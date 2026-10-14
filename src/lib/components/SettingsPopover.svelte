@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import { EDIT_MODES } from "../editMode";
   import { t } from "../i18n";
   import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
@@ -64,6 +65,20 @@
           onclick={() => session.setWidth(width)}
         >
           {t(`width.${width}`)}
+        </button>
+      {/each}
+    </div>
+  </div>
+  <div class="field">
+    <span class="field__label">{t("settings.editMode")}</span>
+    <div class="segmented" role="group" aria-label={t("settings.editMode")}>
+      {#each EDIT_MODES as mode (mode)}
+        <button
+          type="button"
+          aria-pressed={session.editMode === mode}
+          onclick={() => session.setEditMode(mode)}
+        >
+          {t(`edit.${mode}`)}
         </button>
       {/each}
     </div>

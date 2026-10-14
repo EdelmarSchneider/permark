@@ -1,0 +1,363 @@
+/* =====================================================================================
+   Visual mode (docs/design/v0.2.md section 3): the toolbar, the document drawn with the reading styles (the editor has the
+   classes `md md-body`, so type, spacing and colours are the reader's), locked blocks, the unsaved-block bar, the slash menu
+   and the link form. Colours come from the tokens, so light and dark follow the theme.
+   ===================================================================================== */
+.visual {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg);
+}
+.visual__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  /* the reader's side padding, so the text starts where it does when reading */
+  padding: var(--sp-6) clamp(28px, 4.5vw, var(--sp-8)) 0;
+}
+.visual__column {
+  min-height: 100%;
+  padding-bottom: 40vh;
+}
+.visual__host {
+  display: contents;
+}
+.visual__skeleton {
+  position: absolute;
+  inset: 76px clamp(28px, 4.5vw, var(--sp-8)) 0;
+  pointer-events: none;
+}
+.main[data-width="full"] .visual__skeleton {
+  max-width: none;
+}
+
+/* The document (ProseMirror). Its own base rules, which a stock Markdown editor would bring, are kept to the few that matter. */
+.ProseMirror {
+  position: relative;
+  min-height: 40vh;
+  outline: none;
+  caret-color: var(--accent);
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+}
+.ProseMirror pre {
+  white-space: pre-wrap;
+}
+.ProseMirror :focus-visible {
+  outline: none;
+}
+.ProseMirror ::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.ProseMirror > * {
+  scroll-margin-top: var(--sp-5);
+}
+.ProseMirror li {
+  position: relative;
+}
+.ProseMirror .ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
+}
+.ProseMirror img {
+  max-width: 100%;
+  border-radius: var(--radius-control);
+}
+.ProseMirror-gapcursor {
+  display: none;
+  pointer-events: none;
+  position: absolute;
+}
+.ProseMirror-gapcursor::after {
+  content: "";
+  display: block;
+  position: absolute;
+  top: -2px;
+  width: 20px;
+  border-top: 2px solid var(--accent);
+  animation: tm-caret-blink 1.1s steps(2, start) infinite;
+}
+.ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+@keyframes tm-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ProseMirror-gapcursor::after {
+    animation: none;
+  }
+}
+/* tables: the selected cells (prosemirror-tables) */
+.ProseMirror .selectedCell {
+  background: var(--accent-soft);
+}
+.ProseMirror td,
+.ProseMirror th {
+  position: relative;
+  vertical-align: top;
+  min-width: 3em;
+}
+/* the reader draws a table in a bordered, rounded wrapper; here the table itself carries the border */
+.ProseMirror table {
+  margin: 0 0 1em;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+.ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+
+/* A task item: its box sits where a bullet would, and a click on it flips it (the list is the only block that changes). */
+.ProseMirror li[data-item-type="task"] {
+  list-style: none;
+  margin-left: calc(-1.5em + 0.2em);
+  padding-left: 25px;
+}
+.ProseMirror li[data-item-type="task"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: calc((var(--lh-reading) * 1em - 15px) / 2);
+  width: 15px;
+  height: 15px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.ProseMirror li[data-item-type="task"][data-checked="true"]::before {
+  border-color: var(--accent);
+  background: var(--accent) no-repeat center/11px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+.ProseMirror li[data-item-type="task"][data-checked="true"] {
+  color: var(--muted);
+}
+
+/* Unsaved-block bar: the blocks a save would rewrite, in the place the reader's change bars take. Neutral, like the unsaved dot. */
+.tm-unsaved {
+  position: relative;
+}
+.tm-unsaved::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--muted);
+  opacity: 0.7;
+}
+
+/* Locked block: drawn as the reader draws it, never edited, never rewritten. */
+.tm-locked {
+  position: relative;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  cursor: default;
+}
+.tm-locked__body {
+  min-width: 0;
+  overflow-x: auto;
+}
+.tm-locked__body > :last-child {
+  margin-bottom: 0;
+}
+/* the reader lets wide blocks break out of the column; inside a locked block they stay in it */
+.tm-locked__body > * {
+  position: static !important;
+  transform: none !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+.tm-locked__source {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 12.5px/1.6 var(--font-code);
+  white-space: pre-wrap;
+}
+.tm-locked__edit {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  opacity: 0;
+  background: var(--bg);
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.tm-locked:hover .tm-locked__edit,
+.tm-locked:focus-within .tm-locked__edit,
+.tm-locked.ProseMirror-selectednode .tm-locked__edit {
+  opacity: 1;
+}
+
+/* Toolbar */
+.vtoolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 40px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  overflow: hidden;
+}
+.vtool-slot {
+  display: inline-flex;
+  align-items: center;
+}
+.vtool-slot--group {
+  margin-left: 3px;
+  padding-left: 4px;
+  border-left: 1px solid var(--border);
+}
+.vtool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-ui-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.vtool:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.vtool:active {
+  background: var(--pressed);
+}
+.vtool.is-on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.vtool:disabled {
+  opacity: 0.38;
+  cursor: default;
+  background: transparent;
+}
+.vtool:focus-visible,
+.slash__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.vtool--type,
+.vtool--language {
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 112px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  margin-right: 2px;
+}
+.vtool--language {
+  min-width: 96px;
+  color: var(--muted);
+}
+.vtool--type span,
+.vtool--language span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Slash menu */
+.slash {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-pop);
+  animation: tm-rise var(--dur-fast) var(--ease) both;
+}
+[data-theme="dark"] .slash {
+  background: var(--surface-2);
+}
+.slash__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  flex: none;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.slash__item .icon {
+  color: var(--muted);
+}
+.slash__item.is-active {
+  background: var(--hover);
+}
+.slash__empty {
+  padding: 6px 8px;
+  color: var(--muted);
+}
+
+/* Link form */
+.link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.link-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.field__hint {
+  min-height: 1.3em;
+  font-size: var(--fs-ui-xs);
+  color: var(--muted);
+}
+.field__hint--warn {
+  color: var(--git-deleted-text);
+}
+.text-input[aria-invalid="true"] {
+  border-color: var(--git-deleted);
+}

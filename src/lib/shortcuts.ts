@@ -11,6 +11,7 @@ export type ShortcutAction =
   | "editTags"
   | "edit"
   | "toggleEdit"
+  | "toggleEditMode"
   | "save"
   | "newFile"
   | "find"
@@ -86,6 +87,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "cycleWidth";
       case "o":
         return "toggleOutline";
+      case "e":
+        return "toggleEditMode";
     }
     return null;
   }
