@@ -3,6 +3,15 @@
 import type { Api } from "../api";
 import type { SessionState } from "../types";
 import {
+  cleanUp,
+  fileMeta,
+  filesWithTags,
+  listTags,
+  metaIndex,
+  setDescription,
+  setTags,
+} from "./mockMeta";
+import {
   MOCK_ROOT,
   getDocument,
   mockGit,
@@ -77,5 +86,12 @@ export const mockImpl: Api = {
     stateLocation = "project";
   },
   stateLocation: async () => stateLocation,
+  fileMeta: async (path) => fileMeta(path),
+  setFileTags: async (path, tags) => setTags(path, tags),
+  setFileDescription: async (path, description) => setDescription(path, description),
+  listTags: async () => listTags(),
+  filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
+  metaIndex: async () => metaIndex(),
+  cleanUpMeta: async () => cleanUp(),
   on: async () => () => {},
 };

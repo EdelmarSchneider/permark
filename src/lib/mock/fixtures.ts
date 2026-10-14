@@ -365,6 +365,7 @@ const docs: Record<string, MockDoc> = {
       p("Not used in the MVP; local disks only."),
     ],
     4 * MIN,
+    { frontmatter: [["tags", "research, watcher"]] },
   ),
   "docs/research/index.md": doc(
     "Research",
@@ -494,6 +495,11 @@ function registry(): Record<string, MockDoc> {
 
 export function docExists(path: string): boolean {
   return path in registry() && !mockState.deleted.has(path);
+}
+
+/** The front matter pairs of a mock document, if it has any. */
+export function mockFrontmatter(path: string): [string, string][] | null {
+  return registry()[path]?.frontmatter ?? null;
 }
 
 export function getDocument(path: string): DocumentView {
