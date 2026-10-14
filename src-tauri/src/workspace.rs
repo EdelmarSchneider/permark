@@ -1415,7 +1415,10 @@ tags = [\"team\"]
             ws.file_meta("new.md")
                 .is_ok_and(|m| m.tags.iter().any(|t| t.name == "keep"))
         });
-        assert!(ws.file_meta("old.md").expect("old").tags.is_empty());
+        assert_eq!(
+            ws.file_meta("old.md").expect("old").tags,
+            Vec::<crate::meta::catalog::TagRef>::new()
+        );
         ws.close();
     }
 
@@ -1456,7 +1459,7 @@ exclude = [\"archive/**\"]
         let tree = ws.info().tree_default.expect("tree default");
         assert_eq!(tree.show, Some(crate::session::TreeShow::Documents));
         assert_eq!(tree.exclude, ["archive/**"]);
-        assert!(tree.include.is_empty());
+        assert_eq!(tree.include, Vec::<String>::new());
         ws.close();
     }
 

@@ -317,7 +317,7 @@ description = \"How the feed groups events.\"
         let text = "[files.\"a.md\"]\ntags = [\"x\"]\n<<<<<<< HEAD\ntags = [\"y\"]\n=======\n";
         let problem = Entries::parse(text).expect_err("conflict markers");
         assert_eq!(problem.line, Some(3));
-        assert!(!problem.message.is_empty());
+        assert_ne!(problem.message, "");
         let wrong_type = Entries::parse("[files.\"a.md\"]\ntags = 5\n").expect_err("type");
         assert_eq!(wrong_type.line, Some(2));
         assert!(Entries::parse("files = 3").is_err());

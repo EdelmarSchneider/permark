@@ -152,7 +152,7 @@ exclude = [\"x/\"]",
         .expect("parse");
         let tree = c.tree.expect("tree");
         assert_eq!(tree.show, None);
-        assert!(tree.include.is_empty());
+        assert_eq!(tree.include, Vec::<String>::new());
         assert_eq!(tree.exclude, ["x/"]);
         // an empty table is still "the project has a tree section"
         assert_eq!(

@@ -257,7 +257,7 @@ mod tests {
         assert_eq!(f.show, TreeShow::Everything);
         assert!(f.hide_empty_folders);
         assert!(f.assets_near_docs, "on unless the UI turned it off");
-        assert!(f.categories.is_empty());
+        assert_eq!(f.categories, Vec::<String>::new());
     }
 
     #[test]

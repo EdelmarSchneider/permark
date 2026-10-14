@@ -227,7 +227,10 @@ fn front_matter_tags_are_read_only_and_a_tag_in_both_places_shows_once_as_a_file
         ]
     );
     // Only the Markdown family has front matter.
-    assert!(svc.file_meta("notes.txt").expect("meta").tags.is_empty());
+    assert_eq!(
+        svc.file_meta("notes.txt").expect("meta").tags,
+        Vec::<crate::meta::catalog::TagRef>::new()
+    );
     svc.stop();
 }
 
@@ -316,7 +319,10 @@ fn our_own_writes_are_echoes_and_other_edits_are_read_in() {
     // Deleting it empties the app's tags.
     fs::remove_file(fx.project_meta()).expect("remove");
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
-    assert!(svc.file_meta("a.md").expect("a").tags.is_empty());
+    assert_eq!(
+        svc.file_meta("a.md").expect("a").tags,
+        Vec::<crate::meta::catalog::TagRef>::new()
+    );
     svc.stop();
 }
 
@@ -528,7 +534,10 @@ fn answers_follow_the_files_once_the_watcher_says_they_changed() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     let svc = fx.service();
-    assert!(svc.overview().tags.is_empty());
+    assert_eq!(
+        svc.overview().tags,
+        Vec::<crate::meta::catalog::TagCount>::new()
+    );
     fx.write("a.md", "---\ntags: [fresh]\n---\n# A\n");
     svc.on_fs_changes(&[change("a.md")]);
     assert_eq!(svc.overview().tags[0].name, "fresh");
@@ -898,7 +907,10 @@ fn edits_update_the_cached_answers_in_place_while_new_files_need_a_scan() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     let svc = fx.service();
-    assert!(svc.overview().tags.is_empty());
+    assert_eq!(
+        svc.overview().tags,
+        Vec::<crate::meta::catalog::TagCount>::new()
+    );
 
     // an agent edits a.md and creates new.md
     fx.write("a.md", "---\ntags: [edited]\n---\n# A\n");

@@ -240,7 +240,10 @@ mod tests {
                 ("spec", false, true)
             ]
         );
-        assert!(combine_tags(&[], &[]).is_empty());
+        assert_eq!(
+            combine_tags(&[], &[]),
+            Vec::<crate::meta::catalog::TagRef>::new()
+        );
     }
 
     #[test]
