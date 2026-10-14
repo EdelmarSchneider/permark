@@ -73,7 +73,10 @@ fn project_key(root: &Path) -> String {
 impl StateStore {
     /// Uses `.trailmark/local/` when the project has a `.trailmark/` folder, AppData otherwise.
     pub fn open(app_data_dir: &Path, root: &Path) -> Self {
-        let root = dunce::simplified(root).to_path_buf();
+        // Canonical when possible, so every spelling of a folder (8.3 short names, `..`, case on Windows) maps to
+        // one key. The workspace already passes the vault's canonical root, for which this changes nothing.
+        let root =
+            dunce::canonicalize(root).unwrap_or_else(|_| dunce::simplified(root).to_path_buf());
         let trailmark = root.join(TRAILMARK_DIR);
         let outside = app_data_dir.join("projects").join(project_key(&root));
         let (location, dir) = if trailmark.is_dir() {
@@ -212,6 +215,17 @@ mod tests {
     }
 
     #[test]
+    fn every_spelling_of_a_folder_shares_one_key() {
+        let f = fx();
+        std::fs::create_dir(f.project.path().join("sub")).expect("mkdir");
+        let roundabout = f.project.path().join("sub").join("..");
+        assert_eq!(
+            StateStore::open(f.app.path(), &roundabout).dir(),
+            f.store().dir()
+        );
+    }
+
+    #[test]
     fn default_location_is_appdata_keyed_by_the_root_hash() {
         let f = fx();
         let s = f.store();
@@ -240,7 +254,8 @@ mod tests {
         assert_eq!(s.meta_path(), s.dir().join("meta.toml"));
         assert!(s.meta_path().starts_with(f.app.path()));
         s.init_project_folder().expect("init");
-        let project_file = f.project.path().join(".trailmark").join("meta.toml");
+        let root = dunce::canonicalize(f.project.path()).expect("canonical");
+        let project_file = root.join(".trailmark").join("meta.toml");
         assert_eq!(s.meta_path(), project_file);
         // The shared file is not in the gitignored local/ folder.
         assert!(!s.meta_path().starts_with(s.dir()));
