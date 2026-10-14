@@ -70,6 +70,8 @@ pub struct DocumentView {
     pub frontmatter: Option<Vec<(String, String)>>,
     pub modified_ms: u64,
     pub size_bytes: u64,
+    /// Codes for what the reader should know (see `decode`; `deepNesting` from the Markdown renderer), several
+    /// joined with a comma. The UI words them.
     pub encoding_note: Option<String>,
 }
 
@@ -80,8 +82,8 @@ pub struct Rendered {
     pub html: String,
     pub title: Option<String>,
     pub frontmatter: Option<Vec<(String, String)>>,
-    /// A short remark for the reader when the renderer had to fall back (for example "shown as plain
-    /// text"). It is merged into the view's `encoding_note`.
+    /// A code for what the reader should know when the renderer had to fall back (`deepNesting`: shown as
+    /// plain text). It is merged into the view's `encoding_note`.
     pub note: Option<String>,
 }
 
@@ -176,7 +178,7 @@ pub fn render_bytes(
             let r = registry.render(abs, &text);
             // Both notes end up in the one chip next to the title.
             let note = match (note, r.note) {
-                (Some(encoding), Some(fallback)) => Some(format!("{encoding}; {fallback}")),
+                (Some(encoding), Some(fallback)) => Some(format!("{encoding},{fallback}")),
                 (encoding, fallback) => encoding.or(fallback),
             };
             DocumentView {
@@ -289,10 +291,10 @@ mod tests {
         let v = view_of("a.md", &utf16);
         assert_eq!(v.kind, DocKind::Markdown);
         assert_eq!(v.title.as_deref(), Some("Hi"));
-        assert!(v.encoding_note.is_some_and(|n| n.contains("UTF-16")));
+        assert_eq!(v.encoding_note.as_deref(), Some("utf16Le"));
 
         let v = view_of("b.md", b"# Caf\xE9\n");
-        assert!(v.encoding_note.is_some());
+        assert_eq!(v.encoding_note.as_deref(), Some("invalidUtf8"));
         assert!(v.html.contains('\u{FFFD}'));
     }
 
@@ -300,7 +302,7 @@ mod tests {
     fn a_rendering_fallback_is_reported_in_the_note() {
         let v = view_of("deep.md", format!("{} x\n", ">".repeat(500)).as_bytes());
         assert_eq!(v.kind, DocKind::Text);
-        assert!(v.encoding_note.is_some_and(|n| n.contains("nesting")));
+        assert_eq!(v.encoding_note.as_deref(), Some("deepNesting"));
         assert_eq!(v.blocks.len(), 1);
         assert!(v.html.contains("&gt;&gt;"));
     }

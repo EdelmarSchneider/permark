@@ -212,6 +212,23 @@ input {
   color: var(--muted);
   font-size: var(--fs-ui-sm);
 }
+/* The left items give way first when the window is narrow (clipped at the edge); the right ones, with the panel
+   toggle, always stay. Nothing makes the page scroll sideways. */
+.statusbar {
+  overflow: hidden;
+}
+.sb-group {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
+.sb-group--start {
+  flex: 1 1 0;
+  overflow: hidden;
+}
+.sb-group--end {
+  flex: none;
+}
 .scroll {
   overflow: auto;
   min-height: 0;

@@ -29,7 +29,7 @@ import {
   toBase64,
 } from "../editor/imageName";
 import type { EditMode } from "../editMode";
-import { errorKind, errorText } from "../errors";
+import { errorKind, errorMessage } from "../errors";
 import { mapPath } from "../fileOps";
 import { t, tn } from "../i18n";
 import { registerOverlay } from "../overlays";
@@ -166,7 +166,7 @@ class EditStore {
       toast.message(
         reason
           ? t(EDIT_BLOCK_TEXT[reason])
-          : t("edit.openFailed", { name: basename(path), message: errorText(error) }),
+          : t("edit.openFailed", { name: basename(path), message: errorMessage(error) }),
         "warn",
       );
       return false;
@@ -439,7 +439,7 @@ class EditStore {
       await this.adopt(text, outcome.hash, outcome.modifiedMs);
       return true;
     } catch (error) {
-      if (this.path === path) this.saveError = errorText(error);
+      if (this.path === path) this.saveError = errorMessage(error);
       return false;
     } finally {
       this.endSave();
@@ -488,7 +488,7 @@ class EditStore {
     this.followSave(text, parsed !== null || text.trim() === "" ? map : null, bridge.editor);
     this.showNote(changed > 0 ? tn("edit.savedBlocks", changed) : t("edit.saved"));
     if (unreadable !== null) {
-      toast.message(t("edit.blocksUnreadable", { message: errorText(unreadable) }), "warn");
+      toast.message(t("edit.blocksUnreadable", { message: errorMessage(unreadable) }), "warn");
     }
     if (!this.hintSeen) {
       this.hintSeen = true;
@@ -708,7 +708,7 @@ class EditStore {
       if (this.path === path) this.applyDisk(source, true);
     } catch (error) {
       if (errorKind(error) === "notFound") this.setConflict(null);
-      else this.saveError = errorText(error);
+      else this.saveError = errorMessage(error);
     }
   }
 
@@ -750,7 +750,7 @@ class EditStore {
       this.conflict = null;
       void vault.refreshTree();
     } catch (error) {
-      if (this.path === path) this.saveError = errorText(error);
+      if (this.path === path) this.saveError = errorMessage(error);
     } finally {
       this.endSave();
     }
@@ -823,7 +823,7 @@ class EditStore {
       this.mode = "visual";
       return true;
     } catch (error) {
-      toast.message(t("edit.switchFailed", { message: errorText(error) }), "warn");
+      toast.message(t("edit.switchFailed", { message: errorMessage(error) }), "warn");
       return false;
     } finally {
       if (token === this.switchToken) this.switching = false;
@@ -891,7 +891,7 @@ class EditStore {
         if (this.path !== path) return;
         editor.insertImage(written.rel);
       } catch (error) {
-        toast.message(t("images.addFailed", { message: errorText(error) }), "warn");
+        toast.message(t("images.addFailed", { message: errorMessage(error) }), "warn");
       }
     }
     editor.focus();

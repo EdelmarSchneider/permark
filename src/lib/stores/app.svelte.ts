@@ -6,7 +6,7 @@ import { api, type Unlisten } from "../api";
 import { bridge } from "../bridge";
 import { isTextSelected } from "../dom/domUtil";
 import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
-import { errorKind, errorText } from "../errors";
+import { errorKind, errorMessage } from "../errors";
 import { followCandidate } from "../follow";
 import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
@@ -123,7 +123,7 @@ class AppStore {
       const path = await pickFolder();
       if (path) await this.openProject(path);
     } catch (error) {
-      this.openError = errorText(error);
+      this.openError = errorMessage(error);
     }
   }
 
@@ -132,7 +132,7 @@ class AppStore {
       const path = await pickFile();
       if (path) await this.openProject(path);
     } catch (error) {
-      this.openError = errorText(error);
+      this.openError = errorMessage(error);
     }
   }
 
@@ -166,7 +166,7 @@ class AppStore {
       try {
         info = await api.openVault(path);
       } catch (error) {
-        const message = t("welcome.openFailed", { path, message: errorText(error) });
+        const message = t("welcome.openFailed", { path, message: errorMessage(error) });
         this.openError = message;
         if (this.screen !== "project") this.missingRecents.add(path);
         else toast.message(message, "warn");
@@ -220,7 +220,7 @@ class AppStore {
       }
       return true;
     } catch (error) {
-      this.openError = t("welcome.openFailed", { path, message: errorText(error) });
+      this.openError = t("welcome.openFailed", { path, message: errorMessage(error) });
       return false;
     } finally {
       this.opening = false;
@@ -367,7 +367,7 @@ class AppStore {
     try {
       target = await api.resolveLink(from, href);
     } catch (error) {
-      toast.message(errorText(error), "warn");
+      toast.message(errorMessage(error), "warn");
       return null;
     }
     switch (target.kind) {
@@ -378,7 +378,7 @@ class AppStore {
         try {
           await openExternalUrl(target.url);
         } catch (error) {
-          toast.message(t("link.openFailed", { message: errorText(error) }), "warn");
+          toast.message(t("link.openFailed", { message: errorMessage(error) }), "warn");
         }
         return null;
       case "anchor":
@@ -420,7 +420,7 @@ class AppStore {
     try {
       await api.createDocument(path, blankTemplate(name));
     } catch (error) {
-      return errorKind(error) === "exists" ? t("newFile.exists") : errorText(error);
+      return errorKind(error) === "exists" ? t("newFile.exists") : errorMessage(error);
     }
     ui.newFile = null;
     await vault.refreshTree();
@@ -438,7 +438,7 @@ class AppStore {
       vault.git = await api.setGitBaseline(kind);
       await vault.refreshSince();
     } catch (error) {
-      toast.message(errorText(error), "warn");
+      toast.message(errorMessage(error), "warn");
     }
   }
 
@@ -593,7 +593,7 @@ class AppStore {
     try {
       await this.copy((await api.absolutePath(path)).replace(/\\/g, "/"), flashId);
     } catch (error) {
-      toast.message(errorText(error), "warn");
+      toast.message(errorMessage(error), "warn");
     }
   }
 
@@ -608,7 +608,7 @@ class AppStore {
     try {
       await api.openExternal(path);
     } catch (error) {
-      toast.message(t("doc.externalFailed", { message: errorText(error) }), "warn");
+      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
     }
   }
 
@@ -616,7 +616,7 @@ class AppStore {
     try {
       await api.revealInFolder(path);
     } catch (error) {
-      toast.message(t("doc.externalFailed", { message: errorText(error) }), "warn");
+      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
     }
   }
 

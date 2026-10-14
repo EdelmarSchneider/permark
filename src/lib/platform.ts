@@ -18,7 +18,11 @@ const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
 
 export async function pickFolder(): Promise<string | null> {
   if (isMock) return MOCK_FOLDER;
-  const picked = await openDialog({ directory: true, multiple: false });
+  const picked = await openDialog({
+    directory: true,
+    multiple: false,
+    title: t("dialog.openFolder"),
+  });
   return typeof picked === "string" ? picked : null;
 }
 
@@ -27,6 +31,7 @@ export async function pickFile(): Promise<string | null> {
   const picked = await openDialog({
     directory: false,
     multiple: false,
+    title: t("dialog.openFile"),
     filters: [
       {
         name: t("dialog.filter.docs"),

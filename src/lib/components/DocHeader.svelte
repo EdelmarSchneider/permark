@@ -1,6 +1,7 @@
 <script lang="ts">
   import { EDIT_MODES } from "../editMode";
   import { gitStateLabel } from "../gitLabels";
+  import { noteText } from "../errors";
   import { t } from "../i18n";
   import { basename, breadcrumbs } from "../paths";
   import { formatReference } from "../reference";
@@ -138,7 +139,7 @@
   {#if path}
     <nav class="breadcrumb" aria-label={t("header.path")}>
       {#if vault.isSimple}
-        <span class="current">{file}</span>
+        <span class="current" title={file}>{file}</span>
         <span class="parent">{vault.info?.name}</span>
       {:else}
         {#each folders as crumb (crumb.path)}
@@ -167,12 +168,17 @@
           >
         </span>
       {/if}
-      <span class="doc-meta" role="status">
-        {edit.saving ? t("edit.saving") : (edit.note ?? savedLabel(edit.modifiedMs, clock.now))}
-      </span>
+      {@const meta = edit.saving
+        ? t("edit.saving")
+        : (edit.note ?? savedLabel(edit.modifiedMs, clock.now))}
+      <span class="doc-meta" role="status" title={meta}>{meta}</span>
     {:else if view}
-      <span class="doc-meta">{savedLabel(view.modifiedMs, clock.now)}</span>
-      {#if view.encodingNote}<span class="doc-chip">{view.encodingNote}</span>{/if}
+      {@const saved = savedLabel(view.modifiedMs, clock.now)}
+      <span class="doc-meta" title={saved}>{saved}</span>
+      {#if view.encodingNote}
+        {@const note = noteText(view.encodingNote)}
+        <span class="doc-chip" title={note}>{note}</span>
+      {/if}
     {/if}
   {/if}
 

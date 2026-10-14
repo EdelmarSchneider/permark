@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { t } from "../i18n";
+  import { keys, t } from "../i18n";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { relativeTime } from "../time";
@@ -58,10 +58,10 @@
           name="folder-open"
           size="sm"
         />{/if}
-      {t("welcome.openFolder")} <kbd>Ctrl+O</kbd>
+      {t("welcome.openFolder")} <kbd>{keys("Ctrl+O")}</kbd>
     </button>
     <button type="button" class="btn" disabled={app.opening} onclick={() => void app.chooseFile()}>
-      <Icon name="file-text" size="sm" />{t("welcome.openFile")} <kbd>Ctrl+Shift+O</kbd>
+      <Icon name="file-text" size="sm" />{t("welcome.openFile")} <kbd>{keys("Ctrl+Shift+O")}</kbd>
     </button>
   </div>
   {#if app.openError}<p class="welcome__error" role="alert">{app.openError}</p>{/if}

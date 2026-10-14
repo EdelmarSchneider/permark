@@ -1,6 +1,7 @@
 // Names for the images added to a document (docs/design/v0.2.md section 3, "Images"): a pasted picture is called
 // `<doc-stem>-YYYYMMDD-HHMMSS.<ext>`, a dropped file keeps its own name. The backend makes the name safe and unique.
 
+import { intlTag } from "../i18n";
 import { basename } from "../paths";
 
 /** Largest image added without asking. */
@@ -8,9 +9,13 @@ export const CONFIRM_ABOVE_BYTES = 10 * 1024 * 1024;
 /** Largest image added at all (the backend refuses more); a bigger file is never read. */
 export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 
-/** A file size for a message: "12.3 MB". */
+/** A file size for a message, with the decimal mark of the interface's language: "12.3 MB", "12,3 MB". */
 export function megabytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  const size = (bytes / (1024 * 1024)).toLocaleString(intlTag(), {
+    minimumFractionDigits: 1,
+    maximumFractionDigits: 1,
+  });
+  return `${size} MB`;
 }
 
 const TYPES: Record<string, string> = {

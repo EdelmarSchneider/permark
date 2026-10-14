@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { language } from "./i18n";
 import { ago, baselineLabel, clock, relativeTime, savedLabel } from "./time";
 
 const NOW = new Date(2026, 9, 13, 12, 0, 0).getTime();
@@ -48,5 +49,38 @@ describe("clock and baselineLabel", () => {
   it("uses the date for older baselines", () => {
     const old = new Date(2026, 9, 1, 8, 15).getTime();
     expect(baselineLabel(old, NOW)).toBe("Oct 1, 08:15");
+  });
+});
+
+describe("in another language", () => {
+  afterEach(() => {
+    language.preference = "en";
+  });
+
+  it("words the age with the language's own grammar", () => {
+    language.preference = "pt-BR";
+    expect(ago(NOW - 12 * SEC, NOW)).toBe("há 12 segundos");
+    expect(ago(NOW - 1 * MIN, NOW)).toBe("há 1 minuto");
+    language.preference = "es";
+    expect(ago(NOW - 2 * HOUR, NOW)).toBe("hace 2 horas");
+    language.preference = "de";
+    expect(ago(NOW - 2 * HOUR, NOW)).toBe("vor 2 Stunden");
+    expect(ago(NOW - 1 * MIN, NOW)).toBe("vor 1 Minute");
+  });
+
+  it("says 'just now' in the language", () => {
+    language.preference = "de";
+    expect(ago(NOW - SEC, NOW)).toBe("eben");
+    expect(savedLabel(NOW - SEC, NOW)).toBe("eben geändert");
+    expect(savedLabel(NOW - 12 * SEC, NOW)).toBe("vor 12 s geändert");
+  });
+
+  it("keeps the 24-hour clock and names the day in the language", () => {
+    language.preference = "de";
+    expect(clock(new Date(2026, 9, 13, 18, 5).getTime())).toBe("18:05");
+    const monday = new Date(2026, 9, 12, 18, 40).getTime();
+    expect(baselineLabel(monday, NOW)).toMatch(/^Mo\.? 18:40$/);
+    language.preference = "pt-BR";
+    expect(baselineLabel(monday, NOW)).toMatch(/^seg\.? 18:40$/);
   });
 });

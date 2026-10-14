@@ -39,7 +39,14 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "languages": ["English", "PortugueseBR", "SpanishInternational", "German"],
+        "displayLanguageSelector": true,
+        "installerHooks": "installer/hooks.nsh"
+      }
+    }
   },
   "plugins": {
     "updater": {

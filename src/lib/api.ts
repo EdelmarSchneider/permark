@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { LanguagePreference } from "./i18n";
 import type {
   AssetWritten,
   BufferText,
@@ -49,6 +50,10 @@ export interface Api {
   /** The CLI argument, if any. */
   initialPath(): Promise<string | null>;
   recentVaults(): Promise<RecentVault[]>;
+  /** The language the interface starts in: the one picked in Settings, else the one the installer recorded, else "system". */
+  appLanguage(): Promise<LanguagePreference>;
+  /** Keeps the language picked in Settings (an app-wide choice, not a project one). */
+  setAppLanguage(language: LanguagePreference): Promise<void>;
   /** Main root plus worktrees as top-level roots. */
   listTree(): Promise<TreeNode>;
   readDocument(path: string): Promise<DocumentView>;
@@ -125,6 +130,8 @@ export const tauriApi: Api = {
   openVault: (path) => invoke<VaultInfo>("open_vault", { path }),
   initialPath: () => invoke<string | null>("initial_path"),
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
+  appLanguage: () => invoke<LanguagePreference>("app_language"),
+  setAppLanguage: (language) => invoke<void>("set_app_language", { language }),
   listTree: () => invoke<TreeNode>("list_tree"),
   readDocument: (path) => invoke<DocumentView>("read_document", { path }),
   resolveLink: (from, href) => invoke<LinkTarget>("resolve_link", { from, href }),
@@ -204,6 +211,8 @@ function createMockApi(): Api {
     openVault: command("openVault"),
     initialPath: command("initialPath"),
     recentVaults: command("recentVaults"),
+    appLanguage: command("appLanguage"),
+    setAppLanguage: command("setAppLanguage"),
     listTree: command("listTree"),
     readDocument: command("readDocument"),
     resolveLink: command("resolveLink"),

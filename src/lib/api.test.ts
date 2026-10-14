@@ -22,6 +22,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   openVault: ["/project"],
   initialPath: [],
   recentVaults: [],
+  appLanguage: [],
+  setAppLanguage: ["de"],
   listTree: [],
   readDocument: ["docs/a.md"],
   resolveLink: ["docs/a.md", "b.md"],

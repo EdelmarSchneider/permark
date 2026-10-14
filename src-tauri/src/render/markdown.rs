@@ -20,8 +20,8 @@ pub(crate) const MAX_CONTAINER_MARKERS: usize = 100;
 /// The deepest tree (parsed Markdown, or the HTML made from it) that is sanitized and handed to the
 /// webview. Real documents stay far below this; the sanitizer's cost grows quadratically with depth.
 pub(crate) const MAX_TREE_DEPTH: usize = 256;
-/// Shown next to the title when a document is displayed as plain text because of its nesting.
-const DEEP_NESTING_NOTE: &str = "Shown as plain text: nesting too deep to render";
+/// The note (a code the UI words itself) for a document displayed as plain text because of its nesting.
+const DEEP_NESTING_NOTE: &str = "deepNesting";
 
 /// comrak options shared by rendering and search chunking.
 pub(crate) fn options() -> Options<'static> {
@@ -647,7 +647,7 @@ mod tests {
         let r = super::render_markdown(&src);
         assert_eq!(r.kind, DocKind::Text);
         assert!(r.html.starts_with("<pre>"), "{}", &r.html[..40]);
-        assert!(r.note.is_some_and(|n| n.contains("nest")));
+        assert_eq!(r.note.as_deref(), Some("deepNesting"));
         assert!(
             started.elapsed() < std::time::Duration::from_secs(5),
             "the nesting guard must run before the (quadratic) parse"

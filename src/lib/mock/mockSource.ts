@@ -24,11 +24,17 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 
 /** What the backend rejects with: the serialized `AppError`, `{ kind, message }`. */
 export class MockBackendError extends Error {
+  readonly subject?: string;
+  readonly detail?: string;
+  readonly reason?: string;
+
   constructor(
     readonly kind: string,
     message: string,
+    blanks: { subject?: string; detail?: string; reason?: string } = {},
   ) {
     super(message);
+    Object.assign(this, blanks);
   }
 }
 
@@ -49,12 +55,19 @@ export const mockHash = (text: string): string => hashString(text);
 export async function documentSource(path: string): Promise<SourceDoc> {
   await wait(40);
   const kind = mockDocKind(path);
-  if (kind === null) throw new MockBackendError("notFound", `not found: ${path}`);
-  if (kind === "binary") throw new MockBackendError("binary", `${path} is a binary file`);
-  if (kind === "tooLarge") throw new MockBackendError("tooLarge", `${path} is too large to edit`);
+  if (kind === null)
+    throw new MockBackendError("notFound", `not found: ${path}`, { subject: path });
+  if (kind === "binary")
+    throw new MockBackendError("binary", `${path} is a binary file`, { subject: path });
+  if (kind === "tooLarge")
+    throw new MockBackendError("tooLarge", `${path} is too large to edit`, {
+      subject: path,
+    });
   if (kind !== "markdown")
-    throw new MockBackendError("notMarkdown", `${path} is not a Markdown file`);
-  if (mockEncodingNote(path)) throw new MockBackendError("encoding", `${path} is not UTF-8 text`);
+    throw new MockBackendError("notMarkdown", `${path} is not a Markdown file`, { subject: path });
+  if (mockEncodingNote(path)) {
+    throw new MockBackendError("encoding", `${path} is not UTF-8 text`, { subject: path });
+  }
   const text = sourceText(path) ?? "";
   return {
     path,
@@ -84,7 +97,10 @@ export async function saveDocument(
   await wait(120);
   if (mockFiles.failNextSave) {
     mockFiles.failNextSave = false;
-    throw new MockBackendError("denied", `cannot write ${path}: Access is denied. (os error 5)`);
+    throw new MockBackendError("denied", `cannot write ${path}: Access is denied. (os error 5)`, {
+      subject: path,
+      detail: "Access is denied. (os error 5)",
+    });
   }
   if (mockDocKind(path) === null) return { result: "conflict", diskHash: null };
   const current = sourceText(path) ?? "";
@@ -102,16 +118,18 @@ export async function createDocument(path: string, text: string): Promise<Create
   await wait(60);
   const name = basename(path);
   if (!/\.(md|markdown|mdown|mkd|mdx)$/i.test(name) || name.startsWith(".")) {
-    throw new MockBackendError("notMarkdown", `${path} is not a Markdown file`);
+    throw new MockBackendError("notMarkdown", `${path} is not a Markdown file`, { subject: path });
   }
   if (FORBIDDEN_NAME.test(name) || /[. ]$/.test(name)) {
-    throw new MockBackendError("invalidName", "Names can't contain \\ / : * ? \" < > |");
+    throw new MockBackendError("invalidName", "Names can't contain \\ / : * ? \" < > |", {
+      reason: "forbiddenChars",
+    });
   }
   const exists = [...allDocPaths(), ...mockFiles.created].some(
     (p) => p.toLowerCase() === path.toLowerCase(),
   );
   if (exists && !mockState.deleted.has(path)) {
-    throw new MockBackendError("exists", `a file named ${name} already exists`);
+    throw new MockBackendError("exists", `a file named ${name} already exists`, { subject: name });
   }
   mockFiles.created.add(path);
   mockState.deleted.delete(path);
@@ -136,6 +154,7 @@ export async function writeAsset(
     throw new MockBackendError(
       "invalidName",
       "Only images can be added here (PNG, JPG, GIF, WebP, SVG)",
+      { reason: "notImage" },
     );
   }
   const dot = name.lastIndexOf(".");

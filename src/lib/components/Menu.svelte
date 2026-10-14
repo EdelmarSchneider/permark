@@ -19,6 +19,7 @@
 
 <script lang="ts">
   import { onMount } from "svelte";
+  import { keys } from "../i18n";
   import Icon from "./Icon.svelte";
   import Popover, { type Anchor } from "./Popover.svelte";
 
@@ -85,7 +86,7 @@
             <Icon name={entry.icon} size="sm" />
           {/if}
           <span class="menu-item__label">{entry.label}</span>
-          {#if entry.hint}<span class="menu-item__hint">{entry.hint}</span>{/if}
+          {#if entry.hint}<span class="menu-item__hint">{keys(entry.hint)}</span>{/if}
         </button>
       {/if}
     {/each}

@@ -24,6 +24,7 @@
   type="button"
   class={["feed-row", current && "is-current", entry.kind === "removed" && "feed-row--removed"]}
   aria-current={current ? "true" : undefined}
+  title={entry.path}
   onclick={onopen}
 >
   <Icon name={ICONS[entry.kind]} class={`kind kind--${entry.kind}`} />

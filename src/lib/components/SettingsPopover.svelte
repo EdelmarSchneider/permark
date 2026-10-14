@@ -2,10 +2,17 @@
   import { onDestroy } from "svelte";
   import { LINK_UPDATES } from "../fileOps";
   import { EDIT_MODES } from "../editMode";
-  import { t } from "../i18n";
+  import {
+    LANGUAGE_NAMES,
+    LANGUAGE_PREFERENCES,
+    language,
+    t,
+    type LanguagePreference,
+  } from "../i18n";
   import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { docs } from "../stores/docs.svelte";
+  import { chooseLanguage } from "../stores/languageChoice.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { updates } from "../stores/updates.svelte";
@@ -25,6 +32,11 @@
   const simple = anchor.left > window.innerWidth / 2;
 
   const themes = ["system", "light", "dark"] as const;
+
+  // each language is written in itself, so it can be found whatever the interface says now
+  function languageName(choice: LanguagePreference): string {
+    return choice === "system" ? t("settings.languageSystem") : LANGUAGE_NAMES[choice];
+  }
   const preview = $derived(formatReference(session.refTemplate, docs.path ?? SAMPLE));
   const update = $derived(updates.state);
   // the button already says "Checking..."
@@ -42,6 +54,21 @@
   label={t("settings.title")}
   onclose={() => (ui.settingsOpen = false)}
 >
+  <div class="field">
+    <label class="field__label" for="app-language">{t("settings.language")}</label>
+    <select
+      id="app-language"
+      class="text-input select-input"
+      value={language.preference}
+      onchange={(e) => void chooseLanguage(e.currentTarget.value as LanguagePreference)}
+    >
+      {#each LANGUAGE_PREFERENCES as choice (choice)}
+        <option value={choice} lang={choice === "system" ? undefined : choice}>
+          {languageName(choice)}
+        </option>
+      {/each}
+    </select>
+  </div>
   <div class="field">
     <span class="field__label">{t("settings.theme")}</span>
     <div class="segmented" role="group" aria-label={t("settings.theme")}>

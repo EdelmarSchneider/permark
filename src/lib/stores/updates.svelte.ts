@@ -1,7 +1,7 @@
 // The app updater: a check a few seconds after launch (release builds only), a manual check from the
 // settings, and "Restart to update". The state machine is in `../updates`; this store runs the steps.
 
-import { errorText } from "../errors";
+import { errorMessage } from "../errors";
 import { t } from "../i18n";
 import { checkForUpdate, isMock, type AvailableUpdate } from "../platform";
 import {
@@ -49,7 +49,7 @@ class UpdatesStore {
       this.dispatch({ type: "found", version: update.version });
       toast.update();
     } catch (error) {
-      this.dispatch({ type: "checkFailed", message: errorText(error) });
+      this.dispatch({ type: "checkFailed", message: errorMessage(error) });
     }
   }
 
@@ -75,7 +75,7 @@ class UpdatesStore {
     try {
       await update.install((progress) => this.onProgress(progress));
     } catch (error) {
-      const message = errorText(error);
+      const message = errorMessage(error);
       this.dispatch({ type: "installFailed", message });
       toast.message(t("update.installFailed", { message }), "warn");
     }

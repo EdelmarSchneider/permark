@@ -2,7 +2,7 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api } from "../api";
-import { errorText } from "../errors";
+import { errorMessage } from "../errors";
 import { flattenResults, groupHits, hitKey, type HitGroup, type ResultRow } from "../searchModel";
 import { hasAllTags, unknownTags } from "../tagQuery";
 import { TagQueryState } from "../tagQueryState.svelte";
@@ -107,7 +107,7 @@ class SearchStore {
     } catch (error) {
       if (seq !== this.seq) return;
       this.status = "error";
-      this.error = errorText(error);
+      this.error = errorMessage(error);
     }
   }
 

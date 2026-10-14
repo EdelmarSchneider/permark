@@ -47,8 +47,12 @@
     </span>
     {#if current.type === "change"}
       {@const name = basename(current.path)}
+      {@const full =
+        current.count > 1
+          ? `${tn("toast.docsChanged", current.count)} · ${t("toast.latest")} ${name}`
+          : `${name} ${t(`toast.kind.${current.kind}`)}`}
       <div style="min-width:0">
-        <div class="toast__title">
+        <div class="toast__title" title={full}>
           {#if current.count > 1}
             {tn("toast.docsChanged", current.count)} · {t("toast.latest")}
             <span style="font-weight:600">{name}</span>

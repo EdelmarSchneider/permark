@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { bridge } from "../bridge";
-  import { LOCALE, t } from "../i18n";
+  import { formatNumber, t } from "../i18n";
   import { navigate, visibleAncestor, visibleRows } from "../outline";
   import { nearestScrollTop } from "../reveal";
   import { docs } from "../stores/docs.svelte";
@@ -178,8 +178,8 @@
   {#if cut}
     <div class="outline-note">
       {t("outline.truncated", {
-        shown: items.length.toLocaleString(LOCALE),
-        total: outline.model.total.toLocaleString(LOCALE),
+        shown: formatNumber(items.length),
+        total: formatNumber(outline.model.total),
       })}
     </div>
   {/if}

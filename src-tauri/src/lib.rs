@@ -69,6 +69,8 @@ pub fn run() {
             commands::open_vault,
             commands::initial_path,
             commands::recent_vaults,
+            commands::app_language,
+            commands::set_app_language,
             commands::list_tree,
             commands::read_document,
             commands::resolve_link,

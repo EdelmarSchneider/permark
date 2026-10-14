@@ -39,6 +39,10 @@ tauri-plugin-process = "2.4.0"
 base64 = "0.23.1"
 trash = "5.2.9"
 
+# The Windows installer records the language it ran in; the app reads it once, on a first start
+[target.'cfg(windows)'.dependencies]
+winreg = "0.56.0"
+
 [lints.rust]
 unsafe_code = "deny"
 

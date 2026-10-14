@@ -362,10 +362,10 @@ fn a_folder_that_holds_a_linked_worktree_cannot_be_moved_or_deleted() {
     // every folder above the worktree
     for folder in ["agents", "agents/trees"] {
         let moved = check_moves(&vault, &[mv(folder, "elsewhere")]).expect_err(folder);
-        assert_eq!(moved.kind(), "protected", "{folder}");
+        assert_eq!(moved.kind(), "holdsWorktree", "{folder}");
         assert!(moved.to_string().contains("wt-x"), "{moved}");
         let deleted = check_deletes(&vault, &[folder.to_owned()]).expect_err(folder);
-        assert_eq!(deleted.kind(), "protected", "{folder}");
+        assert_eq!(deleted.kind(), "holdsWorktree", "{folder}");
     }
     // folders and files beside it are free
     assert!(check_moves(&vault, &[mv("other", "other2")]).is_ok());
