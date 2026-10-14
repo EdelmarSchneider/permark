@@ -2,6 +2,7 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import type { FindMode } from "../find";
+import type { Anchor } from "../components/Popover.svelte";
 
 const HINT_KEY = "trailmark.hint.initProject";
 
@@ -14,7 +15,7 @@ function readHintDismissed(): boolean {
 }
 
 class UiStore {
-  sidebarView = $state<"explorer" | "search">("explorer");
+  sidebarView = $state<"explorer" | "search" | "tags">("explorer");
   quickOpen = $state(false);
   settingsOpen = $state(false);
   initDialog = $state(false);
@@ -42,6 +43,9 @@ class UiStore {
   dismissedRepoState = $state<string | null>(null);
   searchFocusTick = $state(0);
   explorerFocusTick = $state(0);
+  tagsFocusTick = $state(0);
+  /** The tag editor popover; `anchor` is where it opens (null: next to the document header). */
+  tagEditor = $state.raw<{ anchor: Anchor | null } | null>(null);
   /** Id of the control showing its "Copied" check right now. */
   flashed = $state<string | null>(null);
   collapsedSections = new SvelteSet<string>();
@@ -63,6 +67,10 @@ class UiStore {
     this.flashTimer = setTimeout(() => {
       this.flashed = null;
     }, 1200);
+  }
+
+  openTagEditor(anchor: Anchor | null = null): void {
+    this.tagEditor = { anchor };
   }
 
   toggleSection(id: string): void {

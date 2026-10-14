@@ -4,12 +4,14 @@
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
   import QuickOpen from "./lib/components/QuickOpen.svelte";
+  import TagEditor from "./lib/components/TagEditor.svelte";
   import SelectionPopover from "./lib/components/SelectionPopover.svelte";
   import SettingsPopover from "./lib/components/SettingsPopover.svelte";
   import Shell from "./lib/components/Shell.svelte";
   import Welcome from "./lib/components/Welcome.svelte";
   import { t } from "./lib/i18n";
-  import { closeTopOverlay } from "./lib/overlays";
+  import { isEditable } from "./lib/dom/domUtil";
+  import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
   import { matchShortcut } from "./lib/shortcuts";
   import { app } from "./lib/stores/app.svelte";
   import { docs } from "./lib/stores/docs.svelte";
@@ -44,6 +46,8 @@
     }
     const action = matchShortcut(e);
     if (!action) return;
+    // "T" is a plain letter: it only means "edit tags" while reading
+    if (action === "editTags" && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) return;
     e.preventDefault();
     app.run(action);
   }
@@ -77,6 +81,7 @@
   {#if ui.quickOpen}<QuickOpen />{/if}
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
+  {#if ui.tagEditor}<TagEditor />{/if}
   <SelectionPopover />
 {:else}
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>

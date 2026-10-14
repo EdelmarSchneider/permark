@@ -20,6 +20,8 @@ describe("matchShortcut", () => {
     ["Ctrl+P", ctrl("p"), "quickOpen"],
     ["Ctrl+Shift+F", ctrl("F", { shiftKey: true }), "searchAll"],
     ["Ctrl+Shift+X", ctrl("X", { shiftKey: true }), "explorer"],
+    ["Ctrl+Shift+T", ctrl("T", { shiftKey: true }), "tagsView"],
+    ["T (reading)", press("t"), "editTags"],
     ["Ctrl+F", ctrl("f"), "find"],
     ["Alt+Left", press("ArrowLeft", { altKey: true }), "back"],
     ["Alt+Right", press("ArrowRight", { altKey: true }), "forward"],
@@ -58,5 +60,12 @@ describe("matchShortcut", () => {
     expect(matchShortcut(press("f"))).toBeNull();
     expect(matchShortcut(press("ArrowLeft"))).toBeNull();
     expect(matchShortcut(ctrl("c"))).toBeNull();
+  });
+
+  it("T needs no modifier, and the other letters stay free", () => {
+    expect(matchShortcut(press("T", { shiftKey: true }))).toBeNull();
+    expect(matchShortcut(press("t", { altKey: true }))).toBeNull();
+    expect(matchShortcut(ctrl("t"))).toBeNull();
+    expect(matchShortcut(press("e"))).toBeNull();
   });
 });

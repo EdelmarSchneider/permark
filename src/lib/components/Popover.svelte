@@ -12,6 +12,8 @@
     side?: "bottom" | "top" | "right";
     align?: "start" | "end";
     variant?: "menu" | "panel" | "bar";
+    /** A panel that needs room for chips and lists. */
+    wide?: boolean;
     label: string;
     onclose: () => void;
     children: Snippet;
@@ -21,6 +23,7 @@
     side = "bottom",
     align = "start",
     variant = "menu",
+    wide = false,
     label,
     onclose,
     children,
@@ -82,6 +85,7 @@
     "popover",
     variant === "menu" && "popover--menu",
     variant === "panel" && "popover--panel",
+    wide && "popover--wide",
   ]}
   style:left="{pos?.left ?? 0}px"
   style:top="{pos?.top ?? 0}px"
