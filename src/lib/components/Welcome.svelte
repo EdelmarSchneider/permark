@@ -5,6 +5,7 @@
   import { clock } from "../stores/clock.svelte";
   import { relativeTime } from "../time";
   import Icon from "./Icon.svelte";
+  import BrandMark from "./BrandMark.svelte";
 
   let active = $state(0);
   let list: HTMLElement | undefined = $state();
@@ -42,7 +43,7 @@
 </script>
 
 <div class="welcome">
-  <div class="welcome__logo"><Icon name="file-text" /></div>
+  <div class="welcome__logo"><BrandMark size={64} /></div>
   <h1>{t("app.name")}</h1>
   <p class="welcome__tagline">{t("welcome.tagline")}</p>
 
