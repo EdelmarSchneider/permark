@@ -13,7 +13,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-pub use config::Config;
+pub use config::{Config, TreeConfig, TreeShow};
 pub use recent::{RecentStore, RecentVault};
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};
 
@@ -58,6 +58,30 @@ impl Default for PanelState {
     }
 }
 
+/// The Explorer filter a person chose for this project. The UI interprets it; the app only keeps it, so
+/// category names stay plain strings (a newer or older UI can save names this build does not know).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TreeFilterState {
+    pub show: TreeShow,
+    /// The categories shown by `Custom`.
+    pub categories: Vec<String>,
+    /// The advanced field of `Custom`: `+pattern` and `-pattern` entries.
+    pub patterns: String,
+    pub hide_empty_folders: bool,
+}
+
+impl Default for TreeFilterState {
+    fn default() -> Self {
+        Self {
+            show: TreeShow::default(),
+            categories: Vec::new(),
+            patterns: String::new(),
+            hide_empty_folders: true,
+        }
+    }
+}
+
 /// What the UI wants restored on the next visit. Matches the UI's `SessionState`; fields missing from
 /// an older save take their defaults.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,6 +96,8 @@ pub struct SessionState {
     pub right_panel: PanelState,
     pub theme: Theme,
     pub follow: bool,
+    /// `None` until the person picks a filter: the project's default (or the app's) applies.
+    pub tree_filter: Option<TreeFilterState>,
 }
 
 impl Default for SessionState {
@@ -89,6 +115,7 @@ impl Default for SessionState {
             },
             theme: Theme::System,
             follow: false,
+            tree_filter: None,
         }
     }
 }
@@ -102,12 +129,17 @@ mod tests {
         let json = serde_json::json!({
             "lastDoc": "docs/a.md", "scrollTop": 120.5, "zoom": 1.25, "wide": true,
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
-            "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true
+            "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
+            "treeFilter": {"show": "custom", "categories": ["documents", "data"],
+                           "patterns": "+*.sql -archive/**", "hideEmptyFolders": false}
         });
         let s: SessionState = serde_json::from_value(json.clone()).expect("parse");
         assert_eq!(s.last_doc.as_deref(), Some("docs/a.md"));
         assert_eq!(s.theme, Theme::Dark);
         assert!(!s.left_panel.open);
+        let filter = s.tree_filter.as_ref().expect("filter");
+        assert_eq!(filter.show, TreeShow::Custom);
+        assert!(!filter.hide_empty_folders);
         assert_eq!(serde_json::to_value(&s).expect("json"), json);
     }
 
@@ -120,6 +152,21 @@ mod tests {
         assert_eq!(s.theme, Theme::System);
         let s: SessionState = serde_json::from_str("{}").expect("parse");
         assert_eq!(s, SessionState::default());
+    }
+
+    #[test]
+    fn a_session_saved_before_the_filter_existed_has_none() {
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
+        assert_eq!(s.tree_filter, None);
+        let s: SessionState = serde_json::from_str("{\"treeFilter\": null}").expect("parse");
+        assert_eq!(s.tree_filter, None);
+        // a partial filter takes the defaults for the rest
+        let s: SessionState =
+            serde_json::from_str("{\"treeFilter\": {\"show\": \"everything\"}}").expect("parse");
+        let f = s.tree_filter.expect("filter");
+        assert_eq!(f.show, TreeShow::Everything);
+        assert!(f.hide_empty_folders);
+        assert!(f.categories.is_empty());
     }
 
     #[test]
