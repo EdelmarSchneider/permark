@@ -186,6 +186,88 @@ describe("compose", () => {
   });
 });
 
+describe("compose keeps what lives between blocks", () => {
+  // link reference definitions are consumed by the parser, so they sit in the separators
+  const defs = "one\n\n[x]: /a\n\ntwo\n\n[y]: /b\n\nthree\n";
+
+  it("keeps the definitions of the separators that go away with a deleted block", () => {
+    const map = mapOf(defs);
+    expect(compose(map, [{ origin: 0 }, { origin: 2 }])).toBe("one\n\n[x]: /a\n[y]: /b\n\nthree\n");
+  });
+
+  it("keeps a definition when a block is inserted next to it", () => {
+    const map = mapOf(defs);
+    const slots = [{ origin: 0 }, { origin: null, text: "NEW" }, { origin: 1 }, { origin: 2 }];
+    expect(compose(map, slots)).toBe("one\n\n[x]: /a\n\nNEW\n\ntwo\n\n[y]: /b\n\nthree\n");
+  });
+
+  it("keeps a definition that stood before the first surviving block", () => {
+    const map = mapOf("A\n\n[x]: /a\n\nB\n\nC\n");
+    expect(compose(map, [{ origin: 1 }, { origin: 2 }])).toBe("[x]: /a\n\nB\n\nC\n");
+  });
+
+  it("keeps the definitions when blocks are reordered", () => {
+    const map = mapOf("a\n\n[x]: /a\n\nb\n");
+    expect(compose(map, [{ origin: 1 }, { origin: 0 }])).toBe("b\n\na\n\n[x]: /a\n");
+  });
+
+  it("keeps every definition when all the blocks are deleted", () => {
+    const map = mapOf(defs);
+    expect(compose(map, [])).toBe("[x]: /a\n[y]: /b\n");
+  });
+
+  it("keeps the file's line ending for what it moves", () => {
+    const map = mapOf(`${BOM}one\r\n\r\n[x]: /a\r\n\r\ntwo\r\n\r\n[y]: /b\r\n\r\nthree\r\n`);
+    expect(compose(map, [{ origin: 0 }, { origin: 2 }])).toBe(
+      `${BOM}one\r\n\r\n[x]: /a\r\n[y]: /b\r\n\r\nthree\r\n`,
+    );
+  });
+
+  it("keeps the text of a file that has no blocks when a block is added", () => {
+    const only = mapOf("[x]: https://example.com\n");
+    expect(only.blocks).toEqual([]);
+    expect(compose(only, [{ origin: null, text: "hello" }])).toBe(
+      "[x]: https://example.com\n\nhello\n",
+    );
+    const bom = mapOf(`${BOM}[x]: /a\r\n[y]: /b\r\n`);
+    expect(compose(bom, [{ origin: null, text: "hello" }])).toBe(
+      `${BOM}[x]: /a\r\n[y]: /b\r\n\r\nhello\r\n`,
+    );
+  });
+
+  it("loses no definition however the blocks are deleted, inserted or reordered", () => {
+    const text = "p0\n\n[a]: /a\n\np1\n\n[b]: /b\n[c]: /c\n\np2\n\np3\n\n[d]: /d\n\np4\n";
+    const map = mapOf(text);
+    const lines = ["[a]: /a", "[b]: /b", "[c]: /c", "[d]: /d"];
+    const origins = map.blocks.map((_, i) => i);
+    // every way to keep some of the blocks in some order, with a new block at each position
+    const orders: number[][] = [];
+    const walk = (picked: number[]): void => {
+      orders.push(picked);
+      if (picked.length === 4) return;
+      for (const i of origins) if (!picked.includes(i)) walk([...picked, i]);
+    };
+    walk([]);
+    for (const order of orders) {
+      for (let at = -1; at < order.length; at++) {
+        const slots = order.map(
+          (origin) => ({ origin }) as { origin: number | null; text?: string },
+        );
+        if (at >= 0) slots.splice(at, 0, { origin: null, text: "NEW" });
+        const saved = compose(map, slots);
+        for (const line of lines) {
+          expect(saved, `${JSON.stringify(slots)} lost ${line}`).toContain(line);
+        }
+        // and what comes out is a document of the same blocks, in the order asked for
+        const next = mapOf(saved);
+        expect(next.blocks.map((b) => b.text)).toEqual(
+          slots.map((s) => s.text ?? map.blocks[s.origin as number].text),
+        );
+      }
+    }
+  });
+});
+
 describe("matchBlocks", () => {
   it("finds the blocks that kept their text, wherever they moved", () => {
     const base = mapOf("# A\n\none\n\ntwo\n\nthree\n");

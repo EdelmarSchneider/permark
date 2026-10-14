@@ -10,7 +10,7 @@ import { diffBlocks } from "../diff";
 import type { BlockKind, ParsedBlocks } from "../types";
 
 export const BOM = "﻿";
-export type LineEnding = "\n" | "\r\n";
+export type LineEnding = "\n" | "\r\n" | "\r";
 
 /** One top-level block: its exact text (no line terminator at the ends) and the lines it covers (0-based). */
 export type MapBlock = { kind: BlockKind; text: string; startLine: number; endLine: number };
@@ -39,15 +39,22 @@ export function countLineBreaks(text: string): number {
   return breaks;
 }
 
-/** The line ending used most: CRLF when it beats the bare LF, else LF. */
+/** The line ending used most: CRLF or a lone CR when it beats the others, else LF (also on a tie). */
 export function dominantEol(text: string): LineEnding {
   let crlf = 0;
   let lf = 0;
+  let cr = 0;
   for (let i = 0; i < text.length; i++) {
-    if (text.charCodeAt(i) !== 10) continue;
-    if (i > 0 && text.charCodeAt(i - 1) === 13) crlf++;
-    else lf++;
+    const c = text.charCodeAt(i);
+    if (c === 10) lf++;
+    else if (c === 13) {
+      if (text.charCodeAt(i + 1) === 10) {
+        crlf++;
+        i++;
+      } else cr++;
+    }
   }
+  if (cr > lf && cr > crlf) return "\r";
   return crlf > lf ? "\r\n" : "\n";
 }
 
@@ -117,36 +124,74 @@ export function tidyBlockText(text: string, eol: LineEnding): string {
   return unified.slice(0, end);
 }
 
+/** The lines of a separator that are not blank: what a separator holds besides spacing (link reference definitions). */
+function contentLines(separator: string): string[] {
+  return separator.split(/\r\n|\r|\n/).filter((line) => line.trim() !== "");
+}
+
 /**
  * The text to save. Untouched blocks come back as their original bytes. A separator is kept when both
  * neighbours were next to each other in the original (whether or not either was edited), so blank lines
  * the author chose survive; otherwise the blocks are one blank line apart. A BOM and the final newline are
  * kept as they were.
+ *
+ * Text that is not a block but lives between blocks (link reference definitions) must outlive the blocks
+ * around it: when a separator is dropped because its neighbours are no longer next to each other, its
+ * non-blank lines are written after the last block that came from before it (before the first block when
+ * there is none), one blank line away from the blocks. A document without blocks keeps its text the same way.
  */
 export function compose(map: BlockMap, slots: readonly Slot[]): string {
   const count = map.blocks.length;
   // a document without blocks is all separator: nothing to compose unless blocks are added
   if (count === 0 && slots.length === 0) return map.seps[0] ?? "";
+  const { eol } = map;
+  const gap = eol + eol;
+  const isAdjacent = (i: number): boolean => {
+    const [previous, slot] = [slots[i - 1], slots[i]];
+    return previous.origin !== null && slot.origin !== null && slot.origin === previous.origin + 1;
+  };
+
+  // `rescued[i]` is written before slot `i` (the last entry: after the last slot)
+  const rescued: string[][] = Array.from({ length: slots.length + 1 }, () => []);
   let out: string;
   let trailing: string;
   if (count > 0) {
     out = map.seps[0];
     trailing = map.seps[count];
+    const kept = new Set<number>();
+    for (let i = 1; i < slots.length; i++) if (isAdjacent(i)) kept.add(slots[i].origin as number);
+    for (let j = 1; j < count; j++) {
+      if (kept.has(j)) continue;
+      const lines = contentLines(map.seps[j]);
+      if (lines.length === 0) continue;
+      let after = -1;
+      slots.forEach((slot, s) => {
+        if (slot.origin !== null && slot.origin < j) after = s;
+      });
+      rescued[after + 1].push(...lines);
+    }
   } else {
-    out = map.seps[0]?.startsWith(BOM) ? BOM : "";
-    trailing = map.eol;
+    const bom = map.seps[0]?.startsWith(BOM) ?? false;
+    out = bom ? BOM : "";
+    trailing = eol;
+    rescued[0] = contentLines((map.seps[0] ?? "").slice(bom ? BOM.length : 0));
   }
+
   slots.forEach((slot, i) => {
     if (i > 0) {
-      const previous = slots[i - 1];
-      const adjacent =
-        previous.origin !== null && slot.origin !== null && slot.origin === previous.origin + 1;
-      out += adjacent ? map.seps[slot.origin as number] : map.eol + map.eol;
+      out += isAdjacent(i)
+        ? map.seps[slot.origin as number]
+        : gap + (rescued[i].length > 0 ? rescued[i].join(eol) + gap : "");
+    } else if (rescued[0].length > 0) {
+      out += rescued[0].join(eol) + gap;
     }
-    if (slot.text !== undefined) out += tidyBlockText(slot.text, map.eol);
+    if (slot.text !== undefined) out += tidyBlockText(slot.text, eol);
     else if (slot.origin !== null && map.blocks[slot.origin]) out += map.blocks[slot.origin].text;
     else throw new Error("a slot without text needs an original block");
   });
+  const tail = rescued[slots.length];
+  if (slots.length === 0) out += tail.join(eol);
+  else if (tail.length > 0) out += gap + tail.join(eol);
   return out + trailing;
 }
 
