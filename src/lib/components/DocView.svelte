@@ -4,20 +4,24 @@
   import { DomFind } from "../dom/domFind";
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
   import { anchorTarget, findById, selectionIn } from "../dom/domUtil";
+  import { readBlocks } from "../dom/outlineDom";
   import type { EnhanceContext } from "../dom/enhance";
   import { ICON_CHECK, ICON_COPY } from "../dom/enhance";
   import { frontmatterValue } from "../frontmatter";
   import { t, tn } from "../i18n";
+  import { buildOutline, currentHeading } from "../outline";
   import { assetUrl } from "../platform";
   import { basename, decodeFragment } from "../paths";
   import { blockForLine, parseSourcepos } from "../sourcepos";
   import { app } from "../stores/app.svelte";
   import { docs, type LocateRequest, type RenderRequest } from "../stores/docs.svelte";
+  import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
   import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
   import { clock as formatClock } from "../time";
+  import type { DocumentView } from "../types";
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import DocMetaStrip from "./DocMetaStrip.svelte";
@@ -32,6 +36,12 @@
   /** True once the reader scrolled by hand since the last render, so late layout changes must not move them. */
   let userScrolled = false;
   let locatedClearTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The blocks wearing the search-hit tint right now. */
+  let tinted: HTMLElement[] = [];
+  /** The heading elements of the outline, in order (the outline holds only their text). */
+  let headingEls: HTMLElement[] = [];
+  /** The heading an outline click went to, kept as the section being read until the reader scrolls by hand. */
+  let pinned: number | null = null;
   let frame = 0;
   let missing = $state<{ anchor: DOMRect; path: string } | null>(null);
 
@@ -102,6 +112,7 @@
     if (view.kind === "binary" || view.kind === "tooLarge") {
       renderer.clear();
       finder.clear();
+      clearOutline();
       docs.reportRender({ changed: 0, removed: 0 });
       scroller?.scrollTo({ top: 0, behavior: "instant" });
       return;
@@ -119,6 +130,7 @@
       labels: renderLabels(),
     });
     docs.reportRender({ changed: result.changed.length, removed: result.removedMarkers.length });
+    reportOutline(view);
 
     if (req.mode === "fresh") {
       position(req, result);
@@ -137,6 +149,10 @@
       ui.find.open = true;
       ui.find.takeFocus = false;
     }
+    // diagrams, math and images change the layout once they have loaded
+    void result.settled.then(() => {
+      if (renderedRev === req.rev) updateCurrent();
+    });
     const rerun = (keep: boolean): void => {
       if (renderedRev !== req.rev) return;
       if (ui.find.open && ui.find.query.trim() !== "") {
@@ -189,19 +205,23 @@
     scrollToElement(target, 1 / 3);
     locatedElement = target;
     if (!tint) return true;
-    const tinted = [target];
     const next = blocks[index + 1];
-    if (next && !/^H[1-6]$/.test(next.tagName)) tinted.push(next);
-    for (const el of tinted) {
-      el.classList.remove("tm-located");
-      void el.offsetWidth;
+    tintBlocks(next && !/^H[1-6]$/.test(next.tagName) ? [target, next] : [target]);
+    return true;
+  }
+
+  /** Tints blocks for a moment, like a search hit (the heading of a clicked outline entry uses it too). */
+  function tintBlocks(elements: HTMLElement[]): void {
+    for (const el of tinted) el.classList.remove("tm-located");
+    tinted = elements;
+    for (const el of elements) {
+      void el.offsetWidth; // restart the animation when the same block is tinted again
       el.classList.add("tm-located");
     }
     if (locatedClearTimer !== null) clearTimeout(locatedClearTimer);
     locatedClearTimer = setTimeout(() => {
-      for (const el of tinted) el.classList.remove("tm-located");
+      for (const el of elements) el.classList.remove("tm-located");
     }, 1700);
-    return true;
   }
 
   function scrollToAnchor(id: string, smooth = true, notify = true): boolean {
@@ -252,6 +272,61 @@
     scroller.scrollTo({ top, behavior: first ? "instant" : "smooth" });
   }
 
+  // ---- outline ---------------------------------------------------------------------------------------
+
+  function clearOutline(): void {
+    headingEls = [];
+    pinned = null;
+    outline.clear();
+  }
+
+  /** Rebuilds the outline from the headings on screen (after every render, fresh or live). */
+  function reportOutline(view: DocumentView): void {
+    if (!body || view.kind !== "markdown") {
+      clearOutline();
+      return;
+    }
+    const { blocks, headings } = readBlocks(body);
+    const model = buildOutline(blocks);
+    headingEls = headings.slice(0, model.items.length);
+    pinned = null;
+    outline.set(view.path, model);
+    updateCurrent();
+  }
+
+  /** The section being read: the last heading above the top-third line of the viewport. */
+  function updateCurrent(): void {
+    if (!scroller || headingEls.length === 0) {
+      outline.setCurrent(null);
+      return;
+    }
+    if (pinned !== null) {
+      outline.setCurrent(pinned);
+      return;
+    }
+    const top = scroller.getBoundingClientRect().top;
+    const height = scroller.clientHeight;
+    const atBottom = scroller.scrollTop + height >= scroller.scrollHeight - 2;
+    outline.setCurrent(
+      currentHeading(headingEls.length, (i) => headingEls[i].getBoundingClientRect().top - top, {
+        line: height / 3,
+        bottomEdge: atBottom ? height : undefined,
+      }),
+    );
+  }
+
+  /** An outline click: the heading goes to the top (8px below it) and is tinted, with no history entry. */
+  function goToHeading(index: number): void {
+    const el = headingEls[index];
+    if (!el) return;
+    userScrolled = true; // late layout changes must not pull the page back
+    scrollToElement(el, 0, 8);
+    tintBlocks([el]);
+    // near the end of the page the heading cannot reach the top, so it stays the current one until the reader scrolls
+    pinned = index;
+    outline.setCurrent(index);
+  }
+
   // ---- effects ----------------------------------------------------------------------------------------
 
   $effect(() => {
@@ -289,8 +364,17 @@
     });
   });
 
+  // no document (closed, or the project was replaced): no outline
+  $effect(() => {
+    if (!docs.current) untrack(clearOutline);
+  });
+
   onMount(() => {
     bridge.jumpChange = (direction) => jumpToChange(direction);
+    bridge.outline = {
+      goTo: goToHeading,
+      focusDoc: () => scroller?.focus({ preventScroll: true }),
+    };
     bridge.find = {
       run: (query, mode, opts) => ensureObjects()?.finder.run(query, mode, opts),
       step: (direction) => finder?.step(direction),
@@ -307,6 +391,7 @@
       bridge.find = undefined;
       bridge.getSelection = undefined;
       bridge.locatedElement = undefined;
+      bridge.outline = undefined;
       if (frame) cancelAnimationFrame(frame);
     };
   });
@@ -318,12 +403,14 @@
     frame = requestAnimationFrame(() => {
       frame = 0;
       if (scroller) docs.noteScroll(scroller.scrollTop);
+      updateCurrent();
     });
   }
 
   /** The reader took over scrolling (wheel, touch, keys or the scrollbar). */
   function took(): void {
     userScrolled = true;
+    pinned = null;
   }
 
   function onwheel(e: WheelEvent): void {

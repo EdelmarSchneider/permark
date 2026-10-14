@@ -38,6 +38,7 @@ describe("matchShortcut", () => {
     ["Ctrl+-", ctrl("-", {}, "Minus"), "zoomOut"],
     ["Ctrl+0", ctrl("0", {}, "Digit0"), "zoomReset"],
     ["Ctrl+Alt+W", ctrl("w", { altKey: true }), "cycleWidth"],
+    ["Ctrl+Alt+O", ctrl("o", { altKey: true }), "toggleOutline"],
     ["Ctrl+,", ctrl(",", {}, "Comma"), "settings"],
   ];
 
@@ -47,6 +48,7 @@ describe("matchShortcut", () => {
 
   it("uses the physical key when Alt changes the character (macOS)", () => {
     expect(matchShortcut(ctrl("ç", { altKey: true }, "KeyC"))).toBe("copyReference");
+    expect(matchShortcut(ctrl("ø", { altKey: true }, "KeyO"))).toBe("toggleOutline");
   });
 
   it("treats Cmd like Ctrl", () => {

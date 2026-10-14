@@ -10,6 +10,7 @@ import { followCandidate } from "../follow";
 import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
 import { formatQuote, formatReference } from "../reference";
+import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
 import type { ShortcutAction } from "../shortcuts";
 import { selectOnly } from "../tagModel";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
@@ -18,6 +19,7 @@ import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
 import { feed } from "./feed.svelte";
 import { filter } from "./filter.svelte";
+import { outline } from "./outline.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
@@ -162,6 +164,7 @@ class AppStore {
       docs.reset();
       feed.clear();
       filter.reset();
+      outline.reset();
       search.reset();
       tags.reset();
       toast.clear();
@@ -170,6 +173,9 @@ class AppStore {
       ui.find.open = false;
       ui.quickOpen = false;
       ui.tagEditor = null;
+      ui.outlinePopover = false;
+      ui.changesNotify = false;
+      ui.rightTabBack = "changes";
       ui.sidebarView = "explorer";
       ui.dismissedRepoState = null;
       vault.info = info;
@@ -258,6 +264,8 @@ class AppStore {
 
     const docChanged = update.bulk !== null || update.files.some((f) => f.isDoc);
     if (docChanged && !session.right.open) ui.rightNotify = true;
+    // the same rule for the Changes tab while the Outline is the view showing
+    if (docChanged && session.rightTab !== "changes") ui.changesNotify = true;
 
     let jumped: string | null = null;
     if (session.follow && update.bulk === null) {
@@ -379,7 +387,45 @@ class AppStore {
 
   toggleRight(): void {
     session.setPanel("right", { open: !session.right.open });
-    if (session.right.open) ui.rightNotify = false;
+    if (session.right.open) {
+      ui.rightNotify = false;
+      if (session.rightTab === "changes") ui.changesNotify = false;
+    }
+  }
+
+  /** Shows one view of the right panel (a click on its tab). */
+  showRightTab(tab: RightTab): void {
+    if (session.rightTab === tab) return;
+    ui.rightTabBack = session.rightTab;
+    session.setRightTab(tab);
+    if (tab === "changes") ui.changesNotify = false;
+  }
+
+  /**
+   * Ctrl+Alt+O: the Outline tab (opening the right panel if it is collapsed), and back to the previous tab when
+   * pressed again. Simple mode has no panel: the outline opens as a popover under the header.
+   */
+  toggleOutline(): void {
+    if (vault.isSimple) {
+      ui.outlinePopover = !ui.outlinePopover;
+      return;
+    }
+    const next = outlineToggled({
+      open: session.right.open,
+      tab: session.rightTab,
+      back: ui.rightTabBack,
+    });
+    ui.rightTabBack = next.back;
+    if (!session.right.open) session.setPanel("right", { open: true });
+    ui.rightNotify = false;
+    if (next.tab !== session.rightTab) session.setRightTab(next.tab);
+    if (next.tab === "outline") {
+      ui.outlineFocusTick++;
+    } else {
+      // the list that had the focus is gone: the reader goes back to the document
+      ui.changesNotify = false;
+      bridge.outline?.focusDoc();
+    }
   }
 
   showSearch(): void {
@@ -584,6 +630,8 @@ class AppStore {
         return session.setZoom(1);
       case "cycleWidth":
         return session.cycleWidth();
+      case "toggleOutline":
+        return this.toggleOutline();
       case "settings":
         ui.settingsOpen = true;
         return;

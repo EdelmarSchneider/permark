@@ -162,6 +162,10 @@ function liveFeed(rev: number): Block[] {
         ["checkout", "git operation", "one collapsed entry", "no"],
       ],
     ),
+    h(3, "Sources"),
+    p("The file watcher and the git-dir watcher are the only two sources; nothing polls.", 1),
+    h(3, "Batches"),
+    p("A batch closes after 150 ms of quiet, or after one second at the most.", 1),
     code(
       "ts",
       `// One batch per quiet period (150 ms), or at most every second.
@@ -389,6 +393,64 @@ const readingWidthBlocks = (rev: number): Block[] => [
   quote("A wide block is the exception, not the layout.", "Design notes"),
 ];
 
+/** Filler paragraphs, so that a section is tall enough to scroll through. */
+const filler = (topic: string, count = 3): Block[] =>
+  Array.from({ length: count }, (_, i) =>
+    p(
+      `${topic}, paragraph ${i + 1}. Text like this makes the section tall enough to scroll, so the outline has a section to follow: the agent writes, the reader scrolls, and the heading that is current moves with the page.`,
+      2,
+    ),
+  );
+
+/**
+ * A document with nested headings for the outline: a skipped level, a repeated heading text and a heading too long
+ * for the panel. A save (`rev` > 0) rewrites one paragraph under "Risks" and adds a section under "Phase two".
+ */
+const rolloutBlocks = (rev: number): Block[] => [
+  h(1, "Rollout plan"),
+  p(
+    "A plan with nested sections, to try the outline: collapse, follow, click, and live changes.",
+    2,
+  ),
+  h(2, "Phase one"),
+  ...filler("Phase one", 2),
+  h(3, "Scope"),
+  ...filler("Phase one scope", 3),
+  h(3, "Risks"),
+  p(
+    rev > 0
+      ? `The main risk is a slow disk, and since revision ${rev} also a full one.`
+      : "The main risk is a slow disk.",
+    1,
+  ),
+  ul(["Slow disk", "Network drive", "Antivirus scanning the folder"]),
+  h(4, "Mitigations"),
+  ...filler("Mitigations", 2),
+  h(2, "Phase two"),
+  ...filler("Phase two", 2),
+  h(3, "Scope"),
+  ...filler("Phase two scope", 3),
+  h(4, "A heading that skips a level"),
+  ...filler("The skipped level", 2),
+  ...(rev > 0 ? [h(3, `New in revision ${rev}`), ...filler("The new section", 2)] : []),
+  h(
+    2,
+    "A heading so long that it cannot possibly fit in the narrow right panel without being cut short",
+  ),
+  ...filler("The long heading", 3),
+  h(2, "Appendix"),
+  ...filler("Appendix", 4),
+];
+
+/** 1,312 headings, for the cut at 1,000 ("Showing 1,000 of 1,312"). */
+const longOutlineBlocks: Block[] = [
+  h(1, "Every heading"),
+  ...Array.from({ length: 1311 }, (_, i): Block[] => [
+    h(i % 9 === 0 ? 2 : 3, `Heading ${i + 1}`),
+    p(`Text under heading ${i + 1}.`, 1),
+  ]).flat(),
+];
+
 const docs: Record<string, MockDoc> = {
   "docs/specs/live-feed.md": doc(
     "Live changes feed",
@@ -483,6 +545,8 @@ const docs: Record<string, MockDoc> = {
     26 * 60 * MIN,
   ),
   "docs/design/reading-width.md": doc("Reading width", readingWidthBlocks),
+  "docs/design/outline.md": doc("Rollout plan", rolloutBlocks),
+  "docs/design/long-outline.md": doc("Every heading", longOutlineBlocks),
   "docs/design/wireframes.md": doc("Wireframes", [
     h(1, "Wireframes"),
     p("Layouts for the welcome screen, the IDE mode and the search panel."),
@@ -721,6 +785,8 @@ export function mockTree(): TreeNode {
       dir("data", [file("data/config.json")]),
       dir("docs", [
         dir("docs/design", [
+          file("docs/design/long-outline.md"),
+          file("docs/design/outline.md"),
           file("docs/design/reading-width.md"),
           file("docs/design/wireframes.md"),
         ]),

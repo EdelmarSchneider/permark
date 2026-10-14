@@ -3,6 +3,7 @@
   import ImageZoom from "./lib/components/ImageZoom.svelte";
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
+  import OutlinePopover from "./lib/components/OutlinePopover.svelte";
   import QuickOpen from "./lib/components/QuickOpen.svelte";
   import TagEditor from "./lib/components/TagEditor.svelte";
   import SelectionPopover from "./lib/components/SelectionPopover.svelte";
@@ -82,6 +83,7 @@
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
   {#if ui.tagEditor}<TagEditor />{/if}
+  {#if ui.outlinePopover}<OutlinePopover />{/if}
   <SelectionPopover />
 {:else}
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>

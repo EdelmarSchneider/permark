@@ -30,6 +30,7 @@
   import Info from "@lucide/svelte/icons/info";
   import Layers from "@lucide/svelte/icons/layers";
   import Lightbulb from "@lucide/svelte/icons/lightbulb";
+  import ListTree from "@lucide/svelte/icons/list-tree";
   import Minus from "@lucide/svelte/icons/minus";
   import Monitor from "@lucide/svelte/icons/monitor";
   import Moon from "@lucide/svelte/icons/moon";
@@ -77,6 +78,7 @@
     info: Info,
     layers: Layers,
     lightbulb: Lightbulb,
+    outline: ListTree,
     minus: Minus,
     monitor: Monitor,
     moon: Moon,

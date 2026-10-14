@@ -33,7 +33,7 @@ export const en = {
   "activity.explorer": "Explorer (Ctrl+Shift+X)",
   "activity.search": "Search all docs (Ctrl+Shift+F)",
   "activity.tags": "Tags (Ctrl+Shift+T)",
-  "activity.live": "Live changes (Ctrl+Alt+B)",
+  "activity.live": "Live changes and outline (Ctrl+Alt+B)",
   "activity.theme": "Theme: {theme} (click to switch)",
   "activity.settings": "Settings (Ctrl+,)",
   "theme.system": "System",
@@ -42,11 +42,27 @@ export const en = {
   "sidebar.label": "Sidebar",
   "panel.collapseLeft": "Collapse sidebar",
   "panel.collapseLeftHint": "Collapse sidebar (Ctrl+B)",
-  "panel.collapseRight": "Collapse live changes",
-  "panel.collapseRightHint": "Collapse live changes (Ctrl+Alt+B)",
+  "panel.collapseRight": "Collapse right panel",
+  "panel.collapseRightHint": "Collapse right panel (Ctrl+Alt+B)",
   "panel.resizeLeft": "Resize sidebar",
-  "panel.resizeRight": "Resize live changes panel",
+  "panel.resizeRight": "Resize right panel",
   "panel.resizeHint": "Drag to resize, double-click to reset",
+
+  // ---- right panel tabs and the outline (docs/design/v0.2.md sections 0 and 2)
+  "panel.label": "Changes and outline",
+  "panel.tabs": "Right panel views",
+  "panel.tabChanges": "Changes",
+  "panel.tabChangesHint": "Live changes, and what changed since your last visit",
+  "panel.tabOutline": "Outline",
+  "panel.tabOutlineHint": "Outline of the open document (Ctrl+Alt+O)",
+  "panel.newChanges": "new changes",
+  "outline.label": "Document outline",
+  "outline.empty": "This document has no headings.",
+  "outline.notMarkdown": "Outline is available for Markdown documents.",
+  "outline.noDoc": "Open a document to see its outline.",
+  "outline.truncated": "Showing {shown} of {total}",
+  "outline.changed": "Changed in the last update",
+  "outline.untitled": "(untitled heading)",
 
   // ---- explorer and tree
   "explorer.title": "Explorer",
@@ -115,6 +131,7 @@ export const en = {
   "menu.zoomOut": "Zoom out",
   "menu.zoomReset": "Reset zoom",
   "menu.editTags": "Edit tags and description",
+  "menu.outline": "Outline",
 
   // ---- git
   "git.state.modified": "Modified",
@@ -220,7 +237,6 @@ export const en = {
   "reference.section": 'section "{name}"',
 
   // ---- live changes
-  "live.title": "Live changes",
   "live.label": "Live changes",
   "live.active": "active",
   "live.idle": "idle",
@@ -363,7 +379,7 @@ export const en = {
 
   // ---- status bar
   "status.toggleLeft": "Toggle sidebar (Ctrl+B)",
-  "status.toggleRight": "Toggle live changes (Ctrl+Alt+B)",
+  "status.toggleRight": "Toggle right panel (Ctrl+Alt+B)",
   "status.unborn": "no commits yet",
   "status.detached": "detached {oid}",
   "status.branchHint": "Branch {branch} · HEAD {oid}",
