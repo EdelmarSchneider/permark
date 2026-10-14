@@ -48,6 +48,9 @@ describe("nameProblem", () => {
     expect(nameProblem(".md", siblings)).toBe("notMarkdown");
     expect(nameProblem("CON.md", siblings)).toBe("reserved");
     expect(nameProblem("lpt1.md", siblings)).toBe("reserved");
+    expect(nameProblem("con .md", siblings)).toBe("reserved");
+    expect(nameProblem("Lpt1  .md", siblings)).toBe("reserved");
+    expect(nameProblem("console.md", siblings)).toBeNull();
     expect(nameProblem(`${"é".repeat(200)}.md`, siblings)).toBe("tooLong");
   });
 

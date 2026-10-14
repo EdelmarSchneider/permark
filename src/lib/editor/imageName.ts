@@ -5,6 +5,13 @@ import { basename } from "../paths";
 
 /** Largest image added without asking. */
 export const CONFIRM_ABOVE_BYTES = 10 * 1024 * 1024;
+/** Largest image added at all (the backend refuses more); a bigger file is never read. */
+export const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+
+/** A file size for a message: "12.3 MB". */
+export function megabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const TYPES: Record<string, string> = {
   "image/png": "png",

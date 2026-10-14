@@ -492,6 +492,7 @@ export const en = {
   "edit.position": "Ln {line}, Col {col}",
   "edit.sourceLabel": "Markdown source of {name}",
   "edit.closePrompt": "Unsaved changes in {name}. Save them before closing?",
+  "edit.restartPrompt": "Unsaved changes in {name}. Save them before restarting to update?",
   "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "The editor could not be loaded.",
   "edit.bars": "Editing notices",
@@ -508,6 +509,7 @@ export const en = {
   // ---- images pasted or dropped into the editor
   "images.add": "Add image",
   "images.tooLarge": "{name} is {size}. Add it anyway?",
+  "images.tooBig": "{name} is {size}, over the {limit} limit for images.",
   "images.onlyImages": "Only images can be added here (PNG, JPG, GIF, WebP, SVG)",
   "images.addFailed": "Couldn't add the image: {message}",
   "images.dropWhileEditing": "To add an image, paste it into the document (Ctrl+V).",

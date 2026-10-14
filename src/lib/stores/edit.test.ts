@@ -26,6 +26,7 @@ vi.mock("../platform", () => ({
   askYesNo: vi.fn(async () => true),
   copyText: vi.fn(async () => true),
   guardWindowClose: vi.fn(async () => () => {}),
+  checkForUpdate: vi.fn(),
   assetUrl: (p: string) => p,
   isMock: true,
 }));
@@ -38,8 +39,12 @@ vi.mock("../editor/imageName", async (original) => ({
 
 import { bridge } from "../bridge";
 import { mockParseBlocks } from "../mock/mockBlocks";
+import { askUnsaved, checkForUpdate } from "../platform";
+import { INITIAL_UPDATE_STATE } from "../updates";
 import { docs } from "./docs.svelte";
 import { edit } from "./edit.svelte";
+import { toast } from "./toast.svelte";
+import { updates } from "./updates.svelte";
 
 const view = (path: string): DocumentView => ({
   path,
@@ -159,6 +164,28 @@ describe("saving", () => {
     expect(edit.modifiedMs).toBe(200);
   });
 
+  it("writes a file with mixed line endings back with the line endings of the lines it did not touch", async () => {
+    const mixed = "# A\r\n\r\nfirst\nsecond\r\n";
+    const editor = await startEditing(mixed, "h1");
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    await edit.save(); // no edit at all: the very same bytes
+    expect(fake.saveDocument).toHaveBeenLastCalledWith(PATH, mixed, "h1");
+    type(editor, "# B\n\nfirst\nsecond\n");
+    await edit.save();
+    expect(fake.saveDocument).toHaveBeenLastCalledWith(PATH, "# B\r\n\r\nfirst\nsecond\r\n", "h2");
+  });
+
+  it("keeps a file with lone CR line endings as it is", async () => {
+    const cr = "# T\r\rbody\r";
+    const editor = await startEditing(cr, "h1");
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    await edit.save();
+    expect(fake.saveDocument).toHaveBeenLastCalledWith(PATH, cr, "h1");
+    type(editor, "# T\n\nbody!\n");
+    await edit.save();
+    expect(fake.saveDocument).toHaveBeenLastCalledWith(PATH, "# T\r\rbody!\r", "h2");
+  });
+
   it("goes on from the saved version: the next save expects the new hash", async () => {
     const editor = await startEditing();
     fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
@@ -245,6 +272,58 @@ describe("the file changed on disk", () => {
     await vi.advanceTimersByTimeAsync(400);
     expect(editor.text).toBe(ORIGINAL);
     expect(edit.note).toBeNull();
+  });
+
+  it("does not put the version from before a save back into the editor", async () => {
+    const editor = await startEditing();
+    // a check starts and reads the file as it was before the save ...
+    let arrive!: (doc: SourceDoc) => void;
+    fake.documentSource.mockImplementationOnce(
+      () =>
+        new Promise<SourceDoc>((resolve) => {
+          arrive = resolve;
+        }),
+    );
+    edit.onFsChange(changed);
+    await vi.advanceTimersByTimeAsync(400);
+    // ... the person saves while it is reading ...
+    type(editor, `${ORIGINAL}mine\n`);
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    expect(await edit.save()).toBe(true);
+    // ... and the old read arrives
+    fake.documentSource.mockResolvedValue(source(PATH, `${ORIGINAL}mine\n`, "h2"));
+    arrive(source(PATH, ORIGINAL, "h1"));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(editor.text).toBe(`${ORIGINAL}mine\n`);
+    expect(edit.note).not.toMatch(/Reloaded/);
+    expect(edit.conflict).toBeNull();
+    expect(edit.dirty).toBe(false);
+    // the file was looked at again, and was our own version
+    expect(fake.documentSource).toHaveBeenCalledTimes(3);
+  });
+
+  it("waits for a save that is running before it looks at the file", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}mine\n`);
+    let finish!: (outcome: SaveOutcome) => void;
+    fake.saveDocument.mockImplementation(
+      () =>
+        new Promise<SaveOutcome>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const saving = edit.save();
+    fake.documentSource.mockClear();
+    edit.onFsChange(changed);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fake.documentSource).not.toHaveBeenCalled();
+    fake.documentSource.mockResolvedValue(source(PATH, `${ORIGINAL}mine\n`, "h2"));
+    finish({ result: "saved", hash: "h2", modifiedMs: 200 });
+    expect(await saving).toBe(true);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(fake.documentSource).toHaveBeenCalledTimes(1);
+    expect(edit.conflict).toBeNull();
+    expect(edit.note).not.toMatch(/Reloaded/);
   });
 
   it("ignores changes to other files", async () => {
@@ -421,7 +500,103 @@ describe("leaving", () => {
   });
 });
 
+describe("restarting to update", () => {
+  const install = vi.fn(async () => {});
+
+  beforeEach(async () => {
+    install.mockClear();
+    vi.mocked(askUnsaved).mockReset();
+    updates.state = INITIAL_UPDATE_STATE;
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      version: "0.2.0",
+      install,
+      close: async () => {},
+    });
+    await updates.check(true);
+    expect(updates.state.phase).toBe("available");
+  });
+
+  it("goes on at once when there is nothing unsaved", async () => {
+    await startEditing();
+    await updates.install();
+    expect(askUnsaved).not.toHaveBeenCalled();
+    expect(install).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks first when there are unsaved edits, and Keep editing stops the update", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    vi.mocked(askUnsaved).mockResolvedValue("keep");
+    await updates.install();
+    expect(vi.mocked(askUnsaved).mock.calls[0][0]).toMatch(/restarting to update/);
+    expect(install).not.toHaveBeenCalled();
+    expect(updates.state.phase).toBe("available");
+    expect(edit.dirty).toBe(true);
+    expect(editor.text).toBe(`${ORIGINAL}x\n`);
+  });
+
+  it("Save writes the edits before the update starts", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    vi.mocked(askUnsaved).mockResolvedValue("save");
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    await updates.install();
+    expect(fake.saveDocument).toHaveBeenCalledTimes(1);
+    expect(install).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start the update when the save did not work", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    vi.mocked(askUnsaved).mockResolvedValue("save");
+    fake.saveDocument.mockRejectedValue(new Error("disk full"));
+    await updates.install();
+    expect(install).not.toHaveBeenCalled();
+    expect(edit.saveError).toBe("disk full");
+    expect(edit.dirty).toBe(true);
+  });
+
+  it("Discard lets the update go on", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    vi.mocked(askUnsaved).mockResolvedValue("discard");
+    await updates.install();
+    expect(fake.saveDocument).not.toHaveBeenCalled();
+    expect(install).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a new file opened while another document has unsaved edits", () => {
+  it("starts editing after the answer, as it does when nothing is held", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    fake.readDocument.mockResolvedValue(view("docs/new.md"));
+    fake.fileMeta.mockResolvedValue({ tags: [], description: null });
+    const entered = vi.fn();
+    expect(await docs.open("docs/new.md", { afterOpen: entered })).toBe(false);
+    expect(edit.prompt?.reason).toBe("navigate");
+    expect(entered).not.toHaveBeenCalled();
+    edit.promptDiscard();
+    await vi.waitFor(() => expect(entered).toHaveBeenCalledTimes(1));
+    expect(docs.path).toBe("docs/new.md");
+  });
+});
+
 describe("images", () => {
+  it("refuses an image over the limit without reading it", async () => {
+    const editor = await startEditing();
+    const message = vi.spyOn(toast, "message");
+    const file = new File([new Uint8Array([1])], "huge.png", { type: "image/png" });
+    Object.defineProperty(file, "size", { value: 40 * 1024 * 1024 });
+    const read = vi.spyOn(file, "arrayBuffer");
+    await edit.addFiles([file], "drop");
+    expect(read).not.toHaveBeenCalled();
+    expect(fake.writeAsset).not.toHaveBeenCalled();
+    expect(message.mock.calls[0][0]).toMatch(/huge\.png is 40\.0 MB, over the 32\.0 MB limit/);
+    expect(editor.text).toBe(ORIGINAL);
+    message.mockRestore();
+  });
+
   it("writes a pasted picture next to the document and links it at the caret", async () => {
     const editor = await startEditing();
     fake.writeAsset.mockResolvedValue({

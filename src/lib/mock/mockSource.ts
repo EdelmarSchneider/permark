@@ -115,6 +115,8 @@ export async function createDocument(path: string, text: string): Promise<Create
 }
 
 const IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
+/** Names Windows opens as devices; the backend adds "-image" to an image stem like these. */
+const DEVICE_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/;
 
 export async function writeAsset(
   docPath: string,
@@ -130,12 +132,13 @@ export async function writeAsset(
     );
   }
   const dot = name.lastIndexOf(".");
-  const stem =
+  const slug =
     name
       .slice(0, dot)
       .toLowerCase()
       .replace(/[^\p{L}\p{N}]+/gu, "-")
       .replace(/^-+|-+$/g, "") || "image";
+  const stem = DEVICE_NAME.test(slug) ? `${slug}-image` : slug;
   const ext = name.slice(dot + 1).toLowerCase();
   const folder = dirname(docPath);
   const prefix = folder === "" ? "assets" : `${folder}/assets`;

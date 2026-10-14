@@ -48,7 +48,8 @@ export function nameProblem(name: string, siblings: readonly string[]): NameProb
   if (FORBIDDEN.test(name)) return "invalidChars";
   if (/[. ]$/.test(name) || name.startsWith(" ")) return "invalidEnd";
   if (!MARKDOWN.test(name) || name.startsWith(".")) return "notMarkdown";
-  if (RESERVED.has(name.split(".")[0].toLowerCase())) return "reserved";
+  // spaces before the extension do not help: Windows reads `con .md` as the device too
+  if (RESERVED.has(name.split(".")[0].trimEnd().toLowerCase())) return "reserved";
   if (new TextEncoder().encode(name).length > 255) return "tooLong";
   const lower = name.toLowerCase();
   if (siblings.some((s) => s.toLowerCase() === lower)) return "exists";

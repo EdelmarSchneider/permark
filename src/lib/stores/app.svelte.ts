@@ -419,7 +419,9 @@ class AppStore {
     }
     ui.newFile = null;
     await vault.refreshTree();
-    if (await this.openDoc(path)) await edit.enter(true);
+    // Editing starts once the file is open. If the document being edited has unsaved work the open waits for the
+    // person's answer (Save or Discard) and is resumed after it, so the start of editing travels with it.
+    await this.openDoc(path, { afterOpen: () => void edit.enter(true) });
     return null;
   }
 

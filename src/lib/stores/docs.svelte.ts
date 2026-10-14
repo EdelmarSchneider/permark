@@ -58,6 +58,11 @@ export type OpenOptions = {
   silent?: boolean;
   /** Opened because it changed (Follow, toast, feed): diff against the version seen last. */
   fromChange?: boolean;
+  /**
+   * Runs once the document is open. When leaving the document being edited first needs an answer (Save, Discard), the
+   * open is resumed with the same options after it, so this runs then.
+   */
+  afterOpen?: () => void;
 };
 
 class DocStore {
@@ -136,6 +141,7 @@ class DocStore {
         };
       }
       this.revealInExplorer(path, movedWithin);
+      opts.afterOpen?.();
       return true;
     }
     const token = ++this.token;
@@ -182,6 +188,7 @@ class DocStore {
     this.syncNav();
     session.noteDoc(path);
     this.revealInExplorer(path, false);
+    opts.afterOpen?.();
     return true;
   }
 

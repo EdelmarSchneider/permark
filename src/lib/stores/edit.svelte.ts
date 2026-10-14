@@ -17,9 +17,11 @@ import { fromBuffer, toBuffer, type TextFormat } from "../editor/bufferText";
 import { EDIT_BLOCK_TEXT, editBlock, editBlockFromKind } from "../editor/editability";
 import {
   CONFIRM_ABOVE_BYTES,
+  MAX_IMAGE_BYTES,
   imageExtension,
   imageMarkdown,
   isImageName,
+  megabytes,
   pastedImageName,
   toBase64,
 } from "../editor/imageName";
@@ -103,6 +105,8 @@ class EditStore {
   private diskTimer: ReturnType<typeof setTimeout> | null = null;
   private checking = false;
   private recheck = false;
+  /** Bumped when a save starts and again when it ends, so a disk check can tell it read the file around a save. */
+  private saveGeneration = 0;
   private stopCloseGuard: (() => void) | null = null;
   private closeGuardToken = 0;
   private hintSeen = readHintSeen();
@@ -260,16 +264,20 @@ class EditStore {
     this.stopCloseGuard = null;
     if (!dirty) return;
     // closing the window while there is unsaved work asks first
-    void guardWindowClose(() => this.confirmClose()).then((stop) => {
+    void guardWindowClose(() => this.confirmLeave("close")).then((stop) => {
       if (token === this.closeGuardToken) this.stopCloseGuard = stop;
       else stop();
     });
   }
 
-  /** The window is being closed: may it? Asks with the same three choices as the bar. */
-  private async confirmClose(): Promise<boolean> {
+  /**
+   * The window is about to close, or the app to restart to update (neither goes through the bar): may it? Asks with
+   * the same three choices as the bar. Resolves to false when the person keeps editing or the save did not work.
+   */
+  async confirmLeave(reason: "close" | "restart"): Promise<boolean> {
     if (!this.dirty) return true;
-    const choice = await askUnsaved(t("edit.closePrompt", { name: basename(this.path ?? "") }), {
+    const message = reason === "close" ? "edit.closePrompt" : "edit.restartPrompt";
+    const choice = await askUnsaved(t(message, { name: basename(this.path ?? "") }), {
       save: t("edit.save"),
       discard: t("edit.discard"),
       keep: t("edit.keepEditing"),
@@ -343,7 +351,7 @@ class EditStore {
   private currentText(): string {
     const base = this.base;
     const buffer = bridge.editor?.getText() ?? base?.buffer ?? "";
-    return base ? fromBuffer(buffer, base.format) : buffer;
+    return base ? fromBuffer(buffer, base.format, base) : buffer;
   }
 
   /** Ctrl+S and the Save button. Resolves to true when the file now holds the buffer. */
@@ -357,8 +365,7 @@ class EditStore {
       return false;
     }
     const text = this.currentText();
-    this.saving = true;
-    this.saveError = null;
+    this.beginSave();
     try {
       const outcome = await api.saveDocument(path, text, base.hash);
       if (this.path !== path) return false;
@@ -372,8 +379,27 @@ class EditStore {
       if (this.path === path) this.saveError = errorText(error);
       return false;
     } finally {
-      this.saving = false;
+      this.endSave();
     }
+  }
+
+  private beginSave(): void {
+    this.saving = true;
+    this.saveGeneration++;
+    this.saveError = null;
+  }
+
+  private endSave(): void {
+    this.saving = false;
+    this.saveGeneration++;
+    this.runRecheck();
+  }
+
+  /** A disk check that had to wait (for another check or a save) runs now. */
+  private runRecheck(): void {
+    if (!this.recheck || this.checking || this.saving) return;
+    this.recheck = false;
+    void this.checkDisk();
   }
 
   /** The file now holds `text`: it becomes the version the editor goes on from. */
@@ -444,16 +470,23 @@ class EditStore {
 
   /** Compares the file with the version being edited: clean buffers reload, dirty ones get the banner. */
   private async checkDisk(): Promise<void> {
-    if (this.checking) {
+    // while a save runs the file is about to change under the check; it runs again when the save is over
+    if (this.checking || this.saving) {
       this.recheck = true;
       return;
     }
     const path = this.path;
     if (!path || !this.base) return;
+    const generation = this.saveGeneration;
     this.checking = true;
     try {
       const source = await api.documentSource(path);
       if (this.path !== path || !this.base) return;
+      if (generation !== this.saveGeneration) {
+        // a save started or ended while the file was being read: this may be the version from before it
+        this.recheck = true;
+        return;
+      }
       if (source.hash === this.base.hash) {
         // our own save, or a change that was undone: the file is the version being edited again
         this.conflict = null;
@@ -462,13 +495,12 @@ class EditStore {
       if (this.dirty) this.setConflict(source.hash);
       else this.applyDisk(source, true);
     } catch (error) {
-      if (this.path === path && errorKind(error) === "notFound") this.setConflict(null);
+      if (this.path !== path) return;
+      if (generation !== this.saveGeneration) this.recheck = true;
+      else if (errorKind(error) === "notFound") this.setConflict(null);
     } finally {
       this.checking = false;
-      if (this.recheck) {
-        this.recheck = false;
-        void this.checkDisk();
-      }
+      this.runRecheck();
     }
   }
 
@@ -557,8 +589,7 @@ class EditStore {
     const base = this.base;
     if (!path || !base || this.saving) return;
     const text = this.currentText();
-    this.saving = true;
-    this.saveError = null;
+    this.beginSave();
     try {
       const created = await api.createDocument(path, text);
       if (this.path !== path) return;
@@ -568,7 +599,7 @@ class EditStore {
     } catch (error) {
       if (this.path === path) this.saveError = errorText(error);
     } finally {
-      this.saving = false;
+      this.endSave();
     }
   }
 
@@ -595,8 +626,20 @@ class EditStore {
         source === "paste" || file.name === ""
           ? pastedImageName(path, extension || "png", new Date())
           : file.name;
+      if (file.size > MAX_IMAGE_BYTES) {
+        // refused before the file is read: a huge one would freeze the window and then be refused anyway
+        toast.message(
+          t("images.tooBig", {
+            name: file.name || name,
+            size: megabytes(file.size),
+            limit: megabytes(MAX_IMAGE_BYTES),
+          }),
+          "warn",
+        );
+        continue;
+      }
       if (file.size > CONFIRM_ABOVE_BYTES) {
-        const size = `${(file.size / (1024 * 1024)).toFixed(1)} MB`;
+        const size = megabytes(file.size);
         const ok = await askYesNo(
           t("images.tooLarge", { name: file.name || name, size }),
           t("images.add"),
