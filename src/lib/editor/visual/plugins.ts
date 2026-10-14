@@ -2,9 +2,11 @@
 // node tied to its block, the unsaved-block bar, task checkboxes, pasted and dropped images, and the keys that open the
 // link popover and the slash menu.
 
+import { addRowWithAlignment } from "@milkdown/kit/preset/gfm";
 import { keymap } from "@milkdown/kit/prose/keymap";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
+import { isInTable, selectedRect } from "@milkdown/kit/prose/tables";
 import { Mapping } from "@milkdown/kit/prose/transform";
 import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/view";
 import { $prose } from "@milkdown/kit/utils";
@@ -167,10 +169,26 @@ export function appPlugins(host: PluginHost) {
       }),
   );
 
-  const keys = $prose(() =>
+  const keys = $prose((ctx) =>
     keymap({
       "Mod-k": () => {
         host.link();
+        return true;
+      },
+      // Tab in the last cell of a table adds a row and moves into it, as in most editors (the preset's Tab moves to the next cell and
+      // has nowhere to go from the last one, so the browser would take the focus out of the text)
+      Tab: (state, dispatch) => {
+        if (!isInTable(state)) return false;
+        const rect = selectedRect(state);
+        if (rect.bottom !== rect.map.height || rect.right !== rect.map.width) return false;
+        if (dispatch) {
+          // the new row starts where the table's rows end; its first cell's text is three positions in
+          const rowAt = rect.tableStart + rect.table.content.size;
+          const tr = addRowWithAlignment(ctx, state.tr, rect, rect.bottom);
+          dispatch(
+            tr.setSelection(TextSelection.near(tr.doc.resolve(rowAt + 3), 1)).scrollIntoView(),
+          );
+        }
         return true;
       },
       // Enter on a selected atom opens it in Source: the keyboard way to the atom's button

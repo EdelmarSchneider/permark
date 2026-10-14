@@ -111,7 +111,7 @@ export const es = {
   "filter.invalidGlob": "Patrón no válido: {pattern}",
   "filter.assetsNearDocs": "Solo recursos junto a documentos",
   "filter.assetsNearDocsHint":
-    "Las imágenes, los datos y los archivos XML solo se muestran cuando su carpeta, o la de arriba, tiene un documento.",
+    "Las imágenes, los datos y los XML solo se muestran junto a un documento (la misma carpeta o la de arriba). Las imágenes también se muestran cuando un documento las enlaza, o en carpetas como assets o images.",
   "filter.hideEmptyFolders": "Ocultar carpetas sin archivos visibles",
   "filter.showingOf.one": "{shown} de {n} archivo",
   "filter.showingOf.other": "{shown} de {n} archivos",
@@ -611,6 +611,11 @@ export const es = {
   "toolbar.deleteRow": "Eliminar fila",
   "toolbar.deleteCol": "Eliminar columna",
   "toolbar.deleteTable": "Eliminar tabla",
+  "toolbar.tableNeedsCell": "Coloca primero el cursor en una celda de la tabla",
+  "toolbar.tableHeaderNoRowAbove":
+    "La fila de encabezado va siempre primero: usa Agregar fila abajo para agregar la primera fila",
+  "toolbar.tableHeaderNoDelete":
+    "Una tabla necesita su fila de encabezado: elimina la tabla completa",
   "toolbar.codeBlock": "Bloque de código",
   "toolbar.language": "Lenguaje del bloque de código",
   "toolbar.plainText": "Texto sin formato",

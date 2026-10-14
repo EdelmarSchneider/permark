@@ -1,4 +1,4 @@
-//! Per-project state (session, last visit), project settings, and the recent-folders list.
+//! Per-project state (session, last visit, window geometry), project settings, and the recent-folders list.
 //!
 //! State lives in AppData by default (`projects/<xxh3 of the canonical root>/`), so a project folder
 //! stays untouched. When the project has a `.trailmark/` folder, state lives in `.trailmark/local/`
@@ -8,6 +8,7 @@ mod app_settings;
 mod config;
 mod recent;
 mod store;
+mod window;
 
 use std::io;
 use std::path::Path;
@@ -19,6 +20,7 @@ pub use app_settings::{effective_language, installer_language, AppSettingsStore,
 pub use config::{Config, TreeConfig, TreeShow};
 pub use recent::{RecentStore, RecentVault};
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};
+pub use window::{saved_for_launch, WindowState};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {

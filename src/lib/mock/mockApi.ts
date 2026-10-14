@@ -119,6 +119,8 @@ export const mockImpl: Api = {
     await wait(60);
     return searchDocs(query, limit);
   },
+  // `docs/design/wireframes.md` embeds it from another folder
+  referencedImages: async () => ["docs/images/pipeline.svg"],
   initProjectFolder: async () => {
     await wait(400);
     stateLocation = "project";

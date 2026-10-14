@@ -6,6 +6,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **The window remembers its size and position.** TrailMark opens where you left it, including maximized, with no jump: the window is
+  placed before it is shown. Each project folder keeps its own place (in the project's private state, never in a file you commit), and
+  the last window is used for the welcome screen, a folder opened for the first time and a single file. If the screen it was on is gone,
+  or the resolution or display scale changed, the window comes back on the main screen at a size that fits.
 - **Translations.** The interface now comes in **Português (Brasil)**, **Español** and **Deutsch** besides English. **Settings → Language** offers
   *System default* (the first language of your system that TrailMark speaks, else English) and each language written in itself; the change
   applies at once, without a restart, and is kept for all your projects. Plurals, numbers, dates and relative times follow the language,
@@ -17,6 +21,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `docs/design/i18n.md` for the conventions and how to add a language.
 
 ### Changed
+- **The Explorer filter keeps your documentation images.** With **Only assets next to documents** on, an image used to show only when its
+  folder, or the one above it, held a document, so the pictures of a top-level `assets/` or `site/assets/` folder were hidden. Now an image
+  also shows when a Markdown document links to it (`![](...)`, a reference definition, or an HTML `<img>`, resolved from that document, wherever the
+  image is), or when it sits in a folder named `assets`, `images`, `img`, `media`, `attachments`, `screenshots`, `figures`, `diagrams` or
+  `pictures`. The icons of a code folder stay out unless a document uses them. Data and XML files keep the old rule, and `+pattern` / `-pattern`
+  entries still win. The set of linked images is kept up to date as documents change, reading only the document that changed.
 - Errors from the backend carry a kind and the name or text they are about, and the interface words them; a few messages that used to be fixed
   English sentences (a file that is not UTF-8, a document shown as plain text because of its nesting) are now worded by the interface.
 

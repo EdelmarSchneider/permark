@@ -43,8 +43,12 @@ export function formatNumber(value: number): string {
 
 const pluralRules = new Map<string, Intl.PluralRules>();
 
-/** The plural category (`one`, `other`, ...) the interface's language gives a count. */
+/**
+ * The plural category (`one`, `other`, ...) the interface's language gives a count. The rules are CLDR's, with one
+ * exception: Brazilian usage writes zero in the plural ("0 arquivos"), where CLDR reads it as singular.
+ */
 export function pluralCategory(count: number): Intl.LDMLPluralRule {
+  if (count === 0 && language.locale === "pt-BR") return "other";
   const tag = intlTag();
   let rules = pluralRules.get(tag);
   if (!rules) {

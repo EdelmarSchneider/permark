@@ -112,7 +112,7 @@ export const de = {
   "filter.invalidGlob": "Kein gültiges Muster: {pattern}",
   "filter.assetsNearDocs": "Medien nur neben Dokumenten",
   "filter.assetsNearDocsHint":
-    "Bilder, Daten und XML-Dateien erscheinen nur, wenn ihr Ordner oder der darüberliegende ein Dokument enthält.",
+    "Bilder, Daten und XML erscheinen nur neben einem Dokument (gleicher Ordner oder der darüberliegende). Bilder erscheinen auch, wenn ein Dokument auf sie verweist, oder in Ordnern wie assets oder images.",
   "filter.hideEmptyFolders": "Ordner ohne sichtbare Dateien ausblenden",
   "filter.showingOf.one": "{shown} von {n} Datei",
   "filter.showingOf.other": "{shown} von {n} Dateien",
@@ -611,6 +611,11 @@ export const de = {
   "toolbar.deleteRow": "Zeile löschen",
   "toolbar.deleteCol": "Spalte löschen",
   "toolbar.deleteTable": "Tabelle löschen",
+  "toolbar.tableNeedsCell": "Zuerst den Cursor in eine Tabellenzelle setzen",
+  "toolbar.tableHeaderNoRowAbove":
+    "Die Kopfzeile bleibt oben: für die erste Zeile „Zeile unterhalb einfügen“ verwenden",
+  "toolbar.tableHeaderNoDelete":
+    "Eine Tabelle braucht ihre Kopfzeile: stattdessen die ganze Tabelle löschen",
   "toolbar.codeBlock": "Codeblock",
   "toolbar.language": "Sprache des Codeblocks",
   "toolbar.plainText": "Nur Text",

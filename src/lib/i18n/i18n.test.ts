@@ -65,10 +65,23 @@ describe("tn", () => {
     expect(tn("toast.docsChanged", 3)).toBe("3 docs cambiaron");
   });
 
-  it("uses each language's own plural rules", () => {
-    // Portuguese counts 0 (and 1) as singular; the other languages only 1
+  it("writes zero as a plural in Brazilian Portuguese and by CLDR in the other languages", () => {
     language.preference = "pt-BR";
-    expect(pluralCategory(0)).toBe("one");
+    expect(tn("feed.saves", 0)).toBe("0 salvamentos");
+    expect(tn("feed.saves", 1)).toBe("1 salvamento");
+    expect(tn("fileOps.files", 0)).toBe("0 arquivos");
+    language.preference = "es";
+    expect(tn("fileOps.files", 0)).toBe("0 archivos");
+    language.preference = "de";
+    expect(tn("fileOps.files", 0)).toBe("0 Dateien");
+    language.preference = "en";
+    expect(tn("fileOps.files", 0)).toBe("0 files");
+  });
+
+  it("uses each language's own plural rules", () => {
+    // CLDR counts 0 as singular in Portuguese, but Brazilian usage writes "0 arquivos": zero is plural there
+    language.preference = "pt-BR";
+    expect(pluralCategory(0)).toBe("other");
     expect(pluralCategory(1)).toBe("one");
     expect(pluralCategory(2)).toBe("other");
     language.preference = "de";

@@ -18,6 +18,7 @@
     "open_external": ["path"],
     "reveal_in_folder": ["path"],
     "search": ["query", "limit"],
+    "referenced_images": [],
     "init_project_folder": [],
     "state_location": [],
     "file_meta": ["path"],
@@ -39,5 +40,5 @@
     "new_folder": ["path"],
     "undo_file_op": ["op_id"]
   },
-  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed"]
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed"]
 }

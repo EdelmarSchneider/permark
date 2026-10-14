@@ -11,10 +11,16 @@
         hint?: string;
         checked?: boolean;
         disabled?: boolean;
+        /** The tooltip: for an entry that is off, why. */
+        title?: string;
+        /** The keyboard starts here instead of on the first entry that is on. */
+        initial?: boolean;
         onselect: () => void;
       }
     | { type: "separator" }
-    | { type: "label"; label: string };
+    | { type: "label"; label: string }
+    /** A sentence of explanation between the entries (a heading, a label, is shorter and in capitals). */
+    | { type: "note"; text: string };
 </script>
 
 <script lang="ts">
@@ -41,7 +47,10 @@
 
   onMount(() => {
     // the popover is positioned in an effect; focus once it is in place
-    const timer = setTimeout(() => buttons()[0]?.focus(), 0);
+    const timer = setTimeout(() => {
+      const first = list?.querySelector<HTMLButtonElement>("button[data-initial]:not(:disabled)");
+      (first ?? buttons()[0])?.focus();
+    }, 0);
     return () => clearTimeout(timer);
   });
 
@@ -69,6 +78,8 @@
         <div class="menu-sep" role="separator"></div>
       {:else if entry.type === "label"}
         <div class="menu-label">{entry.label}</div>
+      {:else if entry.type === "note"}
+        <div class="menu-note">{entry.text}</div>
       {:else}
         <button
           type="button"
@@ -76,6 +87,8 @@
           role={entry.checked !== undefined ? "menuitemcheckbox" : "menuitem"}
           aria-checked={entry.checked}
           disabled={entry.disabled}
+          title={entry.title}
+          data-initial={entry.initial ? "" : undefined}
           onclick={() => choose(entry)}
         >
           {#if entry.checked !== undefined}

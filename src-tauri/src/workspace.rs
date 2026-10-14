@@ -24,13 +24,15 @@ use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
 use crate::meta::{MetaService, Timing};
+use crate::refs::ImageRefs;
 use crate::render::{self, DocumentView, Registry};
 use crate::search::indexer::{IndexWorker, Indexer};
 use crate::search::{Bm25Index, SearchHit, SearchProvider};
 use crate::session::{
     FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore, TreeConfig,
+    WindowState,
 };
-use crate::util::{modified_ms, now_ms, on_parser_stack, read_with_retry};
+use crate::util::{image_mime, modified_ms, now_ms, on_parser_stack, read_with_retry};
 use crate::vault::{NodeKind, TreeNode, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
@@ -59,6 +61,8 @@ pub trait EventSink: Send + Sync + 'static {
     fn index_progress(&self, indexed: usize, total: usize);
     /// Tags or descriptions changed (`meta-changed`).
     fn meta_changed(&self);
+    /// The set of images that documents link to changed (`image-refs-changed`).
+    fn image_refs_changed(&self);
 }
 
 /// Forwards events only while its workspace is the one that may emit, so a folder that is being
@@ -114,6 +118,12 @@ impl EventSink for GuardedSink {
             self.inner.meta_changed();
         }
     }
+
+    fn image_refs_changed(&self) {
+        if self.live() {
+            self.inner.image_refs_changed();
+        }
+    }
 }
 
 /// Matches the UI's `VaultInfo`.
@@ -162,25 +172,6 @@ pub struct Asset {
     pub mime: &'static str,
 }
 
-/// The MIME type of an image file, from its extension.
-fn image_mime(rel: &str) -> Option<&'static str> {
-    let ext = Path::new(rel)
-        .extension()?
-        .to_string_lossy()
-        .to_ascii_lowercase();
-    Some(match ext.as_str() {
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "avif" => "image/avif",
-        "bmp" => "image/bmp",
-        "ico" => "image/x-icon",
-        "svg" => "image/svg+xml",
-        _ => return None,
-    })
-}
-
 /// Extensions of the files that may be handed to the system's default application. Files that can
 /// run code when opened (programs, scripts, shortcuts, installers) are not documents and are left out;
 /// so are source files, because some systems run those on open too.
@@ -202,6 +193,8 @@ pub struct Workspace {
     /// Whether the watcher runs (see [`VaultInfo::live_updates`]).
     live_updates: bool,
     index: Arc<RwLock<Bm25Index>>,
+    /// The images that documents link to, kept by the index worker.
+    image_refs: Arc<RwLock<ImageRefs>>,
     indexer: Arc<IndexWorker>,
     filter: Arc<PathFilter>,
     meta: Arc<MetaService>,
@@ -319,6 +312,31 @@ fn start_watcher(
     )?)
 }
 
+/// Starts the index worker: the only writer of the search index and of the set of images that documents
+/// use. It builds them first, then follows the watcher. Returns the worker and the set.
+fn start_indexer(
+    vault: &Arc<Vault>,
+    filter: &Arc<PathFilter>,
+    index: &Arc<RwLock<Bm25Index>>,
+    sigs: &Arc<SigStore>,
+    sink: &Arc<dyn EventSink>,
+) -> (Arc<IndexWorker>, Arc<RwLock<ImageRefs>>) {
+    let progress_sink = Arc::clone(sink);
+    let refs_sink = Arc::clone(sink);
+    let indexer = Indexer::new(
+        Arc::clone(vault),
+        Arc::clone(filter),
+        Arc::clone(index),
+        Arc::clone(sigs),
+    )
+    .on_image_refs_changed(Arc::new(move || refs_sink.image_refs_changed()));
+    let image_refs = indexer.image_refs();
+    let worker = IndexWorker::start(indexer, move |done, total| {
+        progress_sink.index_progress(done, total);
+    });
+    (Arc::new(worker), image_refs)
+}
+
 impl Workspace {
     /// Opens a folder (IDE mode) or a file (Simple mode) and starts everything for it.
     ///
@@ -398,17 +416,7 @@ impl Workspace {
             Arc::new(move |snap: &GitSnapshot| git_sink.git_status(snap)),
         );
 
-        // The index worker is the only writer of the index; it builds first, then follows the watcher.
-        let progress_sink = Arc::clone(sink);
-        let indexer = Arc::new(IndexWorker::start(
-            Indexer::new(
-                Arc::clone(&vault),
-                Arc::clone(&filter),
-                Arc::clone(&index),
-                Arc::clone(&sigs),
-            ),
-            move |done, total| progress_sink.index_progress(done, total),
-        ));
+        let (indexer, image_refs) = start_indexer(&vault, &filter, &index, &sigs, sink);
 
         // No watcher is not fatal: the folder is perfectly readable, it just is not live.
         let watcher = watch(
@@ -446,6 +454,7 @@ impl Workspace {
             live_updates: watcher.is_some(),
             watcher: Mutex::new(watcher),
             index,
+            image_refs,
             indexer,
             filter,
             meta,
@@ -672,6 +681,16 @@ impl Workspace {
         self.index.search(query, limit)
     }
 
+    /// The images that some document of the folder links to, embeds or defines a reference for, as paths
+    /// of the folder (`@wt/<name>/...` in a worktree). Documents are read once, when the folder opens,
+    /// and again one at a time as they change.
+    pub fn referenced_images(&self) -> Vec<String> {
+        self.image_refs
+            .read()
+            .map(|refs| refs.images())
+            .unwrap_or_default()
+    }
+
     pub fn save_session(&self, session: &SessionState) -> Result<(), AppError> {
         self.lock_store()?.save_session(session)?;
         Ok(())
@@ -685,6 +704,16 @@ impl Workspace {
             s.ref_template.clone_from(template);
         }
         Ok(session)
+    }
+
+    /// Remembers where the window is, with this project's state. Simple mode (one file) has no state of its
+    /// own to keep it in: such a window is only remembered app-wide.
+    pub fn save_window(&self, window: &WindowState) -> Result<(), AppError> {
+        if self.vault.mode() == VaultMode::Simple {
+            return Ok(());
+        }
+        self.lock_store()?.save_window(window)?;
+        Ok(())
     }
 
     pub fn init_project_folder(&self) -> Result<(), AppError> {
@@ -969,6 +998,14 @@ impl WorkspaceHost {
         }
     }
 
+    /// Remembers where the window is with the open project (none is open on the welcome screen).
+    pub fn save_window(&self, window: &WindowState) {
+        if let Ok(ws) = self.current() {
+            // Best effort, like the rest of the window's memory: a failed write must not bother anyone.
+            let _ = ws.save_window(window);
+        }
+    }
+
     /// Window focus: external tools may have changed things while we were in the background.
     pub fn refresh_on_focus(&self) {
         if let Ok(ws) = self.current() {
@@ -998,6 +1035,7 @@ mod tests {
         fs: Mutex<Vec<FsBatch>>,
         tree: AtomicUsize,
         meta: AtomicUsize,
+        image_refs: AtomicUsize,
         git: Mutex<Vec<GitSnapshot>>,
         progress: Mutex<Vec<(usize, usize)>>,
     }
@@ -1017,6 +1055,9 @@ mod tests {
         }
         fn meta_changed(&self) {
             self.meta.fetch_add(1, Ordering::SeqCst);
+        }
+        fn image_refs_changed(&self) {
+            self.image_refs.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -1304,6 +1345,46 @@ deepword
     }
 
     #[test]
+    fn the_images_documents_use_follow_the_files_live() {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "README.md",
+            "![logo](docs/assets/logo.png)\n",
+        );
+        write(fx.project.path(), "docs/guide.md", "No images yet.\n");
+        let ws = fx.open();
+        fx.indexed();
+        wait_until("the build to find the logo", || {
+            ws.referenced_images() == ["docs/assets/logo.png"]
+        });
+        assert!(
+            fx.rec.image_refs.load(Ordering::SeqCst) >= 1,
+            "the UI is told"
+        );
+
+        // Another tool edits a document: only that document is read again.
+        let told = fx.rec.image_refs.load(Ordering::SeqCst);
+        write(
+            fx.project.path(),
+            "docs/guide.md",
+            "![s](../site/shot.png)\n",
+        );
+        wait_until("the edit to be followed", || {
+            ws.referenced_images() == ["docs/assets/logo.png", "site/shot.png"]
+        });
+        wait_until("the UI to be told", || {
+            fx.rec.image_refs.load(Ordering::SeqCst) > told
+        });
+
+        std::fs::remove_file(fx.project.path().join("README.md")).expect("rm");
+        wait_until("the removal to be followed", || {
+            ws.referenced_images() == ["site/shot.png"]
+        });
+        ws.close();
+    }
+
+    #[test]
     fn since_last_visit_uses_the_commit_stored_at_the_last_close() {
         let fx = Fx::new();
         let repo = init_repo(fx.project.path());
@@ -1379,13 +1460,21 @@ deepword
     fn linked_worktrees_become_extra_roots() {
         let fx = Fx::new();
         let repo = init_repo(fx.project.path());
-        write(fx.project.path(), "a.md", "# Main\n");
+        write(
+            fx.project.path(),
+            "a.md",
+            "# Main\n\n![m](assets/main.png)\n",
+        );
         commit_all(&repo, "init");
         let wt_parent = tempfile::tempdir().expect("tempdir");
         let wt_path = wt_parent.path().join("feature-x");
         repo.worktree("feature-x", &wt_path, None)
             .expect("worktree");
-        write(&wt_path, "plan.md", "# Plan in worktree\n\nwtuniqueword\n");
+        write(
+            &wt_path,
+            "plan.md",
+            "# Plan in worktree\n\nwtuniqueword\n\n![w](shots/w.png)\n",
+        );
 
         let ws = fx.open();
         let info = ws.info();
@@ -1407,6 +1496,16 @@ deepword
             ws.search("wtuniqueword", None)[0].path,
             "@wt/feature-x/plan.md"
         );
+        // Images are resolved inside the root of the document that uses them (the worktree is a checkout
+        // of the same commit, so it has `a.md` too).
+        wait_until("the images of both roots", || {
+            ws.referenced_images()
+                == [
+                    "@wt/feature-x/assets/main.png",
+                    "@wt/feature-x/shots/w.png",
+                    "assets/main.png",
+                ]
+        });
 
         // Changes inside the worktree are reported with the prefixed path.
         write(&wt_path, "plan.md", "# Plan in worktree\n\nedited\n");
@@ -1455,6 +1554,46 @@ deepword
             .any(|c| c.path.contains("local") || c.path.contains("cache"));
         assert!(!leaked);
         ws.close();
+    }
+
+    #[test]
+    fn the_window_is_remembered_with_a_folder_but_not_with_a_single_file() {
+        let window = WindowState {
+            x: 10,
+            y: 20,
+            width: 1280,
+            height: 800,
+            scale: 1.5,
+            maximized: true,
+        };
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "x");
+        let ws = fx.open();
+        ws.save_window(&window).expect("save");
+        ws.init_project_folder().expect("init");
+        ws.close();
+        // it moved into the project's own (private) state with everything else
+        let store = StateStore::open(fx.app.path(), fx.project.path());
+        assert_eq!(store.location(), StateLocation::Project);
+        assert_eq!(store.load_window(), Some(window));
+        assert!(fx
+            .project
+            .path()
+            .join(".trailmark/local/window.json")
+            .is_file());
+
+        // a single file shares the app-wide window instead: nothing is kept for its folder
+        let single = Fx::new();
+        write(single.project.path(), "note.md", "x");
+        let ws = single.open_path(&single.project.path().join("note.md"));
+        ws.save_window(&window).expect("save");
+        ws.close();
+        let store = StateStore::open(single.app.path(), single.project.path());
+        assert_eq!(store.load_window(), None);
+        assert!(
+            !store.dir().join("window.json").exists(),
+            "no entry of its own"
+        );
     }
 
     #[test]
@@ -2066,6 +2205,30 @@ exclude = [\"archive/**\"]
             .expect("canonicalize")
             .display()
             .to_string()
+    }
+
+    #[test]
+    fn the_window_is_saved_with_whichever_folder_is_open() {
+        let fx = HostFx::new();
+        let window = WindowState {
+            x: 1,
+            y: 2,
+            width: 900,
+            height: 600,
+            scale: 1.0,
+            maximized: false,
+        };
+        // the welcome screen has no folder: nothing to save with, and nothing goes wrong
+        fx.host.save_window(&window);
+        fx.open(fx.a.path()).expect("open A");
+        fx.host.save_window(&window);
+        let moved = WindowState { x: 99, ..window };
+        fx.open(fx.b.path()).expect("open B");
+        fx.host.save_window(&moved);
+        let stored = |dir: &Path| StateStore::open(fx.app.path(), dir).load_window();
+        assert_eq!(stored(fx.a.path()), Some(window));
+        assert_eq!(stored(fx.b.path()), Some(moved));
+        fx.host.shutdown();
     }
 
     #[test]

@@ -4,6 +4,9 @@
 //! applies, in order, what the watcher reports. A rescan (events were lost, or a moved-in folder was only
 //! partly listed) is a reconciliation with the disk. Because nothing else writes the index, a slow initial
 //! build can never put an older version of a file over a newer one the watcher already indexed.
+//!
+//! Every document the worker reads is also looked at for the images it uses ([`ImageRefs`]), so one read
+//! serves both and a saved document's images are found by reading that document only.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -14,6 +17,7 @@ use std::thread::JoinHandle;
 
 use super::chunk::{chunk_markdown, Chunk};
 use super::Bm25Index;
+use crate::refs::{images_used, ImageRefs};
 use crate::render::{decode_text, MAX_RENDER_BYTES};
 use crate::util::{hash_bytes, modified_ms, parser_thread, read_with_retry};
 use crate::vault::{key, NodeKind, Vault, WalkItem};
@@ -34,10 +38,13 @@ pub fn is_indexable(rel: &str) -> bool {
 struct Read {
     sig: FileSig,
     chunks: Vec<Chunk>,
+    /// The images it uses (see [`images_used`]).
+    images: Vec<String>,
 }
 
-/// Reads and chunks one file. `None` for files that cannot be read, are too large or binary.
-fn read_markdown(abs: &Path) -> Option<Read> {
+/// Reads one file (`rel` is its path in the vault) and chunks it. `None` for files that cannot be read,
+/// are too large or binary.
+fn read_markdown(abs: &Path, rel: &str) -> Option<Read> {
     let meta = std::fs::metadata(abs).ok()?;
     if !meta.is_file() || meta.len() > MAX_RENDER_BYTES {
         return None;
@@ -48,9 +55,11 @@ fn read_markdown(abs: &Path) -> Option<Read> {
         mtime_ms: modified_ms(&meta),
         hash: hash_bytes(&bytes),
     };
+    let text = decode_text(&bytes)?;
     Some(Read {
         sig,
-        chunks: chunk_markdown(&decode_text(&bytes)?),
+        chunks: chunk_markdown(&text),
+        images: images_used(rel, &text),
     })
 }
 
@@ -74,6 +83,12 @@ pub struct Indexer {
     sigs: Arc<SigStore>,
     /// (size, mtime) of each indexed file when it was read, so a rescan only re-reads what changed.
     stamps: HashMap<String, (u64, u64)>,
+    /// The images the documents use.
+    refs: Arc<RwLock<ImageRefs>>,
+    /// Called after a pass that changed the set of used images.
+    on_refs_changed: Option<Arc<dyn Fn() + Send + Sync>>,
+    /// The set changed since `on_refs_changed` was last called.
+    refs_dirty: bool,
 }
 
 impl Indexer {
@@ -89,6 +104,38 @@ impl Indexer {
             index,
             sigs,
             stamps: HashMap::new(),
+            refs: Arc::default(),
+            on_refs_changed: None,
+            refs_dirty: false,
+        }
+    }
+
+    /// The images the documents use: this indexer updates them, whoever holds the handle reads them.
+    pub fn image_refs(&self) -> Arc<RwLock<ImageRefs>> {
+        Arc::clone(&self.refs)
+    }
+
+    /// Calls `notify` after the initial build and after each batch of changes that changed the set of
+    /// used images (not once per document).
+    #[must_use]
+    pub fn on_image_refs_changed(mut self, notify: Arc<dyn Fn() + Send + Sync>) -> Self {
+        self.on_refs_changed = Some(notify);
+        self
+    }
+
+    /// Runs `update` on the images and remembers whether the set of used images changed.
+    fn update_refs(&mut self, update: impl FnOnce(&mut ImageRefs) -> bool) {
+        if let Ok(mut refs) = self.refs.write() {
+            self.refs_dirty |= update(&mut refs);
+        }
+    }
+
+    /// Tells the listener about a change of the used images that has not been announced yet.
+    fn announce_refs(&mut self) {
+        if std::mem::take(&mut self.refs_dirty) {
+            if let Some(notify) = &self.on_refs_changed {
+                notify();
+            }
         }
     }
 
@@ -96,16 +143,23 @@ impl Indexer {
     /// Returns whether it is indexed.
     fn index_one(&mut self, abs: &Path, rel: &str, policy: SigPolicy) -> bool {
         let k = key(rel);
-        let chunks = if let Some(Read { sig, chunks }) = read_markdown(abs) {
+        let chunks = if let Some(Read {
+            sig,
+            chunks,
+            images,
+        }) = read_markdown(abs, rel)
+        {
             match policy {
                 SigPolicy::Seed => self.sigs.seed(k.clone(), rel, sig),
                 SigPolicy::Overwrite => self.sigs.set(k.clone(), rel, sig),
                 SigPolicy::Keep => {}
             }
             self.stamps.insert(k, (sig.len, sig.mtime_ms));
+            self.update_refs(|refs| refs.set_doc(rel, images));
             Some(chunks)
         } else {
             self.stamps.remove(&k);
+            self.update_refs(|refs| refs.remove_doc(rel));
             None
         };
         let Ok(mut index) = self.index.write() else {
@@ -150,6 +204,7 @@ impl Indexer {
                 progress(done, total);
             }
         }
+        self.announce_refs();
     }
 
     /// Applies watcher output to the index.
@@ -173,6 +228,7 @@ impl Indexer {
                 }
             }
         }
+        self.announce_refs();
     }
 
     /// Removes a file, or every file below a folder (the watcher reports a deleted folder as one
@@ -185,6 +241,7 @@ impl Indexer {
             index.remove_doc(path);
             index.remove_under(path);
         }
+        self.update_refs(|refs| refs.remove_doc(path) | refs.remove_under(path));
     }
 
     /// Reconciles the index with the disk: documents whose file is gone leave, new and changed files
@@ -217,6 +274,7 @@ impl Indexer {
             }
             self.index_one(&item.abs, &item.rel, SigPolicy::Overwrite);
         }
+        self.announce_refs();
     }
 }
 
@@ -330,6 +388,7 @@ mod tests {
     use super::*;
     use crate::search::SearchProvider;
     use std::fs;
+    use std::sync::atomic::AtomicUsize;
     use std::time::{Duration, Instant};
 
     struct Fx {
@@ -337,6 +396,9 @@ mod tests {
         indexer: Indexer,
         index: Arc<RwLock<Bm25Index>>,
         sigs: Arc<SigStore>,
+        /// The images the documents use, and how many times that set was announced as changed.
+        refs: Arc<RwLock<ImageRefs>>,
+        announced: Arc<AtomicUsize>,
     }
 
     fn fx(files: &[(&str, &str)]) -> Fx {
@@ -353,12 +415,20 @@ mod tests {
         ));
         let index = Arc::new(RwLock::new(Bm25Index::new()));
         let sigs = Arc::new(SigStore::new());
-        let indexer = Indexer::new(vault, filter, Arc::clone(&index), Arc::clone(&sigs));
+        let announced = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&announced);
+        let indexer = Indexer::new(vault, filter, Arc::clone(&index), Arc::clone(&sigs))
+            .on_image_refs_changed(Arc::new(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            }));
+        let refs = indexer.image_refs();
         Fx {
             dir,
             indexer,
             index,
             sigs,
+            refs,
+            announced,
         }
     }
 
@@ -378,6 +448,14 @@ mod tests {
             let p = self.dir.path().join(rel);
             fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
             fs::write(p, content).expect("write");
+        }
+
+        fn images(&self) -> Vec<String> {
+            self.refs.read().expect("lock").images()
+        }
+
+        fn announced(&self) -> usize {
+            self.announced.load(Ordering::SeqCst)
         }
 
         fn found(&self, word: &str) -> Vec<String> {
@@ -651,6 +729,118 @@ mod tests {
 
         worker.stop();
         worker.stop(); // idempotent
+    }
+
+    #[test]
+    fn build_collects_the_images_the_documents_use_and_announces_them_once() {
+        let mut f = fx(&[
+            ("README.md", "![logo](assets/logo.png)\n"),
+            ("docs/guide.md", "![a](../site/shot.png) ![b](pics/b.jpg)\n"),
+            ("docs/other.md", "![same](../assets/logo.png) and no more\n"),
+            ("notes.txt", "![t](from-text.png)\n"),
+            ("private/c.md", "![p](hidden.png)\n"),
+            ("plain.md", "# No images here\n"),
+        ]);
+        f.build();
+        assert_eq!(
+            f.images(),
+            ["assets/logo.png", "docs/pics/b.jpg", "site/shot.png"]
+        );
+        assert_eq!(
+            f.announced(),
+            1,
+            "once for the build, not once per document"
+        );
+    }
+
+    #[test]
+    fn a_save_updates_only_that_documents_images_and_announces_real_changes_only() {
+        let mut f = fx(&[
+            ("a.md", "![x](one.png)\n"),
+            ("b.md", "![x](one.png) ![y](two.png)\n"),
+        ]);
+        f.build();
+        assert_eq!(f.images(), ["one.png", "two.png"]);
+        let before = f.announced();
+
+        // the same images again: nothing to announce
+        f.write("a.md", "![x](one.png) with more text\n");
+        f.indexer.apply(&[change(ChangeKind::Modified, "a.md")]);
+        assert_eq!(f.announced(), before);
+
+        // a.md moves on to another image; b.md still uses one.png
+        f.write("a.md", "![x](three.png)\n");
+        f.indexer.apply(&[change(ChangeKind::Modified, "a.md")]);
+        assert_eq!(f.images(), ["one.png", "three.png", "two.png"]);
+        assert_eq!(f.announced(), before + 1);
+
+        // a new document, a rewritten one and a removed one in one batch: one announcement
+        f.write("c.md", "![z](four.png)\n");
+        f.write("b.md", "no images now\n");
+        fs::remove_file(f.dir.path().join("a.md")).expect("rm");
+        f.indexer.apply(&[
+            change(ChangeKind::Created, "c.md"),
+            change(ChangeKind::Modified, "b.md"),
+            change(ChangeKind::Removed, "a.md"),
+        ]);
+        assert_eq!(f.images(), ["four.png"]);
+        assert_eq!(f.announced(), before + 2);
+    }
+
+    #[test]
+    fn a_renamed_document_resolves_its_links_from_its_new_folder() {
+        let mut f = fx(&[("old.md", "![x](shot.png)\n")]);
+        f.build();
+        assert_eq!(f.images(), ["shot.png"]);
+        fs::create_dir_all(f.dir.path().join("sub")).expect("mkdir");
+        fs::rename(f.dir.path().join("old.md"), f.dir.path().join("sub/new.md")).expect("mv");
+        f.indexer.apply(&[FsChange {
+            kind: ChangeKind::Renamed,
+            path: "sub/new.md".to_owned(),
+            from: Some("old.md".to_owned()),
+            at_ms: 0,
+        }]);
+        assert_eq!(f.images(), ["sub/shot.png"]);
+    }
+
+    #[test]
+    fn removing_a_folder_forgets_the_images_its_documents_used() {
+        let mut f = fx(&[
+            ("docs/a.md", "![x](a.png)\n"),
+            ("docs/deep/b.md", "![x](b.png)\n"),
+            ("docs2/c.md", "![x](c.png)\n"),
+        ]);
+        f.build();
+        fs::remove_dir_all(f.dir.path().join("docs")).expect("rm");
+        f.indexer.apply(&[change(ChangeKind::Removed, "docs")]);
+        assert_eq!(f.images(), ["docs2/c.png"]);
+    }
+
+    #[test]
+    fn an_unreadable_document_stops_counting() {
+        let mut f = fx(&[("a.md", "![x](a.png)\n")]);
+        f.build();
+        f.write("a.md", "\0\0binary\0");
+        f.indexer.apply(&[change(ChangeKind::Modified, "a.md")]);
+        assert_eq!(f.images(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_rescan_repairs_the_images_after_lost_events() {
+        let mut f = fx(&[
+            ("keep.md", "![x](keep.png)\n"),
+            ("edit.md", "![x](old.png)\n"),
+            ("gone.md", "![x](gone.png)\n"),
+        ]);
+        f.build();
+        std::thread::sleep(Duration::from_millis(20));
+        f.write("edit.md", "![x](new.png) and more words\n");
+        f.write("fresh.md", "![x](fresh.png)\n");
+        fs::remove_file(f.dir.path().join("gone.md")).expect("rm");
+        let before = f.announced();
+        f.rescan();
+        assert_eq!(f.images(), ["fresh.png", "keep.png", "new.png"]);
+        assert_eq!(f.announced(), before + 1);
     }
 
     #[test]

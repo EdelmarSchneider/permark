@@ -110,7 +110,7 @@ export const ptBR = {
   "filter.invalidGlob": "Padrão inválido: {pattern}",
   "filter.assetsNearDocs": "Só recursos ao lado de documentos",
   "filter.assetsNearDocsHint":
-    "Imagens, dados e arquivos XML só aparecem quando a pasta deles, ou a de cima, tem um documento.",
+    "Imagens, dados e XML só aparecem ao lado de um documento (na mesma pasta ou na de cima). As imagens também aparecem quando um documento as referencia, ou em pastas como assets ou images.",
   "filter.hideEmptyFolders": "Ocultar pastas sem arquivos visíveis",
   "filter.showingOf.one": "{shown} de {n} arquivo",
   "filter.showingOf.other": "{shown} de {n} arquivos",
@@ -607,6 +607,11 @@ export const ptBR = {
   "toolbar.deleteRow": "Excluir linha",
   "toolbar.deleteCol": "Excluir coluna",
   "toolbar.deleteTable": "Excluir tabela",
+  "toolbar.tableNeedsCell": "Coloque o cursor em uma célula da tabela primeiro",
+  "toolbar.tableHeaderNoRowAbove":
+    "A linha de cabeçalho fica sempre primeiro: use Adicionar linha abaixo para criar a primeira linha",
+  "toolbar.tableHeaderNoDelete":
+    "Uma tabela precisa da linha de cabeçalho: exclua a tabela inteira",
   "toolbar.codeBlock": "Bloco de código",
   "toolbar.language": "Linguagem do bloco de código",
   "toolbar.plainText": "Texto simples",
