@@ -1,0 +1,14 @@
+# Rust / Tauri
+/src-tauri/target/
+/src-tauri/gen/schemas/
+# Node
+node_modules/
+/dist/
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+# Claude local settings
+.claude/settings.local.json
