@@ -128,6 +128,12 @@ export function appPlugins(host: PluginHost) {
             }
             return false;
           },
+          // A selected locked block (a click on a diagram, a formula, the front matter) is read-only: typing would replace
+          // the whole block with the typed letter. Backspace and Delete still remove it, on purpose.
+          handleTextInput(view) {
+            const { selection } = view.state;
+            return selection instanceof NodeSelection && selection.node.type.name === LOCKED;
+          },
           handlePaste(_view, event) {
             const images = imagesOf(event.clipboardData, true);
             if (images.length === 0) return false;
