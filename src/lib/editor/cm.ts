@@ -15,7 +15,8 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import type { EditorApi } from "../bridge";
+import type { SourceApi } from "../bridge";
+import { imageMarkdown } from "./imageName";
 import { toggleMarker, wrapLink, type WrapEdit } from "./wrapSelection";
 
 export type SourceHandlers = {
@@ -27,7 +28,7 @@ export type SourceHandlers = {
   onFiles(files: File[], source: "paste" | "drop"): void;
 };
 
-export type SourceView = EditorApi & { destroy(): void };
+export type SourceView = SourceApi & { destroy(): void };
 
 /** Markdown colours from the design tokens, so the editor follows the light and dark themes by itself. */
 const markdownStyle = HighlightStyle.define([
@@ -166,7 +167,18 @@ export function createSourceView(
     scrollIntoView: true,
   });
 
+  const insertAtSelection = (insert: string): void => {
+    const { from, to } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, to, insert },
+      selection: EditorSelection.cursor(from + insert.length),
+      userEvent: "input.paste",
+      scrollIntoView: true,
+    });
+  };
+
   return {
+    mode: "source",
     getText: () => view.state.doc.toString(),
     setText(next, atLine) {
       view.dispatch({
@@ -180,15 +192,7 @@ export function createSourceView(
     },
     caretLine: () => view.state.doc.lineAt(view.state.selection.main.head).number - 1,
     focus: () => view.focus(),
-    insertAtSelection(insert) {
-      const { from, to } = view.state.selection.main;
-      view.dispatch({
-        changes: { from, to, insert },
-        selection: EditorSelection.cursor(from + insert.length),
-        userEvent: "input.paste",
-        scrollIntoView: true,
-      });
-    },
+    insertImage: (rel) => insertAtSelection(imageMarkdown(rel)),
     applyChanges(edits) {
       // positions are relative to the document as it is now; CodeMirror maps the caret through the changes
       view.dispatch({

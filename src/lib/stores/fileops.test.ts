@@ -279,12 +279,13 @@ describe("renaming and moving", () => {
     });
     expect(await edit.enter()).toBe(true);
     const editor = {
+      mode: "source" as const,
       text: "[a](api.md) unsaved\n",
       getText: () => editor.text,
       setText: vi.fn(),
       caretLine: () => 0,
       focus: vi.fn(),
-      insertAtSelection: vi.fn(),
+      insertImage: vi.fn(),
       applyChanges: vi.fn((edits: { from: number; to: number; insert: string }[]) => {
         editor.text =
           editor.text.slice(0, edits[0].from) + edits[0].insert + editor.text.slice(edits[0].to);

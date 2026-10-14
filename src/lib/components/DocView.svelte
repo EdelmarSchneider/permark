@@ -5,6 +5,7 @@
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
   import { anchorTarget, findById, selectionIn } from "../dom/domUtil";
   import { readBlocks } from "../dom/outlineDom";
+  import { enhanceContextFor } from "../dom/enhanceContext";
   import type { EnhanceContext } from "../dom/enhance";
   import { ICON_CHECK, ICON_COPY } from "../dom/enhance";
   import { frontmatterValue } from "../frontmatter";
@@ -55,26 +56,8 @@
 
   // ---- rendering ----------------------------------------------------------------------------------
 
-  function enhanceContext(path: string): EnhanceContext {
-    return {
-      docPath: path,
-      theme: session.resolvedTheme,
-      labels: {
-        copyCode: t("doc.copyCode"),
-        anchorLabel: (name) => t("doc.anchorLabel", { name }),
-        diagramPending: t("doc.diagramRendering"),
-        diagramFailed: t("doc.diagramFailed"),
-        alertTitles: {
-          note: t("alert.note"),
-          tip: t("alert.tip"),
-          important: t("alert.important"),
-          warning: t("alert.warning"),
-          caution: t("alert.caution"),
-        },
-      },
-      resolveImage: async (path) => assetUrl(path),
-    };
-  }
+  const enhanceContext = (path: string): EnhanceContext =>
+    enhanceContextFor(path, session.resolvedTheme);
 
   function renderLabels(): RenderLabels {
     const time = formatClock(Date.now());

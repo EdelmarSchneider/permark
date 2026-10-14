@@ -8,6 +8,7 @@ import "./styles/filter.css";
 import "./styles/outline.css";
 import "./styles/editor.css";
 import "./styles/fileops.css";
+import "./styles/visual.css";
 import App from "./App.svelte";
 
 // resolve the theme before the first paint so a dark system does not flash white

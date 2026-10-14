@@ -45,6 +45,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   cleanUpMeta: [],
   documentSource: ["docs/a.md"],
   parseBlocks: ["# Title"],
+  renderFragments: [["# Title"]],
   saveDocument: ["docs/a.md", "# Title", "00ff00ff00ff00ff"],
   createDocument: ["docs/new.md", "# New"],
   writeAsset: ["docs/a.md", "shot.png", "aGVsbG8="],

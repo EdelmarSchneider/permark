@@ -27,6 +27,7 @@
     "clean_up_meta": [],
     "document_source": ["path"],
     "parse_blocks": ["text"],
+    "render_fragments": ["texts"],
     "save_document": ["path", "text", "expected_hash"],
     "create_document": ["path", "text"],
     "write_asset": ["doc_path", "name_hint", "data"],

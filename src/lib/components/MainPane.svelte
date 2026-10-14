@@ -8,6 +8,7 @@
   import EditBars from "./EditBars.svelte";
   import FindBar from "./FindBar.svelte";
   import SourceEditor from "./SourceEditor.svelte";
+  import VisualEditor from "./VisualEditor.svelte";
   import Toast from "./Toast.svelte";
 </script>
 
@@ -17,8 +18,10 @@
   {#if edit.active}<EditBars />{/if}
   <DocView />
   {#if edit.active}
-    <!-- one editor per document: opening another document starts a fresh one -->
-    {#key edit.path}<SourceEditor />{/key}
+    <!-- one editor per document and mode: opening another document, or the other mode, starts a fresh one -->
+    {#key `${edit.path}:${edit.mode}`}
+      {#if edit.mode === "visual"}<VisualEditor />{:else}<SourceEditor />{/if}
+    {/key}
   {/if}
   {#if ui.find.open && !edit.active}<FindBar />{/if}
   <Toast />

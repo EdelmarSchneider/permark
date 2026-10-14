@@ -51,7 +51,7 @@
       }
       // Esc also leaves editing, once menus and bars are closed (and not from some other text field)
       const target = e.target as Element | null;
-      if (edit.active && (!isEditable(target) || target?.closest(".cm-editor"))) {
+      if (edit.active && (!isEditable(target) || target?.closest(".cm-editor, .tm-visual"))) {
         e.preventDefault();
         edit.requestExit();
       }

@@ -1,5 +1,6 @@
 import type { FileCategory } from "./fileKinds";
 import type { ReadingWidth } from "./readingWidth";
+import type { EditMode } from "./editMode";
 import type { RightTab } from "./rightPanel";
 
 // Mirrors the Rust <-> UI contract defined by the Tauri commands in src-tauri/src/commands.rs.
@@ -114,6 +115,8 @@ export type SessionState = {
   rightTab: RightTab;
   /** Whether moving files in the Explorer rewrites the links to them. */
   linkUpdate: LinkUpdate;
+  /** How a document opens for editing. */
+  editMode: EditMode;
 };
 
 // ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------

@@ -42,6 +42,7 @@ import { mockParseBlocks } from "../mock/mockBlocks";
 import { askUnsaved, checkForUpdate } from "../platform";
 import { INITIAL_UPDATE_STATE } from "../updates";
 import { docs } from "./docs.svelte";
+import { session } from "./session.svelte";
 import { edit } from "./edit.svelte";
 import { toast } from "./toast.svelte";
 import { updates } from "./updates.svelte";
@@ -69,6 +70,7 @@ const source = (path: string, text: string, hash: string): SourceDoc => ({
 /** An editor that is only a string. */
 function fakeEditor(initial: string): EditorApi & { text: string; line: number } {
   const editor = {
+    mode: "source" as const,
     text: initial,
     line: 0,
     getText: () => editor.text,
@@ -78,8 +80,8 @@ function fakeEditor(initial: string): EditorApi & { text: string; line: number }
     },
     caretLine: () => editor.line,
     focus: vi.fn(),
-    insertAtSelection: (text: string) => {
-      editor.text += text;
+    insertImage: (rel: string) => {
+      editor.text += `![](${rel})`;
     },
     applyChanges: (edits: readonly { from: number; to: number; insert: string }[]) => {
       // positions are relative to the text before the changes: apply from the end
@@ -110,6 +112,7 @@ async function startEditing(text = ORIGINAL, hash = "h1"): Promise<ReturnType<ty
 }
 
 beforeEach(() => {
+  session.editMode = "source";
   edit.reset();
   docs.reset();
   docs.guard = null;

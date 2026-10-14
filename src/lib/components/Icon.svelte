@@ -1,4 +1,22 @@
 <script lang="ts" module>
+  import Bold from "@lucide/svelte/icons/bold";
+  import Code from "@lucide/svelte/icons/code";
+  import Heading from "@lucide/svelte/icons/heading";
+  import Heading1 from "@lucide/svelte/icons/heading-1";
+  import Heading2 from "@lucide/svelte/icons/heading-2";
+  import Heading3 from "@lucide/svelte/icons/heading-3";
+  import Heading4 from "@lucide/svelte/icons/heading-4";
+  import Image from "@lucide/svelte/icons/image";
+  import Italic from "@lucide/svelte/icons/italic";
+  import Link from "@lucide/svelte/icons/link";
+  import List from "@lucide/svelte/icons/list";
+  import ListChecks from "@lucide/svelte/icons/list-checks";
+  import ListOrdered from "@lucide/svelte/icons/list-ordered";
+  import Pilcrow from "@lucide/svelte/icons/pilcrow";
+  import Quote from "@lucide/svelte/icons/quote";
+  import SquareCode from "@lucide/svelte/icons/square-code";
+  import Strikethrough from "@lucide/svelte/icons/strikethrough";
+  import Table from "@lucide/svelte/icons/table";
   import Activity from "@lucide/svelte/icons/activity";
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import ArrowRight from "@lucide/svelte/icons/arrow-right";
@@ -52,6 +70,24 @@
 
   // The one icon set of the app (Lucide), registered by name so components stay tree-shakeable.
   export const icons = {
+    bold: Bold,
+    code: Code,
+    heading: Heading,
+    "heading-1": Heading1,
+    "heading-2": Heading2,
+    "heading-3": Heading3,
+    "heading-4": Heading4,
+    image: Image,
+    italic: Italic,
+    link: Link,
+    list: List,
+    "list-checks": ListChecks,
+    "list-ordered": ListOrdered,
+    pilcrow: Pilcrow,
+    quote: Quote,
+    "square-code": SquareCode,
+    strike: Strikethrough,
+    table: Table,
     activity: Activity,
     "arrow-left": ArrowLeft,
     "arrow-right": ArrowRight,

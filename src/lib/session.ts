@@ -2,6 +2,7 @@
 
 import { DEFAULT_REF_TEMPLATE } from "./reference";
 import { DEFAULT_WIDTH, normalizeWidth } from "./readingWidth";
+import { DEFAULT_EDIT_MODE, normalizeEditMode } from "./editMode";
 import { DEFAULT_RIGHT_TAB, normalizeRightTab } from "./rightPanel";
 import { DEFAULT_LINK_UPDATE, normalizeLinkUpdate } from "./fileOps";
 import { normalizeTreeFilter } from "./treeFilter";
@@ -45,6 +46,7 @@ export function defaultSession(): SessionState {
     autoReveal: true,
     rightTab: DEFAULT_RIGHT_TAB,
     linkUpdate: DEFAULT_LINK_UPDATE,
+    editMode: DEFAULT_EDIT_MODE,
   };
 }
 
@@ -79,5 +81,6 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     autoReveal: stored.autoReveal !== false,
     rightTab: normalizeRightTab(stored.rightTab),
     linkUpdate: normalizeLinkUpdate(stored.linkUpdate),
+    editMode: normalizeEditMode(stored.editMode),
   };
 }

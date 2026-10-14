@@ -142,6 +142,20 @@ describe("normalizeSession", () => {
     }
   });
 
+  it("opens documents in the visual editor unless the person chose Source", () => {
+    expect(defaultSession().editMode).toBe("visual");
+    expect(normalizeSession(null).editMode).toBe("visual");
+    expect(normalizeSession({ zoom: 1.2 }).editMode).toBe("visual");
+    expect(normalizeSession({ editMode: "source" }).editMode).toBe("source");
+    for (const value of ["split", "Source", "", 7, null, {}]) {
+      expect(normalizeSession({ editMode: value as never }).editMode).toBe("visual");
+    }
+    for (const editMode of ["visual", "source"] as const) {
+      const saved = { ...defaultSession(), editMode };
+      expect(normalizeSession(JSON.parse(JSON.stringify(saved))).editMode).toBe(editMode);
+    }
+  });
+
   it("selects the opened file unless the person turned that off", () => {
     expect(defaultSession().autoReveal).toBe(true);
     expect(normalizeSession(null).autoReveal).toBe(true);
