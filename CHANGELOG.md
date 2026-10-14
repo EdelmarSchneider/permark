@@ -3,6 +3,23 @@
 All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Translations.** The interface now comes in **Português (Brasil)**, **Español** and **Deutsch** besides English. **Settings → Language** offers
+  *System default* (the first language of your system that TrailMark speaks, else English) and each language written in itself; the change
+  applies at once, without a restart, and is kept for all your projects. Plurals, numbers, dates and relative times follow the language,
+  key names in tooltips follow the keyboard of the language (`Strg+Umschalt+O` in German), and the native dialogs, errors and document
+  notes are worded in it too.
+- **Windows installer languages.** The installer asks for English, Português (Brasil), Español or Deutsch, and TrailMark starts in that language
+  until you pick one in Settings. A language chosen in the app always wins, and an update never changes it.
+- A test fails when a translation misses a key, has an extra one, changes a placeholder, or leaves a long sentence in English. See
+  `docs/design/i18n.md` for the conventions and how to add a language.
+
+### Changed
+- Errors from the backend carry a kind and the name or text they are about, and the interface words them; a few messages that used to be fixed
+  English sentences (a file that is not UTF-8, a document shown as plain text because of its nesting) are now worded by the interface.
+
 ## [0.2.0] - 2026-10-14
 
 TrailMark grows from a reader into a Markdown IDE: organize, edit and reorganize the documents you read, with the same promise as

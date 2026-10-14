@@ -133,6 +133,10 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 TrailMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
 **Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
 
+### 🌍 Your language
+TrailMark speaks **English, Português (Brasil), Español and Deutsch**. It follows your system's language, and **Settings → Language**
+switches it at once, no restart. The Windows installer asks for a language too.
+
 ## Install
 
 > Prebuilt installers for Windows, macOS and Linux are published on the [Releases](../../releases) page.
