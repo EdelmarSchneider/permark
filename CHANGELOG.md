@@ -43,6 +43,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   entries still win. The set of linked images is kept up to date as documents change, reading only the document that changed.
 - Errors from the backend carry a kind and the name or text they are about, and the interface words them; a few messages that used to be fixed
   English sentences (a file that is not UTF-8, a document shown as plain text because of its nesting) are now worded by the interface.
+- **Enter works like a spreadsheet inside a table in the Visual editor.** A table cell can't hold a line break, and Enter used to leave the table.
+  Now **Enter** moves to the same column one row down (and adds a row from the last row), **Shift+Enter** moves one row up, and **Ctrl+Enter**
+  (**Cmd+Enter** on macOS) leaves the table. **Tab** and **Shift+Tab** still move between cells, and Tab in the last cell adds a row. Undo
+  takes an added row away in one step. Enter outside a table is unchanged.
 
 ## [0.2.0] - 2026-10-14
 
