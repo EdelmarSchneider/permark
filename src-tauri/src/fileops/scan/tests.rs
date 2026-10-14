@@ -92,6 +92,44 @@ fn code_spans_and_blocks_are_never_scanned() {
     assert_eq!(raws(&text), ["three.md", "eight.md"]);
 }
 
+/// What comrak, with the math extension the reader uses, sees as the destinations of links and images.
+fn comrak_urls(text: &str) -> Vec<String> {
+    use comrak::nodes::NodeValue;
+    let arena = comrak::Arena::new();
+    let opts = crate::render::markdown::options();
+    let root = comrak::parse_document(&arena, &normalize_newlines(text), &opts);
+    root.descendants()
+        .filter_map(|node| match &node.data.borrow().value {
+            NodeValue::Link(l) | NodeValue::Image(l) => Some(l.url.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_link_inside_dollar_math_is_math_not_a_link() {
+    let none: &[&str] = &[];
+    for (text, want) in [
+        ("$[x](m.md)$", none),
+        ("$$ [x](m.md) $$", none),
+        ("before $a [x](m.md) b$ after", none),
+        ("$x\\$ [c](c.md)$ [d](d.md)", &["d.md"][..]),
+        // not math: a price, a space after the opening or before the closing sign, escaped signs, code
+        ("it costs $5 and [a](a.md) then $6", &["a.md"][..]),
+        ("$ [a](a.md) $", &["a.md"][..]),
+        ("$a [a](a.md) $", &["a.md"][..]),
+        ("\\$[a](a.md)\\$", &["a.md"][..]),
+        ("`$` [a](a.md) `$`", &["a.md"][..]),
+        ("$$$ [a](a.md) $$$", &["a.md"][..]),
+        // math that ends before the link
+        ("$x$ and [b](b.md)", &["b.md"][..]),
+        ("$$x$$ and [b](b.md)", &["b.md"][..]),
+    ] {
+        assert_eq!(raws(text), want, "scanner: {text:?}");
+        assert_eq!(comrak_urls(text), want, "comrak: {text:?}");
+    }
+}
+
 #[test]
 fn front_matter_is_not_scanned() {
     let text = "---\ntitle: [x](front.md)\n---\n\n[y](body.md)\n";

@@ -551,6 +551,7 @@ fn scan_inline(text: &str, lo: usize, hi: usize, defined: &HashSet<String>, out:
                 }
             }
             b'`' => i = skip_code_span(b, i, hi),
+            b'$' => i = skip_math(b, i, hi),
             b'<' => i = skip_angle(text, i, hi, out),
             b'!' if i + 1 < hi && b[i + 1] == b'[' => {
                 stack.push(Opener {
@@ -591,6 +592,49 @@ fn skip_code_span(b: &[u8], i: usize, hi: usize) -> usize {
         }
     }
     i + width
+}
+
+/// The offset after the math that opens at `i` (`$x$` or `$$x$$`), or after the run of dollar signs when
+/// nothing opens there. `[x](m.md)` inside a formula is not a link. The rules are the ones comrak reads
+/// `math_dollars` by (from pandoc): a single `$` must not be followed or closed by a space, a closing one
+/// is not followed by a digit (so prices are text), `\$` does not close, and more than two do not open.
+fn skip_math(b: &[u8], i: usize, hi: usize) -> usize {
+    let space = |c: u8| matches!(c, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r');
+    let open = b[i..hi].iter().take_while(|c| **c == b'$').count();
+    let after = i + open;
+    if open > 2 || (open == 1 && after < hi && space(b[after])) {
+        return after;
+    }
+    let mut j = after;
+    while j < hi {
+        if b[j] != b'$' {
+            j += 1;
+            continue;
+        }
+        if open == 1 {
+            if space(b[j - 1]) {
+                // a space before the closing sign: not math
+                return after;
+            }
+            if b[j - 1] == b'\\' {
+                // an escaped sign is part of the formula
+                j += 1;
+                continue;
+            }
+        }
+        let mut end = j;
+        while end < hi && end - j < open && b[end] == b'$' {
+            end += 1;
+        }
+        if open == 1 && end < hi && b[end].is_ascii_digit() {
+            return after;
+        }
+        if end - j == open {
+            return end;
+        }
+        j = end;
+    }
+    after
 }
 
 /// Handles a `]`: closes the innermost bracket as an inline link, a reference link, or plain text.
