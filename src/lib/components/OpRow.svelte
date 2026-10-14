@@ -59,7 +59,7 @@
         </span>
       </button>
     {/each}
-    {#each entry.notes as note (note)}
+    {#each entry.notes as note, n (n)}
       <div class="feed-note" style="padding-left:0">{note}</div>
     {/each}
   </div>

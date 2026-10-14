@@ -420,6 +420,36 @@ describe("deleting", () => {
       text: "Couldn't delete: the bin is full",
     });
   });
+
+  it("looks at the folder again when the bin failed, because it may have taken some of the items", async () => {
+    fake.deleteEntries.mockRejectedValue({ kind: "trash", message: "the bin is full" });
+    fake.listTree.mockClear();
+    await fileops.remove(["README.md", "docs/api.md"]);
+    expect(fake.listTree).toHaveBeenCalled();
+  });
+
+  it("warns that the open document has changes that are not saved", async () => {
+    edit.path = "docs/api.md";
+    edit.dirty = true;
+    fake.deleteEntries.mockResolvedValue({ deleted: ["docs"] });
+    await fileops.remove(["docs"]);
+    const question = fake.askYesNo.mock.calls[0][0] as string;
+    expect(question).toContain("Move the folder docs and everything in it to the recycle bin?");
+    expect(question).toContain("api.md is open with changes that are not saved. They will be lost.");
+  });
+
+  it("does not warn when the document that is open has nothing unsaved, or is not deleted", async () => {
+    edit.path = "docs/api.md";
+    edit.dirty = false;
+    fake.deleteEntries.mockResolvedValue({ deleted: ["docs"] });
+    await fileops.remove(["docs"]);
+    expect(fake.askYesNo.mock.calls[0][0]).not.toContain("not saved");
+
+    edit.dirty = true;
+    fake.askYesNo.mockClear();
+    await fileops.remove(["README.md"]);
+    expect(fake.askYesNo.mock.calls[0][0]).not.toContain("not saved");
+  });
 });
 
 describe("new folders", () => {

@@ -81,6 +81,8 @@
       busy = false;
     }
     if (refused) {
+      // the field is enabled again only after the next update: focusing it now would not stick
+      await tick();
       input?.focus();
     } else {
       finished = true;

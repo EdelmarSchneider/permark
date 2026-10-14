@@ -108,7 +108,7 @@
       {#if notes.length > 0}
         <p class="link-list__note"><strong>{t("fileOps.skippedTitle")}</strong></p>
         <ul class="link-list__skipped">
-          {#each notes as note (note)}<li>{note}</li>{/each}
+          {#each notes as note, n (n)}<li>{note}</li>{/each}
         </ul>
       {/if}
     </div>

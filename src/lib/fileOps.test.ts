@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   UndoStack,
@@ -322,6 +323,26 @@ describe("what happened, in words", () => {
         { path: "big.md", reason: "tooLarge" },
       ]),
     ).toEqual(["guide.md: changed in the meantime", "big.md: too large"]);
+  });
+
+  it("gives the same note twice for two files of one name, so lists of notes cannot be keyed by the note", () => {
+    const notes = skipNotes([
+      { path: "a/README.md", reason: "changed" },
+      { path: "b/README.md", reason: "changed" },
+    ]);
+    expect(notes[0]).toBe(notes[1]);
+    // Svelte throws on equal keys in an {#each}, in production too: the dialog and the feed row key by position
+    for (const component of ["LinkUpdateDialog", "OpRow"]) {
+      const source = readFileSync(`src/lib/components/${component}.svelte`, "utf8");
+      expect(source, component).toMatch(/\{#each [\w.]*notes as note, \w+ \(\w+\)\}/);
+      expect(source, component).not.toMatch(/\{#each [\w.]*notes as note \(note\)\}/);
+    }
+  });
+
+  it("says that a move could not be undone because something is in the way", () => {
+    expect(skipNotes([{ path: "docs/manual.md", reason: "occupied" }])).toEqual([
+      "manual.md: can't go back, something is in the way",
+    ]);
   });
 });
 

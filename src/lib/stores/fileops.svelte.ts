@@ -12,6 +12,7 @@ import {
   dropProblem,
   isRootPath,
   joinPath,
+  isInside,
   isRename,
   linkDecision,
   mapPath,
@@ -260,12 +261,17 @@ class FileOpsStore {
     const items = topLevelOnly(paths).filter((p) => !isRootPath(p));
     if (items.length === 0 || this.busy || vault.isSimple) return;
     const dirs = items.map((p) => isDirPath(vault.tree, p));
-    const question =
+    let question =
       items.length > 1
         ? tn("fileOps.deleteConfirm", items.length)
         : dirs[0]
           ? t("fileOps.deleteFolderConfirm", { name: basename(items[0]) })
           : tn("fileOps.deleteConfirm", 1, { name: basename(items[0]) });
+    // the document being edited goes too: its unsaved edits are not in the file, so the bin will not have them
+    const open = edit.path;
+    if (edit.dirty && open !== null && items.some((p) => isInside(open, p))) {
+      question += `\n\n${t("fileOps.deleteUnsaved", { name: basename(open) })}`;
+    }
     if (!(await askYesNo(question, t("fileOps.deleteButton"), t("common.cancel")))) return;
     this.busy = true;
     try {
@@ -285,6 +291,8 @@ class FileOpsStore {
       });
       toast.message(summary);
     } catch (error) {
+      // the bin may have taken some of the items before it failed: the tree shows what is left
+      await vault.refreshTree();
       toast.message(t("fileOps.deleteFailed", { message: errorText(error) }), "warn");
     } finally {
       this.busy = false;
