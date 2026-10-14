@@ -1020,6 +1020,23 @@ mod tests {
         }
     }
 
+    /// Writes `name` until the watcher reports it. A watcher can still be starting for a moment after a folder
+    /// opens (inotify adds its watches asynchronously), and a write in that moment is never reported; the
+    /// initial scan covers such files in the app, but a test waiting for the event would hang.
+    fn write_until_reported(rec: &Recorder, dir: &Path, name: &str, what: &str) {
+        let mut n = 0u32;
+        wait_until(what, || {
+            if fs_paths(rec).contains(&name.to_owned()) {
+                return true;
+            }
+            if n.is_multiple_of(20) {
+                write(dir, name, &format!("x{n}"));
+            }
+            n += 1;
+            false
+        });
+    }
+
     fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
         let deadline = Instant::now() + Duration::from_secs(15);
         while Instant::now() < deadline {
@@ -2156,10 +2173,12 @@ exclude = [\"archive/**\"]
             .expect_err("missing");
         assert_eq!(err.kind(), "notFound");
         assert_eq!(fx.current_root(), root_of(&fx.a));
-        write(fx.a.path(), "after.md", "x");
-        wait_until("A still reports its changes", || {
-            fs_paths(&fx.rec).contains(&"after.md".to_owned())
-        });
+        write_until_reported(
+            &fx.rec,
+            fx.a.path(),
+            "after.md",
+            "A still reports its changes",
+        );
         fx.host.shutdown();
     }
 
@@ -2179,10 +2198,12 @@ exclude = [\"archive/**\"]
                 Ok(ws)
             })
             .expect("open");
-        write(fx.a.path(), "later.md", "x");
-        wait_until("events flow once the folder is installed", || {
-            fs_paths(&fx.rec).contains(&"later.md".to_owned())
-        });
+        write_until_reported(
+            &fx.rec,
+            fx.a.path(),
+            "later.md",
+            "events flow once the folder is installed",
+        );
         fx.host.shutdown();
     }
     #[test]
