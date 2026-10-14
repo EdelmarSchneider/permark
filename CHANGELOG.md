@@ -5,6 +5,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Explorer filter
+- A filter in the Explorer header chooses what the tree shows: Documents, Docs and assets (the default), Everything, or Custom
+  (file-type checkboxes plus optional `+pattern` / `-pattern` globs such as `+*.sql -archive/**`). Folders with no visible file are
+  hidden, so a code repository shows `docs/` and the root documents instead of every source folder.
+- The tree footer says how many files are hidden ("Showing 52 of 1,204 files") and offers **Show all** for the moment. A hidden file
+  you open by link, search, Ctrl+P or the feed stays in the tree, dimmed, while it is open.
+- Quick open follows the same filter and ends with "+N hidden files match", which lists them.
+- Your choice is remembered per project. A project can set the default for everyone in `.trailmark/config.toml`
+  (`[tree] show = "docs-and-assets"`, `include = [...]`, `exclude = [...]`); your own choice wins.
+
 ### Tags and descriptions
 - Tag any file and give it a one-line description. Tags written in a document's frontmatter (`tags:`) are read automatically and
   shown with a file glyph; tags added in the app are kept outside your files, in `.trailmark/meta.toml` once the project is
