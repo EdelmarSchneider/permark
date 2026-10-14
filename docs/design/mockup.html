@@ -1,0 +1,1118 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TrailMark · IDE mode mockup</title>
+<!-- Optional web fonts for the mockup only. The app bundles Inter and JetBrains Mono locally. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* =====================================================================================
+   1. TOKENS  ->  src/styles/tokens.css
+   ===================================================================================== */
+:root {
+  /* spacing */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+  /* radius */
+  --radius-control: 6px; --radius-card: 10px;
+  /* type */
+  --font-ui: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-reading: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-code: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --fs-ui: 13px; --fs-ui-sm: 12px; --fs-ui-xs: 11px;
+  --fs-reading: 16.5px; --lh-reading: 1.7; --fs-code: 13.5px;
+  --measure: 760px; --measure-wide: 1100px;
+  /* layout */
+  --w-activity: 44px; --w-sidebar: 260px; --w-right: 280px; --h-status: 24px; --h-header: 44px;
+  /* motion */
+  --dur-fast: 120ms; --dur: 180ms; --ease: cubic-bezier(.2, .7, .3, 1);
+  --dur-glow: 2.5s; --dur-locate: 1.5s;
+}
+
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff; --surface: #f7f7f8; --surface-2: #efeff1;
+  --border: #e6e6e9; --border-strong: #d4d4d9;
+  --text: #1f2328; --muted: #656d76; --faint: #8b929a;
+  --accent: #4f6bed; --accent-fg: #ffffff;
+  --accent-soft: rgb(79 107 237 / .10);
+  --accent-muted: rgb(79 107 237 / .45);
+  --live: rgb(79 107 237 / .18);                 /* live-change glow, design-system spec */
+  --hover: rgb(31 35 40 / .05); --pressed: rgb(31 35 40 / .09);
+  /* git: base colors for dots, darker text variants for AA on light backgrounds */
+  --git-modified: #d29922; --git-added: #3fb950; --git-deleted: #f85149; --git-renamed: #a371f7;
+  --git-modified-text: #9a6700; --git-added-text: #1a7f37; --git-deleted-text: #cf222e; --git-renamed-text: #8250df;
+  /* find / search marks: neutral, so the accent keeps meaning "live change" */
+  --mark: #fff0a3; --mark-strong: #ffd33d;
+  --zebra: #fafafb;
+  --shadow-pop: 0 10px 28px rgb(31 35 40 / .12), 0 1px 3px rgb(31 35 40 / .08);
+  --backdrop: rgb(31 35 40 / .28);
+  /* syntax */
+  --syn-comment: #6e7781; --syn-keyword: #8250df; --syn-string: #0a3069; --syn-type: #953800; --syn-prop: #0550ae;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #16171a; --surface: #1d1f23; --surface-2: #24272c;
+  --border: #2b2e34; --border-strong: #3a3e46;
+  --text: #e6e8eb; --muted: #9198a1; --faint: #6f7680;
+  --accent: #7b93ff; --accent-fg: #0f1117;
+  --accent-soft: rgb(123 147 255 / .13);
+  --accent-muted: rgb(123 147 255 / .5);
+  --live: rgb(123 147 255 / .18);
+  --hover: rgb(230 232 235 / .05); --pressed: rgb(230 232 235 / .09);
+  --git-modified-text: #d29922; --git-added-text: #3fb950; --git-deleted-text: #f85149; --git-renamed-text: #a371f7;
+  --mark: rgb(242 204 96 / .26); --mark-strong: rgb(242 204 96 / .55);
+  --zebra: #1a1c1f;
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / .5), 0 1px 3px rgb(0 0 0 / .35);
+  --backdrop: rgb(0 0 0 / .45);
+  --syn-comment: #8b949e; --syn-keyword: #d2a8ff; --syn-string: #a5d6ff; --syn-type: #ffa657; --syn-prop: #79c0ff;
+}
+
+/* =====================================================================================
+   2. BASE
+   ===================================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: var(--fs-ui)/1.45 var(--font-ui); color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased; overflow: hidden;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+[hidden] { display: none !important; }
+.icon {
+  width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.icon--sm { width: 14px; height: 14px; }
+.icon--xs { width: 12px; height: 12px; }
+.spacer { flex: 1; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: transparent; border: 3px solid transparent; border-radius: 10px; background-clip: padding-box; }
+:hover::-webkit-scrollbar-thumb { background-color: var(--border-strong); }
+
+/* =====================================================================================
+   3. LAYOUT  ->  src/styles/layout.css
+   ===================================================================================== */
+.app {
+  --sb: var(--w-sidebar); --rp: var(--w-right);
+  display: grid; height: 100vh;
+  grid-template-columns: var(--w-activity) var(--sb) minmax(0, 1fr) var(--rp);
+  grid-template-rows: minmax(0, 1fr) var(--h-status);
+  grid-template-areas: "activity sidebar main right" "status status status status";
+}
+.app[data-sidebar="hidden"] { --sb: 0px; }
+.app[data-right="hidden"] { --rp: 0px; }
+
+.activitybar {
+  grid-area: activity; background: var(--surface); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); padding: var(--sp-2) 0;
+}
+.sidebar {
+  grid-area: sidebar; position: relative; min-width: 0; overflow: hidden;
+  background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column;
+}
+.app[data-sidebar="hidden"] .sidebar, .app[data-right="hidden"] .rpanel { border: 0; }
+.resizer { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
+.resizer:hover { background: linear-gradient(to right, transparent 2px, var(--accent-muted) 2px, var(--accent-muted) 4px, transparent 4px); }
+.main { grid-area: main; position: relative; min-width: 0; display: flex; flex-direction: column; background: var(--bg); }
+.doc-scroll { flex: 1; overflow: auto; padding: var(--sp-6) var(--sp-8) 120px; scroll-behavior: smooth; }
+.main.is-wide { --measure: var(--measure-wide); }
+.rpanel {
+  grid-area: right; min-width: 0; overflow: hidden; background: var(--surface);
+  border-left: 1px solid var(--border); display: flex; flex-direction: column;
+}
+.statusbar {
+  grid-area: status; display: flex; align-items: stretch; padding: 0 var(--sp-1);
+  background: var(--surface); border-top: 1px solid var(--border); color: var(--muted); font-size: var(--fs-ui-sm);
+}
+.scroll { overflow: auto; min-height: 0; }
+
+/* =====================================================================================
+   4. COMPONENTS  ->  src/styles/components.css (or scoped in each .svelte file)
+   ===================================================================================== */
+
+/* IconButton / Button ----------------------------------------------------------------- */
+.icon-btn {
+  display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0;
+  border-radius: var(--radius-control); background: transparent; color: var(--muted); cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn:active { background: var(--pressed); }
+.icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+.icon-btn:disabled { opacity: .38; cursor: default; background: transparent; }
+.icon-btn--sm { width: 22px; height: 22px; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--bg);
+  font-size: 12.5px; font-weight: 500; white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.btn:hover { background: var(--hover); border-color: var(--border-strong); }
+.btn--ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn--ghost:hover { color: var(--text); border-color: transparent; }
+.btn--accent-text { color: var(--accent); }
+.btn--primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.btn--primary:hover { background: var(--accent); filter: brightness(1.06); }
+.btn--sm { height: 24px; padding: 0 8px; font-size: 12px; }
+.link-btn { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: inherit; }
+.link-btn:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* Activity bar ------------------------------------------------------------------------ */
+.ab-btn { position: relative; width: 36px; height: 36px; color: var(--faint); }
+.ab-btn .icon { width: 19px; height: 19px; stroke-width: 1.6; }
+.ab-btn[aria-pressed="true"] { color: var(--text); background: transparent; }
+.ab-btn[aria-pressed="true"]::before {
+  content: ""; position: absolute; left: -4px; top: 8px; bottom: 8px; width: 2px; border-radius: 2px; background: var(--accent);
+}
+.ab-btn--toggle[aria-pressed="true"]::before { content: none; } /* panel toggles: no "active view" bar */
+.ab-btn .notify-dot {
+  position: absolute; top: 7px; right: 7px; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* Panel headers / SectionHeader -------------------------------------------------------- */
+.panel-header { display: flex; align-items: center; gap: var(--sp-2); height: 36px; padding: 0 var(--sp-2) 0 var(--sp-4); flex: none; }
+.panel-title { font-size: var(--fs-ui-xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.section-header {
+  display: flex; align-items: center; gap: 4px; width: 100%; height: 26px; padding: 0 var(--sp-3) 0 6px;
+  border: 0; background: none; cursor: pointer; color: var(--muted);
+  font-size: var(--fs-ui-xs); font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+}
+.section-header:hover { color: var(--text); }
+.section-header .twisty { transition: transform var(--dur) var(--ease); }
+.section-header[aria-expanded="false"] .twisty { transform: rotate(-90deg); }
+.section-header__aside { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--faint); }
+.count-pill {
+  display: inline-grid; place-items: center; min-width: 18px; height: 16px; padding: 0 5px; border-radius: 8px;
+  background: var(--surface-2); color: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: 0;
+}
+
+/* Tree --------------------------------------------------------------------------------- */
+.tree { padding: 2px 0 var(--sp-2); }
+.tree-row {
+  display: flex; align-items: center; gap: 6px; height: 24px; margin: 0 6px;
+  padding: 0 var(--sp-2) 0 calc(6px + var(--depth, 0) * 14px);
+  border-radius: var(--radius-control); cursor: pointer; color: var(--text); white-space: nowrap;
+}
+.tree-row:hover { background: var(--hover); }
+.tree-row.is-selected { background: var(--accent-soft); }
+.tree-row.is-selected .tree-name { font-weight: 500; }
+.tree-row .twisty, .tree-row .twisty-space { width: 14px; flex: none; color: var(--faint); }
+.tree-row[aria-expanded="false"] .twisty { transform: rotate(-90deg); }
+.tree-row .file-icon { color: var(--faint); width: 15px; height: 15px; }
+.tree-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tree-row--dir .tree-name { color: var(--text); }
+.badge { width: 14px; flex: none; text-align: center; font-size: var(--fs-ui-xs); font-weight: 600; }
+.badge--M { color: var(--git-modified-text); }
+.badge--A, .badge--U { color: var(--git-added-text); }
+.badge--D, .badge--C { color: var(--git-deleted-text); }
+.badge--R { color: var(--git-renamed-text); }
+.rollup { width: 6px; height: 6px; margin: 0 4px; border-radius: 50%; flex: none; background: var(--git-modified); }
+.rollup--added { background: var(--git-added); }
+.branch-chip {
+  font: 500 10.5px/16px var(--font-code); padding: 0 5px; border-radius: 4px;
+  background: var(--surface-2); color: var(--muted); flex: none;
+}
+
+/* Live changes feed / FeedRow ----------------------------------------------------------- */
+.live-status { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-ui-xs); color: var(--muted); }
+.live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: tm-pulse 2s ease-in-out infinite; }
+.chip-toggle {
+  height: 22px; padding: 0 9px; border-radius: 11px; border: 1px solid var(--border); background: transparent;
+  font-size: var(--fs-ui-xs); font-weight: 500; color: var(--muted); cursor: pointer;
+}
+.chip-toggle[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.feed { list-style: none; margin: 0; padding: 2px 6px; }
+.feed-row {
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 2px 9px; align-items: start; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: var(--radius-control); background: none; text-align: left; cursor: pointer;
+}
+.feed-row > :nth-child(2) { min-width: 0; }
+.feed-row:hover { background: var(--hover); }
+.feed-row.is-current { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.feed-row .kind { margin-top: 1px; }
+.kind--created { color: var(--git-added-text); }
+.kind--modified { color: var(--git-modified-text); }
+.kind--removed { color: var(--git-deleted-text); }
+.kind--bulk { color: var(--muted); }
+.feed-row__name { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.feed-row--removed .feed-row__name { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.feed-row__meta { display: flex; align-items: center; gap: 5px; font-size: var(--fs-ui-xs); color: var(--muted); white-space: nowrap; overflow: hidden; }
+.feed-row__time { font-size: var(--fs-ui-xs); color: var(--faint); font-variant-numeric: tabular-nums; margin-top: 1px; }
+.wt-label { display: inline-flex; align-items: center; gap: 3px; padding: 0 5px; border-radius: 4px; background: var(--surface-2); color: var(--muted); }
+.feed-row .twisty { transition: transform var(--dur) var(--ease); }
+.feed-row[aria-expanded="false"] .twisty { transform: rotate(-90deg); }
+.bulk-body { padding: 0 8px 6px 33px; font-size: var(--fs-ui-sm); }
+.bulk-body .mini-row { display: flex; gap: 8px; height: 22px; align-items: center; color: var(--text); }
+.bulk-body .mini-row span:last-child { color: var(--faint); margin-left: auto; font-size: var(--fs-ui-xs); }
+.feed-note { padding: 2px var(--sp-4) var(--sp-2); font-size: var(--fs-ui-xs); color: var(--faint); }
+
+/* Since last visit ---------------------------------------------------------------------- */
+.panel-section { border-top: 1px solid var(--border); padding-top: 6px; }
+.since-folder { padding: 6px var(--sp-4) 2px 26px; font-size: var(--fs-ui-xs); color: var(--faint); font-family: var(--font-code); }
+.since-row { height: 24px; margin: 0 6px; padding: 0 var(--sp-2) 0 22px; }
+.hint {
+  display: flex; gap: 8px; align-items: flex-start; margin: var(--sp-3); padding: 10px 10px 10px 12px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-card); font-size: var(--fs-ui-sm); color: var(--muted);
+}
+.hint .icon-btn { margin: -4px -4px 0 auto; }
+
+/* Status bar ------------------------------------------------------------------------- */
+.sb-item {
+  display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; border: 0; background: none;
+  color: inherit; font-size: inherit; cursor: pointer; white-space: nowrap;
+}
+.sb-item:hover { background: var(--hover); color: var(--text); }
+.sb-item .icon { width: 13px; height: 13px; }
+.sb-item.is-on { color: var(--accent); font-weight: 500; }
+.sb-item .chev { opacity: .7; }
+.sb-chip { font-size: 10px; font-weight: 600; letter-spacing: .05em; padding: 0 5px; border-radius: 4px;
+  color: var(--git-modified-text); background: color-mix(in srgb, var(--git-modified) 14%, transparent); }
+
+/* Doc header ------------------------------------------------------------------------- */
+.doc-header {
+  display: flex; align-items: center; gap: var(--sp-2); height: var(--h-header); padding: 0 var(--sp-3);
+  flex: none; border-bottom: 1px solid transparent; transition: border-color var(--dur) var(--ease);
+}
+.doc-header.is-scrolled { border-bottom-color: var(--border); }
+.nav-group { display: flex; gap: 2px; }
+.breadcrumb { display: flex; align-items: center; gap: 2px; min-width: 0; font-size: var(--fs-ui); }
+.breadcrumb button { border: 0; background: none; padding: 2px 4px; border-radius: 4px; color: var(--muted); cursor: pointer; }
+.breadcrumb button:hover { color: var(--text); background: var(--hover); }
+.breadcrumb .sep { color: var(--faint); }
+.breadcrumb .current { padding: 2px 4px; font-weight: 500; }
+.doc-meta { font-size: var(--fs-ui-sm); color: var(--faint); white-space: nowrap; }
+.actions { display: flex; align-items: center; gap: 2px; }
+
+/* Banner / Notice -------------------------------------------------------------------- */
+.banner {
+  --tone: var(--git-modified); --tone-text: var(--git-modified-text);
+  display: flex; align-items: center; gap: 10px; padding: 7px var(--sp-4); flex: none; font-size: 12.5px;
+  background: color-mix(in srgb, var(--tone) 9%, var(--bg));
+  border-top: 1px solid color-mix(in srgb, var(--tone) 25%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--tone) 25%, transparent);
+}
+.banner > .icon { color: var(--tone-text); }
+
+/* Toast ------------------------------------------------------------------------------ */
+.toast {
+  position: absolute; right: 20px; bottom: 20px; z-index: 5; width: 348px;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+  padding: 10px 8px 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-card);
+  background: var(--bg); box-shadow: var(--shadow-pop); animation: tm-rise var(--dur) var(--ease) both;
+}
+[data-theme="dark"] .toast { background: var(--surface-2); }
+.toast__icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+.toast__title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toast__meta { font-size: var(--fs-ui-xs); color: var(--muted); }
+
+/* Popover / Dialog -------------------------------------------------------------------- */
+.popover {
+  position: fixed; z-index: 20; display: flex; align-items: center; padding: 3px; gap: 2px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-card); box-shadow: var(--shadow-pop);
+  animation: tm-rise var(--dur-fast) var(--ease) both;
+}
+[data-theme="dark"] .popover { background: var(--surface-2); }
+.popover .btn { border: 0; background: transparent; height: 28px; }
+.popover .btn:hover { background: var(--hover); }
+.popover .divider { width: 1px; align-self: stretch; margin: 4px 1px; background: var(--border); }
+kbd.hint-kbd { font: 500 10.5px var(--font-ui); color: var(--faint); }
+.backdrop { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: var(--backdrop); animation: tm-fade var(--dur) var(--ease); }
+.dialog {
+  width: 448px; padding: 20px 24px 18px; border-radius: var(--radius-card); background: var(--bg);
+  border: 1px solid var(--border); box-shadow: var(--shadow-pop); animation: tm-rise var(--dur) var(--ease) both;
+}
+[data-theme="dark"] .dialog { background: var(--surface); }
+.dialog h2 { margin: 0 0 6px; font-size: 15px; font-weight: 600; }
+.dialog p { margin: 0 0 12px; color: var(--muted); }
+.dialog dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 14px; padding: 10px 14px;
+  border-radius: var(--radius-control); background: var(--surface); }
+[data-theme="dark"] .dialog dl { background: var(--surface-2); }
+.dialog dt { font-family: var(--font-code); font-size: 12px; }
+.dialog dd { margin: 0; color: var(--muted); }
+.dialog footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* Search view ------------------------------------------------------------------------- */
+.search-box {
+  display: flex; align-items: center; gap: 6px; height: 30px; margin: 2px var(--sp-3) 8px; padding: 0 4px 0 8px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-control); color: var(--faint);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+.search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.search-box input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; }
+.search-sub { display: flex; align-items: center; justify-content: space-between; margin: 0 var(--sp-3) 8px; font-size: var(--fs-ui-xs); color: var(--muted); }
+.switch { display: inline-flex; align-items: center; gap: 6px; }
+.switch.is-disabled { opacity: .55; cursor: not-allowed; }
+.switch__track { position: relative; width: 24px; height: 14px; border-radius: 7px; background: var(--border-strong); }
+.switch__track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); }
+.soon-tag { font-size: 10px; padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 4px; color: var(--faint); }
+.index-progress { margin: -2px var(--sp-3) 8px; font-size: var(--fs-ui-xs); color: var(--muted); }
+.index-progress .bar { height: 2px; margin-top: 5px; border-radius: 1px; background: var(--border); overflow: hidden; }
+.index-progress .bar span { display: block; height: 100%; width: 32%; background: var(--muted); }
+.search-results { flex: 1; padding: 0 6px var(--sp-3); outline: none; }
+.hit-group { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px 0 4px; border-radius: var(--radius-control); cursor: pointer; }
+.hit-group:hover { background: var(--hover); }
+.hit-group[aria-expanded="false"] .twisty { transform: rotate(-90deg); }
+.hit-group .twisty { color: var(--faint); }
+.hit-group__name { font-weight: 600; font-size: 12.5px; }
+.hit-group__path { margin-left: auto; font-size: var(--fs-ui-xs); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hit { padding: 5px 8px 7px 26px; border-radius: var(--radius-control); cursor: pointer; }
+.hit:hover { background: var(--hover); }
+.hit.is-active { background: var(--accent-soft); }
+.hit__crumb { font-size: 12px; font-weight: 500; }
+.hit__crumb .sep { color: var(--faint); margin: 0 3px; font-weight: 400; }
+.hit__snippet {
+  margin-top: 1px; font-size: 12px; line-height: 1.45; color: var(--muted);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+.empty { padding: var(--sp-5) var(--sp-4); text-align: center; color: var(--muted); font-size: 12.5px; }
+.empty strong { display: block; margin-bottom: 4px; color: var(--text); font-weight: 500; }
+
+/* Mockup-only controls (not part of the app) ------------------------------------------ */
+.demo {
+  position: fixed; left: calc(var(--w-activity) + var(--w-sidebar) + 16px); bottom: 36px; z-index: 40;
+  display: flex; flex-wrap: wrap; gap: 4px; max-width: 300px;
+  padding: 6px; border: 1px dashed var(--border-strong); border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg) 92%, transparent); font-size: 11px;
+}
+.demo b { width: 100%; padding: 0 4px; color: var(--faint); font-weight: 600; letter-spacing: .05em; text-transform: uppercase; font-size: 10px; }
+.demo .btn { height: 22px; padding: 0 7px; font-size: 11px; }
+
+/* =====================================================================================
+   5. MARKDOWN READING STYLES  ->  src/styles/markdown.css
+   ===================================================================================== */
+.md { max-width: var(--measure); margin: 0 auto; font: var(--fs-reading)/var(--lh-reading) var(--font-reading); color: var(--text); }
+.md > * { margin: 0 0 1em; }
+.md h1, .md h2, .md h3 { position: relative; line-height: 1.25; scroll-margin-top: var(--sp-4); }
+.md h1 { font-size: 2em; font-weight: 700; letter-spacing: -.02em; margin: .2em 0 .6em; padding-bottom: .3em; border-bottom: 1px solid var(--border); }
+.md h2 { font-size: 1.5em; font-weight: 600; letter-spacing: -.012em; margin: 1.8em 0 .6em; }
+.md h3 { font-size: 1.2em; font-weight: 600; margin: 1.5em 0 .5em; }
+.md .anchor {
+  position: absolute; left: -1.1em; width: 1em; color: var(--faint); text-decoration: none; font-weight: 400;
+  opacity: 0; transition: opacity var(--dur-fast);
+}
+.md h2:hover .anchor, .md h3:hover .anchor, .md .anchor:focus-visible { opacity: 1; }
+.md p { margin: 0 0 1em; }
+.md .lead { font-size: 1.06em; color: color-mix(in srgb, var(--text) 86%, var(--muted)); }
+.md a { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: var(--accent-muted); }
+.md a:hover { text-decoration-color: var(--accent); }
+.md a.is-missing { color: var(--git-deleted-text); text-decoration-style: wavy; text-decoration-color: var(--git-deleted); }
+.md strong { font-weight: 600; }
+.md code { font: .84em var(--font-code); padding: .12em .38em; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); }
+.md kbd {
+  font: 500 .78em var(--font-code); padding: .05em .4em; border-radius: 4px; background: var(--bg);
+  border: 1px solid var(--border-strong); border-bottom-width: 2px; white-space: nowrap;
+}
+.md ul, .md ol { padding-left: 1.5em; }
+.md li + li { margin-top: .25em; }
+.md hr { border: 0; border-top: 1px solid var(--border); margin: 2em 0; }
+.md img { max-width: 100%; border-radius: var(--radius-card); cursor: zoom-in; }
+
+/* frontmatter card */
+.frontmatter {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px 24px;
+  padding: 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface);
+  font: 13px/1.4 var(--font-ui); margin-bottom: 2em;
+}
+.frontmatter dt { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.frontmatter dd { margin: 2px 0 0; display: flex; gap: 4px; flex-wrap: wrap; }
+.fm-tag { padding: 0 7px; border-radius: 10px; background: var(--surface-2); color: var(--muted); font-size: 12px; }
+
+/* GitHub alerts */
+.markdown-alert {
+  --alert: var(--accent);
+  padding: 10px 16px; border-left: 3px solid var(--alert); border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: color-mix(in srgb, var(--alert) 7%, transparent);
+}
+.markdown-alert > :last-child { margin-bottom: 0; }
+.markdown-alert-title { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; font-weight: 600; font-size: .9em; color: var(--alert); }
+.markdown-alert-tip { --alert: var(--git-added-text); }
+.markdown-alert-important { --alert: var(--git-renamed-text); }
+.markdown-alert-warning { --alert: var(--git-modified-text); }
+.markdown-alert-caution { --alert: var(--git-deleted-text); }
+
+/* tables */
+.table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-card); }
+.md table { width: 100%; border-collapse: collapse; font-size: .9em; line-height: 1.5; }
+.md th, .md td { padding: 8px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+.md th { position: sticky; top: 0; background: var(--surface); font-weight: 600; font-size: .92em; }
+.md tbody tr:nth-child(even) { background: var(--zebra); }
+.md tbody tr:last-child td { border-bottom: 0; }
+
+/* code blocks */
+.code-block { position: relative; }
+.md pre {
+  margin: 0; padding: 14px 16px; overflow-x: auto; border-radius: var(--radius-card);
+  background: var(--surface); border: 1px solid var(--border); font: var(--fs-code)/1.6 var(--font-code);
+}
+.md pre code { font: inherit; padding: 0; border: 0; background: none; }
+.code-block__lang { position: absolute; top: 8px; right: 42px; font: 11px var(--font-code); color: var(--faint); }
+.code-block__copy { position: absolute; top: 5px; right: 6px; opacity: 0; transition: opacity var(--dur-fast); }
+.code-block:hover .code-block__copy, .code-block__copy:focus-visible { opacity: 1; }
+.tok-c { color: var(--syn-comment); font-style: italic; }
+.tok-k { color: var(--syn-keyword); }
+.tok-s { color: var(--syn-string); }
+.tok-t { color: var(--syn-type); }
+.tok-p { color: var(--syn-prop); }
+
+/* blockquote */
+.md blockquote { margin: 0 0 1em; padding: 2px 0 2px 18px; border-left: 3px solid var(--accent-muted); color: var(--muted); }
+.md blockquote > :last-child { margin-bottom: 0; }
+.md blockquote footer { margin-top: 4px; font-size: .85em; color: var(--faint); }
+
+/* task lists */
+.contains-task-list { list-style: none; padding-left: .2em !important; }
+.task-list-item { display: flex; gap: 10px; align-items: baseline; }
+.task-list-item input {
+  appearance: none; flex: none; width: 15px; height: 15px; margin: 0; transform: translateY(2px);
+  border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--bg);
+}
+.task-list-item input:checked {
+  border-color: var(--accent); background: var(--accent) no-repeat center/11px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+.task-list-item.is-done { color: var(--muted); }
+
+/* diagrams (Mermaid placeholder: real SVG comes from mermaid, lazily) */
+.diagram {
+  margin: 0 0 1em; padding: 18px 12px 8px; border: 1px solid var(--border); border-radius: var(--radius-card);
+  background: var(--bg); text-align: center;
+}
+.diagram svg { width: 100%; height: auto; max-width: 680px; }
+.diagram figcaption { font: 11px var(--font-code); color: var(--faint); text-align: right; }
+.dg-node { fill: var(--surface); stroke: var(--border-strong); stroke-width: 1; }
+.dg-node--accent { stroke: var(--accent-muted); }
+.dg-title { fill: var(--text); font: 600 13px var(--font-ui); }
+.dg-sub { fill: var(--muted); font: 11.5px var(--font-ui); }
+.dg-edge { stroke: var(--muted); stroke-width: 1.4; fill: none; }
+.dg-arrow { fill: var(--muted); }
+
+/* live changes: changed block glow, then a persistent gutter bar; removed-block marker */
+.tm-changed { position: relative; border-radius: var(--radius-control); animation: tm-glow var(--dur-glow) ease-out both; }
+.tm-changed::before {
+  content: ""; position: absolute; left: -22px; top: 4px; bottom: 4px; width: 3px; border-radius: 2px;
+  background: var(--accent); opacity: .55;
+}
+.tm-removed { margin: -.2em 0 1em; font: 12px/1.4 var(--font-ui); }
+.tm-removed__bar {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 2px 0; border: 0; background: none;
+  color: var(--git-deleted-text); cursor: pointer; position: relative;
+}
+.tm-removed__bar::before { content: ""; position: absolute; left: -22px; top: 50%; width: 3px; height: 3px; border-radius: 50%; background: var(--git-deleted); }
+.tm-removed__rule { flex: 1; border-top: 1px dashed color-mix(in srgb, var(--git-deleted) 55%, transparent); }
+.tm-removed__label { color: var(--muted); }
+.tm-removed__toggle { color: var(--muted); font-weight: 500; }
+.tm-removed__bar:hover .tm-removed__toggle { color: var(--text); }
+.tm-removed__content {
+  margin-top: 6px; padding: 8px 14px; border-left: 3px solid var(--git-deleted); border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--git-deleted) 6%, transparent); color: var(--muted);
+  font: var(--fs-reading)/var(--lh-reading) var(--font-reading);
+}
+.tm-removed__content > :last-child { margin-bottom: 0; }
+/* section located by a search hit */
+.tm-located { animation: tm-locate var(--dur-locate) ease-out both; border-radius: var(--radius-control); }
+
+/* =====================================================================================
+   6. MOTION
+   ===================================================================================== */
+@keyframes tm-glow {
+  0%, 18% { background: var(--live); box-shadow: 0 0 0 6px var(--live); }
+  100% { background: transparent; box-shadow: 0 0 0 6px transparent; }
+}
+@keyframes tm-locate {
+  0%, 30% { background: var(--mark); box-shadow: 0 0 0 6px var(--mark); }
+  100% { background: transparent; box-shadow: 0 0 0 6px transparent; }
+}
+@keyframes tm-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@keyframes tm-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes tm-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+  .doc-scroll { scroll-behavior: auto; }
+}
+</style>
+</head>
+<body>
+
+<!-- Lucide icons (subset), used via <use href="#i-..."> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-files" viewBox="0 0 24 24"><path d="M20 7h-3a2 2 0 0 1-2-2V2"/><path d="M9 18a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h7l4 4v10a2 2 0 0 1-2 2Z"/><path d="M3 7.6v12.8A1.6 1.6 0 0 0 4.6 22h9.8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></symbol>
+  <symbol id="i-file-plus" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/><path d="M12 18v-6"/></symbol>
+  <symbol id="i-file-minus" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15h6"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-fork" viewBox="0 0 24 24"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/></symbol>
+  <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-width" viewBox="0 0 24 24"><path d="m18 8 4 4-4 4"/><path d="M2 12h20"/><path d="m6 8-4 4 4 4"/></symbol>
+  <symbol id="i-folder-cog" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol>
+</svg>
+
+<div class="app" data-sidebar="shown" data-right="shown" data-view="explorer">
+
+  <!-- ============================== ACTIVITY BAR ============================== -->
+  <nav class="activitybar" aria-label="Views">
+    <button class="icon-btn ab-btn" data-view-btn="explorer" aria-pressed="true" aria-label="Explorer (Ctrl+Shift+X)" title="Explorer (Ctrl+Shift+X)"><svg class="icon"><use href="#i-files"/></svg></button>
+    <button class="icon-btn ab-btn" data-view-btn="search" aria-pressed="false" aria-label="Search all docs (Ctrl+Shift+F)" title="Search all docs (Ctrl+Shift+F)"><svg class="icon"><use href="#i-search"/></svg></button>
+    <button class="icon-btn ab-btn ab-btn--toggle" id="btnRight" aria-pressed="true" aria-label="Live changes (Ctrl+Alt+B)" title="Live changes (Ctrl+Alt+B)"><svg class="icon"><use href="#i-activity"/></svg><span class="notify-dot" hidden></span></button>
+    <span class="spacer"></span>
+    <button class="icon-btn ab-btn" id="btnTheme" aria-label="Theme: light (click to switch)" title="Theme"><svg class="icon"><use href="#i-moon"/></svg></button>
+    <button class="icon-btn ab-btn" aria-label="Settings (Ctrl+,)" title="Settings (Ctrl+,)"><svg class="icon"><use href="#i-settings"/></svg></button>
+  </nav>
+
+  <!-- ============================== SIDEBAR ============================== -->
+  <aside class="sidebar" aria-label="Sidebar">
+    <div class="resizer" role="separator" aria-orientation="vertical" aria-label="Resize sidebar"></div>
+
+    <!-- Explorer view -->
+    <section id="view-explorer" style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <div class="panel-header">
+        <span class="panel-title">Explorer</span><span class="spacer"></span>
+        <button class="icon-btn icon-btn--sm" id="btnProjectMenu" aria-label="Explorer menu" title="Collapse all · Reveal open doc · Initialize TrailMark in this project…"><svg class="icon icon--sm"><use href="#i-more"/></svg></button>
+      </div>
+      <div class="scroll" style="flex:1">
+        <button class="section-header" aria-expanded="true"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg>trailmark-docs</button>
+        <div class="tree" role="tree" aria-label="Files">
+          <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="true" style="--depth:0"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">docs</span><span class="rollup" title="Contains changes"></span></div>
+          <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="true" style="--depth:1"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">specs</span><span class="rollup" title="Contains changes"></span></div>
+          <div class="tree-row is-selected" role="treeitem" aria-selected="true" style="--depth:2"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">live-feed.md</span><span class="badge badge--M" title="Modified">M</span></div>
+          <div class="tree-row" role="treeitem" style="--depth:2"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">watcher.md</span><span class="badge badge--A" title="Added">A</span></div>
+          <div class="tree-row" role="treeitem" style="--depth:2"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">glossary.md</span></div>
+          <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="true" style="--depth:1"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">research</span><span class="rollup" title="Contains changes"></span></div>
+          <div class="tree-row" role="treeitem" style="--depth:2"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">storage.md</span><span class="badge badge--U" title="Untracked">U</span></div>
+          <div class="tree-row" role="treeitem" style="--depth:2"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">watchers.md</span><span class="badge badge--M" title="Modified">M</span></div>
+          <div class="tree-row" role="treeitem" style="--depth:2"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">index.md</span></div>
+          <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="false" style="--depth:1"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">world</span></div>
+          <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="false" style="--depth:1"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">design</span></div>
+          <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="false" style="--depth:0"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">src</span></div>
+          <div class="tree-row" role="treeitem" style="--depth:0"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">CHANGELOG.md</span></div>
+          <div class="tree-row" role="treeitem" style="--depth:0"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">plan.md</span><span class="badge badge--M" title="Modified">M</span></div>
+          <div class="tree-row" role="treeitem" style="--depth:0"><span class="twisty-space"></span><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">README.md</span></div>
+        </div>
+
+        <button class="section-header" aria-expanded="true"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg>Worktrees<span class="section-header__aside">2</span></button>
+        <div class="tree" role="tree" aria-label="Worktrees">
+          <div class="tree-row" role="treeitem" aria-expanded="false" style="--depth:0" title="@wt/feature-ui · .worktrees/feature-ui"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><svg class="icon icon--sm" style="color:var(--muted)"><use href="#i-fork"/></svg><span class="tree-name">feature-ui</span><span class="branch-chip">feature/ui</span></div>
+          <div class="tree-row" role="treeitem" aria-expanded="false" style="--depth:0" title="@wt/fix-links · ../trailmark-fix-links"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><svg class="icon icon--sm" style="color:var(--muted)"><use href="#i-fork"/></svg><span class="tree-name">fix-links</span><span class="branch-chip">fix/links</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Search view (alternative sidebar view, Ctrl+Shift+F) -->
+    <section id="view-search" hidden style="display:flex;flex-direction:column;min-height:0;flex:1">
+      <div class="panel-header"><span class="panel-title">Search</span></div>
+      <label class="search-box">
+        <svg class="icon icon--sm"><use href="#i-search"/></svg>
+        <input id="searchInput" value="character descriptions" aria-label="Search all docs" spellcheck="false">
+        <button class="icon-btn icon-btn--sm" aria-label="Clear search" title="Clear (Esc)"><svg class="icon icon--sm"><use href="#i-x"/></svg></button>
+      </label>
+      <div class="search-sub">
+        <span class="switch is-disabled" title="Meaning-based search arrives in v0.2 (optional local model, downloaded on demand)">
+          <span class="switch__track" role="switch" aria-checked="false" aria-disabled="true" aria-label="Semantic search (v0.2)"></span>Semantic <span class="soon-tag">v0.2</span>
+        </span>
+        <span id="searchCount">12 in 3 files</span>
+      </div>
+      <div class="index-progress" id="indexProgress" hidden>
+        Indexing 412 of 1,280 files · results may be partial
+        <div class="bar"><span></span></div>
+      </div>
+
+      <div class="search-results scroll" id="searchResults" tabindex="0" role="tree" aria-label="Search results">
+        <div class="hit-group" role="treeitem" aria-expanded="true"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="hit-group__name">lore.md</span><span class="count-pill">2</span><span class="hit-group__path">docs/world</span></div>
+        <div class="hit is-active" role="treeitem">
+          <div class="hit__crumb">Characters<span class="sep">›</span>Aria</div>
+          <div class="hit__snippet"><mark>Character</mark> notes: tall, quiet, a cartographer who trusts maps more than people. Her <mark>descriptions</mark> change per book as she ages.</div>
+        </div>
+        <div class="hit" role="treeitem">
+          <div class="hit__crumb">Characters<span class="sep">›</span>Bram</div>
+          <div class="hit__snippet">…the <mark>character</mark> sheet lists his scars in order; keep physical <mark>descriptions</mark> consistent with book one.</div>
+        </div>
+        <div class="hit-group" role="treeitem" aria-expanded="true"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="hit-group__name">style-guide.md</span><span class="count-pill">4</span><span class="hit-group__path">docs/world</span></div>
+        <div class="hit" role="treeitem">
+          <div class="hit__crumb">Writing<span class="sep">›</span><mark>Character</mark> <mark>descriptions</mark></div>
+          <div class="hit__snippet">Introduce a <mark>character</mark> with one concrete detail, not a list. Longer <mark>descriptions</mark> belong in lore.md.</div>
+        </div>
+        <div class="hit" role="treeitem">
+          <div class="hit__crumb">Review checklist</div>
+          <div class="hit__snippet">Check every new <mark>character</mark> against the glossary before merging.</div>
+        </div>
+        <div class="hit-group" role="treeitem" aria-expanded="false"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="hit-group__name">outline.md</span><span class="count-pill">6</span><span class="hit-group__path">docs/world</span></div>
+      </div>
+
+      <div class="empty" id="searchEmpty" hidden>
+        <strong>No results for “quarterly budget”.</strong>
+        Try fewer words. <kbd class="hint-kbd">Ctrl+P</kbd> searches file names instead.
+      </div>
+    </section>
+  </aside>
+
+  <!-- ============================== MAIN / DOC ============================== -->
+  <main class="main" id="main">
+    <header class="doc-header" id="docHeader">
+      <div class="nav-group">
+        <button class="icon-btn" aria-label="Back (Alt+Left)" title="Back (Alt+Left)"><svg class="icon"><use href="#i-arrow-left"/></svg></button>
+        <button class="icon-btn" aria-label="Forward (Alt+Right)" title="Forward (Alt+Right)" disabled><svg class="icon"><use href="#i-arrow-right"/></svg></button>
+      </div>
+      <nav class="breadcrumb" aria-label="Path">
+        <button title="Reveal in tree">docs</button><span class="sep">/</span><button title="Reveal in tree">specs</button><span class="sep">/</span><span class="current">live-feed.md</span>
+      </nav>
+      <span class="badge badge--M" title="Modified since your last visit">M</span>
+      <span class="doc-meta">saved 12s ago</span>
+      <span class="spacer"></span>
+      <div class="actions">
+        <button class="btn btn--ghost btn--sm" id="btnCopyRef" title="Copy reference @docs/specs/live-feed.md (Ctrl+Alt+C)"><svg class="icon icon--sm"><use href="#i-at"/></svg><span>Copy reference</span></button>
+        <!-- Edit slot: in v0.2 this becomes the "Edit" button and "Open in external editor" moves into the menu -->
+        <button class="icon-btn" aria-label="Open in external editor (Ctrl+Shift+E)" title="Open in external editor (Ctrl+Shift+E)"><svg class="icon"><use href="#i-external"/></svg></button>
+        <button class="icon-btn" aria-label="More actions" title="Copy path · Reveal in tree · Reading width · Zoom"><svg class="icon"><use href="#i-more"/></svg></button>
+      </div>
+    </header>
+
+    <div class="banner" id="repoBanner" role="status" hidden>
+      <svg class="icon"><use href="#i-alert"/></svg>
+      <div><strong>Rebase in progress.</strong> Files may change quickly; large batches are grouped in the feed.</div>
+      <span class="spacer"></span>
+      <button class="btn btn--ghost btn--sm" id="btnBannerDismiss">Dismiss</button>
+    </div>
+
+    <div class="doc-scroll" id="docScroll">
+      <article class="md" id="md">
+        <dl class="frontmatter" aria-label="Front matter">
+          <div><dt>status</dt><dd>Draft</dd></div>
+          <div><dt>owner</dt><dd>planning-agent</dd></div>
+          <div><dt>updated</dt><dd>2026-10-13</dd></div>
+          <div><dt>tags</dt><dd><span class="fm-tag">feed</span><span class="fm-tag">watcher</span></dd></div>
+        </dl>
+
+        <h1 id="live-changes-feed">Live changes feed</h1>
+        <p class="lead">The feed answers one question: <em>what changed while I was looking elsewhere?</em> It lists every file
+          the watcher reports, keyed by path, so a file saved twelve times stays one entry that moves back to the top.</p>
+
+        <div class="markdown-alert markdown-alert-note">
+          <p class="markdown-alert-title"><svg class="icon icon--sm"><use href="#i-info"/></svg>Note</p>
+          <p>Temporary files (<code>*.tmp</code>, <code>~$*</code>, swap files) and build folders never reach the feed.
+            The filter runs in the core, before events are batched.</p>
+        </div>
+
+        <h2 id="event-model"><a class="anchor" href="#event-model" aria-label="Link to Event model">#</a>Event model</h2>
+        <p>Events come from two sources. The <a href="#">file watcher</a> reports single saves; the git-dir watcher reports
+          operations such as checkout or rebase, which arrive as one bulk batch.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Event</th><th>Source</th><th>Feed</th><th>Toast</th></tr></thead>
+            <tbody>
+              <tr><td>created</td><td>watcher</td><td>new entry</td><td>yes</td></tr>
+              <tr><td>modified</td><td>watcher</td><td>updated in place</td><td>yes</td></tr>
+              <tr><td>removed</td><td>watcher</td><td>kept, struck through</td><td>yes</td></tr>
+              <tr><td>checkout</td><td>git operation</td><td>one collapsed entry</td><td>no</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="code-block">
+          <span class="code-block__lang">ts</span>
+          <button class="icon-btn icon-btn--sm code-block__copy" aria-label="Copy code" title="Copy code"><svg class="icon icon--sm"><use href="#i-copy"/></svg></button>
+<pre><code><span class="tok-c">// One batch per quiet period (150 ms), or at most every second.</span>
+<span class="tok-k">type</span> <span class="tok-t">FsBatch</span> = {
+  <span class="tok-p">changes</span>: <span class="tok-t">FsChange</span>[];
+  <span class="tok-p">bulk</span>: <span class="tok-k">null</span> | { <span class="tok-p">count</span>: <span class="tok-t">number</span>; <span class="tok-p">reason</span>: <span class="tok-s">"gitOperation"</span> | <span class="tok-s">"large"</span> | <span class="tok-s">"overflow"</span> };
+  <span class="tok-p">rescan</span>: <span class="tok-t">boolean</span>;
+};</code></pre>
+        </div>
+
+        <h2 id="grouping"><a class="anchor" href="#grouping" aria-label="Link to Grouping">#</a>Grouping</h2>
+        <p class="tm-changed" id="changedBlock">Bursts of saves collapse into one entry and <strong>never produce more than one
+          toast</strong>: while a burst lasts, the toast updates its counter in place instead of stacking.</p>
+
+        <div class="tm-removed" id="removedMarker">
+          <button class="tm-removed__bar" aria-expanded="false" aria-controls="removedContent" title="Show what was removed">
+            <span class="tm-removed__rule"></span>
+            <span class="tm-removed__label">1 block removed · 10:42</span>
+            <span class="tm-removed__rule"></span>
+            <span class="tm-removed__toggle">Show</span>
+          </button>
+          <div class="tm-removed__content" id="removedContent" hidden>
+            <p>Each save shows its own toast, so nothing is missed.</p>
+          </div>
+        </div>
+
+        <p>Follow mode (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd>) opens the latest changed doc at most once every three
+          seconds, and never for a bulk batch.</p>
+
+        <blockquote>
+          <p>The feed is only useful if it is quiet. If people stop looking at it, it has failed.</p>
+          <footer>Design review, 2026-10-12</footer>
+        </blockquote>
+
+        <h2 id="pipeline"><a class="anchor" href="#pipeline" aria-label="Link to Pipeline">#</a>Pipeline</h2>
+        <figure class="diagram" aria-label="Diagram: watcher to aggregator to reconcile to feed">
+          <svg viewBox="0 0 680 104" role="img">
+            <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="dg-arrow" d="M0 0 10 5 0 10z"/></marker></defs>
+            <rect class="dg-node" x="4" y="24" width="132" height="56" rx="8"/>
+            <text class="dg-title" x="70" y="48" text-anchor="middle">Watcher</text><text class="dg-sub" x="70" y="66" text-anchor="middle">notify events</text>
+            <rect class="dg-node" x="184" y="24" width="140" height="56" rx="8"/>
+            <text class="dg-title" x="254" y="48" text-anchor="middle">Aggregator</text><text class="dg-sub" x="254" y="66" text-anchor="middle">150 ms quiet, 1 s max</text>
+            <rect class="dg-node" x="372" y="24" width="140" height="56" rx="8"/>
+            <text class="dg-title" x="442" y="48" text-anchor="middle">Reconcile</text><text class="dg-sub" x="442" y="66" text-anchor="middle">stat + hash dedupe</text>
+            <rect class="dg-node dg-node--accent" x="560" y="24" width="116" height="56" rx="8"/>
+            <text class="dg-title" x="618" y="48" text-anchor="middle">Feed</text><text class="dg-sub" x="618" y="66" text-anchor="middle">+ toast, Follow</text>
+            <path class="dg-edge" d="M136 52H182" marker-end="url(#arrow)"/>
+            <path class="dg-edge" d="M324 52H370" marker-end="url(#arrow)"/>
+            <path class="dg-edge" d="M512 52H558" marker-end="url(#arrow)"/>
+          </svg>
+          <figcaption>mermaid</figcaption>
+        </figure>
+
+        <h2 id="rollout"><a class="anchor" href="#rollout" aria-label="Link to Rollout">#</a>Rollout</h2>
+        <ul class="contains-task-list">
+          <li class="task-list-item is-done"><input type="checkbox" checked disabled aria-label="Done">Aggregate events (150 ms quiet, 1 s max)</li>
+          <li class="task-list-item is-done"><input type="checkbox" checked disabled aria-label="Done">Reconcile with disk and drop duplicates</li>
+          <li class="task-list-item is-done"><input type="checkbox" checked disabled aria-label="Done">Bulk detection for git operations</li>
+          <li class="task-list-item"><input type="checkbox" disabled aria-label="Not done">Follow dwell: at most one jump every 3 s</li>
+          <li class="task-list-item"><input type="checkbox" disabled aria-label="Not done">Worktree labels in the feed</li>
+        </ul>
+        <p>See <a href="#" class="is-missing" title="Not found: docs/old/spec.md">the old spec</a> for the first draft.</p>
+      </article>
+    </div>
+
+    <div class="toast" id="toast" role="status">
+      <span class="toast__icon"><svg class="icon icon--sm"><use href="#i-file"/></svg></span>
+      <div style="min-width:0">
+        <div class="toast__title">3 docs changed · latest <span style="font-weight:600">watchers.md</span></div>
+        <div class="toast__meta">docs/research · just now</div>
+      </div>
+      <button class="btn btn--ghost btn--sm btn--accent-text">Open</button>
+      <button class="icon-btn icon-btn--sm" id="btnToastClose" aria-label="Dismiss" title="Dismiss"><svg class="icon icon--sm"><use href="#i-x"/></svg></button>
+    </div>
+  </main>
+
+  <!-- ============================== RIGHT PANEL ============================== -->
+  <aside class="rpanel" aria-label="Live changes">
+    <div class="panel-header">
+      <span class="panel-title">Live changes</span>
+      <span class="live-status" title="Last change 12s ago"><span class="live-dot"></span>active</span>
+      <span class="spacer"></span>
+      <button class="chip-toggle" aria-pressed="true" title="Show only Markdown docs">Docs only</button>
+    </div>
+    <div class="scroll" style="flex:1">
+      <ul class="feed">
+        <li><button class="feed-row is-current" aria-current="true">
+          <svg class="icon kind kind--modified" aria-label="Modified"><use href="#i-file"/></svg>
+          <span><span class="feed-row__name">live-feed.md</span><span class="feed-row__meta">docs/specs · 3 saves</span></span>
+          <time class="feed-row__time">12s</time></button></li>
+        <li><button class="feed-row">
+          <svg class="icon kind kind--created" aria-label="Created"><use href="#i-file-plus"/></svg>
+          <span><span class="feed-row__name">ui-notes.md</span><span class="feed-row__meta"><span class="wt-label"><svg class="icon icon--xs"><use href="#i-fork"/></svg>feature-ui</span>docs</span></span>
+          <time class="feed-row__time">1m</time></button></li>
+        <li><button class="feed-row">
+          <svg class="icon kind kind--modified" aria-label="Modified"><use href="#i-file"/></svg>
+          <span><span class="feed-row__name">watchers.md</span><span class="feed-row__meta">docs/research</span></span>
+          <time class="feed-row__time">4m</time></button></li>
+        <li><button class="feed-row feed-row--removed">
+          <svg class="icon kind kind--removed" aria-label="Removed"><use href="#i-file-minus"/></svg>
+          <span><span class="feed-row__name">old-notes.md</span><span class="feed-row__meta">docs · removed</span></span>
+          <time class="feed-row__time">6m</time></button></li>
+        <li><button class="feed-row" id="bulkRow" aria-expanded="false" aria-controls="bulkBody">
+          <svg class="icon kind kind--bulk" aria-hidden="true"><use href="#i-layers"/></svg>
+          <span><span class="feed-row__name">Checkout · 143 files</span><span class="feed-row__meta">git operation · 12 docs</span></span>
+          <span style="display:flex;align-items:center;gap:4px"><time class="feed-row__time">8m</time><svg class="icon icon--sm twisty" style="color:var(--faint)"><use href="#i-chev-down"/></svg></span></button>
+          <div class="bulk-body" id="bulkBody" hidden>
+            <div class="mini-row"><span class="badge badge--M">M</span><span>spec.md</span><span>docs</span></div>
+            <div class="mini-row"><span class="badge badge--M">M</span><span>plan.md</span><span>(root)</span></div>
+            <div class="mini-row"><span class="badge badge--A">A</span><span>roadmap.md</span><span>docs</span></div>
+            <button class="link-btn" style="margin-top:4px">Show all 143 files</button>
+          </div>
+        </li>
+      </ul>
+      <div class="feed-note">+9 other files hidden by “Docs only”</div>
+
+      <section class="panel-section">
+        <button class="section-header" aria-expanded="true" style="padding-left:10px"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg>Since last visit<span class="count-pill" style="margin-left:4px">5</span><span class="section-header__aside" title="Baseline: a1b2c3d">Mon 18:40</span></button>
+        <div class="since-folder">docs/specs</div>
+        <div class="tree-row since-row is-selected"><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">live-feed.md</span><span class="badge badge--M">M</span></div>
+        <div class="tree-row since-row"><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">watcher.md</span><span class="badge badge--A">A</span></div>
+        <div class="since-folder">docs/research</div>
+        <div class="tree-row since-row"><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">storage.md</span><span class="badge badge--U">U</span></div>
+        <div class="tree-row since-row"><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">watchers.md</span><span class="badge badge--M">M</span></div>
+        <div class="since-folder">(root)</div>
+        <div class="tree-row since-row"><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">plan.md</span><span class="badge badge--M">M</span></div>
+
+        <div class="hint" id="trailmarkHint">
+          <svg class="icon icon--sm" style="margin-top:1px;flex:none"><use href="#i-lightbulb"/></svg>
+          <span>Keep settings with the project? <button class="link-btn" data-open-init>Initialize .trailmark/</button></span>
+          <button class="icon-btn icon-btn--sm" id="btnHintClose" aria-label="Dismiss hint" title="Don't show again"><svg class="icon icon--xs"><use href="#i-x"/></svg></button>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- ============================== STATUS BAR ============================== -->
+  <footer class="statusbar">
+    <button class="sb-item" title="Branch main · HEAD 9f3c2e1"><svg class="icon"><use href="#i-branch"/></svg>main</button>
+    <span class="sb-item" style="cursor:default" title="5 files changed since your last visit"><span class="rollup" style="margin:0"></span>5 changed</span>
+    <button class="sb-item" title="Compare against: your last visit (Mon 18:40, a1b2c3d) or the last commit">Since: last visit<svg class="icon chev"><use href="#i-chev-down"/></svg></button>
+    <span class="sb-chip" id="rebaseChip" hidden>REBASING</span>
+    <span class="spacer"></span>
+    <button class="sb-item" data-open-init id="stateItem" title="Project state is stored on this computer only. Click to keep it in the project (.trailmark/)."><svg class="icon"><use href="#i-folder-cog"/></svg><span id="stateLabel">State: Local</span></button>
+    <button class="sb-item" id="btnFollow" aria-pressed="false" title="Follow: open the latest changed doc (Ctrl+Shift+L)"><svg class="icon"><use href="#i-eye"/></svg><span>Follow</span></button>
+    <button class="sb-item" title="Zoom (Ctrl+0 to reset)">100%</button>
+    <button class="sb-item" id="btnWidth" title="Reading width (Ctrl+Alt+W)"><svg class="icon"><use href="#i-width"/></svg><span>Normal width</span></button>
+  </footer>
+</div>
+
+<!-- Selection popover -->
+<div class="popover" id="selPopover" hidden role="toolbar" aria-label="Selection">
+  <button class="btn" id="btnCopyWithRef"><svg class="icon icon--sm"><use href="#i-at"/></svg><span>Copy with reference</span><kbd class="hint-kbd">Ctrl+Alt+C</kbd></button>
+  <span class="divider"></span>
+  <button class="btn" id="btnCopyPlain"><svg class="icon icon--sm"><use href="#i-copy"/></svg><span>Copy</span></button>
+</div>
+
+<!-- Initialize .trailmark dialog -->
+<div class="backdrop" id="initDialog" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="initTitle">
+    <h2 id="initTitle">Initialize TrailMark in this project?</h2>
+    <p>TrailMark will create <code style="font-family:var(--font-code)">.trailmark/</code> in <strong>trailmark-docs</strong>:</p>
+    <dl>
+      <dt>config.toml</dt><dd>shared settings, safe to commit</dd>
+      <dt>cache/</dt><dd>search index (gitignored)</dd>
+      <dt>local/</dt><dd>your session and last visit (gitignored)</dd>
+    </dl>
+    <p style="margin:0">Your current state moves there. Delete the folder to undo.</p>
+    <footer>
+      <button class="btn" id="btnInitCancel">Cancel</button>
+      <button class="btn btn--primary" id="btnInitOk">Initialize</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Mockup-only controls -->
+<div class="demo" aria-label="Mockup controls">
+  <b>Mockup</b>
+  <button class="btn" id="demoReplay">Replay live update</button>
+  <button class="btn" id="demoBanner">Rebase banner</button>
+  <button class="btn" id="demoSearch">Search: results</button>
+  <button class="btn" id="demoLocate">Open search hit</button>
+</div>
+
+<script>
+(() => {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+  const app = $('.app'), root = document.documentElement;
+  const DOC_PATH = 'docs/specs/live-feed.md', REF_TEMPLATE = '@{path}';
+
+  /* theme: system by default, toggle light/dark */
+  const setTheme = t => {
+    root.dataset.theme = t;
+    $('#btnTheme use').setAttribute('href', t === 'dark' ? '#i-sun' : '#i-moon');
+    $('#btnTheme').setAttribute('aria-label', `Theme: ${t} (click to switch)`);
+  };
+  setTheme(matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  $('#btnTheme').onclick = () => setTheme(root.dataset.theme === 'dark' ? 'light' : 'dark');
+
+  /* sidebar views: clicking the active view collapses the sidebar */
+  const showView = v => {
+    if (app.dataset.view === v && app.dataset.sidebar === 'shown') app.dataset.sidebar = 'hidden';
+    else { app.dataset.sidebar = 'shown'; app.dataset.view = v; }
+    $('#view-explorer').hidden = v !== 'explorer';
+    $('#view-search').hidden = v !== 'search';
+    $$('[data-view-btn]').forEach(b => b.setAttribute('aria-pressed',
+      String(b.dataset.viewBtn === app.dataset.view && app.dataset.sidebar === 'shown')));
+    if (v === 'search' && app.dataset.sidebar === 'shown') $('#searchInput').select();
+  };
+  $$('[data-view-btn]').forEach(b => b.onclick = () => showView(b.dataset.viewBtn));
+  $('#btnRight').onclick = () => {
+    const hidden = app.dataset.right === 'shown';
+    app.dataset.right = hidden ? 'hidden' : 'shown';
+    $('#btnRight').setAttribute('aria-pressed', String(!hidden));
+  };
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); app.dataset.view = ''; showView('search'); }
+    if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'x') { e.preventDefault(); app.dataset.view = ''; showView('explorer'); }
+    if (e.key === 'Escape') { hidePopover(); $('#initDialog').hidden = true; }
+  });
+
+  /* collapsible section headers */
+  $$('.section-header').forEach(h => h.onclick = () => {
+    const open = h.getAttribute('aria-expanded') !== 'true';
+    h.setAttribute('aria-expanded', String(open));
+    let n = h.nextElementSibling;
+    while (n && !n.matches('.section-header')) { if (!n.matches('.hint')) n.hidden = !open; n = n.nextElementSibling; }
+  });
+
+  /* doc header border appears once scrolled */
+  $('#docScroll').addEventListener('scroll', e => {
+    $('#docHeader').classList.toggle('is-scrolled', e.target.scrollTop > 4);
+    hidePopover();
+  });
+
+  /* removed-block marker */
+  $('.tm-removed__bar').onclick = e => {
+    const bar = e.currentTarget, open = bar.getAttribute('aria-expanded') !== 'true';
+    bar.setAttribute('aria-expanded', String(open));
+    $('#removedContent').hidden = !open;
+    $('.tm-removed__toggle', bar).textContent = open ? 'Hide' : 'Show';
+  };
+
+  /* bulk row */
+  $('#bulkRow').onclick = e => {
+    const row = e.currentTarget, open = row.getAttribute('aria-expanded') !== 'true';
+    row.setAttribute('aria-expanded', String(open));
+    $('#bulkBody').hidden = !open;
+  };
+
+  /* toggles */
+  $('#btnFollow').onclick = e => {
+    const b = e.currentTarget, on = b.getAttribute('aria-pressed') !== 'true';
+    b.setAttribute('aria-pressed', String(on)); b.classList.toggle('is-on', on);
+    $('span', b).textContent = on ? 'Following' : 'Follow';
+  };
+  $('#btnWidth').onclick = () => {
+    const wide = $('#main').classList.toggle('is-wide');
+    $('#btnWidth span').textContent = wide ? 'Wide' : 'Normal width';
+  };
+  $$('.chip-toggle').forEach(c => c.onclick = () => c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true')));
+  $('#btnToastClose').onclick = () => $('#toast').hidden = true;
+  $('#btnHintClose').onclick = () => $('#trailmarkHint').hidden = true;
+
+  /* copy feedback */
+  const copy = async (text, btn) => {
+    try { await navigator.clipboard.writeText(text); } catch { /* file:// may block the clipboard */ }
+    const label = $('span', btn), prev = label.textContent;
+    label.textContent = 'Copied';
+    setTimeout(() => (label.textContent = prev), 1200);
+  };
+  const reference = () => REF_TEMPLATE.replace('{path}', DOC_PATH);
+  $('#btnCopyRef').onclick = e => copy(reference(), e.currentTarget);
+
+  /* selection popover: copy with reference */
+  const pop = $('#selPopover'), md = $('#md');
+  let lastSelection = null;
+  function hidePopover() { pop.hidden = true; }
+  const sectionOf = node => {
+    let el = (node.nodeType === 1 ? node : node.parentElement).closest('.md > *');
+    while (el && !/^H[1-3]$/.test(el.tagName)) el = el.previousElementSibling;
+    return el ? el.textContent.replace(/^#/, '').trim() : null;
+  };
+  document.addEventListener('mouseup', e => {
+    if (pop.contains(e.target)) return;
+    setTimeout(() => {
+      const sel = getSelection();
+      if (!sel || sel.isCollapsed || !md.contains(sel.anchorNode)) return hidePopover();
+      lastSelection = { text: sel.toString().trim(), section: sectionOf(sel.anchorNode) };
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      pop.hidden = false;
+      const w = pop.offsetWidth, h = pop.offsetHeight;
+      const left = Math.max(8, Math.min(innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+      const top = r.top - h - 8 < 52 ? r.bottom + 8 : r.top - h - 8;
+      pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    }, 150);
+  });
+  document.addEventListener('mousedown', e => { if (!pop.contains(e.target)) hidePopover(); });
+  $('#btnCopyWithRef').onclick = e => {
+    if (!lastSelection) return;
+    const head = reference() + (lastSelection.section ? ` (section "${lastSelection.section}")` : '');
+    const quote = lastSelection.text.split(/\r?\n/).map(l => '> ' + l).join('\n');
+    copy(head + '\n' + quote, e.currentTarget);
+  };
+  $('#btnCopyPlain').onclick = e => lastSelection && copy(lastSelection.text, e.currentTarget);
+
+  /* .trailmark init dialog */
+  $$('[data-open-init]').forEach(b => b.onclick = () => {
+    if ($('#stateLabel').textContent.includes('.trailmark')) return;
+    $('#initDialog').hidden = false; $('#btnInitOk').focus();
+  });
+  $('#btnInitCancel').onclick = () => $('#initDialog').hidden = true;
+  $('#initDialog').onclick = e => { if (e.target.id === 'initDialog') e.target.hidden = true; };
+  $('#btnInitOk').onclick = () => {
+    $('#initDialog').hidden = true;
+    $('#stateLabel').textContent = 'State: .trailmark';
+    $('#stateItem').title = 'Project state is stored in .trailmark/ inside the project.';
+    $('#trailmarkHint').hidden = true;
+  };
+
+  /* search results: keyboard navigation and group collapse */
+  const results = $('#searchResults');
+  results.addEventListener('keydown', e => {
+    const hits = $$('.hit', results).filter(h => !h.hidden);
+    let i = hits.findIndex(h => h.classList.contains('is-active'));
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      i = Math.max(0, Math.min(hits.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)));
+      hits.forEach(h => h.classList.remove('is-active'));
+      hits[i].classList.add('is-active'); hits[i].scrollIntoView({ block: 'nearest' });
+    }
+    if (e.key === 'Enter') locate();
+  });
+  $$('.hit', results).forEach(h => h.onclick = () => {
+    $$('.hit', results).forEach(x => x.classList.remove('is-active'));
+    h.classList.add('is-active'); locate();
+  });
+  $$('.hit-group', results).forEach(g => g.onclick = () => {
+    const open = g.getAttribute('aria-expanded') !== 'true';
+    g.setAttribute('aria-expanded', String(open));
+    let n = g.nextElementSibling;
+    while (n && n.matches('.hit')) { n.hidden = !open; n = n.nextElementSibling; }
+  });
+  /* "open a hit": in the app this opens lore.md; here it demonstrates the located-section tint */
+  function locate() {
+    const target = $('#event-model');
+    target.scrollIntoView({ block: 'start' });
+    [target, target.nextElementSibling].forEach(el => {
+      el.classList.remove('tm-located'); void el.offsetWidth; el.classList.add('tm-located');
+    });
+  }
+  $('#demoLocate').onclick = locate;
+
+  /* mockup-only controls */
+  $('#demoReplay').onclick = () => {
+    const b = $('#changedBlock');
+    b.classList.remove('tm-changed'); void b.offsetWidth; b.classList.add('tm-changed');
+    b.scrollIntoView({ block: 'center' });
+    $('#toast').hidden = false;
+    $('#toast').style.animation = 'none'; void $('#toast').offsetWidth; $('#toast').style.animation = '';
+    if (app.dataset.right === 'hidden') $('#btnRight .notify-dot').hidden = false;
+  };
+  $('#btnRight').addEventListener('click', () => { if (app.dataset.right === 'shown') $('#btnRight .notify-dot').hidden = true; });
+  const toggleBanner = show => { $('#repoBanner').hidden = !show; $('#rebaseChip').hidden = !show; };
+  $('#demoBanner').onclick = () => toggleBanner($('#repoBanner').hidden);
+  $('#btnBannerDismiss').onclick = () => { $('#repoBanner').hidden = true; };
+  const searchStates = ['results', 'indexing', 'none'];
+  let si = 0;
+  $('#demoSearch').onclick = () => {
+    si = (si + 1) % searchStates.length;
+    const s = searchStates[si];
+    if (app.dataset.view !== 'search' || app.dataset.sidebar !== 'shown') { app.dataset.view = ''; showView('search'); }
+    $('#demoSearch').textContent = 'Search: ' + s;
+    $('#indexProgress').hidden = s !== 'indexing';
+    $('#searchResults').hidden = s === 'none';
+    $('#searchEmpty').hidden = s !== 'none';
+    $('#searchInput').value = s === 'none' ? 'quarterly budget' : 'character descriptions';
+    $('#searchCount').textContent = s === 'none' ? 'No results' : s === 'indexing' ? '4 so far' : '12 in 3 files';
+  };
+})();
+</script>
+</body>
+</html>
