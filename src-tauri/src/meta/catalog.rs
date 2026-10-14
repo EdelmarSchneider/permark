@@ -99,6 +99,7 @@ pub struct IndexEntry {
     pub path: String,
     pub tags: Vec<String>,
     pub description: String,
+    pub modified_ms: u64,
 }
 
 /// All the files of the project (sorted by path).
@@ -173,6 +174,7 @@ impl Catalog {
                 path: r.path.clone(),
                 tags: r.tags().into_iter().map(str::to_owned).collect(),
                 description: r.description.clone(),
+                modified_ms: r.modified_ms,
             })
             .collect()
     }
@@ -315,6 +317,7 @@ mod tests {
         let live = &index[0];
         assert_eq!(live.tags, ["feed", "needs-review", "spec"]);
         assert_eq!(live.description, "The feed.");
+        assert_eq!(live.modified_ms, 7);
         assert_eq!(index[1].tags, Vec::<String>::new());
     }
 
