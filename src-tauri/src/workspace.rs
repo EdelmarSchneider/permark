@@ -22,7 +22,9 @@ use crate::meta::{MetaService, Timing};
 use crate::render::{self, DocumentView, Registry};
 use crate::search::indexer::{IndexWorker, Indexer};
 use crate::search::{Bm25Index, SearchHit, SearchProvider};
-use crate::session::{FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore};
+use crate::session::{
+    FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore, TreeConfig,
+};
 use crate::util::{modified_ms, now_ms, on_parser_stack, read_with_retry};
 use crate::vault::{NodeKind, TreeNode, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
@@ -119,6 +121,8 @@ pub struct VaultInfo {
     /// Whether changes in the folder are followed live. False when the file system cannot report
     /// them (some network and virtual drives): everything else keeps working, refreshed on focus.
     pub live_updates: bool,
+    /// The project's default for the Explorer filter (`[tree]` in `.trailmark/config.toml`), if it sets one.
+    pub tree_default: Option<TreeConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -433,6 +437,7 @@ impl Workspace {
                 })
                 .collect(),
             live_updates: self.live_updates,
+            tree_default: self.config.tree.clone(),
         }
     }
 
@@ -1429,6 +1434,29 @@ tags = [\"team\"]
             ws.load_session().expect("load").map(|s| s.ref_template),
             Some("see {path}".to_owned())
         );
+        ws.close();
+    }
+
+    #[test]
+    fn project_config_tree_defaults_reach_the_ui_through_the_vault_info() {
+        let fx = Fx::new();
+        let ws = fx.open();
+        assert_eq!(ws.info().tree_default, None);
+        ws.close();
+
+        write(
+            fx.project.path(),
+            ".trailmark/config.toml",
+            "[tree]
+show = \"documents\"
+exclude = [\"archive/**\"]
+",
+        );
+        let ws = fx.open();
+        let tree = ws.info().tree_default.expect("tree default");
+        assert_eq!(tree.show, Some(crate::session::TreeShow::Documents));
+        assert_eq!(tree.exclude, ["archive/**"]);
+        assert!(tree.include.is_empty());
         ws.close();
     }
 

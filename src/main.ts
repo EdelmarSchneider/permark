@@ -4,6 +4,7 @@ import "./styles/layout.css";
 import "./styles/components.css";
 import "./styles/markdown.css";
 import "./styles/tags.css";
+import "./styles/filter.css";
 import App from "./App.svelte";
 
 // resolve the theme before the first paint so a dark system does not flash white

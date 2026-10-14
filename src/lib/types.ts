@@ -1,3 +1,5 @@
+import type { FileCategory } from "./fileKinds";
+
 // Mirrors the Rust <-> UI contract defined by the Tauri commands in src-tauri/src/commands.rs.
 // Paths are vault-relative, `/`-separated, real on-disk case. Worktree paths are prefixed with `@wt/<name>/`.
 
@@ -11,7 +13,24 @@ export type VaultInfo = {
   /** False when the file system cannot report changes (some network or virtual drives): the folder
    *  works, but is only refreshed when the window gets focus. */
   liveUpdates: boolean;
+  /** The project's default for the Explorer filter (`[tree]` in `.trailmark/config.toml`), if it sets one. */
+  treeDefault: TreeDefault | null;
 };
+/** The presets of the Explorer filter (`show` in `[tree]` of `config.toml` uses the same names). */
+export type FilterShow = "documents" | "docs-and-assets" | "everything" | "custom";
+/** A person's Explorer filter for a project. */
+export type TreeFilter = {
+  show: FilterShow;
+  /** What "custom" shows (the presets ignore it). */
+  categories: FileCategory[];
+  /** The advanced field of "custom": `+pattern` and `-pattern` entries (the presets ignore it). */
+  patterns: string;
+  hideEmptyFolders: boolean;
+  /** Images, data and XML files show only in folders that hold documents (see `treeFilter.ts`). */
+  assetsNearDocs: boolean;
+};
+/** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
+export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
 export type TreeNode = {
   name: string;
@@ -83,6 +102,8 @@ export type SessionState = {
   rightPanel: { open: boolean; width: number };
   theme: "system" | "light" | "dark";
   follow: boolean;
+  /** The Explorer filter this person chose for the project; null until they do (the project's default applies). */
+  treeFilter: TreeFilter | null;
 };
 
 // ---- tags and descriptions (docs/design/v0.2.md section 1) ---------------------------------------

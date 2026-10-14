@@ -76,3 +76,14 @@ export function searchFiles(input: SearchFilesInput): FoundFile[] {
   );
   return [...byName, ...byDescription].slice(0, limit);
 }
+
+export type CountMatchesInput = Omit<SearchFilesInput, "limit">;
+
+/**
+ * How many of `files` the query finds: the "+N hidden files match" row of Quick open counts the files the
+ * Explorer filter keeps out. Nothing typed (no words and no tags) matches nothing.
+ */
+export function countMatches(input: CountMatchesInput): number {
+  if (input.text.trim() === "" && input.tags.length === 0) return 0;
+  return searchFiles({ ...input, limit: input.files.length }).length;
+}

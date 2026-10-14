@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { gitStateLabel } from "../gitLabels";
-  import { t } from "../i18n";
+  import { t, tn } from "../i18n";
   import { basename, dirname, isMarkdown, splitWorktree } from "../paths";
   import { registerOverlay, rememberFocus } from "../overlays";
-  import { searchFiles } from "../quickOpenModel";
+  import { countMatches, searchFiles } from "../quickOpenModel";
   import { knownTagsHint } from "../tagModel";
   import { unknownTags } from "../tagQuery";
   import { TagQueryState } from "../tagQueryState.svelte";
@@ -13,6 +13,7 @@
   import { clock } from "../stores/clock.svelte";
   import { docs } from "../stores/docs.svelte";
   import { feed } from "../stores/feed.svelte";
+  import { filter } from "../stores/filter.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
@@ -34,6 +35,8 @@
     description: string;
     ms: number | null;
     group?: "changed" | "opened";
+    /** A file the Explorer filter hides, listed because the hidden matches were revealed. */
+    hidden?: boolean;
   };
 
   /** The words and the `tag:` filters of the box. */
@@ -42,7 +45,11 @@
   let input: HTMLInputElement | undefined = $state();
   let list: HTMLElement | undefined = $state();
 
-  const files = $derived(vault.files);
+  /** The "+N hidden files match" row was used: the files the Explorer filter hides are listed too. */
+  let revealHidden = $state(false);
+
+  const files = $derived(revealHidden ? vault.files : filter.files);
+  const hiddenSet = $derived(new Set(filter.hiddenFiles));
 
   const recency = $derived.by(() => {
     const map = new Map<string, number>();
@@ -113,8 +120,26 @@
       ...r,
       description: describe(r.path),
       ms: feed.entries.find((e) => e.type === "file" && e.path === r.path)?.atMs ?? null,
+      hidden: revealHidden && hiddenSet.has(r.path),
     }));
   });
+
+  // the files the Explorer filter hides that the query would also find
+  const hiddenCount = $derived(
+    revealHidden || unknown.length > 0
+      ? 0
+      : countMatches({
+          text: q.words,
+          tags: q.chips,
+          files: filter.hiddenFiles,
+          tagsOf: (path) => tags.index.get(path)?.tags,
+          describe,
+          recency: listRecency,
+        }),
+  );
+  /** Rows plus the "hidden files match" row, which is selected like any other. */
+  const rowCount = $derived(rows.length + (hiddenCount > 0 ? 1 : 0));
+  const moreActive = $derived(hiddenCount > 0 && active === rows.length);
 
   const emptyText = $derived.by(() => {
     if (unknown.length > 0) {
@@ -128,6 +153,12 @@
 
   function close(): void {
     ui.quickOpen = false;
+  }
+
+  function reveal(): void {
+    revealHidden = true;
+    active = 0;
+    input?.focus();
   }
 
   function choose(row: Row | undefined): void {
@@ -145,14 +176,15 @@
     }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (rows.length === 0) return;
-      active = (active + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length;
+      if (rowCount === 0) return;
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + rowCount) % rowCount;
       void tick().then(() =>
         list?.querySelector(`[data-i="${active}"]`)?.scrollIntoView({ block: "nearest" }),
       );
     } else if (e.key === "Enter") {
       e.preventDefault();
-      choose(rows[active]);
+      if (moreActive) reveal();
+      else choose(rows[active]);
     }
   }
 
@@ -239,7 +271,7 @@
         aria-controls={suggesting ? "quick-tags" : "quick-list"}
         aria-activedescendant={suggesting
           ? `quick-tags-${q.active}`
-          : rows[active]
+          : rows[active] || moreActive
             ? `quick-row-${active}`
             : undefined}
         spellcheck="false"
@@ -266,7 +298,7 @@
           <!-- svelte-ignore a11y_click_events_have_key_events -->
           <div
             id="quick-row-{i}"
-            class={["palette__row", i === active && "is-active"]}
+            class={["palette__row", i === active && "is-active", row.hidden && "is-hidden"]}
             role="option"
             tabindex="-1"
             aria-selected={i === active}
@@ -305,6 +337,22 @@
         {:else}
           <div class="palette__empty">{emptyText}</div>
         {/each}
+        {#if hiddenCount > 0}
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div
+            id="quick-row-{rows.length}"
+            class={["palette__row", "palette__row--more", moreActive && "is-active"]}
+            role="option"
+            tabindex="-1"
+            aria-selected={moreActive}
+            data-i={rows.length}
+            onmousemove={() => (active = rows.length)}
+            onclick={reveal}
+          >
+            <Icon name="eye" size="sm" />
+            <span>{tn("filter.hiddenMatches", hiddenCount)}</span>
+          </div>
+        {/if}
       </div>
     {/if}
     <div class="palette__foot">

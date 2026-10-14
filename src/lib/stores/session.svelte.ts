@@ -11,7 +11,7 @@ import {
   normalizeSession,
   stepZoom,
 } from "../session";
-import type { SessionState } from "../types";
+import type { SessionState, TreeFilter } from "../types";
 
 const SAVE_DELAY_MS = 600;
 
@@ -23,6 +23,8 @@ class SessionStore {
   left = $state({ open: true, width: LEFT_DEFAULT });
   right = $state({ open: true, width: RIGHT_DEFAULT });
   follow = $state(false);
+  /** The Explorer filter this person chose for the project; null until they do. */
+  treeFilter = $state.raw<TreeFilter | null>(null);
   systemDark = $state(false);
 
   lastDoc: string | null = null;
@@ -54,6 +56,7 @@ class SessionStore {
     this.left = { ...s.leftPanel };
     this.right = { ...s.rightPanel };
     this.follow = s.follow;
+    this.treeFilter = s.treeFilter;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
     this.enabled = true;
@@ -71,6 +74,7 @@ class SessionStore {
       rightPanel: { open: this.right.open, width: this.right.width },
       theme: this.theme,
       follow: this.follow,
+      treeFilter: this.treeFilter,
     };
   }
 
@@ -142,6 +146,11 @@ class SessionStore {
 
   toggleFollow(): void {
     this.follow = !this.follow;
+    this.persist();
+  }
+
+  setTreeFilter(filter: TreeFilter): void {
+    this.treeFilter = filter;
     this.persist();
   }
 

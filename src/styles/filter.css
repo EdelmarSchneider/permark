@@ -1,0 +1,142 @@
+/* =====================================================================================
+   Explorer filter (docs/design/v0.2.md section 13): the header control, its popover, the tree
+   footer, and the dimmed row of an open file the filter would hide.
+   ===================================================================================== */
+
+/* Header control ------------------------------------------------------------------------ */
+.filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 160px;
+  height: 22px;
+  margin: 0 -5px 0 auto; /* the header is tight: keep the whole preset name readable at the default width */
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-ui-xs);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease);
+}
+.filter-btn:hover,
+.filter-btn[aria-expanded="true"] {
+  background: var(--hover);
+  color: var(--text);
+}
+.filter-btn .icon {
+  flex: none;
+}
+.filter-btn__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Popover ------------------------------------------------------------------------------- */
+.filter {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: -4px -6px 0;
+}
+.filter__option,
+.filter__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.filter__option {
+  padding: 5px 6px;
+  border-radius: var(--radius-control);
+}
+.filter__option:hover {
+  background: var(--hover);
+}
+.filter__check.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+.filter__option input,
+.filter__check input {
+  flex: none;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+.filter__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.filter__hint {
+  font-size: var(--fs-ui-xs);
+  color: var(--muted);
+}
+.filter__categories {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+.filter__patterns {
+  font-family: var(--font-code);
+  font-size: var(--fs-ui-sm);
+}
+.filter__patterns[aria-invalid="true"] {
+  border-color: var(--git-deleted-text);
+}
+.filter__note {
+  font-size: var(--fs-ui-xs);
+  color: var(--muted);
+  word-break: break-word;
+}
+.filter__error {
+  color: var(--git-deleted-text);
+}
+
+/* Tree footer --------------------------------------------------------------------------- */
+.tree-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  flex: none;
+  padding: 6px var(--sp-3) 6px var(--sp-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-ui-sm);
+  color: var(--muted);
+}
+.tree-footer__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-footer .link-btn {
+  flex: none;
+  font-size: var(--fs-ui-sm);
+  cursor: pointer;
+}
+
+/* A file the filter hides, shown because it is open ---------------------------------------- */
+.tree-row.is-filtered .tree-name,
+.tree-row.is-filtered .file-icon {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Quick open: the "+N hidden files match" row and the hidden files it reveals ----------------- */
+.palette__row--more {
+  color: var(--accent);
+  font-size: var(--fs-ui-sm);
+}
+.palette__row.is-hidden .palette__name,
+.palette__row.is-hidden .file-icon,
+.palette__row.is-hidden .icon {
+  color: var(--muted);
+}
