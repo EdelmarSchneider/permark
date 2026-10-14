@@ -38,6 +38,24 @@ export const NO_FORMAT: FormatState = {
   language: "",
 };
 
+/** The commands of the table menu that work on the table the caret is in. */
+export type TableCommandId =
+  "rowBefore" | "rowAfter" | "colBefore" | "colAfter" | "deleteRow" | "deleteCol" | "deleteTable";
+
+/** Why a table command cannot run: the caret is not in a table, or it is in the header row, which stays the first row. */
+export type TableBlock = "notInTable" | "headerRowAbove" | "headerRowDelete";
+
+/**
+ * Whether a table command can run for the selection, and when it cannot, why. The menus show this as the reason an entry is off;
+ * the commands refuse in the same cases. A row below the header row is allowed: it is the first row of the table.
+ */
+export function tableUnavailable(format: FormatState, id: TableCommandId): TableBlock | null {
+  if (!format.table) return "notInTable";
+  if (format.tableHeader && id === "rowBefore") return "headerRowAbove";
+  if (format.tableHeader && id === "deleteRow") return "headerRowDelete";
+  return null;
+}
+
 export type CommandId =
   | "bold"
   | "italic"

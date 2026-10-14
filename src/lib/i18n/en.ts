@@ -550,6 +550,10 @@ export const en = {
   "toolbar.deleteRow": "Delete row",
   "toolbar.deleteCol": "Delete column",
   "toolbar.deleteTable": "Delete table",
+  "toolbar.tableNeedsCell": "Put the cursor in a table cell first",
+  "toolbar.tableHeaderNoRowAbove":
+    "The header row stays first: use Add row below to add the first row",
+  "toolbar.tableHeaderNoDelete": "A table needs its header row: delete the whole table instead",
   "toolbar.codeBlock": "Code block",
   "toolbar.language": "Language of the code block",
   "toolbar.plainText": "Plain text",
