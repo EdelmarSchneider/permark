@@ -5,6 +5,7 @@
 //! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor),
 //! [`fileops`] (rename, move, delete and new folders with the links kept working).
 //! [`refs`] knows which images the documents use (for the Explorer filter).
+//! [`shell_integration`] adds "Open with TrailMark" to the file manager.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
 
@@ -20,6 +21,7 @@ mod refs;
 mod render;
 mod search;
 mod session;
+mod shell_integration;
 mod util;
 mod vault;
 mod watch;
@@ -79,6 +81,11 @@ pub fn run() {
             commands::recent_vaults,
             commands::app_language,
             commands::set_app_language,
+            commands::shell_integration_state,
+            commands::set_shell_context_menu,
+            commands::set_shell_file_association,
+            commands::refresh_shell_labels,
+            commands::open_default_apps,
             commands::list_tree,
             commands::read_document,
             commands::resolve_link,

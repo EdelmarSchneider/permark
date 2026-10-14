@@ -2,7 +2,7 @@
 
 import type { Api } from "../api";
 import { parsePreference, type LanguagePreference } from "../i18n";
-import type { SessionState } from "../types";
+import type { SessionState, ShellState } from "../types";
 import {
   cleanUp,
   fileMeta,
@@ -54,6 +54,13 @@ let savedSession: SessionState | null = {
   initHintNever: false,
 };
 let stateLocation: "appData" | "project" = "appData";
+/** The file manager entries of the mock "system": on, so the Settings section shows in the browser. */
+const mockShell: ShellState = {
+  supported: true,
+  contextMenu: true,
+  association: false,
+  isDefault: false,
+};
 const LANGUAGE_KEY = "trailmark.mock.language";
 
 /** `?lang=de` picks the language for a run; otherwise the one chosen in Settings last time. */
@@ -91,6 +98,24 @@ export const mockImpl: Api = {
     } catch {
       // the browser mock forgets it on reload
     }
+  },
+  shellIntegrationState: async () => ({ ...mockShell }),
+  setShellContextMenu: async (enabled, locale) => {
+    console.info("[mock] right-click menu entry:", enabled, locale);
+    mockShell.contextMenu = enabled;
+    return { ...mockShell };
+  },
+  setShellFileAssociation: async (enabled, locale) => {
+    console.info("[mock] file association:", enabled, locale);
+    mockShell.association = enabled;
+    if (!enabled) mockShell.isDefault = false;
+    return { ...mockShell };
+  },
+  refreshShellLabels: async (locale) => {
+    console.info("[mock] reword the file manager entries:", locale);
+  },
+  openDefaultApps: async () => {
+    console.info("[mock] open the default apps settings");
   },
   listTree: async () => mockTree(),
   readDocument: async (path) => {

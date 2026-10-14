@@ -4,6 +4,7 @@
 import { api } from "../api";
 import { errorMessage } from "../errors";
 import { language, parsePreference, t, type LanguagePreference } from "../i18n";
+import { rewordShellEntries } from "./shell.svelte";
 import { toast } from "./toast.svelte";
 
 /** Applies the stored choice. Never rejects: a language that cannot be read is "system". */
@@ -24,4 +25,6 @@ export async function chooseLanguage(choice: LanguagePreference): Promise<void> 
   } catch (error) {
     toast.message(t("settings.languageNotSaved", { message: errorMessage(error) }), "warn");
   }
+  // the right-click entries, when they exist, are worded in the language now on screen
+  await rewordShellEntries();
 }

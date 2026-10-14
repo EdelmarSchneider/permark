@@ -13,6 +13,7 @@ use crate::git::GitError;
 use crate::meta::MetaError;
 use crate::render::RenderError;
 use crate::session::SessionError;
+use crate::shell_integration::ShellError;
 use crate::vault::VaultError;
 use crate::watch::WatchError;
 
@@ -34,6 +35,8 @@ pub enum AppError {
     Edit(#[from] EditError),
     #[error(transparent)]
     FileOps(#[from] FileOpError),
+    #[error(transparent)]
+    Shell(#[from] ShellError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -62,6 +65,7 @@ impl AppError {
             Self::Meta(e) => e.kind(),
             Self::Edit(e) => e.kind(),
             Self::FileOps(e) => e.kind(),
+            Self::Shell(_) => "shell",
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -188,6 +192,8 @@ impl AppError {
                 EditError::Io { path, source } => Details::io(path, source),
             },
             Self::FileOps(e) => file_op_details(e),
+            Self::Shell(ShellError::Registry(source)) => Details::detail(&source.to_string()),
+            Self::Shell(ShellError::Unsupported) => Details::default(),
             Self::Git(GitError::WorkerGone) | Self::NoVault | Self::Superseded => {
                 Details::default()
             }
@@ -295,6 +301,19 @@ mod tests {
         assert_eq!(value["kind"], "partlyMoved");
         assert_eq!(value["subject"], "x/a.md, x/b.md");
         assert_eq!(value["detail"], "disk full");
+    }
+
+    #[test]
+    fn a_file_manager_error_carries_the_system_text_as_detail() {
+        let e = AppError::from(ShellError::Registry(io::Error::from(
+            io::ErrorKind::PermissionDenied,
+        )));
+        let value = json(&e);
+        assert_eq!(value["kind"], "shell");
+        assert!(value["detail"].as_str().is_some_and(|d| !d.is_empty()));
+        let unsupported = json(&AppError::from(ShellError::Unsupported));
+        assert_eq!(unsupported["kind"], "shell");
+        assert!(unsupported.get("detail").is_none());
     }
 
     #[test]

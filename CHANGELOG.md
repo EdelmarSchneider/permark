@@ -29,6 +29,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
   until you pick one in Settings. A language chosen in the app always wins, and an update never changes it.
 - A test fails when a translation misses a key, has an extra one, changes a placeholder, or leaves a long sentence in English. See
   `docs/design/i18n.md` for the conventions and how to add a language.
+- **"Open with TrailMark" in the Windows file manager.** Right-click a folder, the empty space inside a folder, or a `.md` / `.markdown` file and
+  choose **Open with TrailMark** (on Windows 11 it is under *Show more options*). A second, separate option lists TrailMark in the **Open with**
+  menu of Markdown files; it never takes over your default app (Windows keeps that for you), and **Settings → File manager → Make default...**
+  opens the Windows page where you pick it. Both options are in the installer (on by default for a new install, on its first page) and in
+  **Settings → File manager**, which adds or removes the entries at once and always shows what is registered now. The text of the entry follows the
+  language of the interface. Nothing needs administrator rights. An update keeps what you chose (it never adds back what you removed, nor
+  removes what you kept), and uninstalling removes every entry.
 
 ### Changed
 - Hidden files and folders (`.github`, `.claude`, `.vscode`, `.gitignore`, ...) are no longer listed by default, in any preset. Turn on **Show
@@ -43,6 +50,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   entries still win. The set of linked images is kept up to date as documents change, reading only the document that changed.
 - Errors from the backend carry a kind and the name or text they are about, and the interface words them; a few messages that used to be fixed
   English sentences (a file that is not UTF-8, a document shown as plain text because of its nesting) are now worded by the interface.
+- **The Settings panel scrolls** when the window is shorter than it is (it grew with the new File manager section), and a popover whose
+  content changes size after it opened is placed again.
+- Opening a drive root from the file manager (`"C:\"` on the command line) works.
 
 ## [0.2.0] - 2026-10-14
 

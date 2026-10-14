@@ -459,6 +459,15 @@ export const es = {
   "settings.refTemplate": "Plantilla de referencia",
   "settings.refPreview": "Vista previa: {preview}",
   "settings.updates": "Actualizaciones",
+  "settings.fileManager": "Administrador de archivos",
+  "settings.shellMenu": 'Agregar "Abrir con TrailMark" al menú de clic derecho',
+  "settings.shellMenuHint": 'En Windows 11 aparece en "Mostrar más opciones".',
+  "settings.shellAssoc": "Asociar los archivos .md con TrailMark",
+  "settings.shellAssocHint": 'Incluye TrailMark en la lista "Abrir con" de los archivos Markdown.',
+  "settings.shellDefault": "Hacer predeterminada...",
+  "settings.shellDefaultHint":
+    "Solo Windows define la aplicación predeterminada: selecciona .md en la lista que se abre.",
+  "settings.shellIsDefault": "TrailMark es la aplicación predeterminada para los archivos .md.",
 
   // ---- updates
   "update.check": "Buscar actualizaciones...",
@@ -525,6 +534,7 @@ export const es = {
   "error.partlyMoved":
     "El movimiento se detuvo a medias. Estos elementos no se pudieron devolver y quedan donde se movieron: {subject}",
   "error.trash": "No se pudo mover a la papelera de reciclaje: {detail}",
+  "error.shell": "No se pudieron cambiar las entradas del administrador de archivos: {detail}",
   "error.nameNoStem": "El nombre necesita algo antes de la extensión",
   "error.imageEmpty": "La imagen está vacía",
 

@@ -26,6 +26,7 @@ import type {
   SaveOutcome,
   SearchHit,
   SessionState,
+  ShellState,
   SourceDoc,
   TaggedFile,
   TagOverview,
@@ -55,6 +56,16 @@ export interface Api {
   appLanguage(): Promise<LanguagePreference>;
   /** Keeps the language picked in Settings (an app-wide choice, not a project one). */
   setAppLanguage(language: LanguagePreference): Promise<void>;
+  /** What "Open with TrailMark" has registered with the file manager, read from the system each time. */
+  shellIntegrationState(): Promise<ShellState>;
+  /** Adds or removes the right-click menu entry; `locale` (`en`, `pt-BR`, `es`, `de`) is the language it is worded in. */
+  setShellContextMenu(enabled: boolean, locale: string): Promise<ShellState>;
+  /** Adds or removes TrailMark in the "Open with" list of Markdown files. */
+  setShellFileAssociation(enabled: boolean, locale: string): Promise<ShellState>;
+  /** Rewords the entries that exist after the interface language changed. */
+  refreshShellLabels(locale: string): Promise<void>;
+  /** Opens the page of Windows Settings where the default app of a file type is chosen. */
+  openDefaultApps(): Promise<void>;
   /** Main root plus worktrees as top-level roots. */
   /** The folder's tree. `showIgnored` also lists what version control ignores; `showHidden` lists `.trailmark/`. */
   listTree(showIgnored: boolean, showHidden: boolean): Promise<TreeNode>;
@@ -136,6 +147,13 @@ export const tauriApi: Api = {
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
   appLanguage: () => invoke<LanguagePreference>("app_language"),
   setAppLanguage: (language) => invoke<void>("set_app_language", { language }),
+  shellIntegrationState: () => invoke<ShellState>("shell_integration_state"),
+  setShellContextMenu: (enabled, locale) =>
+    invoke<ShellState>("set_shell_context_menu", { enabled, locale }),
+  setShellFileAssociation: (enabled, locale) =>
+    invoke<ShellState>("set_shell_file_association", { enabled, locale }),
+  refreshShellLabels: (locale) => invoke<void>("refresh_shell_labels", { locale }),
+  openDefaultApps: () => invoke<void>("open_default_apps"),
   listTree: (showIgnored, showHidden) => invoke<TreeNode>("list_tree", { showIgnored, showHidden }),
   readDocument: (path) => invoke<DocumentView>("read_document", { path }),
   resolveLink: (from, href) => invoke<LinkTarget>("resolve_link", { from, href }),
@@ -218,6 +236,11 @@ function createMockApi(): Api {
     recentVaults: command("recentVaults"),
     appLanguage: command("appLanguage"),
     setAppLanguage: command("setAppLanguage"),
+    shellIntegrationState: command("shellIntegrationState"),
+    setShellContextMenu: command("setShellContextMenu"),
+    setShellFileAssociation: command("setShellFileAssociation"),
+    refreshShellLabels: command("refreshShellLabels"),
+    openDefaultApps: command("openDefaultApps"),
     listTree: command("listTree"),
     readDocument: command("readDocument"),
     resolveLink: command("resolveLink"),

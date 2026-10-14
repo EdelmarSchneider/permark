@@ -39,6 +39,17 @@ export type TreeFilter = {
 /** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
 export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
+/** What "Open with TrailMark" has registered with the file manager, as the system has it right now. */
+export type ShellState = {
+  /** False where TrailMark cannot register anything (every platform but Windows, for now). */
+  supported: boolean;
+  /** TrailMark is in the right-click menu of folders and Markdown files. */
+  contextMenu: boolean;
+  /** TrailMark is in the "Open with" list of Markdown files. */
+  association: boolean;
+  /** Windows' own choice for `.md` files is TrailMark. */
+  isDefault: boolean;
+};
 export type TreeNode = {
   name: string;
   path: string;

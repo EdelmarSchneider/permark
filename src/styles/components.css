@@ -924,6 +924,15 @@
   width: 288px;
   padding: 12px 14px;
 }
+/* a panel taller than the window scrolls (Settings, in the smallest window) instead of running off the screen */
+.popover--scroll {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.popover--scroll > * {
+  flex: none;
+}
 .menu-item {
   display: flex;
   align-items: center;

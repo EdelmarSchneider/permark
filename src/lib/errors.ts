@@ -88,6 +88,7 @@ const KIND_KEYS = {
   unknownOperation: "error.unknownOperation",
   partlyMoved: "error.partlyMoved",
   trash: "error.trash",
+  shell: "error.shell",
 } as const satisfies Record<string, MessageKey>;
 
 function field(error: Record<string, unknown>, name: string): string | undefined {
