@@ -526,7 +526,7 @@ mod tests {
     /// The Markdown files of this repository: real documents written by people and agents.
     fn corpus() -> Vec<(String, String)> {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let mut files: Vec<std::path::PathBuf> = ["README.md", "CHANGELOG.md", "HANDOFF.md"]
+        let mut files: Vec<std::path::PathBuf> = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md"]
             .iter()
             .map(|f| root.join(f))
             .collect();

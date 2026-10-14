@@ -1,4 +1,4 @@
-// Markdown that is hard for an editor to round-trip, for the corpus test (docs/plan-editor.md section 4). The
+// Markdown that is hard for an editor to round-trip, for the corpus test. The
 // strings are written with explicit escapes so the bytes in the test are the bytes the author meant.
 
 import { BOM } from "./blockModel";

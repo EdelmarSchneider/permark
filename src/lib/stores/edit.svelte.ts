@@ -1,4 +1,4 @@
-// Editing the open document in the Source editor (docs/design/v0.2.md section 3, docs/plan-editor.md). This store
+// Editing the open document in the Source editor (docs/design/v0.2.md section 3). This store
 // holds the version of the file the editor started from (`base`: text, hash and block map) and decides what
 // happens at each step: entering and leaving, saving, the unsaved-changes bar, and what to do when the file
 // changes on disk meanwhile. The text itself lives in the editor (reached through `bridge.editor`).

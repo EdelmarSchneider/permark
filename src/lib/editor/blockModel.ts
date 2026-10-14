@@ -1,4 +1,4 @@
-// The block model of the editor (docs/plan-editor.md sections 1 to 4). A document is its text split
+// The block model of the editor (design: docs/design/v0.2.md §3). A document is its text split
 // into the top-level blocks that Rust found (`parse_blocks`) and the separators between them, so
 // that `blocks + separators` give back the text byte for byte (CRLF, a BOM and the final newline
 // included). The editor then rewrites only the blocks a person changed: `compose()` takes the

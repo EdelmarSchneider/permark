@@ -1,4 +1,4 @@
-// The round-trip safety net of the editor (docs/plan-editor.md section 4): for every Markdown document in this
+// The round-trip safety net of the editor: for every Markdown document in this
 // repository and for a set of hostile ones, loading it into the block model and saving without an edit must give
 // back the very same bytes, and editing one block must change that block's bytes and nothing else.
 //
@@ -37,7 +37,7 @@ function markdownFiles(dir: string): string[] {
 }
 
 function repositoryDocs(): Doc[] {
-  const files = [...markdownFiles("docs"), "README.md", "CHANGELOG.md", "HANDOFF.md"];
+  const files = [...markdownFiles("docs"), "README.md", "CHANGELOG.md", "CONTRIBUTING.md"];
   return files.map((name) => ({ name, text: readFileSync(name, "utf8") }));
 }
 
