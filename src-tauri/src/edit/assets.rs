@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use base64::Engine;
 use serde::Serialize;
 
-use super::{EditError, OwnWrites, RESERVED_NAMES};
+use super::{EditError, NameProblem, OwnWrites, RESERVED_NAMES};
 use crate::util::hash_bytes;
 use crate::vault::{Vault, VaultError};
 
@@ -43,7 +43,7 @@ pub fn decode_image(data: &str, name_hint: &str) -> Result<Vec<u8>, EditError> {
     }
     base64::engine::general_purpose::STANDARD
         .decode(data)
-        .map_err(|e| EditError::InvalidData(format!("The image data is not valid: {e}")))
+        .map_err(|e| EditError::InvalidData(e.to_string()))
 }
 
 /// A file name that is safe on every system: lowercase letters and digits of any script, single `-`.
@@ -76,9 +76,7 @@ fn clean_name(hint: &str) -> Result<(String, String), EditError> {
     let (stem, ext) = name.rsplit_once('.').unwrap_or((name, ""));
     let ext = ext.to_ascii_lowercase();
     if !IMAGE_EXTENSIONS.contains(&ext.as_str()) {
-        return Err(EditError::InvalidName(
-            "Only images can be added here (PNG, JPG, GIF, WebP, SVG)".to_owned(),
-        ));
+        return Err(EditError::InvalidName(NameProblem::NotImage));
     }
     Ok((slug(stem), ext))
 }
@@ -101,7 +99,7 @@ pub(super) fn write(
         ));
     }
     if data.is_empty() {
-        return Err(EditError::InvalidName("The image is empty".to_owned()));
+        return Err(EditError::InvalidName(NameProblem::EmptyImage));
     }
     if data.len() > MAX_ASSET_BYTES {
         return Err(EditError::TooLarge(name_hint.to_owned()));

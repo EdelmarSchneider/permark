@@ -1,4 +1,4 @@
-import { LOCALE, t, tn } from "./i18n";
+import { intlTag, t } from "./i18n";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -15,14 +15,15 @@ export function relativeTime(ms: number, now: number): string {
   return t("time.days", { n: Math.floor(diff / DAY) });
 }
 
-/** Longer age for sentences: "just now", "12 seconds ago", "4 minutes ago". */
+/** Longer age for sentences, worded by the language: "just now", "12 seconds ago", "há 4 minutos", "vor 2 Stunden". */
 export function ago(ms: number, now: number): string {
   const diff = Math.max(0, now - ms);
   if (diff < 5 * SECOND) return t("time.justNow");
-  if (diff < MINUTE) return tn("time.ago.seconds", Math.floor(diff / SECOND));
-  if (diff < HOUR) return tn("time.ago.minutes", Math.floor(diff / MINUTE));
-  if (diff < DAY) return tn("time.ago.hours", Math.floor(diff / HOUR));
-  return tn("time.ago.days", Math.floor(diff / DAY));
+  const words = new Intl.RelativeTimeFormat(intlTag(), { numeric: "always" });
+  if (diff < MINUTE) return words.format(-Math.floor(diff / SECOND), "second");
+  if (diff < HOUR) return words.format(-Math.floor(diff / MINUTE), "minute");
+  if (diff < DAY) return words.format(-Math.floor(diff / HOUR), "hour");
+  return words.format(-Math.floor(diff / DAY), "day");
 }
 
 /** Header text for a document's modification time: "saved just now", "saved 12s ago". */
@@ -36,7 +37,7 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** "10:42" in local time. */
+/** "10:42" in local time: 24 hours in every language of the app. */
 export function clock(ms: number): string {
   const d = new Date(ms);
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -46,7 +47,7 @@ export function clock(ms: number): string {
 export function baselineLabel(ms: number, now: number): string {
   const d = new Date(ms);
   if (now - ms < 6 * DAY) {
-    return `${d.toLocaleDateString(LOCALE, { weekday: "short" })} ${clock(ms)}`;
+    return `${d.toLocaleDateString(intlTag(), { weekday: "short" })} ${clock(ms)}`;
   }
-  return `${d.toLocaleDateString(LOCALE, { month: "short", day: "numeric" })}, ${clock(ms)}`;
+  return `${d.toLocaleDateString(intlTag(), { month: "short", day: "numeric" })}, ${clock(ms)}`;
 }

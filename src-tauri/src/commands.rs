@@ -21,7 +21,10 @@ use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
 use crate::render::DocumentView;
 use crate::search::SearchHit;
-use crate::session::{RecentStore, RecentVault, SessionState, StateLocation};
+use crate::session::{
+    effective_language, installer_language, AppSettingsStore, Language, RecentStore, RecentVault,
+    SessionState, StateLocation,
+};
 use crate::vault::{TreeNode, TreeOptions};
 use crate::watch::FsBatch;
 use crate::workspace::{Asset, ChangedSince, EventSink, VaultInfo, Workspace, WorkspaceHost};
@@ -126,6 +129,25 @@ fn initial_path_from(arg: OsString, cwd: Option<PathBuf>) -> Option<String> {
 pub async fn recent_vaults(app: AppHandle) -> Result<Vec<RecentVault>, AppError> {
     let dir = app_data_dir(&app)?;
     blocking(move || Ok(RecentStore::new(&dir).load_existing())).await
+}
+
+/// The language the UI starts in: the one picked in the app, else the one the installer recorded, else the
+/// system's.
+#[tauri::command]
+pub async fn app_language(app: AppHandle) -> Result<Language, AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || {
+        let stored = AppSettingsStore::new(&dir).load().language;
+        Ok(effective_language(stored, installer_language()))
+    })
+    .await
+}
+
+/// Keeps the language picked in Settings (the app-wide choice that outranks the installer's).
+#[tauri::command]
+pub async fn set_app_language(app: AppHandle, language: Language) -> Result<(), AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || Ok(AppSettingsStore::new(&dir).set_language(language)?)).await
 }
 
 #[tauri::command]

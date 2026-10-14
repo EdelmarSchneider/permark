@@ -1,6 +1,6 @@
 <script lang="ts">
   import { visibleBulkItems, type BulkEntry, type BulkItem } from "../feed";
-  import { t, tn } from "../i18n";
+  import { formatNumber, t, tn } from "../i18n";
   import { basename, folderLabel, isMarkdown } from "../paths";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
@@ -16,10 +16,10 @@
   const items = $derived(visibleBulkItems(entry, all));
   const title = $derived(
     entry.reason === "gitOperation"
-      ? t("feed.bulk.git", { count: entry.count.toLocaleString() })
+      ? t("feed.bulk.git", { count: formatNumber(entry.count) })
       : entry.reason === "large"
-        ? t("feed.bulk.large", { count: entry.count.toLocaleString() })
-        : t("feed.bulk.overflow", { count: entry.count.toLocaleString() }),
+        ? t("feed.bulk.large", { count: formatNumber(entry.count) })
+        : t("feed.bulk.overflow", { count: formatNumber(entry.count) }),
   );
   const meta = $derived(
     [
@@ -41,6 +41,7 @@
   class="feed-row"
   aria-expanded={open}
   aria-controls="bulk-{entry.id}"
+  title={`${title} · ${meta}`}
   onclick={() => feed.toggleBulk(entry.id)}
 >
   <Icon name="layers" class="kind kind--bulk" />
@@ -64,14 +65,14 @@
     {/each}
     {#if !all && entry.items.length > items.length}
       <button type="button" class="link-btn" onclick={() => feed.showAll.add(entry.id)}>
-        {t("feed.bulk.showAll", { count: entry.items.length.toLocaleString() })}
+        {t("feed.bulk.showAll", { count: formatNumber(entry.items.length) })}
       </button>
     {/if}
     {#if entry.count > entry.items.length}
       <div class="feed-note" style="padding-left:0">
         {t("feed.bulk.partial", {
-          shown: entry.items.length.toLocaleString(),
-          count: entry.count.toLocaleString(),
+          shown: formatNumber(entry.items.length),
+          count: formatNumber(entry.count),
         })}
       </div>
     {/if}

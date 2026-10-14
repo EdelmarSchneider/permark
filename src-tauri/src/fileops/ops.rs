@@ -192,7 +192,7 @@ fn worktree_inside<'a>(vault: &'a Vault, folder: &Path) -> Option<&'a str> {
 }
 
 fn check_name(name: &str) -> Result<(), FileOpError> {
-    validate_file_name(name).map_err(|e| FileOpError::InvalidName(e.to_string()))
+    validate_file_name(name).map_err(FileOpError::InvalidName)
 }
 
 // ---- move and rename ---------------------------------------------------------------------------------
@@ -354,7 +354,7 @@ fn run_moves(
                     e
                 } else {
                     FileOpError::PartlyMoved {
-                        reason: e.to_string(),
+                        reason: Box::new(e),
                         left: stuck.iter().map(|&i| moves[i].as_move()).collect(),
                     }
                 });

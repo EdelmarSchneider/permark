@@ -4,6 +4,7 @@
 //! stays untouched. When the project has a `.trailmark/` folder, state lives in `.trailmark/local/`
 //! instead and settings are read from `.trailmark/config.toml`.
 
+mod app_settings;
 mod config;
 mod recent;
 mod store;
@@ -15,6 +16,7 @@ use std::path::Path;
 use serde::de::IgnoredAny;
 use serde::{Deserialize, Deserializer, Serialize};
 
+pub use app_settings::{effective_language, installer_language, AppSettingsStore, Language};
 pub use config::{Config, TreeConfig, TreeShow};
 pub use recent::{RecentStore, RecentVault};
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};

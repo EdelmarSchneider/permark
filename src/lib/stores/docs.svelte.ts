@@ -3,7 +3,7 @@
 
 import { api } from "../api";
 import type { FindMode } from "../find";
-import { errorText } from "../errors";
+import { errorMessage } from "../errors";
 import { isInside, mapPath } from "../fileOps";
 import { t } from "../i18n";
 import { NavHistory } from "../history";
@@ -155,7 +155,7 @@ class DocStore {
       if (token !== this.token) return false;
       this.endLoading();
       if (!opts.silent) {
-        const message = errorText(error);
+        const message = errorMessage(error);
         if (!this.current) this.error = { path, message };
         toast.message(t("doc.openFailed", { path, message }), "warn");
       }
@@ -334,6 +334,23 @@ class DocStore {
       this.cancelDeleteCheck();
       void this.refresh(followScroll);
     }
+  }
+
+  /** Draws the open document again where it is, quietly (the interface language changed: the labels drawn by code follow it). */
+  rerender(): void {
+    const view = this.current;
+    if (!view) return;
+    this.request = {
+      rev: ++this.rev,
+      view,
+      mode: "fresh",
+      anchor: null,
+      locate: null,
+      scrollTop: this.scrollTop,
+      followScroll: false,
+      diffAgainstLast: false,
+      quiet: true,
+    };
   }
 
   /** Re-reads the open document and renders it as an update (block diff, scroll anchoring). */

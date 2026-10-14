@@ -8,7 +8,8 @@ pub(crate) enum Decoded {
     Text {
         /// Text with `\n` line endings.
         text: String,
-        /// Shown to the user when the file was not plain UTF-8.
+        /// What the reader should know when the file was not plain UTF-8: a code the UI words itself
+        /// (`invalidUtf8`, `utf16Le`, `utf16LeLossy`, `utf16Be`, `utf16BeLossy`).
         note: Option<String>,
     },
     Binary,
@@ -20,10 +21,10 @@ pub(crate) fn decode(bytes: &[u8]) -> Decoded {
         return from_utf8(rest);
     }
     if let Some(rest) = bytes.strip_prefix(&[0xFF, 0xFE]) {
-        return from_utf16(rest, encoding_rs::UTF_16LE, "UTF-16 LE");
+        return from_utf16(rest, encoding_rs::UTF_16LE, "utf16Le");
     }
     if let Some(rest) = bytes.strip_prefix(&[0xFE, 0xFF]) {
-        return from_utf16(rest, encoding_rs::UTF_16BE, "UTF-16 BE");
+        return from_utf16(rest, encoding_rs::UTF_16BE, "utf16Be");
     }
     if bytes[..bytes.len().min(SNIFF_LEN)].contains(&0) {
         return Decoded::Binary;
@@ -39,20 +40,18 @@ fn from_utf8(bytes: &[u8]) -> Decoded {
         },
         Err(_) => Decoded::Text {
             text: normalize_newlines(&String::from_utf8_lossy(bytes)),
-            note: Some(
-                "This file is not valid UTF-8; unreadable bytes were replaced with \u{FFFD}."
-                    .to_owned(),
-            ),
+            note: Some("invalidUtf8".to_owned()),
         },
     }
 }
 
-fn from_utf16(bytes: &[u8], enc: &'static encoding_rs::Encoding, label: &str) -> Decoded {
+/// `code` is the note for a clean conversion; a conversion that lost characters adds `Lossy`.
+fn from_utf16(bytes: &[u8], enc: &'static encoding_rs::Encoding, code: &str) -> Decoded {
     let (text, had_errors) = enc.decode_without_bom_handling(bytes);
     let note = if had_errors {
-        format!("Converted from {label}; some characters could not be decoded.")
+        format!("{code}Lossy")
     } else {
-        format!("Converted from {label}.")
+        code.to_owned()
     };
     Decoded::Text {
         text: normalize_newlines(&text),
@@ -105,11 +104,11 @@ mod tests {
         let le = decode(&le);
         let (t, n) = text(&le);
         assert_eq!(t, "# Olá\n");
-        assert_eq!(n, Some("Converted from UTF-16 LE."));
+        assert_eq!(n, Some("utf16Le"));
         let be = decode(&be);
         let (t, n) = text(&be);
         assert_eq!(t, "# Olá\n");
-        assert_eq!(n, Some("Converted from UTF-16 BE."));
+        assert_eq!(n, Some("utf16Be"));
     }
 
     #[test]
@@ -122,7 +121,7 @@ mod tests {
             (text, note)
         };
         assert_eq!(t, "caf\u{FFFD} ok");
-        assert!(n.is_some_and(|n| n.contains("UTF-8")));
+        assert_eq!(n.as_deref(), Some("invalidUtf8"));
     }
 
     #[test]

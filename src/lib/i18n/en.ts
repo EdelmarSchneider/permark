@@ -1,5 +1,6 @@
-// English strings (the default locale). Placeholders are `{name}`. Plural keys come in `.one` / `.other`
-// pairs and are read with `tn()`, which fills `{n}`.
+// English strings: the source language and the fallback of every other table. Placeholders are `{name}`. Plural
+// keys come in `.one` / `.other` pairs and are read with `tn()`, which fills `{n}`. Every other language has
+// exactly these keys (`i18n.test.ts` checks it); see docs/design/i18n.md for the conventions.
 export const en = {
   "app.name": "TrailMark",
   "app.loading": "Loading",
@@ -14,6 +15,8 @@ export const en = {
   "common.open": "Open",
   "copy.failed": "Couldn't copy to the clipboard.",
   "dialog.filter.docs": "Documents",
+  "dialog.openFolder": "Open folder",
+  "dialog.openFile": "Open file",
 
   // ---- welcome
   "welcome.tagline": "Read, navigate and follow your Markdown docs.",
@@ -431,6 +434,9 @@ export const en = {
 
   // ---- settings
   "settings.title": "Settings",
+  "settings.language": "Language",
+  "settings.languageSystem": "System default",
+  "settings.languageNotSaved": "Couldn't keep the language for next time: {message}",
   "settings.theme": "Theme",
   "settings.width": "Reading width",
   "settings.zoom": "Zoom",
@@ -454,20 +460,58 @@ export const en = {
   "update.statusHint": "Update available: v{version}. Click to see the options.",
   "update.installFailed": "The update could not be installed: {message}",
 
+  // ---- notes about a document (the backend sends codes; see noteText)
+  "note.invalidUtf8": "Not valid UTF-8; unreadable bytes were replaced",
+  "note.utf16Le": "Converted from UTF-16 LE",
+  "note.utf16LeLossy": "Converted from UTF-16 LE; some characters could not be decoded",
+  "note.utf16Be": "Converted from UTF-16 BE",
+  "note.utf16BeLossy": "Converted from UTF-16 BE; some characters could not be decoded",
+  "note.deepNesting": "Shown as plain text: nesting too deep to render",
+
+  // ---- errors from the backend, worded by kind (see errorMessage); {subject} is a path or a name, {detail} is
+  // diagnostic text from the system that is shown as it is
+  "error.noVault": "No folder is open.",
+  "error.superseded": "Another folder was opened in the meantime.",
+  "error.internal": "Something went wrong inside TrailMark: {detail}",
+  "error.pathEscape": "{subject} is outside the open folder.",
+  "error.invalidPath": "{subject} isn't a valid path.",
+  "error.notFound": "Not found: {subject}",
+  "error.io": "Couldn't access {subject}: {detail}",
+  "error.denied": "No permission to use {subject}.",
+  "error.watch": "Couldn't watch the folder for changes: {detail}",
+  "error.git": "Git reported a problem: {detail}",
+  "error.gitUnavailable": "Git isn't available right now.",
+  "error.session": "Couldn't read or save TrailMark's saved state: {detail}",
+  "error.metaUnreadable": "Can't read .trailmark/meta.toml{where}: {detail}",
+  "error.binary": "{subject} is a binary file, so it can't be edited.",
+  "error.tooLarge": "{subject} is too large.",
+  "error.notMarkdown": "{subject} isn't a Markdown file.",
+  "error.encoding": "{subject} isn't UTF-8 text, so it can't be edited here.",
+  "error.exists": "{subject} already exists.",
+  "error.unsupported": "Not available when a single file is opened on its own.",
+  "error.invalidData": "The image data isn't valid: {detail}",
+  "error.intoItself": "{subject} can't be moved into itself.",
+  "error.otherRoot":
+    "{subject} is in another root: files can't be moved between the project and a worktree.",
+  "error.protected": "{subject} can't be changed here.",
+  "error.holdsWorktree":
+    "{subject} holds the linked worktree {detail}, so it can't be moved or deleted here.",
+  "error.overlap": "{subject} overlaps another item of the same move.",
+  "error.nothing": "There is nothing to do.",
+  "error.unknownPlan": "That preview is no longer available. Try again.",
+  "error.unknownOperation": "That operation can no longer be undone.",
+  "error.partlyMoved":
+    "The move stopped partway. These could not be put back and stay where they were moved to: {subject}",
+  "error.trash": "Couldn't move to the recycle bin: {detail}",
+  "error.nameNoStem": "The name needs something before the extension",
+  "error.imageEmpty": "The image is empty",
+
   // ---- time
   "time.justNow": "just now",
   "time.seconds": "{n}s",
   "time.minutes": "{n}m",
   "time.hours": "{n}h",
   "time.days": "{n}d",
-  "time.ago.seconds.one": "{n} second ago",
-  "time.ago.seconds.other": "{n} seconds ago",
-  "time.ago.minutes.one": "{n} minute ago",
-  "time.ago.minutes.other": "{n} minutes ago",
-  "time.ago.hours.one": "{n} hour ago",
-  "time.ago.hours.other": "{n} hours ago",
-  "time.ago.days.one": "{n} day ago",
-  "time.ago.days.other": "{n} days ago",
 
   // ---- editing (docs/design/v0.2.md section 3)
   "edit.edit": "Edit",
@@ -700,3 +744,6 @@ export const en = {
   "feed.op.folder": "New folder",
   "feed.op.undone": "Undo",
 } as const;
+
+/** The shape of a table for any language: the keys of English, each a string. */
+export type Messages = { readonly [K in keyof typeof en]: string };

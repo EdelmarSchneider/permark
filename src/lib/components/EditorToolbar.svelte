@@ -2,7 +2,7 @@
   // The toolbar of Visual mode (docs/design/v0.2.md section 3): block type, marks, link, lists, quote, table, code block, image and
   // rule. Sticky under the header. When the pane is narrow the last buttons fold into a `[...]` menu. It only draws; what a
   // button does is decided by the callbacks, and what is pressed comes from the selection (`format`).
-  import { t } from "../i18n";
+  import { keys, t } from "../i18n";
   import type { CommandId, FormatState } from "../editor/visual/format";
   import {
     BLOCK_TYPES,
@@ -48,7 +48,7 @@
   const folded = $derived(TOOLBAR_ITEMS.slice(shown));
 
   function hintOf(entry: ToolbarItem): string {
-    return entry.hint ? `${t(entry.label)} (${entry.hint})` : t(entry.label);
+    return entry.hint ? `${t(entry.label)} (${keys(entry.hint)})` : t(entry.label);
   }
 
   function open(kind: NonNullable<typeof menu>["kind"], e: MouseEvent): void {

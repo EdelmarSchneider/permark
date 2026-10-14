@@ -11,7 +11,7 @@
     topLevelOnly,
   } from "../fileOps";
   import { gitStateLabel } from "../gitLabels";
-  import { LOCALE, t, tn } from "../i18n";
+  import { formatNumber, t, tn } from "../i18n";
   import { dirname, isMarkdown } from "../paths";
   import { nearestScrollTop } from "../reveal";
   import { app } from "../stores/app.svelte";
@@ -441,7 +441,7 @@
       {#if row.node.large !== undefined}
         <span
           class="branch-chip"
-          title={t("tree.largeFolderTitle", { n: row.node.large.toLocaleString(LOCALE) })}
+          title={t("tree.largeFolderTitle", { n: formatNumber(row.node.large) })}
           >{t("tree.largeFolder")}</span
         >
       {/if}

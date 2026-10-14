@@ -4,6 +4,8 @@
     "open_vault": ["path"],
     "initial_path": [],
     "recent_vaults": [],
+    "app_language": [],
+    "set_app_language": ["language"],
     "list_tree": ["show_ignored", "show_hidden"],
     "read_document": ["path"],
     "resolve_link": ["from", "href"],

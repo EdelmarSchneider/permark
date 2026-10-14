@@ -56,7 +56,7 @@ export type DocumentView = {
   frontmatter: [string, string][] | null;
   modifiedMs: number;
   sizeBytes: number;
-  /** A short remark shown next to the title: an odd encoding, or a rendering fallback. */
+  /** Codes for what to tell the reader next to the title (an odd encoding, a rendering fallback), several joined with a comma; `noteText` words them. */
   encodingNote: string | null;
 };
 export type LinkTarget =

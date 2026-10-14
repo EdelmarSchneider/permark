@@ -1,6 +1,7 @@
 // The mock backend behind `mockApi` (VITE_MOCK=1). Loaded lazily by api.ts.
 
 import type { Api } from "../api";
+import { parsePreference, type LanguagePreference } from "../i18n";
 import type { SessionState } from "../types";
 import {
   cleanUp,
@@ -53,6 +54,21 @@ let savedSession: SessionState | null = {
   initHintNever: false,
 };
 let stateLocation: "appData" | "project" = "appData";
+const LANGUAGE_KEY = "trailmark.mock.language";
+
+/** `?lang=de` picks the language for a run; otherwise the one chosen in Settings last time. */
+function mockLanguage(): LanguagePreference {
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(LANGUAGE_KEY);
+  } catch {
+    stored = null;
+  }
+  const asked =
+    typeof location === "undefined" ? null : new URLSearchParams(location.search).get("lang");
+  return parsePreference(asked ?? stored);
+}
+
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const mockImpl: Api = {
@@ -68,6 +84,14 @@ export const mockImpl: Api = {
   initialPath: async () =>
     typeof location === "undefined" ? null : new URLSearchParams(location.search).get("open"),
   recentVaults: async () => mockRecents,
+  appLanguage: async () => mockLanguage(),
+  setAppLanguage: async (language) => {
+    try {
+      localStorage.setItem(LANGUAGE_KEY, language);
+    } catch {
+      // the browser mock forgets it on reload
+    }
+  },
   listTree: async () => mockTree(),
   readDocument: async (path) => {
     await wait(40);

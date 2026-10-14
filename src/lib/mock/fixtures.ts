@@ -536,7 +536,7 @@ const docs: Record<string, MockDoc> = {
       p('Start with <a href="storage.md">storage</a> or <a href="watchers.md">watchers</a>.'),
     ],
     2 * 24 * 60 * MIN,
-    { encodingNote: "Decoded from UTF-16" },
+    { encodingNote: "utf16Le" },
   ),
   "docs/world/lore.md": doc("Lore", [h(1, "Lore"), ...loreBlocks], 26 * 60 * MIN),
   "docs/world/outline.md": doc("Outline", [h(1, "Outline"), ...outlineBlocks], 26 * 60 * MIN),

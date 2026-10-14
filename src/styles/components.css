@@ -710,8 +710,9 @@
   --tone: var(--git-modified);
   --tone-text: var(--git-modified-text);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
   padding: 7px var(--sp-4);
   flex: none;
   font-size: 12.5px;
@@ -732,8 +733,19 @@
 }
 .banner__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
+  margin-left: auto;
+}
+/* the text takes what is left of the line; the buttons drop below it when they do not fit beside it */
+.banner > :not(.icon, .spacer, .banner__actions, button) {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+.banner > button {
+  margin-left: auto;
 }
 .follow-chip {
   animation: tm-rise var(--dur) var(--ease) both;
@@ -1004,6 +1016,10 @@
 .text-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+select.select-input {
+  cursor: pointer;
+  text-overflow: ellipsis;
 }
 .field__preview {
   font: 11.5px/1.4 var(--font-code);
