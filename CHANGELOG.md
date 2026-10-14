@@ -32,6 +32,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   image is), or when it sits in a folder named `assets`, `images`, `img`, `media`, `attachments`, `screenshots`, `figures`, `diagrams` or
   `pictures`. The icons of a code folder stay out unless a document uses them. Data and XML files keep the old rule, and `+pattern` / `-pattern`
   entries still win. The set of linked images is kept up to date as documents change, reading only the document that changed.
+- **Enter works like a spreadsheet inside a table in the Visual editor.** A table cell can't hold a line break, and Enter used to leave the table.
+  Now **Enter** moves to the same column one row down (and adds a row from the last row), **Shift+Enter** moves one row up, and **Ctrl+Enter**
+  (**Cmd+Enter** on macOS) leaves the table. **Tab** and **Shift+Tab** still move between cells, and Tab in the last cell adds a row. Undo
+  takes an added row away in one step. Enter outside a table is unchanged.
 
 ## [0.2.0] - 2026-10-14
 
