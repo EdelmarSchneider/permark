@@ -64,7 +64,7 @@ Gemini CLI, and it's a great Markdown reader if you don't use AI at all.
 - Accent- and case-insensitive, with light stemming, and incremental updates as files change
 - Semantic search with a local multilingual model is planned for v0.3 (see the [roadmap](#roadmap))
 
-![Section search: "character descriptions" finds characters.md › Aria](docs/assets/screenshot-search.png)
+![Section search with a tag filter: "lanterns" in the files tagged needs-review, each file with its description, and the match highlighted in the open document](docs/assets/screenshot-search.png)
 
 ### 🌿 Git-aware
 - Badges for modified, added and untracked files, with folder roll-up
