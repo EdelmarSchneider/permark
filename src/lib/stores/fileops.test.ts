@@ -319,6 +319,11 @@ describe("renaming and moving", () => {
       { path: "docs/guide.md", text: "[a](api.md) unsaved\n" },
     ]);
     expect(editor.text).toBe("[a](reference.md) unsaved\n");
+    // the link patched into the buffer counts like one written to disk (the question counted it too)
+    expect(feed.entries[0]).toMatchObject({
+      summary: "Renamed api.md to reference.md, 1 link updated",
+    });
+    expect(toast.current).toMatchObject({ text: "Renamed api.md to reference.md, 1 link updated" });
   });
 
   /** A Visual editor holding the open document, with or without unsaved edits. */
