@@ -67,6 +67,15 @@ impl OwnWrites {
         }
     }
 
+    /// Takes back the announcements of deletions that were not made.
+    pub fn retract_removals(&self, paths: &[String]) {
+        if let Ok(mut map) = self.moved.lock() {
+            for path in paths {
+                map.remove(&key(path));
+            }
+        }
+    }
+
     /// Takes back the announcements of moves that were not made.
     pub fn retract_moves(&self, pairs: &[(String, String)]) {
         if let Ok(mut map) = self.moved.lock() {
@@ -416,6 +425,21 @@ mod tests {
         assert!(changes.is_empty(), "{changes:?}");
         // nothing is left to hide a later change with the same content
         assert!(!is_stripped(&own, "docs/a.md", 77));
+    }
+
+    #[test]
+    fn retracted_removals_are_news_again() {
+        let own = OwnWrites::new();
+        let paths = ["docs/a.md".to_owned(), "docs/b.md".to_owned()];
+        own.expect_removals(&paths);
+        own.retract_removals(&paths[..1]);
+        let mut changes = vec![
+            change(ChangeKind::Removed, "docs/a.md"),
+            change(ChangeKind::Removed, "docs/b.md"),
+        ];
+        own.strip(&mut changes, &SigStore::new());
+        // a.md was taken back; b.md is still ours
+        assert_eq!(changes, [change(ChangeKind::Removed, "docs/a.md")]);
     }
 
     #[test]

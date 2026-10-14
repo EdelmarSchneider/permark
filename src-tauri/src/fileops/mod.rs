@@ -40,6 +40,8 @@ pub enum FileOpError {
     OtherRoot(String),
     #[error("{0} can't be changed here")]
     Protected(String),
+    #[error("{path} holds the linked worktree {worktree}, so it can't be moved or deleted here")]
+    HoldsWorktree { path: String, worktree: String },
     #[error("{0} overlaps another item of the same move")]
     Overlap(String),
     #[error("file operations need a folder to be open, not a single file")]
@@ -52,6 +54,11 @@ pub enum FileOpError {
     UnknownOperation,
     #[error("couldn't move {path}: {source}")]
     Io { path: String, source: io::Error },
+    #[error(
+        "{reason}. These could not be put back and stay where they were moved to: {}",
+        .left.iter().map(|m| m.to.as_str()).collect::<Vec<_>>().join(", ")
+    )]
+    PartlyMoved { reason: String, left: Vec<Move> },
     #[error("couldn't move to the recycle bin: {0}")]
     Trash(String),
 }
@@ -65,7 +72,7 @@ impl FileOpError {
             Self::InvalidName(_) => "invalidName",
             Self::IntoItself(_) => "intoItself",
             Self::OtherRoot(_) => "otherRoot",
-            Self::Protected(_) => "protected",
+            Self::Protected(_) | Self::HoldsWorktree { .. } => "protected",
             Self::Overlap(_) => "overlap",
             Self::SimpleMode => "simpleMode",
             Self::Nothing => "nothing",
@@ -73,6 +80,7 @@ impl FileOpError {
             Self::UnknownOperation => "unknownOperation",
             Self::Io { source, .. } if source.kind() == io::ErrorKind::PermissionDenied => "denied",
             Self::Io { .. } => "io",
+            Self::PartlyMoved { .. } => "partlyMoved",
             Self::Trash(_) => "trash",
         }
     }
@@ -93,6 +101,8 @@ pub enum SkipReason {
     WriteFailed,
     /// The file is gone.
     Missing,
+    /// Something else is where the file has to go back to (an undo).
+    Occupied,
 }
 
 /// A file that was left alone, and why. Matches the UI's `SkippedFile`.

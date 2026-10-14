@@ -683,9 +683,75 @@ fn undo_does_not_put_a_file_where_another_one_has_appeared() {
     fs::write(fx.path("docs/guide.md"), "a new file").expect("write");
     let undone = fx.svc.undo(outcome.op_id).expect("undo");
     assert!(undone.moved_back.is_empty(), "{:?}", undone.moved_back);
-    assert_eq!(undone.could_not.len(), 1);
+    // the reason is that something is in the way, not that a write failed
+    assert_eq!(
+        undone.could_not,
+        [SkippedFile {
+            path: "docs/manual.md".to_owned(),
+            reason: SkipReason::Occupied
+        }]
+    );
     assert_eq!(fx.read("docs/guide.md"), "a new file");
     assert!(fx.exists("docs/manual.md"));
+    // the link keeps leading to the document, which is still at its new place, and not to the new file
+    assert_eq!((undone.files_restored, undone.links_restored), (0, 0));
+    assert!(fx
+        .read("README.md")
+        .contains("[the guide](docs/manual.md#setup)"));
+}
+
+#[test]
+fn undo_puts_back_the_links_of_the_files_that_go_back_and_only_those() {
+    let fx = Fx::new(&[
+        ("README.md", "# Home\n[a](a.md) and [b](b.md)\n"),
+        ("a.md", "# A\n"),
+        ("b.md", "# B\n"),
+        ("archive/keep.md", "k"),
+    ]);
+    let both = moves(&[("a.md", "archive/a.md"), ("b.md", "archive/b.md")]);
+    let preview = fx.svc.preview_move(&both, true).expect("preview");
+    let outcome = fx
+        .svc
+        .apply_move(preview.plan_id, true, &[])
+        .expect("apply");
+    assert_eq!(
+        fx.read("README.md"),
+        "# Home\n[a](archive/a.md) and [b](archive/b.md)\n"
+    );
+    // a new a.md appears where the old one was
+    fs::write(fx.path("a.md"), "a new file").expect("write");
+    let undone = fx.svc.undo(outcome.op_id).expect("undo");
+    assert_eq!(undone.moved_back, moves(&[("archive/b.md", "b.md")]));
+    assert_eq!(
+        undone.could_not,
+        [SkippedFile {
+            path: "archive/a.md".to_owned(),
+            reason: SkipReason::Occupied
+        }]
+    );
+    assert_eq!((undone.files_restored, undone.links_restored), (1, 1));
+    assert_eq!(
+        fx.read("README.md"),
+        "# Home\n[a](archive/a.md) and [b](b.md)\n"
+    );
+    assert!(fx.exists("archive/a.md") && fx.exists("b.md") && !fx.exists("archive/b.md"));
+}
+
+#[test]
+fn a_moved_document_that_cannot_go_back_keeps_the_links_it_was_given() {
+    let fx = Fx::new(&WIKI);
+    fs::create_dir_all(fx.path("archive/old")).expect("mkdir");
+    let outcome = fx.mv("docs/guide.md", "archive/old/guide.md");
+    let moved_text = fx.read("archive/old/guide.md");
+    fs::write(fx.path("docs/guide.md"), "a new file").expect("write");
+    let undone = fx.svc.undo(outcome.op_id).expect("undo");
+    assert_eq!(undone.moved_back, moves(&[]));
+    assert_eq!(undone.files_restored, 0);
+    // its own links still work from where it stays, and so does the link that leads to it
+    assert_eq!(fx.read("archive/old/guide.md"), moved_text);
+    assert!(fx
+        .read("README.md")
+        .contains("(archive/old/guide.md#setup)"));
 }
 
 #[test]
@@ -719,6 +785,52 @@ fn a_bin_that_fails_leaves_the_files_where_they_are() {
     let fx = Fx::with(&WIKI, |v| v, true);
     assert_eq!(kind(fx.svc.delete(&["README.md".to_owned()])), "trash");
     assert!(fx.exists("README.md"));
+}
+
+#[test]
+fn a_bin_that_fails_does_not_hide_a_real_removal_from_the_feed() {
+    let fx = Fx::with(&WIKI, |v| v, true);
+    assert_eq!(kind(fx.svc.delete(&["README.md".to_owned()])), "trash");
+    // someone else removes the file a moment later: that is news, the failed attempt was not an announcement
+    let mut changes = vec![FsChange {
+        kind: ChangeKind::Removed,
+        path: "README.md".to_owned(),
+        from: None,
+        at_ms: 1,
+    }];
+    fx.own.strip(&mut changes, &SigStore::new());
+    assert_eq!(changes.len(), 1);
+}
+
+#[test]
+fn a_folder_with_a_linked_worktree_in_it_is_not_moved_or_deleted() {
+    let fx = Fx::new(&WIKI);
+    // a worktree that lives inside the project, in a folder of its own
+    let inner = fx.path("agents/trees/x");
+    fs::create_dir_all(&inner).expect("mkdir");
+    fs::write(inner.join("code.rs"), "x").expect("write");
+    let vault = Vault::open(fx.dir.path())
+        .expect("open")
+        .with_worktrees(vec![Worktree {
+            name: "x".to_owned(),
+            path: inner,
+            branch: None,
+        }]);
+    let svc = FileOpsService::new(
+        Arc::new(vault),
+        Arc::clone(&fx.own),
+        fx.followers.clone(),
+        Arc::new(FolderBin {
+            bin: tempfile::tempdir().expect("bin"),
+            fail: false,
+        }),
+    );
+    assert_eq!(
+        kind(svc.preview_move(&moves(&[("agents", "elsewhere")]), true)),
+        "protected"
+    );
+    assert_eq!(kind(svc.delete(&["agents".to_owned()])), "protected");
+    assert!(fx.exists("agents/trees/x/code.rs"));
 }
 
 #[test]

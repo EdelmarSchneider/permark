@@ -160,7 +160,17 @@ impl FileOpsService {
             (Vec::new(), HashSet::new())
         };
 
-        execute_moves(&self.own, &valid)?;
+        if let Err(error) = execute_moves(&self.vault, &self.own, &valid) {
+            if let FileOpError::PartlyMoved { left, .. } = &error {
+                // what could not be put back did move, and what follows files has to know
+                for m in left {
+                    if let Some(v) = valid.iter().find(|v| v.from == m.from) {
+                        self.followers.renamed(&v.from, &v.to, v.is_dir);
+                    }
+                }
+            }
+            return Err(error);
+        }
         for m in &valid {
             self.followers.renamed(&m.from, &m.to, m.is_dir);
         }
@@ -283,7 +293,7 @@ impl FileOpsService {
     /// Sends files and folders to the recycle bin.
     pub fn delete(&self, paths: &[String]) -> Result<DeleteOutcome, FileOpError> {
         let valid = check_deletes(&self.vault, paths)?;
-        execute_deletes(&self.own, self.recycler.as_ref(), &valid)?;
+        execute_deletes(&self.vault, &self.own, self.recycler.as_ref(), &valid)?;
         Ok(DeleteOutcome {
             deleted: valid.into_iter().map(|d| d.rel).collect(),
         })
@@ -314,8 +324,12 @@ impl FileOpsService {
         state.operations.drain(..excess);
     }
 
-    /// Puts an operation back: the links it rewrote (in the files that are unchanged since), then the
-    /// files it moved, then the folders it made. What cannot be put back is reported.
+    /// Puts an operation back: the files it moved, the links it rewrote (in the files that are unchanged
+    /// since), then the folders it made. What cannot be put back is reported.
+    ///
+    /// Every move back is checked before anything is written. A link is put back only when everything it
+    /// is about goes back (the file it points at and the document it is in): a file that cannot return
+    /// because something is in the way of its old place keeps the links that lead to its new one.
     pub fn undo(&self, op_id: u64) -> Result<UndoOutcome, FileOpError> {
         let operation = {
             let mut state = lock(&self.state);
@@ -333,11 +347,34 @@ impl FileOpsService {
             folders_removed: 0,
             could_not: Vec::new(),
         };
+
+        // which moves can go back, last first (the order they are made in)
+        let mut goes_back = vec![false; operation.moves.len()];
+        let mut backs: Vec<(usize, ValidMove)> = Vec::new();
+        let mut blocked: Vec<SkippedFile> = Vec::new();
+        for (at, m) in operation.moves.iter().enumerate().rev() {
+            let back = Move {
+                from: m.to.clone(),
+                to: m.from.clone(),
+            };
+            match check_moves(&self.vault, std::slice::from_ref(&back)) {
+                Ok(mut valid) => {
+                    goes_back[at] = true;
+                    backs.extend(valid.pop().map(|v| (at, v)));
+                }
+                Err(error) => blocked.push(SkippedFile {
+                    path: m.to.clone(),
+                    reason: why_not_back(&error),
+                }),
+            }
+        }
+
         for rewrite in operation.rewrites.iter().rev() {
-            match self.restore_one(rewrite) {
-                Ok(()) => {
+            match self.restore_one(rewrite, &goes_back) {
+                Ok(0) => {}
+                Ok(links) => {
                     out.files_restored += 1;
-                    out.links_restored += rewrite.links;
+                    out.links_restored += links;
                 }
                 Err(reason) => out.could_not.push(SkippedFile {
                     path: rewrite.path.clone(),
@@ -345,29 +382,22 @@ impl FileOpsService {
                 }),
             }
         }
-        for m in operation.moves.iter().rev() {
-            let back = Move {
-                from: m.to.clone(),
-                to: m.from.clone(),
-            };
-            match check_moves(&self.vault, std::slice::from_ref(&back))
-                .and_then(|valid| execute_moves(&self.own, &valid).map(|()| valid))
-            {
-                Ok(valid) => {
-                    for v in &valid {
-                        self.followers.renamed(&v.from, &v.to, v.is_dir);
-                    }
-                    out.moved_back.push(back);
+
+        out.could_not.extend(blocked);
+        for (at, valid) in backs {
+            match execute_moves(&self.vault, &self.own, std::slice::from_ref(&valid)) {
+                Ok(()) => {
+                    self.followers.renamed(&valid.from, &valid.to, valid.is_dir);
+                    out.moved_back.push(valid.as_move());
                 }
+                // it passed the check a moment ago: someone was quicker
                 Err(error) => out.could_not.push(SkippedFile {
-                    path: m.to.clone(),
-                    reason: match error {
-                        FileOpError::Vault(_) => SkipReason::Missing,
-                        _ => SkipReason::WriteFailed,
-                    },
+                    path: operation.moves[at].to.clone(),
+                    reason: why_not_back(&error),
                 }),
             }
         }
+
         for folder in &operation.folders {
             if remove_empty_folder(&self.vault, folder) {
                 out.folders_removed += 1;
@@ -381,8 +411,23 @@ impl FileOpsService {
         Ok(out)
     }
 
-    /// Writes a document's old text back, if it still is exactly what the operation wrote.
-    fn restore_one(&self, rewrite: &Rewrite) -> Result<(), SkipReason> {
+    /// Writes a document's old links back, if it still is exactly what the operation wrote. Only the edits
+    /// whose moves all go back (`goes_back`, by position in the operation) are taken back. Returns how many
+    /// links that was.
+    fn restore_one(&self, rewrite: &Rewrite, goes_back: &[bool]) -> Result<usize, SkipReason> {
+        let wanted: Vec<LinkEdit> = rewrite
+            .inverse
+            .iter()
+            .filter(|e| {
+                e.causes
+                    .iter()
+                    .all(|c| goes_back.get(*c).copied().unwrap_or(false))
+            })
+            .cloned()
+            .collect();
+        if wanted.is_empty() {
+            return Ok(0);
+        }
         let resolved = self
             .vault
             .resolve(&rewrite.path)
@@ -392,8 +437,9 @@ impl FileOpsService {
             return Err(SkipReason::Changed);
         }
         let text = std::str::from_utf8(&bytes).map_err(|_| SkipReason::NotUtf8)?;
-        let restored = apply_edits(text, &rewrite.inverse).into_bytes();
-        if hash_hex(&restored) != rewrite.old_hash {
+        let restored = apply_edits(text, &wanted).into_bytes();
+        // all of them back: the document must be exactly what it was
+        if wanted.len() == rewrite.inverse.len() && hash_hex(&restored) != rewrite.old_hash {
             return Err(SkipReason::Changed);
         }
         let hash = hash_bytes(&restored);
@@ -403,7 +449,7 @@ impl FileOpsService {
             Ok((hash_hex(&on_disk) != rewrite.new_hash).then_some(()))
         });
         match written {
-            Ok(Guarded::Written) => Ok(()),
+            Ok(Guarded::Written) => Ok(wanted.len()),
             Ok(Guarded::Refused(())) => {
                 self.own.retract(&resolved.rel, hash);
                 Err(SkipReason::Changed)
@@ -413,6 +459,17 @@ impl FileOpsService {
                 Err(SkipReason::WriteFailed)
             }
         }
+    }
+}
+
+/// Why a move could not be undone.
+fn why_not_back(error: &FileOpError) -> SkipReason {
+    match error {
+        // something is at the old place now
+        FileOpError::Exists(_) => SkipReason::Occupied,
+        // the file is not where the operation left it
+        FileOpError::Vault(_) => SkipReason::Missing,
+        _ => SkipReason::WriteFailed,
     }
 }
 

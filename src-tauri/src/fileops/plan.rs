@@ -63,6 +63,10 @@ pub(crate) struct LinkEdit {
     pub new: String,
     /// 1-based line of the link.
     pub line: usize,
+    /// The moves (by position in the list given to the planner) this edit is about: the one that moves
+    /// the document, and the one that moves what the link points at. An undo can take the edit back only
+    /// when all of them go back.
+    pub causes: Vec<usize>,
 }
 
 /// The edits of one document.
@@ -117,37 +121,49 @@ fn segments(inner: &str) -> Vec<&str> {
 
 /// The moves, answering "where does this path end up?".
 struct Mover {
-    /// `from` segments (case-folded where the system folds case), `to`, longest `from` first.
-    entries: Vec<(Vec<String>, String, usize)>,
+    /// `from` segments (case-folded where the system folds case), `to`, their count, and the position of
+    /// the move in the list it came from; longest `from` first.
+    entries: Vec<(Vec<String>, String, usize, usize)>,
 }
 
 impl Mover {
     fn new(moves: &[Move]) -> Self {
-        let mut entries: Vec<(Vec<String>, String, usize)> = moves
+        let mut entries: Vec<(Vec<String>, String, usize, usize)> = moves
             .iter()
-            .map(|m| {
+            .enumerate()
+            .map(|(at, m)| {
                 let segs: Vec<String> = m.from.split('/').map(key).collect();
-                (segs.clone(), m.to.clone(), segs.len())
+                (segs.clone(), m.to.clone(), segs.len(), at)
             })
             .collect();
-        entries.sort_by_key(|(_, _, len)| std::cmp::Reverse(*len));
+        entries.sort_by_key(|(_, _, len, _)| std::cmp::Reverse(*len));
         Self { entries }
     }
 
-    /// The new place of `path`: the path itself when it is moved, or one inside a moved folder.
-    fn map(&self, path: &str) -> Option<String> {
+    /// The move that takes `path` along, and the new place it gives it.
+    fn find(&self, path: &str) -> Option<(usize, String)> {
         let parts: Vec<&str> = path.split('/').collect();
-        for (from, to, len) in &self.entries {
+        for (from, to, len, at) in &self.entries {
             if parts.len() >= *len && parts.iter().zip(from).all(|(p, f)| key(p) == *f) {
                 let mut out = to.clone();
                 for rest in &parts[*len..] {
                     out.push('/');
                     out.push_str(rest);
                 }
-                return Some(out);
+                return Some((*at, out));
             }
         }
         None
+    }
+
+    /// The new place of `path`: the path itself when it is moved, or one inside a moved folder.
+    fn map(&self, path: &str) -> Option<String> {
+        self.find(path).map(|(_, new)| new)
+    }
+
+    /// Which move takes `path` along.
+    fn move_of(&self, path: &str) -> Option<usize> {
+        self.find(path).map(|(at, _)| at)
     }
 
     fn map_or_same(&self, path: &str) -> String {
@@ -242,6 +258,8 @@ fn needs_encoding(c: char, rest: &str, style: Style) -> bool {
         // these end or split the destination in every form
         '#' | '?' | '%' | '<' | '>' => true,
         '"' | '`' | '|' | '(' | ')' => !angle,
+        // the attribute may be quoted with either: `<a href='it%27s.md'>`
+        '\'' => style.form == Form::Html,
         ' ' => !angle || style.percent,
         '&' => !angle && looks_like_entity(rest),
         c if c.is_control() => true,
@@ -433,15 +451,22 @@ impl<'a> Planner<'a> {
         let lines = LineIndex::new(text);
         let mut edits = Vec::new();
         for dest in find_destinations(text) {
-            if let Some(new) = self.rewrite(doc, &doc_new, text, &dest) {
+            if let Some((new, target)) = self.rewrite(doc, &doc_new, text, &dest) {
                 let old = dest.raw(text).to_owned();
                 if new != old {
+                    let mut causes: Vec<usize> =
+                        [self.mover.move_of(doc), self.mover.move_of(&target)]
+                            .into_iter()
+                            .flatten()
+                            .collect();
+                    causes.dedup();
                     edits.push(LinkEdit {
                         start: dest.start,
                         end: dest.end,
                         old,
                         new,
                         line: lines.line_of(dest.start),
+                        causes,
                     });
                 }
             }
@@ -449,8 +474,15 @@ impl<'a> Planner<'a> {
         edits
     }
 
-    /// The new token for one destination, or `None` when it stays as it is.
-    fn rewrite(&self, doc: &str, doc_new: &str, text: &str, dest: &Dest) -> Option<String> {
+    /// The new token for one destination and the path it points at (before the move), or `None` when it
+    /// stays as it is.
+    fn rewrite(
+        &self,
+        doc: &str,
+        doc_new: &str,
+        text: &str,
+        dest: &Dest,
+    ) -> Option<(String, String)> {
         let raw = dest.inner(text);
         if dest.form == Form::Html && (raw.contains('&') || raw.trim() != raw) {
             return None;
@@ -508,7 +540,7 @@ impl<'a> Planner<'a> {
             dot_slash: path.starts_with("./") || path.starts_with(".\\"),
             trailing_slash: decoded.ends_with('/') && decoded.len() > 1,
         };
-        Some(render_path(&rel, suffix, style))
+        Some((render_path(&rel, suffix, style), target))
     }
 
     /// What a link path points at (before the move): the path itself, or the `.md` file it leaves out.
@@ -583,6 +615,7 @@ pub(crate) fn invert_edits(edits: &[LinkEdit]) -> Vec<LinkEdit> {
                 old: e.new.clone(),
                 new: e.old.clone(),
                 line: e.line,
+                causes: e.causes.clone(),
             }
         })
         .collect()

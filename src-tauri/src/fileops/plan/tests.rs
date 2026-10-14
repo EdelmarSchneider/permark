@@ -408,6 +408,49 @@ fn raw_html_images_and_links_are_rewritten() {
 }
 
 #[test]
+fn an_apostrophe_in_a_new_name_does_not_end_a_quoted_html_attribute() {
+    let files = [
+        (
+            "a.md",
+            "<a href='b.md'>single</a> <a href=\"b.md\">double</a> [md](b.md)\n",
+        ),
+        ("b.md", "x\n"),
+    ];
+    // encoded in both kinds of quotes, left as it is in Markdown where it is harmless
+    assert_eq!(
+        after(&files, &[("b.md", "it's.md")], "a.md"),
+        "<a href='it%27s.md'>single</a> <a href=\"it%27s.md\">double</a> [md](it's.md)\n"
+    );
+}
+
+#[test]
+fn every_edit_knows_which_moves_it_comes_from() {
+    let files = [
+        ("a.md", "[x](docs/b.md) [y](c.md)\n"),
+        ("docs/b.md", "[back](../a.md) [z](../c.md)\n"),
+        ("c.md", "x\n"),
+    ];
+    let world = MemWorld::new(&files);
+    // 0: b.md is renamed, 1: c.md is renamed
+    let plan = plan_of(
+        &world,
+        &[("docs/b.md", "docs/b2.md"), ("c.md", "docs/c.md")],
+    );
+    let causes = |doc: &str| -> Vec<Vec<usize>> {
+        plan.docs
+            .iter()
+            .find(|d| d.path == doc)
+            .map(|d| d.edits.iter().map(|e| e.causes.clone()).collect())
+            .unwrap_or_default()
+    };
+    // a.md stays: each of its links is about the move of what it points at
+    assert_eq!(causes("a.md"), [vec![0], vec![1]]);
+    // b.md moves itself (0) and its link to c.md follows c.md (1) too; a link to a file that does not move
+    // is not touched by a rename within the same folder
+    assert_eq!(causes("docs/b.md"), [vec![0, 1]]);
+}
+
+#[test]
 fn a_case_only_rename_rewrites_links_to_the_new_case() {
     let files = [
         ("a.md", "[x](docs/readme.md) [y](docs/readme.md)\n"),
