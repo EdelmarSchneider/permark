@@ -32,6 +32,8 @@
   let group: HTMLElement | undefined = $state();
 
   const current = $derived(filter.current);
+  // the rule is about what the presets call assets: it has no meaning for Documents or Everything
+  const assetsRule = $derived(current.show === "docs-and-assets" || current.show === "custom");
   const invalid = $derived(
     current.show === "custom" ? parsePatterns(current.patterns).invalid : [],
   );
@@ -112,6 +114,19 @@
   {/if}
 
   <div class="menu-sep" role="separator"></div>
+  <label class={["filter__check", !assetsRule && "is-disabled"]}>
+    <input
+      type="checkbox"
+      checked={current.assetsNearDocs}
+      disabled={!assetsRule}
+      aria-describedby="filter-assets-note"
+      onchange={(e) => filter.set({ ...current, assetsNearDocs: e.currentTarget.checked })}
+    />
+    <span class="filter__text">
+      <span>{t("filter.assetsNearDocs")}</span>
+      <span id="filter-assets-note" class="filter__hint">{t("filter.assetsNearDocsHint")}</span>
+    </span>
+  </label>
   <label class="filter__check">
     <input
       type="checkbox"

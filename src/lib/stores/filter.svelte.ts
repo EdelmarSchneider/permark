@@ -1,7 +1,7 @@
 // The Explorer filter in force: the person's choice, else the project's default, else the app's. Derives
 // the filtered tree and the lists Quick open needs. "Show all" lifts the filter for now and is not saved.
 
-import { fileTest, filterFromDefault, filterTree } from "../treeFilter";
+import { documentFolders, fileTest, filterFromDefault, filterTree } from "../treeFilter";
 import type { TreeFilter } from "../types";
 import { docs } from "./docs.svelte";
 import { session } from "./session.svelte";
@@ -17,9 +17,12 @@ class FilterStore {
     session.treeFilter ?? filterFromDefault(vault.info?.treeDefault ?? null),
   );
 
+  /** Folders that hold a document, for "only assets next to documents". */
+  private docFolders = $derived(documentFolders(vault.files));
+
   // The open document stays in the tree even when the filter hides it.
   private outcome = $derived(
-    filterTree(vault.tree, fileTest(this.current), {
+    filterTree(vault.tree, fileTest(this.current, this.docFolders), {
       hideEmptyFolders: this.current.hideEmptyFolders,
       keep: docs.path,
     }),

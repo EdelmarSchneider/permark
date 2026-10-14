@@ -3,7 +3,7 @@
 // folders left with nothing to show can be dropped.
 
 import { FILE_CATEGORIES, categoryOf, isFileCategory, type FileCategory } from "./fileKinds";
-import { WT_PREFIX, splitWorktree } from "./paths";
+import { WT_PREFIX, dirname, splitWorktree } from "./paths";
 import { isDirNode } from "./tree";
 import type { FilterShow, TreeDefault, TreeFilter, TreeNode } from "./types";
 
@@ -34,6 +34,7 @@ export const DEFAULT_TREE_FILTER: TreeFilter = {
   categories: categoriesOf("docs-and-assets"),
   patterns: "",
   hideEmptyFolders: true,
+  assetsNearDocs: true,
 };
 
 /**
@@ -47,9 +48,9 @@ export function filterFromDefault(config: TreeDefault | null): TreeFilter {
     ...(config?.exclude ?? []).map((p) => `-${p}`),
   ].join(" ");
   if (show === "custom" || patterns !== "") {
-    return { show: "custom", categories: categoriesOf(show), patterns, hideEmptyFolders: true };
+    return { ...DEFAULT_TREE_FILTER, show: "custom", categories: categoriesOf(show), patterns };
   }
-  return { show, categories: categoriesOf(show), patterns: "", hideEmptyFolders: true };
+  return { ...DEFAULT_TREE_FILTER, show, categories: categoriesOf(show) };
 }
 
 /** Switching to "custom" keeps what the previous preset showed, so the tree does not jump. */
@@ -73,6 +74,7 @@ export function normalizeTreeFilter(raw: unknown): TreeFilter | null {
     categories,
     patterns: typeof r.patterns === "string" ? r.patterns : "",
     hideEmptyFolders: r.hideEmptyFolders !== false,
+    assetsNearDocs: r.assetsNearDocs !== false,
   };
 }
 
@@ -195,17 +197,49 @@ export function parsePatterns(text: string): ParsedPatterns {
 /** True when the file is shown. Takes the path as it appears in the tree (worktree files carry `@wt/<name>/`). */
 export type FileTest = (path: string) => boolean;
 
-export function fileTest(filter: TreeFilter): FileTest {
+/** The categories that count as documents: a folder that holds one is a place for reading. */
+const DOCUMENT_CATEGORIES: ReadonlySet<FileCategory> = new Set(["documents", "text"]);
+/** The companions of documents that "only assets next to documents" keeps out of code folders. */
+const ASSET_CATEGORIES: ReadonlySet<FileCategory> = new Set(["images", "data", "xml"]);
+
+/** Every folder that directly holds a document (`""` is the project root, `@wt/<name>` a worktree root). */
+export function documentFolders(files: Iterable<string>): Set<string> {
+  const folders = new Set<string>();
+  for (const path of files) {
+    if (DOCUMENT_CATEGORIES.has(categoryOf(path))) folders.add(dirname(path));
+  }
+  return folders;
+}
+
+/**
+ * Whether a document sits next to the file: in its own folder, or in the folder above it. The project
+ * root (and a worktree's root) counts as the file's own folder only: `package.json` sits next to
+ * `README.md`, but `src-tauri/Cargo.toml` and `.vscode/settings.json` do not borrow the root's.
+ */
+function nearDocuments(path: string, folders: ReadonlySet<string>): boolean {
+  const own = dirname(path);
+  if (folders.has(own)) return true;
+  return splitWorktree(own).rel.includes("/") && folders.has(dirname(own));
+}
+
+/** `folders` comes from `documentFolders` over the files of the tree. */
+export function fileTest(filter: TreeFilter, folders: ReadonlySet<string>): FileTest {
   if (filter.show === "everything") return () => true;
   const categories = new Set<FileCategory>(
     filter.show === "custom" ? filter.categories : PRESET_CATEGORIES[filter.show],
   );
+  const near = filter.assetsNearDocs && filter.show !== "documents";
   const rules = filter.show === "custom" ? parsePatterns(filter.patterns).rules : [];
-  if (rules.length === 0) return (path) => categories.has(categoryOf(path));
+  const byCategory = (path: string): boolean => {
+    const category = categoryOf(path);
+    if (!categories.has(category)) return false;
+    return !near || !ASSET_CATEGORIES.has(category) || nearDocuments(path, folders);
+  };
+  if (rules.length === 0) return byCategory;
   return (path) => {
     // patterns mean the same in a worktree as in the main folder
     const relative = path.startsWith(WT_PREFIX) ? splitWorktree(path).rel : path;
-    let shown = categories.has(categoryOf(path));
+    let shown = byCategory(path);
     for (const rule of rules) if (rule.regex.test(relative)) shown = rule.include; // the last match wins
     return shown;
   };

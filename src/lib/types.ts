@@ -26,6 +26,8 @@ export type TreeFilter = {
   /** The advanced field of "custom": `+pattern` and `-pattern` entries (the presets ignore it). */
   patterns: string;
   hideEmptyFolders: boolean;
+  /** Images, data and XML files show only in folders that hold documents (see `treeFilter.ts`). */
+  assetsNearDocs: boolean;
 };
 /** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
 export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };

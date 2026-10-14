@@ -9,6 +9,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - A filter in the Explorer header chooses what the tree shows: Documents, Docs and assets (the default), Everything, or Custom
   (file-type checkboxes plus optional `+pattern` / `-pattern` globs such as `+*.sql -archive/**`). Folders with no visible file are
   hidden, so a code repository shows `docs/` and the root documents instead of every source folder.
+- "Only assets next to documents" (on by default) keeps the JSON, TOML, YAML, XML and image files of code folders out of the
+  tree: such a file shows only when its folder, or the one above it, holds a document.
 - The tree footer says how many files are hidden ("Showing 52 of 1,204 files") and offers **Show all** for the moment. A hidden file
   you open by link, search, Ctrl+P or the feed stays in the tree, dimmed, while it is open.
 - Quick open follows the same filter and ends with "+N hidden files match", which lists them.

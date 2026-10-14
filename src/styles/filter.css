@@ -59,6 +59,10 @@
 .filter__option:hover {
   background: var(--hover);
 }
+.filter__check.is-disabled {
+  cursor: default;
+  opacity: 0.55;
+}
 .filter__option input,
 .filter__check input {
   flex: none;

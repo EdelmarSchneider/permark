@@ -66,6 +66,7 @@ describe("normalizeSession", () => {
       categories: ["data" as const],
       patterns: "+*.sql",
       hideEmptyFolders: false,
+      assetsNearDocs: false,
     };
     expect(normalizeSession({ treeFilter: filter }).treeFilter).toEqual(filter);
   });
