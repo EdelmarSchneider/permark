@@ -5,6 +5,7 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 use crate::git::GitError;
+use crate::meta::MetaError;
 use crate::render::RenderError;
 use crate::session::SessionError;
 use crate::vault::VaultError;
@@ -22,6 +23,8 @@ pub enum AppError {
     Git(#[from] GitError),
     #[error(transparent)]
     Session(#[from] SessionError),
+    #[error(transparent)]
+    Meta(#[from] MetaError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -46,6 +49,7 @@ impl AppError {
             Self::Watch(_) => "watch",
             Self::Git(_) => "git",
             Self::Session(_) => "session",
+            Self::Meta(e) => e.kind(),
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",

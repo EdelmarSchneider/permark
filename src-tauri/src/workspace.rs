@@ -16,6 +16,9 @@ use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
 };
 use crate::links::{self, LinkTarget};
+use crate::meta::catalog::{IndexEntry, TaggedFile};
+use crate::meta::service::{FileMeta, TagOverview};
+use crate::meta::{MetaService, Timing};
 use crate::render::{self, DocumentView, Registry};
 use crate::search::indexer::{IndexWorker, Indexer};
 use crate::search::{Bm25Index, SearchHit, SearchProvider};
@@ -45,6 +48,8 @@ pub trait EventSink: Send + Sync + 'static {
     fn git_status(&self, snapshot: &GitSnapshot);
     /// Search indexing advanced (`index-progress`).
     fn index_progress(&self, indexed: usize, total: usize);
+    /// Tags or descriptions changed (`meta-changed`).
+    fn meta_changed(&self);
 }
 
 /// Forwards events only while its workspace is the one that may emit, so a folder that is being
@@ -92,6 +97,12 @@ impl EventSink for GuardedSink {
     fn index_progress(&self, indexed: usize, total: usize) {
         if self.live() {
             self.inner.index_progress(indexed, total);
+        }
+    }
+
+    fn meta_changed(&self) {
+        if self.live() {
+            self.inner.meta_changed();
         }
     }
 }
@@ -182,6 +193,7 @@ pub struct Workspace {
     index: Arc<RwLock<Bm25Index>>,
     indexer: Arc<IndexWorker>,
     filter: Arc<PathFilter>,
+    meta: Arc<MetaService>,
     sink: Arc<dyn EventSink>,
     last_visit: Option<LastVisit>,
     closed: AtomicBool,
@@ -194,6 +206,7 @@ struct WatchWiring {
     sigs: Arc<SigStore>,
     sink: Arc<dyn EventSink>,
     indexer: Arc<IndexWorker>,
+    meta: Arc<MetaService>,
 }
 
 type StartWatcher = fn(
@@ -218,6 +231,7 @@ fn start_watcher(
         sigs,
         sink,
         indexer,
+        meta,
     } = wiring;
     Ok(WatchService::start(
         vault,
@@ -225,7 +239,13 @@ fn start_watcher(
         sigs,
         probe,
         WatchConfig::default(),
-        move |out: WatchOutput| {
+        move |mut out: WatchOutput| {
+            // Tags follow renamed files; file tags may have changed; an edit of `meta.toml` is read in,
+            // and the app's own writes to it are not news.
+            if meta.on_fs_changes(&out.all_changes) {
+                MetaService::without_meta_file(&mut out.all_changes);
+                MetaService::without_meta_file(&mut out.batch.changes);
+            }
             let has_batch = out.has_batch();
             let WatchOutput {
                 batch,
@@ -298,6 +318,15 @@ impl Workspace {
         let sigs = Arc::new(SigStore::new());
         let index = Arc::new(RwLock::new(Bm25Index::new()));
 
+        let meta_sink = Arc::clone(sink);
+        let meta = Arc::new(MetaService::open(
+            Arc::clone(&vault),
+            store.meta_path(),
+            store.location() == StateLocation::Project,
+            Timing::default(),
+            Arc::new(move || meta_sink.meta_changed()),
+        ));
+
         let git_sink = Arc::clone(sink);
         let git = GitHandle::start(
             GitSettings {
@@ -331,6 +360,7 @@ impl Workspace {
                 sigs,
                 sink: Arc::clone(sink),
                 indexer: Arc::clone(&indexer),
+                meta: Arc::clone(&meta),
             },
             git_ctx.as_ref(),
             git.trigger_fn(),
@@ -359,6 +389,7 @@ impl Workspace {
             index,
             indexer,
             filter,
+            meta,
             sink: Arc::clone(sink),
             last_visit,
             closed: AtomicBool::new(false),
@@ -482,6 +513,7 @@ impl Workspace {
     /// The window is back in the foreground: other tools may have changed things meanwhile.
     pub fn refresh(&self) {
         self.git.trigger();
+        self.meta.invalidate();
         if !self.live_updates {
             // Nothing tells us about changes in this folder, so look at the disk now.
             self.indexer.rescan();
@@ -510,8 +542,49 @@ impl Workspace {
     }
 
     pub fn init_project_folder(&self) -> Result<(), AppError> {
-        self.lock_store()?.init_project_folder()?;
+        let mut store = self.lock_store()?;
+        let was_in_project = store.location() == StateLocation::Project;
+        store.init_project_folder()?;
+        if !was_in_project {
+            // The tags and descriptions added so far move into `.trailmark/meta.toml`.
+            self.meta.migrate_to(store.meta_path(), true)?;
+        }
         Ok(())
+    }
+
+    // ---- tags and descriptions ------------------------------------------------------------------
+
+    pub fn file_meta(&self, path: &str) -> Result<FileMeta, AppError> {
+        Ok(self.meta.file_meta(path)?)
+    }
+
+    pub fn set_file_tags(&self, path: &str, tags: &[String]) -> Result<FileMeta, AppError> {
+        Ok(self.meta.set_tags(path, tags)?)
+    }
+
+    pub fn set_file_description(
+        &self,
+        path: &str,
+        description: &str,
+    ) -> Result<FileMeta, AppError> {
+        Ok(self.meta.set_description(path, description)?)
+    }
+
+    pub fn list_tags(&self) -> TagOverview {
+        self.meta.overview()
+    }
+
+    pub fn files_with_tags(&self, tags: &[String], untagged: bool) -> Vec<TaggedFile> {
+        self.meta.files_with_tags(tags, untagged)
+    }
+
+    pub fn meta_index(&self) -> Vec<IndexEntry> {
+        self.meta.index()
+    }
+
+    /// Removes the tags and descriptions kept for files that no longer exist. Returns how many.
+    pub fn clean_up_meta(&self) -> Result<usize, AppError> {
+        Ok(self.meta.clean_up()?)
     }
 
     pub fn state_location(&self) -> Result<StateLocation, AppError> {
@@ -648,6 +721,7 @@ impl Workspace {
             return;
         }
         self.save_last_visit();
+        self.meta.stop();
         self.indexer.stop();
         if let Ok(mut w) = self.watcher.lock() {
             if let Some(w) = w.take() {
@@ -776,6 +850,7 @@ mod tests {
     struct Recorder {
         fs: Mutex<Vec<FsBatch>>,
         tree: AtomicUsize,
+        meta: AtomicUsize,
         git: Mutex<Vec<GitSnapshot>>,
         progress: Mutex<Vec<(usize, usize)>>,
     }
@@ -792,6 +867,9 @@ mod tests {
         }
         fn index_progress(&self, indexed: usize, total: usize) {
             self.progress.lock().expect("lock").push((indexed, total));
+        }
+        fn meta_changed(&self) {
+            self.meta.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -1212,6 +1290,78 @@ deepword
             .flat_map(|b| &b.changes)
             .any(|c| c.path.contains("local") || c.path.contains("cache"));
         assert!(!leaked);
+        ws.close();
+    }
+
+    #[test]
+    fn tags_move_into_the_project_on_init_and_the_apps_own_writes_are_not_changes() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let ws = fx.open();
+        ws.set_file_tags("a.md", &["before".to_owned()])
+            .expect("tags");
+        ws.set_file_description("a.md", "first")
+            .expect("description");
+        let appdata_meta = StateStore::open(fx.app.path(), fx.project.path()).meta_path();
+        wait_until("the first write", || appdata_meta.exists());
+
+        ws.init_project_folder().expect("init");
+        let meta_file = fx.project.path().join(".trailmark/meta.toml");
+        let text = std::fs::read_to_string(&meta_file).expect("meta.toml");
+        assert!(
+            text.contains("\"before\"") && text.contains("first"),
+            "{text}"
+        );
+        assert!(!appdata_meta.exists(), "moved, not copied");
+
+        ws.set_file_tags("a.md", &["before".to_owned(), "after".to_owned()])
+            .expect("tags");
+        wait_until("the delayed write", || {
+            std::fs::read_to_string(&meta_file).is_ok_and(|t| t.contains("\"after\""))
+        });
+        thread::sleep(Duration::from_millis(700));
+        let seen = fs_paths(&fx.rec);
+        assert!(
+            !seen.iter().any(|p| p.contains("meta.toml")),
+            "own writes must not reach the feed: {seen:?}"
+        );
+        assert!(fx.rec.meta.load(Ordering::SeqCst) >= 2, "the UI is told");
+
+        // An agent edits the file: it is read in, and it is news.
+        let told = fx.rec.meta.load(Ordering::SeqCst);
+        std::fs::write(
+            &meta_file,
+            "[files.\"a.md\"]\ntags = [\"by-agent\"]\ndescription = \"edited\"\n",
+        )
+        .expect("write");
+        wait_until("the edit to be read in", || {
+            ws.file_meta("a.md")
+                .is_ok_and(|m| m.description == "edited" && m.tags.len() == 1)
+        });
+        assert!(fx.rec.meta.load(Ordering::SeqCst) > told);
+        wait_until("the edit in the feed", || {
+            fs_paths(&fx.rec).iter().any(|p| p.ends_with("meta.toml"))
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn a_renamed_file_keeps_its_tags() {
+        let fx = Fx::new();
+        write(fx.project.path(), "old.md", "# Same content\n");
+        let ws = fx.open();
+        ws.set_file_tags("old.md", &["keep".to_owned()])
+            .expect("tags");
+        std::fs::rename(
+            fx.project.path().join("old.md"),
+            fx.project.path().join("new.md"),
+        )
+        .expect("rename");
+        wait_until("the tags to follow the rename", || {
+            ws.file_meta("new.md")
+                .is_ok_and(|m| m.tags.iter().any(|t| t.name == "keep"))
+        });
+        assert!(ws.file_meta("old.md").expect("old").tags.is_empty());
         ws.close();
     }
 

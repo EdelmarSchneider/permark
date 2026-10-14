@@ -13,6 +13,8 @@ use tauri_plugin_opener::OpenerExt;
 use crate::error::AppError;
 use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
+use crate::meta::catalog::{IndexEntry, TaggedFile};
+use crate::meta::service::{FileMeta, TagOverview};
 use crate::render::DocumentView;
 use crate::search::SearchHit;
 use crate::session::{RecentStore, RecentVault, SessionState, StateLocation};
@@ -44,6 +46,10 @@ impl EventSink for TauriSink {
             "index-progress",
             serde_json::json!({ "indexed": indexed, "total": total }),
         );
+    }
+
+    fn meta_changed(&self) {
+        let _ = self.0.emit("meta-changed", ());
     }
 }
 
@@ -232,6 +238,67 @@ pub async fn init_project_folder(state: State<'_, AppState>) -> Result<(), AppEr
 pub async fn state_location(state: State<'_, AppState>) -> Result<StateLocation, AppError> {
     let ws = state.current()?;
     blocking(move || ws.state_location()).await
+}
+
+/// The tags (from the file's front matter and from the app) and the description of a file.
+#[tauri::command]
+pub async fn file_meta(state: State<'_, AppState>, path: String) -> Result<FileMeta, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.file_meta(&path)).await
+}
+
+/// Replaces the tags the app keeps for a file.
+#[tauri::command]
+pub async fn set_file_tags(
+    state: State<'_, AppState>,
+    path: String,
+    tags: Vec<String>,
+) -> Result<FileMeta, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_file_tags(&path, &tags)).await
+}
+
+/// Replaces the description of a file.
+#[tauri::command]
+pub async fn set_file_description(
+    state: State<'_, AppState>,
+    path: String,
+    description: String,
+) -> Result<FileMeta, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_file_description(&path, &description)).await
+}
+
+/// Every tag with its number of files, the number of untagged files, and the state of `meta.toml`.
+#[tauri::command]
+pub async fn list_tags(state: State<'_, AppState>) -> Result<TagOverview, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.list_tags())).await
+}
+
+/// The files that have all of the tags, or (with `untagged`) the files that have none.
+#[tauri::command]
+pub async fn files_with_tags(
+    state: State<'_, AppState>,
+    tags: Vec<String>,
+    untagged: bool,
+) -> Result<Vec<TaggedFile>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.files_with_tags(&tags, untagged))).await
+}
+
+/// The tags and description of every file that has some (for filters and tooltips).
+#[tauri::command]
+pub async fn meta_index(state: State<'_, AppState>) -> Result<Vec<IndexEntry>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.meta_index())).await
+}
+
+/// Removes the entries kept for files that no longer exist. Resolves to how many.
+#[tauri::command]
+pub async fn clean_up_meta(state: State<'_, AppState>) -> Result<usize, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.clean_up_meta()).await
 }
 
 /// The URI scheme that serves the images of the open folder to the document view. Requests are

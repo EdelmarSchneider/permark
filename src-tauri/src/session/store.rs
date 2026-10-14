@@ -11,6 +11,7 @@ use crate::util::{hash_hex, write_atomic};
 
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
+const META_FILE: &str = "meta.toml";
 const TRAILMARK_DIR: &str = ".trailmark";
 const PROJECT_GITIGNORE: &str = "\
 # TrailMark private state: not shared.
@@ -95,6 +96,15 @@ impl StateStore {
     #[cfg(test)]
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// Where the tags and descriptions added in the app are kept: `.trailmark/meta.toml` (shared with
+    /// the project) once the project has a `.trailmark/` folder, a file next to the AppData state before.
+    pub fn meta_path(&self) -> PathBuf {
+        match self.location {
+            StateLocation::Project => self.root.join(TRAILMARK_DIR).join(META_FILE),
+            StateLocation::AppData => self.dir.join(META_FILE),
+        }
     }
 
     /// Project settings from `.trailmark/config.toml`; defaults when missing or invalid.
@@ -214,6 +224,20 @@ mod tests {
         assert_ne!(StateStore::open(f.app.path(), other.path()).dir(), s.dir());
         // The project folder itself is untouched.
         assert!(fs::read_dir(f.project.path()).expect("ls").next().is_none());
+    }
+
+    #[test]
+    fn tags_live_in_appdata_until_the_project_is_initialized_and_then_in_meta_toml() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.meta_path(), s.dir().join("meta.toml"));
+        assert!(s.meta_path().starts_with(f.app.path()));
+        s.init_project_folder().expect("init");
+        let project_file = f.project.path().join(".trailmark").join("meta.toml");
+        assert_eq!(s.meta_path(), project_file);
+        // The shared file is not in the gitignored local/ folder.
+        assert!(!s.meta_path().starts_with(s.dir()));
+        assert_eq!(f.store().meta_path(), project_file);
     }
 
     #[test]
