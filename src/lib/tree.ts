@@ -154,6 +154,22 @@ export function navigate(rows: FlatRow[], index: number, key: string): TreeNavRe
   }
 }
 
+// ---- file operations -----------------------------------------------------------------------
+
+/** The names of the entries directly inside a folder of the tree ("" is the project root), files and folders alike. */
+export function childNames(root: TreeNode | null, folder: string): string[] {
+  const nodes = root?.children ?? [];
+  const children = folder === "" ? nodes : (findNode(nodes, folder)?.children ?? []);
+  // the worktrees listed beside the project's own entries are not entries of the project
+  return children.filter((n) => folder !== "" || n.kind !== "worktree").map((n) => n.name);
+}
+
+/** Whether a path of the tree is a folder (or a worktree). False for files and for paths the tree does not hold. */
+export function isDirPath(root: TreeNode | null, path: string): boolean {
+  const node = findNode(root?.children ?? [], path);
+  return node !== null && isDirNode(node);
+}
+
 /** Type-ahead: the next row (after `from`, wrapping) whose name starts with `prefix`. */
 export function typeahead(rows: FlatRow[], from: number, prefix: string): number | null {
   const p = prefix.toLowerCase();

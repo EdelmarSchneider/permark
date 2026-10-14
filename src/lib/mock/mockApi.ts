@@ -3,6 +3,15 @@
 import type { Api } from "../api";
 import type { SessionState } from "../types";
 import {
+  cleanUp,
+  fileMeta,
+  filesWithTags,
+  listTags,
+  metaIndex,
+  setDescription,
+  setTags,
+} from "./mockMeta";
+import {
   MOCK_ROOT,
   getDocument,
   mockGit,
@@ -16,17 +25,31 @@ import {
   resolveMockLink,
   searchDocs,
 } from "./fixtures";
+import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./mockFileOps";
+import {
+  createDocument,
+  documentSource,
+  parseBlocks,
+  renderFragments,
+  saveDocument,
+  writeAsset,
+} from "./mockSource";
 
 let savedSession: SessionState | null = {
   lastDoc: "docs/specs/live-feed.md",
   scrollTop: 0,
   zoom: 1,
-  wide: false,
+  width: "comfortable",
   refTemplate: "@{path}",
   leftPanel: { open: true, width: 260 },
   rightPanel: { open: true, width: 280 },
   theme: "system",
   follow: false,
+  treeFilter: null,
+  autoReveal: true,
+  rightTab: "changes",
+  linkUpdate: "ask",
+  editMode: "visual",
 };
 let stateLocation: "appData" | "project" = "appData";
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,5 +100,23 @@ export const mockImpl: Api = {
     stateLocation = "project";
   },
   stateLocation: async () => stateLocation,
+  fileMeta: async (path) => fileMeta(path),
+  setFileTags: async (path, tags) => setTags(path, tags),
+  setFileDescription: async (path, description) => setDescription(path, description),
+  listTags: async () => listTags(),
+  filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
+  metaIndex: async () => metaIndex(),
+  cleanUpMeta: async () => cleanUp(),
+  documentSource: (path) => documentSource(path),
+  parseBlocks: (text) => parseBlocks(text),
+  renderFragments: (texts) => renderFragments(texts),
+  saveDocument: (path, text, expectedHash) => saveDocument(path, text, expectedHash),
+  createDocument: (path, text) => createDocument(path, text),
+  writeAsset: (docPath, nameHint, data) => writeAsset(docPath, nameHint, data),
+  previewMove: (moves, scanLinks, heldBack) => previewMove(moves, scanLinks, heldBack),
+  applyMove: (planId, updateLinks, buffers) => applyMove(planId, updateLinks, buffers),
+  deleteEntries: (paths) => deleteEntries(paths),
+  newFolder: (path) => newFolder(path),
+  undoFileOp: (opId) => undoFileOp(opId),
   on: async () => () => {},
 };

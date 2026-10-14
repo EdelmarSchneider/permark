@@ -3,16 +3,22 @@
   import ImageZoom from "./lib/components/ImageZoom.svelte";
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
+  import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
+  import OutlinePopover from "./lib/components/OutlinePopover.svelte";
   import QuickOpen from "./lib/components/QuickOpen.svelte";
+  import TagEditor from "./lib/components/TagEditor.svelte";
   import SelectionPopover from "./lib/components/SelectionPopover.svelte";
   import SettingsPopover from "./lib/components/SettingsPopover.svelte";
   import Shell from "./lib/components/Shell.svelte";
   import Welcome from "./lib/components/Welcome.svelte";
   import { t } from "./lib/i18n";
-  import { closeTopOverlay } from "./lib/overlays";
+  import { isEditable } from "./lib/dom/domUtil";
+  import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
   import { matchShortcut } from "./lib/shortcuts";
   import { app } from "./lib/stores/app.svelte";
   import { docs } from "./lib/stores/docs.svelte";
+  import { edit } from "./lib/stores/edit.svelte";
+  import { fileops } from "./lib/stores/fileops.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
   import { updates } from "./lib/stores/updates.svelte";
@@ -39,11 +45,25 @@
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
-      if (closeTopOverlay()) e.preventDefault();
+      if (closeTopOverlay()) {
+        e.preventDefault();
+        return;
+      }
+      // Esc also leaves editing, once menus and bars are closed (and not from some other text field)
+      const target = e.target as Element | null;
+      if (edit.active && (!isEditable(target) || target?.closest(".cm-editor, .tm-visual"))) {
+        e.preventDefault();
+        edit.requestExit();
+      }
       return;
     }
+    // the editor took the key (Ctrl+B is bold there, not the sidebar)
+    if (e.defaultPrevented) return;
     const action = matchShortcut(e);
     if (!action) return;
+    // "T" and "E" are plain letters: they only mean something while reading
+    const plainLetter = action === "editTags" || action === "edit";
+    if (plainLetter && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) return;
     e.preventDefault();
     app.run(action);
   }
@@ -77,6 +97,9 @@
   {#if ui.quickOpen}<QuickOpen />{/if}
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
+  {#if fileops.prompt}<LinkUpdateDialog prompt={fileops.prompt} />{/if}
+  {#if ui.tagEditor}<TagEditor />{/if}
+  {#if ui.outlinePopover}<OutlinePopover />{/if}
   <SelectionPopover />
 {:else}
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>

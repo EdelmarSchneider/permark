@@ -2,7 +2,7 @@
 // rendered HTML (top-level blocks with `data-sourcepos`, heading anchors, alerts, `language-mermaid`
 // code, `data-math-style` spans, footnotes, task lists), git state and a tiny section search.
 
-import { resolveRelative, splitWorktree } from "../paths";
+import { dirname, resolveRelative, splitWorktree } from "../paths";
 import { hashString } from "../text";
 import type {
   ChangedSince,
@@ -13,6 +13,7 @@ import type {
   TreeNode,
   VaultInfo,
 } from "../types";
+import { htmlToMarkdown, markdownToView } from "./mockMarkdown";
 
 export const MOCK_ROOT = "C:/Users/demo/trailmark-docs";
 export const MOCK_NOW = Date.now();
@@ -162,6 +163,10 @@ function liveFeed(rev: number): Block[] {
         ["checkout", "git operation", "one collapsed entry", "no"],
       ],
     ),
+    h(3, "Sources"),
+    p("The file watcher and the git-dir watcher are the only two sources; nothing polls.", 1),
+    h(3, "Batches"),
+    p("A batch closes after 150 ms of quiet, or after one second at the most.", 1),
     code(
       "ts",
       `// One batch per quiet period (150 ms), or at most every second.
@@ -290,6 +295,163 @@ const outlineBlocks: Block[] = [
   p("The memory cost of magic becomes the central problem."),
 ];
 
+/** A drawing 1000 px wide, for the wide-image case of the reading-width breakout. */
+const WIDE_IMAGE =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="160" viewBox="0 0 1000 160"><rect width="1000" height="160" rx="12" fill="#e8ecff"/><rect x="20" y="20" width="960" height="120" rx="8" fill="none" stroke="#4f6bed" stroke-width="2" stroke-dasharray="8 6"/><text x="500" y="88" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#4f6bed">An image 1000 px wide</text></svg>',
+  );
+
+/**
+ * Blocks that need more room than the text measure, between ordinary paragraphs (reading width, section 15).
+ * A save (`rev` > 0) edits each wide block and drops one paragraph, to exercise glow and removed markers.
+ */
+const readingWidthBlocks = (rev: number): Block[] => [
+  h(1, "Reading width"),
+  p(
+    "Text reads best in a column of about seventy characters, so paragraphs, lists, headings and quotes stay at the measure. Tables, code, diagrams, formulas and pictures often need more room than that, and they are allowed to take it.",
+    3,
+  ),
+  h(2, "A table that needs room"),
+  table(
+    ["Event", "Source", "Debounce", "Grouping", "Feed row", "Toast", "Follow", "Notes"],
+    [
+      [
+        "created",
+        "file watcher",
+        "150 ms",
+        "by path",
+        "new entry",
+        "yes",
+        "yes",
+        rev > 0 ? "A new file is a changed file (edited)." : "A new file is a changed file.",
+      ],
+      [
+        "modified",
+        "file watcher",
+        "150 ms",
+        "by path",
+        "updated in place",
+        "yes",
+        "yes",
+        "Twelve saves stay one row.",
+      ],
+      [
+        "removed",
+        "file watcher",
+        "150 ms",
+        "by path",
+        "kept, struck through",
+        "yes",
+        "no",
+        "The row stays until the next scan.",
+      ],
+      [
+        "checkout",
+        "git operation",
+        "none",
+        "one bulk batch",
+        "one collapsed row",
+        "no",
+        "no",
+        "Never produces a toast or a jump.",
+      ],
+    ],
+  ),
+  p("A narrow table stays at the measure, because its content does not need more.", 1),
+  table(
+    ["Mode", "Width"],
+    [
+      ["Comfortable", "760 px"],
+      ["Wide", "1100 px"],
+      ["Full", "the pane"],
+    ],
+  ),
+  h(2, "A long line of code"),
+  code(
+    "ts",
+    `const summary = events.filter((event) => event.kind !== '${rev > 0 ? "deleted" : "removed"}').map((event) => ({ path: event.path, at: event.atMs, group: groupOf(event), hidden: isHiddenByFilter(event.path) })).sort((a, b) => b.at - a.at);`,
+  ),
+  ...(rev > 0 ? [] : [p("Short code stays at the measure too.", 1)]),
+  code("ts", "const answer = 42;"),
+  h(2, "A diagram"),
+  code(
+    "mermaid",
+    `graph LR
+  Watcher[File watcher] --> Debounce[Debounce 150 ms] --> Group[Group by path] --> Reconcile[Reconcile with disk] --> Feed[Feed row] --> Toast[Toast] --> Follow[Follow jump] --> Outline[Outline ${rev > 0 ? "refresh" : "update"}]`,
+  ),
+  h(2, "A formula"),
+  p(
+    '<span data-math-style="display">S_n = \\sum_{k=1}^{n} \\frac{(-1)^{k+1}}{k} \\cdot \\left(\\frac{a_k + b_k + c_k + d_k + e_k + f_k + g_k + h_k + i_k + j_k + l_k + m_k}{\\sqrt{1 + x_k^2 + y_k^2 + z_k^2}}\\right) + \\int_0^\\infty \\frac{e^{-t}}{1 + t^2}\\,dt</span>',
+  ),
+  h(2, "A wide picture"),
+  p(`<img src="${WIDE_IMAGE}" alt="An image 1000 px wide" width="1000" />`),
+  p(
+    "Back to ordinary text: the paragraphs around the blocks above keep their measure, so the eye never has to cross a very long line.",
+    2,
+  ),
+  ul(["Lists stay at the measure", "so do headings", "and quotes"]),
+  quote("A wide block is the exception, not the layout.", "Design notes"),
+];
+
+/** Filler paragraphs, so that a section is tall enough to scroll through. */
+const filler = (topic: string, count = 3): Block[] =>
+  Array.from({ length: count }, (_, i) =>
+    p(
+      `${topic}, paragraph ${i + 1}. Text like this makes the section tall enough to scroll, so the outline has a section to follow: the agent writes, the reader scrolls, and the heading that is current moves with the page.`,
+      2,
+    ),
+  );
+
+/**
+ * A document with nested headings for the outline: a skipped level, a repeated heading text and a heading too long
+ * for the panel. A save (`rev` > 0) rewrites one paragraph under "Risks" and adds a section under "Phase two".
+ */
+const rolloutBlocks = (rev: number): Block[] => [
+  h(1, "Rollout plan"),
+  p(
+    "A plan with nested sections, to try the outline: collapse, follow, click, and live changes.",
+    2,
+  ),
+  h(2, "Phase one"),
+  ...filler("Phase one", 2),
+  h(3, "Scope"),
+  ...filler("Phase one scope", 3),
+  h(3, "Risks"),
+  p(
+    rev > 0
+      ? `The main risk is a slow disk, and since revision ${rev} also a full one.`
+      : "The main risk is a slow disk.",
+    1,
+  ),
+  ul(["Slow disk", "Network drive", "Antivirus scanning the folder"]),
+  h(4, "Mitigations"),
+  ...filler("Mitigations", 2),
+  h(2, "Phase two"),
+  ...filler("Phase two", 2),
+  h(3, "Scope"),
+  ...filler("Phase two scope", 3),
+  h(4, "A heading that skips a level"),
+  ...filler("The skipped level", 2),
+  ...(rev > 0 ? [h(3, `New in revision ${rev}`), ...filler("The new section", 2)] : []),
+  h(
+    2,
+    "A heading so long that it cannot possibly fit in the narrow right panel without being cut short",
+  ),
+  ...filler("The long heading", 3),
+  h(2, "Appendix"),
+  ...filler("Appendix", 4),
+];
+
+/** 1,312 headings, for the cut at 1,000 ("Showing 1,000 of 1,312"). */
+const longOutlineBlocks: Block[] = [
+  h(1, "Every heading"),
+  ...Array.from({ length: 1311 }, (_, i): Block[] => [
+    h(i % 9 === 0 ? 2 : 3, `Heading ${i + 1}`),
+    p(`Text under heading ${i + 1}.`, 1),
+  ]).flat(),
+];
+
 const docs: Record<string, MockDoc> = {
   "docs/specs/live-feed.md": doc(
     "Live changes feed",
@@ -365,6 +527,7 @@ const docs: Record<string, MockDoc> = {
       p("Not used in the MVP; local disks only."),
     ],
     4 * MIN,
+    { frontmatter: [["tags", "research, watcher"]] },
   ),
   "docs/research/index.md": doc(
     "Research",
@@ -382,6 +545,9 @@ const docs: Record<string, MockDoc> = {
     [h(1, "Style guide"), ...styleGuideBlocks],
     26 * 60 * MIN,
   ),
+  "docs/design/reading-width.md": doc("Reading width", readingWidthBlocks),
+  "docs/design/outline.md": doc("Rollout plan", rolloutBlocks),
+  "docs/design/long-outline.md": doc("Every heading", longOutlineBlocks),
   "docs/design/wireframes.md": doc("Wireframes", [
     h(1, "Wireframes"),
     p("Layouts for the welcome screen, the IDE mode and the search panel."),
@@ -492,11 +658,99 @@ function registry(): Record<string, MockDoc> {
   return mockState.vault === "simple" ? simpleDocs : docs;
 }
 
+/**
+ * The text of the documents, for the editor. A document has none until it is opened for editing (its source is
+ * made from the mock blocks, once). Saving, or an "agent" editing it afterwards, puts it in `written`, from then
+ * on the reading view is rendered from that text.
+ */
+export const mockFiles = {
+  generated: new Map<string, string>(),
+  written: new Map<string, { text: string; mtime: number }>(),
+  /** Files made with New file: they are not in the registry. */
+  created: new Set<string>(),
+  /** Image names written by the editor (for the numbering of clashes). */
+  assets: new Set<string>(),
+  /** Folders made with New folder (or moved there): the tree shows them even while empty. */
+  folders: new Set<string>(),
+  /** The next save fails with "access denied", to see the error bar. */
+  failNextSave: false,
+};
+
+/** What kind of file a mock path is (null when there is no such file). */
+export function mockDocKind(path: string): MockDoc["kind"] | null {
+  if (mockState.deleted.has(path)) return null;
+  if (mockFiles.created.has(path)) return "markdown";
+  return registry()[path]?.kind ?? null;
+}
+
+/** Whether a mock document has a note about its encoding (the editor refuses those). */
+export function mockEncodingNote(path: string): string | null {
+  return registry()[path]?.encodingNote ?? null;
+}
+
+/** The text of a Markdown document: what was saved, else the source made from its mock blocks. */
+export function sourceText(path: string): string | null {
+  const saved = mockFiles.written.get(path);
+  if (saved) return saved.text;
+  const cached = mockFiles.generated.get(path);
+  if (cached !== undefined) return cached;
+  const entry = registry()[path];
+  if (!entry || entry.kind !== "markdown") return null;
+  const text = htmlToMarkdown(
+    entry.blocks(0).map((b) => b.html),
+    entry.frontmatter,
+  );
+  mockFiles.generated.set(path, text);
+  return text;
+}
+
+/** When the document was last written (a save, or the age it started with). */
+export function sourceMtime(path: string): number {
+  return (
+    mockFiles.written.get(path)?.mtime ??
+    mockState.modified.get(path) ??
+    MOCK_NOW - (registry()[path]?.age ?? 0)
+  );
+}
+
+/** Writes the text of a document, as the editor or an agent saving would. */
+export function writeSource(path: string, text: string): number {
+  const mtime = Date.now();
+  mockFiles.written.set(path, { text, mtime });
+  mockState.modified.set(path, mtime);
+  mockState.deleted.delete(path);
+  mockGit.generation += 1;
+  return mtime;
+}
+
 export function docExists(path: string): boolean {
-  return path in registry() && !mockState.deleted.has(path);
+  return (path in registry() || mockFiles.created.has(path)) && !mockState.deleted.has(path);
+}
+
+/** The front matter pairs of a mock document, if it has any. */
+export function mockFrontmatter(path: string): [string, string][] | null {
+  return registry()[path]?.frontmatter ?? null;
+}
+
+function writtenView(path: string, text: string, mtime: number): DocumentView {
+  const view = markdownToView(text);
+  return {
+    path,
+    kind: "markdown",
+    html: view.html,
+    blocks: view.blocks,
+    title: view.title,
+    frontmatter: view.frontmatter,
+    modifiedMs: mtime,
+    sizeBytes: new TextEncoder().encode(text).length,
+    encodingNote: null,
+  };
 }
 
 export function getDocument(path: string): DocumentView {
+  const written = mockFiles.written.get(path);
+  if (written && !mockState.deleted.has(path))
+    return writtenView(path, written.text, written.mtime);
   const entry = registry()[path];
   if (!entry || mockState.deleted.has(path)) throw new Error(`file not found: ${path}`);
   const rev = mockState.revisions.get(path) ?? 0;
@@ -530,9 +784,17 @@ export function getDocument(path: string): DocumentView {
 
 /** Simulates an agent saving a document: bumps its revision and modification time. */
 export function editDocument(path: string): void {
-  mockState.revisions.set(path, (mockState.revisions.get(path) ?? 0) + 1);
+  const rev = (mockState.revisions.get(path) ?? 0) + 1;
+  mockState.revisions.set(path, rev);
   mockState.modified.set(path, Date.now());
   mockState.deleted.delete(path);
+  // a document that has a text (it was opened for editing, or saved) is edited in its text
+  const text =
+    mockFiles.written.has(path) || mockFiles.generated.has(path) ? sourceText(path) : null;
+  if (text !== null) {
+    const body = text.replace(/\n*$/, "\n");
+    writeSource(path, `${body}\nEdit ${rev}: this paragraph was added by an agent.\n`);
+  }
 }
 
 export function deleteDocument(path: string): void {
@@ -546,7 +808,9 @@ export function restoreDocument(path: string): void {
 
 /** Documents that exist in the current mock vault. */
 export function allDocPaths(): string[] {
-  return Object.keys(registry()).filter((p) => !mockState.deleted.has(p));
+  return [...Object.keys(registry()), ...mockFiles.created].filter(
+    (p) => !mockState.deleted.has(p),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -581,6 +845,7 @@ export const mockIdeVault: VaultInfo = {
   initialFile: null,
   worktrees: mockWorktrees,
   liveUpdates: true,
+  treeDefault: null,
 };
 
 export const mockSimpleVault: VaultInfo = {
@@ -590,6 +855,7 @@ export const mockSimpleVault: VaultInfo = {
   initialFile: "proposal.md",
   worktrees: [],
   liveUpdates: true,
+  treeDefault: null,
 };
 
 export function mockTree(): TreeNode {
@@ -604,6 +870,56 @@ export function mockTree(): TreeNode {
   const exists = (p: string): boolean => !mockState.deleted.has(p);
   const keep = (nodes: TreeNode[]): TreeNode[] =>
     nodes.filter((n) => n.kind !== "file" || exists(n.path));
+  const tree = baseTree(keep);
+  for (const path of mockFiles.created) if (exists(path)) insertFile(tree, path);
+  for (const path of mockFiles.folders) insertFolder(tree, path);
+  return tree;
+}
+
+/** Adds a folder (and the ones above it) to a tree, if it is not there yet. */
+function insertFolder(tree: TreeNode, path: string): void {
+  const segments = path.split("/");
+  let folder = tree;
+  for (let i = 0; i < segments.length; i++) {
+    const folderPath = segments.slice(0, i + 1).join("/");
+    let next = (folder.children ?? []).find((n) => n.kind === "dir" && n.path === folderPath);
+    if (!next) {
+      next = dir(folderPath, []);
+      const rank = (n: TreeNode): number => (n.kind === "file" ? 1 : 0);
+      const children = [...(folder.children ?? []), next];
+      children.sort(
+        (a, b) =>
+          rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+      folder.children = children;
+    }
+    folder = next;
+  }
+}
+
+/** Adds a file to a tree, making the folders on the way; folders come first, then names in order. */
+function insertFile(tree: TreeNode, path: string): void {
+  const segments = path.split("/");
+  let folder = tree;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const folderPath = segments.slice(0, i + 1).join("/");
+    let next = (folder.children ?? []).find((n) => n.kind === "dir" && n.path === folderPath);
+    if (!next) {
+      next = dir(folderPath, []);
+      folder.children = [...(folder.children ?? []), next];
+    }
+    folder = next;
+  }
+  if ((folder.children ?? []).some((n) => n.path === path)) return; // an existing file that was recreated
+  const children = [...(folder.children ?? []), file(path)];
+  const rank = (n: TreeNode): number => (n.kind === "file" ? 1 : 0);
+  children.sort(
+    (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  folder.children = children;
+}
+
+function baseTree(keep: (nodes: TreeNode[]) => TreeNode[]): TreeNode {
   return {
     name: "trailmark-docs",
     path: "",
@@ -612,7 +928,12 @@ export function mockTree(): TreeNode {
       dir("assets", keep([file("assets/big-api.md"), file("assets/report.pdf")])),
       dir("data", [file("data/config.json")]),
       dir("docs", [
-        dir("docs/design", [file("docs/design/wireframes.md")]),
+        dir("docs/design", [
+          file("docs/design/long-outline.md"),
+          file("docs/design/outline.md"),
+          file("docs/design/reading-width.md"),
+          file("docs/design/wireframes.md"),
+        ]),
         dir("docs/images", [file("docs/images/pipeline.svg")]),
         dir("docs/research", [
           file("docs/research/index.md"),
@@ -689,17 +1010,29 @@ export function mockSnapshot(kind: "lastVisit" | "head" = mockGit.baseline): Git
       kind,
       oid: kind === "head" ? HEAD_OID : "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
     },
-    files: mockGit.gitError
-      ? {}
-      : {
-          "docs/specs/live-feed.md": { state: "modified", staged: false },
-          "docs/specs/watcher.md": { state: "added", staged: true },
-          "docs/research/storage.md": { state: "untracked", staged: false },
-          "docs/research/watchers.md": { state: "modified", staged: false },
-          "plan.md": { state: "modified", staged: false },
-        },
+    files: mockGit.gitError ? {} : mockGitFiles(),
     truncated: false,
   };
+}
+
+/** The changed files: the ones the mock starts with, plus what was saved or created since. */
+function mockGitFiles(): GitSnapshot["files"] {
+  const files: GitSnapshot["files"] = {
+    "docs/specs/live-feed.md": { state: "modified", staged: false },
+    "docs/specs/watcher.md": { state: "added", staged: true },
+    "docs/research/storage.md": { state: "untracked", staged: false },
+    "docs/research/watchers.md": { state: "modified", staged: false },
+    "plan.md": { state: "modified", staged: false },
+  };
+  for (const path of mockFiles.written.keys()) {
+    if (!mockState.deleted.has(path)) {
+      files[path] ??= {
+        state: mockFiles.created.has(path) ? "untracked" : "modified",
+        staged: false,
+      };
+    }
+  }
+  return files;
 }
 
 export function mockSince(): ChangedSince {

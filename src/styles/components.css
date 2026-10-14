@@ -1141,10 +1141,32 @@ kbd.hint-kbd {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 30px;
-  padding: 0 8px;
+  min-height: 30px;
+  padding: 3px 8px;
   border-radius: var(--radius-control);
   cursor: pointer;
+}
+.palette__body {
+  flex: 1;
+  min-width: 0;
+}
+.palette__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+}
+.palette__desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-bottom: 1px;
+  color: var(--muted);
+  font-size: var(--fs-ui-sm);
+}
+.palette__desc b {
+  font-weight: 700;
+  color: var(--accent);
 }
 .palette__row.is-active {
   background: var(--accent-soft);
@@ -1320,12 +1342,22 @@ kbd.hint-kbd {
 }
 .hit-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  height: 26px;
+  gap: 0 6px;
+  min-height: 26px;
   padding: 0 8px 0 4px;
   border-radius: var(--radius-control);
   cursor: pointer;
+}
+.hit-group__desc {
+  flex-basis: 100%;
+  margin: -3px 0 4px 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--fs-ui-xs);
 }
 .hit-group:hover {
   background: var(--hover);
@@ -1417,16 +1449,7 @@ mark {
 .welcome__logo {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
   margin-bottom: var(--sp-3);
-  border-radius: 14px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.welcome__logo .icon {
-  width: 26px;
-  height: 26px;
 }
 .welcome h1 {
   margin: 0;

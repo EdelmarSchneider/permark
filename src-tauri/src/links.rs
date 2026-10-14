@@ -54,7 +54,7 @@ pub(crate) fn percent_decode(s: &str) -> String {
 }
 
 /// The URL scheme of `href` (`https`, `mailto`, ...), lowercased, if it has one.
-fn scheme_of(href: &str) -> Option<String> {
+pub(crate) fn scheme_of(href: &str) -> Option<String> {
     let colon = href.find(':')?;
     let scheme = &href[..colon];
     let mut chars = scheme.chars();
@@ -156,7 +156,7 @@ fn find_existing(vault: &Vault, rel: &str, anchor: Option<String>) -> LinkTarget
 
 /// Joins `link` (already decoded, `/`-separated) onto the folder of `from`, within one root.
 /// `None` when the link climbs above its root.
-fn join_relative(from: &str, link: &str) -> Option<String> {
+pub(crate) fn join_relative(from: &str, link: &str) -> Option<String> {
     let from = from.replace('\\', "/");
     // Split `@wt/<name>/inner/path` into the root prefix and the part inside the root.
     let (prefix, inner) = match from.strip_prefix(WORKTREE_PREFIX) {

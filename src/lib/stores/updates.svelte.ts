@@ -11,6 +11,7 @@ import {
   type UpdateEvent,
   type UpdateState,
 } from "../updates";
+import { edit } from "./edit.svelte";
 import { toast } from "./toast.svelte";
 
 /** Let the app finish starting (and the network settle) before asking the update server. */
@@ -60,10 +61,15 @@ class UpdatesStore {
     }
   }
 
-  /** "Restart to update": downloads and installs the update, then restarts the app. */
+  /**
+   * "Restart to update": downloads and installs the update, then restarts the app. The restart (and, on Windows, the
+   * installer) closes the window without a close request, so unsaved edits are asked about first.
+   */
   async install(): Promise<void> {
     const update = this.found;
     if (!update || this.state.phase !== "available") return;
+    if (!(await edit.confirmLeave("restart"))) return;
+    if (this.state.phase !== "available") return; // an install started while the question was open
     this.dispatch({ type: "installRequested" });
     toast.update(true);
     try {

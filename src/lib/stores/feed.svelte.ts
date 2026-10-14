@@ -1,7 +1,7 @@
 // The "Live changes" feed (pure model in ../feed.ts) as reactive state, plus the Follow toggle's gate.
 
 import { SvelteSet } from "svelte/reactivity";
-import { FeedStore, type FeedEntry, type FeedUpdate } from "../feed";
+import { FeedStore, type FeedEntry, type FeedUpdate, type OperationEntry } from "../feed";
 import { FollowGate } from "../follow";
 import type { FsBatch } from "../types";
 
@@ -26,6 +26,13 @@ class FeedState {
     this.entries = [...this.model.entries];
     this.lastEventMs = this.model.lastEventMs;
     return update;
+  }
+
+  /** An operation of the Explorer (a move, a delete...) as one row. */
+  addOperation(op: Omit<OperationEntry, "type" | "id">): void {
+    this.model.addOperation(op);
+    this.entries = [...this.model.entries];
+    this.lastEventMs = this.model.lastEventMs;
   }
 
   toggleDocsOnly(): void {

@@ -5,19 +5,28 @@ import { SvelteSet } from "svelte/reactivity";
 import { api, type Unlisten } from "../api";
 import { bridge } from "../bridge";
 import { isTextSelected } from "../dom/domUtil";
-import { errorText } from "../errors";
+import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
+import { errorKind, errorText } from "../errors";
 import { followCandidate } from "../follow";
 import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
 import { formatQuote, formatReference } from "../reference";
+import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
 import type { ShortcutAction } from "../shortcuts";
+import { planReveal } from "../reveal";
+import { selectOnly } from "../tagModel";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
+import { edit } from "./edit.svelte";
 import { feed } from "./feed.svelte";
+import { fileops } from "./fileops.svelte";
+import { filter } from "./filter.svelte";
+import { outline } from "./outline.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
+import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
 import { ui } from "./ui.svelte";
 import { vault } from "./vault.svelte";
@@ -129,6 +138,11 @@ class AppStore {
 
   private async handleDrop(paths: string[]): Promise<void> {
     ui.drag = null;
+    // a file dropped on the window while editing must not replace the project; images are pasted
+    if (edit.active) {
+      toast.message(t("images.dropWhileEditing"), "info");
+      return;
+    }
     if (paths.length !== 1) {
       this.openError = t("welcome.dropOne");
       toast.message(t("welcome.dropOne"), "warn");
@@ -140,6 +154,10 @@ class AppStore {
   /** Opens a folder (IDE mode) or a file (Simple mode), replacing the current project. */
   async openProject(path: string): Promise<boolean> {
     if (this.opening) return false;
+    // unsaved edits are asked about first; the answer carries on with this
+    if (this.screen === "project" && edit.holdNavigation(() => void this.openProject(path))) {
+      return false;
+    }
     this.opening = true;
     this.openError = null;
     try {
@@ -156,16 +174,27 @@ class AppStore {
       }
 
       session.suspend();
+      edit.reset();
       docs.reset();
       feed.clear();
+      fileops.reset();
+      filter.reset();
+      outline.reset();
       search.reset();
+      tags.reset();
       toast.clear();
       vault.reset();
       ui.followChip = null;
       ui.find.open = false;
       ui.quickOpen = false;
+      ui.tagEditor = null;
+      ui.outlinePopover = false;
+      ui.changesNotify = false;
+      ui.rightTabBack = "changes";
       ui.sidebarView = "explorer";
       ui.dismissedRepoState = null;
+      ui.newFile = null;
+      ui.treeCursor = null;
       vault.info = info;
 
       const [stored, tree, git, location] = await Promise.all([
@@ -178,6 +207,7 @@ class AppStore {
       vault.git = git;
       vault.stateLocation = location;
       void vault.refreshSince();
+      if (info.mode === "ide") void tags.refreshIndex();
       const restored = session.load(stored);
       this.screen = "project";
 
@@ -222,6 +252,9 @@ class AppStore {
       await api.on("index-progress", (progress) => {
         vault.indexProgress = progress.indexed >= progress.total ? null : progress;
       }),
+      await api.on("meta-changed", () => {
+        if (this.screen === "project" && !vault.isSimple) tags.onMetaChanged();
+      }),
     );
   }
 
@@ -237,6 +270,7 @@ class AppStore {
 
   private onFsChange(batch: FsBatch): void {
     if (this.screen !== "project") return;
+    edit.onFsChange(batch);
     const now = Date.now();
     if (vault.isSimple) {
       docs.handleBatch(batch, false);
@@ -244,9 +278,12 @@ class AppStore {
     }
     const update = feed.apply(batch, now);
     if (batch.rescan) void vault.refreshTree();
+    tags.onFilesChanged();
 
     const docChanged = update.bulk !== null || update.files.some((f) => f.isDoc);
     if (docChanged && !session.right.open) ui.rightNotify = true;
+    // the same rule for the Changes tab while the Outline is the view showing
+    if (docChanged && session.rightTab !== "changes") ui.changesNotify = true;
 
     let jumped: string | null = null;
     if (session.follow && update.bulk === null) {
@@ -270,8 +307,9 @@ class AppStore {
 
   // ---- Follow -------------------------------------------------------------------------------------
 
+  /** Follow never jumps away from a document being edited (clean or not). */
   private followBlocked(): boolean {
-    return isTextSelected() || hasOpenOverlay();
+    return edit.active || isTextSelected() || hasOpenOverlay();
   }
 
   private async followTo(path: string): Promise<void> {
@@ -306,11 +344,9 @@ class AppStore {
 
   // ---- navigation ---------------------------------------------------------------------------------
 
-  /** Opens a document and, in IDE mode, reveals it in the tree. */
-  async openDoc(path: string, opts: OpenOptions = {}): Promise<boolean> {
-    const ok = await docs.open(path, opts);
-    if (ok && !vault.isSimple) vault.revealPath(path);
-    return ok;
+  /** Opens a document (the Explorer shows it too, unless "Always select the opened file" is off). */
+  openDoc(path: string, opts: OpenOptions = {}): Promise<boolean> {
+    return docs.open(path, opts);
   }
 
   /** Opens a document because it changed (feed row, toast, Follow): marks what is new in it. */
@@ -353,6 +389,48 @@ class AppStore {
     }
   }
 
+  // ---- new file -------------------------------------------------------------------------------------
+
+  /** Ctrl+N and "New file...": the name is typed in the tree, under the selected folder or the open document's. */
+  startNewFile(folder?: string): void {
+    if (vault.isSimple) {
+      toast.message(t("newFile.simpleMode"), "info");
+      return;
+    }
+    // The new file replaces the open document, so unsaved edits are asked about before anything is made: Save or Discard goes
+    // on to the name, Keep editing creates nothing.
+    if (edit.active && edit.dirty && edit.holdNavigation(() => this.startNewFile(folder))) return;
+    const target = folder ?? targetFolder(ui.treeCursor, docs.path);
+    ui.sidebarView = "explorer";
+    if (!session.left.open) session.setPanel("left", { open: true });
+    // the folders above the new file's folder open, and so does the folder itself
+    const plan = planReveal(target === "" ? "x" : `${target}/x`, vault.expanded);
+    ui.collapsedSections.delete(plan.section);
+    for (const dir of plan.expand) vault.expanded.add(dir);
+    if (target !== "") vault.expanded.add(target);
+    ui.newFile = { folder: target, n: (ui.newFile?.n ?? 0) + 1 };
+  }
+
+  /**
+   * Makes the file the tree input asked for and opens it for editing, the caret after its title. Resolves to the
+   * message to show under the input when it cannot be made, else null.
+   */
+  async createNewFile(folder: string, name: string): Promise<string | null> {
+    const path = newFilePath(folder, name);
+    try {
+      await api.createDocument(path, blankTemplate(name));
+    } catch (error) {
+      return errorKind(error) === "exists" ? t("newFile.exists") : errorText(error);
+    }
+    ui.newFile = null;
+    await vault.refreshTree();
+    // Editing starts once the file is open. Unsaved work in the open document was asked about before the name (see
+    // `startNewFile`); if there is some again by now (typed while the name was open) the open waits for the answer as
+    // any other move does, and the start of editing travels with it.
+    await this.openDoc(path, { afterOpen: () => void edit.enter(true) });
+    return null;
+  }
+
   // ---- baseline, panels, views ---------------------------------------------------------------------
 
   async setBaseline(kind: "lastVisit" | "head"): Promise<void> {
@@ -370,7 +448,45 @@ class AppStore {
 
   toggleRight(): void {
     session.setPanel("right", { open: !session.right.open });
-    if (session.right.open) ui.rightNotify = false;
+    if (session.right.open) {
+      ui.rightNotify = false;
+      if (session.rightTab === "changes") ui.changesNotify = false;
+    }
+  }
+
+  /** Shows one view of the right panel (a click on its tab). */
+  showRightTab(tab: RightTab): void {
+    if (session.rightTab === tab) return;
+    ui.rightTabBack = session.rightTab;
+    session.setRightTab(tab);
+    if (tab === "changes") ui.changesNotify = false;
+  }
+
+  /**
+   * Ctrl+Alt+O: the Outline tab (opening the right panel if it is collapsed), and back to the previous tab when
+   * pressed again. Simple mode has no panel: the outline opens as a popover under the header.
+   */
+  toggleOutline(): void {
+    if (vault.isSimple) {
+      ui.outlinePopover = !ui.outlinePopover;
+      return;
+    }
+    const next = outlineToggled({
+      open: session.right.open,
+      tab: session.rightTab,
+      back: ui.rightTabBack,
+    });
+    ui.rightTabBack = next.back;
+    if (!session.right.open) session.setPanel("right", { open: true });
+    ui.rightNotify = false;
+    if (next.tab !== session.rightTab) session.setRightTab(next.tab);
+    if (next.tab === "outline") {
+      ui.outlineFocusTick++;
+    } else {
+      // the list that had the focus is gone: the reader goes back to the document
+      ui.changesNotify = false;
+      bridge.outline?.focusDoc();
+    }
   }
 
   showSearch(): void {
@@ -387,13 +503,31 @@ class AppStore {
     ui.explorerFocusTick++;
   }
 
+  showTags(): void {
+    if (vault.isSimple) return;
+    ui.sidebarView = "tags";
+    if (!session.left.open) session.setPanel("left", { open: true });
+    ui.tagsFocusTick++;
+    void tags.refreshOverview();
+    void tags.refreshFiles();
+  }
+
+  /** A tag chip was clicked: the Tags view, showing the files with that tag. */
+  showTagsFor(tag: string): void {
+    if (vault.isSimple) return;
+    tags.filter = "";
+    tags.select(selectOnly(tag));
+    this.showTags();
+  }
+
   /** Activity bar: switch the sidebar view, or collapse the sidebar when its view is already showing. */
-  clickView(view: "explorer" | "search"): void {
+  clickView(view: "explorer" | "search" | "tags"): void {
     if (ui.sidebarView === view && session.left.open) {
       session.setPanel("left", { open: false });
       return;
     }
     if (view === "search") this.showSearch();
+    else if (view === "tags") this.showTags();
     else this.showExplorer();
   }
 
@@ -519,8 +653,29 @@ class AppStore {
         return this.showSearch();
       case "explorer":
         return this.showExplorer();
+      case "tagsView":
+        return this.showTags();
+      case "editTags":
+        if (ide && docs.current && !edit.active) ui.openTagEditor();
+        return;
+      case "edit":
+        if (docs.current && !edit.active) void edit.enter();
+        return;
+      case "toggleEdit":
+        if (docs.current || edit.active) edit.toggle();
+        return;
+      case "toggleEditMode":
+        if (edit.active) void edit.toggleMode();
+        return;
+      case "save":
+        if (edit.active) void edit.save();
+        return;
+      case "newFile":
+        return this.startNewFile();
       case "find":
-        return this.openFind();
+        // the editor has no find yet, and the reading view it would search is hidden
+        if (!edit.active) this.openFind();
+        return;
       case "back":
         return void docs.back();
       case "forward":
@@ -550,8 +705,10 @@ class AppStore {
         return session.zoomBy(-1);
       case "zoomReset":
         return session.setZoom(1);
-      case "toggleWide":
-        return session.toggleWide();
+      case "cycleWidth":
+        return session.cycleWidth();
+      case "toggleOutline":
+        return this.toggleOutline();
       case "settings":
         ui.settingsOpen = true;
         return;

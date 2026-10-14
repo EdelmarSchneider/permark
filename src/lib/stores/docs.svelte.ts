@@ -4,18 +4,33 @@
 import { api } from "../api";
 import type { FindMode } from "../find";
 import { errorText } from "../errors";
+import { isInside, mapPath } from "../fileOps";
 import { t } from "../i18n";
 import { NavHistory } from "../history";
-import type { DocumentView, FsBatch, FsChange } from "../types";
+import { shouldAutoReveal } from "../reveal";
+import type { DocumentView, FsBatch, FsChange, Move } from "../types";
 import { session } from "./session.svelte";
+import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
+import { vault } from "./vault.svelte";
 
 /** How long a removed file may stay missing before the open document is treated as deleted. */
 export const DELETE_GRACE_MS = 1000;
 /** The loading bar appears only when a read takes longer than this. */
 const LOADING_DELAY_MS = 150;
 
-export type LocateRequest = { line: number; find: { query: string; mode: FindMode } | null };
+export type LocateRequest = {
+  line: number;
+  find: { query: string; mode: FindMode } | null;
+  /** Tint the block it lands on, like a search hit (on unless false). */
+  tint?: boolean;
+};
+
+/**
+ * Asked before the open document is left for another one (or another project). Returns true to hold the navigation
+ * back (the editor has unsaved work and asks first); `resume` runs it later. Set by the edit store.
+ */
+export type NavigationGuard = (resume: () => void) => boolean;
 
 export type RenderRequest = {
   rev: number;
@@ -28,6 +43,8 @@ export type RenderRequest = {
   scrollTop: number | null;
   /** Scroll to the first changed block after an update (Follow is on) or after opening a changed doc. */
   followScroll: boolean;
+  /** An update that is not news (the person's own save, a reload after editing): nothing is marked as changed. */
+  quiet?: boolean;
   /** Mark what changed since this document was last rendered, even though it is a fresh open. */
   diffAgainstLast: boolean;
 };
@@ -42,6 +59,11 @@ export type OpenOptions = {
   silent?: boolean;
   /** Opened because it changed (Follow, toast, feed): diff against the version seen last. */
   fromChange?: boolean;
+  /**
+   * Runs once the document is open. When leaving the document being edited first needs an answer (Save, Discard), the
+   * open is resumed with the same options after it, so this runs then.
+   */
+  afterOpen?: () => void;
 };
 
 class DocStore {
@@ -60,6 +82,10 @@ class DocStore {
   /** Changes marked by the last live update (reported by DocView after rendering). */
   marks = $state({ changed: 0, removed: 0 });
   scrolled = $state(false);
+  /** The open document is being edited: the reading view is hidden and does not follow the file. */
+  editing = $state(false);
+  /** See [`NavigationGuard`]. */
+  guard: NavigationGuard | null = null;
 
   private history = new NavHistory();
   private token = 0;
@@ -98,22 +124,33 @@ class DocStore {
 
   /** Opens a document. Resolves to false when it could not be read (a toast says why). */
   async open(path: string, opts: OpenOptions = {}): Promise<boolean> {
+    if (
+      this.current &&
+      this.current.path !== path &&
+      this.guard?.(() => void this.open(path, opts))
+    ) {
+      return false;
+    }
     if (this.current?.path === path && !this.deleted && opts.history !== "none") {
       // the same document: just move within it
-      if (opts.anchor || opts.locate) {
+      const movedWithin = !!(opts.anchor || opts.locate);
+      if (movedWithin) {
         this.jump = {
           n: ++this.jumpCount,
           anchor: opts.anchor ?? null,
           locate: opts.locate ?? null,
         };
       }
+      this.revealInExplorer(path, movedWithin);
+      opts.afterOpen?.();
       return true;
     }
     const token = ++this.token;
     this.beginLoading();
     let view: DocumentView;
     try {
-      view = await api.readDocument(path);
+      // The tags load along with the document, so the strip above it is there from the first paint.
+      [view] = await Promise.all([api.readDocument(path), tags.preload(path)]);
     } catch (error) {
       if (token !== this.token) return false;
       this.endLoading();
@@ -151,10 +188,22 @@ class DocStore {
     };
     this.syncNav();
     session.noteDoc(path);
+    this.revealInExplorer(path, false);
+    opts.afterOpen?.();
     return true;
   }
 
+  /**
+   * Every route that opens a document ends here (tree, Quick open, search, links, the feed, Follow,
+   * back and forward, the restored session), so this is where the Explorer is asked to show it.
+   */
+  private revealInExplorer(path: string, movedWithin: boolean): void {
+    const opened = { autoReveal: session.autoReveal, simple: vault.isSimple, movedWithin };
+    if (shouldAutoReveal(opened)) vault.revealPath(path);
+  }
+
   async back(): Promise<void> {
+    if (this.guard?.(() => void this.back())) return;
     this.history.saveScroll(this.scrollTop);
     const entry = this.history.back();
     if (!entry) return;
@@ -167,6 +216,7 @@ class DocStore {
   }
 
   async forward(): Promise<void> {
+    if (this.guard?.(() => void this.forward())) return;
     this.history.saveScroll(this.scrollTop);
     const entry = this.history.forward();
     if (!entry) return;
@@ -176,6 +226,56 @@ class DocStore {
       this.history.back();
       this.syncNav();
     }
+  }
+
+  // ---- file operations of the Explorer ------------------------------------------------------------
+
+  /**
+   * Files or folders were moved or renamed here (not by someone else, so there is no tombstone): the history follows
+   * them, and the open document is shown again from where it is now, with nothing marked as changed. A document that
+   * did not move is read again anyway, because its links may have been rewritten.
+   */
+  async followMoves(moves: readonly Move[]): Promise<void> {
+    this.history.rename(moves);
+    const path = this.current?.path;
+    if (!path) return;
+    const now = mapPath(path, moves);
+    if (now === path) {
+      const view = await this.fetchCurrent();
+      if (view) this.applyQuiet(view);
+      return;
+    }
+    const token = ++this.token;
+    let view: DocumentView;
+    try {
+      [view] = await Promise.all([api.readDocument(now), tags.preload(now)]);
+    } catch {
+      if (token === this.token) this.markDeleted(null);
+      return;
+    }
+    if (token !== this.token) return;
+    this.cancelDeleteCheck();
+    this.current = view;
+    this.error = null;
+    this.deleted = null;
+    this.request = {
+      rev: ++this.rev,
+      view,
+      mode: "fresh",
+      anchor: null,
+      locate: null,
+      scrollTop: this.scrollTop,
+      followScroll: false,
+      diffAgainstLast: false,
+      quiet: true,
+    };
+    this.syncNav();
+  }
+
+  /** Files or folders were deleted here: the open document is shown as deleted when it was one of them. */
+  followRemoved(paths: readonly string[]): void {
+    const path = this.current?.path;
+    if (path && paths.some((p) => isInside(path, p))) this.markDeleted(null);
   }
 
   /** Dismisses the "deleted" notice: back to the previous document, or an empty view. */
@@ -213,7 +313,8 @@ class DocStore {
   /** Looks at a watcher batch and refreshes or tombstones the open document if it is affected. */
   handleBatch(batch: FsBatch, followScroll: boolean): void {
     const path = this.current?.path;
-    if (!path) return;
+    // while editing, the edit store watches the file (a change is a conflict, not a glow)
+    if (!path || this.editing) return;
     const mine = batch.changes.filter((c) => c.path === path || c.from === path);
 
     const movedAway = mine.find((c) => c.kind === "renamed" && c.from === path);
@@ -263,7 +364,30 @@ class DocStore {
     }
   }
 
-  private applyUpdate(view: DocumentView, followScroll: boolean): void {
+  /** The open document as it is on disk now, or null when it cannot be read. */
+  async fetchCurrent(): Promise<DocumentView | null> {
+    const path = this.current?.path;
+    if (!path) return null;
+    try {
+      const view = await api.readDocument(path);
+      return this.current?.path === path ? view : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Shows a version of the open document without marking anything as changed (the person's own edits). */
+  applyQuiet(view: DocumentView): void {
+    if (this.current?.path === view.path) this.applyUpdate(view, false, true);
+  }
+
+  /** The open document is gone (the editor was told, and the person chose to let it go). */
+  noteDeleted(): void {
+    this.markDeleted(null);
+  }
+
+  private applyUpdate(view: DocumentView, followScroll: boolean, quiet = false): void {
+    void tags.refreshMeta();
     this.current = view;
     this.deleted = null;
     this.request = {
@@ -275,6 +399,7 @@ class DocStore {
       scrollTop: null,
       followScroll,
       diffAgainstLast: false,
+      quiet,
     };
   }
 

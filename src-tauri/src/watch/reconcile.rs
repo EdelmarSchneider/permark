@@ -172,7 +172,12 @@ impl Pass<'_> {
             return;
         }
         let Ok(sig) = hash_file(&p.abs, meta) else {
-            // Still locked or vanished: report what we know without remembering it.
+            // Still locked or vanished: report what we know without remembering it. What the file holds now
+            // is unknown, so the content hash kept for its previous version must stop counting (0 means
+            // "unknown"): a stale hash would let the app's own writes be recognised in this change.
+            if let Some(prev) = prev {
+                self.env.sigs.set(k, &p.rel, FileSig { hash: 0, ..prev });
+            }
             if prev.is_some() || !p.created {
                 self.push(ChangeKind::Modified, &p.rel, None);
             } else {
@@ -322,6 +327,75 @@ mod tests {
         let r = f.run(&[("a.md", Hint::Modify)]);
         assert!(r.changes.is_empty(), "{:?}", r.changes);
         assert!(!r.tree_changed);
+    }
+
+    /// Makes `path` unreadable until the returned value is dropped (`None` where this cannot be done).
+    #[cfg(windows)]
+    fn make_unreadable(path: &std::path::Path) -> Option<fs::File> {
+        use std::os::windows::fs::OpenOptionsExt;
+        // opened with no sharing: every other open of the file fails with a sharing violation
+        fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(path)
+            .ok()
+    }
+
+    #[cfg(unix)]
+    struct Unreadable(std::path::PathBuf, fs::Permissions);
+
+    #[cfg(unix)]
+    impl Drop for Unreadable {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, self.1.clone());
+        }
+    }
+
+    #[cfg(unix)]
+    fn make_unreadable(path: &std::path::Path) -> Option<Unreadable> {
+        use std::os::unix::fs::PermissionsExt;
+        let original = fs::metadata(path).ok()?.permissions();
+        fs::set_permissions(path, fs::Permissions::from_mode(0o000)).ok()?;
+        let locked = Unreadable(path.to_path_buf(), original);
+        // the superuser reads anything
+        fs::read(path).is_err().then_some(locked)
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_does_not_keep_a_content_hash_that_could_match_our_own_write() {
+        use crate::util::hash_bytes;
+        use crate::watch::own::OwnWrites;
+
+        let f = Fx::new();
+        f.write("a.md", "one");
+        f.run(&[("a.md", Hint::Create)]);
+        let remembered = f.sigs.get("a.md").expect("sig");
+        assert_eq!(remembered.hash, hash_bytes(b"one"));
+        // We announced a write of "one" that the watcher never reported (the content was already there).
+        let own = OwnWrites::new();
+        own.expect("a.md", hash_bytes(b"one"));
+
+        // An agent writes something else, and the file is locked when the watcher comes to read it.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        f.write("a.md", "two!");
+        let Some(_locked) = make_unreadable(&f.path("a.md")) else {
+            eprintln!("skipped: cannot make a file unreadable here");
+            return;
+        };
+        let mut r = f.run(&[("a.md", Hint::Modify)]);
+        assert_eq!(kinds(&r), [(ChangeKind::Modified, "a.md")]);
+        assert_eq!(
+            f.sigs.get("a.md").map(|s| s.hash),
+            Some(0),
+            "what the file holds is unknown now"
+        );
+
+        own.strip(&mut r.changes, &f.sigs);
+        assert_eq!(
+            kinds(&r),
+            [(ChangeKind::Modified, "a.md")],
+            "the agent's change must reach the UI"
+        );
     }
 
     #[test]

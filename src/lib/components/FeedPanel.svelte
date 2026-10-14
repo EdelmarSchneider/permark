@@ -5,6 +5,7 @@
   import { feed } from "../stores/feed.svelte";
   import BulkRow from "./BulkRow.svelte";
   import FeedRow from "./FeedRow.svelte";
+  import OpRow from "./OpRow.svelte";
 
   const view = $derived(feed.view);
 </script>
@@ -17,6 +18,8 @@
       <li>
         {#if entry.type === "bulk"}
           <BulkRow {entry} />
+        {:else if entry.type === "op"}
+          <OpRow {entry} />
         {:else}
           <FeedRow
             {entry}

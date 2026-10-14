@@ -29,3 +29,12 @@ describe("tn", () => {
     expect(tn("doc.removedBlocks", 1, { time: "10:42" })).toBe("1 block removed · 10:42");
   });
 });
+
+describe("the Semantic teaser", () => {
+  it("names the release it is planned for (v0.3), everywhere it shows", () => {
+    for (const key of ["search.soon", "search.semanticLabel", "search.semanticHint"] as const) {
+      expect(t(key), key).toContain("v0.3");
+      expect(t(key), key).not.toContain("v0.2");
+    }
+  });
+});

@@ -2,8 +2,9 @@
 //! used by both the filesystem aggregator and the git worker.
 
 use std::ffi::OsStr;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -98,18 +99,112 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Option<PathBuf> {
     Some(canon)
 }
 
-/// Writes a file atomically (temp file in the same directory, then rename).
-pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+const RENAME_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+];
+
+/// Counts the temp files of this process, so two writes of the same file never share one.
+static TEMP_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// A fresh hidden temp name next to `path` (`.<name>.<pid>.<n>.part`).
+fn temp_path(path: &Path) -> PathBuf {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(dir)?;
     let name = path
         .file_name()
         .map_or_else(|| "state".to_owned(), |n| n.to_string_lossy().into_owned());
-    let tmp = dir.join(format!(".{name}.{}.part", std::process::id()));
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
-        let _ = std::fs::remove_file(&tmp);
-    })
+    let n = TEMP_COUNT.fetch_add(1, Ordering::Relaxed);
+    dir.join(format!(".{name}.{}.{n}.part", std::process::id()))
+}
+
+/// What [`write_atomic_guarded`] did with the target.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Guarded<R> {
+    /// The new bytes are in place.
+    Written,
+    /// The guard said no, and the target was left alone.
+    Refused(R),
+}
+
+/// Writes a file atomically: the bytes go to a temp file in the same directory, which is flushed to
+/// disk before it is renamed into place, so a power loss leaves the old file or the new one but never
+/// an empty one. A rename that fails because another program holds the target (antivirus, a sync
+/// client) is retried briefly. The permissions of the file being replaced (the mode bits on Unix, the
+/// read-only attribute on Windows) are given to the new one; ACLs, ownership and hard links are not
+/// carried over.
+pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    write_atomic_guarded(path, bytes, || Ok(None::<()>)).map(|_| ())
+}
+
+/// [`write_atomic`] with a last look at the target. `guard` runs after the temp file is written and
+/// flushed (which can take many milliseconds), immediately before each attempt to rename it into place:
+/// `Ok(None)` lets the rename go ahead, `Ok(Some(why))` throws the temp file away and leaves the target
+/// as it is. The save of a document uses it to compare the file on disk with the version the editor
+/// started from, so that a writer who got in during the flush is noticed.
+///
+/// What cannot be closed portably is the gap between the guard's read and the rename itself (no
+/// operating system offers "replace this file only if it still holds these bytes"). It is a few
+/// microseconds of syscalls instead of the whole write, and it is the known limit of this check.
+pub(crate) fn write_atomic_guarded<R>(
+    path: &Path,
+    bytes: &[u8],
+    mut guard: impl FnMut() -> io::Result<Option<R>>,
+) -> io::Result<Guarded<R>> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    let tmp = temp_path(path);
+    let mut refused: Option<R> = None;
+    let result = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .and_then(|mut file| {
+            file.write_all(bytes)?;
+            file.sync_all()
+        })
+        .and_then(|()| {
+            // Best effort: a file system that cannot carry the permissions over still gets the new bytes.
+            if let Some(meta) = std::fs::metadata(path)
+                .ok()
+                .filter(std::fs::Metadata::is_file)
+            {
+                let _ = std::fs::set_permissions(&tmp, meta.permissions());
+            }
+            retry_io(&RENAME_RETRY_DELAYS, || {
+                if let Some(why) = guard()? {
+                    refused = Some(why);
+                    return Ok(());
+                }
+                std::fs::rename(&tmp, path)
+            })
+        });
+    match (result, refused) {
+        (Ok(()), None) => Ok(Guarded::Written),
+        (Ok(()), Some(why)) => {
+            discard(&tmp);
+            Ok(Guarded::Refused(why))
+        }
+        (Err(e), _) => {
+            discard(&tmp);
+            Err(e)
+        }
+    }
+}
+
+/// Removes a temp file that is not going to be used. It may carry the read-only attribute of the file it
+/// was going to replace, which on Windows can stop it from being deleted.
+fn discard(tmp: &Path) {
+    if std::fs::remove_file(tmp).is_err() {
+        if let Ok(meta) = std::fs::metadata(tmp) {
+            let mut permissions = meta.permissions();
+            // the temp file is ours and about to be deleted: making it writable exposes nothing
+            #[allow(clippy::permissions_set_readonly_false)]
+            permissions.set_readonly(false);
+            let _ = std::fs::set_permissions(tmp, permissions);
+        }
+        let _ = std::fs::remove_file(tmp);
+    }
 }
 
 /// Escapes text for HTML element content and double-quoted attribute values.
@@ -305,6 +400,105 @@ mod tests {
         write_atomic(&p, b"one").expect("first write");
         write_atomic(&p, b"two").expect("second write");
         assert_eq!(std::fs::read(&p).expect("read"), b"two");
+    }
+
+    #[test]
+    fn write_atomic_leaves_no_temp_file_behind_even_when_the_target_cannot_be_replaced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ok = dir.path().join("a.json");
+        write_atomic(&ok, b"data").expect("write");
+        // a directory in the way: the rename fails, and the temp file is cleaned up
+        let blocked = dir.path().join("b.json");
+        std::fs::create_dir(&blocked).expect("mkdir");
+        assert!(write_atomic(&blocked, b"data").is_err());
+        let mut names: Vec<String> = std::fs::read_dir(dir.path())
+            .expect("ls")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a.json", "b.json"]);
+    }
+
+    /// Whether `name` looks like `.a.md.<pid>.<n>.part`.
+    fn is_temp_of_a(name: &str) -> bool {
+        name.starts_with(".a.md.") && Path::new(name).extension().is_some_and(|e| e == "part")
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .expect("ls")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn the_guard_looks_at_the_target_after_the_temp_file_is_written_and_can_refuse() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join("a.md");
+        std::fs::write(&p, "old").expect("write");
+        let mut temp_was_complete = false;
+        let outcome = write_atomic_guarded(&p, b"new", || {
+            temp_was_complete = names_in(dir.path()).iter().any(|name| {
+                is_temp_of_a(name)
+                    && std::fs::read(dir.path().join(name)).is_ok_and(|b| b == b"new")
+            });
+            Ok(Some("someone else wrote it"))
+        })
+        .expect("no io error");
+        assert_eq!(outcome, Guarded::Refused("someone else wrote it"));
+        assert!(
+            temp_was_complete,
+            "the guard must run once the new bytes are on disk"
+        );
+        assert_eq!(std::fs::read(&p).expect("read"), b"old", "target untouched");
+        assert_eq!(names_in(dir.path()), ["a.md"], "temp file removed");
+    }
+
+    #[test]
+    fn a_guard_that_lets_go_replaces_the_target_and_an_error_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join("a.md");
+        std::fs::write(&p, "old").expect("write");
+        let outcome = write_atomic_guarded(&p, b"new", || Ok(None::<()>)).expect("write");
+        assert_eq!(outcome, Guarded::Written);
+        assert_eq!(std::fs::read(&p).expect("read"), b"new");
+
+        let failed = write_atomic_guarded(&p, b"newer", || -> io::Result<Option<()>> {
+            Err(io::Error::other("cannot look"))
+        });
+        assert!(failed.is_err());
+        assert_eq!(std::fs::read(&p).expect("read"), b"new");
+        assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    #[test]
+    fn every_write_gets_a_temp_file_of_its_own() {
+        let p = Path::new("dir").join("a.md");
+        let (one, two) = (temp_path(&p), temp_path(&p));
+        assert_ne!(one, two);
+        assert_eq!(one.parent(), Some(Path::new("dir")));
+        let name = one
+            .file_name()
+            .expect("name")
+            .to_string_lossy()
+            .into_owned();
+        assert!(is_temp_of_a(&name), "{name}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_rewritten_file_keeps_its_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join("private.md");
+        std::fs::write(&p, "secret").expect("write");
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).expect("chmod");
+        write_atomic(&p, b"still secret").expect("write");
+        let mode = std::fs::metadata(&p).expect("meta").permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(std::fs::read(&p).expect("read"), b"still secret");
     }
 
     #[test]

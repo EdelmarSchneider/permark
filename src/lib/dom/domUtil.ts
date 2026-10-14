@@ -65,3 +65,12 @@ export function anchorTarget(el: HTMLElement): HTMLElement {
   const heading = el.closest<HTMLElement>("h1, h2, h3, h4, h5, h6");
   return heading ?? el;
 }
+
+/** True inside a field the user types into: plain-letter shortcuts must leave those keys alone. */
+export function isEditable(target: EventTarget | null): boolean {
+  if (typeof Element === "undefined" || !(target instanceof Element)) return false;
+  return (
+    target.closest("input, textarea, select, [contenteditable]:not([contenteditable=false])") !==
+    null
+  );
+}

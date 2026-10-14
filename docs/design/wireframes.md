@@ -423,7 +423,7 @@ Since last visit header reads "By file times, since Mon 18:40".
 | Open in external editor | Ctrl+Shift+E | Becomes Edit (Ctrl+E) in v0.2 |
 | Toggle sidebar / right panel | Ctrl+B / Ctrl+Alt+B | |
 | Zoom in / out / reset | Ctrl+= / Ctrl+- / Ctrl+0 | Also Ctrl+wheel |
-| Reading width | Ctrl+Alt+W | Normal 760px / wide 1100px |
+| Reading width | Ctrl+Alt+W | Cycles Comfortable 760px / Wide 1100px / Full (v0.2 section 15) |
 | Settings | Ctrl+, | Popover |
 | Close any overlay | Esc | Focus returns to where it was |
 | Reserved for v0.2 | Ctrl+K palette, Ctrl+E edit, Ctrl+S save | Do not bind in MVP |

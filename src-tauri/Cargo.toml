@@ -1,6 +1,6 @@
 [package]
 name = "trailmark"
-version = "0.1.0"
+version = "0.2.0"
 description = "A fast, beautiful Markdown IDE that keeps up with your AI agents."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/trailmark"
@@ -36,6 +36,8 @@ git2 = { version = "0.21.0", default-features = false }
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 tauri-plugin-updater = "2.13.3"
 tauri-plugin-process = "2.4.0"
+base64 = "0.23.1"
+trash = "5.2.9"
 
 [lints.rust]
 unsafe_code = "deny"

@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { t } from "../i18n";
+  import { t, tn } from "../i18n";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
+  import { edit } from "../stores/edit.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { updates } from "../stores/updates.svelte";
@@ -122,6 +123,18 @@
   {#if rebasing && git}
     <span class="sb-chip">{t(`status.chip.${git.repoState}`)}</span>
   {/if}
+  {#if edit.active}
+    <span class="sb-item">{t("edit.statusMode", { mode: t(`edit.${edit.mode}`) })}</span>
+    {#if edit.mode === "visual" && edit.unsavedBlocks > 0}
+      <span class="sb-item">{tn("edit.unsavedBlocks", edit.unsavedBlocks)}</span>
+    {/if}
+    {#if edit.mode === "source"}
+      <span class="sb-item" aria-live="off">
+        {t("edit.position", { line: edit.caret.line, col: edit.caret.column })}
+      </span>
+    {/if}
+    {#if session.follow}<span class="sb-chip">{t("edit.followPaused")}</span>{/if}
+  {/if}
   <span class="spacer"></span>
   {#if update.phase === "available"}
     <button
@@ -175,10 +188,10 @@
   <button
     type="button"
     class="sb-item"
-    title={t("status.widthHint")}
-    onclick={() => session.toggleWide()}
+    title={t("status.widthHint", { name: t(`width.${session.width}`) })}
+    onclick={() => session.cycleWidth()}
   >
-    <Icon name="width" />{session.wide ? t("status.wide") : t("status.normalWidth")}
+    <Icon name="width" />{t(`width.${session.width}`)}
   </button>
   <IconButton
     small

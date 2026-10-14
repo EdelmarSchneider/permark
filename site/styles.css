@@ -589,6 +589,13 @@ kbd {
     center / 11px no-repeat;
 }
 
+/* the two-column list of an editing or tags showcase */
+.checks--cols {
+  margin-top: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4) var(--sp-7);
+}
+
 .demo {
   display: grid;
   grid-template-columns: 1fr 190px;
@@ -951,6 +958,12 @@ kbd {
 .keys tr:last-child td {
   border-bottom: 0;
 }
+.keys__group th {
+  border-top: 1px solid var(--border);
+}
+.keys__group:first-child th {
+  border-top: 0;
+}
 .keys tbody tr:nth-child(even) td {
   background: color-mix(in srgb, var(--surface) 55%, transparent);
 }
@@ -965,7 +978,7 @@ kbd {
   margin: 0 0 var(--sp-6);
   padding: 0;
   display: grid;
-  grid-template-columns: 1.4fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: var(--sp-5);
 }
 .milestone {
@@ -1003,6 +1016,12 @@ kbd {
 .milestone strong {
   color: var(--text);
   font-weight: 600;
+}
+.milestone__state {
+  margin-left: var(--sp-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 /* ---------- CTA + footer ---------- */
@@ -1066,6 +1085,9 @@ kbd {
 @media (max-width: 760px) {
   body {
     font-size: 16px;
+  }
+  .checks--cols {
+    grid-template-columns: 1fr;
   }
   .section,
   .cta {

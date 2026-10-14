@@ -19,7 +19,8 @@ pub enum Verdict {
     Emit,
 }
 
-/// Editor and tool scratch files: `*.tmp`, `*~`, `.#*`, `*.swp` (and its `.swo`/`.swx` siblings), Vim's `4913`.
+/// Editor and tool scratch files: `*.tmp`, `*~`, `.#*`, `*.swp` (and its `.swo`/`.swx` siblings), Vim's
+/// `4913`, and the hidden `.<name>.<pid>.<n>.part` files this app writes before it renames them into place.
 pub fn is_temp_name(name: &str) -> bool {
     let has_ext = |wanted: &str| {
         Path::new(name)
@@ -29,6 +30,7 @@ pub fn is_temp_name(name: &str) -> bool {
     name.ends_with('~')
         || name.starts_with(".#")
         || name == "4913"
+        || (name.starts_with('.') && has_ext("part"))
         || ["tmp", "swp", "swo", "swx"].into_iter().any(has_ext)
 }
 
@@ -228,6 +230,7 @@ mod tests {
             "doc.md.swp",
             ".doc.swo",
             "4913",
+            ".meta.toml.1234.part",
         ] {
             assert!(is_temp_name(n), "{n}");
         }
@@ -238,6 +241,7 @@ mod tests {
             "notes~1.md",
             "swp.md",
             "my.templates",
+            "download.part",
         ] {
             assert!(!is_temp_name(n), "{n}");
         }

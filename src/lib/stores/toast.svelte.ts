@@ -4,6 +4,8 @@
 import { BurstTracker } from "../burst";
 import type { ChangeKind } from "../feed";
 
+export type ToastAction = { label: string; run: () => void };
+
 export type ToastModel =
   | {
       id: number;
@@ -13,11 +15,20 @@ export type ToastModel =
       kind: ChangeKind;
       atMs: number;
     }
-  | { id: number; type: "message"; text: string; tone: "info" | "warn" }
+  | {
+      id: number;
+      type: "message";
+      text: string;
+      tone: "info" | "warn";
+      /** A button on the toast (Undo): it runs once and the toast goes away. */
+      action?: ToastAction;
+    }
   /** An app update; the text and buttons follow the updater state (`stores/updates.svelte.ts`). */
   | { id: number; type: "update" };
 
 const AUTO_HIDE_MS = 6000;
+/** A toast with a button waits longer: there is something to decide. */
+const ACTION_HIDE_MS = 12000;
 /** The update toast waits longer: it asks a question. */
 const UPDATE_HIDE_MS = 20000;
 const LEAVE_MS = 180;
@@ -46,8 +57,19 @@ class ToastStore {
     });
   }
 
-  message(text: string, tone: "info" | "warn" = "info"): void {
-    this.show({ id: this.nextId++, type: "message", text, tone });
+  message(text: string, tone: "info" | "warn" = "info", action?: ToastAction): void {
+    this.show(
+      { id: this.nextId++, type: "message", text, tone, action },
+      action ? ACTION_HIDE_MS : AUTO_HIDE_MS,
+    );
+  }
+
+  /** The button of the toast was pressed: the toast goes, then the action runs. */
+  runAction(): void {
+    const current = this.current;
+    const action = current?.type === "message" ? current.action : undefined;
+    this.dismiss();
+    action?.run();
   }
 
   /** An update is available (or being installed, when `sticky`: the toast then stays to show the progress). */

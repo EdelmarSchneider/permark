@@ -1,5 +1,5 @@
 // The keyboard map (docs/design/wireframes.md, section 13) as a pure function, so it can be tested.
-// Reserved for v0.2 and deliberately unbound: Ctrl+K, Ctrl+E, Ctrl+S.
+// Ctrl+K stays unbound (the command palette will use it; in the editor it is the link).
 
 export type ShortcutAction =
   | "openFolder"
@@ -7,6 +7,13 @@ export type ShortcutAction =
   | "quickOpen"
   | "searchAll"
   | "explorer"
+  | "tagsView"
+  | "editTags"
+  | "edit"
+  | "toggleEdit"
+  | "toggleEditMode"
+  | "save"
+  | "newFile"
   | "find"
   | "back"
   | "forward"
@@ -21,7 +28,8 @@ export type ShortcutAction =
   | "zoomIn"
   | "zoomOut"
   | "zoomReset"
-  | "toggleWide"
+  | "cycleWidth"
+  | "toggleOutline"
   | "settings";
 
 export type KeyInfo = {
@@ -63,6 +71,9 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
     if (key === "ArrowRight") return "forward";
   }
   if (!mod && !alt && key === "F7") return shift ? "prevChange" : "nextChange";
+  // A plain letter: the caller leaves it alone while the user is typing in a field or an overlay is open.
+  if (!mod && !alt && !shift && key === "t") return "editTags";
+  if (!mod && !alt && !shift && key === "e") return "edit";
   if (!mod && alt && shift && key === "c") return "copyPath";
   if (!mod) return null;
 
@@ -73,7 +84,11 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
       case "b":
         return "toggleRight";
       case "w":
-        return "toggleWide";
+        return "cycleWidth";
+      case "o":
+        return "toggleOutline";
+      case "e":
+        return "toggleEditMode";
     }
     return null;
   }
@@ -87,6 +102,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "searchAll";
       case "x":
         return "explorer";
+      case "t":
+        return "tagsView";
       case "l":
         return "toggleFollow";
       case "e":
@@ -103,6 +120,12 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
       return "quickOpen";
     case "f":
       return "find";
+    case "e":
+      return "toggleEdit";
+    case "s":
+      return "save";
+    case "n":
+      return "newFile";
     case "b":
       return "toggleLeft";
     case "=":

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TrailMark: a Markdown IDE that keeps up with your AI agents</title>
-  <meta name="description" content="TrailMark is a fast, beautiful Markdown IDE for the docs your AI agents write. Read a folder like a wiki, watch documents change live, see exactly what changed and find any section in seconds. Works with any AI tool, or none.">
+  <meta name="description" content="TrailMark is a fast, beautiful Markdown IDE for the docs your AI agents write. Read a folder like a wiki, watch documents change live, find any section in seconds, and edit without rewriting what you did not touch. Works with any AI tool, or none.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
@@ -14,11 +14,11 @@
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="TrailMark">
   <meta property="og:title" content="TrailMark: a Markdown IDE that keeps up with your AI agents">
-  <meta property="og:description" content="Read a folder like a wiki, watch docs change live as agents write them, see what changed and find any section in seconds. Free and open source.">
+  <meta property="og:description" content="Read a folder like a wiki, watch docs change live as agents write them, find any section in seconds, and edit safely. Free and open source.">
   <meta property="og:url" content="https://edelmarschneider.github.io/trailmark/">
   <meta property="og:image" content="https://edelmarschneider.github.io/trailmark/assets/screenshot-light.png">
-  <meta property="og:image:width" content="1280">
-  <meta property="og:image:height" content="831">
+  <meta property="og:image:width" content="1440">
+  <meta property="og:image:height" content="900">
   <meta property="og:image:alt" content="TrailMark in IDE mode: file explorer, a rendered Markdown document and the live changes panel.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="TrailMark: a Markdown IDE that keeps up with your AI agents">
@@ -26,7 +26,7 @@
   <meta name="twitter:image" content="https://edelmarschneider.github.io/trailmark/assets/screenshot-light.png">
 
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
-  <link rel="apple-touch-icon" href="assets/logo.svg">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -46,6 +46,7 @@
       <nav class="nav__links" aria-label="Primary">
         <a href="#features">Features</a>
         <a href="#live">Live</a>
+        <a href="#edit">Edit</a>
         <a href="#install">Install</a>
         <a href="#roadmap">Roadmap</a>
       </nav>
@@ -66,7 +67,7 @@
           A fast, beautiful Markdown IDE that <span class="grad">keeps up with your AI agents.</span>
         </h1>
         <p class="hero__sub">
-          Read a folder like a wiki, watch documents change live as they're written, and find any section in seconds.
+          Read a folder like a wiki, watch documents change live as they're written, find any section in seconds, and edit without rewriting what you didn't touch.
         </p>
         <div class="hero__cta">
           <a class="btn btn--primary btn--lg" id="download-btn" href="https://github.com/EdelmarSchneider/trailmark/releases/latest">
@@ -87,7 +88,7 @@
             <picture>
               <source srcset="assets/screenshot-dark.png" media="(prefers-color-scheme: dark)">
               <img src="assets/screenshot-light.png" width="1440" height="900"
-                   alt="TrailMark in IDE mode: a file explorer with git badges on the left, a rendered Markdown document with a metadata card and a paragraph that just changed on disk (highlighted, with a marker for the removed text) in the middle, and the Live changes and Since last visit panels on the right."
+                   alt="TrailMark in IDE mode: a file explorer with git badges on the left, a rendered Markdown document with its description, tag chips and a metadata card, and a paragraph that just changed on disk (highlighted, with a marker for the removed text) in the middle, and the Live changes and Since last visit panels on the right."
                    fetchpriority="high"
                    onerror="this.onerror=null;this.parentNode.querySelectorAll('source').forEach(function(s){s.remove()});this.src='assets/screenshot-light.png';">
             </picture>
@@ -137,14 +138,14 @@
               <svg viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>
             </span>
             <h3>Reading that feels like a book</h3>
-            <p>GitHub-flavored Markdown with <strong>Mermaid</strong>, <strong>KaTeX</strong> math, alerts, footnotes and highlighted code. Frontmatter becomes a clean metadata card. Light and dark themes, zoom, reading width and a focus mode.</p>
+            <p>GitHub-flavored Markdown with <strong>Mermaid</strong>, <strong>KaTeX</strong> math, alerts, footnotes and highlighted code. Frontmatter becomes a clean metadata card. Light and dark themes, zoom, three reading widths and a focus mode.</p>
           </li>
           <li class="card">
             <span class="card__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/></svg>
             </span>
             <h3>Navigate like a wiki</h3>
-            <p>Open a folder for IDE mode or a single file for a distraction-free reader. Relative links, anchors and images resolve in the app, with back and forward, quick open and session restore.</p>
+            <p>Open a folder for IDE mode or a single file for a distraction-free reader. Relative links and images resolve in the app, with back and forward and quick open. An <strong>outline</strong> follows you through long documents, and an Explorer filter keeps a code repository down to its docs.</p>
           </li>
           <li class="card card--accent">
             <span class="card__icon" aria-hidden="true">
@@ -159,6 +160,27 @@
             </span>
             <h3>Find anything, to the section</h3>
             <p>Section-level full-text search shows <code>file › heading › snippet</code> and jumps to the exact spot. Accent- and case-insensitive, with light stemming, updated as files change.</p>
+          </li>
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/></svg>
+            </span>
+            <h3>Tags and descriptions</h3>
+            <p>Give any file a one-line description and tags, read from frontmatter or added in the app <strong>without touching your files</strong>. Browse by tag, filter search with <code>tag:needs-review</code>, and see descriptions in the tree and in results.</p>
+          </li>
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+            </span>
+            <h3>Edit without fear</h3>
+            <p>A visual editor and a source editor that rewrite <strong>only the blocks you changed</strong>. If an agent changes the file while you edit, you choose: reload theirs or keep mine. Images you paste land in <code>assets/</code>.</p>
+          </li>
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </span>
+            <h3>Move files, keep your links</h3>
+            <p>Rename, move and delete from the Explorer. TrailMark updates the links and images that point to a file, <strong>shows you the change first</strong>, and puts everything back with one <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</p>
           </li>
           <li class="card">
             <span class="card__icon" aria-hidden="true">
@@ -177,7 +199,7 @@
         </ul>
         <p class="footnote">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
-          <span><strong>Zero footprint by default.</strong> State lives in your user profile. Opt in to a shared <code>.trailmark/</code> folder only if you want settings to travel with the project.</span>
+          <span><strong>Zero footprint by default.</strong> State lives in your user profile. Opt in to a shared <code>.trailmark/</code> folder only if you want settings and tags to travel with the project.</span>
         </p>
       </div>
     </section>
@@ -236,7 +258,67 @@
       </div>
     </section>
 
-    <!-- 5. Works with -->
+    <!-- 5. Editing showcase -->
+    <section class="section section--tinted" id="edit" aria-labelledby="edit-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Editing</p>
+          <h2 id="edit-title">Edit without fear</h2>
+          <p class="lead">Fix a paragraph, add a table, paste a screenshot. TrailMark rewrites only the blocks you changed, so the file stays as its author wrote it and your diff stays small.</p>
+        </div>
+        <ul class="checks checks--cols">
+          <li><strong>Visual or Source.</strong> A WYSIWYG editor with a toolbar and a <code>/</code> block menu, or a Markdown editor with highlighting. Switch with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd>, keeping your place and your unsaved work</li>
+          <li><strong>Only your changes are written.</strong> Every other byte, line ending and blank line stays as it was, and a save without an edit writes the very same file</li>
+          <li><strong>Safe next to agents.</strong> If something changes the file while you edit, choose <em>Reload theirs</em> or <em>Keep mine</em>. A save never overwrites a version you haven't seen</li>
+          <li><strong>Nothing lost quietly.</strong> Unsaved blocks carry a bar in the margin, and leaving asks to save, discard or keep editing</li>
+          <li><strong>Locked blocks stay exact.</strong> Front matter, raw HTML, math and diagrams are shown as they read, with <em>Edit in Source</em> one click away</li>
+          <li><strong>New files and images.</strong> <kbd>Ctrl</kbd>+<kbd>N</kbd> names a file in the tree and opens it ready to type. Pasted images are saved in <code>assets/</code> next to the document</li>
+        </ul>
+      </div>
+
+      <div class="container container--wide">
+        <figure class="shot">
+          <div class="shot__frame">
+            <picture>
+              <source srcset="assets/screenshot-editor-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="assets/screenshot-editor.png" width="1440" height="900" loading="lazy" decoding="async"
+                   alt="TrailMark's Visual editor: a toolbar with bold active, a price table and a paragraph with one block marked as unsaved in the margin, a Mermaid diagram shown as a locked block with an Edit in Source button, and the document's outline in the right panel.">
+            </picture>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 6. Tags showcase -->
+    <section class="section" id="tags" aria-labelledby="tags-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Tags and descriptions</p>
+          <h2 id="tags-title">Find the right file by what it is</h2>
+          <p class="lead">Give files a one-line description and a few tags, and browse a big folder the way you think about it: "everything that needs review", "all the character sheets".</p>
+        </div>
+        <ul class="checks checks--cols">
+          <li><strong>Frontmatter and app tags.</strong> Tags written in a file's <code>tags:</code> are read automatically. Tags you add in the app never touch your files</li>
+          <li><strong>Shared when you want.</strong> Added tags live in <code>.trailmark/meta.toml</code>, plain text you can commit so teammates and agents can read it</li>
+          <li><strong>A Tags view.</strong> Every tag with its file count. Click one, or <kbd>Ctrl</kbd>+click several to narrow the list</li>
+          <li><strong>Everywhere you look.</strong> <code>tag:needs-review</code> works in quick open and search, and descriptions show in the tree, quick open and results</li>
+        </ul>
+      </div>
+
+      <div class="container container--wide">
+        <figure class="shot">
+          <div class="shot__frame">
+            <picture>
+              <source srcset="assets/screenshot-tags-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="assets/screenshot-tags.png" width="1440" height="900" loading="lazy" decoding="async"
+                   alt="TrailMark's Tags view: every tag with its file count, the needs-review tag selected and the three files that carry it, each with its description and git badge, next to an open document with its description and tag chips above the text.">
+            </picture>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 7. Works with -->
     <section class="section section--tinted" id="works-with" aria-labelledby="works-title">
       <div class="container center">
         <p class="eyebrow">Tool-agnostic</p>
@@ -254,7 +336,7 @@
       </div>
     </section>
 
-    <!-- 6. Install + shortcuts -->
+    <!-- 8. Install + shortcuts -->
     <section class="section" id="install" aria-labelledby="install-title">
       <div class="container">
         <div class="section__head">
@@ -301,21 +383,43 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
             <caption class="sr-only">Keyboard shortcuts</caption>
             <thead><tr><th scope="col">Action</th><th scope="col">Shortcut</th></tr></thead>
             <tbody>
+              <tr class="keys__group"><th scope="rowgroup" colspan="2">Reading and navigating</th></tr>
               <tr><td>Quick open file</td><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td></tr>
               <tr><td>Search all docs, by section</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td></tr>
               <tr><td>Find in page</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
+              <tr><td>Show the Explorer / the Tags view</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd></td></tr>
+              <tr><td>Show the Outline (again to go back)</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd></td></tr>
+              <tr><td>Cycle the reading width</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd></td></tr>
               <tr><td>Toggle left / right panel</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd></td></tr>
               <tr><td>Next / previous change</td><td><kbd>F7</kbd> / <kbd>Shift</kbd>+<kbd>F7</kbd></td></tr>
+              <tr><td>Follow mode</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td></tr>
               <tr><td>Back / forward</td><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td></tr>
               <tr><td>Copy reference (or selection with reference)</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></td></tr>
+              <tr><td>Edit tags and description</td><td><kbd>T</kbd></td></tr>
               <tr><td>Zoom in / out / reset</td><td><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
+              <tr class="keys__group"><th scope="rowgroup" colspan="2">Editing</th></tr>
+              <tr><td>Start editing</td><td><kbd>E</kbd> or <kbd>Ctrl</kbd>+<kbd>E</kbd></td></tr>
+              <tr><td>Done, back to reading</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd> or <kbd>Esc</kbd></td></tr>
+              <tr><td>Switch between Visual and Source</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td></tr>
+              <tr><td>Save</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
+              <tr><td>New file</td><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td></tr>
+              <tr><td>Bold / italic / strikethrough</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd></td></tr>
+              <tr><td>Link / inline code</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>`</kbd></td></tr>
+              <tr><td>Headings 1 to 4 / paragraph (Visual)</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>1</kbd>…<kbd>4</kbd> / <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd></td></tr>
+              <tr><td>Block menu (Visual)</td><td><kbd>/</kbd> in an empty paragraph</td></tr>
+              <tr class="keys__group"><th scope="rowgroup" colspan="2">In the Explorer</th></tr>
+              <tr><td>Rename</td><td><kbd>F2</kbd></td></tr>
+              <tr><td>Delete (asks first)</td><td><kbd>Del</kbd></td></tr>
+              <tr><td>Cut / paste to move</td><td><kbd>Ctrl</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd></td></tr>
+              <tr><td>Select several files</td><td><kbd>Ctrl</kbd>+click / <kbd>Shift</kbd>+click</td></tr>
+              <tr><td>Undo the last file operation</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
             </tbody>
           </table>
         </div>
       </div>
     </section>
 
-    <!-- 7. Roadmap -->
+    <!-- 9. Roadmap -->
     <section class="section section--tinted" id="roadmap" aria-labelledby="roadmap-title">
       <div class="container">
         <div class="section__head">
@@ -325,16 +429,31 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
         <ol class="roadmap">
           <li class="milestone">
             <span class="milestone__tag">v0.2</span>
+            <span class="milestone__state">Released</span>
             <ul>
-              <li><strong>Tags and short descriptions</strong> for files, from frontmatter or added in the app, with <code>tag:</code> search filters</li>
-              <li><strong>WYSIWYG editing</strong> with conflict-safe saving that never silently reformats agent-written files</li>
-              <li><strong>Outline panel</strong> for long documents</li>
+              <li><strong>Edit</strong> in a visual or a source editor that rewrites only the blocks you changed, and shares a file safely with agents</li>
+              <li><strong>Tags and descriptions</strong>, an Explorer filter, three reading widths and an <strong>outline</strong> for long documents</li>
+              <li><strong>File operations</strong> that update your links, with undo</li>
+            </ul>
+          </li>
+          <li class="milestone">
+            <span class="milestone__tag milestone__tag--later">v0.2.1</span>
+            <ul>
+              <li><strong>Translations:</strong> Português (Brasil), Español and Deutsch</li>
             </ul>
           </li>
           <li class="milestone">
             <span class="milestone__tag milestone__tag--later">v0.3</span>
             <ul>
-              <li><strong>Semantic search</strong> with a local multilingual model: ask for "retry policy" and find the section that describes it, whatever words it uses</li>
+              <li><strong>Search everywhere</strong> (<kbd>Ctrl</kbd>+<kbd>T</kbd>): files, sections, tags and commands in one box</li>
+              <li><strong>Semantic search</strong>, local, offline and multilingual: ask for "retry policy" and find the section that describes it, whatever words it uses</li>
+              <li><strong>Unread markers</strong>, clickable <strong>code references</strong> and <strong>"Open with TrailMark"</strong> in your file manager</li>
+            </ul>
+          </li>
+          <li class="milestone">
+            <span class="milestone__tag milestone__tag--later">Later</span>
+            <ul>
+              <li>Ideas being explored, with no promises: spec-driven workflows, review comments for your agent, an MCP server, a rendered diff against your last read, and backlinks</li>
             </ul>
           </li>
         </ol>
@@ -363,7 +482,7 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
         <img src="assets/logo.svg" width="24" height="24" alt="">
         <span>TrailMark</span>
       </a>
-      <p>Licensed under <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option.</p>
+      <p>&copy; 2026 Edelmar Schneider. Licensed under <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option.</p>
       <p><a href="https://github.com/EdelmarSchneider/trailmark">github.com/EdelmarSchneider/trailmark</a></p>
     </div>
   </footer>

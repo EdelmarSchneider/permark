@@ -10,9 +10,15 @@ use tauri::http::{self, header, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, State, UriSchemeResponder};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
+use crate::fileops::{
+    BufferText, CreatedFolder, DeleteOutcome, Move, MoveOutcome, MovePreview, UndoOutcome,
+};
 use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
+use crate::meta::catalog::{IndexEntry, TaggedFile};
+use crate::meta::service::{FileMeta, TagOverview};
 use crate::render::DocumentView;
 use crate::search::SearchHit;
 use crate::session::{RecentStore, RecentVault, SessionState, StateLocation};
@@ -44,6 +50,10 @@ impl EventSink for TauriSink {
             "index-progress",
             serde_json::json!({ "indexed": indexed, "total": total }),
         );
+    }
+
+    fn meta_changed(&self) {
+        let _ = self.0.emit("meta-changed", ());
     }
 }
 
@@ -232,6 +242,182 @@ pub async fn init_project_folder(state: State<'_, AppState>) -> Result<(), AppEr
 pub async fn state_location(state: State<'_, AppState>) -> Result<StateLocation, AppError> {
     let ws = state.current()?;
     blocking(move || ws.state_location()).await
+}
+
+/// The tags (from the file's front matter and from the app) and the description of a file.
+#[tauri::command]
+pub async fn file_meta(state: State<'_, AppState>, path: String) -> Result<FileMeta, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.file_meta(&path)).await
+}
+
+/// Replaces the tags the app keeps for a file.
+#[tauri::command]
+pub async fn set_file_tags(
+    state: State<'_, AppState>,
+    path: String,
+    tags: Vec<String>,
+) -> Result<FileMeta, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_file_tags(&path, &tags)).await
+}
+
+/// Replaces the description of a file.
+#[tauri::command]
+pub async fn set_file_description(
+    state: State<'_, AppState>,
+    path: String,
+    description: String,
+) -> Result<FileMeta, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_file_description(&path, &description)).await
+}
+
+/// Every tag with its number of files, the number of untagged files, and the state of `meta.toml`.
+#[tauri::command]
+pub async fn list_tags(state: State<'_, AppState>) -> Result<TagOverview, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.list_tags())).await
+}
+
+/// The files that have all of the tags, or (with `untagged`) the files that have none.
+#[tauri::command]
+pub async fn files_with_tags(
+    state: State<'_, AppState>,
+    tags: Vec<String>,
+    untagged: bool,
+) -> Result<Vec<TaggedFile>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.files_with_tags(&tags, untagged))).await
+}
+
+/// The tags and description of every file that has some (for filters and tooltips).
+#[tauri::command]
+pub async fn meta_index(state: State<'_, AppState>) -> Result<Vec<IndexEntry>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.meta_index())).await
+}
+
+/// Removes the entries kept for files that no longer exist. Resolves to how many.
+#[tauri::command]
+pub async fn clean_up_meta(state: State<'_, AppState>) -> Result<usize, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.clean_up_meta()).await
+}
+
+/// A Markdown file as the editor needs it: the exact text, its hash and the byte ranges of its blocks.
+#[tauri::command]
+pub async fn document_source(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<SourceDoc, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.document_source(&path)).await
+}
+
+/// The top-level blocks of some Markdown text (the editor's buffer).
+#[tauri::command]
+pub async fn parse_blocks(text: String) -> Result<ParsedBlocks, AppError> {
+    blocking(move || Ok(edit::parse_blocks(&text))).await
+}
+
+/// The reading view's HTML for pieces of Markdown (Visual mode draws its locked blocks with it).
+#[tauri::command]
+pub async fn render_fragments(texts: Vec<String>) -> Result<Vec<String>, AppError> {
+    blocking(move || Ok(edit::render_fragments(&texts))).await
+}
+
+/// Saves the editor's text over a file, unless the file is no longer the version with `expected_hash`.
+#[tauri::command]
+pub async fn save_document(
+    state: State<'_, AppState>,
+    path: String,
+    text: String,
+    expected_hash: String,
+) -> Result<SaveOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.save_document(&path, &text, &expected_hash)).await
+}
+
+/// Creates a new Markdown file; fails when the name is not usable or the file exists.
+#[tauri::command]
+pub async fn create_document(
+    state: State<'_, AppState>,
+    path: String,
+    text: String,
+) -> Result<CreatedDoc, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.create_document(&path, &text)).await
+}
+
+/// Writes an image (`data` is base64) into the `assets` folder next to a document.
+#[tauri::command]
+pub async fn write_asset(
+    state: State<'_, AppState>,
+    doc_path: String,
+    name_hint: String,
+    data: String,
+) -> Result<AssetWritten, AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        let bytes = edit::decode_image(&data, &name_hint)?;
+        ws.write_asset(&doc_path, &name_hint, &bytes)
+    })
+    .await
+}
+
+/// Checks a rename or move (nothing is overwritten, nothing leaves the project) and, with `scan_links`,
+/// lists the links in the documents that would have to change. The documents in `held_back` (open with
+/// unsaved edits that cannot be patched) are left out and listed as skipped.
+#[tauri::command]
+pub async fn preview_move(
+    state: State<'_, AppState>,
+    moves: Vec<Move>,
+    scan_links: bool,
+    held_back: Vec<String>,
+) -> Result<MovePreview, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.preview_move(&moves, scan_links, &held_back)).await
+}
+
+/// Makes the move of a preview. With `update_links` the links it listed are rewritten; the documents in
+/// `buffers` (open with unsaved edits) are not written, the changes for their text come back instead.
+#[tauri::command]
+pub async fn apply_move(
+    state: State<'_, AppState>,
+    plan_id: u64,
+    update_links: bool,
+    buffers: Vec<BufferText>,
+) -> Result<MoveOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.apply_move(plan_id, update_links, &buffers)).await
+}
+
+/// Sends files and folders of the open folder to the recycle bin.
+#[tauri::command]
+pub async fn delete_entries(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<DeleteOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.delete_entries(&paths)).await
+}
+
+/// Creates a folder; fails when the name is not usable or the folder exists.
+#[tauri::command]
+pub async fn new_folder(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<CreatedFolder, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.new_folder(&path)).await
+}
+
+/// Reverts an operation of the Explorer (the moves and every rewritten link) as far as the files are unchanged.
+#[tauri::command]
+pub async fn undo_file_op(state: State<'_, AppState>, op_id: u64) -> Result<UndoOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.undo_file_op(op_id)).await
 }
 
 /// The URI scheme that serves the images of the open folder to the document view. Requests are

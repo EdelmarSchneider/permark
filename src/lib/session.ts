@@ -1,6 +1,11 @@
 // Defaults and sanitizing for `SessionState` (panel widths, zoom, theme, ...).
 
 import { DEFAULT_REF_TEMPLATE } from "./reference";
+import { DEFAULT_WIDTH, normalizeWidth } from "./readingWidth";
+import { DEFAULT_EDIT_MODE, normalizeEditMode } from "./editMode";
+import { DEFAULT_RIGHT_TAB, normalizeRightTab } from "./rightPanel";
+import { DEFAULT_LINK_UPDATE, normalizeLinkUpdate } from "./fileOps";
+import { normalizeTreeFilter } from "./treeFilter";
 import type { SessionState } from "./types";
 
 export const PANEL_MIN = 200;
@@ -31,12 +36,17 @@ export function defaultSession(): SessionState {
     lastDoc: null,
     scrollTop: 0,
     zoom: 1,
-    wide: false,
+    width: DEFAULT_WIDTH,
     refTemplate: DEFAULT_REF_TEMPLATE,
     leftPanel: { open: true, width: LEFT_DEFAULT },
     rightPanel: { open: true, width: RIGHT_DEFAULT },
     theme: "system",
     follow: false,
+    treeFilter: null,
+    autoReveal: true,
+    rightTab: DEFAULT_RIGHT_TAB,
+    linkUpdate: DEFAULT_LINK_UPDATE,
+    editMode: DEFAULT_EDIT_MODE,
   };
 }
 
@@ -52,7 +62,7 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     lastDoc: typeof stored.lastDoc === "string" ? stored.lastDoc : null,
     scrollTop: Number.isFinite(stored.scrollTop) ? Math.max(0, stored.scrollTop as number) : 0,
     zoom: clampZoom(stored.zoom ?? 1),
-    wide: stored.wide === true,
+    width: normalizeWidth(stored.width, stored.wide),
     refTemplate:
       typeof stored.refTemplate === "string" && stored.refTemplate.trim() !== ""
         ? stored.refTemplate
@@ -67,5 +77,10 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     },
     theme,
     follow: stored.follow === true,
+    treeFilter: normalizeTreeFilter(stored.treeFilter),
+    autoReveal: stored.autoReveal !== false,
+    rightTab: normalizeRightTab(stored.rightTab),
+    linkUpdate: normalizeLinkUpdate(stored.linkUpdate),
+    editMode: normalizeEditMode(stored.editMode),
   };
 }

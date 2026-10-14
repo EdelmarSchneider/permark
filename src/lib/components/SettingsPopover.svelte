@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import { LINK_UPDATES } from "../fileOps";
+  import { EDIT_MODES } from "../editMode";
   import { t } from "../i18n";
+  import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { docs } from "../stores/docs.svelte";
   import { session } from "../stores/session.svelte";
@@ -56,20 +59,43 @@
   <div class="field">
     <span class="field__label">{t("settings.width")}</span>
     <div class="segmented" role="group" aria-label={t("settings.width")}>
-      <button
-        type="button"
-        aria-pressed={!session.wide}
-        onclick={() => session.wide && session.toggleWide()}
-      >
-        {t("settings.widthNormal")}
-      </button>
-      <button
-        type="button"
-        aria-pressed={session.wide}
-        onclick={() => !session.wide && session.toggleWide()}
-      >
-        {t("settings.widthWide")}
-      </button>
+      {#each READING_WIDTHS as width (width)}
+        <button
+          type="button"
+          aria-pressed={session.width === width}
+          onclick={() => session.setWidth(width)}
+        >
+          {t(`width.${width}`)}
+        </button>
+      {/each}
+    </div>
+  </div>
+  <div class="field">
+    <span class="field__label">{t("settings.linkUpdate")}</span>
+    <div class="segmented" role="group" aria-label={t("settings.linkUpdate")}>
+      {#each LINK_UPDATES as choice (choice)}
+        <button
+          type="button"
+          aria-pressed={session.linkUpdate === choice}
+          onclick={() => session.setLinkUpdate(choice)}
+        >
+          {t(`settings.linkUpdate.${choice}`)}
+        </button>
+      {/each}
+    </div>
+  </div>
+  <div class="field">
+    <span class="field__label">{t("settings.editMode")}</span>
+    <div class="segmented" role="group" aria-label={t("settings.editMode")}>
+      {#each EDIT_MODES as mode (mode)}
+        <button
+          type="button"
+          aria-pressed={session.editMode === mode}
+          onclick={() => session.setEditMode(mode)}
+        >
+          {t(`edit.${mode}`)}
+        </button>
+      {/each}
     </div>
   </div>
   <div class="field">

@@ -20,6 +20,12 @@ describe("matchShortcut", () => {
     ["Ctrl+P", ctrl("p"), "quickOpen"],
     ["Ctrl+Shift+F", ctrl("F", { shiftKey: true }), "searchAll"],
     ["Ctrl+Shift+X", ctrl("X", { shiftKey: true }), "explorer"],
+    ["Ctrl+Shift+T", ctrl("T", { shiftKey: true }), "tagsView"],
+    ["T (reading)", press("t"), "editTags"],
+    ["E (reading)", press("e"), "edit"],
+    ["Ctrl+E", ctrl("e"), "toggleEdit"],
+    ["Ctrl+S", ctrl("s"), "save"],
+    ["Ctrl+N", ctrl("n"), "newFile"],
     ["Ctrl+F", ctrl("f"), "find"],
     ["Alt+Left", press("ArrowLeft", { altKey: true }), "back"],
     ["Alt+Right", press("ArrowRight", { altKey: true }), "forward"],
@@ -35,7 +41,9 @@ describe("matchShortcut", () => {
     ["Ctrl++", ctrl("+", { shiftKey: true }, "Equal"), "zoomIn"],
     ["Ctrl+-", ctrl("-", {}, "Minus"), "zoomOut"],
     ["Ctrl+0", ctrl("0", {}, "Digit0"), "zoomReset"],
-    ["Ctrl+Alt+W", ctrl("w", { altKey: true }), "toggleWide"],
+    ["Ctrl+Alt+W", ctrl("w", { altKey: true }), "cycleWidth"],
+    ["Ctrl+Alt+O", ctrl("o", { altKey: true }), "toggleOutline"],
+    ["Ctrl+Alt+E", ctrl("e", { altKey: true }), "toggleEditMode"],
     ["Ctrl+,", ctrl(",", {}, "Comma"), "settings"],
   ];
 
@@ -45,18 +53,27 @@ describe("matchShortcut", () => {
 
   it("uses the physical key when Alt changes the character (macOS)", () => {
     expect(matchShortcut(ctrl("ç", { altKey: true }, "KeyC"))).toBe("copyReference");
+    expect(matchShortcut(ctrl("ø", { altKey: true }, "KeyO"))).toBe("toggleOutline");
   });
 
   it("treats Cmd like Ctrl", () => {
     expect(matchShortcut(press("p", { metaKey: true }))).toBe("quickOpen");
   });
 
-  it("leaves the keys reserved for v0.2 and plain typing alone", () => {
+  it("leaves Ctrl+K (the editor's link) and plain typing alone", () => {
     expect(matchShortcut(ctrl("k"))).toBeNull();
-    expect(matchShortcut(ctrl("e"))).toBeNull();
-    expect(matchShortcut(ctrl("s"))).toBeNull();
+    expect(matchShortcut(ctrl("i"))).toBeNull();
     expect(matchShortcut(press("f"))).toBeNull();
     expect(matchShortcut(press("ArrowLeft"))).toBeNull();
     expect(matchShortcut(ctrl("c"))).toBeNull();
+  });
+
+  it("T needs no modifier, and the other letters stay free", () => {
+    expect(matchShortcut(press("T", { shiftKey: true }))).toBeNull();
+    expect(matchShortcut(press("t", { altKey: true }))).toBeNull();
+    expect(matchShortcut(ctrl("t"))).toBeNull();
+    expect(matchShortcut(press("E", { shiftKey: true }))).toBeNull();
+    expect(matchShortcut(press("e", { altKey: true }))).toBeNull();
+    expect(matchShortcut(press("x"))).toBeNull();
   });
 });

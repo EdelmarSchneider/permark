@@ -2,6 +2,8 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import type { FindMode } from "../find";
+import type { Anchor } from "../components/Popover.svelte";
+import type { RightTab } from "../rightPanel";
 
 const HINT_KEY = "trailmark.hint.initProject";
 
@@ -14,7 +16,7 @@ function readHintDismissed(): boolean {
 }
 
 class UiStore {
-  sidebarView = $state<"explorer" | "search">("explorer");
+  sidebarView = $state<"explorer" | "search" | "tags">("explorer");
   quickOpen = $state(false);
   settingsOpen = $state(false);
   initDialog = $state(false);
@@ -34,6 +36,14 @@ class UiStore {
   resizing = $state(false);
   /** The right panel is hidden and something changed: the activity bar shows a dot. */
   rightNotify = $state(false);
+  /** Feed events arrived while another view of the right panel was showing: a dot on the Changes tab. */
+  changesNotify = $state(false);
+  /** The view the Outline shortcut goes back to when pressed again (not remembered across launches). */
+  rightTabBack = $state<RightTab>("changes");
+  /** Bumped to move the focus into the outline list (Ctrl+Alt+O). */
+  outlineFocusTick = $state(0);
+  /** Simple mode has no right panel: the outline opens as a popover under the header. */
+  outlinePopover = $state(false);
   zoomImage = $state<string | null>(null);
   followChip = $state.raw<{ from: string; to: string; n: number } | null>(null);
   /** The "keep settings with the project" hint was dismissed or used (remembered across projects). */
@@ -42,6 +52,13 @@ class UiStore {
   dismissedRepoState = $state<string | null>(null);
   searchFocusTick = $state(0);
   explorerFocusTick = $state(0);
+  tagsFocusTick = $state(0);
+  /** The tag editor popover; `anchor` is where it opens (null: next to the document header). */
+  tagEditor = $state.raw<{ anchor: Anchor | null } | null>(null);
+  /** The folder the name of a new file is being typed in (the input shows in the tree under it). */
+  newFile = $state.raw<{ folder: string; n: number } | null>(null);
+  /** The tree row the person last moved to or clicked: where Ctrl+N puts a new file. */
+  treeCursor = $state.raw<{ path: string; isDir: boolean } | null>(null);
   /** Id of the control showing its "Copied" check right now. */
   flashed = $state<string | null>(null);
   collapsedSections = new SvelteSet<string>();
@@ -63,6 +80,10 @@ class UiStore {
     this.flashTimer = setTimeout(() => {
       this.flashed = null;
     }, 1200);
+  }
+
+  openTagEditor(anchor: Anchor | null = null): void {
+    this.tagEditor = { anchor };
   }
 
   toggleSection(id: string): void {

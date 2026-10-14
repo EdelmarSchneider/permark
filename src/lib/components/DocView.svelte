@@ -4,22 +4,28 @@
   import { DomFind } from "../dom/domFind";
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
   import { anchorTarget, findById, selectionIn } from "../dom/domUtil";
+  import { readBlocks } from "../dom/outlineDom";
+  import { enhanceContextFor } from "../dom/enhanceContext";
   import type { EnhanceContext } from "../dom/enhance";
   import { ICON_CHECK, ICON_COPY } from "../dom/enhance";
   import { frontmatterValue } from "../frontmatter";
   import { t, tn } from "../i18n";
+  import { buildOutline, currentHeading } from "../outline";
   import { assetUrl } from "../platform";
   import { basename, decodeFragment } from "../paths";
   import { blockForLine, parseSourcepos } from "../sourcepos";
   import { app } from "../stores/app.svelte";
   import { docs, type LocateRequest, type RenderRequest } from "../stores/docs.svelte";
+  import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
   import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
   import { clock as formatClock } from "../time";
+  import type { DocumentView } from "../types";
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
+  import DocMetaStrip from "./DocMetaStrip.svelte";
   import Popover from "./Popover.svelte";
 
   let scroller: HTMLElement | undefined = $state();
@@ -31,35 +37,27 @@
   /** True once the reader scrolled by hand since the last render, so late layout changes must not move them. */
   let userScrolled = false;
   let locatedClearTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The blocks wearing the search-hit tint right now. */
+  let tinted: HTMLElement[] = [];
+  /** The heading elements of the outline, in order (the outline holds only their text). */
+  let headingEls: HTMLElement[] = [];
+  /** The heading an outline click went to, kept as the section being read until the reader scrolls by hand. */
+  let pinned: number | null = null;
   let frame = 0;
   let missing = $state<{ anchor: DOMRect; path: string } | null>(null);
 
   const view = $derived(docs.current);
   const showArticle = $derived(!!view && view.kind !== "binary" && view.kind !== "tooLarge");
   const tombstone = $derived(docs.deleted !== null);
+  // `tags:` moved to the strip above the document
+  const frontmatter = $derived(
+    (view?.frontmatter ?? []).filter(([key]) => key.toLowerCase() !== "tags"),
+  );
 
   // ---- rendering ----------------------------------------------------------------------------------
 
-  function enhanceContext(path: string): EnhanceContext {
-    return {
-      docPath: path,
-      theme: session.resolvedTheme,
-      labels: {
-        copyCode: t("doc.copyCode"),
-        anchorLabel: (name) => t("doc.anchorLabel", { name }),
-        diagramPending: t("doc.diagramRendering"),
-        diagramFailed: t("doc.diagramFailed"),
-        alertTitles: {
-          note: t("alert.note"),
-          tip: t("alert.tip"),
-          important: t("alert.important"),
-          warning: t("alert.warning"),
-          caution: t("alert.caution"),
-        },
-      },
-      resolveImage: async (path) => assetUrl(path),
-    };
-  }
+  const enhanceContext = (path: string): EnhanceContext =>
+    enhanceContextFor(path, session.resolvedTheme);
 
   function renderLabels(): RenderLabels {
     const time = formatClock(Date.now());
@@ -97,6 +95,7 @@
     if (view.kind === "binary" || view.kind === "tooLarge") {
       renderer.clear();
       finder.clear();
+      clearOutline();
       docs.reportRender({ changed: 0, removed: 0 });
       scroller?.scrollTo({ top: 0, behavior: "instant" });
       return;
@@ -110,10 +109,12 @@
     const result = renderer.render(view, {
       mode: req.mode,
       diffAgainstLast: req.diffAgainstLast,
+      quiet: req.quiet,
       enhance: enhanceContext(view.path),
       labels: renderLabels(),
     });
     docs.reportRender({ changed: result.changed.length, removed: result.removedMarkers.length });
+    reportOutline(view);
 
     if (req.mode === "fresh") {
       position(req, result);
@@ -132,6 +133,10 @@
       ui.find.open = true;
       ui.find.takeFocus = false;
     }
+    // diagrams, math and images change the layout once they have loaded
+    void result.settled.then(() => {
+      if (renderedRev === req.rev) updateCurrent();
+    });
     const rerun = (keep: boolean): void => {
       if (renderedRev !== req.rev) return;
       if (ui.find.open && ui.find.query.trim() !== "") {
@@ -183,20 +188,24 @@
     const target = blocks[index];
     scrollToElement(target, 1 / 3);
     locatedElement = target;
-    if (!tint) return true;
-    const tinted = [target];
+    if (!tint || request.tint === false) return true;
     const next = blocks[index + 1];
-    if (next && !/^H[1-6]$/.test(next.tagName)) tinted.push(next);
-    for (const el of tinted) {
-      el.classList.remove("tm-located");
-      void el.offsetWidth;
+    tintBlocks(next && !/^H[1-6]$/.test(next.tagName) ? [target, next] : [target]);
+    return true;
+  }
+
+  /** Tints blocks for a moment, like a search hit (the heading of a clicked outline entry uses it too). */
+  function tintBlocks(elements: HTMLElement[]): void {
+    for (const el of tinted) el.classList.remove("tm-located");
+    tinted = elements;
+    for (const el of elements) {
+      void el.offsetWidth; // restart the animation when the same block is tinted again
       el.classList.add("tm-located");
     }
     if (locatedClearTimer !== null) clearTimeout(locatedClearTimer);
     locatedClearTimer = setTimeout(() => {
-      for (const el of tinted) el.classList.remove("tm-located");
+      for (const el of elements) el.classList.remove("tm-located");
     }, 1700);
-    return true;
   }
 
   function scrollToAnchor(id: string, smooth = true, notify = true): boolean {
@@ -247,6 +256,66 @@
     scroller.scrollTo({ top, behavior: first ? "instant" : "smooth" });
   }
 
+  // ---- outline ---------------------------------------------------------------------------------------
+
+  function clearOutline(): void {
+    headingEls = [];
+    pinned = null;
+    outline.clear();
+  }
+
+  /**
+   * Rebuilds the outline from the headings on screen (after every render, fresh or live). While editing, this view is hidden and the
+   * editor builds the outline (`editor/outlineSync.ts`).
+   */
+  function reportOutline(view: DocumentView): void {
+    if (docs.editing) return;
+    if (!body || view.kind !== "markdown") {
+      clearOutline();
+      return;
+    }
+    const { blocks, headings } = readBlocks(body);
+    const model = buildOutline(blocks);
+    headingEls = headings.slice(0, model.items.length);
+    pinned = null;
+    outline.set(view.path, model);
+    updateCurrent();
+  }
+
+  /** The section being read: the last heading above the top-third line of the viewport. */
+  function updateCurrent(): void {
+    if (docs.editing) return;
+    if (!scroller || headingEls.length === 0) {
+      outline.setCurrent(null);
+      return;
+    }
+    if (pinned !== null) {
+      outline.setCurrent(pinned);
+      return;
+    }
+    const top = scroller.getBoundingClientRect().top;
+    const height = scroller.clientHeight;
+    const atBottom = scroller.scrollTop + height >= scroller.scrollHeight - 2;
+    outline.setCurrent(
+      currentHeading(headingEls.length, (i) => headingEls[i].getBoundingClientRect().top - top, {
+        line: height / 3,
+        bottomEdge: atBottom ? height : undefined,
+      }),
+    );
+  }
+
+  /** An outline click: the heading goes to the top (8px below it) and is tinted, with no history entry. */
+  function goToHeading(index: number): void {
+    const el = headingEls[index];
+    if (!el) return;
+    userScrolled = true; // late layout changes must not pull the page back
+    scrollToElement(el, 0, 8);
+    tintBlocks([el]);
+    // near the end of the page the heading cannot reach the top, so it stays the current one until the reader scrolls
+    pinned = index;
+    outline.setCurrent(index);
+  }
+
   // ---- effects ----------------------------------------------------------------------------------------
 
   $effect(() => {
@@ -284,8 +353,43 @@
     });
   });
 
+  // Editing hides the reading view; a hidden scroller forgets where it was, so the position is taken first and put back.
+  let scrollBeforeEdit = 0;
+  $effect.pre(() => {
+    if (docs.editing && scroller) scrollBeforeEdit = untrack(() => scroller?.scrollTop ?? 0);
+  });
+  $effect(() => {
+    if (docs.editing || !scroller) return;
+    const top = scrollBeforeEdit;
+    scrollBeforeEdit = 0;
+    if (top > 0) untrack(() => scroller?.scrollTo({ top, behavior: "instant" }));
+  });
+
+  // Back from editing: the outline of the editor gives way to the one of the reading view.
+  let wasEditing = false;
+  $effect(() => {
+    const editing = docs.editing;
+    untrack(() => {
+      if (wasEditing && !editing && view) reportOutline(view);
+      wasEditing = editing;
+    });
+  });
+
+  // no document (closed, or the project was replaced): no outline
+  $effect(() => {
+    if (!docs.current) untrack(clearOutline);
+  });
+
   onMount(() => {
     bridge.jumpChange = (direction) => jumpToChange(direction);
+    // while editing, the outline's clicks and focus belong to the editor
+    bridge.outline = {
+      goTo: (index) => (bridge.editorOutline ?? { goTo: goToHeading }).goTo(index),
+      focusDoc: () =>
+        bridge.editorOutline
+          ? bridge.editorOutline.focusDoc()
+          : scroller?.focus({ preventScroll: true }),
+    };
     bridge.find = {
       run: (query, mode, opts) => ensureObjects()?.finder.run(query, mode, opts),
       step: (direction) => finder?.step(direction),
@@ -297,11 +401,22 @@
       return selection ? { text: selection.text, section: selection.section } : null;
     };
     bridge.locatedElement = () => locatedElement;
+    bridge.topLine = () => {
+      if (!scroller) return null;
+      const edge = scroller.getBoundingClientRect().top;
+      for (const el of renderer?.blocks ?? []) {
+        if (el.getBoundingClientRect().bottom <= edge + 1) continue;
+        return parseSourcepos(el.getAttribute("data-sourcepos"))?.startLine ?? null;
+      }
+      return null;
+    };
     return () => {
+      bridge.topLine = undefined;
       bridge.jumpChange = undefined;
       bridge.find = undefined;
       bridge.getSelection = undefined;
       bridge.locatedElement = undefined;
+      bridge.outline = undefined;
       if (frame) cancelAnimationFrame(frame);
     };
   });
@@ -313,12 +428,14 @@
     frame = requestAnimationFrame(() => {
       frame = 0;
       if (scroller) docs.noteScroll(scroller.scrollTop);
+      updateCurrent();
     });
   }
 
   /** The reader took over scrolling (wheel, touch, keys or the scrollbar). */
   function took(): void {
     userScrolled = true;
+    pinned = null;
   }
 
   function onwheel(e: WheelEvent): void {
@@ -372,6 +489,7 @@
 <div
   bind:this={scroller}
   class="doc-scroll"
+  hidden={docs.editing}
   role="region"
   tabindex="-1"
   aria-label={t("doc.region")}
@@ -381,6 +499,7 @@
   onkeydown={took}
   onpointerdown={(e) => e.target === e.currentTarget && took()}
 >
+  <DocMetaStrip />
   {#if view && view.kind === "binary"}
     <Notice
       icon="file"
@@ -411,33 +530,35 @@
     <Notice icon="files" title={t("doc.none.title")} text={t("doc.none.text")} />
   {/if}
 
-  <article
-    class={["md", tombstone && "is-tombstone"]}
-    style:--zoom={session.zoom}
-    hidden={!showArticle}
-    aria-busy={docs.loading}
-  >
-    {#if view?.frontmatter && view.frontmatter.length > 0}
-      <dl class="frontmatter" aria-label={t("doc.frontmatter")}>
-        {#each view.frontmatter as [key, value], i (i)}
-          {@const parsed = frontmatterValue(key, value)}
-          <div>
-            <dt>{key}</dt>
-            <dd>
-              {#if "chips" in parsed}
-                {#each parsed.chips as chip, c (c)}<span class="fm-tag">{chip}</span>{/each}
-              {:else}
-                {parsed.text}
-              {/if}
-            </dd>
-          </div>
-        {/each}
-      </dl>
-    {/if}
-    <!-- the backend's sanitized HTML is injected here by DocRenderer; links are handled in onclick -->
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div bind:this={body} class="md-body" {onclick}></div>
-  </article>
+  <div class="doc-column">
+    <article
+      class={["md", tombstone && "is-tombstone"]}
+      style:--zoom={session.zoom}
+      hidden={!showArticle}
+      aria-busy={docs.loading}
+    >
+      {#if frontmatter.length > 0}
+        <dl class="frontmatter" aria-label={t("doc.frontmatter")}>
+          {#each frontmatter as [key, value], i (i)}
+            {@const parsed = frontmatterValue(key, value)}
+            <div>
+              <dt>{key}</dt>
+              <dd>
+                {#if "chips" in parsed}
+                  {#each parsed.chips as chip, c (c)}<span class="fm-tag">{chip}</span>{/each}
+                {:else}
+                  {parsed.text}
+                {/if}
+              </dd>
+            </div>
+          {/each}
+        </dl>
+      {/if}
+      <!-- the backend's sanitized HTML is injected here by DocRenderer; links are handled in onclick -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div bind:this={body} class="md-body" {onclick}></div>
+    </article>
+  </div>
 </div>
 
 {#if missing}

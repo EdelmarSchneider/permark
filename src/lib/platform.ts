@@ -3,7 +3,8 @@
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { ask, message, open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -129,6 +130,65 @@ export async function copyText(text: string): Promise<boolean> {
     area.remove();
     return ok;
   }
+}
+
+/** Sets the title of the window (the browser mock sets the page title). */
+export async function setWindowTitle(title: string): Promise<void> {
+  if (isMock) {
+    document.title = title;
+    return;
+  }
+  try {
+    await getCurrentWindow().setTitle(title);
+  } catch {
+    // the title is only a hint of unsaved work; the editor says it too
+  }
+}
+
+/** A native yes/no question. */
+export async function askYesNo(text: string, yes: string, no: string): Promise<boolean> {
+  if (isMock) return window.confirm(text);
+  return ask(text, { kind: "warning", okLabel: yes, cancelLabel: no });
+}
+
+export type UnsavedChoice = "save" | "discard" | "keep";
+
+/** The native "Unsaved changes" question with its three choices. */
+export async function askUnsaved(
+  text: string,
+  labels: { save: string; discard: string; keep: string },
+): Promise<UnsavedChoice> {
+  if (isMock) {
+    return window.confirm(`${text}\n\nOK: ${labels.save}. Cancel: ${labels.keep}.`)
+      ? "save"
+      : "keep";
+  }
+  const answer = await message(text, {
+    kind: "warning",
+    buttons: { yes: labels.save, no: labels.discard, cancel: labels.keep },
+  });
+  if (answer === labels.save || answer === "Yes") return "save";
+  if (answer === labels.discard || answer === "No") return "discard";
+  return "keep";
+}
+
+/**
+ * Lets the app decide whether the window may close. `allow` is asked each time the person closes the window and
+ * resolves to true to let it close. Call it while there is something to lose and stop it afterwards: a window
+ * without a listener closes by itself. Resolves to the function that stops listening.
+ */
+export async function guardWindowClose(allow: () => Promise<boolean>): Promise<() => void> {
+  if (isMock) {
+    const onUnload = (e: BeforeUnloadEvent): void => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => window.removeEventListener("beforeunload", onUnload);
+  }
+  return getCurrentWindow().onCloseRequested(async (event) => {
+    if (!(await allow())) event.preventDefault();
+  });
 }
 
 /** A newer version of the app, as announced by the update server. */

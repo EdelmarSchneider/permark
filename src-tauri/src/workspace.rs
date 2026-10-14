@@ -11,20 +11,32 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use serde::Serialize;
 
+use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
+use crate::fileops::{
+    BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers, Move,
+    MoveOutcome, MovePreview, OsRecycler, UndoOutcome,
+};
 use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
 };
 use crate::links::{self, LinkTarget};
+use crate::meta::catalog::{IndexEntry, TaggedFile};
+use crate::meta::service::{FileMeta, TagOverview};
+use crate::meta::{MetaService, Timing};
 use crate::render::{self, DocumentView, Registry};
 use crate::search::indexer::{IndexWorker, Indexer};
 use crate::search::{Bm25Index, SearchHit, SearchProvider};
-use crate::session::{FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore};
+use crate::session::{
+    FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore, TreeConfig,
+};
 use crate::util::{modified_ms, now_ms, on_parser_stack, read_with_retry};
 use crate::vault::{NodeKind, TreeNode, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
-use crate::watch::{FsBatch, GitProbe, PathFilter, SigStore, Verdict, WatchConfig, WatchService};
+use crate::watch::{
+    FsBatch, GitProbe, OwnWrites, PathFilter, SigStore, Verdict, WatchConfig, WatchService,
+};
 
 /// "Since your last visit" lists at most this many files.
 const MAX_SINCE_FILES: usize = 500;
@@ -45,6 +57,8 @@ pub trait EventSink: Send + Sync + 'static {
     fn git_status(&self, snapshot: &GitSnapshot);
     /// Search indexing advanced (`index-progress`).
     fn index_progress(&self, indexed: usize, total: usize);
+    /// Tags or descriptions changed (`meta-changed`).
+    fn meta_changed(&self);
 }
 
 /// Forwards events only while its workspace is the one that may emit, so a folder that is being
@@ -94,6 +108,12 @@ impl EventSink for GuardedSink {
             self.inner.index_progress(indexed, total);
         }
     }
+
+    fn meta_changed(&self) {
+        if self.live() {
+            self.inner.meta_changed();
+        }
+    }
 }
 
 /// Matches the UI's `VaultInfo`.
@@ -108,6 +128,8 @@ pub struct VaultInfo {
     /// Whether changes in the folder are followed live. False when the file system cannot report
     /// them (some network and virtual drives): everything else keeps working, refreshed on focus.
     pub live_updates: bool,
+    /// The project's default for the Explorer filter (`[tree]` in `.trailmark/config.toml`), if it sets one.
+    pub tree_default: Option<TreeConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -182,9 +204,27 @@ pub struct Workspace {
     index: Arc<RwLock<Bm25Index>>,
     indexer: Arc<IndexWorker>,
     filter: Arc<PathFilter>,
+    meta: Arc<MetaService>,
+    /// Content the editor is writing, so the watcher does not report it back as an external change.
+    own_writes: Arc<OwnWrites>,
+    /// Rename, move, delete and new folder in the Explorer.
+    fileops: FileOpsService,
     sink: Arc<dyn EventSink>,
     last_visit: Option<LastVisit>,
     closed: AtomicBool,
+}
+
+/// Tags follow the files that are renamed or moved in the Explorer.
+struct MetaFollower(Arc<MetaService>);
+
+impl Followers for MetaFollower {
+    fn renamed(&self, from: &str, to: &str, is_dir: bool) {
+        if is_dir {
+            self.0.rename_tree(from, to);
+        } else {
+            self.0.rename(from, to);
+        }
+    }
 }
 
 /// What the watcher thread needs to do its work.
@@ -194,6 +234,8 @@ struct WatchWiring {
     sigs: Arc<SigStore>,
     sink: Arc<dyn EventSink>,
     indexer: Arc<IndexWorker>,
+    meta: Arc<MetaService>,
+    own_writes: Arc<OwnWrites>,
 }
 
 type StartWatcher = fn(
@@ -218,14 +260,41 @@ fn start_watcher(
         sigs,
         sink,
         indexer,
+        meta,
+        own_writes,
     } = wiring;
+    let known = Arc::clone(&sigs);
     Ok(WatchService::start(
         vault,
         filter,
         sigs,
         probe,
         WatchConfig::default(),
-        move |out: WatchOutput| {
+        move |mut out: WatchOutput| {
+            // Tags follow renamed files; file tags may have changed; an edit of `meta.toml` is read in,
+            // and the app's own writes to it are not news.
+            if meta.on_fs_changes(&out.all_changes) {
+                MetaService::without_meta_file(&mut out.all_changes);
+                MetaService::without_meta_file(&mut out.batch.changes);
+            }
+            // Lost events or a folder that appeared: what the files hold has to be looked at again.
+            if out.batch.rescan || out.tree_changed {
+                meta.invalidate();
+            }
+            // What the editor saved or created is no news to the person who did it. The index and git
+            // below still learn about it (`all_changes`), the UI does not hear about it.
+            if out.batch.bulk.is_some() {
+                // A bulk batch lists at most 200 of its changes, so what the app announced is matched against
+                // all of them: a big folder moved in the Explorer is not a "Large batch" row.
+                let mut everything = out.all_changes.clone();
+                own_writes.strip(&mut everything, &known);
+                if everything.is_empty() && !out.all_changes.is_empty() {
+                    out.batch.bulk = None;
+                    out.batch.changes.clear();
+                }
+            } else {
+                own_writes.strip(&mut out.batch.changes, &known);
+            }
             let has_batch = out.has_batch();
             let WatchOutput {
                 batch,
@@ -298,6 +367,24 @@ impl Workspace {
         let sigs = Arc::new(SigStore::new());
         let index = Arc::new(RwLock::new(Bm25Index::new()));
 
+        let meta_sink = Arc::clone(sink);
+        let meta = Arc::new(MetaService::open(
+            Arc::clone(&vault),
+            store.meta_path(),
+            store.location() == StateLocation::Project,
+            store.legacy_meta_path(),
+            Timing::default(),
+            Arc::new(move || meta_sink.meta_changed()),
+        ));
+
+        let own_writes = Arc::new(OwnWrites::new());
+        let fileops = FileOpsService::new(
+            Arc::clone(&vault),
+            Arc::clone(&own_writes),
+            Arc::new(MetaFollower(Arc::clone(&meta))),
+            Arc::new(OsRecycler),
+        );
+
         let git_sink = Arc::clone(sink);
         let git = GitHandle::start(
             GitSettings {
@@ -331,6 +418,8 @@ impl Workspace {
                 sigs,
                 sink: Arc::clone(sink),
                 indexer: Arc::clone(&indexer),
+                meta: Arc::clone(&meta),
+                own_writes: Arc::clone(&own_writes),
             },
             git_ctx.as_ref(),
             git.trigger_fn(),
@@ -359,6 +448,9 @@ impl Workspace {
             index,
             indexer,
             filter,
+            meta,
+            own_writes,
+            fileops,
             sink: Arc::clone(sink),
             last_visit,
             closed: AtomicBool::new(false),
@@ -397,6 +489,7 @@ impl Workspace {
                 })
                 .collect(),
             live_updates: self.live_updates,
+            tree_default: self.config.tree.clone(),
         }
     }
 
@@ -410,6 +503,90 @@ impl Workspace {
         Ok(on_parser_stack(|| {
             render::load_document(&self.registry, &resolved.abs, &resolved.rel)
         })?)
+    }
+
+    // ---- editing --------------------------------------------------------------------------------
+
+    fn editor(&self) -> Editor<'_> {
+        Editor::new(&self.vault, &self.own_writes)
+    }
+
+    /// A Markdown file as the editor needs it: the exact text, its hash and its blocks.
+    pub fn document_source(&self, path: &str) -> Result<SourceDoc, AppError> {
+        Ok(self.editor().source(path)?)
+    }
+
+    /// Saves the editor's text unless the file changed since `expected_hash`.
+    pub fn save_document(
+        &self,
+        path: &str,
+        text: &str,
+        expected_hash: &str,
+    ) -> Result<SaveOutcome, AppError> {
+        Ok(self.editor().save(path, text, expected_hash)?)
+    }
+
+    /// Creates a new Markdown file (never overwrites).
+    pub fn create_document(&self, path: &str, text: &str) -> Result<CreatedDoc, AppError> {
+        Ok(self.editor().create(path, text)?)
+    }
+
+    /// Writes a pasted or dropped image into the `assets` folder next to a document.
+    pub fn write_asset(
+        &self,
+        doc_path: &str,
+        name_hint: &str,
+        data: &[u8],
+    ) -> Result<AssetWritten, AppError> {
+        Ok(self.editor().write_asset(doc_path, name_hint, data)?)
+    }
+
+    // ---- file operations ------------------------------------------------------------------------
+
+    /// The Explorer's operations need a folder, not a single opened file (whose folder may be Downloads).
+    fn file_ops(&self) -> Result<&FileOpsService, AppError> {
+        if self.vault.is_shallow() {
+            return Err(FileOpError::SimpleMode.into());
+        }
+        Ok(&self.fileops)
+    }
+
+    /// Checks a rename or move and finds the links it would change (`scan_links`), leaving out the
+    /// documents in `held_back`.
+    pub fn preview_move(
+        &self,
+        moves: &[Move],
+        scan_links: bool,
+        held_back: &[String],
+    ) -> Result<MovePreview, AppError> {
+        Ok(self
+            .file_ops()?
+            .preview_move(moves, scan_links, held_back)?)
+    }
+
+    /// Makes the move of a preview, rewriting links when asked to.
+    pub fn apply_move(
+        &self,
+        plan_id: u64,
+        update_links: bool,
+        buffers: &[BufferText],
+    ) -> Result<MoveOutcome, AppError> {
+        Ok(self
+            .file_ops()?
+            .apply_move(plan_id, update_links, buffers)?)
+    }
+
+    /// Sends files and folders to the recycle bin.
+    pub fn delete_entries(&self, paths: &[String]) -> Result<DeleteOutcome, AppError> {
+        Ok(self.file_ops()?.delete(paths)?)
+    }
+
+    pub fn new_folder(&self, path: &str) -> Result<CreatedFolder, AppError> {
+        Ok(self.file_ops()?.new_folder(path)?)
+    }
+
+    pub fn undo_file_op(&self, op_id: u64) -> Result<UndoOutcome, AppError> {
+        Ok(self.file_ops()?.undo(op_id)?)
     }
 
     pub fn resolve_link(&self, from: &str, href: &str) -> LinkTarget {
@@ -482,6 +659,7 @@ impl Workspace {
     /// The window is back in the foreground: other tools may have changed things meanwhile.
     pub fn refresh(&self) {
         self.git.trigger();
+        self.meta.invalidate();
         if !self.live_updates {
             // Nothing tells us about changes in this folder, so look at the disk now.
             self.indexer.rescan();
@@ -510,8 +688,49 @@ impl Workspace {
     }
 
     pub fn init_project_folder(&self) -> Result<(), AppError> {
-        self.lock_store()?.init_project_folder()?;
+        let mut store = self.lock_store()?;
+        let was_in_project = store.location() == StateLocation::Project;
+        store.init_project_folder()?;
+        if !was_in_project {
+            // The tags and descriptions added so far move into `.trailmark/meta.toml`.
+            self.meta.migrate_to(store.meta_path(), true)?;
+        }
         Ok(())
+    }
+
+    // ---- tags and descriptions ------------------------------------------------------------------
+
+    pub fn file_meta(&self, path: &str) -> Result<FileMeta, AppError> {
+        Ok(self.meta.file_meta(path)?)
+    }
+
+    pub fn set_file_tags(&self, path: &str, tags: &[String]) -> Result<FileMeta, AppError> {
+        Ok(self.meta.set_tags(path, tags)?)
+    }
+
+    pub fn set_file_description(
+        &self,
+        path: &str,
+        description: &str,
+    ) -> Result<FileMeta, AppError> {
+        Ok(self.meta.set_description(path, description)?)
+    }
+
+    pub fn list_tags(&self) -> TagOverview {
+        self.meta.overview()
+    }
+
+    pub fn files_with_tags(&self, tags: &[String], untagged: bool) -> Vec<TaggedFile> {
+        self.meta.files_with_tags(tags, untagged)
+    }
+
+    pub fn meta_index(&self) -> Vec<IndexEntry> {
+        self.meta.index()
+    }
+
+    /// Removes the tags and descriptions kept for files that no longer exist. Returns how many.
+    pub fn clean_up_meta(&self) -> Result<usize, AppError> {
+        Ok(self.meta.clean_up()?)
     }
 
     pub fn state_location(&self) -> Result<StateLocation, AppError> {
@@ -648,12 +867,14 @@ impl Workspace {
             return;
         }
         self.save_last_visit();
-        self.indexer.stop();
+        // The watcher goes first: what it reports last (a rename that moves tags) is still written.
         if let Ok(mut w) = self.watcher.lock() {
             if let Some(w) = w.take() {
                 w.stop();
             }
         }
+        self.meta.stop();
+        self.indexer.stop();
         self.git.shutdown();
     }
 }
@@ -776,6 +997,7 @@ mod tests {
     struct Recorder {
         fs: Mutex<Vec<FsBatch>>,
         tree: AtomicUsize,
+        meta: AtomicUsize,
         git: Mutex<Vec<GitSnapshot>>,
         progress: Mutex<Vec<(usize, usize)>>,
     }
@@ -793,6 +1015,26 @@ mod tests {
         fn index_progress(&self, indexed: usize, total: usize) {
             self.progress.lock().expect("lock").push((indexed, total));
         }
+        fn meta_changed(&self) {
+            self.meta.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// Writes `name` until the watcher reports it. A watcher can still be starting for a moment after a folder
+    /// opens (inotify adds its watches asynchronously), and a write in that moment is never reported; the
+    /// initial scan covers such files in the app, but a test waiting for the event would hang.
+    fn write_until_reported(rec: &Recorder, dir: &Path, name: &str, what: &str) {
+        let mut n = 0u32;
+        wait_until(what, || {
+            if fs_paths(rec).contains(&name.to_owned()) {
+                return true;
+            }
+            if n.is_multiple_of(20) {
+                write(dir, name, &format!("x{n}"));
+            }
+            n += 1;
+            false
+        });
     }
 
     fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
@@ -1216,6 +1458,124 @@ deepword
     }
 
     #[test]
+    fn tags_move_into_the_project_on_init_and_the_apps_own_writes_are_not_changes() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let ws = fx.open();
+        ws.set_file_tags("a.md", &["before".to_owned()])
+            .expect("tags");
+        ws.set_file_description("a.md", "first")
+            .expect("description");
+        let appdata_meta = StateStore::open(fx.app.path(), fx.project.path()).meta_path();
+        wait_until("the first write", || appdata_meta.exists());
+
+        ws.init_project_folder().expect("init");
+        let meta_file = fx.project.path().join(".trailmark/meta.toml");
+        let text = std::fs::read_to_string(&meta_file).expect("meta.toml");
+        assert!(
+            text.contains("\"before\"") && text.contains("first"),
+            "{text}"
+        );
+        assert!(!appdata_meta.exists(), "moved, not copied");
+
+        ws.set_file_tags("a.md", &["before".to_owned(), "after".to_owned()])
+            .expect("tags");
+        wait_until("the delayed write", || {
+            std::fs::read_to_string(&meta_file).is_ok_and(|t| t.contains("\"after\""))
+        });
+        // A negative proof: wait longer than the watcher's quiet period, then look. On a slow machine
+        // this can pass without the watcher having reported yet, but it cannot fail without a leak.
+        thread::sleep(Duration::from_millis(700));
+        let seen = fs_paths(&fx.rec);
+        assert!(
+            !seen.iter().any(|p| p.contains("meta.toml")),
+            "own writes must not reach the feed: {seen:?}"
+        );
+        assert!(fx.rec.meta.load(Ordering::SeqCst) >= 2, "the UI is told");
+
+        // An agent edits the file: it is read in, and it is news.
+        let told = fx.rec.meta.load(Ordering::SeqCst);
+        std::fs::write(
+            &meta_file,
+            "[files.\"a.md\"]\ntags = [\"by-agent\"]\ndescription = \"edited\"\n",
+        )
+        .expect("write");
+        wait_until("the edit to be read in", || {
+            ws.file_meta("a.md")
+                .is_ok_and(|m| m.description == "edited" && m.tags.len() == 1)
+        });
+        assert!(fx.rec.meta.load(Ordering::SeqCst) > told);
+        wait_until("the edit in the feed", || {
+            fs_paths(&fx.rec).iter().any(|p| p.ends_with("meta.toml"))
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn a_project_that_gets_a_trailmark_folder_from_elsewhere_keeps_the_tags_added_before() {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "a.md",
+            "# A
+",
+        );
+        let appdata_meta = StateStore::open(fx.app.path(), fx.project.path()).meta_path();
+        let ws = fx.open();
+        ws.set_file_tags("a.md", &["early".to_owned()])
+            .expect("tags");
+        ws.close();
+        assert!(appdata_meta.exists());
+
+        // a teammate commits .trailmark/, and it arrives with a pull
+        std::fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+        std::fs::write(
+            fx.project.path().join(".trailmark/meta.toml"),
+            "[files.\"a.md\"]
+tags = [\"team\"]
+",
+        )
+        .expect("write");
+
+        let ws = fx.open();
+        let meta = ws.file_meta("a.md").expect("meta");
+        let mut names: Vec<&str> = meta.tags.iter().map(|t| t.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["early", "team"]);
+        let text = std::fs::read_to_string(fx.project.path().join(".trailmark/meta.toml"))
+            .expect("meta.toml");
+        assert!(
+            text.contains("\"early\"") && text.contains("\"team\""),
+            "{text}"
+        );
+        assert!(!appdata_meta.exists(), "the AppData copy is retired");
+        ws.close();
+    }
+
+    #[test]
+    fn a_renamed_file_keeps_its_tags() {
+        let fx = Fx::new();
+        write(fx.project.path(), "old.md", "# Same content\n");
+        let ws = fx.open();
+        ws.set_file_tags("old.md", &["keep".to_owned()])
+            .expect("tags");
+        std::fs::rename(
+            fx.project.path().join("old.md"),
+            fx.project.path().join("new.md"),
+        )
+        .expect("rename");
+        wait_until("the tags to follow the rename", || {
+            ws.file_meta("new.md")
+                .is_ok_and(|m| m.tags.iter().any(|t| t.name == "keep"))
+        });
+        assert_eq!(
+            ws.file_meta("old.md").expect("old").tags,
+            Vec::<crate::meta::catalog::TagRef>::new()
+        );
+        ws.close();
+    }
+
+    #[test]
     fn project_config_ref_template_overrides_the_saved_one() {
         let fx = Fx::new();
         write(
@@ -1234,6 +1594,29 @@ deepword
     }
 
     #[test]
+    fn project_config_tree_defaults_reach_the_ui_through_the_vault_info() {
+        let fx = Fx::new();
+        let ws = fx.open();
+        assert_eq!(ws.info().tree_default, None);
+        ws.close();
+
+        write(
+            fx.project.path(),
+            ".trailmark/config.toml",
+            "[tree]
+show = \"documents\"
+exclude = [\"archive/**\"]
+",
+        );
+        let ws = fx.open();
+        let tree = ws.info().tree_default.expect("tree default");
+        assert_eq!(tree.show, Some(crate::session::TreeShow::Documents));
+        assert_eq!(tree.exclude, ["archive/**"]);
+        assert_eq!(tree.include, Vec::<String>::new());
+        ws.close();
+    }
+
+    #[test]
     fn recents_are_updated_on_open() {
         let fx = Fx::new();
         write(fx.project.path(), "a.md", "x");
@@ -1241,6 +1624,156 @@ deepword
         let list = RecentStore::new(fx.app.path()).load();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].root, ws.info().root);
+        ws.close();
+    }
+
+    #[test]
+    fn the_editors_own_writes_are_not_news_but_an_agents_are() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        write(fx.project.path(), "b.md", "# B\n");
+        let ws = fx.open();
+        fx.indexed();
+
+        // The editor saves a.md: the index and git still learn about it, the UI does not.
+        let source = ws.document_source("a.md").expect("source");
+        let saved = ws
+            .save_document("a.md", "# A\n\nzebra stripes\n", &source.hash)
+            .expect("save");
+        assert!(matches!(saved, SaveOutcome::Saved { .. }), "{saved:?}");
+        wait_until("the index to learn the new text", || {
+            ws.search("zebra", None).len() == 1
+        });
+
+        // It creates a new file: the tree is refreshed, but there is no feed entry for it.
+        let trees = fx.rec.tree.load(Ordering::SeqCst);
+        ws.create_document("c.md", "# C\n").expect("create");
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) > trees
+        });
+
+        // A negative proof: wait longer than the watcher's quiet period, then look.
+        thread::sleep(Duration::from_millis(700));
+        let seen = fs_paths(&fx.rec);
+        assert!(
+            !seen.iter().any(|p| p == "a.md" || p == "c.md"),
+            "own writes must not reach the feed: {seen:?}"
+        );
+
+        // An agent saves b.md, and then a.md over our version: both are news.
+        std::fs::write(fx.project.path().join("b.md"), "# B changed\n").expect("write");
+        std::fs::write(fx.project.path().join("a.md"), "# A by an agent\n").expect("write");
+        wait_until("the agent's saves in the feed", || {
+            let seen = fs_paths(&fx.rec);
+            seen.iter().any(|p| p == "b.md") && seen.iter().any(|p| p == "a.md")
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn moves_in_the_explorer_are_not_news_and_tags_links_and_the_index_follow() {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "README.md",
+            "# Home\n\nSee [guide](docs/guide.md).\n",
+        );
+        write(fx.project.path(), "docs/guide.md", "# Guide\n\nzebra\n");
+        write(fx.project.path(), "docs/extra/api.md", "# API\n");
+        let ws = fx.open();
+        fx.indexed();
+        let keep = vec!["keep".to_owned()];
+        ws.set_file_tags("docs/guide.md", &keep).expect("tags");
+        ws.set_file_tags("docs/extra/api.md", &keep).expect("tags");
+
+        // a rename with the links rewritten, then the folder with everything in it
+        let rename = [Move {
+            from: "docs/guide.md".to_owned(),
+            to: "docs/manual.md".to_owned(),
+        }];
+        let preview = ws.preview_move(&rename, true, &[]).expect("preview");
+        assert_eq!((preview.link_count, preview.file_count), (1, 1));
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+
+        let on_disk = |rel: &str| std::fs::read_to_string(fx.project.path().join(rel)).expect(rel);
+        assert!(on_disk("README.md").contains("(manual/manual.md)"));
+        assert!(on_disk("manual/manual.md").contains("zebra"));
+
+        // the tags went along, for the file and for what was inside the folder
+        for moved in ["manual/manual.md", "manual/extra/api.md"] {
+            let meta = ws.file_meta(moved).expect("meta");
+            assert_eq!(meta.tags.len(), 1, "{moved}");
+        }
+        // the search index learned the new place
+        wait_until("the index to follow the move", || {
+            ws.search("zebra", None)
+                .first()
+                .is_some_and(|hit| hit.path == "manual/manual.md")
+        });
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) >= 1
+        });
+
+        // A negative proof: wait longer than the watcher's quiet period, then look. Nothing of this
+        // reached the feed: no removed and created rows for every file, no row for the rewritten README.
+        thread::sleep(Duration::from_millis(900));
+        let seen = fs_paths(&fx.rec);
+        assert!(
+            seen.is_empty(),
+            "the person's own moves must not reach the feed: {seen:?}"
+        );
+
+        // An agent saving a moved file afterwards is news.
+        std::fs::write(
+            fx.project.path().join("manual/manual.md"),
+            "# Guide\n\nby an agent\n",
+        )
+        .expect("write");
+        wait_until("the agent's save in the feed", || {
+            fs_paths(&fx.rec).iter().any(|p| p == "manual/manual.md")
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn a_big_folder_moved_in_the_explorer_is_not_a_bulk_row() {
+        let fx = Fx::new();
+        for n in 0..70 {
+            write(
+                fx.project.path(),
+                &format!("docs/note-{n}.md"),
+                &format!("# Note {n}\n"),
+            );
+        }
+        let ws = fx.open();
+        fx.indexed();
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        assert!(fx.project.path().join("manual/note-69.md").is_file());
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) >= 1
+        });
+
+        thread::sleep(Duration::from_millis(900));
+        let batches = fx.rec.fs.lock().expect("lock").clone();
+        assert!(
+            batches.is_empty(),
+            "70 files moved by the person must not reach the feed: {} batch(es), bulk {:?}",
+            batches.len(),
+            batches
+                .first()
+                .and_then(|b| b.bulk.as_ref().map(|x| x.count))
+        );
         ws.close();
     }
 
@@ -1640,10 +2173,12 @@ deepword
             .expect_err("missing");
         assert_eq!(err.kind(), "notFound");
         assert_eq!(fx.current_root(), root_of(&fx.a));
-        write(fx.a.path(), "after.md", "x");
-        wait_until("A still reports its changes", || {
-            fs_paths(&fx.rec).contains(&"after.md".to_owned())
-        });
+        write_until_reported(
+            &fx.rec,
+            fx.a.path(),
+            "after.md",
+            "A still reports its changes",
+        );
         fx.host.shutdown();
     }
 
@@ -1663,10 +2198,12 @@ deepword
                 Ok(ws)
             })
             .expect("open");
-        write(fx.a.path(), "later.md", "x");
-        wait_until("events flow once the folder is installed", || {
-            fs_paths(&fx.rec).contains(&"later.md".to_owned())
-        });
+        write_until_reported(
+            &fx.rec,
+            fx.a.path(),
+            "later.md",
+            "events flow once the folder is installed",
+        );
         fx.host.shutdown();
     }
     #[test]
