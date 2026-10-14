@@ -17,7 +17,7 @@ import type { SourceApi } from "../bridge";
 import { currentHeading } from "../outline";
 import { imageMarkdown } from "./imageName";
 import { sourceHeadings, sourceLanguage, type SourceHeading } from "./sourceHeadings";
-import { watchViewport } from "./viewport";
+import { showsAtTop, watchViewport } from "./viewport";
 import { toggleMarker, wrapLink, type WrapEdit } from "./wrapSelection";
 
 export type SourceHandlers = {
@@ -112,6 +112,7 @@ export function createSourceView(
   label: string,
   handlers: SourceHandlers,
   caretAtEnd = false,
+  topLine?: number,
 ): SourceView {
   const extensions: Extension[] = [
     lineNumbers(),
@@ -163,10 +164,16 @@ export function createSourceView(
   const lineAt = (n: number): { from: number; to: number } =>
     view.state.doc.line(Math.min(Math.max(n + 1, 1), view.state.doc.lines));
   const lineStart = (n: number): number => lineAt(n).from;
+  // `topLine` is the line that goes to the top of the view (the place the other mode was showing); without it the caret is only made visible
   view.dispatch({
     selection: EditorSelection.cursor(caretAtEnd ? lineAt(line).to : lineStart(line)),
-    scrollIntoView: true,
+    scrollIntoView: topLine === undefined,
   });
+  if (topLine !== undefined && topLine > 0) {
+    view.dispatch({
+      effects: EditorView.scrollIntoView(lineStart(topLine), { y: "start", yMargin: 8 }),
+    });
+  }
 
   const insertAtSelection = (insert: string): void => {
     const { from, to } = view.state.selection.main;
@@ -224,6 +231,17 @@ export function createSourceView(
       });
     },
     caretLine: () => view.state.doc.lineAt(view.state.selection.main.head).number - 1,
+    topLine() {
+      // the document's own coordinates of the top edge of the view
+      const edge = view.scrollDOM.getBoundingClientRect().top;
+      let block = view.lineBlockAtHeight(Math.max(0, edge - view.documentTop));
+      // a line cut off at the edge is the one that was scrolled past
+      const top = view.documentTop + block.top;
+      if (block.height > 0 && !showsAtTop(top, top + block.height, edge)) {
+        block = view.lineBlockAtHeight(block.bottom + 1);
+      }
+      return view.state.doc.lineAt(block.from).number - 1;
+    },
     focus: () => view.focus(),
     insertImage: (rel) => insertAtSelection(imageMarkdown(rel)),
     applyChanges(edits) {

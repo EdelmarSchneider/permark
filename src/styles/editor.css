@@ -70,6 +70,9 @@
   background: var(--surface-2);
 }
 .seg__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 22px;
   padding: 0 10px;
   border: 0;
@@ -94,6 +97,10 @@
 }
 .seg__btn.is-disabled:hover {
   color: var(--muted);
+}
+/* The labels give way to icons when the header is narrow (the tooltip and the accessible name keep the word). */
+.seg__btn .seg__icon {
+  display: none;
 }
 /* A control that is off but still says why (a tooltip, a toast) stays reachable by keyboard and mouse. */
 .btn.is-disabled {
@@ -145,14 +152,31 @@
   display: none;
 }
 
-/* A narrow header (both panels open on a small window) gives up the switch first, then the word "Unsaved" (the dot stays). */
+/* A narrow header (both panels open on a small window) gives up, in this order: the labels of the mode switch (icons stay), then the
+   word "Unsaved" (the dot stays). */
 @container (max-width: 560px) {
-  .doc-header .seg {
+  .doc-header .seg__label {
     display: none;
+  }
+  .doc-header .seg__btn .seg__icon {
+    display: block;
+  }
+  .doc-header .seg__btn {
+    width: 28px;
+    padding: 0;
   }
 }
 @container (max-width: 480px) {
   .doc-header .edit-state__text {
+    display: none;
+  }
+}
+/* The narrowest header (a window of the minimum size with both panels open) is for the switch, Save and the menu while editing: the file
+   name, its git letter and Done (the Read segment does the same) wait until there is room. */
+@container (max-width: 400px) {
+  .doc-header.is-editing .breadcrumb,
+  .doc-header.is-editing .badge,
+  .doc-header.is-editing .btn-done {
     display: none;
   }
 }

@@ -524,15 +524,20 @@ export const ptBR = {
   "error.nameNoStem": "O nome precisa ter algo antes da extensão",
   "error.imageEmpty": "A imagem está vazia",
 
+  // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
+  "mode.label": "Modo",
+  "mode.read": "Ler",
+  "mode.readHint": "Ler este documento",
+  "mode.visualHint": "Editar no editor visual",
+  "mode.sourceHint": "Editar a fonte Markdown",
+  "mode.withKeys": "{hint} ({keys})",
+
   // ---- editing
-  "edit.edit": "Editar",
-  "edit.editHint": "Editar este documento (E)",
   "edit.done": "Concluir",
   "edit.doneHint": "Voltar à leitura (Ctrl+E ou Esc)",
   "edit.save": "Salvar",
   "edit.saveHint": "Salvar (Ctrl+S)",
   "edit.saving": "Salvando...",
-  "edit.modes": "Editor",
   "edit.visual": "Visual",
   "edit.source": "Fonte",
   "edit.unsaved": "Não salvo",
@@ -565,7 +570,6 @@ export const ptBR = {
   "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "Não foi possível carregar o editor.",
   "edit.bars": "Avisos de edição",
-  "edit.modeHint": "Alternar entre Visual e Fonte (Ctrl+Alt+E)",
   "edit.switchFailed": "Não foi possível trocar de editor: {message}",
   "edit.switchTyping": "o texto continuou mudando durante a leitura. Tente novamente.",
   "edit.blocksUnreadable":

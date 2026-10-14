@@ -1,8 +1,9 @@
 // Editing the open document, in the Visual or the Source editor (docs/design/v0.2.md section 3). This store
 // holds the version of the file the editor started from (`base`: text, hash and block map) and decides what
-// happens at each step: entering and leaving, switching between the two editors, saving, the unsaved-changes
-// bar, and what to do when the file changes on disk meanwhile. The text itself lives in the editor (reached
-// through `bridge.editor`): Source holds a buffer, Visual holds a document that writes the text on demand.
+// happens at each step: entering and leaving (the Read | Visual | Source switch of the header, Ctrl+E, E and
+// Ctrl+Alt+E), switching between the two editors, saving, the unsaved-changes bar, and what to do when the
+// file changes on disk meanwhile. The text itself lives in the editor (reached through `bridge.editor`): Source
+// holds a buffer, Visual holds a document that writes the text on demand.
 
 import { tick } from "svelte";
 import { api } from "../api";
@@ -28,7 +29,7 @@ import {
   pastedImageName,
   toBase64,
 } from "../editor/imageName";
-import type { EditMode } from "../editMode";
+import { otherEditMode, type DocMode, type EditMode } from "../editMode";
 import { errorKind, errorMessage } from "../errors";
 import { mapPath } from "../fileOps";
 import { t, tn } from "../i18n";
@@ -100,14 +101,17 @@ class EditStore {
   caret = $state({ line: 1, column: 1 });
   /** When the file was last written, as far as the editor knows. */
   modifiedMs = $state(0);
-  /** The editor in use. Entering starts in the session's mode; the switch in the header changes it. */
+  /** The editor in use. Entering starts in the editor used last (else the session's setting); the switch in the header changes it. */
   mode = $state<EditMode>("visual");
   /** The mode is being switched (Source to Visual waits for the blocks of the text), so another switch waits. */
   switching = $state(false);
   /** How many blocks carry the unsaved-block bar in Visual mode. */
   unsavedBlocks = $state(0);
-  /** What the Source editor opens with (text and line), read once when it mounts. */
-  initial = $state.raw<{ buffer: string; line: number; atEnd: boolean } | null>(null);
+  /**
+   * What the Source editor opens with (text and line), read once when it mounts. `top` is the line to put at the top of the view
+   * (the place the reading view or the Visual editor was showing); without it the caret's line is only made visible.
+   */
+  initial = $state.raw<{ buffer: string; line: number; atEnd: boolean; top?: number } | null>(null);
   /** What the Visual editor opens with, read once when it mounts. */
   visualStart = $state.raw<VisualStart | null>(null);
   /** Bumped for the bars to move the keyboard focus (Ctrl+S during a conflict). */
@@ -134,6 +138,15 @@ class EditStore {
     docs.guard = (resume) => this.holdNavigation(resume);
   }
 
+  /** The editor that Ctrl+E and E open from reading: the one used last, else the "Open files for editing in" setting. */
+  get lastEditMode(): EditMode {
+    return session.lastEditMode ?? session.editMode;
+  }
+
+  private remember(mode: EditMode): void {
+    session.lastEditMode = mode;
+  }
+
   /** Why the open document cannot be edited (null when it can). */
   get blocked(): string | null {
     const reason = editBlock(docs.current);
@@ -143,10 +156,10 @@ class EditStore {
   // ---- entering and leaving -------------------------------------------------------------------
 
   /**
-   * Starts editing the open document, with the caret on the block at the top of the viewport. A document that was
-   * just made (`fresh`) opens with the caret after its title.
+   * Starts editing the open document, in `mode` (the editor used last when not given), with the caret on the block at the top of
+   * the viewport and that block kept at the top. A document that was just made (`fresh`) opens with the caret after its title.
    */
-  async enter(fresh = false): Promise<boolean> {
+  async enter(fresh = false, mode?: EditMode): Promise<boolean> {
     if (this.active) return true;
     const path = docs.path;
     if (this.loading || !path || !docs.current || docs.deleted) return false;
@@ -159,7 +172,8 @@ class EditStore {
     try {
       const source = await api.documentSource(path);
       if (docs.path !== path || this.active) return false;
-      this.begin(source, fresh ? 0 : Math.max(0, (bridge.topLine?.() ?? 1) - 1), fresh);
+      const line = fresh ? 0 : Math.max(0, (bridge.topLine?.() ?? 1) - 1);
+      this.begin(source, line, fresh, mode ?? this.lastEditMode);
       return true;
     } catch (error) {
       const reason = editBlockFromKind(errorKind(error));
@@ -175,7 +189,7 @@ class EditStore {
     }
   }
 
-  private begin(source: SourceDoc, line: number, atEnd: boolean): void {
+  private begin(source: SourceDoc, line: number, atEnd: boolean, mode: EditMode): void {
     const { buffer, format } = toBuffer(source.text);
     const map = buildBlockMap(source.text, source);
     this.base = {
@@ -187,7 +201,8 @@ class EditStore {
       modifiedMs: source.modifiedMs,
     };
     this.modifiedMs = source.modifiedMs;
-    this.mode = session.editMode;
+    this.mode = mode;
+    this.remember(mode);
     this.switching = false;
     this.switchToken++;
     this.unsavedBlocks = 0;
@@ -201,7 +216,7 @@ class EditStore {
         dirty: false,
         reveal: "start",
       };
-    } else this.initial = { buffer, line, atEnd };
+    } else this.initial = { buffer, line, atEnd, top: line };
     this.caret = { line: line + 1, column: 1 };
     this.dirty = false;
     this.saving = false;
@@ -214,13 +229,13 @@ class EditStore {
     docs.editing = true;
   }
 
-  /** Ctrl+E and the Edit and Done buttons. */
+  /** Ctrl+E: reading to the editor used last, and any editor back to reading. */
   toggle(): void {
     if (this.active) this.requestExit();
     else void this.enter();
   }
 
-  /** Done, Ctrl+E or Esc: back to reading, after asking when there is unsaved work. */
+  /** Done, Read, Ctrl+E or Esc: back to reading, after asking when there is unsaved work. */
   requestExit(): void {
     if (!this.active) return;
     if (this.dirty) {
@@ -233,7 +248,8 @@ class EditStore {
   /** Leaves editing without asking (the caller has dealt with unsaved work). */
   async leave(opts: { refresh: boolean }): Promise<void> {
     if (!this.active) return;
-    const line = bridge.editor?.caretLine() ?? this.caret.line - 1;
+    // the reading view comes back with the block that was at the top of the editor at the top
+    const line = bridge.editor?.topLine() ?? this.caret.line - 1;
     // the file is read before the reading view comes back, so it never shows the old text for a moment
     const fresh = opts.refresh && this.touched ? await docs.fetchCurrent() : null;
     if (!this.active) return;
@@ -241,13 +257,14 @@ class EditStore {
     if (!opts.refresh) return;
     if (fresh) docs.applyQuiet(fresh);
     await tick();
-    docs.jumpTo(null, { line: line + 1, find: null, tint: false });
+    docs.jumpTo(null, { line: line + 1, find: null, tint: false, align: "top" });
   }
 
   /** Forgets everything about the session (another project was opened). */
   reset(): void {
     this.clear();
     this.hint = false;
+    session.lastEditMode = null;
   }
 
   private clear(): void {
@@ -762,18 +779,30 @@ class EditStore {
     docs.noteDeleted();
   }
 
-  // ---- switching between Visual and Source --------------------------------------------------------------
+  // ---- the modes: Read, Visual and Source -----------------------------------------------------------------
 
-  /** Ctrl+Alt+E and the switch in the header. */
+  /**
+   * A segment of the header switch: one click goes to any mode. Read asks first when there is unsaved work (the bar), Visual and
+   * Source keep it when going from one to the other; from reading, an editor opens at the block at the top of the viewport.
+   */
+  async goTo(target: DocMode): Promise<void> {
+    if (target === "read") this.requestExit();
+    else if (this.active) await this.switchTo(target);
+    else await this.enter(false, target);
+  }
+
+  /** Ctrl+Alt+E: between the two editors; from reading, the one that was not used last. */
   async toggleMode(): Promise<void> {
-    await this.switchTo(this.mode === "visual" ? "source" : "visual");
+    if (this.active) await this.switchTo(otherEditMode(this.mode));
+    else await this.enter(false, otherEditMode(this.lastEditMode));
   }
 
   /**
-   * Opens the other editor on the text as it is now, unsaved work included, with the caret in the same block. `block` (of the
-   * text being edited) puts the caret on a given block instead: the "Edit in Source" button of a locked block. Resolves to
-   * whether the editor changed. Source to Visual waits for the blocks of the text, so a second switch meanwhile is ignored, and
-   * so is a switch that the end of the session or another switch overtook.
+   * Opens the other editor on the text as it is now, unsaved work included, with the caret in the same block and the block that
+   * was at the top of the view still there. `block` (of the text being edited) puts the caret, and the view, on a given block
+   * instead: the "Edit in Source" button of a locked block. Resolves to whether the editor changed. Source to Visual waits for
+   * the blocks of the text, so a second switch meanwhile is ignored, and so is a switch that the end of the session or another
+   * switch overtook.
    */
   async switchTo(mode: EditMode, opts: { block?: number | null } = {}): Promise<boolean> {
     const base = this.base;
@@ -786,10 +815,12 @@ class EditStore {
         // the text a save would write, so Source shows exactly that
         const text = editor.text();
         const line = editor.lineOfBlock(opts.block ?? null);
+        const top = opts.block == null ? editor.topLine() : line;
         const { buffer } = toBuffer(text);
-        this.initial = { buffer, line, atEnd: false };
+        this.initial = { buffer, line, atEnd: false, top };
         this.visualStart = null;
         this.mode = "source";
+        this.remember("source");
         this.caret = { line: line + 1, column: 1 };
         this.unsavedBlocks = 0;
         this.setDirty(buffer !== base.buffer);
@@ -798,6 +829,7 @@ class EditStore {
       // Source to Visual: the blocks of the buffer come from the backend
       let text = this.currentText();
       let line = editor.caretLine();
+      let top = editor.topLine();
       let parsed = await api.parseBlocks(text);
       // typing while the blocks were being read: read them again for the later text; if it keeps changing, the blocks that were
       // read are of an older text and the switch would drop what was typed since
@@ -805,6 +837,7 @@ class EditStore {
         if (rereads === 3) throw new Error(t("edit.switchTyping"));
         text = this.currentText();
         line = editor.caretLine();
+        top = editor.topLine();
         parsed = await api.parseBlocks(text);
       }
       if (token !== this.switchToken || !this.active || this.mode !== "source") return false;
@@ -818,9 +851,11 @@ class EditStore {
         unsaved: match.origins.map((origin) => origin === null),
         dirty: text !== saved.text,
         block: Math.max(0, blockAtLine(map, line)),
+        top: Math.max(0, blockAtLine(map, top)),
       };
       this.initial = null;
       this.mode = "visual";
+      this.remember("visual");
       return true;
     } catch (error) {
       toast.message(t("edit.switchFailed", { message: errorMessage(error) }), "warn");

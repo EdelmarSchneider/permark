@@ -24,6 +24,8 @@ export type LocateRequest = {
   find: { query: string; mode: FindMode } | null;
   /** Tint the block it lands on, like a search hit (on unless false). */
   tint?: boolean;
+  /** Where the block lands: the top of the view, to keep the place when the view changes mode (a third of the way down unless given). */
+  align?: "top";
 };
 
 /**

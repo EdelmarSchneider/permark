@@ -72,3 +72,19 @@ describe("the Source editor and the Outline", () => {
     expect(onChange).toHaveBeenCalled();
   });
 });
+
+describe("the Source editor and the place it keeps", () => {
+  const TEXT = "# One\n\nfirst\n\nsecond\n\nthird\n";
+
+  it("opens with the caret on the line asked for, and a top line does not move it", () => {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    view = createSourceView(parent, TEXT, 4, "test", handlers, false, 2);
+    expect(view.caretLine()).toBe(4);
+    expect(view.getText()).toBe(TEXT);
+  });
+
+  it("reports the line at the top of the view (the first one without a layout)", () => {
+    expect(open(TEXT).topLine()).toBe(0);
+  });
+});

@@ -528,15 +528,20 @@ export const es = {
   "error.nameNoStem": "El nombre necesita algo antes de la extensión",
   "error.imageEmpty": "La imagen está vacía",
 
+  // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
+  "mode.label": "Modo",
+  "mode.read": "Leer",
+  "mode.readHint": "Leer este documento",
+  "mode.visualHint": "Editar en el editor visual",
+  "mode.sourceHint": "Editar el código fuente Markdown",
+  "mode.withKeys": "{hint} ({keys})",
+
   // ---- editing
-  "edit.edit": "Editar",
-  "edit.editHint": "Editar este documento (E)",
   "edit.done": "Listo",
   "edit.doneHint": "Volver a la lectura (Ctrl+E o Esc)",
   "edit.save": "Guardar",
   "edit.saveHint": "Guardar (Ctrl+S)",
   "edit.saving": "Guardando...",
-  "edit.modes": "Editor",
   "edit.visual": "Visual",
   "edit.source": "Código fuente",
   "edit.unsaved": "Sin guardar",
@@ -569,7 +574,6 @@ export const es = {
   "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "No se pudo cargar el editor.",
   "edit.bars": "Avisos de edición",
-  "edit.modeHint": "Cambiar entre Visual y Código fuente (Ctrl+Alt+E)",
   "edit.switchFailed": "No se pudo cambiar de editor: {message}",
   "edit.switchTyping": "el texto seguía cambiando mientras se leía. Inténtalo de nuevo.",
   "edit.blocksUnreadable":

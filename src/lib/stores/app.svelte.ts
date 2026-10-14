@@ -677,7 +677,7 @@ class AppStore {
         if (docs.current || edit.active) edit.toggle();
         return;
       case "toggleEditMode":
-        if (edit.active) void edit.toggleMode();
+        if (docs.current || edit.active) void edit.toggleMode();
         return;
       case "save":
         if (edit.active) void edit.save();

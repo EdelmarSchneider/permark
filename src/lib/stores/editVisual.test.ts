@@ -74,6 +74,7 @@ type FakeVisual = VisualApi & {
   dirty: boolean;
   block: number | null;
   line: number;
+  top: number;
   loads: unknown[];
   rebased: unknown[];
 };
@@ -86,11 +87,13 @@ function fakeVisual(initial: string): FakeVisual {
     dirty: false,
     block: 0,
     line: 0,
+    top: 0,
     loads: [],
     rebased: [],
     text: () => editor.current,
     status: () => ({ dirty: editor.dirty, changed: editor.dirty ? 1 : 0 }),
     caretLine: () => editor.line,
+    topLine: () => editor.top,
     caretBlock: () => editor.block,
     lineOfBlock: (block: number | null) => (block === null ? editor.line : block * 2),
     load: (input: unknown) => void editor.loads.push(input),
@@ -108,12 +111,14 @@ function fakeSource(initial: string) {
     mode: "source" as const,
     text: initial,
     line: 0,
+    top: 0,
     getText: () => editor.text,
     setText: (text: string, line: number) => {
       editor.text = text;
       editor.line = line;
     },
     caretLine: () => editor.line,
+    topLine: () => editor.top,
     focus: vi.fn(),
     insertImage: vi.fn(),
     applyChanges: vi.fn(),
@@ -328,6 +333,7 @@ describe("switching between Visual and Source", () => {
       buffer: "# A\n\nfirst, edited\n\nsecond\n",
       line: 2,
       atEnd: false,
+      top: 0,
     });
     expect(edit.dirty).toBe(true);
     expect(edit.visualStart).toBeNull();

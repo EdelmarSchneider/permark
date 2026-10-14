@@ -6,6 +6,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **One mode switch in the header: Read | Visual | Source.** It replaces the **Edit** button and the Visual / Source switch that only showed while
+  editing, and it is always there while a document is open (Simple mode too). One click goes to any mode, keeping your place (the block at the
+  top of the view stays at the top, in all three) and your unsaved work; leaving an editor for Read with unsaved changes asks, as before, to
+  Save, Discard or Keep editing. `Ctrl+E` and `E` open the editor you used last (the **Open files for editing in** setting until you use one),
+  `Ctrl+Alt+E` toggles Visual and Source, or from Read opens the editor you did not use last. For a file that cannot be edited the Visual and Source
+  segments are dimmed, with the reason as their tooltip. In a narrow header the labels become icons, and the switch works with the arrow keys,
+  Home and End, with tooltips that name the shortcut.
 - **Repositories inside a project are always in the tree.** A folder with its own `.git` shows up even when the project's `.gitignore`
   leaves it out, which is how a workspace folder that collects several independent repositories is usually set up. Inside each one its own
   `.gitignore` and `.git/info/exclude` decide what is listed, not the project's. Search, Quick open, tags and live updates cover their files

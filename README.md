@@ -91,8 +91,10 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 </picture>
 
 ### ✏️ Edit without fear
-- Two editors, one click apart (`Ctrl+Alt+E`): **Visual**, a WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and
-  code blocks, and **Source**, a Markdown editor with highlighting and line numbers. Both are loaded only when you start editing
+- One switch in the header, **Read | Visual | Source**, goes to any mode in one click and keeps your place and your unsaved work. **Visual** is a
+  WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks; **Source** is a Markdown editor with highlighting and
+  line numbers. `Ctrl+E` toggles Read and the editor you used last, `Ctrl+Alt+E` toggles Visual and Source. Both editors are loaded only
+  when you start editing
 - **Only the blocks you changed are rewritten.** Every other byte of the file stays as its author (or agent) wrote it, including line
   endings and a byte-order mark. A block you edited carries a bar in the margin until you save, and the status bar counts them
 - Blocks the visual editor can't write back faithfully (front matter, raw HTML, math, diagrams, footnotes) stay as they are,
@@ -188,9 +190,9 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 
 | Action | Shortcut |
 |---|---|
-| Start editing | `E` or `Ctrl+E` |
+| Start editing, in the editor you used last | `E` or `Ctrl+E` |
 | Done (back to reading) | `Ctrl+E` or `Esc` |
-| Switch between Visual and Source | `Ctrl+Alt+E` |
+| Switch between Visual and Source (from reading: the editor you did not use last) | `Ctrl+Alt+E` |
 | Save | `Ctrl+S` |
 | New file | `Ctrl+N` |
 | Bold / italic / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |

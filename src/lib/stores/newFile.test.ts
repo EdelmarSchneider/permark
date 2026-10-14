@@ -76,6 +76,7 @@ function fakeEditor(initial: string) {
       editor.text = text;
     },
     caretLine: () => 0,
+    topLine: () => 0,
     focus: vi.fn(),
     insertImage: () => {},
     applyChanges: () => {},
