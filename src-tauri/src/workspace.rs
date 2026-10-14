@@ -29,6 +29,7 @@ use crate::search::indexer::{IndexWorker, Indexer};
 use crate::search::{Bm25Index, SearchHit, SearchProvider};
 use crate::session::{
     FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore, TreeConfig,
+    WindowState,
 };
 use crate::util::{modified_ms, now_ms, on_parser_stack, read_with_retry};
 use crate::vault::{NodeKind, TreeNode, Vault, VaultError, VaultMode};
@@ -687,6 +688,16 @@ impl Workspace {
         Ok(session)
     }
 
+    /// Remembers where the window is, with this project's state. Simple mode (one file) has no state of its
+    /// own to keep it in: such a window is only remembered app-wide.
+    pub fn save_window(&self, window: &WindowState) -> Result<(), AppError> {
+        if self.vault.mode() == VaultMode::Simple {
+            return Ok(());
+        }
+        self.lock_store()?.save_window(window)?;
+        Ok(())
+    }
+
     pub fn init_project_folder(&self) -> Result<(), AppError> {
         let mut store = self.lock_store()?;
         let was_in_project = store.location() == StateLocation::Project;
@@ -966,6 +977,14 @@ impl WorkspaceHost {
     pub fn save_last_visit(&self) {
         if let Ok(ws) = self.current() {
             ws.save_last_visit();
+        }
+    }
+
+    /// Remembers where the window is with the open project (none is open on the welcome screen).
+    pub fn save_window(&self, window: &WindowState) {
+        if let Ok(ws) = self.current() {
+            // Best effort, like the rest of the window's memory: a failed write must not bother anyone.
+            let _ = ws.save_window(window);
         }
     }
 
@@ -1455,6 +1474,46 @@ deepword
             .any(|c| c.path.contains("local") || c.path.contains("cache"));
         assert!(!leaked);
         ws.close();
+    }
+
+    #[test]
+    fn the_window_is_remembered_with_a_folder_but_not_with_a_single_file() {
+        let window = WindowState {
+            x: 10,
+            y: 20,
+            width: 1280,
+            height: 800,
+            scale: 1.5,
+            maximized: true,
+        };
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "x");
+        let ws = fx.open();
+        ws.save_window(&window).expect("save");
+        ws.init_project_folder().expect("init");
+        ws.close();
+        // it moved into the project's own (private) state with everything else
+        let store = StateStore::open(fx.app.path(), fx.project.path());
+        assert_eq!(store.location(), StateLocation::Project);
+        assert_eq!(store.load_window(), Some(window));
+        assert!(fx
+            .project
+            .path()
+            .join(".trailmark/local/window.json")
+            .is_file());
+
+        // a single file shares the app-wide window instead: nothing is kept for its folder
+        let single = Fx::new();
+        write(single.project.path(), "note.md", "x");
+        let ws = single.open_path(&single.project.path().join("note.md"));
+        ws.save_window(&window).expect("save");
+        ws.close();
+        let store = StateStore::open(single.app.path(), single.project.path());
+        assert_eq!(store.load_window(), None);
+        assert!(
+            !store.dir().join("window.json").exists(),
+            "no entry of its own"
+        );
     }
 
     #[test]
@@ -2066,6 +2125,30 @@ exclude = [\"archive/**\"]
             .expect("canonicalize")
             .display()
             .to_string()
+    }
+
+    #[test]
+    fn the_window_is_saved_with_whichever_folder_is_open() {
+        let fx = HostFx::new();
+        let window = WindowState {
+            x: 1,
+            y: 2,
+            width: 900,
+            height: 600,
+            scale: 1.0,
+            maximized: false,
+        };
+        // the welcome screen has no folder: nothing to save with, and nothing goes wrong
+        fx.host.save_window(&window);
+        fx.open(fx.a.path()).expect("open A");
+        fx.host.save_window(&window);
+        let moved = WindowState { x: 99, ..window };
+        fx.open(fx.b.path()).expect("open B");
+        fx.host.save_window(&moved);
+        let stored = |dir: &Path| StateStore::open(fx.app.path(), dir).load_window();
+        assert_eq!(stored(fx.a.path()), Some(window));
+        assert_eq!(stored(fx.b.path()), Some(moved));
+        fx.host.shutdown();
     }
 
     #[test]
