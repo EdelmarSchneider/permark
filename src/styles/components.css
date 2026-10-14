@@ -1449,16 +1449,7 @@ mark {
 .welcome__logo {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
   margin-bottom: var(--sp-3);
-  border-radius: 14px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.welcome__logo .icon {
-  width: 26px;
-  height: 26px;
 }
 .welcome h1 {
   margin: 0;
