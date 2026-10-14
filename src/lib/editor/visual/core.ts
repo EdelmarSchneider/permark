@@ -16,6 +16,7 @@ import {
   rootCtx,
   serializerCtx,
 } from "@milkdown/kit/core";
+import { clipboard } from "@milkdown/kit/plugin/clipboard";
 import { history } from "@milkdown/kit/plugin/history";
 import {
   blockquoteSchema,
@@ -270,6 +271,8 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use((options.firstPlugins ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
     .use(history)
+    // Markdown pasted as text becomes blocks, and what is copied is Markdown
+    .use(clipboard)
     .use(pasteAsNew)
     .use($prose(() => gapCursor()))
     .use((options.plugins ?? []).flat());
