@@ -3,6 +3,18 @@
 All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Tags and descriptions
+- Tag any file and give it a one-line description. Tags written in a document's frontmatter (`tags:`) are read automatically and
+  shown with a file glyph; tags added in the app are kept outside your files, in `.trailmark/meta.toml` once the project is
+  initialized (committable, so teammates and agents can read it) or in the app's own storage before that.
+- A strip at the top of the document shows the description and the tags; `T` (or the menu) edits them, with autocomplete.
+- A Tags view (`Ctrl+Shift+T`) lists every tag with its number of files; pick one, or Ctrl+click several, to list the files.
+- `tag:name` filters in Quick open and in Search; descriptions show in the tree tooltip, Quick open and search results.
+- Renamed files keep their tags; entries of deleted files are kept until you choose "Clean up".
+- A `meta.toml` that cannot be read (for example a merge conflict) makes the app's tags read-only and says which line is wrong.
+
 ## [0.1.0] - 2026-10-14
 
 The first public release.
