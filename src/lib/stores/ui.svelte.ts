@@ -55,6 +55,10 @@ class UiStore {
   tagsFocusTick = $state(0);
   /** The tag editor popover; `anchor` is where it opens (null: next to the document header). */
   tagEditor = $state.raw<{ anchor: Anchor | null } | null>(null);
+  /** The folder the name of a new file is being typed in (the input shows in the tree under it). */
+  newFile = $state.raw<{ folder: string; n: number } | null>(null);
+  /** The tree row the person last moved to or clicked: where Ctrl+N puts a new file. */
+  treeCursor = $state.raw<{ path: string; isDir: boolean } | null>(null);
   /** Id of the control showing its "Copied" check right now. */
   flashed = $state<string | null>(null);
   collapsedSections = new SvelteSet<string>();

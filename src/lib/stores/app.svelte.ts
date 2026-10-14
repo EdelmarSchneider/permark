@@ -5,18 +5,21 @@ import { SvelteSet } from "svelte/reactivity";
 import { api, type Unlisten } from "../api";
 import { bridge } from "../bridge";
 import { isTextSelected } from "../dom/domUtil";
-import { errorText } from "../errors";
+import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
+import { errorKind, errorText } from "../errors";
 import { followCandidate } from "../follow";
 import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
 import { formatQuote, formatReference } from "../reference";
 import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
 import type { ShortcutAction } from "../shortcuts";
+import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
+import { edit } from "./edit.svelte";
 import { feed } from "./feed.svelte";
 import { filter } from "./filter.svelte";
 import { outline } from "./outline.svelte";
@@ -134,6 +137,11 @@ class AppStore {
 
   private async handleDrop(paths: string[]): Promise<void> {
     ui.drag = null;
+    // a file dropped on the window while editing must not replace the project; images are pasted
+    if (edit.active) {
+      toast.message(t("images.dropWhileEditing"), "info");
+      return;
+    }
     if (paths.length !== 1) {
       this.openError = t("welcome.dropOne");
       toast.message(t("welcome.dropOne"), "warn");
@@ -145,6 +153,10 @@ class AppStore {
   /** Opens a folder (IDE mode) or a file (Simple mode), replacing the current project. */
   async openProject(path: string): Promise<boolean> {
     if (this.opening) return false;
+    // unsaved edits are asked about first; the answer carries on with this
+    if (this.screen === "project" && edit.holdNavigation(() => void this.openProject(path))) {
+      return false;
+    }
     this.opening = true;
     this.openError = null;
     try {
@@ -161,6 +173,7 @@ class AppStore {
       }
 
       session.suspend();
+      edit.reset();
       docs.reset();
       feed.clear();
       filter.reset();
@@ -178,6 +191,8 @@ class AppStore {
       ui.rightTabBack = "changes";
       ui.sidebarView = "explorer";
       ui.dismissedRepoState = null;
+      ui.newFile = null;
+      ui.treeCursor = null;
       vault.info = info;
 
       const [stored, tree, git, location] = await Promise.all([
@@ -253,6 +268,7 @@ class AppStore {
 
   private onFsChange(batch: FsBatch): void {
     if (this.screen !== "project") return;
+    edit.onFsChange(batch);
     const now = Date.now();
     if (vault.isSimple) {
       docs.handleBatch(batch, false);
@@ -289,8 +305,9 @@ class AppStore {
 
   // ---- Follow -------------------------------------------------------------------------------------
 
+  /** Follow never jumps away from a document being edited (clean or not). */
   private followBlocked(): boolean {
-    return isTextSelected() || hasOpenOverlay();
+    return edit.active || isTextSelected() || hasOpenOverlay();
   }
 
   private async followTo(path: string): Promise<void> {
@@ -368,6 +385,44 @@ class AppStore {
       case "missing":
         return { missing: target.path };
     }
+  }
+
+  // ---- new file -------------------------------------------------------------------------------------
+
+  /** Ctrl+N and "New file...": the name is typed in the tree, under the selected folder or the open document's. */
+  startNewFile(folder?: string): void {
+    if (vault.isSimple) {
+      toast.message(t("newFile.simpleMode"), "info");
+      return;
+    }
+    const target = folder ?? targetFolder(ui.treeCursor, docs.path);
+    ui.sidebarView = "explorer";
+    if (!session.left.open) session.setPanel("left", { open: true });
+    // the folders above the new file's folder open, and so does the folder itself
+    const plan = planReveal(target === "" ? "x" : `${target}/x`, vault.expanded);
+    ui.collapsedSections.delete(plan.section);
+    for (const dir of plan.expand) vault.expanded.add(dir);
+    if (target !== "") vault.expanded.add(target);
+    ui.newFile = { folder: target, n: (ui.newFile?.n ?? 0) + 1 };
+  }
+
+  /**
+   * Makes the file the tree input asked for and opens it for editing, the caret after its title. Resolves to the
+   * message to show under the input when it cannot be made, else null.
+   */
+  async createNewFile(folder: string, name: string): Promise<string | null> {
+    const path = newFilePath(folder, name);
+    try {
+      await api.createDocument(path, blankTemplate(name));
+    } catch (error) {
+      return errorKind(error) === "exists" ? t("newFile.exists") : errorText(error);
+    }
+    ui.newFile = null;
+    await vault.refreshTree();
+    // Editing starts once the file is open. If the document being edited has unsaved work the open waits for the
+    // person's answer (Save or Discard) and is resumed after it, so the start of editing travels with it.
+    await this.openDoc(path, { afterOpen: () => void edit.enter(true) });
+    return null;
   }
 
   // ---- baseline, panels, views ---------------------------------------------------------------------
@@ -595,10 +650,23 @@ class AppStore {
       case "tagsView":
         return this.showTags();
       case "editTags":
-        if (ide && docs.current) ui.openTagEditor();
+        if (ide && docs.current && !edit.active) ui.openTagEditor();
         return;
+      case "edit":
+        if (docs.current && !edit.active) void edit.enter();
+        return;
+      case "toggleEdit":
+        if (docs.current || edit.active) edit.toggle();
+        return;
+      case "save":
+        if (edit.active) void edit.save();
+        return;
+      case "newFile":
+        return this.startNewFile();
       case "find":
-        return this.openFind();
+        // the editor has no find yet, and the reading view it would search is hidden
+        if (!edit.active) this.openFind();
+        return;
       case "back":
         return void docs.back();
       case "forward":

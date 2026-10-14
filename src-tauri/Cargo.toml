@@ -36,6 +36,7 @@ git2 = { version = "0.21.0", default-features = false }
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 tauri-plugin-updater = "2.13.3"
 tauri-plugin-process = "2.4.0"
+base64 = "0.23.1"
 
 [lints.rust]
 unsafe_code = "deny"

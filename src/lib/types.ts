@@ -114,6 +114,41 @@ export type SessionState = {
   rightTab: RightTab;
 };
 
+// ---- editing (docs/design/v0.2.md section 3, docs/plan-editor.md) -----------------------------------
+/** What a top-level block is; decides what the Visual editor may do with it (locked blocks keep their bytes). */
+export type BlockKind =
+  | "paragraph"
+  | "heading"
+  | "list"
+  | "table"
+  | "code"
+  | "html"
+  | "frontmatter"
+  | "math"
+  | "footnoteDef"
+  | "thematicBreak"
+  | "blockquote"
+  | "other";
+/** A top-level block as a range of UTF-8 bytes of the text it was parsed from. */
+export type BlockInfo = { startByte: number; endByte: number; kind: BlockKind };
+/** The line ending of a file; "mixed" when it uses several. */
+export type Eol = "lf" | "crlf" | "mixed";
+export type ParsedBlocks = { eol: Eol; blocks: BlockInfo[] };
+/** A Markdown file as the editor needs it: the exact text on disk (a BOM is its first character), the hash of its bytes, its blocks. */
+export type SourceDoc = ParsedBlocks & {
+  path: string;
+  text: string;
+  hash: string;
+  modifiedMs: number;
+};
+/** Saved, or the file is no longer the version the editor started from (`diskHash` null: it is gone). */
+export type SaveOutcome =
+  | { result: "saved"; hash: string; modifiedMs: number }
+  | { result: "conflict"; diskHash: string | null };
+export type CreatedDoc = { path: string; hash: string; modifiedMs: number };
+/** An image written next to a document: `rel` is what the Markdown links to, `path` the vault path. */
+export type AssetWritten = { path: string; rel: string; bytes: number };
+
 // ---- tags and descriptions (docs/design/v0.2.md section 1) ---------------------------------------
 /** One tag of a file. A tag in both places is listed once, as a file tag (`file`); `app` says the app has it too. */
 export type TagRef = { name: string; file: boolean; app: boolean };

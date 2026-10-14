@@ -10,6 +10,7 @@ use tauri::http::{self, header, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, State, UriSchemeResponder};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
@@ -299,6 +300,61 @@ pub async fn meta_index(state: State<'_, AppState>) -> Result<Vec<IndexEntry>, A
 pub async fn clean_up_meta(state: State<'_, AppState>) -> Result<usize, AppError> {
     let ws = state.current()?;
     blocking(move || ws.clean_up_meta()).await
+}
+
+/// A Markdown file as the editor needs it: the exact text, its hash and the byte ranges of its blocks.
+#[tauri::command]
+pub async fn document_source(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<SourceDoc, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.document_source(&path)).await
+}
+
+/// The top-level blocks of some Markdown text (the editor's buffer).
+#[tauri::command]
+pub async fn parse_blocks(text: String) -> Result<ParsedBlocks, AppError> {
+    blocking(move || Ok(edit::parse_blocks(&text))).await
+}
+
+/// Saves the editor's text over a file, unless the file is no longer the version with `expected_hash`.
+#[tauri::command]
+pub async fn save_document(
+    state: State<'_, AppState>,
+    path: String,
+    text: String,
+    expected_hash: String,
+) -> Result<SaveOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.save_document(&path, &text, &expected_hash)).await
+}
+
+/// Creates a new Markdown file; fails when the name is not usable or the file exists.
+#[tauri::command]
+pub async fn create_document(
+    state: State<'_, AppState>,
+    path: String,
+    text: String,
+) -> Result<CreatedDoc, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.create_document(&path, &text)).await
+}
+
+/// Writes an image (`data` is base64) into the `assets` folder next to a document.
+#[tauri::command]
+pub async fn write_asset(
+    state: State<'_, AppState>,
+    doc_path: String,
+    name_hint: String,
+    data: String,
+) -> Result<AssetWritten, AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        let bytes = edit::decode_image(&data, &name_hint)?;
+        ws.write_asset(&doc_path, &name_hint, &bytes)
+    })
+    .await
 }
 
 /// The URI scheme that serves the images of the open folder to the document view. Requests are

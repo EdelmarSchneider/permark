@@ -22,6 +22,10 @@ describe("matchShortcut", () => {
     ["Ctrl+Shift+X", ctrl("X", { shiftKey: true }), "explorer"],
     ["Ctrl+Shift+T", ctrl("T", { shiftKey: true }), "tagsView"],
     ["T (reading)", press("t"), "editTags"],
+    ["E (reading)", press("e"), "edit"],
+    ["Ctrl+E", ctrl("e"), "toggleEdit"],
+    ["Ctrl+S", ctrl("s"), "save"],
+    ["Ctrl+N", ctrl("n"), "newFile"],
     ["Ctrl+F", ctrl("f"), "find"],
     ["Alt+Left", press("ArrowLeft", { altKey: true }), "back"],
     ["Alt+Right", press("ArrowRight", { altKey: true }), "forward"],
@@ -55,10 +59,9 @@ describe("matchShortcut", () => {
     expect(matchShortcut(press("p", { metaKey: true }))).toBe("quickOpen");
   });
 
-  it("leaves the keys reserved for v0.2 and plain typing alone", () => {
+  it("leaves Ctrl+K (the editor's link) and plain typing alone", () => {
     expect(matchShortcut(ctrl("k"))).toBeNull();
-    expect(matchShortcut(ctrl("e"))).toBeNull();
-    expect(matchShortcut(ctrl("s"))).toBeNull();
+    expect(matchShortcut(ctrl("i"))).toBeNull();
     expect(matchShortcut(press("f"))).toBeNull();
     expect(matchShortcut(press("ArrowLeft"))).toBeNull();
     expect(matchShortcut(ctrl("c"))).toBeNull();
@@ -68,6 +71,8 @@ describe("matchShortcut", () => {
     expect(matchShortcut(press("T", { shiftKey: true }))).toBeNull();
     expect(matchShortcut(press("t", { altKey: true }))).toBeNull();
     expect(matchShortcut(ctrl("t"))).toBeNull();
-    expect(matchShortcut(press("e"))).toBeNull();
+    expect(matchShortcut(press("E", { shiftKey: true }))).toBeNull();
+    expect(matchShortcut(press("e", { altKey: true }))).toBeNull();
+    expect(matchShortcut(press("x"))).toBeNull();
   });
 });

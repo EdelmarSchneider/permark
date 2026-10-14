@@ -5,7 +5,9 @@
   import { isMarkdown } from "../paths";
   import { nearestScrollTop } from "../reveal";
   import { app } from "../stores/app.svelte";
+  import { dirname } from "../paths";
   import { docs } from "../stores/docs.svelte";
+  import { edit } from "../stores/edit.svelte";
   import { filter } from "../stores/filter.svelte";
   import { ui } from "../stores/ui.svelte";
   import { tags } from "../stores/tags.svelte";
@@ -15,14 +17,17 @@
   import type { TreeNode } from "../types";
   import Icon from "./Icon.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
+  import TreeNameInput from "./TreeNameInput.svelte";
 
   type Props = {
     nodes: TreeNode[];
     label: string;
     /** Worktrees show no git badges in the MVP. */
     badges?: boolean;
+    /** This tree holds the project's own root (a new file at the top level is typed at the top of it). */
+    root?: boolean;
   };
-  let { nodes, label, badges = true }: Props = $props();
+  let { nodes, label, badges = true, root = false }: Props = $props();
 
   let container: HTMLElement | undefined = $state();
   let focusIndex = $state(0);
@@ -47,8 +52,15 @@
     return container?.querySelector<HTMLElement>(`[data-index="${index}"]`) ?? null;
   }
 
+  /** Remembers the row the person is on: Ctrl+N puts a new file in its folder. */
+  function markCursor(index: number): void {
+    const row = rows[index];
+    if (row) ui.treeCursor = { path: row.node.path, isDir: row.isDir };
+  }
+
   async function follow(index: number): Promise<void> {
     focusIndex = index;
+    markCursor(index);
     await tick();
     rowEl(index)?.scrollIntoView({ block: "nearest" });
   }
@@ -76,6 +88,7 @@
     const row = rows[index];
     if (!row) return;
     focusIndex = index;
+    markCursor(index);
     if (row.isDir) vault.toggle(row.node.path);
     else void app.openDoc(row.node.path);
   }
@@ -83,6 +96,14 @@
   function entriesFor(node: TreeNode): MenuEntry[] {
     const isFile = node.kind === "file";
     return [
+      {
+        id: "new",
+        label: t("newFile.newFile"),
+        icon: "file-plus",
+        hint: "Ctrl+N",
+        onselect: () => app.startNewFile(isFile ? dirname(node.path) : node.path),
+      },
+      { type: "separator" },
       {
         id: "path",
         label: t("menu.copyPath"),
@@ -145,6 +166,7 @@
         if (index < 0) return;
         revealed = target.n;
         focusIndex = index;
+        markCursor(index);
         showRow(index);
       });
     });
@@ -163,6 +185,9 @@
   onblur={() => (hasFocus = false)}
   {onkeydown}
 >
+  {#if root && ui.newFile?.folder === ""}
+    {#key ui.newFile.n}<TreeNameInput folder="" depth={0} />{/key}
+  {/if}
   {#each rows as row, i (row.node.path)}
     {@const git = badges && !row.isDir ? vault.git?.files[row.node.path] : undefined}
     {@const badge = badgeFor(git?.state)}
@@ -202,6 +227,7 @@
       oncontextmenu={(e) => {
         e.preventDefault();
         focusIndex = i;
+        markCursor(i);
         menu = { x: e.clientX, y: e.clientY, node: row.node };
       }}
     >
@@ -216,6 +242,10 @@
         <Icon name={isMarkdown(row.node.path) ? "file-text" : "file"} class="file-icon" />
       {/if}
       <span class="tree-name">{row.node.name}</span>
+      {#if edit.dirty && edit.path === row.node.path}
+        <span class="dirty-dot" role="img" aria-label={t("edit.unsaved")} title={t("edit.unsaved")}
+        ></span>
+      {/if}
       {#if branch}<span class="branch-chip">{branch}</span>{/if}
       {#if rollup}
         <span
@@ -232,6 +262,9 @@
         >
       {/if}
     </div>
+    {#if row.isDir && row.expanded && ui.newFile?.folder === row.node.path}
+      {#key ui.newFile.n}<TreeNameInput folder={row.node.path} depth={row.depth + 1} />{/key}
+    {/if}
   {/each}
 </div>
 

@@ -113,8 +113,8 @@
     <Icon name="chevron-down" size="sm" class="twisty" />{vault.info?.name}
   </button>
   {#if !ui.collapsedSections.has("vault")}
-    {#if filter.roots.main.length > 0}
-      <Tree bind:this={tree} nodes={filter.roots.main} label={t("tree.files")} />
+    {#if filter.roots.main.length > 0 || ui.newFile?.folder === ""}
+      <Tree bind:this={tree} nodes={filter.roots.main} label={t("tree.files")} root />
     {:else}
       <p class="panel-note">
         {filter.hiddenFiles.length > 0 ? t("filter.noneVisible") : t("explorer.empty")}

@@ -5,6 +5,23 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Editing (Source mode)
+- **Edit** a Markdown document (`E`, Ctrl+E or the Edit button) in a source editor with Markdown highlighting, line numbers and soft wrap at the reading
+  width; **Ctrl+S** saves, **Done**, Ctrl+E or Esc goes back to reading. TrailMark writes the text as you typed it and keeps the file's BOM and line
+  endings: lines you did not touch keep their own bytes, also in a file that mixes CRLF, LF and a lone CR, and a save without an edit writes the very same
+  file. Saving keeps the file's permissions. The editor is loaded only when you start editing. Ctrl+B, Ctrl+I, Ctrl+K, Ctrl+` and Ctrl+Shift+X wrap the selection in Markdown.
+- Unsaved work is never lost quietly: an `Unsaved` mark in the header, a dot on the file in the tree and a `*` in the window title; leaving the document
+  (closing the window, or **Restart to update**) while it has unsaved changes asks to Save, Discard or Keep editing, and Follow never jumps away while you edit.
+- If someone else (an agent, another editor) changes the file while you edit, a clean buffer reloads in place and a buffer with your edits shows a banner:
+  **Reload theirs** or **Keep mine**; a file deleted meanwhile can be saved again or discarded. A save never overwrites a version you have not seen: the file is compared once more right before it is replaced, so
+  an agent that saves while your save is being written makes it a conflict. A save
+  that fails (read-only file, access denied) keeps your text and offers Retry and Copy all.
+- Your own saves are not news: no glow, toast, feed entry or Follow jump for what you just wrote, while the search index and the git badge still catch up.
+- **Ctrl+N** creates a new Markdown file: type its name in the tree (`.md` is added), and it opens for editing with the caret after the title. Pasting or
+  dropping an image into the editor saves it next to the document in `assets/` and inserts the link.
+- Visual (WYSIWYG) editing is next; its switch is in the header, disabled for now. Files that are binary, over 5 MB, not Markdown or not UTF-8 cannot be edited
+  (the Edit button says why). "Open in external editor" moved to the `...` menu.
+
 ### Outline
 - The right panel has two tabs, **Changes** (the live feed and "Since last visit", as before) and **Outline**. The Outline lists the
   open document's headings, indented by nesting; the section you are reading is marked and the list follows you as you scroll.

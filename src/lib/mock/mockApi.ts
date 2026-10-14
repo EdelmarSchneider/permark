@@ -25,6 +25,13 @@ import {
   resolveMockLink,
   searchDocs,
 } from "./fixtures";
+import {
+  createDocument,
+  documentSource,
+  parseBlocks,
+  saveDocument,
+  writeAsset,
+} from "./mockSource";
 
 let savedSession: SessionState | null = {
   lastDoc: "docs/specs/live-feed.md",
@@ -96,5 +103,10 @@ export const mockImpl: Api = {
   filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
   metaIndex: async () => metaIndex(),
   cleanUpMeta: async () => cleanUp(),
+  documentSource: (path) => documentSource(path),
+  parseBlocks: (text) => parseBlocks(text),
+  saveDocument: (path, text, expectedHash) => saveDocument(path, text, expectedHash),
+  createDocument: (path, text) => createDocument(path, text),
+  writeAsset: (docPath, nameHint, data) => writeAsset(docPath, nameHint, data),
   on: async () => () => {},
 };

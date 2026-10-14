@@ -7,12 +7,14 @@
 
 pub mod aggregate;
 pub mod filter;
+pub mod own;
 pub mod reconcile;
 pub mod service;
 pub mod sigs;
 pub mod types;
 
 pub use filter::{PathFilter, Verdict};
+pub use own::OwnWrites;
 pub use service::{GitProbe, WatchConfig, WatchService};
 pub use sigs::{FileSig, SigStore};
 pub use types::{ChangeKind, FsBatch, FsChange};

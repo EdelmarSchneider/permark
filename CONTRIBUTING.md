@@ -17,6 +17,24 @@ the final say on what gets merged. Issues, ideas and pull requests are welcome.
 npm run check   # rustfmt, clippy -D warnings, cargo test, svelte-check, vitest
 ```
 
+The editor's round-trip test keeps the block ranges that the Rust parser finds in a frozen snapshot of the project's documents
+(`src/lib/editor/corpus/docs/`), so editing the README or the changelog never affects it. When you change the block parser, `npm run check` says the
+ranges in `src/lib/editor/corpus/` are stale; regenerate them with:
+
+```bash
+UPDATE_CORPUS=1 npx vitest run src/lib/editor/corpus.test.ts
+UPDATE_CORPUS=1 cargo test --manifest-path src-tauri/Cargo.toml corpus
+```
+
+(In PowerShell, set the variable first: `$env:UPDATE_CORPUS = "1"`.)
+
+To refresh the snapshot on purpose (for example to cover new Markdown the project's documents now use), copy the current files over it and regenerate:
+
+```bash
+cp README.md CHANGELOG.md CONTRIBUTING.md src/lib/editor/corpus/docs/
+cp docs/design/*.md src/lib/editor/corpus/docs/design/
+```
+
 ## Sign your commits (DCO)
 By contributing you certify the [Developer Certificate of Origin](https://developercertificate.org/): that you wrote
 the change, or otherwise have the right to submit it under the project's licenses. Add a sign-off line to each commit:

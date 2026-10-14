@@ -1,0 +1,158 @@
+/* =====================================================================================
+   Editing (docs/design/v0.2.md section 3): the Source editor, the header controls, the unsaved dot and the name
+   field of a new file. Colors come from the tokens, so light and dark follow the theme.
+   ===================================================================================== */
+
+/* The editor fills the pane under the header and the bars. */
+.source {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  justify-content: center;
+  position: relative;
+  background: var(--bg);
+}
+.source__host {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  /* the reading measure plus the line numbers, so the text wraps where the reader would */
+  max-width: calc(var(--measure) + 72px);
+}
+.main[data-width="full"] .source__host {
+  max-width: none;
+}
+.source .skeleton {
+  position: absolute;
+  inset: var(--sp-6) var(--sp-5) 0;
+  max-width: var(--measure);
+  margin: 0 auto;
+  pointer-events: none;
+}
+.source .notice {
+  position: absolute;
+  inset: 0 0 auto;
+}
+.source__host .cm-editor {
+  height: 100%;
+}
+.source__host .cm-focused {
+  outline: none;
+}
+.source__host .cm-scroller:focus-visible {
+  outline: none;
+}
+
+/* Header: the unsaved indicator and the Visual | Source switch. */
+.edit-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: var(--fs-ui-sm);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.dirty-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  /* neutral: unsaved is not a git state and not a live change */
+  background: var(--muted);
+}
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+}
+.seg__btn {
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-ui-sm);
+  font-weight: 500;
+  cursor: pointer;
+}
+.seg__btn:hover {
+  color: var(--text);
+}
+.seg__btn.is-on {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+.seg__btn.is-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.seg__btn.is-disabled:hover {
+  color: var(--muted);
+}
+/* A control that is off but still says why (a tooltip, a toast) stays reachable by keyboard and mouse. */
+.btn.is-disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.btn.is-disabled:hover {
+  background: var(--bg);
+  border-color: var(--border);
+}
+.btn:focus-visible,
+.seg__btn:focus-visible,
+.tree-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Tree: the dot of an unsaved file and the name field of a new one. */
+.tree-row .dirty-dot {
+  margin: 0 4px;
+}
+.tree-row--new {
+  cursor: default;
+}
+.tree-row--new:hover {
+  background: transparent;
+}
+.tree-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+.tree-input[aria-invalid="true"] {
+  border-color: var(--git-deleted);
+}
+.tree-new__message {
+  margin: 0 6px;
+  padding: 2px var(--sp-2) 4px calc(6px + 14px + 6px + 15px + 6px + var(--depth, 0) * 14px);
+  font-size: var(--fs-ui-xs);
+  color: var(--git-deleted-text);
+}
+.tree-new__message:empty {
+  display: none;
+}
+
+/* A narrow header (both panels open on a small window) gives up the switch first, then the word "Unsaved" (the dot stays). */
+@container (max-width: 560px) {
+  .doc-header .seg {
+    display: none;
+  }
+}
+@container (max-width: 480px) {
+  .doc-header .edit-state__text {
+    display: none;
+  }
+}

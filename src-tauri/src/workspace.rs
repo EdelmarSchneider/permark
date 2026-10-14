@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use serde::Serialize;
 
+use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
@@ -29,7 +30,9 @@ use crate::util::{modified_ms, now_ms, on_parser_stack, read_with_retry};
 use crate::vault::{NodeKind, TreeNode, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
-use crate::watch::{FsBatch, GitProbe, PathFilter, SigStore, Verdict, WatchConfig, WatchService};
+use crate::watch::{
+    FsBatch, GitProbe, OwnWrites, PathFilter, SigStore, Verdict, WatchConfig, WatchService,
+};
 
 /// "Since your last visit" lists at most this many files.
 const MAX_SINCE_FILES: usize = 500;
@@ -198,6 +201,8 @@ pub struct Workspace {
     indexer: Arc<IndexWorker>,
     filter: Arc<PathFilter>,
     meta: Arc<MetaService>,
+    /// Content the editor is writing, so the watcher does not report it back as an external change.
+    own_writes: Arc<OwnWrites>,
     sink: Arc<dyn EventSink>,
     last_visit: Option<LastVisit>,
     closed: AtomicBool,
@@ -211,6 +216,7 @@ struct WatchWiring {
     sink: Arc<dyn EventSink>,
     indexer: Arc<IndexWorker>,
     meta: Arc<MetaService>,
+    own_writes: Arc<OwnWrites>,
 }
 
 type StartWatcher = fn(
@@ -236,7 +242,9 @@ fn start_watcher(
         sink,
         indexer,
         meta,
+        own_writes,
     } = wiring;
+    let known = Arc::clone(&sigs);
     Ok(WatchService::start(
         vault,
         filter,
@@ -254,6 +262,9 @@ fn start_watcher(
             if out.batch.rescan || out.tree_changed {
                 meta.invalidate();
             }
+            // What the editor saved or created is no news to the person who did it. The index and git
+            // below still learn about it (`all_changes`), the UI does not hear about it.
+            own_writes.strip(&mut out.batch.changes, &known);
             let has_batch = out.has_batch();
             let WatchOutput {
                 batch,
@@ -336,6 +347,8 @@ impl Workspace {
             Arc::new(move || meta_sink.meta_changed()),
         ));
 
+        let own_writes = Arc::new(OwnWrites::new());
+
         let git_sink = Arc::clone(sink);
         let git = GitHandle::start(
             GitSettings {
@@ -370,6 +383,7 @@ impl Workspace {
                 sink: Arc::clone(sink),
                 indexer: Arc::clone(&indexer),
                 meta: Arc::clone(&meta),
+                own_writes: Arc::clone(&own_writes),
             },
             git_ctx.as_ref(),
             git.trigger_fn(),
@@ -399,6 +413,7 @@ impl Workspace {
             indexer,
             filter,
             meta,
+            own_writes,
             sink: Arc::clone(sink),
             last_visit,
             closed: AtomicBool::new(false),
@@ -451,6 +466,42 @@ impl Workspace {
         Ok(on_parser_stack(|| {
             render::load_document(&self.registry, &resolved.abs, &resolved.rel)
         })?)
+    }
+
+    // ---- editing --------------------------------------------------------------------------------
+
+    fn editor(&self) -> Editor<'_> {
+        Editor::new(&self.vault, &self.own_writes)
+    }
+
+    /// A Markdown file as the editor needs it: the exact text, its hash and its blocks.
+    pub fn document_source(&self, path: &str) -> Result<SourceDoc, AppError> {
+        Ok(self.editor().source(path)?)
+    }
+
+    /// Saves the editor's text unless the file changed since `expected_hash`.
+    pub fn save_document(
+        &self,
+        path: &str,
+        text: &str,
+        expected_hash: &str,
+    ) -> Result<SaveOutcome, AppError> {
+        Ok(self.editor().save(path, text, expected_hash)?)
+    }
+
+    /// Creates a new Markdown file (never overwrites).
+    pub fn create_document(&self, path: &str, text: &str) -> Result<CreatedDoc, AppError> {
+        Ok(self.editor().create(path, text)?)
+    }
+
+    /// Writes a pasted or dropped image into the `assets` folder next to a document.
+    pub fn write_asset(
+        &self,
+        doc_path: &str,
+        name_hint: &str,
+        data: &[u8],
+    ) -> Result<AssetWritten, AppError> {
+        Ok(self.editor().write_asset(doc_path, name_hint, data)?)
     }
 
     pub fn resolve_link(&self, from: &str, href: &str) -> LinkTarget {
@@ -1471,6 +1522,49 @@ exclude = [\"archive/**\"]
         let list = RecentStore::new(fx.app.path()).load();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].root, ws.info().root);
+        ws.close();
+    }
+
+    #[test]
+    fn the_editors_own_writes_are_not_news_but_an_agents_are() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        write(fx.project.path(), "b.md", "# B\n");
+        let ws = fx.open();
+        fx.indexed();
+
+        // The editor saves a.md: the index and git still learn about it, the UI does not.
+        let source = ws.document_source("a.md").expect("source");
+        let saved = ws
+            .save_document("a.md", "# A\n\nzebra stripes\n", &source.hash)
+            .expect("save");
+        assert!(matches!(saved, SaveOutcome::Saved { .. }), "{saved:?}");
+        wait_until("the index to learn the new text", || {
+            ws.search("zebra", None).len() == 1
+        });
+
+        // It creates a new file: the tree is refreshed, but there is no feed entry for it.
+        let trees = fx.rec.tree.load(Ordering::SeqCst);
+        ws.create_document("c.md", "# C\n").expect("create");
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) > trees
+        });
+
+        // A negative proof: wait longer than the watcher's quiet period, then look.
+        thread::sleep(Duration::from_millis(700));
+        let seen = fs_paths(&fx.rec);
+        assert!(
+            !seen.iter().any(|p| p == "a.md" || p == "c.md"),
+            "own writes must not reach the feed: {seen:?}"
+        );
+
+        // An agent saves b.md, and then a.md over our version: both are news.
+        std::fs::write(fx.project.path().join("b.md"), "# B changed\n").expect("write");
+        std::fs::write(fx.project.path().join("a.md"), "# A by an agent\n").expect("write");
+        wait_until("the agent's saves in the feed", || {
+            let seen = fs_paths(&fx.rec);
+            seen.iter().any(|p| p == "b.md") && seen.iter().any(|p| p == "a.md")
+        });
         ws.close();
     }
 

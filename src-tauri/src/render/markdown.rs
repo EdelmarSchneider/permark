@@ -19,7 +19,7 @@ use super::{blocks, frontmatter, plain, DocKind, RenderCtx, Rendered, Renderer};
 pub(crate) const MAX_CONTAINER_MARKERS: usize = 100;
 /// The deepest tree (parsed Markdown, or the HTML made from it) that is sanitized and handed to the
 /// webview. Real documents stay far below this; the sanitizer's cost grows quadratically with depth.
-const MAX_TREE_DEPTH: usize = 256;
+pub(crate) const MAX_TREE_DEPTH: usize = 256;
 /// Shown next to the title when a document is displayed as plain text because of its nesting.
 const DEEP_NESTING_NOTE: &str = "Shown as plain text: nesting too deep to render";
 
@@ -48,12 +48,17 @@ pub(crate) fn options() -> Options<'static> {
 
 pub(crate) struct MarkdownRenderer;
 
+/// Whether the file name says Markdown (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mdx`).
+pub(crate) fn is_markdown_path(path: &Path) -> bool {
+    path.extension().is_some_and(|e| {
+        let e = e.to_string_lossy().to_ascii_lowercase();
+        matches!(e.as_str(), "md" | "markdown" | "mdown" | "mkd" | "mdx")
+    })
+}
+
 impl Renderer for MarkdownRenderer {
     fn can_handle(&self, path: &Path) -> bool {
-        path.extension().is_some_and(|e| {
-            let e = e.to_string_lossy().to_ascii_lowercase();
-            matches!(e.as_str(), "md" | "markdown" | "mdown" | "mkd" | "mdx")
-        })
+        is_markdown_path(path)
     }
 
     fn render(&self, src: &str, _ctx: &RenderCtx<'_>) -> Rendered {
@@ -161,7 +166,7 @@ pub(crate) fn too_many_container_markers(src: &str) -> bool {
 }
 
 /// Whether the tree under `root` is deeper than `limit` levels (walked iteratively).
-fn is_deeper_than<'a>(root: &'a AstNode<'a>, limit: usize) -> bool {
+pub(crate) fn is_deeper_than<'a>(root: &'a AstNode<'a>, limit: usize) -> bool {
     let mut depth = 0_usize;
     for edge in root.traverse() {
         match edge {

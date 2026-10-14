@@ -15,6 +15,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::util::{modified_ms, read_with_retry};
+pub(crate) use decode::normalize_newlines;
 use decode::{decode, Decoded};
 pub(crate) use frontmatter::RawValue;
 
