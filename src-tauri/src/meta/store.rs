@@ -6,8 +6,10 @@
 //! description = "How the live feed groups watcher events."
 //! ```
 //!
-//! Files are keyed by their path relative to the project, `/`-separated. Keys the app does not know
-//! (a newer version may add some) are kept when the file is written again.
+//! Files are keyed by their path relative to the project, `/`-separated. Keys and tables the app does
+//! not know (a newer version may add some, in the file or at the top level) are kept when the file is
+//! written again. Two paths that differ only in case are two entries, even on a case-insensitive
+//! system: the file may have been written on one that tells them apart.
 
 use std::collections::BTreeMap;
 
@@ -16,12 +18,16 @@ use serde::{Deserialize, Serialize};
 use super::normalize::{normalize_description, normalize_tags};
 use crate::vault::key;
 
-/// Written at the top of every `meta.toml`.
+/// Written at the top of every `meta.toml`. A file this app wrote is never shorter than this.
 const HEADER: &str = "\
 # TrailMark metadata: tags and descriptions added in the app.
 # Safe to commit and share. TrailMark rewrites this file when you edit tags.
 
 ";
+
+/// How many bytes the header takes: a `meta.toml` the app wrote is at least this long, so a shorter
+/// one was cut off while someone was writing it.
+pub const HEADER_LEN: usize = HEADER.len();
 
 /// What the app knows about one file.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -50,8 +56,11 @@ impl Entry {
 /// The `meta.toml` document as it is on disk.
 #[derive(Serialize, Deserialize, Default)]
 struct Disk {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     files: BTreeMap<String, Entry>,
+    /// Top-level keys and tables written by other versions or tools.
+    #[serde(flatten)]
+    extra: BTreeMap<String, toml::Value>,
 }
 
 /// Why a `meta.toml` could not be read (a merge conflict, a hand-edit gone wrong).
@@ -65,8 +74,14 @@ pub struct Problem {
 /// Every entry, looked up by path (case-insensitively on Windows, like the file system).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Entries {
-    /// Folded path to the path as written and its entry.
-    map: BTreeMap<String, (String, Entry)>,
+    /// (folded path, path as written) to the entry.
+    map: BTreeMap<(String, String), Entry>,
+    /// Top-level keys and tables the app does not know.
+    extra: BTreeMap<String, toml::Value>,
+}
+
+fn slot(path: &str) -> (String, String) {
+    (key(path), path.to_owned())
 }
 
 impl Entries {
@@ -78,48 +93,79 @@ impl Entries {
                 .span()
                 .map(|s| 1 + text[..s.start.min(text.len())].matches('\n').count()),
         })?;
-        let mut entries = Self::default();
+        let mut entries = Self {
+            map: BTreeMap::new(),
+            extra: disk.extra,
+        };
         for (path, entry) in disk.files {
-            entries.put(&path, entry.normalized());
+            let entry = entry.normalized();
+            if !path.is_empty() && !entry.is_blank() {
+                entries.map.insert(slot(&path), entry);
+            }
         }
         Ok(entries)
     }
 
     /// The text of the `meta.toml`: sorted by path, so the file diffs cleanly.
     pub fn to_toml(&self) -> String {
-        let mut files: BTreeMap<String, Entry> = BTreeMap::new();
-        for (path, entry) in self.map.values() {
-            files.insert(path.clone(), entry.clone());
-        }
-        let body = if files.is_empty() {
+        let files: BTreeMap<String, Entry> = self
+            .map
+            .iter()
+            .map(|((_, path), entry)| (path.clone(), entry.clone()))
+            .collect();
+        let body = if files.is_empty() && self.extra.is_empty() {
             String::new()
         } else {
-            toml::to_string(&Disk { files }).unwrap_or_default()
+            let disk = Disk {
+                files,
+                extra: self.extra.clone(),
+            };
+            toml::to_string(&disk).unwrap_or_default()
         };
         format!("{HEADER}{body}")
     }
 
-    pub fn get(&self, path: &str) -> Option<&Entry> {
-        self.map.get(&key(path)).map(|(_, e)| e)
+    /// The entry key a path refers to: the entry spelled exactly like it, or else one that differs
+    /// only in case (the same file on a case-insensitive system).
+    fn locate(&self, path: &str) -> Option<(String, String)> {
+        let exact = slot(path);
+        if self.map.contains_key(&exact) {
+            return Some(exact);
+        }
+        let folded = exact.0;
+        self.map
+            .range((folded.clone(), String::new())..)
+            .next()
+            .filter(|((k, _), _)| *k == folded)
+            .map(|(found, _)| found.clone())
     }
 
-    #[cfg(test)]
+    pub fn get(&self, path: &str) -> Option<&Entry> {
+        self.locate(path).and_then(|s| self.map.get(&s))
+    }
+
+    /// Nothing is kept: no entry and no unknown key.
     pub fn is_empty(&self) -> bool {
-        self.map.is_empty()
+        self.map.is_empty() && self.extra.is_empty()
     }
 
     /// Every path with its entry, in folded-path order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Entry)> {
-        self.map.values().map(|(p, e)| (p.as_str(), e))
+        self.map
+            .iter()
+            .map(|((_, path), entry)| (path.as_str(), entry))
     }
 
     /// Replaces the entry of a path; a blank entry removes it.
     pub(super) fn put(&mut self, path: &str, entry: Entry) {
-        let k = key(path);
-        if path.is_empty() || entry.is_blank() {
-            self.map.remove(&k);
+        if path.is_empty() {
+            return;
+        }
+        let at = self.locate(path).unwrap_or_else(|| slot(path));
+        if entry.is_blank() {
+            self.map.remove(&at);
         } else {
-            self.map.insert(k, (path.to_owned(), entry));
+            self.map.insert(at, entry);
         }
     }
 
@@ -139,7 +185,8 @@ impl Entries {
 
     /// Removes a path. Returns whether it had an entry.
     pub fn remove(&mut self, path: &str) -> bool {
-        self.map.remove(&key(path)).is_some()
+        self.locate(path)
+            .is_some_and(|at| self.map.remove(&at).is_some())
     }
 
     /// Moves an entry to a new path (a renamed file). If the new path already has one, the two are
@@ -148,7 +195,7 @@ impl Entries {
         if key(from) == key(to) {
             return false;
         }
-        let Some((_, moved)) = self.map.remove(&key(from)) else {
+        let Some(moved) = self.locate(from).and_then(|at| self.map.remove(&at)) else {
             return false;
         };
         self.merge_entry(to, moved);
@@ -156,10 +203,13 @@ impl Entries {
     }
 
     /// Adds everything from `other`: tags are united, and `other`'s description is used only where this
-    /// side has none.
+    /// side has none. Unknown top-level keys of `other` are added where this side has none.
     pub fn merge(&mut self, other: Entries) {
-        for (_, (path, entry)) in other.map {
+        for ((_, path), entry) in other.map {
             self.merge_entry(&path, entry);
+        }
+        for (k, v) in other.extra {
+            self.extra.entry(k).or_insert(v);
         }
     }
 
@@ -315,6 +365,99 @@ description = \"How the feed groups events.\"
             base.get("b.md").map(|e| e.description.as_str()),
             Some("only mine")
         );
+    }
+
+    #[test]
+    fn unknown_top_level_keys_and_tables_survive_a_rewrite() {
+        let source = "\
+version = 2
+[tags.spec]
+color = \"red\"
+[files.\"a.md\"]
+tags = [\"x\"]
+[files.\"a.md\".review]
+by = \"ana\"
+";
+        let mut e = Entries::parse(source).expect("parse");
+        // an ordinary edit, as the app would make it
+        e.set_tags("b.md", &tags(&["new"]));
+        e.set_description("a.md", "changed");
+        let text = e.to_toml();
+        assert!(text.contains("version = 2"), "{text}");
+        assert!(
+            text.contains("[tags.spec]") && text.contains("color = \"red\""),
+            "{text}"
+        );
+        assert!(text.contains("by = \"ana\""), "{text}");
+        assert!(text.contains("description = \"changed\""), "{text}");
+        // and nothing else changed on the way: reading it back gives the same store
+        assert_eq!(Entries::parse(&text), Ok(e));
+    }
+
+    #[test]
+    fn unknown_top_level_keys_are_kept_without_any_file_entry() {
+        let mut e = Entries::parse("version = 3\n[tags.a]\nx = 1\n").expect("parse");
+        assert!(!e.is_empty(), "the unknown keys count as content");
+        e.set_tags("a.md", &tags(&["x"]));
+        e.set_tags("a.md", &[]);
+        let text = e.to_toml();
+        assert!(
+            text.contains("version = 3") && text.contains("[tags.a]"),
+            "{text}"
+        );
+        assert!(!text.contains("files"), "{text}");
+    }
+
+    #[test]
+    fn merging_brings_unknown_top_level_keys_along_without_overriding_the_receivers() {
+        let mut base = Entries::parse("version = 2\n").expect("parse");
+        let other = Entries::parse("version = 1\nextra = true\n").expect("parse");
+        base.merge(other);
+        let text = base.to_toml();
+        assert!(
+            text.contains("version = 2") && text.contains("extra = true"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn paths_that_differ_only_in_case_stay_two_entries() {
+        let source =
+            "[files.\"Notes.md\"]\ntags = [\"upper\"]\n[files.\"notes.md\"]\ntags = [\"lower\"]\n";
+        let mut e = Entries::parse(source).expect("parse");
+        assert_eq!(e.iter().count(), 2, "not collapsed on read");
+        // an edit to an unrelated file writes both spellings back
+        e.set_tags("other.md", &tags(&["x"]));
+        let text = e.to_toml();
+        assert!(
+            text.contains("\"Notes.md\"") && text.contains("\"notes.md\""),
+            "{text}"
+        );
+        assert!(
+            text.contains("\"upper\"") && text.contains("\"lower\""),
+            "{text}"
+        );
+        // the exact spelling is found first, whatever the system
+        assert_eq!(
+            e.get("Notes.md").map(|x| x.tags.clone()),
+            Some(tags(&["upper"]))
+        );
+        assert_eq!(
+            e.get("notes.md").map(|x| x.tags.clone()),
+            Some(tags(&["lower"]))
+        );
+        // changing one leaves the other alone
+        e.set_tags("notes.md", &tags(&["changed"]));
+        assert_eq!(
+            e.get("Notes.md").map(|x| x.tags.clone()),
+            Some(tags(&["upper"]))
+        );
+        assert_eq!(
+            e.get("notes.md").map(|x| x.tags.clone()),
+            Some(tags(&["changed"]))
+        );
+        assert!(e.remove("Notes.md"));
+        assert!(e.get("notes.md").is_some());
     }
 
     #[test]
