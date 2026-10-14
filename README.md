@@ -6,6 +6,8 @@
 
 **A fast, beautiful Markdown IDE that keeps up with your AI agents.**
 
+Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneider).
+
 Open a folder and read it like a wiki. Watch documents change live as agents write them, see exactly what changed,
 and find any section in seconds. It works with any AI tool, or with none.
 
@@ -149,8 +151,10 @@ quality gate:
 npm run check   # rustfmt, clippy -D warnings, cargo test, svelte-check, vitest
 ```
 
-Design and planning docs are in [`docs/`](docs/).
+Design and planning docs are in [`docs/`](docs/). See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
 
 ## License
 
-Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+Copyright (c) 2026 Edelmar Schneider. Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+
+"TrailMark" and its logo are trademarks of Edelmar Schneider: forks are welcome under a different name. See [TRADEMARKS.md](TRADEMARKS.md).
