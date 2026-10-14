@@ -263,7 +263,12 @@ export type FilterOutcome = {
 export function filterTree(
   root: TreeNode | null,
   test: FileTest,
-  options: { hideEmptyFolders: boolean; keep: string | null },
+  options: {
+    hideEmptyFolders: boolean;
+    keep: string | null;
+    /** Folders made in the Explorer this session: they stay while they are empty, waiting for their files. */
+    keepFolders?: ReadonlySet<string>;
+  },
 ): FilterOutcome {
   const out: FilterOutcome = { main: [], worktrees: [], shown: [], hidden: [], forced: new Set() };
   if (!root) return out;
@@ -273,7 +278,13 @@ export function filterTree(
     for (const node of nodes) {
       if (isDirNode(node)) {
         const children = prune(node.children ?? []);
-        if (children.length > 0 || !options.hideEmptyFolders) kept.push({ ...node, children });
+        if (
+          children.length > 0 ||
+          !options.hideEmptyFolders ||
+          (options.keepFolders?.has(node.path) && (node.children ?? []).length === 0)
+        ) {
+          kept.push({ ...node, children });
+        }
       } else if (test(node.path)) {
         out.shown.push(node.path);
         kept.push(node);

@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   badgeFor,
+  childNames,
   collectFiles,
   findNode,
   flattenTree,
+  isDirPath,
   navigate,
   rollups,
   splitRoots,
@@ -147,6 +149,32 @@ describe("navigate", () => {
   it("ignores other keys and empty lists", () => {
     expect(navigate(rows, 0, "a")).toBeNull();
     expect(navigate([], 0, "ArrowDown")).toBeNull();
+  });
+});
+
+describe("childNames / isDirPath", () => {
+  it("lists the names inside a folder, files and folders alike", () => {
+    expect(childNames(root, "docs")).toEqual(["specs", "index.md"]);
+    expect(childNames(root, "docs/specs")).toEqual(["live-feed.md"]);
+    expect(childNames(root, "@wt/feature-ui")).toEqual(["a.md"]);
+  });
+
+  it("lists the project root without its worktrees", () => {
+    expect(childNames(root, "")).toEqual(["docs", "README.md"]);
+  });
+
+  it("is empty for files, unknown folders and no tree", () => {
+    expect(childNames(root, "README.md")).toEqual([]);
+    expect(childNames(root, "nope")).toEqual([]);
+    expect(childNames(null, "")).toEqual([]);
+  });
+
+  it("tells folders from files", () => {
+    expect(isDirPath(root, "docs")).toBe(true);
+    expect(isDirPath(root, "@wt/feature-ui")).toBe(true);
+    expect(isDirPath(root, "docs/index.md")).toBe(false);
+    expect(isDirPath(root, "nope")).toBe(false);
+    expect(isDirPath(null, "docs")).toBe(false);
   });
 });
 

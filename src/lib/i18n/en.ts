@@ -565,6 +565,8 @@ export const en = {
   "fileOps.withLinks": "{summary}, {links}",
   "fileOps.notUpdated.one": "{n} document wasn't updated",
   "fileOps.notUpdated.other": "{n} documents weren't updated",
+  "fileOps.bufferNotUpdated":
+    "{name}: its unsaved text changed meanwhile, so its links weren't updated",
   "fileOps.couldNotUndo.one": "{n} file couldn't be put back because it changed",
   "fileOps.couldNotUndo.other": "{n} files couldn't be put back because they changed",
   "fileOps.undo": "Undo",
@@ -580,6 +582,9 @@ export const en = {
   "fileOps.dialogLabel": "Update links",
   "fileOps.updateLinks.one": "Update {n} link in {files}?",
   "fileOps.updateLinks.other": "Update {n} links in {files}?",
+  "fileOps.movesLabel": "What is moving",
+  "fileOps.moreMoves.one": "and {n} more item",
+  "fileOps.moreMoves.other": "and {n} more items",
   "fileOps.updateIntro":
     "These links point at what you are moving, or are in documents that move. Updating keeps them working.",
   "fileOps.apply": "Apply",

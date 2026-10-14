@@ -81,6 +81,12 @@ function fakeEditor(initial: string): EditorApi & { text: string; line: number }
     insertAtSelection: (text: string) => {
       editor.text += text;
     },
+    applyChanges: (edits: readonly { from: number; to: number; insert: string }[]) => {
+      // positions are relative to the text before the changes: apply from the end
+      for (const e of [...edits].sort((a, b) => b.from - a.from)) {
+        editor.text = editor.text.slice(0, e.from) + e.insert + editor.text.slice(e.to);
+      }
+    },
   };
   return editor;
 }
@@ -426,6 +432,94 @@ describe("the file changed on disk", () => {
     expect(await edit.save()).toBe(false);
     expect(edit.conflict).toMatchObject({ deleted: false, diskHash: "h7" });
     expect(edit.dirty).toBe(true);
+  });
+});
+
+describe("files moved, renamed or deleted in the Explorer", () => {
+  const MOVED = "manual/a.md";
+  const moves = [{ from: "docs", to: "manual" }];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    return () => vi.useRealTimers();
+  });
+
+  it("hands over the text of a document with unsaved edits, and nothing for a clean one", async () => {
+    const editor = await startEditing();
+    expect(edit.unsavedBuffer()).toBeNull();
+    type(editor, `${ORIGINAL}more\n`);
+    expect(edit.unsavedBuffer()).toEqual({ path: PATH, text: `${ORIGINAL}more\n` });
+  });
+
+  it("goes on under the new path with its text and the version it started from", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}mine\n`);
+    expect(edit.followMoves(moves)).toBe(true);
+    expect(edit.path).toBe(MOVED);
+    expect(edit.dirty).toBe(true);
+    expect(editor.text).toBe(`${ORIGINAL}mine\n`);
+    // the file moved with its content: the check finds the version it started from, no conflict
+    fake.documentSource.mockResolvedValue(source(MOVED, ORIGINAL, "h1"));
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fake.documentSource).toHaveBeenCalledWith(MOVED);
+    expect(edit.conflict).toBeNull();
+    // and it saves to the new path
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    expect(await edit.save()).toBe(true);
+    expect(fake.saveDocument).toHaveBeenCalledWith(MOVED, `${ORIGINAL}mine\n`, "h1");
+  });
+
+  it("applies the link changes to the unsaved text, once", async () => {
+    const editor = await startEditing();
+    const text = "# A\n\n[x](old.md) and [y](old.md#top)\n";
+    type(editor, text);
+    const edits = [
+      { from: 9, to: 15, insert: "new/old.md" },
+      { from: 25, to: 31, insert: "new/old.md" },
+    ];
+    const applied = edit.followMoves(moves, { path: PATH, newPath: MOVED, edits }, text);
+    expect(applied).toBe(true);
+    expect(editor.text).toBe("# A\n\n[x](new/old.md) and [y](new/old.md#top)\n");
+  });
+
+  it("does not apply link changes to text that is not the text they were made for", async () => {
+    const editor = await startEditing();
+    type(editor, "# A\n\n[x](old.md)\n");
+    // the person typed after the move was asked for
+    type(editor, "# A\n\n[x](old.md) and more\n");
+    const edits = [{ from: 9, to: 15, insert: "new/old.md" }];
+    const applied = edit.followMoves(
+      moves,
+      { path: PATH, newPath: MOVED, edits },
+      "# A\n\n[x](old.md)\n",
+    );
+    expect(applied).toBe(false);
+    expect(editor.text).toBe("# A\n\n[x](old.md) and more\n");
+  });
+
+  it("a clean buffer takes in the links rewritten on disk", async () => {
+    const editor = await startEditing();
+    edit.followMoves(moves);
+    fake.documentSource.mockResolvedValue(source(MOVED, "# A\n\nrewritten\n", "h2"));
+    await vi.advanceTimersByTimeAsync(400);
+    expect(editor.text).toBe("# A\n\nrewritten\n");
+    expect(edit.dirty).toBe(false);
+  });
+
+  it("a document deleted in the Explorer is a conflict that offers to write it again", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}mine\n`);
+    fake.documentSource.mockRejectedValue({ kind: "notFound", message: "gone" });
+    edit.followRemoved();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(edit.conflict).toMatchObject({ deleted: true });
+    expect(editor.text).toBe(`${ORIGINAL}mine\n`);
+  });
+
+  it("nothing happens when no document is being edited", () => {
+    expect(edit.followMoves(moves)).toBe(true);
+    edit.followRemoved();
+    expect(edit.unsavedBuffer()).toBeNull();
   });
 });
 

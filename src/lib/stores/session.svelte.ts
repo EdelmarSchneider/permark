@@ -4,7 +4,7 @@
 import { api } from "../api";
 import { DEFAULT_REF_TEMPLATE } from "../reference";
 import { DEFAULT_WIDTH, nextWidth, type ReadingWidth } from "../readingWidth";
-import { DEFAULT_LINK_UPDATE } from "../fileOps";
+import { DEFAULT_LINK_UPDATE, mapPath } from "../fileOps";
 import { DEFAULT_RIGHT_TAB, type RightTab } from "../rightPanel";
 import {
   LEFT_DEFAULT,
@@ -14,7 +14,7 @@ import {
   normalizeSession,
   stepZoom,
 } from "../session";
-import type { LinkUpdate, SessionState, TreeFilter } from "../types";
+import type { LinkUpdate, Move, SessionState, TreeFilter } from "../types";
 
 const SAVE_DELAY_MS = 600;
 
@@ -122,6 +122,13 @@ class SessionStore {
   noteDoc(path: string | null): void {
     this.lastDoc = path;
     this.scrollTop = 0;
+    this.persist();
+  }
+
+  /** Files or folders were moved or renamed: the document to reopen next time is where it is now. */
+  followMoves(moves: readonly Move[]): void {
+    if (this.lastDoc === null) return;
+    this.lastDoc = mapPath(this.lastDoc, moves);
     this.persist();
   }
 

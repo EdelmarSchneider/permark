@@ -1,8 +1,11 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { targetFolder } from "../editor/newFile";
   import { LOCALE, t, tn } from "../i18n";
   import { app } from "../stores/app.svelte";
+  import { basename } from "../paths";
   import { docs } from "../stores/docs.svelte";
+  import { fileops } from "../stores/fileops.svelte";
   import { filter } from "../stores/filter.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -19,6 +22,13 @@
 
   const projectOpen = $derived(vault.stateLocation === "project");
   const entries = $derived<MenuEntry[]>([
+    {
+      id: "newFolder",
+      label: t("fileOps.newFolder"),
+      icon: "folder-plus",
+      onselect: () => fileops.startNewFolder(targetFolder(ui.treeCursor, docs.path)),
+    },
+    { type: "separator" },
     { id: "collapse", label: t("explorer.collapseAll"), onselect: () => vault.collapseAll() },
     {
       id: "reveal",
@@ -104,7 +114,7 @@
     onclick={() => app.toggleLeft()}
   />
 </div>
-<div class="scroll" style="flex:1">
+<div class={["scroll", fileops.drag?.over === "" && "is-drop-root"]} style="flex:1" data-drop-root>
   <button
     class="section-header"
     aria-expanded={!ui.collapsedSections.has("vault")}
@@ -147,6 +157,31 @@
     <button type="button" class="link-btn" onclick={() => filter.setShowAll(!filter.showAll)}>
       {filter.showAll ? t("filter.useFilter") : t("filter.showAll")}
     </button>
+  </div>
+{/if}
+
+{#if fileops.drag}
+  {@const drag = fileops.drag}
+  <!-- follows the pointer during a drag; says what is dragged and where it would land -->
+  <div
+    class={["drag-chip", drag.over === null && "is-refused"]}
+    style:left="{fileops.dragPoint.x + 14}px"
+    style:top="{fileops.dragPoint.y + 14}px"
+    role="status"
+  >
+    <Icon name="arrow-right-left" size="sm" />
+    <span>
+      {#if drag.sources.length === 1}
+        {basename(drag.sources[0])}
+      {:else}
+        {tn("fileOps.items", drag.sources.length)}
+      {/if}
+      {#if drag.over !== null}
+        · {t("fileOps.dropInto", {
+          folder: drag.over === "" ? t("fileOps.projectRoot") : basename(drag.over),
+        })}
+      {/if}
+    </span>
   </div>
 {/if}
 

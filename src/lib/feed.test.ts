@@ -146,4 +146,42 @@ describe("FeedStore", () => {
     feed.apply(batch([ch("a.md", 4200)]), 5000);
     expect(feed.lastEventMs).toBe(4200);
   });
+
+  it("shows an operation of the Explorer as one row on top, whatever the filter", () => {
+    const feed = new FeedStore();
+    feed.apply(batch([ch("a.md", 1000)]), 1000);
+    const op = feed.addOperation({
+      kind: "moved",
+      atMs: 2000,
+      summary: "Moved 2 files, 7 links updated",
+      items: [
+        { path: "manual/a.md", from: "docs/a.md" },
+        { path: "manual/b.md", from: "docs/b.md" },
+      ],
+      notes: [],
+    });
+    expect(op.type).toBe("op");
+    expect(feed.entries.map((e) => e.id)).toEqual([op.id, "a.md"]);
+    expect(feed.lastEventMs).toBe(2000);
+    // "Docs only" hides files that are not documents, never an operation
+    feed.apply(batch([ch("data.json", 3000)]), 3000);
+    const docsOnly = feed.view(true);
+    expect(docsOnly.entries.map((e) => e.id)).toEqual([op.id, "a.md"]);
+    expect(docsOnly.hidden).toBe(1);
+  });
+
+  it("gives every operation its own id", () => {
+    const feed = new FeedStore();
+    const op = {
+      kind: "deleted" as const,
+      atMs: 1,
+      summary: "Deleted 1 file",
+      items: [],
+      notes: [],
+    };
+    const first = feed.addOperation(op);
+    const second = feed.addOperation(op);
+    expect(first.id).not.toBe(second.id);
+    expect(feed.entries).toHaveLength(2);
+  });
 });

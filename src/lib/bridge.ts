@@ -34,6 +34,11 @@ export type EditorApi = {
   focus(): void;
   /** Inserts text at the caret, replacing the selection. */
   insertAtSelection(text: string): void;
+  /**
+   * Replaces ranges of the text (UTF-16 offsets into the text as it is now, not overlapping) in one undoable step, and
+   * leaves the caret where it was. The link rewrite of a move uses it on a document with unsaved edits.
+   */
+  applyChanges(edits: readonly { from: number; to: number; insert: string }[]): void;
 };
 
 export type DocBridge = {

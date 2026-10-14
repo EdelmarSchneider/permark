@@ -2,9 +2,9 @@
 // drop, delete, multi-select and undo. The stores and components call these; the backend checks the same rules
 // again, so nothing here is a security boundary.
 
-import type { MessageKey } from "./i18n";
+import { t, tn, type MessageKey } from "./i18n";
 import { basename, dirname, splitWorktree } from "./paths";
-import type { LinkUpdate, Move, MovePreview } from "./types";
+import type { LinkUpdate, Move, MovePreview, SkippedFile } from "./types";
 
 // ---- the setting ---------------------------------------------------------------------------------
 
@@ -158,6 +158,16 @@ export function entryNameProblem(
   return null;
 }
 
+/** The first of "New folder", "New folder 2"... that is not taken in the folder (names compare without regard to case). */
+export function freshFolderName(base: string, siblings: readonly string[]): string {
+  const taken = new Set(siblings.map((s) => s.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) {
+    const name = `${base} ${n}`;
+    if (!taken.has(name.toLowerCase())) return name;
+  }
+}
+
 /** Where the part of a name that is typed over is: the stem of a file, the whole name of a folder. */
 export function renameSelection(name: string, isDir: boolean): [number, number] {
   const dot = name.lastIndexOf(".");
@@ -225,6 +235,8 @@ export function targetsOf(selection: ReadonlySet<string>, row: string): string[]
 export type UndoEntry = {
   /** The id the backend gave the operation. */
   opId: number;
+  /** What it did, in a sentence ("Moved 2 files"), for the feed row of the undo. */
+  label: string;
   /** The moves that were made, for the UI to follow them back. */
   moves: Move[];
   /** The paths of folders that were created. */
@@ -267,22 +279,38 @@ export class UndoStack {
 
 // ---- what happened, for the toast and the feed -----------------------------------------------------
 
-export type OperationKind = "moved" | "renamed" | "deleted" | "folder" | "undone";
-
-export type OperationSummary = {
-  kind: OperationKind;
-  /** Items moved, deleted or restored. */
-  count: number;
-  /** Links rewritten, in `files` documents. */
-  links: number;
-  files: number;
-  /** Documents whose links could not be updated. */
-  skipped: number;
-  /** The name of the item when there is only one. */
-  name: string | null;
-};
-
 /** A move that renames: one item, same folder. */
 export function isRename(moves: readonly Move[]): boolean {
   return moves.length === 1 && dirname(moves[0].from) === dirname(moves[0].to);
+}
+
+/** "2 files", "1 folder" or "3 items" (when files and folders are mixed). `dirs` says which of the items are folders. */
+export function itemsPhrase(dirs: readonly boolean[]): string {
+  if (dirs.every((isDir) => !isDir)) return tn("fileOps.files", dirs.length);
+  if (dirs.every(Boolean)) return tn("fileOps.folders", dirs.length);
+  return tn("fileOps.items", dirs.length);
+}
+
+/** The sentence for a move: "Renamed a.md to b.md", "Moved 2 files, 7 links updated". */
+export function moveSummary(
+  moves: readonly Move[],
+  dirs: readonly boolean[],
+  links: number,
+): string {
+  const base = isRename(moves)
+    ? t("fileOps.summaryRenamed", { from: basename(moves[0].from), to: basename(moves[0].to) })
+    : t("fileOps.summaryMoved", { what: itemsPhrase(dirs) });
+  return links > 0
+    ? t("fileOps.withLinks", { summary: base, links: tn("fileOps.linksUpdated", links) })
+    : base;
+}
+
+/** The sentence for a delete: "Deleted 3 items". */
+export function deleteSummary(dirs: readonly boolean[]): string {
+  return t("fileOps.summaryDeleted", { what: itemsPhrase(dirs) });
+}
+
+/** One line for each document that was left alone: "guide.md: changed in the meantime". */
+export function skipNotes(skipped: readonly SkippedFile[]): string[] {
+  return skipped.map((s) => `${basename(s.path)}: ${t(`fileOps.reason.${s.reason}`)}`);
 }

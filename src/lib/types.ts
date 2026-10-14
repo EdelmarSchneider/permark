@@ -189,12 +189,7 @@ export type LinkUpdate = "ask" | "always" | "never";
 export type Move = { from: string; to: string };
 /** Why a document's links were left alone (or an undo could not restore it). */
 export type SkipReason =
-  | "tooLarge"
-  | "notUtf8"
-  | "unreadable"
-  | "changed"
-  | "writeFailed"
-  | "missing";
+  "tooLarge" | "notUtf8" | "unreadable" | "changed" | "writeFailed" | "missing";
 export type SkippedFile = { path: string; reason: SkipReason };
 /** One link of a document that would change: `old` and `new` are its destination as written. */
 export type PreviewChange = { line: number; old: string; new: string };

@@ -21,6 +21,7 @@ import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
 import { edit } from "./edit.svelte";
 import { feed } from "./feed.svelte";
+import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
 import { outline } from "./outline.svelte";
 import { search } from "./search.svelte";
@@ -176,6 +177,7 @@ class AppStore {
       edit.reset();
       docs.reset();
       feed.clear();
+      fileops.reset();
       filter.reset();
       outline.reset();
       search.reset();

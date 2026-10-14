@@ -1,5 +1,8 @@
 // Back/forward history of opened documents, remembering the scroll position of each entry.
 
+import { mapPath } from "./fileOps";
+import type { Move } from "./types";
+
 export type HistoryEntry = { path: string; scrollTop: number };
 
 const MAX_ENTRIES = 100;
@@ -44,6 +47,11 @@ export class NavHistory {
     } else {
       this.push(path);
     }
+  }
+
+  /** Follows moved or renamed files: every entry at or inside a moved path points at its new place. */
+  rename(moves: readonly Move[]): void {
+    for (const entry of this.entries) entry.path = mapPath(entry.path, moves);
   }
 
   back(): HistoryEntry | null {

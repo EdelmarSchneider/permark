@@ -4,6 +4,7 @@
 import { documentFolders, fileTest, filterFromDefault, filterTree } from "../treeFilter";
 import type { TreeFilter } from "../types";
 import { docs } from "./docs.svelte";
+import { fileops } from "./fileops.svelte";
 import { session } from "./session.svelte";
 import { vault } from "./vault.svelte";
 
@@ -25,6 +26,7 @@ class FilterStore {
     filterTree(vault.tree, fileTest(this.current, this.docFolders), {
       hideEmptyFolders: this.current.hideEmptyFolders,
       keep: docs.path,
+      keepFolders: fileops.madeFolders,
     }),
   );
 

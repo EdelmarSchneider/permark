@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   UndoStack,
+  deleteSummary,
   dropFolder,
   dropProblem,
   entryNameProblem,
   extendSelection,
+  freshFolderName,
   isInside,
   isRename,
   isRootPath,
@@ -12,6 +14,7 @@ import {
   linkDecision,
   mapPath,
   mapSet,
+  moveSummary,
   movesFor,
   normalizeLinkUpdate,
   rangeBetween,
@@ -21,6 +24,7 @@ import {
   rootOf,
   selectAfterClick,
   shouldScanLinks,
+  skipNotes,
   targetsOf,
   topLevelOnly,
 } from "./fileOps";
@@ -214,6 +218,13 @@ describe("names", () => {
     expect(entryNameProblem("guide.md", siblings, "api.md")).toBe("exists");
   });
 
+  it("proposes a name for a new folder that is not taken", () => {
+    expect(freshFolderName("New folder", [])).toBe("New folder");
+    expect(freshFolderName("New folder", ["docs"])).toBe("New folder");
+    expect(freshFolderName("New folder", ["New folder"])).toBe("New folder 2");
+    expect(freshFolderName("New folder", ["new FOLDER", "New folder 2"])).toBe("New folder 3");
+  });
+
   it("selects the stem of a file and the whole name of a folder", () => {
     expect(renameSelection("guide.md", false)).toEqual([0, 5]);
     expect(renameSelection("archive.tar.gz", false)).toEqual([0, 11]);
@@ -275,8 +286,47 @@ describe("selection", () => {
   });
 });
 
+describe("what happened, in words", () => {
+  const move = (from: string, to: string) => ({ from, to });
+
+  it("says what a rename did", () => {
+    expect(moveSummary([move("docs/old.md", "docs/new.md")], [false], 0)).toBe(
+      "Renamed old.md to new.md",
+    );
+    expect(moveSummary([move("docs/old.md", "docs/new.md")], [false], 3)).toBe(
+      "Renamed old.md to new.md, 3 links updated",
+    );
+  });
+
+  it("says what a move did, with the links", () => {
+    const two = [move("a.md", "x/a.md"), move("b.md", "x/b.md")];
+    expect(moveSummary(two, [false, false], 7)).toBe("Moved 2 files, 7 links updated");
+    expect(moveSummary(two, [false, false], 1)).toBe("Moved 2 files, 1 link updated");
+    expect(moveSummary(two, [false, false], 0)).toBe("Moved 2 files");
+    expect(moveSummary([move("docs", "x/docs")], [true], 0)).toBe("Moved 1 folder");
+    expect(moveSummary(two, [true, false], 0)).toBe("Moved 2 items");
+    // one item to another folder is a move, not a rename
+    expect(moveSummary([move("a.md", "x/a.md")], [false], 0)).toBe("Moved 1 file");
+  });
+
+  it("says what a delete did", () => {
+    expect(deleteSummary([false, false, false])).toBe("Deleted 3 files");
+    expect(deleteSummary([true])).toBe("Deleted 1 folder");
+    expect(deleteSummary([true, false])).toBe("Deleted 2 items");
+  });
+
+  it("says why a document was left alone", () => {
+    expect(
+      skipNotes([
+        { path: "docs/guide.md", reason: "changed" },
+        { path: "big.md", reason: "tooLarge" },
+      ]),
+    ).toEqual(["guide.md: changed in the meantime", "big.md: too large"]);
+  });
+});
+
 describe("undo stack", () => {
-  const entry = (opId: number) => ({ opId, moves: [], folders: [] });
+  const entry = (opId: number) => ({ opId, label: `op ${opId}`, moves: [], folders: [] });
 
   it("gives back the newest operation first", () => {
     const stack = new UndoStack();

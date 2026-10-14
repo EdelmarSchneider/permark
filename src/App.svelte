@@ -3,6 +3,7 @@
   import ImageZoom from "./lib/components/ImageZoom.svelte";
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
+  import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
   import OutlinePopover from "./lib/components/OutlinePopover.svelte";
   import QuickOpen from "./lib/components/QuickOpen.svelte";
   import TagEditor from "./lib/components/TagEditor.svelte";
@@ -17,6 +18,7 @@
   import { app } from "./lib/stores/app.svelte";
   import { docs } from "./lib/stores/docs.svelte";
   import { edit } from "./lib/stores/edit.svelte";
+  import { fileops } from "./lib/stores/fileops.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
   import { updates } from "./lib/stores/updates.svelte";
@@ -95,6 +97,7 @@
   {#if ui.quickOpen}<QuickOpen />{/if}
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
+  {#if fileops.prompt}<LinkUpdateDialog prompt={fileops.prompt} />{/if}
   {#if ui.tagEditor}<TagEditor />{/if}
   {#if ui.outlinePopover}<OutlinePopover />{/if}
   <SelectionPopover />

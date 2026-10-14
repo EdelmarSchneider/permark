@@ -23,6 +23,7 @@
   import Folder from "@lucide/svelte/icons/folder";
   import FolderCog from "@lucide/svelte/icons/folder-cog";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
+  import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import Funnel from "@lucide/svelte/icons/funnel";
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import GitFork from "@lucide/svelte/icons/git-fork";
@@ -44,7 +45,9 @@
   import Search from "@lucide/svelte/icons/search";
   import Settings from "@lucide/svelte/icons/settings";
   import Sun from "@lucide/svelte/icons/sun";
+  import Trash from "@lucide/svelte/icons/trash";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
+  import Undo2 from "@lucide/svelte/icons/undo-2";
   import X from "@lucide/svelte/icons/x";
 
   // The one icon set of the app (Lucide), registered by name so components stay tree-shakeable.
@@ -73,6 +76,7 @@
     folder: Folder,
     "folder-cog": FolderCog,
     "folder-open": FolderOpen,
+    "folder-plus": FolderPlus,
     filter: Funnel,
     branch: GitBranch,
     fork: GitFork,
@@ -94,7 +98,9 @@
     search: Search,
     settings: Settings,
     sun: Sun,
+    trash: Trash,
     alert: TriangleAlert,
+    undo: Undo2,
     x: X,
   } as const;
 

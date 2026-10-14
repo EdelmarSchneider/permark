@@ -26,11 +26,12 @@ import {
   toBase64,
 } from "../editor/imageName";
 import { errorKind, errorText } from "../errors";
+import { mapPath } from "../fileOps";
 import { t, tn } from "../i18n";
 import { registerOverlay } from "../overlays";
 import { basename } from "../paths";
 import { askUnsaved, askYesNo, copyText, guardWindowClose, setWindowTitle } from "../platform";
-import type { FsBatch, SourceDoc } from "../types";
+import type { BufferEdits, BufferText, FsBatch, Move, SourceDoc } from "../types";
 import { clock as formatClock } from "../time";
 import { docs } from "./docs.svelte";
 import { toast } from "./toast.svelte";
@@ -461,11 +462,53 @@ class EditStore {
     if (!path || !this.base) return;
     const mine = batch.changes.some((c) => c.path === path || c.from === path);
     if (!mine && batch.bulk === null && !batch.rescan) return;
+    this.scheduleDiskCheck();
+  }
+
+  private scheduleDiskCheck(): void {
     if (this.diskTimer !== null) clearTimeout(this.diskTimer);
     this.diskTimer = setTimeout(() => {
       this.diskTimer = null;
       void this.checkDisk();
     }, DISK_CHECK_DELAY_MS);
+  }
+
+  // ---- file operations of the Explorer --------------------------------------------------------------
+
+  /**
+   * The document being edited and the text in the editor, when it has unsaved edits. A move does not write such a
+   * document: it hands back the changes for this text instead (see [`EditStore.followMoves`]).
+   */
+  unsavedBuffer(): BufferText | null {
+    const text = bridge.editor?.getText();
+    return this.path !== null && this.dirty && text !== undefined
+      ? { path: this.path, text }
+      : null;
+  }
+
+  /**
+   * Files or folders were moved or renamed in the Explorer (the file system does not report it: the watcher is told it
+   * is our own doing). The document being edited keeps its text and the version of the file it started from, under its
+   * new path. `changes` are the link updates for the unsaved text `sent`; they are applied to the editor only if the
+   * text is still exactly that. The file is looked at again, because its links may have been rewritten on disk (a
+   * buffer with no edits takes them in). Resolves to false when the changes could not be applied.
+   */
+  followMoves(moves: readonly Move[], changes?: BufferEdits, sent?: string): boolean {
+    if (!this.path) return true;
+    this.path = mapPath(this.path, moves);
+    let applied = true;
+    if (changes && changes.edits.length > 0) {
+      const editor = bridge.editor;
+      if (editor && editor.getText() === sent) editor.applyChanges(changes.edits);
+      else applied = false;
+    }
+    this.scheduleDiskCheck();
+    return applied;
+  }
+
+  /** Files or folders were deleted in the Explorer: if the document being edited was one of them, the bar says so. */
+  followRemoved(): void {
+    if (this.path) this.scheduleDiskCheck();
   }
 
   /** Compares the file with the version being edited: clean buffers reload, dirty ones get the banner. */

@@ -283,7 +283,18 @@ fn start_watcher(
             }
             // What the editor saved or created is no news to the person who did it. The index and git
             // below still learn about it (`all_changes`), the UI does not hear about it.
-            own_writes.strip(&mut out.batch.changes, &known);
+            if out.batch.bulk.is_some() {
+                // A bulk batch lists at most 200 of its changes, so what the app announced is matched against
+                // all of them: a big folder moved in the Explorer is not a "Large batch" row.
+                let mut everything = out.all_changes.clone();
+                own_writes.strip(&mut everything, &known);
+                if everything.is_empty() && !out.all_changes.is_empty() {
+                    out.batch.bulk = None;
+                    out.batch.changes.clear();
+                }
+            } else {
+                own_writes.strip(&mut out.batch.changes, &known);
+            }
             let has_batch = out.has_batch();
             let WatchOutput {
                 batch,
@@ -1631,6 +1642,113 @@ exclude = [\"archive/**\"]
             let seen = fs_paths(&fx.rec);
             seen.iter().any(|p| p == "b.md") && seen.iter().any(|p| p == "a.md")
         });
+        ws.close();
+    }
+
+    #[test]
+    fn moves_in_the_explorer_are_not_news_and_tags_links_and_the_index_follow() {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "README.md",
+            "# Home\n\nSee [guide](docs/guide.md).\n",
+        );
+        write(fx.project.path(), "docs/guide.md", "# Guide\n\nzebra\n");
+        write(fx.project.path(), "docs/extra/api.md", "# API\n");
+        let ws = fx.open();
+        fx.indexed();
+        let keep = vec!["keep".to_owned()];
+        ws.set_file_tags("docs/guide.md", &keep).expect("tags");
+        ws.set_file_tags("docs/extra/api.md", &keep).expect("tags");
+
+        // a rename with the links rewritten, then the folder with everything in it
+        let rename = [Move {
+            from: "docs/guide.md".to_owned(),
+            to: "docs/manual.md".to_owned(),
+        }];
+        let preview = ws.preview_move(&rename, true).expect("preview");
+        assert_eq!((preview.link_count, preview.file_count), (1, 1));
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+
+        let on_disk = |rel: &str| std::fs::read_to_string(fx.project.path().join(rel)).expect(rel);
+        assert!(on_disk("README.md").contains("(manual/manual.md)"));
+        assert!(on_disk("manual/manual.md").contains("zebra"));
+
+        // the tags went along, for the file and for what was inside the folder
+        for moved in ["manual/manual.md", "manual/extra/api.md"] {
+            let meta = ws.file_meta(moved).expect("meta");
+            assert_eq!(meta.tags.len(), 1, "{moved}");
+        }
+        // the search index learned the new place
+        wait_until("the index to follow the move", || {
+            ws.search("zebra", None)
+                .first()
+                .is_some_and(|hit| hit.path == "manual/manual.md")
+        });
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) >= 1
+        });
+
+        // A negative proof: wait longer than the watcher's quiet period, then look. Nothing of this
+        // reached the feed: no removed and created rows for every file, no row for the rewritten README.
+        thread::sleep(Duration::from_millis(900));
+        let seen = fs_paths(&fx.rec);
+        assert!(
+            seen.is_empty(),
+            "the person's own moves must not reach the feed: {seen:?}"
+        );
+
+        // An agent saving a moved file afterwards is news.
+        std::fs::write(
+            fx.project.path().join("manual/manual.md"),
+            "# Guide\n\nby an agent\n",
+        )
+        .expect("write");
+        wait_until("the agent's save in the feed", || {
+            fs_paths(&fx.rec).iter().any(|p| p == "manual/manual.md")
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn a_big_folder_moved_in_the_explorer_is_not_a_bulk_row() {
+        let fx = Fx::new();
+        for n in 0..70 {
+            write(
+                fx.project.path(),
+                &format!("docs/note-{n}.md"),
+                &format!("# Note {n}\n"),
+            );
+        }
+        let ws = fx.open();
+        fx.indexed();
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        assert!(fx.project.path().join("manual/note-69.md").is_file());
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) >= 1
+        });
+
+        thread::sleep(Duration::from_millis(900));
+        let batches = fx.rec.fs.lock().expect("lock").clone();
+        assert!(
+            batches.is_empty(),
+            "70 files moved by the person must not reach the feed: {} batch(es), bulk {:?}",
+            batches.len(),
+            batches
+                .first()
+                .and_then(|b| b.bulk.as_ref().map(|x| x.count))
+        );
         ws.close();
     }
 
