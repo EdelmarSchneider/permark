@@ -13,3 +13,11 @@ Thumbs.db
 # Claude local settings
 .claude/settings.local.json
 .playwright-mcp/
+# Vite / logs / env
+dist-ssr/
+*.local
+*.log
+.env
+.env.*
+!.env.example
+vite.config.ts.timestamp-*
