@@ -5,6 +5,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Outline
+- The right panel has two tabs, **Changes** (the live feed and "Since last visit", as before) and **Outline**. The Outline lists the
+  open document's headings, indented by nesting; the section you are reading is marked and the list follows you as you scroll.
+  Click or press Enter on a heading to jump to it (it is tinted for a moment); Left and Right collapse and expand a section, and
+  the collapsed state is kept per document while the app is open, even when the document is rewritten under you.
+- When an agent rewrites the document, a dot marks the sections whose blocks changed (a collapsed section shows it when something
+  inside it changed), and goes away with the change bars. A dot on the Changes tab says the feed moved while you were on the Outline.
+- **Ctrl+Alt+O** shows the Outline (opening the panel if it is collapsed); press it again to go back to the previous tab. In
+  Simple mode it opens the outline as a popover under the header. Long documents show the first 1,000 headings.
+- The tab you were on is remembered per project.
+
 ### Reading width
 - Three reading widths instead of two: **Comfortable** (760 px, the default), **Wide** (1100 px) and **Full** (the whole document
   pane). One click on the status bar width button, the menu entry or Ctrl+Alt+W moves to the next; Settings has all three. The
