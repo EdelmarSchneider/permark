@@ -2,9 +2,10 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api } from "../api";
-import { ancestors } from "../paths";
+import { planReveal } from "../reveal";
 import { collectFiles, rollups, splitRoots } from "../tree";
 import type { ChangedSince, GitSnapshot, TreeNode, VaultInfo } from "../types";
+import { ui } from "./ui.svelte";
 
 export type WorktreeInfo = VaultInfo["worktrees"][number];
 
@@ -71,10 +72,12 @@ class VaultStore {
     this.expanded.clear();
   }
 
-  /** Expands the folders above `path` and scrolls its row into view. */
+  /** Opens the folders (and the Explorer section) that hold `path`, then selects its row and scrolls it into view. */
   revealPath(path: string): void {
-    for (const dir of ancestors(path)) this.expanded.add(dir);
-    this.reveal = { path, n: ++this.revealCount };
+    const plan = planReveal(path, this.expanded);
+    for (const dir of plan.expand) this.expanded.add(dir);
+    ui.collapsedSections.delete(plan.section);
+    this.reveal = { path: plan.target, n: ++this.revealCount };
   }
 }
 

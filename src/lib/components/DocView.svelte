@@ -417,33 +417,35 @@
     <Notice icon="files" title={t("doc.none.title")} text={t("doc.none.text")} />
   {/if}
 
-  <article
-    class={["md", tombstone && "is-tombstone"]}
-    style:--zoom={session.zoom}
-    hidden={!showArticle}
-    aria-busy={docs.loading}
-  >
-    {#if frontmatter.length > 0}
-      <dl class="frontmatter" aria-label={t("doc.frontmatter")}>
-        {#each frontmatter as [key, value], i (i)}
-          {@const parsed = frontmatterValue(key, value)}
-          <div>
-            <dt>{key}</dt>
-            <dd>
-              {#if "chips" in parsed}
-                {#each parsed.chips as chip, c (c)}<span class="fm-tag">{chip}</span>{/each}
-              {:else}
-                {parsed.text}
-              {/if}
-            </dd>
-          </div>
-        {/each}
-      </dl>
-    {/if}
-    <!-- the backend's sanitized HTML is injected here by DocRenderer; links are handled in onclick -->
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-    <div bind:this={body} class="md-body" {onclick}></div>
-  </article>
+  <div class="doc-column">
+    <article
+      class={["md", tombstone && "is-tombstone"]}
+      style:--zoom={session.zoom}
+      hidden={!showArticle}
+      aria-busy={docs.loading}
+    >
+      {#if frontmatter.length > 0}
+        <dl class="frontmatter" aria-label={t("doc.frontmatter")}>
+          {#each frontmatter as [key, value], i (i)}
+            {@const parsed = frontmatterValue(key, value)}
+            <div>
+              <dt>{key}</dt>
+              <dd>
+                {#if "chips" in parsed}
+                  {#each parsed.chips as chip, c (c)}<span class="fm-tag">{chip}</span>{/each}
+                {:else}
+                  {parsed.text}
+                {/if}
+              </dd>
+            </div>
+          {/each}
+        </dl>
+      {/if}
+      <!-- the backend's sanitized HTML is injected here by DocRenderer; links are handled in onclick -->
+      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+      <div bind:this={body} class="md-body" {onclick}></div>
+    </article>
+  </div>
 </div>
 
 {#if missing}

@@ -1,6 +1,7 @@
 // Defaults and sanitizing for `SessionState` (panel widths, zoom, theme, ...).
 
 import { DEFAULT_REF_TEMPLATE } from "./reference";
+import { DEFAULT_WIDTH, normalizeWidth } from "./readingWidth";
 import { normalizeTreeFilter } from "./treeFilter";
 import type { SessionState } from "./types";
 
@@ -32,13 +33,14 @@ export function defaultSession(): SessionState {
     lastDoc: null,
     scrollTop: 0,
     zoom: 1,
-    wide: false,
+    width: DEFAULT_WIDTH,
     refTemplate: DEFAULT_REF_TEMPLATE,
     leftPanel: { open: true, width: LEFT_DEFAULT },
     rightPanel: { open: true, width: RIGHT_DEFAULT },
     theme: "system",
     follow: false,
     treeFilter: null,
+    autoReveal: true,
   };
 }
 
@@ -54,7 +56,7 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     lastDoc: typeof stored.lastDoc === "string" ? stored.lastDoc : null,
     scrollTop: Number.isFinite(stored.scrollTop) ? Math.max(0, stored.scrollTop as number) : 0,
     zoom: clampZoom(stored.zoom ?? 1),
-    wide: stored.wide === true,
+    width: normalizeWidth(stored.width, stored.wide),
     refTemplate:
       typeof stored.refTemplate === "string" && stored.refTemplate.trim() !== ""
         ? stored.refTemplate
@@ -70,5 +72,6 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     theme,
     follow: stored.follow === true,
     treeFilter: normalizeTreeFilter(stored.treeFilter),
+    autoReveal: stored.autoReveal !== false,
   };
 }

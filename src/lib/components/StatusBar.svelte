@@ -175,10 +175,10 @@
   <button
     type="button"
     class="sb-item"
-    title={t("status.widthHint")}
-    onclick={() => session.toggleWide()}
+    title={t("status.widthHint", { name: t(`width.${session.width}`) })}
+    onclick={() => session.cycleWidth()}
   >
-    <Icon name="width" />{session.wide ? t("status.wide") : t("status.normalWidth")}
+    <Icon name="width" />{t(`width.${session.width}`)}
   </button>
   <IconButton
     small

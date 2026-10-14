@@ -5,6 +5,20 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Reading width
+- Three reading widths instead of two: **Comfortable** (760 px, the default), **Wide** (1100 px) and **Full** (the whole document
+  pane). One click on the status bar width button, the menu entry or Ctrl+Alt+W moves to the next; Settings has all three. The
+  width is remembered per project, and a project that used the old "Wide" setting keeps it.
+- Tables, code blocks, Mermaid diagrams, display formulas and wide images take the room they need, up to the pane, while the text
+  stays at the comfortable measure. A narrow table or a short snippet stays where it was; glow, change bars and find highlights
+  follow the block.
+
+### Explorer follows the open file
+- Whatever opens a document (Quick open, search, a link, the feed, Follow, back and forward, the restored session), the Explorer
+  opens the folders above it, selects it and scrolls it into view by the shortest way, without taking the keyboard focus. Worktree
+  files appear under their worktree, and a file the filter hides is shown dimmed while it is open.
+- **Always select the opened file** (Explorer `[:]` menu, on by default) turns it off; "Reveal open doc" still works.
+
 ### Explorer filter
 - A filter in the Explorer header chooses what the tree shows: Documents, Docs and assets (the default), Everything, or Custom
   (file-type checkboxes plus optional `+pattern` / `-pattern` globs such as `+*.sql -archive/**`). Folders with no visible file are

@@ -182,8 +182,15 @@ input {
   padding: var(--sp-6) clamp(28px, 4.5vw, var(--sp-8)) 120px;
   scroll-behavior: smooth;
 }
-.main.is-wide {
+/* Reading width (docs/design/v0.2.md section 15). Comfortable is the token's 760px; Full lifts the cap so the
+   text, the meta strip and the frontmatter card take the whole pane (inside the usual side padding). */
+.main[data-width="wide"] {
   --measure: var(--measure-wide);
+}
+.main[data-width="full"] .md,
+.main[data-width="full"] .meta-strip,
+.main[data-width="full"] .skeleton {
+  max-width: none;
 }
 .rpanel {
   grid-area: right;

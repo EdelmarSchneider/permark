@@ -3,9 +3,11 @@
   import { gitStateLabel } from "../gitLabels";
   import { t } from "../i18n";
   import { isMarkdown } from "../paths";
+  import { nearestScrollTop } from "../reveal";
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
   import { filter } from "../stores/filter.svelte";
+  import { ui } from "../stores/ui.svelte";
   import { tags } from "../stores/tags.svelte";
   import { vault } from "../stores/vault.svelte";
   import { treeTooltip } from "../tagModel";
@@ -112,16 +114,38 @@
     ];
   }
 
-  // scroll a revealed row into view (the open document, "Reveal in tree")
+  /**
+   * Brings a row into view by the least movement (nothing moves when it is visible already). It scrolls the
+   * list itself and nothing else: no smooth jump, no sideways scroll, and the keyboard focus stays put.
+   */
+  function showRow(index: number): void {
+    const row = rowEl(index);
+    const list = row?.closest<HTMLElement>(".scroll");
+    if (!row || !list) return;
+    const box = list.getBoundingClientRect();
+    const at = row.getBoundingClientRect();
+    const top = nearestScrollTop(
+      { top: at.top - box.top + list.scrollTop, bottom: at.bottom - box.top + list.scrollTop },
+      { scrollTop: list.scrollTop, height: list.clientHeight },
+      8,
+    );
+    if (top !== null) list.scrollTo({ top, behavior: "instant" });
+  }
+
+  // Select the row of the open document and scroll it into view ("Always select the opened file", "Reveal open
+  // doc"). It is applied even when the panel is collapsed, so opening the panel shows the file already there; when
+  // another sidebar view covers the Explorer (no layout), it waits until the Explorer is back.
+  let revealed = 0;
   $effect(() => {
     const target = vault.reveal;
-    if (!target) return;
+    if (!target || ui.sidebarView !== "explorer" || target.n === revealed) return;
     untrack(() => {
       void tick().then(() => {
         const index = rows.findIndex((r) => r.node.path === target.path);
         if (index < 0) return;
+        revealed = target.n;
         focusIndex = index;
-        rowEl(index)?.scrollIntoView({ block: "nearest" });
+        showRow(index);
       });
     });
   });
@@ -172,8 +196,8 @@
           : filter.forced.has(row.node.path)
             ? t("filter.hiddenFile")
             : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
-              t("tags.tooltipTags", { list }),
-            )}
+                t("tags.tooltipTags", { list }),
+              )}
       onclick={() => activate(i)}
       oncontextmenu={(e) => {
         e.preventDefault();

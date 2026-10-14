@@ -4,6 +4,7 @@
 // can address blocks by index; the heavy libraries load lazily and fill in afterwards.
 
 import { resolveRelative } from "../paths";
+import { viewBoxWidth } from "./breakout";
 
 export type EnhanceLabels = {
   copyCode: string;
@@ -87,6 +88,7 @@ function enhanceInside(root: HTMLElement, ctx: EnhanceContext, tasks: Promise<vo
   if (root.matches("h1, h2, h3, h4, h5, h6")) ensureAnchor(root, ctx);
   decorateAlerts(root, ctx);
   decorateTaskLists(root);
+  if (root.tagName === "P" && isImageOnly(root)) root.classList.add("tm-wide");
   root.querySelectorAll<HTMLElement>("[data-math-style]").forEach((el) => {
     tasks.push(renderMath(el));
   });
@@ -187,6 +189,36 @@ function decorateTaskLists(root: HTMLElement): void {
   });
 }
 
+// ---- blocks that may outgrow the text measure ----------------------------------------------------
+
+/** Paragraph content that counts: elements, and text that is not blank. */
+function meaningfulNodes(parent: Element): ChildNode[] {
+  return Array.from(parent.childNodes).filter(
+    (node) =>
+      node.nodeType === Node.ELEMENT_NODE ||
+      (node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() !== ""),
+  );
+}
+
+/** A paragraph that is one image, possibly inside a link. Its width is the image's (see `.tm-wide`). */
+function isImageOnly(paragraph: HTMLElement): boolean {
+  const [only, ...rest] = meaningfulNodes(paragraph);
+  if (!(only instanceof HTMLElement) || rest.length > 0) return false;
+  if (only.tagName === "IMG") return true;
+  if (only.tagName !== "A") return false;
+  const [inner, ...more] = meaningfulNodes(only);
+  return inner instanceof HTMLElement && inner.tagName === "IMG" && more.length === 0;
+}
+
+/** Display math is the only thing in its paragraph: the paragraph may then be as wide as the formula. */
+function markDisplayMath(formula: HTMLElement): void {
+  const paragraph = formula.parentElement;
+  if (!paragraph || paragraph.tagName !== "P") return;
+  if (!paragraph.parentElement?.classList.contains("md-body")) return;
+  const [only, ...rest] = meaningfulNodes(paragraph);
+  if (only === formula && rest.length === 0) paragraph.classList.add("tm-wide");
+}
+
 // ---- lazy libraries ---------------------------------------------------------------------------
 
 async function highlight(code: Element, lang: string, source: string): Promise<void> {
@@ -208,11 +240,9 @@ async function renderMath(el: HTMLElement): Promise<void> {
       import("katex"),
       import("katex/dist/katex.min.css"),
     ]);
-    katex.render(source, el, {
-      displayMode: el.dataset.mathStyle === "display",
-      throwOnError: true,
-      output: "htmlAndMathml",
-    });
+    const display = el.dataset.mathStyle === "display";
+    katex.render(source, el, { displayMode: display, throwOnError: true, output: "htmlAndMathml" });
+    if (display) markDisplayMath(el);
   } catch (error) {
     el.textContent = source;
     el.classList.add("tm-math-error");
@@ -312,6 +342,14 @@ export function renderDiagram(figure: HTMLElement, ctx: EnhanceContext): Promise
 function showDiagram(figure: HTMLElement, svg: string): void {
   figure.className = "diagram";
   figure.innerHTML = svg;
+  // Mermaid draws `width="100%"`, which has no size of its own: give the SVG the width it was drawn at, so the
+  // figure can size to the diagram (and outgrow the text measure when the diagram is wide)
+  const drawing = figure.querySelector("svg");
+  const width = viewBoxWidth(drawing?.getAttribute("viewBox"));
+  if (drawing && width !== null) {
+    drawing.style.width = `${width}px`;
+    drawing.style.maxWidth = "100%";
+  }
 }
 
 function showDiagramError(figure: HTMLElement, source: string, ctx: EnhanceContext): void {
