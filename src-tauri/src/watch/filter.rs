@@ -20,7 +20,7 @@ pub enum Verdict {
 }
 
 /// Editor and tool scratch files: `*.tmp`, `*~`, `.#*`, `*.swp` (and its `.swo`/`.swx` siblings), Vim's
-/// `4913`, and the hidden `.<name>.<pid>.part` files this app writes before it renames them into place.
+/// `4913`, and the hidden `.<name>.<pid>.<n>.part` files this app writes before it renames them into place.
 pub fn is_temp_name(name: &str) -> bool {
     let has_ext = |wanted: &str| {
         Path::new(name)
