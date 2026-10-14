@@ -36,6 +36,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
   until you pick one in Settings. A language chosen in the app always wins, and an update never changes it.
 - A test fails when a translation misses a key, has an extra one, changes a placeholder, or leaves a long sentence in English. See
   `docs/design/i18n.md` for the conventions and how to add a language.
+- **"Open with TrailMark" in the Windows file manager.** Right-click a folder, the empty space inside a folder, or a `.md` / `.markdown` file and
+  choose **Open with TrailMark** (on Windows 11 it is under *Show more options*). A second, separate option lists TrailMark in the **Open with**
+  menu of Markdown files; it never takes over your default app (Windows keeps that for you), and **Settings → File manager → Make default...**
+  opens the Windows page where you pick it. Both options are in the installer (on by default for a new install, on its first page) and in
+  **Settings → File manager**, which adds or removes the entries at once and always shows what is registered now. The text of the entry follows the
+  language of the interface. Nothing needs administrator rights. An update keeps what you chose (it never adds back what you removed, nor
+  removes what you kept), and uninstalling removes every entry.
 
 ### Changed
 - Hidden files and folders (`.github`, `.claude`, `.vscode`, `.gitignore`, ...) are no longer listed by default, in any preset. Turn on **Show
@@ -54,6 +61,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   Now **Enter** moves to the same column one row down (and adds a row from the last row), **Shift+Enter** moves one row up, and **Ctrl+Enter**
   (**Cmd+Enter** on macOS) leaves the table. **Tab** and **Shift+Tab** still move between cells, and Tab in the last cell adds a row. Undo
   takes an added row away in one step. Enter outside a table is unchanged.
+- **The Settings panel scrolls** when the window is shorter than it is (it grew with the new File manager section), and a popover whose
+  content changes size after it opened is placed again.
+- Opening a drive root from the file manager (`"C:\"` on the command line) works.
 
 ## [0.2.0] - 2026-10-14
 

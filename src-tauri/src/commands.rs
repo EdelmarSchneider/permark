@@ -25,6 +25,7 @@ use crate::session::{
     effective_language, installer_language, AppSettingsStore, Language, RecentStore, RecentVault,
     SessionState, StateLocation,
 };
+use crate::shell_integration::{self, ShellError, ShellState};
 use crate::vault::{TreeNode, TreeOptions};
 use crate::watch::FsBatch;
 use crate::workspace::{Asset, ChangedSince, EventSink, VaultInfo, Workspace, WorkspaceHost};
@@ -110,11 +111,23 @@ pub fn initial_path() -> Option<String> {
     initial_path_from(arg, std::env::current_dir().ok())
 }
 
+/// A drive root passed from the file manager's "Open with TrailMark" entry is `"C:\"` on the command line, and
+/// the quote after the backslash reads as an escaped quote: the program receives `C:"`. Gives the root back.
+fn unquote_drive_root(arg: OsString) -> OsString {
+    let text = arg.to_string_lossy();
+    match text.as_bytes() {
+        [letter, b':', b'"'] if letter.is_ascii_alphabetic() => {
+            OsString::from(format!("{}:\\", char::from(*letter)))
+        }
+        _ => arg,
+    }
+}
+
 fn initial_path_from(arg: OsString, cwd: Option<PathBuf>) -> Option<String> {
     if arg.to_string_lossy().starts_with('-') {
         return None; // a flag, not a path
     }
-    let path = PathBuf::from(arg);
+    let path = PathBuf::from(unquote_drive_root(arg));
     let absolute = if path.is_absolute() {
         path
     } else {
@@ -148,6 +161,49 @@ pub async fn app_language(app: AppHandle) -> Result<Language, AppError> {
 pub async fn set_app_language(app: AppHandle, language: Language) -> Result<(), AppError> {
     let dir = app_data_dir(&app)?;
     blocking(move || Ok(AppSettingsStore::new(&dir).set_language(language)?)).await
+}
+
+/// What "Open with TrailMark" has registered with the file manager, read from the system each time.
+#[tauri::command]
+pub async fn shell_integration_state() -> Result<ShellState, AppError> {
+    blocking(|| Ok(shell_integration::state())).await
+}
+
+/// Adds or removes "Open with TrailMark" in the right-click menu. `locale` is the language of the interface
+/// (`en`, `pt-BR`, `es`, `de`): the entry is worded in it.
+#[tauri::command]
+pub async fn set_shell_context_menu(enabled: bool, locale: String) -> Result<ShellState, AppError> {
+    blocking(move || Ok(shell_integration::set_context_menu(enabled, &locale)?)).await
+}
+
+/// Adds or removes TrailMark in the "Open with" list of Markdown files.
+#[tauri::command]
+pub async fn set_shell_file_association(
+    enabled: bool,
+    locale: String,
+) -> Result<ShellState, AppError> {
+    blocking(move || Ok(shell_integration::set_association(enabled, &locale)?)).await
+}
+
+/// Rewords the entries that exist after the interface language changed.
+#[tauri::command]
+pub async fn refresh_shell_labels(locale: String) -> Result<(), AppError> {
+    blocking(move || Ok(shell_integration::refresh_labels(&locale)?)).await
+}
+
+/// Opens the page of Windows Settings where the default app of a file type is chosen: Windows does not let a
+/// program pick itself.
+#[tauri::command]
+pub async fn open_default_apps(app: AppHandle) -> Result<(), AppError> {
+    if !cfg!(windows) {
+        return Err(ShellError::Unsupported.into());
+    }
+    blocking(move || {
+        app.opener()
+            .open_url(shell_integration::DEFAULT_APPS_URI, None::<&str>)
+            .map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
 }
 
 #[tauri::command]
@@ -675,6 +731,47 @@ mod tests {
             None
         );
         assert_eq!(initial_path_from(os("relative"), None), None);
+    }
+
+    /// "Open with TrailMark" on a drive passes `"C:\"`, which arrives as `C:"` (see `unquote_drive_root`).
+    #[test]
+    fn a_drive_root_from_the_file_manager_loses_its_stray_quote() {
+        assert_eq!(unquote_drive_root(os("C:\"")), os("C:\\"));
+        assert_eq!(unquote_drive_root(os("d:\"")), os("d:\\"));
+        for untouched in [
+            "C:\\",
+            "C:",
+            "C:\\docs",
+            "C:\\docs\"",
+            "\"C:\"",
+            "docs",
+            "",
+            "1:\"",
+        ] {
+            assert_eq!(
+                unquote_drive_root(os(untouched)),
+                os(untouched),
+                "{untouched}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_folder_with_spaces_and_a_markdown_file_open_from_the_entry_the_way_the_shell_passes_them()
+    {
+        let d = tempfile::tempdir().expect("tempdir");
+        let folder = d.path().join("my notes");
+        std::fs::create_dir(&folder).expect("mkdir");
+        let file = folder.join("read me.md");
+        std::fs::write(&file, "x").expect("write");
+        for path in [&folder, &file] {
+            let got = initial_path_from(os(&path.display().to_string()), None);
+            let expected = dunce::canonicalize(path)
+                .expect("canon")
+                .display()
+                .to_string();
+            assert_eq!(got, Some(expected));
+        }
     }
 
     #[test]

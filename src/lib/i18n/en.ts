@@ -444,6 +444,15 @@ export const en = {
   "settings.refTemplate": "Reference template",
   "settings.refPreview": "Preview: {preview}",
   "settings.updates": "Updates",
+  "settings.fileManager": "File manager",
+  "settings.shellMenu": 'Add "Open with TrailMark" to the right-click menu',
+  "settings.shellMenuHint": 'On Windows 11 it is under "Show more options".',
+  "settings.shellAssoc": "Associate .md files with TrailMark",
+  "settings.shellAssocHint": 'Adds TrailMark to the "Open with" list of Markdown files.',
+  "settings.shellDefault": "Make default...",
+  "settings.shellDefaultHint":
+    "Only Windows can set the default app: choose .md in the list that opens.",
+  "settings.shellIsDefault": "TrailMark is the default app for .md files.",
 
   // ---- updates
   "update.check": "Check for updates...",
@@ -503,6 +512,7 @@ export const en = {
   "error.partlyMoved":
     "The move stopped partway. These could not be put back and stay where they were moved to: {subject}",
   "error.trash": "Couldn't move to the recycle bin: {detail}",
+  "error.shell": "Couldn't change the file manager entries: {detail}",
   "error.nameNoStem": "The name needs something before the extension",
   "error.imageEmpty": "The image is empty",
 

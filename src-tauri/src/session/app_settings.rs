@@ -257,8 +257,10 @@ mod tests {
         for code in &written {
             assert!(Language::from_installer_code(code).is_some(), "{code}");
         }
-        // the registry location the app reads
-        assert!(HOOKS.contains(r#"WriteRegStr HKCU "Software\TrailMark" "Language" "$R8""#));
+        // the registry location the app reads (the define is `Software\TrailMark`; the tests of the installer script
+        // point it elsewhere to try the script out)
+        assert!(HOOKS.contains(r#"!define TRAILMARK_APP_KEY "Software\TrailMark""#));
+        assert!(HOOKS.contains(r#"WriteRegStr HKCU "${TRAILMARK_APP_KEY}" "Language" "$R8""#));
 
         let config: serde_json::Value = serde_json::from_str(CONFIG).expect("tauri.conf.json");
         let nsis = &config["bundle"]["windows"]["nsis"];

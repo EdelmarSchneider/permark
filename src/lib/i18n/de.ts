@@ -459,6 +459,15 @@ export const de = {
   "settings.refTemplate": "Verweisvorlage",
   "settings.refPreview": "Vorschau: {preview}",
   "settings.updates": "Updates",
+  "settings.fileManager": "Dateimanager",
+  "settings.shellMenu": "„Mit TrailMark öffnen“ zum Kontextmenü hinzufügen",
+  "settings.shellMenuHint": "Unter Windows 11 steht der Eintrag unter „Weitere Optionen anzeigen“.",
+  "settings.shellAssoc": "Dateien vom Typ .md mit TrailMark verknüpfen",
+  "settings.shellAssocHint": "Nimmt TrailMark in die Liste „Öffnen mit“ von Markdown-Dateien auf.",
+  "settings.shellDefault": "Als Standard festlegen...",
+  "settings.shellDefaultHint":
+    "Die Standard-App legt nur Windows fest: in der Liste, die sich öffnet, .md auswählen.",
+  "settings.shellIsDefault": "TrailMark ist die Standard-App für .md-Dateien.",
 
   // ---- updates
   "update.check": "Nach Updates suchen ...",
@@ -525,6 +534,7 @@ export const de = {
   "error.partlyMoved":
     "Die Verschiebung wurde unterbrochen. Diese Elemente konnten nicht wiederhergestellt werden und bleiben dort, wohin sie verschoben wurden: {subject}",
   "error.trash": "Verschieben in den Papierkorb nicht möglich: {detail}",
+  "error.shell": "Die Einträge im Dateimanager konnten nicht geändert werden: {detail}",
   "error.nameNoStem": "Vor der Dateiendung muss noch etwas stehen",
   "error.imageEmpty": "Das Bild ist leer",
 

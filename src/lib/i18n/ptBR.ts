@@ -456,6 +456,14 @@ export const ptBR = {
   "settings.refTemplate": "Modelo de referência",
   "settings.refPreview": "Prévia: {preview}",
   "settings.updates": "Atualizações",
+  "settings.fileManager": "Gerenciador de arquivos",
+  "settings.shellMenu": 'Adicionar "Abrir com o TrailMark" ao menu de clique direito',
+  "settings.shellMenuHint": 'No Windows 11, fica em "Mostrar mais opções".',
+  "settings.shellAssoc": "Associar arquivos .md ao TrailMark",
+  "settings.shellAssocHint": 'Inclui o TrailMark na lista "Abrir com" dos arquivos Markdown.',
+  "settings.shellDefault": "Tornar padrão...",
+  "settings.shellDefaultHint": "Só o Windows define o app padrão: selecione .md na lista que abre.",
+  "settings.shellIsDefault": "O TrailMark é o app padrão dos arquivos .md.",
 
   // ---- updates
   "update.check": "Verificar atualizações...",
@@ -521,6 +529,7 @@ export const ptBR = {
   "error.partlyMoved":
     "A movimentação parou no meio. Estes itens não puderam voltar e ficaram onde foram movidos: {subject}",
   "error.trash": "Não foi possível mover para a Lixeira: {detail}",
+  "error.shell": "Não foi possível alterar as entradas do gerenciador de arquivos: {detail}",
   "error.nameNoStem": "O nome precisa ter algo antes da extensão",
   "error.imageEmpty": "A imagem está vazia",
 

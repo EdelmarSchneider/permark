@@ -135,6 +135,12 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 TrailMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
 **Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
 
+### 🖱️ Open with TrailMark
+On Windows, right-click a folder, the background of a folder or a Markdown file and choose **Open with TrailMark** (under *Show more options* on
+Windows 11). You can also list TrailMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
+**Settings → File manager**, which adds and removes them at once. TrailMark never sets itself as your default app; **Make default...** takes you to the
+Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
+
 ### 🌍 Your language
 TrailMark speaks **English, Português (Brasil), Español and Deutsch**. It follows your system's language, and **Settings → Language**
 switches it at once, no restart. The Windows installer asks for a language too.
@@ -224,7 +230,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - Search everywhere (`Ctrl+T`): files, sections, tags and commands in one box
 - Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words it uses
 - Unread markers ("changed since I last read it") and clickable code references (`src/main.rs:42`)
-- "Open with TrailMark" in your file manager
+- "Open with TrailMark" in the macOS and Linux file managers (Windows has it already)
 
 **Later**, no promises
 - Spec-driven workflows, review comments that turn into a prompt for your agent, and an MCP server so any agent can ask TrailMark
