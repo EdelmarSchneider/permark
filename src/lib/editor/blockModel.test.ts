@@ -186,6 +186,62 @@ describe("compose", () => {
   });
 });
 
+describe("compose with a block that changed kind", () => {
+  // a paragraph, a heading right under it (one line break: a heading interrupts a paragraph), a paragraph two lines below
+  const close = "Intro text\n# Heading\n\nAfter.\n";
+
+  it("keeps a single line break between blocks that kept their kind", () => {
+    const map = mapOf(close);
+    const slots = untouchedSlots(map);
+    slots[0] = { origin: 0, text: "Intro text, edited" };
+    slots[1] = { origin: 1, text: "# Heading, edited", retyped: false };
+    expect(compose(map, slots)).toBe("Intro text, edited\n# Heading, edited\n\nAfter.\n");
+  });
+
+  it("puts a blank line where a block that changed kind sat one line break from the next", () => {
+    const map = mapOf(close);
+    const slots = untouchedSlots(map);
+    // the heading became a paragraph: right under another paragraph it would read as a line of it
+    slots[1] = { origin: 1, text: "Heading", retyped: true };
+    expect(compose(map, slots)).toBe("Intro text\n\nHeading\n\nAfter.\n");
+    // and the paragraph above it, as a quote, would take the line below into it
+    const above = untouchedSlots(map);
+    above[0] = { origin: 0, text: "> Intro text", retyped: true };
+    expect(compose(map, above)).toBe("> Intro text\n\n# Heading\n\nAfter.\n");
+  });
+
+  it("keeps a blank line the author left, whatever the kinds", () => {
+    const map = mapOf(close);
+    const slots = untouchedSlots(map);
+    slots[2] = { origin: 2, text: "- After.", retyped: true };
+    expect(compose(map, slots)).toBe("Intro text\n# Heading\n\n- After.\n");
+  });
+
+  it("writes the file's line ending, and a CRLF is one line break, not two", () => {
+    const crlf = "Intro text\r\n# Heading\r\n\r\nAfter.\r\n";
+    const map = mapOf(crlf);
+    const slots = untouchedSlots(map);
+    slots[1] = { origin: 1, text: "Heading", retyped: true };
+    expect(compose(map, slots)).toBe("Intro text\r\n\r\nHeading\r\n\r\nAfter.\r\n");
+    // a lone CR as well
+    const cr = "Intro text\r# Heading\r\rAfter.\r";
+    const crMap = mapOf(cr);
+    const crSlots = untouchedSlots(crMap);
+    crSlots[1] = { origin: 1, text: "Heading", retyped: true };
+    expect(compose(crMap, crSlots)).toBe("Intro text\r\rHeading\r\rAfter.\r");
+  });
+
+  it("keeps the definitions of a separator it replaces", () => {
+    const text = "Intro text\n# Heading\n\n[x]: /a\n\nAfter.\n";
+    const map = mapOf(text);
+    expect(map.blocks.map((b) => b.text)).toEqual(["Intro text", "# Heading", "After."]);
+    const slots = untouchedSlots(map);
+    slots[1] = { origin: 1, text: "Heading", retyped: true };
+    const saved = compose(map, slots);
+    expect(saved).toBe("Intro text\n\nHeading\n\n[x]: /a\n\nAfter.\n");
+  });
+});
+
 describe("compose keeps what lives between blocks", () => {
   // link reference definitions are consumed by the parser, so they sit in the separators
   const defs = "one\n\n[x]: /a\n\ntwo\n\n[y]: /b\n\nthree\n";

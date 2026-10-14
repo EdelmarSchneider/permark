@@ -19,8 +19,22 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Your own saves are not news: no glow, toast, feed entry or Follow jump for what you just wrote, while the search index and the git badge still catch up.
 - **Ctrl+N** creates a new Markdown file: type its name in the tree (`.md` is added), and it opens for editing with the caret after the title. Pasting or
   dropping an image into the editor saves it next to the document in `assets/` and inserts the link.
-- Visual (WYSIWYG) editing is next; its switch is in the header, disabled for now. Files that are binary, over 5 MB, not Markdown or not UTF-8 cannot be edited
-  (the Edit button says why). "Open in external editor" moved to the `...` menu.
+- Files that are binary, over 5 MB, not Markdown or not UTF-8 cannot be edited (the Edit button says why). "Open in external editor" moved to the `...` menu.
+
+### Editing (Visual mode)
+- Documents now open in a **visual editor** (Settings: "Open files for editing in" Visual or Source), with a toolbar for the block type, bold, italic, strikethrough, inline
+  code, links, lists, task lists, quotes, tables, code blocks (with a language menu), images and rules; it folds into a `...` menu when the pane is narrow. The text is drawn
+  with the reading styles. Keys: Ctrl+B and Ctrl+I, Ctrl+` inline code, Ctrl+Shift+X strikethrough, Ctrl+K a link popover (it flags a link to a file that is not in the folder),
+  Ctrl+Alt+C a code block, Ctrl+Alt+1..4 and 0 headings, Ctrl+Shift+. a quote; `/` in an empty paragraph opens a block menu. Task boxes can be clicked.
+  The table menu inserts a table and adds or removes rows and columns. Pasting, dropping or picking an image saves it next to the document and shows it; Markdown pasted as text becomes blocks.
+- The promise holds in Visual mode too: **only the blocks you changed are rewritten**, every other byte of the file stays as it was (also the blank lines around a block you
+  turned into a heading, and link reference definitions when you delete or move blocks). A block you edit is marked with a bar in the margin until it is saved, and the
+  status bar counts them. Undo back to the original makes the block clean again.
+- Blocks the editor cannot write back as the same Markdown are shown as they read but cannot be edited there, with an **Edit in Source** button that opens the Markdown at
+  that block: front matter, raw HTML, math, diagrams, footnotes and alerts, and any block that defines or uses a link reference or footnote, or has inline math or syntax the editor would change.
+  A link inside one of them opens as it does when reading.
+- **Visual / Source** in the header (or Ctrl+Alt+E) switches editors keeping your unsaved work and the block you are in. External changes, the conflict bar and saves work
+  as in Source mode.
 
 ### Outline
 - The right panel has two tabs, **Changes** (the live feed and "Since last visit", as before) and **Outline**. The Outline lists the

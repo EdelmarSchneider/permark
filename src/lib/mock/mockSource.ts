@@ -18,6 +18,7 @@ import {
   writeSource,
 } from "./fixtures";
 import { mockParseBlocks } from "./mockBlocks";
+import { markdownToView } from "./mockMarkdown";
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -67,6 +68,12 @@ export async function documentSource(path: string): Promise<SourceDoc> {
 export async function parseBlocks(text: string): Promise<ParsedBlocks> {
   await wait(10);
   return mockParseBlocks(text);
+}
+
+/** The reading view's HTML for pieces of Markdown (what Visual mode draws its locked blocks with). */
+export async function renderFragments(texts: string[]): Promise<string[]> {
+  await wait(10);
+  return texts.map((text) => markdownToView(text).html);
 }
 
 export async function saveDocument(

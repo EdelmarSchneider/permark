@@ -4,6 +4,7 @@
 import { api } from "../api";
 import { DEFAULT_REF_TEMPLATE } from "../reference";
 import { DEFAULT_WIDTH, nextWidth, type ReadingWidth } from "../readingWidth";
+import { DEFAULT_EDIT_MODE, type EditMode } from "../editMode";
 import { DEFAULT_RIGHT_TAB, type RightTab } from "../rightPanel";
 import {
   LEFT_DEFAULT,
@@ -31,6 +32,8 @@ class SessionStore {
   autoReveal = $state(true);
   /** The view the right panel shows. */
   rightTab = $state<RightTab>(DEFAULT_RIGHT_TAB);
+  /** How a document opens for editing (the switch in the header changes the mode of the open document only). */
+  editMode = $state<EditMode>(DEFAULT_EDIT_MODE);
   systemDark = $state(false);
 
   lastDoc: string | null = null;
@@ -65,6 +68,7 @@ class SessionStore {
     this.treeFilter = s.treeFilter;
     this.autoReveal = s.autoReveal;
     this.rightTab = s.rightTab;
+    this.editMode = s.editMode;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
     this.enabled = true;
@@ -85,6 +89,7 @@ class SessionStore {
       treeFilter: this.treeFilter,
       autoReveal: this.autoReveal,
       rightTab: this.rightTab,
+      editMode: this.editMode,
     };
   }
 
@@ -123,6 +128,11 @@ class SessionStore {
   noteScroll(top: number): void {
     this.scrollTop = top;
     this.persist(1500);
+  }
+
+  setEditMode(mode: EditMode): void {
+    this.editMode = mode;
+    this.persist();
   }
 
   setTheme(theme: SessionState["theme"]): void {

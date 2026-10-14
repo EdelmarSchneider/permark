@@ -318,6 +318,12 @@ pub async fn parse_blocks(text: String) -> Result<ParsedBlocks, AppError> {
     blocking(move || Ok(edit::parse_blocks(&text))).await
 }
 
+/// The reading view's HTML for pieces of Markdown (Visual mode draws its locked blocks with it).
+#[tauri::command]
+pub async fn render_fragments(texts: Vec<String>) -> Result<Vec<String>, AppError> {
+    blocking(move || Ok(edit::render_fragments(&texts))).await
+}
+
 /// Saves the editor's text over a file, unless the file is no longer the version with `expected_hash`.
 #[tauri::command]
 pub async fn save_document(

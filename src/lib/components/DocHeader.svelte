@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EDIT_MODES } from "../editMode";
   import { gitStateLabel } from "../gitLabels";
   import { t } from "../i18n";
   import { basename, breadcrumbs } from "../paths";
@@ -190,19 +191,18 @@
       </button>
     {/if}
     {#if edit.active}
-      <div class="seg" role="group" aria-label={t("edit.modes")}>
-        <button
-          type="button"
-          class="seg__btn is-disabled"
-          aria-disabled="true"
-          title={t("edit.visualSoon")}
-          onclick={() => toast.message(t("edit.visualSoon"), "info")}
-        >
-          {t("edit.visual")}
-        </button>
-        <button type="button" class="seg__btn is-on" aria-pressed="true">
-          {t("edit.source")}
-        </button>
+      <div class="seg" role="group" aria-label={t("edit.modes")} title={t("edit.modeHint")}>
+        {#each EDIT_MODES as mode (mode)}
+          <button
+            type="button"
+            class={["seg__btn", edit.mode === mode && "is-on"]}
+            aria-pressed={edit.mode === mode}
+            disabled={edit.switching}
+            onclick={() => void edit.switchTo(mode)}
+          >
+            {t(`edit.${mode}`)}
+          </button>
+        {/each}
       </div>
       <button
         type="button"

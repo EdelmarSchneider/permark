@@ -29,6 +29,7 @@ import {
   createDocument,
   documentSource,
   parseBlocks,
+  renderFragments,
   saveDocument,
   writeAsset,
 } from "./mockSource";
@@ -46,6 +47,7 @@ let savedSession: SessionState | null = {
   treeFilter: null,
   autoReveal: true,
   rightTab: "changes",
+  editMode: "visual",
 };
 let stateLocation: "appData" | "project" = "appData";
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -105,6 +107,7 @@ export const mockImpl: Api = {
   cleanUpMeta: async () => cleanUp(),
   documentSource: (path) => documentSource(path),
   parseBlocks: (text) => parseBlocks(text),
+  renderFragments: (texts) => renderFragments(texts),
   saveDocument: (path, text, expectedHash) => saveDocument(path, text, expectedHash),
   createDocument: (path, text) => createDocument(path, text),
   writeAsset: (docPath, nameHint, data) => writeAsset(docPath, nameHint, data),
