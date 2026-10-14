@@ -225,7 +225,9 @@ class FileOpsStore {
     await docs.followMoves(moves);
     vault.revealPath(moves[0].to);
 
-    const summary = moveSummary(moves, dirs, outcome.linksUpdated);
+    // the links patched into the editor's text count like the ones written to disk (the question counted them too)
+    const patched = applied && changes ? changes.edits.length : 0;
+    const summary = moveSummary(moves, dirs, outcome.linksUpdated + patched);
     const notes = skipNotes(outcome.skipped);
     if (!applied && buffer) {
       notes.push(t("fileOps.bufferNotUpdated", { name: basename(buffer.path) }));

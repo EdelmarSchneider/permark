@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { redo, undo } from "@milkdown/kit/prose/history";
 import { Fragment, Slice } from "@milkdown/kit/prose/model";
-import { TextSelection } from "@milkdown/kit/prose/state";
+import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { splitBlock } from "@milkdown/kit/prose/commands";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mockParseBlocks } from "../../mock/mockBlocks";
@@ -189,6 +189,43 @@ describe("dirty tracking", () => {
       DOC.replace("First paragraph.", "Second paragraph.\n\nFirst paragraph."),
     );
     expect(editor.status().changed).toBe(1);
+  });
+});
+
+describe("a selected locked block", () => {
+  const RAW = "<div>raw</div>\n\ntext\n";
+  const textInput = (text: string) => {
+    const { view } = editor.core;
+    const { from, to } = view.state.selection;
+    return view.someProp("handleTextInput", (f) => f(view, from, to, text, () => view.state.tr));
+  };
+
+  it("is not replaced by typing: the text is swallowed and nothing changes", () => {
+    load(RAW);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.setSelection(NodeSelection.create(view.state.doc, 0)));
+    expect(textInput("z")).toBe(true);
+    expect(editor.text()).toBe(RAW);
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+  });
+
+  it("leaves typing in the text next to it alone", () => {
+    load(RAW);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, inside(1, 2))));
+    expect(textInput("z")).toBeFalsy();
+  });
+
+  it("can still be deleted on purpose, and the deletion is undone like any other", () => {
+    load(RAW);
+    const { view } = editor.core;
+    view.dispatch(
+      view.state.tr.setSelection(NodeSelection.create(view.state.doc, 0)).deleteSelection(),
+    );
+    expect(editor.text()).toBe("text\n");
+    expect(editor.status().dirty).toBe(true);
+    expect(undo(view.state, view.dispatch)).toBe(true);
+    expect(editor.text()).toBe(RAW);
   });
 });
 

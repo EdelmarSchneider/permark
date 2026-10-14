@@ -293,8 +293,11 @@
         <span class="tag-editor__error" role="alert">
           {t("tags.writeError", { message: status.writeError })}
         </span>
-      {:else}
+      {:else if writable}
         <span>{where}</span>
+      {:else}
+        <!-- nothing is saved for this file (a linked worktree, or a meta.toml that cannot be read): the note above says why -->
+        <span></span>
       {/if}
       <button type="button" class="btn btn--sm btn--primary" onclick={close}>
         {t("tags.done")}
