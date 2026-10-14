@@ -79,6 +79,8 @@ export interface Api {
   documentSource(path: string): Promise<SourceDoc>;
   /** The top-level blocks of some Markdown text (the editor's buffer). */
   parseBlocks(text: string): Promise<ParsedBlocks>;
+  /** The reading view's HTML for pieces of Markdown, in order (Visual mode draws its locked blocks with it). An empty string: no HTML, show the source. */
+  renderFragments(texts: string[]): Promise<string[]>;
   /** Writes `text` unless the file is no longer the version with `expectedHash`; then it reports a conflict and writes nothing. */
   saveDocument(path: string, text: string, expectedHash: string): Promise<SaveOutcome>;
   /** Creates a Markdown file; rejects with kind "exists" when the name is taken. */
@@ -121,6 +123,7 @@ export const tauriApi: Api = {
   cleanUpMeta: () => invoke<number>("clean_up_meta"),
   documentSource: (path) => invoke<SourceDoc>("document_source", { path }),
   parseBlocks: (text) => invoke<ParsedBlocks>("parse_blocks", { text }),
+  renderFragments: (texts) => invoke<string[]>("render_fragments", { texts }),
   saveDocument: (path, text, expectedHash) =>
     invoke<SaveOutcome>("save_document", { path, text, expectedHash }),
   createDocument: (path, text) => invoke<CreatedDoc>("create_document", { path, text }),
@@ -191,6 +194,7 @@ function createMockApi(): Api {
     cleanUpMeta: command("cleanUpMeta"),
     documentSource: command("documentSource"),
     parseBlocks: command("parseBlocks"),
+    renderFragments: command("renderFragments"),
     saveDocument: command("saveDocument"),
     createDocument: command("createDocument"),
     writeAsset: command("writeAsset"),

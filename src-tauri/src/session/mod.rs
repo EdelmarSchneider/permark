@@ -143,6 +143,15 @@ pub enum RightTab {
     Outline,
 }
 
+/// How a document opens for editing. The UI draws it; the app only keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EditMode {
+    #[default]
+    Visual,
+    Source,
+}
+
 /// What the UI wants restored on the next visit. Matches the UI's `SessionState`; fields missing from
 /// an older save take their defaults.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -179,6 +188,9 @@ pub struct SessionState {
     /// The right panel's view. A view this build does not know (written by a newer UI) reads as Changes.
     #[serde(deserialize_with = "or_default")]
     pub right_tab: RightTab,
+    /// How a document opens for editing. A mode this build does not know reads as Visual.
+    #[serde(deserialize_with = "or_default")]
+    pub edit_mode: EditMode,
 }
 
 impl Default for SessionState {
@@ -200,6 +212,7 @@ impl Default for SessionState {
             tree_filter: None,
             auto_reveal: true,
             right_tab: RightTab::Changes,
+            edit_mode: EditMode::Visual,
         }
     }
 }
@@ -214,7 +227,7 @@ mod tests {
             "lastDoc": "docs/a.md", "scrollTop": 120.5, "zoom": 1.25, "width": "full",
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
             "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
-            "autoReveal": false, "rightTab": "outline",
+            "autoReveal": false, "rightTab": "outline", "editMode": "source",
             "treeFilter": {"show": "custom", "categories": ["documents", "data"],
                            "patterns": "+*.sql -archive/**", "hideEmptyFolders": false,
                            "assetsNearDocs": false}
@@ -225,6 +238,7 @@ mod tests {
         assert_eq!(s.width, Some(ReadingWidth::Full));
         assert!(!s.auto_reveal);
         assert_eq!(s.right_tab, RightTab::Outline);
+        assert_eq!(s.edit_mode, EditMode::Source);
         assert!(!s.left_panel.open);
         let filter = s.tree_filter.as_ref().expect("filter");
         assert_eq!(filter.show, TreeShow::Custom);
@@ -410,6 +424,26 @@ mod tests {
             assert!((s.zoom - 1.5).abs() < f64::EPSILON);
             assert_eq!(s.last_doc.as_deref(), Some("a.md"));
             assert_eq!(s.right_tab, RightTab::Changes, "{tab}");
+        }
+    }
+
+    #[test]
+    fn documents_open_in_the_visual_editor_unless_the_person_chose_source() {
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
+        assert_eq!(s.edit_mode, EditMode::Visual, "missing means the default");
+        for (name, mode) in [("visual", EditMode::Visual), ("source", EditMode::Source)] {
+            let json = format!("{{\"editMode\": \"{name}\"}}");
+            let s: SessionState = serde_json::from_str(&json).expect("parse");
+            assert_eq!(s.edit_mode, mode);
+            assert_eq!(serde_json::to_value(&s).expect("json")["editMode"], name);
+        }
+        // a mode from a newer UI reads as Visual and the session survives
+        for mode in ["\"split\"", "\"Source\"", "null", "7", "{}"] {
+            let json = format!("{{\"zoom\": 1.5, \"editMode\": {mode}}}");
+            let s: SessionState = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{mode} lost the session: {e}"));
+            assert!((s.zoom - 1.5).abs() < f64::EPSILON);
+            assert_eq!(s.edit_mode, EditMode::Visual, "{mode}");
         }
     }
 

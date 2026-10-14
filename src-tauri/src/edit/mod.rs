@@ -18,7 +18,7 @@ use serde::Serialize;
 pub use assets::{decode_image, AssetWritten};
 pub use blocks::{parse_blocks, ParsedBlocks};
 
-use crate::render::markdown::is_markdown_path;
+use crate::render::markdown::{is_markdown_path, render_markdown};
 use crate::render::MAX_RENDER_BYTES;
 use crate::util::{
     hash_bytes, hash_hex, modified_ms, read_with_retry, write_atomic_guarded, Guarded,
@@ -289,6 +289,23 @@ impl<'a> Editor<'a> {
     ) -> Result<AssetWritten, EditError> {
         assets::write(self.vault, self.own, doc_path, name_hint, data)
     }
+}
+
+/// The reading view's HTML for some pieces of Markdown, one string for each piece, in the same order. Visual mode draws its locked
+/// blocks (raw HTML, math, diagrams, alerts...) with this. The same renderer and sanitizer as the reading view; a piece that does not
+/// fit in what is left of the size limit comes back empty (the UI then shows its source).
+pub fn render_fragments(texts: &[String]) -> Vec<String> {
+    let mut left = usize::try_from(MAX_RENDER_BYTES).unwrap_or(usize::MAX);
+    texts
+        .iter()
+        .map(|text| {
+            if text.len() > left {
+                return String::new();
+            }
+            left -= text.len();
+            render_markdown(text).html
+        })
+        .collect()
 }
 
 /// How the file on disk compares with the version a save is based on: `None` when it is that version,
@@ -801,6 +818,40 @@ mod tests {
         }];
         fx.own.strip(&mut changes, &sigs);
         assert_eq!(changes, Vec::<crate::watch::FsChange>::new());
+    }
+
+    #[test]
+    fn fragments_are_rendered_like_the_reading_view_and_stay_in_order() {
+        let html = render_fragments(&[
+            "| a | b |
+|---|---|
+| 1 | 2 |"
+                .to_owned(),
+            "<div class=\"note\">raw <script>alert(1)</script></div>".to_owned(),
+            "```mermaid
+graph LR
+  A --> B
+```"
+            .to_owned(),
+            "Inline $x^2$ math.".to_owned(),
+            String::new(),
+        ]);
+        assert_eq!(html.len(), 5);
+        assert!(html[0].contains("<table"), "{}", html[0]);
+        assert!(html[1].contains("raw"), "{}", html[1]);
+        assert!(!html[1].contains("script"), "sanitized: {}", html[1]);
+        assert!(html[2].contains("language-mermaid"), "{}", html[2]);
+        assert!(html[3].contains("data-math-style"), "{}", html[3]);
+        assert_eq!(html[4], "");
+    }
+
+    #[test]
+    fn fragments_beyond_the_size_limit_come_back_empty() {
+        let big = "a".repeat(usize::try_from(MAX_RENDER_BYTES).expect("fits") / 2 + 1);
+        let html = render_fragments(&[big.clone(), big, "after".to_owned()]);
+        assert!(html[0].contains('a'));
+        assert_eq!(html[1], "", "the second piece does not fit");
+        assert!(html[2].is_empty() || html[2].contains("after"));
     }
 
     #[test]

@@ -73,6 +73,7 @@ pub fn run() {
             commands::clean_up_meta,
             commands::document_source,
             commands::parse_blocks,
+            commands::render_fragments,
             commands::save_document,
             commands::create_document,
             commands::write_asset,
