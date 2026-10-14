@@ -163,17 +163,20 @@ fn another_spelling_of_a_protected_folder_is_protected_too() {
 
 #[test]
 fn the_last_check_before_the_disk_is_touched_keeps_everything_inside_the_root() {
-    let (d, vault) = vault_with(&["a.md", "docs/b.md"]);
-    let inside_path = d.path().join("docs").join("b.md");
+    let (_d, vault) = vault_with(&["a.md", "docs/b.md"]);
+    // paths in the app are built from the vault's canonical root (not the temp dir's own spelling, which can be
+    // an 8.3 short name on Windows)
+    let root = vault.root().to_path_buf();
+    let inside_path = root.join("docs").join("b.md");
     assert!(confine(&vault, 0, &inside_path).is_ok());
     // the root itself, something beside it, something that climbs out of it
-    assert!(confine(&vault, 0, d.path()).is_err());
+    assert!(confine(&vault, 0, &root).is_err());
     let outside = tempfile::tempdir().expect("outside");
     assert!(confine(&vault, 0, &outside.path().join("x.md")).is_err());
     assert!(confine(
         &vault,
         0,
-        &d.path().join("docs").join("..").join("..").join("x")
+        &root.join("docs").join("..").join("..").join("x")
     )
     .is_err());
     // a root that does not exist
