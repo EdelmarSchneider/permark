@@ -2,8 +2,16 @@
 // state of the selection, and how many fit before the rest folds into the `[...]` menu. The component only draws this.
 
 import type { IconName } from "../../components/Icon.svelte";
+import type { MenuEntry } from "../../components/Menu.svelte";
 import type { MessageKey } from "../../i18n";
-import type { BlockName, CommandId, FormatState } from "./format";
+import {
+  tableUnavailable,
+  type BlockName,
+  type CommandId,
+  type FormatState,
+  type TableBlock,
+  type TableCommandId,
+} from "./format";
 
 export type ToolbarItem = {
   id: CommandId | "link" | "image";
@@ -80,6 +88,110 @@ export function visibleCount(widths: readonly number[], available: number): numb
     count++;
   }
   return count;
+}
+
+/** The sentence that says why a table command is off. */
+const TABLE_WHY: Record<TableBlock, MessageKey> = {
+  notInTable: "toolbar.tableNeedsCell",
+  headerRowAbove: "toolbar.tableHeaderNoRowAbove",
+  headerRowDelete: "toolbar.tableHeaderNoDelete",
+};
+
+function tableEntry(
+  format: FormatState,
+  id: TableCommandId,
+  label: MessageKey,
+  labelOf: (key: MessageKey) => string,
+  run: (id: CommandId) => void,
+  icon?: IconName,
+  initial?: boolean,
+): MenuEntry {
+  const why = tableUnavailable(format, id);
+  return {
+    id,
+    label: labelOf(label),
+    icon,
+    disabled: why !== null,
+    title: why === null ? undefined : labelOf(TABLE_WHY[why]),
+    initial,
+    onselect: () => run(id),
+  };
+}
+
+/**
+ * The entries of the table menu: insert a table, and, when the caret is in one, add and delete its rows and columns. An entry that
+ * is off says why, as a tooltip; when the caret is not in a table at all, so does a line of text in the menu (a keyboard has no tooltips).
+ * In a table the keyboard starts on a row action: "Insert table" first would make Enter put a second table there.
+ */
+export function tableMenuEntries(
+  format: FormatState,
+  labelOf: (key: MessageKey) => string,
+  run: (id: CommandId) => void,
+): MenuEntry[] {
+  const first = (["rowBefore", "rowAfter"] as const).find(
+    (id) => tableUnavailable(format, id) === null,
+  );
+  const entry = (id: TableCommandId, label: MessageKey, icon?: IconName): MenuEntry =>
+    tableEntry(format, id, label, labelOf, run, icon, id === first);
+  return [
+    {
+      id: "insert",
+      label: labelOf("toolbar.insertTable"),
+      icon: "table",
+      onselect: () => run("table"),
+    },
+    { type: "separator" },
+    ...(format.table ? [] : [{ type: "note", text: labelOf(TABLE_WHY.notInTable) } as const]),
+    entry("rowBefore", "toolbar.rowAbove"),
+    entry("rowAfter", "toolbar.rowBelow"),
+    entry("colBefore", "toolbar.colLeft"),
+    entry("colAfter", "toolbar.colRight"),
+    { type: "separator" },
+    entry("deleteRow", "toolbar.deleteRow"),
+    entry("deleteCol", "toolbar.deleteCol"),
+    entry("deleteTable", "toolbar.deleteTable", "trash"),
+  ];
+}
+
+/**
+ * The `[...]` menu: the buttons that did not fit in the toolbar. The table button is a menu of its own, so when it is one of them its
+ * entries are listed here (a single "Table" entry would only insert a table, and leave no way to add or delete a row or a column).
+ * `act` runs a button, `run` a table command; `off` turns every entry off (a locked block, an editor that is still loading).
+ */
+export function moreMenuEntries(
+  folded: readonly ToolbarItem[],
+  format: FormatState,
+  off: boolean,
+  labelOf: (key: MessageKey) => string,
+  act: (item: ToolbarItem) => void,
+  run: (id: CommandId) => void,
+): MenuEntry[] {
+  const out: MenuEntry[] = [];
+  folded.forEach((item, i) => {
+    if (item.id !== "table") {
+      out.push({
+        id: item.id,
+        label: labelOf(item.label),
+        icon: item.icon,
+        hint: item.hint,
+        checked: item.id === "link" || item.id === "image" ? undefined : item.active(format),
+        disabled: off,
+        onselect: () => act(item),
+      });
+      return;
+    }
+    if (i > 0) out.push({ type: "separator" });
+    out.push({ type: "label", label: labelOf(item.label) });
+    for (const entry of tableMenuEntries(format, labelOf, run)) {
+      out.push(
+        off && entry.type !== "separator" && entry.type !== "label" && entry.type !== "note"
+          ? { ...entry, disabled: true }
+          : entry,
+      );
+    }
+    if (i < folded.length - 1) out.push({ type: "separator" });
+  });
+  return out;
 }
 
 /** The block types of the dropdown (and the slash menu), in order. */

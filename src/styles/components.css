@@ -966,6 +966,13 @@
   text-transform: uppercase;
   color: var(--faint);
 }
+/* a sentence of explanation inside a menu: quiet, wrapped to the menu's width */
+.menu-note {
+  padding: 4px 8px;
+  font-size: var(--fs-ui-xs);
+  line-height: 1.4;
+  color: var(--muted);
+}
 .field {
   display: flex;
   flex-direction: column;

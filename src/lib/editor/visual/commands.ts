@@ -31,7 +31,14 @@ import { NodeSelection, type EditorState } from "@milkdown/kit/prose/state";
 import { deleteColumn, deleteRow, deleteTable } from "@milkdown/kit/prose/tables";
 import type { $Command } from "@milkdown/kit/utils";
 import { LOCKED, type Core } from "./core";
-import { NO_FORMAT, type BlockName, type CommandId, type FormatState } from "./format";
+import {
+  NO_FORMAT,
+  tableUnavailable,
+  type BlockName,
+  type CommandId,
+  type FormatState,
+  type TableCommandId,
+} from "./format";
 
 function markActive(state: EditorState, type: MarkType | undefined): boolean {
   if (!type) return false;
@@ -158,6 +165,27 @@ function plainAlignment(core: Core): void {
   }
 }
 
+/** Runs a command of the table menu on the table the caret is in (the caller has checked that it can). */
+function runTableCommand(core: Core, id: TableCommandId): boolean {
+  const { view } = core;
+  switch (id) {
+    case "rowBefore":
+      return send(core, addRowBeforeCommand);
+    case "rowAfter":
+      return send(core, addRowAfterCommand);
+    case "colBefore":
+      return send(core, addColBeforeCommand);
+    case "colAfter":
+      return send(core, addColAfterCommand);
+    case "deleteRow":
+      return deleteRow(view.state, view.dispatch);
+    case "deleteCol":
+      return deleteColumn(view.state, view.dispatch);
+    case "deleteTable":
+      return deleteTable(view.state, view.dispatch);
+  }
+}
+
 /** Runs a toolbar command. Resolves to whether it did anything. */
 export function runCommand(core: Core, id: CommandId): boolean {
   const { view } = core;
@@ -212,25 +240,13 @@ export function runCommand(core: Core, id: CommandId): boolean {
       if (done) plainAlignment(core);
       break;
     case "rowBefore":
-      done = state.table && !state.tableHeader && send(core, addRowBeforeCommand);
-      break;
     case "rowAfter":
-      done = state.table && send(core, addRowAfterCommand);
-      break;
     case "colBefore":
-      done = state.table && send(core, addColBeforeCommand);
-      break;
     case "colAfter":
-      done = state.table && send(core, addColAfterCommand);
-      break;
     case "deleteRow":
-      done = state.table && !state.tableHeader && deleteRow(view.state, view.dispatch);
-      break;
     case "deleteCol":
-      done = state.table && deleteColumn(view.state, view.dispatch);
-      break;
     case "deleteTable":
-      done = state.table && deleteTable(view.state, view.dispatch);
+      done = tableUnavailable(state, id) === null && runTableCommand(core, id);
       break;
   }
   view.focus();
