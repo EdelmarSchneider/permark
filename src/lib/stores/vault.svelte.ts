@@ -2,9 +2,10 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api } from "../api";
+import { mapPath, mapSet } from "../fileOps";
 import { planReveal } from "../reveal";
 import { collectFiles, rollups, splitRoots } from "../tree";
-import type { ChangedSince, GitSnapshot, TreeNode, VaultInfo } from "../types";
+import type { ChangedSince, GitSnapshot, Move, TreeNode, VaultInfo } from "../types";
 import { ui } from "./ui.svelte";
 
 export type WorktreeInfo = VaultInfo["worktrees"][number];
@@ -70,6 +71,15 @@ class VaultStore {
 
   collapseAll(): void {
     this.expanded.clear();
+  }
+
+  /** Files or folders were moved or renamed: the folders that were open stay open in their new place. */
+  followMoves(moves: readonly Move[]): void {
+    const open = mapSet(this.expanded, moves);
+    this.expanded.clear();
+    for (const path of open) this.expanded.add(path);
+    const cursor = ui.treeCursor;
+    if (cursor) ui.treeCursor = { ...cursor, path: mapPath(cursor.path, moves) };
   }
 
   /** Opens the folders (and the Explorer section) that hold `path`, then selects its row and scrolls it into view. */

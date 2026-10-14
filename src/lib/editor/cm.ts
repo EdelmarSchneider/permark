@@ -193,6 +193,13 @@ export function createSourceView(
     caretLine: () => view.state.doc.lineAt(view.state.selection.main.head).number - 1,
     focus: () => view.focus(),
     insertImage: (rel) => insertAtSelection(imageMarkdown(rel)),
+    applyChanges(edits) {
+      // positions are relative to the document as it is now; CodeMirror maps the caret through the changes
+      view.dispatch({
+        changes: edits.map(({ from, to, insert }) => ({ from, to, insert })),
+        userEvent: "input.link",
+      });
+    },
     destroy: () => view.destroy(),
   };
 }

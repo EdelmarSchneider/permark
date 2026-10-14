@@ -206,7 +206,9 @@ describe("patterns", () => {
     const filter = custom({ categories: ["documents"], patterns: "-docs/archive/**" });
     expect(fileTest(filter, ROOT_DOCS)("@wt/feature/docs/archive/old.md")).toBe(false);
     expect(fileTest(filter, ROOT_DOCS)("@wt/feature/docs/a.md")).toBe(true);
-    expect(fileTest(custom({ patterns: "+/queries/*.sql" }), ROOT_DOCS)("@wt/f/queries/u.sql")).toBe(true);
+    expect(
+      fileTest(custom({ patterns: "+/queries/*.sql" }), ROOT_DOCS)("@wt/f/queries/u.sql"),
+    ).toBe(true);
   });
 });
 
@@ -584,6 +586,17 @@ describe("filterTree", () => {
     expect(names(out.main)).toEqual(["docs", "src", "empty", "README.md"]);
     expect(out.main[1].children?.[0].children).toEqual([]);
     expect(names(out.worktrees)).toEqual(["@wt/feature-ui", "@wt/code-only"]);
+  });
+
+  it("keeps a folder made in the Explorer while nothing is in it, and only that kind of folder", () => {
+    const options = {
+      hideEmptyFolders: true,
+      keep: null,
+      keepFolders: new Set(["empty", "src/deep"]),
+    };
+    const out = filterTree(root, docsOnly, options);
+    // `empty` has nothing at all in it; `src/deep` was emptied by the filter, which is not the same
+    expect(names(out.main)).toEqual(["docs", "empty", "README.md"]);
   });
 
   it("counts the files that pass and the files that do not, worktrees included", () => {

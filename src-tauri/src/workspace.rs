@@ -13,6 +13,10 @@ use serde::Serialize;
 
 use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
+use crate::fileops::{
+    BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers, Move,
+    MoveOutcome, MovePreview, OsRecycler, UndoOutcome,
+};
 use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
 };
@@ -203,9 +207,24 @@ pub struct Workspace {
     meta: Arc<MetaService>,
     /// Content the editor is writing, so the watcher does not report it back as an external change.
     own_writes: Arc<OwnWrites>,
+    /// Rename, move, delete and new folder in the Explorer.
+    fileops: FileOpsService,
     sink: Arc<dyn EventSink>,
     last_visit: Option<LastVisit>,
     closed: AtomicBool,
+}
+
+/// Tags follow the files that are renamed or moved in the Explorer.
+struct MetaFollower(Arc<MetaService>);
+
+impl Followers for MetaFollower {
+    fn renamed(&self, from: &str, to: &str, is_dir: bool) {
+        if is_dir {
+            self.0.rename_tree(from, to);
+        } else {
+            self.0.rename(from, to);
+        }
+    }
 }
 
 /// What the watcher thread needs to do its work.
@@ -264,7 +283,18 @@ fn start_watcher(
             }
             // What the editor saved or created is no news to the person who did it. The index and git
             // below still learn about it (`all_changes`), the UI does not hear about it.
-            own_writes.strip(&mut out.batch.changes, &known);
+            if out.batch.bulk.is_some() {
+                // A bulk batch lists at most 200 of its changes, so what the app announced is matched against
+                // all of them: a big folder moved in the Explorer is not a "Large batch" row.
+                let mut everything = out.all_changes.clone();
+                own_writes.strip(&mut everything, &known);
+                if everything.is_empty() && !out.all_changes.is_empty() {
+                    out.batch.bulk = None;
+                    out.batch.changes.clear();
+                }
+            } else {
+                own_writes.strip(&mut out.batch.changes, &known);
+            }
             let has_batch = out.has_batch();
             let WatchOutput {
                 batch,
@@ -348,6 +378,12 @@ impl Workspace {
         ));
 
         let own_writes = Arc::new(OwnWrites::new());
+        let fileops = FileOpsService::new(
+            Arc::clone(&vault),
+            Arc::clone(&own_writes),
+            Arc::new(MetaFollower(Arc::clone(&meta))),
+            Arc::new(OsRecycler),
+        );
 
         let git_sink = Arc::clone(sink);
         let git = GitHandle::start(
@@ -414,6 +450,7 @@ impl Workspace {
             filter,
             meta,
             own_writes,
+            fileops,
             sink: Arc::clone(sink),
             last_visit,
             closed: AtomicBool::new(false),
@@ -502,6 +539,54 @@ impl Workspace {
         data: &[u8],
     ) -> Result<AssetWritten, AppError> {
         Ok(self.editor().write_asset(doc_path, name_hint, data)?)
+    }
+
+    // ---- file operations ------------------------------------------------------------------------
+
+    /// The Explorer's operations need a folder, not a single opened file (whose folder may be Downloads).
+    fn file_ops(&self) -> Result<&FileOpsService, AppError> {
+        if self.vault.is_shallow() {
+            return Err(FileOpError::SimpleMode.into());
+        }
+        Ok(&self.fileops)
+    }
+
+    /// Checks a rename or move and finds the links it would change (`scan_links`), leaving out the
+    /// documents in `held_back`.
+    pub fn preview_move(
+        &self,
+        moves: &[Move],
+        scan_links: bool,
+        held_back: &[String],
+    ) -> Result<MovePreview, AppError> {
+        Ok(self
+            .file_ops()?
+            .preview_move(moves, scan_links, held_back)?)
+    }
+
+    /// Makes the move of a preview, rewriting links when asked to.
+    pub fn apply_move(
+        &self,
+        plan_id: u64,
+        update_links: bool,
+        buffers: &[BufferText],
+    ) -> Result<MoveOutcome, AppError> {
+        Ok(self
+            .file_ops()?
+            .apply_move(plan_id, update_links, buffers)?)
+    }
+
+    /// Sends files and folders to the recycle bin.
+    pub fn delete_entries(&self, paths: &[String]) -> Result<DeleteOutcome, AppError> {
+        Ok(self.file_ops()?.delete(paths)?)
+    }
+
+    pub fn new_folder(&self, path: &str) -> Result<CreatedFolder, AppError> {
+        Ok(self.file_ops()?.new_folder(path)?)
+    }
+
+    pub fn undo_file_op(&self, op_id: u64) -> Result<UndoOutcome, AppError> {
+        Ok(self.file_ops()?.undo(op_id)?)
     }
 
     pub fn resolve_link(&self, from: &str, href: &str) -> LinkTarget {
@@ -1565,6 +1650,113 @@ exclude = [\"archive/**\"]
             let seen = fs_paths(&fx.rec);
             seen.iter().any(|p| p == "b.md") && seen.iter().any(|p| p == "a.md")
         });
+        ws.close();
+    }
+
+    #[test]
+    fn moves_in_the_explorer_are_not_news_and_tags_links_and_the_index_follow() {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "README.md",
+            "# Home\n\nSee [guide](docs/guide.md).\n",
+        );
+        write(fx.project.path(), "docs/guide.md", "# Guide\n\nzebra\n");
+        write(fx.project.path(), "docs/extra/api.md", "# API\n");
+        let ws = fx.open();
+        fx.indexed();
+        let keep = vec!["keep".to_owned()];
+        ws.set_file_tags("docs/guide.md", &keep).expect("tags");
+        ws.set_file_tags("docs/extra/api.md", &keep).expect("tags");
+
+        // a rename with the links rewritten, then the folder with everything in it
+        let rename = [Move {
+            from: "docs/guide.md".to_owned(),
+            to: "docs/manual.md".to_owned(),
+        }];
+        let preview = ws.preview_move(&rename, true, &[]).expect("preview");
+        assert_eq!((preview.link_count, preview.file_count), (1, 1));
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+
+        let on_disk = |rel: &str| std::fs::read_to_string(fx.project.path().join(rel)).expect(rel);
+        assert!(on_disk("README.md").contains("(manual/manual.md)"));
+        assert!(on_disk("manual/manual.md").contains("zebra"));
+
+        // the tags went along, for the file and for what was inside the folder
+        for moved in ["manual/manual.md", "manual/extra/api.md"] {
+            let meta = ws.file_meta(moved).expect("meta");
+            assert_eq!(meta.tags.len(), 1, "{moved}");
+        }
+        // the search index learned the new place
+        wait_until("the index to follow the move", || {
+            ws.search("zebra", None)
+                .first()
+                .is_some_and(|hit| hit.path == "manual/manual.md")
+        });
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) >= 1
+        });
+
+        // A negative proof: wait longer than the watcher's quiet period, then look. Nothing of this
+        // reached the feed: no removed and created rows for every file, no row for the rewritten README.
+        thread::sleep(Duration::from_millis(900));
+        let seen = fs_paths(&fx.rec);
+        assert!(
+            seen.is_empty(),
+            "the person's own moves must not reach the feed: {seen:?}"
+        );
+
+        // An agent saving a moved file afterwards is news.
+        std::fs::write(
+            fx.project.path().join("manual/manual.md"),
+            "# Guide\n\nby an agent\n",
+        )
+        .expect("write");
+        wait_until("the agent's save in the feed", || {
+            fs_paths(&fx.rec).iter().any(|p| p == "manual/manual.md")
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn a_big_folder_moved_in_the_explorer_is_not_a_bulk_row() {
+        let fx = Fx::new();
+        for n in 0..70 {
+            write(
+                fx.project.path(),
+                &format!("docs/note-{n}.md"),
+                &format!("# Note {n}\n"),
+            );
+        }
+        let ws = fx.open();
+        fx.indexed();
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        assert!(fx.project.path().join("manual/note-69.md").is_file());
+        wait_until("the tree to refresh", || {
+            fx.rec.tree.load(Ordering::SeqCst) >= 1
+        });
+
+        thread::sleep(Duration::from_millis(900));
+        let batches = fx.rec.fs.lock().expect("lock").clone();
+        assert!(
+            batches.is_empty(),
+            "70 files moved by the person must not reach the feed: {} batch(es), bulk {:?}",
+            batches.len(),
+            batches
+                .first()
+                .and_then(|b| b.bulk.as_ref().map(|x| x.count))
+        );
         ws.close();
     }
 

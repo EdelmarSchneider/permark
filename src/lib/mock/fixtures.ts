@@ -670,6 +670,8 @@ export const mockFiles = {
   created: new Set<string>(),
   /** Image names written by the editor (for the numbering of clashes). */
   assets: new Set<string>(),
+  /** Folders made with New folder (or moved there): the tree shows them even while empty. */
+  folders: new Set<string>(),
   /** The next save fails with "access denied", to see the error bar. */
   failNextSave: false,
 };
@@ -870,7 +872,29 @@ export function mockTree(): TreeNode {
     nodes.filter((n) => n.kind !== "file" || exists(n.path));
   const tree = baseTree(keep);
   for (const path of mockFiles.created) if (exists(path)) insertFile(tree, path);
+  for (const path of mockFiles.folders) insertFolder(tree, path);
   return tree;
+}
+
+/** Adds a folder (and the ones above it) to a tree, if it is not there yet. */
+function insertFolder(tree: TreeNode, path: string): void {
+  const segments = path.split("/");
+  let folder = tree;
+  for (let i = 0; i < segments.length; i++) {
+    const folderPath = segments.slice(0, i + 1).join("/");
+    let next = (folder.children ?? []).find((n) => n.kind === "dir" && n.path === folderPath);
+    if (!next) {
+      next = dir(folderPath, []);
+      const rank = (n: TreeNode): number => (n.kind === "file" ? 1 : 0);
+      const children = [...(folder.children ?? []), next];
+      children.sort(
+        (a, b) =>
+          rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+      );
+      folder.children = children;
+    }
+    folder = next;
+  }
 }
 
 /** Adds a file to a tree, making the folders on the way; folders come first, then names in order. */

@@ -143,6 +143,18 @@ pub enum RightTab {
     Outline,
 }
 
+/// What happens to the links of documents when files are moved or renamed in the Explorer. The UI
+/// acts on it; the app only keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LinkUpdate {
+    /// Show what would change and ask.
+    #[default]
+    Ask,
+    Always,
+    Never,
+}
+
 /// How a document opens for editing. The UI draws it; the app only keeps it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -188,6 +200,9 @@ pub struct SessionState {
     /// The right panel's view. A view this build does not know (written by a newer UI) reads as Changes.
     #[serde(deserialize_with = "or_default")]
     pub right_tab: RightTab,
+    /// Whether moving files rewrites the links to them. A value this build does not know reads as Ask.
+    #[serde(deserialize_with = "or_default")]
+    pub link_update: LinkUpdate,
     /// How a document opens for editing. A mode this build does not know reads as Visual.
     #[serde(deserialize_with = "or_default")]
     pub edit_mode: EditMode,
@@ -212,6 +227,7 @@ impl Default for SessionState {
             tree_filter: None,
             auto_reveal: true,
             right_tab: RightTab::Changes,
+            link_update: LinkUpdate::Ask,
             edit_mode: EditMode::Visual,
         }
     }
@@ -227,7 +243,8 @@ mod tests {
             "lastDoc": "docs/a.md", "scrollTop": 120.5, "zoom": 1.25, "width": "full",
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
             "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
-            "autoReveal": false, "rightTab": "outline", "editMode": "source",
+            "autoReveal": false, "rightTab": "outline", "linkUpdate": "always",
+            "editMode": "source",
             "treeFilter": {"show": "custom", "categories": ["documents", "data"],
                            "patterns": "+*.sql -archive/**", "hideEmptyFolders": false,
                            "assetsNearDocs": false}
@@ -238,6 +255,7 @@ mod tests {
         assert_eq!(s.width, Some(ReadingWidth::Full));
         assert!(!s.auto_reveal);
         assert_eq!(s.right_tab, RightTab::Outline);
+        assert_eq!(s.link_update, LinkUpdate::Always);
         assert_eq!(s.edit_mode, EditMode::Source);
         assert!(!s.left_panel.open);
         let filter = s.tree_filter.as_ref().expect("filter");
@@ -424,6 +442,30 @@ mod tests {
             assert!((s.zoom - 1.5).abs() < f64::EPSILON);
             assert_eq!(s.last_doc.as_deref(), Some("a.md"));
             assert_eq!(s.right_tab, RightTab::Changes, "{tab}");
+        }
+    }
+
+    #[test]
+    fn links_are_asked_about_unless_the_person_chose_otherwise() {
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
+        assert_eq!(s.link_update, LinkUpdate::Ask, "missing means the default");
+        for (name, expected) in [
+            ("ask", LinkUpdate::Ask),
+            ("always", LinkUpdate::Always),
+            ("never", LinkUpdate::Never),
+        ] {
+            let json = format!("{{\"linkUpdate\": \"{name}\"}}");
+            let s: SessionState = serde_json::from_str(&json).expect("parse");
+            assert_eq!(s.link_update, expected);
+            assert_eq!(serde_json::to_value(&s).expect("json")["linkUpdate"], name);
+        }
+        // a value from a newer UI reads as the default and keeps the session
+        for value in ["\"sometimes\"", "null", "7", "true", "[]"] {
+            let json = format!("{{\"follow\": true, \"linkUpdate\": {value}}}");
+            let s: SessionState = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{value} lost the session: {e}"));
+            assert!(s.follow);
+            assert_eq!(s.link_update, LinkUpdate::Ask, "{value}");
         }
     }
 

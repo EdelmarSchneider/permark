@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import { LINK_UPDATES } from "../fileOps";
   import { EDIT_MODES } from "../editMode";
   import { t } from "../i18n";
   import { READING_WIDTHS } from "../readingWidth";
@@ -65,6 +66,20 @@
           onclick={() => session.setWidth(width)}
         >
           {t(`width.${width}`)}
+        </button>
+      {/each}
+    </div>
+  </div>
+  <div class="field">
+    <span class="field__label">{t("settings.linkUpdate")}</span>
+    <div class="segmented" role="group" aria-label={t("settings.linkUpdate")}>
+      {#each LINK_UPDATES as choice (choice)}
+        <button
+          type="button"
+          aria-pressed={session.linkUpdate === choice}
+          onclick={() => session.setLinkUpdate(choice)}
+        >
+          {t(`settings.linkUpdate.${choice}`)}
         </button>
       {/each}
     </div>

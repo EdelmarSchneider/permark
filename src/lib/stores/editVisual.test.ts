@@ -113,6 +113,7 @@ function fakeSource(initial: string) {
     caretLine: () => editor.line,
     focus: vi.fn(),
     insertImage: vi.fn(),
+    applyChanges: vi.fn(),
   };
   return editor;
 }
@@ -517,5 +518,79 @@ describe("images in Visual mode", () => {
     fake.writeAsset.mockResolvedValue({ path: "docs/assets/x.png", rel: "assets/x.png", bytes: 4 });
     await edit.addFiles([new File(["abcd"], "x.png", { type: "image/png" })], "drop");
     expect(editor.insertImage).toHaveBeenCalledWith("assets/x.png");
+  });
+});
+
+describe("files moved or renamed in the Explorer", () => {
+  const MOVED = "manual/a.md";
+  const moves = [{ from: "docs", to: "manual" }];
+  const edits = [{ from: 9, to: 15, insert: "new/old.md" }];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    return () => vi.useRealTimers();
+  });
+
+  it("holds back a document with unsaved edits in Visual mode and hands over no text for it", async () => {
+    const editor = await startVisual();
+    expect(edit.unsavedUnpatchable()).toBeNull();
+    expect(edit.unsavedBuffer()).toBeNull();
+    editor.dirty = true;
+    edit.noteVisual();
+    expect(edit.unsavedUnpatchable()).toBe(PATH);
+    expect(edit.unsavedBuffer()).toBeNull();
+    // back to the saved text: nothing to hold back
+    editor.dirty = false;
+    edit.noteVisual();
+    expect(edit.unsavedUnpatchable()).toBeNull();
+  });
+
+  it("holds back a document with unsaved edits whose editor is not on screen yet", async () => {
+    const editor = await startVisual();
+    editor.dirty = true;
+    edit.noteVisual();
+    bridge.editor = undefined;
+    expect(edit.unsavedUnpatchable()).toBe(PATH);
+    expect(edit.unsavedBuffer()).toBeNull();
+  });
+
+  it("does not hold back a document with unsaved edits in Source mode: its text is patched", async () => {
+    const editor = await startSource();
+    expect(edit.unsavedUnpatchable()).toBeNull();
+    editor.text = `${ORIGINAL}more\n`;
+    edit.noteChange(editor.text.length);
+    expect(edit.unsavedUnpatchable()).toBeNull();
+    expect(edit.unsavedBuffer()).toEqual({ path: PATH, text: `${ORIGINAL}more\n` });
+  });
+
+  it("never patches the Visual editor with link changes, and keeps the document and its edits", async () => {
+    const editor = await startVisual();
+    editor.dirty = true;
+    edit.noteVisual();
+    const applied = edit.followMoves(moves, { path: PATH, newPath: MOVED, edits }, editor.current);
+    expect(applied).toBe(false);
+    expect(editor.loads).toHaveLength(0);
+    expect(editor.rebased).toHaveLength(0);
+    expect(edit.path).toBe(MOVED);
+    expect(edit.dirty).toBe(true);
+    // the file moved with its content: the check finds the version it started from, no conflict
+    fake.documentSource.mockResolvedValue({ ...source(ORIGINAL, "h1"), path: MOVED });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fake.documentSource).toHaveBeenCalledWith(MOVED);
+    expect(edit.conflict).toBeNull();
+    expect(editor.loads).toHaveLength(0);
+  });
+
+  it("a clean Visual document takes in the links rewritten on disk", async () => {
+    const editor = await startVisual();
+    expect(edit.followMoves(moves)).toBe(true);
+    fake.documentSource.mockResolvedValue({
+      ...source("# A\n\nrewritten\n\nsecond\n", "h2"),
+      path: MOVED,
+    });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(editor.loads).toHaveLength(1);
+    expect(edit.dirty).toBe(false);
+    expect(edit.conflict).toBeNull();
   });
 });

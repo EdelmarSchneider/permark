@@ -4,6 +4,7 @@
 import { api } from "../api";
 import { DEFAULT_REF_TEMPLATE } from "../reference";
 import { DEFAULT_WIDTH, nextWidth, type ReadingWidth } from "../readingWidth";
+import { DEFAULT_LINK_UPDATE, mapPath } from "../fileOps";
 import { DEFAULT_EDIT_MODE, type EditMode } from "../editMode";
 import { DEFAULT_RIGHT_TAB, type RightTab } from "../rightPanel";
 import {
@@ -14,7 +15,7 @@ import {
   normalizeSession,
   stepZoom,
 } from "../session";
-import type { SessionState, TreeFilter } from "../types";
+import type { LinkUpdate, Move, SessionState, TreeFilter } from "../types";
 
 const SAVE_DELAY_MS = 600;
 
@@ -32,6 +33,8 @@ class SessionStore {
   autoReveal = $state(true);
   /** The view the right panel shows. */
   rightTab = $state<RightTab>(DEFAULT_RIGHT_TAB);
+  /** Whether moving files in the Explorer rewrites the links to them. */
+  linkUpdate = $state<LinkUpdate>(DEFAULT_LINK_UPDATE);
   /** How a document opens for editing (the switch in the header changes the mode of the open document only). */
   editMode = $state<EditMode>(DEFAULT_EDIT_MODE);
   systemDark = $state(false);
@@ -68,6 +71,7 @@ class SessionStore {
     this.treeFilter = s.treeFilter;
     this.autoReveal = s.autoReveal;
     this.rightTab = s.rightTab;
+    this.linkUpdate = s.linkUpdate;
     this.editMode = s.editMode;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
@@ -89,6 +93,7 @@ class SessionStore {
       treeFilter: this.treeFilter,
       autoReveal: this.autoReveal,
       rightTab: this.rightTab,
+      linkUpdate: this.linkUpdate,
       editMode: this.editMode,
     };
   }
@@ -122,6 +127,13 @@ class SessionStore {
   noteDoc(path: string | null): void {
     this.lastDoc = path;
     this.scrollTop = 0;
+    this.persist();
+  }
+
+  /** Files or folders were moved or renamed: the document to reopen next time is where it is now. */
+  followMoves(moves: readonly Move[]): void {
+    if (this.lastDoc === null) return;
+    this.lastDoc = mapPath(this.lastDoc, moves);
     this.persist();
   }
 
@@ -180,6 +192,11 @@ class SessionStore {
 
   toggleAutoReveal(): void {
     this.autoReveal = !this.autoReveal;
+    this.persist();
+  }
+
+  setLinkUpdate(value: LinkUpdate): void {
+    this.linkUpdate = value;
     this.persist();
   }
 

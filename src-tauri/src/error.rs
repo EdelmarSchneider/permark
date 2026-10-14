@@ -5,6 +5,7 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 use crate::edit::EditError;
+use crate::fileops::FileOpError;
 use crate::git::GitError;
 use crate::meta::MetaError;
 use crate::render::RenderError;
@@ -28,6 +29,8 @@ pub enum AppError {
     Meta(#[from] MetaError),
     #[error(transparent)]
     Edit(#[from] EditError),
+    #[error(transparent)]
+    FileOps(#[from] FileOpError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -54,6 +57,7 @@ impl AppError {
             Self::Session(_) => "session",
             Self::Meta(e) => e.kind(),
             Self::Edit(e) => e.kind(),
+            Self::FileOps(e) => e.kind(),
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",

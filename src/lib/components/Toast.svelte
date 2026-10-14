@@ -110,7 +110,17 @@
       <div style="min-width:0">
         <div class="toast__title" style="white-space:normal">{current.text}</div>
       </div>
-      <span></span>
+      {#if current.action}
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm btn--accent-text"
+          onclick={() => toast.runAction()}
+        >
+          {current.action.label}
+        </button>
+      {:else}
+        <span></span>
+      {/if}
     {/if}
     {#if current.type === "update" && installing}
       <span></span>

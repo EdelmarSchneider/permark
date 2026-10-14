@@ -1,0 +1,199 @@
+/* File operations in the Explorer (docs/design/v0.2.md section 17) ------------------------------------------------ */
+
+/* A drag over rows must not select text, and the rows are the handles. */
+.tree {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tree.is-dragging,
+.tree.is-dragging .tree-row {
+  cursor: grabbing;
+}
+
+/* Rows picked with Ctrl and Shift, cut rows, and the rows of a drag. */
+.tree-row.is-picked {
+  background: var(--accent-soft);
+}
+.tree-row.is-picked.is-selected {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.tree-row.is-cut {
+  opacity: 0.55;
+}
+.tree-row.is-dragged {
+  opacity: 0.5;
+}
+.tree-row.is-drop-target {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.scroll.is-drop-root {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
+}
+
+/* The name field of a rename sits in the row; its message floats under it. */
+.tree-row--renaming {
+  position: relative;
+  cursor: default;
+}
+.tree-row--renaming .tree-input {
+  height: 20px;
+}
+.tree-input__message {
+  position: absolute;
+  left: 8px;
+  top: calc(100% + 2px);
+  z-index: 3;
+  max-width: calc(100% - 16px);
+  padding: 3px 8px;
+  border: 1px solid var(--git-deleted);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--git-deleted-text);
+  font-size: var(--fs-ui-xs);
+  white-space: normal;
+  box-shadow: var(--shadow-pop);
+}
+[data-theme="dark"] .tree-input__message {
+  background: var(--surface-2);
+}
+.tree-input__message:empty {
+  display: none;
+}
+
+/* The chip that follows the pointer during a drag. */
+.drag-chip {
+  position: fixed;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 280px;
+  padding: 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-ui-sm);
+  box-shadow: var(--shadow-pop);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-theme="dark"] .drag-chip {
+  background: var(--surface-2);
+}
+.drag-chip.is-refused {
+  border-color: var(--border-strong);
+  color: var(--muted);
+}
+
+/* "Update 7 links in 4 files?" */
+.dialog--links {
+  width: 560px;
+}
+.dialog--links p {
+  margin: 0 0 10px;
+}
+.link-list__moves {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  font-size: var(--fs-ui-sm);
+}
+[data-theme="dark"] .link-list__moves {
+  background: var(--surface-2);
+}
+.link-list__moves li {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-list {
+  max-height: min(320px, 40vh);
+  overflow: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
+  font-size: var(--fs-ui-sm);
+}
+.link-list details {
+  border-top: 1px solid var(--border);
+}
+.link-list details:first-child {
+  border-top: 0;
+}
+.link-list summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  cursor: pointer;
+  list-style: none;
+}
+.link-list summary::-webkit-details-marker {
+  display: none;
+}
+.link-list summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+.link-list__file {
+  font-weight: 600;
+}
+.link-list__where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+}
+.link-list ul {
+  list-style: none;
+  margin: 0 0 6px;
+  padding: 0 0 0 12px;
+}
+.link-list li {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0;
+}
+.link-list code {
+  font-family: var(--font-code);
+  font-size: 12px;
+  word-break: break-all;
+}
+.link-list__line {
+  min-width: 52px;
+  color: var(--faint);
+}
+.link-list__note {
+  margin: 8px 0 4px;
+  color: var(--muted);
+}
+.link-list__skipped {
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-row.is-drop-target,
+  .scroll.is-drop-root {
+    transition: none;
+  }
+}
+
+/* A row of an operation says what happened in a sentence: it wraps instead of cutting it off. */
+.feed-row--op .feed-row__name {
+  white-space: normal;
+}
+.feed-row--op:disabled {
+  cursor: default;
+}

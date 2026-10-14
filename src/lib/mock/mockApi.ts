@@ -25,6 +25,7 @@ import {
   resolveMockLink,
   searchDocs,
 } from "./fixtures";
+import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./mockFileOps";
 import {
   createDocument,
   documentSource,
@@ -47,6 +48,7 @@ let savedSession: SessionState | null = {
   treeFilter: null,
   autoReveal: true,
   rightTab: "changes",
+  linkUpdate: "ask",
   editMode: "visual",
 };
 let stateLocation: "appData" | "project" = "appData";
@@ -111,5 +113,10 @@ export const mockImpl: Api = {
   saveDocument: (path, text, expectedHash) => saveDocument(path, text, expectedHash),
   createDocument: (path, text) => createDocument(path, text),
   writeAsset: (docPath, nameHint, data) => writeAsset(docPath, nameHint, data),
+  previewMove: (moves, scanLinks, heldBack) => previewMove(moves, scanLinks, heldBack),
+  applyMove: (planId, updateLinks, buffers) => applyMove(planId, updateLinks, buffers),
+  deleteEntries: (paths) => deleteEntries(paths),
+  newFolder: (path) => newFolder(path),
+  undoFileOp: (opId) => undoFileOp(opId),
   on: async () => () => {},
 };

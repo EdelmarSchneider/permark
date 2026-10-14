@@ -63,6 +63,18 @@ describe("NavHistory", () => {
     expect(h.recentPaths()).toEqual(["c.md", "a.md", "b.md"]);
   });
 
+  it("follows moved and renamed files, and the folders they are in", () => {
+    const h = new NavHistory();
+    ["docs/a.md", "docs/sub/b.md", "README.md"].forEach((p) => h.push(p));
+    h.rename([
+      { from: "docs", to: "manual" },
+      { from: "README.md", to: "intro.md" },
+    ]);
+    expect(h.recentPaths()).toEqual(["intro.md", "manual/sub/b.md", "manual/a.md"]);
+    // the position in the history stays
+    expect(h.back()?.path).toBe("manual/sub/b.md");
+  });
+
   it("caps its length", () => {
     const h = new NavHistory();
     for (let i = 0; i < 150; i++) h.push(`f${i}.md`);

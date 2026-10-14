@@ -39,7 +39,24 @@ export type BulkEntry = {
   rescan: boolean;
 };
 
-export type FeedEntry = FileEntry | BulkEntry;
+/**
+ * Something the person did in the Explorer: moved or renamed files, deleted some, made a folder, undid one of these.
+ * It is one row however many files it touched; the file system's reports of it are not shown (see `OwnWrites`).
+ */
+export type OperationEntry = {
+  type: "op";
+  id: string;
+  kind: "moved" | "renamed" | "deleted" | "folder" | "undone";
+  atMs: number;
+  /** One line, ready to show: "Moved 2 files, 7 links updated". */
+  summary: string;
+  /** What it touched: the path now, and where a moved item came from. */
+  items: { path: string; from?: string }[];
+  /** Why some documents were not updated, one line each. */
+  notes: string[];
+};
+
+export type FeedEntry = FileEntry | BulkEntry | OperationEntry;
 
 export type FeedUpdate = {
   /** File entries touched by the batch (empty for a bulk batch). */
@@ -101,8 +118,15 @@ export class FeedStore {
   /** Entries to show; "docs only" hides non-Markdown files and reports how many were hidden. */
   view(docsOnly: boolean): { entries: FeedEntry[]; hidden: number } {
     if (!docsOnly) return { entries: this.list, hidden: 0 };
-    const entries = this.list.filter((e) => e.type === "bulk" || e.isDoc);
+    const entries = this.list.filter((e) => e.type !== "file" || e.isDoc);
     return { entries, hidden: this.list.length - entries.length };
+  }
+
+  /** Adds the row of an operation of the Explorer, on top. */
+  addOperation(op: Omit<OperationEntry, "type" | "id">): OperationEntry {
+    const entry: OperationEntry = { ...op, type: "op", id: `op-${++this.seq}` };
+    this.list = [entry, ...this.list].slice(0, MAX_ENTRIES);
+    return entry;
   }
 
   private addChange(change: FsChange): FileEntry {

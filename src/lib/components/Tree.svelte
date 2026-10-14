@@ -1,13 +1,23 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
+  import { trackPointerDrag } from "../dom/treeDrag";
+  import {
+    dropFolder,
+    dropProblem,
+    extendSelection,
+    isRootPath,
+    selectAfterClick,
+    targetsOf,
+    topLevelOnly,
+  } from "../fileOps";
   import { gitStateLabel } from "../gitLabels";
-  import { t } from "../i18n";
-  import { isMarkdown } from "../paths";
+  import { t, tn } from "../i18n";
+  import { dirname, isMarkdown } from "../paths";
   import { nearestScrollTop } from "../reveal";
   import { app } from "../stores/app.svelte";
-  import { dirname } from "../paths";
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
+  import { fileops } from "../stores/fileops.svelte";
   import { filter } from "../stores/filter.svelte";
   import { ui } from "../stores/ui.svelte";
   import { tags } from "../stores/tags.svelte";
@@ -17,6 +27,7 @@
   import type { TreeNode } from "../types";
   import Icon from "./Icon.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
+  import TreeEntryInput from "./TreeEntryInput.svelte";
   import TreeNameInput from "./TreeNameInput.svelte";
 
   type Props = {
@@ -35,9 +46,13 @@
   let menu = $state<{ x: number; y: number; node: TreeNode } | null>(null);
   let typed = "";
   let typedTimer: ReturnType<typeof setTimeout> | null = null;
+  /** A drag just ended: the click that follows the release must not open or select anything. */
+  let afterDrag = false;
 
   const rows = $derived(flattenTree(nodes, vault.expanded));
+  const rowPaths = $derived(rows.map((r) => r.node.path));
   const selected = $derived(docs.current?.path ?? null);
+  const picked = $derived(fileops.selection.size > 1 ? fileops.selection : null);
 
   // a filter change can leave fewer rows than the focused index
   $effect(() => {
@@ -65,11 +80,67 @@
     rowEl(index)?.scrollIntoView({ block: "nearest" });
   }
 
+  /** The paths a key press acts on: the picked rows when the focused row is one of them, else the focused row. */
+  function keyTargets(): string[] {
+    const row = rows[focusIndex];
+    return row ? targetsOf(fileops.selection, row.node.path) : [];
+  }
+
   function onkeydown(e: KeyboardEvent): void {
+    // the name field of a rename or a new folder takes its own keys
+    if (e.target instanceof HTMLInputElement) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && !e.altKey && !e.shiftKey) {
+      const key = e.key.toLowerCase();
+      if (key === "z") {
+        e.preventDefault();
+        void fileops.undo();
+      } else if (key === "x" && !vault.isSimple) {
+        e.preventDefault();
+        fileops.cutPicked(keyTargets());
+      } else if (key === "v" && fileops.cut.size > 0) {
+        e.preventDefault();
+        const row = rows[focusIndex];
+        void fileops.paste(row ? dropFolder({ path: row.node.path, isDir: row.isDir }) : "");
+      }
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (e.key === "F2") {
+      const row = rows[focusIndex];
+      if (row) {
+        e.preventDefault();
+        fileops.startRename(row.node.path);
+      }
+      return;
+    }
+    if (e.key === "Delete") {
+      e.preventDefault();
+      void fileops.remove(keyTargets());
+      return;
+    }
+    if (e.key === "Escape") {
+      if (fileops.selection.size > 0 || fileops.cut.size > 0) {
+        e.preventDefault();
+        fileops.clearPicked();
+      }
+      return;
+    }
+
     const result = navigate(rows, focusIndex, e.key);
     if (result) {
       e.preventDefault();
+      if (e.shiftKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        // Shift+Arrow extends the selection from the row it started on
+        const anchor = fileops.anchor ?? rows[focusIndex]?.node.path ?? null;
+        const to = rows[result.focus]?.node.path;
+        if (anchor !== null && to !== undefined) {
+          fileops.pick(extendSelection(rowPaths, anchor, to), anchor);
+        }
+        void follow(result.focus);
+        return;
+      }
       if (result.toggle) vault.toggle(result.toggle.path, result.toggle.expand);
       if (result.open) void app.openDoc(result.open);
       void follow(result.focus);
@@ -93,15 +164,114 @@
     else void app.openDoc(row.node.path);
   }
 
+  /** A click: Ctrl and Shift pick rows, a plain click opens the file or opens and closes the folder. */
+  function onrowclick(e: MouseEvent, index: number): void {
+    if (afterDrag) {
+      afterDrag = false;
+      return;
+    }
+    const row = rows[index];
+    if (!row) return;
+    const out = selectAfterClick(rowPaths, fileops.selection, fileops.anchor, row.node.path, {
+      ctrl: e.ctrlKey || e.metaKey,
+      shift: e.shiftKey,
+    });
+    fileops.pick(out.selection, out.anchor);
+    if (out.plain) {
+      activate(index);
+    } else {
+      focusIndex = index;
+      markCursor(index);
+    }
+  }
+
+  // ---- drag and drop -------------------------------------------------------------------------
+
+  /** Where a drop on this element lands, or null: a row stands for its folder, the rest of the Explorer for the project. */
+  function folderUnder(element: Element | null): string | null {
+    const drag = fileops.drag;
+    if (!drag) return null;
+    const row = element?.closest<HTMLElement>("[data-path]");
+    let folder: string | null = null;
+    if (row) {
+      folder = dropFolder({ path: row.dataset.path ?? "", isDir: row.dataset.dir === "true" });
+    } else if (element?.closest("[data-drop-root]")) {
+      folder = "";
+    }
+    return folder !== null && dropProblem(drag.sources, folder) === null ? folder : null;
+  }
+
+  function onrowpointerdown(e: PointerEvent, index: number): void {
+    const row = rows[index];
+    if (!row || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    if (fileops.renaming || fileops.busy || isRootPath(row.node.path)) return;
+    if (e.target instanceof HTMLElement && e.target.closest("input")) return;
+    const path = row.node.path;
+    trackPointerDrag(e, {
+      begin: () => {
+        const inPicked = fileops.selection.has(path) && fileops.selection.size > 1;
+        const sources = inPicked ? topLevelOnly([...fileops.selection]) : [path];
+        fileops.dragPoint = { x: e.clientX, y: e.clientY };
+        fileops.drag = { sources, over: null };
+        afterDrag = true;
+      },
+      over: ({ folder, x, y }) => {
+        // the rows read `drag`, which changes only when the target does; the pointer has its own state
+        fileops.dragPoint = { x, y };
+        if (fileops.drag && fileops.drag.over !== folder) {
+          fileops.drag = { ...fileops.drag, over: folder };
+        }
+      },
+      expand: (dir) => vault.toggle(dir, true),
+      end: (folder) => {
+        const drag = fileops.drag;
+        fileops.drag = null;
+        if (drag && folder !== null) void fileops.move(drag.sources, folder);
+        // the click that follows a release comes at once; one that never comes must not swallow the next
+        setTimeout(() => (afterDrag = false), 0);
+      },
+      folderAt: folderUnder,
+      scroller: () => container?.closest<HTMLElement>(".scroll") ?? null,
+    });
+  }
+
+  // ---- menu ----------------------------------------------------------------------------------
+
   function entriesFor(node: TreeNode): MenuEntry[] {
     const isFile = node.kind === "file";
+    const targets = targetsOf(fileops.selection, node.path);
+    const isRoot = isRootPath(node.path);
+    const folder = isFile ? dirname(node.path) : node.path;
     return [
       {
         id: "new",
         label: t("newFile.newFile"),
         icon: "file-plus",
         hint: "Ctrl+N",
-        onselect: () => app.startNewFile(isFile ? dirname(node.path) : node.path),
+        onselect: () => app.startNewFile(folder),
+      },
+      {
+        id: "newFolder",
+        label: t("fileOps.newFolder"),
+        icon: "folder-plus",
+        onselect: () => fileops.startNewFolder(folder),
+      },
+      { type: "separator" },
+      {
+        id: "rename",
+        label: t("fileOps.rename"),
+        icon: "pencil",
+        hint: "F2",
+        disabled: isRoot || targets.length > 1,
+        onselect: () => fileops.startRename(node.path),
+      },
+      {
+        id: "delete",
+        label: tn("fileOps.deleteSelected", targets.length),
+        icon: "trash",
+        hint: "Del",
+        disabled: isRoot,
+        onselect: () => void fileops.remove(targets),
       },
       { type: "separator" },
       {
@@ -176,9 +346,10 @@
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div
   bind:this={container}
-  class="tree"
+  class={["tree", fileops.drag && "is-dragging"]}
   role="tree"
   aria-label={label}
+  aria-multiselectable="true"
   tabindex="0"
   aria-activedescendant={hasFocus ? `${label}-row-${focusIndex}` : undefined}
   onfocus={() => (hasFocus = true)}
@@ -188,12 +359,17 @@
   {#if root && ui.newFile?.folder === ""}
     {#key ui.newFile.n}<TreeNameInput folder="" depth={0} />{/key}
   {/if}
+  {#if root && fileops.newFolder?.folder === ""}
+    {#key fileops.newFolder.n}<TreeEntryInput variant="folder" folder="" depth={0} />{/key}
+  {/if}
   {#each rows as row, i (row.node.path)}
     {@const git = badges && !row.isDir ? vault.git?.files[row.node.path] : undefined}
     {@const badge = badgeFor(git?.state)}
     {@const rollup = badges && row.isDir ? vault.rollups.get(row.node.path) : undefined}
     {@const branch =
       row.node.kind === "worktree" ? vault.worktree(row.node.name)?.branch : undefined}
+    {@const isPicked = picked?.has(row.node.path) === true}
+    {@const renaming = fileops.renaming?.path === row.node.path}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       id="{label}-row-{i}"
@@ -201,6 +377,11 @@
         "tree-row",
         row.isDir && "tree-row--dir",
         selected === row.node.path && "is-selected",
+        isPicked && "is-picked",
+        fileops.cut.has(row.node.path) && "is-cut",
+        fileops.drag?.sources.includes(row.node.path) && "is-dragged",
+        row.isDir && fileops.drag?.over === row.node.path && "is-drop-target",
+        renaming && "tree-row--renaming",
         filter.forced.has(row.node.path) && "is-filtered",
         hasFocus && focusIndex === i && "is-focused",
         git?.state === "deleted" && "is-deleted",
@@ -209,21 +390,25 @@
       role="treeitem"
       tabindex="-1"
       aria-expanded={row.isDir ? row.expanded : undefined}
-      aria-selected={selected === row.node.path}
+      aria-selected={selected === row.node.path || isPicked}
       aria-level={row.depth + 1}
       style:--depth={row.depth}
       data-index={i}
       data-path={row.node.path}
-      title={row.node.kind === "worktree"
-        ? row.node.path
-        : row.isDir
-          ? undefined
-          : filter.forced.has(row.node.path)
-            ? t("filter.hiddenFile")
-            : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
-                t("tags.tooltipTags", { list }),
-              )}
-      onclick={() => activate(i)}
+      data-dir={row.isDir}
+      title={renaming
+        ? undefined
+        : row.node.kind === "worktree"
+          ? row.node.path
+          : row.isDir
+            ? undefined
+            : filter.forced.has(row.node.path)
+              ? t("filter.hiddenFile")
+              : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
+                  t("tags.tooltipTags", { list }),
+                )}
+      onclick={(e) => onrowclick(e, i)}
+      onpointerdown={(e) => onrowpointerdown(e, i)}
       oncontextmenu={(e) => {
         e.preventDefault();
         focusIndex = i;
@@ -241,7 +426,13 @@
       {:else if !row.isDir}
         <Icon name={isMarkdown(row.node.path) ? "file-text" : "file"} class="file-icon" />
       {/if}
-      <span class="tree-name">{row.node.name}</span>
+      {#if renaming && fileops.renaming}
+        {#key fileops.renaming.n}
+          <TreeEntryInput variant="rename" path={row.node.path} isDir={row.isDir} />
+        {/key}
+      {:else}
+        <span class="tree-name">{row.node.name}</span>
+      {/if}
       {#if edit.dirty && edit.path === row.node.path}
         <span class="dirty-dot" role="img" aria-label={t("edit.unsaved")} title={t("edit.unsaved")}
         ></span>
@@ -264,6 +455,11 @@
     </div>
     {#if row.isDir && row.expanded && ui.newFile?.folder === row.node.path}
       {#key ui.newFile.n}<TreeNameInput folder={row.node.path} depth={row.depth + 1} />{/key}
+    {/if}
+    {#if row.isDir && row.expanded && fileops.newFolder?.folder === row.node.path}
+      {#key fileops.newFolder.n}
+        <TreeEntryInput variant="folder" folder={row.node.path} depth={row.depth + 1} />
+      {/key}
     {/if}
   {/each}
 </div>

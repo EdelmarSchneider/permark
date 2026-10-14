@@ -4,10 +4,11 @@
 import { api } from "../api";
 import type { FindMode } from "../find";
 import { errorText } from "../errors";
+import { isInside, mapPath } from "../fileOps";
 import { t } from "../i18n";
 import { NavHistory } from "../history";
 import { shouldAutoReveal } from "../reveal";
-import type { DocumentView, FsBatch, FsChange } from "../types";
+import type { DocumentView, FsBatch, FsChange, Move } from "../types";
 import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
@@ -225,6 +226,56 @@ class DocStore {
       this.history.back();
       this.syncNav();
     }
+  }
+
+  // ---- file operations of the Explorer ------------------------------------------------------------
+
+  /**
+   * Files or folders were moved or renamed here (not by someone else, so there is no tombstone): the history follows
+   * them, and the open document is shown again from where it is now, with nothing marked as changed. A document that
+   * did not move is read again anyway, because its links may have been rewritten.
+   */
+  async followMoves(moves: readonly Move[]): Promise<void> {
+    this.history.rename(moves);
+    const path = this.current?.path;
+    if (!path) return;
+    const now = mapPath(path, moves);
+    if (now === path) {
+      const view = await this.fetchCurrent();
+      if (view) this.applyQuiet(view);
+      return;
+    }
+    const token = ++this.token;
+    let view: DocumentView;
+    try {
+      [view] = await Promise.all([api.readDocument(now), tags.preload(now)]);
+    } catch {
+      if (token === this.token) this.markDeleted(null);
+      return;
+    }
+    if (token !== this.token) return;
+    this.cancelDeleteCheck();
+    this.current = view;
+    this.error = null;
+    this.deleted = null;
+    this.request = {
+      rev: ++this.rev,
+      view,
+      mode: "fresh",
+      anchor: null,
+      locate: null,
+      scrollTop: this.scrollTop,
+      followScroll: false,
+      diffAgainstLast: false,
+      quiet: true,
+    };
+    this.syncNav();
+  }
+
+  /** Files or folders were deleted here: the open document is shown as deleted when it was one of them. */
+  followRemoved(paths: readonly string[]): void {
+    const path = this.current?.path;
+    if (path && paths.some((p) => isInside(path, p))) this.markDeleted(null);
   }
 
   /** Dismisses the "deleted" notice: back to the previous document, or an empty view. */

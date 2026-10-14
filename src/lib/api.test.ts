@@ -49,6 +49,11 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   saveDocument: ["docs/a.md", "# Title", "00ff00ff00ff00ff"],
   createDocument: ["docs/new.md", "# New"],
   writeAsset: ["docs/a.md", "shot.png", "aGVsbG8="],
+  previewMove: [[{ from: "docs/a.md", to: "docs/b.md" }], true, ["docs/c.md"]],
+  applyMove: [7, true, [{ path: "docs/a.md", text: "# A" }]],
+  deleteEntries: [["docs/a.md"]],
+  newFolder: ["docs/new"],
+  undoFileOp: [3],
 };
 
 describe("tauriApi", () => {

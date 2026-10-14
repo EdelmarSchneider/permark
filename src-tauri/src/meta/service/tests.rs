@@ -436,6 +436,45 @@ fn renamed_files_take_their_tags_along() {
 }
 
 #[test]
+fn the_files_of_a_renamed_folder_take_their_tags_along() {
+    let fx = Fx::new();
+    fx.write("docs/a.md", "# A\n");
+    fx.write("docs/deep/b.md", "# B\n");
+    fx.write("other/c.md", "# C\n");
+    fx.write("docs.md", "# D\n");
+    let svc = fx.service();
+    for path in ["docs/a.md", "docs/deep/b.md", "other/c.md", "docs.md"] {
+        svc.set_tags(path, &s(&["keep"])).expect("tags");
+    }
+    fs::rename(
+        fx.project.path().join("docs"),
+        fx.project.path().join("manual"),
+    )
+    .expect("rename");
+    svc.rename_tree("docs", "manual");
+    for moved in ["manual/a.md", "manual/deep/b.md"] {
+        assert_eq!(
+            svc.file_meta(moved).expect("moved").tags.len(),
+            1,
+            "{moved}"
+        );
+    }
+    // the neighbours stay where they are, and the old paths hold nothing
+    for stays in ["other/c.md", "docs.md"] {
+        assert_eq!(
+            svc.file_meta(stays).expect("stays").tags.len(),
+            1,
+            "{stays}"
+        );
+    }
+    assert!(
+        svc.file_meta("docs/a.md").expect("old").tags.is_empty(),
+        "the old path holds nothing"
+    );
+    svc.stop();
+}
+
+#[test]
 fn entries_of_missing_files_are_kept_until_clean_up() {
     let fx = Fx::new();
     fx.write("here.md", "# A\n");
@@ -843,10 +882,10 @@ fn a_failed_write_is_tried_again_until_it_works() {
     // something that cannot be replaced is in the way (a directory stands in for a locked file)
     fs::create_dir_all(fx.project_meta()).expect("mkdir");
     svc.set_tags("a.md", &s(&["precious"])).expect("tags");
-    wait_until("the failure to be reported", || {
-        svc.status().write_error.is_some()
+    // The error is recorded under the lock and the UI is told a moment later, so wait for both.
+    wait_until("the failure to be reported and the UI told", || {
+        svc.status().write_error.is_some() && fx.notified.load(Ordering::SeqCst) >= 2
     });
-    assert!(fx.notified.load(Ordering::SeqCst) >= 2, "the UI is told");
     // the edit is still in memory, and nobody touches the file: the obstacle goes away
     assert_eq!(svc.file_meta("a.md").expect("a").tags.len(), 1);
     fs::remove_dir(fx.project_meta()).expect("rmdir");
