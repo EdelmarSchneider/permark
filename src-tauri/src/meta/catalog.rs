@@ -114,6 +114,18 @@ impl Catalog {
         Self { rows }
     }
 
+    /// A copy in which the rows of the given files are replaced. Files that are not listed are left
+    /// out: a new file needs a full scan.
+    pub fn patched(&self, updates: Vec<Row>) -> Self {
+        let mut rows = self.rows.clone();
+        for update in updates {
+            if let Ok(at) = rows.binary_search_by(|r| r.path.cmp(&update.path)) {
+                rows[at] = update;
+            }
+        }
+        Self { rows }
+    }
+
     /// Tags by number of files, most files first, then by name.
     pub fn tag_counts(&self) -> Vec<TagCount> {
         let mut counts: BTreeMap<&str, (usize, bool)> = BTreeMap::new();
@@ -319,6 +331,29 @@ mod tests {
         assert_eq!(live.description, "The feed.");
         assert_eq!(live.modified_ms, 7);
         assert_eq!(index[1].tags, Vec::<String>::new());
+    }
+
+    #[test]
+    fn patching_replaces_the_rows_of_the_given_files_only() {
+        let c = sample();
+        let patched = c.patched(vec![
+            row("plan.md", &[], &["fresh"], "Now tagged"),
+            row("not-listed.md", &[], &["ghost"], ""),
+        ]);
+        let names: Vec<String> = patched.tag_counts().into_iter().map(|t| t.name).collect();
+        assert!(names.contains(&"fresh".to_owned()));
+        assert!(
+            !names.contains(&"ghost".to_owned()),
+            "unknown files need a scan"
+        );
+        assert_eq!(patched.untagged_count(), c.untagged_count() - 1);
+        // the original is untouched
+        assert!(!c.tag_counts().iter().any(|t| t.name == "fresh"));
+        // the order by path is kept
+        let paths: Vec<String> = patched.index().into_iter().map(|e| e.path).collect();
+        let mut sorted = paths.clone();
+        sorted.sort();
+        assert_eq!(paths, sorted);
     }
 
     #[test]

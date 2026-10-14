@@ -246,6 +246,10 @@ fn start_watcher(
                 MetaService::without_meta_file(&mut out.all_changes);
                 MetaService::without_meta_file(&mut out.batch.changes);
             }
+            // Lost events or a folder that appeared: what the files hold has to be looked at again.
+            if out.batch.rescan || out.tree_changed {
+                meta.invalidate();
+            }
             let has_batch = out.has_batch();
             let WatchOutput {
                 batch,
@@ -323,6 +327,7 @@ impl Workspace {
             Arc::clone(&vault),
             store.meta_path(),
             store.location() == StateLocation::Project,
+            store.legacy_meta_path(),
             Timing::default(),
             Arc::new(move || meta_sink.meta_changed()),
         ));
@@ -721,13 +726,14 @@ impl Workspace {
             return;
         }
         self.save_last_visit();
-        self.meta.stop();
-        self.indexer.stop();
+        // The watcher goes first: what it reports last (a rename that moves tags) is still written.
         if let Ok(mut w) = self.watcher.lock() {
             if let Some(w) = w.take() {
                 w.stop();
             }
         }
+        self.meta.stop();
+        self.indexer.stop();
         self.git.shutdown();
     }
 }
@@ -1319,6 +1325,8 @@ deepword
         wait_until("the delayed write", || {
             std::fs::read_to_string(&meta_file).is_ok_and(|t| t.contains("\"after\""))
         });
+        // A negative proof: wait longer than the watcher's quiet period, then look. On a slow machine
+        // this can pass without the watcher having reported yet, but it cannot fail without a leak.
         thread::sleep(Duration::from_millis(700));
         let seen = fs_paths(&fx.rec);
         assert!(
@@ -1342,6 +1350,47 @@ deepword
         wait_until("the edit in the feed", || {
             fs_paths(&fx.rec).iter().any(|p| p.ends_with("meta.toml"))
         });
+        ws.close();
+    }
+
+    #[test]
+    fn a_project_that_gets_a_trailmark_folder_from_elsewhere_keeps_the_tags_added_before() {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "a.md",
+            "# A
+",
+        );
+        let appdata_meta = StateStore::open(fx.app.path(), fx.project.path()).meta_path();
+        let ws = fx.open();
+        ws.set_file_tags("a.md", &["early".to_owned()])
+            .expect("tags");
+        ws.close();
+        assert!(appdata_meta.exists());
+
+        // a teammate commits .trailmark/, and it arrives with a pull
+        std::fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+        std::fs::write(
+            fx.project.path().join(".trailmark/meta.toml"),
+            "[files.\"a.md\"]
+tags = [\"team\"]
+",
+        )
+        .expect("write");
+
+        let ws = fx.open();
+        let meta = ws.file_meta("a.md").expect("meta");
+        let mut names: Vec<&str> = meta.tags.iter().map(|t| t.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, ["early", "team"]);
+        let text = std::fs::read_to_string(fx.project.path().join(".trailmark/meta.toml"))
+            .expect("meta.toml");
+        assert!(
+            text.contains("\"early\"") && text.contains("\"team\""),
+            "{text}"
+        );
+        assert!(!appdata_meta.exists(), "the AppData copy is retired");
         ws.close();
     }
 

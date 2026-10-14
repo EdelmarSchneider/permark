@@ -54,6 +54,8 @@ pub struct StateStore {
     location: StateLocation,
     /// Directory holding `session.json` and `last_visit.json`.
     dir: PathBuf,
+    /// This project's folder in AppData, which holds the state of a project that has no `.trailmark/`.
+    appdata_dir: PathBuf,
 }
 
 /// Stable, case-insensitive-on-Windows key for a project folder.
@@ -73,18 +75,17 @@ impl StateStore {
     pub fn open(app_data_dir: &Path, root: &Path) -> Self {
         let root = dunce::simplified(root).to_path_buf();
         let trailmark = root.join(TRAILMARK_DIR);
+        let outside = app_data_dir.join("projects").join(project_key(&root));
         let (location, dir) = if trailmark.is_dir() {
             (StateLocation::Project, trailmark.join("local"))
         } else {
-            (
-                StateLocation::AppData,
-                app_data_dir.join("projects").join(project_key(&root)),
-            )
+            (StateLocation::AppData, outside.clone())
         };
         Self {
             root,
             location,
             dir,
+            appdata_dir: outside,
         }
     }
 
@@ -103,8 +104,14 @@ impl StateStore {
     pub fn meta_path(&self) -> PathBuf {
         match self.location {
             StateLocation::Project => self.root.join(TRAILMARK_DIR).join(META_FILE),
-            StateLocation::AppData => self.dir.join(META_FILE),
+            StateLocation::AppData => self.appdata_dir.join(META_FILE),
         }
+    }
+
+    /// The AppData `meta.toml` of a project that has a `.trailmark/` folder now: tags added before the
+    /// folder existed may still be in it, and have to be merged into the project's file.
+    pub fn legacy_meta_path(&self) -> Option<PathBuf> {
+        (self.location == StateLocation::Project).then(|| self.appdata_dir.join(META_FILE))
     }
 
     /// Project settings from `.trailmark/config.toml`; defaults when missing or invalid.
@@ -238,6 +245,25 @@ mod tests {
         // The shared file is not in the gitignored local/ folder.
         assert!(!s.meta_path().starts_with(s.dir()));
         assert_eq!(f.store().meta_path(), project_file);
+    }
+
+    #[test]
+    fn the_appdata_meta_file_is_only_a_legacy_once_the_project_has_a_trailmark_folder() {
+        let f = fx();
+        let s = f.store();
+        assert_eq!(
+            s.legacy_meta_path(),
+            None,
+            "in AppData it is the file itself"
+        );
+        fs::create_dir(f.project.path().join(".trailmark")).expect("mkdir");
+        let s = f.store();
+        let legacy = s.legacy_meta_path().expect("a legacy path");
+        assert!(legacy.starts_with(f.app.path().join("projects")));
+        assert!(legacy.ends_with("meta.toml"));
+        // it is where the store kept it before the folder existed
+        let before = StateStore::open(f.app.path(), tempfile::tempdir().expect("tmp").path());
+        assert_ne!(before.meta_path(), legacy, "another project, another file");
     }
 
     #[test]

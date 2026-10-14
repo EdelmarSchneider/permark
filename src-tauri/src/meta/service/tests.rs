@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 const QUICK: Timing = Timing {
     quiet: Duration::from_millis(25),
     max_wait: Duration::from_millis(250),
+    retry: Duration::from_millis(20),
 };
 
 struct Fx {
@@ -38,12 +39,23 @@ impl Fx {
     }
 
     fn service_at(&self, path: PathBuf, watched: bool, timing: Timing) -> MetaService {
+        self.service_with(path, watched, None, timing)
+    }
+
+    fn service_with(
+        &self,
+        path: PathBuf,
+        watched: bool,
+        legacy: Option<PathBuf>,
+        timing: Timing,
+    ) -> MetaService {
         let vault = Arc::new(Vault::open(self.project.path()).expect("vault"));
         let n = Arc::clone(&self.notified);
         MetaService::open(
             vault,
             path,
             watched,
+            legacy,
             timing,
             Arc::new(move || {
                 n.fetch_add(1, Ordering::SeqCst);
@@ -66,6 +78,7 @@ impl Fx {
         let lazy = Timing {
             quiet: Duration::from_mins(1),
             max_wait: Duration::from_mins(1),
+            retry: Duration::from_millis(20),
         };
         self.service_at(path, watched, lazy)
     }
@@ -178,6 +191,7 @@ fn constant_changes_cannot_hold_the_write_back_for_ever() {
         Timing {
             quiet: Duration::from_millis(400),
             max_wait: Duration::from_millis(150),
+            retry: Duration::from_millis(20),
         },
     );
     let began = Instant::now();
@@ -588,7 +602,7 @@ fn initializing_leaves_a_team_file_byte_for_byte_and_never_creates_an_empty_one(
 }
 
 #[test]
-fn initializing_does_not_overwrite_a_meta_toml_it_cannot_read() {
+fn initializing_does_not_overwrite_a_meta_toml_it_cannot_read_and_keeps_the_appdata_tags() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n");
@@ -602,9 +616,431 @@ fn initializing_does_not_overwrite_a_meta_toml_it_cannot_read() {
         fs::read_to_string(fx.project_meta()).expect("read"),
         "<<<<<<< HEAD\n"
     );
-    // Still in AppData, still working.
-    svc.stop();
+    // The service is on the project's file now (it must not keep writing to a file that is
+    // abandoned), read-only until that is fixed; the AppData copy waits for the merge.
+    assert!(matches!(
+        svc.set_tags("a.md", &s(&["more"])),
+        Err(MetaError::Unreadable(_))
+    ));
     assert!(fs::read_to_string(fx.app_meta())
         .expect("appdata")
         .contains("mine"));
+
+    // The conflict is resolved by hand: the merge happens, and the AppData file is retired.
+    fx.write(
+        ".trailmark/meta.toml",
+        "[files.\"b.md\"]\ntags = [\"team\"]\n",
+    );
+    assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
+    wait_until("the merge to be written", || !fx.app_meta().exists());
+    let text = fs::read_to_string(fx.project_meta()).expect("read");
+    assert!(
+        text.contains("\"team\"") && text.contains("\"mine\""),
+        "{text}"
+    );
+    assert_eq!(svc.file_meta("a.md").expect("a").tags.len(), 1);
+    assert!(svc.set_tags("a.md", &s(&["mine", "more"])).is_ok());
+    svc.stop();
+}
+
+#[test]
+fn a_project_that_already_has_a_trailmark_folder_takes_the_appdata_tags_in_when_it_opens() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    fx.write("b.md", "# B\n");
+    // tags added before the project had a .trailmark/ folder, in AppData
+    let before = fx.service();
+    before.set_tags("a.md", &s(&["mine"])).expect("tags");
+    before
+        .set_description("a.md", "from appdata")
+        .expect("description");
+    before.stop();
+    assert!(fx.app_meta().exists());
+    // a teammate committed .trailmark/meta.toml in the meantime
+    fx.write(
+        ".trailmark/meta.toml",
+        "[files.\"a.md\"]\ntags = [\"team\"]\ndescription = \"theirs\"\n[files.\"b.md\"]\ntags = [\"b\"]\n",
+    );
+
+    let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
+    // merged at once, before anything is edited, and the AppData copy is gone
+    let text = fs::read_to_string(fx.project_meta()).expect("read");
+    assert!(
+        text.contains("\"mine\"") && text.contains("\"team\""),
+        "{text}"
+    );
+    assert!(text.contains("\"b\""), "{text}");
+    assert!(!fx.app_meta().exists(), "retired");
+    let meta = svc.file_meta("a.md").expect("a");
+    assert_eq!(meta.description, "theirs", "the project's description wins");
+    assert_eq!(names(&meta), [("team", false, true), ("mine", false, true)]);
+    assert_eq!(svc.on_disk_event(), DiskEvent::Echo);
+    svc.stop();
+}
+
+#[test]
+fn opening_with_appdata_tags_and_no_project_file_creates_it() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let before = fx.service();
+    before.set_tags("a.md", &s(&["mine"])).expect("tags");
+    before.stop();
+    fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+
+    let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
+    assert!(fs::read_to_string(fx.project_meta())
+        .expect("created")
+        .contains("\"mine\""));
+    assert!(!fx.app_meta().exists());
+    assert_eq!(svc.file_meta("a.md").expect("a").tags.len(), 1);
+    svc.stop();
+}
+
+#[test]
+fn an_unreadable_project_file_keeps_the_appdata_copy_for_later() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let before = fx.service();
+    before.set_tags("a.md", &s(&["mine"])).expect("tags");
+    before.stop();
+    fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n");
+
+    let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
+    assert!(svc.status().problem.is_some());
+    assert!(fx.app_meta().exists(), "kept");
+    assert_eq!(
+        fs::read_to_string(fx.project_meta()).expect("read"),
+        "<<<<<<< HEAD\n",
+        "left alone"
+    );
+    svc.stop();
+    assert!(fx.app_meta().exists());
+
+    // On the next open the file is fine: the merge happens then.
+    fx.write(".trailmark/meta.toml", "");
+    fs::remove_file(fx.project_meta()).expect("remove");
+    let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
+    assert!(!fx.app_meta().exists());
+    assert_eq!(svc.file_meta("a.md").expect("a").tags.len(), 1);
+    svc.stop();
+}
+
+#[test]
+fn an_appdata_copy_that_cannot_be_read_is_left_where_it_is() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    fs::write(fx.app_meta(), "<<<<<<< HEAD\n").expect("write");
+    fx.write(
+        ".trailmark/meta.toml",
+        "[files.\"a.md\"]\ntags = [\"team\"]\n",
+    );
+    let team = fs::read_to_string(fx.project_meta()).expect("read");
+    let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
+    assert!(fx.app_meta().exists());
+    assert_eq!(fs::read_to_string(fx.project_meta()).expect("read"), team);
+    assert_eq!(svc.file_meta("a.md").expect("a").tags.len(), 1);
+    svc.stop();
+}
+
+#[test]
+fn nothing_is_rewritten_when_the_appdata_copy_adds_nothing() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let before = fx.service();
+    before.set_tags("a.md", &s(&["same"])).expect("tags");
+    before.stop();
+    let team = "# hand formatted\n[files.\"a.md\"]\ntags=[\"same\"]\n";
+    fx.write(".trailmark/meta.toml", team);
+    let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
+    assert_eq!(fs::read_to_string(fx.project_meta()).expect("read"), team);
+    assert!(
+        !fx.app_meta().exists(),
+        "everything in it was already there"
+    );
+    svc.stop();
+}
+
+#[test]
+fn a_file_that_is_cut_off_while_someone_writes_it_is_not_taken_for_empty() {
+    let fx = Fx::new();
+    fx.write("b.md", "# B\n");
+    fx.write("c.md", "# C\n");
+    fx.write(
+        ".trailmark/meta.toml",
+        "[files.\"b.md\"]\ntags = [\"keep\"]\n",
+    );
+    let svc = fx.project_service();
+    assert_eq!(svc.file_meta("b.md").expect("b").tags.len(), 1);
+
+    // An agent writes by truncating first, then writing; we look in between.
+    let full = {
+        let mut e = crate::meta::store::Entries::default();
+        e.set_tags("b.md", &s(&["keep"]));
+        e.set_tags("c.md", &s(&["from-agent"]));
+        e.to_toml()
+    };
+    fs::write(fx.project_meta(), "").expect("truncate");
+    let target = fx.project_meta();
+    let writer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(40));
+        fs::write(target, full).expect("write");
+    });
+    assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
+    writer.join().expect("writer");
+    assert_eq!(svc.file_meta("c.md").expect("c").tags.len(), 1);
+    assert_eq!(
+        svc.file_meta("b.md").expect("b").tags.len(),
+        1,
+        "nothing was wiped on the way"
+    );
+    svc.stop();
+}
+
+#[test]
+fn our_own_write_does_not_wipe_the_others_when_it_meets_a_half_written_file() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    fx.write("b.md", "# B\n");
+    let original = {
+        let mut e = crate::meta::store::Entries::default();
+        e.set_tags("b.md", &s(&["keep"]));
+        e.to_toml()
+    };
+    fx.write(".trailmark/meta.toml", &original);
+    let svc = fx.lazy_service(fx.project_meta(), true);
+    svc.set_tags("a.md", &s(&["mine"])).expect("tags");
+
+    // Just as we are about to write, the agent's tool has truncated the file...
+    fs::write(fx.project_meta(), "").expect("truncate");
+    let (target, content) = (fx.project_meta(), original);
+    let writer = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(40));
+        fs::write(target, content).expect("write");
+    });
+    svc.stop();
+    writer.join().expect("writer");
+    let text = fs::read_to_string(fx.project_meta()).expect("read");
+    assert!(
+        text.contains("\"keep\"") && text.contains("\"mine\""),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_failed_write_is_tried_again_until_it_works() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let svc = fx.project_service();
+    // something that cannot be replaced is in the way (a directory stands in for a locked file)
+    fs::create_dir_all(fx.project_meta()).expect("mkdir");
+    svc.set_tags("a.md", &s(&["precious"])).expect("tags");
+    wait_until("the failure to be reported", || {
+        svc.status().write_error.is_some()
+    });
+    assert!(fx.notified.load(Ordering::SeqCst) >= 2, "the UI is told");
+    // the edit is still in memory, and nobody touches the file: the obstacle goes away
+    assert_eq!(svc.file_meta("a.md").expect("a").tags.len(), 1);
+    fs::remove_dir(fx.project_meta()).expect("rmdir");
+    wait_until("the retry to write the file", || {
+        fs::read_to_string(fx.project_meta()).is_ok_and(|t| t.contains("\"precious\""))
+    });
+    wait_until("the error to clear", || svc.status().write_error.is_none());
+    svc.stop();
+}
+
+#[test]
+fn the_pause_between_retries_grows_and_then_stays_put() {
+    let t = Timing::default();
+    assert_eq!(
+        [1, 2, 3, 4, 100].map(|n| t.backoff(n)),
+        [
+            Duration::from_millis(500),
+            Duration::from_secs(2),
+            Duration::from_secs(10),
+            Duration::from_secs(10),
+            Duration::from_secs(10)
+        ]
+    );
+}
+
+#[test]
+fn an_answer_computed_before_a_change_is_not_kept() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let svc = fx.service();
+    // A scan is under way when a tag is added (here: the change happens inside the "scan").
+    let stale = svc.catalog_via(|s| {
+        let before = s.scan();
+        s.set_tags("a.md", &["fresh".to_owned()]).expect("tags");
+        before
+    });
+    assert!(stale.tag_counts().is_empty(), "the scan saw the old state");
+    // The next question must not be answered from it.
+    assert_eq!(svc.overview().tags[0].name, "fresh");
+    assert_eq!(svc.index()[0].tags, ["fresh"]);
+    svc.stop();
+}
+
+#[test]
+fn an_answer_that_nothing_invalidated_is_kept_and_reused() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let svc = fx.service();
+    let first = svc.catalog();
+    assert!(Arc::ptr_eq(&first, &svc.catalog()));
+    svc.invalidate();
+    assert!(!Arc::ptr_eq(&first, &svc.catalog()));
+    svc.stop();
+}
+
+#[test]
+fn edits_update_the_cached_answers_in_place_while_new_files_need_a_scan() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let svc = fx.service();
+    assert!(svc.overview().tags.is_empty());
+
+    // an agent edits a.md and creates new.md
+    fx.write("a.md", "---\ntags: [edited]\n---\n# A\n");
+    fx.write("new.md", "---\ntags: [created]\n---\n# N\n");
+    svc.on_fs_changes(&[change("a.md"), change("new.md")]);
+    let tags: Vec<String> = svc.overview().tags.into_iter().map(|t| t.name).collect();
+    assert_eq!(
+        tags,
+        ["edited"],
+        "an edit is picked up, a file nobody listed yet waits"
+    );
+
+    let created = FsChange {
+        kind: ChangeKind::Created,
+        path: "new.md".to_owned(),
+        from: None,
+        at_ms: 1,
+    };
+    svc.on_fs_changes(&[created]);
+    let mut tags: Vec<String> = svc.overview().tags.into_iter().map(|t| t.name).collect();
+    tags.sort();
+    assert_eq!(tags, ["created", "edited"]);
+
+    // a lost-events rescan or a huge batch also scans again
+    fx.write("late.md", "---\ntags: [late]\n---\n");
+    svc.invalidate();
+    assert!(svc.overview().tags.iter().any(|t| t.name == "late"));
+    svc.stop();
+}
+
+#[test]
+fn a_move_into_a_linked_worktree_leaves_the_shared_file_alone() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let svc = fx.service();
+    svc.set_tags("a.md", &s(&["keep"])).expect("tags");
+    svc.on_fs_changes(&[FsChange {
+        kind: ChangeKind::Renamed,
+        path: "@wt/feature/a.md".to_owned(),
+        from: Some("a.md".to_owned()),
+        at_ms: 1,
+    }]);
+    svc.stop();
+    let text = fs::read_to_string(fx.app_meta()).expect("read");
+    assert!(text.contains("\"a.md\"") && !text.contains("@wt"), "{text}");
+}
+
+#[test]
+fn changes_made_before_the_file_became_unreadable_are_kept_and_applied_once_it_is_fixed() {
+    let fx = Fx::new();
+    for name in ["a.md", "b.md", "c.md"] {
+        fx.write(name, "# F\n");
+    }
+    fx.write(
+        ".trailmark/meta.toml",
+        "[files.\"b.md\"]\ntags = [\"old\"]\n",
+    );
+    let svc = fx.lazy_service(fx.project_meta(), true);
+    svc.set_tags("a.md", &s(&["mine"])).expect("tags");
+    svc.set_description("c.md", "mine too")
+        .expect("description");
+
+    // a git operation leaves conflict markers before our delayed write
+    fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n[files.\"b.md\"]\n");
+    let marked = fs::read_to_string(fx.project_meta()).expect("read");
+    assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
+    let status = svc.status();
+    assert!(status.problem.is_some());
+    assert_eq!(
+        status.pending_changes, 2,
+        "the user is told their edits wait"
+    );
+    assert!(svc.set_tags("a.md", &s(&["x"])).is_err());
+
+    // someone fixes the file: the waiting changes are laid on top of it and written
+    fx.write(
+        ".trailmark/meta.toml",
+        "[files.\"b.md\"]\ntags = [\"fixed\"]\n",
+    );
+    assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
+    assert!(svc.status().problem.is_none());
+    assert_eq!(svc.status().pending_changes, 0);
+    assert_eq!(svc.file_meta("a.md").expect("a").tags[0].name, "mine");
+    assert_eq!(svc.file_meta("c.md").expect("c").description, "mine too");
+    assert_eq!(svc.file_meta("b.md").expect("b").tags[0].name, "fixed");
+    svc.stop();
+    let text = fs::read_to_string(fx.project_meta()).expect("read");
+    for kept in ["\"mine\"", "mine too", "\"fixed\""] {
+        assert!(text.contains(kept), "{kept} in {text}");
+    }
+    assert_ne!(text, marked);
+}
+
+#[test]
+fn entries_that_differ_only_in_case_are_both_kept_when_the_file_is_rewritten() {
+    let fx = Fx::new();
+    fx.write("other.md", "# O\n");
+    fx.write(
+        ".trailmark/meta.toml",
+        "[files.\"Notes.md\"]\ntags = [\"upper\"]\n[files.\"notes.md\"]\ntags = [\"lower\"]\n",
+    );
+    let svc = fx.project_service();
+    svc.set_tags("other.md", &s(&["x"])).expect("tags");
+    svc.stop();
+    let text = fs::read_to_string(fx.project_meta()).expect("read");
+    for kept in ["\"Notes.md\"", "\"notes.md\"", "\"upper\"", "\"lower\""] {
+        assert!(text.contains(kept), "{kept} in {text}");
+    }
+}
+
+#[test]
+fn unknown_top_level_keys_survive_the_apps_own_edits() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    fx.write(
+        ".trailmark/meta.toml",
+        "version = 2\n[tags.spec]\ncolor = \"red\"\n[files.\"a.md\"]\ntags = [\"x\"]\n",
+    );
+    let svc = fx.project_service();
+    svc.set_tags("a.md", &s(&["x", "y"])).expect("tags");
+    svc.stop();
+    let text = fs::read_to_string(fx.project_meta()).expect("read");
+    assert!(text.contains("version = 2"), "{text}");
+    assert!(
+        text.contains("[tags.spec]") && text.contains("color = \"red\""),
+        "{text}"
+    );
+    assert!(text.contains("\"y\""), "{text}");
+}
+
+#[test]
+fn a_file_that_is_not_utf8_is_a_problem_and_is_not_rewritten() {
+    let fx = Fx::new();
+    fx.write("a.md", "# A\n");
+    let mut bad = b"[files.\"a.md\"]\ndescription = \"caf".to_vec();
+    bad.extend([0xE9, b'"', b'\n']);
+    fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+    fs::write(fx.project_meta(), &bad).expect("write");
+    let svc = fx.project_service();
+    let problem = svc.status().problem.expect("a problem");
+    assert!(problem.message.contains("UTF-8"), "{}", problem.message);
+    assert!(svc.set_tags("a.md", &s(&["x"])).is_err());
+    svc.stop();
+    assert_eq!(fs::read(fx.project_meta()).expect("read"), bad);
 }
