@@ -57,6 +57,19 @@ describe("normalizeSession", () => {
     expect(s.refTemplate).toBe("@{path}");
   });
 
+  it("keeps the Explorer filter only when it names a known preset", () => {
+    expect(normalizeSession({}).treeFilter).toBeNull();
+    expect(normalizeSession({ treeFilter: null }).treeFilter).toBeNull();
+    expect(normalizeSession({ treeFilter: { show: "nope" } as never }).treeFilter).toBeNull();
+    const filter = {
+      show: "custom" as const,
+      categories: ["data" as const],
+      patterns: "+*.sql",
+      hideEmptyFolders: false,
+    };
+    expect(normalizeSession({ treeFilter: filter }).treeFilter).toEqual(filter);
+  });
+
   it("keeps valid values", () => {
     const stored = {
       ...defaultSession(),

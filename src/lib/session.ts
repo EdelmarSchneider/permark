@@ -1,6 +1,7 @@
 // Defaults and sanitizing for `SessionState` (panel widths, zoom, theme, ...).
 
 import { DEFAULT_REF_TEMPLATE } from "./reference";
+import { normalizeTreeFilter } from "./treeFilter";
 import type { SessionState } from "./types";
 
 export const PANEL_MIN = 200;
@@ -37,6 +38,7 @@ export function defaultSession(): SessionState {
     rightPanel: { open: true, width: RIGHT_DEFAULT },
     theme: "system",
     follow: false,
+    treeFilter: null,
   };
 }
 
@@ -67,5 +69,6 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     },
     theme,
     follow: stored.follow === true,
+    treeFilter: normalizeTreeFilter(stored.treeFilter),
   };
 }

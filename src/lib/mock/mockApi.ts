@@ -36,6 +36,7 @@ let savedSession: SessionState | null = {
   rightPanel: { open: true, width: 280 },
   theme: "system",
   follow: false,
+  treeFilter: null,
 };
 let stateLocation: "appData" | "project" = "appData";
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
