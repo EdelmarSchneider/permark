@@ -513,15 +513,20 @@ export const en = {
   "time.hours": "{n}h",
   "time.days": "{n}d",
 
+  // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
+  "mode.label": "Mode",
+  "mode.read": "Read",
+  "mode.readHint": "Read this document",
+  "mode.visualHint": "Edit in the visual editor",
+  "mode.sourceHint": "Edit the Markdown source",
+  "mode.withKeys": "{hint} ({keys})",
+
   // ---- editing (docs/design/v0.2.md section 3)
-  "edit.edit": "Edit",
-  "edit.editHint": "Edit this document (E)",
   "edit.done": "Done",
   "edit.doneHint": "Back to reading (Ctrl+E or Esc)",
   "edit.save": "Save",
   "edit.saveHint": "Save (Ctrl+S)",
   "edit.saving": "Saving...",
-  "edit.modes": "Editor",
   "edit.visual": "Visual",
   "edit.source": "Source",
   "edit.unsaved": "Unsaved",
@@ -553,7 +558,6 @@ export const en = {
   "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "The editor could not be loaded.",
   "edit.bars": "Editing notices",
-  "edit.modeHint": "Switch between Visual and Source (Ctrl+Alt+E)",
   "edit.switchFailed": "Couldn't switch editors: {message}",
   "edit.switchTyping": "the text kept changing while it was read. Try again.",
   "edit.blocksUnreadable":

@@ -528,15 +528,20 @@ export const de = {
   "error.nameNoStem": "Vor der Dateiendung muss noch etwas stehen",
   "error.imageEmpty": "Das Bild ist leer",
 
+  // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
+  "mode.label": "Modus",
+  "mode.read": "Lesen",
+  "mode.readHint": "Dieses Dokument lesen",
+  "mode.visualHint": "Im visuellen Editor bearbeiten",
+  "mode.sourceHint": "Den Markdown-Quelltext bearbeiten",
+  "mode.withKeys": "{hint} ({keys})",
+
   // ---- editing
-  "edit.edit": "Bearbeiten",
-  "edit.editHint": "Dieses Dokument bearbeiten (E)",
   "edit.done": "Fertig",
   "edit.doneHint": "Zurück zum Lesen (Strg+E oder Esc)",
   "edit.save": "Speichern",
   "edit.saveHint": "Speichern (Strg+S)",
   "edit.saving": "Wird gespeichert ...",
-  "edit.modes": "Editor",
   "edit.visual": "Visuell",
   "edit.source": "Quelltext",
   "edit.unsaved": "Ungespeichert",
@@ -569,7 +574,6 @@ export const de = {
   "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "Der Editor konnte nicht geladen werden.",
   "edit.bars": "Bearbeitungshinweise",
-  "edit.modeHint": "Zwischen Visuell und Quelltext wechseln (Strg+Alt+E)",
   "edit.switchFailed": "Editor konnte nicht gewechselt werden: {message}",
   "edit.switchTyping": "der Text hat sich beim Lesen weiter geändert. Bitte erneut versuchen.",
   "edit.blocksUnreadable":

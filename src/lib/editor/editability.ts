@@ -1,5 +1,5 @@
-// Which documents can be edited, and why not (docs/design/v0.2.md section 3: "[Edit] is disabled with a tooltip
-// saying why"). The backend refuses the same files; this only lets the UI say so before asking.
+// Which documents can be edited, and why not (docs/design/v0.2.md section 3: the Visual and Source segments of the header
+// switch are disabled, with the reason as their tooltip). The backend refuses the same files; this only lets the UI say so before asking.
 
 import type { MessageKey } from "../i18n";
 import type { DocumentView } from "../types";

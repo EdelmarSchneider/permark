@@ -15,7 +15,7 @@ import type { EditorView } from "@milkdown/kit/prose/view";
 import type { HeadingInfo } from "../../outline";
 import { currentHeading } from "../../outline";
 import type { BlockMap } from "../blockModel";
-import { watchViewport } from "../viewport";
+import { showsAtTop, watchViewport } from "../viewport";
 import {
   analyze,
   buildDoc,
@@ -77,6 +77,8 @@ export type VisualInput = {
   atEnd?: boolean;
   /** Where the caret's block goes on screen: `start` puts it at the top (entering from the reading view keeps the place), the default only makes it visible. */
   reveal?: "start" | "nearest";
+  /** The block (0-based, of `map`) to put at the top of the pane, whichever block the caret is in: the place the other mode was showing. */
+  top?: number | null;
 };
 
 export type VisualStatus = {
@@ -192,7 +194,7 @@ export class VisualEditor {
       }),
     );
     if (input.block !== undefined && input.block !== null)
-      this.placeCaret(input.block, input.atEnd ?? false, input.reveal ?? "nearest");
+      this.placeCaret(input.block, input.atEnd ?? false, input.reveal ?? "nearest", input.top);
     this.options.handlers.changed();
     return built.report;
   }
@@ -241,6 +243,28 @@ export class VisualEditor {
     if (!this.built) return 0;
     const composed = composeDoc(this.core, this.built, this.core.view.state.doc);
     return lineOfNode(composed, this.analysis(), this.caretChild());
+  }
+
+  /** The 0-based line, in `text()`, of the block at the top of the pane (the caret's block when there is no layout to look at). */
+  topLine(): number {
+    const { scroller } = this.options;
+    if (!this.built || !scroller) return this.caretLine();
+    const { view } = this.core;
+    const edge = scroller.getBoundingClientRect().top;
+    const { doc } = view.state;
+    let child = Math.max(0, doc.childCount - 1);
+    let found = false;
+    doc.forEach((_node, pos, index) => {
+      if (found) return;
+      const dom = view.nodeDOM(pos);
+      if (!(dom instanceof HTMLElement)) return;
+      const box = dom.getBoundingClientRect();
+      if (showsAtTop(box.top, box.bottom, edge)) {
+        child = index;
+        found = true;
+      }
+    });
+    return lineOfNode(composeDoc(this.core, this.built, doc), this.analysis(), child);
   }
 
   /** The 0-based line, in `text()`, where a block of the loaded text starts (null: the block the caret is in). */
@@ -294,7 +318,12 @@ export class VisualEditor {
     return null;
   }
 
-  private placeCaret(block: number, atEnd: boolean, reveal: "start" | "nearest"): void {
+  private placeCaret(
+    block: number,
+    atEnd: boolean,
+    reveal: "start" | "nearest",
+    top?: number | null,
+  ): void {
     const { view } = this.core;
     const { doc } = view.state;
     const analysis = this.analysis();
@@ -305,12 +334,17 @@ export class VisualEditor {
       for (let k = 0; k < i; k++) at += doc.child(k).nodeSize;
       return at;
     };
-    // the block asked for is the one that goes to the top of the pane, even when the caret has to be in another one; when only front
-    // matter is above it (the reader shows that as a card over the text) the pane stays at the very top
-    let revealIndex = index;
+    // the block asked for (`top`, else the caret's) is the one that goes to the top of the pane, even when the caret has to be in
+    // another one; when only front matter is above it (the reader shows that as a card over the text) the pane stays at the very top
+    let topIndex = index;
+    if (top !== undefined && top !== null) {
+      const found = analysis.nodes.findIndex((n) => n.origin === top);
+      topIndex = found >= 0 ? found : Math.min(top, doc.childCount - 1);
+    }
+    let revealIndex = topIndex;
     while (revealIndex > 0 && doc.child(revealIndex - 1).attrs.kind === "frontmatter")
       revealIndex--;
-    if (revealIndex > 0) revealIndex = index;
+    if (revealIndex > 0) revealIndex = topIndex;
     const revealAt = startOf(revealIndex);
     // a locked block takes no caret: it goes to the next block that can be typed in (else the one before)
     const editable = (i: number): boolean => doc.child(i).type.name !== LOCKED;
@@ -335,10 +369,21 @@ export class VisualEditor {
     const tr = view.state.tr.setSelection(selection);
     if (this.options.scroll !== false) tr.scrollIntoView();
     view.dispatch(tr);
-    if (reveal === "start" && this.options.scroll !== false) {
+    if ((reveal === "start" || (top ?? null) !== null) && this.options.scroll !== false) {
       const dom = view.nodeDOM(revealAt);
-      if (dom instanceof HTMLElement) dom.scrollIntoView({ block: "start" });
+      if (dom instanceof HTMLElement) this.scrollToTop(dom);
     }
+  }
+
+  /** Scrolls the pane so `el` is 8 px under its top edge. */
+  private scrollToTop(el: HTMLElement): void {
+    const { scroller } = this.options;
+    if (!scroller) {
+      el.scrollIntoView({ block: "start" });
+      return;
+    }
+    const delta = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + delta - 8), behavior: "instant" });
   }
 
   // ---- the Outline -----------------------------------------------------------------------------------------
@@ -377,12 +422,10 @@ export class VisualEditor {
 
   /** Scrolls heading `index` to 8 px under the top of the editor. The selection stays where it is. */
   scrollToHeading(index: number): void {
-    const { scroller } = this.options;
     const heading = this.headingList(this.core.view.state.doc)[index];
     const el = heading ? this.headingEl(heading) : null;
-    if (!scroller || !el) return;
-    const delta = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + delta - 8), behavior: "instant" });
+    if (!this.options.scroller || !el) return;
+    this.scrollToTop(el);
   }
 
   /** The heading of the section in view: the last one at or above the top-third line of the editor. */

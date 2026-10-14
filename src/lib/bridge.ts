@@ -47,6 +47,8 @@ export type SourceApi = OutlineSource & {
   setText(text: string, line: number): void;
   /** The line the caret is on (0-based). */
   caretLine(): number;
+  /** The line at the top of the viewport (0-based): the place to keep when the view changes to another mode. */
+  topLine(): number;
   focus(): void;
   /** Inserts the image `rel` (a path relative to the document) at the caret, replacing the selection. */
   insertImage(rel: string): void;
@@ -66,6 +68,8 @@ export type VisualApi = OutlineSource & {
   status(): { dirty: boolean; changed: number };
   /** The line, in `text()`, of the block the caret is in (0-based). */
   caretLine(): number;
+  /** The line, in `text()`, of the block at the top of the viewport (0-based): the place to keep when the view changes to another mode. */
+  topLine(): number;
   /** The block of the loaded text the caret is in, or null in a block that was added. */
   caretBlock(): number | null;
   /** The line, in `text()`, where a block of the loaded text starts (null: the caret's block). */
