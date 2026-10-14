@@ -3,6 +3,14 @@
 All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **The window remembers its size and position.** TrailMark opens where you left it, including maximized, with no jump: the window is
+  placed before it is shown. Each project folder keeps its own place (in the project's private state, never in a file you commit), and
+  the last window is used for the welcome screen, a folder opened for the first time and a single file. If the screen it was on is gone,
+  or the resolution or display scale changed, the window comes back on the main screen at a size that fits.
+
 ## [0.2.0] - 2026-10-14
 
 TrailMark grows from a reader into a Markdown IDE: organize, edit and reorganize the documents you read, with the same promise as
