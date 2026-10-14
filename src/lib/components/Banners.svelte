@@ -1,0 +1,82 @@
+<script lang="ts">
+  import { t } from "../i18n";
+  import { app } from "../stores/app.svelte";
+  import { docs } from "../stores/docs.svelte";
+  import { session } from "../stores/session.svelte";
+  import { ui } from "../stores/ui.svelte";
+  import { vault } from "../stores/vault.svelte";
+  import { clock } from "../time";
+  import { basename } from "../paths";
+  import Icon from "./Icon.svelte";
+
+  const repoState = $derived(vault.git?.repoState ?? "clean");
+  const showRepo = $derived(repoState !== "clean" && ui.dismissedRepoState !== repoState);
+  const deleted = $derived(docs.deleted);
+
+  // the banner comes back the next time the state changes
+  $effect(() => {
+    if (repoState === "clean" && ui.dismissedRepoState !== null) ui.dismissedRepoState = null;
+  });
+</script>
+
+{#if showRepo}
+  <div class="banner" role="status">
+    <Icon name="alert" />
+    <div>{t(`repo.banner.${repoState}`)}</div>
+    <span class="spacer"></span>
+    <button
+      type="button"
+      class="btn btn--ghost btn--sm"
+      onclick={() => (ui.dismissedRepoState = repoState)}
+    >
+      {t("common.dismiss")}
+    </button>
+  </div>
+{/if}
+
+{#if deleted}
+  <div class="banner banner--error" role="alert">
+    <Icon name="circle-alert" />
+    <div>
+      <strong>{t("doc.deleted.title", { time: clock(deleted.atMs) })}</strong>
+      {t("doc.deleted.text")}
+      {#if deleted.movedTo}
+        <br />{t("doc.deleted.moved", { path: deleted.movedTo })}
+      {/if}
+    </div>
+    <span class="spacer"></span>
+    <div class="banner__actions">
+      {#if deleted.movedTo}
+        {@const target = deleted.movedTo}
+        <button type="button" class="btn btn--sm" onclick={() => void app.openDoc(target)}>
+          {t("common.open")}
+        </button>
+      {/if}
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => void docs.closeDeleted()}>
+        {t("common.close")}
+      </button>
+    </div>
+  </div>
+{/if}
+
+{#if ui.followChip && session.follow}
+  {@const chip = ui.followChip}
+  <div class="banner banner--info follow-chip" role="status">
+    <span class="live-dot"></span>
+    <div>{t("follow.chip", { name: basename(chip.from) })}</div>
+    <span class="spacer"></span>
+    <div class="banner__actions">
+      <button
+        type="button"
+        class="btn btn--ghost btn--sm"
+        disabled={!docs.canBack}
+        onclick={() => void docs.back()}
+      >
+        {t("follow.back")}
+      </button>
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => app.toggleFollow()}>
+        {t("follow.stop")}
+      </button>
+    </div>
+  </div>
+{/if}

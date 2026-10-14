@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TrailMark: a Markdown IDE that keeps up with your AI agents</title>
+  <meta name="description" content="TrailMark is a fast, beautiful Markdown IDE for the docs your AI agents write. Read a folder like a wiki, watch documents change live, see exactly what changed and find any section in seconds. Works with any AI tool, or none.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://edelmarschneider.github.io/trailmark/">
+
+  <!-- Open Graph / Twitter -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="TrailMark">
+  <meta property="og:title" content="TrailMark: a Markdown IDE that keeps up with your AI agents">
+  <meta property="og:description" content="Read a folder like a wiki, watch docs change live as agents write them, see what changed and find any section in seconds. Free and open source.">
+  <meta property="og:url" content="https://edelmarschneider.github.io/trailmark/">
+  <meta property="og:image" content="https://edelmarschneider.github.io/trailmark/assets/screenshot-light.png">
+  <meta property="og:image:width" content="1280">
+  <meta property="og:image:height" content="831">
+  <meta property="og:image:alt" content="TrailMark in IDE mode: file explorer, a rendered Markdown document and the live changes panel.">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="TrailMark: a Markdown IDE that keeps up with your AI agents">
+  <meta name="twitter:description" content="Read a folder like a wiki, watch docs change live as agents write them, see what changed and find any section in seconds.">
+  <meta name="twitter:image" content="https://edelmarschneider.github.io/trailmark/assets/screenshot-light.png">
+
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  <link rel="apple-touch-icon" href="assets/logo.svg">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script src="main.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="nav" role="banner">
+    <div class="container nav__inner">
+      <a class="brand" href="#top" aria-label="TrailMark, back to top">
+        <img src="assets/logo.svg" width="28" height="28" alt="">
+        <span>TrailMark</span>
+      </a>
+      <nav class="nav__links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#live">Live</a>
+        <a href="#install">Install</a>
+        <a href="#roadmap">Roadmap</a>
+      </nav>
+      <a class="btn btn--ghost btn--sm" href="https://github.com/EdelmarSchneider/trailmark">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- 1. Hero -->
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="container hero__inner">
+        <img class="hero__logo" src="assets/logo.svg" width="72" height="72" alt="TrailMark logo">
+        <p class="eyebrow">Free and open source · Windows, macOS, Linux</p>
+        <h1 id="hero-title" class="hero__title">
+          A fast, beautiful Markdown IDE that <span class="grad">keeps up with your AI agents.</span>
+        </h1>
+        <p class="hero__sub">
+          Read a folder like a wiki, watch documents change live as they're written, and find any section in seconds.
+        </p>
+        <div class="hero__cta">
+          <a class="btn btn--primary btn--lg" id="download-btn" href="https://github.com/EdelmarSchneider/trailmark/releases/latest">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+            <span id="download-label">Download</span>
+          </a>
+          <a class="btn btn--ghost btn--lg" href="https://github.com/EdelmarSchneider/trailmark">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+            <span>View on GitHub</span>
+          </a>
+        </div>
+        <p class="hero__note">Works with any AI tool, or with none. Only needs your filesystem and git.</p>
+      </div>
+
+      <div class="container container--wide">
+        <figure class="shot">
+          <div class="shot__frame">
+            <picture>
+              <source srcset="assets/screenshot-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="assets/screenshot-light.png" width="1440" height="900"
+                   alt="TrailMark in IDE mode: a file explorer with git badges on the left, a rendered Markdown document with a metadata card and a paragraph that just changed on disk (highlighted, with a marker for the removed text) in the middle, and the Live changes and Since last visit panels on the right."
+                   fetchpriority="high"
+                   onerror="this.onerror=null;this.parentNode.querySelectorAll('source').forEach(function(s){s.remove()});this.src='assets/screenshot-light.png';">
+            </picture>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 2. Why -->
+    <section class="section" id="why" aria-labelledby="why-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Why TrailMark</p>
+          <h2 id="why-title">Your agents write the docs. You still have to read them.</h2>
+          <p class="lead">Specs, plans, research notes, reports: AI tools produce a lot of Markdown. TrailMark closes the gap between the documents they write and you, the human who has to read, check and steer them.</p>
+        </div>
+        <ol class="why">
+          <li class="why__item">
+            <span class="why__num" aria-hidden="true">1</span>
+            <h3>Raw text is tiring</h3>
+            <p>Reading long Markdown as plain text in a terminal or code editor wears you down. Tables, diagrams and math deserve to be rendered.</p>
+          </li>
+          <li class="why__item">
+            <span class="why__num" aria-hidden="true">2</span>
+            <h3>One file at a time</h3>
+            <p>Preview extensions render a single file and lose the bigger picture: links, folders, and how documents relate.</p>
+          </li>
+          <li class="why__item">
+            <span class="why__num" aria-hidden="true">3</span>
+            <h3>Changes slip past you</h3>
+            <p>Agents edit and commit every few minutes. Without help, you can't tell what moved since you last looked.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- 3. Features -->
+    <section class="section section--tinted" id="features" aria-labelledby="features-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Features</p>
+          <h2 id="features-title">Everything you need to read what your tools write</h2>
+        </div>
+        <ul class="features">
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>
+            </span>
+            <h3>Reading that feels like a book</h3>
+            <p>GitHub-flavored Markdown with <strong>Mermaid</strong>, <strong>KaTeX</strong> math, alerts, footnotes and highlighted code. Frontmatter becomes a clean metadata card. Light and dark themes, zoom, reading width and a focus mode.</p>
+          </li>
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/></svg>
+            </span>
+            <h3>Navigate like a wiki</h3>
+            <p>Open a folder for IDE mode or a single file for a distraction-free reader. Relative links, anchors and images resolve in the app, with back and forward, quick open and session restore.</p>
+          </li>
+          <li class="card card--accent">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </span>
+            <h3>Follow your agents live</h3>
+            <p>Docs reload without losing your scroll position. Changed blocks glow, removed blocks leave a marker, and a live feed shows every file being touched, across git worktrees too.</p>
+          </li>
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            </span>
+            <h3>Find anything, to the section</h3>
+            <p>Section-level full-text search shows <code>file › heading › snippet</code> and jumps to the exact spot. Accent- and case-insensitive, with light stemming, updated as files change.</p>
+          </li>
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="8" r="3"/><path d="M6 9v6"/><path d="M18 11a6 6 0 0 1-6 6H9"/></svg>
+            </span>
+            <h3>Git-aware</h3>
+            <p>Badges for modified, added and untracked files. Review changes <strong>since your last visit</strong> or since <code>HEAD</code>, even when the agent already committed. Clear banners for rebases and merges.</p>
+          </li>
+          <li class="card">
+            <span class="card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
+            </span>
+            <h3>Close the loop with your AI</h3>
+            <p>Copy a reference like <code>@docs/plan.md</code>, or a quoted selection with its path and section, ready to paste into any AI chat or CLI. The template is yours to configure.</p>
+          </li>
+        </ul>
+        <p class="footnote">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+          <span><strong>Zero footprint by default.</strong> State lives in your user profile. Opt in to a shared <code>.trailmark/</code> folder only if you want settings to travel with the project.</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- 4. Live showcase -->
+    <section class="section" id="live" aria-labelledby="live-title">
+      <div class="container live">
+        <div class="live__copy">
+          <p class="eyebrow">Follow mode</p>
+          <h2 id="live-title">Follow your agents live</h2>
+          <p class="lead">Leave TrailMark open next to your terminal. As an agent writes, you see exactly where.</p>
+          <ul class="checks">
+            <li>Changed blocks glow softly, then fade</li>
+            <li>Removed blocks leave a marker you can expand</li>
+            <li>One feed entry per file, bursts grouped, <code>git checkout</code> storms collapsed</li>
+            <li>Follow mode opens the doc being written, and never jumps while you're selecting</li>
+            <li>Jump between changes with <kbd>F7</kbd> and <kbd>Shift</kbd>+<kbd>F7</kbd></li>
+          </ul>
+        </div>
+
+        <div class="demo" role="img" aria-label="Illustration: a paragraph in docs/plan.md glows as an agent edits it and then fades, while a new entry for plan.md appears at the top of the Live changes feed.">
+          <div class="demo__doc" aria-hidden="true">
+            <div class="demo__bar">
+              <span class="demo__file">plan.md</span>
+              <span class="demo__follow"><span class="pulse"></span>Following</span>
+            </div>
+            <div class="demo__body">
+              <p class="demo__h">Retry policy</p>
+              <p class="demo__p">Requests are retried up to three times. Only idempotent calls are retried automatically.</p>
+              <p class="demo__p demo__changed">Backoff starts at 200&nbsp;ms and doubles on each attempt, capped at 5&nbsp;s, with ±20% jitter.</p>
+              <p class="demo__removed"><span>−</span> 1 block removed</p>
+              <p class="demo__p demo__muted">Timeouts are reported to the caller as <code>RetryExhausted</code>.</p>
+            </div>
+          </div>
+          <div class="demo__feed" aria-hidden="true">
+            <p class="demo__feedtitle">Live changes <span class="dot-live"></span></p>
+            <ul>
+              <li class="feed-item feed-item--new">
+                <span class="badge badge--mod">M</span>
+                <span class="feed-item__name">plan.md<small>docs</small></span>
+                <span class="feed-item__time">now</span>
+              </li>
+              <li class="feed-item">
+                <span class="badge badge--add">A</span>
+                <span class="feed-item__name">agent-log.md<small>docs/specs</small></span>
+                <span class="feed-item__time">10s</span>
+              </li>
+              <li class="feed-item">
+                <span class="badge badge--mod">M</span>
+                <span class="feed-item__name">roadmap.md<small>docs</small></span>
+                <span class="feed-item__time">1m</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Works with -->
+    <section class="section section--tinted" id="works-with" aria-labelledby="works-title">
+      <div class="container center">
+        <p class="eyebrow">Tool-agnostic</p>
+        <h2 id="works-title">Works with whatever writes your Markdown</h2>
+        <p class="lead lead--center">TrailMark only relies on your filesystem and git, so there is no plugin to install and no account to connect.</p>
+        <ul class="chips" aria-label="Compatible tools">
+          <li class="chip">Claude Code</li>
+          <li class="chip">opencode</li>
+          <li class="chip">Cursor</li>
+          <li class="chip">Aider</li>
+          <li class="chip">Codex</li>
+          <li class="chip">Gemini CLI</li>
+          <li class="chip chip--none">or no AI at all</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 6. Install + shortcuts -->
+    <section class="section" id="install" aria-labelledby="install-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Install</p>
+          <h2 id="install-title">Up and running in a minute</h2>
+        </div>
+        <div class="install">
+          <article class="panel">
+            <h3>Download</h3>
+            <p>Prebuilt installers for Windows, macOS and Linux. TrailMark updates itself: when a new version is out, you get a one-click restart.</p>
+            <a class="btn btn--primary" href="https://github.com/EdelmarSchneider/trailmark/releases/latest">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+              <span>Latest release</span>
+            </a>
+            <h4>Then open a project</h4>
+            <div class="code">
+              <pre><code><span class="c-cmd">trailmark</span>                <span class="c-com"># welcome screen, recent projects</span>
+<span class="c-cmd">trailmark</span> .              <span class="c-com"># this folder, IDE mode</span>
+<span class="c-cmd">trailmark</span> docs/plan.md   <span class="c-com"># one file, simple mode</span></code></pre>
+            </div>
+            <p class="small">Or drag a folder or a <code>.md</code> file onto the window.</p>
+          </article>
+
+          <article class="panel">
+            <h3>Build from source</h3>
+            <p>Requires <a href="https://rustup.rs">Rust</a>, <a href="https://nodejs.org">Node.js</a> 20+ and the <a href="https://v2.tauri.app/start/prerequisites/">Tauri prerequisites</a>.</p>
+            <div class="code">
+              <button class="code__copy" type="button" data-copy="git clone https://github.com/EdelmarSchneider/trailmark.git
+cd trailmark
+npm install
+npm run tauri build" aria-label="Copy build commands">Copy</button>
+              <pre><code><span class="c-cmd">git</span> clone https://github.com/EdelmarSchneider/trailmark.git
+<span class="c-cmd">cd</span> trailmark
+<span class="c-cmd">npm</span> install
+<span class="c-cmd">npm</span> run tauri build</code></pre>
+            </div>
+            <p class="small">A Tauri 2 app: a Rust core with a Svelte UI in the system webview. Small installer, low memory.</p>
+          </article>
+        </div>
+
+        <h3 class="subhead" id="shortcuts">Keyboard shortcuts</h3>
+        <div class="table-wrap">
+          <table class="keys">
+            <caption class="sr-only">Keyboard shortcuts</caption>
+            <thead><tr><th scope="col">Action</th><th scope="col">Shortcut</th></tr></thead>
+            <tbody>
+              <tr><td>Quick open file</td><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td></tr>
+              <tr><td>Search all docs, by section</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td></tr>
+              <tr><td>Find in page</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
+              <tr><td>Toggle left / right panel</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd></td></tr>
+              <tr><td>Next / previous change</td><td><kbd>F7</kbd> / <kbd>Shift</kbd>+<kbd>F7</kbd></td></tr>
+              <tr><td>Back / forward</td><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td></tr>
+              <tr><td>Copy reference (or selection with reference)</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></td></tr>
+              <tr><td>Zoom in / out / reset</td><td><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Roadmap -->
+    <section class="section section--tinted" id="roadmap" aria-labelledby="roadmap-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Roadmap</p>
+          <h2 id="roadmap-title">What's next</h2>
+        </div>
+        <ol class="roadmap">
+          <li class="milestone">
+            <span class="milestone__tag">v0.2</span>
+            <ul>
+              <li><strong>Tags and short descriptions</strong> for files, from frontmatter or added in the app, with <code>tag:</code> search filters</li>
+              <li><strong>WYSIWYG editing</strong> with conflict-safe saving that never silently reformats agent-written files</li>
+              <li><strong>Outline panel</strong> for long documents</li>
+            </ul>
+          </li>
+          <li class="milestone">
+            <span class="milestone__tag milestone__tag--later">v0.3</span>
+            <ul>
+              <li><strong>Semantic search</strong> with a local multilingual model: ask for "retry policy" and find the section that describes it, whatever words it uses</li>
+            </ul>
+          </li>
+        </ol>
+        <p class="center small"><a href="https://github.com/EdelmarSchneider/trailmark#roadmap">Full roadmap on GitHub →</a></p>
+      </div>
+    </section>
+
+    <!-- Closing CTA -->
+    <section class="cta" aria-labelledby="cta-title">
+      <div class="container center">
+        <h2 id="cta-title">Point it at a folder. Watch it come alive.</h2>
+        <div class="hero__cta">
+          <a class="btn btn--primary btn--lg" href="https://github.com/EdelmarSchneider/trailmark/releases/latest">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+            <span>Download TrailMark</span>
+          </a>
+          <a class="btn btn--ghost btn--lg" href="https://github.com/EdelmarSchneider/trailmark">Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <a class="brand" href="#top">
+        <img src="assets/logo.svg" width="24" height="24" alt="">
+        <span>TrailMark</span>
+      </a>
+      <p>Licensed under <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option.</p>
+      <p><a href="https://github.com/EdelmarSchneider/trailmark">github.com/EdelmarSchneider/trailmark</a></p>
+    </div>
+  </footer>
+</body>
+</html>

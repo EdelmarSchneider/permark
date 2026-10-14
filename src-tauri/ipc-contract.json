@@ -1,0 +1,23 @@
+{
+  "_comment": "The Rust/UI boundary. Checked on both sides: the test in src-tauri/src/commands.rs (registered commands, their argument names, emitted events) and src/lib/api.test.ts (what tauriApi sends and listens to). Argument names are Rust snake_case; Tauri expects camelCase on the JS side.",
+  "commands": {
+    "open_vault": ["path"],
+    "initial_path": [],
+    "recent_vaults": [],
+    "list_tree": [],
+    "read_document": ["path"],
+    "resolve_link": ["from", "href"],
+    "git_snapshot": [],
+    "set_git_baseline": ["kind"],
+    "since_last_visit": [],
+    "save_session": ["s"],
+    "load_session": [],
+    "absolute_path": ["path"],
+    "open_external": ["path"],
+    "reveal_in_folder": ["path"],
+    "search": ["query", "limit"],
+    "init_project_folder": [],
+    "state_location": []
+  },
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress"]
+}
