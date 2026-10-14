@@ -3,6 +3,25 @@
 All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Repositories inside a project are always in the tree.** A folder with its own `.git` shows up even when the project's `.gitignore`
+  leaves it out, which is how a workspace folder that collects several independent repositories is usually set up. Inside each one its own
+  `.gitignore` and `.git/info/exclude` decide what is listed, not the project's. Search, Quick open, tags and live updates cover their files
+  too. Linked worktrees work as before.
+- **Two new switches in the Explorer filter**, saved with it and off by default: **Show hidden files and folders** (names that start with a dot) and
+  **Show files ignored by git**. Folders with more than 2,000 entries that git ignores (`node_modules`, `target`, build output) are listed
+  closed, with a "large folder" tag, instead of being read.
+- **`.trailmark/` is easier to find.** A quiet banner offers to keep tags and settings with the project when you open a git repository that
+  doesn't have a `.trailmark/` folder yet (**Initialize**, **Not now**, **Never for this folder**), and the tag editor has an **Initialize .trailmark**
+  link next to "Saved in TrailMark, not in the file". Both open the existing Initialize dialog.
+
+### Changed
+- Hidden files and folders (`.github`, `.claude`, `.vscode`, `.gitignore`, ...) are no longer listed by default, in any preset. Turn on **Show
+  hidden files and folders** to see them; a hidden file that is open still shows, dimmed, in its folder.
+- The **Everything** preset says that files ignored by git (including those in `.git/info/exclude`, such as a local-only script) have their own switch.
+
 ## [0.2.0] - 2026-10-14
 
 TrailMark grows from a reader into a Markdown IDE: organize, edit and reorganize the documents you read, with the same promise as
