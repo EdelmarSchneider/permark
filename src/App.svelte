@@ -15,6 +15,7 @@
   import { docs } from "./lib/stores/docs.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
+  import { updates } from "./lib/stores/updates.svelte";
 
   type MockPanel = typeof import("./lib/mock/MockControls.svelte").default;
   let MockControls = $state<MockPanel | null>(null);
@@ -26,6 +27,7 @@
 
   onMount(() => {
     void app.boot();
+    updates.scheduleStartupCheck();
     if (import.meta.env.VITE_MOCK === "1") {
       void import("./lib/mock/driver").then((driver) => {
         const quiet = new URLSearchParams(location.search).get("mock") === "quiet";

@@ -310,6 +310,22 @@ export const en = {
   "settings.zoom": "Zoom",
   "settings.refTemplate": "Reference template",
   "settings.refPreview": "Preview: {preview}",
+  "settings.updates": "Updates",
+
+  // ---- updates
+  "update.check": "Check for updates...",
+  "update.checking": "Checking...",
+  "update.upToDate": "You're up to date",
+  "update.checkFailed": "Couldn't check for updates",
+  "update.available": "Update available: v{version}",
+  "update.downloading": "Downloading v{version}...",
+  "update.downloadingPercent": "Downloading v{version}: {percent}%",
+  "update.installing": "Installing v{version}...",
+  "update.restart": "Restart to update",
+  "update.later": "Later",
+  "update.statusAvailable": "Update v{version}",
+  "update.statusHint": "Update available: v{version}. Click to see the options.",
+  "update.installFailed": "The update could not be installed: {message}",
 
   // ---- time
   "time.justNow": "just now",

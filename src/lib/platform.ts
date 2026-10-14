@@ -1,11 +1,14 @@
 // Thin wrappers over the Tauri plugins the UI needs besides `api.ts`: dialogs, the opener for web links,
-// drag and drop, the image protocol and the clipboard. With `VITE_MOCK=1` (a plain browser) they degrade to harmless stand-ins.
+// drag and drop, the image protocol, the clipboard and the app updater. With `VITE_MOCK=1` (a plain browser) they degrade to harmless stand-ins.
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check } from "@tauri-apps/plugin-updater";
 import { t } from "./i18n";
+import type { DownloadProgress } from "./updates";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
 
@@ -126,4 +129,63 @@ export async function copyText(text: string): Promise<boolean> {
     area.remove();
     return ok;
   }
+}
+
+/** A newer version of the app, as announced by the update server. */
+export type AvailableUpdate = {
+  version: string;
+  /** Downloads and installs it, then restarts the app (on Windows the installer does the restart). */
+  install(onProgress: (progress: DownloadProgress) => void): Promise<void>;
+  /** Releases the update when it is not going to be installed. */
+  close(): Promise<void>;
+};
+
+const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** The stand-in update of the browser mock; `?update=none` makes the mock report "up to date". */
+async function mockCheckForUpdate(): Promise<AvailableUpdate | null> {
+  await wait(700);
+  if (new URLSearchParams(location.search).get("update") === "none") return null;
+  return {
+    version: "0.2.0",
+    install: async (onProgress) => {
+      const total = 4_000_000;
+      onProgress({ kind: "started", total });
+      for (let sent = 0; sent < total; sent += 500_000) {
+        await wait(250);
+        onProgress({ kind: "chunk", bytes: 500_000 });
+      }
+      onProgress({ kind: "finished" });
+      await wait(400);
+      location.reload();
+    },
+    close: async () => {},
+  };
+}
+
+/** Asks the update server for a newer version. Resolves to null when this one is the latest; rejects when the server can't be reached. */
+export async function checkForUpdate(): Promise<AvailableUpdate | null> {
+  if (isMock) return mockCheckForUpdate();
+  const update = await check();
+  if (!update) return null;
+  return {
+    version: update.version,
+    install: async (onProgress) => {
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            onProgress({ kind: "started", total: event.data.contentLength ?? null });
+            break;
+          case "Progress":
+            onProgress({ kind: "chunk", bytes: event.data.chunkLength });
+            break;
+          case "Finished":
+            onProgress({ kind: "finished" });
+            break;
+        }
+      });
+      await relaunch();
+    },
+    close: () => update.close(),
+  };
 }

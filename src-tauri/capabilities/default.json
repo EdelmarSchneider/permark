@@ -8,6 +8,8 @@
     "core:event:allow-unlisten",
     "dialog:allow-open",
     "opener:allow-open-url",
-    "opener:allow-default-urls"
+    "opener:allow-default-urls",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

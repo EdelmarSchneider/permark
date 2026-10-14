@@ -4,11 +4,15 @@
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { toast } from "../stores/toast.svelte";
+  import { updates } from "../stores/updates.svelte";
+  import { describeUpdate, updatePercent } from "../updates";
   import { relativeTime } from "../time";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
 
   const current = $derived(toast.current);
+  const update = $derived(updates.state);
+  const installing = $derived(update.phase === "downloading" || update.phase === "installing");
 
   function meta(path: string, atMs: number): string {
     const { worktree } = splitWorktree(path);
@@ -35,7 +39,9 @@
           ? current.tone === "warn"
             ? "alert"
             : "info"
-          : "file-text"}
+          : current.type === "update"
+            ? "download"
+            : "file-text"}
         size="sm"
       />
     </span>
@@ -68,12 +74,48 @@
       {:else}
         <span></span>
       {/if}
+    {:else if current.type === "update"}
+      <div style="min-width:0">
+        <div class="toast__title" aria-live="polite">{describeUpdate(update)}</div>
+        {#if installing}
+          {@const percent = updatePercent(update)}
+          <div
+            class="toast__progress"
+            role="progressbar"
+            aria-label={describeUpdate(update)}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow={percent ?? undefined}
+          >
+            <span class={[percent === null && "is-indeterminate"]} style:width="{percent ?? 100}%"
+            ></span>
+          </div>
+        {:else}
+          <div class="toast__actions">
+            <button
+              type="button"
+              class="btn btn--primary btn--sm"
+              onclick={() => void updates.install()}
+            >
+              {t("update.restart")}
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm" onclick={() => toast.dismiss()}>
+              {t("update.later")}
+            </button>
+          </div>
+        {/if}
+      </div>
+      <span></span>
     {:else}
       <div style="min-width:0">
         <div class="toast__title" style="white-space:normal">{current.text}</div>
       </div>
       <span></span>
     {/if}
-    <IconButton small icon="x" label={t("common.dismiss")} onclick={() => toast.dismiss()} />
+    {#if current.type === "update" && installing}
+      <span></span>
+    {:else}
+      <IconButton small icon="x" label={t("common.dismiss")} onclick={() => toast.dismiss()} />
+    {/if}
   </div>
 {/if}

@@ -149,7 +149,7 @@ mod tests {
     fn front_matter_values_are_searchable_in_the_preamble() {
         let c = chunk_markdown("---\ntitle: Plan\ntags: [alpha, beta]\n---\n\n# Body\n\ntext\n");
         assert_eq!(c.len(), 2);
-        assert!(c[0].heading_path.is_empty());
+        assert_eq!(c[0].heading_path.len(), 0);
         assert!(c[0].text.contains("alpha, beta"));
         assert_eq!(c[1].heading_path, ["Body"]);
     }
@@ -200,7 +200,7 @@ mod tests {
 
     #[test]
     fn empty_and_whitespace_documents_have_no_chunks() {
-        assert!(chunk_markdown("").is_empty());
-        assert!(chunk_markdown("\n\n  \n").is_empty());
+        assert_eq!(chunk_markdown("").len(), 0);
+        assert_eq!(chunk_markdown("\n\n  \n").len(), 0);
     }
 }

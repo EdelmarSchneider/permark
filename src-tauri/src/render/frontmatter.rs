@@ -234,8 +234,8 @@ mod tests {
 
     #[test]
     fn ignores_garbage_and_empty_input() {
-        assert!(parse("").is_empty());
-        assert!(parse("# just a comment\n\n").is_empty());
-        assert!(parse("not a pair\n---").is_empty());
+        assert_eq!(parse("").len(), 0);
+        assert_eq!(parse("# just a comment\n\n").len(), 0);
+        assert_eq!(parse("not a pair\n---").len(), 0);
     }
 }

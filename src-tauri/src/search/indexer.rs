@@ -414,9 +414,9 @@ mod tests {
         assert_eq!(calls.last(), Some(&(2, 2)));
         let i = f.index.read().expect("lock");
         assert_eq!(i.paths(), ["a.md", "docs/b.markdown"]);
-        assert!(i.search("plainonlyword", 3).is_empty());
-        assert!(i.search("hiddenword", 3).is_empty());
-        assert!(i.search("ignoredword", 3).is_empty());
+        assert_eq!(i.search("plainonlyword", 3).len(), 0);
+        assert_eq!(i.search("hiddenword", 3).len(), 0);
+        assert_eq!(i.search("ignoredword", 3).len(), 0);
         assert_eq!(i.search("uniquealphaword", 3).len(), 1);
         drop(i);
         assert_eq!(f.sigs.len(), 2, "signatures are seeded for the watcher");
@@ -471,13 +471,13 @@ mod tests {
             change(ChangeKind::Modified, "a.md"),
             change(ChangeKind::Created, "new.md"),
         ]);
-        assert!(f.found("firstversion").is_empty());
+        assert_eq!(f.found("firstversion").len(), 0);
         assert_eq!(f.found("secondversion"), ["a.md"]);
         assert_eq!(f.found("brandnewword"), ["new.md"]);
 
         fs::remove_file(f.dir.path().join("new.md")).expect("rm");
         f.indexer.apply(&[change(ChangeKind::Removed, "new.md")]);
-        assert!(f.found("brandnewword").is_empty());
+        assert_eq!(f.found("brandnewword").len(), 0);
     }
 
     #[test]
@@ -516,10 +516,10 @@ mod tests {
         f.build();
         f.write("a.md", "\0\0binary\0");
         f.indexer.apply(&[change(ChangeKind::Modified, "a.md")]);
-        assert!(f.found("someword").is_empty());
+        assert_eq!(f.found("someword").len(), 0);
         f.indexer
             .apply(&[change(ChangeKind::Created, "missing.md")]);
-        assert!(f.found("binary").is_empty());
+        assert_eq!(f.found("binary").len(), 0);
     }
 
     #[test]
@@ -541,12 +541,12 @@ mod tests {
 
         f.rescan();
         assert_eq!(f.found("keepword"), ["keep.md"]);
-        assert!(f.found("oldword").is_empty());
+        assert_eq!(f.found("oldword").len(), 0);
         assert_eq!(f.found("newword"), ["edit.md"]);
         assert_eq!(f.found("freshword"), ["fresh.md"]);
         assert_eq!(f.found("movedword"), ["deep/er/moved.md"]);
-        assert!(f.found("goneword").is_empty());
-        assert!(f.found("insideword").is_empty());
+        assert_eq!(f.found("goneword").len(), 0);
+        assert_eq!(f.found("insideword").len(), 0);
         assert!(
             f.sigs.get(&key("gone.md")).is_none(),
             "its signature goes too"
@@ -601,7 +601,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         indexer.build(&cancel, &mut |_, _| {});
         run(&mut indexer, &rx, &cancel);
-        assert!(index.search("startword", 3).is_empty());
+        assert_eq!(index.search("startword", 3).len(), 0);
         assert_eq!(index.search("laterword", 3).len(), 1);
     }
 

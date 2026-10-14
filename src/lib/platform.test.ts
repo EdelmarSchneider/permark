@@ -9,6 +9,8 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: vi.fn() }));
+vi.mock("@tauri-apps/plugin-updater", () => ({ check: vi.fn() }));
 
 import { assetUrl } from "./platform";
 
@@ -67,5 +69,29 @@ describe("security configuration", () => {
     const granted = capability.permissions.map((p) => (typeof p === "string" ? p : p.identifier));
     expect(granted.filter((p) => /^opener:.*(open-path|reveal)/.test(p))).toEqual([]);
     expect(granted).toEqual(expect.arrayContaining(["opener:allow-open-url"]));
+  });
+
+  it("grants the updater and the restart, and nothing broader from the process plugin", () => {
+    const capability = JSON.parse(read("src-tauri/capabilities/default.json")) as {
+      permissions: string[];
+    };
+    expect(capability.permissions).toEqual(
+      expect.arrayContaining(["updater:default", "process:allow-restart"]),
+    );
+    expect(capability.permissions.filter((p) => p.startsWith("process:"))).toEqual([
+      "process:allow-restart",
+    ]);
+  });
+
+  it("signs updates: a public key, the GitHub release endpoint and installer artifacts", () => {
+    const full = JSON.parse(read("src-tauri/tauri.conf.json")) as {
+      bundle: { createUpdaterArtifacts?: unknown };
+      plugins?: { updater?: { pubkey?: string; endpoints?: string[] } };
+    };
+    expect(full.bundle.createUpdaterArtifacts).toBe(true);
+    expect(full.plugins?.updater?.pubkey).toMatch(/^[A-Za-z0-9+/=]{40,}$/);
+    expect(full.plugins?.updater?.endpoints).toEqual([
+      "https://github.com/EdelmarSchneider/trailmark/releases/latest/download/latest.json",
+    ]);
   });
 });

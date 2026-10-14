@@ -31,6 +31,10 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // In-app updates: the updater checks the GitHub release endpoint from `tauri.conf.json`,
+        // the process plugin restarts the app once an update is installed.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         // Images of the open folder: answered from the folder that is open now (see `serve_asset`).
         .register_asynchronous_uri_scheme_protocol(

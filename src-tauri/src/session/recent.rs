@@ -81,7 +81,7 @@ mod tests {
     fn newest_first_and_deduplicated() {
         let d = tempfile::tempdir().expect("tempdir");
         let s = RecentStore::new(d.path());
-        assert!(s.load().is_empty());
+        assert_eq!(s.load().len(), 0);
         s.touch("/a", "a", 1).expect("touch");
         s.touch("/b", "b", 2).expect("touch");
         let list = s.touch("/a", "a", 3).expect("touch");
@@ -125,7 +125,7 @@ mod tests {
         let d = tempfile::tempdir().expect("tempdir");
         std::fs::write(d.path().join(FILE_NAME), "{{{ not json").expect("write");
         let s = RecentStore::new(d.path());
-        assert!(s.load().is_empty());
+        assert_eq!(s.load().len(), 0);
         assert_eq!(s.touch("/a", "a", 1).expect("touch").len(), 1);
     }
 

@@ -26,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
     "shortDescription": "A fast, beautiful Markdown IDE that keeps up with your AI agents.",
     "longDescription": "TrailMark reads, navigates and follows Markdown documents as a local wiki over a folder. It renders GitHub-flavored Markdown with math and diagrams, follows files as AI agents (or anyone) change them, and shows what changed since you last looked.",
@@ -39,5 +40,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1QjVEODA3MTNDNjE4ODUKUldTRkdNWVRCOWkxNVhhRkl4OFdxOXRyempvTU16R0xKL0Z5MzJIcU9wcmh3UWFZelFNR2JQQUkK",
+      "endpoints": ["https://github.com/EdelmarSchneider/trailmark/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
   }
 }

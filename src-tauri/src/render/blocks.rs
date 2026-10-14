@@ -201,8 +201,8 @@ mod tests {
 
     #[test]
     fn empty_and_text_only_input_have_no_blocks() {
-        assert!(top_level_elements("").is_empty());
-        assert!(top_level_elements("\n  just text \n").is_empty());
+        assert_eq!(top_level_elements("").len(), 0);
+        assert_eq!(top_level_elements("\n  just text \n").len(), 0);
     }
 
     #[test]

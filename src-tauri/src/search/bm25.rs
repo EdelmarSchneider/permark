@@ -372,7 +372,7 @@ mod tests {
     #[test]
     fn character_descriptions_finds_the_exact_section_first() {
         let hits = index().search("character descriptions", 5);
-        assert!(!hits.is_empty());
+        assert_ne!(hits.len(), 0);
         let top = &hits[0];
         assert_eq!(top.path, "story/cast.md");
         assert_eq!(top.heading_path, ["Cast", "Character descriptions"]);
@@ -412,7 +412,7 @@ mod tests {
         assert_eq!(hits[0].path, "story/cast.md", "{hits:?}");
         let hits = i.search("stat", 5);
         assert_eq!(hits[0].path, "story/cast.md");
-        assert!(i.search("zzzz", 5).is_empty());
+        assert_eq!(i.search("zzzz", 5).len(), 0);
     }
 
     #[test]
@@ -439,10 +439,10 @@ mod tests {
         let before = i.len();
         i.add_doc("food.md", "# Recipes\n\n## Stew\n\nSimmer beef.\n");
         assert_eq!(i.len(), before);
-        assert!(i.search("boil", 5).is_empty());
+        assert_eq!(i.search("boil", 5).len(), 0);
         assert_eq!(i.search("simmer", 5)[0].path, "food.md");
         i.remove_doc("food.md");
-        assert!(i.search("simmer", 5).is_empty());
+        assert_eq!(i.search("simmer", 5).len(), 0);
         assert!(!i.paths().contains(&"food.md".to_owned()));
         i.remove_doc("never-added.md");
     }
@@ -491,11 +491,11 @@ mod tests {
     fn limit_and_empty_queries() {
         let i = index();
         assert_eq!(i.search("the", 1).len(), 1);
-        assert!(i.search("", 5).is_empty());
-        assert!(i.search("   ", 5).is_empty());
-        assert!(i.search("!!!", 5).is_empty());
-        assert!(i.search("scar", 0).is_empty());
-        assert!(Bm25Index::new().search("scar", 5).is_empty());
+        assert_eq!(i.search("", 5).len(), 0);
+        assert_eq!(i.search("   ", 5).len(), 0);
+        assert_eq!(i.search("!!!", 5).len(), 0);
+        assert_eq!(i.search("scar", 0).len(), 0);
+        assert_eq!(Bm25Index::new().search("scar", 5).len(), 0);
     }
 
     #[test]
@@ -523,7 +523,7 @@ mod tests {
     fn provider_trait_is_object_safe() {
         let i = index();
         let p: &dyn SearchProvider = &i;
-        assert!(!p.search("pilot", 3).is_empty());
+        assert_ne!(p.search("pilot", 3).len(), 0);
     }
 
     #[test]

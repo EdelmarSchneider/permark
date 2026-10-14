@@ -885,7 +885,7 @@ mod tests {
         let info = ws.info();
         assert_eq!(info.mode, VaultMode::Ide);
         assert_eq!(info.initial_file, None);
-        assert!(info.worktrees.is_empty());
+        assert_eq!(info.worktrees.len(), 0);
         assert!(info.live_updates);
         assert_eq!(info.name, ws.vault().name());
 
@@ -981,7 +981,7 @@ deepword
         let ws = fx.open_path(&fx.project.path().join("docs").join("todo.md"));
         fx.indexed();
         assert_eq!(ws.search("siblingword", None).len(), 1);
-        assert!(ws.search("deepword", None).is_empty());
+        assert_eq!(ws.search("deepword", None).len(), 0);
 
         // Nested changes are not watched; changes next to the file are.
         write(fx.project.path(), "docs/sub/new.md", "x");
@@ -1353,7 +1353,7 @@ deepword
 
         commit_all(&repo, "the agent commits the work in progress");
         let ws = fx.open();
-        assert!(ws.since_last_visit().expect("since").files.is_empty());
+        assert_eq!(ws.since_last_visit().expect("since").files.len(), 0);
         ws.close();
     }
 

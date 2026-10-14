@@ -4,8 +4,10 @@
   import { clock } from "../stores/clock.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { updates } from "../stores/updates.svelte";
   import { vault } from "../stores/vault.svelte";
   import { baselineLabel } from "../time";
+  import { describeUpdate } from "../updates";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
@@ -39,6 +41,7 @@
   );
   const rebasing = $derived(git && git.repoState !== "clean");
   const sinceMs = $derived(vault.since?.sinceMs ?? null);
+  const update = $derived(updates.state);
 
   const baselineEntries = $derived<MenuEntry[]>([
     {
@@ -120,6 +123,25 @@
     <span class="sb-chip">{t(`status.chip.${git.repoState}`)}</span>
   {/if}
   <span class="spacer"></span>
+  {#if update.phase === "available"}
+    <button
+      type="button"
+      class="sb-item is-on"
+      title={t("update.statusHint", { version: update.version })}
+      onclick={() => updates.announce()}
+    >
+      <Icon name="download" />{t("update.statusAvailable", { version: update.version })}
+    </button>
+  {:else if update.phase === "downloading" || update.phase === "installing"}
+    <button
+      type="button"
+      class="sb-item is-on"
+      title={describeUpdate(update)}
+      onclick={() => updates.announce()}
+    >
+      <Icon name="download" />{describeUpdate(update)}
+    </button>
+  {/if}
   <button
     type="button"
     class="sb-item"

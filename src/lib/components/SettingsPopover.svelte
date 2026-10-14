@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { t } from "../i18n";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { docs } from "../stores/docs.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { updates } from "../stores/updates.svelte";
+  import { describeUpdate, isBusy } from "../updates";
   import IconButton from "./IconButton.svelte";
   import Popover, { type Anchor } from "./Popover.svelte";
 
@@ -20,6 +23,12 @@
 
   const themes = ["system", "light", "dark"] as const;
   const preview = $derived(formatReference(session.refTemplate, docs.path ?? SAMPLE));
+  const update = $derived(updates.state);
+  // the button already says "Checking..."
+  const status = $derived(update.phase === "checking" ? "" : describeUpdate(update));
+
+  // "You're up to date" is the answer to the last check; it is not kept for the next time the popover opens
+  onDestroy(() => updates.dismissResult());
 </script>
 
 <Popover
@@ -102,5 +111,29 @@
       oninput={(e) => session.setRefTemplate(e.currentTarget.value)}
     />
     <span class="field__preview" aria-live="polite">{t("settings.refPreview", { preview })}</span>
+  </div>
+  <div class="field">
+    <span class="field__label">{t("settings.updates")}</span>
+    <div class="field__row">
+      {#if update.phase === "available"}
+        <button
+          type="button"
+          class="btn btn--sm btn--primary"
+          onclick={() => void updates.install()}
+        >
+          {t("update.restart")}
+        </button>
+      {:else}
+        <button
+          type="button"
+          class="btn btn--sm"
+          disabled={isBusy(update)}
+          onclick={() => void updates.check(true)}
+        >
+          {update.phase === "checking" ? t("update.checking") : t("update.check")}
+        </button>
+      {/if}
+    </div>
+    <span class="field__status" role="status">{status}</span>
   </div>
 </Popover>

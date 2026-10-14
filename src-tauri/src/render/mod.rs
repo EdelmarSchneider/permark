@@ -272,7 +272,7 @@ mod tests {
         let v = load_document(&Registry::with_defaults(), &p, "big.md").expect("load");
         assert_eq!(v.kind, DocKind::TooLarge);
         assert_eq!(v.size_bytes, MAX_RENDER_BYTES + 1);
-        assert!(v.html.is_empty());
+        assert_eq!(v.html.len(), 0);
     }
 
     #[test]
@@ -310,7 +310,7 @@ mod tests {
     fn empty_file_is_an_empty_markdown_document() {
         let v = view_of("empty.md", b"");
         assert_eq!(v.kind, DocKind::Markdown);
-        assert!(v.blocks.is_empty());
+        assert_eq!(v.blocks.len(), 0);
     }
 
     #[test]

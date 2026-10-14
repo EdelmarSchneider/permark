@@ -843,6 +843,28 @@
   font-size: var(--fs-ui-xs);
   color: var(--muted);
 }
+.toast__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.toast__progress {
+  height: 3px;
+  margin-top: 8px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+.toast__progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+.toast__progress span.is-indeterminate {
+  animation: tm-pulse 1.4s ease-in-out infinite;
+}
 
 /* Popover / Menu / Dialog -------------------------------------------------------------- */
 .popover {
@@ -980,6 +1002,14 @@
   font: 11.5px/1.4 var(--font-code);
   color: var(--muted);
   word-break: break-all;
+}
+.field__status {
+  min-height: 1.4em;
+  font-size: var(--fs-ui-sm);
+  color: var(--muted);
+}
+.field__status:empty {
+  display: none;
 }
 kbd.hint-kbd {
   font: 500 10.5px var(--font-ui);

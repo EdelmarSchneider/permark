@@ -368,7 +368,7 @@ mod tests {
     fn created_and_deleted_in_one_window_is_nothing() {
         let f = Fx::new();
         let r = f.run(&[("scratch.md", Hint::Create), ("scratch.md", Hint::Remove)]);
-        assert!(r.changes.is_empty());
+        assert_eq!(r.changes.len(), 0);
         assert!(!r.tree_changed);
     }
 
@@ -450,7 +450,7 @@ mod tests {
         let f = Fx::new();
         f.write("d/a.md", "1");
         let r = f.run(&[("d", Hint::Modify)]);
-        assert!(r.changes.is_empty());
+        assert_eq!(r.changes.len(), 0);
         assert!(!r.tree_changed);
     }
 
@@ -461,7 +461,7 @@ mod tests {
         f.run(&[("a.md", Hint::Create)]);
         f.write("a.md", "");
         let first = f.run(&[("a.md", Hint::Modify)]);
-        assert!(first.changes.is_empty());
+        assert_eq!(first.changes.len(), 0);
         assert_eq!(first.deferred.len(), 1);
 
         // Still empty on the second look: report it.

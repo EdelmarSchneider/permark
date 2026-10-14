@@ -13,9 +13,13 @@ export type ToastModel =
       kind: ChangeKind;
       atMs: number;
     }
-  | { id: number; type: "message"; text: string; tone: "info" | "warn" };
+  | { id: number; type: "message"; text: string; tone: "info" | "warn" }
+  /** An app update; the text and buttons follow the updater state (`stores/updates.svelte.ts`). */
+  | { id: number; type: "update" };
 
 const AUTO_HIDE_MS = 6000;
+/** The update toast waits longer: it asks a question. */
+const UPDATE_HIDE_MS = 20000;
 const LEAVE_MS = 180;
 
 class ToastStore {
@@ -24,6 +28,8 @@ class ToastStore {
 
   private burst = new BurstTracker();
   private nextId = 1;
+  /** How long the current toast stays; null keeps it until it is dismissed. */
+  private hideMs: number | null = AUTO_HIDE_MS;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
   private leaveTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -44,6 +50,11 @@ class ToastStore {
     this.show({ id: this.nextId++, type: "message", text, tone });
   }
 
+  /** An update is available (or being installed, when `sticky`: the toast then stays to show the progress). */
+  update(sticky = false): void {
+    this.show({ id: this.nextId++, type: "update" }, sticky ? null : UPDATE_HIDE_MS);
+  }
+
   dismiss(): void {
     this.clearTimers();
     this.burst.reset();
@@ -62,16 +73,17 @@ class ToastStore {
   }
 
   resume(): void {
-    if (!this.current) return;
+    if (!this.current || this.hideMs === null) return;
     this.pause();
-    this.hideTimer = setTimeout(() => this.dismiss(), AUTO_HIDE_MS);
+    this.hideTimer = setTimeout(() => this.dismiss(), this.hideMs);
   }
 
-  private show(model: ToastModel): void {
+  private show(model: ToastModel, hideMs: number | null = AUTO_HIDE_MS): void {
     this.clearTimers();
     this.leaving = false;
     this.current = model;
-    this.hideTimer = setTimeout(() => this.dismiss(), AUTO_HIDE_MS);
+    this.hideMs = hideMs;
+    if (hideMs !== null) this.hideTimer = setTimeout(() => this.dismiss(), hideMs);
   }
 
   private clearTimers(): void {

@@ -176,13 +176,13 @@ mod tests {
     #[test]
     fn tokenize_skips_giant_tokens() {
         let blob = "a".repeat(100);
-        assert!(tokenize(&blob).is_empty());
+        assert_eq!(tokenize(&blob).len(), 0);
         assert_eq!(tokenize(&format!("{blob} ok")).len(), 1);
     }
 
     #[test]
     fn tokenize_handles_empty_and_symbol_only_text() {
-        assert!(tokenize("").is_empty());
-        assert!(tokenize("--- *** !!!").is_empty());
+        assert_eq!(tokenize("").len(), 0);
+        assert_eq!(tokenize("--- *** !!!").len(), 0);
     }
 }

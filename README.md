@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/assets/logo.svg" width="96" height="96" alt="TrailMark logo">
+
 # TrailMark
 
 **A fast, beautiful Markdown IDE that keeps up with your AI agents.**
@@ -55,7 +57,7 @@ Gemini CLI, and it's a great Markdown reader if you don't use AI at all.
 ### 🔍 Find anything, to the section
 - Section-level full-text search (`Ctrl+Shift+F`): results show `file › heading › snippet` and jump to the exact spot
 - Accent- and case-insensitive, with light stemming, and incremental updates as files change
-- Semantic search with a local multilingual model is on the [roadmap](#roadmap)
+- Semantic search with a local multilingual model is planned for v0.3 (see the [roadmap](#roadmap))
 
 ### 🌿 Git-aware
 - Badges for modified, added and untracked files, with folder roll-up
@@ -115,10 +117,12 @@ You can also drag and drop a folder or a `.md` file onto the window.
 - File tags and short descriptions ("Character sheets", "NPC dialogues"…): read from frontmatter or added in the app
   without touching your files, with a Tags view and `tag:` search filters
 - WYSIWYG editing (tables, images, formatting) with conflict-safe saving that never silently reformats agent-written files
-- Semantic and hybrid search with a local multilingual embedding model (optional download)
 - Outline panel, "unread since last read" markers, commit timeline, rendered diff against the baseline
 - Rich JSON and XML views, clickable code references (`src/main.rs:42`)
 - Installers with `trailmark` on `PATH` and `.md` file association
+
+**v0.3**
+- Semantic and hybrid search with a local multilingual embedding model (optional download)
 
 **Later**
 - Review comments that turn into a prompt or a `REVIEW.md` for your agent

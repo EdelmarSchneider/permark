@@ -51,7 +51,7 @@ mod tests {
         let c = Config::default();
         assert_eq!(c.ref_template, None);
         assert_eq!(c.baseline, BaselineKind::LastVisit);
-        assert!(c.ignore.is_empty());
+        assert_eq!(c.ignore.len(), 0);
     }
 
     #[test]

@@ -1,0 +1,75 @@
+name: CI
+
+# The quality gate (`npm run check`: rustfmt, clippy -D warnings, cargo test, svelte-check, vitest)
+# on every push to the long-lived branches and on every pull request.
+
+on:
+  push:
+    branches: [develop, main, "feature/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The system libraries the Tauri crates link against on Linux.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Install Rust (stable, with clippy and rustfmt)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # `tauri::generate_context!` embeds `frontendDist` (../dist) at compile time, so the cargo steps of the
+      # gate need it to exist. Building it for real also checks that the frontend bundles.
+      - name: Build the frontend
+        run: npm run build
+
+      - name: Quality gate
+        run: npm run check
