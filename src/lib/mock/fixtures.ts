@@ -2,7 +2,7 @@
 // rendered HTML (top-level blocks with `data-sourcepos`, heading anchors, alerts, `language-mermaid`
 // code, `data-math-style` spans, footnotes, task lists), git state and a tiny section search.
 
-import { resolveRelative, splitWorktree } from "../paths";
+import { dirname, resolveRelative, splitWorktree } from "../paths";
 import { hashString } from "../text";
 import type {
   ChangedSince,
@@ -13,6 +13,7 @@ import type {
   TreeNode,
   VaultInfo,
 } from "../types";
+import { htmlToMarkdown, markdownToView } from "./mockMarkdown";
 
 export const MOCK_ROOT = "C:/Users/demo/trailmark-docs";
 export const MOCK_NOW = Date.now();
@@ -657,8 +658,71 @@ function registry(): Record<string, MockDoc> {
   return mockState.vault === "simple" ? simpleDocs : docs;
 }
 
+/**
+ * The text of the documents, for the editor. A document has none until it is opened for editing (its source is
+ * made from the mock blocks, once). Saving, or an "agent" editing it afterwards, puts it in `written`, from then
+ * on the reading view is rendered from that text.
+ */
+export const mockFiles = {
+  generated: new Map<string, string>(),
+  written: new Map<string, { text: string; mtime: number }>(),
+  /** Files made with New file: they are not in the registry. */
+  created: new Set<string>(),
+  /** Image names written by the editor (for the numbering of clashes). */
+  assets: new Set<string>(),
+  /** The next save fails with "access denied", to see the error bar. */
+  failNextSave: false,
+};
+
+/** What kind of file a mock path is (null when there is no such file). */
+export function mockDocKind(path: string): MockDoc["kind"] | null {
+  if (mockState.deleted.has(path)) return null;
+  if (mockFiles.created.has(path)) return "markdown";
+  return registry()[path]?.kind ?? null;
+}
+
+/** Whether a mock document has a note about its encoding (the editor refuses those). */
+export function mockEncodingNote(path: string): string | null {
+  return registry()[path]?.encodingNote ?? null;
+}
+
+/** The text of a Markdown document: what was saved, else the source made from its mock blocks. */
+export function sourceText(path: string): string | null {
+  const saved = mockFiles.written.get(path);
+  if (saved) return saved.text;
+  const cached = mockFiles.generated.get(path);
+  if (cached !== undefined) return cached;
+  const entry = registry()[path];
+  if (!entry || entry.kind !== "markdown") return null;
+  const text = htmlToMarkdown(
+    entry.blocks(0).map((b) => b.html),
+    entry.frontmatter,
+  );
+  mockFiles.generated.set(path, text);
+  return text;
+}
+
+/** When the document was last written (a save, or the age it started with). */
+export function sourceMtime(path: string): number {
+  return (
+    mockFiles.written.get(path)?.mtime ??
+    mockState.modified.get(path) ??
+    MOCK_NOW - (registry()[path]?.age ?? 0)
+  );
+}
+
+/** Writes the text of a document, as the editor or an agent saving would. */
+export function writeSource(path: string, text: string): number {
+  const mtime = Date.now();
+  mockFiles.written.set(path, { text, mtime });
+  mockState.modified.set(path, mtime);
+  mockState.deleted.delete(path);
+  mockGit.generation += 1;
+  return mtime;
+}
+
 export function docExists(path: string): boolean {
-  return path in registry() && !mockState.deleted.has(path);
+  return (path in registry() || mockFiles.created.has(path)) && !mockState.deleted.has(path);
 }
 
 /** The front matter pairs of a mock document, if it has any. */
@@ -666,7 +730,25 @@ export function mockFrontmatter(path: string): [string, string][] | null {
   return registry()[path]?.frontmatter ?? null;
 }
 
+function writtenView(path: string, text: string, mtime: number): DocumentView {
+  const view = markdownToView(text);
+  return {
+    path,
+    kind: "markdown",
+    html: view.html,
+    blocks: view.blocks,
+    title: view.title,
+    frontmatter: view.frontmatter,
+    modifiedMs: mtime,
+    sizeBytes: new TextEncoder().encode(text).length,
+    encodingNote: null,
+  };
+}
+
 export function getDocument(path: string): DocumentView {
+  const written = mockFiles.written.get(path);
+  if (written && !mockState.deleted.has(path))
+    return writtenView(path, written.text, written.mtime);
   const entry = registry()[path];
   if (!entry || mockState.deleted.has(path)) throw new Error(`file not found: ${path}`);
   const rev = mockState.revisions.get(path) ?? 0;
@@ -700,9 +782,17 @@ export function getDocument(path: string): DocumentView {
 
 /** Simulates an agent saving a document: bumps its revision and modification time. */
 export function editDocument(path: string): void {
-  mockState.revisions.set(path, (mockState.revisions.get(path) ?? 0) + 1);
+  const rev = (mockState.revisions.get(path) ?? 0) + 1;
+  mockState.revisions.set(path, rev);
   mockState.modified.set(path, Date.now());
   mockState.deleted.delete(path);
+  // a document that has a text (it was opened for editing, or saved) is edited in its text
+  const text =
+    mockFiles.written.has(path) || mockFiles.generated.has(path) ? sourceText(path) : null;
+  if (text !== null) {
+    const body = text.replace(/\n*$/, "\n");
+    writeSource(path, `${body}\nEdit ${rev}: this paragraph was added by an agent.\n`);
+  }
 }
 
 export function deleteDocument(path: string): void {
@@ -716,7 +806,9 @@ export function restoreDocument(path: string): void {
 
 /** Documents that exist in the current mock vault. */
 export function allDocPaths(): string[] {
-  return Object.keys(registry()).filter((p) => !mockState.deleted.has(p));
+  return [...Object.keys(registry()), ...mockFiles.created].filter(
+    (p) => !mockState.deleted.has(p),
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -776,6 +868,33 @@ export function mockTree(): TreeNode {
   const exists = (p: string): boolean => !mockState.deleted.has(p);
   const keep = (nodes: TreeNode[]): TreeNode[] =>
     nodes.filter((n) => n.kind !== "file" || exists(n.path));
+  const tree = baseTree(keep);
+  for (const path of mockFiles.created) if (exists(path)) insertFile(tree, path);
+  return tree;
+}
+
+/** Adds a file to a tree, making the folders on the way; folders come first, then names in order. */
+function insertFile(tree: TreeNode, path: string): void {
+  const segments = path.split("/");
+  let folder = tree;
+  for (let i = 0; i < segments.length - 1; i++) {
+    const folderPath = segments.slice(0, i + 1).join("/");
+    let next = (folder.children ?? []).find((n) => n.kind === "dir" && n.path === folderPath);
+    if (!next) {
+      next = dir(folderPath, []);
+      folder.children = [...(folder.children ?? []), next];
+    }
+    folder = next;
+  }
+  const children = [...(folder.children ?? []), file(path)];
+  const rank = (n: TreeNode): number => (n.kind === "file" ? 1 : 0);
+  children.sort(
+    (a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
+  );
+  folder.children = children;
+}
+
+function baseTree(keep: (nodes: TreeNode[]) => TreeNode[]): TreeNode {
   return {
     name: "trailmark-docs",
     path: "",
@@ -866,17 +985,29 @@ export function mockSnapshot(kind: "lastVisit" | "head" = mockGit.baseline): Git
       kind,
       oid: kind === "head" ? HEAD_OID : "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
     },
-    files: mockGit.gitError
-      ? {}
-      : {
-          "docs/specs/live-feed.md": { state: "modified", staged: false },
-          "docs/specs/watcher.md": { state: "added", staged: true },
-          "docs/research/storage.md": { state: "untracked", staged: false },
-          "docs/research/watchers.md": { state: "modified", staged: false },
-          "plan.md": { state: "modified", staged: false },
-        },
+    files: mockGit.gitError ? {} : mockGitFiles(),
     truncated: false,
   };
+}
+
+/** The changed files: the ones the mock starts with, plus what was saved or created since. */
+function mockGitFiles(): GitSnapshot["files"] {
+  const files: GitSnapshot["files"] = {
+    "docs/specs/live-feed.md": { state: "modified", staged: false },
+    "docs/specs/watcher.md": { state: "added", staged: true },
+    "docs/research/storage.md": { state: "untracked", staged: false },
+    "docs/research/watchers.md": { state: "modified", staged: false },
+    "plan.md": { state: "modified", staged: false },
+  };
+  for (const path of mockFiles.written.keys()) {
+    if (!mockState.deleted.has(path)) {
+      files[path] ??= {
+        state: mockFiles.created.has(path) ? "untracked" : "modified",
+        staged: false,
+      };
+    }
+  }
+  return files;
 }
 
 export function mockSince(): ChangedSince {
