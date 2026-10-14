@@ -3,9 +3,11 @@
   import { onMount } from "svelte";
   import { bridge } from "../bridge";
   import type { SourceView } from "../editor/cm";
+  import { EditorOutline } from "../editor/outlineSync";
   import { t } from "../i18n";
   import { basename } from "../paths";
   import { edit } from "../stores/edit.svelte";
+  import { outline } from "../stores/outline.svelte";
   import Notice from "./Notice.svelte";
 
   let host: HTMLElement | undefined = $state();
@@ -17,6 +19,7 @@
     const mount = host;
     if (!mount || !start) return;
     let view: SourceView | null = null;
+    let sync: EditorOutline | null = null;
     let gone = false;
     import("../editor/cm")
       .then(({ createSourceView }) => {
@@ -27,13 +30,22 @@
           start.line,
           t("edit.sourceLabel", { name: basename(edit.path ?? "") }),
           {
-            onChange: (length) => edit.noteChange(length),
+            onChange: (length) => {
+              edit.noteChange(length);
+              sync?.changed();
+            },
             onCaret: (line, column) => edit.noteCaret(line, column),
             onFiles: (files, source) => void edit.addFiles(files, source),
           },
           start.atEnd === true,
         );
         bridge.editor = view;
+        // the reading view is hidden while editing, so the Outline is built from, and scrolls, this editor
+        if (edit.path) {
+          sync = new EditorOutline(edit.path, view, outline);
+          bridge.editorOutline = sync;
+          sync.start();
+        }
         ready = true;
         view.focus();
       })
@@ -43,6 +55,8 @@
     return () => {
       gone = true;
       if (view && bridge.editor === view) bridge.editor = undefined;
+      if (sync && bridge.editorOutline === sync) bridge.editorOutline = undefined;
+      sync?.dispose();
       view?.destroy();
     };
   });

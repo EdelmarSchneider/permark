@@ -397,6 +397,9 @@ class AppStore {
       toast.message(t("newFile.simpleMode"), "info");
       return;
     }
+    // The new file replaces the open document, so unsaved edits are asked about before anything is made: Save or Discard goes
+    // on to the name, Keep editing creates nothing.
+    if (edit.active && edit.dirty && edit.holdNavigation(() => this.startNewFile(folder))) return;
     const target = folder ?? targetFolder(ui.treeCursor, docs.path);
     ui.sidebarView = "explorer";
     if (!session.left.open) session.setPanel("left", { open: true });
@@ -421,8 +424,9 @@ class AppStore {
     }
     ui.newFile = null;
     await vault.refreshTree();
-    // Editing starts once the file is open. If the document being edited has unsaved work the open waits for the
-    // person's answer (Save or Discard) and is resumed after it, so the start of editing travels with it.
+    // Editing starts once the file is open. Unsaved work in the open document was asked about before the name (see
+    // `startNewFile`); if there is some again by now (typed while the name was open) the open waits for the answer as
+    // any other move does, and the start of editing travels with it.
     await this.openDoc(path, { afterOpen: () => void edit.enter(true) });
     return null;
   }

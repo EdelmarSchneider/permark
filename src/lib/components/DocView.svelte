@@ -264,8 +264,12 @@
     outline.clear();
   }
 
-  /** Rebuilds the outline from the headings on screen (after every render, fresh or live). */
+  /**
+   * Rebuilds the outline from the headings on screen (after every render, fresh or live). While editing, this view is hidden and the
+   * editor builds the outline (`editor/outlineSync.ts`).
+   */
   function reportOutline(view: DocumentView): void {
+    if (docs.editing) return;
     if (!body || view.kind !== "markdown") {
       clearOutline();
       return;
@@ -280,6 +284,7 @@
 
   /** The section being read: the last heading above the top-third line of the viewport. */
   function updateCurrent(): void {
+    if (docs.editing) return;
     if (!scroller || headingEls.length === 0) {
       outline.setCurrent(null);
       return;
@@ -360,6 +365,16 @@
     if (top > 0) untrack(() => scroller?.scrollTo({ top, behavior: "instant" }));
   });
 
+  // Back from editing: the outline of the editor gives way to the one of the reading view.
+  let wasEditing = false;
+  $effect(() => {
+    const editing = docs.editing;
+    untrack(() => {
+      if (wasEditing && !editing && view) reportOutline(view);
+      wasEditing = editing;
+    });
+  });
+
   // no document (closed, or the project was replaced): no outline
   $effect(() => {
     if (!docs.current) untrack(clearOutline);
@@ -367,9 +382,13 @@
 
   onMount(() => {
     bridge.jumpChange = (direction) => jumpToChange(direction);
+    // while editing, the outline's clicks and focus belong to the editor
     bridge.outline = {
-      goTo: goToHeading,
-      focusDoc: () => scroller?.focus({ preventScroll: true }),
+      goTo: (index) => (bridge.editorOutline ?? { goTo: goToHeading }).goTo(index),
+      focusDoc: () =>
+        bridge.editorOutline
+          ? bridge.editorOutline.focusDoc()
+          : scroller?.focus({ preventScroll: true }),
     };
     bridge.find = {
       run: (query, mode, opts) => ensureObjects()?.finder.run(query, mode, opts),

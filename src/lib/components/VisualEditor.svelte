@@ -5,6 +5,7 @@
   import { bridge } from "../bridge";
   import { enhanceContextFor } from "../dom/enhanceContext";
   import { createLockedHost, type LockedHostHandle } from "../editor/lockedHost";
+  import { EditorOutline } from "../editor/outlineSync";
   import type { SlashState, VisualEditor } from "../editor/visual/editor";
   import { NO_FORMAT, type CommandId, type FormatState } from "../editor/visual/format";
   import type { LinkTarget } from "../editor/visual/link";
@@ -14,6 +15,7 @@
   import { assetUrl } from "../platform";
   import { app } from "../stores/app.svelte";
   import { edit } from "../stores/edit.svelte";
+  import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import LinkPopover from "./LinkPopover.svelte";
@@ -29,7 +31,9 @@
   let slashApi = $state<SlashApi | undefined>();
   let link = $state.raw<{ anchor: Anchor; target: LinkTarget } | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
+  let scroller: HTMLElement | undefined = $state();
   let editor: VisualEditor | null = null;
+  let sync: EditorOutline | null = null;
   let locked: LockedHostHandle | null = null;
 
   /** The address an `<img>` loads for the `src` written in the Markdown: the app's image scheme for files of the folder. */
@@ -116,12 +120,14 @@
           host: mount,
           label: t("edit.visualLabel", { name: basename(path) }),
           locked: hostHandle.host,
+          scroller,
           imageUrl,
           handlers: {
             changed: () => {
               if (!editor) return;
               format = editor.format();
               edit.noteVisual();
+              sync?.changed();
             },
             files: (files, source) => void edit.addFiles(files, source),
             editInSource: (block) => void edit.switchTo("source", { block }),
@@ -137,6 +143,12 @@
         editor = created;
         created.load(start);
         bridge.editor = created;
+        // the reading view is hidden while editing, so the Outline is built from, and scrolls, this editor
+        if (edit.path) {
+          sync = new EditorOutline(edit.path, created, outline);
+          bridge.editorOutline = sync;
+          sync.start();
+        }
         ready = true;
         created.focus();
         edit.noteVisual();
@@ -149,6 +161,9 @@
     return () => {
       gone = true;
       if (editor && bridge.editor === editor) bridge.editor = undefined;
+      if (sync && bridge.editorOutline === sync) bridge.editorOutline = undefined;
+      sync?.dispose();
+      sync = null;
       hostHandle.dispose();
       void editor?.destroy();
       editor = null;
@@ -180,7 +195,7 @@
   />
   <!-- the empty space around the text is a target of its own: a click there puts the caret at the end -->
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="visual__scroll" onclick={onScrollerClick}>
+  <div bind:this={scroller} class="visual__scroll" onclick={onScrollerClick}>
     <div class="visual__column">
       <div bind:this={host} class="visual__host"></div>
     </div>

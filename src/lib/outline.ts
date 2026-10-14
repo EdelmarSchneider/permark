@@ -1,6 +1,9 @@
 // The document outline (docs/design/v0.2.md section 2): the tree of a document's headings, the section being
 // read, collapsing, and the keyboard. Pure; DocView reads the DOM and the store keeps the result.
 
+/** A heading of a text being edited: its level (1 to 6) and the text a reader sees. */
+export type HeadingInfo = { level: number; text: string };
+
 /** A top-level block of the rendered document, as the outline sees it. */
 export type BlockInfo = {
   /** 1 to 6 for a heading, null for any other block. */

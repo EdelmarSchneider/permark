@@ -44,6 +44,7 @@ vi.mock("../platform", () => ({
 }));
 
 import { bridge } from "../bridge";
+import { noOutline } from "../editor/outlineStub";
 import { skipNotes } from "../fileOps";
 import { docs } from "./docs.svelte";
 import { edit } from "./edit.svelte";
@@ -281,6 +282,7 @@ describe("renaming and moving", () => {
     });
     expect(await edit.enter()).toBe(true);
     const editor = {
+      ...noOutline,
       mode: "source" as const,
       text: "[a](api.md) unsaved\n",
       getText: () => editor.text,
@@ -339,6 +341,7 @@ describe("renaming and moving", () => {
     });
     expect(await edit.enter()).toBe(true);
     bridge.editor = {
+      ...noOutline,
       mode: "visual",
       text: () => "[a](api.md)\n",
       status: () => ({ dirty, changed: dirty ? 1 : 0 }),

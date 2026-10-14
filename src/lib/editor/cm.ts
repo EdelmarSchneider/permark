@@ -2,10 +2,8 @@
 // only when someone starts editing (see SourceEditor.svelte), so reading costs none of it.
 
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
-import { yamlFrontmatter } from "@codemirror/lang-yaml";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { EditorSelection, EditorState, type Extension } from "@codemirror/state";
+import { EditorSelection, EditorState, type Extension, type Text } from "@codemirror/state";
 import {
   EditorView,
   drawSelection,
@@ -16,7 +14,10 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import type { SourceApi } from "../bridge";
+import { currentHeading } from "../outline";
 import { imageMarkdown } from "./imageName";
+import { sourceHeadings, sourceLanguage, type SourceHeading } from "./sourceHeadings";
+import { watchViewport } from "./viewport";
 import { toggleMarker, wrapLink, type WrapEdit } from "./wrapSelection";
 
 export type SourceHandlers = {
@@ -119,7 +120,7 @@ export function createSourceView(
     drawSelection(),
     history(),
     // a `---` block at the top is front matter (YAML), not a heading underline
-    yamlFrontmatter({ content: markdown() }),
+    sourceLanguage(),
     syntaxHighlighting(markdownStyle),
     EditorView.lineWrapping,
     EditorState.allowMultipleSelections.of(false),
@@ -177,8 +178,40 @@ export function createSourceView(
     });
   };
 
+  // the headings of the text, for the Outline: read again only when the text is not the one they were read from
+  let headingsOf: { doc: Text; list: SourceHeading[] } | null = null;
+  const headingList = (): SourceHeading[] => {
+    const { doc } = view.state;
+    if (headingsOf?.doc === doc) return headingsOf.list;
+    const { headings, complete } = sourceHeadings(view.state);
+    headingsOf = complete ? { doc, list: headings } : null;
+    return headings;
+  };
+
   return {
     mode: "source",
+    headings: () => headingList().map(({ level, text }) => ({ level, text })),
+    scrollToHeading(index) {
+      const heading = headingList()[index];
+      if (!heading) return;
+      view.dispatch({
+        effects: EditorView.scrollIntoView(heading.from, { y: "start", yMargin: 8 }),
+      });
+    },
+    currentHeading() {
+      const list = headingList();
+      if (list.length === 0) return null;
+      const scroller = view.scrollDOM;
+      const height = scroller.clientHeight;
+      const atBottom = scroller.scrollTop + height >= scroller.scrollHeight - 2;
+      // where the document starts on screen, measured once; a heading's top is that plus its offset in the document
+      const base = view.documentTop - scroller.getBoundingClientRect().top;
+      return currentHeading(list.length, (i) => base + view.lineBlockAt(list[i].from).top, {
+        line: height / 3,
+        bottomEdge: atBottom ? height : undefined,
+      });
+    },
+    onViewport: (handler) => watchViewport(view.scrollDOM, handler),
     getText: () => view.state.doc.toString(),
     setText(next, atLine) {
       view.dispatch({
