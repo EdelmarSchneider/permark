@@ -48,6 +48,8 @@ class UiStore {
   followChip = $state.raw<{ from: string; to: string; n: number } | null>(null);
   /** The "keep settings with the project" hint was dismissed or used (remembered across projects). */
   hintDismissed = $state(readHintDismissed());
+  /** Folders whose "keep settings with the project?" banner was answered "Not now" since the app started. */
+  initHintSnoozed = new SvelteSet<string>();
   /** Repo state whose banner the user dismissed; it returns when the state changes. */
   dismissedRepoState = $state<string | null>(null);
   searchFocusTick = $state(0);

@@ -35,6 +35,10 @@ pub fn is_temp_name(name: &str) -> bool {
 }
 
 /// `.gitignore` files are loaded per folder on first use and cached; the cache is dropped when one changes.
+///
+/// A folder with a `.git` of its own is a repository nested in the project. The project's `.gitignore`
+/// never hides it (the tree always lists it), and inside it only its own `.gitignore` files and
+/// `.git/info/exclude` apply, not the project's.
 #[derive(Debug)]
 struct LazyGitignore {
     root: PathBuf,
@@ -43,6 +47,10 @@ struct LazyGitignore {
     /// The user's global excludes file; lowest priority.
     global: Option<Gitignore>,
     cache: HashMap<PathBuf, Option<Gitignore>>,
+    /// Folders looked at for a `.git` of their own.
+    repos: HashMap<PathBuf, bool>,
+    /// `.git/info/exclude` of the nested repositories.
+    excludes: HashMap<PathBuf, Option<Gitignore>>,
 }
 
 impl LazyGitignore {
@@ -58,6 +66,8 @@ impl LazyGitignore {
             base,
             global: (!global.is_empty()).then_some(global),
             cache: HashMap::new(),
+            repos: HashMap::new(),
+            excludes: HashMap::new(),
         }
     }
 
@@ -71,29 +81,57 @@ impl LazyGitignore {
             .as_ref()
     }
 
+    fn is_repo(&mut self, dir: &Path) -> bool {
+        *self
+            .repos
+            .entry(dir.to_path_buf())
+            .or_insert_with(|| dir.join(".git").exists())
+    }
+
+    /// `.git/info/exclude` of a nested repository.
+    fn exclude_of(&mut self, repo: &Path) -> Option<&Gitignore> {
+        self.excludes
+            .entry(repo.to_path_buf())
+            .or_insert_with(|| {
+                let file = repo.join(".git").join("info").join("exclude");
+                file.is_file().then(|| {
+                    let mut builder = GitignoreBuilder::new(repo);
+                    let _ = builder.add(&file);
+                    builder.build().unwrap_or_else(|_| Gitignore::empty())
+                })
+            })
+            .as_ref()
+    }
+
     /// Is the path, or any folder above it inside the root, ignored?
     fn is_ignored(&mut self, comps: &[&str], is_dir: bool) -> bool {
-        for depth in 1..=comps.len() {
-            let mut path = self.root.clone();
-            path.extend(&comps[..depth]);
-            let dir = depth < comps.len() || is_dir;
-            if self.matches(&path, dir) {
+        let mut repo = self.root.clone();
+        let mut path = self.root.clone();
+        for (i, comp) in comps.iter().enumerate() {
+            path.push(comp);
+            let dir = i + 1 < comps.len() || is_dir;
+            if dir && self.is_repo(&path) {
+                repo.clone_from(&path);
+                continue;
+            }
+            if self.matches(&repo, &path, dir) {
                 return true;
             }
         }
         false
     }
 
-    /// Deepest `.gitignore` first; the first file with an opinion wins.
-    fn matches(&mut self, path: &Path, is_dir: bool) -> bool {
+    /// Deepest `.gitignore` first; the first file with an opinion wins. Only the files of the repository
+    /// `repo` (the project root, or a repository nested in it) are consulted.
+    fn matches(&mut self, repo: &Path, path: &Path, is_dir: bool) -> bool {
         let mut dirs: Vec<PathBuf> = path
             .ancestors()
             .skip(1)
-            .take_while(|a| a.starts_with(&self.root))
+            .take_while(|a| a.starts_with(repo))
             .map(Path::to_path_buf)
             .collect();
         if dirs.is_empty() {
-            dirs.push(self.root.clone());
+            dirs.push(repo.to_path_buf());
         }
         for dir in dirs {
             if let Some(gi) = self.for_dir(&dir) {
@@ -106,14 +144,22 @@ impl LazyGitignore {
                 }
             }
         }
-        [&self.base, &self.global]
-            .into_iter()
-            .flatten()
-            .any(|g| g.matched(path, is_dir).is_ignore())
+        let own = if repo == self.root {
+            self.base.as_ref().map(|g| g.matched(path, is_dir))
+        } else {
+            self.exclude_of(repo).map(|g| g.matched(path, is_dir))
+        };
+        own.is_some_and(|m| m.is_ignore())
+            || self
+                .global
+                .as_ref()
+                .is_some_and(|g| g.matched(path, is_dir).is_ignore())
     }
 
     fn invalidate(&mut self) {
         self.cache.clear();
+        self.repos.clear();
+        self.excludes.clear();
     }
 }
 
@@ -157,6 +203,12 @@ impl PathFilter {
         Self { roots }
     }
 
+    fn forget_repos(&self, root: usize) {
+        if let Some(Ok(mut gi)) = self.roots.get(root).map(|rf| rf.gitignore.lock()) {
+            gi.invalidate();
+        }
+    }
+
     /// `inner` is the path relative to the root of index `root`, `/`-separated.
     pub fn classify(&self, root: usize, inner: &str, is_dir: bool) -> Verdict {
         let comps: Vec<&str> = inner.split('/').filter(|c| !c.is_empty()).collect();
@@ -164,6 +216,10 @@ impl PathFilter {
             return Verdict::Ignore;
         };
         if let Some(pos) = comps.iter().position(|c| c.eq_ignore_ascii_case(".git")) {
+            if pos > 0 && pos + 1 == comps.len() {
+                // A nested repository appeared or went away: what is remembered about it is stale.
+                self.forget_repos(root);
+            }
             return if pos == 0 && comps.len() == 1 {
                 Verdict::GitOnly
             } else {
@@ -309,6 +365,91 @@ mod tests {
         assert_eq!(f.classify(0, "sub/secret.md", false), Verdict::Ignore);
         assert_eq!(f.classify(0, "secret.md", false), Verdict::Emit);
         assert_eq!(f.classify(0, "docs/a.md", false), Verdict::Emit);
+    }
+
+    /// A project that ignores `Design/` (and `*.log`), where `Design/` is a repository with rules of its own.
+    fn project_with_nested_repo(dir: &Path) {
+        fs::write(dir.join(".gitignore"), "Design/\n*.log\n").expect("write");
+        fs::create_dir_all(dir.join("Design").join(".git").join("info")).expect("mkdir");
+        fs::write(dir.join("Design").join(".gitignore"), "secret.md\n").expect("write");
+        fs::write(
+            dir.join("Design").join(".git").join("info").join("exclude"),
+            "private/\n",
+        )
+        .expect("write");
+    }
+
+    #[test]
+    fn a_nested_repository_is_never_ignored_for_being_inside_the_project() {
+        let d = tempfile::tempdir().expect("tempdir");
+        project_with_nested_repo(d.path());
+        let f = filter(d.path(), &[]);
+        assert_eq!(f.classify(0, "Design", true), Verdict::Emit);
+        assert_eq!(f.classify(0, "Design/notes.md", false), Verdict::Emit);
+        assert_eq!(f.classify(0, "Design/sub/deep.md", false), Verdict::Emit);
+        // The project's own rules still apply to the project's files.
+        assert_eq!(f.classify(0, "app.log", false), Verdict::Ignore);
+        assert_eq!(f.classify(0, "other/x.md", false), Verdict::Emit);
+    }
+
+    #[test]
+    fn inside_a_nested_repository_only_its_own_rules_apply() {
+        let d = tempfile::tempdir().expect("tempdir");
+        project_with_nested_repo(d.path());
+        let f = filter(d.path(), &[]);
+        // `*.log` is the project's rule, not the repository's
+        assert_eq!(f.classify(0, "Design/debug.log", false), Verdict::Emit);
+        assert_eq!(f.classify(0, "Design/secret.md", false), Verdict::Ignore);
+        assert_eq!(
+            f.classify(0, "Design/sub/secret.md", false),
+            Verdict::Ignore
+        );
+        // `.git/info/exclude` of the repository
+        assert_eq!(f.classify(0, "Design/private/x.md", false), Verdict::Ignore);
+        assert_eq!(f.classify(0, "private/x.md", false), Verdict::Emit);
+        // its own internals are still noise
+        assert_eq!(f.classify(0, "Design/.git/index", false), Verdict::Ignore);
+    }
+
+    #[test]
+    fn repositories_nested_in_nested_repositories_follow_the_same_rule() {
+        let d = tempfile::tempdir().expect("tempdir");
+        project_with_nested_repo(d.path());
+        let inner = d.path().join("Design").join("docs").join("inner");
+        fs::create_dir_all(inner.join(".git")).expect("mkdir");
+        fs::write(inner.join(".gitignore"), "*.tmpl\n").expect("write");
+        let f = filter(d.path(), &[]);
+        // Design's rule (`secret.md`) applies in Design, and the inner repository has its own rules.
+        assert_eq!(
+            f.classify(0, "Design/docs/secret.md", false),
+            Verdict::Ignore
+        );
+        assert_eq!(
+            f.classify(0, "Design/docs/inner/a.md", false),
+            Verdict::Emit
+        );
+        assert_eq!(
+            f.classify(0, "Design/docs/inner/a.tmpl", false),
+            Verdict::Ignore
+        );
+        assert_eq!(
+            f.classify(0, "Design/docs/inner/secret.md", false),
+            Verdict::Emit
+        );
+    }
+
+    #[test]
+    fn a_repository_that_appears_later_is_noticed() {
+        let d = tempfile::tempdir().expect("tempdir");
+        fs::write(d.path().join(".gitignore"), "Design/\n").expect("write");
+        fs::create_dir_all(d.path().join("Design")).expect("mkdir");
+        let f = filter(d.path(), &[]);
+        // not a repository yet: the project's rule hides it
+        assert_eq!(f.classify(0, "Design/a.md", false), Verdict::Ignore);
+        fs::create_dir_all(d.path().join("Design").join(".git")).expect("mkdir");
+        // the event for the new `.git` makes the filter look again
+        assert_eq!(f.classify(0, "Design/.git", true), Verdict::Ignore);
+        assert_eq!(f.classify(0, "Design/a.md", false), Verdict::Emit);
     }
 
     #[test]

@@ -51,7 +51,8 @@ export interface Api {
   initialPath(): Promise<string | null>;
   recentVaults(): Promise<RecentVault[]>;
   /** Main root plus worktrees as top-level roots. */
-  listTree(): Promise<TreeNode>;
+  /** The folder's tree. `showIgnored` also lists what version control ignores; `showHidden` lists `.trailmark/`. */
+  listTree(showIgnored: boolean, showHidden: boolean): Promise<TreeNode>;
   readDocument(path: string): Promise<DocumentView>;
   resolveLink(from: string, href: string): Promise<LinkTarget>;
   gitSnapshot(): Promise<GitSnapshot>;
@@ -128,7 +129,7 @@ export const tauriApi: Api = {
   openVault: (path) => invoke<VaultInfo>("open_vault", { path }),
   initialPath: () => invoke<string | null>("initial_path"),
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
-  listTree: () => invoke<TreeNode>("list_tree"),
+  listTree: (showIgnored, showHidden) => invoke<TreeNode>("list_tree", { showIgnored, showHidden }),
   readDocument: (path) => invoke<DocumentView>("read_document", { path }),
   resolveLink: (from, href) => invoke<LinkTarget>("resolve_link", { from, href }),
   gitSnapshot: () => invoke<GitSnapshot>("git_snapshot"),

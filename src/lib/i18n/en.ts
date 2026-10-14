@@ -80,6 +80,8 @@ export const en = {
   "tree.files": "Files",
   "tree.worktrees": "Worktrees",
   "tree.containsChanges": "Contains changes",
+  "tree.largeFolder": "large folder",
+  "tree.largeFolderTitle": "Not opened: it holds more than {n} items.",
 
   // ---- Explorer filter (docs/design/v0.2.md section 13)
   "filter.title": "Filter files",
@@ -90,6 +92,8 @@ export const en = {
   "filter.docsAndAssets": "Docs and assets",
   "filter.docsAndAssetsHint": "Documents plus images, JSON, YAML, TOML, XML and CSV",
   "filter.everything": "Everything",
+  "filter.everythingHint":
+    "All file types. Ignored and hidden files have their own switches below.",
   "filter.custom": "Custom",
   "filter.categories": "File types",
   "filter.categoryDocuments": "Documents",
@@ -106,6 +110,10 @@ export const en = {
   "filter.assetsNearDocsHint":
     "Images, data and XML show only next to a document (same folder or the one above). Images also show when a document links to them, or in folders like assets or images.",
   "filter.hideEmptyFolders": "Hide folders with no visible files",
+  "filter.showHidden": "Show hidden files and folders",
+  "filter.showHiddenHint": "Names that start with a dot, like .github.",
+  "filter.showIgnored": "Show files ignored by git",
+  "filter.showIgnoredHint": "Build output and local files. Very large folders are not opened.",
   "filter.showingOf.one": "Showing {shown} of {n} file",
   "filter.showingOf.other": "Showing {shown} of {n} files",
   "filter.showingAll.one": "Showing all {n} file",
@@ -286,6 +294,10 @@ export const en = {
   "hint.initialize": "Initialize .trailmark/",
   "hint.dismiss": "Dismiss hint",
   "hint.dismissHint": "Don't show again",
+  "initHint.text": "Keep tags and TrailMark settings with this project?",
+  "initHint.initialize": "Initialize",
+  "initHint.notNow": "Not now",
+  "initHint.never": "Never for this folder",
   "init.title": "Initialize TrailMark in this project?",
   "init.intro": "TrailMark will create .trailmark/ in {name}:",
   "init.config": "shared settings, safe to commit",
@@ -344,6 +356,7 @@ export const en = {
   "tags.savedApp": "Saved in TrailMark, not in the file.",
   "tags.savedProject": "Saved in .trailmark/meta.toml (shared with the project).",
   "tags.done": "Done",
+  "tags.initialize": "Initialize .trailmark",
   "tags.empty": "No tags yet.",
   "tags.emptyHint": "Press T on a doc to tag it, or add `tags:` to its frontmatter.",
   "tags.noMatch": "No tags match '{query}'",

@@ -50,6 +50,7 @@ let savedSession: SessionState | null = {
   rightTab: "changes",
   linkUpdate: "ask",
   editMode: "visual",
+  initHintNever: false,
 };
 let stateLocation: "appData" | "project" = "appData";
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

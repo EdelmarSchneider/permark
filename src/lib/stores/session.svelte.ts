@@ -37,6 +37,8 @@ class SessionStore {
   linkUpdate = $state<LinkUpdate>(DEFAULT_LINK_UPDATE);
   /** How a document opens for editing (the switch in the header changes the mode of the open document only). */
   editMode = $state<EditMode>(DEFAULT_EDIT_MODE);
+  /** "Never for this folder" was chosen on the hint to keep settings with the project. */
+  initHintNever = $state(false);
   systemDark = $state(false);
 
   lastDoc: string | null = null;
@@ -73,6 +75,7 @@ class SessionStore {
     this.rightTab = s.rightTab;
     this.linkUpdate = s.linkUpdate;
     this.editMode = s.editMode;
+    this.initHintNever = s.initHintNever;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
     this.enabled = true;
@@ -95,6 +98,7 @@ class SessionStore {
       rightTab: this.rightTab,
       linkUpdate: this.linkUpdate,
       editMode: this.editMode,
+      initHintNever: this.initHintNever,
     };
   }
 
@@ -187,6 +191,12 @@ class SessionStore {
 
   setTreeFilter(filter: TreeFilter): void {
     this.treeFilter = filter;
+    this.persist();
+  }
+
+  /** The hint to keep settings with the project is not shown again for this folder. */
+  neverHintInit(): void {
+    this.initHintNever = true;
     this.persist();
   }
 

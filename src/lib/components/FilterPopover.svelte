@@ -19,6 +19,7 @@
   const hints: Partial<Record<FilterShow, MessageKey>> = {
     documents: "filter.documentsHint",
     "docs-and-assets": "filter.docsAndAssetsHint",
+    everything: "filter.everythingHint",
   };
   const categoryNames: Record<FileCategory, MessageKey> = {
     documents: "filter.categoryDocuments",
@@ -134,5 +135,30 @@
       onchange={(e) => filter.set({ ...current, hideEmptyFolders: e.currentTarget.checked })}
     />
     <span>{t("filter.hideEmptyFolders")}</span>
+  </label>
+  <div class="menu-sep" role="separator"></div>
+  <label class="filter__check">
+    <input
+      type="checkbox"
+      checked={current.showHidden}
+      aria-describedby="filter-hidden-note"
+      onchange={(e) => filter.set({ ...current, showHidden: e.currentTarget.checked })}
+    />
+    <span class="filter__text">
+      <span>{t("filter.showHidden")}</span>
+      <span id="filter-hidden-note" class="filter__hint">{t("filter.showHiddenHint")}</span>
+    </span>
+  </label>
+  <label class="filter__check">
+    <input
+      type="checkbox"
+      checked={current.showIgnored}
+      aria-describedby="filter-ignored-note"
+      onchange={(e) => filter.set({ ...current, showIgnored: e.currentTarget.checked })}
+    />
+    <span class="filter__text">
+      <span>{t("filter.showIgnored")}</span>
+      <span id="filter-ignored-note" class="filter__hint">{t("filter.showIgnoredHint")}</span>
+    </span>
   </label>
 </Popover>
