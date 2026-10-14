@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { t } from "../i18n";
+  import { DescriptionDraft } from "../descriptionDraft";
   import { splitWorktree } from "../paths";
   import { suggest, type Suggestion } from "../tagModel";
   import {
@@ -35,7 +36,9 @@
   }
   const anchor = untrack(() => ui.tagEditor?.anchor ?? findAnchor());
 
-  const path = $derived(docs.path);
+  // The editor belongs to the document it was opened on: every change is saved to that one, even
+  // if the reader navigates away while it is open (then it closes).
+  const path = untrack(() => docs.path ?? "");
   const meta = $derived(tags.meta && tags.meta.path === path ? tags.meta : null);
   const writable = $derived(meta?.writable === true);
   const appTags = $derived(meta ? meta.tags.filter((tag) => tag.app).map((tag) => tag.name) : []);
@@ -43,6 +46,15 @@
   const status = $derived(tags.overview?.status ?? null);
 
   let description = $state(untrack(() => meta?.description ?? ""));
+  /** What is typed is saved through this: always to the document the editor was opened on. */
+  const draft = new DescriptionDraft(
+    path,
+    untrack(() => meta?.description ?? ""),
+    (target, text) => {
+      void tags.setDescription(target, text);
+    },
+  );
+  let canWrite = untrack(() => meta?.writable === true);
   let descriptionFocused = $state(false);
   let typed = $state("");
   let active = $state(0);
@@ -60,14 +72,20 @@
     vault.stateLocation === "project" ? t("tags.savedProject") : t("tags.savedApp"),
   );
   const readOnlyNote = $derived(
-    path && splitWorktree(path).worktree !== null ? t("tags.worktreeReadOnly") : t("tags.readOnly"),
+    splitWorktree(path).worktree !== null ? t("tags.worktreeReadOnly") : t("tags.readOnly"),
   );
 
   // another change of the description (an agent edited meta.toml) shows up while the box is not being typed in
   $effect(() => {
-    const incoming = meta?.description ?? "";
+    const incoming = meta?.description;
+    const writable = meta?.writable;
     untrack(() => {
-      if (!descriptionFocused && saveTimer === null) description = incoming;
+      if (incoming === undefined) return; // another document's tags are showing: leave the box alone
+      canWrite = writable === true;
+      if (!descriptionFocused && saveTimer === null) {
+        description = incoming;
+        draft.adopt(incoming);
+      }
     });
   });
 
@@ -78,9 +96,14 @@
     });
   });
 
-  // the document went away (closed, or another project opened): nothing left to edit
+  // the reader moved to another document (back, forward, a link) or it went away: what was typed is
+  // saved to the document the editor was opened on, and the editor closes
   $effect(() => {
-    if (!path) close();
+    if (docs.path === path) return;
+    untrack(() => {
+      saveDescription();
+      close();
+    });
   });
 
   function close(): void {
@@ -90,8 +113,14 @@
   function saveDescription(): void {
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = null;
-    if (path && meta && writable && description !== meta.description) {
-      void tags.setDescription(path, description);
+    draft.flush(description, canWrite);
+  }
+
+  /** Keeps what is typed within the limit, counting characters like the backend does. */
+  function capDescription(): void {
+    const chars = Array.from(description);
+    if (chars.length > MAX_DESCRIPTION_CHARS) {
+      description = chars.slice(0, MAX_DESCRIPTION_CHARS).join("");
     }
   }
 
@@ -101,7 +130,7 @@
   }
 
   function setAppTags(next: string[]): void {
-    if (path && writable) void tags.setTags(path, next);
+    if (writable) void tags.setTags(path, next);
   }
 
   function add(names: string[]): void {
@@ -180,7 +209,6 @@
         bind:this={descriptionInput}
         class="text-input"
         bind:value={description}
-        maxlength={MAX_DESCRIPTION_CHARS}
         placeholder={t("tags.descriptionPlaceholder")}
         disabled={!writable}
         spellcheck="false"
@@ -190,7 +218,10 @@
           descriptionFocused = false;
           saveDescription();
         }}
-        oninput={scheduleDescription}
+        oninput={() => {
+          capDescription();
+          scheduleDescription();
+        }}
         onkeydown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();

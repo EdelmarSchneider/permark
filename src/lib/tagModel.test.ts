@@ -14,8 +14,9 @@ import {
   toggleTag,
   toggleUntagged,
   treeTooltip,
+  withAppTags,
 } from "./tagModel";
-import type { IndexEntry } from "./types";
+import type { FileMeta, IndexEntry } from "./types";
 
 const tag = (name: string, count: number) => ({ name, count });
 const TAGS = [
@@ -191,18 +192,79 @@ describe("countTags and knownTagsHint", () => {
 });
 
 describe("treeTooltip", () => {
-  it("adds the description and the tags below the path", () => {
-    expect(treeTooltip("a/b.md", { tags: ["spec", "feed"], description: "About b" }, "Tags")).toBe(
+  // the line is worded by the caller (a translated string with the list in it)
+  const line = (list: string): string => `Tags: ${list}`;
+
+  it("adds the description and the tags line below the path", () => {
+    expect(treeTooltip("a/b.md", { tags: ["spec", "feed"], description: "About b" }, line)).toBe(
       "a/b.md\nAbout b\nTags: spec, feed",
     );
-    expect(treeTooltip("a/b.md", { tags: [], description: "Only text" }, "Tags")).toBe(
+    expect(treeTooltip("a/b.md", { tags: [], description: "Only text" }, line)).toBe(
       "a/b.md\nOnly text",
     );
-    expect(treeTooltip("a/b.md", { tags: ["x"], description: "" }, "Tags")).toBe("a/b.md\nTags: x");
+    expect(treeTooltip("a/b.md", { tags: ["x"], description: "" }, line)).toBe("a/b.md\nTags: x");
   });
 
   it("leaves the tooltip alone for a file without either", () => {
-    expect(treeTooltip("a/b.md", undefined, "Tags")).toBeUndefined();
-    expect(treeTooltip("a/b.md", { tags: [], description: "" }, "Tags")).toBeUndefined();
+    expect(treeTooltip("a/b.md", undefined, line)).toBeUndefined();
+    expect(treeTooltip("a/b.md", { tags: [], description: "" }, line)).toBeUndefined();
+  });
+
+  it("lets the caller put the list anywhere in the line", () => {
+    const reordered = (list: string): string => `${list} <- tags`;
+    expect(treeTooltip("p.md", { tags: ["a", "b"], description: "" }, reordered)).toBe(
+      "p.md\na, b <- tags",
+    );
+  });
+});
+
+describe("withAppTags", () => {
+  const meta: FileMeta = {
+    path: "a.md",
+    description: "d",
+    writable: true,
+    tags: [
+      { name: "feed", file: true, app: false },
+      { name: "watcher", file: true, app: true },
+      { name: "spec", file: false, app: true },
+    ],
+  };
+
+  it("keeps the front matter's tags and follows the new list for the app's", () => {
+    const next = withAppTags(meta, ["spec", "needs-review"]);
+    expect(next.tags).toEqual([
+      { name: "feed", file: true, app: false },
+      { name: "watcher", file: true, app: false },
+      { name: "spec", file: false, app: true },
+      { name: "needs-review", file: false, app: true },
+    ]);
+    expect(next.description).toBe("d");
+  });
+
+  it("shows a tag the file already has once, as a file tag, marking that the app has it too", () => {
+    const next = withAppTags(meta, ["feed"]);
+    expect(next.tags).toEqual([
+      { name: "feed", file: true, app: true },
+      { name: "watcher", file: true, app: false },
+    ]);
+  });
+
+  it("normalizes the names and leaves the original alone", () => {
+    const next = withAppTags(meta, [" New Idea ", "NEW IDEA"]);
+    expect(next.tags.filter((t) => !t.file)).toEqual([
+      { name: "new-idea", file: false, app: true },
+    ]);
+    expect(meta.tags).toHaveLength(3);
+  });
+
+  it("two changes in a row build on each other", () => {
+    const first = withAppTags(meta, ["spec", "one"]);
+    const appNames = first.tags.filter((t) => t.app).map((t) => t.name);
+    const second = withAppTags(first, [...appNames, "two"]);
+    expect(second.tags.filter((t) => t.app && !t.file).map((t) => t.name)).toEqual([
+      "spec",
+      "one",
+      "two",
+    ]);
   });
 });

@@ -9,6 +9,7 @@ import {
   isEmptySelection,
   NO_SELECTION,
   pruneSelection,
+  withAppTags,
   type NamedCount,
   type TagSelection,
 } from "../tagModel";
@@ -139,6 +140,8 @@ class TagsStore {
 
   /** Replaces the app's tags of a file. Resolves to false when the change was refused. */
   async setTags(path: string, names: string[]): Promise<boolean> {
+    // shown at once, so a second change made before the answer arrives builds on this one
+    if (this.meta?.path === path) this.meta = withAppTags(this.meta, names);
     return this.change(path, () => api.setFileTags(path, names));
   }
 

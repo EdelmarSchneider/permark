@@ -219,6 +219,9 @@
       {t("tags.metaUnreadable", {
         where: problem.line === null ? "" : t("tags.metaUnreadableLine", { line: problem.line }),
       })}
+      {#if (overview?.status.pendingChanges ?? 0) > 0}
+        {tn("tags.pendingChanges", overview?.status.pendingChanges ?? 0)}
+      {/if}
     </div>
     {#if vault.stateLocation === "project"}
       <span class="spacer"></span>

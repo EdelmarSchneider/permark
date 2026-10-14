@@ -2,8 +2,8 @@
 // filtering the Tags view, and which tags are selected there.
 
 import { foldChars } from "./text";
-import { normalizeTag } from "./tagText";
-import type { IndexEntry, TagCount } from "./types";
+import { normalizeTag, normalizeTags } from "./tagText";
+import type { FileMeta, IndexEntry, TagCount } from "./types";
 
 /** A tag with the number of files that have it (what the backend and the local index both provide). */
 export type NamedCount = Pick<TagCount, "name" | "count">;
@@ -169,15 +169,36 @@ export function knownTagsHint(counts: readonly Pick<TagCount, "name">[], max = 6
 
 // ---- tooltips -----------------------------------------------------------------------------------
 
-/** The tooltip of a file in the tree: its path, then the description and tags when it has any. */
+/**
+ * The tooltip of a file in the tree: its path, then the description and the tags line when it has
+ * any. `tagsLine` words the line (it is a translated string with the list in it).
+ */
 export function treeTooltip(
   path: string,
   entry: Pick<IndexEntry, "tags" | "description"> | undefined,
-  tagsLabel: string,
+  tagsLine: (list: string) => string,
 ): string | undefined {
   if (!entry) return undefined;
   const lines = [path];
   if (entry.description !== "") lines.push(entry.description);
-  if (entry.tags.length > 0) lines.push(`${tagsLabel}: ${entry.tags.join(", ")}`);
+  if (entry.tags.length > 0) lines.push(tagsLine(entry.tags.join(", ")));
   return lines.length > 1 ? lines.join("\n") : undefined;
+}
+
+// ---- tags of the open document ---------------------------------------------------------------
+
+/**
+ * The tags of a file as they will be once the app's tags are `names`: the front matter's stay, and
+ * the app's follow the list. Used to show a change before the backend has answered, so two quick
+ * changes build on each other.
+ */
+export function withAppTags(meta: FileMeta, names: readonly string[]): FileMeta {
+  const app = normalizeTags(names);
+  const fromFile = meta.tags
+    .filter((tag) => tag.file)
+    .map((tag) => ({ ...tag, app: app.includes(tag.name) }));
+  const appOnly = app
+    .filter((name) => !fromFile.some((tag) => tag.name === name))
+    .map((name) => ({ name, file: false, app: true }));
+  return { ...meta, tags: [...fromFile, ...appOnly] };
 }

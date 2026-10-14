@@ -97,7 +97,13 @@ export type FileMeta = {
 };
 /** Why `meta.toml` could not be read (a merge conflict, a bad edit). */
 export type MetaProblem = { message: string; line: number | null };
-export type MetaStatus = { problem: MetaProblem | null; writeError: string | null };
+export type MetaStatus = {
+  problem: MetaProblem | null;
+  /** The last write of `meta.toml` failed (it is tried again). */
+  writeError: string | null;
+  /** Changes made before `meta.toml` became unreadable: kept, and saved once it can be read. */
+  pendingChanges: number;
+};
 export type TagCount = { name: string; count: number; onlyInFiles: boolean };
 export type TagOverview = {
   tags: TagCount[];

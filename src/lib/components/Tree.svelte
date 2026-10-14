@@ -162,7 +162,9 @@
         ? row.node.path
         : row.isDir
           ? undefined
-          : treeTooltip(row.node.path, tags.index.get(row.node.path), t("tags.title"))}
+          : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
+              t("tags.tooltipTags", { list }),
+            )}
       onclick={() => activate(i)}
       oncontextmenu={(e) => {
         e.preventDefault();

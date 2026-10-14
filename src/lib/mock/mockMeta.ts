@@ -147,7 +147,7 @@ export function listTags(): TagOverview {
     tags: [...counts.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
     untagged: all.filter((row) => tagsOf(row).length === 0).length,
     missing: missingPaths().length,
-    status: { problem: mockMeta.problem, writeError: null },
+    status: { problem: mockMeta.problem, writeError: null, pendingChanges: 0 },
   };
 }
 
