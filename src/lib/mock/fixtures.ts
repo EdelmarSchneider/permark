@@ -523,6 +523,7 @@ export function getDocument(path: string): DocumentView {
     title: entry.title,
     frontmatter: entry.frontmatter ?? null,
     modifiedMs: mockState.modified.get(path) ?? MOCK_NOW - entry.age,
+    sizeBytes: new TextEncoder().encode(html.join("\n")).length,
     encodingNote: entry.encodingNote ?? null,
   };
 }

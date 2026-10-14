@@ -63,6 +63,8 @@ pub enum VaultMode {
 pub struct Worktree {
     pub name: String,
     pub path: PathBuf,
+    /// The checked-out branch (`None` for a detached HEAD or when it cannot be read).
+    pub branch: Option<String>,
 }
 
 /// A path that passed validation.
@@ -189,7 +191,11 @@ impl Vault {
                 name = format!("{base}-{n}");
                 n += 1;
             }
-            accepted.push(Worktree { name, path });
+            accepted.push(Worktree {
+                name,
+                path,
+                branch: wt.branch,
+            });
         }
         self.worktrees = accepted;
         self
@@ -491,6 +497,7 @@ mod tests {
         let v = v.with_worktrees(vec![Worktree {
             name: "feature-x".to_owned(),
             path: wt.path().to_path_buf(),
+            branch: None,
         }]);
         let r = v.resolve("@wt/feature-x/w.md").expect("resolve");
         assert_eq!(r.root, 1);
@@ -516,6 +523,7 @@ mod tests {
         let v = v.with_worktrees(vec![Worktree {
             name: "inner".to_owned(),
             path: d.path().join("inner").join("wt"),
+            branch: None,
         }]);
         let (rel, idx) = v
             .to_rel(&d.path().join("inner").join("wt").join("w.md"))
@@ -533,18 +541,22 @@ mod tests {
             Worktree {
                 name: "gone".to_owned(),
                 path: d.path().join("does-not-exist"),
+                branch: None,
             },
             Worktree {
                 name: "self".to_owned(),
                 path: d.path().to_path_buf(),
+                branch: None,
             },
             Worktree {
                 name: "a/b".to_owned(),
                 path: wt.path().to_path_buf(),
+                branch: None,
             },
             Worktree {
                 name: "dup".to_owned(),
                 path: wt.path().to_path_buf(),
+                branch: None,
             },
         ]);
         assert_eq!(v.worktrees().len(), 1);

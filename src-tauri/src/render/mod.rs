@@ -62,6 +62,7 @@ pub struct DocumentView {
     pub title: Option<String>,
     pub frontmatter: Option<Vec<(String, String)>>,
     pub modified_ms: u64,
+    pub size_bytes: u64,
     pub encoding_note: Option<String>,
 }
 
@@ -135,7 +136,7 @@ impl Default for Registry {
     }
 }
 
-fn empty_view(path: &str, kind: DocKind, modified_ms: u64) -> DocumentView {
+fn empty_view(path: &str, kind: DocKind, modified_ms: u64, size_bytes: u64) -> DocumentView {
     DocumentView {
         path: path.to_owned(),
         kind,
@@ -144,6 +145,7 @@ fn empty_view(path: &str, kind: DocKind, modified_ms: u64) -> DocumentView {
         title: None,
         frontmatter: None,
         modified_ms,
+        size_bytes,
         encoding_note: None,
     }
 }
@@ -156,8 +158,9 @@ pub fn render_bytes(
     bytes: &[u8],
     modified_ms: u64,
 ) -> DocumentView {
+    let size = bytes.len() as u64;
     match decode(bytes) {
-        Decoded::Binary => empty_view(rel, DocKind::Binary, modified_ms),
+        Decoded::Binary => empty_view(rel, DocKind::Binary, modified_ms, size),
         Decoded::Text { text, note } => {
             let r = registry.render(abs, &text);
             DocumentView {
@@ -168,6 +171,7 @@ pub fn render_bytes(
                 title: r.title,
                 frontmatter: r.frontmatter,
                 modified_ms,
+                size_bytes: size,
                 encoding_note: note,
             }
         }
@@ -187,7 +191,7 @@ pub fn load_document(
     let meta = std::fs::metadata(abs).map_err(io_err)?;
     let mtime = modified_ms(&meta);
     if meta.len() > MAX_RENDER_BYTES {
-        return Ok(empty_view(rel, DocKind::TooLarge, mtime));
+        return Ok(empty_view(rel, DocKind::TooLarge, mtime, meta.len()));
     }
     let bytes = read_with_retry(abs).map_err(io_err)?;
     Ok(render_bytes(registry, abs, rel, &bytes, mtime))
@@ -213,6 +217,7 @@ mod tests {
         assert_eq!(v.blocks.len(), blocks::top_level_elements(&v.html).len());
         assert_eq!(v.blocks.len(), 3);
         assert!(v.modified_ms > 0);
+        assert_eq!(v.size_bytes, 20);
         assert_eq!(v.path, "a.md");
     }
 
@@ -245,6 +250,7 @@ mod tests {
     fn binary_files_are_detected_by_nul() {
         let v = view_of("img.png", b"\x89PNG\r\n\x1a\n\0\0\0");
         assert_eq!(v.kind, DocKind::Binary);
+        assert_eq!(v.size_bytes, 11);
         assert!(v.html.is_empty() && v.blocks.is_empty());
     }
 
@@ -256,6 +262,7 @@ mod tests {
         f.set_len(MAX_RENDER_BYTES + 1).expect("set_len");
         let v = load_document(&Registry::with_defaults(), &p, "big.md").expect("load");
         assert_eq!(v.kind, DocKind::TooLarge);
+        assert_eq!(v.size_bytes, MAX_RENDER_BYTES + 1);
         assert!(v.html.is_empty());
     }
 
@@ -332,6 +339,7 @@ mod tests {
             "title",
             "frontmatter",
             "modifiedMs",
+            "sizeBytes",
             "encodingNote",
         ] {
             assert!(json.get(field).is_some(), "missing {field}");

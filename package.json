@@ -1,7 +1,13 @@
 {
   "name": "trailmark",
   "version": "0.1.0",
-  "description": "Read, navigate and follow Markdown documents written by AI agents",
+  "description": "A fast, beautiful Markdown IDE that keeps up with your AI agents.",
+  "license": "MIT OR Apache-2.0",
+  "author": "Edelmar Schneider",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EdelmarSchneider/trailmark"
+  },
   "private": true,
   "type": "module",
   "scripts": {

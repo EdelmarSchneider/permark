@@ -474,6 +474,7 @@ mod tests {
         let v = v.with_worktrees(vec![crate::vault::Worktree {
             name: "feat".to_owned(),
             path: wt.path().to_path_buf(),
+            branch: None,
         }]);
         assert_eq!(
             resolve(&v, "@wt/feat/docs/a.md", "../b.md"),

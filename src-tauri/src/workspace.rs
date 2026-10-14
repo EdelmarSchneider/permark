@@ -105,6 +105,7 @@ pub struct VaultInfo {
 pub struct WorktreeInfo {
     pub name: String,
     pub path: String,
+    pub branch: Option<String>,
 }
 
 /// Matches the UI's `ChangedSince`.
@@ -314,6 +315,7 @@ impl Workspace {
                 .map(|w| WorktreeInfo {
                     name: w.name.clone(),
                     path: w.path.display().to_string(),
+                    branch: w.branch.clone(),
                 })
                 .collect(),
         }
@@ -873,6 +875,7 @@ deepword
         let info = ws.info();
         assert_eq!(info.worktrees.len(), 1);
         assert_eq!(info.worktrees[0].name, "feature-x");
+        assert_eq!(info.worktrees[0].branch.as_deref(), Some("feature-x"));
         assert_eq!(ws.root_paths().len(), 2);
         let tree = ws.tree();
         let wt = tree

@@ -242,6 +242,7 @@ mod tests {
             .with_worktrees(vec![Worktree {
                 name: "feat".to_owned(),
                 path: d.path().join(".claude").join("worktrees").join("feat"),
+                branch: None,
             }]);
         let t = v.tree();
         let wt = t
@@ -282,6 +283,7 @@ mod tests {
             .with_worktrees(vec![Worktree {
                 name: "feat".to_owned(),
                 path: d.path().join("wts").join("feat"),
+                branch: None,
             }]);
         let paths: Vec<String> = v.walk().into_iter().map(|i| i.rel).collect();
         assert!(paths.contains(&"@wt/feat/plan.md".to_owned()));

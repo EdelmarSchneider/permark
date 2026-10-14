@@ -272,7 +272,123 @@ pub async fn state_location(state: State<'_, AppState>) -> Result<StateLocation,
 
 #[cfg(test)]
 mod tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
     use super::*;
+
+    const CONTRACT: &str = include_str!("../ipc-contract.json");
+    const LIB_SRC: &str = include_str!("lib.rs");
+    const COMMANDS_SRC: &str = include_str!("commands.rs");
+
+    /// This file without its test module (whose own text would match the scans below).
+    fn production_source() -> &'static str {
+        COMMANDS_SRC
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap_or_default()
+    }
+
+    /// Splits a parameter list at the commas that are not inside `<...>` or `(...)`.
+    fn split_params(params: &str) -> Vec<&str> {
+        let mut parts = Vec::new();
+        let (mut depth, mut start) = (0_i32, 0);
+        for (i, c) in params.char_indices() {
+            match c {
+                '<' | '(' => depth += 1,
+                '>' | ')' => depth -= 1,
+                ',' if depth == 0 => {
+                    parts.push(&params[start..i]);
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+        parts.push(&params[start..]);
+        parts
+    }
+
+    /// Every `#[tauri::command]` function in this file with the names of the arguments the UI sends
+    /// (everything except the injected `AppHandle` and `State`).
+    fn declared_commands() -> BTreeMap<String, Vec<String>> {
+        let mut out = BTreeMap::new();
+        for chunk in production_source()
+            .split(
+                "
+#[tauri::command]",
+            )
+            .skip(1)
+        {
+            let (_, after_fn) = chunk.split_once("fn ").expect("a fn after the attribute");
+            let (name, rest) = after_fn.split_once('(').expect("a parameter list");
+            let mut depth = 1;
+            let mut end = rest.len();
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '(' => depth += 1,
+                    ')' => depth -= 1,
+                    _ => {}
+                }
+                if depth == 0 {
+                    end = i;
+                    break;
+                }
+            }
+            let args = split_params(&rest[..end])
+                .into_iter()
+                .filter_map(|p| p.split_once(':'))
+                .filter(|(_, ty)| {
+                    !ty.trim().starts_with("AppHandle") && !ty.trim().starts_with("State<")
+                })
+                .map(|(arg, _)| arg.trim().to_owned())
+                .collect();
+            out.insert(name.trim().to_owned(), args);
+        }
+        out
+    }
+
+    /// The commands listed in `tauri::generate_handler![...]` in `lib.rs`.
+    fn registered_commands() -> BTreeSet<String> {
+        let list = LIB_SRC
+            .split("generate_handler![")
+            .nth(1)
+            .and_then(|rest| rest.split(']').next())
+            .expect("generate_handler! in lib.rs");
+        list.split(',')
+            .filter_map(|item| item.trim().strip_prefix("commands::"))
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The event names passed to `.emit("...")` in this file.
+    fn emitted_events() -> BTreeSet<String> {
+        production_source()
+            .split(".emit(")
+            .skip(1)
+            .filter_map(|rest| {
+                let rest = rest.trim_start().strip_prefix('"')?;
+                rest.split_once('"').map(|(name, _)| name.to_owned())
+            })
+            .collect()
+    }
+
+    /// `src-tauri/ipc-contract.json` is also checked against `tauriApi` by `src/lib/api.test.ts`, so a
+    /// renamed command, argument or event fails on one side or the other.
+    #[test]
+    fn commands_and_events_match_the_ui_contract() {
+        let contract: serde_json::Value = serde_json::from_str(CONTRACT).expect("contract json");
+        let commands: BTreeMap<String, Vec<String>> =
+            serde_json::from_value(contract["commands"].clone()).expect("commands in contract");
+        let events: BTreeSet<String> =
+            serde_json::from_value(contract["events"].clone()).expect("events in contract");
+
+        assert_eq!(declared_commands(), commands, "#[tauri::command] fns");
+        assert_eq!(
+            registered_commands(),
+            commands.keys().cloned().collect::<BTreeSet<_>>(),
+            "generate_handler! in lib.rs"
+        );
+        assert_eq!(emitted_events(), events, "events emitted to the webview");
+    }
 
     fn os(s: &str) -> OsString {
         OsString::from(s)

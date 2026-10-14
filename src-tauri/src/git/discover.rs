@@ -119,11 +119,23 @@ pub fn list_worktrees(ctx: &GitContext) -> Vec<Worktree> {
         if path.is_dir() {
             out.push(Worktree {
                 name: name.to_owned(),
+                branch: worktree_branch(&wt),
                 path,
             });
         }
     }
     out
+}
+
+/// The branch checked out in a linked worktree (`None` when detached, unborn or unreadable).
+fn worktree_branch(wt: &git2::Worktree) -> Option<String> {
+    let repo = Repository::open_from_worktree(wt).ok()?;
+    let head = repo.head().ok()?;
+    if head.is_branch() {
+        head.shorthand().ok().map(str::to_owned)
+    } else {
+        None
+    }
 }
 
 /// The commit HEAD points to, as a hex string (`None` for an unborn branch or on error).
@@ -222,6 +234,8 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "feature-x");
         assert_eq!(canon(&list[0].path), canon(&wt_path));
+        // `git worktree add` creates a branch named after the worktree and checks it out.
+        assert_eq!(list[0].branch.as_deref(), Some("feature-x"));
 
         // From inside the linked worktree the vault still finds the repo, with its own git dir.
         let Discovery::Repo(wt_ctx) = discover(&canon(&wt_path), None) else {

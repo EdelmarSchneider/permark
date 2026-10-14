@@ -6,7 +6,8 @@ export type VaultInfo = {
   name: string;
   mode: "ide" | "simple";
   initialFile: string | null;
-  worktrees: { name: string; path: string }[];
+  /** `branch` is the checked-out branch, `null` when detached or unreadable. */
+  worktrees: { name: string; path: string; branch: string | null }[];
 };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
 export type TreeNode = {
@@ -23,6 +24,7 @@ export type DocumentView = {
   title: string | null;
   frontmatter: [string, string][] | null;
   modifiedMs: number;
+  sizeBytes: number;
   encodingNote: string | null;
 };
 export type LinkTarget =

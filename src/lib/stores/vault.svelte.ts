@@ -6,8 +6,7 @@ import { ancestors } from "../paths";
 import { collectFiles, rollups, splitRoots } from "../tree";
 import type { ChangedSince, GitSnapshot, TreeNode, VaultInfo } from "../types";
 
-/** Worktree entries may carry the checked-out branch (the contract's `{ name, path }` is a subset). */
-export type WorktreeInfo = VaultInfo["worktrees"][number] & { branch?: string };
+export type WorktreeInfo = VaultInfo["worktrees"][number];
 
 class VaultStore {
   info = $state.raw<VaultInfo | null>(null);

@@ -20,16 +20,27 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-src 'none'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-src 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": []
       }
     }
   },
+  "plugins": {
+    "opener": {
+      "requireLiteralLeadingDot": false
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "A fast, beautiful Markdown IDE that keeps up with your AI agents.",
+    "longDescription": "TrailMark reads, navigates and follows Markdown documents as a local wiki over a folder. It renders GitHub-flavored Markdown with math and diagrams, follows files as AI agents (or anyone) change them, and shows what changed since you last looked.",
+    "copyright": "Copyright (c) 2026 Edelmar Schneider",
+    "license": "MIT OR Apache-2.0",
+    "licenseFile": "../LICENSE-MIT",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
