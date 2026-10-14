@@ -12,6 +12,8 @@
 //!
 //! Anything the scanner is not sure about is left alone: a missed link is a link that stays as it was,
 //! never a document that got damaged.
+//!
+//! The same scan tells [`crate::refs`] which images the documents use.
 
 use std::borrow::Cow;
 use std::collections::HashSet;
@@ -126,6 +128,20 @@ struct Definition {
     dest: Dest,
 }
 
+/// Splits a destination at the first `?` or `#`: the path and the rest (kept as written).
+pub(crate) fn split_suffix(raw: &str) -> (&str, &str) {
+    let b = raw.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'\\' if b.get(i + 1).is_some_and(u8::is_ascii_punctuation) => i += 2,
+            b'?' | b'#' => return raw.split_at(i),
+            _ => i += 1,
+        }
+    }
+    (raw, "")
+}
+
 /// The destinations of `text`, in the order they appear. Empty for a text too large or too deeply nested
 /// to be parsed safely.
 pub(crate) fn find_destinations(text: &str) -> Vec<Dest> {
@@ -133,6 +149,15 @@ pub(crate) fn find_destinations(text: &str) -> Vec<Dest> {
         return Vec::new();
     }
     on_parser_stack(|| scan_document(text))
+}
+
+/// [`find_destinations`] on the calling thread, for a caller that already runs on a parser thread (the
+/// search index worker does) and scans one document after another.
+pub(crate) fn find_destinations_here(text: &str) -> Vec<Dest> {
+    if text.len() as u64 > MAX_RENDER_BYTES {
+        return Vec::new();
+    }
+    scan_document(text)
 }
 
 fn scan_document(text: &str) -> Vec<Dest> {

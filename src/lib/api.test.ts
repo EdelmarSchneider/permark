@@ -34,6 +34,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   openExternal: ["docs/a.md"],
   revealInFolder: ["docs"],
   search: ["query", 5],
+  referencedImages: [],
   initProjectFolder: [],
   stateLocation: [],
   fileMeta: ["docs/a.md"],

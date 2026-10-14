@@ -406,6 +406,10 @@ describe("assets next to documents", () => {
     "docs/assets/screenshot-dark.png",
     "package-lock.json",
     "package.json",
+    // `site/` has no document of its own, but `assets/` is a folder made for images
+    "site/assets/logo.svg",
+    "site/assets/screenshot-dark.png",
+    "site/assets/screenshot-light.png",
     "tsconfig.json",
   ];
   const testOf = (filter: TreeFilter, paths = REPO) => fileTest(filter, documentFolders(paths));
@@ -424,8 +428,6 @@ describe("assets next to documents", () => {
       ".github/workflows/release.yml",
       ".vscode/extensions.json",
       ".claude/settings.json",
-      "site/assets/logo.svg",
-      "site/assets/screenshot-dark.png",
       "src/styles/tokens.css",
     ]) {
       expect(shown, hidden).not.toContain(hidden);
@@ -437,16 +439,17 @@ describe("assets next to documents", () => {
     expect(test("docs/assets/logo.png")).toBe(true); // docs/ holds documents, one level up
     expect(test("package.json")).toBe(true); // the root holds README.md
     expect(test("docs/design/mockup.html")).toBe(false); // other files are not assets either way
-    const deeper = [...REPO, "docs/design/img/a.png", "docs/design/img/raw/b.png"];
-    expect(testOf(DEFAULT_TREE_FILTER, deeper)("docs/design/img/a.png")).toBe(true);
+    // (folder names that are not image folders: those have a rule of their own, below)
+    const deeper = [...REPO, "docs/design/pics/a.png", "docs/design/pics/raw/b.png"];
+    expect(testOf(DEFAULT_TREE_FILTER, deeper)("docs/design/pics/a.png")).toBe(true);
     // two levels below the nearest document: too far
-    expect(testOf(DEFAULT_TREE_FILTER, deeper)("docs/design/img/raw/b.png")).toBe(false);
+    expect(testOf(DEFAULT_TREE_FILTER, deeper)("docs/design/pics/raw/b.png")).toBe(false);
   });
 
   it("does not borrow the root's documents for a first-level folder", () => {
     const test = testOf(DEFAULT_TREE_FILTER);
     expect(test("src-tauri/Cargo.toml")).toBe(false);
-    expect(test("site/assets/logo.svg")).toBe(false); // site/ has no document of its own
+    expect(test("src-tauri/icons/icon.png")).toBe(false); // src-tauri/ has no document of its own
   });
 
   it("reduces this repository's tree to its documents and their companions", () => {
@@ -455,8 +458,8 @@ describe("assets next to documents", () => {
       keep: null,
     });
     expect(REPO).toHaveLength(51);
-    expect(outcome.shown).toHaveLength(17);
-    expect(outcome.hidden).toHaveLength(34);
+    expect(outcome.shown).toHaveLength(20);
+    expect(outcome.hidden).toHaveLength(31);
     expect(outcome.main.map((n) => n.path)).toEqual([
       ".claude",
       "CHANGELOG.md",
@@ -466,8 +469,11 @@ describe("assets next to documents", () => {
       "docs",
       "package-lock.json",
       "package.json",
+      "site",
       "tsconfig.json",
     ]);
+    const site = outcome.main.find((n) => n.path === "site");
+    expect(site?.children?.map((n) => n.path)).toEqual(["site/assets"]);
     const docs = outcome.main.find((n) => n.path === "docs");
     expect(docs?.children?.map((n) => n.path)).toEqual([
       "docs/assets",
@@ -548,6 +554,148 @@ describe("assets next to documents", () => {
       ["", ".claude/agents", ".claude/skills/design-system", "docs", "docs/design"].sort(),
     );
     expect(documentFolders(["@wt/a/notes.txt", "x.png"])).toEqual(new Set(["@wt/a"]));
+  });
+});
+
+describe("images beyond the folders of documents", () => {
+  const testOf = (filter: TreeFilter, refs: string[] = [], paths = REPO) =>
+    fileTest(filter, documentFolders(paths), refs);
+
+  it("shows the images of a folder made for images, at any level, in any case", () => {
+    const test = testOf(DEFAULT_TREE_FILTER);
+    // this repository: the site's images were hidden by the first rule, and now show
+    for (const shown of [
+      "site/assets/logo.svg",
+      "site/assets/screenshot-dark.png",
+      "site/assets/screenshot-light.png",
+      "docs/assets/logo.png",
+    ]) {
+      expect(test(shown), shown).toBe(true);
+    }
+    expect(test("src-tauri/icons/32x32.png")).toBe(false);
+    expect(test("src-tauri/icons/128x128.png")).toBe(false);
+    expect(test("src-tauri/icons/icon.ico")).toBe(false);
+    expect(test("src-tauri/icons/icon.png")).toBe(false);
+
+    for (const name of [
+      "assets",
+      "images",
+      "img",
+      "media",
+      "attachments",
+      "screenshots",
+      "figures",
+      "diagrams",
+      "pictures",
+    ]) {
+      expect(test(`tools/${name}/a.png`), name).toBe(true);
+    }
+    expect(test("tools/Images/a.PNG")).toBe(true);
+    expect(test("web/public/media/deep/er/a.webp")).toBe(true);
+    expect(test("tools/icons/a.png")).toBe(false);
+    expect(test("tools/assets.png")).toBe(false); // a file named like the folder is not a folder
+    expect(test("tools/my-assets/a.png")).toBe(false); // the whole name has to match
+  });
+
+  it("keeps data and XML to the folders of documents", () => {
+    const test = testOf(DEFAULT_TREE_FILTER);
+    expect(test("site/assets/manifest.json")).toBe(false);
+    expect(test("site/assets/feed.xml")).toBe(false);
+    expect(test("site/images/rows.csv")).toBe(false);
+    // next to a document they show, as before
+    expect(test("docs/assets/manifest.json")).toBe(true);
+  });
+
+  it("shows an image a document links to, wherever the image is", () => {
+    const refs = ["src-tauri/icons/icon.png", "tools/diagram.png"];
+    const test = testOf(DEFAULT_TREE_FILTER, refs);
+    expect(test("src-tauri/icons/icon.png")).toBe(true);
+    expect(test("tools/diagram.png")).toBe(true);
+    expect(test("src-tauri/icons/128x128.png")).toBe(false); // not linked
+    expect(test("tools/other.png")).toBe(false);
+    // the links are matched ignoring case, as the patterns are
+    expect(
+      testOf(DEFAULT_TREE_FILTER, ["SRC-Tauri/Icons/Icon.PNG"])("src-tauri/icons/icon.png"),
+    ).toBe(true);
+    // nothing is linked until the backend says so
+    expect(testOf(DEFAULT_TREE_FILTER)("src-tauri/icons/icon.png")).toBe(false);
+  });
+
+  it("applies to images only: a linked data file or a linked code file stays out", () => {
+    const refs = ["src-tauri/Cargo.toml", "src-tauri/tauri.conf.json", "src-tauri/src/main.rs"];
+    const test = testOf(DEFAULT_TREE_FILTER, refs);
+    expect(test("src-tauri/Cargo.toml")).toBe(false);
+    expect(test("src-tauri/tauri.conf.json")).toBe(false);
+    expect(test("src-tauri/src/main.rs")).toBe(false);
+  });
+
+  it("follows the categories: Documents and an unchecked Images box hide a linked image", () => {
+    const refs = ["src-tauri/icons/icon.png", "site/assets/logo.svg"];
+    const documents = { ...DEFAULT_TREE_FILTER, show: "documents" as const };
+    expect(testOf(documents, refs)("src-tauri/icons/icon.png")).toBe(false);
+    expect(testOf(documents, refs)("site/assets/logo.svg")).toBe(false);
+    const noImages: TreeFilter = { ...DEFAULT_TREE_FILTER, show: "custom", categories: ["data"] };
+    expect(testOf(noImages, refs)("src-tauri/icons/icon.png")).toBe(false);
+    const images: TreeFilter = { ...DEFAULT_TREE_FILTER, show: "custom", categories: ["images"] };
+    expect(testOf(images, refs)("src-tauri/icons/icon.png")).toBe(true);
+    expect(testOf(images, refs)("site/assets/logo.svg")).toBe(true);
+  });
+
+  it("is off with the box: every image shows, linked or not", () => {
+    const off = { ...DEFAULT_TREE_FILTER, assetsNearDocs: false };
+    expect(testOf(off)("src-tauri/icons/icon.png")).toBe(true);
+    expect(testOf(off, ["x.png"])("src-tauri/icons/icon.png")).toBe(true);
+  });
+
+  it("lets +pattern and -pattern win, the last match first", () => {
+    const refs = ["src-tauri/icons/icon.png"];
+    const filter = (patterns: string): TreeFilter => ({
+      ...DEFAULT_TREE_FILTER,
+      show: "custom",
+      categories: categoriesOf("docs-and-assets"),
+      patterns,
+    });
+    expect(testOf(filter("-src-tauri/icons/**"), refs)("src-tauri/icons/icon.png")).toBe(false);
+    expect(testOf(filter("-site/assets/**"))("site/assets/logo.svg")).toBe(false);
+    expect(testOf(filter("-site/assets/** +site/assets/logo.svg"))("site/assets/logo.svg")).toBe(
+      true,
+    );
+    expect(testOf(filter("+src-tauri/icons/**"))("src-tauri/icons/32x32.png")).toBe(true);
+    expect(testOf(filter("-*.svg"))("docs/assets/logo.svg")).toBe(false);
+  });
+
+  it("works in a worktree: its own folders, its own links", () => {
+    const paths = [
+      "README.md",
+      "assets/main.png",
+      "@wt/feature/README.md",
+      "@wt/feature/tools/b.png",
+      "@wt/feature/tools/c.png",
+      "@wt/feature/images/d.png",
+      "@wt/assets/tools/e.png", // a worktree that happens to be called `assets`
+      "@wt/assets/images/f.png",
+      "tools/b.png",
+    ];
+    const test = testOf(DEFAULT_TREE_FILTER, ["@wt/feature/tools/b.png"], paths);
+    expect(test("@wt/feature/tools/b.png")).toBe(true); // linked from the worktree
+    expect(test("@wt/feature/tools/c.png")).toBe(false);
+    expect(test("tools/b.png")).toBe(false); // the main folder's file is not the one linked
+    expect(test("@wt/feature/images/d.png")).toBe(true);
+    expect(test("assets/main.png")).toBe(true);
+    expect(test("@wt/assets/tools/e.png")).toBe(false); // the worktree's name is not a folder of the project
+    expect(test("@wt/assets/images/f.png")).toBe(true);
+  });
+
+  it("an image in an unconventional folder shows only because a document links to it", () => {
+    const paths = ["README.md", "build/output/chart.png", "build/output/other.png"];
+    const root = treeOf(paths);
+    const run = (refs: string[]): string[] =>
+      filterTree(root, testOf(DEFAULT_TREE_FILTER, refs, paths), {
+        hideEmptyFolders: true,
+        keep: null,
+      }).shown;
+    expect(run([])).toEqual(["README.md"]);
+    expect(run(["build/output/chart.png"])).toEqual(["README.md", "build/output/chart.png"]);
   });
 });
 

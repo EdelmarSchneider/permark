@@ -4,6 +4,7 @@
 //! [`render`] (documents to HTML), [`links`], [`search`], [`watch`] (filesystem events), [`git`] and
 //! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor),
 //! [`fileops`] (rename, move, delete and new folders with the links kept working).
+//! [`refs`] knows which images the documents use (for the Explorer filter).
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
 
@@ -15,6 +16,7 @@ mod git;
 mod links;
 mod meta;
 mod nav;
+mod refs;
 mod render;
 mod search;
 mod session;
@@ -87,6 +89,7 @@ pub fn run() {
             commands::open_external,
             commands::reveal_in_folder,
             commands::search,
+            commands::referenced_images,
             commands::init_project_folder,
             commands::state_location,
             commands::file_meta,
