@@ -115,6 +115,14 @@ pub fn resolve(vault: &Vault, from: &str, href: &str) -> LinkTarget {
     }
     let decoded = percent_decode(path_part).replace('\\', "/");
 
+    // `/tmp/notes/docs/a.md` is a filesystem path when it lies inside a root; otherwise a leading `/`
+    // means "from the vault root". (On Windows only drive and UNC paths are absolute.)
+    if Path::new(&decoded).is_absolute() {
+        if let Some((rel, _)) = vault.to_rel(Path::new(&decoded)) {
+            return find_existing(vault, &rel, anchor);
+        }
+    }
+
     let Some(joined) = join_relative(from, &decoded) else {
         return LinkTarget::Missing { path: decoded };
     };
@@ -414,6 +422,89 @@ mod tests {
             resolve(&v, "README.md", "file:///definitely/not/inside.md"),
             LinkTarget::Missing { .. }
         ));
+    }
+
+    /// A link such as `/tmp/x/docs/guide.md` is a filesystem path, not a vault-root-relative one.
+    #[test]
+    fn absolute_links_win_over_the_root_relative_reading() {
+        let (d, v) = vault();
+        let abs = d.path().join("docs").join("guide.md");
+        let as_path = abs.to_string_lossy().replace('\\', "/");
+        assert_eq!(
+            resolve(&v, "docs/sub/deep.md", &as_path),
+            internal("docs/guide.md", None)
+        );
+        // Inside the vault but not there: reported relative to the vault, not as `tmp/x/...`.
+        let gone = d.path().join("docs").join("gone.md");
+        assert_eq!(
+            resolve(&v, "README.md", &gone.to_string_lossy().replace('\\', "/")),
+            LinkTarget::Missing {
+                path: "docs/gone.md".to_owned()
+            }
+        );
+        // Root-relative links keep working next to them.
+        assert_eq!(
+            resolve(&v, "docs/sub/deep.md", "/docs/guide.md"),
+            internal("docs/guide.md", None)
+        );
+    }
+
+    /// A different spelling of the vault's own location: through a symlink (`/var` versus
+    /// `/private/var` on macOS).
+    #[cfg(unix)]
+    #[test]
+    fn absolute_paths_through_a_symlink_to_the_vault_are_internal() {
+        let (_d, v) = vault();
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let link = elsewhere.path().join("alias");
+        std::os::unix::fs::symlink(v.root(), &link).expect("symlink");
+        let via_link = link.join("docs").join("guide.md");
+        assert_eq!(
+            resolve(&v, "README.md", &via_link.to_string_lossy()),
+            internal("docs/guide.md", None)
+        );
+        assert_eq!(
+            resolve(
+                &v,
+                "README.md",
+                &format!("file://{}", via_link.to_string_lossy())
+            ),
+            internal("docs/guide.md", None)
+        );
+    }
+
+    /// The CI runner's temp dir is spelled `C:\Users\RUNNER~1\...`; the vault root is canonical.
+    #[cfg(windows)]
+    #[test]
+    fn absolute_paths_spelled_with_8dot3_short_names_are_internal() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let long = d.path().join("a-long-vault-folder");
+        fs::create_dir_all(long.join("docs")).expect("mkdir");
+        fs::write(long.join("docs").join("guide.md"), "x").expect("write");
+        let Some(short) = crate::util::short_path(&long) else {
+            eprintln!("skipped: 8.3 short names are disabled on this volume");
+            return;
+        };
+        let v = Vault::open(&long).expect("open");
+        let abs = short.join("docs").join("guide.md");
+        let backslashes = abs.display().to_string();
+        let slashes = backslashes.replace('\\', "/");
+        for href in [
+            backslashes.clone(),
+            slashes.clone(),
+            format!("file:///{slashes}"),
+        ] {
+            assert_eq!(
+                resolve(&v, "README.md", &href),
+                internal("docs/guide.md", None),
+                "{href}"
+            );
+        }
+        // With an anchor.
+        assert_eq!(
+            resolve(&v, "README.md", &format!("{backslashes}#intro")),
+            internal("docs/guide.md", Some("intro"))
+        );
     }
 
     #[cfg(windows)]

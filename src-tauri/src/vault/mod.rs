@@ -12,6 +12,8 @@ use std::path::{Component, Path, PathBuf, Prefix, PrefixComponent};
 
 use serde::Serialize;
 
+use crate::util::{canonicalize_lenient, split_existing};
+
 pub use tree::{NodeKind, TreeNode, WalkItem};
 
 /// Prefix of worktree paths: `@wt/<name>/relative/path`.
@@ -327,23 +329,14 @@ impl Vault {
 
         // Re-check containment on the real location: the deepest existing ancestor is canonicalized
         // (following symlinks and junctions) and must still be inside the root.
-        let mut existing = abs.as_path();
-        let mut tail: Vec<&OsStr> = Vec::new();
-        let canon_existing = loop {
-            if let Ok(c) = dunce::canonicalize(existing) {
-                break c;
-            }
-            let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else {
-                return Err(VaultError::NotFound(rel));
-            };
-            tail.push(name);
-            existing = parent;
+        let Some((canon_existing, tail)) = split_existing(&abs) else {
+            return Err(VaultError::NotFound(rel));
         };
         if strip_root(&canon_existing, root).is_none() {
             return Err(VaultError::Escapes(rel));
         }
         let mut full = canon_existing;
-        full.extend(tail.iter().rev());
+        full.extend(tail);
 
         let display = self.to_rel(&full).map_or_else(
             || {
@@ -366,8 +359,36 @@ impl Vault {
     }
 
     /// Like [`Vault::to_rel`], also returning the path relative to the owning root.
+    ///
+    /// The roots are canonical, so a path spelled differently (8.3 short names such as `RUNNER~1`,
+    /// a symlinked folder, `/var` versus `/private/var`) is compared in its canonical form when it
+    /// does not match as written. Paths from the walker and the watcher match on the first try.
     pub fn locate(&self, abs: &Path) -> Option<Located> {
         let abs = dunce::simplified(abs);
+        self.locate_in_roots(abs).or_else(|| {
+            if !self.shares_volume_with_a_root(abs) {
+                return None;
+            }
+            let canon = canonicalize_lenient(abs).filter(|c| c != abs)?;
+            self.locate_in_roots(&canon)
+        })
+    }
+
+    /// Whether `abs` starts on a drive or share that a root lives on. Spelling differences (short
+    /// names, case, symlinks) stay on the volume, so a path on any other one is not worth touching
+    /// the disk for: probing a disconnected network drive (`Z:\...`) can block for a minute.
+    fn shares_volume_with_a_root(&self, abs: &Path) -> bool {
+        let first = abs.components().next();
+        self.root_paths()
+            .into_iter()
+            .any(|root| match (first, root.components().next()) {
+                (Some(Component::Prefix(a)), Some(Component::Prefix(b))) => prefix_eq(a, b),
+                (Some(Component::RootDir), Some(Component::RootDir)) => true,
+                _ => false,
+            })
+    }
+
+    fn locate_in_roots(&self, abs: &Path) -> Option<Located> {
         let mut best: Option<(usize, Vec<&OsStr>)> = None;
         for (idx, root) in self.root_paths().into_iter().enumerate() {
             if let Some(rest) = strip_root(abs, root) {
@@ -569,6 +590,106 @@ mod tests {
         );
         assert_eq!(rest(r"\\?\D:\Users\me\a.md", r"C:\Users\me"), None);
         assert_eq!(rest(r"\\?\UNC\other\share\a.md", r"\\server\share"), None);
+    }
+
+    /// A folder with a long name, so that it has a distinct 8.3 short spelling, with its short path.
+    /// `None` (the test is skipped) when the volume has 8.3 names disabled.
+    #[cfg(windows)]
+    fn long_folder_with_short_name(files: &[&str]) -> Option<(TempDir, PathBuf, PathBuf)> {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let long = dir.path().join("a-long-folder-name");
+        for f in files {
+            let p = long.join(f);
+            fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
+            fs::write(&p, "x").expect("write");
+        }
+        let short = crate::util::short_path(&long);
+        if short.is_none() {
+            eprintln!("skipped: 8.3 short names are disabled on this volume");
+        }
+        short.map(|short| (dir, long, short))
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn paths_spelled_with_8dot3_short_names_are_located() {
+        let Some((_d, long, short)) = long_folder_with_short_name(&["docs/a.md"]) else {
+            return;
+        };
+        let v = Vault::open(&long).expect("open");
+        let located = |p: PathBuf| v.to_rel(&p);
+        assert_eq!(
+            located(short.join("docs").join("a.md")),
+            Some(("docs/a.md".to_owned(), 0))
+        );
+        // A file that does not exist (yet) below the short spelling is placed too.
+        assert_eq!(
+            located(short.join("docs").join("new").join("n.md")),
+            Some(("docs/new/n.md".to_owned(), 0))
+        );
+        // The short spelling of somewhere else is still outside.
+        let other = tempfile::tempdir().expect("tempdir");
+        assert_eq!(located(other.path().join("x.md")), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn worktrees_given_by_their_8dot3_short_path_are_located() {
+        let Some((_w, long, short)) = long_folder_with_short_name(&["w.md"]) else {
+            return;
+        };
+        let (_d, v) = vault_with(&["a.md"]);
+        let v = v.with_worktrees(vec![Worktree {
+            name: "feature-x".to_owned(),
+            path: short.clone(),
+            branch: None,
+        }]);
+        assert_eq!(v.worktrees().len(), 1);
+        assert_eq!(
+            v.worktrees()[0].path,
+            dunce::canonicalize(&long).expect("canon")
+        );
+        let (rel, idx) = v.to_rel(&short.join("w.md")).expect("to_rel");
+        assert_eq!((rel.as_str(), idx), ("@wt/feature-x/w.md", 1));
+        let r = v.resolve("@wt/feature-x/w.md").expect("resolve");
+        assert!(r.abs.is_file());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn other_drives_are_not_probed() {
+        let (_d, v) = vault_with(&["a.md"]);
+        let drive = v.root().display().to_string()[..1].to_owned();
+        assert!(v.shares_volume_with_a_root(Path::new(&format!("{}:\\x", drive.to_lowercase()))));
+        assert!(v.shares_volume_with_a_root(Path::new(&format!("\\\\?\\{drive}:\\x"))));
+        let other = if drive.eq_ignore_ascii_case("Q") {
+            "R"
+        } else {
+            "Q"
+        };
+        assert!(!v.shares_volume_with_a_root(Path::new(&format!("{other}:\\x"))));
+        assert!(!v.shares_volume_with_a_root(Path::new(r"\\server\share\x")));
+        assert!(!v.shares_volume_with_a_root(Path::new("relative\\x")));
+    }
+
+    /// A different spelling of the same place: the vault is reached through a symlink (like `/var`
+    /// versus `/private/var` on macOS).
+    #[cfg(unix)]
+    #[test]
+    fn paths_reached_through_a_symlink_are_located() {
+        let (_d, v) = vault_with(&["docs/a.md"]);
+        let elsewhere = tempfile::tempdir().expect("tempdir");
+        let link = elsewhere.path().join("alias");
+        std::os::unix::fs::symlink(v.root(), &link).expect("symlink");
+        assert_eq!(
+            v.to_rel(&link.join("docs").join("a.md")),
+            Some(("docs/a.md".to_owned(), 0))
+        );
+        assert_eq!(
+            v.to_rel(&link.join("docs").join("new.md")),
+            Some(("docs/new.md".to_owned(), 0))
+        );
+        assert_eq!(v.to_rel(&elsewhere.path().join("x.md")), None);
     }
 
     #[test]

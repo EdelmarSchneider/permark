@@ -1,8 +1,9 @@
 //! Small helpers shared by several modules: clocks, hashing, read retry, and the quiet/max coalescer
 //! used by both the filesystem aggregator and the git worker.
 
+use std::ffi::OsStr;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -68,6 +69,33 @@ const READ_RETRY_DELAYS: [Duration; 3] = [
 /// Reads a whole file, retrying Windows sharing violations at 50/100/200 ms.
 pub(crate) fn read_with_retry(path: &Path) -> io::Result<Vec<u8>> {
     retry_io(&READ_RETRY_DELAYS, || std::fs::read(path))
+}
+
+/// Canonicalizes the deepest existing ancestor of `path` and returns it with the components below it
+/// that do not exist (yet), in path order. Canonicalizing follows symlinks and junctions, expands
+/// Windows 8.3 short names (`RUNNER~1`) and fixes the case, and drops the `\\?\` prefix when it can
+/// (see `dunce`). `None` when nothing on the path exists or it ends in `..`.
+pub(crate) fn split_existing(path: &Path) -> Option<(PathBuf, Vec<&OsStr>)> {
+    let mut existing = path;
+    let mut tail: Vec<&OsStr> = Vec::new();
+    let canon = loop {
+        if let Ok(c) = dunce::canonicalize(existing) {
+            break c;
+        }
+        tail.push(existing.file_name()?);
+        existing = existing.parent()?;
+    };
+    tail.reverse();
+    Some((canon, tail))
+}
+
+/// `path` in canonical form even when its last components do not exist: the deepest existing
+/// ancestor is canonicalized (see [`split_existing`]) and the remaining components are appended.
+/// Use it to compare an arbitrary absolute path with a canonical root.
+pub(crate) fn canonicalize_lenient(path: &Path) -> Option<PathBuf> {
+    let (mut canon, tail) = split_existing(path)?;
+    canon.extend(tail);
+    Some(canon)
 }
 
 /// Writes a file atomically (temp file in the same directory, then rename).
@@ -182,6 +210,23 @@ impl Coalescer {
     }
 }
 
+/// The 8.3 short spelling of an existing Windows path (`C:\Users\RUNNER~1\...`), or `None` when the
+/// volume has 8.3 names disabled (the path then comes back unchanged). Test helper: a CI runner's temp
+/// dir is spelled this way, while the vault root is canonical.
+#[cfg(all(test, windows))]
+pub(crate) fn short_path(path: &Path) -> Option<std::path::PathBuf> {
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("cmd")
+        .arg("/C")
+        .raw_arg(format!("for %I in (\"{}\") do @echo %~sI", path.display()))
+        .output()
+        .ok()?;
+    let short = std::path::PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    (!short.as_os_str().is_empty()
+        && short.to_string_lossy().to_lowercase() != path.to_string_lossy().to_lowercase())
+    .then_some(short)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +320,50 @@ mod tests {
         assert_eq!(on_parser_stack(|| depth(300_000)), 300_000);
         let local = String::from("borrowed");
         assert_eq!(on_parser_stack(|| local.len()), 8);
+    }
+
+    #[test]
+    fn split_existing_separates_the_missing_tail() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join("a")).expect("mkdir");
+        let canon = dunce::canonicalize(dir.path()).expect("canonicalize");
+
+        let missing = dir.path().join("a").join("b").join("c.md");
+        let (head, tail) = split_existing(&missing).expect("the temp dir exists");
+        assert_eq!(head, canon.join("a"));
+        assert_eq!(tail, [OsStr::new("b"), OsStr::new("c.md")]);
+
+        let (head, tail) = split_existing(dir.path()).expect("exists");
+        assert_eq!((head, tail.len()), (canon.clone(), 0));
+
+        assert_eq!(
+            canonicalize_lenient(&dir.path().join("a").join("b").join("c.md")),
+            Some(canon.join("a").join("b").join("c.md"))
+        );
+        // Nothing to anchor a relative path to.
+        assert_eq!(canonicalize_lenient(Path::new("no-such-dir/x.md")), None);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn canonicalize_lenient_expands_8dot3_short_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let long = dir.path().join("a-long-folder-name");
+        std::fs::create_dir_all(&long).expect("mkdir");
+        let Some(short) = short_path(&long) else {
+            eprintln!("skipped: 8.3 short names are disabled on this volume");
+            return;
+        };
+        assert!(short.to_string_lossy().contains('~'));
+        assert_eq!(
+            canonicalize_lenient(&short.join("not-yet").join("n.md")),
+            Some(
+                dunce::canonicalize(&long)
+                    .expect("canonicalize")
+                    .join("not-yet")
+                    .join("n.md")
+            )
+        );
     }
 
     #[test]
