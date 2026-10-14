@@ -270,7 +270,6 @@ class DocStore {
       quiet: true,
     };
     this.syncNav();
-    this.revealInExplorer(now, true);
   }
 
   /** Files or folders were deleted here: the open document is shown as deleted when it was one of them. */

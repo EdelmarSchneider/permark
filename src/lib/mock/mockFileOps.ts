@@ -230,7 +230,7 @@ export async function newFolder(path: string): Promise<CreatedFolder> {
 
 export async function undoFileOp(opId: number): Promise<UndoOutcome> {
   const at = operations.findIndex((o) => o.id === opId);
-  if (at < 0) return fail("unknownPlan", "that preview is no longer available; try again");
+  if (at < 0) return fail("unknownOperation", "that operation can no longer be undone");
   const [op] = operations.splice(at, 1);
   for (const r of op.rewrites) writeSource(r.path, r.before);
   const back = [...op.moves].reverse().map((m) => ({ from: m.to, to: m.from }));

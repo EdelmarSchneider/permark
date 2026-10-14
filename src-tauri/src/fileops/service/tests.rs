@@ -634,7 +634,7 @@ fn undo_moves_everything_back_and_restores_the_links() {
         ("manual", "docs")
     );
     // an operation is undone once
-    assert_eq!(kind(fx.svc.undo(outcome.op_id)), "unknownPlan");
+    assert_eq!(kind(fx.svc.undo(outcome.op_id)), "unknownOperation");
 }
 
 #[test]

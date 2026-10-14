@@ -323,7 +323,7 @@ impl FileOpsService {
                 .operations
                 .iter()
                 .position(|o| o.id == op_id)
-                .ok_or(FileOpError::UnknownPlan)?;
+                .ok_or(FileOpError::UnknownOperation)?;
             state.operations.remove(at)
         };
         let mut out = UndoOutcome {

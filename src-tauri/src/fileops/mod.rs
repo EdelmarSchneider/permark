@@ -48,6 +48,8 @@ pub enum FileOpError {
     Nothing,
     #[error("that preview is no longer available; try again")]
     UnknownPlan,
+    #[error("that operation can no longer be undone")]
+    UnknownOperation,
     #[error("couldn't move {path}: {source}")]
     Io { path: String, source: io::Error },
     #[error("couldn't move to the recycle bin: {0}")]
@@ -68,6 +70,7 @@ impl FileOpError {
             Self::SimpleMode => "simpleMode",
             Self::Nothing => "nothing",
             Self::UnknownPlan => "unknownPlan",
+            Self::UnknownOperation => "unknownOperation",
             Self::Io { source, .. } if source.kind() == io::ErrorKind::PermissionDenied => "denied",
             Self::Io { .. } => "io",
             Self::Trash(_) => "trash",
