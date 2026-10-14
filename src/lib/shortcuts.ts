@@ -24,6 +24,7 @@ export type ShortcutAction =
   | "zoomOut"
   | "zoomReset"
   | "cycleWidth"
+  | "toggleOutline"
   | "settings";
 
 export type KeyInfo = {
@@ -78,6 +79,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "toggleRight";
       case "w":
         return "cycleWidth";
+      case "o":
+        return "toggleOutline";
     }
     return null;
   }

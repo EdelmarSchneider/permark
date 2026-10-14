@@ -134,6 +134,15 @@ pub enum ReadingWidth {
     Full,
 }
 
+/// Which view the right panel shows. The UI draws it; the app only keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RightTab {
+    #[default]
+    Changes,
+    Outline,
+}
+
 /// What the UI wants restored on the next visit. Matches the UI's `SessionState`; fields missing from
 /// an older save take their defaults.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -167,6 +176,9 @@ pub struct SessionState {
     /// The Explorer selects (and scrolls to) the document that was just opened. On unless turned off.
     #[serde(deserialize_with = "or_true")]
     pub auto_reveal: bool,
+    /// The right panel's view. A view this build does not know (written by a newer UI) reads as Changes.
+    #[serde(deserialize_with = "or_default")]
+    pub right_tab: RightTab,
 }
 
 impl Default for SessionState {
@@ -187,6 +199,7 @@ impl Default for SessionState {
             follow: false,
             tree_filter: None,
             auto_reveal: true,
+            right_tab: RightTab::Changes,
         }
     }
 }
@@ -201,7 +214,7 @@ mod tests {
             "lastDoc": "docs/a.md", "scrollTop": 120.5, "zoom": 1.25, "width": "full",
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
             "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
-            "autoReveal": false,
+            "autoReveal": false, "rightTab": "outline",
             "treeFilter": {"show": "custom", "categories": ["documents", "data"],
                            "patterns": "+*.sql -archive/**", "hideEmptyFolders": false,
                            "assetsNearDocs": false}
@@ -211,6 +224,7 @@ mod tests {
         assert_eq!(s.theme, Theme::Dark);
         assert_eq!(s.width, Some(ReadingWidth::Full));
         assert!(!s.auto_reveal);
+        assert_eq!(s.right_tab, RightTab::Outline);
         assert!(!s.left_panel.open);
         let filter = s.tree_filter.as_ref().expect("filter");
         assert_eq!(filter.show, TreeShow::Custom);
@@ -353,6 +367,49 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{value} lost the session: {e}"));
             assert!(s.auto_reveal, "{value}");
             assert!(s.follow);
+        }
+    }
+
+    #[test]
+    fn a_session_saved_before_the_outline_has_the_changes_view() {
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
+        assert_eq!(s.right_tab, RightTab::Changes, "missing means the default");
+        assert_eq!(SessionState::default().right_tab, RightTab::Changes);
+        let s: SessionState = serde_json::from_str("{}").expect("parse");
+        assert_eq!(s, SessionState::default());
+    }
+
+    #[test]
+    fn every_right_tab_round_trips() {
+        for (name, tab) in [
+            ("changes", RightTab::Changes),
+            ("outline", RightTab::Outline),
+        ] {
+            let json = format!("{{\"rightTab\": \"{name}\"}}");
+            let s: SessionState = serde_json::from_str(&json).expect("parse");
+            assert_eq!(s.right_tab, tab);
+            assert_eq!(serde_json::to_value(&s).expect("json")["rightTab"], name);
+        }
+    }
+
+    #[test]
+    fn a_view_from_a_newer_ui_reads_as_changes_and_the_session_survives() {
+        for tab in [
+            "\"commits\"",
+            "\"Outline\"",
+            "\"\"",
+            "null",
+            "7",
+            "true",
+            "[\"outline\"]",
+            "{}",
+        ] {
+            let json = format!("{{\"zoom\": 1.5, \"lastDoc\": \"a.md\", \"rightTab\": {tab}}}");
+            let s: SessionState = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{tab} lost the session: {e}"));
+            assert!((s.zoom - 1.5).abs() < f64::EPSILON);
+            assert_eq!(s.last_doc.as_deref(), Some("a.md"));
+            assert_eq!(s.right_tab, RightTab::Changes, "{tab}");
         }
     }
 

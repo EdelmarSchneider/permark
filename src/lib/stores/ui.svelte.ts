@@ -3,6 +3,7 @@
 import { SvelteSet } from "svelte/reactivity";
 import type { FindMode } from "../find";
 import type { Anchor } from "../components/Popover.svelte";
+import type { RightTab } from "../rightPanel";
 
 const HINT_KEY = "trailmark.hint.initProject";
 
@@ -35,6 +36,14 @@ class UiStore {
   resizing = $state(false);
   /** The right panel is hidden and something changed: the activity bar shows a dot. */
   rightNotify = $state(false);
+  /** Feed events arrived while another view of the right panel was showing: a dot on the Changes tab. */
+  changesNotify = $state(false);
+  /** The view the Outline shortcut goes back to when pressed again (not remembered across launches). */
+  rightTabBack = $state<RightTab>("changes");
+  /** Bumped to move the focus into the outline list (Ctrl+Alt+O). */
+  outlineFocusTick = $state(0);
+  /** Simple mode has no right panel: the outline opens as a popover under the header. */
+  outlinePopover = $state(false);
   zoomImage = $state<string | null>(null);
   followChip = $state.raw<{ from: string; to: string; n: number } | null>(null);
   /** The "keep settings with the project" hint was dismissed or used (remembered across projects). */

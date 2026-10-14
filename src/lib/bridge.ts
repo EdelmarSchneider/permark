@@ -16,6 +16,13 @@ export type FindApi = {
   clear(): void;
 };
 
+export type OutlineApi = {
+  /** Scrolls a heading (by its index in the outline) to the top of the document and tints it briefly. */
+  goTo(index: number): void;
+  /** Puts the keyboard focus back on the document. */
+  focusDoc(): void;
+};
+
 export type DocBridge = {
   /** F7 / Shift+F7: move to the next or previous changed block or removed marker. */
   jumpChange?: (direction: 1 | -1) => void;
@@ -24,6 +31,7 @@ export type DocBridge = {
   getSelection?: () => DocSelection | null;
   /** The element for a block or heading, used to position the first find match. */
   locatedElement?: () => HTMLElement | null;
+  outline?: OutlineApi;
 };
 
 export const bridge: DocBridge = {};

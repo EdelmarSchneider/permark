@@ -35,7 +35,17 @@
 
   const entries = $derived<MenuEntry[]>([
     ...(vault.isSimple
-      ? []
+      ? ([
+          {
+            id: "outline",
+            label: t("menu.outline"),
+            icon: "outline",
+            hint: "Ctrl+Alt+O",
+            disabled: !view,
+            onselect: () => (ui.outlinePopover = true),
+          },
+          { type: "separator" },
+        ] satisfies MenuEntry[])
       : ([
           {
             id: "tags",
