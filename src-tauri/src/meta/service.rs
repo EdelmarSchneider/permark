@@ -633,6 +633,35 @@ impl MetaService {
         }
     }
 
+    /// A folder was renamed or moved: the tags of the files inside go with it.
+    pub fn rename_tree(&self, from: &str, to: &str) {
+        if from.starts_with(WORKTREE_PREFIX) || to.starts_with(WORKTREE_PREFIX) {
+            return;
+        }
+        let from_segments = from.split('/').count();
+        let inside: Vec<(String, String)> = {
+            let g = lock(&self.inner);
+            let folded: Vec<String> = from.split('/').map(key).collect();
+            g.entries
+                .iter()
+                .filter_map(|(path, _)| {
+                    let parts: Vec<&str> = path.split('/').collect();
+                    let within = parts.len() > from_segments
+                        && parts.iter().zip(&folded).all(|(p, f)| key(p) == *f);
+                    within.then(|| {
+                        (
+                            path.to_owned(),
+                            format!("{to}/{}", parts[from_segments..].join("/")),
+                        )
+                    })
+                })
+                .collect()
+        };
+        for (old, new) in inside {
+            self.rename(&old, &new);
+        }
+    }
+
     /// Entries of files that are gone (kept, because a checkout may bring the files back).
     fn missing_paths(&self) -> Vec<String> {
         let paths: Vec<String> = lock(&self.inner)

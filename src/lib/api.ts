@@ -6,14 +6,20 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AssetWritten,
+  BufferText,
   ChangedSince,
   CreatedDoc,
+  CreatedFolder,
+  DeleteOutcome,
   DocumentView,
   FileMeta,
   FsBatch,
   GitSnapshot,
   IndexEntry,
   LinkTarget,
+  Move,
+  MoveOutcome,
+  MovePreview,
   ParsedBlocks,
   RecentVault,
   SaveOutcome,
@@ -23,6 +29,7 @@ import type {
   TaggedFile,
   TagOverview,
   TreeNode,
+  UndoOutcome,
   VaultInfo,
 } from "./types";
 
@@ -85,6 +92,23 @@ export interface Api {
   createDocument(path: string, text: string): Promise<CreatedDoc>;
   /** Writes an image (`data` is base64) into the `assets` folder next to the document. */
   writeAsset(docPath: string, nameHint: string, data: string): Promise<AssetWritten>;
+  /**
+   * Checks a rename or move (rejects when the destination exists, is outside the project, the name is not usable...)
+   * and, with `scanLinks`, lists the links of the documents that would have to change. Nothing is changed yet.
+   */
+  previewMove(moves: Move[], scanLinks: boolean): Promise<MovePreview>;
+  /**
+   * Makes the move of a preview, once. With `updateLinks` the links it listed are rewritten (a document whose file
+   * changed since is skipped and reported); documents in `buffers` have unsaved edits: they are not written, the
+   * changes for their text come back instead.
+   */
+  applyMove(planId: number, updateLinks: boolean, buffers: BufferText[]): Promise<MoveOutcome>;
+  /** Sends files and folders to the system's recycle bin. */
+  deleteEntries(paths: string[]): Promise<DeleteOutcome>;
+  /** Creates a folder; rejects with kind "exists" or "invalidName". */
+  newFolder(path: string): Promise<CreatedFolder>;
+  /** Reverts an operation (the moves and every rewritten link) as far as the files are unchanged since. */
+  undoFileOp(opId: number): Promise<UndoOutcome>;
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -126,6 +150,12 @@ export const tauriApi: Api = {
   createDocument: (path, text) => invoke<CreatedDoc>("create_document", { path, text }),
   writeAsset: (docPath, nameHint, data) =>
     invoke<AssetWritten>("write_asset", { docPath, nameHint, data }),
+  previewMove: (moves, scanLinks) => invoke<MovePreview>("preview_move", { moves, scanLinks }),
+  applyMove: (planId, updateLinks, buffers) =>
+    invoke<MoveOutcome>("apply_move", { planId, updateLinks, buffers }),
+  deleteEntries: (paths) => invoke<DeleteOutcome>("delete_entries", { paths }),
+  newFolder: (path) => invoke<CreatedFolder>("new_folder", { path }),
+  undoFileOp: (opId) => invoke<UndoOutcome>("undo_file_op", { opId }),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -194,6 +224,11 @@ function createMockApi(): Api {
     saveDocument: command("saveDocument"),
     createDocument: command("createDocument"),
     writeAsset: command("writeAsset"),
+    previewMove: command("previewMove"),
+    applyMove: command("applyMove"),
+    deleteEntries: command("deleteEntries"),
+    newFolder: command("newFolder"),
+    undoFileOp: command("undoFileOp"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

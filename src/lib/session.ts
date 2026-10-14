@@ -3,6 +3,7 @@
 import { DEFAULT_REF_TEMPLATE } from "./reference";
 import { DEFAULT_WIDTH, normalizeWidth } from "./readingWidth";
 import { DEFAULT_RIGHT_TAB, normalizeRightTab } from "./rightPanel";
+import { DEFAULT_LINK_UPDATE, normalizeLinkUpdate } from "./fileOps";
 import { normalizeTreeFilter } from "./treeFilter";
 import type { SessionState } from "./types";
 
@@ -43,6 +44,7 @@ export function defaultSession(): SessionState {
     treeFilter: null,
     autoReveal: true,
     rightTab: DEFAULT_RIGHT_TAB,
+    linkUpdate: DEFAULT_LINK_UPDATE,
   };
 }
 
@@ -76,5 +78,6 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     treeFilter: normalizeTreeFilter(stored.treeFilter),
     autoReveal: stored.autoReveal !== false,
     rightTab: normalizeRightTab(stored.rightTab),
+    linkUpdate: normalizeLinkUpdate(stored.linkUpdate),
   };
 }

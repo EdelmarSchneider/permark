@@ -17,7 +17,7 @@ use crate::render::markdown::{
 use crate::render::{normalize_newlines, MAX_RENDER_BYTES};
 use crate::util::on_parser_stack;
 
-const BOM: char = '\u{FEFF}';
+pub(crate) const BOM: char = '\u{FEFF}';
 
 /// What a block is, which decides what the Visual editor may do with it. Mirrors the UI's `BlockKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -65,13 +65,13 @@ pub struct ParsedBlocks {
 
 /// One line of the source: `start..end` without its terminator.
 #[derive(Debug, Clone, Copy)]
-struct Line {
-    start: usize,
-    end: usize,
+pub(crate) struct Line {
+    pub(crate) start: usize,
+    pub(crate) end: usize,
 }
 
 /// Splits on `\n`, `\r\n` and a lone `\r` (the three terminators comrak knows), starting after any BOM.
-fn split_lines(text: &str, from: usize) -> (Vec<Line>, Eol) {
+pub(crate) fn split_lines(text: &str, from: usize) -> (Vec<Line>, Eol) {
     let bytes = text.as_bytes();
     let mut lines = Vec::new();
     let (mut lf, mut crlf, mut cr) = (0_usize, 0_usize, 0_usize);

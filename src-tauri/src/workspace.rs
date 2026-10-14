@@ -13,6 +13,10 @@ use serde::Serialize;
 
 use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
+use crate::fileops::{
+    BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers, Move,
+    MoveOutcome, MovePreview, OsRecycler, UndoOutcome,
+};
 use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
 };
@@ -203,9 +207,24 @@ pub struct Workspace {
     meta: Arc<MetaService>,
     /// Content the editor is writing, so the watcher does not report it back as an external change.
     own_writes: Arc<OwnWrites>,
+    /// Rename, move, delete and new folder in the Explorer.
+    fileops: FileOpsService,
     sink: Arc<dyn EventSink>,
     last_visit: Option<LastVisit>,
     closed: AtomicBool,
+}
+
+/// Tags follow the files that are renamed or moved in the Explorer.
+struct MetaFollower(Arc<MetaService>);
+
+impl Followers for MetaFollower {
+    fn renamed(&self, from: &str, to: &str, is_dir: bool) {
+        if is_dir {
+            self.0.rename_tree(from, to);
+        } else {
+            self.0.rename(from, to);
+        }
+    }
 }
 
 /// What the watcher thread needs to do its work.
@@ -348,6 +367,12 @@ impl Workspace {
         ));
 
         let own_writes = Arc::new(OwnWrites::new());
+        let fileops = FileOpsService::new(
+            Arc::clone(&vault),
+            Arc::clone(&own_writes),
+            Arc::new(MetaFollower(Arc::clone(&meta))),
+            Arc::new(OsRecycler),
+        );
 
         let git_sink = Arc::clone(sink);
         let git = GitHandle::start(
@@ -414,6 +439,7 @@ impl Workspace {
             filter,
             meta,
             own_writes,
+            fileops,
             sink: Arc::clone(sink),
             last_visit,
             closed: AtomicBool::new(false),
@@ -502,6 +528,46 @@ impl Workspace {
         data: &[u8],
     ) -> Result<AssetWritten, AppError> {
         Ok(self.editor().write_asset(doc_path, name_hint, data)?)
+    }
+
+    // ---- file operations ------------------------------------------------------------------------
+
+    /// The Explorer's operations need a folder, not a single opened file (whose folder may be Downloads).
+    fn file_ops(&self) -> Result<&FileOpsService, AppError> {
+        if self.vault.is_shallow() {
+            return Err(FileOpError::SimpleMode.into());
+        }
+        Ok(&self.fileops)
+    }
+
+    /// Checks a rename or move and finds the links it would change (`scan_links`).
+    pub fn preview_move(&self, moves: &[Move], scan_links: bool) -> Result<MovePreview, AppError> {
+        Ok(self.file_ops()?.preview_move(moves, scan_links)?)
+    }
+
+    /// Makes the move of a preview, rewriting links when asked to.
+    pub fn apply_move(
+        &self,
+        plan_id: u64,
+        update_links: bool,
+        buffers: &[BufferText],
+    ) -> Result<MoveOutcome, AppError> {
+        Ok(self
+            .file_ops()?
+            .apply_move(plan_id, update_links, buffers)?)
+    }
+
+    /// Sends files and folders to the recycle bin.
+    pub fn delete_entries(&self, paths: &[String]) -> Result<DeleteOutcome, AppError> {
+        Ok(self.file_ops()?.delete(paths)?)
+    }
+
+    pub fn new_folder(&self, path: &str) -> Result<CreatedFolder, AppError> {
+        Ok(self.file_ops()?.new_folder(path)?)
+    }
+
+    pub fn undo_file_op(&self, op_id: u64) -> Result<UndoOutcome, AppError> {
+        Ok(self.file_ops()?.undo(op_id)?)
     }
 
     pub fn resolve_link(&self, from: &str, href: &str) -> LinkTarget {

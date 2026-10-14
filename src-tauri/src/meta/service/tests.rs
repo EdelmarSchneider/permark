@@ -436,6 +436,45 @@ fn renamed_files_take_their_tags_along() {
 }
 
 #[test]
+fn the_files_of_a_renamed_folder_take_their_tags_along() {
+    let fx = Fx::new();
+    fx.write("docs/a.md", "# A\n");
+    fx.write("docs/deep/b.md", "# B\n");
+    fx.write("other/c.md", "# C\n");
+    fx.write("docs.md", "# D\n");
+    let svc = fx.service();
+    for path in ["docs/a.md", "docs/deep/b.md", "other/c.md", "docs.md"] {
+        svc.set_tags(path, &s(&["keep"])).expect("tags");
+    }
+    fs::rename(
+        fx.project.path().join("docs"),
+        fx.project.path().join("manual"),
+    )
+    .expect("rename");
+    svc.rename_tree("docs", "manual");
+    for moved in ["manual/a.md", "manual/deep/b.md"] {
+        assert_eq!(
+            svc.file_meta(moved).expect("moved").tags.len(),
+            1,
+            "{moved}"
+        );
+    }
+    // the neighbours stay where they are, and the old paths hold nothing
+    for stays in ["other/c.md", "docs.md"] {
+        assert_eq!(
+            svc.file_meta(stays).expect("stays").tags.len(),
+            1,
+            "{stays}"
+        );
+    }
+    assert!(
+        svc.file_meta("docs/a.md").expect("old").tags.is_empty(),
+        "the old path holds nothing"
+    );
+    svc.stop();
+}
+
+#[test]
 fn entries_of_missing_files_are_kept_until_clean_up() {
     let fx = Fx::new();
     fx.write("here.md", "# A\n");

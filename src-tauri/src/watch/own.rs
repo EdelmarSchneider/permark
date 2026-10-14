@@ -11,6 +11,11 @@
 //! a path ends the announcements of the path, whether or not it was ours: a change whose content could not
 //! be read cannot be told from an agent's, and a change with other content means ours is already past.
 //! So a leftover announcement can never hide a later change that happens to have the same content.
+//!
+//! Moving and deleting files in the Explorer are the app's own doing too. The paths involved are announced
+//! before the operation ([`OwnWrites::expect_moves`], [`OwnWrites::expect_removals`]) and the watcher's
+//! removed, created and renamed reports for them are dropped, one report per announced path. The UI shows
+//! the operation as one row of its own instead of a row for every file.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -29,11 +34,56 @@ const EXPIRES_AFTER: Duration = Duration::from_secs(5);
 pub struct OwnWrites {
     /// Case-folded vault path to the content hashes announced for it, with the time of the announcement.
     pending: Mutex<HashMap<String, Vec<(u64, Instant)>>>,
+    /// Case-folded vault paths the app moved away from, moved to or deleted, with the time of the announcement.
+    moved: Mutex<HashMap<String, Instant>>,
 }
 
 impl OwnWrites {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Announces that the app is about to move files: each pair is `(from, to)`, vault paths of files.
+    /// The watcher's reports of the old and the new path are not news.
+    pub fn expect_moves(&self, pairs: &[(String, String)]) {
+        let now = Instant::now();
+        if let Ok(mut map) = self.moved.lock() {
+            map.retain(|_, at| is_fresh(*at, now));
+            for (from, to) in pairs {
+                map.insert(key(from), now);
+                map.insert(key(to), now);
+            }
+        }
+    }
+
+    /// Announces that the app is about to delete files (vault paths).
+    pub fn expect_removals(&self, paths: &[String]) {
+        let now = Instant::now();
+        if let Ok(mut map) = self.moved.lock() {
+            map.retain(|_, at| is_fresh(*at, now));
+            for path in paths {
+                map.insert(key(path), now);
+            }
+        }
+    }
+
+    /// Takes back the announcements of moves that were not made.
+    pub fn retract_moves(&self, pairs: &[(String, String)]) {
+        if let Ok(mut map) = self.moved.lock() {
+            for (from, to) in pairs {
+                map.remove(&key(from));
+                map.remove(&key(to));
+            }
+        }
+    }
+
+    /// Whether `key` was announced as moved or deleted, and still is fresh; the announcement is used up.
+    fn take_moved(&self, key: &str, now: Instant) -> bool {
+        self.moved
+            .lock()
+            .ok()
+            .and_then(|mut map| map.remove(key))
+            .is_some_and(|at| is_fresh(at, now))
     }
 
     /// Announces that `hash` (xxh3 of the bytes) is about to be written to `rel`. Call it before the
@@ -103,12 +153,26 @@ impl OwnWrites {
 
     fn strip_at(&self, changes: &mut Vec<FsChange>, sigs: &SigStore, now: Instant) {
         changes.retain(|change| {
-            if !matches!(change.kind, ChangeKind::Created | ChangeKind::Modified) {
-                return true;
-            }
             let k = key(&change.path);
-            let hash = sigs.get(&k).map(|sig| sig.hash).filter(|hash| *hash != 0);
-            !self.take(&k, hash, now)
+            // moved or deleted by the app: both ends of a rename are used up, whichever is announced
+            let moved = match change.kind {
+                ChangeKind::Removed | ChangeKind::Created => self.take_moved(&k, now),
+                ChangeKind::Renamed => {
+                    let to = self.take_moved(&k, now);
+                    let from = change
+                        .from
+                        .as_deref()
+                        .is_some_and(|from| self.take_moved(&key(from), now));
+                    to || from
+                }
+                ChangeKind::Modified => false,
+            };
+            // written by the app: a moved document whose links were rewritten has both announcements
+            let written = matches!(change.kind, ChangeKind::Created | ChangeKind::Modified) && {
+                let hash = sigs.get(&k).map(|sig| sig.hash).filter(|hash| *hash != 0);
+                self.take(&k, hash, now)
+            };
+            !(moved || written)
         });
     }
 }
@@ -286,6 +350,83 @@ mod tests {
             is_stripped(&own, "a.md", 3),
             "the newer one is still waiting"
         );
+    }
+
+    fn renamed(path: &str, from: &str) -> FsChange {
+        FsChange {
+            kind: ChangeKind::Renamed,
+            path: path.to_owned(),
+            from: Some(from.to_owned()),
+            at_ms: 1,
+        }
+    }
+
+    #[test]
+    fn the_reports_of_a_move_the_app_made_are_dropped_once_each() {
+        let own = OwnWrites::new();
+        own.expect_moves(&[("docs/a.md".to_owned(), "docs/b.md".to_owned())]);
+        let sigs = SigStore::new();
+        let mut changes = vec![
+            change(ChangeKind::Removed, "docs/a.md"),
+            change(ChangeKind::Created, "docs/b.md"),
+            change(ChangeKind::Removed, "docs/other.md"),
+        ];
+        own.strip(&mut changes, &sigs);
+        assert_eq!(changes, [change(ChangeKind::Removed, "docs/other.md")]);
+
+        // used up: the same report again is news
+        let mut again = vec![change(ChangeKind::Removed, "docs/a.md")];
+        own.strip(&mut again, &sigs);
+        assert_eq!(again.len(), 1);
+    }
+
+    #[test]
+    fn a_rename_report_of_an_announced_move_is_dropped_and_both_ends_are_used_up() {
+        let own = OwnWrites::new();
+        own.expect_moves(&[("a.md".to_owned(), "b.md".to_owned())]);
+        let mut changes = vec![renamed("b.md", "a.md")];
+        own.strip(&mut changes, &SigStore::new());
+        assert!(changes.is_empty(), "{changes:?}");
+        let mut again = vec![change(ChangeKind::Removed, "a.md")];
+        own.strip(&mut again, &SigStore::new());
+        assert_eq!(again.len(), 1, "the old path was used up with the rename");
+    }
+
+    #[test]
+    fn deletions_the_app_made_are_dropped_and_modifications_are_not_affected() {
+        let own = OwnWrites::new();
+        own.expect_removals(&["Docs/Gone.md".to_owned()]);
+        let mut changes = vec![
+            change(ChangeKind::Removed, "Docs/Gone.md"),
+            change(ChangeKind::Modified, "Docs/Gone.md"),
+        ];
+        own.strip(&mut changes, &SigStore::new());
+        // the removal is ours (case aside on Windows); a modification was never announced
+        assert_eq!(changes, [change(ChangeKind::Modified, "Docs/Gone.md")]);
+    }
+
+    #[test]
+    fn a_moved_document_with_rewritten_links_uses_up_both_announcements() {
+        let own = OwnWrites::new();
+        own.expect_moves(&[("a.md".to_owned(), "docs/a.md".to_owned())]);
+        own.expect("docs/a.md", 77);
+        let sigs = sigs_with("docs/a.md", 77);
+        let mut changes = vec![change(ChangeKind::Created, "docs/a.md")];
+        own.strip(&mut changes, &sigs);
+        assert!(changes.is_empty(), "{changes:?}");
+        // nothing is left to hide a later change with the same content
+        assert!(!is_stripped(&own, "docs/a.md", 77));
+    }
+
+    #[test]
+    fn retracted_moves_are_news_again() {
+        let own = OwnWrites::new();
+        let pairs = [("a.md".to_owned(), "b.md".to_owned())];
+        own.expect_moves(&pairs);
+        own.retract_moves(&pairs);
+        let mut changes = vec![change(ChangeKind::Removed, "a.md")];
+        own.strip(&mut changes, &SigStore::new());
+        assert_eq!(changes.len(), 1);
     }
 
     #[test]

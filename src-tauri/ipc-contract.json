@@ -29,7 +29,12 @@
     "parse_blocks": ["text"],
     "save_document": ["path", "text", "expected_hash"],
     "create_document": ["path", "text"],
-    "write_asset": ["doc_path", "name_hint", "data"]
+    "write_asset": ["doc_path", "name_hint", "data"],
+    "preview_move": ["moves", "scan_links"],
+    "apply_move": ["plan_id", "update_links", "buffers"],
+    "delete_entries": ["paths"],
+    "new_folder": ["path"],
+    "undo_file_op": ["op_id"]
   },
   "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed"]
 }

@@ -12,6 +12,9 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
+use crate::fileops::{
+    BufferText, CreatedFolder, DeleteOutcome, Move, MoveOutcome, MovePreview, UndoOutcome,
+};
 use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
@@ -355,6 +358,58 @@ pub async fn write_asset(
         ws.write_asset(&doc_path, &name_hint, &bytes)
     })
     .await
+}
+
+/// Checks a rename or move (nothing is overwritten, nothing leaves the project) and, with `scan_links`,
+/// lists the links in the documents that would have to change.
+#[tauri::command]
+pub async fn preview_move(
+    state: State<'_, AppState>,
+    moves: Vec<Move>,
+    scan_links: bool,
+) -> Result<MovePreview, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.preview_move(&moves, scan_links)).await
+}
+
+/// Makes the move of a preview. With `update_links` the links it listed are rewritten; the documents in
+/// `buffers` (open with unsaved edits) are not written, the changes for their text come back instead.
+#[tauri::command]
+pub async fn apply_move(
+    state: State<'_, AppState>,
+    plan_id: u64,
+    update_links: bool,
+    buffers: Vec<BufferText>,
+) -> Result<MoveOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.apply_move(plan_id, update_links, &buffers)).await
+}
+
+/// Sends files and folders of the open folder to the recycle bin.
+#[tauri::command]
+pub async fn delete_entries(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<DeleteOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.delete_entries(&paths)).await
+}
+
+/// Creates a folder; fails when the name is not usable or the folder exists.
+#[tauri::command]
+pub async fn new_folder(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<CreatedFolder, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.new_folder(&path)).await
+}
+
+/// Reverts an operation of the Explorer (the moves and every rewritten link) as far as the files are unchanged.
+#[tauri::command]
+pub async fn undo_file_op(state: State<'_, AppState>, op_id: u64) -> Result<UndoOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.undo_file_op(op_id)).await
 }
 
 /// The URI scheme that serves the images of the open folder to the document view. Requests are

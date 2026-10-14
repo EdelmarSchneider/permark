@@ -127,6 +127,21 @@ describe("normalizeSession", () => {
     }
   });
 
+  it("asks about links when files move unless the person chose otherwise", () => {
+    expect(defaultSession().linkUpdate).toBe("ask");
+    expect(normalizeSession(null).linkUpdate).toBe("ask");
+    expect(normalizeSession({}).linkUpdate).toBe("ask");
+    for (const linkUpdate of ["ask", "always", "never"] as const) {
+      const saved = { ...defaultSession(), linkUpdate };
+      expect(normalizeSession(JSON.parse(JSON.stringify(saved))).linkUpdate).toBe(linkUpdate);
+    }
+    // a session saved before the setting existed, and values of the wrong kind
+    expect(normalizeSession({ zoom: 1.2, theme: "dark" }).linkUpdate).toBe("ask");
+    for (const value of ["sometimes", "", 7, null, {}]) {
+      expect(normalizeSession({ linkUpdate: value as never }).linkUpdate).toBe("ask");
+    }
+  });
+
   it("selects the opened file unless the person turned that off", () => {
     expect(defaultSession().autoReveal).toBe(true);
     expect(normalizeSession(null).autoReveal).toBe(true);

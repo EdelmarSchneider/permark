@@ -112,6 +112,8 @@ export type SessionState = {
   autoReveal: boolean;
   /** The view the right panel shows: the feed or the document outline. */
   rightTab: RightTab;
+  /** Whether moving files in the Explorer rewrites the links to them. */
+  linkUpdate: LinkUpdate;
 };
 
 // ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------
@@ -179,3 +181,55 @@ export type TagOverview = {
 export type TaggedFile = { path: string; description: string; modifiedMs: number };
 /** Tags and description of a file that has some (for filters and tooltips). `tags` merges both sources. */
 export type IndexEntry = { path: string; tags: string[]; description: string; modifiedMs: number };
+
+// ---- file operations (docs/design/v0.2.md section 17) -------------------------------------------
+/** What happens to the links of documents when files are moved or renamed in the Explorer. */
+export type LinkUpdate = "ask" | "always" | "never";
+/** A file or folder that moves (a rename is a move within its folder). */
+export type Move = { from: string; to: string };
+/** Why a document's links were left alone (or an undo could not restore it). */
+export type SkipReason =
+  | "tooLarge"
+  | "notUtf8"
+  | "unreadable"
+  | "changed"
+  | "writeFailed"
+  | "missing";
+export type SkippedFile = { path: string; reason: SkipReason };
+/** One link of a document that would change: `old` and `new` are its destination as written. */
+export type PreviewChange = { line: number; old: string; new: string };
+export type PreviewFile = { path: string; movedTo: string | null; changes: PreviewChange[] };
+/** What a move would do: the checked moves and the links that would change (the list is cut off at a few thousand). */
+export type MovePreview = {
+  planId: number;
+  moves: Move[];
+  linkCount: number;
+  fileCount: number;
+  files: PreviewFile[];
+  truncated: boolean;
+  skipped: SkippedFile[];
+};
+/** The text of a document being edited, with changes that are not saved yet. */
+export type BufferText = { path: string; text: string };
+/** A change to the text of an editor: UTF-16 offsets. */
+export type TextEdit = { from: number; to: number; insert: string };
+/** The changes for the unsaved text of a document; `newPath` is where the document is after the move. */
+export type BufferEdits = { path: string; newPath: string; edits: TextEdit[] };
+export type MoveOutcome = {
+  /** For `undoFileOp`. */
+  opId: number;
+  moved: Move[];
+  filesUpdated: number;
+  linksUpdated: number;
+  buffers: BufferEdits[];
+  skipped: SkippedFile[];
+};
+export type DeleteOutcome = { deleted: string[] };
+export type CreatedFolder = { opId: number; path: string };
+export type UndoOutcome = {
+  movedBack: Move[];
+  filesRestored: number;
+  linksRestored: number;
+  foldersRemoved: number;
+  couldNot: SkippedFile[];
+};

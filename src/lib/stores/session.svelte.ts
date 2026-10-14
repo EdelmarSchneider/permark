@@ -4,6 +4,7 @@
 import { api } from "../api";
 import { DEFAULT_REF_TEMPLATE } from "../reference";
 import { DEFAULT_WIDTH, nextWidth, type ReadingWidth } from "../readingWidth";
+import { DEFAULT_LINK_UPDATE } from "../fileOps";
 import { DEFAULT_RIGHT_TAB, type RightTab } from "../rightPanel";
 import {
   LEFT_DEFAULT,
@@ -13,7 +14,7 @@ import {
   normalizeSession,
   stepZoom,
 } from "../session";
-import type { SessionState, TreeFilter } from "../types";
+import type { LinkUpdate, SessionState, TreeFilter } from "../types";
 
 const SAVE_DELAY_MS = 600;
 
@@ -31,6 +32,8 @@ class SessionStore {
   autoReveal = $state(true);
   /** The view the right panel shows. */
   rightTab = $state<RightTab>(DEFAULT_RIGHT_TAB);
+  /** Whether moving files in the Explorer rewrites the links to them. */
+  linkUpdate = $state<LinkUpdate>(DEFAULT_LINK_UPDATE);
   systemDark = $state(false);
 
   lastDoc: string | null = null;
@@ -65,6 +68,7 @@ class SessionStore {
     this.treeFilter = s.treeFilter;
     this.autoReveal = s.autoReveal;
     this.rightTab = s.rightTab;
+    this.linkUpdate = s.linkUpdate;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
     this.enabled = true;
@@ -85,6 +89,7 @@ class SessionStore {
       treeFilter: this.treeFilter,
       autoReveal: this.autoReveal,
       rightTab: this.rightTab,
+      linkUpdate: this.linkUpdate,
     };
   }
 
@@ -170,6 +175,11 @@ class SessionStore {
 
   toggleAutoReveal(): void {
     this.autoReveal = !this.autoReveal;
+    this.persist();
+  }
+
+  setLinkUpdate(value: LinkUpdate): void {
+    this.linkUpdate = value;
     this.persist();
   }
 
