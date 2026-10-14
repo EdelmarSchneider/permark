@@ -1,5 +1,6 @@
 //! `StateStore`: where a project's session and last-visit data live, and `.trailmark/` initialization.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -25,12 +26,24 @@ pub enum StateLocation {
     Project,
 }
 
-/// When the project was last closed and where HEAD pointed then.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// A file as it was when the project was closed: its size and a hash of its content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct FileStamp {
+    pub len: u64,
+    pub hash: u64,
+}
+
+/// When the project was last closed, where HEAD pointed then, and which files were already
+/// uncommitted (so "since your last visit" can tell them apart from changes made afterwards).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastVisit {
     pub time_ms: u64,
     pub oid: Option<String>,
+    /// Files that differed from HEAD at the close, by vault path. Files saved by an older version
+    /// of the app have none.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub dirty: BTreeMap<String, FileStamp>,
 }
 
 #[derive(Debug)]
@@ -240,15 +253,39 @@ mod tests {
         let v = LastVisit {
             time_ms: 1_700_000_000_000,
             oid: Some("abc123".to_owned()),
+            dirty: BTreeMap::from([(
+                "docs/wip.md".to_owned(),
+                FileStamp {
+                    len: 12,
+                    hash: u64::MAX,
+                },
+            )]),
         };
         s.save_last_visit(&v).expect("save");
         assert_eq!(s.load_last_visit(), Some(v));
         let v2 = LastVisit {
             time_ms: 5,
-            oid: None,
+            ..LastVisit::default()
         };
         s.save_last_visit(&v2).expect("save");
         assert_eq!(s.load_last_visit(), Some(v2));
+    }
+
+    #[test]
+    fn a_last_visit_saved_by_an_older_version_has_no_dirty_files() {
+        let f = fx();
+        let s = f.store();
+        let dir = s.dir().to_path_buf();
+        fs::create_dir_all(&dir).expect("mkdir");
+        fs::write(dir.join(LAST_VISIT_FILE), r#"{"timeMs": 7, "oid": "abc"}"#).expect("write");
+        assert_eq!(
+            s.load_last_visit(),
+            Some(LastVisit {
+                time_ms: 7,
+                oid: Some("abc".to_owned()),
+                dirty: BTreeMap::new(),
+            })
+        );
     }
 
     #[test]
@@ -312,6 +349,7 @@ mod tests {
         s.save_last_visit(&LastVisit {
             time_ms: 9,
             oid: Some("deadbeef".to_owned()),
+            ..LastVisit::default()
         })
         .expect("save");
         s.init_project_folder().expect("init");

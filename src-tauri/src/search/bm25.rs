@@ -133,6 +133,22 @@ impl Bm25Index {
         u32::try_from(self.chunks.len() - 1).unwrap_or(u32::MAX)
     }
 
+    /// Removes every document below the folder `dir` (`docs` removes `docs/a.md` and `docs/x/b.md`,
+    /// not `docs2/c.md`). Returns how many documents went.
+    pub fn remove_under(&mut self, dir: &str) -> usize {
+        let prefix = format!("{}/", key(dir).trim_end_matches('/'));
+        let below: Vec<String> = self
+            .docs
+            .keys()
+            .filter(|k| k.starts_with(&prefix))
+            .cloned()
+            .collect();
+        for k in &below {
+            self.remove_doc(k); // keys are already folded; folding again changes nothing
+        }
+        below.len()
+    }
+
     /// Removes a document from the index; unknown paths are ignored.
     pub fn remove_doc(&mut self, path: &str) {
         let Some(ids) = self.docs.remove(&key(path)) else {
@@ -248,7 +264,6 @@ impl Bm25Index {
     }
 
     /// Paths of all indexed documents.
-    #[cfg(test)]
     pub fn paths(&self) -> Vec<String> {
         let mut v: Vec<String> = self
             .docs
@@ -490,6 +505,18 @@ mod tests {
         i.add_doc("both.md", "# B\n\nmira flies the ship\n");
         let hits = i.search("mira ship", 3);
         assert_eq!(hits[0].path, "both.md");
+    }
+
+    #[test]
+    fn remove_under_drops_a_whole_folder_but_not_its_namesakes() {
+        let mut i = Bm25Index::new();
+        for p in ["docs/a.md", "docs/x/b.md", "docs2/c.md", "docs.md"] {
+            i.add_doc(p, "# T\n\nword\n");
+        }
+        assert_eq!(i.remove_under("docs"), 2);
+        assert_eq!(i.paths(), ["docs.md", "docs2/c.md"]);
+        assert_eq!(i.remove_under("docs/"), 0);
+        assert_eq!(i.search("word", 5).len(), 2);
     }
 
     #[test]

@@ -64,6 +64,50 @@ pub(crate) fn top_level_elements(html: &str) -> Vec<&str> {
     out
 }
 
+/// Elements whose end tag may be left out in HTML, so a missing close does not mean deeper nesting.
+const IMPLIED_END: [&str; 16] = [
+    "p", "li", "dt", "dd", "tr", "td", "th", "thead", "tbody", "tfoot", "option", "optgroup",
+    "colgroup", "caption", "rt", "rp",
+];
+
+/// The deepest element nesting of `html`, which may be unbalanced and need not be sanitized.
+///
+/// Void elements and elements with optional end tags do not count. Used to refuse documents whose raw
+/// HTML would make the sanitizer (quadratic in depth) or the webview struggle.
+pub(crate) fn max_depth(html: &str) -> usize {
+    let bytes = html.as_bytes();
+    let (mut depth, mut deepest, mut i) = (0_usize, 0_usize, 0_usize);
+    while i < bytes.len() {
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        let Some(end) = tag_end(bytes, i) else { break };
+        let tag = &html[i..=end];
+        i = end + 1;
+        if tag.starts_with("<!") || tag.starts_with("<?") {
+            continue;
+        }
+        let closing = tag.starts_with("</");
+        let inner = tag.trim_start_matches('<').trim_start_matches('/');
+        let name_len = inner
+            .find(|c: char| c.is_whitespace() || c == '/' || c == '>')
+            .unwrap_or(inner.len());
+        let name = &inner[..name_len];
+        let listed = |list: &[&str]| list.iter().any(|n| n.eq_ignore_ascii_case(name));
+        if listed(&VOID_ELEMENTS) || listed(&IMPLIED_END) {
+            continue;
+        }
+        if closing {
+            depth = depth.saturating_sub(1);
+        } else if !tag.ends_with("/>") {
+            depth += 1;
+            deepest = deepest.max(depth);
+        }
+    }
+    deepest
+}
+
 /// Index of the `>` that closes the tag starting at `from`, skipping quoted attribute values.
 fn tag_end(bytes: &[u8], from: usize) -> Option<usize> {
     if bytes[from..].starts_with(b"<!--") {

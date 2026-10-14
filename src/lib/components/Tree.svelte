@@ -79,6 +79,12 @@
         icon: "copy",
         onselect: () => void app.copyPath(node.path),
       },
+      {
+        id: "show",
+        label: t("menu.showInFileManager"),
+        icon: "folder",
+        onselect: () => void app.revealInFolder(node.path),
+      },
       ...(isFile
         ? ([
             {

@@ -60,6 +60,14 @@ impl SigStore {
         }
     }
 
+    /// Like [`SigStore::set`], but keeps a signature that is already there: the watcher saw that file
+    /// change, so what it remembers is newer than anything the initial index build read earlier.
+    pub fn seed(&self, key: String, display: &str, sig: FileSig) {
+        if let Ok(mut m) = self.map.lock() {
+            m.entry(key).or_insert_with(|| (display.to_owned(), sig));
+        }
+    }
+
     pub fn remove(&self, key: &str) -> Option<FileSig> {
         self.map.lock().ok()?.remove(key).map(|(_, s)| s)
     }
@@ -78,13 +86,6 @@ impl SigStore {
         let mut out: Vec<(String, FileSig)> = keys.iter().filter_map(|k| m.remove(k)).collect();
         out.sort_by(|a, b| a.0.cmp(&b.0));
         out
-    }
-
-    /// Forgets everything (events were lost, so remembered signatures may be stale).
-    pub fn clear(&self) {
-        if let Ok(mut m) = self.map.lock() {
-            m.clear();
-        }
     }
 
     #[cfg(test)]
@@ -118,6 +119,16 @@ mod tests {
         assert_eq!(s.get("a.md"), Some(sig(1)));
         assert_eq!(s.remove("a.md"), Some(sig(1)));
         assert_eq!(s.get("a.md"), None);
+    }
+
+    #[test]
+    fn seed_never_overwrites_what_the_watcher_already_saw() {
+        let s = SigStore::new();
+        s.seed("a.md".to_owned(), "a.md", sig(1));
+        assert_eq!(s.get("a.md"), Some(sig(1)));
+        s.set("a.md".to_owned(), "a.md", sig(2));
+        s.seed("a.md".to_owned(), "a.md", sig(3));
+        assert_eq!(s.get("a.md"), Some(sig(2)));
     }
 
     #[test]

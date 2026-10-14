@@ -42,8 +42,12 @@ export interface Api {
   /** Last doc, scroll, zoom, theme, follow. */
   saveSession(s: SessionState): Promise<void>;
   loadSession(): Promise<SessionState | null>;
-  /** For `convertFileSrc` and the external editor. */
+  /** The absolute path of a file of the folder (for "Copy path"). */
   absolutePath(path: string): Promise<string>;
+  /** Opens a document or image of the folder with the system's default application. */
+  openExternal(path: string): Promise<void>;
+  /** Shows a file or folder of the open folder in the system's file manager. */
+  revealInFolder(path: string): Promise<void>;
   search(query: string, limit?: number): Promise<SearchHit[]>;
   /** Creates `.trailmark/` in the project. */
   initProjectFolder(): Promise<void>;
@@ -69,6 +73,8 @@ export const tauriApi: Api = {
   saveSession: (s) => invoke<void>("save_session", { s }),
   loadSession: () => invoke<SessionState | null>("load_session"),
   absolutePath: (path) => invoke<string>("absolute_path", { path }),
+  openExternal: (path) => invoke<void>("open_external", { path }),
+  revealInFolder: (path) => invoke<void>("reveal_in_folder", { path }),
   search: (query, limit) => invoke<SearchHit[]>("search", { query, limit }),
   initProjectFolder: () => invoke<void>("init_project_folder"),
   stateLocation: () => invoke<"appData" | "project">("state_location"),
@@ -123,6 +129,8 @@ function createMockApi(): Api {
     saveSession: command("saveSession"),
     loadSession: command("loadSession"),
     absolutePath: command("absolutePath"),
+    openExternal: command("openExternal"),
+    revealInFolder: command("revealInFolder"),
     search: command("search"),
     initProjectFolder: command("initProjectFolder"),
     stateLocation: command("stateLocation"),

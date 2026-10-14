@@ -23,6 +23,8 @@ use crate::util::Coalescer;
 const LOCK_WAIT_MAX: Duration = Duration::from_secs(10);
 /// How long a caller waits for the worker to answer.
 const REPLY_TIMEOUT: Duration = Duration::from_mins(1);
+/// How long closing the project waits for the list of uncommitted files before saving without it.
+const DIRTY_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Clone, Copy)]
 pub struct GitTimings {
@@ -58,6 +60,7 @@ enum Msg {
     SetBaseline(BaselineKind, Sender<GitSnapshot>),
     Snapshot(Sender<GitSnapshot>),
     SinceVisit(Sender<Option<Vec<(String, GitState)>>>),
+    Dirty(Sender<Option<Vec<String>>>),
     Shutdown,
 }
 
@@ -124,10 +127,25 @@ impl GitHandle {
         self.ask(Msg::SinceVisit(tx), &rx)
     }
 
+    /// Files that exist and differ from HEAD (modified, added or untracked), whatever baseline is
+    /// selected; `None` when there is no repository.
+    pub fn dirty_files(&self) -> Result<Option<Vec<String>>, GitError> {
+        let (tx, rx) = mpsc::channel();
+        self.ask_within(Msg::Dirty(tx), &rx, DIRTY_TIMEOUT)
+    }
+
     fn ask<T>(&self, msg: Msg, rx: &mpsc::Receiver<T>) -> Result<T, GitError> {
+        self.ask_within(msg, rx, REPLY_TIMEOUT)
+    }
+
+    fn ask_within<T>(
+        &self,
+        msg: Msg,
+        rx: &mpsc::Receiver<T>,
+        timeout: Duration,
+    ) -> Result<T, GitError> {
         self.tx.send(msg).map_err(|_| GitError::WorkerGone)?;
-        rx.recv_timeout(REPLY_TIMEOUT)
-            .map_err(|_| GitError::WorkerGone)
+        rx.recv_timeout(timeout).map_err(|_| GitError::WorkerGone)
     }
 
     fn gone(&self) -> GitSnapshot {
@@ -284,6 +302,18 @@ impl Worker {
         Some(c.files.into_iter().map(|(p, f)| (p, f.state)).collect())
     }
 
+    fn dirty(&self) -> Option<Vec<String>> {
+        let (repo, ctx) = self.repo.as_ref()?;
+        let c = compute(repo, ctx, BaselineKind::Head, SessionBaseline::Empty).ok()?;
+        Some(
+            c.files
+                .into_iter()
+                .filter(|(_, f)| f.state != GitState::Deleted)
+                .map(|(path, _)| path)
+                .collect(),
+        )
+    }
+
     fn index_locked(&self) -> bool {
         self.repo
             .as_ref()
@@ -313,6 +343,9 @@ impl Worker {
                 }
                 Ok(Msg::SinceVisit(reply)) => {
                     let _ = reply.send(self.since_visit());
+                }
+                Ok(Msg::Dirty(reply)) => {
+                    let _ = reply.send(self.dirty());
                 }
                 Ok(Msg::Shutdown) | Err(RecvTimeoutError::Disconnected) => break,
                 Err(RecvTimeoutError::Timeout) => {}
@@ -401,6 +434,15 @@ mod tests {
         last_visit: Option<String>,
         prepare: impl FnOnce(&Repository, &std::path::Path) -> Option<String>,
     ) -> Fx {
+        start_timed(kind, last_visit, FAST, prepare)
+    }
+
+    fn start_timed(
+        kind: BaselineKind,
+        last_visit: Option<String>,
+        timings: GitTimings,
+        prepare: impl FnOnce(&Repository, &std::path::Path) -> Option<String>,
+    ) -> Fx {
         let dir = tempfile::tempdir().expect("tempdir");
         let repo = init_repo(dir.path());
         let last_visit = prepare(&repo, dir.path()).or(last_visit);
@@ -412,7 +454,7 @@ mod tests {
             home: None,
             baseline: kind,
             last_visit_oid: last_visit,
-            timings: FAST,
+            timings,
         };
         let handle = GitHandle::start(
             settings,
@@ -473,14 +515,26 @@ mod tests {
 
     #[test]
     fn bursts_of_triggers_are_coalesced_into_one_computation() {
-        let fx = committed(BaselineKind::Head);
+        // Generous windows, so that a slow disk or a busy machine cannot stretch the burst past the
+        // quiet period (which would legitimately produce a second snapshot): the burst takes roughly
+        // 100 ms, the quiet period is 400 ms and the cap 5 s.
+        let slow = GitTimings {
+            quiet: Duration::from_millis(400),
+            max_wait: Duration::from_secs(5),
+        };
+        let fx = start_timed(BaselineKind::Head, None, slow, |repo, dir| {
+            write(dir, "a.md", "one\n");
+            commit_all(repo, "init");
+            None
+        });
         for i in 0..20 {
             write(fx.dir.path(), &format!("n{i}.md"), "x\n");
             fx.handle.trigger();
             thread::sleep(Duration::from_millis(5));
         }
         assert!(fx.wait_events(1));
-        thread::sleep(Duration::from_millis(300));
+        // Give a stray second computation every chance to show up before counting.
+        thread::sleep(slow.quiet * 2);
         assert_eq!(fx.count(), 1, "one announcement for the whole burst");
         assert_eq!(fx.last_event().files.len(), 20);
     }
@@ -588,6 +642,25 @@ mod tests {
     }
 
     #[test]
+    fn dirty_files_are_measured_against_head_whatever_the_baseline() {
+        let fx = start_with(BaselineKind::LastVisit, None, |repo, dir| {
+            write(dir, "a.md", "one\n");
+            write(dir, "gone.md", "x\n");
+            write(dir, "kept.md", "same\n");
+            commit_all(repo, "init");
+            None
+        });
+        assert_eq!(fx.handle.dirty_files().expect("ask"), Some(vec![]));
+        write(fx.dir.path(), "a.md", "two\n");
+        write(fx.dir.path(), "new.md", "x\n");
+        std::fs::remove_file(fx.dir.path().join("gone.md")).expect("rm");
+        assert_eq!(
+            fx.handle.dirty_files().expect("ask"),
+            Some(vec!["a.md".to_owned(), "new.md".to_owned()])
+        );
+    }
+
+    #[test]
     fn folders_without_git_report_not_a_repo_until_one_appears() {
         let dir = tempfile::tempdir().expect("tempdir");
         let vault = dunce::canonicalize(dir.path()).expect("canonicalize");
@@ -608,6 +681,7 @@ mod tests {
         assert!(!s.is_repo);
         assert_eq!(s.git_error, None);
         assert_eq!(h.since_last_visit().expect("ask"), None);
+        assert_eq!(h.dirty_files().expect("ask"), None);
 
         init_repo(dir.path());
         write(dir.path(), "a.md", "x\n");

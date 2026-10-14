@@ -1,6 +1,5 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { api } from "../api";
   import { bridge } from "../bridge";
   import { DomFind } from "../dom/domFind";
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
@@ -58,7 +57,7 @@
           caution: t("alert.caution"),
         },
       },
-      resolveImage: async (path) => assetUrl(await api.absolutePath(path)),
+      resolveImage: async (path) => assetUrl(path),
     };
   }
 

@@ -24,6 +24,9 @@ pub enum AppError {
     Session(#[from] SessionError),
     #[error("no folder is open")]
     NoVault,
+    /// A newer request to open a folder arrived first, so this one was dropped.
+    #[error("another folder was opened in the meantime")]
+    Superseded,
     #[error("{0}")]
     Internal(String),
 }
@@ -44,6 +47,7 @@ impl AppError {
             Self::Git(_) => "git",
             Self::Session(_) => "session",
             Self::NoVault => "noVault",
+            Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
         }
     }
@@ -94,6 +98,7 @@ mod tests {
         assert_eq!(denied.kind(), "io");
         assert_eq!(AppError::from(GitError::WorkerGone).kind(), "git");
         assert_eq!(AppError::Internal("x".to_owned()).kind(), "internal");
+        assert_eq!(AppError::Superseded.kind(), "superseded");
         assert_eq!(
             AppError::from(VaultError::NotFound("p".to_owned())).kind(),
             "notFound"

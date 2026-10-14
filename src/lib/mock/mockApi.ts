@@ -62,6 +62,12 @@ export const mockImpl: Api = {
   },
   loadSession: async () => (mockState.vault === "simple" ? null : savedSession),
   absolutePath: async (path) => `${MOCK_ROOT}/${path}`,
+  openExternal: async (path) => {
+    console.info("[mock] open externally:", path);
+  },
+  revealInFolder: async (path) => {
+    console.info("[mock] reveal in folder:", path);
+  },
   search: async (query, limit = 50) => {
     await wait(60);
     return searchDocs(query, limit);

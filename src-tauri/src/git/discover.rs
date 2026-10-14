@@ -45,6 +45,10 @@ pub enum Discovery {
 
 /// One-time libgit2 setup. Owner validation is turned off: TrailMark only reads repositories, and
 /// libgit2's check makes repositories on non-system drives (the `F:` case) look like "not a repo".
+///
+/// Without that check, a `.git` created by another local user in a shared place would be trusted, so
+/// [`discover`] refuses repositories at a drive root or in the home folder (see [`is_too_broad`]). Opening
+/// a repository still runs no hooks, fsmonitor or external filters; libgit2 only parses its data.
 pub(crate) fn init_libgit2() {
     static ONCE: Once = Once::new();
     ONCE.call_once(disable_owner_validation);
@@ -63,10 +67,24 @@ fn same_folder(a: &Path, b: &Path) -> bool {
     strip_root(a, b).is_some_and(|rest| rest.is_empty())
 }
 
+/// Whether a repository whose working directory is `workdir` is too broad to be the repository of
+/// `vault_root`: a filesystem or drive root (`C:\`, `/`), or the user's home folder, unless the vault
+/// itself is that folder.
+///
+/// Owner validation is off (see [`init_libgit2`]), so any local user could plant a `C:\.git` and have
+/// every vault on that drive bind to attacker-controlled index, HEAD and refs. Such a shared location is
+/// never a project repository anyway (a dotfiles repository in the home folder is the usual case).
+fn is_too_broad(workdir: &Path, vault_root: &Path, home: Option<&Path>) -> bool {
+    if same_folder(workdir, vault_root) {
+        return false;
+    }
+    workdir.parent().is_none() || home.is_some_and(|home| same_folder(workdir, home))
+}
+
 /// Finds the repository containing `vault_root` (canonical), walking up from it.
 ///
-/// A repository found above the vault is ignored when its working directory is `home` (a dotfiles
-/// repo) or when the repository ignores the vault folder itself.
+/// A repository found above the vault is ignored when its working directory is too broad (a drive
+/// root or `home`, see [`is_too_broad`]) or when the repository ignores the vault folder itself.
 pub fn discover(vault_root: &Path, home: Option<&Path>) -> Discovery {
     init_libgit2();
     let repo = match Repository::discover(vault_root) {
@@ -77,10 +95,9 @@ pub fn discover(vault_root: &Path, home: Option<&Path>) -> Discovery {
     let Some(workdir) = repo.workdir().and_then(|w| dunce::canonicalize(w).ok()) else {
         return Discovery::NoRepo; // bare repository
     };
-    if let Some(home) = home.and_then(|h| dunce::canonicalize(h).ok()) {
-        if same_folder(&workdir, &home) {
-            return Discovery::NoRepo;
-        }
+    let home = home.and_then(|h| dunce::canonicalize(h).ok());
+    if is_too_broad(&workdir, vault_root, home.as_deref()) {
+        return Discovery::NoRepo;
     }
     let Some(rest) = strip_root(vault_root, &workdir) else {
         return Discovery::NoRepo;
@@ -198,6 +215,41 @@ mod tests {
         assert_eq!(discover(&vault, Some(home.path())), Discovery::NoRepo);
         // The same layout is fine when the parent is not the home folder.
         assert!(matches!(discover(&vault, None), Discovery::Repo(_)));
+    }
+
+    #[test]
+    fn a_repo_in_the_home_folder_is_the_vaults_repo_when_the_vault_is_the_home_folder() {
+        let home = tempfile::tempdir().expect("tempdir");
+        init_repo(home.path());
+        let vault = canon(home.path());
+        assert!(matches!(
+            discover(&vault, Some(home.path())),
+            Discovery::Repo(_)
+        ));
+    }
+
+    #[test]
+    fn repositories_at_a_filesystem_root_or_the_home_folder_are_too_broad() {
+        let root = if cfg!(windows) {
+            Path::new("C:\\")
+        } else {
+            Path::new("/")
+        };
+        let home_dir = tempfile::tempdir().expect("tempdir");
+        let home = canon(home_dir.path());
+        let project = home.join("project");
+
+        // A `.git` planted at the drive root (with owner validation off) must not capture a vault.
+        assert!(is_too_broad(root, &project, None));
+        assert!(is_too_broad(root, &root.join("data"), Some(&home)));
+        // The home folder is not a project, unless it is the vault itself.
+        assert!(is_too_broad(&home, &project, Some(&home)));
+        assert!(!is_too_broad(&home, &home, Some(&home)));
+        // A vault that IS the root folder is the user's explicit choice.
+        assert!(!is_too_broad(root, root, None));
+        // Ordinary project repositories are fine.
+        assert!(!is_too_broad(&project, &project.join("docs"), Some(&home)));
+        assert!(!is_too_broad(&project, &project, None));
     }
 
     #[test]

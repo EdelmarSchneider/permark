@@ -5,7 +5,8 @@ use std::path::Path;
 use super::{DocKind, RenderCtx, Rendered, Renderer};
 use crate::util::escape_html;
 
-fn pre(lang: &str, text: &str) -> String {
+/// A `<pre><code>` block with the text escaped.
+pub(super) fn pre(lang: &str, text: &str) -> String {
     format!(
         "<pre><code class=\"language-{lang}\">{}</code></pre>\n",
         escape_html(text)
@@ -37,6 +38,7 @@ impl Renderer for JsonRenderer {
             html: pre("json", &text),
             title: None,
             frontmatter: None,
+            note: None,
         }
     }
 }
@@ -59,6 +61,7 @@ impl Renderer for XmlRenderer {
             html: pre("xml", src),
             title: None,
             frontmatter: None,
+            note: None,
         }
     }
 }
@@ -77,6 +80,7 @@ impl Renderer for TextRenderer {
             html: pre("text", src),
             title: None,
             frontmatter: None,
+            note: None,
         }
     }
 }

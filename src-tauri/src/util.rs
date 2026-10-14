@@ -100,6 +100,42 @@ pub(crate) fn escape_html(text: &str) -> String {
     out
 }
 
+/// Stack size of the threads that parse or render documents. The parsers refuse absurd nesting
+/// first; this is the second line of defence, so that a missed case cannot overflow the default
+/// (1 to 2 MiB) stack and take the whole process down. The memory is only reserved, not used.
+pub(crate) const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// A thread builder with the parser stack size and the given name.
+pub(crate) fn parser_thread(name: &str) -> thread::Builder {
+    thread::Builder::new()
+        .name(name.to_owned())
+        .stack_size(PARSER_STACK_BYTES)
+}
+
+/// Runs `work` on a scoped thread with a [`PARSER_STACK_BYTES`] stack and returns its result. If no
+/// thread can be started, `work` runs on the calling thread instead.
+pub(crate) fn on_parser_stack<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    let mut task = Some(work);
+    let mut result: Option<T> = None;
+    thread::scope(|scope| {
+        let (task, result) = (&mut task, &mut result);
+        let spawned = parser_thread("trailmark-render").spawn_scoped(scope, move || {
+            *result = task.take().map(|work| work());
+        });
+        if let Ok(handle) = spawned {
+            if let Err(panic) = handle.join() {
+                std::panic::resume_unwind(panic);
+            }
+        }
+    });
+    match (result, task) {
+        (Some(value), _) => value,
+        (None, Some(work)) => work(),
+        // Only reachable if the thread took the work and produced nothing, which it cannot do.
+        (None, None) => unreachable!("the render thread returns a value or panics"),
+    }
+}
+
 /// Fires once activity has been quiet for `quiet`, but no later than `max` after the first activity.
 #[derive(Debug, Clone)]
 pub(crate) struct Coalescer {
@@ -224,6 +260,21 @@ mod tests {
         write_atomic(&p, b"one").expect("first write");
         write_atomic(&p, b"two").expect("second write");
         assert_eq!(std::fs::read(&p).expect("read"), b"two");
+    }
+
+    #[test]
+    fn on_parser_stack_returns_the_value_and_has_room_for_deep_recursion() {
+        fn depth(n: u32) -> u32 {
+            if n == 0 {
+                0
+            } else {
+                1 + depth(std::hint::black_box(n - 1))
+            }
+        }
+        // About 40 MiB of frames in a debug build: far more than a default thread stack allows.
+        assert_eq!(on_parser_stack(|| depth(300_000)), 300_000);
+        let local = String::from("borrowed");
+        assert_eq!(on_parser_stack(|| local.len()), 8);
     }
 
     #[test]

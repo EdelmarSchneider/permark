@@ -32,6 +32,13 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
+        // Images of the open folder: answered from the folder that is open now (see `serve_asset`).
+        .register_asynchronous_uri_scheme_protocol(
+            commands::ASSET_SCHEME,
+            |ctx, request, responder| {
+                commands::serve_asset(ctx.app_handle(), request.uri(), responder);
+            },
+        )
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::initial_path,
@@ -45,6 +52,8 @@ pub fn run() {
             commands::save_session,
             commands::load_session,
             commands::absolute_path,
+            commands::open_external,
+            commands::reveal_in_folder,
             commands::search,
             commands::init_project_folder,
             commands::state_location,
@@ -62,7 +71,7 @@ pub fn run() {
         RunEvent::WindowEvent {
             event: WindowEvent::Focused(true),
             ..
-        } => handle.state::<AppState>().refresh_git(),
+        } => handle.state::<AppState>().refresh_on_focus(),
         RunEvent::Exit => handle.state::<AppState>().shutdown(),
         _ => {}
     });

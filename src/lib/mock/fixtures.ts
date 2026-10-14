@@ -580,6 +580,7 @@ export const mockIdeVault: VaultInfo = {
   mode: "ide",
   initialFile: null,
   worktrees: mockWorktrees,
+  liveUpdates: true,
 };
 
 export const mockSimpleVault: VaultInfo = {
@@ -588,6 +589,7 @@ export const mockSimpleVault: VaultInfo = {
   mode: "simple",
   initialFile: "proposal.md",
   worktrees: [],
+  liveUpdates: true,
 };
 
 export function mockTree(): TreeNode {

@@ -1,10 +1,10 @@
-// Thin wrappers over the Tauri plugins the UI needs besides `api.ts`: dialogs, the opener, drag and drop,
-// the asset protocol and the clipboard. With `VITE_MOCK=1` (a plain browser) they degrade to harmless stand-ins.
+// Thin wrappers over the Tauri plugins the UI needs besides `api.ts`: dialogs, the opener for web links,
+// drag and drop, the image protocol and the clipboard. With `VITE_MOCK=1` (a plain browser) they degrade to harmless stand-ins.
 
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
@@ -41,24 +41,18 @@ export async function openExternalUrl(url: string): Promise<void> {
   await openUrl(url);
 }
 
-/** Opens a file with its default application (the "external editor"). Takes an absolute path. */
-export async function openFileExternally(absolutePath: string): Promise<void> {
-  if (isMock) {
-    console.info("[mock] open externally:", absolutePath);
-    return;
-  }
-  await openPath(absolutePath);
-}
-
 const MOCK_IMAGE =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 90"><rect width="520" height="90" rx="10" fill="#8b929a" fill-opacity=".18"/><text x="260" y="52" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#656d76">mock image</text></svg>',
   );
 
-/** URL the webview can load for an absolute file path (asset protocol). */
-export function assetUrl(absolutePath: string): string {
-  return isMock ? MOCK_IMAGE : convertFileSrc(absolutePath);
+/** The URI scheme of the backend that serves the images of the open folder (`ASSET_SCHEME` in Rust). */
+const ASSET_SCHEME = "tmasset";
+
+/** URL the webview can load for an image of the open folder, given its vault path. */
+export function assetUrl(path: string): string {
+  return isMock ? MOCK_IMAGE : convertFileSrc(path, ASSET_SCHEME);
 }
 
 export type DropHandlers = {

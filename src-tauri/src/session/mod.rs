@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 pub use config::Config;
 pub use recent::{RecentStore, RecentVault};
-pub use store::{LastVisit, StateLocation, StateStore};
+pub use store::{FileStamp, LastVisit, StateLocation, StateStore};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {

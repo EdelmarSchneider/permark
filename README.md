@@ -73,7 +73,8 @@ TrailMark keeps its state in your user profile. If you want settings to travel w
 
 ## Install
 
-> Prebuilt installers are published on the [Releases](../../releases) page.
+> Prebuilt installers for Windows, macOS and Linux are published on the [Releases](../../releases) page.
+> TrailMark updates itself: when a new version is out, you'll be offered a one-click restart to update.
 
 **Build from source** (requires [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 20+ and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)):
@@ -111,6 +112,8 @@ You can also drag and drop a folder or a `.md` file onto the window.
 ## Roadmap
 
 **v0.2**
+- File tags and short descriptions ("Character sheets", "NPC dialogues"…): read from frontmatter or added in the app
+  without touching your files, with a Tags view and `tag:` search filters
 - WYSIWYG editing (tables, images, formatting) with conflict-safe saving that never silently reformats agent-written files
 - Semantic and hybrid search with a local multilingual embedding model (optional download)
 - Outline panel, "unread since last read" markers, commit timeline, rendered diff against the baseline

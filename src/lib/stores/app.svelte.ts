@@ -11,14 +11,7 @@ import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
 import { formatQuote, formatReference } from "../reference";
 import type { ShortcutAction } from "../shortcuts";
-import {
-  copyText,
-  openExternalUrl,
-  openFileExternally,
-  pickFile,
-  pickFolder,
-  watchFileDrop,
-} from "../platform";
+import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
@@ -479,7 +472,15 @@ class AppStore {
   async openExternally(path = docs.path): Promise<void> {
     if (!path) return;
     try {
-      await openFileExternally(await api.absolutePath(path));
+      await api.openExternal(path);
+    } catch (error) {
+      toast.message(t("doc.externalFailed", { message: errorText(error) }), "warn");
+    }
+  }
+
+  async revealInFolder(path: string): Promise<void> {
+    try {
+      await api.revealInFolder(path);
     } catch (error) {
       toast.message(t("doc.externalFailed", { message: errorText(error) }), "warn");
     }

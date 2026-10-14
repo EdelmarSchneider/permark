@@ -4,65 +4,24 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::http::{self, header, StatusCode};
+use tauri::{AppHandle, Emitter, Manager, State, UriSchemeResponder};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::error::AppError;
 use crate::git::{BaselineKind, GitSnapshot};
-use crate::links::LinkTarget;
+use crate::links::{self, LinkTarget};
 use crate::render::DocumentView;
 use crate::search::SearchHit;
 use crate::session::{RecentStore, RecentVault, SessionState, StateLocation};
 use crate::vault::TreeNode;
 use crate::watch::FsBatch;
-use crate::workspace::{ChangedSince, EventSink, GuardedSink, VaultInfo, Workspace};
+use crate::workspace::{Asset, ChangedSince, EventSink, VaultInfo, Workspace, WorkspaceHost};
 
-/// The folder that is currently open, if any.
-#[derive(Default)]
-pub struct AppState {
-    workspace: Mutex<Option<Arc<Workspace>>>,
-    /// Identifies the workspace allowed to emit events (see [`GuardedSink`]).
-    epoch: Arc<AtomicU64>,
-}
-
-impl AppState {
-    fn current(&self) -> Result<Arc<Workspace>, AppError> {
-        self.workspace
-            .lock()
-            .map_err(|_| AppError::Internal("application state is unavailable".to_owned()))?
-            .clone()
-            .ok_or(AppError::NoVault)
-    }
-
-    /// Installs a workspace and returns the previous one.
-    fn replace(&self, next: Option<Arc<Workspace>>) -> Option<Arc<Workspace>> {
-        let mut slot = self.workspace.lock().ok()?;
-        std::mem::replace(&mut *slot, next)
-    }
-
-    /// Remembers "now" as the last visit without closing anything (window close).
-    pub fn save_last_visit(&self) {
-        if let Ok(ws) = self.current() {
-            ws.save_last_visit();
-        }
-    }
-
-    /// Window focus: external tools may have changed git state while we were in the background.
-    pub fn refresh_git(&self) {
-        if let Ok(ws) = self.current() {
-            ws.refresh_git();
-        }
-    }
-
-    /// Application exit: save the last visit and stop everything.
-    pub fn shutdown(&self) {
-        if let Some(ws) = self.replace(None) {
-            ws.close();
-        }
-    }
-}
+/// The folder that is currently open, if any, and the rules for switching folders.
+pub type AppState = WorkspaceHost;
 
 /// Emits the contract's events to the webview.
 struct TauriSink(AppHandle);
@@ -113,46 +72,17 @@ pub async fn open_vault(
 ) -> Result<VaultInfo, AppError> {
     let app_data = app_data_dir(&app)?;
     let home = app.path().home_dir().ok();
-    // From here on only the workspace being opened may emit events.
-    let epoch = state.epoch.fetch_add(1, Ordering::SeqCst) + 1;
-    let sink: Arc<dyn EventSink> = Arc::new(GuardedSink::new(
-        Arc::new(TauriSink(app.clone())),
-        epoch,
-        Arc::clone(&state.epoch),
-    ));
-    let opened = blocking(move || {
-        Workspace::open(Path::new(&path), &app_data, home.as_deref(), &sink).map(Arc::new)
-    })
-    .await;
-    let workspace = match opened {
-        Ok(ws) => ws,
-        Err(e) => {
-            // The previous folder stays open, so it may emit again.
-            let _ =
-                state
-                    .epoch
-                    .compare_exchange(epoch, epoch - 1, Ordering::SeqCst, Ordering::SeqCst);
-            return Err(e);
-        }
-    };
-
-    // Images in the documents are served through the asset protocol, scoped to the open roots.
-    let scope = app.asset_protocol_scope();
-    for root in workspace.root_paths() {
-        scope
-            .allow_directory(&root, true)
-            .map_err(|e| AppError::Internal(e.to_string()))?;
-    }
-    let info = workspace.info();
-    // Only now stop the previous folder, so a failed open leaves the current one untouched.
-    if let Some(previous) = state.replace(Some(workspace)) {
-        blocking(move || {
-            previous.close();
-            Ok(())
+    let host = state.inner().clone();
+    // Taken now, in the order requests arrive: when several wait for their turn only the newest opens,
+    // so the folder asked for last is the one that stays open.
+    let request = host.request();
+    let sink: Arc<dyn EventSink> = Arc::new(TauriSink(app));
+    blocking(move || {
+        host.open(request, &sink, |sink| {
+            Workspace::open(Path::new(&path), &app_data, home.as_deref(), sink)
         })
-        .await?;
-    }
-    Ok(info)
+    })
+    .await
 }
 
 /// The path given on the command line (`trailmark <path>`), if it exists. Relative paths resolve
@@ -248,6 +178,40 @@ pub async fn absolute_path(state: State<'_, AppState>, path: String) -> Result<S
     blocking(move || ws.absolute_path(&path)).await
 }
 
+/// Opens a file of the folder with the system's default application (the "external editor").
+#[tauri::command]
+pub async fn open_external(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        let target = ws.external_target(&path)?;
+        app.opener()
+            .open_path(target.display().to_string(), None::<&str>)
+            .map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
+}
+
+/// Shows a file or folder of the open folder in the system's file manager.
+#[tauri::command]
+pub async fn reveal_in_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        let target = ws.reveal_target(&path)?;
+        app.opener()
+            .reveal_item_in_dir(target)
+            .map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn search(
     state: State<'_, AppState>,
@@ -268,6 +232,52 @@ pub async fn init_project_folder(state: State<'_, AppState>) -> Result<(), AppEr
 pub async fn state_location(state: State<'_, AppState>) -> Result<StateLocation, AppError> {
     let ws = state.current()?;
     blocking(move || ws.state_location()).await
+}
+
+/// The URI scheme that serves the images of the open folder to the document view. Requests are
+/// answered from the folder that is open now, through the same path checks as every other file, so
+/// nothing outside it (or from a folder that has been closed) can be read.
+pub const ASSET_SCHEME: &str = "tmasset";
+
+/// The vault path a request for [`ASSET_SCHEME`] asks for: the URL path, decoded, without its leading slash.
+fn asset_request_path(uri: &http::Uri) -> String {
+    links::percent_decode(uri.path().trim_start_matches('/'))
+}
+
+/// The HTTP answer for an image lookup.
+fn asset_response(result: Result<Asset, AppError>) -> http::Response<Vec<u8>> {
+    let (status, content_type, body) = match result {
+        Ok(asset) => (StatusCode::OK, asset.mime, asset.bytes),
+        Err(e) => {
+            let status = match e.kind() {
+                "notFound" => StatusCode::NOT_FOUND,
+                "pathEscape" | "invalidPath" | "noVault" => StatusCode::FORBIDDEN,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (status, "text/plain", Vec::new())
+        }
+    };
+    http::Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "no-cache")
+        .header("X-Content-Type-Options", "nosniff")
+        // An SVG shown as a document of its own could not run scripts or load anything.
+        .header(
+            header::CONTENT_SECURITY_POLICY,
+            "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        )
+        .body(body)
+        .unwrap_or_default()
+}
+
+/// Answers a request for [`ASSET_SCHEME`] on the blocking pool (reading a file must not stall the UI).
+pub fn serve_asset(app: &AppHandle, uri: &http::Uri, responder: UriSchemeResponder) {
+    let host = app.state::<AppState>().inner().clone();
+    let path = asset_request_path(uri);
+    tauri::async_runtime::spawn_blocking(move || {
+        responder.respond(asset_response(host.read_asset(&path)));
+    });
 }
 
 #[cfg(test)]
@@ -444,8 +454,57 @@ mod tests {
     fn app_state_starts_empty_and_reports_no_vault() {
         let state = AppState::default();
         assert!(matches!(state.current(), Err(AppError::NoVault)));
+        assert!(matches!(state.read_asset("a.png"), Err(AppError::NoVault)));
         state.save_last_visit();
-        state.refresh_git();
+        state.refresh_on_focus();
         state.shutdown();
+    }
+
+    #[test]
+    fn asset_requests_decode_the_vault_path_from_the_url() {
+        let path = |uri: &str| asset_request_path(&uri.parse::<http::Uri>().expect("uri"));
+        assert_eq!(
+            path("http://tmasset.localhost/docs%2Fimg%2Fa%20b.png"),
+            "docs/img/a b.png"
+        );
+        assert_eq!(path("tmasset://localhost/a.png"), "a.png");
+        assert_eq!(
+            path("http://tmasset.localhost/%40wt%2Ffeat%2Fp.png"),
+            "@wt/feat/p.png"
+        );
+        assert_eq!(path("http://tmasset.localhost/"), "");
+    }
+
+    #[test]
+    fn asset_responses_carry_the_image_or_a_status_without_details() {
+        let ok = asset_response(Ok(Asset {
+            bytes: vec![1, 2, 3],
+            mime: "image/png",
+        }));
+        assert_eq!(ok.status(), StatusCode::OK);
+        assert_eq!(ok.headers()[header::CONTENT_TYPE], "image/png");
+        assert_eq!(ok.headers()["x-content-type-options"], "nosniff");
+        assert!(ok.headers().contains_key(header::CONTENT_SECURITY_POLICY));
+        assert_eq!(ok.body(), &vec![1, 2, 3]);
+
+        for (error, status) in [
+            (AppError::NoVault, StatusCode::FORBIDDEN),
+            (
+                crate::vault::VaultError::Escapes("../x".to_owned()).into(),
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                crate::vault::VaultError::NotFound("x".to_owned()).into(),
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                AppError::Internal("boom".to_owned()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        ] {
+            let r = asset_response(Err(error));
+            assert_eq!(r.status(), status);
+            assert!(r.body().is_empty(), "no details leak into the body");
+        }
     }
 }

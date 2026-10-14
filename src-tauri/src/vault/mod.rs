@@ -8,11 +8,11 @@ mod tree;
 
 use std::ffi::OsStr;
 use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path, PathBuf, Prefix, PrefixComponent};
 
 use serde::Serialize;
 
-pub use tree::{NodeKind, TreeNode};
+pub use tree::{NodeKind, TreeNode, WalkItem};
 
 /// Prefix of worktree paths: `@wt/<name>/relative/path`.
 pub const WORKTREE_PREFIX: &str = "@wt/";
@@ -70,7 +70,8 @@ pub struct Worktree {
 /// A path that passed validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolved {
-    /// Absolute path (existing part in real on-disk case, `\\?\` prefix removed).
+    /// Absolute path (existing part in real on-disk case). The `\\?\` prefix is removed unless the
+    /// path is too long to work without it (over 260 characters).
     pub abs: PathBuf,
     /// Vault-relative path in the UI form (`@wt/<name>/` prefix for worktrees).
     pub rel: String,
@@ -96,11 +97,33 @@ pub fn key(rel: &str) -> String {
     }
 }
 
-fn component_eq(a: &OsStr, b: &OsStr) -> bool {
+fn name_eq(a: &OsStr, b: &OsStr) -> bool {
     if cfg!(windows) {
         a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
     } else {
         a == b
+    }
+}
+
+/// Windows path prefixes compare equal when they name the same place: `C:` and the verbatim `\\?\C:`
+/// (which `canonicalize` keeps for paths over 260 characters), `\\server\share` and `\\?\UNC\server\share`.
+fn prefix_eq(a: PrefixComponent<'_>, b: PrefixComponent<'_>) -> bool {
+    match (a.kind(), b.kind()) {
+        (Prefix::Disk(x) | Prefix::VerbatimDisk(x), Prefix::Disk(y) | Prefix::VerbatimDisk(y)) => {
+            x.eq_ignore_ascii_case(&y)
+        }
+        (
+            Prefix::UNC(server_a, share_a) | Prefix::VerbatimUNC(server_a, share_a),
+            Prefix::UNC(server_b, share_b) | Prefix::VerbatimUNC(server_b, share_b),
+        ) => name_eq(server_a, server_b) && name_eq(share_a, share_b),
+        _ => name_eq(a.as_os_str(), b.as_os_str()),
+    }
+}
+
+fn component_eq(a: Component<'_>, b: Component<'_>) -> bool {
+    match (a, b) {
+        (Component::Prefix(x), Component::Prefix(y)) => prefix_eq(x, y),
+        _ => name_eq(a.as_os_str(), b.as_os_str()),
     }
 }
 
@@ -109,7 +132,7 @@ pub(crate) fn strip_root<'a>(path: &'a Path, root: &Path) -> Option<Vec<&'a OsSt
     let mut rest = path.components();
     for want in root.components() {
         let got = rest.next()?;
-        if !component_eq(got.as_os_str(), want.as_os_str()) {
+        if !component_eq(got, want) {
             return None;
         }
     }
@@ -482,6 +505,70 @@ mod tests {
         let (_d, v) = vault_with(&["Docs/ReadMe.md"]);
         let r = v.resolve("docs/README.MD").expect("resolve");
         assert_eq!(r.rel, "Docs/ReadMe.md");
+    }
+
+    /// Creates `dir/<long path>/deep.md` with an absolute path of more than 300 characters.
+    #[cfg(windows)]
+    fn deep_file(dir: &Path) -> String {
+        let mut rel = String::new();
+        while dir.display().to_string().len() + rel.len() < 320 {
+            rel.push_str("segment-with-a-long-name/");
+        }
+        rel.push_str("deep.md");
+        let abs = dir.join(&rel);
+        fs::create_dir_all(abs.parent().expect("parent")).expect("mkdir");
+        fs::write(&abs, "x").expect("write");
+        rel
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn files_under_paths_longer_than_260_characters_resolve() {
+        let (d, _v) = vault_with(&["a.md"]);
+        let rel = deep_file(d.path());
+        let v = Vault::open(d.path()).expect("open");
+        let r = v.resolve(&rel).expect("a long path stays inside the root");
+        assert_eq!(r.rel, rel);
+        assert!(r.abs.is_file());
+        assert!(r.abs.display().to_string().len() > 300);
+        assert_eq!(v.to_rel(&r.abs).map(|(rel, _)| rel), Some(rel.clone()));
+        // A file that does not exist yet below such a folder is still inside the root.
+        let missing = rel.replace("deep.md", "new.md");
+        assert_eq!(
+            v.resolve(&missing).expect("missing but inside").rel,
+            missing
+        );
+        // And the way out is still closed.
+        assert!(matches!(
+            v.resolve(&format!("{rel}{}", "/..".repeat(40))),
+            Err(VaultError::Escapes(_))
+        ));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn strip_root_treats_verbatim_and_plain_prefixes_alike() {
+        let rest = |p: &str, r: &str| {
+            strip_root(Path::new(p), Path::new(r)).map(|v| {
+                v.iter()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(
+            rest(r"\\?\C:\Users\me\docs\a.md", r"C:\Users\me"),
+            Some(vec!["docs".to_owned(), "a.md".to_owned()])
+        );
+        assert_eq!(
+            rest(r"c:\users\ME\a.md", r"\\?\C:\Users\me"),
+            Some(vec!["a.md".to_owned()])
+        );
+        assert_eq!(
+            rest(r"\\?\UNC\server\share\dir\a.md", r"\\server\share\dir"),
+            Some(vec!["a.md".to_owned()])
+        );
+        assert_eq!(rest(r"\\?\D:\Users\me\a.md", r"C:\Users\me"), None);
+        assert_eq!(rest(r"\\?\UNC\other\share\a.md", r"\\server\share"), None);
     }
 
     #[test]

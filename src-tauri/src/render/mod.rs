@@ -73,6 +73,9 @@ pub struct Rendered {
     pub html: String,
     pub title: Option<String>,
     pub frontmatter: Option<Vec<(String, String)>>,
+    /// A short remark for the reader when the renderer had to fall back (for example "shown as plain
+    /// text"). It is merged into the view's `encoding_note`.
+    pub note: Option<String>,
 }
 
 pub struct RenderCtx<'a> {
@@ -124,6 +127,7 @@ impl Registry {
                 html: String::new(),
                 title: None,
                 frontmatter: None,
+                note: None,
             },
             |r| r.render(src, &ctx),
         )
@@ -163,6 +167,11 @@ pub fn render_bytes(
         Decoded::Binary => empty_view(rel, DocKind::Binary, modified_ms, size),
         Decoded::Text { text, note } => {
             let r = registry.render(abs, &text);
+            // Both notes end up in the one chip next to the title.
+            let note = match (note, r.note) {
+                (Some(encoding), Some(fallback)) => Some(format!("{encoding}; {fallback}")),
+                (encoding, fallback) => encoding.or(fallback),
+            };
             DocumentView {
                 path: rel.to_owned(),
                 kind: r.kind,
@@ -281,6 +290,15 @@ mod tests {
     }
 
     #[test]
+    fn a_rendering_fallback_is_reported_in_the_note() {
+        let v = view_of("deep.md", format!("{} x\n", ">".repeat(500)).as_bytes());
+        assert_eq!(v.kind, DocKind::Text);
+        assert!(v.encoding_note.is_some_and(|n| n.contains("nesting")));
+        assert_eq!(v.blocks.len(), 1);
+        assert!(v.html.contains("&gt;&gt;"));
+    }
+
+    #[test]
     fn crlf_documents_render_like_lf_documents() {
         let lf = view_of("a.md", b"# T\n\nBody\n");
         let crlf = view_of("a.md", b"# T\r\n\r\nBody\r\n");
@@ -319,6 +337,7 @@ mod tests {
                     html: "<table></table>".to_owned(),
                     title: None,
                     frontmatter: None,
+                    note: None,
                 }
             }
         }

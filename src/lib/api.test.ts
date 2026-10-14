@@ -31,6 +31,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   saveSession: [{} as SessionState],
   loadSession: [],
   absolutePath: ["docs/a.md"],
+  openExternal: ["docs/a.md"],
+  revealInFolder: ["docs"],
   search: ["query", 5],
   initProjectFolder: [],
   stateLocation: [],

@@ -296,9 +296,9 @@ fn run(
         }
         if agg.due(Instant::now()) {
             let flushed = agg.take();
-            if flushed.overflow {
-                sigs.clear(); // events were lost, so what we remember may be stale
-            }
+            // After an overflow the remembered signatures may be stale, but they are kept: a stale one
+            // only makes the next event for that file look like a change (which it is), while a wiped
+            // store would report every antivirus touch as one. The consumer rescans on `rescan`.
             let env = Env {
                 vault,
                 filter,
@@ -308,7 +308,8 @@ fn run(
             for p in rec.deferred {
                 agg.requeue(p, Instant::now());
             }
-            let pressure = if flushed.overflow {
+            // A moved-in folder that was only partly listed needs the same rescan as lost events.
+            let pressure = if flushed.overflow || rec.truncated {
                 Some(BulkReason::Overflow)
             } else if probe.operation_in_progress() {
                 Some(BulkReason::GitOperation)
@@ -606,6 +607,24 @@ mod tests {
         );
 
         live.svc.stop();
+    }
+
+    #[test]
+    fn moving_in_a_huge_folder_asks_the_consumers_to_rescan() {
+        let live = live();
+        let outside = tempfile::tempdir().expect("tempdir");
+        let big = outside.path().join("big");
+        fs::create_dir(&big).expect("mkdir");
+        for i in 0..520 {
+            fs::write(big.join(format!("n{i}.md")), "x").expect("write");
+        }
+        fs::rename(&big, live.root.join("big")).expect("move in");
+        let outs = wait_for(&live.rx, |o| o.iter().any(|out| out.batch.rescan));
+        assert!(
+            outs.iter().any(|o| o.batch.rescan),
+            "the files past the listing cap must trigger a rescan: {} outputs",
+            outs.len()
+        );
     }
 
     #[test]

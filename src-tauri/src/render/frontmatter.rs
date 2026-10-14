@@ -21,7 +21,15 @@ fn indent_of(line: &str) -> usize {
     line.len() - line.trim_start_matches([' ', '\t']).len()
 }
 
+/// A scalar or a one-level inline list (`[a, "b c"]`, joined with `, `).
+///
+/// Lists do not nest: a bracketed item inside a list stays as written. Recursing into them would let
+/// a value like `[[[[...]]]]` (a hundred thousand brackets) overflow the stack.
 fn unquote(value: &str) -> String {
+    unquote_item(value, true)
+}
+
+fn unquote_item(value: &str, allow_list: bool) -> String {
     let v = value.trim();
     let bytes = v.as_bytes();
     if bytes.len() >= 2
@@ -36,10 +44,10 @@ fn unquote(value: &str) -> String {
     }
     // Strip a trailing ` # comment` from unquoted scalars.
     let v = v.find(" #").map_or(v, |i| v[..i].trim_end());
-    if v.starts_with('[') && v.ends_with(']') {
+    if allow_list && v.starts_with('[') && v.ends_with(']') {
         return v[1..v.len() - 1]
             .split(',')
-            .map(unquote)
+            .map(|item| unquote_item(item, false))
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
@@ -209,6 +217,18 @@ mod tests {
                 ("folded", "a b"),
                 ("end", "ok")
             ])
+        );
+    }
+
+    #[test]
+    fn inline_lists_do_not_nest_and_endless_brackets_cannot_overflow_the_stack() {
+        assert_eq!(parse("tags: [[a], [b]]"), kv(&[("tags", "[a], [b]")]));
+        let deep = format!("tags: {}x{}", "[".repeat(100_000), "]".repeat(100_000));
+        let pairs = parse(&deep);
+        assert_eq!(pairs.len(), 1);
+        assert!(
+            pairs[0].1.starts_with("[[[") && pairs[0].1.contains('x'),
+            "kept as written"
         );
     }
 

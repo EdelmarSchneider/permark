@@ -32,6 +32,8 @@ pub struct Reconciled {
     pub tree_changed: bool,
     /// Truncated files to look at again on the next tick.
     pub deferred: Vec<PendingPath>,
+    /// A moved-in folder had more files than were listed: the caller must rescan to find the rest.
+    pub truncated: bool,
 }
 
 struct Pass<'a> {
@@ -137,6 +139,7 @@ impl Pass<'_> {
             }
             files += 1;
             if files > MAX_EXPANDED_FILES {
+                self.out.truncated = true;
                 break;
             }
             let child = PendingPath {
@@ -424,6 +427,22 @@ mod tests {
         k.sort_unstable();
         assert_eq!(k, ["moved/a.md", "moved/deep/b.md"]);
         assert!(r.tree_changed);
+    }
+
+    #[test]
+    fn a_folder_with_more_files_than_the_expansion_cap_asks_for_a_rescan() {
+        let f = Fx::new();
+        for i in 0..=MAX_EXPANDED_FILES {
+            f.write(&format!("big/n{i}.md"), "x");
+        }
+        let r = f.run(&[("big", Hint::Create)]);
+        assert_eq!(r.changes.len(), MAX_EXPANDED_FILES);
+        assert!(r.truncated, "the files past the cap are unknown");
+
+        let small = Fx::new();
+        small.write("small/a.md", "x");
+        let r = small.run(&[("small", Hint::Create)]);
+        assert!(!r.truncated);
     }
 
     #[test]

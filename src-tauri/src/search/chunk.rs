@@ -3,7 +3,7 @@
 use comrak::nodes::NodeValue;
 use comrak::{parse_document, Arena};
 
-use crate::render::markdown::{append_plain_text, options, plain_text};
+use crate::render::markdown::{append_plain_text, options, plain_text, too_many_container_markers};
 
 /// One section of a document.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,6 +22,15 @@ fn line_of<'a>(node: &'a comrak::nodes::AstNode<'a>) -> u32 {
 
 /// Splits `src` (already decoded, `\n` line endings) by headings.
 pub fn chunk_markdown(src: &str) -> Vec<Chunk> {
+    // Absurdly nested quotes or lists are not parsed (the parse time is quadratic); the raw text is
+    // still searchable as one section.
+    if too_many_container_markers(src) {
+        return vec![Chunk {
+            heading_path: Vec::new(),
+            start_line: 1,
+            text: src.trim().to_owned(),
+        }];
+    }
     let arena = Arena::new();
     let root = parse_document(&arena, src, &options());
 
@@ -155,6 +164,38 @@ mod tests {
             assert!(t.contains(w), "missing {w} in {t}");
         }
         assert!(!t.contains('|') && !t.contains("- "));
+    }
+
+    #[test]
+    fn deeply_nested_quotes_are_indexed_as_plain_text_without_overflowing() {
+        let src = format!("{} findme\n", ">".repeat(100_000));
+        let started = std::time::Instant::now();
+        let c = chunk_markdown(&src);
+        assert_eq!(c.len(), 1);
+        assert!(c[0].text.contains("findme"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    #[test]
+    fn deep_inline_nesting_is_chunked_without_overflowing() {
+        let src = format!("{}b{}\n", "_a ".repeat(100_000), " a_".repeat(100_000));
+        let c = chunk_markdown(&src);
+        assert_eq!(c.len(), 1);
+        assert!(c[0].text.contains('b'));
+    }
+
+    #[test]
+    fn front_matter_with_endless_brackets_is_chunked() {
+        let src = format!(
+            "---\ntags: {}{}\n---\n\n# Body\n\ntext\n",
+            "[".repeat(100_000),
+            "]".repeat(100_000)
+        );
+        let c = chunk_markdown(&src);
+        assert_eq!(
+            c.last().map(|c| c.heading_path.clone()),
+            Some(vec!["Body".to_owned()])
+        );
     }
 
     #[test]

@@ -82,6 +82,11 @@
     pressed={session.left.open}
     onclick={() => app.toggleLeft()}
   />
+  {#if vault.info && !vault.info.liveUpdates}
+    <span class="sb-item is-warn" title={t("status.liveOffHint")}>
+      <Icon name="alert" />{t("status.liveOff")}
+    </span>
+  {/if}
   {#if git?.gitError}
     <span class="sb-item is-warn" title={git.gitError}>
       <Icon name="alert" />{t("status.gitUnavailable")}

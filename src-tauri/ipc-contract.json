@@ -13,6 +13,8 @@
     "save_session": ["s"],
     "load_session": [],
     "absolute_path": ["path"],
+    "open_external": ["path"],
+    "reveal_in_folder": ["path"],
     "search": ["query", "limit"],
     "init_project_folder": [],
     "state_location": []

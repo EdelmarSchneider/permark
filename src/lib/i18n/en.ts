@@ -66,6 +66,7 @@ export const en = {
   "menu.copyPath": "Copy path",
   "menu.copyReference": "Copy reference",
   "menu.openExternal": "Open in external editor",
+  "menu.showInFileManager": "Show in file manager",
   "menu.openFolder": "Open containing folder",
   "menu.reveal": "Reveal in tree",
   "menu.wide": "Wide reading width",
@@ -270,6 +271,9 @@ export const en = {
   "status.changedHint": "Files changed since the baseline",
   "status.noRepo": "No git repository",
   "status.noRepoHint": "This folder is not in a git repository. Change markers are off.",
+  "status.liveOff": "Live updates off",
+  "status.liveOffHint":
+    "This location can't report changes, so TrailMark can't follow them live. Switch back to the window to refresh.",
   "status.gitUnavailable": "Git unavailable",
   "status.sinceVisit": "Since: last visit",
   "status.sinceCommit": "Since: last commit",

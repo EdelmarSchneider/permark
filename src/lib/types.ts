@@ -8,6 +8,9 @@ export type VaultInfo = {
   initialFile: string | null;
   /** `branch` is the checked-out branch, `null` when detached or unreadable. */
   worktrees: { name: string; path: string; branch: string | null }[];
+  /** False when the file system cannot report changes (some network or virtual drives): the folder
+   *  works, but is only refreshed when the window gets focus. */
+  liveUpdates: boolean;
 };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
 export type TreeNode = {
@@ -25,6 +28,7 @@ export type DocumentView = {
   frontmatter: [string, string][] | null;
   modifiedMs: number;
   sizeBytes: number;
+  /** A short remark shown next to the title: an odd encoding, or a rendering fallback. */
   encodingNote: string | null;
 };
 export type LinkTarget =
