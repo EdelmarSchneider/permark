@@ -38,6 +38,7 @@ vi.mock("../editor/imageName", async (original) => ({
 }));
 
 import { bridge } from "../bridge";
+import { noOutline } from "../editor/outlineStub";
 import { mockParseBlocks } from "../mock/mockBlocks";
 import { askUnsaved, checkForUpdate } from "../platform";
 import { INITIAL_UPDATE_STATE } from "../updates";
@@ -70,6 +71,7 @@ const source = (path: string, text: string, hash: string): SourceDoc => ({
 /** An editor that is only a string. */
 function fakeEditor(initial: string): EditorApi & { text: string; line: number } {
   const editor = {
+    ...noOutline,
     mode: "source" as const,
     text: initial,
     line: 0,

@@ -4,6 +4,7 @@
 import type { BlockMap } from "./editor/blockModel";
 import type { VisualInput } from "./editor/visual/editor";
 import type { FindMode } from "./find";
+import type { HeadingInfo } from "./outline";
 
 export type DocSelection = { text: string; section: string | null };
 
@@ -25,8 +26,20 @@ export type OutlineApi = {
   focusDoc(): void;
 };
 
+/** What the Outline needs from either editor while it is open: the headings of the text as it is now, and where the view is. */
+export type OutlineSource = {
+  /** The top-level headings of the text being edited, in order. */
+  headings(): HeadingInfo[];
+  /** Scrolls heading `index` (of `headings()`) to the top of the editor, 8 px below it. The caret stays where it is. */
+  scrollToHeading(index: number): void;
+  /** The heading of the section in view: the last one at or above the top-third line of the editor; null above the first. */
+  currentHeading(): number | null;
+  /** Calls `handler` when the view scrolls (`byUser` false) and when the person takes over (`byUser` true). Returns the function that stops it. */
+  onViewport(handler: (byUser: boolean) => void): () => void;
+};
+
 /** The Source editor, for code outside it (the edit store reads the text and moves the caret through this). */
-export type SourceApi = {
+export type SourceApi = OutlineSource & {
   mode: "source";
   /** The text in the editor (no BOM, LF line endings). */
   getText(): string;
@@ -45,7 +58,7 @@ export type SourceApi = {
 };
 
 /** What the store needs from Visual mode (the editor itself is `editor/visual/editor.ts`, loaded on first use). */
-export type VisualApi = {
+export type VisualApi = OutlineSource & {
   mode: "visual";
   /** The file text a save would write (the BOM and line endings of the file, untouched blocks as they were). */
   text(): string;
@@ -76,6 +89,8 @@ export type DocBridge = {
   /** The element for a block or heading, used to position the first find match. */
   locatedElement?: () => HTMLElement | null;
   outline?: OutlineApi;
+  /** Set while an editor is on screen: the Outline's clicks and focus go to the editor instead of the (hidden) reading view. */
+  editorOutline?: OutlineApi;
   /** The 1-based source line of the block at the top of the viewport, where editing starts. */
   topLine?: () => number | null;
   /** Set while the source editor is on screen. */

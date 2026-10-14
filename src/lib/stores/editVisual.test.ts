@@ -38,6 +38,7 @@ vi.mock("../editor/imageName", async (original) => ({
 }));
 
 import { bridge } from "../bridge";
+import { noOutline } from "../editor/outlineStub";
 import { mockParseBlocks } from "../mock/mockBlocks";
 import { docs } from "./docs.svelte";
 import { edit } from "./edit.svelte";
@@ -79,6 +80,7 @@ type FakeVisual = VisualApi & {
 
 function fakeVisual(initial: string): FakeVisual {
   const editor: FakeVisual = {
+    ...noOutline,
     mode: "visual",
     current: initial,
     dirty: false,
@@ -102,6 +104,7 @@ function fakeVisual(initial: string): FakeVisual {
 /** A Source editor that is only a string. */
 function fakeSource(initial: string) {
   const editor = {
+    ...noOutline,
     mode: "source" as const,
     text: initial,
     line: 0,

@@ -12,7 +12,10 @@ import { strikethroughKeymap } from "@milkdown/kit/preset/gfm";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { EditorState, NodeSelection, Selection, TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
+import type { HeadingInfo } from "../../outline";
+import { currentHeading } from "../../outline";
 import type { BlockMap } from "../blockModel";
+import { watchViewport } from "../viewport";
 import {
   analyze,
   buildDoc,
@@ -57,6 +60,8 @@ export type VisualEditorOptions = {
   imageUrl(src: string): string;
   /** Scroll the caret into view when it is placed. Off in tests, where there is no layout. */
   scroll?: boolean;
+  /** The element that scrolls the document: the Outline reads where the view is from it, and scrolls it to a heading. */
+  scroller?: HTMLElement;
 };
 
 /** What a load needs: the text being edited (as its blocks), and how it relates to the saved file. */
@@ -81,6 +86,9 @@ export type VisualStatus = {
   changed: number;
 };
 
+/** A top-level heading of the document, and where its node starts. */
+type DocHeading = HeadingInfo & { pos: number };
+
 const EMPTY_ANALYSIS: Analysis = { nodes: [], structure: false, changed: 0, touched: 0 };
 
 export class VisualEditor {
@@ -88,6 +96,7 @@ export class VisualEditor {
   private built: Built | null = null;
   private initialDirty = false;
   private readonly cache = new WeakMap<PMNode, Analysis>();
+  private readonly headingCache = new WeakMap<PMNode, DocHeading[]>();
   private slashOpen = false;
   private slashDismissed = false;
   private destroyed = false;
@@ -299,7 +308,8 @@ export class VisualEditor {
     // the block asked for is the one that goes to the top of the pane, even when the caret has to be in another one; when only front
     // matter is above it (the reader shows that as a card over the text) the pane stays at the very top
     let revealIndex = index;
-    while (revealIndex > 0 && doc.child(revealIndex - 1).attrs.kind === "frontmatter") revealIndex--;
+    while (revealIndex > 0 && doc.child(revealIndex - 1).attrs.kind === "frontmatter")
+      revealIndex--;
     if (revealIndex > 0) revealIndex = index;
     const revealAt = startOf(revealIndex);
     // a locked block takes no caret: it goes to the next block that can be typed in (else the one before)
@@ -329,6 +339,71 @@ export class VisualEditor {
       const dom = view.nodeDOM(revealAt);
       if (dom instanceof HTMLElement) dom.scrollIntoView({ block: "start" });
     }
+  }
+
+  // ---- the Outline -----------------------------------------------------------------------------------------
+
+  /** The top-level headings of a document (one inside a list or a quote is not listed, as in the reading view). */
+  private headingList(doc: PMNode): DocHeading[] {
+    let list = this.headingCache.get(doc);
+    if (!list) {
+      const found: DocHeading[] = [];
+      doc.forEach((node, pos) => {
+        if (node.type.name !== "heading") return;
+        // an image shows its alt text, a line break a space
+        const text = node.textBetween(0, node.content.size, " ", (leaf) =>
+          leaf.type.name === "image" ? String(leaf.attrs.alt ?? "") : " ",
+        );
+        found.push({
+          level: Number(node.attrs.level) || 1,
+          text: text.replace(/\s+/g, " ").trim(),
+          pos,
+        });
+      });
+      list = found;
+      this.headingCache.set(doc, list);
+    }
+    return list;
+  }
+
+  headings(): HeadingInfo[] {
+    return this.headingList(this.core.view.state.doc).map(({ level, text }) => ({ level, text }));
+  }
+
+  private headingEl(heading: DocHeading): HTMLElement | null {
+    const dom = this.core.view.nodeDOM(heading.pos);
+    return dom instanceof HTMLElement ? dom : null;
+  }
+
+  /** Scrolls heading `index` to 8 px under the top of the editor. The selection stays where it is. */
+  scrollToHeading(index: number): void {
+    const { scroller } = this.options;
+    const heading = this.headingList(this.core.view.state.doc)[index];
+    const el = heading ? this.headingEl(heading) : null;
+    if (!scroller || !el) return;
+    const delta = el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTo({ top: Math.max(0, scroller.scrollTop + delta - 8), behavior: "instant" });
+  }
+
+  /** The heading of the section in view: the last one at or above the top-third line of the editor. */
+  currentHeading(): number | null {
+    const { scroller } = this.options;
+    const list = this.headingList(this.core.view.state.doc);
+    if (!scroller || list.length === 0) return null;
+    const top = scroller.getBoundingClientRect().top;
+    const height = scroller.clientHeight;
+    const atBottom = scroller.scrollTop + height >= scroller.scrollHeight - 2;
+    return currentHeading(
+      list.length,
+      (i) => (this.headingEl(list[i])?.getBoundingClientRect().top ?? top) - top,
+      { line: height / 3, bottomEdge: atBottom ? height : undefined },
+    );
+  }
+
+  /** Calls `handler` when the editor scrolls, and with `true` when the person takes over. Returns the function that stops it. */
+  onViewport(handler: (byUser: boolean) => void): () => void {
+    const { scroller } = this.options;
+    return scroller ? watchViewport(scroller, handler) : () => {};
   }
 
   // ---- reading the selection --------------------------------------------------------------------------

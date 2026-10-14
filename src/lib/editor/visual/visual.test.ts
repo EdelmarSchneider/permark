@@ -3,7 +3,7 @@ import { redo, undo } from "@milkdown/kit/prose/history";
 import { Fragment, Slice } from "@milkdown/kit/prose/model";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { splitBlock } from "@milkdown/kit/prose/commands";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mockParseBlocks } from "../../mock/mockBlocks";
 import { buildBlockMap } from "../blockModel";
 import "./jsdomShims";
@@ -11,6 +11,7 @@ import { VisualEditor, type VisualInput } from "./editor";
 
 let editor: VisualEditor;
 let changes = 0;
+const scroller = document.createElement("div");
 
 beforeAll(async () => {
   const host = document.createElement("div");
@@ -19,6 +20,7 @@ beforeAll(async () => {
     host,
     label: "test",
     scroll: false,
+    scroller,
     imageUrl: (src) => src,
     locked: {
       render: (body, atom) => {
@@ -248,6 +250,109 @@ describe("the caret", () => {
     expect(editor.caretBlock()).toBe(2);
     // the heading is on line 0, "First paragraph." on 2, "Second paragraph." on 6
     expect(editor.caretLine()).toBe(6);
+  });
+});
+
+describe("the Outline", () => {
+  const TEXT =
+    "# Title\n\nIntro.\n\n## Sub\n\n> ## Quoted\n\n- ### Listed\n\nSetext\n======\n\n## Fancy **bold** [link](x.md) ![alt text](a.png)\n\nEnd.\n";
+
+  /** Where each top-level heading is on screen, as the layout would say (jsdom has none). */
+  function layout(
+    tops: number[],
+    box: { top?: number; height: number; scrollTop?: number; scrollHeight: number },
+  ) {
+    const { doc } = editor.core.view.state;
+    let at = 0;
+    let next = 0;
+    doc.forEach((node, pos) => {
+      if (node.type.name !== "heading") return;
+      const el = editor.core.view.nodeDOM(pos) as HTMLElement;
+      const top = tops[next++];
+      vi.spyOn(el, "getBoundingClientRect").mockReturnValue(new DOMRect(0, top, 100, 20));
+      at++;
+    });
+    expect(at).toBe(tops.length);
+    vi.spyOn(scroller, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, box.top ?? 0, 100, box.height),
+    );
+    Object.defineProperty(scroller, "clientHeight", { value: box.height, configurable: true });
+    Object.defineProperty(scroller, "scrollHeight", {
+      value: box.scrollHeight,
+      configurable: true,
+    });
+    scroller.scrollTop = box.scrollTop ?? 0;
+  }
+
+  it("lists the top-level headings with the text a reader sees", () => {
+    load(TEXT);
+    expect(editor.headings()).toEqual([
+      { level: 1, text: "Title" },
+      { level: 2, text: "Sub" },
+      { level: 1, text: "Setext" },
+      { level: 2, text: "Fancy bold link alt text" },
+    ]);
+  });
+
+  it("follows the document as it is edited", () => {
+    load("# Title\n\nIntro.\n");
+    const { view } = editor.core;
+    expect(editor.headings()).toHaveLength(1);
+    view.dispatch(
+      view.state.tr.setNodeMarkup(inside(1) - 1, view.state.schema.nodes.heading, { level: 3 }),
+    );
+    expect(editor.headings()).toEqual([
+      { level: 1, text: "Title" },
+      { level: 3, text: "Intro." },
+    ]);
+    typeAt(inside(1, 6), " now");
+    expect(editor.headings()[1].text).toBe("Intro. now");
+  });
+
+  it("has no headings in a document without any", () => {
+    load("Just text.\n\n- and a list\n");
+    expect(editor.headings()).toEqual([]);
+    expect(editor.currentHeading()).toBeNull();
+  });
+
+  it("scrolls the editor so the heading is 8 px under the top", () => {
+    load(TEXT);
+    layout([-900, 400, 1300, 2000], { top: 100, height: 600, scrollTop: 50, scrollHeight: 5000 });
+    const scrollTo = vi.fn();
+    scroller.scrollTo = scrollTo as unknown as typeof scroller.scrollTo;
+    editor.scrollToHeading(1);
+    // the heading is 300 px under the pane's top edge now (400 - 100); the pane is at 50
+    expect(scrollTo).toHaveBeenCalledWith({ top: 50 + 300 - 8, behavior: "instant" });
+    scrollTo.mockClear();
+    editor.scrollToHeading(0);
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "instant" }); // never above the start
+    scrollTo.mockClear();
+    editor.scrollToHeading(9);
+    expect(scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("names the section in view: the last heading above the top-third line", () => {
+    load(TEXT);
+    layout([-300, 120, 900, 1500], { height: 600, scrollHeight: 5000 });
+    expect(editor.currentHeading()).toBe(1); // the line is at 200
+    layout([300, 700, 900, 1500], { height: 600, scrollHeight: 5000 });
+    expect(editor.currentHeading()).toBeNull(); // above the first heading
+  });
+
+  it("counts the last heading in view as the section at the very end of the document", () => {
+    load(TEXT);
+    layout([-900, -400, 100, 500], { height: 600, scrollTop: 4400, scrollHeight: 5000 });
+    expect(editor.currentHeading()).toBe(3);
+  });
+
+  it("tells when the editor scrolls and when the person does", () => {
+    const seen: boolean[] = [];
+    const stop = editor.onViewport((byUser) => seen.push(byUser));
+    scroller.dispatchEvent(new Event("scroll"));
+    scroller.dispatchEvent(new Event("wheel"));
+    stop();
+    scroller.dispatchEvent(new Event("scroll"));
+    expect(seen).toEqual([false, true]);
   });
 });
 
