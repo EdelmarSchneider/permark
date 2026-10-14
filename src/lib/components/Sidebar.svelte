@@ -5,6 +5,7 @@
   import Explorer from "./Explorer.svelte";
   import Resizer from "./Resizer.svelte";
   import SearchPanel from "./SearchPanel.svelte";
+  import TagsPanel from "./TagsPanel.svelte";
 </script>
 
 <aside class="sidebar" aria-label={t("sidebar.label")} inert={!session.left.open}>
@@ -16,6 +17,9 @@
     </section>
     <section class="panel-inner" hidden={ui.sidebarView !== "search"}>
       <SearchPanel />
+    </section>
+    <section class="panel-inner" hidden={ui.sidebarView !== "tags"}>
+      <TagsPanel />
     </section>
   </div>
 </aside>

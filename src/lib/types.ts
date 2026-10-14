@@ -84,3 +84,34 @@ export type SessionState = {
   theme: "system" | "light" | "dark";
   follow: boolean;
 };
+
+// ---- tags and descriptions (docs/design/v0.2.md section 1) ---------------------------------------
+/** One tag of a file. A tag in both places is listed once, as a file tag (`file`); `app` says the app has it too. */
+export type TagRef = { name: string; file: boolean; app: boolean };
+/** The tags and description of one file. `writable` is false when the app's tags cannot be changed now. */
+export type FileMeta = {
+  path: string;
+  tags: TagRef[];
+  description: string;
+  writable: boolean;
+};
+/** Why `meta.toml` could not be read (a merge conflict, a bad edit). */
+export type MetaProblem = { message: string; line: number | null };
+export type MetaStatus = {
+  problem: MetaProblem | null;
+  /** The last write of `meta.toml` failed (it is tried again). */
+  writeError: string | null;
+  /** Changes made before `meta.toml` became unreadable: kept, and saved once it can be read. */
+  pendingChanges: number;
+};
+export type TagCount = { name: string; count: number; onlyInFiles: boolean };
+export type TagOverview = {
+  tags: TagCount[];
+  untagged: number;
+  /** Entries kept for files that no longer exist. */
+  missing: number;
+  status: MetaStatus;
+};
+export type TaggedFile = { path: string; description: string; modifiedMs: number };
+/** Tags and description of a file that has some (for filters and tooltips). `tags` merges both sources. */
+export type IndexEntry = { path: string; tags: string[]; description: string; modifiedMs: number };

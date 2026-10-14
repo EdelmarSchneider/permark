@@ -139,6 +139,73 @@ pub(crate) fn parse(yaml: &str) -> Vec<(String, String)> {
     pairs
 }
 
+/// The YAML between the `---` lines that open a document, without the delimiters. `None` when the
+/// document does not start with a complete front matter block.
+pub(crate) fn block_of(doc: &str) -> Option<&str> {
+    let rest = doc.trim_start_matches('\u{feff}').strip_prefix("---")?;
+    let rest = rest
+        .strip_prefix("\r\n")
+        .or_else(|| rest.strip_prefix('\n'))?;
+    let mut end = 0;
+    for line in rest.split_inclusive('\n') {
+        if line.trim_end() == "---" {
+            return Some(&rest[..end]);
+        }
+        end += line.len();
+    }
+    None
+}
+
+/// The value of a top-level key as written: one scalar, or a list (inline `[a, b]` or block `- a`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum RawValue {
+    Scalar(String),
+    List(Vec<String>),
+}
+
+/// The value of the first top-level `key:` (compared without regard to case), keeping lists as lists.
+/// `None` when the key is absent. Nested keys never match.
+pub(crate) fn top_level(yaml: &str, key: &str) -> Option<RawValue> {
+    let lines: Vec<&str> = yaml.lines().collect();
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim();
+        if indent_of(line) != 0 || t.is_empty() || t.starts_with('#') || t.starts_with('-') {
+            continue;
+        }
+        let Some((found, value)) = split_key(t) else {
+            continue;
+        };
+        if found.eq_ignore_ascii_case(key) {
+            return Some(value_at(value, &lines[i + 1..]));
+        }
+    }
+    None
+}
+
+/// The value written after `key:` (`inline`), or the block list on the lines that follow it.
+fn value_at(inline: &str, following: &[&str]) -> RawValue {
+    let inline = inline.find(" #").map_or(inline, |i| inline[..i].trim_end());
+    if inline.is_empty() {
+        let items = following
+            .iter()
+            .map(|l| l.trim())
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map_while(|l| l.strip_prefix("- ").or_else(|| (l == "-").then_some("")))
+            .map(|item| unquote_item(item, false))
+            .collect();
+        return RawValue::List(items);
+    }
+    if let Some(inner) = inline.strip_prefix('[').and_then(|v| v.strip_suffix(']')) {
+        return RawValue::List(
+            inner
+                .split(',')
+                .map(|item| unquote_item(item, false))
+                .collect(),
+        );
+    }
+    RawValue::Scalar(unquote_item(inline, false))
+}
+
 /// `parent.child` for a key under open parents. The key already pushed as the last parent is not repeated.
 fn parents_key(parents: &[(usize, String)], key: &str) -> String {
     let mut parts: Vec<&str> = parents.iter().map(|(_, k)| k.as_str()).collect();
@@ -229,6 +296,48 @@ mod tests {
         assert!(
             pairs[0].1.starts_with("[[[") && pairs[0].1.contains('x'),
             "kept as written"
+        );
+    }
+
+    #[test]
+    fn finds_the_front_matter_block_of_a_document() {
+        assert_eq!(block_of("---\ntitle: A\n---\n# Body"), Some("title: A\n"));
+        assert_eq!(
+            block_of("\u{feff}---\r\ntitle: A\r\n---\r\nx"),
+            Some("title: A\r\n")
+        );
+        assert_eq!(block_of("---\n---\nbody"), Some(""));
+        assert_eq!(block_of("# Title\n---\nx: 1\n---"), None);
+        assert_eq!(block_of("---\ntitle: A\nno closing line"), None);
+        assert_eq!(block_of("----\nx: 1\n---"), None);
+        assert_eq!(block_of(""), None);
+    }
+
+    #[test]
+    fn reads_top_level_values_keeping_lists_as_lists() {
+        use RawValue::{List, Scalar};
+        let list = |items: &[&str]| List(items.iter().map(|s| (*s).to_owned()).collect());
+        let scalar = |s: &str| Scalar(s.to_owned());
+        assert_eq!(top_level("tags: a, b", "tags"), Some(scalar("a, b")));
+        assert_eq!(
+            top_level("Tags: [a, \"b c\", 'd']", "tags"),
+            Some(list(&["a", "b c", "d"]))
+        );
+        assert_eq!(
+            top_level("tags:\n  - a\n  - \"b c\"\nnext: 1", "tags"),
+            Some(list(&["a", "b c"]))
+        );
+        assert_eq!(
+            top_level("tags:\n- a\n\n# note\n- b\nnext: 1", "tags"),
+            Some(list(&["a", "b"]))
+        );
+        assert_eq!(top_level("tags:\nnext: 1", "tags"), Some(list(&[])));
+        assert_eq!(top_level("tags: x # note", "tags"), Some(scalar("x")));
+        assert_eq!(top_level("meta:\n  tags: nested", "tags"), None);
+        assert_eq!(top_level("title: A", "tags"), None);
+        assert_eq!(
+            top_level("tags: first\ntags: second", "tags"),
+            Some(scalar("first"))
         );
     }
 

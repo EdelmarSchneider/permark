@@ -8,6 +8,7 @@ import { t } from "../i18n";
 import { NavHistory } from "../history";
 import type { DocumentView, FsBatch, FsChange } from "../types";
 import { session } from "./session.svelte";
+import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
 
 /** How long a removed file may stay missing before the open document is treated as deleted. */
@@ -113,7 +114,8 @@ class DocStore {
     this.beginLoading();
     let view: DocumentView;
     try {
-      view = await api.readDocument(path);
+      // The tags load along with the document, so the strip above it is there from the first paint.
+      [view] = await Promise.all([api.readDocument(path), tags.preload(path)]);
     } catch (error) {
       if (token !== this.token) return false;
       this.endLoading();
@@ -264,6 +266,7 @@ class DocStore {
   }
 
   private applyUpdate(view: DocumentView, followScroll: boolean): void {
+    void tags.refreshMeta();
     this.current = view;
     this.deleted = null;
     this.request = {

@@ -20,6 +20,7 @@
   import { clock as formatClock } from "../time";
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
+  import DocMetaStrip from "./DocMetaStrip.svelte";
   import Popover from "./Popover.svelte";
 
   let scroller: HTMLElement | undefined = $state();
@@ -37,6 +38,10 @@
   const view = $derived(docs.current);
   const showArticle = $derived(!!view && view.kind !== "binary" && view.kind !== "tooLarge");
   const tombstone = $derived(docs.deleted !== null);
+  // `tags:` moved to the strip above the document
+  const frontmatter = $derived(
+    (view?.frontmatter ?? []).filter(([key]) => key.toLowerCase() !== "tags"),
+  );
 
   // ---- rendering ----------------------------------------------------------------------------------
 
@@ -381,6 +386,7 @@
   onkeydown={took}
   onpointerdown={(e) => e.target === e.currentTarget && took()}
 >
+  <DocMetaStrip />
   {#if view && view.kind === "binary"}
     <Notice
       icon="file"
@@ -417,9 +423,9 @@
     hidden={!showArticle}
     aria-busy={docs.loading}
   >
-    {#if view?.frontmatter && view.frontmatter.length > 0}
+    {#if frontmatter.length > 0}
       <dl class="frontmatter" aria-label={t("doc.frontmatter")}>
-        {#each view.frontmatter as [key, value], i (i)}
+        {#each frontmatter as [key, value], i (i)}
           {@const parsed = frontmatterValue(key, value)}
           <div>
             <dt>{key}</dt>

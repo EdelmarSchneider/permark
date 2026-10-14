@@ -7,12 +7,16 @@ import { listen } from "@tauri-apps/api/event";
 import type {
   ChangedSince,
   DocumentView,
+  FileMeta,
   FsBatch,
   GitSnapshot,
+  IndexEntry,
   LinkTarget,
   RecentVault,
   SearchHit,
   SessionState,
+  TaggedFile,
+  TagOverview,
   TreeNode,
   VaultInfo,
 } from "./types";
@@ -23,6 +27,7 @@ export type EventMap = {
   "tree-changed": null;
   "git-status-changed": GitSnapshot;
   "index-progress": { indexed: number; total: number };
+  "meta-changed": null;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
@@ -52,6 +57,19 @@ export interface Api {
   /** Creates `.trailmark/` in the project. */
   initProjectFolder(): Promise<void>;
   stateLocation(): Promise<"appData" | "project">;
+  /** The tags (front matter and app) and the description of a file. */
+  fileMeta(path: string): Promise<FileMeta>;
+  /** Replaces the tags the app keeps for a file. Front matter tags are not touched. */
+  setFileTags(path: string, tags: string[]): Promise<FileMeta>;
+  setFileDescription(path: string, description: string): Promise<FileMeta>;
+  /** Every tag with its number of files, the untagged count, missing entries and the state of `meta.toml`. */
+  listTags(): Promise<TagOverview>;
+  /** Files that have all of `tags`, or (with `untagged`) the files that have none. */
+  filesWithTags(tags: string[], untagged: boolean): Promise<TaggedFile[]>;
+  /** The tags and description of every file that has some. */
+  metaIndex(): Promise<IndexEntry[]>;
+  /** Removes the entries kept for files that no longer exist. Resolves to how many. */
+  cleanUpMeta(): Promise<number>;
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -78,6 +96,14 @@ export const tauriApi: Api = {
   search: (query, limit) => invoke<SearchHit[]>("search", { query, limit }),
   initProjectFolder: () => invoke<void>("init_project_folder"),
   stateLocation: () => invoke<"appData" | "project">("state_location"),
+  fileMeta: (path) => invoke<FileMeta>("file_meta", { path }),
+  setFileTags: (path, tags) => invoke<FileMeta>("set_file_tags", { path, tags }),
+  setFileDescription: (path, description) =>
+    invoke<FileMeta>("set_file_description", { path, description }),
+  listTags: () => invoke<TagOverview>("list_tags"),
+  filesWithTags: (tags, untagged) => invoke<TaggedFile[]>("files_with_tags", { tags, untagged }),
+  metaIndex: () => invoke<IndexEntry[]>("meta_index"),
+  cleanUpMeta: () => invoke<number>("clean_up_meta"),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -134,6 +160,13 @@ function createMockApi(): Api {
     search: command("search"),
     initProjectFolder: command("initProjectFolder"),
     stateLocation: command("stateLocation"),
+    fileMeta: command("fileMeta"),
+    setFileTags: command("setFileTags"),
+    setFileDescription: command("setFileDescription"),
+    listTags: command("listTags"),
+    filesWithTags: command("filesWithTags"),
+    metaIndex: command("metaIndex"),
+    cleanUpMeta: command("cleanUpMeta"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

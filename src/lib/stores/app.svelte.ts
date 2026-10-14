@@ -11,6 +11,7 @@ import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
 import { formatQuote, formatReference } from "../reference";
 import type { ShortcutAction } from "../shortcuts";
+import { selectOnly } from "../tagModel";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
 import { clock } from "./clock.svelte";
@@ -18,6 +19,7 @@ import { docs, type OpenOptions } from "./docs.svelte";
 import { feed } from "./feed.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
+import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
 import { ui } from "./ui.svelte";
 import { vault } from "./vault.svelte";
@@ -159,11 +161,13 @@ class AppStore {
       docs.reset();
       feed.clear();
       search.reset();
+      tags.reset();
       toast.clear();
       vault.reset();
       ui.followChip = null;
       ui.find.open = false;
       ui.quickOpen = false;
+      ui.tagEditor = null;
       ui.sidebarView = "explorer";
       ui.dismissedRepoState = null;
       vault.info = info;
@@ -178,6 +182,7 @@ class AppStore {
       vault.git = git;
       vault.stateLocation = location;
       void vault.refreshSince();
+      if (info.mode === "ide") void tags.refreshIndex();
       const restored = session.load(stored);
       this.screen = "project";
 
@@ -222,6 +227,9 @@ class AppStore {
       await api.on("index-progress", (progress) => {
         vault.indexProgress = progress.indexed >= progress.total ? null : progress;
       }),
+      await api.on("meta-changed", () => {
+        if (this.screen === "project" && !vault.isSimple) tags.onMetaChanged();
+      }),
     );
   }
 
@@ -244,6 +252,7 @@ class AppStore {
     }
     const update = feed.apply(batch, now);
     if (batch.rescan) void vault.refreshTree();
+    tags.onFilesChanged();
 
     const docChanged = update.bulk !== null || update.files.some((f) => f.isDoc);
     if (docChanged && !session.right.open) ui.rightNotify = true;
@@ -387,13 +396,31 @@ class AppStore {
     ui.explorerFocusTick++;
   }
 
+  showTags(): void {
+    if (vault.isSimple) return;
+    ui.sidebarView = "tags";
+    if (!session.left.open) session.setPanel("left", { open: true });
+    ui.tagsFocusTick++;
+    void tags.refreshOverview();
+    void tags.refreshFiles();
+  }
+
+  /** A tag chip was clicked: the Tags view, showing the files with that tag. */
+  showTagsFor(tag: string): void {
+    if (vault.isSimple) return;
+    tags.filter = "";
+    tags.select(selectOnly(tag));
+    this.showTags();
+  }
+
   /** Activity bar: switch the sidebar view, or collapse the sidebar when its view is already showing. */
-  clickView(view: "explorer" | "search"): void {
+  clickView(view: "explorer" | "search" | "tags"): void {
     if (ui.sidebarView === view && session.left.open) {
       session.setPanel("left", { open: false });
       return;
     }
     if (view === "search") this.showSearch();
+    else if (view === "tags") this.showTags();
     else this.showExplorer();
   }
 
@@ -519,6 +546,11 @@ class AppStore {
         return this.showSearch();
       case "explorer":
         return this.showExplorer();
+      case "tagsView":
+        return this.showTags();
+      case "editTags":
+        if (ide && docs.current) ui.openTagEditor();
+        return;
       case "find":
         return this.openFind();
       case "back":

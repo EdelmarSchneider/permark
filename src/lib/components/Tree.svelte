@@ -5,7 +5,9 @@
   import { isMarkdown } from "../paths";
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
+  import { tags } from "../stores/tags.svelte";
   import { vault } from "../stores/vault.svelte";
+  import { treeTooltip } from "../tagModel";
   import { badgeFor, flattenTree, navigate, typeahead } from "../tree";
   import type { TreeNode } from "../types";
   import Icon from "./Icon.svelte";
@@ -156,7 +158,13 @@
       style:--depth={row.depth}
       data-index={i}
       data-path={row.node.path}
-      title={row.node.kind === "worktree" ? row.node.path : undefined}
+      title={row.node.kind === "worktree"
+        ? row.node.path
+        : row.isDir
+          ? undefined
+          : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
+              t("tags.tooltipTags", { list }),
+            )}
       onclick={() => activate(i)}
       oncontextmenu={(e) => {
         e.preventDefault();

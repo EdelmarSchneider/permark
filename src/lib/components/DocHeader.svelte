@@ -34,6 +34,19 @@
   );
 
   const entries = $derived<MenuEntry[]>([
+    ...(vault.isSimple
+      ? []
+      : ([
+          {
+            id: "tags",
+            label: t("menu.editTags"),
+            icon: "hash",
+            hint: "T",
+            disabled: !view,
+            onselect: () => ui.openTagEditor(),
+          },
+          { type: "separator" },
+        ] satisfies MenuEntry[])),
     {
       id: "path",
       label: t("menu.copyPath"),

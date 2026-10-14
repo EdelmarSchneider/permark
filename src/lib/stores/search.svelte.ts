@@ -4,15 +4,21 @@ import { SvelteSet } from "svelte/reactivity";
 import { api } from "../api";
 import { errorText } from "../errors";
 import { flattenResults, groupHits, hitKey, type HitGroup, type ResultRow } from "../searchModel";
+import { hasAllTags, unknownTags } from "../tagQuery";
+import { TagQueryState } from "../tagQueryState.svelte";
 import type { SearchHit } from "../types";
+import { tags } from "./tags.svelte";
 
 const DEBOUNCE_MS = 150;
 const RESULT_LIMIT = 100;
+/** With `tag:` filters the backend is asked for more, because the hits are filtered afterwards. */
+const FILTERED_LIMIT = 200;
 
 export type SearchStatus = "idle" | "loading" | "ready" | "error";
 
 class SearchStore {
-  query = $state("");
+  /** The box: `tag:` chips and the text (which may end in a `tag:x` being typed). */
+  readonly box = new TagQueryState(() => tags.counts);
   status = $state<SearchStatus>("idle");
   error = $state<string | null>(null);
   hits = $state.raw<SearchHit[]>([]);
@@ -22,7 +28,22 @@ class SearchStore {
   /** Key of the active row: a group path or a hit key. */
   active = $state<string | null>(null);
 
-  groups = $derived<HitGroup[]>(groupHits(this.hits));
+  groups = $derived<HitGroup[]>(
+    groupHits(this.hits, (path) => tags.index.get(path)?.description ?? ""),
+  );
+  /** The text in the box. */
+  get query(): string {
+    return this.box.text;
+  }
+  /** Tags nobody has, in the chips or being typed: the search cannot find anything. */
+  unknown = $derived([
+    ...unknownTags(this.box.chips, tags.known),
+    ...(this.box.partial !== null && this.box.partial !== "" && this.box.suggestions.length === 0
+      ? [this.box.partial]
+      : []),
+  ]);
+  /** Only tags and no words: nothing to search for yet. */
+  tagsOnly = $derived(this.box.chips.length > 0 && this.box.words === "");
   rows = $derived<ResultRow[]>(flattenResults(this.groups, this.collapsed));
 
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -33,9 +54,18 @@ class SearchStore {
   }
 
   setQuery(value: string): void {
-    this.query = value;
+    this.box.setText(value);
+    this.runSoon();
+  }
+
+  /** A chip was taken out, or a suggested tag chosen. */
+  changedChips(): void {
+    this.runSoon();
+  }
+
+  private runSoon(): void {
     if (this.timer !== null) clearTimeout(this.timer);
-    if (value.trim() === "") {
+    if (this.box.isEmpty) {
       this.reset(false);
       return;
     }
@@ -49,16 +79,25 @@ class SearchStore {
   }
 
   async run(): Promise<void> {
-    const query = this.query.trim();
+    const query = this.box.words;
+    const wanted = this.box.chips;
     if (query === "") {
+      // nothing to search for (only tags, or nothing at all)
       this.reset(false);
+      if (wanted.length > 0) this.status = "ready";
       return;
     }
     const seq = ++this.seq;
     this.status = "loading";
     try {
-      const hits = await api.search(query, RESULT_LIMIT);
+      const found = await api.search(query, wanted.length > 0 ? FILTERED_LIMIT : RESULT_LIMIT);
       if (seq !== this.seq) return;
+      const hits =
+        wanted.length > 0
+          ? found
+              .filter((h) => hasAllTags(tags.index.get(h.path)?.tags, wanted))
+              .slice(0, RESULT_LIMIT)
+          : found;
       this.hits = hits;
       this.answered = query;
       this.status = "ready";
@@ -75,7 +114,7 @@ class SearchStore {
   reset(clearQuery = true): void {
     if (this.timer !== null) clearTimeout(this.timer);
     this.seq++;
-    if (clearQuery) this.query = "";
+    if (clearQuery) this.box.clear();
     this.hits = [];
     this.answered = "";
     this.status = "idle";

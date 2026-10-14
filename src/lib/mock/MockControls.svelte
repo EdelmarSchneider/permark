@@ -12,10 +12,12 @@
     setGitError,
     setRepoState,
   } from "./driver";
+  import { setMetaProblem } from "./mockMeta";
 
   let open = $state(false);
   let rebasing = $state(false);
   let gitError = $state(false);
+  let metaConflict = $state(false);
 
   const target = $derived(docs.path ?? "docs/specs/live-feed.md");
 
@@ -50,6 +52,15 @@
         }}
       >
         Git error {gitError ? "off" : "on"}
+      </button>
+      <button
+        class="btn"
+        onclick={() => {
+          metaConflict = !metaConflict;
+          setMetaProblem(metaConflict);
+        }}
+      >
+        meta.toml conflict {metaConflict ? "off" : "on"}
       </button>
     {/if}
   </div>

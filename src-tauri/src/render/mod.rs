@@ -16,6 +16,7 @@ use serde::Serialize;
 
 use crate::util::{modified_ms, read_with_retry};
 use decode::{decode, Decoded};
+pub(crate) use frontmatter::RawValue;
 
 /// Decodes file bytes to text (`None` for binary files); the note about odd encodings is dropped.
 pub(crate) fn decode_text(bytes: &[u8]) -> Option<String> {
@@ -28,6 +29,11 @@ pub(crate) fn decode_text(bytes: &[u8]) -> Option<String> {
 /// Key/value pairs of a front matter block as found in the parsed Markdown (delimiters included).
 pub(crate) fn front_matter_pairs(raw: &str) -> Vec<(String, String)> {
     frontmatter::parse(frontmatter::strip_delimiters(raw))
+}
+
+/// The value of a top-level front matter key in a whole document (`None` without front matter or key).
+pub(crate) fn front_matter_value(doc: &str, key: &str) -> Option<RawValue> {
+    frontmatter::top_level(frontmatter::block_of(doc)?, key)
 }
 
 /// Files larger than this are not rendered (`tooLarge`).

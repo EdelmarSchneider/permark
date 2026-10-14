@@ -7,6 +7,8 @@ export type ShortcutAction =
   | "quickOpen"
   | "searchAll"
   | "explorer"
+  | "tagsView"
+  | "editTags"
   | "find"
   | "back"
   | "forward"
@@ -63,6 +65,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
     if (key === "ArrowRight") return "forward";
   }
   if (!mod && !alt && key === "F7") return shift ? "prevChange" : "nextChange";
+  // A plain letter: the caller leaves it alone while the user is typing in a field or an overlay is open.
+  if (!mod && !alt && !shift && key === "t") return "editTags";
   if (!mod && alt && shift && key === "c") return "copyPath";
   if (!mod) return null;
 
@@ -87,6 +91,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "searchAll";
       case "x":
         return "explorer";
+      case "t":
+        return "tagsView";
       case "l":
         return "toggleFollow";
       case "e":

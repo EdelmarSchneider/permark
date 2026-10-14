@@ -25,6 +25,7 @@
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import GitFork from "@lucide/svelte/icons/git-fork";
+  import Hash from "@lucide/svelte/icons/hash";
   import Info from "@lucide/svelte/icons/info";
   import Layers from "@lucide/svelte/icons/layers";
   import Lightbulb from "@lucide/svelte/icons/lightbulb";
@@ -70,6 +71,7 @@
     "folder-open": FolderOpen,
     branch: GitBranch,
     fork: GitFork,
+    hash: Hash,
     info: Info,
     layers: Layers,
     lightbulb: Lightbulb,

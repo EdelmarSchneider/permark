@@ -17,7 +17,14 @@
     "reveal_in_folder": ["path"],
     "search": ["query", "limit"],
     "init_project_folder": [],
-    "state_location": []
+    "state_location": [],
+    "file_meta": ["path"],
+    "set_file_tags": ["path", "tags"],
+    "set_file_description": ["path", "description"],
+    "list_tags": [],
+    "files_with_tags": ["tags", "untagged"],
+    "meta_index": [],
+    "clean_up_meta": []
   },
-  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress"]
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed"]
 }

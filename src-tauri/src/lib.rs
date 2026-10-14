@@ -9,6 +9,7 @@ mod commands;
 mod error;
 mod git;
 mod links;
+mod meta;
 mod render;
 mod search;
 mod session;
@@ -61,6 +62,13 @@ pub fn run() {
             commands::search,
             commands::init_project_folder,
             commands::state_location,
+            commands::file_meta,
+            commands::set_file_tags,
+            commands::set_file_description,
+            commands::list_tags,
+            commands::files_with_tags,
+            commands::meta_index,
+            commands::clean_up_meta,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
