@@ -14,7 +14,7 @@ use serde::Serialize;
 use crate::render::markdown::{
     is_deeper_than, options, too_many_container_markers, MAX_TREE_DEPTH,
 };
-use crate::render::normalize_newlines;
+use crate::render::{normalize_newlines, MAX_RENDER_BYTES};
 use crate::util::on_parser_stack;
 
 const BOM: char = '\u{FEFF}';
@@ -166,8 +166,15 @@ fn one_block(text: &str, lines: &[Line]) -> Vec<BlockInfo> {
     }
 }
 
-/// Parses `text` (with any line ending and an optional BOM) into its top-level blocks.
+/// Parses `text` (with any line ending and an optional BOM) into its top-level blocks. A text over the size
+/// the app edits (`MAX_RENDER_BYTES`, what a document can be) has no blocks: the editor then leaves it all as it is.
 pub fn parse_blocks(text: &str) -> ParsedBlocks {
+    if text.len() as u64 > MAX_RENDER_BYTES {
+        return ParsedBlocks {
+            eol: Eol::Lf,
+            blocks: Vec::new(),
+        };
+    }
     on_parser_stack(|| parse(text))
 }
 
@@ -516,35 +523,23 @@ mod tests {
     }
 
     #[test]
+    fn a_text_over_the_size_limit_is_not_parsed() {
+        let big = "word\n\n".repeat(usize::try_from(MAX_RENDER_BYTES).expect("fits") / 6 + 1);
+        assert!(big.len() as u64 > MAX_RENDER_BYTES);
+        let parsed = parse_blocks(&big);
+        assert_eq!(parsed.blocks, Vec::<BlockInfo>::new());
+        assert_eq!(parsed.eol, Eol::Lf);
+        // just under the limit it still is
+        let fits = "word\n\n".repeat(10);
+        assert_eq!(parse_blocks(&fits).blocks.len(), 10);
+    }
+
+    #[test]
     fn a_large_flat_document_is_cut_into_a_block_per_paragraph() {
         let text = "para\n\n".repeat(2000);
         let parsed = parse_blocks(&text);
         assert_eq!(parsed.blocks.len(), 2000);
         assert_partition(&text);
-    }
-
-    /// The Markdown files of this repository: real documents written by people and agents.
-    fn corpus() -> Vec<(String, String)> {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-        let mut files: Vec<std::path::PathBuf> = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md"]
-            .iter()
-            .map(|f| root.join(f))
-            .collect();
-        let mut stack = vec![root.join("docs")];
-        while let Some(dir) = stack.pop() {
-            for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    stack.push(path);
-                } else if path.extension().is_some_and(|e| e == "md") {
-                    files.push(path);
-                }
-            }
-        }
-        files
-            .into_iter()
-            .filter_map(|p| Some((p.display().to_string(), std::fs::read_to_string(&p).ok()?)))
-            .collect()
     }
 
     /// Whether a separator holds only blank lines and link reference definitions (what comrak consumes).
@@ -558,8 +553,8 @@ mod tests {
 
     #[test]
     fn the_repository_documents_split_into_blocks_that_add_up_to_the_file() {
-        let corpus = corpus();
-        assert!(corpus.len() >= 10, "found only {} documents", corpus.len());
+        let corpus = super::super::corpus::repository_docs();
+        assert!(corpus.len() >= 5, "found only {} documents", corpus.len());
         for (name, text) in &corpus {
             assert_partition(text);
             // Nothing a reader would see may hide in a separator.

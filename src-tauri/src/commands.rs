@@ -10,8 +10,6 @@ use tauri::http::{self, header, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, State, UriSchemeResponder};
 use tauri_plugin_opener::OpenerExt;
 
-use base64::Engine;
-
 use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::git::{BaselineKind, GitSnapshot};
@@ -353,9 +351,7 @@ pub async fn write_asset(
 ) -> Result<AssetWritten, AppError> {
     let ws = state.current()?;
     blocking(move || {
-        let bytes = base64::engine::general_purpose::STANDARD
-            .decode(data.trim())
-            .map_err(|e| AppError::Internal(format!("the image data is not valid: {e}")))?;
+        let bytes = edit::decode_image(&data, &name_hint)?;
         ws.write_asset(&doc_path, &name_hint, &bytes)
     })
     .await

@@ -7,18 +7,22 @@
 
 mod assets;
 pub mod blocks;
+#[cfg(test)]
+mod corpus;
 
 use std::io::{self, Write};
 use std::path::Path;
 
 use serde::Serialize;
 
-pub use assets::AssetWritten;
+pub use assets::{decode_image, AssetWritten};
 pub use blocks::{parse_blocks, ParsedBlocks};
 
 use crate::render::markdown::is_markdown_path;
 use crate::render::MAX_RENDER_BYTES;
-use crate::util::{hash_bytes, hash_hex, modified_ms, read_with_retry, write_atomic};
+use crate::util::{
+    hash_bytes, hash_hex, modified_ms, read_with_retry, write_atomic_guarded, Guarded,
+};
 use crate::vault::{Vault, VaultError};
 use crate::watch::OwnWrites;
 
@@ -46,6 +50,8 @@ pub enum EditError {
     InvalidName(String),
     #[error("{0}")]
     Unsupported(String),
+    #[error("{0}")]
+    InvalidData(String),
     #[error("cannot write {path}: {source}")]
     Io { path: String, source: io::Error },
 }
@@ -62,6 +68,7 @@ impl EditError {
             Self::Exists(_) => "exists",
             Self::InvalidName(_) => "invalidName",
             Self::Unsupported(_) => "unsupported",
+            Self::InvalidData(_) => "invalidData",
             Self::Io { source, .. } if source.kind() == io::ErrorKind::PermissionDenied => "denied",
             Self::Io { .. } => "io",
         }
@@ -159,11 +166,28 @@ impl<'a> Editor<'a> {
 
     /// Writes `text` over the file when it still is the version with hash `expected_hash`. A file that
     /// changed or vanished meanwhile is reported as a conflict and left alone.
+    ///
+    /// The comparison is made twice: first to answer a stale save at once, and again after the new bytes
+    /// are written and flushed to a temp file, right before it is renamed over the file (see
+    /// [`write_atomic_guarded`]), because writing takes long enough for an agent to save in between.
+    /// A save of the text that is already on disk writes nothing.
     pub fn save(
         &self,
         path: &str,
         text: &str,
         expected_hash: &str,
+    ) -> Result<SaveOutcome, EditError> {
+        self.save_after(path, text, expected_hash, || {})
+    }
+
+    /// [`Editor::save`] with `after_check` run between the first comparison and the write: the moment in
+    /// which a test makes another writer get in.
+    fn save_after(
+        &self,
+        path: &str,
+        text: &str,
+        expected_hash: &str,
+        after_check: impl FnOnce(),
     ) -> Result<SaveOutcome, EditError> {
         let resolved = self.vault.resolve(path)?;
         let rel = resolved.rel;
@@ -184,31 +208,41 @@ impl<'a> Editor<'a> {
         if meta.len() > MAX_RENDER_BYTES {
             return Err(EditError::TooLarge(rel));
         }
-        match read_with_retry(&resolved.abs) {
-            Ok(on_disk) => {
-                let disk_hash = hash_hex(&on_disk);
-                if disk_hash != expected_hash {
-                    return Ok(SaveOutcome::Conflict {
-                        disk_hash: Some(disk_hash),
-                    });
-                }
-            }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                return Ok(SaveOutcome::Conflict { disk_hash: None });
-            }
+        match conflict_with_disk(&resolved.abs, expected_hash) {
+            Ok(Some(conflict)) => return Ok(conflict),
+            Ok(None) => {}
             Err(e) => return Err(EditError::io(&rel, e)),
         }
+        after_check();
 
         let bytes = text.as_bytes();
         let hash = hash_bytes(bytes);
+        let hash_text = format!("{hash:016x}");
+        if hash_text == expected_hash {
+            // The file holds exactly this text already: nothing to write, and nothing for the watcher to see.
+            return Ok(SaveOutcome::Saved {
+                hash: hash_text,
+                modified_ms: modified_ms(&meta),
+            });
+        }
         self.own.expect(&rel, hash);
-        if let Err(e) = write_atomic(&resolved.abs, bytes) {
-            self.own.retract(&rel, hash);
-            return Err(EditError::io(&rel, e));
+        let written = write_atomic_guarded(&resolved.abs, bytes, || {
+            conflict_with_disk(&resolved.abs, expected_hash)
+        });
+        match written {
+            Ok(Guarded::Written) => {}
+            Ok(Guarded::Refused(conflict)) => {
+                self.own.retract(&rel, hash);
+                return Ok(conflict);
+            }
+            Err(e) => {
+                self.own.retract(&rel, hash);
+                return Err(EditError::io(&rel, e));
+            }
         }
         let modified = std::fs::metadata(&resolved.abs).map_or(0, |m| modified_ms(&m));
         Ok(SaveOutcome::Saved {
-            hash: format!("{hash:016x}"),
+            hash: hash_text,
             modified_ms: modified,
         })
     }
@@ -254,6 +288,25 @@ impl<'a> Editor<'a> {
         data: &[u8],
     ) -> Result<AssetWritten, EditError> {
         assets::write(self.vault, self.own, doc_path, name_hint, data)
+    }
+}
+
+/// How the file on disk compares with the version a save is based on: `None` when it is that version,
+/// else the conflict to report (the file's hash, or none when it is gone).
+fn conflict_with_disk(abs: &Path, expected_hash: &str) -> io::Result<Option<SaveOutcome>> {
+    match read_with_retry(abs) {
+        Ok(on_disk) => {
+            let disk_hash = hash_hex(&on_disk);
+            Ok(
+                (disk_hash != expected_hash).then_some(SaveOutcome::Conflict {
+                    disk_hash: Some(disk_hash),
+                }),
+            )
+        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            Ok(Some(SaveOutcome::Conflict { disk_hash: None }))
+        }
+        Err(e) => Err(e),
     }
 }
 
@@ -304,6 +357,8 @@ pub(crate) fn validate_file_name(name: &str) -> Result<(), EditError> {
     const FORBIDDEN: [char; 9] = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
     let bad = |why: &str| Err(EditError::InvalidName(why.to_owned()));
     let stem = name.split('.').next().unwrap_or_default();
+    // Windows also treats `con .md` as the device: spaces before the extension do not count.
+    let device_stem = stem.trim_end();
     if name.is_empty() || name == "." || name == ".." {
         bad("The name is empty")
     } else if name
@@ -315,7 +370,7 @@ pub(crate) fn validate_file_name(name: &str) -> Result<(), EditError> {
         bad("Names can't start with a space or end with a space or a dot")
     } else if stem.is_empty() {
         bad("The name needs something before the extension")
-    } else if RESERVED_NAMES.contains(&stem.to_ascii_lowercase().as_str()) {
+    } else if RESERVED_NAMES.contains(&device_stem.to_ascii_lowercase().as_str()) {
         bad("That name is reserved by the system")
     } else if name.len() > 255 {
         bad("The name is too long")
@@ -477,6 +532,117 @@ mod tests {
         assert_eq!(fx.read("a.md"), b"# Mine\n");
     }
 
+    fn names_in(root: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(root)
+            .expect("ls")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// Whether the watcher would hear about a change of `rel` to `content` (it is not one of our own writes).
+    fn is_news(fx: &Fx, rel: &str, content: &[u8]) -> bool {
+        let sigs = crate::watch::SigStore::new();
+        sigs.set(
+            crate::vault::key(rel),
+            rel,
+            crate::watch::FileSig {
+                len: content.len() as u64,
+                mtime_ms: 1,
+                hash: hash_bytes(content),
+            },
+        );
+        let mut changes = vec![crate::watch::FsChange {
+            kind: crate::watch::ChangeKind::Modified,
+            path: rel.to_owned(),
+            from: None,
+            at_ms: 1,
+        }];
+        fx.own.strip(&mut changes, &sigs);
+        !changes.is_empty()
+    }
+
+    #[test]
+    fn a_writer_that_gets_in_after_the_first_check_is_not_overwritten() {
+        let fx = Fx::new(&[("a.md", b"# One\n")]);
+        let ed = fx.editor();
+        let before = ed.source("a.md").expect("source");
+        let path = fx.vault.root().join("a.md");
+        // The agent saves while our new bytes are being written and flushed to the temp file.
+        let out = ed
+            .save_after("a.md", "# Mine\n", &before.hash, || {
+                fs::write(&path, "# By an agent\n").expect("agent write");
+            })
+            .expect("save");
+        assert_eq!(
+            out,
+            SaveOutcome::Conflict {
+                disk_hash: Some(hash_hex(b"# By an agent\n"))
+            }
+        );
+        assert_eq!(
+            fx.read("a.md"),
+            b"# By an agent\n",
+            "the agent's work stays"
+        );
+        assert_eq!(names_in(fx.vault.root()), ["a.md"], "no temp file is left");
+        assert!(
+            is_news(&fx, "a.md", b"# Mine\n"),
+            "a refused save must not be announced as ours"
+        );
+    }
+
+    #[test]
+    fn a_file_that_vanishes_after_the_first_check_is_not_recreated() {
+        let fx = Fx::new(&[("a.md", b"# One\n")]);
+        let ed = fx.editor();
+        let before = ed.source("a.md").expect("source");
+        let path = fx.vault.root().join("a.md");
+        let out = ed
+            .save_after("a.md", "# Mine\n", &before.hash, || {
+                fs::remove_file(&path).expect("rm");
+            })
+            .expect("save");
+        assert_eq!(out, SaveOutcome::Conflict { disk_hash: None });
+        assert_eq!(names_in(fx.vault.root()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn saving_the_text_that_is_already_there_writes_and_announces_nothing() {
+        let fx = Fx::new(&[("a.md", b"# Same\n")]);
+        let path = fx.vault.root().join("a.md");
+        let ed = fx.editor();
+        let before = ed.source("a.md").expect("source");
+        let stamp = fs::metadata(&path)
+            .expect("meta")
+            .modified()
+            .expect("mtime");
+        let out = ed.save("a.md", "# Same\n", &before.hash).expect("save");
+        assert_eq!(
+            out,
+            SaveOutcome::Saved {
+                hash: before.hash.clone(),
+                modified_ms: before.modified_ms
+            }
+        );
+        assert_eq!(
+            fs::metadata(&path)
+                .expect("meta")
+                .modified()
+                .expect("mtime"),
+            stamp,
+            "the file was not rewritten"
+        );
+        assert!(
+            is_news(&fx, "a.md", b"# Same\n"),
+            "nothing is left announced for a write that never happened"
+        );
+        // and an agent changing it later is not hidden by a leftover announcement
+        fs::write(&path, "# Agent\n").expect("write");
+        assert!(is_news(&fx, "a.md", b"# Agent\n"));
+    }
+
     #[test]
     fn a_file_deleted_behind_the_editor_is_a_conflict_without_a_disk_hash() {
         let fx = Fx::new(&[("a.md", b"x")]);
@@ -592,7 +758,15 @@ mod tests {
         let fx = Fx::new(&[]);
         let ed = fx.editor();
         for bad in [
-            "a?.md", "a*.md", "a<b.md", "a|b.md", "a\"b.md", "con.md", "NUL.md",
+            "a?.md",
+            "a*.md",
+            "a<b.md",
+            "a|b.md",
+            "a\"b.md",
+            "con.md",
+            "NUL.md",
+            "con .md",
+            "Lpt1  .md",
         ] {
             assert_eq!(kind_of(ed.create(bad, "x")), "invalidName", "{bad}");
         }
@@ -639,6 +813,7 @@ mod tests {
             (EditError::Exists("a".into()), "exists"),
             (EditError::InvalidName("a".into()), "invalidName"),
             (EditError::Unsupported("a".into()), "unsupported"),
+            (EditError::InvalidData("a".into()), "invalidData"),
             (
                 EditError::Io {
                     path: "a".into(),

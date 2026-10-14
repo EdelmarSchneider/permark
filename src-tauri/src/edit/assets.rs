@@ -4,9 +4,10 @@
 
 use std::io::{self, Write};
 
+use base64::Engine;
 use serde::Serialize;
 
-use super::{EditError, OwnWrites};
+use super::{EditError, OwnWrites, RESERVED_NAMES};
 use crate::util::hash_bytes;
 use crate::vault::{Vault, VaultError};
 
@@ -16,6 +17,9 @@ const ASSETS_DIR: &str = "assets";
 const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "gif", "webp", "svg"];
 /// The largest image written (the UI asks for confirmation well below this).
 pub(super) const MAX_ASSET_BYTES: usize = 32 * 1024 * 1024;
+/// The longest base64 text that can hold an image of at most [`MAX_ASSET_BYTES`] (four characters for every
+/// three bytes), with room for the line breaks and spaces some encoders add around it.
+pub(super) const MAX_ASSET_BASE64: usize = MAX_ASSET_BYTES.div_ceil(3) * 4 + 4;
 /// How many `-2`, `-3`... names are tried before giving up.
 const MAX_CLASH_SUFFIX: u32 = 999;
 
@@ -28,6 +32,18 @@ pub struct AssetWritten {
     /// The path to put in the Markdown: relative to the document's folder (`assets/name.png`).
     pub rel: String,
     pub bytes: usize,
+}
+
+/// The bytes of an image sent as base64 text. The length of the text is checked first, so an image far over
+/// the limit is refused without being decoded into a second large buffer.
+pub fn decode_image(data: &str, name_hint: &str) -> Result<Vec<u8>, EditError> {
+    let data = data.trim();
+    if data.len() > MAX_ASSET_BASE64 {
+        return Err(EditError::TooLarge(name_hint.to_owned()));
+    }
+    base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|e| EditError::InvalidData(format!("The image data is not valid: {e}")))
 }
 
 /// A file name that is safe on every system: lowercase letters and digits of any script, single `-`.
@@ -44,7 +60,13 @@ fn slug(stem: &str) -> String {
     if trimmed.is_empty() {
         "image".to_owned()
     } else {
-        trimmed.chars().take(80).collect()
+        let stem: String = trimmed.chars().take(80).collect();
+        // Windows opens `nul.png` or `con.png` as the device, not as a file.
+        if RESERVED_NAMES.contains(&stem.as_str()) {
+            format!("{stem}-image")
+        } else {
+            stem
+        }
     }
 }
 
@@ -180,6 +202,59 @@ mod tests {
             assert!(clean_name(bad).is_err(), "{bad}");
         }
         assert_eq!(slug("A  --  B__C"), "a-b-c");
+    }
+
+    #[test]
+    fn names_that_are_devices_on_windows_get_a_suffix() {
+        for device in ["nul", "CON", "Aux", "prn", "com1", "LPT9"] {
+            let hint = format!("{device}.png");
+            let (stem, ext) = clean_name(&hint).expect("a name");
+            assert_eq!(stem, format!("{}-image", device.to_lowercase()), "{hint}");
+            assert_eq!(ext, "png");
+        }
+        // only the whole stem is reserved
+        assert_eq!(slug("console"), "console");
+        assert_eq!(slug("com10"), "com10");
+        let (dir, v) = vault_with(&["a.md"]);
+        let w = write(&v, &OwnWrites::new(), "a.md", "NUL.png", PNG).expect("write");
+        assert_eq!(w.rel, "assets/nul-image.png");
+        assert!(dir.path().join("assets/nul-image.png").is_file());
+    }
+
+    #[test]
+    fn an_oversized_text_is_refused_before_it_is_decoded() {
+        // Not valid base64: a decoder would fail with "invalidData", so "tooLarge" proves the length came first.
+        let junk = "!".repeat(MAX_ASSET_BASE64 + 1);
+        let err = decode_image(&junk, "big.png").expect_err("too large");
+        assert_eq!(err.kind(), "tooLarge");
+        let spaced = format!("  {}  ", "!".repeat(MAX_ASSET_BASE64));
+        assert_eq!(
+            decode_image(&spaced, "x.png")
+                .expect_err("not base64")
+                .kind(),
+            "invalidData",
+            "the limit is on the text without the spaces around it"
+        );
+    }
+
+    #[test]
+    fn the_text_limit_fits_an_image_of_the_byte_limit() {
+        // 4 characters per 3 bytes, padded: the longest valid text for MAX_ASSET_BYTES
+        assert!(MAX_ASSET_BASE64 >= 4 * MAX_ASSET_BYTES.div_ceil(3));
+        // and it is not much more than that
+        assert!(MAX_ASSET_BASE64 <= 4 * MAX_ASSET_BYTES.div_ceil(3) + 16);
+    }
+
+    #[test]
+    fn base64_images_decode_and_bad_text_is_named() {
+        assert_eq!(decode_image("AQID\n", "a.png").expect("decode"), [1, 2, 3]);
+        assert_eq!(decode_image("", "a.png").expect("empty"), Vec::<u8>::new());
+        assert_eq!(
+            decode_image("not base64!", "a.png")
+                .expect_err("bad")
+                .kind(),
+            "invalidData"
+        );
     }
 
     #[test]
