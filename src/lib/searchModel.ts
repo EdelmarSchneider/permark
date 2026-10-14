@@ -1,7 +1,7 @@
 // Pure model of the search panel: grouping hits by file, ordering, safe snippets and the flat list
 // used for keyboard navigation.
 
-import { basename, folderLabel } from "./paths";
+import { basename, folderLabel, splitWorktree } from "./paths";
 import type { SearchHit } from "./types";
 
 export type HitGroup = {
@@ -9,11 +9,25 @@ export type HitGroup = {
   name: string;
   /** Folder shown next to the name; "" for the project root. */
   folder: string;
+  /** Folder plus the worktree name for a worktree copy ("@wt feature-ui / docs"), so copies can be told apart. */
+  where: string;
+  worktree: string | null;
   best: number;
   hits: SearchHit[];
 };
 
-/** Groups by file; groups ordered by their best score, hits by score. */
+function whereLabel(path: string): string {
+  const folder = folderLabel(path);
+  const { worktree } = splitWorktree(path);
+  if (worktree === null) return folder;
+  return folder === "" ? `@wt ${worktree}` : `@wt ${worktree} / ${folder}`;
+}
+
+/**
+ * Groups by file, hits by score. Groups are ordered by their best score, except that files of the
+ * project itself come before files of linked worktrees (usually the same docs on another branch), so
+ * the copies never interleave.
+ */
 export function groupHits(hits: SearchHit[]): HitGroup[] {
   const byPath = new Map<string, HitGroup>();
   for (const hit of hits) {
@@ -23,6 +37,8 @@ export function groupHits(hits: SearchHit[]): HitGroup[] {
         path: hit.path,
         name: basename(hit.path),
         folder: folderLabel(hit.path),
+        where: whereLabel(hit.path),
+        worktree: splitWorktree(hit.path).worktree,
         best: hit.score,
         hits: [],
       };
@@ -33,7 +49,9 @@ export function groupHits(hits: SearchHit[]): HitGroup[] {
   }
   const groups = [...byPath.values()];
   for (const group of groups) group.hits.sort((a, b) => b.score - a.score);
-  return groups.sort((a, b) => b.best - a.best);
+  return groups.sort(
+    (a, b) => Number(a.worktree !== null) - Number(b.worktree !== null) || b.best - a.best,
+  );
 }
 
 /** Keeps only `<mark>` tags from a backend snippet; any other tag-like text is escaped. */

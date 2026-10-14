@@ -56,6 +56,8 @@ pub struct Flushed {
     pub overflow: bool,
     /// A `.git` entry appeared or disappeared (the git worker should look again).
     pub git_touched: bool,
+    /// HEAD's reflog grew during the window: a commit, checkout, merge, reset, pull or rebase happened.
+    pub head_moved: bool,
 }
 
 pub struct Aggregator {
@@ -64,6 +66,7 @@ pub struct Aggregator {
     coalescer: Coalescer,
     overflow: bool,
     git_touched: bool,
+    head_moved: bool,
 }
 
 impl Aggregator {
@@ -74,6 +77,7 @@ impl Aggregator {
             coalescer: Coalescer::new(quiet, max_wait),
             overflow: false,
             git_touched: false,
+            head_moved: false,
         }
     }
 
@@ -83,6 +87,11 @@ impl Aggregator {
             return;
         };
         let (rel, root) = (loc.rel, loc.root);
+        if is_head_log(&loc.inner) {
+            // Not a change anyone should see; it only tells the flush that a git command moved HEAD.
+            self.head_moved = true;
+            return;
+        }
         let is_dir_guess = ev.is_dir.unwrap_or_else(|| ev.abs.is_dir());
         match filter.classify(root, &loc.inner, is_dir_guess) {
             Verdict::Ignore => return,
@@ -162,7 +171,21 @@ impl Aggregator {
             paths,
             overflow: std::mem::take(&mut self.overflow),
             git_touched: std::mem::take(&mut self.git_touched),
+            head_moved: std::mem::take(&mut self.head_moved),
         }
+    }
+}
+
+/// `.git/logs/HEAD` (or a linked worktree's `.git/worktrees/<name>/logs/HEAD`): appended whenever HEAD moves.
+fn is_head_log(inner: &str) -> bool {
+    let comps: Vec<&str> = inner.split('/').filter(|c| !c.is_empty()).collect();
+    let is = |c: &str, want: &str| c.eq_ignore_ascii_case(want);
+    match comps.as_slice() {
+        [git, logs, head] => is(git, ".git") && is(logs, "logs") && is(head, "HEAD"),
+        [git, wts, _, logs, head] => {
+            is(git, ".git") && is(wts, "worktrees") && is(logs, "logs") && is(head, "HEAD")
+        }
+        _ => false,
     }
 }
 
@@ -278,6 +301,39 @@ mod tests {
         let out = a.take();
         assert!(out.git_touched);
         assert!(out.paths.is_empty());
+    }
+
+    #[test]
+    fn head_reflog_growth_is_remembered_without_becoming_a_change() {
+        let f = fixture();
+        let mut a = Aggregator::new(QUIET, MAX_WAIT);
+        a.push(
+            ev(&f, ".git/logs/HEAD", Hint::Modify),
+            &f.vault,
+            &f.filter,
+            Instant::now(),
+        );
+        a.push(
+            ev(&f, ".git/refs/heads/main", Hint::Modify),
+            &f.vault,
+            &f.filter,
+            Instant::now(),
+        );
+        let out = a.take();
+        assert!(out.head_moved);
+        assert!(out.paths.is_empty());
+        assert!(!a.take().head_moved, "reported once");
+    }
+
+    #[test]
+    fn only_the_head_reflog_counts_as_head_moving() {
+        assert!(is_head_log(".git/logs/HEAD"));
+        assert!(is_head_log(".GIT/logs/head"));
+        assert!(is_head_log(".git/worktrees/ui/logs/HEAD"));
+        assert!(!is_head_log(".git/logs/refs/heads/main"));
+        assert!(!is_head_log(".git/HEAD"));
+        assert!(!is_head_log("docs/logs/HEAD"));
+        assert!(!is_head_log("sub/.git/logs/HEAD"));
     }
 
     #[test]

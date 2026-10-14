@@ -20,6 +20,15 @@ use crate::vault::{strip_root, Vault};
 
 /// More changes than this in one flush are collapsed into a bulk batch.
 pub const BULK_THRESHOLD: usize = 50;
+/// A window in which HEAD moved and at least this many files changed is a git operation (a checkout,
+/// merge, pull or reset), even though the command is long finished when the window is flushed.
+/// Fewer files are far more likely to be an agent saving a doc right before it commits.
+pub const GIT_OPERATION_MIN_FILES: usize = 3;
+
+/// Whether a flush that saw HEAD move and `count` changed files was most likely one git command.
+pub fn head_move_is_operation(head_moved: bool, count: usize) -> bool {
+    head_moved && count >= GIT_OPERATION_MIN_FILES
+}
 
 /// Detects a git operation in progress by looking for its marker files.
 #[derive(Debug, Clone, Default)]
@@ -311,7 +320,9 @@ fn run(
             // A moved-in folder that was only partly listed needs the same rescan as lost events.
             let pressure = if flushed.overflow || rec.truncated {
                 Some(BulkReason::Overflow)
-            } else if probe.operation_in_progress() {
+            } else if probe.operation_in_progress()
+                || head_move_is_operation(flushed.head_moved, rec.changes.len())
+            {
                 Some(BulkReason::GitOperation)
             } else {
                 None
@@ -439,6 +450,14 @@ mod tests {
             out.batch.bulk.map(|b| (b.count, b.reason)),
             Some((0, BulkReason::Overflow))
         );
+    }
+
+    #[test]
+    fn a_moved_head_with_several_changed_files_is_a_git_operation() {
+        assert!(head_move_is_operation(true, GIT_OPERATION_MIN_FILES));
+        assert!(head_move_is_operation(true, 8));
+        assert!(!head_move_is_operation(true, GIT_OPERATION_MIN_FILES - 1));
+        assert!(!head_move_is_operation(false, 200));
     }
 
     #[test]

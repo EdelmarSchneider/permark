@@ -418,18 +418,20 @@
   list-style: none;
   padding-left: 0.2em !important;
 }
+/* Block layout with an absolutely placed checkbox: a flex row would split mixed content
+   (text, links, code) into separate flex items with a gap between each of them. */
 .task-list-item {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
+  position: relative;
+  padding-left: 25px;
 }
 .task-list-item input {
   appearance: none;
-  flex: none;
+  position: absolute;
+  left: 0;
+  top: calc((var(--lh-reading) * 1em - 15px) / 2);
   width: 15px;
   height: 15px;
   margin: 0;
-  transform: translateY(2px);
   border: 1.5px solid var(--border-strong);
   border-radius: 4px;
   background: var(--bg);

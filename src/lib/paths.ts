@@ -42,6 +42,15 @@ export function folderLabel(path: string): string {
   return dirname(splitWorktree(path).rel);
 }
 
+/** A URL fragment as the reader wrote it: "a%C3%A7%C3%B5es" -> "ações". Invalid escapes are left as they are. */
+export function decodeFragment(fragment: string): string {
+  try {
+    return decodeURIComponent(fragment);
+  } catch {
+    return fragment;
+  }
+}
+
 /** Folders that must be expanded to reveal `path` in the tree, outermost first. */
 export function ancestors(path: string): string[] {
   const { worktree, rel } = splitWorktree(path);

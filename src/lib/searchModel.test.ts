@@ -74,3 +74,27 @@ describe("flattenResults", () => {
     expect(hitKey(hit("a.md", 1, 5))).toBe("a.md:5");
   });
 });
+
+describe("groupHits with worktree copies", () => {
+  const groups = groupHits([
+    hit("@wt/feature-ui/docs/world/lore.md", 9),
+    hit("docs/world/lore.md", 5),
+    hit("glossary.md", 2),
+    hit("@wt/feature-ui/README.md", 1),
+  ]);
+
+  it("lists the project's files before worktree files, each side by score", () => {
+    expect(groups.map((g) => g.path)).toEqual([
+      "docs/world/lore.md",
+      "glossary.md",
+      "@wt/feature-ui/docs/world/lore.md",
+      "@wt/feature-ui/README.md",
+    ]);
+  });
+
+  it("labels the location of a worktree copy so the copies can be told apart", () => {
+    expect(groups[0].where).toBe("docs/world");
+    expect(groups[2].where).toBe("@wt feature-ui / docs/world");
+    expect(groups[3].where).toBe("@wt feature-ui");
+  });
+});

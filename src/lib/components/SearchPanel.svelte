@@ -239,7 +239,7 @@
           <Icon name="chevron-down" size="sm" class="twisty" />
           <span class="hit-group__name">{row.group.name}</span>
           <span class="count-pill">{row.group.hits.length}</span>
-          <span class="hit-group__path">{row.group.folder}</span>
+          <span class="hit-group__path">{row.group.where}</span>
         </div>
       {:else}
         <!-- svelte-ignore a11y_click_events_have_key_events -->

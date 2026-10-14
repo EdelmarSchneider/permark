@@ -9,7 +9,7 @@
   import { frontmatterValue } from "../frontmatter";
   import { t, tn } from "../i18n";
   import { assetUrl } from "../platform";
-  import { basename } from "../paths";
+  import { basename, decodeFragment } from "../paths";
   import { blockForLine, parseSourcepos } from "../sourcepos";
   import { app } from "../stores/app.svelte";
   import { docs, type LocateRequest, type RenderRequest } from "../stores/docs.svelte";
@@ -203,7 +203,7 @@
     if (!body || !scroller) return false;
     const found = findById(body, id);
     if (!found) {
-      if (notify) toast.message(t("doc.sectionMissing", { id }), "warn");
+      if (notify) toast.message(t("doc.sectionMissing", { id: decodeFragment(id) }), "warn");
       return false;
     }
     const target = anchorTarget(found);

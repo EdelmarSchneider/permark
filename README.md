@@ -11,7 +11,10 @@ and find any section in seconds. It works with any AI tool, or with none.
 
 [Features](#features) · [Install](#install) · [Usage](#usage) · [Shortcuts](#keyboard-shortcuts) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
-![TrailMark: IDE mode, light theme](docs/assets/screenshot-light.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-dark.png">
+  <img src="docs/assets/screenshot-light.png" alt="TrailMark in IDE mode: a design doc with a live-change glow, a removed-block marker and the live changes feed">
+</picture>
 
 </div>
 
@@ -58,6 +61,8 @@ Gemini CLI, and it's a great Markdown reader if you don't use AI at all.
 - Section-level full-text search (`Ctrl+Shift+F`): results show `file › heading › snippet` and jump to the exact spot
 - Accent- and case-insensitive, with light stemming, and incremental updates as files change
 - Semantic search with a local multilingual model is planned for v0.3 (see the [roadmap](#roadmap))
+
+![Section search: "character descriptions" finds characters.md › Aria](docs/assets/screenshot-search.png)
 
 ### 🌿 Git-aware
 - Badges for modified, added and untracked files, with folder roll-up

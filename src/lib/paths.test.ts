@@ -5,6 +5,7 @@ import {
   breadcrumbs,
   dirname,
   extname,
+  decodeFragment,
   folderLabel,
   isMarkdown,
   resolveRelative,
@@ -90,5 +91,13 @@ describe("resolveRelative", () => {
   it("keeps worktree paths inside their worktree", () => {
     expect(resolveRelative("@wt/x/docs/a.md", "../img/p.png")).toBe("@wt/x/img/p.png");
     expect(resolveRelative("@wt/x/a.md", "../p.png")).toBeNull();
+  });
+});
+
+describe("decodeFragment", () => {
+  it("decodes percent-encoded accents and keeps broken escapes", () => {
+    expect(decodeFragment("a%C3%A7%C3%B5es")).toBe("ações");
+    expect(decodeFragment("plain-id")).toBe("plain-id");
+    expect(decodeFragment("100%")).toBe("100%");
   });
 });

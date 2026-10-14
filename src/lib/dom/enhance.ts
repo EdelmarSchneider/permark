@@ -268,6 +268,8 @@ async function loadMermaid(theme: "light" | "dark"): Promise<Mermaid> {
         secondaryColor: token("--surface-2"),
         tertiaryColor: token("--bg"),
         lineColor: token("--muted"),
+        // edge labels sit on the page, not on a derived shade (the base theme computes pure black in dark mode)
+        edgeLabelBackground: token("--bg"),
         textColor: token("--text"),
         noteBkgColor: token("--surface-2"),
         noteTextColor: token("--text"),
