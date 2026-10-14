@@ -16,6 +16,7 @@ import type { ShortcutAction } from "../shortcuts";
 import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
+import { normalizeTreeFilter, treeLoadOf } from "../treeFilter";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
@@ -197,9 +198,14 @@ class AppStore {
       ui.treeCursor = null;
       vault.info = info;
 
+      // the tree is loaded the way the saved Explorer filter asks for it (ignored and hidden files)
+      const storedSession = api.loadSession().catch(() => null);
       const [stored, tree, git, location] = await Promise.all([
-        api.loadSession().catch(() => null),
-        api.listTree(),
+        storedSession,
+        storedSession.then((s) => {
+          const load = treeLoadOf(normalizeTreeFilter(s?.treeFilter));
+          return api.listTree(load.showIgnored, load.showHidden);
+        }),
         api.gitSnapshot(),
         api.stateLocation().catch(() => "appData" as const),
       ]);

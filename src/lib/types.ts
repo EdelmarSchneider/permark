@@ -31,6 +31,10 @@ export type TreeFilter = {
   hideEmptyFolders: boolean;
   /** Images, data and XML files show only in folders that hold documents (see `treeFilter.ts`). */
   assetsNearDocs: boolean;
+  /** Also list the files that version control ignores (the tree is loaded without ignore rules; see `vault.refreshTree`). */
+  showIgnored: boolean;
+  /** Also list hidden files and folders (names that start with a dot). Applies to every preset. */
+  showHidden: boolean;
 };
 /** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
 export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };
@@ -40,6 +44,8 @@ export type TreeNode = {
   path: string;
   kind: "dir" | "file" | "worktree" | "link";
   children?: TreeNode[];
+  /** An ignored folder that was too large to load: it holds more than this many entries and shows no children. */
+  large?: number;
 };
 export type DocumentView = {
   path: string;
@@ -117,6 +123,8 @@ export type SessionState = {
   linkUpdate: LinkUpdate;
   /** How a document opens for editing. */
   editMode: EditMode;
+  /** "Never for this folder" was chosen on the hint to keep settings with the project. */
+  initHintNever: boolean;
 };
 
 // ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------

@@ -6,6 +6,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Repositories inside a project are always in the tree.** A folder with its own `.git` shows up even when the project's `.gitignore`
+  leaves it out, which is how a workspace folder that collects several independent repositories is usually set up. Inside each one its own
+  `.gitignore` and `.git/info/exclude` decide what is listed, not the project's. Search, Quick open, tags and live updates cover their files
+  too. Linked worktrees work as before.
+- **Two new switches in the Explorer filter**, saved with it and off by default: **Show hidden files and folders** (names that start with a dot) and
+  **Show files ignored by git**. Folders with more than 2,000 entries that git ignores (`node_modules`, `target`, build output) are listed
+  closed, with a "large folder" tag, instead of being read.
+- **`.trailmark/` is easier to find.** A quiet banner offers to keep tags and settings with the project when you open a git repository that
+  doesn't have a `.trailmark/` folder yet (**Initialize**, **Not now**, **Never for this folder**), and the tag editor has an **Initialize .trailmark**
+  link next to "Saved in TrailMark, not in the file". Both open the existing Initialize dialog.
 - **The window remembers its size and position.** TrailMark opens where you left it, including maximized, with no jump: the window is
   placed before it is shown. Each project folder keeps its own place (in the project's private state, never in a file you commit), and
   the last window is used for the welcome screen, a folder opened for the first time and a single file. If the screen it was on is gone,
@@ -21,6 +31,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   `docs/design/i18n.md` for the conventions and how to add a language.
 
 ### Changed
+- Hidden files and folders (`.github`, `.claude`, `.vscode`, `.gitignore`, ...) are no longer listed by default, in any preset. Turn on **Show
+  hidden files and folders** to see them; a hidden file that is open still shows, dimmed, in its folder. A hidden folder hides its images too, even
+  ones a document links to.
+- The **Everything** preset says that files ignored by git (including those in `.git/info/exclude`, such as a local-only script) have their own switch.
 - **The Explorer filter keeps your documentation images.** With **Only assets next to documents** on, an image used to show only when its
   folder, or the one above it, held a document, so the pictures of a top-level `assets/` or `site/assets/` folder were hidden. Now an image
   also shows when a Markdown document links to it (`![](...)`, a reference definition, or an HTML `<img>`, resolved from that document, wherever the

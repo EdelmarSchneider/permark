@@ -25,7 +25,7 @@ use crate::session::{
     effective_language, installer_language, AppSettingsStore, Language, RecentStore, RecentVault,
     SessionState, StateLocation,
 };
-use crate::vault::TreeNode;
+use crate::vault::{TreeNode, TreeOptions};
 use crate::watch::FsBatch;
 use crate::workspace::{Asset, ChangedSince, EventSink, VaultInfo, Workspace, WorkspaceHost};
 
@@ -151,9 +151,17 @@ pub async fn set_app_language(app: AppHandle, language: Language) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn list_tree(state: State<'_, AppState>) -> Result<TreeNode, AppError> {
+pub async fn list_tree(
+    state: State<'_, AppState>,
+    show_ignored: bool,
+    show_hidden: bool,
+) -> Result<TreeNode, AppError> {
     let ws = state.current()?;
-    blocking(move || Ok(ws.tree())).await
+    let opts = TreeOptions {
+        show_ignored,
+        show_state_dir: show_hidden,
+    };
+    blocking(move || Ok(ws.tree(opts))).await
 }
 
 #[tauri::command]

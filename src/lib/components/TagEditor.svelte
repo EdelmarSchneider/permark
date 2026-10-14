@@ -110,6 +110,12 @@
     ui.tagEditor = null;
   }
 
+  /** What the editor saved goes into the project's folder once it exists: the Initialize dialog asks, and the editor closes (saving as it goes). */
+  function initialize(): void {
+    close();
+    ui.initDialog = true;
+  }
+
   function saveDescription(): void {
     if (saveTimer !== null) clearTimeout(saveTimer);
     saveTimer = null;
@@ -294,7 +300,14 @@
           {t("tags.writeError", { message: status.writeError })}
         </span>
       {:else if writable}
-        <span>{where}</span>
+        <span class="tag-editor__where">
+          {where}
+          {#if vault.stateLocation === "appData"}
+            <button type="button" class="link-btn" onclick={initialize}>
+              {t("tags.initialize")}
+            </button>
+          {/if}
+        </span>
       {:else}
         <!-- nothing is saved for this file (a linked worktree, or a meta.toml that cannot be read): the note above says why -->
         <span></span>

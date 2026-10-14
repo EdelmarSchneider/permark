@@ -51,6 +51,7 @@ let savedSession: SessionState | null = {
   rightTab: "changes",
   linkUpdate: "ask",
   editMode: "visual",
+  initHintNever: false,
 };
 let stateLocation: "appData" | "project" = "appData";
 const LANGUAGE_KEY = "trailmark.mock.language";

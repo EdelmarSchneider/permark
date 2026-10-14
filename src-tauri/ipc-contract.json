@@ -6,7 +6,7 @@
     "recent_vaults": [],
     "app_language": [],
     "set_app_language": ["language"],
-    "list_tree": [],
+    "list_tree": ["show_ignored", "show_hidden"],
     "read_document": ["path"],
     "resolve_link": ["from", "href"],
     "git_snapshot": [],

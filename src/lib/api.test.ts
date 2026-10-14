@@ -24,7 +24,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   recentVaults: [],
   appLanguage: [],
   setAppLanguage: ["de"],
-  listTree: [],
+  listTree: [true, false],
   readDocument: ["docs/a.md"],
   resolveLink: ["docs/a.md", "b.md"],
   gitSnapshot: [],

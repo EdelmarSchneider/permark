@@ -56,7 +56,8 @@ export interface Api {
   /** Keeps the language picked in Settings (an app-wide choice, not a project one). */
   setAppLanguage(language: LanguagePreference): Promise<void>;
   /** Main root plus worktrees as top-level roots. */
-  listTree(): Promise<TreeNode>;
+  /** The folder's tree. `showIgnored` also lists what version control ignores; `showHidden` lists `.trailmark/`. */
+  listTree(showIgnored: boolean, showHidden: boolean): Promise<TreeNode>;
   readDocument(path: string): Promise<DocumentView>;
   resolveLink(from: string, href: string): Promise<LinkTarget>;
   gitSnapshot(): Promise<GitSnapshot>;
@@ -135,7 +136,7 @@ export const tauriApi: Api = {
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
   appLanguage: () => invoke<LanguagePreference>("app_language"),
   setAppLanguage: (language) => invoke<void>("set_app_language", { language }),
-  listTree: () => invoke<TreeNode>("list_tree"),
+  listTree: (showIgnored, showHidden) => invoke<TreeNode>("list_tree", { showIgnored, showHidden }),
   readDocument: (path) => invoke<DocumentView>("read_document", { path }),
   resolveLink: (from, href) => invoke<LinkTarget>("resolve_link", { from, href }),
   gitSnapshot: () => invoke<GitSnapshot>("git_snapshot"),

@@ -87,6 +87,8 @@ export const de = {
   "tree.files": "Dateien",
   "tree.worktrees": "Worktrees",
   "tree.containsChanges": "Enthält Änderungen",
+  "tree.largeFolder": "großer Ordner",
+  "tree.largeFolderTitle": "Nicht geöffnet: enthält mehr als {n} Elemente.",
 
   // ---- Explorer filter
   "filter.title": "Dateien filtern",
@@ -97,6 +99,8 @@ export const de = {
   "filter.docsAndAssets": "Docs & Medien",
   "filter.docsAndAssetsHint": "Dokumente sowie Bilder, JSON, YAML, TOML, XML und CSV",
   "filter.everything": "Alles",
+  "filter.everythingHint":
+    "Alle Dateitypen. Ignorierte und ausgeblendete Dateien haben unten eigene Schalter.",
   "filter.custom": "Benutzerdefiniert",
   "filter.categories": "Dateitypen",
   "filter.categoryDocuments": "Dokumente",
@@ -114,6 +118,11 @@ export const de = {
   "filter.assetsNearDocsHint":
     "Bilder, Daten und XML erscheinen nur neben einem Dokument (gleicher Ordner oder der darüberliegende). Bilder erscheinen auch, wenn ein Dokument auf sie verweist, oder in Ordnern wie assets oder images.",
   "filter.hideEmptyFolders": "Ordner ohne sichtbare Dateien ausblenden",
+  "filter.showHidden": "Versteckte Dateien und Ordner anzeigen",
+  "filter.showHiddenHint": "Namen, die mit einem Punkt beginnen, wie .github.",
+  "filter.showIgnored": "Von Git ignorierte Dateien anzeigen",
+  "filter.showIgnoredHint":
+    "Build-Ausgaben und lokale Dateien. Sehr große Ordner werden nicht geöffnet.",
   "filter.showingOf.one": "{shown} von {n} Datei",
   "filter.showingOf.other": "{shown} von {n} Dateien",
   "filter.showingAll.one": "Alle: {n} Datei",
@@ -295,6 +304,10 @@ export const de = {
   "hint.initialize": ".trailmark/ initialisieren",
   "hint.dismiss": "Hinweis ausblenden",
   "hint.dismissHint": "Nicht mehr anzeigen",
+  "initHint.text": "Tags und TrailMark-Einstellungen beim Projekt speichern?",
+  "initHint.initialize": "Initialisieren",
+  "initHint.notNow": "Nicht jetzt",
+  "initHint.never": "Nie für diesen Ordner",
   "init.title": "TrailMark in diesem Projekt initialisieren?",
   "init.intro": "TrailMark legt .trailmark/ in {name} an:",
   "init.config": "gemeinsame Einstellungen, können eingecheckt werden",
@@ -355,6 +368,7 @@ export const de = {
   "tags.savedApp": "In TrailMark gespeichert, nicht in der Datei.",
   "tags.savedProject": "In .trailmark/meta.toml gespeichert (mit dem Projekt geteilt).",
   "tags.done": "Fertig",
+  "tags.initialize": ".trailmark initialisieren",
   "tags.empty": "Noch keine Tags.",
   "tags.emptyHint":
     "Bei einem Dokument T drücken, um es zu taggen, oder `tags:` ins Front Matter schreiben.",

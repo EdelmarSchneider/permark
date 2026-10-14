@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use crate::util::{canonicalize_lenient, split_existing};
 
-pub use tree::{NodeKind, TreeNode, WalkItem};
+pub use tree::{NodeKind, TreeNode, TreeOptions, WalkItem};
 
 /// Prefix of worktree paths: `@wt/<name>/relative/path`.
 pub const WORKTREE_PREFIX: &str = "@wt/";

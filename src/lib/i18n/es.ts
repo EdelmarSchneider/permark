@@ -86,6 +86,8 @@ export const es = {
   "tree.files": "Archivos",
   "tree.worktrees": "Worktrees",
   "tree.containsChanges": "Contiene cambios",
+  "tree.largeFolder": "carpeta grande",
+  "tree.largeFolderTitle": "No abierta: contiene más de {n} elementos.",
 
   // ---- Explorer filter
   "filter.title": "Filtrar archivos",
@@ -96,6 +98,8 @@ export const es = {
   "filter.docsAndAssets": "Docs y datos",
   "filter.docsAndAssetsHint": "Documentos más imágenes, JSON, YAML, TOML, XML y CSV",
   "filter.everything": "Todo",
+  "filter.everythingHint":
+    "Todos los tipos de archivo. Los archivos ignorados y ocultos tienen sus propios interruptores abajo.",
   "filter.custom": "Personalizado",
   "filter.categories": "Tipos de archivo",
   "filter.categoryDocuments": "Documentos",
@@ -113,6 +117,11 @@ export const es = {
   "filter.assetsNearDocsHint":
     "Las imágenes, los datos y los XML solo se muestran junto a un documento (la misma carpeta o la de arriba). Las imágenes también se muestran cuando un documento las enlaza, o en carpetas como assets o images.",
   "filter.hideEmptyFolders": "Ocultar carpetas sin archivos visibles",
+  "filter.showHidden": "Mostrar archivos y carpetas ocultos",
+  "filter.showHiddenHint": "Nombres que empiezan con un punto, como .github.",
+  "filter.showIgnored": "Mostrar archivos ignorados por Git",
+  "filter.showIgnoredHint":
+    "Resultados de compilación y archivos locales. Las carpetas muy grandes no se abren.",
   "filter.showingOf.one": "{shown} de {n} archivo",
   "filter.showingOf.other": "{shown} de {n} archivos",
   "filter.showingAll.one": "Todos: {n} archivo",
@@ -294,6 +303,10 @@ export const es = {
   "hint.initialize": "Inicializar .trailmark/",
   "hint.dismiss": "Descartar sugerencia",
   "hint.dismissHint": "No volver a mostrar",
+  "initHint.text": "¿Guardar las etiquetas y la configuración de TrailMark con este proyecto?",
+  "initHint.initialize": "Inicializar",
+  "initHint.notNow": "Ahora no",
+  "initHint.never": "Nunca para esta carpeta",
   "init.title": "¿Inicializar TrailMark en este proyecto?",
   "init.intro": "TrailMark creará .trailmark/ en {name}:",
   "init.config": "configuración compartida, segura para hacer commit",
@@ -355,6 +368,7 @@ export const es = {
   "tags.savedApp": "Guardado en TrailMark, no en el archivo.",
   "tags.savedProject": "Guardado en .trailmark/meta.toml (compartido con el proyecto).",
   "tags.done": "Listo",
+  "tags.initialize": "Inicializar .trailmark",
   "tags.empty": "Aún no hay etiquetas.",
   "tags.emptyHint": "Presiona T en un doc para etiquetarlo, o agrega `tags:` a su front matter.",
   "tags.noMatch": "Ninguna etiqueta coincide con '{query}'",
