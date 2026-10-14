@@ -3,7 +3,7 @@
 //! The core modules are plain Rust with no Tauri dependency: [`vault`] (roots and path safety),
 //! [`render`] (documents to HTML), [`links`], [`search`], [`watch`] (filesystem events), [`git`] and
 //! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor).
-//! [`workspace`] wires them together for one open folder, and
+//! [`nav`] keeps the window on the app's own page. [`workspace`] wires them together for one open folder, and
 //! [`commands`] exposes it to the UI.
 
 mod commands;
@@ -12,6 +12,7 @@ mod error;
 mod git;
 mod links;
 mod meta;
+mod nav;
 mod render;
 mod search;
 mod session;
@@ -20,9 +21,18 @@ mod vault;
 mod watch;
 mod workspace;
 
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::plugin::{Builder as PluginBuilder, TauriPlugin};
+use tauri::{Manager, RunEvent, Url, WindowEvent, Wry};
 
 use commands::AppState;
+
+/// A plugin that stops the window from navigating away from the app (see [`nav`]). The development server counts as the app in a
+/// debug build.
+fn navigation_guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
+    PluginBuilder::new("navigation-guard")
+        .on_navigation(move |_webview, url| nav::is_app_url(url, dev_url.as_ref()))
+        .build()
+}
 
 /// Builds and runs the Tauri application.
 ///
@@ -31,7 +41,14 @@ use commands::AppState;
 /// Panics if the Tauri runtime fails to start.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
+    let dev_url = if cfg!(debug_assertions) {
+        context.config().build.dev_url.clone()
+    } else {
+        None
+    };
     let app = tauri::Builder::default()
+        .plugin(navigation_guard(dev_url))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         // In-app updates: the updater checks the GitHub release endpoint from `tauri.conf.json`,
@@ -78,7 +95,7 @@ pub fn run() {
             commands::create_document,
             commands::write_asset,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application");
 
     app.run(|handle, event| match event {

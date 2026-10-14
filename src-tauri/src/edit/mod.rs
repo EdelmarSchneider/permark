@@ -851,7 +851,8 @@ graph LR
         let html = render_fragments(&[big.clone(), big, "after".to_owned()]);
         assert!(html[0].contains('a'));
         assert_eq!(html[1], "", "the second piece does not fit");
-        assert!(html[2].is_empty() || html[2].contains("after"));
+        // the piece that did not fit takes nothing from what is left, so a small one after it still does
+        assert!(html[2].contains("after"), "{}", html[2]);
     }
 
     #[test]
