@@ -1,0 +1,438 @@
+// Visual mode as one object: the Milkdown editor, the document it holds and the questions the rest of the app asks it
+// (is it dirty, what would a save write, which block is the caret in). No Svelte in here; the components in
+// `components/` draw the toolbar, menus and popovers around it.
+
+import {
+  imageAttr,
+  imageSchema,
+  inlineCodeKeymap,
+  blockquoteKeymap,
+} from "@milkdown/kit/preset/commonmark";
+import { strikethroughKeymap } from "@milkdown/kit/preset/gfm";
+import type { Node as PMNode } from "@milkdown/kit/prose/model";
+import { EditorState, NodeSelection, Selection, TextSelection } from "@milkdown/kit/prose/state";
+import type { EditorView } from "@milkdown/kit/prose/view";
+import type { BlockMap } from "../blockModel";
+import {
+  analyze,
+  buildDoc,
+  composeDoc,
+  lineOfNode,
+  originOf,
+  type Analysis,
+  type Built,
+  type LoadReport,
+} from "./doc";
+import { createCore, LOCKED, type Core, type LockedHost } from "./core";
+import { formatState, insertImage, runCommand, setCodeLanguage } from "./commands";
+import { NO_FORMAT, type CommandId, type FormatState } from "./format";
+import { applyLink, linkTarget, type LinkTarget } from "./link";
+import { appPlugins, type PluginHost } from "./plugins";
+
+/** The slash menu is open: what has been typed after the `/`, and where the caret is on screen. */
+export type SlashState = { query: string; rect: DOMRect | null };
+
+/** What Visual mode tells the rest of the app. */
+export type VisualHandlers = {
+  /** The document or the selection changed: read `status()` and `format()` again. */
+  changed(): void;
+  /** Images pasted or dropped on the editor. */
+  files(files: File[], source: "paste" | "drop"): void;
+  /** The button of a locked atom (or Enter on it): open Source at this block of the loaded text (null: a new block). */
+  editInSource(block: number | null): void;
+  /** Ctrl+K. */
+  link(): void;
+  /** The slash menu opened (with its state), changed, or closed (null). */
+  slash(state: SlashState | null): void;
+  /** The slash menu is open and wants this key (Up, Down, Enter). */
+  slashKey(key: string): boolean;
+};
+
+export type VisualEditorOptions = {
+  host: HTMLElement;
+  label: string;
+  locked: LockedHost;
+  handlers: VisualHandlers;
+  /** The URL an `<img>` can load for the `src` written in the Markdown (a vault-relative path, or a remote URL as it is). */
+  imageUrl(src: string): string;
+  /** Scroll the caret into view when it is placed. Off in tests, where there is no layout. */
+  scroll?: boolean;
+};
+
+/** What a load needs: the text being edited (as its blocks), and how it relates to the saved file. */
+export type VisualInput = {
+  map: BlockMap;
+  /** Per block of `map`: it differs from the saved file (it comes from unsaved Source edits). */
+  unsaved?: readonly boolean[];
+  /** The text differs from the saved file (even when no block does: blank lines, say). */
+  dirty?: boolean;
+  /** The block to put the caret in (0-based, of `map`). */
+  block?: number | null;
+  /** Put the caret at the end of that block instead of its start. */
+  atEnd?: boolean;
+  /** Where the caret's block goes on screen: `start` puts it at the top (entering from the reading view keeps the place), the default only makes it visible. */
+  reveal?: "start" | "nearest";
+};
+
+export type VisualStatus = {
+  /** A save would write something other than the saved file. */
+  dirty: boolean;
+  /** How many blocks carry the unsaved-block bar. */
+  changed: number;
+};
+
+const EMPTY_ANALYSIS: Analysis = { nodes: [], structure: false, changed: 0, touched: 0 };
+
+export class VisualEditor {
+  readonly mode = "visual" as const;
+  private built: Built | null = null;
+  private initialDirty = false;
+  private readonly cache = new WeakMap<PMNode, Analysis>();
+  private slashOpen = false;
+  private slashDismissed = false;
+  private destroyed = false;
+
+  private constructor(
+    readonly core: Core,
+    private readonly options: VisualEditorOptions,
+  ) {}
+
+  static async create(options: VisualEditorOptions): Promise<VisualEditor> {
+    let editor: VisualEditor | null = null;
+    const host: PluginHost = {
+      analysisFor: (doc) => editor?.analysisFor(doc) ?? null,
+      updated: (view) => editor?.viewUpdated(view),
+      files: (files, source) => options.handlers.files(files, source),
+      link: () => options.handlers.link(),
+      editInSource: (block) => options.handlers.editInSource(block),
+      slashKey: (key) => editor?.slashOpen === true && options.handlers.slashKey(key),
+    };
+    const core = await createCore({
+      host: options.host,
+      locked: options.locked,
+      label: options.label,
+      firstPlugins: appPlugins(host),
+      config: (ctx) => {
+        // the key remaps of docs/design/v0.2.md section 11: Ctrl+E always toggles editing, so inline code moves to Ctrl+`
+        ctx.update(inlineCodeKeymap.key, (keys) => ({
+          ...keys,
+          ToggleInlineCode: { shortcuts: "Mod-`" },
+        }));
+        ctx.update(strikethroughKeymap.key, (keys) => ({
+          ...keys,
+          ToggleStrikethrough: { shortcuts: "Mod-Shift-x" },
+        }));
+        ctx.update(blockquoteKeymap.key, (keys) => ({
+          ...keys,
+          WrapInBlockquote: { shortcuts: ["Mod-Shift-.", "Mod->"] },
+        }));
+        // a relative image path is drawn from the app's own image scheme; the Markdown keeps the path as written
+        ctx.update(imageSchema.key, (previous) => (c) => {
+          const spec = previous(c);
+          return {
+            ...spec,
+            parseDOM: [
+              {
+                tag: "img[src]",
+                getAttrs: (dom: HTMLElement | string) => {
+                  if (typeof dom === "string") return false;
+                  return {
+                    src: dom.getAttribute("data-src") ?? dom.getAttribute("src") ?? "",
+                    alt: dom.getAttribute("alt") ?? "",
+                    title: dom.getAttribute("title") ?? "",
+                  };
+                },
+              },
+            ],
+            toDOM: (node: PMNode) => [
+              "img",
+              {
+                ...c.get(imageAttr.key)(node),
+                src: options.imageUrl(String(node.attrs.src)),
+                "data-src": String(node.attrs.src),
+                alt: String(node.attrs.alt),
+                title: String(node.attrs.title),
+              },
+            ],
+          };
+        });
+      },
+    });
+    editor = new VisualEditor(core, options);
+    const dom = core.view.dom;
+    dom.classList.add("md", "md-body", "tm-visual");
+    dom.setAttribute("aria-label", options.label);
+    dom.setAttribute("aria-multiline", "true");
+    dom.setAttribute("role", "textbox");
+    return editor;
+  }
+
+  // ---- the document ---------------------------------------------------------------------------------
+
+  /** Replaces the document with the blocks of a text. Undo history starts over. */
+  load(input: VisualInput): LoadReport {
+    const built = buildDoc(this.core, { map: input.map, unsaved: input.unsaved });
+    this.built = built;
+    this.initialDirty = input.dirty ?? false;
+    const { view } = this.core;
+    view.updateState(
+      EditorState.create({
+        schema: view.state.schema,
+        doc: built.doc,
+        plugins: view.state.plugins,
+      }),
+    );
+    if (input.block !== undefined && input.block !== null)
+      this.placeCaret(input.block, input.atEnd ?? false, input.reveal ?? "nearest");
+    this.options.handlers.changed();
+    return built.report;
+  }
+
+  /** Goes back to the document as loaded: the edits and the undo history are dropped (the blocks are not read again). */
+  restart(): void {
+    if (!this.built) return;
+    const { view } = this.core;
+    view.updateState(
+      EditorState.create({
+        schema: view.state.schema,
+        doc: this.built.doc,
+        plugins: view.state.plugins,
+      }),
+    );
+    this.options.handlers.changed();
+  }
+
+  private analysisFor(doc: PMNode): Analysis | null {
+    if (!this.built) return null;
+    let analysis = this.cache.get(doc);
+    if (!analysis) {
+      analysis = analyze(this.built, doc);
+      this.cache.set(doc, analysis);
+    }
+    return analysis;
+  }
+
+  private analysis(): Analysis {
+    return this.analysisFor(this.core.view.state.doc) ?? EMPTY_ANALYSIS;
+  }
+
+  /** Whether a save would write something other than the saved file, and how many blocks carry the unsaved bar. */
+  status(): VisualStatus {
+    const a = this.analysis();
+    return { dirty: this.initialDirty || a.structure || a.touched > 0, changed: a.changed };
+  }
+
+  /** The file text a save would write: untouched blocks and separators as they were, edited blocks as the editor writes them. */
+  text(): string {
+    return this.built ? composeDoc(this.core, this.built, this.core.view.state.doc).text : "";
+  }
+
+  /** The 0-based line of the caret's block in `text()`. */
+  caretLine(): number {
+    if (!this.built) return 0;
+    const composed = composeDoc(this.core, this.built, this.core.view.state.doc);
+    return lineOfNode(composed, this.analysis(), this.caretChild());
+  }
+
+  /** The 0-based line, in `text()`, where a block of the loaded text starts (null: the block the caret is in). */
+  lineOfBlock(block: number | null): number {
+    if (!this.built) return 0;
+    const analysis = this.analysis();
+    let child = this.caretChild();
+    if (block !== null) {
+      const found = analysis.nodes.findIndex((n) => n.origin === block);
+      if (found >= 0) child = found;
+    }
+    return lineOfNode(composeDoc(this.core, this.built, this.core.view.state.doc), analysis, child);
+  }
+
+  /**
+   * Starts over from the blocks of the text that was just saved. The selection stays where it was (the document is the same
+   * text, so the same positions mean the same place). The undo history starts over too.
+   */
+  rebase(map: BlockMap): void {
+    const { view } = this.core;
+    const { anchor, head } = view.state.selection;
+    this.load({ map, dirty: false });
+    const { doc } = view.state;
+    const at = (pos: number): number => Math.min(Math.max(pos, 0), doc.content.size);
+    try {
+      view.dispatch(
+        view.state.tr.setSelection(
+          TextSelection.between(doc.resolve(at(anchor)), doc.resolve(at(head))),
+        ),
+      );
+    } catch {
+      // the caret stays at the start of the document
+    }
+  }
+
+  /** The top-level node the selection is in. */
+  private caretChild(): number {
+    const { selection, doc } = this.core.view.state;
+    const index =
+      selection instanceof NodeSelection ? selection.$from.index(0) : selection.$head.index(0);
+    return Math.min(index, Math.max(0, doc.childCount - 1));
+  }
+
+  /** The block (of the loaded text) the caret is in, or null in a block that was added. */
+  caretBlock(): number | null {
+    const analysis = this.analysis();
+    for (let i = this.caretChild(); i >= 0; i--) {
+      const origin = analysis.nodes[i]?.origin ?? null;
+      if (origin !== null) return origin;
+    }
+    return null;
+  }
+
+  private placeCaret(block: number, atEnd: boolean, reveal: "start" | "nearest"): void {
+    const { view } = this.core;
+    const { doc } = view.state;
+    const analysis = this.analysis();
+    let index = analysis.nodes.findIndex((n) => n.origin === block);
+    if (index < 0) index = Math.min(block, doc.childCount - 1);
+    // a locked block takes no caret: it goes to the next block that can be typed in (else the one before)
+    const editable = (i: number): boolean => doc.child(i).type.name !== LOCKED;
+    if (!editable(index)) {
+      let next = index;
+      while (next < doc.childCount && !editable(next)) next++;
+      if (next >= doc.childCount) {
+        next = index;
+        while (next >= 0 && !editable(next)) next--;
+      }
+      if (next >= 0 && next < doc.childCount) {
+        index = next;
+        atEnd = false;
+      }
+    }
+    let pos = 0;
+    for (let i = 0; i < index; i++) pos += doc.child(i).nodeSize;
+    const node = doc.child(index);
+    let selection: Selection;
+    if (node.type.name === LOCKED) selection = NodeSelection.create(doc, pos);
+    else if (atEnd) selection = Selection.near(doc.resolve(pos + node.nodeSize - 1), -1);
+    else selection = Selection.near(doc.resolve(pos + 1), 1);
+    const tr = view.state.tr.setSelection(selection);
+    if (this.options.scroll !== false) tr.scrollIntoView();
+    view.dispatch(tr);
+    if (reveal === "start" && this.options.scroll !== false) {
+      const dom = view.nodeDOM(pos);
+      if (dom instanceof HTMLElement) dom.scrollIntoView({ block: "start" });
+    }
+  }
+
+  // ---- reading the selection --------------------------------------------------------------------------
+
+  format(): FormatState {
+    return this.destroyed ? NO_FORMAT : formatState(this.core.view.state);
+  }
+
+  run(command: CommandId): boolean {
+    return runCommand(this.core, command);
+  }
+
+  setLanguage(language: string): boolean {
+    return setCodeLanguage(this.core, language);
+  }
+
+  focus(): void {
+    this.core.view.focus();
+  }
+
+  /** Puts the caret at the end of the document (a click on the empty space below it). */
+  focusEnd(): void {
+    const { view } = this.core;
+    view.dispatch(view.state.tr.setSelection(Selection.atEnd(view.state.doc)));
+    view.focus();
+  }
+
+  /** Where the caret is on screen, or null when it cannot be told. */
+  caretRect(): DOMRect | null {
+    try {
+      const at = this.core.view.coordsAtPos(this.core.view.state.selection.head);
+      return new DOMRect(at.left, at.top, 1, at.bottom - at.top);
+    } catch {
+      return null;
+    }
+  }
+
+  /** The person closed the slash menu with Esc: it stays closed until the `/` is gone. */
+  dismissSlash(): void {
+    if (this.slashOpen) this.slashDismissed = true;
+  }
+
+  insertImage(src: string, alt = ""): boolean {
+    return insertImage(this.core, src, alt);
+  }
+
+  // ---- links ---------------------------------------------------------------------------------------------
+
+  linkTarget(): LinkTarget {
+    return linkTarget(this.core.view.state);
+  }
+
+  applyLink(target: LinkTarget, next: { text: string; href: string }): boolean {
+    return applyLink(this.core.view, target, next);
+  }
+
+  // ---- the slash menu --------------------------------------------------------------------------------------
+
+  /** The `/query` the caret is at the end of, in an otherwise empty paragraph. */
+  private slashState(view: EditorView): SlashState | null {
+    const { selection } = view.state;
+    if (!selection.empty) return null;
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (parent.type.name !== "paragraph" || $from.parentOffset !== parent.content.size) return null;
+    for (let depth = $from.depth; depth > 0; depth--) {
+      if ($from.node(depth).type.name.startsWith("table")) return null;
+    }
+    const match = /^\/(\S*)$/.exec(parent.textContent);
+    if (!match) return null;
+    let rect: DOMRect | null = null;
+    try {
+      const at = view.coordsAtPos($from.pos);
+      rect = new DOMRect(at.left, at.top, 1, at.bottom - at.top);
+    } catch {
+      // no layout (tests): the menu has nowhere to go, the state is still right
+    }
+    return { query: match[1], rect };
+  }
+
+  /** Removes the `/query` and runs a command in its place. */
+  runSlash(command: CommandId | "image"): void {
+    const { view } = this.core;
+    const { $from } = view.state.selection;
+    if ($from.parent.type.name === "paragraph" && /^\//.test($from.parent.textContent)) {
+      view.dispatch(view.state.tr.delete($from.start(), $from.pos));
+    }
+    if (command !== "image") runCommand(this.core, command);
+    else view.focus();
+  }
+
+  private viewUpdated(view: EditorView): void {
+    if (this.destroyed) return;
+    let slash = this.slashState(view);
+    if (slash === null) this.slashDismissed = false;
+    else if (this.slashDismissed) slash = null;
+    const was = this.slashOpen;
+    this.slashOpen = slash !== null;
+    if (slash || was) this.options.handlers.slash(slash);
+    this.options.handlers.changed();
+  }
+
+  // ---- lifetime -----------------------------------------------------------------------------------------------
+
+  /** The block map of the loaded text, for the store (it maps the caret between modes). */
+  get map(): BlockMap | null {
+    return this.built?.map ?? null;
+  }
+
+  async destroy(): Promise<void> {
+    this.destroyed = true;
+    await this.core.destroy();
+  }
+
+  /** Which original block a top-level node stands for (tests and the store use this to follow a block). */
+  static originOf = originOf;
+}

@@ -141,9 +141,17 @@ function contentLines(separator: string): string[] {
  * there is none), one blank line away from the blocks. A document without blocks keeps its text the same way.
  */
 export function compose(map: BlockMap, slots: readonly Slot[]): string {
+  return composeDetailed(map, slots).text;
+}
+
+/** The composed text, and the offset in it where the text of each slot starts (for placing a caret in the new text). */
+export type Composed = { text: string; starts: number[] };
+
+/** `compose()` that also says where every slot landed. */
+export function composeDetailed(map: BlockMap, slots: readonly Slot[]): Composed {
   const count = map.blocks.length;
   // a document without blocks is all separator: nothing to compose unless blocks are added
-  if (count === 0 && slots.length === 0) return map.seps[0] ?? "";
+  if (count === 0 && slots.length === 0) return { text: map.seps[0] ?? "", starts: [] };
   const { eol } = map;
   const gap = eol + eol;
   const isAdjacent = (i: number): boolean => {
@@ -177,6 +185,7 @@ export function compose(map: BlockMap, slots: readonly Slot[]): string {
     rescued[0] = contentLines((map.seps[0] ?? "").slice(bom ? BOM.length : 0));
   }
 
+  const starts: number[] = [];
   slots.forEach((slot, i) => {
     if (i > 0) {
       out += isAdjacent(i)
@@ -185,6 +194,7 @@ export function compose(map: BlockMap, slots: readonly Slot[]): string {
     } else if (rescued[0].length > 0) {
       out += rescued[0].join(eol) + gap;
     }
+    starts.push(out.length);
     if (slot.text !== undefined) out += tidyBlockText(slot.text, eol);
     else if (slot.origin !== null && map.blocks[slot.origin]) out += map.blocks[slot.origin].text;
     else throw new Error("a slot without text needs an original block");
@@ -192,7 +202,7 @@ export function compose(map: BlockMap, slots: readonly Slot[]): string {
   const tail = rescued[slots.length];
   if (slots.length === 0) out += tail.join(eol);
   else if (tail.length > 0) out += gap + tail.join(eol);
-  return out + trailing;
+  return { text: out + trailing, starts };
 }
 
 /** A slot for every block of the map, all untouched: composing them gives back the original. */
