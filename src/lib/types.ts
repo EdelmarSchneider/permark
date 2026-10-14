@@ -1,5 +1,6 @@
 import type { FileCategory } from "./fileKinds";
 import type { ReadingWidth } from "./readingWidth";
+import type { RightTab } from "./rightPanel";
 
 // Mirrors the Rust <-> UI contract defined by the Tauri commands in src-tauri/src/commands.rs.
 // Paths are vault-relative, `/`-separated, real on-disk case. Worktree paths are prefixed with `@wt/<name>/`.
@@ -109,6 +110,8 @@ export type SessionState = {
   treeFilter: TreeFilter | null;
   /** The Explorer selects and scrolls to the document that was just opened (on unless turned off). */
   autoReveal: boolean;
+  /** The view the right panel shows: the feed or the document outline. */
+  rightTab: RightTab;
 };
 
 // ---- tags and descriptions (docs/design/v0.2.md section 1) ---------------------------------------

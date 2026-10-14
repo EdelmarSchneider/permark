@@ -4,6 +4,7 @@
 import { api } from "../api";
 import { DEFAULT_REF_TEMPLATE } from "../reference";
 import { DEFAULT_WIDTH, nextWidth, type ReadingWidth } from "../readingWidth";
+import { DEFAULT_RIGHT_TAB, type RightTab } from "../rightPanel";
 import {
   LEFT_DEFAULT,
   RIGHT_DEFAULT,
@@ -28,6 +29,8 @@ class SessionStore {
   treeFilter = $state.raw<TreeFilter | null>(null);
   /** The Explorer selects and scrolls to the document that was just opened. */
   autoReveal = $state(true);
+  /** The view the right panel shows. */
+  rightTab = $state<RightTab>(DEFAULT_RIGHT_TAB);
   systemDark = $state(false);
 
   lastDoc: string | null = null;
@@ -61,6 +64,7 @@ class SessionStore {
     this.follow = s.follow;
     this.treeFilter = s.treeFilter;
     this.autoReveal = s.autoReveal;
+    this.rightTab = s.rightTab;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
     this.enabled = true;
@@ -80,6 +84,7 @@ class SessionStore {
       follow: this.follow,
       treeFilter: this.treeFilter,
       autoReveal: this.autoReveal,
+      rightTab: this.rightTab,
     };
   }
 
@@ -165,6 +170,11 @@ class SessionStore {
 
   toggleAutoReveal(): void {
     this.autoReveal = !this.autoReveal;
+    this.persist();
+  }
+
+  setRightTab(tab: RightTab): void {
+    this.rightTab = tab;
     this.persist();
   }
 

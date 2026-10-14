@@ -38,6 +38,7 @@ let savedSession: SessionState | null = {
   follow: false,
   treeFilter: null,
   autoReveal: true,
+  rightTab: "changes",
 };
 let stateLocation: "appData" | "project" = "appData";
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

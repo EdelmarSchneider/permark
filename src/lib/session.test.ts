@@ -107,6 +107,26 @@ describe("normalizeSession", () => {
     }
   });
 
+  it("shows the Changes view unless the person chose another", () => {
+    expect(defaultSession().rightTab).toBe("changes");
+    expect(normalizeSession(null).rightTab).toBe("changes");
+    expect(normalizeSession({}).rightTab).toBe("changes");
+    expect(normalizeSession({ rightTab: "outline" }).rightTab).toBe("outline");
+    // a session saved before the Outline existed
+    expect(normalizeSession({ zoom: 1.2, theme: "dark" }).rightTab).toBe("changes");
+    // a view written by a newer UI, and a value of the wrong type
+    for (const value of ["commits", "", 7, null, {}]) {
+      expect(normalizeSession({ rightTab: value as never }).rightTab).toBe("changes");
+    }
+  });
+
+  it("keeps the right panel view through a save and a load", () => {
+    for (const rightTab of ["changes", "outline"] as const) {
+      const saved = { ...defaultSession(), rightTab };
+      expect(normalizeSession(JSON.parse(JSON.stringify(saved))).rightTab).toBe(rightTab);
+    }
+  });
+
   it("selects the opened file unless the person turned that off", () => {
     expect(defaultSession().autoReveal).toBe(true);
     expect(normalizeSession(null).autoReveal).toBe(true);
