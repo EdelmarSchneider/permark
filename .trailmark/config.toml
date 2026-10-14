@@ -1,0 +1,11 @@
+# TrailMark project settings. Shared with your team: safe to commit.
+# Everything here is optional; the commented values are the defaults.
+
+# How "Copy reference" writes a path. {path} is the file path relative to the project folder.
+# ref_template = "@{path}"
+
+# What the file badges compare against: "lastVisit" (the project as you last left it) or "head".
+# baseline = "lastVisit"
+
+# Extra gitignore-style patterns hidden from the live feed and from search.
+# ignore = ["drafts/", "*.generated.md"]
