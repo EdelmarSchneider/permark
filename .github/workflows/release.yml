@@ -7,6 +7,16 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Rebuild some platforms of an existing release (e.g. one that failed), without moving its tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to build (e.g. v0.2.0)"
+        required: true
+      platforms:
+        description: "Comma-separated runners to build: windows-latest, macos-latest, ubuntu-22.04 (or all)"
+        required: true
+        default: all
 
 permissions:
   contents: write
@@ -16,6 +26,9 @@ jobs:
     name: Release (${{ matrix.platform }})
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RUN_THIS: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, matrix.platform) }}
     strategy:
       fail-fast: false
       # One job at a time: each job merges its entry into the release's latest.json; parallel uploads could drop a platform.
@@ -33,11 +46,14 @@ jobs:
             args: ""
     steps:
       - name: Checkout
+        if: env.RUN_THIS == 'true'
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
 
       # The system libraries the Tauri crates link against and the AppImage bundler needs.
       - name: Install Linux dependencies
-        if: runner.os == 'Linux'
+        if: env.RUN_THIS == 'true' && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -50,25 +66,53 @@ jobs:
             libjavascriptcoregtk-4.1-dev
 
       - name: Install Rust (stable)
+        if: env.RUN_THIS == 'true'
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust-targets }}
 
+      # rust-toolchain.toml pins the compiler; the step above installs targets for "stable", so add them to the pinned one.
+      - name: Add the cross-compilation targets to the pinned toolchain
+        if: env.RUN_THIS == 'true' && matrix.rust-targets != ''
+        shell: bash
+        run: rustup target add $(echo "${{ matrix.rust-targets }}" | tr ',' ' ')
+
+      # The release notes are this version's section of CHANGELOG.md, followed by the install notes below.
+      - name: Release notes from the changelog
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && index($0, "## [") == 1 { exit }
+            on { print }
+          ' CHANGELOG.md > release-notes.md
+          {
+            echo "RELEASE_NOTES<<__NOTES__"
+            cat release-notes.md
+            echo "__NOTES__"
+          } >> "$GITHUB_ENV"
+
       - name: Cache Rust build
+        if: env.RUN_THIS == 'true'
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
       - name: Set up Node
+        if: env.RUN_THIS == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
       - name: Install frontend dependencies
+        if: env.RUN_THIS == 'true'
         run: npm ci
 
       - name: Build and publish the release
+        if: env.RUN_THIS == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,19 +120,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: "TrailMark ${{ github.ref_name }}"
+          tagName: ${{ env.TAG }}
+          releaseName: "TrailMark ${{ env.TAG }}"
           releaseBody: |
             **TrailMark** is a fast, beautiful Markdown IDE that keeps up with your AI agents. It works with any
             tool, or none: it only relies on your files and git.
 
-            ### Highlights
-            - Read a whole folder of Markdown like a wiki: relative links, back and forward, quick open (`Ctrl+P`).
-            - Follow documents live as they change: changed blocks glow, removed blocks leave a marker.
-            - See what changed since your last visit, even when the agent already committed.
-            - Search by section across hundreds of documents (`Ctrl+Shift+F`).
-            - Copy a path, a reference or a quoted selection to paste straight back into your AI tool.
-            - Mermaid diagrams, math, light and dark themes.
+            ${{ env.RELEASE_NOTES }}
 
             ### Install
             | Platform | Download |
