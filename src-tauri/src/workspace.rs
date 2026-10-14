@@ -551,9 +551,17 @@ impl Workspace {
         Ok(&self.fileops)
     }
 
-    /// Checks a rename or move and finds the links it would change (`scan_links`).
-    pub fn preview_move(&self, moves: &[Move], scan_links: bool) -> Result<MovePreview, AppError> {
-        Ok(self.file_ops()?.preview_move(moves, scan_links)?)
+    /// Checks a rename or move and finds the links it would change (`scan_links`), leaving out the
+    /// documents in `held_back`.
+    pub fn preview_move(
+        &self,
+        moves: &[Move],
+        scan_links: bool,
+        held_back: &[String],
+    ) -> Result<MovePreview, AppError> {
+        Ok(self
+            .file_ops()?
+            .preview_move(moves, scan_links, held_back)?)
     }
 
     /// Makes the move of a preview, rewriting links when asked to.
@@ -1666,14 +1674,14 @@ exclude = [\"archive/**\"]
             from: "docs/guide.md".to_owned(),
             to: "docs/manual.md".to_owned(),
         }];
-        let preview = ws.preview_move(&rename, true).expect("preview");
+        let preview = ws.preview_move(&rename, true, &[]).expect("preview");
         assert_eq!((preview.link_count, preview.file_count), (1, 1));
         ws.apply_move(preview.plan_id, true, &[]).expect("apply");
         let folder = [Move {
             from: "docs".to_owned(),
             to: "manual".to_owned(),
         }];
-        let preview = ws.preview_move(&folder, true).expect("preview");
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
         ws.apply_move(preview.plan_id, true, &[]).expect("apply");
 
         let on_disk = |rel: &str| std::fs::read_to_string(fx.project.path().join(rel)).expect(rel);
@@ -1732,7 +1740,7 @@ exclude = [\"archive/**\"]
             from: "docs".to_owned(),
             to: "manual".to_owned(),
         }];
-        let preview = ws.preview_move(&folder, true).expect("preview");
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
         ws.apply_move(preview.plan_id, true, &[]).expect("apply");
         assert!(fx.project.path().join("manual/note-69.md").is_file());
         wait_until("the tree to refresh", || {

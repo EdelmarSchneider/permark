@@ -662,7 +662,7 @@ export const en = {
   "fileOps.movesTo": "moves to {path}",
   "fileOps.atLine": "line {line}",
   "fileOps.moreLinks": "More links are not listed here, but they are all updated.",
-  "fileOps.skippedTitle": "Not looked at",
+  "fileOps.skippedTitle": "Not updated",
   "fileOps.reason.tooLarge": "too large",
   "fileOps.reason.notUtf8": "not UTF-8 text",
   "fileOps.reason.unreadable": "couldn't be read",
@@ -670,6 +670,8 @@ export const en = {
   "fileOps.reason.writeFailed": "couldn't be written",
   "fileOps.reason.missing": "is gone",
   "fileOps.reason.occupied": "can't go back, something is in the way",
+  "fileOps.reason.unsavedVisual":
+    "has unsaved edits in Visual mode; save it, then run Update links again",
   "fileOps.working": "Working...",
   "fileOps.simpleMode": "Files can be renamed and moved once a folder is open.",
   "settings.linkUpdate": "Update links when moving files",

@@ -580,6 +580,15 @@ class EditStore {
   }
 
   /**
+   * The document being edited when it has unsaved edits that cannot be patched with link changes: the ones in Visual
+   * mode (its document is blocks, not text to splice into), or whose editor is not on screen yet. A move leaves such a
+   * document alone and says so. The Source editor takes the changes instead (see [`EditStore.unsavedBuffer`]).
+   */
+  unsavedUnpatchable(): string | null {
+    return this.path !== null && this.dirty && bridge.editor?.mode !== "source" ? this.path : null;
+  }
+
+  /**
    * Files or folders were moved or renamed in the Explorer (the file system does not report it: the watcher is told it
    * is our own doing). The document being edited keeps its text and the version of the file it started from, under its
    * new path. `changes` are the link updates for the unsaved text `sent`; they are applied to the editor only if the
@@ -592,7 +601,8 @@ class EditStore {
     let applied = true;
     if (changes && changes.edits.length > 0) {
       const editor = bridge.editor;
-      if (editor?.mode === "source" && editor.getText() === sent) editor.applyChanges(changes.edits);
+      if (editor?.mode === "source" && editor.getText() === sent)
+        editor.applyChanges(changes.edits);
       else applied = false;
     }
     this.scheduleDiskCheck();

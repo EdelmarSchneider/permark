@@ -14,6 +14,7 @@
 //! Links that do not resolve to something that exists are left alone (they were broken already), and so are
 //! external links, anchors, and links the scanner could not read with certainty.
 
+use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::io;
 
@@ -99,6 +100,22 @@ impl LinkPlan {
     /// How many links change.
     pub(crate) fn link_count(&self) -> usize {
         self.docs.iter().map(|d| d.edits.len()).sum()
+    }
+
+    /// Takes the documents whose path (as [`key`] spells it) is in `held` out of the plan. Those that had
+    /// links to change are listed as skipped for [`SkipReason::UnsavedVisual`]; the others are not mentioned.
+    pub(crate) fn hold_back(&mut self, held: &HashSet<String>) {
+        if held.is_empty() {
+            return;
+        }
+        let (kept, left): (Vec<_>, Vec<_>) = std::mem::take(&mut self.docs)
+            .into_iter()
+            .partition(|d| !held.contains(&key(&d.path)));
+        self.docs = kept;
+        self.skipped.extend(left.into_iter().map(|d| SkippedDoc {
+            path: d.path,
+            reason: SkipReason::UnsavedVisual,
+        }));
     }
 }
 

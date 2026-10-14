@@ -102,17 +102,22 @@ impl FileOpsService {
 
     // ---- move and rename ---------------------------------------------------------------------------
 
-    /// Checks the moves and, with `scan_links`, finds the links that would have to change.
+    /// Checks the moves and, with `scan_links`, finds the links that would have to change. The documents in
+    /// `held_back` are open with unsaved edits that cannot be patched: they are left out of the plan, and the
+    /// ones that had links to change are listed as skipped ([`SkipReason::UnsavedVisual`]).
     pub fn preview_move(
         &self,
         moves: &[Move],
         scan_links: bool,
+        held_back: &[String],
     ) -> Result<MovePreview, FileOpError> {
         let valid = check_moves(&self.vault, moves)?;
         let real: Vec<Move> = valid.iter().map(ValidMove::as_move).collect();
         let links = if scan_links {
             let world = VaultWorld::new(&self.vault);
-            Planner::new(&world, &real).plan()
+            let mut links = Planner::new(&world, &real).plan();
+            links.hold_back(&held_back.iter().map(|p| key(p)).collect());
+            links
         } else {
             LinkPlan::default()
         };

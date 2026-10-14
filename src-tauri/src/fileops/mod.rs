@@ -103,6 +103,9 @@ pub enum SkipReason {
     Missing,
     /// Something else is where the file has to go back to (an undo).
     Occupied,
+    /// The document is open with unsaved edits in the Visual editor, which cannot take link changes the way
+    /// the Source editor does: it is left alone, to be saved first.
+    UnsavedVisual,
 }
 
 /// A file that was left alone, and why. Matches the UI's `SkippedFile`.

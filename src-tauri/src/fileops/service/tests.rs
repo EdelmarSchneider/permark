@@ -105,7 +105,7 @@ impl Fx {
     fn mv(&self, from: &str, to: &str) -> MoveOutcome {
         let preview = self
             .svc
-            .preview_move(&moves(&[(from, to)]), true)
+            .preview_move(&moves(&[(from, to)]), true, &[])
             .expect("preview");
         self.svc
             .apply_move(preview.plan_id, true, &[])
@@ -199,7 +199,7 @@ fn move_without_updating_links_leaves_the_documents_alone() {
     let fx = Fx::new(&WIKI);
     let preview = fx
         .svc
-        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true)
+        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true, &[])
         .expect("preview");
     assert_eq!((preview.link_count, preview.file_count), (1, 1));
     let outcome = fx
@@ -216,7 +216,7 @@ fn the_preview_lists_every_link_with_its_line() {
     let fx = Fx::new(&WIKI);
     let preview = fx
         .svc
-        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true)
+        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true, &[])
         .expect("preview");
     assert_eq!(preview.files.len(), 1);
     let file = &preview.files[0];
@@ -239,7 +239,7 @@ fn a_preview_without_link_scanning_reads_no_documents() {
     let fx = Fx::new(&WIKI);
     let preview = fx
         .svc
-        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), false)
+        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), false, &[])
         .expect("preview");
     assert_eq!((preview.link_count, preview.file_count), (0, 0));
     assert_eq!(preview.moves, moves(&[("docs/guide.md", "docs/manual.md")]));
@@ -251,17 +251,23 @@ fn a_destination_that_exists_is_never_overwritten() {
     assert_eq!(
         kind(
             fx.svc
-                .preview_move(&moves(&[("docs/guide.md", "docs/api.md")]), true)
+                .preview_move(&moves(&[("docs/guide.md", "docs/api.md")]), true, &[])
         ),
         "exists"
     );
     // a folder onto a file, a file onto a folder
     assert_eq!(
-        kind(fx.svc.preview_move(&moves(&[("docs", "README.md")]), true)),
+        kind(
+            fx.svc
+                .preview_move(&moves(&[("docs", "README.md")]), true, &[])
+        ),
         "exists"
     );
     assert_eq!(
-        kind(fx.svc.preview_move(&moves(&[("README.md", "docs")]), true)),
+        kind(
+            fx.svc
+                .preview_move(&moves(&[("README.md", "docs")]), true, &[])
+        ),
         "exists"
     );
     assert_eq!(fx.read("docs/api.md"), "# API\n");
@@ -272,7 +278,7 @@ fn something_created_between_preview_and_apply_is_not_overwritten_either() {
     let fx = Fx::new(&WIKI);
     let preview = fx
         .svc
-        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true)
+        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true, &[])
         .expect("preview");
     fs::write(fx.path("docs/manual.md"), "someone else's").expect("write");
     assert_eq!(
@@ -292,11 +298,11 @@ fn moves_outside_the_project_are_refused() {
         "/etc/outside.md",
         "C:/outside.md",
     ] {
-        let k = kind(fx.svc.preview_move(&moves(&[("README.md", to)]), true));
+        let k = kind(fx.svc.preview_move(&moves(&[("README.md", to)]), true, &[]));
         assert!(matches!(k, "pathEscape" | "invalidPath"), "{to}: {k}");
     }
     for from in ["../README.md", "/README.md"] {
-        let k = kind(fx.svc.preview_move(&moves(&[(from, "x.md")]), true));
+        let k = kind(fx.svc.preview_move(&moves(&[(from, "x.md")]), true, &[]));
         assert!(matches!(k, "pathEscape" | "invalidPath"), "{from}: {k}");
     }
     assert!(fx.exists("README.md"));
@@ -306,13 +312,16 @@ fn moves_outside_the_project_are_refused() {
 fn a_missing_source_or_destination_folder_is_reported() {
     let fx = Fx::new(&WIKI);
     assert_eq!(
-        kind(fx.svc.preview_move(&moves(&[("nope.md", "x.md")]), true)),
+        kind(
+            fx.svc
+                .preview_move(&moves(&[("nope.md", "x.md")]), true, &[])
+        ),
         "notFound"
     );
     assert_eq!(
         kind(
             fx.svc
-                .preview_move(&moves(&[("README.md", "missing/dir/x.md")]), true)
+                .preview_move(&moves(&[("README.md", "missing/dir/x.md")]), true, &[])
         ),
         "notFound"
     );
@@ -337,14 +346,14 @@ fn files_do_not_move_between_the_project_and_a_worktree() {
     assert_eq!(
         kind(
             fx.svc
-                .preview_move(&moves(&[("README.md", "@wt/feat/README.md")]), true)
+                .preview_move(&moves(&[("README.md", "@wt/feat/README.md")]), true, &[])
         ),
         "otherRoot"
     );
     assert_eq!(
         kind(
             fx.svc
-                .preview_move(&moves(&[("@wt/feat/w.md", "w.md")]), true)
+                .preview_move(&moves(&[("@wt/feat/w.md", "w.md")]), true, &[])
         ),
         "otherRoot"
     );
@@ -352,14 +361,14 @@ fn files_do_not_move_between_the_project_and_a_worktree() {
     assert_eq!(
         kind(
             fx.svc
-                .preview_move(&moves(&[("@wt/feat", "@wt/other")]), true)
+                .preview_move(&moves(&[("@wt/feat", "@wt/other")]), true, &[])
         ),
         "protected"
     );
     // inside the worktree, a rename works
     let preview = fx
         .svc
-        .preview_move(&moves(&[("@wt/feat/w.md", "@wt/feat/v.md")]), true)
+        .preview_move(&moves(&[("@wt/feat/w.md", "@wt/feat/v.md")]), true, &[])
         .expect("preview");
     fx.svc
         .apply_move(preview.plan_id, true, &[])
@@ -377,7 +386,7 @@ fn roots_and_the_git_folder_are_protected() {
         ("a.md", ".trailmark"),
     ] {
         assert_eq!(
-            kind(fx.svc.preview_move(&moves(&[(from, to)]), true)),
+            kind(fx.svc.preview_move(&moves(&[(from, to)]), true, &[])),
             "protected",
             "{from} -> {to}"
         );
@@ -390,7 +399,10 @@ fn roots_and_the_git_folder_are_protected() {
 fn a_folder_cannot_be_moved_into_itself_and_names_are_checked() {
     let fx = Fx::new(&WIKI);
     assert_eq!(
-        kind(fx.svc.preview_move(&moves(&[("docs", "docs/inner")]), true)),
+        kind(
+            fx.svc
+                .preview_move(&moves(&[("docs", "docs/inner")]), true, &[])
+        ),
         "intoItself"
     );
     for bad in [
@@ -401,7 +413,10 @@ fn a_folder_cannot_be_moved_into_itself_and_names_are_checked() {
         "con.md",
         "",
     ] {
-        let k = kind(fx.svc.preview_move(&moves(&[("README.md", bad)]), true));
+        let k = kind(
+            fx.svc
+                .preview_move(&moves(&[("README.md", bad)]), true, &[]),
+        );
         assert!(
             matches!(k, "invalidName" | "protected" | "invalidPath"),
             "{bad:?}: {k}"
@@ -410,7 +425,7 @@ fn a_folder_cannot_be_moved_into_itself_and_names_are_checked() {
     assert_eq!(
         kind(
             fx.svc
-                .preview_move(&moves(&[("README.md", "README.md")]), true)
+                .preview_move(&moves(&[("README.md", "README.md")]), true, &[])
         ),
         "nothing"
     );
@@ -432,7 +447,7 @@ fn several_moves_happen_together_and_must_not_overlap() {
         ("docs/guide.md", "archive/guide.md"),
         ("docs/api.md", "archive/api.md"),
     ]);
-    let preview = fx.svc.preview_move(&both, true).expect("preview");
+    let preview = fx.svc.preview_move(&both, true, &[]).expect("preview");
     let outcome = fx
         .svc
         .apply_move(preview.plan_id, true, &[])
@@ -447,25 +462,27 @@ fn several_moves_happen_together_and_must_not_overlap() {
     assert_eq!(
         kind(fx.svc.preview_move(
             &moves(&[("docs", "manual"), ("docs/guide.md", "guide.md")]),
-            true
+            true,
+            &[]
         )),
         "overlap"
     );
     assert_eq!(
         kind(fx.svc.preview_move(
             &moves(&[("docs/guide.md", "same.md"), ("docs/api.md", "same.md")]),
-            true
+            true,
+            &[]
         )),
         "exists"
     );
-    assert_eq!(kind(fx.svc.preview_move(&[], true)), "nothing");
+    assert_eq!(kind(fx.svc.preview_move(&[], true, &[])), "nothing");
 }
 
 #[test]
 fn a_move_that_fails_half_way_puts_back_what_it_moved() {
     let fx = Fx::new(&WIKI);
     let two = moves(&[("docs/guide.md", "g.md"), ("docs/api.md", "a.md")]);
-    let preview = fx.svc.preview_move(&two, true).expect("preview");
+    let preview = fx.svc.preview_move(&two, true, &[]).expect("preview");
     // the second source disappears before the move is made
     fs::remove_file(fx.path("docs/api.md")).expect("remove");
     assert!(fx.svc.apply_move(preview.plan_id, true, &[]).is_err());
@@ -477,7 +494,7 @@ fn a_preview_can_be_applied_once() {
     let fx = Fx::new(&WIKI);
     let preview = fx
         .svc
-        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true)
+        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true, &[])
         .expect("preview");
     fx.svc
         .apply_move(preview.plan_id, true, &[])
@@ -513,7 +530,7 @@ fn a_document_that_changed_after_the_preview_is_skipped_and_reported() {
     ]);
     let preview = fx
         .svc
-        .preview_move(&moves(&[("g.md", "h.md")]), true)
+        .preview_move(&moves(&[("g.md", "h.md")]), true, &[])
         .expect("preview");
     assert_eq!(preview.file_count, 2);
     fs::write(fx.path("a.md"), "[x](g.md)\nan agent wrote this\n").expect("write");
@@ -540,13 +557,15 @@ fn a_document_with_unsaved_edits_is_not_written_and_gets_edits_for_its_buffer() 
         ("b.md", "[x](g.md)\n"),
         ("g.md", "g"),
     ]);
-    let preview = fx.svc.preview_move(&moves(&[("g.md", "sub/h.md")]), true);
+    let preview = fx
+        .svc
+        .preview_move(&moves(&[("g.md", "sub/h.md")]), true, &[]);
     // the destination folder does not exist yet
     assert_eq!(kind(preview), "notFound");
     fs::create_dir(fx.path("sub")).expect("mkdir");
     let preview = fx
         .svc
-        .preview_move(&moves(&[("g.md", "sub/h.md")]), true)
+        .preview_move(&moves(&[("g.md", "sub/h.md")]), true, &[])
         .expect("preview");
     // the editor holds a.md with a line the file does not have, and a multi-byte character before the link
     let buffer = BufferText {
@@ -587,7 +606,7 @@ fn the_buffer_of_a_document_that_moves_gets_its_own_links_recomputed() {
     fs::create_dir_all(fx.path("deeper/more")).expect("mkdir");
     let preview = fx
         .svc
-        .preview_move(&moves(&[("docs/a.md", "deeper/more/a.md")]), true)
+        .preview_move(&moves(&[("docs/a.md", "deeper/more/a.md")]), true, &[])
         .expect("preview");
     let buffer = BufferText {
         path: "docs/a.md".to_owned(),
@@ -604,6 +623,97 @@ fn the_buffer_of_a_document_that_moves_gets_its_own_links_recomputed() {
         "disk untouched"
     );
     assert_eq!(outcome.buffers[0].edits[0].insert, "../../README.md");
+}
+
+#[test]
+fn a_held_back_document_is_left_out_of_the_preview_and_listed_as_skipped() {
+    let fx = Fx::new(&[
+        ("a.md", "[x](g.md)\n"),
+        ("b.md", "[x](g.md) and [y](g.md#top)\n"),
+        ("c.md", "no links here\n"),
+        ("g.md", "g"),
+    ]);
+    let held = ["b.md".to_owned(), "c.md".to_owned()];
+    let preview = fx
+        .svc
+        .preview_move(&moves(&[("g.md", "h.md")]), true, &held)
+        .expect("preview");
+    // only a.md is left to rewrite; b.md had links, c.md had none and is not mentioned
+    assert_eq!((preview.link_count, preview.file_count), (1, 1));
+    assert_eq!(
+        preview
+            .files
+            .iter()
+            .map(|f| f.path.as_str())
+            .collect::<Vec<_>>(),
+        ["a.md"]
+    );
+    assert_eq!(
+        preview.skipped,
+        [SkippedFile {
+            path: "b.md".to_owned(),
+            reason: SkipReason::UnsavedVisual
+        }]
+    );
+
+    // applying leaves the held document's file alone and carries the note into the result
+    let outcome = fx
+        .svc
+        .apply_move(preview.plan_id, true, &[])
+        .expect("apply");
+    assert_eq!(fx.read("a.md"), "[x](h.md)\n");
+    assert_eq!(fx.read("b.md"), "[x](g.md) and [y](g.md#top)\n");
+    assert!(fx.exists("h.md"), "the move itself is made");
+    assert_eq!((outcome.files_updated, outcome.links_updated), (1, 1));
+    assert_eq!(outcome.skipped, preview.skipped);
+}
+
+#[test]
+fn a_held_back_document_that_moves_itself_keeps_its_links_for_later() {
+    let fx = Fx::new(&[("docs/a.md", "[r](../README.md)\n"), ("README.md", "x")]);
+    fs::create_dir_all(fx.path("deeper/more")).expect("mkdir");
+    let preview = fx
+        .svc
+        .preview_move(
+            &moves(&[("docs/a.md", "deeper/more/a.md")]),
+            true,
+            &["docs/a.md".to_owned()],
+        )
+        .expect("preview");
+    assert_eq!((preview.link_count, preview.file_count), (0, 0));
+    assert_eq!(
+        preview.skipped,
+        [SkippedFile {
+            path: "docs/a.md".to_owned(),
+            reason: SkipReason::UnsavedVisual
+        }]
+    );
+    let outcome = fx
+        .svc
+        .apply_move(preview.plan_id, true, &[])
+        .expect("apply");
+    assert_eq!(fx.read("deeper/more/a.md"), "[r](../README.md)\n");
+    assert_eq!(outcome.files_updated, 0);
+}
+
+#[test]
+fn nothing_is_held_back_without_a_matching_path() {
+    let fx = Fx::new(&WIKI);
+    let plain = fx
+        .svc
+        .preview_move(&moves(&[("docs/guide.md", "docs/manual.md")]), true, &[])
+        .expect("preview");
+    let other = fx
+        .svc
+        .preview_move(
+            &moves(&[("docs/guide.md", "docs/manual.md")]),
+            true,
+            &["docs/api.md".to_owned(), "nope.md".to_owned()],
+        )
+        .expect("preview");
+    assert_eq!((other.link_count, other.file_count), (1, 1));
+    assert_eq!(other.files, plain.files);
+    assert_eq!(other.skipped, plain.skipped);
 }
 
 #[test]
@@ -709,7 +819,7 @@ fn undo_puts_back_the_links_of_the_files_that_go_back_and_only_those() {
         ("archive/keep.md", "k"),
     ]);
     let both = moves(&[("a.md", "archive/a.md"), ("b.md", "archive/b.md")]);
-    let preview = fx.svc.preview_move(&both, true).expect("preview");
+    let preview = fx.svc.preview_move(&both, true, &[]).expect("preview");
     let outcome = fx
         .svc
         .apply_move(preview.plan_id, true, &[])
@@ -826,7 +936,7 @@ fn a_folder_with_a_linked_worktree_in_it_is_not_moved_or_deleted() {
         }),
     );
     assert_eq!(
-        kind(svc.preview_move(&moves(&[("agents", "elsewhere")]), true)),
+        kind(svc.preview_move(&moves(&[("agents", "elsewhere")]), true, &[])),
         "protected"
     );
     assert_eq!(kind(svc.delete(&["agents".to_owned()])), "protected");
@@ -938,7 +1048,7 @@ fn a_document_that_cannot_be_read_as_text_is_reported_in_the_preview() {
     fs::write(fx.path("latin.md"), b"[x](g.md) caf\xE9").expect("write");
     let preview = fx
         .svc
-        .preview_move(&moves(&[("g.md", "h.md")]), true)
+        .preview_move(&moves(&[("g.md", "h.md")]), true, &[])
         .expect("preview");
     assert_eq!(
         preview.skipped,

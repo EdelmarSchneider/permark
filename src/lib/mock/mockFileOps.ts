@@ -13,6 +13,7 @@ import type {
   MovePreview,
   PreviewChange,
   PreviewFile,
+  SkippedFile,
   TextEdit,
   UndoOutcome,
 } from "../types";
@@ -26,7 +27,11 @@ import {
   writeSource,
 } from "./fixtures";
 
-type Plan = { moves: Move[]; files: { path: string; movedTo: string | null; edits: Edit[] }[] };
+type Plan = {
+  moves: Move[];
+  files: { path: string; movedTo: string | null; edits: Edit[] }[];
+  skipped: SkippedFile[];
+};
 type Edit = { old: string; new: string; at: number; line: number };
 type Operation = {
   id: number;
@@ -114,11 +119,20 @@ function scan(moves: Move[]): Plan["files"] {
   return files;
 }
 
-export async function previewMove(moves: Move[], scanLinks: boolean): Promise<MovePreview> {
+export async function previewMove(
+  moves: Move[],
+  scanLinks: boolean,
+  heldBack: string[],
+): Promise<MovePreview> {
   const checked = check(moves);
-  const files = scanLinks ? scan(checked) : [];
+  const found = scanLinks ? scan(checked) : [];
+  // documents with unsaved edits in Visual mode are left out and reported
+  const files = found.filter((f) => !heldBack.includes(f.path));
+  const skipped = found
+    .filter((f) => heldBack.includes(f.path))
+    .map((f): SkippedFile => ({ path: f.path, reason: "unsavedVisual" }));
   const planId = ++counter;
-  plans.set(planId, { moves: checked, files });
+  plans.set(planId, { moves: checked, files, skipped });
   const shown: PreviewFile[] = files.map((f) => ({
     path: f.path,
     movedTo: f.movedTo,
@@ -131,7 +145,7 @@ export async function previewMove(moves: Move[], scanLinks: boolean): Promise<Mo
     fileCount: files.length,
     files: shown,
     truncated: false,
-    skipped: [],
+    skipped,
   };
 }
 
@@ -204,7 +218,7 @@ export async function applyMove(
     filesUpdated: rewrites.length,
     linksUpdated: links,
     buffers: bufferEdits,
-    skipped: [],
+    skipped: plan.skipped,
   };
 }
 

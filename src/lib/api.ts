@@ -96,9 +96,11 @@ export interface Api {
   writeAsset(docPath: string, nameHint: string, data: string): Promise<AssetWritten>;
   /**
    * Checks a rename or move (rejects when the destination exists, is outside the project, the name is not usable...)
-   * and, with `scanLinks`, lists the links of the documents that would have to change. Nothing is changed yet.
+   * and, with `scanLinks`, lists the links of the documents that would have to change. Nothing is changed yet. The
+   * documents in `heldBack` have unsaved edits that cannot be patched (Visual mode): they are left out of the plan
+   * and listed as skipped.
    */
-  previewMove(moves: Move[], scanLinks: boolean): Promise<MovePreview>;
+  previewMove(moves: Move[], scanLinks: boolean, heldBack: string[]): Promise<MovePreview>;
   /**
    * Makes the move of a preview, once. With `updateLinks` the links it listed are rewritten (a document whose file
    * changed since is skipped and reported); documents in `buffers` have unsaved edits: they are not written, the
@@ -153,7 +155,8 @@ export const tauriApi: Api = {
   createDocument: (path, text) => invoke<CreatedDoc>("create_document", { path, text }),
   writeAsset: (docPath, nameHint, data) =>
     invoke<AssetWritten>("write_asset", { docPath, nameHint, data }),
-  previewMove: (moves, scanLinks) => invoke<MovePreview>("preview_move", { moves, scanLinks }),
+  previewMove: (moves, scanLinks, heldBack) =>
+    invoke<MovePreview>("preview_move", { moves, scanLinks, heldBack }),
   applyMove: (planId, updateLinks, buffers) =>
     invoke<MoveOutcome>("apply_move", { planId, updateLinks, buffers }),
   deleteEntries: (paths) => invoke<DeleteOutcome>("delete_entries", { paths }),

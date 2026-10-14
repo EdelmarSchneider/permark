@@ -6,6 +6,7 @@ import type {
   Move,
   MoveOutcome,
   MovePreview,
+  SkippedFile,
   TreeNode,
   UndoOutcome,
 } from "../types";
@@ -43,6 +44,7 @@ vi.mock("../platform", () => ({
 }));
 
 import { bridge } from "../bridge";
+import { skipNotes } from "../fileOps";
 import { docs } from "./docs.svelte";
 import { edit } from "./edit.svelte";
 import { feed } from "./feed.svelte";
@@ -141,7 +143,7 @@ describe("renaming and moving", () => {
     const done = fileops.rename("docs/guide.md", "manual.md");
     await answer("apply");
     expect(await done).toBeNull();
-    expect(fake.previewMove).toHaveBeenCalledWith(RENAME, true);
+    expect(fake.previewMove).toHaveBeenCalledWith(RENAME, true, []);
     expect(fake.applyMove).toHaveBeenCalledWith(7, true, []);
     expect(fileops.renaming).toBeNull();
     // one row in the feed, one toast with Undo
@@ -191,7 +193,7 @@ describe("renaming and moving", () => {
     fake.previewMove.mockResolvedValue(preview(5, RENAME));
     fake.applyMove.mockResolvedValue(outcome(RENAME, { filesUpdated: 1, linksUpdated: 5 }));
     await fileops.rename("docs/guide.md", "manual.md");
-    expect(fake.previewMove).toHaveBeenCalledWith(RENAME, true);
+    expect(fake.previewMove).toHaveBeenCalledWith(RENAME, true, []);
     expect(fake.applyMove).toHaveBeenCalledWith(7, true, []);
   });
 
@@ -200,7 +202,7 @@ describe("renaming and moving", () => {
     fake.previewMove.mockResolvedValue(preview(0, RENAME));
     fake.applyMove.mockResolvedValue(outcome(RENAME));
     await fileops.rename("docs/guide.md", "manual.md");
-    expect(fake.previewMove).toHaveBeenCalledWith(RENAME, false);
+    expect(fake.previewMove).toHaveBeenCalledWith(RENAME, false, []);
     expect(fake.applyMove).toHaveBeenCalledWith(7, false, []);
   });
 
@@ -225,7 +227,7 @@ describe("renaming and moving", () => {
     fake.previewMove.mockResolvedValue(preview(0, moves));
     fake.applyMove.mockResolvedValue(outcome(moves));
     await fileops.move(["docs/guide.md", "README.md"], "archive");
-    expect(fake.previewMove).toHaveBeenCalledWith(moves, true);
+    expect(fake.previewMove).toHaveBeenCalledWith(moves, true, []);
     expect(feed.entries[0]).toMatchObject({ kind: "moved", summary: "Moved 2 files" });
 
     fake.previewMove.mockRejectedValue({ kind: "otherRoot", message: "in another root" });
@@ -243,7 +245,7 @@ describe("renaming and moving", () => {
     fake.previewMove.mockResolvedValue(preview(0, moves));
     fake.applyMove.mockResolvedValue(outcome(moves));
     await fileops.move(["docs", "docs/api.md"], "archive");
-    expect(fake.previewMove).toHaveBeenCalledWith(moves, true);
+    expect(fake.previewMove).toHaveBeenCalledWith(moves, true, []);
     expect(feed.entries[0]).toMatchObject({ summary: "Moved 1 folder" });
   });
 
@@ -311,10 +313,100 @@ describe("renaming and moving", () => {
     fake.readDocument.mockResolvedValue(view("docs/guide.md"));
     session.setLinkUpdate("always");
     await fileops.rename("docs/api.md", "reference.md");
+    // a Source buffer is patched, not held back
+    expect(fake.previewMove).toHaveBeenCalledWith(moves, true, []);
     expect(fake.applyMove).toHaveBeenCalledWith(7, true, [
       { path: "docs/guide.md", text: "[a](api.md) unsaved\n" },
     ]);
     expect(editor.text).toBe("[a](reference.md) unsaved\n");
+  });
+
+  /** A Visual editor holding the open document, with or without unsaved edits. */
+  async function openInVisual(dirty: boolean): Promise<void> {
+    docs.current = view("docs/guide.md");
+    fake.documentSource.mockResolvedValue({
+      path: "docs/guide.md",
+      text: "[a](api.md)\n",
+      hash: "h1",
+      modifiedMs: 1,
+      eol: "lf",
+      blocks: [],
+    });
+    expect(await edit.enter()).toBe(true);
+    bridge.editor = {
+      mode: "visual",
+      text: () => "[a](api.md)\n",
+      status: () => ({ dirty, changed: dirty ? 1 : 0 }),
+      caretLine: () => 0,
+      caretBlock: () => 0,
+      lineOfBlock: () => 0,
+      load: vi.fn(),
+      rebase: vi.fn(),
+      focus: vi.fn(),
+      insertImage: vi.fn(),
+    };
+    edit.noteVisual();
+    expect(edit.dirty).toBe(dirty);
+  }
+
+  const GUIDE_HELD: SkippedFile = { path: "docs/guide.md", reason: "unsavedVisual" };
+  const GUIDE_NOTE =
+    "guide.md: has unsaved edits in Visual mode; save it, then run Update links again";
+  const REFERENCE: Move[] = [{ from: "docs/api.md", to: "docs/reference.md" }];
+
+  it("leaves a document with unsaved edits in Visual mode out of the rewrite, says so, and keeps the rest working", async () => {
+    await openInVisual(true);
+    const editor = bridge.editor;
+    fake.previewMove.mockResolvedValue({ ...preview(1, REFERENCE), skipped: [GUIDE_HELD] });
+    fake.applyMove.mockResolvedValue(
+      outcome(REFERENCE, { filesUpdated: 1, linksUpdated: 1, skipped: [GUIDE_HELD] }),
+    );
+    fake.readDocument.mockResolvedValue(view("docs/guide.md"));
+    session.setLinkUpdate("always");
+    await fileops.rename("docs/api.md", "reference.md");
+
+    // the backend is told to leave it out, and gets no text for it
+    expect(fake.previewMove).toHaveBeenCalledWith(REFERENCE, true, ["docs/guide.md"]);
+    expect(fake.applyMove).toHaveBeenCalledWith(7, true, []);
+    // the move is made and reported, with the document named as not updated
+    expect(toast.current).toMatchObject({
+      tone: "warn",
+      text: "Renamed api.md to reference.md, 1 link updated. 1 document wasn't updated",
+    });
+    expect(feed.entries[0]).toMatchObject({ notes: [GUIDE_NOTE] });
+    // the editor and its edits are untouched
+    expect(bridge.editor).toBe(editor);
+    expect(edit.dirty).toBe(true);
+    expect(edit.path).toBe("docs/guide.md");
+    expect(edit.conflict).toBeNull();
+  });
+
+  it("lists the held-back document in the question about links", async () => {
+    await openInVisual(true);
+    fake.previewMove.mockResolvedValue({ ...preview(1, REFERENCE), skipped: [GUIDE_HELD] });
+    fake.applyMove.mockResolvedValue(outcome(REFERENCE, { skipped: [GUIDE_HELD] }));
+    fake.readDocument.mockResolvedValue(view("docs/guide.md"));
+    const done = fileops.rename("docs/api.md", "reference.md");
+    await vi.waitFor(() => expect(fileops.prompt).not.toBeNull());
+    expect(fileops.prompt?.preview.skipped).toEqual([GUIDE_HELD]);
+    expect(skipNotes(fileops.prompt?.preview.skipped ?? [])).toEqual([GUIDE_NOTE]);
+    fileops.answer("apply");
+    await done;
+    expect(fake.applyMove).toHaveBeenCalledWith(7, true, []);
+  });
+
+  it("holds nothing back when the Visual document has no unsaved edits: it is rewritten on disk and looked at again", async () => {
+    await openInVisual(false);
+    fake.previewMove.mockResolvedValue(preview(1, REFERENCE));
+    fake.applyMove.mockResolvedValue(outcome(REFERENCE, { filesUpdated: 1, linksUpdated: 1 }));
+    fake.readDocument.mockResolvedValue(view("docs/guide.md"));
+    session.setLinkUpdate("always");
+    fake.documentSource.mockClear();
+    await fileops.rename("docs/api.md", "reference.md");
+    expect(fake.previewMove).toHaveBeenCalledWith(REFERENCE, true, []);
+    expect(fake.applyMove).toHaveBeenCalledWith(7, true, []);
+    // the editor reads the file again, as it does for any change from outside
+    await vi.waitFor(() => expect(fake.documentSource).toHaveBeenCalledWith("docs/guide.md"));
   });
 
   it("says when the links of a document could not be updated", async () => {
@@ -352,7 +444,7 @@ describe("renaming and moving", () => {
     expect([...fileops.cut].sort()).toEqual(["README.md", "docs"]);
     fileops.cutPicked(["README.md"]);
     await fileops.paste("archive");
-    expect(fake.previewMove).toHaveBeenCalledWith(moves, true);
+    expect(fake.previewMove).toHaveBeenCalledWith(moves, true, []);
     expect(fileops.cut.size).toBe(0);
     // pasting into the folder of the item itself, or with nothing cut, does nothing
     fake.previewMove.mockClear();
@@ -436,7 +528,9 @@ describe("deleting", () => {
     await fileops.remove(["docs"]);
     const question = fake.askYesNo.mock.calls[0][0] as string;
     expect(question).toContain("Move the folder docs and everything in it to the recycle bin?");
-    expect(question).toContain("api.md is open with changes that are not saved. They will be lost.");
+    expect(question).toContain(
+      "api.md is open with changes that are not saved. They will be lost.",
+    );
   });
 
   it("does not warn when the document that is open has nothing unsaved, or is not deleted", async () => {

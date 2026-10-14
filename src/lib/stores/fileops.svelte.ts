@@ -160,9 +160,15 @@ class FileOpsStore {
     try {
       const dirs = moves.map((m) => isDirPath(vault.tree, m.from));
       const setting = session.linkUpdate;
+      // a document with unsaved edits in Visual mode cannot take link changes: it is left out and reported
+      const held = edit.unsavedUnpatchable();
       let preview: MovePreview;
       try {
-        preview = await api.previewMove(moves, shouldScanLinks(setting));
+        preview = await api.previewMove(
+          moves,
+          shouldScanLinks(setting),
+          held === null ? [] : [held],
+        );
       } catch (error) {
         return errorText(error);
       }

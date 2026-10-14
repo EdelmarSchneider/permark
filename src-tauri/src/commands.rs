@@ -367,15 +367,17 @@ pub async fn write_asset(
 }
 
 /// Checks a rename or move (nothing is overwritten, nothing leaves the project) and, with `scan_links`,
-/// lists the links in the documents that would have to change.
+/// lists the links in the documents that would have to change. The documents in `held_back` (open with
+/// unsaved edits that cannot be patched) are left out and listed as skipped.
 #[tauri::command]
 pub async fn preview_move(
     state: State<'_, AppState>,
     moves: Vec<Move>,
     scan_links: bool,
+    held_back: Vec<String>,
 ) -> Result<MovePreview, AppError> {
     let ws = state.current()?;
-    blocking(move || ws.preview_move(&moves, scan_links)).await
+    blocking(move || ws.preview_move(&moves, scan_links, &held_back)).await
 }
 
 /// Makes the move of a preview. With `update_links` the links it listed are rewritten; the documents in
