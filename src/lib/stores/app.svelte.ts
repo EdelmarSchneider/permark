@@ -317,11 +317,9 @@ class AppStore {
 
   // ---- navigation ---------------------------------------------------------------------------------
 
-  /** Opens a document and, in IDE mode, reveals it in the tree. */
-  async openDoc(path: string, opts: OpenOptions = {}): Promise<boolean> {
-    const ok = await docs.open(path, opts);
-    if (ok && !vault.isSimple) vault.revealPath(path);
-    return ok;
+  /** Opens a document (the Explorer shows it too, unless "Always select the opened file" is off). */
+  openDoc(path: string, opts: OpenOptions = {}): Promise<boolean> {
+    return docs.open(path, opts);
   }
 
   /** Opens a document because it changed (feed row, toast, Follow): marks what is new in it. */

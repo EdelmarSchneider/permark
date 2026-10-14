@@ -54,6 +54,7 @@ export const en = {
   "explorer.menuHint": "Collapse all, reveal the open doc, initialize TrailMark",
   "explorer.collapseAll": "Collapse all",
   "explorer.revealOpen": "Reveal open doc",
+  "explorer.autoReveal": "Always select the opened file",
   "explorer.initialize": "Initialize TrailMark in this project...",
   "explorer.stateInProject": "Settings are kept in .trailmark/",
   "explorer.empty": "No Markdown files here yet. New files appear as soon as they are written.",

@@ -4,6 +4,7 @@
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
   import { filter } from "../stores/filter.svelte";
+  import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
   import FilterPopover from "./FilterPopover.svelte";
@@ -24,6 +25,12 @@
       label: t("explorer.revealOpen"),
       disabled: !docs.current,
       onselect: () => docs.path && vault.revealPath(docs.path),
+    },
+    {
+      id: "autoReveal",
+      label: t("explorer.autoReveal"),
+      checked: session.autoReveal,
+      onselect: () => session.toggleAutoReveal(),
     },
     { type: "separator" },
     {

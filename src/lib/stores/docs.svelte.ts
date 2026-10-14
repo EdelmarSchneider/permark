@@ -6,10 +6,12 @@ import type { FindMode } from "../find";
 import { errorText } from "../errors";
 import { t } from "../i18n";
 import { NavHistory } from "../history";
+import { shouldAutoReveal } from "../reveal";
 import type { DocumentView, FsBatch, FsChange } from "../types";
 import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
+import { vault } from "./vault.svelte";
 
 /** How long a removed file may stay missing before the open document is treated as deleted. */
 export const DELETE_GRACE_MS = 1000;
@@ -101,13 +103,15 @@ class DocStore {
   async open(path: string, opts: OpenOptions = {}): Promise<boolean> {
     if (this.current?.path === path && !this.deleted && opts.history !== "none") {
       // the same document: just move within it
-      if (opts.anchor || opts.locate) {
+      const movedWithin = !!(opts.anchor || opts.locate);
+      if (movedWithin) {
         this.jump = {
           n: ++this.jumpCount,
           anchor: opts.anchor ?? null,
           locate: opts.locate ?? null,
         };
       }
+      this.revealInExplorer(path, movedWithin);
       return true;
     }
     const token = ++this.token;
@@ -153,7 +157,17 @@ class DocStore {
     };
     this.syncNav();
     session.noteDoc(path);
+    this.revealInExplorer(path, false);
     return true;
+  }
+
+  /**
+   * Every route that opens a document ends here (tree, Quick open, search, links, the feed, Follow,
+   * back and forward, the restored session), so this is where the Explorer is asked to show it.
+   */
+  private revealInExplorer(path: string, movedWithin: boolean): void {
+    const opened = { autoReveal: session.autoReveal, simple: vault.isSimple, movedWithin };
+    if (shouldAutoReveal(opened)) vault.revealPath(path);
   }
 
   async back(): Promise<void> {
