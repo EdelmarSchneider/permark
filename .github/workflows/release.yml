@@ -1,0 +1,116 @@
+name: Release
+
+# Pushing a `v*` tag (made by `git flow release finish`) builds the installers for Windows,
+# macOS (universal) and Linux, signs the updater artifacts and publishes the GitHub release together with
+# `latest.json`, the manifest the in-app updater reads.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release (${{ matrix.platform }})
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      # One job at a time: each job merges its entry into the release's latest.json; parallel uploads could drop a platform.
+      max-parallel: 1
+      matrix:
+        include:
+          - platform: windows-latest
+            rust-targets: ""
+            args: ""
+          - platform: macos-latest
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
+          - platform: ubuntu-22.04
+            rust-targets: ""
+            args: ""
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The system libraries the Tauri crates link against and the AppImage bundler needs.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build and publish the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the updater artifacts (the matching public key is in tauri.conf.json). The key has no password.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "TrailMark ${{ github.ref_name }}"
+          releaseBody: |
+            **TrailMark** is a fast, beautiful Markdown IDE that keeps up with your AI agents. It works with any
+            tool, or none: it only relies on your files and git.
+
+            ### Highlights
+            - Read a whole folder of Markdown like a wiki: relative links, back and forward, quick open (`Ctrl+P`).
+            - Follow documents live as they change: changed blocks glow, removed blocks leave a marker.
+            - See what changed since your last visit, even when the agent already committed.
+            - Search by section across hundreds of documents (`Ctrl+Shift+F`).
+            - Copy a path, a reference or a quoted selection to paste straight back into your AI tool.
+            - Mermaid diagrams, math, light and dark themes.
+
+            ### Install
+            | Platform | Download |
+            | --- | --- |
+            | Windows | the `-setup.exe` installer (or the `.msi`) |
+            | macOS | the universal `.dmg` (Apple silicon and Intel) |
+            | Linux | the `.AppImage`, `.deb` or `.rpm` |
+
+            TrailMark updates itself: when a new version is out, it offers a one-click "Restart to update".
+
+            ### The app is not code-signed yet
+            The installers are unsigned, so your system warns you the first time. They are built by GitHub Actions
+            from the tagged commit, and the in-app updates are verified with a signature.
+
+            **Windows (SmartScreen).** If you see "Windows protected your PC", click **More info**, then **Run anyway**.
+
+            **macOS (Gatekeeper).** If macOS says it can't verify TrailMark, open **System Settings, Privacy & Security**,
+            scroll to the Security section and click **Open Anyway**. On older macOS versions you can right-click the
+            app and choose **Open** instead. From a terminal: `xattr -dr com.apple.quarantine /Applications/TrailMark.app`.
+
+            **Linux.** Make the AppImage executable (`chmod +x TrailMark_*.AppImage`) and run it, or install the `.deb` / `.rpm`.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}

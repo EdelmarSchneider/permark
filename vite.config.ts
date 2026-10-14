@@ -5,8 +5,11 @@ import { defineConfig } from "vitest/config";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [svelte()],
+
+  // `vite --mode mock` runs the UI in a browser against mockApi (same as VITE_MOCK=1)
+  define: mode === "mock" ? { "import.meta.env.VITE_MOCK": JSON.stringify("1") } : {},
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
@@ -34,4 +37,4 @@ export default defineConfig({
     include: ["src/**/*.test.ts"],
     environment: "node",
   },
-});
+}));

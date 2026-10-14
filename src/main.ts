@@ -1,6 +1,14 @@
 import { mount } from "svelte";
-import "./app.css";
+import "./styles/tokens.css";
+import "./styles/layout.css";
+import "./styles/components.css";
+import "./styles/markdown.css";
 import App from "./App.svelte";
+
+// resolve the theme before the first paint so a dark system does not flash white
+document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+  ? "dark"
+  : "light";
 
 const app = mount(App, {
   target: document.getElementById("app")!,

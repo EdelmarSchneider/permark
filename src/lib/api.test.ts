@@ -1,0 +1,87 @@
+import { readFileSync } from "node:fs";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null) }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import { api, tauriApi, type Api } from "./api";
+import type { SessionState } from "./types";
+
+// The boundary contract is shared with the Rust test in src-tauri/src/commands.rs.
+const contract = JSON.parse(readFileSync("src-tauri/ipc-contract.json", "utf8")) as {
+  commands: Record<string, string[]>;
+  events: string[];
+};
+
+const camel = (snake: string): string => snake.replace(/_(\w)/g, (_, c: string) => c.toUpperCase());
+
+/** One call per `Api` method; the type makes a new method fail to compile until it is listed here. */
+const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
+  openVault: ["/project"],
+  initialPath: [],
+  recentVaults: [],
+  listTree: [],
+  readDocument: ["docs/a.md"],
+  resolveLink: ["docs/a.md", "b.md"],
+  gitSnapshot: [],
+  setGitBaseline: ["head"],
+  sinceLastVisit: [],
+  saveSession: [{} as SessionState],
+  loadSession: [],
+  absolutePath: ["docs/a.md"],
+  openExternal: ["docs/a.md"],
+  revealInFolder: ["docs"],
+  search: ["query", 5],
+  initProjectFolder: [],
+  stateLocation: [],
+};
+
+describe("tauriApi", () => {
+  beforeEach(() => {
+    vi.mocked(invoke).mockClear();
+    vi.mocked(listen).mockClear();
+  });
+
+  it("is the API the app uses unless built with VITE_MOCK=1", () => {
+    expect(api).toBe(tauriApi);
+  });
+
+  it("invokes exactly the commands of the contract, with the argument names Rust expects", async () => {
+    const sent = new Map<string, string[]>();
+    for (const [method, args] of Object.entries(calls)) {
+      vi.mocked(invoke).mockClear();
+      await (tauriApi[method as keyof typeof calls] as (...a: unknown[]) => Promise<unknown>)(
+        ...args,
+      );
+      expect(invoke, method).toHaveBeenCalledTimes(1);
+      const [command, payload] = vi.mocked(invoke).mock.calls[0];
+      sent.set(command, Object.keys(payload ?? {}).sort());
+    }
+
+    const expected = new Map(
+      Object.entries(contract.commands).map(([command, rustArgs]) => [
+        command,
+        rustArgs.map(camel).sort(),
+      ]),
+    );
+    expect(Object.fromEntries([...sent].sort())).toEqual(Object.fromEntries([...expected].sort()));
+  });
+
+  it("subscribes to the event name it is given and hands over the payload", async () => {
+    const handler = vi.fn();
+    await tauriApi.on("fs-change", handler);
+    expect(listen).toHaveBeenCalledWith("fs-change", expect.any(Function));
+    const forward = vi.mocked(listen).mock.calls[0][1] as (e: { payload: unknown }) => void;
+    forward({ payload: { changes: [], bulk: null, rescan: false } });
+    expect(handler).toHaveBeenCalledWith({ changes: [], bulk: null, rescan: false });
+  });
+
+  it("declares the events of the contract, and only those", () => {
+    const source = readFileSync("src/lib/api.ts", "utf8");
+    const block = /export type EventMap = \{(.*?)\n\};/s.exec(source)?.[1] ?? "";
+    const declared = [...block.matchAll(/"([a-z-]+)":/g)].map((m) => m[1]);
+    expect(declared.sort()).toEqual([...contract.events].sort());
+  });
+});
