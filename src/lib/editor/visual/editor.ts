@@ -291,6 +291,17 @@ export class VisualEditor {
     const analysis = this.analysis();
     let index = analysis.nodes.findIndex((n) => n.origin === block);
     if (index < 0) index = Math.min(block, doc.childCount - 1);
+    const startOf = (i: number): number => {
+      let at = 0;
+      for (let k = 0; k < i; k++) at += doc.child(k).nodeSize;
+      return at;
+    };
+    // the block asked for is the one that goes to the top of the pane, even when the caret has to be in another one; when only front
+    // matter is above it (the reader shows that as a card over the text) the pane stays at the very top
+    let revealIndex = index;
+    while (revealIndex > 0 && doc.child(revealIndex - 1).attrs.kind === "frontmatter") revealIndex--;
+    if (revealIndex > 0) revealIndex = index;
+    const revealAt = startOf(revealIndex);
     // a locked block takes no caret: it goes to the next block that can be typed in (else the one before)
     const editable = (i: number): boolean => doc.child(i).type.name !== LOCKED;
     if (!editable(index)) {
@@ -305,8 +316,7 @@ export class VisualEditor {
         atEnd = false;
       }
     }
-    let pos = 0;
-    for (let i = 0; i < index; i++) pos += doc.child(i).nodeSize;
+    const pos = startOf(index);
     const node = doc.child(index);
     let selection: Selection;
     if (node.type.name === LOCKED) selection = NodeSelection.create(doc, pos);
@@ -316,7 +326,7 @@ export class VisualEditor {
     if (this.options.scroll !== false) tr.scrollIntoView();
     view.dispatch(tr);
     if (reveal === "start" && this.options.scroll !== false) {
-      const dom = view.nodeDOM(pos);
+      const dom = view.nodeDOM(revealAt);
       if (dom instanceof HTMLElement) dom.scrollIntoView({ block: "start" });
     }
   }

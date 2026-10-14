@@ -119,6 +119,21 @@
   overflow-x: auto;
 }
 
+/* An item's text is a paragraph in the editor and a bare text in the reader (a tight list): give it the reader's spacing. */
+.ProseMirror li > p {
+  margin: 0 0 0.5em;
+}
+.ProseMirror li[data-spread="false"] > p {
+  margin: 0;
+}
+.ProseMirror li > :last-child {
+  margin-bottom: 0;
+}
+.ProseMirror td > p,
+.ProseMirror th > p {
+  margin: 0;
+}
+
 /* A task item: its box sits where a bullet would, and a click on it flips it (the list is the only block that changes). */
 .ProseMirror li[data-item-type="task"] {
   list-style: none;
