@@ -2,7 +2,7 @@
 //! used by both the filesystem aggregator and the git worker.
 
 use std::ffi::OsStr;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -98,7 +98,16 @@ pub(crate) fn canonicalize_lenient(path: &Path) -> Option<PathBuf> {
     Some(canon)
 }
 
-/// Writes a file atomically (temp file in the same directory, then rename).
+const RENAME_RETRY_DELAYS: [Duration; 3] = [
+    Duration::from_millis(50),
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+];
+
+/// Writes a file atomically: the bytes go to a temp file in the same directory, which is flushed to
+/// disk before it is renamed into place, so a power loss leaves the old file or the new one but never
+/// an empty one. A rename that fails because another program holds the target (antivirus, a sync
+/// client) is retried briefly.
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
@@ -106,10 +115,16 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         .file_name()
         .map_or_else(|| "state".to_owned(), |n| n.to_string_lossy().into_owned());
     let tmp = dir.join(format!(".{name}.{}.part", std::process::id()));
-    std::fs::write(&tmp, bytes)?;
-    std::fs::rename(&tmp, path).inspect_err(|_| {
+    let result = std::fs::File::create(&tmp)
+        .and_then(|mut file| {
+            file.write_all(bytes)?;
+            file.sync_all()
+        })
+        .and_then(|()| retry_io(&RENAME_RETRY_DELAYS, || std::fs::rename(&tmp, path)));
+    if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
-    })
+    }
+    result
 }
 
 /// Escapes text for HTML element content and double-quoted attribute values.
@@ -305,6 +320,23 @@ mod tests {
         write_atomic(&p, b"one").expect("first write");
         write_atomic(&p, b"two").expect("second write");
         assert_eq!(std::fs::read(&p).expect("read"), b"two");
+    }
+
+    #[test]
+    fn write_atomic_leaves_no_temp_file_behind_even_when_the_target_cannot_be_replaced() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let ok = dir.path().join("a.json");
+        write_atomic(&ok, b"data").expect("write");
+        // a directory in the way: the rename fails, and the temp file is cleaned up
+        let blocked = dir.path().join("b.json");
+        std::fs::create_dir(&blocked).expect("mkdir");
+        assert!(write_atomic(&blocked, b"data").is_err());
+        let mut names: Vec<String> = std::fs::read_dir(dir.path())
+            .expect("ls")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(names, ["a.json", "b.json"]);
     }
 
     #[test]
