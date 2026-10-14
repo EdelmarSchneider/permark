@@ -475,3 +475,11 @@ Frontmatter card and alerts are pure CSS in `markdown.css`, not components.
   coalesced toast, Follow skipped during selection/find, auto-open README. Cut any of them first if time runs short.
 - Too big for the MVP, deferred: per-list-item diff, image viewer for binary images, "Show as plain text" for too-large
   files, opening another project in a new process from inside the app, styling broken links before they are clicked.
+
+## Addendum (user validation, 2026-10-13): collapsible side panels
+- Left panel (Explorer/Search) and right panel (Live changes / Since last visit) can each be **collapsed and expanded**:
+  Ctrl+B (left), Ctrl+Alt+B (right), a collapse chevron in each panel header, and clicking the active activity-bar icon toggles the left panel.
+- Both are resizable by dragging their inner edge (min 200 px, max 480 px); double-click the edge resets the width.
+- Open/closed state and widths persist per project (SessionState). With both collapsed, the doc gets the full width (focus reading);
+  the status bar shows small toggle buttons so a collapsed panel is always recoverable.
+- Collapse/expand animates 150 ms (instant with prefers-reduced-motion).
