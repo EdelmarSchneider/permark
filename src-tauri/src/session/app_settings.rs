@@ -123,10 +123,16 @@ pub fn installer_language() -> Option<Language> {
 
 #[cfg(windows)]
 fn installer_language_code() -> Option<String> {
+    language_value_under("Software\\TrailMark")
+}
+
+/// The `Language` value of a key under `HKEY_CURRENT_USER`, when there is one.
+#[cfg(windows)]
+fn language_value_under(subkey: &str) -> Option<String> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
     RegKey::predef(HKEY_CURRENT_USER)
-        .open_subkey("Software\\TrailMark")
+        .open_subkey(subkey)
         .ok()?
         .get_value::<String, _>("Language")
         .ok()
@@ -268,6 +274,32 @@ mod tests {
         assert_eq!(
             languages,
             ["English", "PortugueseBR", "SpanishInternational", "German"]
+        );
+    }
+
+    /// The reader finds the value the installer writes (checked on a throwaway key, not the real one).
+    #[cfg(windows)]
+    #[test]
+    fn the_language_value_is_read_from_the_registry() {
+        use winreg::enums::HKEY_CURRENT_USER;
+        use winreg::RegKey;
+        let subkey = format!("Software\\TrailMarkTest{}", std::process::id());
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        assert_eq!(language_value_under(&subkey), None, "no key, no value");
+        let (key, _) = hkcu.create_subkey(&subkey).expect("create the key");
+        assert_eq!(
+            language_value_under(&subkey),
+            None,
+            "a key without the value"
+        );
+        key.set_value("Language", &"pt-BR")
+            .expect("write the value");
+        let read = language_value_under(&subkey);
+        hkcu.delete_subkey_all(&subkey).expect("clean up");
+        assert_eq!(read.as_deref(), Some("pt-BR"));
+        assert_eq!(
+            read.and_then(|code| Language::from_installer_code(&code)),
+            Some(Language::PtBr)
         );
     }
 }
