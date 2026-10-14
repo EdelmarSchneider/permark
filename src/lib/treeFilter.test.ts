@@ -6,9 +6,13 @@ import {
   fileTest,
   filterFromDefault,
   filterTree,
+  isHiddenName,
+  isHiddenPath,
   normalizeTreeFilter,
   parsePatterns,
+  sameTreeLoad,
   splitPatterns,
+  treeLoadOf,
   withShow,
   type FileTest,
 } from "./treeFilter";
@@ -39,6 +43,8 @@ const custom = (patch: Partial<TreeFilter>): TreeFilter => ({
   patterns: "",
   hideEmptyFolders: true,
   assetsNearDocs: false,
+  showIgnored: false,
+  showHidden: false,
   ...patch,
 });
 const ROOT_DOCS: ReadonlySet<string> = new Set([""]);
@@ -285,6 +291,8 @@ describe("withShow / normalizeTreeFilter", () => {
       patterns: "",
       hideEmptyFolders: true,
       assetsNearDocs: true,
+      showIgnored: false,
+      showHidden: false,
     });
     expect(
       normalizeTreeFilter({ show: "custom", categories: ["data", "nope", "data", 3], patterns: 4 }),
@@ -387,10 +395,13 @@ function treeOf(paths: string[]): TreeNode {
 }
 
 describe("assets next to documents", () => {
-  const REPO_DOCS = [
+  // the documents inside hidden folders (`.claude/`) only show with "Show hidden files and folders"
+  const HIDDEN_DOCS = [
     ".claude/agents/rust-reviewer.md",
     ".claude/agents/ux-designer.md",
     ".claude/skills/design-system/SKILL.md",
+  ];
+  const REPO_DOCS = [
     "CHANGELOG.md",
     "CLAUDE.md",
     "HANDOFF.md",
@@ -409,10 +420,11 @@ describe("assets next to documents", () => {
     "tsconfig.json",
   ];
   const testOf = (filter: TreeFilter, paths = REPO) => fileTest(filter, documentFolders(paths));
+  const WITH_HIDDEN: TreeFilter = { ...DEFAULT_TREE_FILTER, showHidden: true };
 
   it("keeps the code folders of this repository out of Docs and assets", () => {
-    const shown = REPO.filter(testOf(DEFAULT_TREE_FILTER));
-    expect([...shown].sort()).toEqual([...REPO_DOCS, ...REPO_ASSETS].sort());
+    const shown = REPO.filter(testOf(WITH_HIDDEN));
+    expect([...shown].sort()).toEqual([...HIDDEN_DOCS, ...REPO_DOCS, ...REPO_ASSETS].sort());
     for (const hidden of [
       "src-tauri/Cargo.toml",
       "src-tauri/tauri.conf.json",
@@ -455,10 +467,10 @@ describe("assets next to documents", () => {
       keep: null,
     });
     expect(REPO).toHaveLength(51);
-    expect(outcome.shown).toHaveLength(17);
-    expect(outcome.hidden).toHaveLength(34);
+    // the 3 documents in `.claude/` and the 11 hidden files are not shown unless asked for
+    expect(outcome.shown).toHaveLength(14);
+    expect(outcome.hidden).toHaveLength(37);
     expect(outcome.main.map((n) => n.path)).toEqual([
-      ".claude",
       "CHANGELOG.md",
       "CLAUDE.md",
       "HANDOFF.md",
@@ -477,8 +489,19 @@ describe("assets next to documents", () => {
     ]);
   });
 
+  it("lists the hidden folders with their documents when hidden files are shown", () => {
+    const outcome = filterTree(treeOf(REPO), testOf(WITH_HIDDEN), {
+      hideEmptyFolders: true,
+      keep: null,
+      showHidden: true,
+    });
+    expect(outcome.shown).toHaveLength(17);
+    expect(outcome.hidden).toHaveLength(34);
+    expect(outcome.main.map((n) => n.path)[0]).toBe(".claude");
+  });
+
   it("turning it off brings back every image, JSON, YAML, TOML and XML file", () => {
-    const shown = REPO.filter(testOf({ ...DEFAULT_TREE_FILTER, assetsNearDocs: false }));
+    const shown = REPO.filter(testOf({ ...WITH_HIDDEN, assetsNearDocs: false }));
     expect(shown).toContain("src-tauri/Cargo.toml");
     expect(shown).toContain("src-tauri/icons/icon.png");
     expect(shown).toContain(".github/workflows/ci.yml");
@@ -488,10 +511,12 @@ describe("assets next to documents", () => {
 
   it("does not apply to Documents or Everything", () => {
     for (const assetsNearDocs of [true, false]) {
-      const everything = { ...DEFAULT_TREE_FILTER, show: "everything" as const, assetsNearDocs };
+      const everything = { ...WITH_HIDDEN, show: "everything" as const, assetsNearDocs };
       expect(REPO.filter(testOf(everything))).toEqual(REPO);
-      const documents = { ...DEFAULT_TREE_FILTER, show: "documents" as const, assetsNearDocs };
-      expect([...REPO.filter(testOf(documents))].sort()).toEqual([...REPO_DOCS].sort());
+      const documents = { ...WITH_HIDDEN, show: "documents" as const, assetsNearDocs };
+      expect([...REPO.filter(testOf(documents))].sort()).toEqual(
+        [...HIDDEN_DOCS, ...REPO_DOCS].sort(),
+      );
     }
   });
 
@@ -657,5 +682,226 @@ describe("filterTree", () => {
     const before = JSON.stringify(root);
     filterTree(root, docsOnly, { hideEmptyFolders: true, keep: "src/main.rs" });
     expect(JSON.stringify(root)).toBe(before);
+  });
+});
+describe("hidden files and folders", () => {
+  const PATHS = [
+    "README.md",
+    "notes.txt",
+    "start-team.bat",
+    ".gitignore",
+    ".env",
+    ".github/workflows/ci.yml",
+    ".github/guide.md",
+    ".claude/plan.md",
+    "docs/guide.md",
+    "docs/.draft/idea.md",
+    "@wt/feat/README.md",
+    "@wt/feat/.vscode/settings.json",
+    "@wt/.hidden-name/README.md",
+  ];
+  const everything: TreeFilter = { ...DEFAULT_TREE_FILTER, show: "everything" };
+  const shownOf = (filter: TreeFilter): string[] =>
+    PATHS.filter(fileTest(filter, documentFolders(PATHS)));
+
+  it("recognizes a name that starts with a dot", () => {
+    expect(isHiddenName(".github")).toBe(true);
+    expect(isHiddenName(".gitignore")).toBe(true);
+    expect(isHiddenName("README.md")).toBe(false);
+    expect(isHiddenName("a.b")).toBe(false);
+    expect(isHiddenName("")).toBe(false);
+  });
+
+  it("finds a hidden name anywhere in a path, but never in a worktree's own name", () => {
+    expect(isHiddenPath(".gitignore")).toBe(true);
+    expect(isHiddenPath(".github/workflows/ci.yml")).toBe(true);
+    expect(isHiddenPath("docs/.draft/idea.md")).toBe(true);
+    expect(isHiddenPath("docs/guide.md")).toBe(false);
+    expect(isHiddenPath("@wt/feat/.vscode/settings.json")).toBe(true);
+    // a worktree that lives under a dot folder, or has a dotted name, is a root of its own
+    expect(isHiddenPath("@wt/.hidden-name/README.md")).toBe(false);
+    expect(isHiddenPath("@wt/feat/README.md")).toBe(false);
+  });
+
+  it("hides them in every preset, Everything included, by default", () => {
+    expect(shownOf(everything)).toEqual([
+      "README.md",
+      "notes.txt",
+      "start-team.bat",
+      "docs/guide.md",
+      "@wt/feat/README.md",
+      "@wt/.hidden-name/README.md",
+    ]);
+    expect(shownOf({ ...DEFAULT_TREE_FILTER, show: "documents" })).toEqual([
+      "README.md",
+      "notes.txt",
+      "docs/guide.md",
+      "@wt/feat/README.md",
+      "@wt/.hidden-name/README.md",
+    ]);
+    const other = custom({
+      categories: ["other", "documents", "data", "text"],
+    });
+    expect(shownOf(other).filter(isHiddenPath)).toEqual([]);
+  });
+
+  it("shows them in every preset once asked for", () => {
+    expect(shownOf({ ...everything, showHidden: true })).toEqual(PATHS);
+    expect(shownOf({ ...DEFAULT_TREE_FILTER, show: "documents", showHidden: true })).toEqual([
+      "README.md",
+      "notes.txt",
+      ".github/guide.md",
+      ".claude/plan.md",
+      "docs/guide.md",
+      "docs/.draft/idea.md",
+      "@wt/feat/README.md",
+      "@wt/.hidden-name/README.md",
+    ]);
+  });
+
+  it("lets an explicit pattern show a hidden file, the last match first", () => {
+    const filter = custom({
+      categories: ["documents", "text"],
+      patterns: "+.github/** -.github/guide.md",
+    });
+    expect(fileTest(filter, new Set())(".github/workflows/ci.yml")).toBe(true);
+    expect(fileTest(filter, new Set())(".github/guide.md")).toBe(false);
+    expect(fileTest(filter, new Set())(".claude/plan.md")).toBe(false);
+  });
+
+  describe("in the tree", () => {
+    const tree = (): TreeNode =>
+      dir("", [
+        dir(".github", [dir(".github/workflows", [file(".github/workflows/ci.yml")])]),
+        dir(".claude", [file(".claude/plan.md")]),
+        dir("docs", [file("docs/guide.md"), dir("docs/.draft", [file("docs/.draft/idea.md")])]),
+        file("README.md"),
+        file(".env"),
+        worktree(".claude-wt", [file("@wt/.claude-wt/README.md")]),
+      ]);
+    const test = (filter: TreeFilter): FileTest => fileTest(filter, new Set([""]));
+    const paths = (nodes: TreeNode[]): string[] => nodes.map((n) => n.path);
+
+    it("leaves the hidden folders out, even when empty folders are not hidden", () => {
+      for (const hideEmptyFolders of [true, false]) {
+        const out = filterTree(tree(), test(everything), {
+          hideEmptyFolders,
+          keep: null,
+        });
+        expect(paths(out.main)).toEqual(["docs", "README.md"]);
+        expect(paths(out.main[0].children ?? [])).toEqual(["docs/guide.md"]);
+      }
+    });
+
+    it("lists the worktree under a dot folder as a root of its own", () => {
+      const out = filterTree(tree(), test(everything), {
+        hideEmptyFolders: true,
+        keep: null,
+      });
+      expect(paths(out.worktrees)).toEqual(["@wt/.claude-wt"]);
+      expect(out.shown).toContain("@wt/.claude-wt/README.md");
+    });
+
+    it("counts hidden files as hidden, and lists them when asked for", () => {
+      const out = filterTree(tree(), test(everything), {
+        hideEmptyFolders: true,
+        keep: null,
+      });
+      expect([...out.hidden].sort()).toEqual(
+        [".github/workflows/ci.yml", ".claude/plan.md", "docs/.draft/idea.md", ".env"].sort(),
+      );
+      const all = { ...everything, showHidden: true };
+      const shown = filterTree(tree(), test(all), {
+        hideEmptyFolders: true,
+        keep: null,
+        showHidden: true,
+      });
+      expect(shown.hidden).toEqual([]);
+      expect(paths(shown.main)).toEqual([".github", ".claude", "docs", "README.md", ".env"]);
+    });
+
+    it("keeps an open hidden file, dimmed, inside its hidden folder", () => {
+      const out = filterTree(tree(), test(everything), {
+        hideEmptyFolders: true,
+        keep: ".github/workflows/ci.yml",
+      });
+      expect(paths(out.main)).toEqual([".github", "docs", "README.md"]);
+      expect(paths(out.main[0].children ?? [])).toEqual([".github/workflows"]);
+      expect([...out.forced]).toEqual([".github/workflows/ci.yml"]);
+      expect(out.shown).not.toContain(".github/workflows/ci.yml");
+    });
+
+    it("keeps an ignored folder that was too large to load, even though it shows no file", () => {
+      const big: TreeNode = { ...dir("target", []), large: 2000 };
+      const out = filterTree(dir("", [big, dir("empty", [])]), test(everything), {
+        hideEmptyFolders: true,
+        keep: null,
+      });
+      expect(paths(out.main)).toEqual(["target"]);
+    });
+  });
+});
+
+describe("what the backend loads for a filter", () => {
+  it("asks for ignored and hidden files only when the filter does", () => {
+    expect(treeLoadOf(null)).toEqual({ showIgnored: false, showHidden: false });
+    expect(treeLoadOf(DEFAULT_TREE_FILTER)).toEqual({
+      showIgnored: false,
+      showHidden: false,
+    });
+    expect(treeLoadOf({ ...DEFAULT_TREE_FILTER, showIgnored: true })).toEqual({
+      showIgnored: true,
+      showHidden: false,
+    });
+    expect(treeLoadOf({ ...DEFAULT_TREE_FILTER, showHidden: true })).toEqual({
+      showIgnored: false,
+      showHidden: true,
+    });
+  });
+
+  it("tells a change of what is loaded from a change of how it is filtered", () => {
+    const none = treeLoadOf(DEFAULT_TREE_FILTER);
+    expect(sameTreeLoad(none, treeLoadOf({ ...DEFAULT_TREE_FILTER, show: "everything" }))).toBe(
+      true,
+    );
+    expect(sameTreeLoad(none, treeLoadOf({ ...DEFAULT_TREE_FILTER, showIgnored: true }))).toBe(
+      false,
+    );
+    expect(sameTreeLoad(none, treeLoadOf({ ...DEFAULT_TREE_FILTER, showHidden: true }))).toBe(
+      false,
+    );
+  });
+
+  it("reads the two switches from a stored filter, on only when they are exactly true", () => {
+    const stored = normalizeTreeFilter({
+      show: "documents",
+      showIgnored: true,
+      showHidden: true,
+    });
+    expect(stored).toMatchObject({ showIgnored: true, showHidden: true });
+    // a filter saved before the switches existed has them off
+    expect(normalizeTreeFilter({ show: "documents" })).toMatchObject({
+      showIgnored: false,
+      showHidden: false,
+    });
+    for (const value of ["true", 1, null, {}, []]) {
+      expect(
+        normalizeTreeFilter({
+          show: "documents",
+          showIgnored: value,
+          showHidden: value,
+        }),
+      ).toMatchObject({ showIgnored: false, showHidden: false });
+    }
+  });
+
+  it("a project default never turns them on", () => {
+    expect(
+      filterFromDefault({
+        show: "everything",
+        include: ["*.sql"],
+        exclude: [],
+      }),
+    ).toMatchObject({ showIgnored: false, showHidden: false });
   });
 });

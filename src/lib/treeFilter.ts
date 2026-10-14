@@ -1,6 +1,7 @@
 // The Explorer filter: which files of the loaded tree are shown. Pure logic, no UI: presets are bundles of
 // file categories (see fileKinds.ts), "custom" adds gitignore-style `+pattern` / `-pattern` entries, and
-// folders left with nothing to show can be dropped.
+// folders left with nothing to show can be dropped. Two switches sit on top of every preset: hidden files
+// (names that start with a dot) and files that version control ignores.
 
 import { FILE_CATEGORIES, categoryOf, isFileCategory, type FileCategory } from "./fileKinds";
 import { WT_PREFIX, dirname, splitWorktree } from "./paths";
@@ -35,7 +36,20 @@ export const DEFAULT_TREE_FILTER: TreeFilter = {
   patterns: "",
   hideEmptyFolders: true,
   assetsNearDocs: true,
+  showIgnored: false,
+  showHidden: false,
 };
+
+/** What the backend has to load for a filter: the filter itself runs over the tree that comes back. */
+export type TreeLoad = { showIgnored: boolean; showHidden: boolean };
+
+export function treeLoadOf(filter: TreeFilter | null): TreeLoad {
+  return { showIgnored: filter?.showIgnored === true, showHidden: filter?.showHidden === true };
+}
+
+export function sameTreeLoad(a: TreeLoad, b: TreeLoad): boolean {
+  return a.showIgnored === b.showIgnored && a.showHidden === b.showHidden;
+}
 
 /**
  * The filter a project asks for. Patterns turn a preset into "custom" with that preset's categories
@@ -75,6 +89,8 @@ export function normalizeTreeFilter(raw: unknown): TreeFilter | null {
     patterns: typeof r.patterns === "string" ? r.patterns : "",
     hideEmptyFolders: r.hideEmptyFolders !== false,
     assetsNearDocs: r.assetsNearDocs !== false,
+    showIgnored: r.showIgnored === true,
+    showHidden: r.showHidden === true,
   };
 }
 
@@ -197,6 +213,19 @@ export function parsePatterns(text: string): ParsedPatterns {
 /** True when the file is shown. Takes the path as it appears in the tree (worktree files carry `@wt/<name>/`). */
 export type FileTest = (path: string) => boolean;
 
+/** A name that starts with a dot (`.github`, `.env`, `.gitignore`). */
+export function isHiddenName(name: string): boolean {
+  return name.startsWith(".");
+}
+
+/**
+ * Whether the path has a hidden name in it, below the root it belongs to: a worktree is judged by the
+ * path inside it, never by its own folder name (a worktree under `.claude/` is still a root of its own).
+ */
+export function isHiddenPath(path: string): boolean {
+  return splitWorktree(path).rel.split("/").some(isHiddenName);
+}
+
 /** The categories that count as documents: a folder that holds one is a place for reading. */
 const DOCUMENT_CATEGORIES: ReadonlySet<FileCategory> = new Set(["documents", "text"]);
 /** The companions of documents that "only assets next to documents" keeps out of code folders. */
@@ -224,13 +253,15 @@ function nearDocuments(path: string, folders: ReadonlySet<string>): boolean {
 
 /** `folders` comes from `documentFolders` over the files of the tree. */
 export function fileTest(filter: TreeFilter, folders: ReadonlySet<string>): FileTest {
-  if (filter.show === "everything") return () => true;
+  const visible: FileTest = filter.showHidden ? () => true : (path) => !isHiddenPath(path);
+  if (filter.show === "everything") return visible;
   const categories = new Set<FileCategory>(
     filter.show === "custom" ? filter.categories : PRESET_CATEGORIES[filter.show],
   );
   const near = filter.assetsNearDocs && filter.show !== "documents";
   const rules = filter.show === "custom" ? parsePatterns(filter.patterns).rules : [];
   const byCategory = (path: string): boolean => {
+    if (!visible(path)) return false;
     const category = categoryOf(path);
     if (!categories.has(category)) return false;
     return !near || !ASSET_CATEGORIES.has(category) || nearDocuments(path, folders);
@@ -243,6 +274,11 @@ export function fileTest(filter: TreeFilter, folders: ReadonlySet<string>): File
     for (const rule of rules) if (rule.regex.test(relative)) shown = rule.include; // the last match wins
     return shown;
   };
+}
+
+/** Whether the node is a file, or a folder with a file somewhere inside. */
+function holdsFile(node: TreeNode): boolean {
+  return !isDirNode(node) || (node.children ?? []).some(holdsFile);
 }
 
 export type FilterOutcome = {
@@ -268,6 +304,8 @@ export function filterTree(
     keep: string | null;
     /** Folders made in the Explorer this session: they stay while they are empty, waiting for their files. */
     keepFolders?: ReadonlySet<string>;
+    /** Hidden folders (names that start with a dot) stay out unless one holds a file that is shown. */
+    showHidden?: boolean;
   },
 ): FilterOutcome {
   const out: FilterOutcome = { main: [], worktrees: [], shown: [], hidden: [], forced: new Set() };
@@ -278,9 +316,15 @@ export function filterTree(
     for (const node of nodes) {
       if (isDirNode(node)) {
         const children = prune(node.children ?? []);
+        if (node.kind === "dir" && !options.showHidden && isHiddenName(node.name)) {
+          // a hidden folder is not listed for being there, only for a file in it that is (a pattern, the open file)
+          if (children.some(holdsFile)) kept.push({ ...node, children });
+          continue;
+        }
         if (
           children.length > 0 ||
           !options.hideEmptyFolders ||
+          node.large !== undefined ||
           (options.keepFolders?.has(node.path) && (node.children ?? []).length === 0)
         ) {
           kept.push({ ...node, children });

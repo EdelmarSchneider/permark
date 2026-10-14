@@ -47,6 +47,7 @@ export function defaultSession(): SessionState {
     rightTab: DEFAULT_RIGHT_TAB,
     linkUpdate: DEFAULT_LINK_UPDATE,
     editMode: DEFAULT_EDIT_MODE,
+    initHintNever: false,
   };
 }
 
@@ -82,5 +83,6 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     rightTab: normalizeRightTab(stored.rightTab),
     linkUpdate: normalizeLinkUpdate(stored.linkUpdate),
     editMode: normalizeEditMode(stored.editMode),
+    initHintNever: stored.initHintNever === true,
   };
 }

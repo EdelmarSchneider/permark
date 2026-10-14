@@ -67,6 +67,8 @@ describe("normalizeSession", () => {
       patterns: "+*.sql",
       hideEmptyFolders: false,
       assetsNearDocs: false,
+      showIgnored: true,
+      showHidden: true,
     };
     expect(normalizeSession({ treeFilter: filter }).treeFilter).toEqual(filter);
   });

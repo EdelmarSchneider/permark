@@ -31,7 +31,7 @@ use crate::session::{
     FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore, TreeConfig,
 };
 use crate::util::{modified_ms, now_ms, on_parser_stack, read_with_retry};
-use crate::vault::{NodeKind, TreeNode, Vault, VaultError, VaultMode};
+use crate::vault::{NodeKind, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
 use crate::watch::{
@@ -493,8 +493,8 @@ impl Workspace {
         }
     }
 
-    pub fn tree(&self) -> TreeNode {
-        self.vault.tree()
+    pub fn tree(&self, opts: TreeOptions) -> TreeNode {
+        self.vault.tree_with(opts)
     }
 
     pub fn read_document(&self, path: &str) -> Result<DocumentView, AppError> {
@@ -1131,7 +1131,7 @@ mod tests {
         assert!(info.live_updates);
         assert_eq!(info.name, ws.vault().name());
 
-        let tree = ws.tree();
+        let tree = ws.tree(TreeOptions::default());
         assert_eq!(tree.kind, NodeKind::Dir);
         assert_eq!(tree.children.as_ref().map(Vec::len), Some(2));
 
@@ -1393,7 +1393,7 @@ deepword
         assert_eq!(info.worktrees[0].name, "feature-x");
         assert_eq!(info.worktrees[0].branch.as_deref(), Some("feature-x"));
         assert_eq!(ws.root_paths().len(), 2);
-        let tree = ws.tree();
+        let tree = ws.tree(TreeOptions::default());
         let wt = tree
             .children
             .as_ref()
@@ -1419,6 +1419,96 @@ deepword
                 .flat_map(|b| &b.changes)
                 .any(|c| c.path == "@wt/feature-x/plan.md")
         });
+        ws.close();
+    }
+
+    #[test]
+    fn repositories_the_project_ignores_are_part_of_the_workspace() {
+        // A folder that git-ignores three sibling repositories, with a script next to the documents.
+        let fx = Fx::new();
+        let root = fx.project.path();
+        let outer = init_repo(root);
+        write(root, ".gitignore", "Design/\nEngineering/\n");
+        write(root, "README.md", "# Home\n");
+        write(root, "start-team.bat", "@echo off\n");
+        for sub in ["Design", "Engineering"] {
+            let inner = init_repo(&root.join(sub));
+            write(
+                root,
+                &format!("{sub}/notes.md"),
+                &format!("# {sub}\n\n{sub}uniqueword\n"),
+            );
+            write(root, &format!("{sub}/.gitignore"), "secret.md\n");
+            write(root, &format!("{sub}/secret.md"), "# Secret\n");
+            commit_all(&inner, "init");
+        }
+        commit_all(&outer, "init");
+
+        let ws = fx.open();
+        let tree = ws.tree(TreeOptions::default());
+        let top: Vec<_> = tree
+            .children
+            .iter()
+            .flatten()
+            .map(|n| n.name.as_str())
+            .collect();
+        assert_eq!(
+            top,
+            [
+                "Design",
+                "Engineering",
+                ".gitignore",
+                "README.md",
+                "start-team.bat"
+            ]
+        );
+        let design = tree
+            .children
+            .iter()
+            .flatten()
+            .find(|n| n.name == "Design")
+            .expect("Design");
+        let inside: Vec<_> = design
+            .children
+            .iter()
+            .flatten()
+            .map(|n| n.path.as_str())
+            .collect();
+        assert_eq!(inside, ["Design/.gitignore", "Design/notes.md"]);
+
+        // reading, searching (the repository's own ignore rules apply), tagging and git all work, without errors
+        assert_eq!(
+            ws.read_document("Design/notes.md")
+                .expect("doc")
+                .title
+                .as_deref(),
+            Some("Design")
+        );
+        fx.indexed();
+        assert_eq!(
+            ws.search("Designuniqueword", None)[0].path,
+            "Design/notes.md"
+        );
+        assert_eq!(
+            ws.search("Secret", None).len(),
+            0,
+            "the repository ignores secret.md"
+        );
+        ws.set_file_tags("Engineering/notes.md", &["spec".to_owned()])
+            .expect("tags");
+        let tagged = ws.files_with_tags(&["spec".to_owned()], false);
+        assert_eq!(tagged.len(), 1);
+        assert_eq!(tagged[0].path, "Engineering/notes.md");
+        let snapshot = ws.git_snapshot();
+        assert_eq!(snapshot.git_error, None);
+        assert!(
+            snapshot.files.keys().all(|p| !p.starts_with("Design")),
+            "{:?}",
+            snapshot.files.keys().collect::<Vec<_>>()
+        );
+
+        // the watcher reports changes inside a repository the project ignores
+        write_until_reported(&fx.rec, root, "Design/live.md", "a change in Design");
         ws.close();
     }
 

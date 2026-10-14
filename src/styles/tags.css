@@ -216,6 +216,11 @@ button.tag-chip__body:hover .tag-chip__name {
 .tag-editor__error {
   color: var(--git-deleted-text);
 }
+.tag-editor__where .link-btn {
+  margin-left: 4px;
+  font-size: var(--fs-ui-sm);
+  cursor: pointer;
+}
 
 /* Filter chips in the search boxes (Search and Quick open) -------------------------------- */
 .search-box__chips,

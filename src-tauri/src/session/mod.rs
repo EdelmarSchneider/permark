@@ -63,6 +63,8 @@ impl Default for PanelState {
 /// category names stay plain strings (a newer or older UI can save names this build does not know).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+// The filter's switches are independent on/off choices that the UI stores as they are.
+#[allow(clippy::struct_excessive_bools)]
 pub struct TreeFilterState {
     /// A preset this build does not know (written by a newer UI) reads as the default.
     #[serde(deserialize_with = "or_default")]
@@ -74,6 +76,13 @@ pub struct TreeFilterState {
     pub hide_empty_folders: bool,
     /// Images, data and XML files show only in folders that hold documents (docs-and-assets and custom).
     pub assets_near_docs: bool,
+    /// Also list the files that version control ignores. Off unless the person turned it on; a value this build
+    /// cannot read reads as off.
+    #[serde(deserialize_with = "or_default")]
+    pub show_ignored: bool,
+    /// Also list hidden files and folders (names that start with a dot). Off unless the person turned it on.
+    #[serde(deserialize_with = "or_default")]
+    pub show_hidden: bool,
 }
 
 impl Default for TreeFilterState {
@@ -84,6 +93,8 @@ impl Default for TreeFilterState {
             patterns: String::new(),
             hide_empty_folders: true,
             assets_near_docs: true,
+            show_ignored: false,
+            show_hidden: false,
         }
     }
 }
@@ -206,6 +217,10 @@ pub struct SessionState {
     /// How a document opens for editing. A mode this build does not know reads as Visual.
     #[serde(deserialize_with = "or_default")]
     pub edit_mode: EditMode,
+    /// The person chose "Never for this folder" on the hint to keep settings with the project. Kept here, in
+    /// the app's own storage, so nothing about it is written into the project.
+    #[serde(deserialize_with = "or_default")]
+    pub init_hint_never: bool,
 }
 
 impl Default for SessionState {
@@ -229,6 +244,7 @@ impl Default for SessionState {
             right_tab: RightTab::Changes,
             link_update: LinkUpdate::Ask,
             edit_mode: EditMode::Visual,
+            init_hint_never: false,
         }
     }
 }
@@ -244,10 +260,10 @@ mod tests {
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
             "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
             "autoReveal": false, "rightTab": "outline", "linkUpdate": "always",
-            "editMode": "source",
+            "editMode": "source", "initHintNever": true,
             "treeFilter": {"show": "custom", "categories": ["documents", "data"],
                            "patterns": "+*.sql -archive/**", "hideEmptyFolders": false,
-                           "assetsNearDocs": false}
+                           "assetsNearDocs": false, "showIgnored": true, "showHidden": true}
         });
         let s: SessionState = serde_json::from_value(json.clone()).expect("parse");
         assert_eq!(s.last_doc.as_deref(), Some("docs/a.md"));
@@ -262,6 +278,8 @@ mod tests {
         assert_eq!(filter.show, TreeShow::Custom);
         assert!(!filter.hide_empty_folders);
         assert!(!filter.assets_near_docs);
+        assert!(filter.show_ignored && filter.show_hidden);
+        assert!(s.init_hint_never);
         assert_eq!(serde_json::to_value(&s).expect("json"), json);
     }
 
@@ -290,6 +308,62 @@ mod tests {
         assert!(f.hide_empty_folders);
         assert!(f.assets_near_docs, "on unless the UI turned it off");
         assert_eq!(f.categories, Vec::<String>::new());
+    }
+
+    #[test]
+    fn hidden_and_ignored_files_are_off_unless_the_person_turned_them_on() {
+        // a filter saved before the options existed
+        let s: SessionState = serde_json::from_str(
+            "{\"treeFilter\": {\"show\": \"everything\", \"patterns\": \"+x\"}}",
+        )
+        .expect("parse");
+        let f = s.tree_filter.expect("filter");
+        assert!(!f.show_ignored && !f.show_hidden);
+        assert_eq!(f.patterns, "+x");
+        assert!(!TreeFilterState::default().show_ignored);
+        assert!(!TreeFilterState::default().show_hidden);
+        // a value of another type reads as off and keeps the rest of the filter
+        for value in ["null", "\"yes\"", "1", "[]", "{}"] {
+            let json = format!(
+                "{{\"treeFilter\": {{\"show\": \"custom\", \"patterns\": \"+x\", \
+                 \"showIgnored\": {value}, \"showHidden\": {value}}}}}"
+            );
+            let s: SessionState = serde_json::from_str(&json).expect("parse");
+            let f = s
+                .tree_filter
+                .unwrap_or_else(|| panic!("{value} lost the filter"));
+            assert!(!f.show_ignored && !f.show_hidden, "{value}");
+            assert_eq!(f.patterns, "+x");
+        }
+        // each one on its own survives a save and a load
+        for (ignored, hidden) in [(true, false), (false, true), (true, true)] {
+            let filter = TreeFilterState {
+                show_ignored: ignored,
+                show_hidden: hidden,
+                ..TreeFilterState::default()
+            };
+            let saved = serde_json::to_string(&filter).expect("json");
+            let back: TreeFilterState = serde_json::from_str(&saved).expect("parse");
+            assert_eq!(back, filter);
+        }
+    }
+
+    #[test]
+    fn the_init_hint_is_shown_unless_the_person_chose_never() {
+        assert!(!SessionState::default().init_hint_never);
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
+        assert!(
+            !s.init_hint_never,
+            "a session saved before the hint existed"
+        );
+        let s: SessionState = serde_json::from_str("{\"initHintNever\": true}").expect("parse");
+        assert!(s.init_hint_never);
+        let s: SessionState =
+            serde_json::from_str("{\"follow\": true, \"initHintNever\": \"yes\"}").expect("parse");
+        assert!(
+            !s.init_hint_never && s.follow,
+            "unreadable reads as not chosen"
+        );
     }
 
     #[test]

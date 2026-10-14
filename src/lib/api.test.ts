@@ -22,7 +22,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   openVault: ["/project"],
   initialPath: [],
   recentVaults: [],
-  listTree: [],
+  listTree: [true, false],
   readDocument: ["docs/a.md"],
   resolveLink: ["docs/a.md", "b.md"],
   gitSnapshot: [],

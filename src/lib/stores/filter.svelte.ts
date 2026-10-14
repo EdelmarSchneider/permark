@@ -1,7 +1,14 @@
 // The Explorer filter in force: the person's choice, else the project's default, else the app's. Derives
 // the filtered tree and the lists Quick open needs. "Show all" lifts the filter for now and is not saved.
 
-import { documentFolders, fileTest, filterFromDefault, filterTree } from "../treeFilter";
+import {
+  documentFolders,
+  fileTest,
+  filterFromDefault,
+  filterTree,
+  sameTreeLoad,
+  treeLoadOf,
+} from "../treeFilter";
 import type { TreeFilter } from "../types";
 import { docs } from "./docs.svelte";
 import { fileops } from "./fileops.svelte";
@@ -27,6 +34,7 @@ class FilterStore {
       hideEmptyFolders: this.current.hideEmptyFolders,
       keep: docs.path,
       keepFolders: fileops.madeFolders,
+      showHidden: this.current.showHidden,
     }),
   );
 
@@ -47,8 +55,11 @@ class FilterStore {
   shownByFilter = $derived(this.outcome.shown.length);
 
   set(filter: TreeFilter): void {
+    const before = treeLoadOf(this.current);
     this.showAll = false;
     session.setTreeFilter(filter);
+    // ignored files are not in the tree until it is loaded again
+    if (!sameTreeLoad(before, treeLoadOf(filter))) void vault.refreshTree();
   }
 
   setShowAll(on: boolean): void {
