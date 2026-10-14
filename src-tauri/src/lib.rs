@@ -2,10 +2,12 @@
 //!
 //! The core modules are plain Rust with no Tauri dependency: [`vault`] (roots and path safety),
 //! [`render`] (documents to HTML), [`links`], [`search`], [`watch`] (filesystem events), [`git`] and
-//! [`session`] (per-project state). [`workspace`] wires them together for one open folder, and
+//! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor).
+//! [`workspace`] wires them together for one open folder, and
 //! [`commands`] exposes it to the UI.
 
 mod commands;
+mod edit;
 mod error;
 mod git;
 mod links;
@@ -69,6 +71,11 @@ pub fn run() {
             commands::files_with_tags,
             commands::meta_index,
             commands::clean_up_meta,
+            commands::document_source,
+            commands::parse_blocks,
+            commands::save_document,
+            commands::create_document,
+            commands::write_asset,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

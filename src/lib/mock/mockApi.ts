@@ -96,5 +96,20 @@ export const mockImpl: Api = {
   filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
   metaIndex: async () => metaIndex(),
   cleanUpMeta: async () => cleanUp(),
+  documentSource: async () => {
+    throw new Error("editing is not in the mock yet");
+  },
+  parseBlocks: async () => {
+    throw new Error("editing is not in the mock yet");
+  },
+  saveDocument: async () => {
+    throw new Error("editing is not in the mock yet");
+  },
+  createDocument: async () => {
+    throw new Error("editing is not in the mock yet");
+  },
+  writeAsset: async () => {
+    throw new Error("editing is not in the mock yet");
+  },
   on: async () => () => {},
 };

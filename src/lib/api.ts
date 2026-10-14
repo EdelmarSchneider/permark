@@ -5,16 +5,21 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type {
+  AssetWritten,
   ChangedSince,
+  CreatedDoc,
   DocumentView,
   FileMeta,
   FsBatch,
   GitSnapshot,
   IndexEntry,
   LinkTarget,
+  ParsedBlocks,
   RecentVault,
+  SaveOutcome,
   SearchHit,
   SessionState,
+  SourceDoc,
   TaggedFile,
   TagOverview,
   TreeNode,
@@ -70,6 +75,16 @@ export interface Api {
   metaIndex(): Promise<IndexEntry[]>;
   /** Removes the entries kept for files that no longer exist. Resolves to how many. */
   cleanUpMeta(): Promise<number>;
+  /** A Markdown file as the editor needs it: the exact text, its hash and its blocks. Rejects for files that can't be edited. */
+  documentSource(path: string): Promise<SourceDoc>;
+  /** The top-level blocks of some Markdown text (the editor's buffer). */
+  parseBlocks(text: string): Promise<ParsedBlocks>;
+  /** Writes `text` unless the file is no longer the version with `expectedHash`; then it reports a conflict and writes nothing. */
+  saveDocument(path: string, text: string, expectedHash: string): Promise<SaveOutcome>;
+  /** Creates a Markdown file; rejects with kind "exists" when the name is taken. */
+  createDocument(path: string, text: string): Promise<CreatedDoc>;
+  /** Writes an image (`data` is base64) into the `assets` folder next to the document. */
+  writeAsset(docPath: string, nameHint: string, data: string): Promise<AssetWritten>;
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -104,6 +119,13 @@ export const tauriApi: Api = {
   filesWithTags: (tags, untagged) => invoke<TaggedFile[]>("files_with_tags", { tags, untagged }),
   metaIndex: () => invoke<IndexEntry[]>("meta_index"),
   cleanUpMeta: () => invoke<number>("clean_up_meta"),
+  documentSource: (path) => invoke<SourceDoc>("document_source", { path }),
+  parseBlocks: (text) => invoke<ParsedBlocks>("parse_blocks", { text }),
+  saveDocument: (path, text, expectedHash) =>
+    invoke<SaveOutcome>("save_document", { path, text, expectedHash }),
+  createDocument: (path, text) => invoke<CreatedDoc>("create_document", { path, text }),
+  writeAsset: (docPath, nameHint, data) =>
+    invoke<AssetWritten>("write_asset", { docPath, nameHint, data }),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -167,6 +189,11 @@ function createMockApi(): Api {
     filesWithTags: command("filesWithTags"),
     metaIndex: command("metaIndex"),
     cleanUpMeta: command("cleanUpMeta"),
+    documentSource: command("documentSource"),
+    parseBlocks: command("parseBlocks"),
+    saveDocument: command("saveDocument"),
+    createDocument: command("createDocument"),
+    writeAsset: command("writeAsset"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

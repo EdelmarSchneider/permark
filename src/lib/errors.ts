@@ -1,6 +1,15 @@
 // Turns whatever a rejected backend call carries into a short message for the UI.
 // Tauri rejects with the serialized `AppError`, which may be a string or an object with a message.
 
+/** The stable `kind` the backend gave an error (`exists`, `denied`, `notFound`...), or null when it has none. */
+export function errorKind(error: unknown): string | null {
+  if (error && typeof error === "object") {
+    const kind = (error as Record<string, unknown>).kind;
+    if (typeof kind === "string") return kind;
+  }
+  return null;
+}
+
 export function errorText(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;

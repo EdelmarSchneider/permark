@@ -43,6 +43,11 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   filesWithTags: [["spec"], false],
   metaIndex: [],
   cleanUpMeta: [],
+  documentSource: ["docs/a.md"],
+  parseBlocks: ["# Title"],
+  saveDocument: ["docs/a.md", "# Title", "00ff00ff00ff00ff"],
+  createDocument: ["docs/new.md", "# New"],
+  writeAsset: ["docs/a.md", "shot.png", "aGVsbG8="],
 };
 
 describe("tauriApi", () => {

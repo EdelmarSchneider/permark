@@ -24,7 +24,12 @@
     "list_tags": [],
     "files_with_tags": ["tags", "untagged"],
     "meta_index": [],
-    "clean_up_meta": []
+    "clean_up_meta": [],
+    "document_source": ["path"],
+    "parse_blocks": ["text"],
+    "save_document": ["path", "text", "expected_hash"],
+    "create_document": ["path", "text"],
+    "write_asset": ["doc_path", "name_hint", "data"]
   },
   "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed"]
 }
