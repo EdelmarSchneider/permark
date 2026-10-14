@@ -114,7 +114,7 @@ export type SessionState = {
   rightTab: RightTab;
 };
 
-// ---- editing (docs/design/v0.2.md section 3, docs/plan-editor.md) -----------------------------------
+// ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------
 /** What a top-level block is; decides what the Visual editor may do with it (locked blocks keep their bytes). */
 export type BlockKind =
   | "paragraph"
