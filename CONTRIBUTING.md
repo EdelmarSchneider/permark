@@ -17,6 +17,17 @@ the final say on what gets merged. Issues, ideas and pull requests are welcome.
 npm run check   # rustfmt, clippy -D warnings, cargo test, svelte-check, vitest
 ```
 
+The editor's round-trip test keeps the block ranges that the Rust parser finds in this repository's own documents (the README, the changelog,
+this guide and `docs/design/`) in `src/lib/editor/corpus/`. When you change one of those documents, or the block parser, `npm run check` says the
+ranges are stale; regenerate them with:
+
+```bash
+UPDATE_CORPUS=1 npx vitest run src/lib/editor/corpus.test.ts
+UPDATE_CORPUS=1 cargo test --manifest-path src-tauri/Cargo.toml corpus
+```
+
+(In PowerShell, set the variable first: `$env:UPDATE_CORPUS = "1"`.)
+
 ## Sign your commits (DCO)
 By contributing you certify the [Developer Certificate of Origin](https://developercertificate.org/): that you wrote
 the change, or otherwise have the right to submit it under the project's licenses. Add a sign-off line to each commit:
