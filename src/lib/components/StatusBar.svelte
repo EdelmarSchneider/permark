@@ -2,6 +2,7 @@
   import { t } from "../i18n";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
+  import { edit } from "../stores/edit.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { updates } from "../stores/updates.svelte";
@@ -121,6 +122,13 @@
   {/if}
   {#if rebasing && git}
     <span class="sb-chip">{t(`status.chip.${git.repoState}`)}</span>
+  {/if}
+  {#if edit.active}
+    <span class="sb-item">{t("edit.statusMode", { mode: t("edit.source") })}</span>
+    <span class="sb-item" aria-live="off">
+      {t("edit.position", { line: edit.caret.line, col: edit.caret.column })}
+    </span>
+    {#if session.follow}<span class="sb-chip">{t("edit.followPaused")}</span>{/if}
   {/if}
   <span class="spacer"></span>
   {#if update.phase === "available"}

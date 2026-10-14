@@ -6,7 +6,9 @@
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { docs } from "../stores/docs.svelte";
+  import { edit } from "../stores/edit.svelte";
   import { session } from "../stores/session.svelte";
+  import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
   import { savedLabel } from "../time";
@@ -29,6 +31,7 @@
         ? null
         : badgeFor(vault.git?.files[path]?.state),
   );
+  const blocked = $derived(edit.blocked);
   const referenceHint = $derived(
     path ? formatReference(session.refTemplate, path) : t("header.copyReference"),
   );
@@ -83,6 +86,14 @@
             onselect: () => app.revealInTree(path),
           },
         ] satisfies MenuEntry[])),
+    {
+      id: "external",
+      label: t("header.openExternal"),
+      icon: "external",
+      hint: "Ctrl+Shift+E",
+      disabled: !view,
+      onselect: () => void app.openExternally(),
+    },
     { type: "separator" },
     {
       id: "width",
@@ -147,7 +158,18 @@
         >{badge.letter}</span
       >
     {/if}
-    {#if view}
+    {#if edit.active}
+      {#if edit.dirty}
+        <span class="edit-state" role="status" aria-label={t("edit.unsaved")}>
+          <span class="dirty-dot" aria-hidden="true"></span><span class="edit-state__text"
+            >{t("edit.unsaved")}</span
+          >
+        </span>
+      {/if}
+      <span class="doc-meta" role="status">
+        {edit.saving ? t("edit.saving") : (edit.note ?? savedLabel(edit.modifiedMs, clock.now))}
+      </span>
+    {:else if view}
       <span class="doc-meta">{savedLabel(view.modifiedMs, clock.now)}</span>
       {#if view.encodingNote}<span class="doc-chip">{view.encodingNote}</span>{/if}
     {/if}
@@ -166,13 +188,49 @@
         <Icon name={ui.flashed === "reference" ? "check" : "at"} size="sm" />
         <span>{ui.flashed === "reference" ? t("common.copied") : t("header.copyReference")}</span>
       </button>
-      <!-- Edit slot: in v0.2 this becomes "Edit" and "Open in external editor" moves into the menu -->
-      <IconButton
-        icon="external"
-        label={t("header.openExternal")}
-        hint={t("header.openExternalHint")}
-        onclick={() => void app.openExternally()}
-      />
+    {/if}
+    {#if edit.active}
+      <div class="seg" role="group" aria-label={t("edit.modes")}>
+        <button
+          type="button"
+          class="seg__btn is-disabled"
+          aria-disabled="true"
+          title={t("edit.visualSoon")}
+          onclick={() => toast.message(t("edit.visualSoon"), "info")}
+        >
+          {t("edit.visual")}
+        </button>
+        <button type="button" class="seg__btn is-on" aria-pressed="true">
+          {t("edit.source")}
+        </button>
+      </div>
+      <button
+        type="button"
+        class="btn btn--sm"
+        title={t("edit.saveHint")}
+        disabled={edit.saving}
+        onclick={() => void edit.save()}
+      >
+        <Icon name="save" size="sm" /><span>{t("edit.save")}</span>
+      </button>
+      <button
+        type="button"
+        class="btn btn--sm btn--primary"
+        title={t("edit.doneHint")}
+        onclick={() => edit.requestExit()}
+      >
+        <Icon name="check" size="sm" /><span>{t("edit.done")}</span>
+      </button>
+    {:else if view}
+      <button
+        type="button"
+        class={["btn btn--sm", blocked && "is-disabled"]}
+        aria-disabled={blocked !== null}
+        title={blocked ?? t("edit.editHint")}
+        onclick={() => (blocked ? toast.message(blocked, "info") : void edit.enter())}
+      >
+        <Icon name="pencil" size="sm" /><span>{t("edit.edit")}</span>
+      </button>
     {/if}
     {#if vault.isSimple}
       <button

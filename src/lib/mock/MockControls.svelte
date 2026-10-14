@@ -1,7 +1,9 @@
 <script lang="ts">
   // Developer panel shown only with VITE_MOCK=1: triggers the backend activity the real watcher would produce.
   // It is deliberately not part of the app and uses plain English strings.
+  import { bridge } from "../bridge";
   import { docs } from "../stores/docs.svelte";
+  import { edit } from "../stores/edit.svelte";
   import { vault } from "../stores/vault.svelte";
   import {
     emitBulk,
@@ -12,17 +14,19 @@
     setGitError,
     setRepoState,
   } from "./driver";
+  import { mockFiles } from "./fixtures";
   import { setMetaProblem } from "./mockMeta";
 
   let open = $state(false);
   let rebasing = $state(false);
   let gitError = $state(false);
   let metaConflict = $state(false);
+  let failSave = $state(false);
 
   const target = $derived(docs.path ?? "docs/specs/live-feed.md");
 
   // handy in the browser console while developing against the mock
-  (window as unknown as Record<string, unknown>).__tm = { docs, vault };
+  (window as unknown as Record<string, unknown>).__tm = { docs, vault, edit, bridge };
 </script>
 
 {#if vault.info && !vault.isSimple}
@@ -61,6 +65,15 @@
         }}
       >
         meta.toml conflict {metaConflict ? "off" : "on"}
+      </button>
+      <button
+        class="btn"
+        onclick={() => {
+          failSave = !failSave;
+          mockFiles.failNextSave = failSave;
+        }}
+      >
+        Next save fails {failSave ? "(armed)" : "off"}
       </button>
     {/if}
   </div>

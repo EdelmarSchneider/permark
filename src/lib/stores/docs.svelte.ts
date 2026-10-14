@@ -18,7 +18,18 @@ export const DELETE_GRACE_MS = 1000;
 /** The loading bar appears only when a read takes longer than this. */
 const LOADING_DELAY_MS = 150;
 
-export type LocateRequest = { line: number; find: { query: string; mode: FindMode } | null };
+export type LocateRequest = {
+  line: number;
+  find: { query: string; mode: FindMode } | null;
+  /** Tint the block it lands on, like a search hit (on unless false). */
+  tint?: boolean;
+};
+
+/**
+ * Asked before the open document is left for another one (or another project). Returns true to hold the navigation
+ * back (the editor has unsaved work and asks first); `resume` runs it later. Set by the edit store.
+ */
+export type NavigationGuard = (resume: () => void) => boolean;
 
 export type RenderRequest = {
   rev: number;
@@ -31,6 +42,8 @@ export type RenderRequest = {
   scrollTop: number | null;
   /** Scroll to the first changed block after an update (Follow is on) or after opening a changed doc. */
   followScroll: boolean;
+  /** An update that is not news (the person's own save, a reload after editing): nothing is marked as changed. */
+  quiet?: boolean;
   /** Mark what changed since this document was last rendered, even though it is a fresh open. */
   diffAgainstLast: boolean;
 };
@@ -63,6 +76,10 @@ class DocStore {
   /** Changes marked by the last live update (reported by DocView after rendering). */
   marks = $state({ changed: 0, removed: 0 });
   scrolled = $state(false);
+  /** The open document is being edited: the reading view is hidden and does not follow the file. */
+  editing = $state(false);
+  /** See [`NavigationGuard`]. */
+  guard: NavigationGuard | null = null;
 
   private history = new NavHistory();
   private token = 0;
@@ -101,6 +118,13 @@ class DocStore {
 
   /** Opens a document. Resolves to false when it could not be read (a toast says why). */
   async open(path: string, opts: OpenOptions = {}): Promise<boolean> {
+    if (
+      this.current &&
+      this.current.path !== path &&
+      this.guard?.(() => void this.open(path, opts))
+    ) {
+      return false;
+    }
     if (this.current?.path === path && !this.deleted && opts.history !== "none") {
       // the same document: just move within it
       const movedWithin = !!(opts.anchor || opts.locate);
@@ -171,6 +195,7 @@ class DocStore {
   }
 
   async back(): Promise<void> {
+    if (this.guard?.(() => void this.back())) return;
     this.history.saveScroll(this.scrollTop);
     const entry = this.history.back();
     if (!entry) return;
@@ -183,6 +208,7 @@ class DocStore {
   }
 
   async forward(): Promise<void> {
+    if (this.guard?.(() => void this.forward())) return;
     this.history.saveScroll(this.scrollTop);
     const entry = this.history.forward();
     if (!entry) return;
@@ -229,7 +255,8 @@ class DocStore {
   /** Looks at a watcher batch and refreshes or tombstones the open document if it is affected. */
   handleBatch(batch: FsBatch, followScroll: boolean): void {
     const path = this.current?.path;
-    if (!path) return;
+    // while editing, the edit store watches the file (a change is a conflict, not a glow)
+    if (!path || this.editing) return;
     const mine = batch.changes.filter((c) => c.path === path || c.from === path);
 
     const movedAway = mine.find((c) => c.kind === "renamed" && c.from === path);
@@ -279,7 +306,29 @@ class DocStore {
     }
   }
 
-  private applyUpdate(view: DocumentView, followScroll: boolean): void {
+  /** The open document as it is on disk now, or null when it cannot be read. */
+  async fetchCurrent(): Promise<DocumentView | null> {
+    const path = this.current?.path;
+    if (!path) return null;
+    try {
+      const view = await api.readDocument(path);
+      return this.current?.path === path ? view : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Shows a version of the open document without marking anything as changed (the person's own edits). */
+  applyQuiet(view: DocumentView): void {
+    if (this.current?.path === view.path) this.applyUpdate(view, false, true);
+  }
+
+  /** The open document is gone (the editor was told, and the person chose to let it go). */
+  noteDeleted(): void {
+    this.markDeleted(null);
+  }
+
+  private applyUpdate(view: DocumentView, followScroll: boolean, quiet = false): void {
     void tags.refreshMeta();
     this.current = view;
     this.deleted = null;
@@ -292,6 +341,7 @@ class DocStore {
       scrollTop: null,
       followScroll,
       diffAgainstLast: false,
+      quiet,
     };
   }
 

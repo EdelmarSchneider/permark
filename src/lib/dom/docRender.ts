@@ -20,6 +20,8 @@ export type RenderOptions = {
   mode: "fresh" | "update";
   /** A fresh open that should still mark what changed since the document was last rendered. */
   diffAgainstLast?: boolean;
+  /** An update that is not news (the person's own edit): the new version is shown without marks. */
+  quiet?: boolean;
   enhance: EnhanceContext;
   labels: RenderLabels;
 };
@@ -95,7 +97,7 @@ export class DocRenderer {
     const keys = source === "backend" ? view.blocks : els.map(domKey);
 
     const prev = this.snapshots.get(view.path) ?? null;
-    const wantsDiff = opts.mode === "update" || opts.diffAgainstLast === true;
+    const wantsDiff = (opts.mode === "update" && !opts.quiet) || opts.diffAgainstLast === true;
     const diff: BlockDiff | null =
       wantsDiff && prev !== null && prev.source === source ? diffBlocks(prev.keys, keys) : null;
     const anchoring = diff !== null && opts.mode === "update";

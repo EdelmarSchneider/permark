@@ -23,6 +23,19 @@ export type OutlineApi = {
   focusDoc(): void;
 };
 
+/** The source editor, for code outside it (the edit store reads the text and moves the caret through this). */
+export type EditorApi = {
+  /** The text in the editor (no BOM, LF line endings). */
+  getText(): string;
+  /** Replaces the whole text and puts the caret at the start of a line (0-based). */
+  setText(text: string, line: number): void;
+  /** The line the caret is on (0-based). */
+  caretLine(): number;
+  focus(): void;
+  /** Inserts text at the caret, replacing the selection. */
+  insertAtSelection(text: string): void;
+};
+
 export type DocBridge = {
   /** F7 / Shift+F7: move to the next or previous changed block or removed marker. */
   jumpChange?: (direction: 1 | -1) => void;
@@ -32,6 +45,10 @@ export type DocBridge = {
   /** The element for a block or heading, used to position the first find match. */
   locatedElement?: () => HTMLElement | null;
   outline?: OutlineApi;
+  /** The 1-based source line of the block at the top of the viewport, where editing starts. */
+  topLine?: () => number | null;
+  /** Set while the source editor is on screen. */
+  editor?: EditorApi;
 };
 
 export const bridge: DocBridge = {};

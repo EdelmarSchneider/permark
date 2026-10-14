@@ -16,6 +16,7 @@
   import { matchShortcut } from "./lib/shortcuts";
   import { app } from "./lib/stores/app.svelte";
   import { docs } from "./lib/stores/docs.svelte";
+  import { edit } from "./lib/stores/edit.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
   import { updates } from "./lib/stores/updates.svelte";
@@ -42,13 +43,25 @@
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
-      if (closeTopOverlay()) e.preventDefault();
+      if (closeTopOverlay()) {
+        e.preventDefault();
+        return;
+      }
+      // Esc also leaves editing, once menus and bars are closed (and not from some other text field)
+      const target = e.target as Element | null;
+      if (edit.active && (!isEditable(target) || target?.closest(".cm-editor"))) {
+        e.preventDefault();
+        edit.requestExit();
+      }
       return;
     }
+    // the editor took the key (Ctrl+B is bold there, not the sidebar)
+    if (e.defaultPrevented) return;
     const action = matchShortcut(e);
     if (!action) return;
-    // "T" is a plain letter: it only means "edit tags" while reading
-    if (action === "editTags" && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) return;
+    // "T" and "E" are plain letters: they only mean something while reading
+    const plainLetter = action === "editTags" || action === "edit";
+    if (plainLetter && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) return;
     e.preventDefault();
     app.run(action);
   }

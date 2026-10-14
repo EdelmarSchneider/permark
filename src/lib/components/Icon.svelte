@@ -35,10 +35,12 @@
   import Monitor from "@lucide/svelte/icons/monitor";
   import Moon from "@lucide/svelte/icons/moon";
   import MoveHorizontal from "@lucide/svelte/icons/move-horizontal";
+  import Pencil from "@lucide/svelte/icons/pencil";
   import PanelLeft from "@lucide/svelte/icons/panel-left";
   import PanelRight from "@lucide/svelte/icons/panel-right";
   import Plus from "@lucide/svelte/icons/plus";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
+  import Save from "@lucide/svelte/icons/save";
   import Search from "@lucide/svelte/icons/search";
   import Settings from "@lucide/svelte/icons/settings";
   import Sun from "@lucide/svelte/icons/sun";
@@ -83,10 +85,12 @@
     monitor: Monitor,
     moon: Moon,
     width: MoveHorizontal,
+    pencil: Pencil,
     plus: Plus,
     "panel-left": PanelLeft,
     "panel-right": PanelRight,
     refresh: RefreshCw,
+    save: Save,
     search: Search,
     settings: Settings,
     sun: Sun,

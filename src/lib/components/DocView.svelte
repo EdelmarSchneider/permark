@@ -126,6 +126,7 @@
     const result = renderer.render(view, {
       mode: req.mode,
       diffAgainstLast: req.diffAgainstLast,
+      quiet: req.quiet,
       enhance: enhanceContext(view.path),
       labels: renderLabels(),
     });
@@ -204,7 +205,7 @@
     const target = blocks[index];
     scrollToElement(target, 1 / 3);
     locatedElement = target;
-    if (!tint) return true;
+    if (!tint || request.tint === false) return true;
     const next = blocks[index + 1];
     tintBlocks(next && !/^H[1-6]$/.test(next.tagName) ? [target, next] : [target]);
     return true;
@@ -364,6 +365,18 @@
     });
   });
 
+  // Editing hides the reading view; a hidden scroller forgets where it was, so the position is taken first and put back.
+  let scrollBeforeEdit = 0;
+  $effect.pre(() => {
+    if (docs.editing && scroller) scrollBeforeEdit = untrack(() => scroller?.scrollTop ?? 0);
+  });
+  $effect(() => {
+    if (docs.editing || !scroller) return;
+    const top = scrollBeforeEdit;
+    scrollBeforeEdit = 0;
+    if (top > 0) untrack(() => scroller?.scrollTo({ top, behavior: "instant" }));
+  });
+
   // no document (closed, or the project was replaced): no outline
   $effect(() => {
     if (!docs.current) untrack(clearOutline);
@@ -386,7 +399,17 @@
       return selection ? { text: selection.text, section: selection.section } : null;
     };
     bridge.locatedElement = () => locatedElement;
+    bridge.topLine = () => {
+      if (!scroller) return null;
+      const edge = scroller.getBoundingClientRect().top;
+      for (const el of renderer?.blocks ?? []) {
+        if (el.getBoundingClientRect().bottom <= edge + 1) continue;
+        return parseSourcepos(el.getAttribute("data-sourcepos"))?.startLine ?? null;
+      }
+      return null;
+    };
     return () => {
+      bridge.topLine = undefined;
       bridge.jumpChange = undefined;
       bridge.find = undefined;
       bridge.getSelection = undefined;
@@ -464,6 +487,7 @@
 <div
   bind:this={scroller}
   class="doc-scroll"
+  hidden={docs.editing}
   role="region"
   tabindex="-1"
   aria-label={t("doc.region")}

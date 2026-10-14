@@ -886,6 +886,7 @@ function insertFile(tree: TreeNode, path: string): void {
     }
     folder = next;
   }
+  if ((folder.children ?? []).some((n) => n.path === path)) return; // an existing file that was recreated
   const children = [...(folder.children ?? []), file(path)];
   const rank = (n: TreeNode): number => (n.kind === "file" ? 1 : 0);
   children.sort(
