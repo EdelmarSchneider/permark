@@ -15,7 +15,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
   definitions and `href` / `src` in HTML), and code is never touched. "Update 7 links in 4 files?" lists every change first: **Apply**, **Move
   without updating** or **Cancel**; Settings has **Update links when moving files: Ask, Always or Never**. A document changed on disk since the
   preview is skipped and reported. A document open with unsaved edits in Source mode gets the change in the editor instead of on disk; one with unsaved
-  edits in Visual mode is left alone and listed as not updated ("save it, then run Update links again"), and a document without unsaved edits is rewritten on
+  edits in Visual mode is left alone and listed as not updated ("save it, then undo the move and move it again"), and a document without unsaved edits is rewritten on
   disk and reloads in the editor like any change from outside.
 - **Undo** with Ctrl+Z in the Explorer or the toast's Undo puts back the moves and every rewritten link in the files that are unchanged since, and says
   what could not be put back. Tags follow renamed and moved files and folders. The live feed shows the operation as one row ("Moved 2 files, 7

@@ -671,7 +671,7 @@ export const en = {
   "fileOps.reason.missing": "is gone",
   "fileOps.reason.occupied": "can't go back, something is in the way",
   "fileOps.reason.unsavedVisual":
-    "has unsaved edits in Visual mode; save it, then run Update links again",
+    "has unsaved edits in Visual mode, so its links were not updated; save it, then undo the move and move it again",
   "fileOps.working": "Working...",
   "fileOps.simpleMode": "Files can be renamed and moved once a folder is open.",
   "settings.linkUpdate": "Update links when moving files",
