@@ -37,7 +37,7 @@ describe("matchShortcut", () => {
     ["Ctrl++", ctrl("+", { shiftKey: true }, "Equal"), "zoomIn"],
     ["Ctrl+-", ctrl("-", {}, "Minus"), "zoomOut"],
     ["Ctrl+0", ctrl("0", {}, "Digit0"), "zoomReset"],
-    ["Ctrl+Alt+W", ctrl("w", { altKey: true }), "toggleWide"],
+    ["Ctrl+Alt+W", ctrl("w", { altKey: true }), "cycleWidth"],
     ["Ctrl+,", ctrl(",", {}, "Comma"), "settings"],
   ];
 

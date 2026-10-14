@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { t } from "../i18n";
+  import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { docs } from "../stores/docs.svelte";
   import { session } from "../stores/session.svelte";
@@ -56,20 +57,15 @@
   <div class="field">
     <span class="field__label">{t("settings.width")}</span>
     <div class="segmented" role="group" aria-label={t("settings.width")}>
-      <button
-        type="button"
-        aria-pressed={!session.wide}
-        onclick={() => session.wide && session.toggleWide()}
-      >
-        {t("settings.widthNormal")}
-      </button>
-      <button
-        type="button"
-        aria-pressed={session.wide}
-        onclick={() => !session.wide && session.toggleWide()}
-      >
-        {t("settings.widthWide")}
-      </button>
+      {#each READING_WIDTHS as width (width)}
+        <button
+          type="button"
+          aria-pressed={session.width === width}
+          onclick={() => session.setWidth(width)}
+        >
+          {t(`width.${width}`)}
+        </button>
+      {/each}
     </div>
   </div>
   <div class="field">

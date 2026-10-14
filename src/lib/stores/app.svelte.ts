@@ -584,8 +584,8 @@ class AppStore {
         return session.zoomBy(-1);
       case "zoomReset":
         return session.setZoom(1);
-      case "toggleWide":
-        return session.toggleWide();
+      case "cycleWidth":
+        return session.cycleWidth();
       case "settings":
         ui.settingsOpen = true;
         return;

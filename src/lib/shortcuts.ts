@@ -23,7 +23,7 @@ export type ShortcutAction =
   | "zoomIn"
   | "zoomOut"
   | "zoomReset"
-  | "toggleWide"
+  | "cycleWidth"
   | "settings";
 
 export type KeyInfo = {
@@ -77,7 +77,7 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
       case "b":
         return "toggleRight";
       case "w":
-        return "toggleWide";
+        return "cycleWidth";
     }
     return null;
   }

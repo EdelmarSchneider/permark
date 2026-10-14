@@ -107,6 +107,33 @@ where
     })
 }
 
+/// Like `or_default`, but a value this build cannot read is `true` (settings that are on by default).
+fn or_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Lenient {
+        Known(bool),
+        Unknown(IgnoredAny),
+    }
+    Ok(match Lenient::deserialize(deserializer)? {
+        Lenient::Known(value) => value,
+        Lenient::Unknown(_) => true,
+    })
+}
+
+/// How wide the reading column is. The UI draws it; the app only keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReadingWidth {
+    #[default]
+    Comfortable,
+    Wide,
+    Full,
+}
+
 /// What the UI wants restored on the next visit. Matches the UI's `SessionState`; fields missing from
 /// an older save take their defaults.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -115,7 +142,19 @@ pub struct SessionState {
     pub last_doc: Option<String>,
     pub scroll_top: f64,
     pub zoom: f64,
-    pub wide: bool,
+    /// `None` until a width is chosen (a save from before v0.2 only has `wide`); a width this build
+    /// does not know (written by a newer UI) reads as `None` too, and the UI picks its default.
+    #[serde(
+        deserialize_with = "or_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub width: Option<ReadingWidth>,
+    /// The old on/off width choice. Kept only so the UI can migrate it to `width`; it is never written back.
+    #[serde(
+        deserialize_with = "or_default",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub wide: Option<bool>,
     pub ref_template: String,
     pub left_panel: PanelState,
     pub right_panel: PanelState,
@@ -125,6 +164,9 @@ pub struct SessionState {
     /// this build cannot read at all reads as `None`.
     #[serde(deserialize_with = "or_default")]
     pub tree_filter: Option<TreeFilterState>,
+    /// The Explorer selects (and scrolls to) the document that was just opened. On unless turned off.
+    #[serde(deserialize_with = "or_true")]
+    pub auto_reveal: bool,
 }
 
 impl Default for SessionState {
@@ -133,7 +175,8 @@ impl Default for SessionState {
             last_doc: None,
             scroll_top: 0.0,
             zoom: 1.0,
-            wide: false,
+            width: None,
+            wide: None,
             ref_template: config::DEFAULT_REF_TEMPLATE.to_owned(),
             left_panel: PanelState::default(),
             right_panel: PanelState {
@@ -143,6 +186,7 @@ impl Default for SessionState {
             theme: Theme::System,
             follow: false,
             tree_filter: None,
+            auto_reveal: true,
         }
     }
 }
@@ -154,9 +198,10 @@ mod tests {
     #[test]
     fn session_state_round_trips_the_ui_shape() {
         let json = serde_json::json!({
-            "lastDoc": "docs/a.md", "scrollTop": 120.5, "zoom": 1.25, "wide": true,
+            "lastDoc": "docs/a.md", "scrollTop": 120.5, "zoom": 1.25, "width": "full",
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
             "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
+            "autoReveal": false,
             "treeFilter": {"show": "custom", "categories": ["documents", "data"],
                            "patterns": "+*.sql -archive/**", "hideEmptyFolders": false,
                            "assetsNearDocs": false}
@@ -164,6 +209,8 @@ mod tests {
         let s: SessionState = serde_json::from_value(json.clone()).expect("parse");
         assert_eq!(s.last_doc.as_deref(), Some("docs/a.md"));
         assert_eq!(s.theme, Theme::Dark);
+        assert_eq!(s.width, Some(ReadingWidth::Full));
+        assert!(!s.auto_reveal);
         assert!(!s.left_panel.open);
         let filter = s.tree_filter.as_ref().expect("filter");
         assert_eq!(filter.show, TreeShow::Custom);
@@ -237,6 +284,75 @@ mod tests {
             assert!((s.zoom - 1.5).abs() < f64::EPSILON);
             assert!(s.follow);
             assert_eq!(s.tree_filter, None, "{filter}");
+        }
+    }
+
+    #[test]
+    fn a_session_saved_before_reading_widths_keeps_its_wide_flag_for_the_ui_to_migrate() {
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2, \"wide\": true}").expect("parse");
+        assert_eq!(s.wide, Some(true));
+        assert_eq!(s.width, None, "no width was chosen yet");
+        let s: SessionState = serde_json::from_str("{\"wide\": false}").expect("parse");
+        assert_eq!(s.wide, Some(false));
+        // nothing chosen at all: both stay unset, and a save writes neither
+        let s: SessionState = serde_json::from_str("{}").expect("parse");
+        assert_eq!((s.width, s.wide), (None, None));
+        let json = serde_json::to_value(&s).expect("json");
+        assert!(
+            json.get("width").is_none() && json.get("wide").is_none(),
+            "{json}"
+        );
+    }
+
+    #[test]
+    fn every_reading_width_round_trips() {
+        for (name, width) in [
+            ("comfortable", ReadingWidth::Comfortable),
+            ("wide", ReadingWidth::Wide),
+            ("full", ReadingWidth::Full),
+        ] {
+            let json = format!("{{\"width\": \"{name}\"}}");
+            let s: SessionState = serde_json::from_str(&json).expect("parse");
+            assert_eq!(s.width, Some(width));
+            assert_eq!(serde_json::to_value(&s).expect("json")["width"], name);
+        }
+    }
+
+    #[test]
+    fn a_width_from_a_newer_ui_reads_as_unset_and_the_session_survives() {
+        for width in ["\"ultrawide\"", "null", "7", "true", "[\"full\"]", "{}"] {
+            let json = format!(
+                "{{\"zoom\": 1.5, \"lastDoc\": \"a.md\", \"width\": {width}, \"wide\": true}}"
+            );
+            let s: SessionState = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{width} lost the session: {e}"));
+            assert!((s.zoom - 1.5).abs() < f64::EPSILON);
+            assert_eq!(s.last_doc.as_deref(), Some("a.md"));
+            assert_eq!(s.width, None, "{width}");
+            assert_eq!(s.wide, Some(true), "the old flag is still there to migrate");
+        }
+        // an old flag of the wrong type is dropped too
+        let s: SessionState =
+            serde_json::from_str("{\"zoom\": 2, \"wide\": \"yes\"}").expect("parse");
+        assert_eq!(s.wide, None);
+    }
+
+    #[test]
+    fn auto_reveal_is_on_unless_the_person_turned_it_off() {
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
+        assert!(s.auto_reveal, "missing means the default");
+        assert!(SessionState::default().auto_reveal);
+        let s: SessionState = serde_json::from_str("{\"autoReveal\": false}").expect("parse");
+        assert!(!s.auto_reveal);
+        let s: SessionState = serde_json::from_str("{\"autoReveal\": true}").expect("parse");
+        assert!(s.auto_reveal);
+        // a value of another type reads as the default and keeps the session
+        for value in ["null", "\"no\"", "0", "[]", "{}"] {
+            let json = format!("{{\"follow\": true, \"autoReveal\": {value}}}");
+            let s: SessionState = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{value} lost the session: {e}"));
+            assert!(s.auto_reveal, "{value}");
+            assert!(s.follow);
         }
     }
 

@@ -12,6 +12,26 @@
 .md-body > * {
   margin: 0 0 1em;
 }
+
+/* Breakout (docs/design/v0.2.md section 15). Tables, code, diagrams, display math and lone images take the
+   width their content needs: never below the text measure, never above the pane. They sit at the top level of
+   the document only, centred on the column, so glow, gutter bar and find highlights follow the block itself.
+   `.doc-column` is a size container, which makes `cqw` the pane width without any script. */
+.doc-column {
+  container-type: inline-size;
+}
+.md-body > .table-wrap,
+.md-body > .code-block,
+.md-body > .diagram,
+.md-body > .tm-wide {
+  width: max-content;
+  min-width: 100%;
+  max-width: 100%; /* webviews without container units keep the text measure */
+  max-width: 100cqw;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+}
 .md h1,
 .md h2,
 .md h3,

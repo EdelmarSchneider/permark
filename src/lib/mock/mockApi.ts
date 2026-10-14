@@ -30,13 +30,14 @@ let savedSession: SessionState | null = {
   lastDoc: "docs/specs/live-feed.md",
   scrollTop: 0,
   zoom: 1,
-  wide: false,
+  width: "comfortable",
   refTemplate: "@{path}",
   leftPanel: { open: true, width: 260 },
   rightPanel: { open: true, width: 280 },
   theme: "system",
   follow: false,
   treeFilter: null,
+  autoReveal: true,
 };
 let stateLocation: "appData" | "project" = "appData";
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

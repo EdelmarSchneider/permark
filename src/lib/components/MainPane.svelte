@@ -8,7 +8,7 @@
   import Toast from "./Toast.svelte";
 </script>
 
-<main class={["main", session.wide && "is-wide"]}>
+<main class="main" data-width={session.width}>
   <DocHeader />
   <Banners />
   <DocView />

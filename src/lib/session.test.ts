@@ -77,11 +77,44 @@ describe("normalizeSession", () => {
       lastDoc: "x.md",
       scrollTop: 320,
       zoom: 1.2,
-      wide: true,
+      width: "full" as const,
       follow: true,
       theme: "dark" as const,
       refTemplate: "see {path}",
     };
     expect(normalizeSession(stored)).toEqual(stored);
+  });
+
+  it("migrates the old wide flag to a width and never returns it", () => {
+    expect(normalizeSession({ wide: true }).width).toBe("wide");
+    expect(normalizeSession({ wide: false }).width).toBe("comfortable");
+    expect(normalizeSession({}).width).toBe("comfortable");
+    expect("wide" in normalizeSession({ wide: true })).toBe(false);
+    // a saved width wins over a leftover flag
+    expect(normalizeSession({ width: "full", wide: true }).width).toBe("full");
+  });
+
+  it("reads an unknown or malformed width as the default", () => {
+    for (const width of ["ultrawide", "", 7, null, {}]) {
+      expect(normalizeSession({ width: width as never }).width).toBe("comfortable");
+    }
+  });
+
+  it("keeps the width through a save and a load", () => {
+    for (const width of ["comfortable", "wide", "full"] as const) {
+      const saved = { ...defaultSession(), width };
+      expect(normalizeSession(JSON.parse(JSON.stringify(saved))).width).toBe(width);
+    }
+  });
+
+  it("selects the opened file unless the person turned that off", () => {
+    expect(defaultSession().autoReveal).toBe(true);
+    expect(normalizeSession(null).autoReveal).toBe(true);
+    expect(normalizeSession({}).autoReveal).toBe(true);
+    expect(normalizeSession({ autoReveal: false }).autoReveal).toBe(false);
+    expect(normalizeSession({ autoReveal: true }).autoReveal).toBe(true);
+    // a session saved before the setting existed, and a value of the wrong type
+    expect(normalizeSession({ zoom: 1.2, theme: "dark" }).autoReveal).toBe(true);
+    expect(normalizeSession({ autoReveal: "no" as never }).autoReveal).toBe(true);
   });
 });

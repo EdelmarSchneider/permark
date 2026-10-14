@@ -290,6 +290,105 @@ const outlineBlocks: Block[] = [
   p("The memory cost of magic becomes the central problem."),
 ];
 
+/** A drawing 1000 px wide, for the wide-image case of the reading-width breakout. */
+const WIDE_IMAGE =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="160" viewBox="0 0 1000 160"><rect width="1000" height="160" rx="12" fill="#e8ecff"/><rect x="20" y="20" width="960" height="120" rx="8" fill="none" stroke="#4f6bed" stroke-width="2" stroke-dasharray="8 6"/><text x="500" y="88" text-anchor="middle" font-family="sans-serif" font-size="22" fill="#4f6bed">An image 1000 px wide</text></svg>',
+  );
+
+/**
+ * Blocks that need more room than the text measure, between ordinary paragraphs (reading width, section 15).
+ * A save (`rev` > 0) edits each wide block and drops one paragraph, to exercise glow and removed markers.
+ */
+const readingWidthBlocks = (rev: number): Block[] => [
+  h(1, "Reading width"),
+  p(
+    "Text reads best in a column of about seventy characters, so paragraphs, lists, headings and quotes stay at the measure. Tables, code, diagrams, formulas and pictures often need more room than that, and they are allowed to take it.",
+    3,
+  ),
+  h(2, "A table that needs room"),
+  table(
+    ["Event", "Source", "Debounce", "Grouping", "Feed row", "Toast", "Follow", "Notes"],
+    [
+      [
+        "created",
+        "file watcher",
+        "150 ms",
+        "by path",
+        "new entry",
+        "yes",
+        "yes",
+        rev > 0 ? "A new file is a changed file (edited)." : "A new file is a changed file.",
+      ],
+      [
+        "modified",
+        "file watcher",
+        "150 ms",
+        "by path",
+        "updated in place",
+        "yes",
+        "yes",
+        "Twelve saves stay one row.",
+      ],
+      [
+        "removed",
+        "file watcher",
+        "150 ms",
+        "by path",
+        "kept, struck through",
+        "yes",
+        "no",
+        "The row stays until the next scan.",
+      ],
+      [
+        "checkout",
+        "git operation",
+        "none",
+        "one bulk batch",
+        "one collapsed row",
+        "no",
+        "no",
+        "Never produces a toast or a jump.",
+      ],
+    ],
+  ),
+  p("A narrow table stays at the measure, because its content does not need more.", 1),
+  table(
+    ["Mode", "Width"],
+    [
+      ["Comfortable", "760 px"],
+      ["Wide", "1100 px"],
+      ["Full", "the pane"],
+    ],
+  ),
+  h(2, "A long line of code"),
+  code(
+    "ts",
+    `const summary = events.filter((event) => event.kind !== '${rev > 0 ? "deleted" : "removed"}').map((event) => ({ path: event.path, at: event.atMs, group: groupOf(event), hidden: isHiddenByFilter(event.path) })).sort((a, b) => b.at - a.at);`,
+  ),
+  ...(rev > 0 ? [] : [p("Short code stays at the measure too.", 1)]),
+  code("ts", "const answer = 42;"),
+  h(2, "A diagram"),
+  code(
+    "mermaid",
+    `graph LR
+  Watcher[File watcher] --> Debounce[Debounce 150 ms] --> Group[Group by path] --> Reconcile[Reconcile with disk] --> Feed[Feed row] --> Toast[Toast] --> Follow[Follow jump] --> Outline[Outline ${rev > 0 ? "refresh" : "update"}]`,
+  ),
+  h(2, "A formula"),
+  p(
+    '<span data-math-style="display">S_n = \\sum_{k=1}^{n} \\frac{(-1)^{k+1}}{k} \\cdot \\left(\\frac{a_k + b_k + c_k + d_k + e_k + f_k + g_k + h_k + i_k + j_k + l_k + m_k}{\\sqrt{1 + x_k^2 + y_k^2 + z_k^2}}\\right) + \\int_0^\\infty \\frac{e^{-t}}{1 + t^2}\\,dt</span>',
+  ),
+  h(2, "A wide picture"),
+  p(`<img src="${WIDE_IMAGE}" alt="An image 1000 px wide" width="1000" />`),
+  p(
+    "Back to ordinary text: the paragraphs around the blocks above keep their measure, so the eye never has to cross a very long line.",
+    2,
+  ),
+  ul(["Lists stay at the measure", "so do headings", "and quotes"]),
+  quote("A wide block is the exception, not the layout.", "Design notes"),
+];
+
 const docs: Record<string, MockDoc> = {
   "docs/specs/live-feed.md": doc(
     "Live changes feed",
@@ -383,6 +482,7 @@ const docs: Record<string, MockDoc> = {
     [h(1, "Style guide"), ...styleGuideBlocks],
     26 * 60 * MIN,
   ),
+  "docs/design/reading-width.md": doc("Reading width", readingWidthBlocks),
   "docs/design/wireframes.md": doc("Wireframes", [
     h(1, "Wireframes"),
     p("Layouts for the welcome screen, the IDE mode and the search panel."),
@@ -620,7 +720,10 @@ export function mockTree(): TreeNode {
       dir("assets", keep([file("assets/big-api.md"), file("assets/report.pdf")])),
       dir("data", [file("data/config.json")]),
       dir("docs", [
-        dir("docs/design", [file("docs/design/wireframes.md")]),
+        dir("docs/design", [
+          file("docs/design/reading-width.md"),
+          file("docs/design/wireframes.md"),
+        ]),
         dir("docs/images", [file("docs/images/pipeline.svg")]),
         dir("docs/research", [
           file("docs/research/index.md"),
