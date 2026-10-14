@@ -1,0 +1,106 @@
+<script lang="ts">
+  import { t } from "../i18n";
+  import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
+  import { docs } from "../stores/docs.svelte";
+  import { session } from "../stores/session.svelte";
+  import { ui } from "../stores/ui.svelte";
+  import IconButton from "./IconButton.svelte";
+  import Popover, { type Anchor } from "./Popover.svelte";
+
+  const SAMPLE = "docs/specs/live-feed.md";
+
+  // anchor next to whichever settings button is on screen (activity bar, or the header in Simple mode)
+  function findAnchor(): Anchor {
+    const button = document.querySelector<HTMLElement>("[data-settings-anchor]");
+    if (button) return button.getBoundingClientRect();
+    return { left: window.innerWidth - 40, right: window.innerWidth - 8, top: 8, bottom: 40 };
+  }
+  const anchor = findAnchor();
+  const simple = anchor.left > window.innerWidth / 2;
+
+  const themes = ["system", "light", "dark"] as const;
+  const preview = $derived(formatReference(session.refTemplate, docs.path ?? SAMPLE));
+</script>
+
+<Popover
+  {anchor}
+  variant="panel"
+  side={simple ? "bottom" : "right"}
+  align={simple ? "end" : "start"}
+  label={t("settings.title")}
+  onclose={() => (ui.settingsOpen = false)}
+>
+  <div class="field">
+    <span class="field__label">{t("settings.theme")}</span>
+    <div class="segmented" role="group" aria-label={t("settings.theme")}>
+      {#each themes as theme (theme)}
+        <button
+          type="button"
+          aria-pressed={session.theme === theme}
+          onclick={() => session.setTheme(theme)}
+        >
+          {t(`theme.${theme}`)}
+        </button>
+      {/each}
+    </div>
+  </div>
+  <div class="field">
+    <span class="field__label">{t("settings.width")}</span>
+    <div class="segmented" role="group" aria-label={t("settings.width")}>
+      <button
+        type="button"
+        aria-pressed={!session.wide}
+        onclick={() => session.wide && session.toggleWide()}
+      >
+        {t("settings.widthNormal")}
+      </button>
+      <button
+        type="button"
+        aria-pressed={session.wide}
+        onclick={() => !session.wide && session.toggleWide()}
+      >
+        {t("settings.widthWide")}
+      </button>
+    </div>
+  </div>
+  <div class="field">
+    <div class="field__row">
+      <span class="field__label">{t("settings.zoom")}</span>
+      <span class="field__row">
+        <IconButton
+          small
+          icon="chevron-down"
+          label={t("menu.zoomOut")}
+          onclick={() => session.zoomBy(-1)}
+        />
+        <button
+          type="button"
+          class="btn btn--sm"
+          onclick={() => session.setZoom(1)}
+          title={t("status.zoomHint")}
+        >
+          {Math.round(session.zoom * 100)}%
+        </button>
+        <IconButton
+          small
+          icon="chevron-up"
+          label={t("menu.zoomIn")}
+          onclick={() => session.zoomBy(1)}
+        />
+      </span>
+    </div>
+  </div>
+  <div class="field">
+    <label class="field__label" for="ref-template">{t("settings.refTemplate")}</label>
+    <input
+      id="ref-template"
+      class="text-input"
+      value={session.refTemplate}
+      placeholder={DEFAULT_REF_TEMPLATE}
+      spellcheck="false"
+      autocomplete="off"
+      oninput={(e) => session.setRefTemplate(e.currentTarget.value)}
+    />
+    <span class="field__preview" aria-live="polite">{t("settings.refPreview", { preview })}</span>
+  </div>
+</Popover>

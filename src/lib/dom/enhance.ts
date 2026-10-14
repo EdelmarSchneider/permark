@@ -1,0 +1,329 @@
+// Post-processing of the backend's HTML after it is injected: code blocks (copy button, highlight.js),
+// tables, heading anchors, alerts, task lists, KaTeX, Mermaid and relative images.
+// Structural changes are synchronous and keep one element per top-level block, so the block diff
+// can address blocks by index; the heavy libraries load lazily and fill in afterwards.
+
+import { resolveRelative } from "../paths";
+
+export type EnhanceLabels = {
+  copyCode: string;
+  anchorLabel: (name: string) => string;
+  diagramPending: string;
+  diagramFailed: string;
+  alertTitles: Record<string, string>;
+};
+
+export type EnhanceContext = {
+  docPath: string;
+  theme: "light" | "dark";
+  labels: EnhanceLabels;
+  /** Resolves a vault-relative image path to a URL the webview can load. */
+  resolveImage: (path: string) => Promise<string>;
+};
+
+const SVG_ATTRS =
+  'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+
+// Lucide icons used inside injected markup
+export const ICON_COPY = `<svg ${SVG_ATTRS}><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`;
+export const ICON_CHECK = `<svg ${SVG_ATTRS}><path d="M20 6 9 17l-5-5"/></svg>`;
+const ALERT_ICONS: Record<string, string> = {
+  note: `<svg ${SVG_ATTRS}><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
+  tip: `<svg ${SVG_ATTRS}><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>`,
+  important: `<svg ${SVG_ATTRS}><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v2"/><path d="M12 13h.01"/></svg>`,
+  warning: `<svg ${SVG_ATTRS}><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`,
+  caution: `<svg ${SVG_ATTRS}><path d="M12 16h.01"/><path d="M12 8v4"/><path d="M15.312 2a2 2 0 0 1 1.414.586l4.688 4.688A2 2 0 0 1 22 8.688v6.624a2 2 0 0 1-.586 1.414l-4.688 4.688a2 2 0 0 1-1.414.586H8.688a2 2 0 0 1-1.414-.586l-4.688-4.688A2 2 0 0 1 2 15.312V8.688a2 2 0 0 1 .586-1.414l4.688-4.688A2 2 0 0 1 8.688 2z"/></svg>`,
+};
+
+function copySourcepos(from: Element, to: Element): void {
+  const pos = from.getAttribute("data-sourcepos");
+  if (pos) to.setAttribute("data-sourcepos", pos);
+}
+
+// ---- before insertion: images -----------------------------------------------------------------
+
+/**
+ * Detaches relative image sources from a not-yet-inserted fragment, so the webview does not request
+ * them from the app origin. They are resolved to asset URLs after insertion.
+ */
+export function stashRelativeImages(root: ParentNode, docPath: string): void {
+  for (const img of Array.from(root.querySelectorAll("img"))) {
+    const src = img.getAttribute("src");
+    if (src === null) continue;
+    const resolved = resolveRelative(docPath, src);
+    if (resolved === null) continue;
+    img.setAttribute("data-tm-path", resolved);
+    img.removeAttribute("src");
+  }
+}
+
+// ---- after insertion ----------------------------------------------------------------------------
+
+export type Enhanced = { els: HTMLElement[]; tasks: Promise<void>[] };
+
+export function enhanceBlocks(els: HTMLElement[], ctx: EnhanceContext): Enhanced {
+  const tasks: Promise<void>[] = [];
+  const out = els.map((el) => {
+    let top = el;
+    if (el.tagName === "PRE") top = wrapCode(el, ctx, tasks);
+    else if (el.tagName === "TABLE") top = wrapTable(el);
+    enhanceInside(top, ctx, tasks);
+    return top;
+  });
+  return { els: out, tasks };
+}
+
+function enhanceInside(root: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[]): void {
+  for (const pre of Array.from(root.querySelectorAll("pre"))) {
+    if (pre.closest(".code-block, .diagram")) continue;
+    wrapCode(pre, ctx, tasks);
+  }
+  for (const table of Array.from(root.querySelectorAll("table"))) {
+    if (!table.parentElement?.classList.contains("table-wrap")) wrapTable(table);
+  }
+  root
+    .querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6")
+    .forEach((heading) => ensureAnchor(heading, ctx));
+  if (root.matches("h1, h2, h3, h4, h5, h6")) ensureAnchor(root, ctx);
+  decorateAlerts(root, ctx);
+  decorateTaskLists(root);
+  root.querySelectorAll<HTMLElement>("[data-math-style]").forEach((el) => {
+    tasks.push(renderMath(el));
+  });
+  root.querySelectorAll<HTMLImageElement>("img[data-tm-path]").forEach((img) => {
+    tasks.push(loadImage(img, ctx));
+  });
+}
+
+function wrapTable(table: HTMLElement): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "table-wrap";
+  copySourcepos(table, wrap);
+  table.replaceWith(wrap);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function languageOf(code: Element | null): string | null {
+  const match = /(?:^|\s)language-([\w+#.-]+)/.exec(code?.getAttribute("class") ?? "");
+  return match ? match[1].toLowerCase() : null;
+}
+
+function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[]): HTMLElement {
+  const code = pre.querySelector("code");
+  const lang = languageOf(code);
+  const source = (code ?? pre).textContent ?? "";
+
+  if (lang === "mermaid") {
+    const figure = document.createElement("figure");
+    figure.className = "diagram is-pending";
+    figure.dataset.source = source;
+    figure.textContent = ctx.labels.diagramPending;
+    copySourcepos(pre, figure);
+    pre.replaceWith(figure);
+    tasks.push(renderDiagram(figure, ctx));
+    return figure;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "code-block";
+  copySourcepos(pre, wrap);
+  pre.replaceWith(wrap);
+  if (lang) {
+    const label = document.createElement("span");
+    label.className = "code-block__lang";
+    label.textContent = lang;
+    wrap.appendChild(label);
+  }
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "icon-btn icon-btn--sm code-block__copy";
+  copy.setAttribute("aria-label", ctx.labels.copyCode);
+  copy.title = ctx.labels.copyCode;
+  copy.innerHTML = ICON_COPY;
+  wrap.appendChild(copy);
+  wrap.appendChild(pre);
+  if (code && lang) tasks.push(highlight(code, lang, source));
+  return wrap;
+}
+
+function ensureAnchor(heading: HTMLElement, ctx: EnhanceContext): void {
+  const name = (heading.textContent ?? "").replace(/^#/, "").trim();
+  let anchor = heading.querySelector<HTMLAnchorElement>("a.anchor");
+  if (!anchor) {
+    const id = heading.id;
+    if (!id) return;
+    anchor = document.createElement("a");
+    anchor.className = "anchor";
+    anchor.setAttribute("href", `#${id}`);
+    heading.prepend(anchor);
+  }
+  anchor.textContent = "#";
+  anchor.removeAttribute("aria-hidden");
+  anchor.setAttribute("aria-label", ctx.labels.anchorLabel(name));
+}
+
+function decorateAlerts(root: HTMLElement, ctx: EnhanceContext): void {
+  const alerts = root.matches(".markdown-alert")
+    ? [root]
+    : Array.from(root.querySelectorAll<HTMLElement>(".markdown-alert"));
+  for (const alert of alerts) {
+    const title = alert.querySelector<HTMLElement>(".markdown-alert-title");
+    if (!title || title.querySelector("svg")) continue;
+    const kind = /markdown-alert-(\w+)/.exec(alert.className)?.[1] ?? "note";
+    const text = ctx.labels.alertTitles[kind];
+    if (text) title.textContent = text;
+    title.insertAdjacentHTML("afterbegin", ALERT_ICONS[kind] ?? ALERT_ICONS.note);
+  }
+}
+
+function decorateTaskLists(root: HTMLElement): void {
+  root.querySelectorAll<HTMLInputElement>('li > input[type="checkbox"]').forEach((box) => {
+    const item = box.parentElement;
+    if (!item) return;
+    item.classList.add("task-list-item");
+    item.classList.toggle("is-done", box.checked);
+    item.parentElement?.classList.add("contains-task-list");
+  });
+}
+
+// ---- lazy libraries ---------------------------------------------------------------------------
+
+async function highlight(code: Element, lang: string, source: string): Promise<void> {
+  try {
+    const hljs = (await import("highlight.js/lib/common")).default;
+    if (!hljs.getLanguage(lang)) return;
+    const result = hljs.highlight(source, { language: lang, ignoreIllegals: true });
+    code.innerHTML = result.value;
+    code.classList.add("hljs");
+  } catch {
+    // keep the plain text
+  }
+}
+
+async function renderMath(el: HTMLElement): Promise<void> {
+  const source = el.textContent ?? "";
+  try {
+    const [{ default: katex }] = await Promise.all([
+      import("katex"),
+      import("katex/dist/katex.min.css"),
+    ]);
+    katex.render(source, el, {
+      displayMode: el.dataset.mathStyle === "display",
+      throwOnError: true,
+      output: "htmlAndMathml",
+    });
+  } catch (error) {
+    el.textContent = source;
+    el.classList.add("tm-math-error");
+    el.title = error instanceof Error ? error.message : String(error);
+  }
+}
+
+const imageUrls = new Map<string, Promise<string>>();
+
+async function loadImage(img: HTMLImageElement, ctx: EnhanceContext): Promise<void> {
+  const path = img.getAttribute("data-tm-path");
+  if (!path) return;
+  img.addEventListener("error", () => img.classList.add("is-broken"), { once: true });
+  try {
+    let url = imageUrls.get(path);
+    if (!url) {
+      url = ctx.resolveImage(path);
+      imageUrls.set(path, url);
+      url.catch(() => imageUrls.delete(path));
+    }
+    img.src = await url;
+  } catch {
+    img.classList.add("is-broken");
+  }
+}
+
+// ---- Mermaid ------------------------------------------------------------------------------------
+
+type Mermaid = typeof import("mermaid").default;
+let mermaidModule: Mermaid | null = null;
+let mermaidTheme: string | null = null;
+let mermaidQueue: Promise<unknown> = Promise.resolve();
+let mermaidCounter = 0;
+const diagramCache = new Map<string, string>();
+
+async function loadMermaid(theme: "light" | "dark"): Promise<Mermaid> {
+  if (!mermaidModule) mermaidModule = (await import("mermaid")).default;
+  if (mermaidTheme !== theme) {
+    // the diagram palette comes from the design tokens (solid colors only; Mermaid cannot parse rgb alpha)
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string): string => css.getPropertyValue(name).trim();
+    mermaidModule.initialize({
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      fontFamily: '"Inter Variable", Inter, system-ui, sans-serif',
+      themeVariables: {
+        darkMode: theme === "dark",
+        background: token("--bg"),
+        primaryColor: token("--surface"),
+        primaryBorderColor: token("--border-strong"),
+        primaryTextColor: token("--text"),
+        secondaryColor: token("--surface-2"),
+        tertiaryColor: token("--bg"),
+        lineColor: token("--muted"),
+        textColor: token("--text"),
+        noteBkgColor: token("--surface-2"),
+        noteTextColor: token("--text"),
+      },
+    });
+    mermaidTheme = theme;
+  }
+  return mermaidModule;
+}
+
+/** Renders (or re-renders, after a theme change) the diagram held in `figure.dataset.source`. */
+export function renderDiagram(figure: HTMLElement, ctx: EnhanceContext): Promise<void> {
+  const source = figure.dataset.source ?? "";
+  const key = `${ctx.theme}\u0000${source}`;
+  const cached = diagramCache.get(key);
+  if (cached !== undefined) {
+    showDiagram(figure, cached);
+    return Promise.resolve();
+  }
+  const job = mermaidQueue.then(async () => {
+    const id = `tm-mermaid-${++mermaidCounter}`;
+    try {
+      const mermaid = await loadMermaid(ctx.theme);
+      const { svg } = await mermaid.render(id, source);
+      if (diagramCache.size > 60) diagramCache.clear();
+      diagramCache.set(key, svg);
+      showDiagram(figure, svg);
+    } catch {
+      showDiagramError(figure, source, ctx);
+      // Mermaid leaves its error graphic behind in the page when a render fails
+      document.getElementById(id)?.remove();
+    } finally {
+      document.getElementById(`d${id}`)?.remove();
+    }
+  });
+  mermaidQueue = job.catch(() => undefined);
+  return job;
+}
+
+function showDiagram(figure: HTMLElement, svg: string): void {
+  figure.className = "diagram";
+  figure.innerHTML = svg;
+}
+
+function showDiagramError(figure: HTMLElement, source: string, ctx: EnhanceContext): void {
+  figure.className = "diagram-error";
+  figure.replaceChildren();
+  const block = document.createElement("div");
+  block.className = "code-block";
+  const pre = document.createElement("pre");
+  const code = document.createElement("code");
+  code.textContent = source;
+  pre.appendChild(code);
+  block.appendChild(pre);
+  const message = document.createElement("p");
+  message.className = "diagram-error__msg";
+  message.textContent = ctx.labels.diagramFailed;
+  figure.append(block, message);
+}

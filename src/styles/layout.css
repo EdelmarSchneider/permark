@@ -1,0 +1,234 @@
+/* =====================================================================================
+   Base + layout (ported from docs/design/mockup.html, sections 2 and 3)
+   ===================================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  font: var(--fs-ui) / 1.45 var(--font-ui);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+#app {
+  height: 100%;
+}
+button {
+  font: inherit;
+  color: inherit;
+}
+input {
+  font: inherit;
+  color: inherit;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+[hidden] {
+  display: none !important;
+}
+.icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon--sm {
+  width: 14px;
+  height: 14px;
+}
+.icon--xs {
+  width: 12px;
+  height: 12px;
+}
+.spacer {
+  flex: 1;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 3px solid transparent;
+  border-radius: 10px;
+  background-clip: padding-box;
+}
+:hover::-webkit-scrollbar-thumb {
+  background-color: var(--border-strong);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- App grid -------------------------------------------------------------------------- */
+.app {
+  --sb: var(--w-sidebar);
+  --rp: var(--w-right);
+  display: grid;
+  height: 100vh;
+  grid-template-columns: var(--w-activity) var(--sb) minmax(0, 1fr) var(--rp);
+  grid-template-rows: minmax(0, 1fr) var(--h-status);
+  grid-template-areas:
+    "activity sidebar main right"
+    "status status status status";
+  transition: grid-template-columns var(--dur-panel) var(--ease);
+}
+.app.is-resizing {
+  transition: none;
+  user-select: none;
+  cursor: col-resize;
+}
+.app[data-sidebar="hidden"] {
+  --sb: 0px;
+}
+.app[data-right="hidden"] {
+  --rp: 0px;
+}
+.app--simple {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "main";
+}
+
+.activitybar {
+  grid-area: activity;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) 0;
+}
+.sidebar {
+  grid-area: sidebar;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.app[data-sidebar="hidden"] .sidebar,
+.app[data-right="hidden"] .rpanel {
+  border: 0;
+}
+.panel-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+  touch-action: none;
+}
+.resizer--right {
+  right: 0;
+}
+.resizer--left {
+  left: 0;
+}
+.resizer:hover,
+.resizer:focus-visible,
+.app.is-resizing .resizer {
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--accent-muted) 2px,
+    var(--accent-muted) 4px,
+    transparent 4px
+  );
+}
+.main {
+  grid-area: main;
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.doc-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: var(--sp-6) clamp(28px, 4.5vw, var(--sp-8)) 120px;
+  scroll-behavior: smooth;
+}
+.main.is-wide {
+  --measure: var(--measure-wide);
+}
+.rpanel {
+  grid-area: right;
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.statusbar {
+  grid-area: status;
+  display: flex;
+  align-items: stretch;
+  padding: 0 var(--sp-1);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--fs-ui-sm);
+}
+.scroll {
+  overflow: auto;
+  min-height: 0;
+}
+
+/* ---- Full-window states ----------------------------------------------------------------- */
+.drop-overlay {
+  position: fixed;
+  inset: 6px;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 500;
+  pointer-events: none;
+  animation: tm-fade var(--dur) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .doc-scroll {
+    scroll-behavior: auto;
+  }
+}

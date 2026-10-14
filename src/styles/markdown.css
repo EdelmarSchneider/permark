@@ -1,0 +1,591 @@
+/* =====================================================================================
+   Markdown reading styles (ported from docs/design/mockup.html, section 5)
+   The article is `.md`; the backend HTML is injected into `.md-body`.
+   ===================================================================================== */
+.md {
+  --zoom: 1;
+  max-width: calc(var(--measure) * var(--zoom));
+  margin: 0 auto;
+  font: calc(var(--fs-reading) * var(--zoom)) / var(--lh-reading) var(--font-reading);
+  color: var(--text);
+}
+.md-body > * {
+  margin: 0 0 1em;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  position: relative;
+  line-height: 1.25;
+  scroll-margin-top: var(--sp-4);
+}
+.md h1 {
+  font-size: 2em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0.2em 0 0.6em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.md h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  margin: 1.8em 0 0.6em;
+}
+.md h3 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 1.5em 0 0.5em;
+}
+.md h4 {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 1.4em 0 0.5em;
+}
+.md h5,
+.md h6 {
+  font-size: 0.95em;
+  font-weight: 600;
+  margin: 1.3em 0 0.4em;
+  color: var(--muted);
+}
+.md .anchor {
+  position: absolute;
+  left: -1.1em;
+  width: 1em;
+  color: var(--faint);
+  text-decoration: none;
+  font-weight: 400;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.md h1:hover .anchor,
+.md h2:hover .anchor,
+.md h3:hover .anchor,
+.md h4:hover .anchor,
+.md h5:hover .anchor,
+.md h6:hover .anchor,
+.md .anchor:focus-visible {
+  opacity: 1;
+}
+.md p {
+  margin: 0 0 1em;
+}
+.md .lead {
+  font-size: 1.06em;
+  color: color-mix(in srgb, var(--text) 86%, var(--muted));
+}
+.md a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--accent-muted);
+}
+.md a:hover {
+  text-decoration-color: var(--accent);
+}
+.md a.anchor {
+  text-decoration: none;
+}
+.md a.is-missing {
+  color: var(--git-deleted-text);
+  text-decoration-style: wavy;
+  text-decoration-color: var(--git-deleted);
+}
+.md strong {
+  font-weight: 600;
+}
+.md code {
+  font: 0.84em var(--font-code);
+  padding: 0.12em 0.38em;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.md kbd {
+  font: 500 0.78em var(--font-code);
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  white-space: nowrap;
+}
+.md ul,
+.md ol {
+  padding-left: 1.5em;
+}
+.md li + li {
+  margin-top: 0.25em;
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+.md img {
+  max-width: 100%;
+  border-radius: var(--radius-card);
+  cursor: zoom-in;
+}
+.md sub,
+.md sup {
+  font-size: 0.75em;
+  line-height: 0;
+}
+.md details {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.md details > summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.md details[open] > summary {
+  margin-bottom: 0.5em;
+}
+.md dl:not(.frontmatter) dt {
+  font-weight: 600;
+  margin-top: 0.6em;
+}
+.md dl:not(.frontmatter) dd {
+  margin: 0.15em 0 0 1.4em;
+  color: var(--muted);
+}
+.md .footnotes {
+  margin-top: 2.5em;
+  padding-top: 0.5em;
+  border-top: 1px solid var(--border);
+  font-size: 0.88em;
+  color: var(--muted);
+}
+.md .footnotes ol {
+  margin: 0;
+}
+.md sup a[data-footnote-ref] {
+  text-decoration: none;
+  font-weight: 600;
+}
+.md .katex-display {
+  margin: 0.8em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.md [data-math-style] {
+  font-family: inherit;
+}
+.md .tm-math-error {
+  font-family: var(--font-code);
+  color: var(--git-deleted-text);
+  border: 0;
+  background: none;
+}
+
+/* frontmatter card */
+.frontmatter {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px 24px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  font: 13px/1.4 var(--font-ui);
+  margin: 0 0 2em;
+}
+.frontmatter dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.frontmatter dd {
+  margin: 2px 0 0;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fm-tag {
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* GitHub alerts */
+.markdown-alert {
+  --alert: var(--accent);
+  padding: 10px 16px;
+  border-left: 3px solid var(--alert);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: color-mix(in srgb, var(--alert) 7%, transparent);
+}
+.markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+.md .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-weight: 600;
+  font-size: 0.9em;
+  color: var(--alert);
+}
+.markdown-alert-title svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.markdown-alert-tip {
+  --alert: var(--git-added-text);
+}
+.markdown-alert-important {
+  --alert: var(--git-renamed-text);
+}
+.markdown-alert-warning {
+  --alert: var(--git-modified-text);
+}
+.markdown-alert-caution {
+  --alert: var(--git-deleted-text);
+}
+
+/* tables */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.md th,
+.md td {
+  padding: 8px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.md th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  font-weight: 600;
+  font-size: 0.92em;
+}
+.md tbody tr:nth-child(even) {
+  background: var(--zebra);
+}
+.md tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* code blocks */
+.code-block {
+  position: relative;
+}
+.md pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font: calc(var(--fs-code) * var(--zoom)) / 1.6 var(--font-code);
+}
+.md pre code {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.code-block__lang {
+  position: absolute;
+  top: 8px;
+  right: 42px;
+  font: 11px var(--font-code);
+  color: var(--faint);
+  pointer-events: none;
+}
+.code-block__copy {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.code-block:hover .code-block__copy,
+.code-block__copy:focus-visible,
+.code-block__copy.is-done {
+  opacity: 1;
+}
+.code-block__copy svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* highlight.js tokens mapped onto the syntax tokens */
+.hljs-comment,
+.hljs-quote {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-meta .hljs-keyword,
+.hljs-doctag,
+.hljs-section {
+  color: var(--syn-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-meta .hljs-string {
+  color: var(--syn-string);
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_,
+.hljs-class .hljs-title {
+  color: var(--syn-type);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-number,
+.hljs-symbol,
+.hljs-name,
+.hljs-title,
+.hljs-title.function_,
+.hljs-params,
+.hljs-template-variable,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--syn-prop);
+}
+.hljs-deletion {
+  color: var(--git-deleted-text);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
+
+/* blockquote */
+.md blockquote {
+  margin: 0 0 1em;
+  padding: 2px 0 2px 18px;
+  border-left: 3px solid var(--accent-muted);
+  color: var(--muted);
+}
+.md blockquote > :last-child {
+  margin-bottom: 0;
+}
+.md blockquote footer {
+  margin-top: 4px;
+  font-size: 0.85em;
+  color: var(--faint);
+}
+
+/* task lists */
+.contains-task-list {
+  list-style: none;
+  padding-left: 0.2em !important;
+}
+.task-list-item {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.task-list-item input {
+  appearance: none;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  transform: translateY(2px);
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.task-list-item input:checked {
+  border-color: var(--accent);
+  background: var(--accent) no-repeat center/11px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+.task-list-item.is-done {
+  color: var(--muted);
+}
+
+/* diagrams (Mermaid) */
+.diagram {
+  margin: 0 0 1em;
+  padding: 18px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  text-align: center;
+  overflow-x: auto;
+}
+.diagram.is-pending {
+  min-height: 64px;
+  color: var(--faint);
+  font-size: 12px;
+}
+.diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+.diagram-error {
+  margin: 0 0 1em;
+}
+.diagram-error__msg {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* live changes: changed block glow, then a persistent gutter bar; removed-block marker */
+.tm-changed {
+  position: relative;
+  border-radius: var(--radius-control);
+  animation: tm-glow var(--dur-glow) ease-out both;
+}
+.tm-changed::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.55;
+}
+.tm-removed {
+  margin: -0.2em 0 1em;
+  font: 12px/1.4 var(--font-ui);
+}
+.tm-removed__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--git-deleted-text);
+  cursor: pointer;
+  position: relative;
+}
+.tm-removed__bar::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--git-deleted);
+}
+.tm-removed__rule {
+  flex: 1;
+  border-top: 1px dashed color-mix(in srgb, var(--git-deleted) 55%, transparent);
+}
+.tm-removed__label {
+  color: var(--muted);
+}
+.tm-removed__toggle {
+  color: var(--muted);
+  font-weight: 500;
+}
+.tm-removed__bar:hover .tm-removed__toggle {
+  color: var(--text);
+}
+.tm-removed__content {
+  margin-top: 6px;
+  padding: 8px 14px;
+  border-left: 3px solid var(--git-deleted);
+  border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--git-deleted) 6%, transparent);
+  color: var(--muted);
+  font: calc(var(--fs-reading) * var(--zoom)) / var(--lh-reading) var(--font-reading);
+}
+.tm-removed__content > :last-child {
+  margin-bottom: 0;
+}
+.tm-removed__content a {
+  pointer-events: none;
+}
+/* section located by a search hit */
+.tm-located {
+  animation: tm-locate var(--dur-locate) ease-out both;
+  border-radius: var(--radius-control);
+}
+/* a deleted-while-open document: last version, dimmed */
+.md.is-tombstone .md-body,
+.md.is-tombstone .frontmatter {
+  opacity: 0.6;
+}
+
+/* find in page (CSS Custom Highlight API) */
+::highlight(tm-find) {
+  background-color: var(--mark);
+  color: inherit;
+}
+::highlight(tm-find-current) {
+  background-color: var(--mark-strong);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+}
+
+@keyframes tm-glow {
+  0%,
+  18% {
+    background: var(--live);
+    box-shadow: 0 0 0 6px var(--live);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+@keyframes tm-locate {
+  0%,
+  30% {
+    background: var(--mark);
+    box-shadow: 0 0 0 6px var(--mark);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
