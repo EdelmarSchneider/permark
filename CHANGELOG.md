@@ -3,6 +3,16 @@
 All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **The Explorer filter keeps your documentation images.** With **Only assets next to documents** on, an image used to show only when its
+  folder, or the one above it, held a document, so the pictures of a top-level `assets/` or `site/assets/` folder were hidden. Now an image
+  also shows when a Markdown document links to it (`![](...)`, a reference definition, or an HTML `<img>`, resolved from that document, wherever the
+  image is), or when it sits in a folder named `assets`, `images`, `img`, `media`, `attachments`, `screenshots`, `figures`, `diagrams` or
+  `pictures`. The icons of a code folder stay out unless a document uses them. Data and XML files keep the old rule, and `+pattern` / `-pattern`
+  entries still win. The set of linked images is kept up to date as documents change, reading only the document that changed.
+
 ## [0.2.0] - 2026-10-14
 
 TrailMark grows from a reader into a Markdown IDE: organize, edit and reorganize the documents you read, with the same promise as

@@ -18,6 +18,8 @@ class VaultStore {
   sinceLoaded = $state(false);
   stateLocation = $state<"appData" | "project">("appData");
   indexProgress = $state.raw<{ indexed: number; total: number } | null>(null);
+  /** Images some document links to, wherever they are (project paths): one of the reasons the Explorer filter shows an image. */
+  imageRefs = $state.raw<ReadonlySet<string>>(new Set());
   expanded = new SvelteSet<string>();
   /** Asks the tree to scroll a row into view. */
   reveal = $state.raw<{ path: string; n: number } | null>(null);
@@ -37,6 +39,7 @@ class VaultStore {
     this.since = null;
     this.sinceLoaded = false;
     this.indexProgress = null;
+    this.imageRefs = new Set();
     this.expanded.clear();
     this.reveal = null;
   }
@@ -50,6 +53,17 @@ class VaultStore {
       this.tree = await api.listTree();
     } catch {
       // keep the previous tree; the next tree-changed event retries
+    }
+  }
+
+  /** Asks which images the documents use. Called when the project opens and when the backend says the set changed. */
+  async refreshImageRefs(): Promise<void> {
+    const info = this.info;
+    try {
+      const images = await api.referencedImages();
+      if (this.info === info) this.imageRefs = new Set(images);
+    } catch {
+      // keep what is known; the next image-refs-changed event retries
     }
   }
 

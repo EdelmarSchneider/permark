@@ -104,7 +104,7 @@ export const en = {
   "filter.invalidGlob": "Not a valid pattern: {pattern}",
   "filter.assetsNearDocs": "Only assets next to documents",
   "filter.assetsNearDocsHint":
-    "Images, data and XML files show only when their folder, or the one above it, holds a document.",
+    "Images, data and XML show only next to a document (same folder or the one above). Images also show when a document links to them, or in folders like assets or images.",
   "filter.hideEmptyFolders": "Hide folders with no visible files",
   "filter.showingOf.one": "Showing {shown} of {n} file",
   "filter.showingOf.other": "Showing {shown} of {n} files",

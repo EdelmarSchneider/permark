@@ -55,6 +55,10 @@ impl EventSink for TauriSink {
     fn meta_changed(&self) {
         let _ = self.0.emit("meta-changed", ());
     }
+
+    fn image_refs_changed(&self) {
+        let _ = self.0.emit("image-refs-changed", ());
+    }
 }
 
 /// Runs blocking work on the blocking thread pool.
@@ -230,6 +234,13 @@ pub async fn search(
 ) -> Result<Vec<SearchHit>, AppError> {
     let ws = state.current()?;
     blocking(move || Ok(ws.search(&query, limit))).await
+}
+
+/// The images that some document of the folder links to, as folder paths (for the Explorer filter).
+#[tauri::command]
+pub async fn referenced_images(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.referenced_images())).await
 }
 
 #[tauri::command]

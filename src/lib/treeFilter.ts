@@ -222,18 +222,51 @@ function nearDocuments(path: string, folders: ReadonlySet<string>): boolean {
   return splitWorktree(own).rel.includes("/") && folders.has(dirname(own));
 }
 
-/** `folders` comes from `documentFolders` over the files of the tree. */
-export function fileTest(filter: TreeFilter, folders: ReadonlySet<string>): FileTest {
+/** Folder names that hold images by convention: an image inside one of them is part of the documentation. */
+export const ASSET_FOLDERS: ReadonlySet<string> = new Set([
+  "assets",
+  "images",
+  "img",
+  "media",
+  "attachments",
+  "screenshots",
+  "figures",
+  "diagrams",
+  "pictures",
+]);
+
+/** Whether a folder above the file (at any level, a worktree's name aside) is named like an asset folder. */
+function inAssetFolder(path: string): boolean {
+  const folders = splitWorktree(path).rel.split("/").slice(0, -1);
+  return folders.some((name) => ASSET_FOLDERS.has(name.toLowerCase()));
+}
+
+/**
+ * `folders` comes from `documentFolders` over the files of the tree. `imageRefs` lists the images that some
+ * document links to (paths as the tree has them, from the backend); only images use it.
+ */
+export function fileTest(
+  filter: TreeFilter,
+  folders: ReadonlySet<string>,
+  imageRefs: Iterable<string> = [],
+): FileTest {
   if (filter.show === "everything") return () => true;
   const categories = new Set<FileCategory>(
     filter.show === "custom" ? filter.categories : PRESET_CATEGORIES[filter.show],
   );
   const near = filter.assetsNearDocs && filter.show !== "documents";
   const rules = filter.show === "custom" ? parsePatterns(filter.patterns).rules : [];
+  // Links are matched ignoring case, like the patterns: a document may spell `Images/Logo.PNG` for `images/logo.png`.
+  const linked = near ? new Set(Array.from(imageRefs, (p) => p.toLowerCase())) : null;
   const byCategory = (path: string): boolean => {
     const category = categoryOf(path);
     if (!categories.has(category)) return false;
-    return !near || !ASSET_CATEGORIES.has(category) || nearDocuments(path, folders);
+    if (!near || !ASSET_CATEGORIES.has(category) || nearDocuments(path, folders)) return true;
+    // Data and XML are companions of documents only. An image is also shown when it sits in a folder
+    // made for images, or when a document links to it from anywhere.
+    return (
+      category === "images" && (inAssetFolder(path) || (linked?.has(path.toLowerCase()) ?? false))
+    );
   };
   if (rules.length === 0) return byCategory;
   return (path) => {
