@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { descriptionMatch, searchFiles, type SearchFilesInput } from "./quickOpenModel";
+import {
+  countMatches,
+  descriptionMatch,
+  searchFiles,
+  type SearchFilesInput,
+} from "./quickOpenModel";
 
 const FILES = [
   "docs/specs/live-feed.md",
@@ -105,5 +110,33 @@ describe("searchFiles", () => {
       "docs/research/storage.md",
     ]);
     expect(searchFiles(input({ text: "state", tags: ["spec"] }))).toEqual([]);
+  });
+});
+
+describe("countMatches (the hidden files that match)", () => {
+  const HIDDEN = ["src/live.rs", "src/watcher.rs", "assets/logo.png", "docs/archive/live-notes.md"];
+  const hidden = (over: Partial<SearchFilesInput>) => input({ files: HIDDEN, ...over });
+
+  it("counts every hidden file whose path matches the words, not just the first page", () => {
+    expect(countMatches(hidden({ text: "live" }))).toBe(2);
+    expect(countMatches(hidden({ text: "watch" }))).toBe(1);
+    expect(countMatches(hidden({ text: "zzz" }))).toBe(0);
+    const many = Array.from({ length: 80 }, (_, i) => `gen/file-${i}.rs`);
+    expect(countMatches(input({ files: many, text: "file", limit: 50 }))).toBe(80);
+  });
+
+  it("matches descriptions and tags like the visible list does", () => {
+    const withMeta = hidden({
+      text: "milestones",
+      describe: (p) => (p === "src/live.rs" ? "Milestones of the live feed" : ""),
+    });
+    expect(countMatches(withMeta)).toBe(1);
+    const tagged = hidden({ tags: ["spec"], tagsOf: (p) => (p === "src/watcher.rs" ? ["spec"] : []) });
+    expect(countMatches(tagged)).toBe(1);
+  });
+
+  it("is zero when nothing is typed or nothing is hidden", () => {
+    expect(countMatches(hidden({ text: "  " }))).toBe(0);
+    expect(countMatches(input({ files: [], text: "live" }))).toBe(0);
   });
 });
