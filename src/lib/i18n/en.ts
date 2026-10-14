@@ -498,6 +498,9 @@ export const en = {
   "edit.bars": "Editing notices",
   "edit.modeHint": "Switch between Visual and Source (Ctrl+Alt+E)",
   "edit.switchFailed": "Couldn't switch editors: {message}",
+  "edit.switchTyping": "the text kept changing while it was read. Try again.",
+  "edit.blocksUnreadable":
+    "Saved, but the blocks of the new version could not be read ({message}). The visual editor keeps its view until the next save.",
   "edit.visualFailed": "The visual editor could not be loaded, so this document is open in Source.",
   "edit.visualLabel": "Visual editor of {name}",
   "edit.visualLoading": "Loading the editor",

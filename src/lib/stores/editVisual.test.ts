@@ -46,6 +46,7 @@ import { toast } from "./toast.svelte";
 
 const PATH = "docs/a.md";
 const ORIGINAL = "# A\n\nfirst\n\nsecond\n";
+const EDITED_IN_SOURCE = "# A\n\nfirst, changed in Source\n\nsecond\n";
 
 const view = (path: string): DocumentView => ({
   path,
@@ -232,6 +233,29 @@ describe("saving from Visual mode", () => {
     expect(edit.dirty).toBe(true);
   });
 
+  it("leaves the document alone, and says so, when the blocks of the saved text cannot be read", async () => {
+    const editor = await startVisual();
+    editor.current = "# A\n\nfirst, edited\n\nsecond\n";
+    editor.dirty = true;
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    fake.parseBlocks.mockRejectedValue(new Error("backend down"));
+    const warn = vi.spyOn(toast, "message");
+    expect(await edit.save()).toBe(true);
+    // a Visual document started over from no blocks would save with every blank line gone: it keeps the blocks it has
+    expect(editor.rebased).toHaveLength(0);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("backend down"), "warn");
+  });
+
+  it("starts over from no blocks when the saved text has none to read", async () => {
+    const editor = await startVisual();
+    editor.current = "\n";
+    editor.dirty = true;
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    fake.parseBlocks.mockRejectedValue(new Error("backend down"));
+    expect(await edit.save()).toBe(true);
+    expect(editor.rebased).toHaveLength(1);
+  });
+
   it("a conflict writes nothing and keeps the document", async () => {
     const editor = await startVisual();
     editor.current = "# A\n\nmine\n\nsecond\n";
@@ -403,6 +427,87 @@ describe("switching between Visual and Source", () => {
     expect(edit.mode).toBe("source");
     expect(edit.initial?.buffer).toBe(ORIGINAL);
     expect(edit.dirty).toBe(false);
+  });
+
+  it("falls back to Source with the unsaved text, and still unsaved, when the visual editor cannot be loaded after a switch", async () => {
+    const source = await startSource();
+    source.text = EDITED_IN_SOURCE;
+    edit.noteChange(source.text.length);
+    await edit.switchTo("visual");
+    // the visual editor never mounts
+    bridge.editor = undefined;
+    edit.visualUnavailable();
+    expect(edit.mode).toBe("source");
+    expect(edit.initial?.buffer).toBe(EDITED_IN_SOURCE);
+    expect(edit.dirty).toBe(true);
+  });
+
+  it("starts the Source editor on the line of the block the Visual editor was to open on", async () => {
+    const source = await startSource();
+    source.text = EDITED_IN_SOURCE;
+    source.line = 2;
+    edit.noteChange(source.text.length);
+    await edit.switchTo("visual");
+    bridge.editor = undefined;
+    edit.visualUnavailable();
+    expect(edit.initial?.line).toBe(2);
+  });
+
+  it("saves the text of the document the visual editor is about to open, when a save comes before it has loaded", async () => {
+    const source = await startSource();
+    source.text = EDITED_IN_SOURCE;
+    edit.noteChange(source.text.length);
+    await edit.switchTo("visual");
+    // the editor's code is still loading: nothing is mounted
+    bridge.editor = undefined;
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    expect(await edit.save()).toBe(true);
+    expect(fake.saveDocument).toHaveBeenCalledWith(PATH, EDITED_IN_SOURCE, "h1");
+    // it opens on what was saved, and clean
+    expect(edit.dirty).toBe(false);
+    expect(edit.visualStart?.dirty).toBe(false);
+    expect(edit.visualStart?.unsaved).toBeUndefined();
+    expect(edit.visualStart?.map.blocks.map((b) => b.text)).toEqual([
+      "# A",
+      "first, changed in Source",
+      "second",
+    ]);
+  });
+
+  it("does not take a document that is still being typed in for a finished one", async () => {
+    const source = await startSource();
+    source.text = EDITED_IN_SOURCE;
+    edit.noteChange(source.text.length);
+    let calls = 0;
+    // every read of the blocks is followed by more typing
+    fake.parseBlocks.mockImplementation(async (text: string): Promise<ParsedBlocks> => {
+      calls++;
+      source.text = `${source.text}.`;
+      return mockParseBlocks(text);
+    });
+    const warn = vi.spyOn(toast, "message");
+    expect(await edit.switchTo("visual")).toBe(false);
+    expect(calls).toBeGreaterThan(1);
+    expect(edit.mode).toBe("source");
+    expect(edit.visualStart).toBeNull();
+    expect(edit.switching).toBe(false);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("compares with the version saved while the blocks were being read, not the one from before", async () => {
+    const source = await startSource();
+    source.text = EDITED_IN_SOURCE;
+    edit.noteChange(source.text.length);
+    const blocks = deferredBlocks();
+    const pending = edit.switchTo("visual");
+    // a save lands while the blocks are being read
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    expect(await edit.save()).toBe(true);
+    blocks.release(mockParseBlocks(EDITED_IN_SOURCE));
+    expect(await pending).toBe(true);
+    // the text is the saved one: no block is unsaved, and the document is not dirty
+    expect(edit.visualStart?.dirty).toBe(false);
+    expect(edit.visualStart?.unsaved).toEqual([false, false, false]);
   });
 });
 

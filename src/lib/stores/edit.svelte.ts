@@ -11,6 +11,7 @@ import {
   blockAtLine,
   buildBlockMap,
   changedBlockCount,
+  joinBlockMap,
   mapLine,
   matchBlocks,
   type BlockMap,
@@ -33,7 +34,7 @@ import { t, tn } from "../i18n";
 import { registerOverlay } from "../overlays";
 import { basename } from "../paths";
 import { askUnsaved, askYesNo, copyText, guardWindowClose, setWindowTitle } from "../platform";
-import type { FsBatch, SourceDoc } from "../types";
+import type { FsBatch, ParsedBlocks, SourceDoc } from "../types";
 import { clock as formatClock } from "../time";
 import { docs } from "./docs.svelte";
 import { session } from "./session.svelte";
@@ -404,8 +405,15 @@ class EditStore {
     const editor = bridge.editor;
     // Visual writes the file text itself; the Source buffer gets the file's BOM and line endings back
     if (editor?.mode === "visual") return editor.text();
-    const buffer = this.sourceBuffer();
-    return base ? fromBuffer(buffer, base.format, base) : buffer;
+    if (editor?.mode === "source") {
+      const buffer = editor.getText();
+      return base ? fromBuffer(buffer, base.format, base) : buffer;
+    }
+    // No editor is on screen yet (its code is loading after a switch): the text it is about to open with is the working text, and the
+    // saved one may be older
+    if (this.visualStart) return joinBlockMap(this.visualStart.map);
+    if (this.initial && base) return fromBuffer(this.initial.buffer, base.format, base);
+    return base?.text ?? "";
   }
 
   /** Ctrl+S and the Save button. Resolves to true when the file now holds the buffer. */
@@ -460,16 +468,27 @@ class EditStore {
   private async adopt(text: string, hash: string, modifiedMs: number): Promise<void> {
     const before = this.base;
     if (!before) return;
-    // The block map is only a help (the count of changed blocks): a failure to build it never fails a save.
-    const parsed = await api.parseBlocks(text).catch(() => ({ eol: "lf" as const, blocks: [] }));
-    const map = buildBlockMap(text, parsed);
+    // The block map helps (the count of changed blocks) and a Visual document that starts over from the saved text needs it: a failure
+    // to read it never fails a save, and is reported.
+    let parsed: ParsedBlocks | null = null;
+    let unreadable: unknown = null;
+    try {
+      parsed = await api.parseBlocks(text);
+    } catch (error) {
+      unreadable = error;
+    }
+    const map = buildBlockMap(text, parsed ?? { eol: "lf", blocks: [] });
     const changed = changedBlockCount(matchBlocks(before.map, map));
     const { buffer } = toBuffer(text);
     this.base = { ...before, text, buffer, hash, map, modifiedMs };
     this.modifiedMs = modifiedMs;
     this.touched = true;
-    this.followSave(text, map, bridge.editor);
+    // without blocks to go by, the editor keeps the ones it has (they give the same text), unless there is nothing in the text to lose
+    this.followSave(text, parsed !== null || text.trim() === "" ? map : null, bridge.editor);
     this.showNote(changed > 0 ? tn("edit.savedBlocks", changed) : t("edit.saved"));
+    if (unreadable !== null) {
+      toast.message(t("edit.blocksUnreadable", { message: errorText(unreadable) }), "warn");
+    }
     if (!this.hintSeen) {
       this.hintSeen = true;
       this.hint = true;
@@ -484,13 +503,21 @@ class EditStore {
   /**
    * The saved text is the version the editor goes on from. Source compares its buffer with it again. Visual starts over from the
    * saved blocks, so the unsaved-block bar clears and the next save compares with what was just written; unless the person typed
-   * while the file was being written, then the document is left as it is (nothing is lost, the bar stays a little longer).
+   * while the file was being written, then the document is left as it is (nothing is lost, the bar stays a little longer). Without
+   * `map` (the blocks of the saved text could not be read) it is left as it is too.
    */
-  private followSave(text: string, map: BlockMap, editor: EditorApi | undefined): void {
+  private followSave(text: string, map: BlockMap | null, editor: EditorApi | undefined): void {
     if (editor?.mode === "visual") {
-      if (editor.text() === text) editor.rebase(map);
+      if (map && editor.text() === text) editor.rebase(map);
       this.noteVisual();
-    } else this.noteChange(editor?.mode === "source" ? editor.getText().length : 0);
+    } else if (editor?.mode === "source") this.noteChange(editor.getText().length);
+    else {
+      // No editor is mounted yet: it will open on the version that was just saved.
+      if (map && this.mode === "visual" && this.visualStart) {
+        this.visualStart = { ...this.visualStart, map, unsaved: undefined, dirty: false };
+      }
+      this.setDirty(false);
+    }
   }
 
   private showNote(text: string): void {
@@ -719,23 +746,24 @@ class EditStore {
       let text = this.currentText();
       let line = editor.caretLine();
       let parsed = await api.parseBlocks(text);
-      // typing while the blocks were being read: read them again for the later text
-      for (
-        let tries = 0;
-        tries < 3 && token === this.switchToken && this.currentText() !== text;
-        tries++
-      ) {
+      // typing while the blocks were being read: read them again for the later text; if it keeps changing, the blocks that were
+      // read are of an older text and the switch would drop what was typed since
+      for (let rereads = 0; token === this.switchToken && this.currentText() !== text; rereads++) {
+        if (rereads === 3) throw new Error(t("edit.switchTyping"));
         text = this.currentText();
         line = editor.caretLine();
         parsed = await api.parseBlocks(text);
       }
       if (token !== this.switchToken || !this.active || this.mode !== "source") return false;
+      // A save or a reload can land while the blocks are read: what the text is compared with is the version there is now.
+      const saved = this.base;
+      if (!saved) return false;
       const map = buildBlockMap(text, parsed);
-      const match = matchBlocks(base.map, map);
+      const match = matchBlocks(saved.map, map);
       this.visualStart = {
         map,
         unsaved: match.origins.map((origin) => origin === null),
-        dirty: text !== base.text,
+        dirty: text !== saved.text,
         block: Math.max(0, blockAtLine(map, line)),
       };
       this.initial = null;
@@ -749,14 +777,21 @@ class EditStore {
     }
   }
 
-  /** The Visual editor could not be loaded: Source takes over with the saved text, and says so. */
+  /** The Visual editor could not be loaded: Source takes over with the text the editor was to open (unsaved work included), and says so. */
   visualUnavailable(): void {
     const base = this.base;
     if (!this.active || !base || this.mode !== "visual") return;
-    this.initial = { buffer: base.buffer, line: 0, atEnd: false };
+    // the working text lives in what the Visual editor was to start from, not in the saved file
+    const start = this.visualStart;
+    const text = start ? joinBlockMap(start.map) : base.text;
+    const block = start?.block;
+    const line =
+      block === undefined || block === null ? 0 : (start?.map.blocks[block]?.startLine ?? 0);
+    this.initial = { buffer: toBuffer(text).buffer, line, atEnd: false };
     this.visualStart = null;
     this.mode = "source";
-    this.setDirty(false);
+    this.caret = { line: line + 1, column: 1 };
+    this.setDirty(text !== base.text);
     toast.message(t("edit.visualFailed"), "warn");
   }
 
