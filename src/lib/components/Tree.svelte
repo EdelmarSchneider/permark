@@ -5,6 +5,7 @@
   import { isMarkdown } from "../paths";
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
+  import { filter } from "../stores/filter.svelte";
   import { tags } from "../stores/tags.svelte";
   import { vault } from "../stores/vault.svelte";
   import { treeTooltip } from "../tagModel";
@@ -30,6 +31,11 @@
 
   const rows = $derived(flattenTree(nodes, vault.expanded));
   const selected = $derived(docs.current?.path ?? null);
+
+  // a filter change can leave fewer rows than the focused index
+  $effect(() => {
+    if (focusIndex >= rows.length) focusIndex = Math.max(0, rows.length - 1);
+  });
 
   export function focus(): void {
     container?.focus();
@@ -146,6 +152,7 @@
         "tree-row",
         row.isDir && "tree-row--dir",
         selected === row.node.path && "is-selected",
+        filter.forced.has(row.node.path) && "is-filtered",
         hasFocus && focusIndex === i && "is-focused",
         git?.state === "deleted" && "is-deleted",
         git?.state === "conflicted" && "is-conflicted",
@@ -162,7 +169,9 @@
         ? row.node.path
         : row.isDir
           ? undefined
-          : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
+          : filter.forced.has(row.node.path)
+            ? t("filter.hiddenFile")
+            : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
               t("tags.tooltipTags", { list }),
             )}
       onclick={() => activate(i)}

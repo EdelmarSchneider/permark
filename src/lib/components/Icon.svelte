@@ -23,6 +23,7 @@
   import Folder from "@lucide/svelte/icons/folder";
   import FolderCog from "@lucide/svelte/icons/folder-cog";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
+  import Funnel from "@lucide/svelte/icons/funnel";
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import GitFork from "@lucide/svelte/icons/git-fork";
   import Hash from "@lucide/svelte/icons/hash";
@@ -69,6 +70,7 @@
     folder: Folder,
     "folder-cog": FolderCog,
     "folder-open": FolderOpen,
+    filter: Funnel,
     branch: GitBranch,
     fork: GitFork,
     hash: Hash,

@@ -17,6 +17,7 @@ import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
 import { feed } from "./feed.svelte";
+import { filter } from "./filter.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
@@ -160,6 +161,7 @@ class AppStore {
       session.suspend();
       docs.reset();
       feed.clear();
+      filter.reset();
       search.reset();
       tags.reset();
       toast.clear();
