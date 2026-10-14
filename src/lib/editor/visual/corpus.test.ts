@@ -8,8 +8,10 @@
 // A shortfall in how many blocks stay editable is a failure too: an editor that locked everything would pass the rest.
 
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
+import { TextSelection } from "@milkdown/kit/prose/state";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mockParseBlocks } from "../../mock/mockBlocks";
+import type { BlockKind } from "../../types";
 import {
   buildBlockMap,
   changedBlockCount,
@@ -27,11 +29,31 @@ import {
   withoutBom,
 } from "../corpusDocs";
 import { writeNode } from "./doc";
+import { endOfText, startOf, startOfText } from "./docPositions";
 import "./jsdomShims";
 import { VisualEditor } from "./editor";
+import type { CommandId } from "./format";
+import { kindOfNode, meaningOf, splitKinds } from "./treeChecks";
 
 const MAX_EDITS_PER_DOC = 30;
 const MAX_STRUCTURAL_EDITS = 10;
+const MAX_CONVERSIONS = 4;
+/** Of those edits, the ones whose saved text is read again by the parser (the long documents take a while to read). */
+const MAX_READ_AGAIN = 8;
+/** Reading the meaning of a text takes time on the long documents. */
+const SLOW = 60_000;
+/** The conversions that give one block back as one block of another kind (or as a few of them). */
+const CONVERSIONS: CommandId[] = ["paragraph", "h2", "quote", "bullet", "codeBlock"];
+
+/** Neighbouring lists as one: the splitter has no way to tell two lists apart by their marker (the parser checks that, in the tests of lists). */
+function oneList(kinds: BlockKind[]): BlockKind[] {
+  return kinds.filter((kind, k) => !(kind === "list" && kinds[k - 1] === "list"));
+}
+
+/** A text with the marker of its lists read as one (`-`, and `1.`), for comparing what the editor wrote with what it would have by default. */
+function withoutListMarkers(text: string): string {
+  return text.replace(/^[-*+] /gm, "- ").replace(/^(\d{1,9})[.)] /gm, "$1. ");
+}
 
 let editor: VisualEditor;
 
@@ -48,6 +70,7 @@ beforeAll(async () => {
         body.textContent = atom.source;
       },
       edit: () => {},
+      link: () => {},
       labels: { edit: "Edit in Source", editHint: "", region: (kind) => kind, reason: () => "" },
     },
     handlers: {
@@ -63,25 +86,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await editor.destroy();
 });
-
-/** The position where a top-level node starts. */
-function startOf(doc: PMNode, index: number): number {
-  let pos = 0;
-  for (let i = 0; i < index; i++) pos += doc.child(i).nodeSize;
-  return pos;
-}
-
-/** The end of the text of the last text block inside a top-level node, or null for a node without one (a rule, an atom). */
-function endOfText(doc: PMNode, index: number): number | null {
-  const start = startOf(doc, index);
-  const child = doc.child(index);
-  if (child.isTextblock) return start + 1 + child.content.size;
-  let found: number | null = null;
-  child.descendants((node, pos) => {
-    if (node.isTextblock) found = start + 1 + pos + 1 + node.content.size;
-  });
-  return found;
-}
 
 /** Where each block starts in the text. */
 function blockStarts(map: BlockMap): number[] {
@@ -114,26 +118,110 @@ for (const splitter of splitters.filter((s) => s.docs.length > 0)) {
         }
       });
 
-      it("changes only the bytes of an edited block", () => {
-        const report = editor.load({ map });
-        const starts = blockStarts(map);
-        for (const i of spread(map.blocks.length, MAX_EDITS_PER_DOC)) {
-          if (report.reasons.has(i)) continue;
-          editor.restart();
-          const { view } = editor.core;
-          const end = endOfText(view.state.doc, i);
-          if (end === null) continue; // a rule has no text to edit
-          view.dispatch(view.state.tr.insertText(" EDITED", end));
-          const rewritten = tidyBlockText(writeNode(editor.core, view.state.doc.child(i)), map.eol);
-          expect(rewritten, `block ${i} keeps the typed text`).toContain("EDITED");
-          const expected =
-            text.slice(0, starts[i]) +
-            rewritten +
-            text.slice(starts[i] + map.blocks[i].text.length);
-          expect(editor.text(), `block ${i}`).toBe(expected);
-          expect(editor.status(), `block ${i}`).toEqual({ dirty: true, changed: 1 });
-        }
-      });
+      it(
+        "changes only the bytes of an edited block, and what the saved text means stays what it meant",
+        () => {
+          const report = editor.load({ map });
+          const starts = blockStarts(map);
+          const meaning = meaningOf(editor.core, text);
+          const kinds = splitKinds(text);
+          const readAgain = new Set(spread(map.blocks.length, MAX_READ_AGAIN));
+          for (const i of spread(map.blocks.length, MAX_EDITS_PER_DOC)) {
+            if (report.reasons.has(i)) continue;
+            editor.restart();
+            const { view } = editor.core;
+            const end = endOfText(view.state.doc, i);
+            if (end === null) continue; // a rule has no text to edit
+            view.dispatch(view.state.tr.insertText(" EDITED", end));
+            const rewritten = tidyBlockText(
+              writeNode(editor.core, view.state.doc.child(i)),
+              map.eol,
+            );
+            expect(rewritten, `block ${i} keeps the typed text`).toContain("EDITED");
+            const saved = editor.text();
+            // the bytes around the block are the ones of the file...
+            const head = text.slice(0, starts[i]);
+            const tail = text.slice(starts[i] + map.blocks[i].text.length);
+            expect(saved.startsWith(head), `block ${i}: the text before it`).toBe(true);
+            expect(saved.endsWith(tail), `block ${i}: the text after it`).toBe(true);
+            // ...and the block is what the editor writes, apart from the marker of a list that has to differ from its neighbour's
+            const written = saved.slice(head.length, saved.length - tail.length);
+            expect(withoutListMarkers(written), `block ${i}`).toBe(withoutListMarkers(rewritten));
+            expect(editor.status(), `block ${i}`).toEqual({ dirty: true, changed: 1 });
+            if (!readAgain.has(i)) continue;
+            // what the text means: no definition is gone, and the parser finds the same blocks (not merged, not split)
+            const where = `block ${i} (${map.blocks[i].kind}) of ${JSON.stringify(saved.slice(Math.max(0, head.length - 20), head.length + written.length + 20))}`;
+            const now = meaningOf(editor.core, saved);
+            expect(
+              meaning.definitions.filter((d) => !now.definitions.includes(d)),
+              `the definitions lost by an edit of ${where}`,
+            ).toEqual([]);
+            expect(now.blocks, `the blocks after an edit of ${where}`).toEqual(meaning.blocks);
+            if (splitter.reparse) {
+              // the same blocks in the same order; the edited one may be another kind (the splitter calls indented code a paragraph)
+              const found = splitKinds(saved);
+              expect(found.length, `the number of blocks after an edit of ${where}`).toBe(
+                kinds.length,
+              );
+              expect(
+                found.filter((_, k) => k !== i),
+                `the other blocks after an edit of ${where}`,
+              ).toEqual(kinds.filter((_, k) => k !== i));
+            }
+          }
+        },
+        SLOW,
+      );
+
+      if (splitter.reparse) {
+        it(
+          "keeps the blocks apart when a block changes kind",
+          () => {
+            const report = editor.load({ map });
+            const definitions = meaningOf(editor.core, text).definitions;
+            for (const i of spread(map.blocks.length, MAX_CONVERSIONS)) {
+              if (report.reasons.has(i)) continue;
+              for (const command of CONVERSIONS) {
+                editor.restart();
+                const { view } = editor.core;
+                const at = startOfText(view.state.doc, i);
+                if (at === null) continue;
+                // the nodes as loaded, to tell the ones the conversion left alone from the ones it made
+                const loaded = new Map<number, PMNode>();
+                view.state.doc.forEach((node) => {
+                  if (typeof node.attrs.tmBlock === "number") loaded.set(node.attrs.tmBlock, node);
+                });
+                view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, at)));
+                if (!editor.run(command)) continue;
+                // the blocks the document has now: the splitter's own kind for one that was not touched, the kind of its node for the rest
+                const expected: (BlockKind | null)[] = [];
+                view.state.doc.forEach((node) => {
+                  if (node.type.name === "paragraph" && node.content.size === 0) return;
+                  const origin = node.attrs.tmBlock as number | null;
+                  expected.push(
+                    origin !== null && loaded.get(origin)?.eq(node)
+                      ? map.blocks[origin].kind
+                      : kindOfNode(node),
+                  );
+                });
+                if (expected.includes(null)) continue;
+                const saved = editor.text();
+                const where = `${command} on block ${i} (${map.blocks[i].kind}) of ${JSON.stringify(saved.slice(0, 300))}`;
+                expect(oneList(splitKinds(saved)), `the blocks after ${where}`).toEqual(
+                  oneList(expected as BlockKind[]),
+                );
+                if (definitions.length > 0) {
+                  expect(
+                    definitions.filter((d) => !meaningOf(editor.core, saved).definitions.includes(d)),
+                    `the definitions lost by ${where}`,
+                  ).toEqual([]);
+                }
+              }
+            }
+          },
+          SLOW,
+        );
+      }
 
       it("loses no text between the blocks when blocks are deleted, inserted or moved", () => {
         const report = editor.load({ map });

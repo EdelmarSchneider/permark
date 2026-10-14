@@ -8,6 +8,7 @@ import {
   classifyBlock,
   hasInlineMath,
   isDiagram,
+  referenceUses,
   sameMeaning,
   tidy,
 } from "./classify";
@@ -116,6 +117,40 @@ describe("rule 4: references defined elsewhere", () => {
   it("locks them, with the reason", () => {
     expect(reason(map.blocks[0].text, "paragraph", true)).toBe("reference");
     expect(reason(map.blocks[1].text, "paragraph", false)).toBeNull();
+  });
+
+  it("locks a block that holds a definition the parser left inside it, wherever it stands", () => {
+    // read on its own, the editor resolves the reference and the definition is not in its document: writing the block drops it
+    expect(reason("[foo]: https://example.com\nPlain paragraph.")).toBe("definition");
+    expect(reason("> Quote.\n>\n> [foo]: https://example.com", "blockquote")).toBe("definition");
+    expect(reason("- [foo]: https://example.com\n- second", "list")).toBe("definition");
+    expect(reason("> Quote.[^n]\n>\n> [^n]: The note.", "blockquote")).toBe("definition");
+    // text that only looks like one
+    expect(reason("See [the docs]: here.")).toBeNull();
+    expect(reason("A line: [not a definition] and more.")).toBeNull();
+  });
+
+  it("finds a document's definitions inside a quote or a list item, and the blocks that use them", () => {
+    const text =
+      "> Quote.\n>\n> [foo]: https://example.com\n\n- [bar]: /b\n- two\n\nSee [x][foo] and [y][bar].\n\nPlain.\n";
+    const map = buildBlockMap(text, mockParseBlocks(text));
+    const uses = referenceUses(core, map);
+    expect([...uses.keys()]).toEqual([2]);
+    // the definitions come back as lines of Markdown, to draw the block with
+    expect(uses.get(2)).toBe("[foo]: <https://example.com>\n\n[bar]: </b>");
+  });
+
+  it("keeps the footnote that a block uses with it", () => {
+    const text = "Text[^1].\n\nOther.\n\n[^1]: The note,\n    continued.\n";
+    const map = buildBlockMap(text, mockParseBlocks(text));
+    const uses = referenceUses(core, map);
+    expect([...uses.keys()]).toEqual([0]);
+    expect(uses.get(0)).toBe("[^1]: The note,\n    continued.");
+  });
+
+  it("locks a block that starts with a byte order mark: the parser would drop it", () => {
+    expect(reason("\uFEFF# Title")).toBe("parse");
+    expect(reason("Text with \uFEFF inside")).toBeNull();
   });
 
   it("finds nothing in a document that cannot define one, without reading it as a whole", () => {

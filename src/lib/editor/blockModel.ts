@@ -113,8 +113,13 @@ export function joinBlockMap(map: BlockMap): string {
 /**
  * One block of the document being saved: `origin` is the block of the original it came from (null for a
  * new block), `text` is its new text, or undefined while it is untouched (its original bytes are kept).
+ * `retyped` says the block is another kind of block than the original it came from (a heading made a paragraph, a
+ * paragraph made a list...), which decides whether the author's separator can be kept (see `compose`).
  */
-export type Slot = { origin: number | null; text?: string };
+export type Slot = { origin: number | null; text?: string; retyped?: boolean };
+
+/** Whether a separator holds a blank line (two line breaks with nothing but spacing between them). */
+const HAS_BLANK_LINE = /(?:\r\n|\r(?!\n)|\n)[ \t]*(?:\r\n|\r(?!\n)|\n)/;
 
 /** Text from the editor as a block: the file's line endings and no line break at its ends. */
 export function tidyBlockText(text: string, eol: LineEnding): string {
@@ -134,6 +139,10 @@ function contentLines(separator: string): string[] {
  * neighbours were next to each other in the original (whether or not either was edited), so blank lines
  * the author chose survive; otherwise the blocks are one blank line apart. A BOM and the final newline are
  * kept as they were.
+ *
+ * A separator of one line break (no blank line) is only valid for the pair it came from: a heading, a fence or a list can
+ * follow a paragraph that way because it interrupts it, while a paragraph cannot. So when either neighbour is another kind
+ * of block than it was (`retyped`) and the separator has no blank line, the blocks are one blank line apart instead.
  *
  * Text that is not a block but lives between blocks (link reference definitions) must outlive the blocks
  * around it: when a separator is dropped because its neighbours are no longer next to each other, its
@@ -158,6 +167,12 @@ export function composeDetailed(map: BlockMap, slots: readonly Slot[]): Composed
     const [previous, slot] = [slots[i - 1], slots[i]];
     return previous.origin !== null && slot.origin !== null && slot.origin === previous.origin + 1;
   };
+  // the separator before slot `i` is the author's own: its neighbours were together in the original, and still read apart
+  const keepsSeparator = (i: number): boolean => {
+    if (!isAdjacent(i)) return false;
+    if (!slots[i - 1].retyped && !slots[i].retyped) return true;
+    return HAS_BLANK_LINE.test(map.seps[slots[i].origin as number]);
+  };
 
   // `rescued[i]` is written before slot `i` (the last entry: after the last slot)
   const rescued: string[][] = Array.from({ length: slots.length + 1 }, () => []);
@@ -167,7 +182,8 @@ export function composeDetailed(map: BlockMap, slots: readonly Slot[]): Composed
     out = map.seps[0];
     trailing = map.seps[count];
     const kept = new Set<number>();
-    for (let i = 1; i < slots.length; i++) if (isAdjacent(i)) kept.add(slots[i].origin as number);
+    for (let i = 1; i < slots.length; i++)
+      if (keepsSeparator(i)) kept.add(slots[i].origin as number);
     for (let j = 1; j < count; j++) {
       if (kept.has(j)) continue;
       const lines = contentLines(map.seps[j]);
@@ -188,7 +204,7 @@ export function composeDetailed(map: BlockMap, slots: readonly Slot[]): Composed
   const starts: number[] = [];
   slots.forEach((slot, i) => {
     if (i > 0) {
-      out += isAdjacent(i)
+      out += keepsSeparator(i)
         ? map.seps[slot.origin as number]
         : gap + (rescued[i].length > 0 ? rescued[i].join(eol) + gap : "");
     } else if (rescued[0].length > 0) {

@@ -24,13 +24,15 @@ const labels = { edit: "Edit", editHint: "", region: (k: string) => k, reason: (
 
 function setup() {
   const edits: [number | null, string][] = [];
+  const links: string[] = [];
   const handle = createLockedHost({
     context: () => context,
     edit: (b, s) => edits.push([b, s]),
+    link: (href) => links.push(href),
     labels,
   });
   const body = (): HTMLElement => document.createElement("div");
-  return { handle, edits, body };
+  return { handle, edits, links, body };
 }
 
 beforeEach(() => {
@@ -65,6 +67,22 @@ describe("the locked block host", () => {
     handle.host.render(again, { kind: "html", source: "x", reason: "kind" });
     expect(again.querySelector("p")?.textContent).toBe("once");
     expect(fake.renderFragments).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws a block that uses a reference together with the definitions it uses", async () => {
+    fake.renderFragments.mockResolvedValue(['<p>See <a href="/a">x</a></p>']);
+    const { handle, body } = setup();
+    const el = body();
+    handle.host.render(el, {
+      kind: "other",
+      source: "See [x][ref]",
+      reason: "reference",
+      definitions: "[ref]: </a>",
+    });
+    // while the HTML is on its way the block shows its own source, not the definitions
+    expect(el.textContent).toBe("See [x][ref]");
+    await vi.waitFor(() => expect(el.querySelector("a")?.textContent).toBe("x"));
+    expect(fake.renderFragments).toHaveBeenCalledWith(["See [x][ref]\n\n[ref]: </a>"]);
   });
 
   it("keeps front matter as text, without asking the backend", () => {

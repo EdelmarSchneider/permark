@@ -12,6 +12,7 @@
   import { t } from "../i18n";
   import { basename, resolveRelative } from "../paths";
   import { assetUrl } from "../platform";
+  import { app } from "../stores/app.svelte";
   import { edit } from "../stores/edit.svelte";
   import { session } from "../stores/session.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
@@ -91,6 +92,11 @@
     const hostHandle = createLockedHost({
       context: () => enhanceContextFor(path, session.resolvedTheme),
       edit: (block) => void edit.switchTo("source", { block }),
+      // a link in a locked block opens as it does when reading (another document asks about unsaved work first); a link to
+      // a place in this document has nowhere to go while editing
+      link: (href) => {
+        if (href !== "" && !href.startsWith("#")) void app.followLink(path, href);
+      },
       labels: {
         edit: t("edit.editInSource"),
         editHint: t("edit.editInSourceHint"),

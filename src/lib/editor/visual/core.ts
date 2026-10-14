@@ -25,10 +25,12 @@ import {
   commonmark,
   headingSchema,
   hrSchema,
+  linkSchema,
   orderedListSchema,
   paragraphSchema,
   remarkPreserveEmptyLinePlugin,
   syncHeadingIdPlugin,
+  textSchema,
 } from "@milkdown/kit/preset/commonmark";
 import { footnoteDefinitionSchema, gfm, tableSchema } from "@milkdown/kit/preset/gfm";
 import { gapCursor } from "@milkdown/kit/prose/gapcursor";
@@ -37,6 +39,32 @@ import { Plugin, PluginKey, type EditorState } from "@milkdown/kit/prose/state";
 import type { EditorView, NodeViewConstructor } from "@milkdown/kit/prose/view";
 import { $ctx, $node, $prose, $view } from "@milkdown/kit/utils";
 import type { BlockKind } from "../../types";
+
+const NO_BREAK_SPACE = String.fromCharCode(0xa0);
+
+/**
+ * The preset's text node, except that a no-break space is written as the `&nbsp;` it was nearly always read from: as the character
+ * itself it looks like a plain space in a diff and in most editors. (Other character references are written as the characters
+ * they stand for.)
+ */
+const textNode = $node("text", () => ({
+  group: "inline",
+  parseMarkdown: {
+    match: ({ type }) => type === "text",
+    runner: (state, node) => {
+      state.addText(node.value as string);
+    },
+  },
+  toMarkdown: {
+    match: (node) => node.type.name === "text",
+    runner: (state, node) => {
+      (node.text ?? "").split(NO_BREAK_SPACE).forEach((part, i) => {
+        if (i > 0) state.addNode("html", undefined, "&nbsp;");
+        if (part !== "") state.addNode("text", undefined, part);
+      });
+    },
+  },
+}));
 
 /** The name of the attribute that ties a top-level node to a block of the original file. */
 export const TM_BLOCK = "tmBlock";
@@ -54,15 +82,22 @@ export type LockReason =
   | "differs"
   /** it uses a reference defined elsewhere in the document (a link reference or a footnote) */
   | "reference"
+  /** it holds the definition of a link reference or a footnote, which the editor would drop when it writes the block */
+  | "definition"
   /** it holds inline math, which the editor would not understand */
   | "math";
 
 /** What a locked atom needs from the app to draw itself. */
 export type LockedHost = {
   /** Fills the body of an atom (its rendered HTML, or its source when there is none). */
-  render(body: HTMLElement, atom: { kind: BlockKind; source: string; reason: LockReason }): void;
+  render(
+    body: HTMLElement,
+    atom: { kind: BlockKind; source: string; reason: LockReason; definitions?: string },
+  ): void;
   /** The button of an atom: open Source at this block. */
   edit(tmBlock: number | null, source: string): void;
+  /** A click on a link inside an atom (the editor has already stopped the webview from following it). */
+  link(href: string): void;
   labels: {
     edit: string;
     editHint: string;
@@ -78,6 +113,7 @@ const noHost: LockedHost = {
     body.textContent = atom.source;
   },
   edit: () => {},
+  link: () => {},
   labels: { edit: "Edit in Source", editHint: "", region: (kind) => kind, reason: () => "" },
 };
 
@@ -96,6 +132,8 @@ export const lockedNode = $node(LOCKED, () => ({
     source: {},
     kind: { default: "other" },
     reason: { default: "kind" },
+    // the definitions of the references the block uses, as written elsewhere in the file: drawn with the block, never saved
+    definitions: { default: "" },
     [TM_BLOCK]: { default: null },
   },
   toDOM: (node) => ["div", { class: "tm-locked", "data-kind": node.attrs.kind as string }],
@@ -135,18 +173,32 @@ export const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
       host.edit((attrs[TM_BLOCK] as number | null) ?? null, attrs.source as string);
     };
     button.addEventListener("click", open);
+    // A link in the body is the reading view's own markup and would navigate the window away from the editor: the click is
+    // stopped here and handed to the app, which follows it as it does in the reading view.
+    const onLink = (event: MouseEvent): void => {
+      const anchor = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!anchor || !body.contains(anchor)) return;
+      event.preventDefault();
+      if (event.type === "click") host.link(anchor.getAttribute("href") ?? "");
+    };
+    body.addEventListener("click", onLink);
+    body.addEventListener("auxclick", onLink);
     dom.append(body, button);
     host.render(body, {
       kind: node.attrs.kind as BlockKind,
       source: node.attrs.source as string,
       reason: node.attrs.reason as LockReason,
+      definitions: node.attrs.definitions as string,
     });
     return {
       dom,
       // the body is the app's own markup: the editor neither reads nor reacts to it
       stopEvent: (event) => event.target instanceof Node && button.contains(event.target),
       ignoreMutation: () => true,
-      update: (next) => next.type === node.type && next.attrs.source === node.attrs.source,
+      update: (next) =>
+        next.type === node.type &&
+        next.attrs.source === node.attrs.source &&
+        next.attrs.definitions === node.attrs.definitions,
     };
   };
 });
@@ -197,6 +249,8 @@ const LEFT_OUT = new Set<unknown>([
   ...[syncHeadingIdPlugin].flat(),
   // writes a blank paragraph as `<br />`; here an empty paragraph is simply not written
   ...[remarkPreserveEmptyLinePlugin].flat(),
+  // replaced by `textNode`
+  ...[textSchema].flat(),
 ]);
 
 /** How the editor writes Markdown. The same choices the files of this product's audience use most. */
@@ -262,6 +316,9 @@ export async function createCore(options: CoreOptions): Promise<Core> {
           return { ...spec, attrs: { ...spec.attrs, [TM_BLOCK]: { default: null } } };
         });
       }
+      // Text typed at the edge of a link stays out of it: a line that ends in a link is common, and the next character is not
+      // part of the link. (Typing inside the link text still extends it.)
+      ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
       if (options.locked) ctx.set(lockedHostCtx.key, options.locked);
     })
     .config(options.config ?? (() => {}))
@@ -270,6 +327,7 @@ export async function createCore(options: CoreOptions): Promise<Core> {
     .use(lockedView)
     .use((options.firstPlugins ?? []).flat())
     .use([...commonmark, ...gfm].filter((plugin) => !LEFT_OUT.has(plugin)))
+    .use(textNode)
     .use(history)
     // Markdown pasted as text becomes blocks, and what is copied is Markdown
     .use(clipboard)

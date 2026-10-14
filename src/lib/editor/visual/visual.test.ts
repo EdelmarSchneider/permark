@@ -25,6 +25,7 @@ beforeAll(async () => {
         body.textContent = atom.source;
       },
       edit: () => {},
+      link: () => {},
       labels: { edit: "Edit in Source", editHint: "", region: (kind) => kind, reason: () => "" },
     },
     handlers: {

@@ -51,4 +51,29 @@ export const HOSTILE: Record<string, string> = {
   "unbalanced fence at the end": "text\n\n```rust\nfn main() {}\n",
   "html comment only": "<!-- nothing else -->\n",
   "headings without a space": "#NotAHeading\n\n####### seven hashes\n\n# Real\n",
+  // a definition the parser leaves inside the block it touches, and a reference to it further down
+  "definition directly before a paragraph":
+    "[foo]: https://example.com\nPlain paragraph.\n\nSee [x][foo] here.\n",
+  "definition inside a blockquote":
+    "> Quote.\n>\n> [foo]: https://example.com\n\nSee [x][foo] here.\n",
+  "definition inside a list item": "- [foo]: https://example.com\n- second\n\nSee [x][foo] here.\n",
+  "definition after a list item, indented":
+    "- item\n\n  [foo]: https://example.com\n\nSee [x][foo] here.\n",
+  "footnote defined inside a blockquote":
+    "> Quote.\n>\n> [^n]: The note.\n\nSee the note[^n] here.\n",
+  // blocks that only stay apart because of what they are: one newline, no blank line
+  "a paragraph, one newline, a heading": "Intro text\n# Heading\n\nAfter.\n",
+  "a paragraph, one newline, a fence": "Para text\n```\ncode\n```\n\nAfter.\n",
+  "a paragraph, one newline, a list": "Intro:\n- a\n- b\n\nOutro.\n",
+  "a list, one newline, a heading": "- a\n- b\n# H\n",
+  "a paragraph, one newline, a quote": "Lead\n> quoted\n\nAfter.\n",
+  // lists kept apart only by their marker
+  "adjacent lists with different bullets": "- a\n- b\n\n* c\n* d\n",
+  "adjacent lists with different number delimiters": "1. a\n2. b\n1) c\n2) d\n",
+  "a paragraph after a list": "Para\n\n- a\n- b\n\nNext\n",
+  // text the editor reads differently from how it was written
+  "a link at the end and at the start of a paragraph":
+    "See [docs](a.md)\n\n<https://x.com> autolink\n\nBefore [b](b.md) after.\n",
+  "character references and bare urls":
+    "a&nbsp;b and &copy; sign\n\nVisit https://example.com/page now, ~x~ struck.\n",
 };

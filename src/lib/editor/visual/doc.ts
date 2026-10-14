@@ -17,7 +17,7 @@ import {
   type Composed,
   type Slot,
 } from "../blockModel";
-import { blocksWithReferences, classifyBlock } from "./classify";
+import { classifyBlock, referenceUses } from "./classify";
 import { LOCKED, TM_BLOCK, type Core, type LockReason } from "./core";
 
 /** What goes into a Visual document. */
@@ -46,14 +46,22 @@ export type Built = {
   report: LoadReport;
 };
 
-const REASONS: LockReason[] = ["kind", "diagram", "parse", "differs", "reference", "math"];
+const REASONS: LockReason[] = [
+  "kind",
+  "diagram",
+  "parse",
+  "differs",
+  "reference",
+  "definition",
+  "math",
+];
 
 /** Builds the document for a text's blocks. Nothing is edited: composing it gives the text back. */
 export function buildDoc(core: Core, input: DocInput): Built {
   const { map } = input;
   const schema = core.view.state.schema;
   const lockedType = schema.nodes[LOCKED];
-  const withReferences = blocksWithReferences(core, map);
+  const references = referenceUses(core, map);
   const report: LoadReport = {
     editable: 0,
     locked: Object.fromEntries(REASONS.map((r) => [r, 0])) as Record<LockReason, number>,
@@ -61,7 +69,7 @@ export function buildDoc(core: Core, input: DocInput): Built {
   };
   const originals: PMNode[] = [];
   map.blocks.forEach((block, i) => {
-    const verdict = classifyBlock(core, block, withReferences.has(i));
+    const verdict = classifyBlock(core, block, references.has(i));
     if (verdict.editable) {
       const node = verdict.node;
       report.editable++;
@@ -74,6 +82,7 @@ export function buildDoc(core: Core, input: DocInput): Built {
           source: block.text,
           kind: block.kind satisfies BlockKind,
           reason: verdict.reason,
+          definitions: references.get(i) ?? "",
           [TM_BLOCK]: i,
         }),
       );
@@ -188,23 +197,99 @@ export function writeNode(core: Core, node: PMNode): string {
   return text;
 }
 
+/** How a list starts: bullet or number, and the character that tells it from the lists around it. */
+type ListMarker = { ordered: boolean; mark: string };
+const BULLET_MARKS = ["-", "*", "+"];
+const NUMBER_MARKS = [".", ")"];
+
+/** The marker a list's text starts with, or null when it starts with something else. */
+function listMarker(text: string): ListMarker | null {
+  const found = /^ {0,3}(?:([-*+])|\d{1,9}([.)]))(?=[ \t\r\n]|$)/.exec(text);
+  if (!found) return null;
+  return found[1] ? { ordered: false, mark: found[1] } : { ordered: true, mark: found[2] };
+}
+
+/** The text of a list the editor wrote, with the marker of its items changed. The editor's items start at the very start of a line and everything inside them is indented. */
+function withMarker(text: string, to: ListMarker): string {
+  return to.ordered
+    ? text.replace(/^(\d{1,9})[.)] /gm, "$1" + to.mark + " ")
+    : text.replace(/^[-*+] /gm, to.mark + " ");
+}
+
+/**
+ * Two lists of the same kind side by side are one list in Markdown, unless their markers differ. The editor writes the lists it
+ * rewrites with its own marker (`-` and `1.`), so a list that was kept apart from its neighbour by its marker alone, or
+ * one made from a paragraph next to a list, would join the list beside it. A list the editor writes takes another marker
+ * when its neighbours use the one it would have. The lists that are kept as they were keep their own.
+ */
+function keepListsApart(slots: Slot[], markers: (ListMarker | null)[], rewritten: boolean[]): void {
+  for (let i = 0; i < slots.length; i++) {
+    const here = markers[i];
+    if (!here || !rewritten[i]) continue;
+    const taken = new Set<string>();
+    for (const k of [i - 1, i + 1]) {
+      const other = markers[k];
+      if (!other || other.ordered !== here.ordered) continue;
+      // a rewritten list further down still has to choose: it will take what is left
+      if (k < i || !rewritten[k]) taken.add(other.mark);
+    }
+    if (!taken.has(here.mark)) continue;
+    const mark = (here.ordered ? NUMBER_MARKS : BULLET_MARKS).find((m) => !taken.has(m));
+    if (mark === undefined) continue;
+    slots[i].text = withMarker(slots[i].text as string, { ordered: here.ordered, mark });
+    markers[i] = { ordered: here.ordered, mark };
+  }
+}
+
+const isListNode = (node: PMNode): boolean =>
+  node.type.name === "bullet_list" || node.type.name === "ordered_list";
+
 /** The blocks to save, in order: untouched ones by their index, the others with the text the editor writes for them. */
-export function slotsOf(core: Core, analysis: Analysis): Slot[] {
+export function slotsOf(core: Core, built: Built, analysis: Analysis): Slot[] {
   const slots: Slot[] = [];
+  const markers: (ListMarker | null)[] = [];
+  const rewritten: boolean[] = [];
+  const push = (slot: Slot, marker: ListMarker | null, written: boolean): void => {
+    slots.push(slot);
+    markers.push(marker);
+    rewritten.push(written);
+  };
   for (const info of analysis.nodes) {
     if (info.skip) continue;
-    if (info.untouched || (info.node.type.name === LOCKED && info.origin !== null)) {
-      slots.push({ origin: info.origin });
+    const { origin } = info;
+    if (info.untouched || (info.node.type.name === LOCKED && origin !== null)) {
+      const block = origin === null ? undefined : built.map.blocks[origin];
+      // Indented by two spaces or more, a block right after a list the editor writes would read as part of its last item. It was not
+      // next to a list when it was written, so it can only happen once the block before it became one: it is written without the indent.
+      const last = slots.length - 1;
+      if (
+        info.untouched &&
+        block !== undefined &&
+        info.node.type.name !== LOCKED &&
+        last >= 0 &&
+        rewritten[last] &&
+        markers[last] !== null &&
+        /^ {2,}\S/.test(block.text)
+      ) {
+        push({ origin, text: writeNode(core, info.node) }, null, true);
+        continue;
+      }
+      push({ origin }, block?.kind === "list" ? listMarker(block.text) : null, false);
     } else if (info.node.type.name === LOCKED) {
-      slots.push({ origin: null, text: info.node.attrs.source as string });
-    } else slots.push({ origin: info.origin, text: writeNode(core, info.node) });
+      push({ origin: null, text: info.node.attrs.source as string }, null, false);
+    } else {
+      const text = writeNode(core, info.node);
+      const retyped = origin !== null && info.node.type !== built.originals[origin]?.type;
+      push({ origin, text, retyped }, isListNode(info.node) ? listMarker(text) : null, true);
+    }
   }
+  keepListsApart(slots, markers, rewritten);
   return slots;
 }
 
 /** The text to save for the document as it is now (the file's BOM, line endings and every untouched byte). */
 export function composeDoc(core: Core, built: Built, doc: PMNode): Composed {
-  return composeDetailed(built.map, slotsOf(core, analyze(built, doc)));
+  return composeDetailed(built.map, slotsOf(core, built, analyze(built, doc)));
 }
 
 /** The slot of every top-level node (-1 for one that is not written), for placing a caret in the composed text. */

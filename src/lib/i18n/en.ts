@@ -514,6 +514,8 @@ export const en = {
   "edit.lockedWhy.parse": "The visual editor cannot read this block.",
   "edit.lockedWhy.differs": "The visual editor would write this block differently.",
   "edit.lockedWhy.reference": "This block uses a link or footnote that is defined elsewhere.",
+  "edit.lockedWhy.definition":
+    "This block defines a link or footnote, which the visual editor would drop.",
   "edit.lockedWhy.math": "This block has inline math.",
   "edit.unsavedBlocks.one": "{n} unsaved block",
   "edit.unsavedBlocks.other": "{n} unsaved blocks",

@@ -12,7 +12,7 @@ import {
 import type { BlockKind } from "../types";
 import type { LockedHost, LockReason } from "./visual/core";
 
-type Atom = { kind: BlockKind; source: string; reason: LockReason };
+type Atom = { kind: BlockKind; source: string; reason: LockReason; definitions?: string };
 type Entry = { body: HTMLElement; atom: Atom };
 
 export type LockedHostDeps = {
@@ -20,6 +20,8 @@ export type LockedHostDeps = {
   context(): EnhanceContext;
   /** The "Edit in Source" button of a block. */
   edit(block: number | null, source: string): void;
+  /** A click on a link inside a block (already kept from navigating the window): follow it as the reading view does. */
+  link(href: string): void;
   labels: LockedHost["labels"];
 };
 
@@ -88,21 +90,25 @@ export function createLockedHost(deps: LockedHostDeps): LockedHostHandle {
         sourceView(body, atom.source);
         return;
       }
-      const cached = cache.get(atom.source);
+      // a block that uses a reference is drawn together with the definitions it uses, so its links and footnotes are what the
+      // reading view shows (the definitions draw nothing of their own)
+      const markdown = atom.definitions ? `${atom.source}\n\n${atom.definitions}` : atom.source;
+      const cached = cache.get(markdown);
       if (cached !== undefined) {
         fill(entry, cached);
         return;
       }
       sourceView(body, atom.source);
-      const list = waiting.get(atom.source) ?? [];
+      const list = waiting.get(markdown) ?? [];
       list.push(entry);
-      waiting.set(atom.source, list);
+      waiting.set(markdown, list);
       if (!scheduled) {
         scheduled = true;
         queueMicrotask(flush);
       }
     },
     edit: (block, source) => deps.edit(block, source),
+    link: (href) => deps.link(href),
     labels: deps.labels,
   };
 

@@ -31,7 +31,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   turned into a heading, and link reference definitions when you delete or move blocks). A block you edit is marked with a bar in the margin until it is saved, and the
   status bar counts them. Undo back to the original makes the block clean again.
 - Blocks the editor cannot write back as the same Markdown are shown as they read but cannot be edited there, with an **Edit in Source** button that opens the Markdown at
-  that block: front matter, raw HTML, math, diagrams, footnotes and alerts, and any block with a link reference defined elsewhere, inline math or syntax the editor would change.
+  that block: front matter, raw HTML, math, diagrams, footnotes and alerts, and any block that defines or uses a link reference or footnote, or has inline math or syntax the editor would change.
+  A link inside one of them opens as it does when reading.
 - **Visual / Source** in the header (or Ctrl+Alt+E) switches editors keeping your unsaved work and the block you are in. External changes, the conflict bar and saves work
   as in Source mode.
 
