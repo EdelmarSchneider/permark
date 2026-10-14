@@ -223,6 +223,8 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 **Later**, no promises
 - Spec-driven workflows, review comments that turn into a prompt for your agent, and an MCP server so any agent can ask TrailMark
   "where is X described?"
+- A rendered diff against the last commit or your last read, rich JSON and XML views, backlinks, and installer extras
+  (`trailmark` on the `PATH`, `.md` file association)
 
 ## Tech
 
