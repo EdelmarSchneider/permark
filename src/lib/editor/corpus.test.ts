@@ -1,5 +1,5 @@
-// The round-trip safety net of the editor: for every Markdown document in this repository's public files, in the
-// mock fixtures and in a set of hostile ones, loading it into the block model and saving without an edit must give
+// The round-trip safety net of the editor: for every Markdown document in a frozen snapshot of the project's own
+// documents, in the mock fixtures and in a set of hostile ones, loading it into the block model and saving without an edit must give
 // back the very same bytes, and editing one block must change that block's bytes and nothing else. Deleting,
 // inserting and moving blocks must not lose any text that lives between them (link reference definitions).
 //
@@ -12,8 +12,14 @@
 //   UPDATE_CORPUS=1 npx vitest run src/lib/editor/corpus.test.ts
 //   UPDATE_CORPUS=1 cargo test --manifest-path src-tauri/Cargo.toml corpus
 //
-// Only public files are in the corpus (the root documents, `docs/design/`, the mock and hostile sets), so it is
-// the same on every checkout.
+// The project's documents are a frozen snapshot in `corpus/docs/` (the README, the changelog, the contributing
+// guide and the design notes, with names like `README.md` and `design/v0.2.md`). Nothing here reads the live files,
+// so editing them never makes the fixtures stale, and the corpus is the same on every checkout. Only a change to the
+// parser, or to the mock and hostile sets, does. To refresh the snapshot on purpose, copy the current files over it
+// and regenerate the fixtures with the two commands above:
+//
+//   cp README.md CHANGELOG.md CONTRIBUTING.md src/lib/editor/corpus/docs/
+//   cp docs/design/*.md src/lib/editor/corpus/docs/design/
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -41,33 +47,32 @@ type Doc = { name: string; text: string };
 const UPDATE = process.env.UPDATE_CORPUS === "1";
 const INLINE = "src/lib/editor/corpus/inline.json";
 const RANGES = "src/lib/editor/corpus/ranges.json";
+const FROZEN = "src/lib/editor/corpus/docs";
 const REGENERATE =
   "regenerate with: UPDATE_CORPUS=1 npx vitest run src/lib/editor/corpus.test.ts && " +
   "UPDATE_CORPUS=1 cargo test --manifest-path src-tauri/Cargo.toml corpus";
 /** Built from repeated text at run time; they are about size, which the Rust tests cover, and would only bloat the fixtures. */
 const GENERATED = new Set(["hostile: very long lines", "hostile: many tiny blocks"]);
 
-function markdownFiles(dir: string): string[] {
+/** The Markdown files of the snapshot, named by their path inside it. */
+function snapshotFiles(dir = ""): string[] {
   const out: string[] = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name).replace(/\\/g, "/");
-    if (entry.isDirectory()) out.push(...markdownFiles(path));
-    else if (entry.name.endsWith(".md")) out.push(path);
+  for (const entry of readdirSync(join(FROZEN, dir), { withFileTypes: true })) {
+    const name = dir === "" ? entry.name : `${dir}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...snapshotFiles(name));
+    else if (entry.name.endsWith(".md")) out.push(name);
   }
   return out;
 }
 
-function repositoryDocs(): Doc[] {
-  const files = [...markdownFiles("docs/design"), "README.md", "CHANGELOG.md", "CONTRIBUTING.md"];
-  return files.sort().map((name) => ({ name, text: readFileSync(name, "utf8") }));
-}
-
-const repository = repositoryDocs();
+const snapshot: Doc[] = snapshotFiles()
+  .sort()
+  .map((name) => ({ name, text: readFileSync(join(FROZEN, name), "utf8") }));
 const inline: Doc[] = [
   ...Object.entries(mockSources()).map(([name, text]) => ({ name: `mock ${name}`, text })),
   ...Object.entries(HOSTILE).map(([name, text]) => ({ name: `hostile: ${name}`, text })),
 ];
-const docs: Doc[] = [...repository, ...inline];
+const docs: Doc[] = [...snapshot, ...inline];
 // the same documents as a Windows editor would have saved them
 const windows: Doc[] = docs.map(({ name, text }) => ({
   name: `${name} (CRLF, BOM)`,
@@ -184,11 +189,11 @@ const splitters: Splitter[] = [
 ];
 
 describe("the corpus", () => {
-  it("covers the repository's public documents, the mock fixtures and the hostile set", () => {
-    expect(repository.map((d) => d.name)).toEqual(
+  it("covers the snapshot of the project's documents, the mock fixtures and the hostile set", () => {
+    expect(snapshot.map((d) => d.name)).toEqual(
       expect.arrayContaining(["README.md", "CHANGELOG.md", "CONTRIBUTING.md"]),
     );
-    expect(repository.length).toBeGreaterThanOrEqual(5);
+    expect(snapshot.length).toBeGreaterThanOrEqual(5);
     expect(Object.keys(mockSources()).length).toBeGreaterThan(10);
     expect(Object.keys(HOSTILE).length).toBeGreaterThan(30);
   });

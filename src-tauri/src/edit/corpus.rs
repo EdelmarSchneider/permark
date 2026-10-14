@@ -4,15 +4,22 @@
 //! edit and with edits, and needs the real ranges for that: vitest cannot call Rust, and the line-based splitter
 //! of the browser mock is only an approximation. So this test parses the corpus with [`parse_blocks`] and keeps the
 //! result in `src/lib/editor/corpus/ranges.json`; the vitest suite reads it. Both sides check that the file is
-//! current, so a change to the parser (or to a document) that moves a range fails here until the file is
-//! regenerated:
+//! current, so a change to the parser that moves a range fails here until the file is regenerated:
 //!
 //! 1. `UPDATE_CORPUS=1 npx vitest run src/lib/editor/corpus.test.ts` writes `corpus/inline.json`, the texts of the
 //!    hostile set and of the mock documents (they live in TypeScript);
 //! 2. `UPDATE_CORPUS=1 cargo test --manifest-path src-tauri/Cargo.toml corpus` writes `corpus/ranges.json`.
 //!
-//! The corpus is public files only (the README, the changelog, the contributing guide, `docs/design/`), so it is the
-//! same on every checkout.
+//! The project's own documents are a frozen snapshot in `src/lib/editor/corpus/docs/` (the README, the changelog,
+//! the contributing guide and the design notes as they were when the snapshot was taken). Neither this test nor the
+//! vitest suite reads the live files, so editing them never makes the fixtures stale, and the corpus is the same on
+//! every checkout. To refresh the snapshot on purpose, copy the current files over it, then run the two commands
+//! above:
+//!
+//! ```text
+//! cp README.md CHANGELOG.md CONTRIBUTING.md src/lib/editor/corpus/docs/
+//! cp docs/design/*.md src/lib/editor/corpus/docs/design/
+//! ```
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -23,6 +30,7 @@ use super::blocks::{parse_blocks, BlockKind};
 
 const INLINE: &str = "src/lib/editor/corpus/inline.json";
 const RANGES: &str = "src/lib/editor/corpus/ranges.json";
+const FROZEN: &str = "src/lib/editor/corpus/docs";
 const BOM: char = '\u{FEFF}';
 
 fn repository_root() -> PathBuf {
@@ -37,21 +45,25 @@ fn fingerprint(text: &str) -> u32 {
     })
 }
 
-/// The Markdown files of the repository that are part of the public project: the root documents and the design.
-pub(super) fn repository_docs() -> Vec<(String, String)> {
-    let root = repository_root();
-    let mut files: Vec<String> = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md"]
-        .iter()
-        .map(|f| (*f).to_owned())
-        .collect();
-    let mut stack = vec![String::from("docs/design")];
+/// The frozen snapshot of the project's own documents (the README, the changelog, the contributing guide and the
+/// design notes), with names relative to the snapshot folder (`README.md`, `design/v0.2.md`). The live files are
+/// never read, so editing them cannot make the fixtures stale.
+pub(super) fn frozen_docs() -> Vec<(String, String)> {
+    let root = repository_root().join(FROZEN);
+    let mut files: Vec<String> = Vec::new();
+    let mut stack = vec![String::new()];
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(root.join(&dir))
             .into_iter()
             .flatten()
             .flatten()
         {
-            let name = format!("{dir}/{}", entry.file_name().to_string_lossy());
+            let file = entry.file_name().to_string_lossy().into_owned();
+            let name = if dir.is_empty() {
+                file
+            } else {
+                format!("{dir}/{file}")
+            };
             if entry.path().is_dir() {
                 stack.push(name);
             } else if Path::new(&name)
@@ -86,7 +98,7 @@ fn inline_docs() -> BTreeMap<String, String> {
 
 /// Every document of the corpus once as written, and once the way a Windows editor saves it (CRLF and a BOM).
 fn corpus() -> BTreeMap<String, String> {
-    let mut docs: BTreeMap<String, String> = repository_docs().into_iter().collect();
+    let mut docs: BTreeMap<String, String> = frozen_docs().into_iter().collect();
     docs.extend(inline_docs());
     let windows: Vec<(String, String)> = docs
         .iter()
@@ -132,7 +144,7 @@ fn fixture() -> String {
 
 #[test]
 fn the_corpus_has_the_documents_it_is_meant_to_have() {
-    let docs = repository_docs();
+    let docs = frozen_docs();
     let names: Vec<&str> = docs.iter().map(|(n, _)| n.as_str()).collect();
     for expected in ["README.md", "CHANGELOG.md", "CONTRIBUTING.md"] {
         assert!(
@@ -140,10 +152,7 @@ fn the_corpus_has_the_documents_it_is_meant_to_have() {
             "{expected} is missing: {names:?}"
         );
     }
-    assert!(
-        names.iter().any(|n| n.starts_with("docs/design/")),
-        "{names:?}"
-    );
+    assert!(names.iter().any(|n| n.starts_with("design/")), "{names:?}");
     let all = corpus();
     assert!(all.len() > 100, "only {} documents", all.len());
 }

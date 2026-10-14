@@ -553,7 +553,7 @@ mod tests {
 
     #[test]
     fn the_repository_documents_split_into_blocks_that_add_up_to_the_file() {
-        let corpus = super::super::corpus::repository_docs();
+        let corpus = super::super::corpus::frozen_docs();
         assert!(corpus.len() >= 5, "found only {} documents", corpus.len());
         for (name, text) in &corpus {
             assert_partition(text);
