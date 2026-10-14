@@ -12,6 +12,8 @@ export type HitGroup = {
   /** Folder plus the worktree name for a worktree copy ("@wt feature-ui / docs"), so copies can be told apart. */
   where: string;
   worktree: string | null;
+  /** The file's description (from the tags metadata); "" when it has none. */
+  description: string;
   best: number;
   hits: SearchHit[];
 };
@@ -28,7 +30,10 @@ function whereLabel(path: string): string {
  * project itself come before files of linked worktrees (usually the same docs on another branch), so
  * the copies never interleave.
  */
-export function groupHits(hits: SearchHit[]): HitGroup[] {
+export function groupHits(
+  hits: SearchHit[],
+  describe: (path: string) => string = () => "",
+): HitGroup[] {
   const byPath = new Map<string, HitGroup>();
   for (const hit of hits) {
     let group = byPath.get(hit.path);
@@ -39,6 +44,7 @@ export function groupHits(hits: SearchHit[]): HitGroup[] {
         folder: folderLabel(hit.path),
         where: whereLabel(hit.path),
         worktree: splitWorktree(hit.path).worktree,
+        description: describe(hit.path),
         best: hit.score,
         hits: [],
       };

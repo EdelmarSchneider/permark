@@ -2,16 +2,22 @@
   import { tick, untrack } from "svelte";
   import { t, tn } from "../i18n";
   import { crumbOf, sanitizeSnippet } from "../searchModel";
+  import { knownTagsHint } from "../tagModel";
   import { app } from "../stores/app.svelte";
   import { search } from "../stores/search.svelte";
+  import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
+  import TagChip from "./TagChip.svelte";
+  import TagSuggestions from "./TagSuggestions.svelte";
 
   let input: HTMLInputElement | undefined = $state();
   let list: HTMLElement | undefined = $state();
 
+  const box = search.box;
+  const suggesting = $derived(box.partial !== null && box.suggestions.length > 0);
   const progress = $derived(vault.indexProgress);
   const indexing = $derived(progress !== null && progress.indexed < progress.total);
   const percent = $derived(
@@ -57,7 +63,7 @@
   }
 
   function escape(): void {
-    if (search.query !== "") {
+    if (!box.isEmpty) {
       search.reset();
       input?.focus();
     } else {
@@ -66,6 +72,12 @@
   }
 
   function onQueryKey(e: KeyboardEvent): void {
+    const chips = box.chips;
+    if (box.handleKey(e)) {
+      e.preventDefault();
+      if (box.chips !== chips) search.changedChips();
+      return;
+    }
     if (e.key === "ArrowDown") {
       e.preventDefault();
       list?.focus();
@@ -139,17 +151,39 @@
 <!-- svelte-ignore a11y_label_has_associated_control -->
 <label class="search-box">
   <Icon name="search" size="sm" />
+  {#if box.chips.length > 0}
+    <span class="search-box__chips">
+      {#each box.chips as chip (chip)}
+        <TagChip
+          name={chip}
+          removable
+          unknown={!tags.known.has(chip)}
+          title={t("tags.queryChip", { name: chip })}
+          removeLabel={t("tags.removeFilter", { name: chip })}
+          onremove={() => {
+            box.remove(chip);
+            search.changedChips();
+            input?.focus();
+          }}
+        />
+      {/each}
+    </span>
+  {/if}
   <input
     bind:this={input}
     value={search.query}
     oninput={(e) => search.setQuery(e.currentTarget.value)}
     onkeydown={onQueryKey}
-    placeholder={t("search.placeholder")}
+    placeholder={box.chips.length > 0 ? "" : t("search.placeholder")}
     aria-label={t("search.label")}
+    role="combobox"
+    aria-expanded={suggesting}
+    aria-controls="search-tags"
+    aria-activedescendant={suggesting ? `search-tags-${box.active}` : undefined}
     spellcheck="false"
     autocomplete="off"
   />
-  {#if search.query !== ""}
+  {#if !box.isEmpty}
     <IconButton
       small
       icon="x"
@@ -193,12 +227,42 @@
   </div>
 {/if}
 
-{#if search.status === "error"}
+{#if suggesting}
+  <div class="search-results scroll">
+    <TagSuggestions
+      id="search-tags"
+      rows={box.suggestions.map((match) => ({ type: "tag" as const, match }))}
+      active={box.active}
+      onpick={(row) => {
+        if (row.type !== "tag") return;
+        box.pick(row.match.tag.name);
+        search.changedChips();
+        input?.focus();
+      }}
+      onhover={(i) => (box.active = i)}
+    />
+  </div>
+{:else if search.unknown.length > 0}
+  <div class="empty">
+    {#if tags.counts.length === 0}
+      <strong>{t("tags.noTagsAtAll", { name: search.unknown[0] })}</strong>
+    {:else}
+      <strong
+        >{t("tags.unknownTag", {
+          name: search.unknown[0],
+          tags: knownTagsHint(tags.counts),
+        })}</strong
+      >
+    {/if}
+  </div>
+{:else if search.status === "error"}
   <div class="empty">
     <strong>{t("search.error", { message: search.error ?? "" })}</strong>
     <button class="btn btn--sm" onclick={() => search.runNow()}>{t("search.retry")}</button>
   </div>
-{:else if search.query.trim() === ""}
+{:else if search.tagsOnly}
+  <div class="empty">{t("search.tagsOnly")}</div>
+{:else if box.isEmpty}
   <div class="empty">{t("search.empty")}</div>
 {:else if search.status === "ready" && search.rows.length === 0}
   <div class="empty">
@@ -240,6 +304,9 @@
           <span class="hit-group__name">{row.group.name}</span>
           <span class="count-pill">{row.group.hits.length}</span>
           <span class="hit-group__path">{row.group.where}</span>
+          {#if row.group.description !== ""}
+            <span class="hit-group__desc">{row.group.description}</span>
+          {/if}
         </div>
       {:else}
         <!-- svelte-ignore a11y_click_events_have_key_events -->
