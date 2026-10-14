@@ -213,7 +213,10 @@ class AppStore {
       vault.git = git;
       vault.stateLocation = location;
       void vault.refreshSince();
-      if (info.mode === "ide") void tags.refreshIndex();
+      if (info.mode === "ide") {
+        void tags.refreshIndex();
+        void vault.refreshImageRefs();
+      }
       const restored = session.load(stored);
       this.screen = "project";
 
@@ -260,6 +263,9 @@ class AppStore {
       }),
       await api.on("meta-changed", () => {
         if (this.screen === "project" && !vault.isSimple) tags.onMetaChanged();
+      }),
+      await api.on("image-refs-changed", () => {
+        if (this.screen === "project" && !vault.isSimple) void vault.refreshImageRefs();
       }),
     );
   }

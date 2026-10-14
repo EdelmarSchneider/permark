@@ -108,7 +108,7 @@ export const en = {
   "filter.invalidGlob": "Not a valid pattern: {pattern}",
   "filter.assetsNearDocs": "Only assets next to documents",
   "filter.assetsNearDocsHint":
-    "Images, data and XML files show only when their folder, or the one above it, holds a document.",
+    "Images, data and XML show only next to a document (same folder or the one above). Images also show when a document links to them, or in folders like assets or images.",
   "filter.hideEmptyFolders": "Hide folders with no visible files",
   "filter.showHidden": "Show hidden files and folders",
   "filter.showHiddenHint": "Names that start with a dot, like .github.",
@@ -563,6 +563,10 @@ export const en = {
   "toolbar.deleteRow": "Delete row",
   "toolbar.deleteCol": "Delete column",
   "toolbar.deleteTable": "Delete table",
+  "toolbar.tableNeedsCell": "Put the cursor in a table cell first",
+  "toolbar.tableHeaderNoRowAbove":
+    "The header row stays first: use Add row below to add the first row",
+  "toolbar.tableHeaderNoDelete": "A table needs its header row: delete the whole table instead",
   "toolbar.codeBlock": "Code block",
   "toolbar.language": "Language of the code block",
   "toolbar.plainText": "Plain text",

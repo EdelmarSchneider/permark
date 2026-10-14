@@ -30,7 +30,7 @@ class FilterStore {
 
   // The open document stays in the tree even when the filter hides it.
   private outcome = $derived(
-    filterTree(vault.tree, fileTest(this.current, this.docFolders), {
+    filterTree(vault.tree, fileTest(this.current, this.docFolders, vault.imageRefs), {
       hideEmptyFolders: this.current.hideEmptyFolders,
       keep: docs.path,
       keepFolders: fileops.madeFolders,

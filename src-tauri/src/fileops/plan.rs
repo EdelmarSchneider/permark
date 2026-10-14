@@ -20,7 +20,7 @@ use std::io;
 
 use serde::{Deserialize, Serialize};
 
-use super::scan::{find_destinations, unescape, Dest, Form};
+use super::scan::{find_destinations, split_suffix, unescape, Dest, Form};
 use super::SkipReason;
 use crate::edit::blocks::{split_lines, BOM};
 use crate::links::{join_relative, percent_decode, scheme_of};
@@ -207,20 +207,6 @@ fn relative_path(from_dir: &[&str], target: &[&str]) -> String {
 }
 
 // ---- how a destination is written ----------------------------------------------------------------------
-
-/// Splits a destination at the first `?` or `#`: the path and the rest (kept as written).
-fn split_suffix(raw: &str) -> (&str, &str) {
-    let b = raw.as_bytes();
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'\\' if b.get(i + 1).is_some_and(u8::is_ascii_punctuation) => i += 2,
-            b'?' | b'#' => return raw.split_at(i),
-            _ => i += 1,
-        }
-    }
-    (raw, "")
-}
 
 /// Whether `s` has a `%XX` escape, and whether one of them is a byte of a non-ASCII character.
 fn percent_style(s: &str) -> (bool, bool) {

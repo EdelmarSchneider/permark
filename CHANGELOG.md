@@ -16,11 +16,22 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **`.trailmark/` is easier to find.** A quiet banner offers to keep tags and settings with the project when you open a git repository that
   doesn't have a `.trailmark/` folder yet (**Initialize**, **Not now**, **Never for this folder**), and the tag editor has an **Initialize .trailmark**
   link next to "Saved in TrailMark, not in the file". Both open the existing Initialize dialog.
+- **The window remembers its size and position.** TrailMark opens where you left it, including maximized, with no jump: the window is
+  placed before it is shown. Each project folder keeps its own place (in the project's private state, never in a file you commit), and
+  the last window is used for the welcome screen, a folder opened for the first time and a single file. If the screen it was on is gone,
+  or the resolution or display scale changed, the window comes back on the main screen at a size that fits.
 
 ### Changed
 - Hidden files and folders (`.github`, `.claude`, `.vscode`, `.gitignore`, ...) are no longer listed by default, in any preset. Turn on **Show
-  hidden files and folders** to see them; a hidden file that is open still shows, dimmed, in its folder.
+  hidden files and folders** to see them; a hidden file that is open still shows, dimmed, in its folder. A hidden folder hides its images too, even
+  ones a document links to.
 - The **Everything** preset says that files ignored by git (including those in `.git/info/exclude`, such as a local-only script) have their own switch.
+- **The Explorer filter keeps your documentation images.** With **Only assets next to documents** on, an image used to show only when its
+  folder, or the one above it, held a document, so the pictures of a top-level `assets/` or `site/assets/` folder were hidden. Now an image
+  also shows when a Markdown document links to it (`![](...)`, a reference definition, or an HTML `<img>`, resolved from that document, wherever the
+  image is), or when it sits in a folder named `assets`, `images`, `img`, `media`, `attachments`, `screenshots`, `figures`, `diagrams` or
+  `pictures`. The icons of a code folder stay out unless a document uses them. Data and XML files keep the old rule, and `+pattern` / `-pattern`
+  entries still win. The set of linked images is kept up to date as documents change, reading only the document that changed.
 
 ## [0.2.0] - 2026-10-14
 

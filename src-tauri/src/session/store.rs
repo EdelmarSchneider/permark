@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::config::{Config, DEFAULT_CONFIG_TOML};
+use super::window::{self, WindowState};
 use super::{SessionError, SessionState};
 use crate::util::{hash_hex, write_atomic};
 
@@ -154,6 +155,15 @@ impl StateStore {
         self.write(LAST_VISIT_FILE, visit)
     }
 
+    /// The window geometry this project had the last time it was open, if any.
+    pub fn load_window(&self) -> Option<WindowState> {
+        WindowState::load(&self.dir)
+    }
+
+    pub fn save_window(&self, state: &WindowState) -> Result<(), SessionError> {
+        state.save(&self.dir)
+    }
+
     /// Creates `.trailmark/{config.toml, .gitignore, cache/, local/}` (existing files are kept),
     /// carries the AppData state over, and switches to project storage.
     pub fn init_project_folder(&mut self) -> Result<(), SessionError> {
@@ -177,7 +187,7 @@ impl StateStore {
         }
         let local = tm.join("local");
         if self.location == StateLocation::AppData {
-            for file in [SESSION_FILE, LAST_VISIT_FILE] {
+            for file in [SESSION_FILE, LAST_VISIT_FILE, window::FILE_NAME] {
                 let (from, to) = (self.dir.join(file), local.join(file));
                 if from.is_file() && !to.exists() {
                     std::fs::copy(&from, &to).map_err(io(&from))?;
@@ -422,6 +432,43 @@ mod tests {
         assert_eq!(s.load_last_visit().map(|v| v.time_ms), Some(9));
         // A store opened afterwards finds the same data in the project.
         assert_eq!(f.store().load_session(), Some(session));
+    }
+
+    #[test]
+    fn the_window_is_kept_with_the_rest_of_the_state_and_follows_it_into_the_project() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.load_window(), None);
+        let window = WindowState {
+            x: -20,
+            y: 30,
+            width: 1280,
+            height: 800,
+            scale: 1.25,
+            maximized: false,
+        };
+        s.save_window(&window).expect("save");
+        assert_eq!(s.load_window(), Some(window));
+        assert!(s.dir().join("window.json").is_file());
+        // another project has its own
+        let other = tempfile::tempdir().expect("tempdir");
+        assert_eq!(
+            StateStore::open(f.app.path(), other.path()).load_window(),
+            None
+        );
+        // in the project's private folder once it has one, never in the part that is shared
+        s.init_project_folder().expect("init");
+        assert_eq!(s.load_window(), Some(window));
+        assert_eq!(f.store().load_window(), Some(window));
+        let tm = f.project.path().join(".trailmark");
+        assert!(tm.join("local").join("window.json").is_file());
+        assert!(!tm.join("window.json").exists());
+        let moved = WindowState { x: 5, ..window };
+        s.save_window(&moved).expect("save");
+        assert_eq!(f.store().load_window(), Some(moved));
+        // damaged data counts as nothing saved
+        fs::write(tm.join("local").join("window.json"), "{ not json").expect("write");
+        assert_eq!(f.store().load_window(), None);
     }
 
     #[test]

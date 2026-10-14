@@ -12,7 +12,7 @@
 
 mod ops;
 mod plan;
-mod scan;
+pub(crate) mod scan;
 mod service;
 mod world;
 

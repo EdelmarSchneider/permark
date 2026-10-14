@@ -40,6 +40,7 @@ export type EventMap = {
   "git-status-changed": GitSnapshot;
   "index-progress": { indexed: number; total: number };
   "meta-changed": null;
+  "image-refs-changed": null;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
@@ -67,6 +68,8 @@ export interface Api {
   /** Shows a file or folder of the open folder in the system's file manager. */
   revealInFolder(path: string): Promise<void>;
   search(query: string, limit?: number): Promise<SearchHit[]>;
+  /** The images some Markdown document of the folder links to, embeds or defines a reference for (folder paths). */
+  referencedImages(): Promise<string[]>;
   /** Creates `.trailmark/` in the project. */
   initProjectFolder(): Promise<void>;
   stateLocation(): Promise<"appData" | "project">;
@@ -138,6 +141,7 @@ export const tauriApi: Api = {
   openExternal: (path) => invoke<void>("open_external", { path }),
   revealInFolder: (path) => invoke<void>("reveal_in_folder", { path }),
   search: (query, limit) => invoke<SearchHit[]>("search", { query, limit }),
+  referencedImages: () => invoke<string[]>("referenced_images"),
   initProjectFolder: () => invoke<void>("init_project_folder"),
   stateLocation: () => invoke<"appData" | "project">("state_location"),
   fileMeta: (path) => invoke<FileMeta>("file_meta", { path }),
@@ -217,6 +221,7 @@ function createMockApi(): Api {
     openExternal: command("openExternal"),
     revealInFolder: command("revealInFolder"),
     search: command("search"),
+    referencedImages: command("referencedImages"),
     initProjectFolder: command("initProjectFolder"),
     stateLocation: command("stateLocation"),
     fileMeta: command("fileMeta"),
