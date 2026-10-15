@@ -136,6 +136,61 @@ export type SessionState = {
   editMode: EditMode;
   /** "Never for this folder" was chosen on the hint to keep settings with the project. */
   initHintNever: boolean;
+  /** An AI agent may ask this project's window what the person is looking at (off until turned on). */
+  agentConnection: boolean;
+};
+
+// ---- the agent connection (docs/design/v0.4.md) ------------------------------------------------------
+
+/** How the open document is shown. */
+export type AgentViewMode = "reading" | "visual" | "source";
+
+/** What the window publishes for an agent that asks: the document, the section on screen and the selection. */
+export type AgentContext = {
+  /** The open document (a path of the project), or null. */
+  document: string | null;
+  mode: AgentViewMode | null;
+  /** The section on screen: its heading path and its lines (from 1, both included). */
+  section: { headingPath: string[]; startLine: number; endLine: number } | null;
+  /** The selected text; the lines are missing when the editor cannot tell. */
+  selection: {
+    text: string;
+    headingPath: string[];
+    startLine?: number;
+    endLine?: number;
+  } | null;
+  /** The editor holds changes that are not saved to the file. */
+  unsaved: boolean;
+};
+
+/** One request an agent made. */
+export type AgentRequest = {
+  /** The tool: `get_context`, `list_unread`, `search` or `open`. */
+  tool: string;
+  /** What it was about (the query, the path). */
+  subject: string | null;
+  atMs: number;
+};
+
+/** The agent connection of the open project. */
+export type AgentStatus = {
+  enabled: boolean;
+  /** The window is listening (not when the socket could not be opened; `error` says why). */
+  listening: boolean;
+  /** Programs connected now (an agent's `trailmark mcp`, a hook's `trailmark context`). */
+  connections: number;
+  /** The latest requests, newest first. */
+  recent: AgentRequest[];
+  error: string | null;
+};
+
+/** A place an agent asked to be shown. */
+export type AgentOpen = {
+  path: string;
+  /** The line to show (from 1): the one asked for, or the one the heading is on. */
+  line?: number;
+  /** A heading was asked for and the document has none like it. */
+  headingNotFound?: boolean;
 };
 
 // ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------

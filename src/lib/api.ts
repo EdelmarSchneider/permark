@@ -6,6 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LanguagePreference } from "./i18n";
 import type {
+  AgentContext,
+  AgentOpen,
+  AgentStatus,
   AssetWritten,
   BufferText,
   ChangedSince,
@@ -47,6 +50,10 @@ export type EventMap = {
   "unread-changed": string[];
   /** The system asked this window (which shows no project) to open a file or folder (macOS: Finder, the Dock icon). */
   "open-path": string;
+  /** The agent connection changed: switched, an agent came or went, or one asked something. */
+  "agent-status": AgentStatus;
+  /** An agent asked to show a place: `takeAgentOpen` has it. */
+  "agent-open": null;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
@@ -157,6 +164,17 @@ export interface Api {
   markAllRead(): Promise<void>;
   /** Every document in a folder, and below it, counts as read. */
   markFolderRead(path: string): Promise<void>;
+  /**
+   * Turns the agent connection of the open project on or off (the setting is saved with the session). A connection that
+   * cannot start still resolves: the status says why.
+   */
+  setAgentConnection(enabled: boolean): Promise<AgentStatus>;
+  /** The state of the agent connection (the `agent-status` event carries the same). */
+  agentStatus(): Promise<AgentStatus>;
+  /** What the window shows, for an agent that asks. Sent when it changes. */
+  publishAgentContext(context: AgentContext): Promise<void>;
+  /** The place an agent asked to be shown, once; null when there is none. */
+  takeAgentOpen(): Promise<AgentOpen | null>;
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -224,6 +242,10 @@ export const tauriApi: Api = {
   markUnread: (path) => invoke<void>("mark_unread", { path }),
   markAllRead: () => invoke<void>("mark_all_read"),
   markFolderRead: (path) => invoke<void>("mark_folder_read", { path }),
+  setAgentConnection: (enabled) => invoke<AgentStatus>("set_agent_connection", { enabled }),
+  agentStatus: () => invoke<AgentStatus>("agent_status"),
+  publishAgentContext: (context) => invoke<void>("publish_agent_context", { context }),
+  takeAgentOpen: () => invoke<AgentOpen | null>("take_agent_open"),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -314,6 +336,10 @@ function createMockApi(): Api {
     markUnread: command("markUnread"),
     markAllRead: command("markAllRead"),
     markFolderRead: command("markFolderRead"),
+    setAgentConnection: command("setAgentConnection"),
+    agentStatus: command("agentStatus"),
+    publishAgentContext: command("publishAgentContext"),
+    takeAgentOpen: command("takeAgentOpen"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

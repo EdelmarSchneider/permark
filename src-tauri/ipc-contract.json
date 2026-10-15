@@ -51,7 +51,11 @@
     "mark_read": ["path"],
     "mark_unread": ["path"],
     "mark_all_read": [],
-    "mark_folder_read": ["path"]
+    "mark_folder_read": ["path"],
+    "set_agent_connection": ["enabled"],
+    "agent_status": [],
+    "publish_agent_context": ["context"],
+    "take_agent_open": []
   },
-  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path"]
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "agent-status", "agent-open"]
 }

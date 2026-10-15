@@ -11,6 +11,11 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use serde::Serialize;
 
+use crate::bridge::context::AgentContext;
+use crate::bridge::hub::{AgentEvents, AgentStatus, Backend};
+use crate::bridge::protocol::Opened;
+use crate::bridge::service::AgentBridge;
+use crate::bridge::socket::Endpoint;
 use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::fileops::{
@@ -66,6 +71,10 @@ pub trait EventSink: Send + Sync + 'static {
     fn image_refs_changed(&self);
     /// The documents that are unread changed (`unread-changed`); `unread` is all of them, sorted.
     fn unread_changed(&self, unread: &[String]);
+    /// The agent connection changed: turned on or off, an agent came or went, or one asked something (`agent-status`).
+    fn agent_status(&self, status: &AgentStatus);
+    /// An agent asked to show a place (`agent-open`); the UI picks it up with `take_agent_open`.
+    fn agent_open(&self);
 }
 
 /// Forwards events only while its workspace is the one that may emit, so a folder that is being
@@ -131,6 +140,18 @@ impl EventSink for GuardedSink {
     fn unread_changed(&self, unread: &[String]) {
         if self.live() {
             self.inner.unread_changed(unread);
+        }
+    }
+
+    fn agent_status(&self, status: &AgentStatus) {
+        if self.live() {
+            self.inner.agent_status(status);
+        }
+    }
+
+    fn agent_open(&self) {
+        if self.live() {
+            self.inner.agent_open();
         }
     }
 }
@@ -213,6 +234,10 @@ pub struct Workspace {
     own_writes: Arc<OwnWrites>,
     /// Rename, move, delete and new folder in the Explorer.
     fileops: FileOpsService,
+    /// What an AI agent can ask of this folder while the person has the agent connection on.
+    agent: AgentBridge,
+    /// The agent connection was on when the folder was opened (see [`Workspace::activate`]).
+    agent_wanted: bool,
     sink: Arc<dyn EventSink>,
     last_visit: Option<LastVisit>,
     closed: AtomicBool,
@@ -238,6 +263,61 @@ impl Followers for AppFollower {
     fn rewritten(&self, path: &str, old_hash: &str, new_hash: &str) {
         self.unread.rewritten(path, old_hash, new_hash);
     }
+}
+
+/// What only the open folder can tell an agent: the live search index and the live unread markers.
+struct LiveBackend {
+    index: Arc<RwLock<Bm25Index>>,
+    unread: Arc<UnreadService>,
+}
+
+impl Backend for LiveBackend {
+    fn unread(&self) -> Vec<String> {
+        self.unread.unread()
+    }
+
+    fn search(&self, query: &str, limit: usize) -> Vec<SearchHit> {
+        self.index.search(query, limit)
+    }
+}
+
+/// Tells the UI what happens to the agent connection.
+struct AgentSink(Arc<dyn EventSink>);
+
+impl AgentEvents for AgentSink {
+    fn status_changed(&self, status: &AgentStatus) {
+        self.0.agent_status(status);
+    }
+
+    fn open_requested(&self) {
+        self.0.agent_open();
+    }
+}
+
+/// The agent connection of a folder, off until [`Workspace::activate`] starts it, and whether the person had it on
+/// the last time (a single file is no project and never connects).
+fn agent_bridge(
+    vault: &Arc<Vault>,
+    store: &StateStore,
+    index: &Arc<RwLock<Bm25Index>>,
+    unread: &Arc<UnreadService>,
+    sink: &Arc<dyn EventSink>,
+) -> (AgentBridge, bool) {
+    let bridge = AgentBridge::new(
+        Arc::clone(vault),
+        Endpoint::for_project(vault.root()),
+        store.agent_path(),
+        Arc::new(LiveBackend {
+            index: Arc::clone(index),
+            unread: Arc::clone(unread),
+        }),
+        Arc::new(AgentSink(Arc::clone(sink))),
+    );
+    let wanted = !vault.is_shallow()
+        && store
+            .load_session()
+            .is_some_and(|session| session.agent_connection);
+    (bridge, wanted)
 }
 
 /// What the watcher thread needs to do its work.
@@ -392,6 +472,8 @@ impl Workspace {
     }
 
     /// [`Workspace::open`] with the way the watcher is started as a parameter (tests make it fail).
+    // It wires every part of an open folder together, one after the other; each part has its own helper already.
+    #[allow(clippy::too_many_lines)]
     fn open_with(
         path: &Path,
         app_data_dir: &Path,
@@ -491,6 +573,8 @@ impl Workspace {
             now_ms(),
         );
 
+        // Started by `activate`, once this folder has replaced the previous one (which must let go of the socket first).
+        let (agent, agent_wanted) = agent_bridge(&vault, &store, &index, &unread, sink);
         Ok(Self {
             vault,
             registry: Registry::with_defaults(),
@@ -508,10 +592,19 @@ impl Workspace {
             unread,
             own_writes,
             fileops,
+            agent,
+            agent_wanted,
             sink: Arc::clone(sink),
             last_visit,
             closed: AtomicBool::new(false),
         })
+    }
+
+    /// Called once this folder is the one that is open: starts the agent connection when the person had it on.
+    pub fn activate(&self) {
+        if self.agent_wanted {
+            self.agent.set_enabled(true);
+        }
     }
 
     #[cfg(test)]
@@ -791,6 +884,7 @@ impl Workspace {
             // The tags and descriptions added so far move into `.trailmark/meta.toml`.
             self.meta.migrate_to(store.meta_path(), true)?;
             self.unread.relocate(store.read_path());
+            self.agent.relocate_file(store.agent_path());
         }
         Ok(())
     }
@@ -853,6 +947,34 @@ impl Workspace {
     /// Everything in a folder counts as read.
     pub fn mark_folder_read(&self, path: &str) -> Result<(), AppError> {
         Ok(self.unread.mark_folder_read(path)?)
+    }
+
+    // ---- agent connection -----------------------------------------------------------------------
+
+    /// Turns the agent connection of this folder on or off: while it is on, an agent can ask this window what the
+    /// person is looking at. The setting itself is saved with the rest of the session by the UI. A single file
+    /// (Simple mode) is no project, so it never connects.
+    pub fn set_agent_connection(&self, enabled: bool) -> AgentStatus {
+        if self.vault.is_shallow() {
+            return self.agent.status();
+        }
+        self.agent.set_enabled(enabled)
+    }
+
+    pub fn agent_status(&self) -> AgentStatus {
+        self.agent.status()
+    }
+
+    /// What the window shows now, for an agent that asks.
+    pub fn publish_agent_context(&self, context: AgentContext) {
+        if !self.vault.is_shallow() {
+            self.agent.publish(context);
+        }
+    }
+
+    /// The place an agent asked to be shown, if the window has not picked it up yet.
+    pub fn take_agent_open(&self) -> Option<Opened> {
+        self.agent.take_open()
     }
 
     pub fn state_location(&self) -> Result<StateLocation, AppError> {
@@ -990,6 +1112,8 @@ impl Workspace {
         if self.closed.swap(true, Ordering::SeqCst) {
             return;
         }
+        // Agents are let go first, and the socket is free for the next window of this folder.
+        self.agent.shutdown();
         self.save_last_visit();
         // The watcher goes first: what it reports last (a rename that moves tags) is still written.
         if let Ok(mut w) = self.watcher.lock() {
@@ -1067,12 +1191,14 @@ impl WorkspaceHost {
         ));
         let workspace = Arc::new(opener(&guarded)?);
         let info = workspace.info();
-        let previous = self.replace(Some(workspace));
+        let previous = self.replace(Some(Arc::clone(&workspace)));
         // From here on the new workspace is the one that may emit.
         self.emitting.store(id, Ordering::SeqCst);
         if let Some(previous) = previous {
             previous.close();
         }
+        // After the previous folder let go: the same folder opened again takes over the agent connection's socket.
+        workspace.activate();
         Ok(info)
     }
 
@@ -1135,6 +1261,8 @@ mod tests {
         meta: AtomicUsize,
         image_refs: AtomicUsize,
         unread: Mutex<Vec<Vec<String>>>,
+        agent: Mutex<Vec<AgentStatus>>,
+        agent_opens: AtomicUsize,
         git: Mutex<Vec<GitSnapshot>>,
         progress: Mutex<Vec<(usize, usize)>>,
     }
@@ -1160,6 +1288,12 @@ mod tests {
         }
         fn unread_changed(&self, unread: &[String]) {
             self.unread.lock().expect("lock").push(unread.to_vec());
+        }
+        fn agent_status(&self, status: &AgentStatus) {
+            self.agent.lock().expect("lock").push(status.clone());
+        }
+        fn agent_open(&self) {
+            self.agent_opens.fetch_add(1, Ordering::SeqCst);
         }
     }
 

@@ -202,19 +202,44 @@ struct Worker {
     stamps: HashMap<String, (u64, u64, u64)>,
 }
 
+/// Every Markdown document of the project that the watcher would report.
+fn documents(vault: &Vault, filter: &PathFilter) -> Vec<WalkItem> {
+    vault
+        .walk()
+        .into_iter()
+        .filter(|item| item.kind == NodeKind::File && is_markdown_path(Path::new(&item.rel)))
+        .filter(|item| {
+            vault
+                .locate(&item.abs)
+                .is_some_and(|l| filter.classify(l.root, &l.inner, false) == Verdict::Emit)
+        })
+        .collect()
+}
+
+/// The documents that are unread, worked out from `read.json` and the files as they are now, with no service
+/// running: what an agent is told when the window is closed. Like the service, a project with no `read.json`
+/// has every document read, and a document is unread when it was never read or has changed since.
+pub fn unread_on_disk(vault: &Vault, filter: &PathFilter, read_path: &Path) -> Vec<String> {
+    let saved = std::fs::read(read_path).ok().and_then(|b| decode(&b));
+    let mut tracker = Tracker::new(saved);
+    let found = documents(vault, filter)
+        .into_iter()
+        .filter_map(|item| {
+            let meta = std::fs::metadata(&item.abs).ok()?;
+            if !meta.is_file() || meta.len() > MAX_HASHED_BYTES {
+                return None;
+            }
+            Some((item.rel, hash_bytes(&read_with_retry(&item.abs).ok()?)))
+        })
+        .collect();
+    tracker.scanned(found);
+    tracker.unread()
+}
+
 impl Worker {
     /// Every Markdown document of the project that the watcher would report.
     fn documents(&self) -> Vec<WalkItem> {
-        self.vault
-            .walk()
-            .into_iter()
-            .filter(|item| item.kind == NodeKind::File && is_markdown_path(Path::new(&item.rel)))
-            .filter(|item| {
-                self.vault
-                    .locate(&item.abs)
-                    .is_some_and(|l| self.filter.classify(l.root, &l.inner, false) == Verdict::Emit)
-            })
-            .collect()
+        documents(&self.vault, &self.filter)
     }
 
     /// Reads every document and hands the answer to the tracker. Returns whether `read.json` is behind.

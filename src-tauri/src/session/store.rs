@@ -13,6 +13,7 @@ use crate::util::{hash_hex, write_atomic};
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
 const READ_FILE: &str = "read.json";
+const AGENT_FILE: &str = "agent.json";
 const META_FILE: &str = "meta.toml";
 const TRAILMARK_DIR: &str = ".trailmark";
 const PROJECT_GITIGNORE: &str = "\
@@ -61,7 +62,7 @@ pub struct StateStore {
 }
 
 /// Stable, case-insensitive-on-Windows key for a project folder.
-fn project_key(root: &Path) -> String {
+pub(crate) fn project_key(root: &Path) -> String {
     let mut s = dunce::simplified(root).to_string_lossy().replace('\\', "/");
     while s.ends_with('/') && s.len() > 1 {
         s.pop();
@@ -107,6 +108,19 @@ impl StateStore {
     /// Where the unread markers keep what was last read: `read.json` with the rest of the local state.
     pub fn read_path(&self) -> PathBuf {
         self.dir.join(READ_FILE)
+    }
+
+    /// Where the agent connection keeps what the person is looking at: `agent.json` with the rest of the local
+    /// state, but only in a project that keeps its state in `.trailmark/` (nothing is written into AppData for
+    /// other programs to find).
+    pub fn agent_path(&self) -> Option<PathBuf> {
+        (self.location == StateLocation::Project).then(|| self.dir.join(AGENT_FILE))
+    }
+
+    /// Whether TrailMark has been used on this folder: it has a `.trailmark/` folder, or the app kept state for it.
+    /// This is how a program started somewhere inside a project finds the project.
+    pub fn is_known(&self) -> bool {
+        self.location == StateLocation::Project || self.dir.is_dir()
     }
 
     /// Where the tags and descriptions added in the app are kept: `.trailmark/meta.toml` (shared with
@@ -457,6 +471,29 @@ mod tests {
         );
         // never in the part of .trailmark that is shared
         assert_eq!(f.store().read_path(), s.read_path());
+    }
+
+    #[test]
+    fn the_agent_state_file_is_written_only_into_a_project_that_keeps_its_state_there() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.agent_path(), None, "nothing is written into AppData");
+        s.init_project_folder().expect("init");
+        let local = Path::new(".trailmark").join("local").join("agent.json");
+        assert!(s.agent_path().expect("a path").ends_with(&local));
+        assert_eq!(f.store().agent_path(), s.agent_path());
+    }
+
+    #[test]
+    fn a_folder_is_known_once_the_app_kept_state_for_it_or_it_has_a_trailmark_folder() {
+        let f = fx();
+        assert!(!f.store().is_known(), "never opened");
+        let s = f.store();
+        s.save_session(&SessionState::default()).expect("save");
+        assert!(f.store().is_known(), "the app kept state for it");
+        let other = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(other.path().join(".trailmark")).expect("mkdir");
+        assert!(StateStore::open(f.app.path(), other.path()).is_known());
     }
 
     #[test]

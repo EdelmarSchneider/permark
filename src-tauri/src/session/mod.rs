@@ -19,6 +19,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 pub use app_settings::{effective_language, installer_language, AppSettingsStore, Language};
 pub use config::{Config, TreeConfig, TreeShow};
 pub use recent::{RecentStore, RecentVault};
+pub(crate) use store::project_key;
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};
 pub use window::{saved_for_launch, WindowState};
 
@@ -183,6 +184,8 @@ pub enum EditMode {
 /// an older save take their defaults.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+// The settings are independent on/off choices that the UI stores as they are.
+#[allow(clippy::struct_excessive_bools)]
 pub struct SessionState {
     pub last_doc: Option<String>,
     pub scroll_top: f64,
@@ -225,6 +228,10 @@ pub struct SessionState {
     /// the app's own storage, so nothing about it is written into the project.
     #[serde(deserialize_with = "or_default")]
     pub init_hint_never: bool,
+    /// An AI agent may ask this project's window what the person is looking at (the agent connection). Off unless
+    /// the person turned it on; a value this build cannot read reads as off.
+    #[serde(deserialize_with = "or_default")]
+    pub agent_connection: bool,
 }
 
 impl Default for SessionState {
@@ -249,6 +256,7 @@ impl Default for SessionState {
             link_update: LinkUpdate::Ask,
             edit_mode: EditMode::Visual,
             init_hint_never: false,
+            agent_connection: false,
         }
     }
 }
@@ -264,7 +272,7 @@ mod tests {
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
             "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
             "autoReveal": false, "rightTab": "outline", "linkUpdate": "always",
-            "editMode": "source", "initHintNever": true,
+            "editMode": "source", "initHintNever": true, "agentConnection": true,
             "treeFilter": {"show": "custom", "categories": ["documents", "data"],
                            "patterns": "+*.sql -archive/**", "hideEmptyFolders": false,
                            "assetsNearDocs": false, "showIgnored": true, "showHidden": true}
@@ -284,6 +292,7 @@ mod tests {
         assert!(!filter.assets_near_docs);
         assert!(filter.show_ignored && filter.show_hidden);
         assert!(s.init_hint_never);
+        assert!(s.agent_connection);
         assert_eq!(serde_json::to_value(&s).expect("json"), json);
     }
 
@@ -564,6 +573,22 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{mode} lost the session: {e}"));
             assert!((s.zoom - 1.5).abs() < f64::EPSILON);
             assert_eq!(s.edit_mode, EditMode::Visual, "{mode}");
+        }
+    }
+
+    #[test]
+    fn the_agent_connection_is_off_unless_the_person_turned_it_on() {
+        assert!(!SessionState::default().agent_connection);
+        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
+        assert!(!s.agent_connection, "a session saved before it existed");
+        let s: SessionState = serde_json::from_str("{\"agentConnection\": true}").expect("parse");
+        assert!(s.agent_connection);
+        // a value this build cannot read reads as off and keeps the session
+        for value in ["null", "\"yes\"", "1", "[]", "{}"] {
+            let json = format!("{{\"follow\": true, \"agentConnection\": {value}}}");
+            let s: SessionState = serde_json::from_str(&json)
+                .unwrap_or_else(|e| panic!("{value} lost the session: {e}"));
+            assert!(!s.agent_connection && s.follow, "{value}");
         }
     }
 

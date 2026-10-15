@@ -49,18 +49,22 @@ fn navigation_guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
         .build()
 }
 
-/// Builds and runs the Tauri application. Started as `trailmark mcp`, it instead serves MCP over standard input and output
-/// (see [`bridge`]), without a window, and exits when the input closes.
+/// Builds and runs the Tauri application. Started as `trailmark mcp` or `trailmark context`, it instead runs that command
+/// without a window (see [`bridge`]): `mcp` serves MCP over standard input and output until the input closes, `context`
+/// prints what the person is looking at and exits.
 ///
 /// # Panics
 ///
 /// Panics if the Tauri runtime fails to start.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// The app's command list is one expression, and it grows with the app.
+#[allow(clippy::too_many_lines)]
 pub fn run() {
-    if bridge::wants_mcp(std::env::args_os()) {
-        std::process::exit(bridge::mcp::run_cli());
-    }
     let context = tauri::generate_context!();
+    if let Some(command) = bridge::subcommand(std::env::args_os()) {
+        // The app's identifier names its data folder, where the project's saved settings are.
+        std::process::exit(bridge::cli::run(command, &context.config().identifier));
+    }
     let dev_url = if cfg!(debug_assertions) {
         context.config().build.dev_url.clone()
     } else {
@@ -140,6 +144,10 @@ pub fn run() {
             commands::mark_unread,
             commands::mark_all_read,
             commands::mark_folder_read,
+            commands::set_agent_connection,
+            commands::agent_status,
+            commands::publish_agent_context,
+            commands::take_agent_open,
         ])
         .build(context)
         .expect("error while building tauri application");
