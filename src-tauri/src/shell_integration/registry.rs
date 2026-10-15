@@ -129,14 +129,20 @@ impl Registry {
         }
     }
 
-    /// The `ProgID` Windows has recorded as the person's choice for an extension (`UserChoice`, which is read-only
-    /// for programs: Windows protects it with a hash).
+    /// The `ProgID` Windows has recorded as the person's choice for an extension. It is read-only for programs
+    /// (Windows protects it with a hash). Newer Windows 11 builds keep it in `UserChoiceLatest\ProgId` (a key named
+    /// `ProgId`) and may have no `UserChoice` at all; older ones only have `UserChoice`.
     fn default_for(&self, extension: &str) -> Option<String> {
-        hkcu()
-            .open_subkey(format!(r"{}\{extension}\UserChoice", self.file_exts))
-            .ok()?
-            .get_value::<String, _>("ProgId")
-            .ok()
+        let base = format!(r"{}\{extension}", self.file_exts);
+        let progid_in = |key: String| {
+            hkcu()
+                .open_subkey(key)
+                .ok()?
+                .get_value::<String, _>("ProgId")
+                .ok()
+        };
+        progid_in(format!(r"{base}\UserChoiceLatest\ProgId"))
+            .or_else(|| progid_in(format!(r"{base}\UserChoice")))
     }
 
     /// Adds or removes the context-menu entries.
@@ -505,6 +511,25 @@ mod tests {
         choice("md_auto_file");
         assert!(!s.registry.state().is_default);
         choice("TrailMark.Markdown");
+        assert!(s.registry.state().is_default);
+    }
+
+    #[test]
+    fn newer_windows_records_the_choice_in_user_choice_latest() {
+        // Windows 11 builds without a `UserChoice` key keep the choice in `UserChoiceLatest\ProgId`.
+        let s = Scratch::new();
+        let latest = |progid: &str| {
+            let (key, _) = hkcu()
+                .create_subkey(format!(
+                    r"{}\.md\UserChoiceLatest\ProgId",
+                    s.registry.file_exts
+                ))
+                .expect("user choice latest");
+            key.set_value("ProgId", &progid).expect("progid");
+        };
+        latest("Applications\\other.exe");
+        assert!(!s.registry.state().is_default);
+        latest("TrailMark.Markdown");
         assert!(s.registry.state().is_default);
     }
 
