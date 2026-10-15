@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy policy | TrailMark</title>
+  <meta name="description" content="TrailMark has no account and collects no data. Your documents, tags, comments and settings stay on your computer. This is what the app does with the network, and what it does not.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
+  <link rel="canonical" href="https://edelmarschneider.github.io/trailmark/privacy.html">
+
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="nav" role="banner">
+    <div class="container nav__inner">
+      <a class="brand" href="index.html" aria-label="TrailMark, back to the home page">
+        <img src="assets/logo.svg" width="28" height="28" alt="">
+        <span>TrailMark</span>
+      </a>
+      <a class="btn btn--ghost btn--sm" href="index.html">Back to the home page</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <article class="legal">
+      <div class="container">
+        <div class="legal__body">
+          <h1>Privacy policy</h1>
+          <p class="legal__updated">Last updated October 15, 2026. This applies to TrailMark, the desktop app, on every platform it runs on, including the version in the Microsoft Store.</p>
+
+          <h2>In short</h2>
+          <p>TrailMark has no account and no sign-in, and it collects no data about you or about how you use it. It has no analytics and no tracking. The developer receives nothing from the app.</p>
+
+          <h2>What stays on your computer</h2>
+          <p>Everything you work with stays on your computer:</p>
+          <ul>
+            <li>Your documents. TrailMark reads the folders you open, and changes a file only when you save an edit or ask it to rename, move or delete one.</li>
+            <li>Your tags, descriptions and comments, and which documents you have read. They are kept in TrailMark's data folder on your computer, or in the project's <code>.trailmark</code> folder if you chose to keep them there.</li>
+            <li>Your settings, your recent folders and the position of the window.</li>
+          </ul>
+          <p>None of it is sent anywhere by TrailMark.</p>
+
+          <h2>What TrailMark does with the network</h2>
+          <ul>
+            <li><strong>Update check.</strong> The installers of TrailMark that are not from the Microsoft Store check for a new version a few seconds after the app starts, and when you ask it to. To do that the app requests a small file named <code>latest.json</code> from GitHub Releases, and, if you choose to update, downloads the update from there. The request carries nothing about you or your documents. GitHub receives it the way any web server receives a visit, under <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>. <strong>The Microsoft Store version does not do this at all</strong>: the Store updates it, and the app makes no update requests.</li>
+            <li><strong>Images in your documents.</strong> If a document you open shows an image from a web address, TrailMark loads that image from there, as a web browser or any Markdown viewer would. Links you click open in your default browser.</li>
+          </ul>
+          <p>That is all: TrailMark itself does not contact any other server.</p>
+
+          <h2>The agent connection</h2>
+          <p>TrailMark can tell an AI agent what you are looking at, so that you can say "rewrite this paragraph" and the agent knows which one. This connection is <strong>off by default</strong> and you turn it on for one project at a time, in <strong>Settings, Agent connection</strong>. It is local only: TrailMark talks to programs on your computer and has no server that listens on the network.</p>
+          <p>The agent you connect is another program, and it is up to you. It may send what it reads from TrailMark (your selection, your comments, search results) to its own AI service, the way it would send anything else you show it. What that service does with it is between you and that service, under its terms and privacy policy. Turn the connection off, in one click from the status bar, and the agent sees nothing.</p>
+
+          <h2>Children</h2>
+          <p>TrailMark has no accounts and collects no personal data, from children or from anyone else.</p>
+
+          <h2>Changes to this page</h2>
+          <p>If this changes, the new text is published on this page, with a new date at the top.</p>
+
+          <h2>Contact</h2>
+          <p>Questions about privacy can be asked in the open, on <a href="https://github.com/EdelmarSchneider/trailmark/issues">TrailMark's GitHub issues</a>. The source code of the app is public, so everything on this page can be checked there.</p>
+        </div>
+      </div>
+    </article>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__inner">
+      <a class="brand" href="index.html">
+        <img src="assets/logo.svg" width="24" height="24" alt="">
+        <span>TrailMark</span>
+      </a>
+      <p>&copy; 2026 Edelmar Schneider. Licensed under <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/trailmark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option.</p>
+      <p><a href="privacy.html" aria-current="page">Privacy</a> · <a href="https://github.com/EdelmarSchneider/trailmark">github.com/EdelmarSchneider/trailmark</a></p>
+    </div>
+  </footer>
+</body>
+</html>

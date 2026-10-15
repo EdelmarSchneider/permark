@@ -1024,6 +1024,36 @@ kbd {
   color: var(--muted);
 }
 
+/* ---------- Plain text pages (privacy policy) ---------- */
+.legal {
+  padding: var(--sp-8) 0 112px;
+}
+.legal__body {
+  max-width: 44rem;
+}
+.legal h1 {
+  font-size: clamp(32px, 4.4vw, 46px);
+  text-wrap: balance;
+}
+.legal h2 {
+  font-size: 22px;
+  margin: var(--sp-7) 0 0;
+}
+.legal p,
+.legal ul {
+  margin: var(--sp-3) 0 0;
+}
+.legal ul {
+  padding-left: 1.25em;
+}
+.legal li + li {
+  margin-top: var(--sp-3);
+}
+.legal__updated {
+  font-size: 14.5px;
+  color: var(--muted);
+}
+
 /* ---------- CTA + footer ---------- */
 .cta {
   padding: 112px 0;
@@ -1092,6 +1122,9 @@ kbd {
   .section,
   .cta {
     padding: 72px 0;
+  }
+  .legal {
+    padding: var(--sp-7) 0 72px;
   }
   .why {
     grid-template-columns: 1fr;
