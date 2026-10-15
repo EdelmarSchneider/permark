@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::session::remove_local_state;
 use crate::vault::Vault;
 
 use super::context::AgentContext;
@@ -91,7 +92,7 @@ impl AgentBridge {
     /// meant to exist while the connection is on, so a project that opens with it off has no use for one.
     pub fn remove_stale_file(&self) {
         if let Some(path) = lock(&self.agent_path).as_ref() {
-            let _ = std::fs::remove_file(path);
+            let _ = remove_local_state(path);
         }
     }
 
@@ -407,6 +408,22 @@ mod tests {
         fx.bridge.remove_stale_file();
         let without = self::fx("stale2", None);
         without.bridge.remove_stale_file();
+    }
+
+    #[test]
+    fn a_stale_state_file_is_not_deleted_behind_a_link() {
+        use crate::util::testing::{dir_link, remove_link};
+
+        let state = tempfile::tempdir().expect("state");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("agent.json"), "not ours").expect("write");
+        let trailmark = state.path().join(".trailmark");
+        std::fs::create_dir(&trailmark).expect("mkdir");
+        dir_link(&trailmark.join("local"), outside.path());
+        let fx = fx("linked", Some(trailmark.join("local").join("agent.json")));
+        fx.bridge.remove_stale_file();
+        assert!(outside.path().join("agent.json").is_file());
+        remove_link(&trailmark.join("local"));
     }
 
     #[test]

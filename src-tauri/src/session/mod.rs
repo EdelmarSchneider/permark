@@ -6,6 +6,7 @@
 
 mod app_settings;
 mod config;
+mod private;
 mod recent;
 mod store;
 mod window;
@@ -18,6 +19,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 pub use app_settings::{effective_language, installer_language, AppSettingsStore, Language};
 pub use config::{Config, TreeConfig, TreeShow};
+pub(crate) use private::{remove_local_state, write_local_state};
 pub use recent::{RecentStore, RecentVault};
 pub(crate) use store::project_key;
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};

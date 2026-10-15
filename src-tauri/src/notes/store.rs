@@ -9,7 +9,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use serde::{Deserialize, Serialize};
 
-use crate::util::{now_ms, write_atomic};
+use crate::session::write_local_state;
+use crate::util::now_ms;
 
 use super::{Note, NoteError};
 
@@ -100,7 +101,7 @@ impl NoteStore {
                 notes,
             })
             .map_err(|error| io_error(&path, std::io::Error::other(error)))?;
-            write_atomic(&path, &bytes).map_err(|error| io_error(&path, error))?;
+            write_local_state(&path, &bytes).map_err(|error| io_error(&path, error))?;
         }
         Ok(value)
     }
@@ -268,6 +269,28 @@ mod tests {
             .expect("update");
         let text = std::fs::read_to_string(&path).expect("read");
         assert!(text.contains("\"version\": 1"));
+    }
+
+    #[test]
+    fn notes_are_not_written_behind_a_link() {
+        use crate::util::testing::{dir_link, remove_link};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let trailmark = dir.path().join(".trailmark");
+        std::fs::create_dir(&trailmark).expect("mkdir");
+        dir_link(&trailmark.join("local"), outside.path());
+        let store = NoteStore::new(trailmark.join("local").join("notes.json"));
+        let result = store.update(|notes| {
+            notes.push(note("n1"));
+            Ok(((), true))
+        });
+        assert!(matches!(result, Err(NoteError::Io { .. })), "{result:?}");
+        assert!(std::fs::read_dir(outside.path())
+            .expect("ls")
+            .next()
+            .is_none());
+        remove_link(&trailmark.join("local"));
     }
 
     #[test]
