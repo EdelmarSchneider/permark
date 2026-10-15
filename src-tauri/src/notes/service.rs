@@ -22,7 +22,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use super::data::{Cached, NoteView, NotesData, Stamp};
+use super::data::{Cached, NoteView, NotesData, Stamp, FILE_NAME};
 use super::history::{Cadence, History};
 use super::lock::{self, Access, FolderLock};
 use super::loose;
@@ -79,6 +79,8 @@ pub enum NotesError {
     BinaryFile(String),
     #[error("a note cannot be moved into the notes folder")]
     MoveInside,
+    #[error("the notes were last used by a newer TrailMark, so what is shared cannot be changed from this one")]
+    NotesNewer,
 }
 
 impl NotesError {
@@ -101,6 +103,7 @@ impl NotesError {
             Self::NotAFile(_) => "notAFile",
             Self::BinaryFile(_) => "binaryFile",
             Self::MoveInside => "moveInside",
+            Self::NotesNewer => "notesNewer",
         }
     }
 
@@ -1050,14 +1053,21 @@ impl NotesService {
         if shared && !abs.is_file() {
             return Err(VaultError::NotFound(name).into());
         }
-        {
-            let mut state = lock(&self.state);
-            state.data.shared.retain(|known| *known != name);
-            if shared {
-                state.data.shared.push(name);
-            }
+        let mut state = lock(&self.state);
+        // a file from a newer version is never written over: sharing a note would need that, stopping to share does not
+        if shared && state.data.newer {
+            return Err(NotesError::NotesNewer);
         }
-        self.persist();
+        let before = state.data.shared.clone();
+        state.data.shared.retain(|known| *known != name);
+        if shared {
+            state.data.shared.push(name);
+        }
+        // What an agent reads is the file, so a change that is not in it did not happen: the error is the person's to see.
+        if let Err(error) = state.data.save(self.root()) {
+            state.data.shared = before;
+            return Err(NotesError::io(FILE_NAME, error));
+        }
         Ok(())
     }
 

@@ -142,6 +142,71 @@ fn what_is_shared_survives_a_restart_and_is_forgotten_when_the_note_is_gone() {
 }
 
 #[test]
+fn stopping_to_share_reaches_agents_even_when_notes_json_is_from_a_newer_version() {
+    let f = fx();
+    let kept = f.new_note("# Kept\n");
+    let secret = f.new_note("# Secret\n");
+    f.service.set_shared(&secret, true).expect("share");
+    let Fx {
+        dir, service, bin, ..
+    } = f;
+    drop(service);
+    // a newer version of TrailMark wrote the file since, with more in it than this one knows
+    let file = NotesData::path(dir.path());
+    fs::write(
+        &file,
+        format!(
+            r#"{{"version": 99, "shared": ["{kept}", "{secret}", {{"name": "x.md"}}], "folders": {{"work": ["{secret}"]}}}}"#
+        ),
+    )
+    .expect("write");
+    let (service, _) = open_in(dir.path(), &bin, &|_| true);
+    assert!(read_shared(dir.path(), &secret).is_ok());
+
+    // nothing is shared through a file that must not be written over
+    assert_eq!(
+        service.set_shared(&kept, true).err().map(|e| e.kind()),
+        Some("notesNewer")
+    );
+    // but stopping to share is what the person asked for, and an agent must stop seeing the note at once
+    service.set_shared(&secret, false).expect("stop sharing");
+    assert!(read_shared(dir.path(), &secret).is_err());
+    assert!(read_shared(dir.path(), &kept).is_ok());
+    assert!(!service
+        .list()
+        .notes
+        .iter()
+        .any(|n| n.shared && n.path == secret));
+    // the rest of the newer file is as it was
+    let after: serde_json::Value =
+        serde_json::from_slice(&fs::read(&file).expect("read")).expect("json");
+    assert_eq!(after["version"], 99);
+    assert_eq!(after["folders"]["work"][0], secret.as_str());
+    assert_eq!(after["shared"].as_array().map(Vec::len), Some(2));
+    assert_eq!(
+        after["shared"][1]["name"], "x.md",
+        "what this version does not read is kept"
+    );
+}
+
+#[test]
+fn a_change_of_sharing_that_could_not_be_written_is_an_error_and_does_not_happen() {
+    let f = fx();
+    let note = f.new_note("# One\n");
+    // the file cannot be replaced: there is a folder where it should be
+    let file = NotesData::path(f.service.root());
+    fs::create_dir_all(file.parent().expect("parent")).expect("mkdir");
+    let _ = fs::remove_file(&file);
+    fs::create_dir(&file).expect("a folder in its place");
+    assert!(f.service.set_shared(&note, true).is_err());
+    assert!(
+        !entry(&f, &note).shared,
+        "the row does not say it is shared"
+    );
+    assert_eq!(shared_names(&f), Vec::<String>::new());
+}
+
+#[test]
 fn a_second_window_cannot_share() {
     let f = fx();
     let note = f.new_note("# One\n");

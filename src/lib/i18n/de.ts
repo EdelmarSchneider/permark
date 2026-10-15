@@ -1059,6 +1059,8 @@ export const de = {
   "agent.request.list_notes": "Deine geteilten Notizen aufgelistet",
   "agent.request.read_note": "Die Notiz {subject} gelesen",
   "cmd.moveToProject": "Notiz in ein Projekt verschieben ...",
+  "error.notesNewer":
+    "Diese Notizen wurden zuletzt mit einem neueren TrailMark benutzt, deshalb lässt sich von hier aus keine Notiz teilen. Das Teilen zu beenden funktioniert weiterhin.",
   "error.moveInside":
     "Eine Notiz kann nicht in den Notizordner verschoben werden. Wähle einen Ort in einem Projekt.",
   "notes.deleteNote": "Notiz löschen",

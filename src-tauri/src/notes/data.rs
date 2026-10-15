@@ -16,7 +16,7 @@ use crate::util::write_atomic;
 
 /// The folder next to the notes where TrailMark keeps its own data. The notes' watcher and index ignore it.
 pub(crate) const STATE_DIR: &str = ".trailmark";
-const FILE_NAME: &str = "notes.json";
+pub(crate) const FILE_NAME: &str = "notes.json";
 /// Where a `notes.json` that cannot be read is kept before it is replaced.
 const BACKUP_NAME: &str = "notes.json.bak";
 const VERSION: u32 = 1;
@@ -226,15 +226,39 @@ impl NotesData {
         Self::parse(&bytes)
     }
 
-    /// Writes the data to the notes folder `root` (not over a file that a newer version wrote).
+    /// Writes the data to the notes folder `root`. A file that a newer version wrote is not written over, but a note that stopped
+    /// being shared must stop being shared in it too, since that file is what an agent reads: only the names this version does not
+    /// share any more are taken out of its list, and everything else in it (what this version does not understand included) is
+    /// left as it is.
     pub(crate) fn save(&self, root: &Path) -> io::Result<()> {
         if self.newer {
-            return Ok(());
+            return self.drop_unshared_names(root);
         }
         let mut data = self.clone();
         data.version = VERSION;
         let bytes = serde_json::to_vec_pretty(&data).map_err(io::Error::other)?;
         write_atomic(&Self::path(root), &bytes)
+    }
+
+    /// Takes the names that are not shared any more out of the `shared` list of a file from a newer version, and writes nothing
+    /// when there is none (see [`NotesData::save`]).
+    fn drop_unshared_names(&self, root: &Path) -> io::Result<()> {
+        let path = Self::path(root);
+        let bytes = std::fs::read(&path)?;
+        let Ok(Value::Object(mut file)) = serde_json::from_slice::<Value>(&bytes) else {
+            return Ok(());
+        };
+        let Some(Value::Array(items)) = file.get_mut("shared") else {
+            return Ok(());
+        };
+        let before = items.len();
+        // an item that is not a name is a thing of the newer version: it stays
+        items.retain(|item| item.as_str().is_none_or(|name| self.is_shared(name)));
+        if items.len() == before {
+            return Ok(());
+        }
+        let bytes = serde_json::to_vec_pretty(&Value::Object(file)).map_err(io::Error::other)?;
+        write_atomic(&path, &bytes)
     }
 
     /// Makes the data say `to` where it said `from` (a note was renamed).

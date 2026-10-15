@@ -1044,6 +1044,8 @@ export const ptBR = {
   "agent.request.list_notes": "Listou suas notas compartilhadas",
   "agent.request.read_note": "Leu a nota {subject}",
   "cmd.moveToProject": "Mover a nota para um projeto...",
+  "error.notesNewer":
+    "Estas notas foram usadas por último por um TrailMark mais novo, então uma nota não pode ser compartilhada por este. Parar de compartilhar continua funcionando.",
   "error.moveInside":
     "Uma nota não pode ser movida para a pasta de notas. Escolha um lugar em um projeto.",
   "notes.deleteNote": "Excluir nota",

@@ -1025,6 +1025,8 @@ export const en = {
   "agent.request.read_note": "Read the note {subject}",
   "cmd.moveToProject": "Move the note to a project...",
   "error.moveInside": "A note can't be moved into the notes folder. Choose a place in a project.",
+  "error.notesNewer":
+    "These notes were last used by a newer TrailMark, so a note can't be shared from this one. Stopping to share still works.",
   "notes.deleteNote": "Delete note",
   "notes.copy": "Copy",
   "notes.copyHint": "Copy the note's text, exactly as it is in the file",
