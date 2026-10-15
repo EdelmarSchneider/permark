@@ -554,7 +554,7 @@ class NotesStore {
         view?.caret != null ? { caret: view.caret, top: view.scroll ?? view.caret } : undefined;
       await edit.enter(false, mode, at, kept);
       // the file is not the version the text was typed over: that is the person's to decide
-      if (edit.active && edit.diskHash !== null && edit.diskHash !== kept.baseHash) {
+      if (edit.changedUnderKeptText) {
         this.looseNotice = { path, kind: "changed", stamp: "" };
       }
     }

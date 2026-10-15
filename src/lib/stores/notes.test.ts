@@ -1154,6 +1154,39 @@ describe("loose files", () => {
     expect(notes.looseNotice?.kind).toBe("changed");
   });
 
+  it("keeps the version the text was typed over, so a save cannot replace a change nobody saw, with a keystroke or a restart between", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE, "an-older-hash");
+    openName = FILE;
+    await start();
+    expect(notes.looseNotice?.kind).toBe("changed");
+    // Ctrl+S with the bar up: the save is guarded with the version the text was typed over, which is not the file's any more,
+    // so the backend writes nothing and the bar stays
+    fake.saveDocument.mockResolvedValue({ result: "conflict", diskHash: `h-${FILE}` });
+    expect(await edit.save()).toBe(false);
+    expect(fake.saveDocument).toHaveBeenCalledWith(FILE, "# Proposal\nhalf", "an-older-hash");
+    expect(notes.looseNotice?.kind).toBe("changed");
+    // one keystroke: the text is kept over the same version, so after a restart the bar is there again
+    type("# Proposal\nhalf more");
+    await vi.advanceTimersByTimeAsync(800);
+    expect(fake.savePending).toHaveBeenLastCalledWith(
+      FILE,
+      "# Proposal\nhalf more",
+      "an-older-hash",
+    );
+    expect(edit.diskHash).toBe("an-older-hash");
+    // "Keep mine" is what makes the file's version the one that is replaced, and it asks once more
+    await notes.keepMine();
+    platform.askYesNo.mockResolvedValue(true);
+    fake.saveDocument.mockImplementation(async () => ({
+      result: "saved",
+      hash: "h-mine",
+      modifiedMs: NOW,
+    }));
+    expect(await edit.save()).toBe(true);
+    expect(platform.askYesNo).toHaveBeenCalledTimes(1);
+    expect(fake.saveDocument).toHaveBeenLastCalledWith(FILE, "# Proposal\nhalf more", `h-${FILE}`);
+  });
+
   it("keeps what is typed apart from the file and writes the file only when asked", async () => {
     typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
     openName = FILE;

@@ -190,6 +190,8 @@ class EditStore {
   private failedAt: "save" | "pending" = "save";
   /** "Keep mine" was chosen over a version on disk that was not seen: the next save asks once more before writing it. */
   private overwriteAsk = false;
+  /** Kept text was reopened over a file that is not the version it was typed over (the bar says so until a choice is made). */
+  private keptOverOther = false;
   /** Saves the open note a moment after the last edit (see `autosave.ts`); idle outside the Notes window. */
   private readonly saver = new Autosaver({ save: () => this.autosaveNow() });
 
@@ -231,6 +233,11 @@ class EditStore {
   /** The hash of the version of the file the editor started from (null when nothing is being edited). */
   get diskHash(): string | null {
     return this.base?.hash ?? null;
+  }
+
+  /** The text kept for a loose file was reopened over a file that changed since it was typed (nothing chosen about it yet). */
+  get changedUnderKeptText(): boolean {
+    return this.active && this.keptOverOther;
   }
 
   // ---- entering and leaving -------------------------------------------------------------------
@@ -275,7 +282,16 @@ class EditStore {
         if (docs.path !== path || this.active) return false;
       }
       this.begin(source, line, fresh, editor, at?.top, working);
-      if (kept) this.pendingText = kept.text;
+      if (kept) {
+        this.pendingText = kept.text;
+        // The text was typed over another version of the file than the one on disk now. The editor keeps the version it was typed
+        // over as its base: a save is guarded with it, so it writes nothing over what changed unseen, and what is kept apart goes
+        // on being kept over that version, whatever is typed, until the person chooses Reload or Keep mine.
+        if (kept.baseHash !== source.hash && this.base) {
+          this.base = { ...this.base, hash: kept.baseHash };
+          this.keptOverOther = true;
+        }
+      }
       return true;
     } catch (error) {
       const reason = editBlockFromKind(errorKind(error));
@@ -320,6 +336,7 @@ class EditStore {
     this.pendingText = null;
     this.failedAt = "save";
     this.overwriteAsk = false;
+    this.keptOverOther = false;
     if (this.mode === "visual") {
       // the text typed and not saved is the working text: its blocks, and which of them differ from the file
       const typed = working?.parsed ? buildBlockMap(working.text, working.parsed) : null;
@@ -414,6 +431,7 @@ class EditStore {
     this.pendingText = null;
     this.closeRefusals = 0;
     this.overwriteAsk = false;
+    this.keptOverOther = false;
     this.setDirty(false);
     docs.editing = false;
   }
@@ -1082,6 +1100,7 @@ class EditStore {
     if (this.loose && this.pendingText !== null) {
       this.pendingText = null;
       this.overwriteAsk = false;
+      this.keptOverOther = false;
       const path = this.path;
       if (path) this.noteHooks.pending?.(path, false);
     }
@@ -1139,6 +1158,7 @@ class EditStore {
     if (!base || diskHash === null) return;
     this.base = { ...base, hash: diskHash };
     this.overwriteAsk = true;
+    this.keptOverOther = false;
   }
 
   /** "Keep mine": the buffer is written over the version on disk. */
