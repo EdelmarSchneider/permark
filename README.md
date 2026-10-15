@@ -148,7 +148,7 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - **Copy reference** (`@docs/plan.md`) and **copy selection with reference**: a quoted excerpt plus path and section,
   ready to paste into any AI chat or CLI
 - Configurable reference template
-- **Comments** (coming in v0.4): select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
+- **Comments**: select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
   (see [Use with an AI agent](#use-with-an-ai-agent))
 
 ### 🗂️ Zero footprint by default
@@ -195,8 +195,6 @@ You can also drag and drop a folder or a `.md` file onto the window.
 
 ## Use with an AI agent
 
-> **Coming in v0.4.** This section describes the next release; v0.3.0 does not have it yet.
-
 TrailMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this
 paragraph" or "go through my comments" and the agent knows which document, which section and which words you mean. It talks to
 TrailMark through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so it works with any tool that supports MCP
@@ -208,6 +206,11 @@ nothing over the network. The agent you connect is another matter. It may send w
 results) to its AI service, as it would anything else you show it. The switch is yours alone: it is kept in TrailMark's own data
 folder, so nothing inside a project, such as a cloned repository, can turn it on. While it is on, the status bar shows **Agent**, with
 a dot that fills while an agent is connected. Click it to see what is shared and what was asked lately, and to turn it off in one click.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-agent-dark.png">
+  <img src="docs/assets/screenshot-agent.png" alt="The Agent popover open from the status bar: an agent is connected, what it can see, and its latest requests (a search, reading and resolving comments, the unread documents, what you are looking at)">
+</picture>
 
 ### Connect an agent
 
@@ -291,6 +294,11 @@ line. A comment whose passage was rewritten stays in the list marked **Passage c
 state (`.trailmark/local/comments.json` once you initialize TrailMark in the project, otherwise in your user profile), never committed (the folder ignores itself),
 and they work without the agent connection.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-comments-dark.png">
+  <img src="docs/assets/screenshot-comments.png" alt="A document with comment bars in the margin, and the Comments tab listing the open comments by document, with one done comment showing the agent's reply">
+</picture>
+
 ## Keyboard shortcuts
 
 On macOS, use `Cmd` where this table says `Ctrl`.
@@ -357,7 +365,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - Unread markers ("changed since I last read it") and clickable code references (`src/main.rs:42`)
 - "Open with TrailMark" in the macOS and Linux file managers (Windows has it already)
 
-**v0.4: your agent sees what you see**
+**v0.4: your agent sees what you see** (released)
 - An optional, local connection (MCP, plus a plain file for tools without it) that lets any coding agent know which document and
   section you are reading and what you selected, so "rewrite this paragraph" just works
 - Comments: leave them on passages while you read, and your agent picks up the open ones
