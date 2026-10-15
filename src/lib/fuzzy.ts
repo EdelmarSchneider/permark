@@ -1,5 +1,7 @@
 // Fuzzy file matching for quick open (Ctrl+P). Ranking: file-name prefix > file-name substring >
 // file-name subsequence > path substring > path subsequence; ties go to the most recently used.
+// A query of several words ("auth token") that does not match as typed matches when each word matches the path,
+// in any order.
 
 import { foldChars } from "./text";
 
@@ -40,6 +42,24 @@ export function fuzzyMatch(query: string, path: string): FuzzyMatch | null {
   const q = foldChars(query.trim());
   if (q === "") return null;
   const p = foldChars(path);
+  const whole = matchOne(q, p);
+  if (whole) return whole;
+  const words = q.split(/\s+/);
+  if (words.length < 2) return null;
+  let score = 0;
+  const positions = new Set<number>();
+  for (const word of words) {
+    const found = matchOne(word, p);
+    if (!found) return null;
+    score += found.score;
+    found.positions.forEach((at) => positions.add(at));
+  }
+  // the mean keeps the scale of a single word, so a path that holds the words ranks with the paths that hold one
+  return { score: score / words.length, positions: [...positions].sort((a, b) => a - b) };
+}
+
+/** `q` (folded, one piece) against `p` (folded). */
+function matchOne(q: string, p: string): FuzzyMatch | null {
   const nameStart = p.lastIndexOf("/") + 1;
   const name = p.slice(nameStart);
 
