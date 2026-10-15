@@ -380,7 +380,7 @@ export const en = {
   "comments.bar": "Comment: {text}",
   "comments.empty.title": "No comments yet",
   "comments.empty.text":
-    "Select a passage in a document and press N to leave a comment on it. An agent you connect can read your comments and mark them done.",
+    "Select a passage in a document and press C to leave a comment on it. An agent you connect can read your comments and mark them done.",
   "comments.allDone": "Every comment is done.",
   "comments.done.one": "{n} done",
   "comments.done.other": "{n} done",

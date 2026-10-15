@@ -385,7 +385,7 @@ export const es = {
   "comments.bar": "Comentario: {text}",
   "comments.empty.title": "Aún no hay comentarios",
   "comments.empty.text":
-    "Selecciona un pasaje de un documento y pulsa N para dejar un comentario. Un agente conectado puede leer tus comentarios y marcarlos como hechos.",
+    "Selecciona un pasaje de un documento y pulsa C para dejar un comentario. Un agente conectado puede leer tus comentarios y marcarlos como hechos.",
   "comments.allDone": "Todos los comentarios están hechos.",
   "comments.done.one": "{n} hecho",
   "comments.done.other": "{n} hechos",

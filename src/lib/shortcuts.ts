@@ -85,7 +85,7 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
   if (!mod && !alt && key === "F7") return shift ? "prevChange" : "nextChange";
   // A plain letter: the caller leaves it alone while the user is typing in a field or an overlay is open.
   if (!mod && !alt && !shift && key === "t") return "editTags";
-  if (!mod && !alt && !shift && key === "n") return "addComment";
+  if (!mod && !alt && !shift && key === "c") return "addComment";
   if (!mod && !alt && !shift && key === "e") return "edit";
   if (!mod && alt && shift && key === "c") return "copyPath";
   if (!mod) return null;

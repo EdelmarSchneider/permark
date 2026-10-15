@@ -109,7 +109,7 @@ export const COMMANDS: readonly Command[] = [
   {
     id: "addComment",
     label: "cmd.addComment",
-    shortcut: "N",
+    shortcut: "C",
     available: (ctx) => ctx.ide && reading(ctx),
   },
 

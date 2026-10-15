@@ -386,7 +386,7 @@ export const ptBR = {
   "comments.bar": "Comentário: {text}",
   "comments.empty.title": "Nenhum comentário ainda",
   "comments.empty.text":
-    "Selecione uma passagem de um documento e pressione N para deixar um comentário. Um agente conectado pode ler seus comentários e marcá-los como concluídos.",
+    "Selecione uma passagem de um documento e pressione C para deixar um comentário. Um agente conectado pode ler seus comentários e marcá-los como concluídos.",
   "comments.allDone": "Todos os comentários estão concluídos.",
   "comments.done.one": "{n} concluído",
   "comments.done.other": "{n} concluídos",

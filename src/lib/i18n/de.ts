@@ -388,7 +388,7 @@ export const de = {
   "comments.bar": "Kommentar: {text}",
   "comments.empty.title": "Noch keine Kommentare",
   "comments.empty.text":
-    "Wähle eine Stelle in einem Dokument und drücke N, um einen Kommentar zu hinterlassen. Ein verbundener Agent kann deine Kommentare lesen und als erledigt markieren.",
+    "Wähle eine Stelle in einem Dokument und drücke C, um einen Kommentar zu hinterlassen. Ein verbundener Agent kann deine Kommentare lesen und als erledigt markieren.",
   "comments.allDone": "Alle Kommentare sind erledigt.",
   "comments.done.one": "{n} erledigt",
   "comments.done.other": "{n} erledigt",

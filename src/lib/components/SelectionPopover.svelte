@@ -119,7 +119,7 @@
       <button type="button" class="btn" title={t("comments.addHint")} onclick={addComment}>
         <Icon name="comment" size="sm" />
         <span>{t("comments.add")}</span>
-        <kbd class="hint-kbd">{keys("N")}</kbd>
+        <kbd class="hint-kbd">{keys("C")}</kbd>
       </button>
     {/if}
   </div>
