@@ -31,6 +31,7 @@ export const SHORTCUT_ACTIONS = [
   "copyReference",
   "copyPath",
   "copyDocument",
+  "moveToProject",
   "newNote",
   "showNotes",
   "openExternal",
@@ -132,6 +133,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "showNotes";
       case "c":
         return "copyDocument";
+      case "s":
+        return "moveToProject";
       case "=": // Ctrl+Shift+= is Ctrl++ on most layouts
         return "zoomIn";
     }

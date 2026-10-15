@@ -4,7 +4,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask, message, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { ask, message, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -39,6 +39,17 @@ export async function pickFile(): Promise<string | null> {
         extensions: ["md", "markdown", "mdx", "txt", "json", "xml"],
       },
     ],
+  });
+  return typeof picked === "string" ? picked : null;
+}
+
+/** Asks where to write a Markdown file, starting from `defaultPath` (a folder and a file name). Null when the person cancels. */
+export async function pickSavePath(defaultPath: string): Promise<string | null> {
+  if (isMock) return defaultPath;
+  const picked = await saveDialog({
+    defaultPath,
+    title: t("dialog.moveNote"),
+    filters: [{ name: t("dialog.filter.markdown"), extensions: ["md"] }],
   });
   return typeof picked === "string" ? picked : null;
 }

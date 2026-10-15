@@ -139,6 +139,12 @@ export function neighbour(
   return shown[(at + step + shown.length) % shown.length];
 }
 
+/** The name of a file and of the folder it is in, from a path of the system (either kind of separator): `C:\work\plan\ask.md` is `ask.md` in `plan`. */
+export function placeOf(path: string): { file: string; folder: string } {
+  const parts = path.split(/[\\/]+/).filter((part) => part !== "");
+  return { file: parts.at(-1) ?? "", folder: parts.at(-2) ?? "" };
+}
+
 /** What the status bar says about saving: nothing, "Unsaved changes", "Saving...", "Saved", or the note a loose file shows for a moment. */
 export type SaveStatus = "none" | "unsaved" | "saving" | "saved" | "note";
 

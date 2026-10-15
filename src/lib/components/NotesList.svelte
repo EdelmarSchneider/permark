@@ -177,6 +177,20 @@
         onselect: () => void notes.copyNote(path),
       },
       {
+        id: "move",
+        label: t("notes.moveToProject"),
+        icon: "corner-down-right",
+        disabled: notes.readOnly !== null,
+        onselect: () => void notes.moveToProject(path),
+      },
+      {
+        id: "share",
+        label: note.shared ? t("notes.unshare") : t("notes.share"),
+        icon: "bot",
+        disabled: notes.readOnly !== null,
+        onselect: () => void notes.toggleShare(path),
+      },
+      {
         id: "delete",
         label: t("notes.delete"),
         icon: "trash",
@@ -409,6 +423,11 @@
           <span class="note-row__unsaved" title={t("notes.file.unsaved")}>
             <span class="note-row__dot" aria-hidden="true"></span>
             <span class="sr-only">{t("notes.file.unsaved")}</span>
+          </span>
+        {/if}
+        {#if note.shared && !file}
+          <span class="note-row__shared" title={t("notes.sharedMark")}>
+            <Icon name="bot" size="xs" /><span class="sr-only">{t("notes.sharedMark")}</span>
           </span>
         {/if}
         {#if note.copied}

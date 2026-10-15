@@ -22,6 +22,7 @@
   const title = $derived(entry && entry.title !== "" ? entry.title : t("notes.untitled"));
   const stem = $derived((path ?? "").replace(/\.(md|markdown)$/i, ""));
   const pinned = $derived(entry?.pinned === true);
+  const shared = $derived(entry?.shared === true);
   const readOnly = $derived(notes.readOnly !== null);
 
   // asking for a name: the field opens with the current file name selected
@@ -127,6 +128,22 @@
           },
           { type: "separator" },
           {
+            id: "move",
+            label: t("notes.moveToProject"),
+            icon: "corner-down-right",
+            hint: "Ctrl+Shift+S",
+            disabled: !notes.movable,
+            onselect: () => void notes.moveToProject(),
+          },
+          {
+            id: "share",
+            label: shared ? t("notes.unshare") : t("notes.share"),
+            icon: "bot",
+            disabled: !notes.movable,
+            onselect: () => void notes.toggleShare(),
+          },
+          { type: "separator" },
+          {
             id: "versions",
             label: t("notes.versionsMenu"),
             icon: "restore",
@@ -190,6 +207,11 @@
       >
         <span class="notes-header__text">{title}</span>
         {#if pinned}<Icon name="pin" size="xs" class="notes-header__pin" />{/if}
+        {#if shared && !isFile}
+          <span class="notes-header__shared" title={t("notes.sharedMark")}>
+            <Icon name="bot" size="xs" /><span class="sr-only">{t("notes.sharedMark")}</span>
+          </span>
+        {/if}
         {#if unsaved}
           <span class="notes-header__unsaved" title={t("notes.file.unsaved")}>
             <span class="note-row__dot" aria-hidden="true"></span>

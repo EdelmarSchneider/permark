@@ -878,6 +878,12 @@
   gap: 4px;
   margin-top: 6px;
 }
+/* the buttons of a plain message: Undo, or Open in project and Undo */
+.toast__buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
 .toast__progress {
   height: 3px;
   margin-top: 8px;

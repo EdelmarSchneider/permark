@@ -145,10 +145,22 @@ class AppStore {
         // window has nothing to show
         if (await this.openFile(initial, null)) await closeThisWindow();
       } else if (await this.openProject(initial)) {
+        await this.showLaunched();
         return;
       }
     }
     await this.showWelcome();
+  }
+
+  /**
+   * A window started by "Open in project" (a note was moved into the project) is asked to show that file: it is shown once the
+   * project is open, when the project holds it.
+   */
+  private async showLaunched(): Promise<void> {
+    const show = await api.launchShow().catch(() => null);
+    if (!show) return;
+    const where = await api.classifyPath(show).catch(() => null);
+    if (where?.inProject) await this.openDoc(where.inProject);
   }
 
   async showWelcome(): Promise<void> {
@@ -1141,6 +1153,9 @@ class AppStore {
         return notes.focusList();
       case "copyDocument":
         return void notes.copyNote();
+      case "moveToProject":
+        if (notes.movable) void notes.moveToProject();
+        return;
       case "searchEverywhere":
         return ui.openSearch();
       case "quickOpen":

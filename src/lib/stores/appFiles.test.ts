@@ -12,6 +12,7 @@ const fake = vi.hoisted(() => ({
   saveSession: vi.fn(),
   recentVaults: vi.fn(),
   notesOverview: vi.fn(),
+  launchShow: vi.fn(),
 }));
 vi.mock("../api", () => ({
   api: {
@@ -103,6 +104,38 @@ describe("opening a file", () => {
     await app.boot();
     expect(fake.showNotes).toHaveBeenCalledWith(false, null, "C:/Users/ana/Downloads/proposal.md");
     expect(platform.closeThisWindow).toHaveBeenCalled();
+  });
+
+  it("shows the file a project window was started to show, once the project is open", async () => {
+    fake.initialPath.mockResolvedValue("C:/work/plan");
+    fake.classifyPath.mockImplementation(async (path: string) =>
+      path === "C:/work/plan"
+        ? { kind: "folder", inProject: null }
+        : { kind: "file", inProject: "ask.md" },
+    );
+    fake.launchShow.mockResolvedValue("C:/work/plan/ask.md");
+    vi.spyOn(app, "openProject").mockResolvedValue(true);
+    const open = vi.spyOn(app, "openDoc").mockResolvedValue(true);
+    await app.boot();
+    expect(fake.launchShow).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith("ask.md");
+  });
+
+  it("shows nothing when the file it was started to show is not in the project", async () => {
+    fake.initialPath.mockResolvedValue("C:/work/plan");
+    fake.classifyPath.mockImplementation(async (path: string) =>
+      path === "C:/work/plan"
+        ? { kind: "folder", inProject: null }
+        : { kind: "file", inProject: null },
+    );
+    fake.launchShow.mockResolvedValue("C:/elsewhere/ask.md");
+    vi.spyOn(app, "openProject").mockResolvedValue(true);
+    const open = vi.spyOn(app, "openDoc").mockResolvedValue(true);
+    await app.boot();
+    expect(open).not.toHaveBeenCalled();
+    fake.launchShow.mockResolvedValue(null);
+    await app.boot();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("keeps a window whose file could not be handed over", async () => {

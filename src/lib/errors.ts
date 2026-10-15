@@ -118,6 +118,7 @@ const KIND_KEYS = {
   notesNotOpen: "error.notesNotOpen",
   notAFile: "error.notAFile",
   binaryFile: "error.binaryFile",
+  moveInside: "error.moveInside",
 } as const satisfies Record<string, MessageKey>;
 
 function field(error: Record<string, unknown>, name: string): string | undefined {

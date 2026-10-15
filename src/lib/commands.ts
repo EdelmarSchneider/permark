@@ -41,6 +41,8 @@ export type CommandContext = {
   notes: boolean;
   /** A document is open in the reading view or the editor. */
   hasDoc: boolean;
+  /** The Notes window has a note open that can be moved into a project or shared (see `notes.movable`). */
+  movableNote: boolean;
   editing: boolean;
   canBack: boolean;
   canForward: boolean;
@@ -145,6 +147,13 @@ export const COMMANDS: readonly Command[] = [
     available: inProjectWithDoc,
   },
   { id: "copyDocument", label: "cmd.copyDocument", shortcut: "Ctrl+Shift+C", available: withDoc },
+  // a note of the Notes window that has a file (not a new one, a loose file, or a window that can only read)
+  {
+    id: "moveToProject",
+    label: "cmd.moveToProject",
+    shortcut: "Ctrl+Shift+S",
+    available: (ctx) => ctx.notes && ctx.movableNote,
+  },
   { id: "copyPath", label: "cmd.copyPath", shortcut: "Shift+Alt+C", available: inProjectWithDoc },
   {
     id: "openExternal",

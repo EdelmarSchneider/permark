@@ -1039,6 +1039,28 @@ export const de = {
   "notes.renamePlaceholder": "Dateiname",
   "notes.versionsMenu": "Frühere Versionen anzeigen",
   "notes.delete": "Löschen",
+  // eine Notiz mit Agenten teilen und in ein Projekt verschieben
+  "notes.share": "Mit Agenten teilen",
+  "notes.unshare": "Nicht mehr teilen",
+  "notes.sharedMark": "Mit Agenten geteilt",
+  "notes.sharedOn": "„{name}“ ist mit Agenten geteilt.",
+  "notes.sharedOff": "„{name}“ wird nicht mehr geteilt.",
+  "notes.moveToProject": "In ein Projekt verschieben ...",
+  "notes.moved": "„{name}“ nach {folder} verschoben",
+  "notes.moved.open": "Im Projekt öffnen",
+  "notes.moveUndone": "„{name}“ ist wieder in deinen Notizen.",
+  "notes.moveUndoneKept":
+    "„{name}“ ist wieder in deinen Notizen. Die Kopie wurde geändert und bleibt deshalb im Projekt.",
+  "notes.move.exists": "Dort gibt es schon eine Datei namens {name}. Es wurde nichts verschoben.",
+  "notes.move.notSaved":
+    "Die Notiz konnte vorher nicht gespeichert werden, deshalb wurde sie nicht verschoben.",
+  "dialog.moveNote": "Notiz in ein Projekt verschieben",
+  "dialog.filter.markdown": "Markdown",
+  "agent.request.list_notes": "Deine geteilten Notizen aufgelistet",
+  "agent.request.read_note": "Die Notiz {subject} gelesen",
+  "cmd.moveToProject": "Notiz in ein Projekt verschieben ...",
+  "error.moveInside":
+    "Eine Notiz kann nicht in den Notizordner verschoben werden. Wähle einen Ort in einem Projekt.",
   "notes.deleteNote": "Notiz löschen",
   "notes.copy": "Kopieren",
   "notes.copyHint": "Den Text der Notiz kopieren, genau wie er in der Datei steht",

@@ -49,6 +49,7 @@ const IDLE: CommandContext = {
   ide: true,
   notes: false,
   hasDoc: false,
+  movableNote: false,
   editing: false,
   canBack: false,
   canForward: false,
@@ -108,6 +109,18 @@ describe("the notes", () => {
       expect(ids).toEqual(expect.arrayContaining(["newNote", "showNotes", "copyDocument"]));
     }
     expect(idsOf(availableCommands(IDLE))).not.toContain("copyDocument");
+  });
+
+  it("can be moved into a project only from the Notes window, with a note that has a file open", () => {
+    const has = (ctx: CommandContext): boolean =>
+      idsOf(availableCommands(ctx)).includes("moveToProject");
+    expect(has({ ...NOTES, movableNote: true })).toBe(true);
+    // a new note, a loose file or a window that only reads has none to move
+    expect(has(NOTES)).toBe(false);
+    // and a project has no notes
+    expect(has({ ...IDLE, hasDoc: true, movableNote: true })).toBe(false);
+    expect(matchShortcut(eventFor("Ctrl+Shift+S"))).toBe("moveToProject");
+    expect(matchShortcut(eventFor("Ctrl+S"))).toBe("save");
   });
 
   it("leave out of the Notes window what belongs to a project", () => {

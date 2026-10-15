@@ -9,6 +9,7 @@ import {
   movePinned,
   neighbour,
   pinnedAt,
+  placeOf,
   saveStatus,
 } from "./notesModel";
 import type { NoteEntry } from "./types";
@@ -218,6 +219,16 @@ describe("jumping between notes", () => {
     expect(neighbour(shown, null, -1)).toBe("c.md");
     expect(neighbour(shown, "gone.md", 1)).toBe("a.md");
     expect(neighbour([], "a.md", 1)).toBeNull();
+  });
+});
+
+describe("placeOf", () => {
+  it("names the file and the folder it is in, whichever the separator", () => {
+    expect(placeOf("C:\\work\\plan\\ask.md")).toEqual({ file: "ask.md", folder: "plan" });
+    expect(placeOf("/home/ana/plan/ask.md")).toEqual({ file: "ask.md", folder: "plan" });
+    expect(placeOf("C:\\ask.md")).toEqual({ file: "ask.md", folder: "C:" });
+    expect(placeOf("ask.md")).toEqual({ file: "ask.md", folder: "" });
+    expect(placeOf("")).toEqual({ file: "", folder: "" });
   });
 });
 

@@ -267,6 +267,7 @@
     ide: !vault.isSimple,
     notes: vault.isNotes,
     hasDoc: docs.current !== null,
+    movableNote: notes.movable,
     editing: edit.active,
     canBack: docs.canBack,
     canForward: docs.canForward,

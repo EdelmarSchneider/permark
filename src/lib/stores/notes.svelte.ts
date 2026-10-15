@@ -15,6 +15,7 @@ import {
   movePinned,
   neighbour,
   pinnedAt,
+  placeOf,
   type ArrangedNotes,
   type Frozen,
 } from "../notesModel";
@@ -23,6 +24,7 @@ import {
   copyText,
   guardWindowClose,
   pickFile,
+  pickSavePath,
   setWindowTitle,
   watchFileDrop,
 } from "../platform";
@@ -1208,6 +1210,126 @@ class NotesStore {
   /** How many notes are marked as copied (the list menu says "Delete copied notes (6)"; pinned notes are not counted). */
   get copiedCount(): number {
     return this.entries.filter((n) => n.copied && !n.pinned).length;
+  }
+
+  // ---- sharing and moving -------------------------------------------------------------------------
+
+  /**
+   * The open note is one that can be moved into a project or shared with agents: a note of the folder that has a file, in a
+   * window that can write. A new note with no file yet, a loose file and a note that is not there are not.
+   */
+  get movable(): boolean {
+    const entry = this.currentEntry;
+    return (
+      this.current !== null &&
+      !this.unborn &&
+      this.readOnly === null &&
+      entry?.kind === "note" &&
+      !isLoosePath(this.current)
+    );
+  }
+
+  /** "Share with agents" and "Stop sharing": the note is marked, and an agent connected to a project can list and read it. */
+  async toggleShare(path = this.current): Promise<void> {
+    if (!path || this.guardWrite()) return;
+    const entry = this.entries.find((n) => n.path === path && n.kind === "note");
+    if (!entry || (path === this.current && this.unborn)) return;
+    const shared = !entry.shared;
+    try {
+      await api.setNoteShared(path, shared);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+      return;
+    }
+    this.entries = this.entries.map((n) => (n.path === path ? { ...n, shared } : n));
+    toast.message(t(shared ? "notes.sharedOn" : "notes.sharedOff", { name: this.titleOf(path) }));
+    await this.refresh();
+  }
+
+  /**
+   * "Move to project...": asks where in the Save dialog (it opens in the project opened last, with a name made from the title),
+   * writes the note there as it is, sends the note to the recycle bin and lists the copy under Files. The toast offers to open the
+   * project on the copy and to undo it.
+   */
+  async moveToProject(path = this.current): Promise<void> {
+    if (!path || this.guardWrite()) return;
+    const entry = this.entries.find((n) => n.path === path && n.kind === "note");
+    if (!entry || (path === this.current && this.unborn)) return;
+    // what was typed is saved first: the copy is the note as it is now
+    if (path === this.current && !(await edit.flush())) {
+      toast.message(t("notes.move.notSaved"), "warn");
+      return;
+    }
+    let destination: string | null;
+    try {
+      const suggestion = await api.moveSuggestion(path);
+      destination = await pickSavePath(suggestion.defaultPath);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+      return;
+    }
+    if (destination === null) return;
+    // the name is read now: the list will not have the note any more
+    const name = this.titleOf(path);
+    const wasOpen = path === this.current;
+    const next = wasOpen ? this.nextAfter([path]) : null;
+    // the open note goes first: its autosave must not write it back
+    if (wasOpen) {
+      edit.abandon();
+      this.current = null;
+      this.unborn = false;
+      this.frozen = null;
+    }
+    let moved;
+    try {
+      moved = await api.moveNoteToProject(path, destination);
+    } catch (error) {
+      const place = placeOf(destination);
+      toast.message(
+        errorKind(error) === "exists"
+          ? t("notes.move.exists", { name: place.file })
+          : errorMessage(error),
+        "warn",
+      );
+      // nothing moved: the note is open again as it was
+      await this.refresh();
+      if (wasOpen) await this.openNote(path);
+      return;
+    }
+    await this.refresh();
+    void vault.refreshTree();
+    const { undoId } = moved;
+    toast.message(
+      t("notes.moved", { name, folder: placeOf(destination).folder }),
+      "info",
+      { label: t("notes.moved.open"), run: () => void this.openInProject(destination) },
+      undoId === null
+        ? undefined
+        : { label: t("notes.undo"), run: () => void this.undoMove(undoId, name) },
+    );
+    if (wasOpen) await this.openNeighbourOrNew(next);
+  }
+
+  /** Starts TrailMark on the project that holds a file, showing it. */
+  private async openInProject(file: string): Promise<void> {
+    try {
+      await api.openInProject(file);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+    }
+  }
+
+  /** Undo of a move: the note is back, and the copy in the project goes unless it was changed. */
+  private async undoMove(undoId: number, name: string): Promise<void> {
+    try {
+      const undone = await api.undoMoveNote(undoId);
+      await this.refresh();
+      void vault.refreshTree();
+      toast.message(t(undone.removed ? "notes.moveUndone" : "notes.moveUndoneKept", { name }));
+      if (undone.note) await this.openNote(undone.note);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+    }
   }
 
   // ---- earlier versions ----------------------------------------------------------------------------

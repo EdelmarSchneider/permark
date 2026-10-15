@@ -195,6 +195,14 @@
   flex: none;
   color: var(--faint);
 }
+/* a note shared with agents: the same small mark in the header and in the list */
+.notes-header__shared,
+.note-row__shared {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  color: var(--accent);
+}
 .notes-rename {
   display: flex;
   align-items: center;

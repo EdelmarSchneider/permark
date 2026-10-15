@@ -60,6 +60,11 @@ const fake = vi.hoisted(() => ({
   saveDocument: vi.fn(),
   createDocument: vi.fn(),
   revealInFolder: vi.fn(),
+  setNoteShared: vi.fn(),
+  moveSuggestion: vi.fn(),
+  moveNoteToProject: vi.fn(),
+  undoMoveNote: vi.fn(),
+  openInProject: vi.fn(),
 }));
 vi.mock("../api", () => ({
   api: {
@@ -77,6 +82,7 @@ const platform = vi.hoisted(() => ({
   guardWindowClose: vi.fn(async () => () => {}),
   watchFileDrop: vi.fn(async () => () => {}),
   pickFile: vi.fn(async (): Promise<string | null> => null),
+  pickSavePath: vi.fn(async (_default: string): Promise<string | null> => null),
   checkForUpdate: vi.fn(),
   assetUrl: (p: string) => p,
   isMock: true,
@@ -866,6 +872,194 @@ describe("earlier versions of a note with text that cannot be saved", () => {
     expect(notes.versions).toBeNull();
     expect(fake.noteVersions).not.toHaveBeenCalled();
     expect(toast.current).toMatchObject({ tone: "warn" });
+  });
+});
+
+describe("sharing a note with agents", () => {
+  beforeEach(() => {
+    addNote("a.md", "# A\n");
+    addNote("b.md", "# B\n");
+    openName = "a.md";
+    fake.setNoteShared.mockImplementation(async (path: string, shared: boolean) => {
+      list = list.map((n) => (n.path === path ? { ...n, shared } : n));
+    });
+  });
+
+  it("marks a note as shared and stops sharing it from the same place", async () => {
+    await start();
+    await notes.toggleShare("b.md");
+    expect(fake.setNoteShared).toHaveBeenLastCalledWith("b.md", true);
+    expect(notes.entries.find((n) => n.path === "b.md")?.shared).toBe(true);
+    expect(toast.current).toMatchObject({ text: "“b” is shared with agents." });
+    await notes.toggleShare("b.md");
+    expect(fake.setNoteShared).toHaveBeenLastCalledWith("b.md", false);
+    expect(notes.entries.find((n) => n.path === "b.md")?.shared).toBe(false);
+    expect(toast.current).toMatchObject({ text: "“b” is not shared any more." });
+  });
+
+  it("works on the open note when none is given, and not on a new note, a file or a window that only reads", async () => {
+    await start();
+    await notes.toggleShare();
+    expect(fake.setNoteShared).toHaveBeenCalledWith("a.md", true);
+    fake.setNoteShared.mockClear();
+    await notes.newNote();
+    await notes.toggleShare();
+    expect(fake.setNoteShared).not.toHaveBeenCalled();
+    fake.openNotes.mockResolvedValue(opened("locked"));
+    notes.reset();
+    await start();
+    await notes.toggleShare("b.md");
+    expect(fake.setNoteShared).not.toHaveBeenCalled();
+  });
+
+  it("says why when it cannot be done", async () => {
+    await start();
+    fake.setNoteShared.mockRejectedValue({ kind: "notANote", message: "no", subject: "b.md" });
+    await notes.toggleShare("b.md");
+    expect(toast.current).toMatchObject({ tone: "warn" });
+    expect(notes.entries.find((n) => n.path === "b.md")?.shared).toBe(false);
+  });
+});
+
+describe("moving a note into a project", () => {
+  const COPY = "@file/0a1b2c3d/launch-plan.md";
+
+  beforeEach(() => {
+    addNote("a.md", "# Launch plan\n", { title: "Launch plan" });
+    addNote("b.md", "# B\n");
+    openName = "a.md";
+    fake.moveSuggestion.mockResolvedValue({
+      defaultPath: "C:/work/plan/Launch plan.md",
+      folder: "C:/work/plan",
+    });
+    platform.pickSavePath.mockResolvedValue("C:/work/plan/launch-plan.md");
+    fake.moveNoteToProject.mockImplementation(async (path: string, destination: string) => {
+      list = [
+        ...list.filter((n) => n.path !== path),
+        entry(COPY, { kind: "file", title: "launch-plan.md", folder: "C:\\work\\plan" }),
+      ];
+      return { destination, file: COPY, undoId: 5 };
+    });
+  });
+
+  it("saves the note, asks where, writes the copy, and offers Open in project and Undo", async () => {
+    await start();
+    type("# Launch plan\ntyped last");
+    await notes.moveToProject();
+    expect(fake.saveNote).toHaveBeenCalledWith("a.md", "# Launch plan\ntyped last", "h-a.md");
+    expect(platform.pickSavePath).toHaveBeenCalledWith("C:/work/plan/Launch plan.md");
+    expect(fake.moveNoteToProject).toHaveBeenCalledWith("a.md", "C:/work/plan/launch-plan.md");
+    expect(fake.saveNote.mock.invocationCallOrder[0]).toBeLessThan(
+      fake.moveNoteToProject.mock.invocationCallOrder[0],
+    );
+    expect(toast.current).toMatchObject({
+      text: "Moved “Launch plan” to plan",
+      action: { label: "Open in project" },
+      second: { label: "Undo" },
+    });
+    // the note is gone from the list and the next one is open; the copy is a row among the files
+    expect(notes.current).toBe("b.md");
+    expect(notes.entries.some((n) => n.path === "a.md")).toBe(false);
+    expect(notes.entries.some((n) => n.path === COPY)).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(fake.saveNote).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves a note that is not the open one, without touching the open one", async () => {
+    await start();
+    await notes.moveToProject("b.md");
+    expect(fake.moveNoteToProject).toHaveBeenCalledWith("b.md", "C:/work/plan/launch-plan.md");
+    expect(notes.current).toBe("a.md");
+    expect(edit.active).toBe(true);
+  });
+
+  it("moves nothing when the dialog is cancelled", async () => {
+    await start();
+    platform.pickSavePath.mockResolvedValue(null);
+    await notes.moveToProject();
+    expect(fake.moveNoteToProject).not.toHaveBeenCalled();
+    expect(notes.current).toBe("a.md");
+    expect(edit.active).toBe(true);
+  });
+
+  it("keeps the note open and says so when a file of that name is there", async () => {
+    await start();
+    fake.moveNoteToProject.mockRejectedValue({
+      kind: "exists",
+      message: "exists",
+      subject: "launch-plan.md",
+    });
+    await notes.moveToProject();
+    expect(toast.current).toMatchObject({
+      text: "There is a file named launch-plan.md there already. Nothing was moved.",
+    });
+    expect(notes.current).toBe("a.md");
+    expect(edit.active).toBe(true);
+    expect(notes.entries.some((n) => n.path === "a.md")).toBe(true);
+  });
+
+  it("does not move a note whose text could not be saved", async () => {
+    await start();
+    fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: "a.md" });
+    type("# Launch plan\ntyped last");
+    await notes.moveToProject();
+    expect(platform.pickSavePath).not.toHaveBeenCalled();
+    expect(fake.moveNoteToProject).not.toHaveBeenCalled();
+    expect(toast.current).toMatchObject({ tone: "warn" });
+    expect(notes.current).toBe("a.md");
+  });
+
+  it("opens the project on the copy from the toast", async () => {
+    await start();
+    await notes.moveToProject();
+    toast.runAction();
+    expect(fake.openInProject).toHaveBeenCalledWith("C:/work/plan/launch-plan.md");
+  });
+
+  it("brings the note back with Undo, and opens it", async () => {
+    await start();
+    await notes.moveToProject();
+    fake.undoMoveNote.mockImplementation(async () => {
+      list = [...list.filter((n) => n.path !== COPY), entry("a.md", { title: "Launch plan" })];
+      return { note: "a.md", removed: true };
+    });
+    toast.runAction("second");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.undoMoveNote).toHaveBeenCalledWith(5);
+    expect(notes.current).toBe("a.md");
+    expect(toast.current).toMatchObject({ text: "“Launch plan” is back in your notes." });
+  });
+
+  it("says when the copy was left in the project because it was changed", async () => {
+    await start();
+    await notes.moveToProject();
+    fake.undoMoveNote.mockImplementation(async () => {
+      list = [...list, entry("a.md", { title: "Launch plan" })];
+      return { note: "a.md", removed: false };
+    });
+    toast.runAction("second");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(toast.current).toMatchObject({
+      text: "“Launch plan” is back in your notes. The copy was changed, so it stays in the project.",
+    });
+  });
+
+  it("does nothing for a new note, a loose file, or a window that can only read", async () => {
+    await start();
+    await notes.newNote();
+    await notes.moveToProject();
+    expect(platform.pickSavePath).not.toHaveBeenCalled();
+    expect(notes.movable).toBe(false);
+    addFile("@file/0a1b2c3d/x.md", "# X\n");
+    await notes.refresh();
+    expect(notes.entries.some((n) => n.path === "@file/0a1b2c3d/x.md")).toBe(true);
+    await notes.moveToProject("@file/0a1b2c3d/x.md");
+    expect(platform.pickSavePath).not.toHaveBeenCalled();
+    fake.openNotes.mockResolvedValue(opened("locked"));
+    notes.reset();
+    await start();
+    await notes.moveToProject("b.md");
+    expect(platform.pickSavePath).not.toHaveBeenCalled();
   });
 });
 
