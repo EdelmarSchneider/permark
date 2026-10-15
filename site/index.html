@@ -194,7 +194,7 @@
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
             </span>
             <h3>Close the loop with your AI</h3>
-            <p>Copy a reference like <code>@docs/plan.md</code>, or a quoted selection with its path and section, ready to paste into any AI chat or CLI. The template is yours to configure.</p>
+            <p>Turn on the agent connection and your coding agent knows which section you are reading and what you selected. Leave comments on passages for it to pick up, or copy a reference like <code>@docs/plan.md</code> into any AI chat.</p>
           </li>
         </ul>
         <p class="footnote">
@@ -318,8 +318,37 @@
       </div>
     </section>
 
-    <!-- 7. Works with -->
-    <section class="section section--tinted" id="works-with" aria-labelledby="works-title">
+    <!-- 7. Agent connection showcase -->
+    <section class="section section--tinted" id="agent" aria-labelledby="agent-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Agent connection</p>
+          <h2 id="agent-title">Your agent sees what you see</h2>
+          <p class="lead">Say "rewrite this paragraph" or "go through my comments", and your agent knows which document, which section and which words you mean. It works with any tool that speaks MCP.</p>
+        </div>
+        <ul class="checks checks--cols">
+          <li><strong>Where you are.</strong> The open document, the section on screen and your selection, plus the documents that changed since you read them</li>
+          <li><strong>Comments.</strong> Select a passage, press <kbd>C</kbd> and write. Your agent lists the open comments and marks them done with a short reply</li>
+          <li><strong>"Where is X described?"</strong> Your agent searches the same section index as you, and can open a place for you without taking your focus</li>
+          <li><strong>Yours to switch on.</strong> Off by default, per project, local only, and visible in the status bar while it is on. An agent never edits through TrailMark</li>
+        </ul>
+      </div>
+
+      <div class="container container--wide">
+        <figure class="shot">
+          <div class="shot__frame">
+            <picture>
+              <source srcset="assets/screenshot-comments-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="assets/screenshot-comments.png" width="1440" height="900" loading="lazy" decoding="async"
+                   alt="A document with comment bars in the margin, and the Comments tab listing the open comments by document, with one done comment showing the agent's reply.">
+            </picture>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- 8. Works with -->
+    <section class="section" id="works-with" aria-labelledby="works-title">
       <div class="container center">
         <p class="eyebrow">Tool-agnostic</p>
         <h2 id="works-title">Works with whatever writes your Markdown</h2>
@@ -336,8 +365,8 @@
       </div>
     </section>
 
-    <!-- 8. Install + shortcuts -->
-    <section class="section" id="install" aria-labelledby="install-title">
+    <!-- 9. Install + shortcuts -->
+    <section class="section section--tinted" id="install" aria-labelledby="install-title">
       <div class="container">
         <div class="section__head">
           <p class="eyebrow">Install</p>
@@ -399,6 +428,7 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
               <tr><td>Back / forward</td><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td></tr>
               <tr><td>Copy reference (or selection with reference)</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></td></tr>
               <tr><td>Edit tags and description</td><td><kbd>T</kbd></td></tr>
+              <tr><td>Leave a comment on the selected passage</td><td><kbd>C</kbd></td></tr>
               <tr><td>Zoom in / out / reset</td><td><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
               <tr class="keys__group"><th scope="rowgroup" colspan="2">Editing</th></tr>
               <tr><td>Start editing</td><td><kbd>E</kbd> or <kbd>Ctrl</kbd>+<kbd>E</kbd></td></tr>
@@ -422,8 +452,8 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
       </div>
     </section>
 
-    <!-- 9. Roadmap -->
-    <section class="section section--tinted" id="roadmap" aria-labelledby="roadmap-title">
+    <!-- 10. Roadmap -->
+    <section class="section" id="roadmap" aria-labelledby="roadmap-title">
       <div class="container">
         <div class="section__head">
           <p class="eyebrow">Roadmap</p>
@@ -457,7 +487,8 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
             </ul>
           </li>
           <li class="milestone">
-            <span class="milestone__tag milestone__tag--later">v0.4</span>
+            <span class="milestone__tag">v0.4</span>
+            <span class="milestone__state">Released</span>
             <ul>
               <li><strong>Your agent sees what you see:</strong> an optional, local connection that tells any coding agent which section you are reading and what you selected</li>
               <li><strong>Comments</strong> on passages that your agent picks up, and "where is X described?" answered by TrailMark</li>
