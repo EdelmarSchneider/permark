@@ -130,15 +130,33 @@ pub fn command_line_path() -> Option<String> {
 /// the app starts and while it runs.
 #[cfg(target_os = "macos")]
 pub fn opened(app: &AppHandle, urls: &[tauri::Url]) {
-    let project_open = app.state::<AppState>().current().is_ok();
+    use crate::vault::VaultMode;
+
+    let showing = match app.state::<AppState>().current() {
+        Err(_) => open_request::Showing::Nothing,
+        Ok(ws) => {
+            let info = ws.info();
+            if info.mode == VaultMode::Simple {
+                open_request::Showing::SingleFile
+            } else {
+                open_request::Showing::Project(PathBuf::from(info.root))
+            }
+        }
+    };
     let actions = app
         .state::<OpenInbox>()
-        .receive(open_request::paths_from_urls(urls), project_open);
+        .receive(open_request::paths_from_urls(urls), &showing);
     for action in actions {
         match action {
             Action::OpenHere(path) => {
                 crate::window::raise(app);
                 let _ = app.emit("open-path", path);
+            }
+            Action::ShowInProject(document) => {
+                crate::window::raise(app);
+                if let Some(document) = document {
+                    let _ = app.emit("show-in-project", document);
+                }
             }
             // Best effort: a process that cannot start leaves nothing to report to.
             Action::NewProcess(path) => {

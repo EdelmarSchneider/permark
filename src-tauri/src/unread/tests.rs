@@ -611,3 +611,194 @@ fn the_hex_form_is_sixteen_lowercase_digits() {
         assert_eq!(hash_from_hex(bad), None, "{bad:?}");
     }
 }
+
+// ---- a look at the disk that is under way while the app works ----
+
+/// The pieces of a service without its thread, so that a test decides what happens while the disk is walked.
+/// The queue is returned to keep the service's sends from failing.
+fn parts(fx: &Fx, saved: Option<BTreeMap<String, u64>>) -> (UnreadService, Worker, Receiver<Msg>) {
+    let vault = Arc::new(Vault::open(fx.project.path()).expect("vault"));
+    let filter = Arc::new(PathFilter::new(&[(vault.root().to_path_buf(), None)], &[]));
+    let heard = Arc::clone(&fx.heard);
+    let shared = Arc::new(Shared {
+        inner: Mutex::new(Inner {
+            tracker: Tracker::new(saved),
+            path: fx.read_path(),
+            announced: Vec::new(),
+            dirty: false,
+        }),
+        notify: Arc::new(move |unread: &[String]| lock(&heard).push(unread.to_vec())),
+    });
+    let stop = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+    let service = UnreadService {
+        vault: Arc::clone(&vault),
+        shared: Arc::clone(&shared),
+        tx: Some(tx),
+        stop: Arc::clone(&stop),
+        handle: Mutex::new(None),
+    };
+    let worker = Worker {
+        vault,
+        filter,
+        shared,
+        stop,
+        stamps: HashMap::new(),
+    };
+    (service, worker, rx)
+}
+
+fn read_state(entries: &[(&str, &str)]) -> BTreeMap<String, u64> {
+    entries
+        .iter()
+        .map(|(path, text)| ((*path).to_owned(), hash_bytes(text.as_bytes())))
+        .collect()
+}
+
+fn saved_paths_of(service: &UnreadService) -> Vec<String> {
+    lock(&service.shared.inner)
+        .tracker
+        .saved()
+        .into_keys()
+        .collect()
+}
+
+#[test]
+fn a_move_in_the_explorer_while_the_disk_is_walked_does_not_unread_the_document() {
+    let fx = Fx::new(&[("old.md", "# Old\n"), ("keep.md", "# Keep\n")]);
+    let (service, mut worker, _queue) = parts(
+        &fx,
+        Some(read_state(&[
+            ("old.md", "# Old\n"),
+            ("keep.md", "# Keep\n"),
+        ])),
+    );
+    // the walk passes and sees old.md; then the person moves it
+    let found = worker.walk().expect("walked");
+    fs::rename(
+        fx.project.path().join("old.md"),
+        fx.project.path().join("new.md"),
+    )
+    .expect("rename");
+    service.renamed("old.md", "new.md");
+    worker.settle(found);
+    assert_eq!(saved_paths_of(&service), ["keep.md", "new.md"]);
+
+    // the watcher reports the move afterwards
+    worker.apply(&[renamed("old.md", "new.md")]);
+    assert_eq!(
+        service.unread(),
+        NOTHING,
+        "it was read, and it is the same text"
+    );
+    assert_eq!(saved_paths_of(&service), ["keep.md", "new.md"]);
+}
+
+#[test]
+fn a_document_made_in_the_app_while_the_disk_is_walked_is_not_unread() {
+    let fx = Fx::new(&[("a.md", "# A\n")]);
+    let (service, mut worker, _queue) = parts(&fx, Some(read_state(&[("a.md", "# A\n")])));
+    // the walk passes before the document exists; the editor makes it and marks it read
+    let found = worker.walk().expect("walked");
+    fx.write("made.md", "# Made\n");
+    service.mark_written("made.md", &hex_of("# Made\n"));
+    worker.settle(found);
+    assert_eq!(saved_paths_of(&service), ["a.md", "made.md"]);
+
+    // the watcher reports the new file afterwards, and it is no news
+    worker.apply(&[change(ChangeKind::Created, "made.md")]);
+    assert_eq!(service.unread(), NOTHING);
+    assert_eq!(*lock(&fx.heard), Vec::<Vec<String>>::new());
+}
+
+#[test]
+fn a_mark_made_while_the_disk_is_walked_stands() {
+    let fx = Fx::new(&[("a.md", "# A\n"), ("b.md", "# B\n")]);
+    let (service, mut worker, _queue) = parts(
+        &fx,
+        Some(read_state(&[("a.md", "# A\n"), ("b.md", "# Old B\n")])),
+    );
+    let found = worker.walk().expect("walked");
+    service.mark_read("b.md").expect("mark");
+    service.mark_unread("a.md").expect("mark");
+    worker.settle(found);
+    assert_eq!(service.unread(), ["a.md"]);
+    assert_eq!(saved_paths_of(&service), ["b.md"]);
+}
+
+#[test]
+fn a_walk_that_was_stopped_tells_the_tracker_nothing() {
+    let fx = Fx::new(&[("a.md", "# A\n")]);
+    let (service, mut worker, _queue) = parts(&fx, Some(read_state(&[("a.md", "# Old\n")])));
+    worker.stop.store(true, Ordering::Relaxed);
+    assert!(worker.walk().is_none());
+    assert_eq!(service.unread(), NOTHING, "nothing was looked at");
+}
+
+#[test]
+fn a_batch_of_changes_is_cut_short_once_the_service_is_stopping() {
+    let fx = Fx::new(&[("a.md", "# A\n")]);
+    let (service, worker, _queue) = parts(&fx, Some(read_state(&[("a.md", "# A\n")])));
+    fx.write("a.md", "# Changed\n");
+    worker.stop.store(true, Ordering::Relaxed);
+    worker.apply(&[change(ChangeKind::Modified, "a.md")]);
+    assert_eq!(service.unread(), NOTHING, "the file was not even read");
+}
+
+// ---- closing does not wait for a look at the disk ----
+
+#[test]
+fn a_flush_gives_up_on_a_thread_that_is_busy_and_the_thread_still_writes_later() {
+    let fx = Fx::new(&[("a.md", "# A\n")]);
+    // a state in which a.md changed: the first look at the disk makes it unread and tells the listener
+    fs::write(
+        fx.read_path(),
+        format!(r#"{{ "a.md": "{}" }}"#, hex_of("# Old\n")),
+    )
+    .expect("state");
+    let (entered_tx, entered_rx) = mpsc::channel::<()>();
+    let (release_tx, release_rx) = mpsc::channel::<()>();
+    let release_rx = Mutex::new(release_rx);
+    let vault = Arc::new(Vault::open(fx.project.path()).expect("vault"));
+    let filter = Arc::new(PathFilter::new(&[(vault.root().to_path_buf(), None)], &[]));
+    // The listener is called by the thread. The first call does not return until the test lets it go, which makes
+    // a thread that is busy for exactly as long as the test says.
+    let first_call = AtomicBool::new(true);
+    let service = UnreadService::open(
+        vault,
+        filter,
+        fx.read_path(),
+        NEVER,
+        Arc::new(move |_: &[String]| {
+            if first_call.swap(false, Ordering::SeqCst) {
+                let _ = entered_tx.send(());
+                let _ = lock(&release_rx).recv();
+            }
+        }),
+    );
+    entered_rx.recv().expect("the thread is busy");
+
+    assert!(
+        !service.flush_within(Duration::from_millis(20)),
+        "the answer does not come while the thread is busy, and the caller is not held up"
+    );
+
+    release_tx.send(()).expect("release");
+    assert!(
+        service.flush_within(Duration::MAX),
+        "once it is free it catches up"
+    );
+    service.mark_read("a.md").expect("mark");
+    service.flush();
+    assert_eq!(fx.saved().expect("saved")["a.md"], hex_of("# A\n"));
+    service.stop();
+}
+
+#[test]
+fn a_flush_with_no_thread_has_nothing_to_wait_for() {
+    let fx = Fx::new(&[("a.md", "a")]);
+    let vault = Arc::new(Vault::open(&fx.project.path().join("a.md")).expect("vault"));
+    let service = fx.service(vault, fx.read_path(), NEVER);
+    assert!(service.flush_within(Duration::ZERO));
+    service.stop();
+}

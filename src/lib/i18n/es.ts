@@ -554,6 +554,10 @@ export const es = {
     "No se pudo ejecutar '{subject}': {detail}. Define el comando del editor en Configuración.",
   "error.editorTemplate":
     "El comando del editor no es válido: {detail}. Define el comando del editor en Configuración.",
+  "error.editorProblemMissingProgram": "falta el programa",
+  "error.editorProblemUnclosedQuote": "una comilla no está cerrada",
+  "error.editorProblemUnknownPlaceholder": "marcador desconocido {subject}",
+  "error.editorProblemPlaceholderInProgram": "el programa no puede ser un marcador",
   "settings.editor": "Editor externo",
   "settings.editorCommand": "Comando",
   "settings.editorPlaceholder": "La app predeterminada del sistema",

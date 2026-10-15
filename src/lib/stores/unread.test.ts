@@ -164,4 +164,16 @@ describe("what the person asks for", () => {
     store.toggleOnlyUnread();
     expect(store.onlyUnread).toBe(false);
   });
+
+  it("is caught up when the Explorer lists only what is unread and nothing is", () => {
+    expect(store.caughtUp, "everything is listed").toBe(false);
+    store.toggleOnlyUnread();
+    expect(store.caughtUp).toBe(true);
+    store.onChanged(["docs/a.md"]);
+    expect(store.caughtUp, "something is unread").toBe(false);
+    store.onChanged([]);
+    expect(store.caughtUp).toBe(true);
+    store.toggleOnlyUnread();
+    expect(store.caughtUp).toBe(false);
+  });
 });

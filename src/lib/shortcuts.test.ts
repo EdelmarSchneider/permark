@@ -4,6 +4,7 @@ import {
   matchShortcut,
   parseCombo,
   shortcutLabel,
+  yieldsToTyping,
   type KeyInfo,
   type ShortcutAction,
 } from "./shortcuts";
@@ -138,5 +139,36 @@ describe("isMacPlatform", () => {
       isMacPlatform("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Edg/120"),
     ).toBe(false);
     expect(isMacPlatform("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15")).toBe(false);
+  });
+});
+
+describe("yieldsToTyping", () => {
+  it("gives the plain letters and Alt+U to a text field everywhere", () => {
+    for (const mac of [false, true]) {
+      expect(yieldsToTyping("editTags", mac)).toBe(true);
+      expect(yieldsToTyping("edit", mac)).toBe(true);
+      expect(yieldsToTyping("nextUnread", mac)).toBe(true);
+    }
+  });
+
+  it("gives Alt+Left and Alt+Right to a text field on macOS only, where Option+Arrow moves by word", () => {
+    for (const action of ["back", "forward"] as const) {
+      expect(yieldsToTyping(action, true)).toBe(true);
+      expect(yieldsToTyping(action, false)).toBe(false);
+    }
+  });
+
+  it("leaves the shortcuts with a main modifier alone", () => {
+    for (const action of [
+      "save",
+      "find",
+      "toggleEdit",
+      "quickOpen",
+      "toggleLeft",
+      "copyReference",
+    ] as const) {
+      expect(yieldsToTyping(action, true)).toBe(false);
+      expect(yieldsToTyping(action, false)).toBe(false);
+    }
   });
 });

@@ -155,6 +155,26 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
   return null;
 }
 
+/**
+ * Whether a shortcut gives way to the text field it was pressed in (and to an overlay that is open), so that typing
+ * keeps the key. Plain letters (T, E) are letters there. On macOS, Option+U is the dead key that types ü, ö and ä, and
+ * Option+Arrow moves by word, so Alt+U and Alt+Left/Right belong to the field there; on other systems Alt+Left/Right
+ * keep navigating from anywhere.
+ */
+export function yieldsToTyping(action: ShortcutAction, mac: boolean): boolean {
+  switch (action) {
+    case "editTags":
+    case "edit":
+    case "nextUnread":
+      return true;
+    case "back":
+    case "forward":
+      return mac;
+    default:
+      return false;
+  }
+}
+
 // ---- how a shortcut is written ---------------------------------------------------------------------
 
 export type Combo = { ctrl: boolean; alt: boolean; shift: boolean; key: string };

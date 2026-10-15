@@ -100,8 +100,8 @@ describe("keeping the command", () => {
     await editorCommand.flush();
     fake.setEditorCommand.mockRejectedValue({
       kind: "editor",
-      reason: "template",
-      detail: "unknown placeholder {file}",
+      reason: "unknownPlaceholder",
+      subject: "file",
       message: "raw",
     });
     editorCommand.type("code {file}");

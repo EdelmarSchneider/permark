@@ -59,7 +59,17 @@ const EDITOR_REASONS = {
   notFound: "error.editorNotFound",
   badArguments: "error.editorBadArguments",
   spawn: "error.editorSpawn",
-  template: "error.editorTemplate",
+} as const satisfies Record<string, MessageKey>;
+
+/**
+ * The keys that word what is wrong with the text of an editor command, by the reason the `editor` error gives. The
+ * sentence around it is `error.editorTemplate`.
+ */
+const EDITOR_PROBLEMS = {
+  missingProgram: "error.editorProblemMissingProgram",
+  unclosedQuote: "error.editorProblemUnclosedQuote",
+  unknownPlaceholder: "error.editorProblemUnknownPlaceholder",
+  placeholderInProgram: "error.editorProblemPlaceholderInProgram",
 } as const satisfies Record<string, MessageKey>;
 
 /** The kinds the UI words itself, and the string for each (the same name under `error.`, except where one exists already). */
@@ -105,6 +115,22 @@ function field(error: Record<string, unknown>, name: string): string | undefined
 }
 
 /**
+ * What is wrong with the text of an editor command ("a quote is not closed"), in the language of the interface; null
+ * when the error is about something else.
+ */
+export function editorProblem(error: unknown): string | null {
+  if (errorKind(error) !== "editor") return null;
+  const record = error as Record<string, unknown>;
+  const reason = field(record, "reason");
+  const key =
+    reason !== undefined ? (EDITOR_PROBLEMS as Record<string, MessageKey>)[reason] : undefined;
+  if (key === undefined) return null;
+  // the name of an unknown placeholder is shown the way it is written in a command
+  const name = field(record, "subject");
+  return t(key, { subject: name !== undefined ? `{${name}}` : "" });
+}
+
+/**
  * Words an error for the person, in the language of the interface. Errors of a kind the UI has words for are
  * written with them; anything else (a library's error, a kind a newer backend added, a sentence that lacks a
  * blank it needs) keeps the backend's own text, which `errorText` finds.
@@ -114,14 +140,20 @@ export function errorMessage(error: unknown): string {
     const record = error as Record<string, unknown>;
     const kind = errorKind(error);
     const subject = field(record, "subject");
-    const detail = field(record, "detail");
+    let detail = field(record, "detail");
     const reason = field(record, "reason");
     let key: MessageKey | undefined;
     if (kind === "invalidName") {
       key = reason !== undefined ? (NAME_REASONS as Record<string, MessageKey>)[reason] : undefined;
     } else if (kind === "editor") {
-      key =
-        reason !== undefined ? (EDITOR_REASONS as Record<string, MessageKey>)[reason] : undefined;
+      const problem = editorProblem(error);
+      if (problem !== null) {
+        key = "error.editorTemplate";
+        detail = problem;
+      } else {
+        key =
+          reason !== undefined ? (EDITOR_REASONS as Record<string, MessageKey>)[reason] : undefined;
+      }
     } else if (kind !== null) {
       key = (KIND_KEYS as Record<string, MessageKey>)[kind];
     }

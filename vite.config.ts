@@ -1,8 +1,14 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
+import path from "node:path";
 import process from "node:process";
 import { defineConfig } from "vitest/config";
 
 const host = process.env.TAURI_DEV_HOST;
+
+// Tooling keeps checkouts of this project under `.claude/` (git worktrees): a change there is not a change of this app,
+// and Vite would reload the page for it. The pattern starts at the folder Vite runs in, so that a dev server started
+// inside such a checkout still watches its own files.
+const toolFolder = `${process.cwd().split(path.sep).join("/")}/.claude/**`;
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -28,8 +34,8 @@ export default defineConfig(({ mode }) => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell Vite to ignore watching `src-tauri` and the checkouts under `.claude/`
+      ignored: ["**/src-tauri/**", toolFolder],
     },
   },
 
