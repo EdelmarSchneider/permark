@@ -17,7 +17,7 @@
   import Welcome from "./lib/components/Welcome.svelte";
   import { language, t } from "./lib/i18n";
   import { isEditable } from "./lib/dom/domUtil";
-  import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
+  import { closeTopOverlay, hasKeyOverlay, hasOpenOverlay } from "./lib/overlays";
   import {
     isMacPlatform,
     matchNotesShortcut,
@@ -106,7 +106,7 @@
     if (!action) return;
     // "T" and "E" are plain letters, and Option+U and Option+Arrow are typing on macOS: they only mean something
     // while reading
-    if (yieldsToTyping(action, mac) && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) {
+    if (yieldsToTyping(action, mac) && (isEditable(e.target) || hasKeyOverlay())) {
       return;
     }
     e.preventDefault();

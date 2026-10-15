@@ -1,14 +1,18 @@
 // A tiny stack of open overlays (menus, popovers, dialogs, quick open, the find bar). Esc closes the
 // topmost one; Follow checks whether any is open before it jumps to another document.
 
-type Entry = { id: number; close: () => void };
+type Entry = { id: number; close: () => void; keys: boolean };
 
 const stack: Entry[] = [];
 let nextId = 1;
 
-/** Registers an open overlay. Returns the function that unregisters it (call it when the overlay closes). */
-export function registerOverlay(close: () => void): () => void {
-  const entry: Entry = { id: nextId++, close };
+/**
+ * Registers an open overlay. Returns the function that unregisters it (call it when the overlay closes). An overlay that is not
+ * where the person types (`keys` false: the find bar a search result opens over the document) is closed by Esc like the others,
+ * but the plain keys keep their meaning while it is open.
+ */
+export function registerOverlay(close: () => void, keys = true): () => void {
+  const entry: Entry = { id: nextId++, close, keys };
   stack.push(entry);
   return () => {
     const i = stack.indexOf(entry);
@@ -26,6 +30,11 @@ export function closeTopOverlay(): boolean {
 
 export function hasOpenOverlay(): boolean {
   return stack.length > 0;
+}
+
+/** Whether an overlay that wants the keys (a menu, a dialog, a field) is open: the plain-letter shortcuts wait for it. */
+export function hasKeyOverlay(): boolean {
+  return stack.some((entry) => entry.keys);
 }
 
 /**
