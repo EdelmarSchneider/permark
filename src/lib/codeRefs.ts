@@ -33,7 +33,15 @@ const SUFFIX =
 
 const INLINE = new RegExp(`^(${PATH})${SUFFIX}?$`);
 // Groups: 1 path; 2 line, 3 last line, 4 column for the `:` form; 5 line, 6 column, 7 last line for the `#L` form.
-const IN_TEXT = new RegExp(`(${PATH})${SUFFIX}(?![A-Za-z0-9_])`, "g");
+// Sticky: tried only where a path can start, see `findTextRefs`.
+const IN_TEXT = new RegExp(`(${PATH})${SUFFIX}(?![A-Za-z0-9_])`, "y");
+
+/** Where a line suffix starts (`:42`, `#L10`): the only places a reference in plain text can end its path. */
+const SUFFIX_START = /:\d|#L\d/g;
+/** A character a path is made of (a name character or a separator). */
+const PATH_CHAR = /[A-Za-z0-9_.@+~\\/-]/;
+/** A path longer than this is not a reference (and bounds the work done per candidate). */
+const MAX_PATH = 400;
 
 /** A reference is not read from the middle of a longer token: URLs, drive paths, `a:b/c.rs`... */
 const TOKEN_CHAR = /[A-Za-z0-9_./\\:@%#?&=~+-]/;
@@ -76,14 +84,28 @@ export function parseInlineRef(text: string): CodeRef | null {
 /** The references in plain text. Only a path with a line counts here. */
 export function findTextRefs(text: string): TextRef[] {
   if (text.length > MAX_TEXT || !/[:#]/.test(text)) return [];
+  // A path holds no `:` or `#`, so a reference's path runs back from its suffix over path characters to the start of
+  // the token. Only that start can begin a reference (any later start follows a path character, which is a token
+  // character), so one anchored try per suffix finds what a scan from every position would, in linear time.
   const found: TextRef[] = [];
-  IN_TEXT.lastIndex = 0;
-  for (let match = IN_TEXT.exec(text); match; match = IN_TEXT.exec(text)) {
-    const start = match.index;
+  let done = 0;
+  SUFFIX_START.lastIndex = 0;
+  for (let at = SUFFIX_START.exec(text); at; at = SUFFIX_START.exec(text)) {
+    const suffix = at.index;
+    if (suffix < done) continue;
+    let start = suffix;
+    while (start > 0 && suffix - start <= MAX_PATH && PATH_CHAR.test(text[start - 1])) start--;
+    if (start === suffix || suffix - start > MAX_PATH) continue;
+    if (start > 0 && TOKEN_CHAR.test(text[start - 1])) continue;
+    IN_TEXT.lastIndex = start;
+    const match = IN_TEXT.exec(text);
+    if (!match) continue;
     const end = start + match[0].length;
-    const before = start > 0 ? text[start - 1] : "";
-    const ref = before !== "" && TOKEN_CHAR.test(before) ? null : build(match);
-    if (ref) found.push({ start, end, ref });
+    const ref = build(match);
+    if (ref) {
+      found.push({ start, end, ref });
+      done = end;
+    }
   }
   return found;
 }
