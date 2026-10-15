@@ -12,8 +12,8 @@
 
   const recents = $derived(app.visibleRecents);
 
-  // Up/Down/Enter/Del work as soon as the screen appears
-  onMount(() => list?.focus());
+  // Up/Down/Enter/Del work as soon as the screen appears (without scrolling the logo away when the list is long)
+  onMount(() => list?.focus({ preventScroll: true }));
 
   function missing(root: string): boolean {
     return app.missingRecents.has(root);

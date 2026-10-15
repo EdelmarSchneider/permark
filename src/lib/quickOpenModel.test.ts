@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   countMatches,
   descriptionMatch,
+  onMoreRow,
+  quickMatches,
   searchFiles,
+  type QuickMatchesInput,
   type SearchFilesInput,
 } from "./quickOpenModel";
 
@@ -131,12 +134,85 @@ describe("countMatches (the hidden files that match)", () => {
       describe: (p) => (p === "src/live.rs" ? "Milestones of the live feed" : ""),
     });
     expect(countMatches(withMeta)).toBe(1);
-    const tagged = hidden({ tags: ["spec"], tagsOf: (p) => (p === "src/watcher.rs" ? ["spec"] : []) });
+    const tagged = hidden({
+      tags: ["spec"],
+      tagsOf: (p) => (p === "src/watcher.rs" ? ["spec"] : []),
+    });
     expect(countMatches(tagged)).toBe(1);
   });
 
   it("is zero when nothing is typed or nothing is hidden", () => {
     expect(countMatches(hidden({ text: "  " }))).toBe(0);
     expect(countMatches(input({ files: [], text: "live" }))).toBe(0);
+  });
+});
+
+describe("quickMatches (what Quick open lists when the Explorer filter hides files)", () => {
+  const SHOWN = ["docs/plan.md", "docs/live-feed.md", "README.md"];
+  const HIDDEN = [".trailmark/notes.md", "docs/archive/live-notes.md"];
+  const query = (over: Partial<QuickMatchesInput>): QuickMatchesInput => ({
+    ...input({ files: SHOWN }),
+    hiddenFiles: HIDDEN,
+    allFiles: [...SHOWN, ...HIDDEN],
+    reveal: false,
+    ...over,
+  });
+
+  it("lists the visible matches and counts the hidden ones behind a row of their own", () => {
+    const m = quickMatches(query({ text: "live" }));
+    expect(paths(m.found)).toEqual(["docs/live-feed.md"]);
+    expect(m.found.some((f) => f.hidden)).toBe(false);
+    expect(m.moreHidden).toBe(1);
+    // the first row is a file: Enter opens it, it does not reveal anything
+    expect(onMoreRow(0, m.found.length, m.moreHidden)).toBe(false);
+    // the person arrows down to the row of the hidden matches
+    expect(onMoreRow(1, m.found.length, m.moreHidden)).toBe(true);
+  });
+
+  it("lists the hidden matches at once when nothing visible matches, so one Enter opens the first", () => {
+    const m = quickMatches(query({ text: "notes" }));
+    expect(paths(m.found)).toEqual([".trailmark/notes.md", "docs/archive/live-notes.md"]);
+    expect(m.found.every((f) => f.hidden)).toBe(true);
+    expect(m.moreHidden).toBe(0);
+    // the selected row (the first) is a file, not the row that only reveals
+    expect(onMoreRow(0, m.found.length, m.moreHidden)).toBe(false);
+  });
+
+  it("does the same for a dot-path found by a tag, and for a description match", () => {
+    const tagged = quickMatches(
+      query({ tags: ["wip"], tagsOf: (p) => (p === ".trailmark/notes.md" ? ["wip"] : []) }),
+    );
+    expect(paths(tagged.found)).toEqual([".trailmark/notes.md"]);
+    expect(tagged.found[0].hidden).toBe(true);
+    expect(tagged.moreHidden).toBe(0);
+
+    const described = quickMatches(
+      query({
+        text: "retrospective",
+        describe: (p) => (p === "docs/archive/live-notes.md" ? "Sprint retrospective" : ""),
+      }),
+    );
+    expect(paths(described.found)).toEqual(["docs/archive/live-notes.md"]);
+    expect(described.found[0].hidden).toBe(true);
+  });
+
+  it("lists both when the hidden matches were revealed, the hidden ones marked", () => {
+    const m = quickMatches(query({ text: "live", reveal: true }));
+    expect(paths(m.found).sort()).toEqual(["docs/archive/live-notes.md", "docs/live-feed.md"]);
+    expect(m.found.find((f) => f.path === "docs/archive/live-notes.md")?.hidden).toBe(true);
+    expect(m.found.find((f) => f.path === "docs/live-feed.md")?.hidden).toBe(false);
+    expect(m.moreHidden).toBe(0);
+  });
+
+  it("has nothing to list or to reveal when no file matches", () => {
+    const m = quickMatches(query({ text: "zzz" }));
+    expect(m).toEqual({ found: [], moreHidden: 0 });
+    expect(onMoreRow(0, 0, 0)).toBe(false);
+  });
+
+  it("has no hidden files to offer when the filter hides none", () => {
+    const m = quickMatches(query({ text: "live", hiddenFiles: [], allFiles: SHOWN }));
+    expect(paths(m.found)).toEqual(["docs/live-feed.md"]);
+    expect(m.moreHidden).toBe(0);
   });
 });
