@@ -205,6 +205,36 @@ describe("the status", () => {
     expect(agent.pulsing).toBe(false);
   });
 
+  it("pulses for the first request of a window that had none yet", async () => {
+    const request = (atMs: number) => ({ tool: "get_context", subject: null, atMs });
+    fake.agentStatus.mockResolvedValue(ON);
+    await agent.onProjectOpened();
+    expect(agent.pulsing).toBe(false);
+    agent.onStatus({ ...ON, connections: 1, recent: [request(1000)] });
+    expect(agent.pulsing).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(agent.pulsing).toBe(false);
+    agent.onStatus({ ...ON, connections: 1, recent: [request(2000), request(1000)] });
+    expect(agent.pulsing).toBe(true);
+  });
+
+  it("pulses for the first request after the connection is switched on", async () => {
+    const request = (atMs: number) => ({ tool: "search", subject: "x", atMs });
+    await agent.setEnabled(true);
+    expect(agent.pulsing).toBe(false);
+    agent.onStatus({ ...ON, connections: 1, recent: [request(1000)] });
+    expect(agent.pulsing).toBe(true);
+  });
+
+  it("does not pulse for requests that were there when it was switched on again", async () => {
+    const request = (atMs: number) => ({ tool: "search", subject: "x", atMs });
+    agent.onStatus({ ...ON, recent: [request(1000)] });
+    agent.onStatus(OFF);
+    // the list of requests outlives the switch: what is in it was asked before
+    agent.onStatus({ ...ON, recent: [request(1000)] });
+    expect(agent.pulsing).toBe(false);
+  });
+
   it("starts from what the backend says when a project opens", async () => {
     fake.agentStatus.mockResolvedValue({ ...ON, connections: 1 });
     await agent.onProjectOpened();
