@@ -63,6 +63,9 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - The window opens where you left it, with its own size and place for each project
 - The Explorer **follows the file you open**, however you got there: quick open, a link, search, the feed, back and forward
 - Quick open (`Ctrl+P`), find in page (`Ctrl+F`), session restore and recent projects
+- **Code references are links.** `src/main.rs:42`, `lib.rs#L10-L20` or `` `docs/plan.md` `` in a document opens the file at the line:
+  Markdown in TrailMark, anything else in your editor (VS Code, Cursor, Zed, Sublime Text, JetBrains IDEs or a command of your own,
+  in **Settings → External editor**). Only names of files the project really has become links
 - One process per project: `trailmark ~/code/my-project`
 
 ### ⚡ Follow your agents live
@@ -71,8 +74,13 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - **Live changes** feed: one entry per file, bursts grouped, `git checkout` storms collapsed into one line
 - **Follow mode** automatically opens the doc the agent is writing (rate-limited, never jumps while you're selecting)
 - Git worktrees are discovered automatically, so changes made by agents working in parallel branches show up too
+- **Unread markers**, like mail: a dot on every document that changed since you last read it, in the tree, search and the feed.
+  Reading it (3 seconds on screen, or a scroll) clears the dot, `Alt+U` takes you to the next one, and **Show only unread** narrows
+  the tree to what you haven't seen
 
 ### 🔍 Find anything, to the section
+- **Search everywhere** (`Ctrl+T`): files, sections, tags and commands in one box. `Tab` moves between scopes, `>` jumps to
+  commands and `#` to sections; `Ctrl+Shift+P` opens the command list with every action of the app and its shortcut
 - Section-level full-text search (`Ctrl+Shift+F`): results show `file › heading › snippet` and jump to the exact spot
 - Accent- and case-insensitive, with light stemming, and incremental updates as files change
 - Filter by tag right in the search box (`tag:needs-review retry policy`)
@@ -139,10 +147,13 @@ TrailMark keeps its state in your user profile. If you want settings and tags to
 **Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
 
 ### 🖱️ Open with TrailMark
-On Windows, right-click a folder, the background of a folder or a Markdown file and choose **Open with TrailMark** (under *Show more options* on
+**Windows**: right-click a folder, the background of a folder or a Markdown file and choose **Open with TrailMark** (under *Show more options* on
 Windows 11). You can also list TrailMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
 **Settings → File manager**, which adds and removes them at once. TrailMark never sets itself as your default app; **Make default...** takes you to the
 Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
+
+**macOS**: TrailMark is listed in Finder's **Open With** for Markdown files, without becoming the default, and a folder dropped on its
+Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list TrailMark under **Open With** for Markdown files.
 
 ### 🌍 Your language
 TrailMark speaks **English, Português (Brasil), Español and Deutsch**. It follows your system's language, and **Settings → Language**
@@ -181,7 +192,9 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 
 | Action | Shortcut |
 |---|---|
+| Search everywhere (files, sections, tags, commands) | `Ctrl+T` |
 | Quick open file | `Ctrl+P` |
+| Commands | `Ctrl+Shift+P` |
 | Search all docs (by section) | `Ctrl+Shift+F` |
 | Find in page | `Ctrl+F` |
 | Show the Explorer / the Tags view | `Ctrl+Shift+X` / `Ctrl+Shift+T` |
@@ -231,7 +244,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - Português (Brasil), Español and Deutsch, "Open with TrailMark" in the Windows file manager, one Read | Visual | Source switch,
   a window that remembers its place, and an Explorer for workspaces of several repositories
 
-**v0.3**
+**v0.3** (released)
 - Search everywhere (`Ctrl+T`): files, sections, tags and commands in one box
 - Unread markers ("changed since I last read it") and clickable code references (`src/main.rs:42`)
 - "Open with TrailMark" in the macOS and Linux file managers (Windows has it already)
