@@ -34,7 +34,11 @@ describe("countWords", () => {
     expect(countWords("")).toBe(0);
     expect(countWords("   \n ")).toBe(0);
     expect(countWords("one")).toBe(1);
-    expect(countWords("# Two words\n\nand a few more\twords")).toBe(8);
+    expect(countWords("Two words\n\nand a few more\twords")).toBe(7);
+  });
+
+  it("does not count the marks of the Markdown that stand alone", () => {
+    expect(countWords("# Title\n\n- [ ] one\n- [x] two\n\n---\n\n| a | b |")).toBe(6);
   });
 });
 

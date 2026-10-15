@@ -5,7 +5,6 @@
   import { trackPointerDrag } from "../dom/treeDrag";
   import { keys, t } from "../i18n";
   import { GROUP_ORDER, type GroupId } from "../notesModel";
-  import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { notes } from "../stores/notes.svelte";
   import type { NoteEntry } from "../types";

@@ -13,7 +13,7 @@
 
   const update = $derived(updates.state);
   // "Saved" when the note is on disk; "Saving..." only when a save takes longer than a second; nothing while typing
-  const state = $derived(
+  const saveState = $derived(
     !notes.current || notes.unborn
       ? ""
       : edit.savingSlow
@@ -40,8 +40,8 @@
         <Icon name="alert" />{t("notes.status.readOnly")}
       </span>
     {/if}
-    {#if state !== ""}
-      <span class="sb-item" role="status" aria-live="polite">{state}</span>
+    {#if saveState !== ""}
+      <span class="sb-item" role="status" aria-live="polite">{saveState}</span>
     {/if}
     {#if notes.current && !notes.unborn}
       <span class="sb-item">{tn("notes.status.words", notes.words)}</span>

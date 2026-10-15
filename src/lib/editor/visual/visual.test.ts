@@ -79,6 +79,16 @@ describe("loading", () => {
     expect(editor.text()).toBe(text);
   });
 
+  it("starts a note with nothing in it: the empty file is an empty text, and what is typed is all that is saved", () => {
+    const report = load("");
+    expect(report.editable).toBe(0);
+    expect(editor.text()).toBe("");
+    expect(editor.status().dirty).toBe(false);
+    typeAt(inside(0), "Ask the agent");
+    expect(editor.status().dirty).toBe(true);
+    expect(editor.text().trim()).toBe("Ask the agent");
+  });
+
   it("locks a block that uses a reference defined elsewhere", () => {
     const text =
       "See [the docs][d] and [^1].\n\nPlain.\n\n[d]: https://example.com\n\n[^1]: note\n";

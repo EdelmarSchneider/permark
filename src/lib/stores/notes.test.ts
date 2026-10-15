@@ -267,6 +267,18 @@ describe("starting", () => {
     expect(docs.path).toBe("a.md");
   });
 
+  it("counts the words of a note when it opens, in either mode", async () => {
+    addNote("a.md", "# A title\n\n- [ ] one thing\n", {
+      view: { mode: "read", caret: null, scroll: 0 },
+    });
+    addNote("b.md", "two words\n", { view: { mode: "source", caret: 1, scroll: 0 } });
+    openName = "a.md";
+    await start();
+    expect(notes.words).toBe(4);
+    await notes.openNote("b.md");
+    expect(notes.words).toBe(2);
+  });
+
   it("starts with a new note, ready to type in, when none was open", async () => {
     addNote("a.md", "# A\n");
     await start();

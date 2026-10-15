@@ -5,7 +5,7 @@
 import { api } from "../api";
 import { errorKind, errorMessage } from "../errors";
 import { t, tn } from "../i18n";
-import { isBlank } from "../noteText";
+import { countWords, isBlank } from "../noteText";
 import {
   arrange,
   dropPinned,
@@ -433,7 +433,18 @@ class NotesStore {
         view?.caret != null ? { caret: view.caret, top: view.scroll ?? view.caret } : undefined;
       await edit.enter(fresh, mode, at);
     }
+    if (!fresh) this.words = await this.wordsOf(path);
     return true;
+  }
+
+  /** How many words the note on disk (or in the editor, when it is being written) has. */
+  private async wordsOf(path: string): Promise<number> {
+    try {
+      const text = edit.active ? edit.exactText() : (await api.documentSource(path)).text;
+      return countWords(text);
+    } catch {
+      return 0;
+    }
   }
 
   /** `Ctrl+Shift+N`: a new note, selected at the top of Today, with the caret ready. */
@@ -491,7 +502,7 @@ class NotesStore {
 
   /** A note was written. */
   private written(note: NoteWritten): void {
-    this.words = note.text.trim() === "" ? 0 : note.text.trim().split(/\s+/).length;
+    this.words = countWords(note.text);
     this.savedAtMs = Date.now();
     if (note.created) {
       this.unborn = false;

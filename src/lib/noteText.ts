@@ -43,10 +43,13 @@ function cleanLine(raw: string): string {
     .trim();
 }
 
-/** How many words a note has: runs of characters between blanks. */
+/** How many words a note has: runs of characters between blanks that have a letter or a digit (not `-`, `#` or `---`). */
 export function countWords(text: string): number {
-  const trimmed = text.trim();
-  return trimmed === "" ? 0 : trimmed.split(/\s+/).length;
+  let count = 0;
+  for (const run of text.split(/\s+/)) {
+    if (/[\p{L}\p{N}]/u.test(run)) count += 1;
+  }
+  return count;
 }
 
 /** Whether the text has nothing but blank characters (a byte order mark counts as blank). */
