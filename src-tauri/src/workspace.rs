@@ -191,6 +191,19 @@ const EXTERNAL_EXTENSIONS: &[&str] = &[
     "pdf",
 ];
 
+/// Whether a file without an extension is a program: on macOS and Linux one with an execute bit (a script such as
+/// `gradlew`, a binary) is run, in a terminal, when the system "opens" it. Windows decides by the extension alone.
+#[cfg(unix)]
+fn is_program_without_extension(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_program_without_extension(_path: &Path) -> bool {
+    false
+}
+
 pub struct Workspace {
     vault: Arc<Vault>,
     registry: Registry,
@@ -683,22 +696,24 @@ impl Workspace {
 
     /// The file to hand to the system's default application for "Open externally".
     ///
-    /// The path must stay inside the folder, name an existing file, and be a document or an image:
-    /// a program or script in the folder is never started from here.
+    /// The path must stay inside the folder, name an existing file, and be a document or an image (or a plain file
+    /// without an extension): a program or script in the folder is never started from here, and neither is a file
+    /// without an extension that the system would run (see [`is_program_without_extension`]).
     pub fn external_target(&self, path: &str) -> Result<PathBuf, AppError> {
         let resolved = self.vault.resolve(path)?;
         if !resolved.abs.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
-        let allowed = resolved.abs.extension().is_none_or(|e| {
-            let e = e.to_string_lossy().to_ascii_lowercase();
-            EXTERNAL_EXTENSIONS.contains(&e.as_str())
-        });
+        let allowed = resolved.abs.extension().map_or_else(
+            // No extension: a plain file (`LICENSE`, `Makefile`) is a document, a program is not.
+            || !is_program_without_extension(&resolved.abs),
+            |e| {
+                let e = e.to_string_lossy().to_ascii_lowercase();
+                EXTERNAL_EXTENSIONS.contains(&e.as_str())
+            },
+        );
         if !allowed {
-            return Err(VaultError::Invalid(format!(
-                "{path} is not a document or an image, so it is not opened from here"
-            ))
-            .into());
+            return Err(VaultError::Invalid(path.to_owned()).into());
         }
         Ok(resolved.abs)
     }
@@ -2509,6 +2524,15 @@ exclude = [\"archive/**\"]
             ws.external_target("run.exe").expect_err("exe").kind(),
             "invalidPath"
         );
+        // what the UI words the refusal with is the file, not an English sentence
+        assert_eq!(
+            ws.external_target("run.exe")
+                .expect_err("exe")
+                .details()
+                .subject
+                .as_deref(),
+            Some("run.exe")
+        );
 
         // An editor command opens any file of the folder, but still only files of the folder.
         for ok in ["a.md", "main.py", "run.exe", "Makefile", "script.ps1"] {
@@ -2535,6 +2559,61 @@ exclude = [\"archive/**\"]
         assert!(ws.reveal_target("run.exe").is_ok());
         assert!(ws.reveal_target("../outside.md").is_err());
         assert!(ws.reveal_target("missing.md").is_err());
+        ws.close();
+    }
+
+    /// macOS opens an executable without an extension in Terminal and runs it: a cloned repository's `gradlew` or
+    /// `bin/setup` must not be started by "Open in external editor" with no editor command.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_without_an_extension_is_not_handed_to_the_system() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "gradlew",
+            "#!/bin/sh
+",
+        );
+        write(
+            fx.project.path(),
+            "bin/setup",
+            "#!/bin/sh
+",
+        );
+        write(
+            fx.project.path(),
+            "LICENSE",
+            "text
+",
+        );
+        write(
+            fx.project.path(),
+            "script.sh",
+            "#!/bin/sh
+",
+        );
+        let chmod = |rel: &str, mode: u32| {
+            std::fs::set_permissions(
+                fx.project.path().join(rel),
+                std::fs::Permissions::from_mode(mode),
+            )
+            .expect("chmod");
+        };
+        chmod("gradlew", 0o755);
+        chmod("bin/setup", 0o700);
+        chmod("LICENSE", 0o644);
+        chmod("script.sh", 0o755);
+        let ws = fx.open();
+
+        for bad in ["gradlew", "bin/setup", "script.sh"] {
+            let error = ws.external_target(bad).expect_err(bad);
+            assert_eq!(error.kind(), "invalidPath", "{bad}");
+            assert_eq!(error.details().subject.as_deref(), Some(bad));
+        }
+        assert!(ws.external_target("LICENSE").expect("plain file").is_file());
+        // the person's own editor command takes any file as an argument
+        assert!(ws.editor_target("gradlew").is_ok());
         ws.close();
     }
 
