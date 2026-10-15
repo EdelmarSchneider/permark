@@ -150,6 +150,16 @@ pub(crate) fn contains(app_data: &Path, chosen: Option<&str>, path: &Path) -> bo
     crate::vault::strip_root(&canonical(path), &canonical(&folder)).is_some()
 }
 
+/// The notes folder, when it lies strictly inside the project in `root` (a project that holds the folder of the notes, or a notes
+/// folder chosen inside a project), as the system spells it. It is what the agent connection of that project must never reach.
+pub(crate) fn inside(app_data: &Path, chosen: Option<&str>, root: &Path) -> Option<PathBuf> {
+    let folder = configured(app_data, chosen);
+    let canonical = |p: &Path| canonicalize_lenient(p).unwrap_or_else(|| p.to_path_buf());
+    let (folder, root) = (canonical(&folder), canonical(root));
+    let rest = crate::vault::strip_root(&folder, &root)?;
+    (!rest.is_empty()).then_some(folder)
+}
+
 /// The ignore line that keeps the notes folder out of the project in `root`, when the notes folder lies inside it (a project
 /// that holds the folder of the notes, or a notes folder chosen inside a project). The line is anchored at the project's root,
 /// so it names this folder only, and it is added to the project's own ignore globs: what is ignored is not indexed, not searched

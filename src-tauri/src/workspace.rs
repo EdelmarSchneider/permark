@@ -388,6 +388,11 @@ fn agent_bridge(
         }),
         Arc::new(AgentSink(Arc::clone(sink))),
     );
+    // the notes folder is private even where it lies inside the project: no tool of the connection reaches it
+    bridge.hide(crate::bridge::answers::PrivateTree::of(
+        app_data,
+        vault.root(),
+    ));
     let wanted = !vault.is_shallow() && store.agent_connection();
     (bridge, wanted)
 }

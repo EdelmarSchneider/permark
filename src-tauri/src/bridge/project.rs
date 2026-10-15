@@ -100,6 +100,8 @@ pub(crate) struct Project {
     read_path: PathBuf,
     comments: CommentBook,
     searcher: Mutex<Option<Searcher>>,
+    /// The notes folder, when it lies inside the project: never shown, opened or commented on.
+    private: answers::PrivateTree,
 }
 
 impl Project {
@@ -132,6 +134,7 @@ impl Project {
             &[(vault.root().to_path_buf(), info_exclude)],
             &ignore,
         ));
+        let private = answers::PrivateTree::of(app_data_dir, vault.root());
         let comments = CommentBook::new(Arc::clone(&vault), store.comments_path());
         Ok(Self {
             vault,
@@ -139,6 +142,7 @@ impl Project {
             read_path: store.read_path(),
             comments,
             searcher: Mutex::new(None),
+            private,
         })
     }
 
@@ -168,9 +172,18 @@ impl Project {
         answers::plain_hits(searcher.index.search(query, limit))
     }
 
-    /// The comments of the kind asked for. Read-only: the places that moved are not written down here.
+    /// The comments of the kind asked for. Read-only: the places that moved are not written down here. A comment on a note of a
+    /// private notes folder that lies inside the project is not listed.
     pub(crate) fn comments(&self, which: CommentFilter) -> CommentList {
-        answers::comment_list(self.comments.list(false), which)
+        answers::comment_list(self.visible_comments(), which)
+    }
+
+    fn visible_comments(&self) -> Vec<CommentView> {
+        self.comments
+            .list(false)
+            .into_iter()
+            .filter(|comment| !self.private.covers_path(&self.vault, &comment.path))
+            .collect()
     }
 
     /// What is wrong with the comments file, when that is why there are no comments to list.
@@ -184,17 +197,25 @@ impl Project {
         id: &str,
         reply: Option<&str>,
     ) -> Result<CommentView, CommentError> {
+        // a comment on a private note is a comment that is not there
+        if !self
+            .visible_comments()
+            .iter()
+            .any(|comment| comment.id == id)
+        {
+            return Err(CommentError::NotFound(id.to_owned()));
+        }
         self.comments.resolve(id, reply)
     }
 
-    /// Checks a place an agent wants shown (see [`answers::prepare_open`]).
+    /// Checks a place an agent wants shown (see [`answers::prepare_open_hiding`]).
     pub(crate) fn check_open(
         &self,
         path: &str,
         line: Option<u32>,
         heading: Option<&str>,
     ) -> Result<Opened, ProtocolError> {
-        answers::prepare_open(&self.vault, path, line, heading)
+        answers::prepare_open_hiding(&self.vault, &self.private, path, line, heading)
     }
 }
 
@@ -525,6 +546,65 @@ mod tests {
         assert_eq!(project.comments(CommentFilter::Open).total, 0);
         assert_eq!(project.comments(CommentFilter::Done).total, 1);
         assert!(project.resolve_comment("nope", None).is_err());
+    }
+
+    /// The program an agent starts when the window is closed answers about the private notes folder as the window does: as if the
+    /// notes were not there.
+    #[test]
+    fn the_notes_folder_inside_a_project_is_not_shown_nor_commented_on_to_an_agent() {
+        use crate::comments::{CommentFilter, NewComment};
+        let fx = fx();
+        write(
+            &fx,
+            "notes/secret.md",
+            "# Secret\n\n## Hidden heading\n\nthe pelican\n",
+        );
+        let notes = root(&fx).join("notes");
+        AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+
+        let missing = project
+            .check_open("notes/zzz.md", Some(2), Some("Hidden heading"))
+            .expect_err("missing");
+        for path in ["notes/secret.md", "NOTES\\secret.md", "./notes/secret.md"] {
+            let refused = project
+                .check_open(path, Some(2), Some("Hidden heading"))
+                .expect_err(path);
+            assert_eq!(refused.kind, missing.kind, "{path}");
+            assert_eq!(
+                refused.message.replace(path, "<path>"),
+                missing.message.replace("notes/zzz.md", "<path>"),
+                "{path}"
+            );
+        }
+        assert!(project.check_open("docs/plan.md", None, None).is_ok());
+
+        // a comment the person wrote on a note is not listed, and cannot be resolved by an agent that learned its id
+        let book = CommentBook::new(
+            Arc::new(Vault::open(&root(&fx)).expect("vault")),
+            store(&fx).comments_path(),
+        );
+        let on_note = book
+            .add(NewComment {
+                path: "notes/secret.md".to_owned(),
+                quote: "the pelican".to_owned(),
+                text: "private".to_owned(),
+                heading_path: Vec::new(),
+                line: 0,
+                end_line: 0,
+            })
+            .expect("a comment");
+        assert_eq!(project.comments(CommentFilter::All).total, 0);
+        assert!(project.resolve_comment(&on_note.id, None).is_err());
+        assert!(
+            !book
+                .list(false)
+                .iter()
+                .any(|comment| comment.id == on_note.id && comment.done),
+            "it was not resolved"
+        );
     }
 
     #[test]
