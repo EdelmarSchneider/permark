@@ -891,3 +891,4 @@ fn a_note_that_is_too_big_is_refused_with_its_name() {
 }
 
 mod loose_files;
+mod sharing_and_moving;

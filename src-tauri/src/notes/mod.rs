@@ -24,6 +24,7 @@ mod names;
 mod pending;
 mod recover;
 mod service;
+pub(crate) mod share;
 mod text;
 
 pub use data::NoteView;
@@ -36,6 +37,7 @@ pub(crate) use names::Moment;
 pub use pending::PendingEdits;
 pub(crate) use recover::process_is_running;
 pub use service::{
-    summary, LooseDoc, LooseStatus, NoteDeleted, NoteList, NoteSaved, NoteVersion, NotesError,
-    NotesService, NotesSummary, OpenReport, OpenedFile, ReadOnlyReason, Restored,
+    summary, LooseDoc, LooseStatus, MoveUndone, NoteDeleted, NoteList, NoteMoved, NoteSaved,
+    NoteVersion, NotesError, NotesService, NotesSummary, OpenReport, OpenedFile, ReadOnlyReason,
+    Restored,
 };

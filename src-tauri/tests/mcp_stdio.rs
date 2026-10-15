@@ -165,8 +165,10 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
         [
             "get_context",
             "list_comments",
+            "list_notes",
             "list_unread",
             "open",
+            "read_note",
             "resolve_comment",
             "search"
         ]
@@ -270,8 +272,58 @@ fn comments_are_listed_and_resolved_in_the_projects_files_without_a_window() {
     assert!(kept.contains("Named it"), "{kept}");
 }
 
+/// The person's notes in the data folder of the fixture (where a debug build keeps them): two notes, one of them shared.
+fn notes(fixture: &Fixture) {
+    let notes = fixture.data.path().join("notes");
+    std::fs::create_dir_all(notes.join(".trailmark")).expect("notes folder");
+    std::fs::write(
+        notes.join("deploy.md"),
+        "# The deploy checklist\n\nbackups first\n",
+    )
+    .expect("a shared note");
+    std::fs::write(notes.join("diary.md"), "# My diary\n\nprivate\n").expect("a private note");
+    std::fs::write(
+        notes.join(".trailmark/notes.json"),
+        json!({ "shared": ["deploy.md"] }).to_string(),
+    )
+    .expect("notes.json");
+}
+
+#[test]
+fn the_notes_the_person_shared_are_read_from_their_files_and_no_other_note_is() {
+    let project = project(Some(true));
+    notes(&project);
+    let mut session = Session::start(&project);
+
+    let (listed, is_error) = session.call("list_notes", &json!({}));
+    assert!(!is_error, "{listed}");
+    assert_eq!(listed["status"], "ok");
+    assert_eq!(listed["source"], "files");
+    assert_eq!(listed["total"], 1);
+    assert_eq!(listed["notes"][0]["note"], "deploy.md");
+    assert_eq!(listed["notes"][0]["title"], "The deploy checklist");
+
+    let (read, is_error) = session.call("read_note", &json!({ "note": "deploy.md" }));
+    assert!(!is_error, "{read}");
+    assert_eq!(read["text"], "# The deploy checklist\n\nbackups first\n");
+
+    // a note that was not shared, and names that try to reach other files, are all the same answer
+    for note in ["diary.md", "../diary.md", "notes.json", "..\\diary.md"] {
+        let (refused, is_error) = session.call("read_note", &json!({ "note": note }));
+        assert!(is_error, "{note}: {refused}");
+        assert!(
+            refused["message"]
+                .as_str()
+                .expect("a message")
+                .contains("no shared note"),
+            "{note}: {refused}"
+        );
+    }
+    assert!(session.finish().success());
+}
+
 /// Every tool, with arguments that would do something if the connection were on.
-fn every_tool() -> [(&'static str, Value); 6] {
+fn every_tool() -> [(&'static str, Value); 8] {
     [
         ("get_context", json!({})),
         ("list_unread", json!({})),
@@ -279,6 +331,8 @@ fn every_tool() -> [(&'static str, Value); 6] {
         ("open", json!({ "path": "docs/plan.md" })),
         ("list_comments", json!({})),
         ("resolve_comment", json!({ "id": "c00000001" })),
+        ("list_notes", json!({})),
+        ("read_note", json!({ "note": "deploy.md" })),
     ]
 }
 

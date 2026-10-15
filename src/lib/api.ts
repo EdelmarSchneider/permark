@@ -29,8 +29,11 @@ import type {
   NewComment,
   Comment,
   LooseStatus,
+  MoveSuggestion,
+  MoveUndone,
   NoteDeleted,
   NoteList,
+  NoteMoved,
   OpenedFile,
   PathClass,
   PendingEdits,
@@ -266,6 +269,18 @@ export interface Api {
   discardBlankNote(path: string): Promise<boolean>;
   /** Shows the notes folder in the system's file manager. */
   openNotesFolder(): Promise<void>;
+  /** Shares a note with agents, or stops sharing it. */
+  setNoteShared(path: string, shared: boolean): Promise<void>;
+  /** What the Save dialog starts with for a note: the project opened last, and a name made from the title. */
+  moveSuggestion(path: string): Promise<MoveSuggestion>;
+  /** Moves a note into a project: the text is written to `destination`, the note goes to the recycle bin, the copy is a file of the list. */
+  moveNoteToProject(path: string, destination: string): Promise<NoteMoved>;
+  /** Undoes a move: the note is back, and the copy goes unless it was changed since. */
+  undoMoveNote(undoId: number): Promise<MoveUndone>;
+  /** Starts TrailMark on the project that holds a file, showing it. */
+  openInProject(path: string): Promise<void>;
+  /** The file this program was started to show once its project is open; asked once. */
+  launchShow(): Promise<string | null>;
   /** What a path of the disk is, and where it is in the open project (when this window shows one that holds it). */
   classifyPath(path: string): Promise<PathClass>;
   /** Opens a file in the Notes window: a note when it is one of the notes folder, else a loose file under Files. */
@@ -392,6 +407,13 @@ export const tauriApi: Api = {
   restoreNoteVersion: (path, id) => invoke<NoteRestored>("restore_note_version", { path, id }),
   discardBlankNote: (path) => invoke<boolean>("discard_blank_note", { path }),
   openNotesFolder: () => invoke<void>("open_notes_folder"),
+  setNoteShared: (path, shared) => invoke<void>("set_note_shared", { path, shared }),
+  moveSuggestion: (path) => invoke<MoveSuggestion>("move_suggestion", { path }),
+  moveNoteToProject: (path, destination) =>
+    invoke<NoteMoved>("move_note_to_project", { path, destination }),
+  undoMoveNote: (undoId) => invoke<MoveUndone>("undo_move_note", { undoId }),
+  openInProject: (path) => invoke<void>("open_in_project", { path }),
+  launchShow: () => invoke<string | null>("launch_show"),
   classifyPath: (path) => invoke<PathClass>("classify_path", { path }),
   openLooseFile: (path) => invoke<OpenedFile>("open_loose_file", { path }),
   looseStatus: () => invoke<LooseStatus[]>("loose_status"),
@@ -530,6 +552,12 @@ function createMockApi(): Api {
     restoreNoteVersion: command("restoreNoteVersion"),
     discardBlankNote: command("discardBlankNote"),
     openNotesFolder: command("openNotesFolder"),
+    setNoteShared: command("setNoteShared"),
+    moveSuggestion: command("moveSuggestion"),
+    moveNoteToProject: command("moveNoteToProject"),
+    undoMoveNote: command("undoMoveNote"),
+    openInProject: command("openInProject"),
+    launchShow: command("launchShow"),
     classifyPath: command("classifyPath"),
     openLooseFile: command("openLooseFile"),
     looseStatus: command("looseStatus"),

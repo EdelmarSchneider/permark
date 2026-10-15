@@ -10,6 +10,27 @@ const STEM_MAX_CHARS: usize = 60;
 /// How much of a note is read to find its title and snippet.
 pub(crate) const HEAD_BYTES: usize = 8 * 1024;
 
+/// The start of a file, which is all a title and a snippet need: empty when it cannot be read or is not text.
+pub(crate) fn head_of(path: &std::path::Path) -> String {
+    use std::io::Read as _;
+
+    let Ok(file) = std::fs::File::open(path) else {
+        return String::new();
+    };
+    let mut bytes = Vec::new();
+    if file
+        .take(HEAD_BYTES as u64)
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return String::new();
+    }
+    if bytes[..bytes.len().min(512)].contains(&0) {
+        return String::new();
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
 /// Whether the text has nothing but blank characters (a byte order mark counts as blank).
 pub(crate) fn is_blank(text: &str) -> bool {
     text.chars().all(|c| c.is_whitespace() || c == '\u{feff}')

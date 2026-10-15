@@ -12,9 +12,12 @@ import type {
   DocumentView,
   LaunchMode,
   LooseStatus,
+  MoveSuggestion,
+  MoveUndone,
   NoteDeleted,
   NoteEntry,
   NoteList,
+  NoteMoved,
   NoteRestored,
   NoteSaved,
   NotesFolder,
@@ -75,6 +78,10 @@ const notes = {
   deleted: new Map<number, { name: string; text: string; mtime: number }[]>(),
   nextUndo: 1,
   request: null as NotesRequest | null,
+  /** The notes shared with agents. */
+  shared: new Set<string>(),
+  /** The notes moved into a project lately: the undo id to the row the copy became. */
+  moves: new Map<number, string>(),
 };
 
 function putNote(name: string, text: string, mtime: number): void {
@@ -168,6 +175,7 @@ function looseEntry(file: MockLoose): NoteEntry {
     folder: file.folder,
     missing: file.missing,
     unsaved: notes.pending.has(path),
+    shared: false,
   };
 }
 
@@ -202,6 +210,7 @@ function entry(name: string): NoteEntry {
     folder: null,
     missing: false,
     unsaved: false,
+    shared: notes.shared.has(name),
   };
 }
 
@@ -548,6 +557,64 @@ export function showNotes(
   notes.request = { newNote: newNoteWanted, open, openFile };
   emitMock("notes-request", null);
 }
+
+// ---- sharing and moving ------------------------------------------------------------------------------------
+
+export function setNoteShared(path: string, shared: boolean): void {
+  writable();
+  if (shared) notes.shared.add(path);
+  else notes.shared.delete(path);
+}
+
+export function moveSuggestion(path: string): MoveSuggestion {
+  const name = `${
+    noteTitle(textOf(path))
+      .replace(/[\\/:*?"<>|]/g, "")
+      .trim() || "note"
+  }.md`;
+  const folder = "C:/Users/demo/work/trailmark";
+  return { defaultPath: `${folder}/${name}`, folder };
+}
+
+export function moveNoteToProject(path: string, destination: string): NoteMoved {
+  writable();
+  const name = baseName(destination);
+  if (/exists/i.test(name)) {
+    throw new MockBackendError("exists", `a file named ${name} already exists`, { subject: name });
+  }
+  const text = textOf(path);
+  const wasPinned = notes.pins.includes(path);
+  const deleted = deleteNotes([path]);
+  const file: MockLoose = {
+    id: (0x4e5f6071 + notes.loose.length * 0x11111111).toString(16).padStart(8, "0").slice(-8),
+    name: /\.md$/i.test(name) ? name : `${name}.md`,
+    folder: folderOf(destination),
+    openedMs: Date.now(),
+    missing: false,
+    changed: false,
+  };
+  notes.loose.push(file);
+  putNote(looseUi(file), text, Date.now());
+  if (wasPinned) notes.pins.push(looseUi(file));
+  if (deleted.undoId !== null) notes.moves.set(deleted.undoId, looseUi(file));
+  return { destination, file: looseUi(file), undoId: deleted.undoId };
+}
+
+export function undoMoveNote(undoId: number): MoveUndone {
+  writable();
+  const file = notes.moves.get(undoId);
+  if (file === undefined) throw new MockBackendError("unknownUndo", "there is nothing to undo");
+  notes.moves.delete(undoId);
+  const back = undoDeleteNotes(undoId);
+  removeLooseFile(file);
+  return { note: back[0] ?? "", removed: true };
+}
+
+export function openInProject(path: string): void {
+  console.info("[mock] open the project that holds", path);
+}
+
+export const launchShow = (): string | null => null;
 
 // ---- loose files ---------------------------------------------------------------------------------------------
 

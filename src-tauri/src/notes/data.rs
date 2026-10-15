@@ -78,6 +78,8 @@ pub(crate) struct NotesData {
     /// The files opened here that are not in the notes folder. Their pins, places and the open one are kept under the
     /// key of the file (`@file/<id>`), which a rename does not change.
     pub loose: Vec<LooseFile>,
+    /// The notes the person shared with agents, by file name. Only these can be listed and read through an agent connection.
+    pub shared: Vec<String>,
 }
 
 /// Reads one field of the file, leniently: a value of the wrong shape reads as the default.
@@ -129,6 +131,20 @@ fn loose_files(root: &serde_json::Map<String, Value>) -> Vec<LooseFile> {
     files
 }
 
+/// Reads the names of the shared notes: only text counts, and a name is shared once.
+fn shared_names(root: &serde_json::Map<String, Value>) -> Vec<String> {
+    let Some(Value::Array(items)) = root.get("shared") else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = Vec::new();
+    for name in items.iter().filter_map(Value::as_str) {
+        if !name.is_empty() && !names.iter().any(|known| known == name) {
+            names.push(name.to_owned());
+        }
+    }
+    names
+}
+
 impl NotesData {
     /// Reads the text of a `notes.json`. Whatever does not make sense is left out: the notes are listed from their files
     /// either way.
@@ -151,6 +167,7 @@ impl NotesData {
             copied: entries(&root, "copied"),
             cache: entries(&root, "cache"),
             loose: loose_files(&root),
+            shared: shared_names(&root),
         }
     }
 
@@ -189,6 +206,12 @@ impl NotesData {
         if let Some(copied) = self.copied.remove(from) {
             self.copied.insert(to.to_owned(), copied);
         }
+        // a note the person shared stays shared when they give it a name
+        for name in &mut self.shared {
+            if name == from {
+                to.clone_into(name);
+            }
+        }
         self.cache.remove(from);
     }
 
@@ -205,6 +228,12 @@ impl NotesData {
         self.views.retain(|name, _| known(name));
         self.copied.retain(|name, _| existing.contains(name));
         self.cache.retain(|name, _| existing.contains(name));
+        // a name that is not a note any more is not shared: a note made later under that name must not be
+        self.shared.retain(|name| existing.contains(name));
+    }
+
+    pub(crate) fn is_shared(&self, name: &str) -> bool {
+        self.shared.iter().any(|shared| shared == name)
     }
 
     /// Forgets what is kept under the key of a loose file that is not listed any more.
@@ -229,6 +258,7 @@ mod tests {
         let mut data = NotesData {
             pins: vec!["b.md".to_owned(), "a.md".to_owned()],
             open: Some("a.md".to_owned()),
+            shared: vec!["a.md".to_owned(), "b.md".to_owned()],
             ..NotesData::default()
         };
         data.views.insert(
@@ -340,6 +370,7 @@ mod tests {
         let mut data = sample();
         data.rename("a.md", "z.md");
         assert_eq!(data.pins, ["b.md", "z.md"]);
+        assert_eq!(data.shared, ["z.md", "b.md"], "a shared note stays shared");
         assert_eq!(data.open.as_deref(), Some("z.md"));
         assert!(data.views.contains_key("z.md") && !data.views.contains_key("a.md"));
         assert!(
@@ -356,6 +387,16 @@ mod tests {
         assert_eq!(data.pins, ["a.md"]);
         assert!(data.copied.is_empty());
         assert!(data.is_pinned("a.md") && !data.is_pinned("b.md"));
+        // a note that is gone is not shared: another one made under its name must not be
+        assert!(data.is_shared("a.md") && !data.is_shared("b.md"));
+    }
+
+    #[test]
+    fn the_shared_names_are_read_as_text_and_once() {
+        let data = NotesData::parse(br#"{"shared": ["a.md", "", 7, "a.md", "b.md", null]}"#);
+        assert_eq!(data.shared, ["a.md", "b.md"]);
+        assert_eq!(NotesData::parse(br#"{"shared": "a.md"}"#).shared.len(), 0);
+        assert_eq!(NotesData::parse(b"{}").shared.len(), 0);
     }
 
     #[test]

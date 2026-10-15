@@ -105,6 +105,7 @@ impl NotesService {
                     folder: Some(loose::folder_label(file.abs(), self.home.as_deref())),
                     missing: stamp.is_none(),
                     unsaved: unsaved.contains(&file.id),
+                    shared: false,
                 }
             })
             .collect()

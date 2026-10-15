@@ -31,6 +31,8 @@ pub const DEFAULT_SEARCH_HITS: usize = 10;
 pub const MAX_UNREAD_LISTED: usize = 200;
 /// The most comments listed.
 pub const MAX_COMMENTS_LISTED: usize = 200;
+/// The most shared notes listed.
+pub const MAX_NOTES_LISTED: usize = 200;
 
 /// What a client can ask.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +68,13 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         heading: Option<String>,
     },
+    /// The notes the person shared with agents.
+    ListNotes,
+    /// The text of one shared note.
+    ReadNote {
+        /// The note's name, as `listNotes` gives it.
+        note: String,
+    },
 }
 
 impl Request {
@@ -79,6 +88,8 @@ impl Request {
             Self::ListComments { .. } => "list_comments",
             Self::ResolveComment { .. } => "resolve_comment",
             Self::Open { .. } => "open",
+            Self::ListNotes => "list_notes",
+            Self::ReadNote { .. } => "read_note",
         }
     }
 
@@ -86,10 +97,13 @@ impl Request {
     #[must_use]
     pub fn subject(&self) -> Option<String> {
         let subject = match self {
-            Self::GetContext | Self::ListUnread | Self::ListComments { .. } => return None,
+            Self::GetContext | Self::ListUnread | Self::ListComments { .. } | Self::ListNotes => {
+                return None
+            }
             Self::Search { query, .. } => query.trim(),
             Self::ResolveComment { comment, .. } => comment.trim(),
             Self::Open { path, .. } => path.trim(),
+            Self::ReadNote { note } => note.trim(),
         };
         Some(subject.chars().take(80).collect())
     }
@@ -243,6 +257,26 @@ pub struct CommentList {
 #[serde(rename_all = "camelCase")]
 pub struct Hits {
     pub hits: Vec<Hit>,
+}
+
+/// What `listNotes` answers: the notes the person shared with agents, the newest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteList {
+    /// At most [`MAX_NOTES_LISTED`].
+    pub notes: Vec<crate::notes::share::SharedNote>,
+    /// How many notes are shared in all.
+    pub total: usize,
+}
+
+impl NoteList {
+    /// The newest [`MAX_NOTES_LISTED`] of `notes` (already newest first), and how many there are.
+    #[must_use]
+    pub fn new(mut notes: Vec<crate::notes::share::SharedNote>) -> Self {
+        let total = notes.len();
+        notes.truncate(MAX_NOTES_LISTED);
+        Self { notes, total }
+    }
 }
 
 /// Reads one line (without its newline) of at most `max` bytes. `Ok(None)` when the other side closed the

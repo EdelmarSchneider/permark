@@ -108,6 +108,7 @@ const entry = (path: string, over: Partial<NoteEntry> = {}): NoteEntry => ({
   folder: null,
   missing: false,
   unsaved: false,
+  shared: false,
   ...over,
 });
 

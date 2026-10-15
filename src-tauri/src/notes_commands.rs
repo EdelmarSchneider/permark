@@ -3,6 +3,7 @@
 //! validate arguments and move blocking work off the async runtime. Their names are listed in `ipc-contract.json`.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Serialize;
@@ -16,7 +17,7 @@ use crate::notes::{
     self, folder, FolderStatus, Moment, NoteDeleted, NoteList, NoteSaved, NoteVersion, NoteView,
     NotesFolder, NotesRequest, NotesSummary, ReadOnlyReason, Restored,
 };
-use crate::session::{AppSettingsStore, StartIn};
+use crate::session::{AppSettingsStore, RecentStore, StartIn};
 use crate::vault::VaultError;
 use crate::workspace::{EventSink, VaultInfo, Workspace};
 
@@ -458,6 +459,140 @@ pub async fn open_notes_folder(app: AppHandle) -> Result<(), AppError> {
             .map_err(|e| AppError::Internal(e.to_string()))
     })
     .await
+}
+
+// ---- sharing and moving ------------------------------------------------------------------------------------
+
+/// Shares a note with agents, or stops sharing it.
+#[tauri::command]
+pub async fn set_note_shared(
+    state: State<'_, AppState>,
+    path: String,
+    shared: bool,
+) -> Result<(), AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || Ok(ws.notes()?.set_shared(&path, shared)?)).await
+}
+
+/// What the Save dialog starts with when a note is moved into a project. Matches the UI's `MoveSuggestion`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveSuggestion {
+    /// Where the dialog opens, with the name: in the project that was opened last when it is still there.
+    pub default_path: String,
+    /// The project folder it opens in, when there is one.
+    pub folder: Option<String>,
+}
+
+/// The place and the name the Save dialog starts with for a note: the project opened last, and a name made from the title.
+#[tauri::command]
+pub async fn move_suggestion(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<MoveSuggestion, AppError> {
+    let dir = app_data_dir(&app)?;
+    let ws = notes_of(&state)?;
+    blocking(move || {
+        let folder = RecentStore::new(&dir)
+            .load_existing()
+            .into_iter()
+            .map(|recent| PathBuf::from(recent.root))
+            .find(|root| root.is_dir());
+        let name = ws.notes()?.suggest_name(&path, folder.as_deref())?;
+        Ok(MoveSuggestion {
+            default_path: folder.as_ref().map_or_else(
+                || name.clone(),
+                |folder| folder.join(&name).display().to_string(),
+            ),
+            folder: folder.map(|folder| folder.display().to_string()),
+        })
+    })
+    .await
+}
+
+/// Moves a note into a project: its text is written to `destination` (a file that must not be there), the note goes to the
+/// recycle bin, and the copy is listed under Files.
+#[tauri::command]
+pub async fn move_note_to_project(
+    state: State<'_, AppState>,
+    path: String,
+    destination: String,
+) -> Result<notes::NoteMoved, AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || {
+        Ok(ws.notes()?.move_to(
+            &path,
+            std::path::Path::new(&destination),
+            crate::util::now_ms(),
+        )?)
+    })
+    .await
+}
+
+/// Undoes a move: the note is back, and the copy in the project goes unless it was changed since.
+#[tauri::command]
+pub async fn undo_move_note(
+    state: State<'_, AppState>,
+    undo_id: u64,
+) -> Result<notes::MoveUndone, AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || Ok(ws.notes()?.undo_move(undo_id)?)).await
+}
+
+/// The environment variable that tells a program just started on a project which of its files to show first.
+const SHOW_VARIABLE: &str = "TRAILMARK_SHOW";
+
+/// "Open in project": starts TrailMark on the project that holds `path` (the project opened lately that contains it, else its
+/// folder), showing that file. A project that is open in a window already is opened once more, as a second launch does.
+#[tauri::command]
+pub async fn open_in_project(app: AppHandle, path: String) -> Result<(), AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || {
+        let file = PathBuf::from(&path);
+        if !file.is_file() {
+            return Err(VaultError::NotFound(path).into());
+        }
+        let folder = RecentStore::new(&dir)
+            .load_existing()
+            .into_iter()
+            .map(|recent| PathBuf::from(recent.root))
+            .filter(|root| file.starts_with(root))
+            .max_by_key(|root| root.components().count())
+            .or_else(|| file.parent().map(std::path::Path::to_path_buf))
+            .ok_or_else(|| VaultError::NotFound(file.display().to_string()))?;
+        start_project_window(&folder, &file).map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
+}
+
+/// Starts another TrailMark on a project, with the file to show first, and lets it go its own way.
+fn start_project_window(folder: &std::path::Path, file: &std::path::Path) -> std::io::Result<()> {
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(std::env::current_exe()?)
+        .arg(folder)
+        .env(SHOW_VARIABLE, file)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+/// The file this program was started to show once its project is open (see [`open_in_project`]), asked once.
+#[tauri::command]
+pub fn launch_show() -> Option<String> {
+    static ASKED: AtomicBool = AtomicBool::new(false);
+    if ASKED.swap(true, Ordering::SeqCst) {
+        return None;
+    }
+    std::env::var_os(SHOW_VARIABLE)
+        .map(|value| value.to_string_lossy().into_owned())
+        .filter(|value| !value.is_empty())
 }
 
 // ---- loose files -----------------------------------------------------------------------------------------

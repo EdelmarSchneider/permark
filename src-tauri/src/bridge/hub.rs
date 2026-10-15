@@ -7,11 +7,13 @@
 //! out through [`AgentEvents`].
 
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 
 use crate::comments::{CommentError, CommentView};
+use crate::notes::share::{self, ShareError};
 use crate::search::SearchHit;
 use crate::util::now_ms;
 use crate::vault::Vault;
@@ -19,8 +21,8 @@ use crate::vault::Vault;
 use super::answers;
 use super::context::{AgentContext, Published, ViewMode};
 use super::protocol::{
-    Call, ErrorKind, Hits, Opened, ProtocolError, Reply, Request, UnreadList, DEFAULT_SEARCH_HITS,
-    MAX_SEARCH_HITS,
+    Call, ErrorKind, Hits, NoteList, Opened, ProtocolError, Reply, Request, UnreadList,
+    DEFAULT_SEARCH_HITS, MAX_SEARCH_HITS,
 };
 
 /// How many requests the popover can list. One constant to change.
@@ -36,6 +38,8 @@ pub trait Backend: Send + Sync + 'static {
     fn comments(&self) -> Vec<CommentView>;
     /// Marks a comment done by an agent.
     fn resolve_comment(&self, id: &str, reply: Option<&str>) -> Result<CommentView, CommentError>;
+    /// The folder of the notes, where the notes the person shared are read from (not part of any project).
+    fn notes_folder(&self) -> Option<PathBuf>;
 }
 
 /// What the interface hears about.
@@ -229,10 +233,16 @@ impl Hub {
         lock(&self.state).connections
     }
 
-    fn note(&self, request: &Request) {
+    /// Remembers that an agent asked this, for the popover. `subject` says what it was about when that is not what the request
+    /// names (a note is told by its title, not by its file name).
+    fn note(&self, request: &Request, subject: Option<String>) {
+        self.note_tool(request.tool(), subject.or_else(|| request.subject()));
+    }
+
+    fn note_tool(&self, tool: &str, subject: Option<String>) {
         let record = RequestRecord {
-            tool: request.tool().to_owned(),
-            subject: request.subject(),
+            tool: tool.to_owned(),
+            subject,
             at_ms: now_ms(),
         };
         self.update(|state| {
@@ -246,7 +256,10 @@ impl Hub {
     /// The reply to one request.
     pub fn handle(&self, call: Call) -> Reply {
         let Call { id, request } = call;
-        self.note(&request);
+        // a read of a note is remembered by the note's title, which is known once it was read
+        if !matches!(request, Request::ReadNote { .. }) {
+            self.note(&request, None);
+        }
         match request {
             Request::GetContext => Reply::success(id, json(&self.context())),
             Request::ListUnread => {
@@ -305,6 +318,40 @@ impl Hub {
                 }
                 Err(error) => Reply::failure(id, error),
             },
+            Request::ListNotes => {
+                let shared = self
+                    .backend
+                    .notes_folder()
+                    .map(|root| share::list_shared(&root))
+                    .unwrap_or_default();
+                Reply::success(id, json(&NoteList::new(shared)))
+            }
+            Request::ReadNote { note } => {
+                let read = self
+                    .backend
+                    .notes_folder()
+                    .map(|root| share::read_shared(&root, &note));
+                // the popover tells the note by its title when it was read (and by the name asked for when it was not)
+                let subject = match &read {
+                    Some(Ok(text)) if !text.title.is_empty() => text.title.clone(),
+                    _ => note.trim().to_owned(),
+                };
+                self.note_tool("read_note", Some(subject.chars().take(80).collect()));
+                match read {
+                    Some(Ok(text)) => Reply::success(id, json(&text)),
+                    Some(Err(error @ (ShareError::TooLarge | ShareError::NotText))) => {
+                        Reply::failure(
+                            id,
+                            ProtocolError::new(ErrorKind::Unavailable, error.to_string()),
+                        )
+                    }
+                    // a note that is not shared is a note that is not there: nothing is said of what exists
+                    Some(Err(ShareError::NotShared)) | None => Reply::failure(
+                        id,
+                        ProtocolError::new(ErrorKind::NotFound, ShareError::NotShared.to_string()),
+                    ),
+                }
+            }
         }
     }
 
@@ -338,9 +385,15 @@ pub(crate) mod testing {
         pub opens: AtomicUsize,
         /// How many times the unread list was asked for (counted before it waits for its lock).
         pub unread_asked: AtomicUsize,
+        /// Where the notes are (none until a test makes a folder of notes).
+        pub notes: Mutex<Option<PathBuf>>,
     }
 
     impl Backend for Fake {
+        fn notes_folder(&self) -> Option<PathBuf> {
+            lock(&self.notes).clone()
+        }
+
         fn unread(&self) -> Vec<String> {
             self.unread_asked.fetch_add(1, Ordering::SeqCst);
             lock(&self.unread).clone()
@@ -609,6 +662,104 @@ mod tests {
             },
         ));
         assert_eq!(missing.error.expect("error").kind, ErrorKind::NotFound);
+    }
+
+    /// A folder of notes: `shared one.md` is shared, `private.md` is not.
+    fn notes() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(".trailmark")).expect("mkdir");
+        std::fs::write(
+            dir.path().join("shared one.md"),
+            "# Server IPs\napi 10.0.0.4\n",
+        )
+        .expect("write");
+        std::fs::write(dir.path().join("private.md"), "# Private\n").expect("write");
+        std::fs::write(
+            dir.path().join(".trailmark").join("notes.json"),
+            r#"{"shared": ["shared one.md"]}"#,
+        )
+        .expect("notes.json");
+        dir
+    }
+
+    #[test]
+    fn shared_notes_are_listed_and_read_and_the_popover_tells_the_note_by_its_title() {
+        let (_dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        let notes = notes();
+        *lock(&fake.notes) = Some(notes.path().to_path_buf());
+
+        let reply = hub.handle(call(1, Request::ListNotes));
+        assert!(reply.ok, "{reply:?}");
+        let list = reply.result.expect("a list");
+        assert_eq!(list["total"], 1);
+        assert_eq!(list["notes"][0]["note"], "shared one.md");
+        assert_eq!(list["notes"][0]["title"], "Server IPs");
+
+        let reply = hub.handle(call(
+            2,
+            Request::ReadNote {
+                note: "shared one.md".to_owned(),
+            },
+        ));
+        assert_eq!(
+            reply.result.expect("text")["text"],
+            "# Server IPs\napi 10.0.0.4\n"
+        );
+        let recent = hub.status().recent;
+        assert_eq!(recent[0].tool, "read_note");
+        assert_eq!(recent[0].subject.as_deref(), Some("Server IPs"));
+        assert_eq!(recent[1].tool, "list_notes");
+        assert_eq!(recent[1].subject, None);
+    }
+
+    #[test]
+    fn a_note_that_is_not_shared_is_not_found_whatever_is_true_of_it() {
+        let (_dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        let notes = notes();
+        *lock(&fake.notes) = Some(notes.path().to_path_buf());
+        for name in [
+            "private.md",
+            "nothing.md",
+            "../private.md",
+            ".trailmark/notes.json",
+        ] {
+            let reply = hub.handle(call(
+                1,
+                Request::ReadNote {
+                    note: name.to_owned(),
+                },
+            ));
+            assert!(!reply.ok, "{name}");
+            let error = reply.error.expect("an error");
+            assert_eq!(error.kind, ErrorKind::NotFound, "{name}");
+            assert!(
+                !error.message.contains("private"),
+                "{name}: {}",
+                error.message
+            );
+        }
+        // the popover still says what was asked
+        assert_eq!(
+            hub.status().recent[0].subject.as_deref(),
+            Some(".trailmark/notes.json")
+        );
+    }
+
+    #[test]
+    fn without_a_notes_folder_nothing_is_shared() {
+        let (_dir, vault) = project();
+        let (hub, _fake) = hub(vault);
+        let reply = hub.handle(call(1, Request::ListNotes));
+        assert_eq!(reply.result.expect("a list")["total"], 0);
+        let reply = hub.handle(call(
+            2,
+            Request::ReadNote {
+                note: "shared one.md".to_owned(),
+            },
+        ));
+        assert_eq!(reply.error.expect("an error").kind, ErrorKind::NotFound);
     }
 
     #[test]

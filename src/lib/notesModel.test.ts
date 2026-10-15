@@ -31,6 +31,7 @@ const note = (path: string, modifiedMs: number, extra: Partial<NoteEntry> = {}):
   folder: null,
   missing: false,
   unsaved: false,
+  shared: false,
   ...extra,
 });
 

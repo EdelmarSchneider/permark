@@ -411,7 +411,20 @@ export type NoteEntry = {
   missing: boolean;
   /** A loose file with text that was typed and not saved. */
   unsaved: boolean;
+  /** A note the person shared with agents (see `list_notes` and `read_note` of the agent connection). */
+  shared: boolean;
 };
+/** What the Save dialog starts with when a note is moved into a project. */
+export type MoveSuggestion = {
+  /** Where the dialog opens, with the file name made from the note's title. */
+  defaultPath: string;
+  /** The project it opens in: the one opened last, when it is still there. */
+  folder: string | null;
+};
+/** A note that was moved into a project: where its copy is, the row it became, and how to ask for the note back. */
+export type NoteMoved = { destination: string; file: string; undoId: number | null };
+/** What Undo of a move did: the note that is back, and whether the copy in the project was taken away (not when it was changed). */
+export type MoveUndone = { note: string; removed: boolean };
 /** What opening a file made of it: a note when it is one of the notes folder, else a loose file. `path` is what to open. */
 export type OpenedFile = { kind: "note" | "file"; path: string };
 /** How a loose file looks on disk compared with what was last read: the same, changed since, or gone. */

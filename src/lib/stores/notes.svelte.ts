@@ -176,6 +176,7 @@ class NotesStore {
       folder: null,
       missing: false,
       unsaved: false,
+      shared: false,
     };
   }
 

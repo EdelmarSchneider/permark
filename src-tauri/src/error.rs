@@ -199,6 +199,7 @@ fn notes_details(e: &NotesError) -> Details {
         | NotesError::Unwritable
         | NotesError::UnknownUndo
         | NotesError::NoSuchVersion
+        | NotesError::MoveInside
         | NotesError::NotOpen => Details::default(),
     }
 }

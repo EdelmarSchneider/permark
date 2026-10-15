@@ -326,9 +326,15 @@ struct LiveBackend {
     index: Arc<RwLock<Bm25Index>>,
     unread: Arc<UnreadService>,
     comments: Arc<CommentBook>,
+    /// The data folder of the program: where the person's choice of the notes folder is kept.
+    app_data: PathBuf,
 }
 
 impl Backend for LiveBackend {
+    fn notes_folder(&self) -> Option<PathBuf> {
+        Some(notes::share::notes_root(&self.app_data))
+    }
+
     fn unread(&self) -> Vec<String> {
         self.unread.unread()
     }
@@ -368,6 +374,7 @@ fn agent_bridge(
     unread: &Arc<UnreadService>,
     comments: &Arc<CommentBook>,
     sink: &Arc<dyn EventSink>,
+    app_data: &Path,
 ) -> (AgentBridge, bool) {
     let bridge = AgentBridge::new(
         Arc::clone(vault),
@@ -377,6 +384,7 @@ fn agent_bridge(
             index: Arc::clone(index),
             unread: Arc::clone(unread),
             comments: Arc::clone(comments),
+            app_data: app_data.to_path_buf(),
         }),
         Arc::new(AgentSink(Arc::clone(sink))),
     );
@@ -702,7 +710,15 @@ impl Workspace {
 
         // Started by `activate`, once this folder has replaced the previous one (which must let go of the socket first).
         // The notes never connect to an agent: they are private.
-        let (agent, agent_wanted) = agent_bridge(&vault, &store, &index, &unread, &comments, sink);
+        let (agent, agent_wanted) = agent_bridge(
+            &vault,
+            &store,
+            &index,
+            &unread,
+            &comments,
+            sink,
+            app_data_dir,
+        );
         let agent_wanted = agent_wanted && !notes_kind;
         let notes = notes_kind.then(|| {
             let (service, opened) = NotesService::open(

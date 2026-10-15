@@ -15,7 +15,7 @@
 //! - **Another program** that has the folder open holds a lock; this one then reads and writes nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, Read, Write};
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, UNIX_EPOCH};
@@ -32,7 +32,7 @@ use super::names::{
 };
 use super::pending::PendingStore;
 use super::recover::{parse_temp_name, recoverable_text, recovered_name};
-use super::text::{is_blank, snippet_of, title_of, HEAD_BYTES};
+use super::text::{head_of, is_blank, snippet_of, title_of};
 use crate::edit::{EditError, Editor, SaveOutcome};
 use crate::fileops::Recycler;
 use crate::render::MAX_RENDER_BYTES;
@@ -77,6 +77,8 @@ pub enum NotesError {
     NotAFile(String),
     #[error("{0} is not a text file, so it cannot be listed")]
     BinaryFile(String),
+    #[error("a note cannot be moved into the notes folder")]
+    MoveInside,
 }
 
 impl NotesError {
@@ -98,6 +100,7 @@ impl NotesError {
             Self::NotOpen => "notesNotOpen",
             Self::NotAFile(_) => "notAFile",
             Self::BinaryFile(_) => "binaryFile",
+            Self::MoveInside => "moveInside",
         }
     }
 
@@ -168,6 +171,8 @@ pub struct NoteEntry {
     pub missing: bool,
     /// A loose file with text that was typed and not saved.
     pub unsaved: bool,
+    /// A note the person shared with agents (see [`share`](super::share)).
+    pub shared: bool,
 }
 
 /// The notes of the folder, the pinned ones first in the person's order, then the others by last change.
@@ -242,6 +247,18 @@ struct DeletedNote {
     name: String,
     bytes: Vec<u8>,
     modified_ms: u64,
+    /// It was shared with agents: it is again when it comes back (and never while it is in the bin).
+    shared: bool,
+}
+
+/// A note that was moved into a project: where its copy is, and what that copy was when it was written, so that Undo takes the
+/// copy away only if nobody changed it since.
+struct MovedNote {
+    undo_id: u64,
+    destination: PathBuf,
+    hash: u64,
+    /// The path of the copy in the list of the files.
+    file: String,
 }
 
 struct DeletedBatch {
@@ -258,6 +275,8 @@ struct State {
     next_undo: u64,
     /// How each loose file looked when it was last read here: a file that looks different now changed on disk.
     seen: BTreeMap<String, Stamp>,
+    /// The notes moved into a project lately, for Undo.
+    moves: Vec<MovedNote>,
 }
 
 /// Whether this program may write the notes, and the lock that says so.
@@ -313,25 +332,6 @@ fn scan(root: &Path) -> Vec<Found> {
         .collect()
 }
 
-/// The start of a note's file, which is all a title and a snippet need.
-fn read_head(path: &Path) -> String {
-    let Ok(file) = std::fs::File::open(path) else {
-        return String::new();
-    };
-    let mut bytes = Vec::new();
-    if file
-        .take(HEAD_BYTES as u64)
-        .read_to_end(&mut bytes)
-        .is_err()
-    {
-        return String::new();
-    }
-    if bytes[..bytes.len().min(512)].contains(&0) {
-        return String::new();
-    }
-    String::from_utf8_lossy(&bytes).into_owned()
-}
-
 /// The list of the notes in `root`, using and refreshing the cache of titles in `data`. Returns whether `data` changed.
 fn entries(root: &Path, data: &mut NotesData) -> (Vec<NoteEntry>, bool) {
     let found = scan(root);
@@ -351,7 +351,7 @@ fn entries(root: &Path, data: &mut NotesData) -> (Vec<NoteEntry>, bool) {
             let (title, snippet) = if let Some(cached) = cached {
                 (cached.title.clone(), cached.snippet.clone())
             } else {
-                let head = read_head(&root.join(&file.name));
+                let head = head_of(&root.join(&file.name));
                 let (title, snippet) = (title_of(&head), snippet_of(&head));
                 data.cache.insert(
                     file.name.clone(),
@@ -377,6 +377,7 @@ fn entries(root: &Path, data: &mut NotesData) -> (Vec<NoteEntry>, bool) {
                 folder: None,
                 missing: false,
                 unsaved: false,
+                shared: data.is_shared(&file.name),
             }
         })
         .collect();
@@ -459,6 +460,7 @@ impl NotesService {
                 undo: Vec::new(),
                 next_undo: 1,
                 seen: BTreeMap::new(),
+                moves: Vec::new(),
             }),
         };
         let root = service.root().to_path_buf();
@@ -826,13 +828,21 @@ impl NotesService {
         }
         let mut kept = Vec::new();
         let mut keepable = true;
-        for (name, abs) in &targets {
+        let shared: Vec<bool> = {
+            let state = lock(&self.state);
+            targets
+                .iter()
+                .map(|(name, _)| state.data.is_shared(name))
+                .collect()
+        };
+        for ((name, abs), shared) in targets.iter().zip(shared) {
             let modified = std::fs::metadata(abs).map_or(0, |meta| modified_ms(&meta));
             match read_with_retry(abs) {
                 Ok(bytes) if bytes.len() as u64 <= MAX_RENDER_BYTES => kept.push(DeletedNote {
                     name: name.clone(),
                     bytes,
                     modified_ms: modified,
+                    shared,
                 }),
                 _ => keepable = false,
             }
@@ -852,6 +862,12 @@ impl NotesService {
                 source: io::Error::other(message),
             });
         }
+        // a name that is not a note any more is not shared, whatever is made under it later; Undo shares it again
+        lock(&self.state)
+            .data
+            .shared
+            .retain(|shared| !names.contains(shared));
+        self.persist();
         let undo_id = keepable.then(|| {
             let mut state = lock(&self.state);
             let id = state.next_undo;
@@ -905,8 +921,15 @@ impl NotesService {
                 note.name.clone()
             };
             self.restore_file(&name, &note)?;
+            if note.shared {
+                let mut state = lock(&self.state);
+                if !state.data.is_shared(&name) {
+                    state.data.shared.push(name.clone());
+                }
+            }
             back.push(name);
         }
+        self.persist();
         Ok(back)
     }
 
@@ -982,6 +1005,25 @@ impl NotesService {
             state.data.pins.retain(|pin| *pin != name);
             if pinned {
                 state.data.pins.push(name);
+            }
+        }
+        self.persist();
+        Ok(())
+    }
+
+    /// Shares a note with agents, or stops sharing it (at once: the next question an agent asks does not see it). Only notes can
+    /// be shared, one by one; a loose file never reaches an agent.
+    pub fn set_shared(&self, path: &str, shared: bool) -> Result<(), NotesError> {
+        self.require_writable()?;
+        let (name, abs) = self.resolve_note(path)?;
+        if shared && !abs.is_file() {
+            return Err(VaultError::NotFound(name).into());
+        }
+        {
+            let mut state = lock(&self.state);
+            state.data.shared.retain(|known| *known != name);
+            if shared {
+                state.data.shared.push(name);
             }
         }
         self.persist();
@@ -1135,7 +1177,9 @@ fn modified_of(path: &Path) -> Option<u64> {
 }
 
 mod files;
+mod moving;
 pub use files::{LooseDoc, LooseStatus, OpenedFile};
+pub use moving::{MoveUndone, NoteMoved};
 
 #[cfg(test)]
 mod tests;

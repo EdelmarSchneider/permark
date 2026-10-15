@@ -281,6 +281,12 @@ export const mockImpl: Api = {
   openNotesFolder: async () => {
     console.info("[mock] open the notes folder");
   },
+  setNoteShared: async (path, shared) => mockNotes.setNoteShared(path, shared),
+  moveSuggestion: async (path) => mockNotes.moveSuggestion(path),
+  moveNoteToProject: async (path, destination) => mockNotes.moveNoteToProject(path, destination),
+  undoMoveNote: async (undoId) => mockNotes.undoMoveNote(undoId),
+  openInProject: async (path) => mockNotes.openInProject(path),
+  launchShow: async () => mockNotes.launchShow(),
   classifyPath: async (path) => mockNotes.classifyPath(path),
   openLooseFile: async (path) => mockNotes.openLooseFile(path),
   looseStatus: async () => mockNotes.looseStatus(),
