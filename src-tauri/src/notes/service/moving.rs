@@ -58,6 +58,7 @@ fn write_new(target: &Path, bytes: &[u8]) -> Result<(), NotesError> {
         let _ = std::fs::remove_file(target);
         return Err(NotesError::io(&name, e));
     }
+    crate::util::sync_parent(target);
     Ok(())
 }
 

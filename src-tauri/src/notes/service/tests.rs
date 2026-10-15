@@ -744,6 +744,49 @@ fn a_deleted_note_goes_to_the_bin_and_comes_back_with_its_text_and_its_time() {
 }
 
 #[test]
+fn an_undo_that_cannot_bring_back_every_note_brings_back_the_others_and_keeps_the_rest() {
+    let f = fx();
+    // a batch whose middle note cannot be written back (its folder is not there)
+    let id = {
+        let mut state = lock(&f.service.state);
+        let note = |name: &str| DeletedNote {
+            name: name.to_owned(),
+            bytes: format!("# {name}").into_bytes(),
+            modified_ms: T0,
+            shared: false,
+        };
+        state.undo.push(DeletedBatch {
+            id: 41,
+            notes: vec![note("a.md"), note("nowhere/b.md"), note("c.md")],
+        });
+        41
+    };
+    let back = f.service.undo_delete(id).expect("two of three came back");
+    assert_eq!(back, ["a.md", "c.md"]);
+    assert_eq!(f.read("a.md"), "# a.md");
+    assert_eq!(f.read("c.md"), "# c.md");
+    // the one that could not be written is still in the bin, and asking again tries it again
+    assert_eq!(
+        lock(&f.service.state)
+            .undo
+            .iter()
+            .find(|batch| batch.id == id)
+            .map(|batch| batch.notes.len()),
+        Some(1)
+    );
+    assert!(f.service.undo_delete(id).is_err());
+    assert_eq!(
+        lock(&f.service.state)
+            .undo
+            .iter()
+            .find(|batch| batch.id == id)
+            .map(|batch| batch.notes[0].bytes.clone()),
+        Some(b"# nowhere/b.md".to_vec()),
+        "its text is not lost"
+    );
+}
+
+#[test]
 fn a_note_whose_name_was_taken_meanwhile_comes_back_under_another_name() {
     let f = fx();
     f.write("a.md", "# Mine");

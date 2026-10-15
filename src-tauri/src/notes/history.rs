@@ -216,12 +216,35 @@ impl History {
         }
     }
 
-    /// The versions follow a note that was renamed.
+    /// The versions follow a note that was renamed. When the name it takes has versions of its own (an older note of that name
+    /// was deleted), the two are joined: a version at the very moment of one already there is put a millisecond later, so that
+    /// none is lost and none is left behind.
     pub(crate) fn rename(&self, from: &str, to: &str) {
         let (from, to) = (self.note_dir(from), self.note_dir(to));
-        if from.is_dir() && !to.exists() {
-            let _ = std::fs::rename(from, to);
+        if !from.is_dir() {
+            return;
         }
+        if !to.exists() {
+            let _ = std::fs::rename(&from, &to);
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(&from) else {
+            return;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            let Some(mut moment) = id_of_file(&entry.file_name().to_string_lossy())
+                .as_deref()
+                .and_then(parse_id)
+            else {
+                continue;
+            };
+            while to.join(file_name(&id_of(moment))).exists() {
+                moment += 1;
+            }
+            let _ = std::fs::rename(entry.path(), to.join(file_name(&id_of(moment))));
+        }
+        // only an empty folder is removed; anything else in it is not ours to delete
+        let _ = std::fs::remove_dir(&from);
     }
 }
 
@@ -253,6 +276,50 @@ mod tests {
         cadence.taken("a.md", T0);
         cadence.renamed("a.md", "c.md");
         assert!(cadence.due("a.md", T0 + 1) && !cadence.due("c.md", T0 + 1));
+    }
+
+    #[test]
+    fn the_versions_of_a_renamed_note_follow_it_and_join_those_of_the_name_it_takes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let history = History::new(dir.path());
+        history.snapshot("a.md", b"a one", T0).expect("snapshot");
+        history
+            .snapshot("a.md", b"a two", T0 + MIN)
+            .expect("snapshot");
+        // a name that is free: the folder moves
+        history.rename("a.md", "b.md");
+        assert_eq!(history.versions("a.md"), Vec::<Version>::new());
+        assert_eq!(history.versions("b.md").len(), 2);
+
+        // a name that has versions of its own (an older note of that name was deleted): nothing is left behind or lost, and a
+        // version at the very moment of another is a millisecond later
+        history.snapshot("c.md", b"c one", T0).expect("snapshot");
+        history
+            .snapshot("c.md", b"c three", T0 + 2 * MIN)
+            .expect("snapshot");
+        history.rename("b.md", "c.md");
+        assert_eq!(history.versions("b.md"), Vec::<Version>::new());
+        assert!(!dir
+            .path()
+            .join(".trailmark")
+            .join("history")
+            .join("b.md")
+            .exists());
+        let kept: Vec<Vec<u8>> = history
+            .versions("c.md")
+            .iter()
+            .map(|v| history.read("c.md", &v.id).expect("read"))
+            .collect();
+        assert_eq!(
+            kept,
+            [
+                b"c three".to_vec(),
+                b"a two".to_vec(),
+                // the two written at the same moment: the one that was already there keeps the moment
+                b"a one".to_vec(),
+                b"c one".to_vec()
+            ]
+        );
     }
 
     #[test]

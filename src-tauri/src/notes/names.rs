@@ -94,7 +94,7 @@ pub(crate) fn first_free(stem: &str, separator: &str, taken: impl Fn(&str) -> bo
         .unwrap_or_else(|| numbered(stem, MAX_TRIES + 1, separator))
 }
 
-/// The number of a name made by [`numbered`], from where a search for the next free name can resume.
+/// Whether a file name is a note's: Markdown, by its extension.
 pub(crate) fn is_note_name(name: &str) -> bool {
     Path::new(name)
         .extension()

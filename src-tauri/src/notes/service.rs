@@ -535,11 +535,18 @@ impl NotesService {
 
     /// The notes and the loose files, in the order the list shows them.
     pub fn list(&self) -> NoteList {
-        let (notes, open, changed) = {
+        // The folder and the loose files are read from a copy of the data, with the lock let go: reading a head or looking at a
+        // file on a slow, synced or disconnected disk can take long, and every save and rename waits for the lock.
+        let mut data = lock(&self.state).data.clone();
+        let (mut notes, changed) = entries(self.root(), &mut data);
+        notes.extend(self.loose_entries(&data));
+        sort_entries(&mut notes, &data.pins);
+        let open = {
             let mut state = lock(&self.state);
-            let (mut notes, changed) = entries(self.root(), &mut state.data);
-            notes.extend(self.loose_entries(&state.data));
-            sort_entries(&mut notes, &state.data.pins);
+            if changed {
+                // only the titles that were read are taken back: the rest of the data may have changed meanwhile
+                state.data.cache = data.cache;
+            }
             // the open one is a note or a file that is listed
             let open = state.data.open.clone().and_then(|key| {
                 notes
@@ -550,7 +557,7 @@ impl NotesService {
             if open.is_none() {
                 state.data.open = None;
             }
-            (notes, open, changed)
+            open
         };
         if changed {
             self.persist();
@@ -896,18 +903,23 @@ impl NotesService {
 
     /// Puts back the notes of a deletion, with the text and the modification time they had. A note whose name is taken
     /// again comes back as "{title} (restored)". Returns the names they have now.
+    ///
+    /// Each note is put back on its own: one that cannot be written does not keep the others from coming back, and stays in the
+    /// bin, under the same number, with its text (asking again tries it again). The error is returned only when none came back.
     pub fn undo_delete(&self, undo_id: u64) -> Result<Vec<String>, NotesError> {
         self.require_writable()?;
-        let batch = {
+        let (at, batch) = {
             let mut state = lock(&self.state);
             let at = state
                 .undo
                 .iter()
                 .position(|batch| batch.id == undo_id)
                 .ok_or(NotesError::UnknownUndo)?;
-            state.undo.remove(at)
+            (at, state.undo.remove(at))
         };
         let mut back = Vec::new();
+        let mut left = Vec::new();
+        let mut failure = None;
         for note in batch.notes {
             let stem = note
                 .name
@@ -920,7 +932,11 @@ impl NotesService {
             } else {
                 note.name.clone()
             };
-            self.restore_file(&name, &note)?;
+            if let Err(e) = self.restore_file(&name, &note) {
+                failure.get_or_insert(e);
+                left.push(note);
+                continue;
+            }
             if note.shared {
                 let mut state = lock(&self.state);
                 if !state.data.is_shared(&name) {
@@ -929,8 +945,22 @@ impl NotesService {
             }
             back.push(name);
         }
+        if !left.is_empty() {
+            let mut state = lock(&self.state);
+            let at = at.min(state.undo.len());
+            state.undo.insert(
+                at,
+                DeletedBatch {
+                    id: batch.id,
+                    notes: left,
+                },
+            );
+        }
         self.persist();
-        Ok(back)
+        match failure {
+            Some(e) if back.is_empty() => Err(e),
+            _ => Ok(back),
+        }
     }
 
     /// Writes a deleted note back under `name`, with its old modification time.
@@ -948,7 +978,8 @@ impl NotesService {
                 // the note keeps the place it had in the list
                 let _ = file.set_modified(UNIX_EPOCH + Duration::from_millis(note.modified_ms));
                 Ok(())
-            });
+            })
+            .inspect(|()| crate::util::sync_parent(&abs));
         written.map_err(|e| {
             self.own.retract(name, hash);
             NotesError::io(name, e)

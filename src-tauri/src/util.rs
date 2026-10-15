@@ -234,6 +234,18 @@ fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
     }
 }
 
+/// Makes the name of a file that was just created durable, as far as the system lets this be done: on Unix the folder that holds
+/// it is flushed (the file's own `sync_all` does not cover its entry in the folder, so a power cut could still lose the file);
+/// Windows has no call for it, and the flush of the file is what there is. A failure is ignored: the file is there.
+pub(crate) fn sync_parent(path: &Path) {
+    #[cfg(unix)]
+    if let Some(dir) = path.parent() {
+        sync_directory(dir);
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
 /// Flushes a folder's entries to the disk, as far as the system lets this be done.
 #[cfg(unix)]
 fn sync_directory(dir: &Path) {
@@ -528,6 +540,19 @@ mod tests {
             escape_html("<a href=\"x\">&'</a>"),
             "&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;"
         );
+    }
+
+    #[test]
+    fn syncing_the_folder_of_a_new_file_is_best_effort_and_never_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("new.md");
+        std::fs::write(&file, "x").expect("write");
+        sync_parent(&file);
+        // a file in a folder that is not there, one with no folder part, and the root: nothing to flush, nothing to fail
+        sync_parent(&dir.path().join("gone").join("new.md"));
+        sync_parent(Path::new("new.md"));
+        sync_parent(Path::new("/"));
+        assert_eq!(std::fs::read(&file).expect("read"), b"x");
     }
 
     #[test]

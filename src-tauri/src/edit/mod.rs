@@ -431,6 +431,8 @@ fn write_new_file(abs: &Path, bytes: &[u8]) -> io::Result<()> {
     if written.is_err() {
         drop(file);
         let _ = std::fs::remove_file(abs);
+    } else {
+        crate::util::sync_parent(abs);
     }
     written
 }
