@@ -23,6 +23,7 @@
   import { session } from "../stores/session.svelte";
   import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { clock as formatClock } from "../time";
   import type { DocumentView } from "../types";
@@ -460,6 +461,8 @@
     frame = requestAnimationFrame(() => {
       frame = 0;
       if (scroller) docs.noteScroll(scroller.scrollTop);
+      // scrolling the reader did by hand counts as reading; a scroll the app made (a restored position) does not
+      if (userScrolled) unread.scrolled();
       updateCurrent();
     });
   }

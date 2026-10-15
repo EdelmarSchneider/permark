@@ -15,11 +15,13 @@
   import { docs } from "../stores/docs.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { badgeFor } from "../tree";
   import type { TagCount } from "../types";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
+  import UnreadDot from "./UnreadDot.svelte";
 
   type Row = { kind: "tag"; tag: TagCount } | { kind: "untagged"; count: number };
 
@@ -354,6 +356,7 @@
             >
               <div class="tag-file__line">
                 <Icon name={isMarkdown(file.path) ? "file-text" : "file"} size="sm" />
+                {#if unread.isUnread(file.path)}<UnreadDot />{/if}
                 <span class="tag-file__name">{basename(file.path)}</span>
                 <span class="tag-file__folder">{folder === "" ? t("feed.root") : folder}</span>
                 {#if badge}

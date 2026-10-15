@@ -189,6 +189,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Cycle the reading width | `Ctrl+Alt+W` |
 | Toggle left / right panel | `Ctrl+B` / `Ctrl+Alt+B` |
 | Next / previous change | `F7` / `Shift+F7` |
+| Next unread document | `Alt+U` |
 | Follow mode | `Ctrl+Shift+L` |
 | Back / forward | `Alt+←` / `Alt+→` |
 | Copy reference (or selection with reference) | `Ctrl+Alt+C` |

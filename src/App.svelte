@@ -21,7 +21,9 @@
   import { fileops } from "./lib/stores/fileops.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
+  import { unread } from "./lib/stores/unread.svelte";
   import { updates } from "./lib/stores/updates.svelte";
+  import { vault } from "./lib/stores/vault.svelte";
 
   type MockPanel = typeof import("./lib/mock/MockControls.svelte").default;
   let MockControls = $state<MockPanel | null>(null);
@@ -42,6 +44,15 @@
       shownLocale = locale;
       docs.rerender();
     });
+  });
+
+  // The reading rule needs the Markdown document on show and whether its reading view is up (not the editor, not
+  // a tombstone); the stores below tell it when the window has the focus and when the person scrolls.
+  $effect(() => {
+    const view = docs.current;
+    const onShow =
+      app.screen === "project" && !vault.isSimple && view?.kind === "markdown" ? view.path : null;
+    unread.watch(onShow, !docs.editing && !edit.active && docs.deleted === null);
   });
 
   onMount(() => {

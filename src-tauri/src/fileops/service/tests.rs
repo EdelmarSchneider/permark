@@ -7,15 +7,21 @@ use super::*;
 use crate::vault::Worktree;
 use crate::watch::{ChangeKind, FileSig, FsChange, SigStore};
 
-/// Records the renames the service reports to what follows them.
+/// Records the renames and rewrites the service reports to what follows them.
 #[derive(Default)]
 struct Recorder {
     renamed: Mutex<Vec<(String, String, bool)>>,
+    /// (path, hash before, hash after)
+    rewritten: Mutex<Vec<(String, String, String)>>,
 }
 
 impl Followers for Recorder {
     fn renamed(&self, from: &str, to: &str, is_dir: bool) {
         lock(&self.renamed).push((from.to_owned(), to.to_owned(), is_dir));
+    }
+
+    fn rewritten(&self, path: &str, old_hash: &str, new_hash: &str) {
+        lock(&self.rewritten).push((path.to_owned(), old_hash.to_owned(), new_hash.to_owned()));
     }
 }
 
@@ -163,6 +169,63 @@ fn renaming_a_file_moves_it_and_rewrites_the_links_to_it() {
             false
         )]
     );
+}
+
+#[test]
+fn the_followers_hear_which_documents_were_rewritten_and_from_what_to_what() {
+    let fx = Fx::new(&WIKI);
+    let readme_before = fx.read("README.md");
+    let outcome = fx.mv("docs/guide.md", "docs/manual.md");
+    assert_eq!(
+        *lock(&fx.followers.rewritten),
+        [(
+            "README.md".to_owned(),
+            hash_hex(readme_before.as_bytes()),
+            hash_hex(fx.read("README.md").as_bytes())
+        )]
+    );
+    // an undo puts the links back, and that is heard the other way round
+    let readme_moved = fx.read("README.md");
+    fx.svc.undo(outcome.op_id).expect("undo");
+    let heard = lock(&fx.followers.rewritten).clone();
+    assert_eq!(
+        heard[1],
+        (
+            "README.md".to_owned(),
+            hash_hex(readme_moved.as_bytes()),
+            hash_hex(readme_before.as_bytes())
+        )
+    );
+}
+
+#[test]
+fn a_moved_document_whose_links_changed_is_reported_where_it_is_now() {
+    let fx = Fx::new(&WIKI);
+    fs::create_dir_all(fx.path("archive/old")).expect("mkdir");
+    let before = fx.read("docs/guide.md");
+    fx.mv("docs/guide.md", "archive/old/guide.md");
+    let heard = lock(&fx.followers.rewritten).clone();
+    let moved = heard
+        .iter()
+        .find(|(path, _, _)| path == "archive/old/guide.md")
+        .expect("heard");
+    assert_eq!(moved.1, hash_hex(before.as_bytes()));
+    assert_eq!(
+        moved.2,
+        hash_hex(fx.read("archive/old/guide.md").as_bytes())
+    );
+}
+
+#[test]
+fn a_move_that_changes_no_links_reports_no_rewrites() {
+    let fx = Fx::new(&WIKI);
+    fx.mv("docs/api.md", "docs/api2.md");
+    // guide.md linked to it, so that one is rewritten; the move of an unlinked file rewrites nothing
+    let heard = lock(&fx.followers.rewritten).len();
+    assert_eq!(heard, 1);
+    let fx = Fx::new(&[("a.md", "# A\n"), ("b.md", "# B\n")]);
+    fx.mv("a.md", "c.md");
+    assert!(lock(&fx.followers.rewritten).is_empty());
 }
 
 #[test]

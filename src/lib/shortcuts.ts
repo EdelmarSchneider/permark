@@ -25,6 +25,7 @@ export const SHORTCUT_ACTIONS = [
   "forward",
   "nextChange",
   "prevChange",
+  "nextUnread",
   "toggleFollow",
   "copyReference",
   "copyPath",
@@ -78,6 +79,7 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
   if (!mod && !shift && alt) {
     if (key === "ArrowLeft") return "back";
     if (key === "ArrowRight") return "forward";
+    if (key === "u") return "nextUnread";
   }
   if (!mod && !alt && key === "F7") return shift ? "prevChange" : "nextChange";
   // A plain letter: the caller leaves it alone while the user is typing in a field or an overlay is open.

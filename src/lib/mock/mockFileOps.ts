@@ -4,6 +4,7 @@
 
 import { dirname, basename } from "../paths";
 import { isInside } from "../fileOps";
+import { noteGone, noteMoved } from "./mockUnread";
 import type {
   BufferText,
   CreatedFolder,
@@ -215,6 +216,7 @@ export async function applyMove(
       links += f.edits.length;
     }
   }
+  noteMoved(plan.moves);
   const id = ++counter;
   operations.push({ id, moves: plan.moves, rewrites, folders: [] });
   return {
@@ -232,6 +234,7 @@ export async function deleteEntries(paths: string[]): Promise<DeleteOutcome> {
   for (const path of paths) {
     for (const doc of allDocPaths().filter((p) => isInside(p, path))) mockState.deleted.add(doc);
     mockFiles.folders.delete(path);
+    noteGone(path);
   }
   return { deleted: paths };
 }
@@ -267,6 +270,7 @@ export async function undoFileOp(opId: number): Promise<UndoOutcome> {
       mockFiles.folders.add(m.to);
     }
   }
+  noteMoved(back);
   let removed = 0;
   for (const f of op.folders) removed += mockFiles.folders.delete(f) ? 1 : 0;
   return {

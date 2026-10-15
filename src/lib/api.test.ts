@@ -65,6 +65,11 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   deleteEntries: [["docs/a.md"]],
   newFolder: ["docs/new"],
   undoFileOp: [3],
+  getUnread: [],
+  markRead: ["docs/a.md"],
+  markUnread: ["docs/a.md"],
+  markAllRead: [],
+  markFolderRead: ["docs"],
 };
 
 describe("tauriApi", () => {

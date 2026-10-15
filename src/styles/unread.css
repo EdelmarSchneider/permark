@@ -1,0 +1,20 @@
+/* Unread markers: a small accent dot before a name, and a heavier name on a folder that holds something unread.
+   The accent is what the app uses for "something changed", which is what unread means. */
+.unread-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* In the tree, a file's dot sits in the slot a folder keeps for its twisty, so the names stay in one column. */
+.tree-row .twisty-space {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.tree-row--dir.has-unread .tree-name {
+  font-weight: 600;
+}

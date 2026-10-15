@@ -38,6 +38,7 @@ describe("matchShortcut", () => {
     ["Ctrl+F", ctrl("f"), "find"],
     ["Alt+Left", press("ArrowLeft", { altKey: true }), "back"],
     ["Alt+Right", press("ArrowRight", { altKey: true }), "forward"],
+    ["Alt+U", press("u", { altKey: true }), "nextUnread"],
     ["F7", press("F7"), "nextChange"],
     ["Shift+F7", press("F7", { shiftKey: true }), "prevChange"],
     ["Ctrl+Shift+L", ctrl("L", { shiftKey: true }), "toggleFollow"],
@@ -63,6 +64,13 @@ describe("matchShortcut", () => {
   it("uses the physical key when Alt changes the character (macOS)", () => {
     expect(matchShortcut(ctrl("ç", { altKey: true }, "KeyC"))).toBe("copyReference");
     expect(matchShortcut(ctrl("ø", { altKey: true }, "KeyO"))).toBe("toggleOutline");
+  });
+
+  it("finds Alt+U by the physical key where Option changes the character (macOS), and leaves AltGr+U alone", () => {
+    expect(matchShortcut(press("¨", { altKey: true }, "KeyU"))).toBe("nextUnread");
+    expect(matchShortcut(ctrl("ü", { altKey: true }, "KeyU"))).toBeNull();
+    expect(matchShortcut(press("U", { altKey: true, shiftKey: true }))).toBeNull();
+    expect(matchShortcut(press("u"))).toBeNull();
   });
 
   it("treats Cmd like Ctrl", () => {

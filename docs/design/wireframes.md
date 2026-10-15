@@ -419,6 +419,7 @@ Since last visit header reads "By file times, since Mon 18:40".
 | Find in page | Ctrl+F, Enter, Shift+Enter, Esc | |
 | Back / forward | Alt+Left / Alt+Right, mouse 4/5 | |
 | Next / previous changed block | F7 / Shift+F7 | Includes removed markers |
+| Next unread document | Alt+U | The live feed first, newest first, then the tree (v0.3 section 2) |
 | Toggle Follow | Ctrl+Shift+L | |
 | Copy reference (or selection with reference) | Ctrl+Alt+C | Context-aware |
 | Copy path | Shift+Alt+C | VS Code parity |

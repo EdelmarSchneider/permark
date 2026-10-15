@@ -7,11 +7,13 @@
   import { docs } from "../stores/docs.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { baselineLabel } from "../time";
   import { badgeFor } from "../tree";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
+  import UnreadDot from "./UnreadDot.svelte";
 
   const SECTION = "since";
   const since = $derived(vault.since);
@@ -100,6 +102,7 @@
             }}
           >
             <Icon name="file-text" class="file-icon" />
+            {#if unread.isUnread(file.path)}<UnreadDot />{/if}
             <span class="tree-name">{file.name}</span>
             {#if badge}
               <span class={["badge", badge.className]} title={gitStateLabel(badge.state)}

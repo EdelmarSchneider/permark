@@ -21,6 +21,7 @@
   import { filter } from "../stores/filter.svelte";
   import { ui } from "../stores/ui.svelte";
   import { tags } from "../stores/tags.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { treeTooltip } from "../tagModel";
   import { badgeFor, flattenTree, navigate, typeahead } from "../tree";
@@ -29,6 +30,7 @@
   import Menu, { type MenuEntry } from "./Menu.svelte";
   import TreeEntryInput from "./TreeEntryInput.svelte";
   import TreeNameInput from "./TreeNameInput.svelte";
+  import UnreadDot from "./UnreadDot.svelte";
 
   type Props = {
     nodes: TreeNode[];
@@ -274,6 +276,17 @@
         onselect: () => void fileops.remove(targets),
       },
       { type: "separator" },
+      ...(isFile
+        ? []
+        : ([
+            {
+              id: "markRead",
+              label: t("unread.markFolderRead"),
+              disabled: unread.inFolder(node.path) === 0,
+              onselect: () => void unread.markFolderRead(node.path),
+            },
+            { type: "separator" },
+          ] satisfies MenuEntry[])),
       {
         id: "path",
         label: t("menu.copyPath"),
@@ -370,6 +383,8 @@
       row.node.kind === "worktree" ? vault.worktree(row.node.name)?.branch : undefined}
     {@const isPicked = picked?.has(row.node.path) === true}
     {@const renaming = fileops.renaming?.path === row.node.path}
+    {@const unreadIn = row.isDir ? unread.inFolder(row.node.path) : 0}
+    {@const isUnread = !row.isDir && unread.isUnread(row.node.path)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       id="{label}-row-{i}"
@@ -382,6 +397,7 @@
         fileops.drag?.sources.includes(row.node.path) && "is-dragged",
         row.isDir && fileops.drag?.over === row.node.path && "is-drop-target",
         renaming && "tree-row--renaming",
+        unreadIn > 0 && "has-unread",
         filter.forced.has(row.node.path) && "is-filtered",
         hasFocus && focusIndex === i && "is-focused",
         git?.state === "deleted" && "is-deleted",
@@ -401,7 +417,9 @@
         : row.node.kind === "worktree"
           ? row.node.path
           : row.isDir
-            ? undefined
+            ? unreadIn > 0
+              ? tn("unread.folderCount", unreadIn)
+              : undefined
             : filter.forced.has(row.node.path)
               ? t("filter.hiddenFile")
               : treeTooltip(row.node.path, tags.index.get(row.node.path), (list) =>
@@ -419,13 +437,14 @@
       {#if row.isDir}
         <Icon name="chevron-down" size="sm" class="twisty" />
       {:else}
-        <span class="twisty-space"></span>
+        <span class="twisty-space">{#if isUnread}<UnreadDot />{/if}</span>
       {/if}
       {#if row.node.kind === "worktree"}
         <Icon name="fork" size="sm" />
       {:else if !row.isDir}
         <Icon name={isMarkdown(row.node.path) ? "file-text" : "file"} class="file-icon" />
       {/if}
+      {#if unreadIn > 0}<UnreadDot label={tn("unread.folderCount", unreadIn)} />{/if}
       {#if renaming && fileops.renaming}
         {#key fileops.renaming.n}
           <TreeEntryInput variant="rename" path={row.node.path} isDir={row.isDir} />

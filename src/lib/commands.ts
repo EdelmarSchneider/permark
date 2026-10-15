@@ -17,6 +17,10 @@ export type MenuAction =
   | "checkUpdates"
   | "newFolder"
   | "collapseAll"
+  | "markAllRead"
+  | "showOnlyUnread"
+  | "markFolderRead"
+  | "markUnread"
   | "revealInTree"
   | "baselineLastVisit"
   | "baselineCommit"
@@ -40,6 +44,8 @@ export type CommandContext = {
   stateInProject: boolean;
   /** The project is a git repository that can be read. */
   hasRepo: boolean;
+  /** Some document is unread. */
+  hasUnread: boolean;
 };
 
 export type Command = {
@@ -66,6 +72,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "openFile", label: "cmd.openFile", shortcut: "Ctrl+Shift+O" },
   { id: "quickOpen", label: "cmd.quickOpen", shortcut: "Ctrl+P", available: inFolder },
   { id: "searchAll", label: "cmd.searchAll", shortcut: "Ctrl+Shift+F", available: inFolder },
+  { id: "nextUnread", label: "cmd.nextUnread", shortcut: "Alt+U", available: inFolder },
   { id: "back", label: "cmd.back", shortcut: "Alt+←", available: (ctx) => ctx.canBack },
   { id: "forward", label: "cmd.forward", shortcut: "Alt+→", available: (ctx) => ctx.canForward },
 
@@ -110,9 +117,13 @@ export const COMMANDS: readonly Command[] = [
   { id: "copyPath", label: "cmd.copyPath", shortcut: "Shift+Alt+C", available: withDoc },
   { id: "openExternal", label: "cmd.openExternal", shortcut: "Ctrl+Shift+E", available: withDoc },
   { id: "revealInTree", label: "cmd.revealInTree", available: (ctx) => ctx.ide && ctx.hasDoc },
+  { id: "markUnread", label: "cmd.markUnread", available: (ctx) => ctx.ide && ctx.hasDoc },
 
   { id: "newFolder", label: "cmd.newFolder", available: inFolder },
   { id: "collapseAll", label: "cmd.collapseAll", available: inFolder },
+  { id: "markAllRead", label: "cmd.markAllRead", available: (ctx) => ctx.ide && ctx.hasUnread },
+  { id: "markFolderRead", label: "cmd.markFolderRead", available: (ctx) => ctx.ide && ctx.hasUnread },
+  { id: "showOnlyUnread", label: "cmd.showOnlyUnread", available: inFolder },
   {
     id: "baselineLastVisit",
     label: "cmd.baselineLastVisit",

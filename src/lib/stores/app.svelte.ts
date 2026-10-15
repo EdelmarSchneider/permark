@@ -18,6 +18,7 @@ import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
 import type { CommandAction } from "../commands";
 import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
+import { batchTouches, nextUnread } from "../unread";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import { normalizeTreeFilter, treeLoadOf } from "../treeFilter";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
@@ -34,6 +35,7 @@ import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
 import { ui } from "./ui.svelte";
+import { unread } from "./unread.svelte";
 import { updates } from "./updates.svelte";
 import { vault } from "./vault.svelte";
 
@@ -77,6 +79,13 @@ class AppStore {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") void session.flush();
     });
+    // a document counts as read only in a window the person is looking at
+    const noteFocus = (): void =>
+      unread.setFocused(document.hasFocus() && document.visibilityState === "visible");
+    window.addEventListener("focus", noteFocus);
+    window.addEventListener("blur", noteFocus);
+    document.addEventListener("visibilitychange", noteFocus);
+    noteFocus();
     this.unlisten.push(
       await watchFileDrop({
         over: (count) => {
@@ -189,6 +198,7 @@ class AppStore {
       search.reset();
       tags.reset();
       toast.clear();
+      unread.reset();
       vault.reset();
       ui.followChip = null;
       ui.find.open = false;
@@ -221,6 +231,7 @@ class AppStore {
       if (info.mode === "ide") {
         void tags.refreshIndex();
         void vault.refreshImageRefs();
+        void unread.refresh();
       }
       const restored = session.load(stored);
       this.screen = "project";
@@ -272,6 +283,9 @@ class AppStore {
       await api.on("image-refs-changed", () => {
         if (this.screen === "project" && !vault.isSimple) void vault.refreshImageRefs();
       }),
+      await api.on("unread-changed", (paths) => {
+        if (this.screen === "project" && !vault.isSimple) unread.onChanged(paths);
+      }),
       await api.on("open-path", (path) => void this.openProject(path)),
     );
   }
@@ -313,6 +327,7 @@ class AppStore {
       }
     }
     docs.handleBatch(batch, session.follow);
+    if (docs.path !== null && batchTouches(batch, docs.path)) unread.contentChanged(docs.path);
 
     if (update.bulk !== null) return;
     for (const file of update.files) {
@@ -405,6 +420,23 @@ class AppStore {
       case "missing":
         return { missing: target.path };
     }
+  }
+
+  // ---- unread ----------------------------------------------------------------------------------------
+
+  /** Alt+U: opens the next unread document (the live feed first, newest first, then the tree), or says there is none. */
+  async openNextUnread(): Promise<void> {
+    const next = nextUnread({
+      unread: unread.set,
+      feed: feed.entries.flatMap((entry) => (entry.type === "file" ? [entry.path] : [])),
+      tree: vault.files,
+      current: docs.path,
+    });
+    if (next === null) {
+      toast.message(t("unread.allCaughtUp"), "info");
+      return;
+    }
+    await this.openDoc(next);
   }
 
   // ---- new file -------------------------------------------------------------------------------------
@@ -775,6 +807,25 @@ class AppStore {
         return bridge.jumpChange?.(1);
       case "prevChange":
         return bridge.jumpChange?.(-1);
+      case "nextUnread":
+        if (ide) void this.openNextUnread();
+        return;
+      case "markAllRead":
+        if (ide) void unread.markAllRead();
+        return;
+      case "showOnlyUnread":
+        if (!ide) return;
+        this.openExplorerPanel();
+        return unread.toggleOnlyUnread();
+      case "markFolderRead": {
+        if (!ide) return;
+        // the folder the tree cursor is in, else the open document's
+        const folder = targetFolder(ui.treeCursor, docs.path);
+        return void (folder === "" ? unread.markAllRead() : unread.markFolderRead(folder));
+      }
+      case "markUnread":
+        if (ide && docs.path) void unread.markUnread(docs.path, true);
+        return;
       case "toggleFollow":
         if (ide) this.toggleFollow();
         return;

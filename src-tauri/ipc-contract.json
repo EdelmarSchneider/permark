@@ -46,7 +46,12 @@
     "apply_move": ["plan_id", "update_links", "buffers"],
     "delete_entries": ["paths"],
     "new_folder": ["path"],
-    "undo_file_op": ["op_id"]
+    "undo_file_op": ["op_id"],
+    "get_unread": [],
+    "mark_read": ["path"],
+    "mark_unread": ["path"],
+    "mark_all_read": [],
+    "mark_folder_read": ["path"]
   },
-  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "open-path"]
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path"]
 }

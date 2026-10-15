@@ -54,6 +54,7 @@ const IDLE: CommandContext = {
   hasChanges: false,
   stateInProject: false,
   hasRepo: false,
+  hasUnread: false,
 };
 const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
 
@@ -203,7 +204,8 @@ describe("matchCommands", () => {
   it("ranks a shorter label first, and keeps the registry order between equal ones", () => {
     expect(ids("zoom")).toEqual(["zoomIn", "zoomOut", "zoomReset"]);
     const same: CommandLabels = { current: () => "Go there", english: () => "Go there" };
-    const two = [COMMANDS[5], COMMANDS[2]];
+    const command = (id: string): Command => COMMANDS.find((c) => c.id === id) as Command;
+    const two = [command("forward"), command("quickOpen")];
     expect(matchCommands("go", two, same).map((m) => m.command.id)).toEqual([
       "forward",
       "quickOpen",
