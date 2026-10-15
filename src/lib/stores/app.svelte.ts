@@ -287,6 +287,9 @@ class AppStore {
         if (this.screen === "project" && !vault.isSimple) unread.onChanged(paths);
       }),
       await api.on("open-path", (path) => void this.openProject(path)),
+      await api.on("show-in-project", (path) => {
+        if (this.screen === "project" && !vault.isSimple) void this.openDoc(path);
+      }),
     );
   }
 

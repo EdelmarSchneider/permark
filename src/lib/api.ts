@@ -47,6 +47,8 @@ export type EventMap = {
   "unread-changed": string[];
   /** The system asked this window (which shows no project) to open a file or folder (macOS: Finder, the Dock icon). */
   "open-path": string;
+  /** The system asked for a file of the project this window shows (macOS: Finder): its path in the project. */
+  "show-in-project": string;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
