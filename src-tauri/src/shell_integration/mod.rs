@@ -103,6 +103,7 @@ pub fn set_association(_enabled: bool, _locale: &str) -> Result<ShellState, Shel
 }
 
 #[cfg(not(windows))]
+#[allow(clippy::unnecessary_wraps)] // Same signature as the Windows version.
 pub fn refresh_labels(_locale: &str) -> Result<(), ShellError> {
     Ok(())
 }
