@@ -935,8 +935,6 @@ mod tests {
     /// the file is not written around it.
     #[tokio::test]
     async fn a_window_that_does_not_answer_is_not_written_around() {
-        use interprocess::local_socket::traits::tokio::Listener as _;
-
         let fx = fx();
         fx.set_connection(true);
         let book = notebook(&fx);

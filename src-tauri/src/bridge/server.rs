@@ -8,14 +8,14 @@ use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use interprocess::local_socket::tokio::{Listener, Stream};
-use interprocess::local_socket::traits::tokio::{Listener as _, Stream as _};
+use interprocess::local_socket::tokio::Stream;
+use interprocess::local_socket::traits::tokio::Stream as _;
 use tokio::io::BufReader;
 use tokio::sync::oneshot;
 
 use super::hub::Hub;
 use super::protocol::{read_line, write_line, Call, MAX_REQUEST_BYTES};
-use super::socket::{Endpoint, ListenError};
+use super::socket::{Endpoint, ListenError, Listening};
 
 /// More connections than this are turned away. An agent holds one; this leaves room for hooks and several agents.
 const MAX_CONNECTIONS: usize = 16;
@@ -111,7 +111,7 @@ impl Drop for BridgeServer {
     }
 }
 
-async fn accept_loop(listener: Listener, hub: Arc<Hub>, mut stopped: oneshot::Receiver<()>) {
+async fn accept_loop(listener: Listening, hub: Arc<Hub>, mut stopped: oneshot::Receiver<()>) {
     loop {
         tokio::select! {
             _ = &mut stopped => break,

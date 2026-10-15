@@ -365,13 +365,17 @@ mod tests {
             fx.fake.clone(),
         );
         let status = other.set_enabled(true);
-        if cfg!(windows) {
-            // A named pipe name is exclusive; elsewhere the newer listener replaces a leftover socket file.
-            assert!(status.enabled && !status.listening, "{status:?}");
-            assert!(status.error.is_some());
-        }
-        fx.bridge.shutdown();
+        // the person's choice stands, and the status says why nothing listens
+        assert!(status.enabled && !status.listening, "{status:?}");
+        assert!(status.error.is_some());
+        // the first window still answers, also after the second one closed
+        let link = link(&fx);
+        assert!(link.call(Request::GetContext).await.is_ok());
         other.shutdown();
+        drop(other);
+        assert!(link.call(Request::GetContext).await.is_ok());
+        assert_eq!(fx.bridge.status().connections, 1);
+        fx.bridge.shutdown();
     }
 
     #[test]
