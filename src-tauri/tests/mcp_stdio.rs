@@ -197,6 +197,66 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
 }
 
 #[test]
+fn review_notes_are_listed_and_resolved_in_the_projects_files_without_a_window() {
+    let project = project(Some(true));
+    let notes = project.path().join(".trailmark/local/notes.json");
+    std::fs::write(
+        &notes,
+        json!({ "version": 1, "notes": [{
+            "id": "n00000001",
+            "path": "docs/plan.md",
+            "text": "Which beacon?",
+            "anchor": {
+                "quote": "Ship the beacon",
+                "headingPath": ["Plan", "Rollout"],
+                "line": 1,
+                "endLine": 1
+            },
+            "createdMs": 1_760_520_600_000_u64,
+            "done": null
+        }]})
+        .to_string(),
+    )
+    .expect("a note");
+    let mut session = Session::start(project.path());
+
+    // the passage is found again in the document, which is not where the note remembers it
+    let (listed, is_error) = session.call("list_notes", &json!({}));
+    assert!(!is_error, "{listed}");
+    assert_eq!(listed["status"], "ok");
+    assert_eq!(listed["source"], "files");
+    assert_eq!(listed["total"], 1);
+    let note = &listed["notes"][0];
+    assert_eq!(note["id"], "n00000001");
+    assert_eq!(note["text"], "Which beacon?");
+    assert_eq!(note["state"], "anchored");
+    assert_eq!(note["line"], 7);
+    assert_eq!(note["created"], "2025-10-15T09:30:00Z");
+
+    let (resolved, is_error) = session.call(
+        "resolve_note",
+        &json!({ "id": "n00000001", "reply": "Named it" }),
+    );
+    assert!(!is_error, "{resolved}");
+    assert_eq!(resolved["note"]["done"], true);
+    assert_eq!(resolved["note"]["reply"], "Named it");
+
+    let (open, _) = session.call("list_notes", &json!({}));
+    assert_eq!(open["total"], 0);
+    let (done, _) = session.call("list_notes", &json!({ "which": "done" }));
+    assert_eq!(done["notes"][0]["doneBy"], "agent");
+
+    let (missing, is_error) = session.call("resolve_note", &json!({ "id": "n99999999" }));
+    assert!(is_error, "{missing}");
+    assert_eq!(missing["status"], "error");
+    assert!(session.finish().success());
+
+    // what the agent wrote is in the file the window reads
+    let kept = std::fs::read_to_string(notes).expect("the notes file");
+    assert!(kept.contains("Named it"), "{kept}");
+}
+
+#[test]
 fn with_the_connection_off_every_tool_says_how_to_turn_it_on() {
     for connection in [None, Some(false)] {
         let project = project(connection);
@@ -206,6 +266,8 @@ fn with_the_connection_off_every_tool_says_how_to_turn_it_on() {
             ("list_unread", json!({})),
             ("search", json!({ "query": "beacon" })),
             ("open", json!({ "path": "docs/plan.md" })),
+            ("list_notes", json!({})),
+            ("resolve_note", json!({ "id": "n00000001" })),
         ] {
             let (answer, is_error) = session.call(tool, &arguments);
             assert!(!is_error, "{tool}: {answer}");
