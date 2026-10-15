@@ -343,6 +343,11 @@ fn entries(root: &Path, data: &mut NotesData) -> (Vec<NoteEntry>, bool) {
     let before = data.cache.len();
     data.cache.retain(|name, _| present.contains(name.as_str()));
     changed |= data.cache.len() != before;
+    // A note that is gone (deleted or renamed by another program) is not shared any more: a note that later takes its name must
+    // not be.
+    let shared = data.shared.len();
+    data.shared.retain(|name| present.contains(name.as_str()));
+    changed |= data.shared.len() != shared;
 
     let mut notes: Vec<NoteEntry> = found
         .iter()
@@ -541,14 +546,20 @@ impl NotesService {
         // The folder and the loose files are read from a copy of the data, with the lock let go: reading a head or looking at a
         // file on a slow, synced or disconnected disk can take long, and every save and rename waits for the lock.
         let mut data = lock(&self.state).data.clone();
+        let shared = data.shared.clone();
         let (mut notes, changed) = entries(self.root(), &mut data);
         notes.extend(self.loose_entries(&data));
         sort_entries(&mut notes, &data.pins);
         let open = {
             let mut state = lock(&self.state);
             if changed {
-                // only the titles that were read are taken back: the rest of the data may have changed meanwhile
+                // only the titles that were read, and the names of the notes that are gone, are taken back: the rest of the data
+                // may have changed meanwhile
                 state.data.cache = data.cache;
+                state
+                    .data
+                    .shared
+                    .retain(|name| data.shared.contains(name) || !shared.contains(name));
             }
             // the open one is a note or a file that is listed
             let open = state.data.open.clone().and_then(|key| {
@@ -669,6 +680,9 @@ impl NotesService {
                     let mut state = lock(&self.state);
                     state.reserved.remove(name);
                     state.cadence.taken(&created.path, now_ms);
+                    // a new note is not shared, whatever name it took
+                    drop(state);
+                    self.forget_sharing(&created.path);
                     return Ok(NoteSaved::Saved {
                         path: created.path,
                         hash: created.hash,
@@ -684,6 +698,20 @@ impl NotesService {
             }
         }
         Err(NotesError::Exists(name.to_owned()))
+    }
+
+    /// A file was just made under `name`: it is a new note, not the one that was shared under that name (a name outlives its
+    /// note when another program deleted it), so it is not shared, in the file an agent reads as well.
+    fn forget_sharing(&self, name: &str) {
+        let was_shared = {
+            let mut state = lock(&self.state);
+            let was = state.data.is_shared(name);
+            state.data.unshare(name);
+            was
+        };
+        if was_shared {
+            self.persist();
+        }
     }
 
     /// Keeps `text`, which could not be saved over the note `name` because the note is not what the editor started from,
@@ -704,7 +732,10 @@ impl NotesService {
         for _ in 0..MAX_TRIES {
             let wanted = first_free(stem, " ", |candidate| self.root().join(candidate).exists());
             match self.editor().create(&wanted, text) {
-                Ok(created) => return Ok(created.path),
+                Ok(created) => {
+                    self.forget_sharing(&created.path);
+                    return Ok(created.path);
+                }
                 Err(EditError::Exists(_)) => {}
                 Err(e) => return Err(e.into()),
             }

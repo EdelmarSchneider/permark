@@ -277,7 +277,9 @@ impl NotesData {
         if let Some(copied) = self.copied.remove(from) {
             self.copied.insert(to.to_owned(), copied);
         }
-        // a note the person shared stays shared when they give it a name
+        // A note the person shared stays shared when they give it a name, and only that one: the name it takes was shared for a
+        // note that is gone (or never was), so it is not carried over to the note that took it.
+        self.shared.retain(|name| name != to);
         for name in &mut self.shared {
             if name == from {
                 to.clone_into(name);
@@ -305,6 +307,11 @@ impl NotesData {
 
     pub(crate) fn is_shared(&self, name: &str) -> bool {
         self.shared.iter().any(|shared| shared == name)
+    }
+
+    /// Stops sharing the note named `name` (a note made or taken under a name is not the note that was shared by it).
+    pub(crate) fn unshare(&mut self, name: &str) {
+        self.shared.retain(|shared| shared != name);
     }
 
     /// Forgets what is kept under the key of a loose file that is not listed any more.

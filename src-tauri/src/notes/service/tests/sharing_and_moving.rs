@@ -207,6 +207,67 @@ fn a_change_of_sharing_that_could_not_be_written_is_an_error_and_does_not_happen
 }
 
 #[test]
+fn a_shared_name_does_not_outlive_its_note_when_the_note_is_deleted_from_outside() {
+    let f = fx();
+    let shared = f.new_note("# Shared\n");
+    f.service.set_shared(&shared, true).expect("share");
+    // Explorer, a sync client or an agent deletes the file while the window is open
+    fs::remove_file(f.path(&shared)).expect("deleted from outside");
+    // the next list of the window forgets the name, in the file too (what an agent reads)
+    assert!(!f.service.list().notes.iter().any(|n| n.path == shared));
+    assert_eq!(
+        NotesData::read(f.service.root()).shared,
+        Vec::<String>::new()
+    );
+    // so a note that is made or taken under that name later is not shared by it
+    f.write(&shared, "# Someone else's\n");
+    assert!(read_shared(f.service.root(), &shared).is_err());
+    assert!(!entry(&f, &shared).shared);
+}
+
+#[test]
+fn a_note_that_takes_a_name_that_was_shared_does_not_take_the_sharing_with_it() {
+    let f = fx();
+    let public = f.new_note("# Public\n");
+    let private = f.new_note("# Private\n");
+    f.service.set_shared(&public, true).expect("share");
+    // the shared note is deleted from outside and, before the window has looked at the folder again, another note is
+    // renamed to its name: it is a different note, and the person never shared it
+    fs::remove_file(f.path(&public)).expect("deleted from outside");
+    let to = f
+        .service
+        .rename(&private, public.trim_end_matches(".md"))
+        .expect("rename");
+    assert_eq!(to, public, "it took the name that was shared");
+    assert!(
+        read_shared(f.service.root(), &to).is_err(),
+        "a private note must not be read by an agent because it took a shared name"
+    );
+    assert_eq!(shared_names(&f), Vec::<String>::new());
+
+    // the same when the name is taken by a note that is created
+    f.service.set_shared(&to, true).expect("share");
+    fs::remove_file(f.path(&to)).expect("deleted from outside");
+    let NoteSaved::Saved { path, .. } = f.save(&to, "# Brand new\n", "", T0) else {
+        panic!("it is saved")
+    };
+    assert_eq!(path, to);
+    assert!(read_shared(f.service.root(), &to).is_err());
+    assert!(!entry(&f, &to).shared);
+}
+
+#[test]
+fn a_renamed_note_that_was_shared_stays_shared_once_under_its_new_name() {
+    let f = fx();
+    let note = f.new_note("# Old\n");
+    f.service.set_shared(&note, true).expect("share");
+    let first = f.service.rename(&note, "one").expect("rename");
+    let second = f.service.rename(&first, "two").expect("rename");
+    assert_eq!(shared_names(&f), std::slice::from_ref(&second));
+    assert_eq!(NotesData::read(f.service.root()).shared, [second]);
+}
+
+#[test]
 fn a_second_window_cannot_share() {
     let f = fx();
     let note = f.new_note("# One\n");
