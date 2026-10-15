@@ -29,6 +29,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   TrailMark" entry on folders is not in the Store version.
 - A [privacy policy](https://edelmarschneider.github.io/trailmark/privacy.html) page on the website.
 
+### Fixed
+- Visual editing keeps the keyboard focus and `Ctrl+Z` across a save. A save used to load the document again: after `Ctrl+S` (and after every
+  autosave of a note) the characters typed next were lost, and undo stopped at the last save.
+- A save works for a file whose path is longer than 260 characters on Windows. Since 0.4.0 it failed with "path not found".
+
 ## [0.4.0] - 2026-10-15
 
 Your AI agent can see what you are reading, and you can leave it comments on passages.
