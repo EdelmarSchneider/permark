@@ -2157,7 +2157,7 @@ exclude = [\"archive/**\"]
     }
 
     #[test]
-    fn the_read_state_moves_into_the_project_when_it_is_initialized() {
+    fn the_read_state_is_written_into_the_project_when_it_is_initialized() {
         let fx = Fx::new();
         write(fx.project.path(), "a.md", "# A\n");
         let ws = fx.open();
@@ -2166,6 +2166,8 @@ exclude = [\"archive/**\"]
         assert!(before.starts_with(fx.app.path()) && before.is_file());
 
         ws.init_project_folder().expect("init");
+        // like the session, the last visit and the window, it is copied: the app's data folder keeps its file
+        assert!(before.is_file());
         ws.mark_unread("a.md").expect("mark");
         ws.unread.flush();
         let local = fx.project.path().join(".trailmark/local/read.json");
