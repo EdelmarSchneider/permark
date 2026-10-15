@@ -140,8 +140,9 @@ documents (\"this contradicts section 2\", \"simplify\"). Each has an id, the do
 passage, its heading path and line, the comment text, when it was made, and `state`: `anchored` when the quote is \
 still in the document (the line is where it is now), `passageChanged` when the passage was rewritten (the line \
 is the best guess) or `documentGone`. Open comments by default; pass `which` = `done` or `all` for others. Call \
-this when the person asks you to go through, address or apply their comments on the documents. Also \
-works when TrailMark is closed, from the project's files.",
+this when the person asks you to go through, address or apply their comments on the documents. A `warning` \
+says when the comments file could not be read, which is why the list is empty. Also works when TrailMark is \
+closed, from the project's files.",
         annotations(read_only_hint = true)
     )]
     async fn list_comments(

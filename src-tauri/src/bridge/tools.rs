@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
-use crate::comments::CommentFilter;
+use crate::comments::{CommentFilter, FileProblem};
 
 use super::link::{Link, LinkError};
 use super::project::{connection_is_on, find_project, Project};
@@ -387,6 +387,12 @@ impl Core {
             },
         };
         list.insert("source".to_owned(), json!(source));
+        // An empty list can be the file's doing; say so rather than let it read as "no comments".
+        if list.get("total").and_then(Value::as_u64) == Some(0) {
+            if let Ok(Some(problem)) = self.offline(Project::comments_problem).await {
+                list.insert("warning".to_owned(), json!(comments_warning(problem)));
+            }
+        }
         Answer::ok(with_readable_comment_times(list))
     }
 
@@ -561,6 +567,23 @@ Try again in a few seconds. If it stays like this, look at the agent connection 
                 }
                 Err(_) => tokio::time::sleep(LAUNCH_POLL).await,
             }
+        }
+    }
+}
+
+/// What a list of comments that is empty because of the comments file says about it.
+fn comments_warning(problem: FileProblem) -> &'static str {
+    match problem {
+        FileProblem::Damaged => {
+            "The comments file could not be read, so no comments are listed. TrailMark keeps it as it is and \
+sets it aside, as comments.unreadable-<time>.json next to it, when the person next leaves a comment."
+        }
+        FileProblem::SetAside => {
+            "The comments file could not be read and was set aside (as comments.unreadable-<time>.json next to \
+it), so there are no comments in the new one yet. The person's earlier comments are in the file that was set aside."
+        }
+        FileProblem::Unreadable => {
+            "The comments file could not be read just now, so no comments are listed. Try again in a moment."
         }
     }
 }
@@ -948,6 +971,65 @@ mod tests {
         }
     }
 
+    /// An empty list that is empty because the file is no good must not read as "the person left no comments".
+    #[tokio::test]
+    async fn a_comments_file_that_cannot_be_read_is_said_in_the_empty_list() {
+        let fx = fx();
+        fx.set_connection(true);
+        let core = fx.core(no_launch());
+        let warning = |answer: &Answer| {
+            answer
+                .value
+                .get("warning")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+
+        // no comments and no problem
+        let none = core.list_comments(None).await;
+        assert_eq!(status(&none), "ok", "{none:?}");
+        assert_eq!(none.value["total"], 0);
+        assert_eq!(warning(&none), None);
+
+        // a file that is no good
+        let path = StateStore::open(fx.app.path(), &fx.root).comments_path();
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "{ not json").expect("write");
+        let damaged = core.list_comments(None).await;
+        assert_eq!(status(&damaged), "ok", "{damaged:?}");
+        assert_eq!(damaged.value["total"], 0);
+        assert!(!damaged.is_error);
+        let text = warning(&damaged).expect("a warning");
+        assert!(text.contains("could not be read"), "{text}");
+        assert!(text.contains("unreadable"), "{text}");
+
+        // the window answers the same way: the file is the same
+        fx.bridge.set_enabled(true);
+        let live = core.list_comments(None).await;
+        assert_eq!(live.value["source"], "window");
+        assert_eq!(warning(&live), warning(&damaged));
+        fx.bridge.shutdown();
+
+        // once the file is set aside (the person's next comment, here a change that writes nothing), the answer says so
+        let book = comment_book(&fx);
+        assert!(book.resolve("nope", None).is_err());
+        assert!(!path.exists());
+        let aside = warning(&core.list_comments(None).await).expect("a warning");
+        assert!(aside.contains("was set aside"), "{aside}");
+
+        // and a comment saved since is a file again, with comments in it and nothing to warn about
+        book.add(new_comment(
+            "docs/plan.md",
+            "Ship the beacon",
+            "Which beacon?",
+        ))
+        .expect("a comment");
+        let healthy = core.list_comments(None).await;
+        assert_eq!(healthy.value["total"], 1);
+        assert_eq!(warning(&healthy), None);
+        fx.bridge.shutdown();
+    }
+
     #[tokio::test]
     async fn with_the_window_open_comments_come_from_it_and_resolving_reaches_it() {
         let fx = fx();
@@ -1140,6 +1222,48 @@ mod tests {
         fx.bridge.shutdown();
     }
 
+    /// The window only shows a notice to a person who is editing; the agent is told, so it does not report that the
+    /// person is looking at the place.
+    #[tokio::test]
+    async fn open_says_that_only_a_notice_was_shown_when_the_person_is_editing() {
+        let fx = fx();
+        fx.set_connection(true);
+        fx.bridge.set_enabled(true);
+        let core = fx.core(no_launch());
+        let publish = |mode| {
+            fx.bridge.publish(AgentContext {
+                document: Some("README.md".to_owned()),
+                mode: Some(mode),
+                ..AgentContext::default()
+            });
+        };
+        publish(ViewMode::Reading);
+        let reading = core.open("docs/plan.md", Some(3), None).await;
+        assert_eq!(status(&reading), "ok", "{reading:?}");
+        assert!(reading.value.get("editing").is_none());
+        assert!(reading.value["message"]
+            .as_str()
+            .expect("message")
+            .starts_with("Shown in TrailMark"));
+
+        for mode in [ViewMode::Visual, ViewMode::Source] {
+            publish(mode);
+            let editing = core
+                .open("docs/plan.md", Some(3), Some("Nonexistent"))
+                .await;
+            // the status values stay what clients know
+            assert_eq!(status(&editing), "ok", "{editing:?}");
+            assert!(!editing.is_error);
+            assert_eq!(editing.value["editing"], true);
+            assert_eq!(editing.value["path"], "docs/plan.md");
+            let message = editing.value["message"].as_str().expect("message");
+            assert!(message.contains("is editing"), "{message}");
+            assert!(message.contains("notice"), "{message}");
+            assert!(message.contains("no such heading"), "{message}");
+        }
+        fx.bridge.shutdown();
+    }
+
     #[tokio::test]
     async fn nothing_is_started_for_a_path_that_is_not_a_document() {
         let fx = fx();
@@ -1222,48 +1346,6 @@ mod tests {
     /// The window is started by the program that has the turn, and the turn is kept until that is over.
     #[tokio::test]
     async fn the_turn_to_start_the_window_is_held_while_it_starts() {
-    /// The window only shows a notice to a person who is editing; the agent is told, so it does not report that the
-    /// person is looking at the place.
-    #[tokio::test]
-    async fn open_says_that_only_a_notice_was_shown_when_the_person_is_editing() {
-        let fx = fx();
-        fx.set_connection(true);
-        fx.bridge.set_enabled(true);
-        let core = fx.core(no_launch());
-        let publish = |mode| {
-            fx.bridge.publish(AgentContext {
-                document: Some("README.md".to_owned()),
-                mode: Some(mode),
-                ..AgentContext::default()
-            });
-        };
-        publish(ViewMode::Reading);
-        let reading = core.open("docs/plan.md", Some(3), None).await;
-        assert_eq!(status(&reading), "ok", "{reading:?}");
-        assert!(reading.value.get("editing").is_none());
-        assert!(reading.value["message"]
-            .as_str()
-            .expect("message")
-            .starts_with("Shown in TrailMark"));
-
-        for mode in [ViewMode::Visual, ViewMode::Source] {
-            publish(mode);
-            let editing = core
-                .open("docs/plan.md", Some(3), Some("Nonexistent"))
-                .await;
-            // the status values stay what clients know
-            assert_eq!(status(&editing), "ok", "{editing:?}");
-            assert!(!editing.is_error);
-            assert_eq!(editing.value["editing"], true);
-            assert_eq!(editing.value["path"], "docs/plan.md");
-            let message = editing.value["message"].as_str().expect("message");
-            assert!(message.contains("is editing"), "{message}");
-            assert!(message.contains("notice"), "{message}");
-            assert!(message.contains("no such heading"), "{message}");
-        }
-        fx.bridge.shutdown();
-    }
-
         let fx = fx();
         fx.set_connection(true);
         let held = Arc::new(AtomicUsize::new(0));

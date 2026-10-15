@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
-use crate::comments::{CommentBook, CommentError, CommentFilter, CommentView};
+use crate::comments::{CommentBook, CommentError, CommentFilter, CommentView, FileProblem};
 use crate::git::{self, Discovery};
 use crate::search::indexer::Indexer;
 use crate::search::{Bm25Index, SearchProvider};
@@ -128,6 +128,11 @@ impl Project {
     /// The comments of the kind asked for. Read-only: the places that moved are not written down here.
     pub(crate) fn comments(&self, which: CommentFilter) -> CommentList {
         answers::comment_list(self.comments.list(false), which)
+    }
+
+    /// What is wrong with the comments file, when that is why there are no comments to list.
+    pub(crate) fn comments_problem(&self) -> Option<FileProblem> {
+        self.comments.problem()
     }
 
     /// Marks a comment done by an agent.
