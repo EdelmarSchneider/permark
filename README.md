@@ -78,6 +78,8 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
   Reading it (3 seconds on screen, or a scroll) clears the dot, `Alt+U` takes you to the next one, and **Show only unread** narrows
   the tree to what you haven't seen
 
+![Unread markers: dots on five documents and their folders in the Explorer and in Since last visit, and a document whose code references are links, one hovered with "Open in editor at line 42"](docs/assets/screenshot-unread.png)
+
 ### 🔍 Find anything, to the section
 - **Search everywhere** (`Ctrl+T`): files, sections, tags and commands in one box. `Tab` moves between scopes, `>` jumps to
   commands and `#` to sections; `Ctrl+Shift+P` opens the command list with every action of the app and its shortcut
@@ -85,6 +87,11 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - Accent- and case-insensitive, with light stemming, and incremental updates as files change
 - Filter by tag right in the search box (`tag:needs-review retry policy`)
 - Semantic search with a local multilingual model is planned for v0.5 (see the [roadmap](#roadmap))
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-everywhere-dark.png">
+  <img src="docs/assets/screenshot-everywhere.png" alt="Search everywhere with the query reference: a file, three sections with highlighted snippets, a tag and the Copy reference command with its shortcut, each in its own group">
+</picture>
 
 ![Section search with a tag filter: "lanterns" in the files tagged needs-review, each file with its description, and the match highlighted in the open document](docs/assets/screenshot-search.png)
 
