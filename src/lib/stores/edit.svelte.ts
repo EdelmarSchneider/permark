@@ -37,7 +37,7 @@ import { t, tn } from "../i18n";
 import { isLoosePath } from "../looseFile";
 import { registerOverlay } from "../overlays";
 import { basename } from "../paths";
-import { askUnsaved, askYesNo, copyText, guardWindowClose, setWindowTitle } from "../platform";
+import { askUnsaved, askYesNo, copyText, guardWindowClose } from "../platform";
 import type {
   BufferEdits,
   BufferText,
@@ -490,12 +490,8 @@ class EditStore {
   private setDirty(dirty: boolean): void {
     if (this.dirty === dirty) return;
     this.dirty = dirty;
-    // the Notes window closes without asking (the notes flush first) and has no unsaved mark in its title
+    // the Notes window closes without asking (the notes flush first)
     if (this.autosave) return;
-    const title = dirty
-      ? t("edit.windowTitle", { name: basename(this.path ?? "") })
-      : t("app.name");
-    void setWindowTitle(title);
     const token = ++this.closeGuardToken;
     this.stopCloseGuard?.();
     this.stopCloseGuard = null;

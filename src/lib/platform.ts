@@ -149,7 +149,7 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** Sets the title of the window (the browser mock sets the page title). */
+/** Sets the title of the window (the browser mock sets the page title). `windowTitle()` says what it should be. */
 export async function setWindowTitle(title: string): Promise<void> {
   if (isMock) {
     document.title = title;
@@ -158,7 +158,7 @@ export async function setWindowTitle(title: string): Promise<void> {
   try {
     await getCurrentWindow().setTitle(title);
   } catch {
-    // the title is only a hint of unsaved work; the editor says it too
+    // the title only helps tell windows apart; nothing depends on it
   }
 }
 

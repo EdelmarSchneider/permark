@@ -33,6 +33,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
   short ones (`trailmark mcp`); and Markdown files can be opened with it from the "Open with" menu. The right-click "Open with
   TrailMark" entry on folders is not in the Store version.
 - A [privacy policy](https://edelmarschneider.github.io/trailmark/privacy.html) page on the website.
+- **Window titles that tell windows apart.** The title of a window, which the taskbar, `Alt+Tab` and the taskbar thumbnails show, now names
+  the open document and its project (`plan.md - my-project - TrailMark`), a single file (`proposal.md - TrailMark`) or the note in the
+  Notes window (`Shopping list - Notes - TrailMark`). A `*` in front still means unsaved edits, and a file open in the Notes window gets it too.
+  It follows the document you switch to, a rename and the language.
 
 ### Fixed
 - Visual editing keeps the keyboard focus and `Ctrl+Z` across a save. A save used to load the document again: after `Ctrl+S` (and after every

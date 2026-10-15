@@ -5,6 +5,14 @@ export const en = {
   "app.name": "TrailMark",
   "app.loading": "Loading",
 
+  // ---- window title (the taskbar and Alt+Tab list it; each is the whole title, so the order can change)
+  "window.title.project": "{document} - {project} - TrailMark",
+  "window.title.projectOnly": "{project} - TrailMark",
+  "window.title.file": "{document} - TrailMark",
+  "window.title.notes": "{document} - Notes - TrailMark",
+  "window.title.notesOnly": "Notes - TrailMark",
+  "window.title.unsaved": "* {title}",
+
   // ---- common
   "common.cancel": "Cancel",
   "common.close": "Close",
@@ -782,7 +790,6 @@ export const en = {
   "edit.sourceLabel": "Markdown source of {name}",
   "edit.closePrompt": "Unsaved changes in {name}. Save them before closing?",
   "edit.restartPrompt": "Unsaved changes in {name}. Save them before restarting to update?",
-  "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "The editor could not be loaded.",
   "edit.bars": "Editing notices",
   "edit.switchFailed": "Couldn't switch editors: {message}",
@@ -976,7 +983,6 @@ export const en = {
   "feed.op.undone": "Undo",
 
   // ---- notes (docs/design/v0.5.md)
-  "notes.windowTitle": "TrailMark Notes",
   "notes.title": "Notes",
   "notes.listLabel": "List of notes",
   "notes.untitled": "Untitled note",
