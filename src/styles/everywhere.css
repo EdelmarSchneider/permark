@@ -1,0 +1,77 @@
+/* Search everywhere: the scope strip, group headers with "Show all", section snippets and shortcuts.
+   The box itself, its rows and its footer are the Quick open styles (components.css, filter.css, tags.css). */
+
+.palette__scopes {
+  display: flex;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.palette__scope {
+  position: relative;
+  flex: none;
+  height: 30px;
+  padding: 0 var(--sp-2);
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-ui-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+.palette__scope:hover {
+  color: var(--text);
+}
+.palette__scope.is-active {
+  color: var(--text);
+  font-weight: 600;
+}
+.palette__scope.is-active::after {
+  content: "";
+  position: absolute;
+  left: var(--sp-2);
+  right: var(--sp-2);
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.palette__group {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.palette__showall {
+  font-size: var(--fs-ui-xs);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* a long heading or file name gives way to the path next to it */
+.palette__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette__keys {
+  flex: none;
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+  font: 500 var(--fs-ui-xs) var(--font-ui);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .palette__scope {
+    transition: none;
+  }
+}
