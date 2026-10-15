@@ -3,7 +3,6 @@
 //! validate arguments and move blocking work off the async runtime. Their names are listed in `ipc-contract.json`.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Serialize;
@@ -18,7 +17,8 @@ use crate::notes::{
     NotesFolder, NotesRequest, NotesSummary, ReadOnlyReason, Restored,
 };
 use crate::session::{AppSettingsStore, RecentStore, StartIn};
-use crate::vault::VaultError;
+use crate::util::canonicalize_lenient;
+use crate::vault::{strip_root, VaultError};
 use crate::workspace::{EventSink, VaultInfo, Workspace};
 
 /// What the program was started as, and the requests to the Notes window that it has not shown yet. Managed state.
@@ -553,17 +553,30 @@ pub async fn open_in_project(app: AppHandle, path: String) -> Result<(), AppErro
         if !file.is_file() {
             return Err(VaultError::NotFound(path).into());
         }
-        let folder = RecentStore::new(&dir)
+        let roots: Vec<PathBuf> = RecentStore::new(&dir)
             .load_existing()
             .into_iter()
             .map(|recent| PathBuf::from(recent.root))
-            .filter(|root| file.starts_with(root))
-            .max_by_key(|root| root.components().count())
+            .collect();
+        let folder = project_holding(&file, &roots)
             .or_else(|| file.parent().map(std::path::Path::to_path_buf))
             .ok_or_else(|| VaultError::NotFound(file.display().to_string()))?;
         start_project_window(&folder, &file).map_err(|e| AppError::Internal(e.to_string()))
     })
     .await
+}
+
+/// The deepest of `roots` that holds `file`. The case of a path and the way a folder is spelled (a short name, a link) are not
+/// told apart where the system does not tell them apart, as the rest of the program does not.
+fn project_holding(file: &std::path::Path, roots: &[PathBuf]) -> Option<PathBuf> {
+    let canonical =
+        |path: &std::path::Path| canonicalize_lenient(path).unwrap_or_else(|| path.to_path_buf());
+    let file = canonical(file);
+    roots
+        .iter()
+        .filter(|root| strip_root(&file, &canonical(root)).is_some())
+        .max_by_key(|root| root.components().count())
+        .cloned()
 }
 
 /// Starts another TrailMark on a project, with the file to show first, and lets it go its own way.
@@ -583,16 +596,31 @@ fn start_project_window(folder: &std::path::Path, file: &std::path::Path) -> std
     Ok(())
 }
 
+/// The file this program was started to show, read once, at start, and taken out of the environment: a program this one starts
+/// later (another window, the Notes window, an editor, an agent's launch) would inherit it and show the file too.
+pub(crate) fn take_show_variable() -> Option<String> {
+    let value = std::env::var_os(SHOW_VARIABLE);
+    std::env::remove_var(SHOW_VARIABLE);
+    value
+        .map(|value| value.to_string_lossy().into_owned())
+        .filter(|value| !value.is_empty())
+}
+
+/// The file this program was started to show.
+static LAUNCH_SHOW: Mutex<Option<String>> = Mutex::new(None);
+
+/// Reads what the program was started to show (called once, before anything else is started).
+pub(crate) fn read_launch_show() {
+    *LAUNCH_SHOW.lock().unwrap_or_else(PoisonError::into_inner) = take_show_variable();
+}
+
 /// The file this program was started to show once its project is open (see [`open_in_project`]), asked once.
 #[tauri::command]
 pub fn launch_show() -> Option<String> {
-    static ASKED: AtomicBool = AtomicBool::new(false);
-    if ASKED.swap(true, Ordering::SeqCst) {
-        return None;
-    }
-    std::env::var_os(SHOW_VARIABLE)
-        .map(|value| value.to_string_lossy().into_owned())
-        .filter(|value| !value.is_empty())
+    LAUNCH_SHOW
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .take()
 }
 
 // ---- loose files -----------------------------------------------------------------------------------------
@@ -773,4 +801,51 @@ fn start_notes_window() -> std::io::Result<()> {
         let _ = child.wait();
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The file to show first is read once, at start, and taken out of the environment: no program this one starts later (another
+    /// window, the Notes window, an editor, an agent's launch) is told to show it too.
+    #[test]
+    fn the_file_to_show_is_read_once_and_not_handed_on_to_other_programs() {
+        std::env::set_var(SHOW_VARIABLE, "C:/work/plan/ask.md");
+        assert_eq!(take_show_variable().as_deref(), Some("C:/work/plan/ask.md"));
+        assert!(
+            std::env::var_os(SHOW_VARIABLE).is_none(),
+            "a program started now does not inherit it"
+        );
+        assert_eq!(take_show_variable(), None, "and it is read once");
+        // an empty value is no file
+        std::env::set_var(SHOW_VARIABLE, "");
+        assert_eq!(take_show_variable(), None);
+        assert!(std::env::var_os(SHOW_VARIABLE).is_none());
+    }
+
+    /// "Open in project" starts the project that holds the file: the deepest of the recent ones, however the case of the path
+    /// differs where the system does not tell it.
+    #[test]
+    fn the_project_that_holds_a_file_is_the_deepest_recent_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outer = dunce::canonicalize(dir.path()).expect("canonical");
+        let inner = outer.join("plan");
+        std::fs::create_dir_all(&inner).expect("mkdir");
+        let file = inner.join("ask.md");
+        std::fs::write(&file, "x").expect("write");
+        let roots = [outer.clone(), inner.clone(), outer.join("elsewhere")];
+        assert_eq!(project_holding(&file, &roots), Some(inner.clone()));
+        assert_eq!(project_holding(&outer.join("a.md"), &roots), Some(outer));
+        assert_eq!(
+            project_holding(std::path::Path::new("/nowhere/x.md"), &roots),
+            None
+        );
+        // a dialog may spell the path in another case than the recent folder was opened with
+        #[cfg(windows)]
+        {
+            let shouting = PathBuf::from(file.display().to_string().to_uppercase());
+            assert_eq!(project_holding(&shouting, &roots), Some(inner));
+        }
+    }
 }

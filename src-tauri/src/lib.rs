@@ -135,6 +135,8 @@ pub fn run() {
         // The app's identifier names its data folder, where the project's saved settings are.
         std::process::exit(bridge::cli::run(command, &context.config().identifier));
     }
+    // what this program was started to show is read now, and is not handed on to the programs it starts
+    notes_commands::read_launch_show();
     let dev_url = if cfg!(debug_assertions) {
         context.config().build.dev_url.clone()
     } else {
