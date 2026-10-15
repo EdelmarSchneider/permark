@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The backend is replaced: these tests are about what the Explorer lists for a tree it was given, and
 // about when the tree is asked for again.
@@ -24,8 +24,10 @@ vi.mock("../platform", () => ({
 
 import { DEFAULT_TREE_FILTER } from "../treeFilter";
 import type { TreeFilter, TreeNode } from "../types";
+import { docs } from "./docs.svelte";
 import { filter } from "./filter.svelte";
 import { session } from "./session.svelte";
+import { unread } from "./unread.svelte";
 import { vault } from "./vault.svelte";
 
 const file = (path: string): TreeNode => ({
@@ -119,6 +121,45 @@ describe("the Explorer filter store", () => {
     filter.set(DEFAULT_TREE_FILTER);
     expect(fake.listTree).toHaveBeenLastCalledWith(false, false);
     expect(fake.listTree).toHaveBeenCalledTimes(3);
+  });
+
+  describe("showing only what is unread", () => {
+    afterEach(() => {
+      unread.reset();
+      docs.reset();
+    });
+
+    it("lists the unread documents and the folders on the way to them", () => {
+      unread.onChanged(["Design/notes.md"]);
+      unread.toggleOnlyUnread();
+      expect(names()).toEqual(["Design"]);
+      expect(filter.roots.main[0].children?.map((n) => n.name)).toEqual(["notes.md"]);
+      unread.toggleOnlyUnread();
+      expect(names()).toEqual(["Design", "CLAUDE.md", "README.md"]);
+    });
+
+    it("is empty when everything is read, and the Explorer says so", () => {
+      unread.toggleOnlyUnread();
+      expect(filter.roots.main).toEqual([]);
+      expect(filter.roots.worktrees).toEqual([]);
+    });
+
+    it("keeps the open document, so it does not vanish from the list when it counts as read", () => {
+      unread.onChanged(["README.md"]);
+      unread.toggleOnlyUnread();
+      docs.current = { path: "CLAUDE.md" } as NonNullable<typeof docs.current>;
+      expect(names()).toEqual(["CLAUDE.md", "README.md"]);
+      unread.onChanged([]);
+      expect(names()).toEqual(["CLAUDE.md"]);
+    });
+
+    it("works on what the Explorer filter lets through, not on files it hides", () => {
+      unread.onChanged([".github/guide.md", "README.md"]);
+      unread.toggleOnlyUnread();
+      expect(names()).toEqual(["README.md"]);
+      filter.setShowAll(true);
+      expect(names()).toEqual([".github", "README.md"]);
+    });
   });
 
   it("keeps an ignored folder that was too large to load, though it shows no file", () => {

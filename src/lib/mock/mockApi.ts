@@ -27,6 +27,7 @@ import {
   searchDocs,
 } from "./fixtures";
 import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./mockFileOps";
+import { listUnread, markAllRead, markFolderRead, markRead, markUnread } from "./mockUnread";
 import {
   createDocument,
   documentSource,
@@ -214,5 +215,10 @@ export const mockImpl: Api = {
   deleteEntries: (paths) => deleteEntries(paths),
   newFolder: (path) => newFolder(path),
   undoFileOp: (opId) => undoFileOp(opId),
+  getUnread: async () => listUnread(),
+  markRead: async (path) => markRead(path),
+  markUnread: async (path) => markUnread(path),
+  markAllRead: async () => markAllRead(),
+  markFolderRead: async (path) => markFolderRead(path),
   on: async () => () => {},
 };

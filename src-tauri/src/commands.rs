@@ -67,6 +67,10 @@ impl EventSink for TauriSink {
     fn image_refs_changed(&self) {
         let _ = self.0.emit("image-refs-changed", ());
     }
+
+    fn unread_changed(&self, unread: &[String]) {
+        let _ = self.0.emit("unread-changed", unread);
+    }
 }
 
 /// Runs blocking work on the blocking thread pool.
@@ -609,6 +613,46 @@ pub async fn new_folder(
 pub async fn undo_file_op(state: State<'_, AppState>, op_id: u64) -> Result<UndoOutcome, AppError> {
     let ws = state.current()?;
     blocking(move || ws.undo_file_op(op_id)).await
+}
+
+/// The documents that changed since they were last read, sorted (the `unread-changed` event carries the
+/// same list). Empty until the folder has been looked at.
+#[tauri::command]
+pub async fn get_unread(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.unread())).await
+}
+
+/// The person read a document: whatever it holds now counts as read.
+#[tauri::command]
+pub async fn mark_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.mark_read(&path)).await
+}
+
+/// A document counts as unread again.
+#[tauri::command]
+pub async fn mark_unread(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.mark_unread(&path)).await
+}
+
+/// Every document counts as read.
+#[tauri::command]
+pub async fn mark_all_read(state: State<'_, AppState>) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        ws.mark_all_read();
+        Ok(())
+    })
+    .await
+}
+
+/// Every document in a folder (and below it) counts as read.
+#[tauri::command]
+pub async fn mark_folder_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.mark_folder_read(&path)).await
 }
 
 /// The URI scheme that serves the images of the open folder to the document view. Requests are

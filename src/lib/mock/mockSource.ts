@@ -18,6 +18,7 @@ import {
   writeSource,
 } from "./fixtures";
 import { mockParseBlocks } from "./mockBlocks";
+import { markRead } from "./mockUnread";
 import { markdownToView } from "./mockMarkdown";
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,6 +109,7 @@ export async function saveDocument(
     return { result: "conflict", diskHash: mockHash(current) };
   }
   const modifiedMs = writeSource(path, text);
+  markRead(path); // what the person wrote is read
   emitMock("git-status-changed", mockSnapshot());
   return { result: "saved", hash: mockHash(text), modifiedMs };
 }
@@ -134,6 +136,7 @@ export async function createDocument(path: string, text: string): Promise<Create
   mockFiles.created.add(path);
   mockState.deleted.delete(path);
   const modifiedMs = writeSource(path, text);
+  markRead(path);
   emitMock("tree-changed", null);
   emitMock("git-status-changed", mockSnapshot());
   return { path, hash: mockHash(text), modifiedMs };

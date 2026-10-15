@@ -10,6 +10,7 @@
   import { edit } from "../stores/edit.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { savedLabel } from "../time";
   import { badgeFor } from "../tree";
@@ -57,6 +58,12 @@
             hint: "T",
             disabled: !view,
             onselect: () => ui.openTagEditor(),
+          },
+          {
+            id: "markUnread",
+            label: t("unread.markUnread"),
+            disabled: !view || unread.isUnread(path),
+            onselect: () => void unread.markUnread(path, true),
           },
           { type: "separator" },
         ] satisfies MenuEntry[])),

@@ -44,12 +44,14 @@
   import { outline } from "../stores/outline.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { relativeTime } from "../time";
   import { badgeFor } from "../tree";
   import Icon from "./Icon.svelte";
   import TagChip from "./TagChip.svelte";
   import TagSuggestions from "./TagSuggestions.svelte";
+  import UnreadDot from "./UnreadDot.svelte";
 
   /** The search index is asked after this pause in typing. */
   const SECTIONS_DEBOUNCE_MS = 80;
@@ -263,6 +265,7 @@
     hasChanges: docs.marks.changed + docs.marks.removed > 0,
     stateInProject: vault.stateLocation === "project",
     hasRepo: !!vault.git?.isRepo && !vault.git.gitError,
+    hasUnread: unread.count > 0,
   });
 
   const commandList = $derived(
@@ -581,6 +584,7 @@
                 <Icon name={isMarkdown(row.path) ? "file-text" : "file"} size="sm" />
                 <div class="palette__body">
                   <div class="palette__line">
+                    {#if unread.isUnread(row.path)}<UnreadDot />{/if}
                     <span class="palette__name">
                       {#each nameSegments(row) as seg, s (s)}{#if seg.match}<b>{seg.text}</b
                           >{:else}{seg.text}{/if}{/each}

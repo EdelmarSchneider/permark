@@ -43,6 +43,8 @@ export type EventMap = {
   "index-progress": { indexed: number; total: number };
   "meta-changed": null;
   "image-refs-changed": null;
+  /** The Markdown documents that are unread changed: the payload is all of them, sorted. */
+  "unread-changed": string[];
   /** The system asked this window (which shows no project) to open a file or folder (macOS: Finder, the Dock icon). */
   "open-path": string;
 };
@@ -145,6 +147,16 @@ export interface Api {
   newFolder(path: string): Promise<CreatedFolder>;
   /** Reverts an operation (the moves and every rewritten link) as far as the files are unchanged since. */
   undoFileOp(opId: number): Promise<UndoOutcome>;
+  /** The Markdown documents that changed since they were last read, sorted (the `unread-changed` event carries the same list). */
+  getUnread(): Promise<string[]>;
+  /** The person read the document: whatever it holds now counts as read. */
+  markRead(path: string): Promise<void>;
+  /** The document counts as unread again. */
+  markUnread(path: string): Promise<void>;
+  /** Every document counts as read. */
+  markAllRead(): Promise<void>;
+  /** Every document in a folder, and below it, counts as read. */
+  markFolderRead(path: string): Promise<void>;
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -207,6 +219,11 @@ export const tauriApi: Api = {
   deleteEntries: (paths) => invoke<DeleteOutcome>("delete_entries", { paths }),
   newFolder: (path) => invoke<CreatedFolder>("new_folder", { path }),
   undoFileOp: (opId) => invoke<UndoOutcome>("undo_file_op", { opId }),
+  getUnread: () => invoke<string[]>("get_unread"),
+  markRead: (path) => invoke<void>("mark_read", { path }),
+  markUnread: (path) => invoke<void>("mark_unread", { path }),
+  markAllRead: () => invoke<void>("mark_all_read"),
+  markFolderRead: (path) => invoke<void>("mark_folder_read", { path }),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -292,6 +309,11 @@ function createMockApi(): Api {
     deleteEntries: command("deleteEntries"),
     newFolder: command("newFolder"),
     undoFileOp: command("undoFileOp"),
+    getUnread: command("getUnread"),
+    markRead: command("markRead"),
+    markUnread: command("markUnread"),
+    markAllRead: command("markAllRead"),
+    markFolderRead: command("markFolderRead"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

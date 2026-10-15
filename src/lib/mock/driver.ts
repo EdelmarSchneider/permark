@@ -5,6 +5,7 @@
 import { emitMock } from "../api";
 import type { FsBatch, FsChange } from "../types";
 import { deleteDocument, editDocument, mockGit, mockSnapshot, restoreDocument } from "./fixtures";
+import { noteChanged, noteGone } from "./mockUnread";
 
 const batch = (changes: FsChange[], extra: Partial<FsBatch> = {}): FsBatch => ({
   changes,
@@ -22,6 +23,7 @@ const change = (kind: FsChange["kind"], path: string): FsChange => ({
 /** An agent saved a document. */
 export function emitSave(path: string): void {
   editDocument(path);
+  noteChanged(path);
   emitMock("fs-change", batch([change("modified", path)]));
 }
 
@@ -51,7 +53,10 @@ export function emitBulk(): void {
   const others = Array.from({ length: 70 }, (_, i) => `src/generated/file-${i}.rs`);
   const paths = [...docs, ...others];
   const changes = paths.map((path, i) => change(i % 7 === 0 ? "created" : "modified", path));
-  for (const path of docs) editDocument(path);
+  for (const path of docs) {
+    editDocument(path);
+    noteChanged(path);
+  }
   emitMock(
     "fs-change",
     batch(changes, { bulk: { count: 143, reason: "gitOperation", paths }, rescan: false }),
@@ -60,12 +65,14 @@ export function emitBulk(): void {
 
 export function emitDelete(path: string): void {
   deleteDocument(path);
+  noteGone(path);
   emitMock("fs-change", batch([change("removed", path)]));
   emitMock("tree-changed", null);
 }
 
 export function emitRestore(path: string): void {
   restoreDocument(path);
+  noteChanged(path);
   emitMock("fs-change", batch([change("created", path)]));
   emitMock("tree-changed", null);
 }

@@ -32,6 +32,7 @@ use crate::session::{
     FileStamp, LastVisit, RecentStore, SessionState, StateLocation, StateStore, TreeConfig,
     WindowState,
 };
+use crate::unread::{Timing as UnreadTiming, UnreadService};
 use crate::util::{image_mime, modified_ms, now_ms, on_parser_stack, read_with_retry};
 use crate::vault::{NodeKind, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
@@ -63,6 +64,8 @@ pub trait EventSink: Send + Sync + 'static {
     fn meta_changed(&self);
     /// The set of images that documents link to changed (`image-refs-changed`).
     fn image_refs_changed(&self);
+    /// The documents that are unread changed (`unread-changed`); `unread` is all of them, sorted.
+    fn unread_changed(&self, unread: &[String]);
 }
 
 /// Forwards events only while its workspace is the one that may emit, so a folder that is being
@@ -122,6 +125,12 @@ impl EventSink for GuardedSink {
     fn image_refs_changed(&self) {
         if self.live() {
             self.inner.image_refs_changed();
+        }
+    }
+
+    fn unread_changed(&self, unread: &[String]) {
+        if self.live() {
+            self.inner.unread_changed(unread);
         }
     }
 }
@@ -198,6 +207,8 @@ pub struct Workspace {
     indexer: Arc<IndexWorker>,
     filter: Arc<PathFilter>,
     meta: Arc<MetaService>,
+    /// Which documents changed since they were last read.
+    unread: Arc<UnreadService>,
     /// Content the editor is writing, so the watcher does not report it back as an external change.
     own_writes: Arc<OwnWrites>,
     /// Rename, move, delete and new folder in the Explorer.
@@ -207,16 +218,25 @@ pub struct Workspace {
     closed: AtomicBool,
 }
 
-/// Tags follow the files that are renamed or moved in the Explorer.
-struct MetaFollower(Arc<MetaService>);
+/// What the app keeps for a file follows it when it is renamed or moved in the Explorer: its tags, and whether
+/// it was read. A document whose links the app rewrote stays as read as it was.
+struct AppFollower {
+    meta: Arc<MetaService>,
+    unread: Arc<UnreadService>,
+}
 
-impl Followers for MetaFollower {
+impl Followers for AppFollower {
     fn renamed(&self, from: &str, to: &str, is_dir: bool) {
         if is_dir {
-            self.0.rename_tree(from, to);
+            self.meta.rename_tree(from, to);
         } else {
-            self.0.rename(from, to);
+            self.meta.rename(from, to);
         }
+        self.unread.renamed(from, to);
+    }
+
+    fn rewritten(&self, path: &str, old_hash: &str, new_hash: &str) {
+        self.unread.rewritten(path, old_hash, new_hash);
     }
 }
 
@@ -228,6 +248,7 @@ struct WatchWiring {
     sink: Arc<dyn EventSink>,
     indexer: Arc<IndexWorker>,
     meta: Arc<MetaService>,
+    unread: Arc<UnreadService>,
     own_writes: Arc<OwnWrites>,
 }
 
@@ -254,6 +275,7 @@ fn start_watcher(
         sink,
         indexer,
         meta,
+        unread,
         own_writes,
     } = wiring;
     let known = Arc::clone(&sigs);
@@ -298,7 +320,9 @@ fn start_watcher(
             // Lost events or a partly listed folder: the index reconciles with the disk instead.
             if batch.rescan {
                 indexer.rescan();
+                unread.rescan();
             } else if !all_changes.is_empty() {
+                unread.apply(&all_changes);
                 indexer.apply(all_changes);
             }
             if has_batch {
@@ -335,6 +359,23 @@ fn start_indexer(
         progress_sink.index_progress(done, total);
     });
     (Arc::new(worker), image_refs)
+}
+
+/// Starts the unread markers: they tell the UI through the sink whenever the unread documents change.
+fn start_unread(
+    vault: &Arc<Vault>,
+    filter: &Arc<PathFilter>,
+    read_path: PathBuf,
+    sink: &Arc<dyn EventSink>,
+) -> Arc<UnreadService> {
+    let sink = Arc::clone(sink);
+    Arc::new(UnreadService::open(
+        Arc::clone(vault),
+        Arc::clone(filter),
+        read_path,
+        UnreadTiming::default(),
+        Arc::new(move |paths: &[String]| sink.unread_changed(paths)),
+    ))
 }
 
 impl Workspace {
@@ -395,11 +436,16 @@ impl Workspace {
             Arc::new(move || meta_sink.meta_changed()),
         ));
 
+        let unread = start_unread(&vault, &filter, store.read_path(), sink);
+
         let own_writes = Arc::new(OwnWrites::new());
         let fileops = FileOpsService::new(
             Arc::clone(&vault),
             Arc::clone(&own_writes),
-            Arc::new(MetaFollower(Arc::clone(&meta))),
+            Arc::new(AppFollower {
+                meta: Arc::clone(&meta),
+                unread: Arc::clone(&unread),
+            }),
             Arc::new(OsRecycler),
         );
 
@@ -427,6 +473,7 @@ impl Workspace {
                 sink: Arc::clone(sink),
                 indexer: Arc::clone(&indexer),
                 meta: Arc::clone(&meta),
+                unread: Arc::clone(&unread),
                 own_writes: Arc::clone(&own_writes),
             },
             git_ctx.as_ref(),
@@ -458,6 +505,7 @@ impl Workspace {
             indexer,
             filter,
             meta,
+            unread,
             own_writes,
             fileops,
             sink: Arc::clone(sink),
@@ -532,12 +580,19 @@ impl Workspace {
         text: &str,
         expected_hash: &str,
     ) -> Result<SaveOutcome, AppError> {
-        Ok(self.editor().save(path, text, expected_hash)?)
+        let outcome = self.editor().save(path, text, expected_hash)?;
+        // What the person wrote is read by definition.
+        if let SaveOutcome::Saved { hash, .. } = &outcome {
+            self.unread.mark_written(path, hash);
+        }
+        Ok(outcome)
     }
 
     /// Creates a new Markdown file (never overwrites).
     pub fn create_document(&self, path: &str, text: &str) -> Result<CreatedDoc, AppError> {
-        Ok(self.editor().create(path, text)?)
+        let created = self.editor().create(path, text)?;
+        self.unread.mark_written(&created.path, &created.hash);
+        Ok(created)
     }
 
     /// Writes a pasted or dropped image into the `assets` folder next to a document.
@@ -683,6 +738,7 @@ impl Workspace {
         if !self.live_updates {
             // Nothing tells us about changes in this folder, so look at the disk now.
             self.indexer.rescan();
+            self.unread.rescan();
             self.sink.tree_changed();
         }
     }
@@ -734,6 +790,7 @@ impl Workspace {
         if !was_in_project {
             // The tags and descriptions added so far move into `.trailmark/meta.toml`.
             self.meta.migrate_to(store.meta_path(), true)?;
+            self.unread.relocate(store.read_path());
         }
         Ok(())
     }
@@ -771,6 +828,31 @@ impl Workspace {
     /// Removes the tags and descriptions kept for files that no longer exist. Returns how many.
     pub fn clean_up_meta(&self) -> Result<usize, AppError> {
         Ok(self.meta.clean_up()?)
+    }
+
+    // ---- unread markers -------------------------------------------------------------------------
+
+    /// The documents that changed since they were last read, sorted. Empty until the folder has been looked at.
+    pub fn unread(&self) -> Vec<String> {
+        self.unread.unread()
+    }
+
+    /// The person read a document: what it holds now counts as read.
+    pub fn mark_read(&self, path: &str) -> Result<(), AppError> {
+        Ok(self.unread.mark_read(path)?)
+    }
+
+    pub fn mark_unread(&self, path: &str) -> Result<(), AppError> {
+        Ok(self.unread.mark_unread(path)?)
+    }
+
+    pub fn mark_all_read(&self) {
+        self.unread.mark_all_read();
+    }
+
+    /// Everything in a folder counts as read.
+    pub fn mark_folder_read(&self, path: &str) -> Result<(), AppError> {
+        Ok(self.unread.mark_folder_read(path)?)
     }
 
     pub fn state_location(&self) -> Result<StateLocation, AppError> {
@@ -899,6 +981,8 @@ impl Workspace {
         if let Ok(store) = self.store.lock() {
             let _ = store.save_last_visit(&visit);
         }
+        // The window may close before the unread markers' write has settled.
+        self.unread.flush();
     }
 
     /// Saves the last visit and stops every background task. Safe to call more than once.
@@ -913,6 +997,7 @@ impl Workspace {
                 w.stop();
             }
         }
+        self.unread.stop();
         self.meta.stop();
         self.indexer.stop();
         self.git.shutdown();
@@ -1036,6 +1121,8 @@ impl WorkspaceHost {
 mod tests {
     use super::*;
     use crate::git::testutil::{commit_all, init_repo, write};
+
+    const NOTHING: [&str; 0] = [];
     use crate::watch::ChangeKind;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
@@ -1047,6 +1134,7 @@ mod tests {
         tree: AtomicUsize,
         meta: AtomicUsize,
         image_refs: AtomicUsize,
+        unread: Mutex<Vec<Vec<String>>>,
         git: Mutex<Vec<GitSnapshot>>,
         progress: Mutex<Vec<(usize, usize)>>,
     }
@@ -1069,6 +1157,9 @@ mod tests {
         }
         fn image_refs_changed(&self) {
             self.image_refs.fetch_add(1, Ordering::SeqCst);
+        }
+        fn unread_changed(&self, unread: &[String]) {
+            self.unread.lock().expect("lock").push(unread.to_vec());
         }
     }
 
@@ -1908,6 +1999,169 @@ exclude = [\"archive/**\"]
             seen.iter().any(|p| p == "b.md") && seen.iter().any(|p| p == "a.md")
         });
         ws.close();
+    }
+
+    /// What the UI heard last about the unread documents.
+    fn unread_heard(rec: &Recorder) -> Option<Vec<String>> {
+        rec.unread.lock().expect("lock").last().cloned()
+    }
+
+    #[test]
+    fn documents_changed_by_others_become_unread_live_and_the_editor_reads_its_own() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        write(fx.project.path(), "b.md", "# B\n");
+        let ws = fx.open();
+        ws.unread.flush();
+        assert!(ws.unread().is_empty(), "the first visit reads everything");
+
+        // an agent writes a new document: unread, and the UI is told
+        write_until_reported(&fx.rec, fx.project.path(), "c.md", "the new document");
+        wait_until("c.md to be unread", || ws.unread() == ["c.md"]);
+        assert_eq!(unread_heard(&fx.rec), Some(vec!["c.md".to_owned()]));
+
+        // an agent changes b.md
+        write(fx.project.path(), "b.md", "# B by an agent\n");
+        wait_until("b.md to be unread", || ws.unread() == ["b.md", "c.md"]);
+
+        // the person edits b.md and saves: read. A new file of theirs is read too.
+        let source = ws.document_source("b.md").expect("source");
+        ws.save_document("b.md", "# B merged\n", &source.hash)
+            .expect("save");
+        ws.create_document("mine.md", "# Mine\n").expect("create");
+        assert_eq!(ws.unread(), ["c.md"]);
+
+        // the watcher reports those writes too (they are the app's own), and changes nothing: an agent's
+        // later write is seen after them, so once it shows the earlier reports have been dealt with
+        write(fx.project.path(), "d.md", "# D\n");
+        wait_until("d.md to be unread", || ws.unread() == ["c.md", "d.md"]);
+
+        ws.mark_read("c.md").expect("mark");
+        ws.mark_unread("a.md").expect("mark");
+        assert_eq!(ws.unread(), ["a.md", "d.md"]);
+        ws.mark_folder_read("").expect("folder");
+        assert_eq!(ws.unread(), NOTHING);
+        ws.mark_all_read();
+        assert_eq!(unread_heard(&fx.rec), Some(Vec::new()));
+        assert!(ws.mark_read("../outside.md").is_err());
+        ws.close();
+    }
+
+    #[test]
+    fn what_changed_while_the_folder_was_closed_is_unread_when_it_opens_again() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        write(fx.project.path(), "b.md", "# B\n");
+        let ws = fx.open();
+        ws.unread.flush(); // the first look at the folder is done
+        ws.close();
+
+        write(fx.project.path(), "b.md", "# B changed\n");
+        write(fx.project.path(), "c.md", "# C\n");
+        let ws = fx.open();
+        ws.unread.flush();
+        assert_eq!(ws.unread(), ["b.md", "c.md"]);
+        ws.mark_all_read();
+        ws.close();
+
+        // what was marked read before closing stays read
+        let ws = fx.open();
+        ws.unread.flush();
+        assert_eq!(ws.unread(), NOTHING);
+        ws.close();
+    }
+
+    #[test]
+    fn moves_in_the_explorer_keep_what_was_read_even_where_links_are_rewritten() {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "README.md",
+            "# Home\n\nSee [guide](docs/guide.md).\n",
+        );
+        write(fx.project.path(), "docs/guide.md", "# Guide\n");
+        write(fx.project.path(), "docs/extra/api.md", "# API\n");
+        let ws = fx.open();
+        ws.unread.flush();
+        ws.mark_unread("docs/extra/api.md").expect("mark");
+
+        let rename = [Move {
+            from: "docs/guide.md".to_owned(),
+            to: "docs/manual.md".to_owned(),
+        }];
+        let preview = ws.preview_move(&rename, true, &[]).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        let readme = std::fs::read_to_string(fx.project.path().join("README.md")).expect("readme");
+        assert!(
+            readme.contains("(manual/manual.md)"),
+            "the link was rewritten"
+        );
+
+        // the rewritten README and the moved documents are as read as they were; the unread one still is
+        assert_eq!(ws.unread(), ["manual/extra/api.md"]);
+
+        // the watcher reports all of it a moment later, and it changes nothing
+        write(fx.project.path(), "later.md", "# Later\n");
+        wait_until("the watcher to catch up", || {
+            ws.unread() == ["later.md", "manual/extra/api.md"]
+        });
+        ws.unread.flush();
+        let saved: BTreeMap<String, String> = serde_json::from_slice(
+            &std::fs::read(ws.lock_store().expect("store").read_path()).expect("read.json"),
+        )
+        .expect("json");
+        assert_eq!(
+            saved.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["README.md", "manual/manual.md"]
+        );
+        ws.close();
+    }
+
+    #[test]
+    fn the_read_state_moves_into_the_project_when_it_is_initialized() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let ws = fx.open();
+        ws.unread.flush();
+        let before = ws.lock_store().expect("store").read_path();
+        assert!(before.starts_with(fx.app.path()) && before.is_file());
+
+        ws.init_project_folder().expect("init");
+        ws.mark_unread("a.md").expect("mark");
+        ws.unread.flush();
+        let local = fx.project.path().join(".trailmark/local/read.json");
+        let saved: BTreeMap<String, String> =
+            serde_json::from_slice(&std::fs::read(&local).expect("read.json in the project"))
+                .expect("json");
+        assert!(
+            saved.is_empty(),
+            "the state written there is the current one"
+        );
+        ws.close();
+    }
+
+    #[test]
+    fn a_single_file_has_no_unread_markers() {
+        let fx = Fx::new();
+        write(fx.project.path(), "notes/todo.md", "# Todo\n");
+        write(fx.project.path(), "notes/other.md", "# Other\n");
+        let ws = fx.open_path(&fx.project.path().join("notes").join("todo.md"));
+        ws.unread.flush();
+        assert_eq!(ws.unread(), NOTHING);
+        ws.mark_read("todo.md").expect("mark");
+        ws.mark_unread("todo.md").expect("mark");
+        ws.mark_all_read();
+        assert_eq!(ws.unread(), NOTHING);
+        assert!(fx.rec.unread.lock().expect("lock").is_empty());
+        let read_path = ws.lock_store().expect("store").read_path();
+        ws.close();
+        assert!(!read_path.exists(), "no state is kept for a single file");
     }
 
     #[test]
