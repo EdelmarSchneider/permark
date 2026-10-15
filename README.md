@@ -58,6 +58,9 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
   collapse sections you don't need. It keeps working while you edit, and a dot marks the sections an agent just changed
 - A **filter** for the Explorer (Documents, Docs and assets, Everything, or your own patterns) keeps a code repository's tree to the
   documents that matter, and tells you how many files it hides
+- Workspaces that collect several repositories show each one, even when the parent's `.gitignore` leaves it out. Hidden
+  files and files ignored by git have their own switches in the filter, off by default
+- The window opens where you left it, with its own size and place for each project
 - The Explorer **follows the file you open**, however you got there: quick open, a link, search, the feed, back and forward
 - Quick open (`Ctrl+P`), find in page (`Ctrl+F`), session restore and recent projects
 - One process per project: `trailmark ~/code/my-project`
@@ -91,8 +94,10 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 </picture>
 
 ### ✏️ Edit without fear
-- Two editors, one click apart (`Ctrl+Alt+E`): **Visual**, a WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and
-  code blocks, and **Source**, a Markdown editor with highlighting and line numbers. Both are loaded only when you start editing
+- One switch in the header, **Read | Visual | Source**, goes to any mode in one click and keeps your place and your unsaved work. **Visual** is a
+  WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks; **Source** is a Markdown editor with highlighting and
+  line numbers. `Ctrl+E` toggles Read and the editor you used last, `Ctrl+Alt+E` toggles Visual and Source. Both editors are loaded only
+  when you start editing
 - **Only the blocks you changed are rewritten.** Every other byte of the file stays as its author (or agent) wrote it, including line
   endings and a byte-order mark. A block you edited carries a bar in the margin until you save, and the status bar counts them
 - Blocks the visual editor can't write back faithfully (front matter, raw HTML, math, diagrams, footnotes) stay as they are,
@@ -132,6 +137,16 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 ### 🗂️ Zero footprint by default
 TrailMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
 **Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
+
+### 🖱️ Open with TrailMark
+On Windows, right-click a folder, the background of a folder or a Markdown file and choose **Open with TrailMark** (under *Show more options* on
+Windows 11). You can also list TrailMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
+**Settings → File manager**, which adds and removes them at once. TrailMark never sets itself as your default app; **Make default...** takes you to the
+Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
+
+### 🌍 Your language
+TrailMark speaks **English, Português (Brasil), Español and Deutsch**. It follows your system's language, and **Settings → Language**
+switches it at once, no restart. The Windows installer asks for a language too.
 
 ## Install
 
@@ -184,9 +199,9 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 
 | Action | Shortcut |
 |---|---|
-| Start editing | `E` or `Ctrl+E` |
+| Start editing, in the editor you used last | `E` or `Ctrl+E` |
 | Done (back to reading) | `Ctrl+E` or `Esc` |
-| Switch between Visual and Source | `Ctrl+Alt+E` |
+| Switch between Visual and Source (from reading: the editor you did not use last) | `Ctrl+Alt+E` |
 | Save | `Ctrl+S` |
 | New file | `Ctrl+N` |
 | Bold / italic / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
@@ -211,20 +226,21 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - A visual and a source editor with block-preserving saves, safe sharing of a file with agents, new files and images
 - File operations (rename, move, delete) that update links and can be undone
 
-**v0.2.1: translations**
-- Português (Brasil), Español and Deutsch
+**v0.2.1: your language** (released)
+- Português (Brasil), Español and Deutsch, "Open with TrailMark" in the Windows file manager, one Read | Visual | Source switch,
+  a window that remembers its place, and an Explorer for workspaces of several repositories
 
 **v0.3**
 - Search everywhere (`Ctrl+T`): files, sections, tags and commands in one box
 - Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words it uses
 - Unread markers ("changed since I last read it") and clickable code references (`src/main.rs:42`)
-- "Open with TrailMark" in your file manager
+- "Open with TrailMark" in the macOS and Linux file managers (Windows has it already)
 
 **Later**, no promises
 - Spec-driven workflows, review comments that turn into a prompt for your agent, and an MCP server so any agent can ask TrailMark
   "where is X described?"
 - A rendered diff against the last commit or your last read, rich JSON and XML views, backlinks, and installer extras
-  (`trailmark` on the `PATH`, `.md` file association)
+  (`trailmark` on the `PATH`)
 
 ## Tech
 

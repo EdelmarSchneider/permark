@@ -5,7 +5,7 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api } from "../api";
-import { errorKind, errorText } from "../errors";
+import { errorKind, errorMessage } from "../errors";
 import {
   UndoStack,
   deleteSummary,
@@ -170,7 +170,7 @@ class FileOpsStore {
           held === null ? [] : [held],
         );
       } catch (error) {
-        return errorText(error);
+        return errorMessage(error);
       }
       const decision = linkDecision(setting, preview);
       let updateLinks = decision === "update";
@@ -185,7 +185,7 @@ class FileOpsStore {
       try {
         outcome = await api.applyMove(preview.planId, updateLinks, buffer ? [buffer] : []);
       } catch (error) {
-        return errorText(error);
+        return errorMessage(error);
       }
       await this.afterMove(outcome, dirs, buffer);
       return null;
@@ -301,7 +301,7 @@ class FileOpsStore {
     } catch (error) {
       // the bin may have taken some of the items before it failed: the tree shows what is left
       await vault.refreshTree();
-      toast.message(t("fileOps.deleteFailed", { message: errorText(error) }), "warn");
+      toast.message(t("fileOps.deleteFailed", { message: errorMessage(error) }), "warn");
     } finally {
       this.busy = false;
     }
@@ -345,7 +345,7 @@ class FileOpsStore {
       });
       return null;
     } catch (error) {
-      return errorKind(error) === "exists" ? t("fileOps.nameExists") : errorText(error);
+      return errorKind(error) === "exists" ? t("fileOps.nameExists") : errorMessage(error);
     }
   }
 
@@ -381,7 +381,7 @@ class FileOpsStore {
         left > 0 ? "warn" : "info",
       );
     } catch (error) {
-      toast.message(t("fileOps.undoFailed", { message: errorText(error) }), "warn");
+      toast.message(t("fileOps.undoFailed", { message: errorMessage(error) }), "warn");
     } finally {
       this.busy = false;
     }

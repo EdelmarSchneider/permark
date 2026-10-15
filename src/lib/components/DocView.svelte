@@ -8,6 +8,7 @@
   import { enhanceContextFor } from "../dom/enhanceContext";
   import type { EnhanceContext } from "../dom/enhance";
   import { ICON_CHECK, ICON_COPY } from "../dom/enhance";
+  import { showsAtTop } from "../editor/viewport";
   import { frontmatterValue } from "../frontmatter";
   import { t, tn } from "../i18n";
   import { buildOutline, currentHeading } from "../outline";
@@ -186,7 +187,8 @@
     const index = blockForLine(ranges, request.line);
     if (index === null) return false;
     const target = blocks[index];
-    scrollToElement(target, 1 / 3);
+    if (request.align === "top") scrollToElement(target, 0, 8);
+    else scrollToElement(target, 1 / 3);
     locatedElement = target;
     if (!tint || request.tint === false) return true;
     const next = blocks[index + 1];
@@ -405,7 +407,8 @@
       if (!scroller) return null;
       const edge = scroller.getBoundingClientRect().top;
       for (const el of renderer?.blocks ?? []) {
-        if (el.getBoundingClientRect().bottom <= edge + 1) continue;
+        const box = el.getBoundingClientRect();
+        if (!showsAtTop(box.top, box.bottom, edge)) continue;
         return parseSourcepos(el.getAttribute("data-sourcepos"))?.startLine ?? null;
       }
       return null;

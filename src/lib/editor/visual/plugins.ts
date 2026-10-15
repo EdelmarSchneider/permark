@@ -1,8 +1,8 @@
 // The ProseMirror plugins of Visual mode that belong to this app and not to the Markdown presets: keeping each top-level
 // node tied to its block, the unsaved-block bar, task checkboxes, pasted and dropped images, and the keys that open the
-// link popover and the slash menu.
+// link popover and the slash menu, and the keys of a table (tableKeys.ts).
 
-import { keymap } from "@milkdown/kit/prose/keymap";
+import { keydownHandler, keymap } from "@milkdown/kit/prose/keymap";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { NodeSelection, Plugin, PluginKey, TextSelection } from "@milkdown/kit/prose/state";
 import { Mapping } from "@milkdown/kit/prose/transform";
@@ -10,6 +10,7 @@ import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/
 import { $prose } from "@milkdown/kit/utils";
 import { LOCKED, TM_BLOCK } from "./core";
 import { originOf, type Analysis } from "./doc";
+import { composing, tableKeymap } from "./tableKeys";
 
 /** What the plugins ask of the editor object that owns them. */
 export type PluginHost = {
@@ -67,6 +68,7 @@ const imagesOf = (data: DataTransfer | null, onlyImages: boolean): File[] =>
   Array.from(data?.files ?? []).filter((file) => !onlyImages || file.type.startsWith("image/"));
 
 export const unsavedKey = new PluginKey("TM_UNSAVED");
+export const tableKeysKey = new PluginKey("TM_TABLE_KEYS");
 
 /** The plugins, in the order the editor should try them (before the Markdown presets'). */
 export function appPlugins(host: PluginHost) {
@@ -184,5 +186,18 @@ export function appPlugins(host: PluginHost) {
     }),
   );
 
-  return [tracking, interaction, keys];
+  // Enter, Shift+Enter, Mod+Enter and Tab in a table. Plugins listed here come before the presets', so these win over the table
+  // keys of the GFM preset (whose Enter leaves the table) and are taken only with the caret in a table. An input method that is
+  // composing text keeps its Enter.
+  const tableKeys = $prose((ctx) => {
+    const handle = keydownHandler(tableKeymap(ctx));
+    return new Plugin({
+      key: tableKeysKey,
+      props: {
+        handleKeyDown: (view, event) => !composing(event, view) && handle(view, event),
+      },
+    });
+  });
+
+  return [tracking, interaction, keys, tableKeys];
 }

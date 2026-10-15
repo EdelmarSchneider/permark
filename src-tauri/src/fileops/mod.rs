@@ -12,7 +12,7 @@
 
 mod ops;
 mod plan;
-mod scan;
+pub(crate) mod scan;
 mod service;
 mod world;
 
@@ -24,6 +24,7 @@ pub use ops::OsRecycler;
 pub use plan::Move;
 pub use service::{FileOpsService, Followers};
 
+use crate::edit::NameProblem;
 use crate::vault::VaultError;
 
 #[derive(Debug, thiserror::Error)]
@@ -33,7 +34,7 @@ pub enum FileOpError {
     #[error("{0} already exists")]
     Exists(String),
     #[error("{0}")]
-    InvalidName(String),
+    InvalidName(NameProblem),
     #[error("{0} can't be moved into itself")]
     IntoItself(String),
     #[error("{0} is in another root: files can't be moved between the project and a worktree")]
@@ -58,7 +59,10 @@ pub enum FileOpError {
         "{reason}. These could not be put back and stay where they were moved to: {}",
         .left.iter().map(|m| m.to.as_str()).collect::<Vec<_>>().join(", ")
     )]
-    PartlyMoved { reason: String, left: Vec<Move> },
+    PartlyMoved {
+        reason: Box<FileOpError>,
+        left: Vec<Move>,
+    },
     #[error("couldn't move to the recycle bin: {0}")]
     Trash(String),
 }
@@ -72,7 +76,8 @@ impl FileOpError {
             Self::InvalidName(_) => "invalidName",
             Self::IntoItself(_) => "intoItself",
             Self::OtherRoot(_) => "otherRoot",
-            Self::Protected(_) | Self::HoldsWorktree { .. } => "protected",
+            Self::Protected(_) => "protected",
+            Self::HoldsWorktree { .. } => "holdsWorktree",
             Self::Overlap(_) => "overlap",
             Self::SimpleMode => "simpleMode",
             Self::Nothing => "nothing",

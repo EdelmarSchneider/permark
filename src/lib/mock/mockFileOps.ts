@@ -44,8 +44,11 @@ const plans = new Map<number, Plan>();
 const operations: Operation[] = [];
 let counter = 0;
 
-const fail = (kind: string, message: string): never => {
-  throw { kind, message };
+/** What the backend adds to an error for the UI to word (see `errorMessage`). */
+type Blanks = { subject?: string; detail?: string; reason?: string };
+
+const fail = (kind: string, message: string, blanks: Blanks = {}): never => {
+  throw { kind, message, ...blanks };
 };
 
 function relative(fromDir: string, target: string): string {
@@ -71,11 +74,13 @@ function check(moves: Move[]): Move[] {
       fail(
         "otherRoot",
         `${m.to} is in another root: files can't be moved between the project and a worktree`,
+        { subject: m.to },
       );
     }
-    if (isInside(m.to, m.from)) fail("intoItself", `${m.from} can't be moved into itself`);
+    if (isInside(m.to, m.from))
+      fail("intoItself", `${m.from} can't be moved into itself`, { subject: m.from });
     if (docExists(m.to) || allDocPaths().some((p) => isInside(p, m.to))) {
-      fail("exists", `${m.to} already exists`);
+      fail("exists", `${m.to} already exists`, { subject: m.to });
     }
     const docs = docsOf(m);
     if (docs.length === 0 && !mockFiles.folders.has(m.from) && mockDocKind(m.from) === null) {
@@ -233,9 +238,10 @@ export async function deleteEntries(paths: string[]): Promise<DeleteOutcome> {
 
 export async function newFolder(path: string): Promise<CreatedFolder> {
   if (allDocPaths().some((p) => isInside(p, path)) || mockFiles.folders.has(path)) {
-    return fail("exists", `${path} already exists`);
+    return fail("exists", `${path} already exists`, { subject: path });
   }
-  if (/[\\:*?"<>|]/.test(basename(path))) return fail("invalidName", "That name can't be used");
+  if (/[\\:*?"<>|]/.test(basename(path)))
+    return fail("invalidName", "That name can't be used", { reason: "forbiddenChars" });
   mockFiles.folders.add(path);
   const id = ++counter;
   operations.push({ id, moves: [], rewrites: [], folders: [path] });

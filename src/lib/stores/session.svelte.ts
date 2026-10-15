@@ -35,8 +35,12 @@ class SessionStore {
   rightTab = $state<RightTab>(DEFAULT_RIGHT_TAB);
   /** Whether moving files in the Explorer rewrites the links to them. */
   linkUpdate = $state<LinkUpdate>(DEFAULT_LINK_UPDATE);
-  /** How a document opens for editing (the switch in the header changes the mode of the open document only). */
+  /** How a document opens for editing (the switch in the header changes the mode of the open document only, and Ctrl+E and E reopen the one used last). */
   editMode = $state<EditMode>(DEFAULT_EDIT_MODE);
+  /** The editor used last in this run (not saved): Ctrl+E and E open it again. Choosing the setting above starts over from it. */
+  lastEditMode = $state<EditMode | null>(null);
+  /** "Never for this folder" was chosen on the hint to keep settings with the project. */
+  initHintNever = $state(false);
   systemDark = $state(false);
 
   lastDoc: string | null = null;
@@ -73,6 +77,7 @@ class SessionStore {
     this.rightTab = s.rightTab;
     this.linkUpdate = s.linkUpdate;
     this.editMode = s.editMode;
+    this.initHintNever = s.initHintNever;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
     this.enabled = true;
@@ -95,6 +100,7 @@ class SessionStore {
       rightTab: this.rightTab,
       linkUpdate: this.linkUpdate,
       editMode: this.editMode,
+      initHintNever: this.initHintNever,
     };
   }
 
@@ -144,6 +150,7 @@ class SessionStore {
 
   setEditMode(mode: EditMode): void {
     this.editMode = mode;
+    this.lastEditMode = null;
     this.persist();
   }
 
@@ -187,6 +194,12 @@ class SessionStore {
 
   setTreeFilter(filter: TreeFilter): void {
     this.treeFilter = filter;
+    this.persist();
+  }
+
+  /** The hint to keep settings with the project is not shown again for this folder. */
+  neverHintInit(): void {
+    this.initHintNever = true;
     this.persist();
   }
 

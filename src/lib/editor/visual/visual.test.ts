@@ -251,6 +251,28 @@ describe("the caret", () => {
     // the heading is on line 0, "First paragraph." on 2, "Second paragraph." on 6
     expect(editor.caretLine()).toBe(6);
   });
+
+  it("maps the block at the top of the pane to its line, whichever block the caret is in", () => {
+    load(DOC, { block: 0 });
+    const { doc } = editor.core.view.state;
+    // the pane starts at 100: everything above the second paragraph is scrolled off, the paragraph is the first block in view
+    let seen = false;
+    doc.forEach((node, pos) => {
+      seen ||= node.textContent === "Second paragraph.";
+      const el = editor.core.view.nodeDOM(pos) as HTMLElement;
+      const top = seen ? 150 : 50;
+      vi.spyOn(el, "getBoundingClientRect").mockReturnValue(new DOMRect(0, top, 100, 20));
+    });
+    vi.spyOn(scroller, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 100, 100, 400));
+    expect(editor.caretLine()).toBe(0);
+    // the heading is on line 0 and "Second paragraph." on 6
+    expect(editor.topLine()).toBe(6);
+  });
+
+  it("shows the block asked for at the top of the pane without moving the caret off its own block", () => {
+    load(DOC, { block: 2, top: 1 });
+    expect(editor.caretBlock()).toBe(2);
+  });
 });
 
 describe("the Outline", () => {

@@ -445,6 +445,23 @@
   white-space: nowrap;
   overflow: hidden;
 }
+/* A long folder or a longer word for "saves" never cuts a word in half: the folder gives way first, with an ellipsis, then the
+   name a file was renamed from. */
+.feed-row__meta > span {
+  flex: none;
+}
+.feed-row__meta > .feed-row__folder {
+  flex: 0 200 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-row__meta > .feed-row__tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .feed-row__time {
   font-size: var(--fs-ui-xs);
   color: var(--faint);
@@ -710,8 +727,9 @@
   --tone: var(--git-modified);
   --tone-text: var(--git-modified-text);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
   padding: 7px var(--sp-4);
   flex: none;
   font-size: 12.5px;
@@ -732,8 +750,19 @@
 }
 .banner__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
+  margin-left: auto;
+}
+/* the text takes what is left of the line; the buttons drop below it when they do not fit beside it */
+.banner > :not(.icon, .spacer, .banner__actions, button) {
+  flex: 1 1 14em;
+  min-width: 0;
+}
+.banner > button {
+  margin-left: auto;
 }
 .follow-chip {
   animation: tm-rise var(--dur) var(--ease) both;
@@ -912,6 +941,15 @@
   width: 288px;
   padding: 12px 14px;
 }
+/* a panel taller than the window scrolls (Settings, in the smallest window) instead of running off the screen */
+.popover--scroll {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.popover--scroll > * {
+  flex: none;
+}
 .menu-item {
   display: flex;
   align-items: center;
@@ -966,6 +1004,13 @@
   text-transform: uppercase;
   color: var(--faint);
 }
+/* a sentence of explanation inside a menu: quiet, wrapped to the menu's width */
+.menu-note {
+  padding: 4px 8px;
+  font-size: var(--fs-ui-xs);
+  line-height: 1.4;
+  color: var(--muted);
+}
 .field {
   display: flex;
   flex-direction: column;
@@ -997,6 +1042,10 @@
 .text-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+select.select-input {
+  cursor: pointer;
+  text-overflow: ellipsis;
 }
 .field__preview {
   font: 11.5px/1.4 var(--font-code);
@@ -1686,10 +1735,22 @@ mark {
 .doc-header .breadcrumb .current {
   overflow: hidden;
   text-overflow: ellipsis;
+  /* the file name is what the person looks for: it keeps a few letters while the folders in front of it shrink first */
+  min-width: 6ch;
+}
+.doc-header .breadcrumb button {
+  min-width: 0;
+  flex-shrink: 10;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-header .breadcrumb .sep {
+  flex: none;
 }
 .doc-header .doc-meta,
 .doc-header .doc-chip {
-  flex: 0 1 auto;
+  /* "saved 2 min ago" gives way (with an ellipsis) before the file name does */
+  flex: 0 6 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

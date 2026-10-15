@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import ImageZoom from "./lib/components/ImageZoom.svelte";
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
@@ -11,7 +11,7 @@
   import SettingsPopover from "./lib/components/SettingsPopover.svelte";
   import Shell from "./lib/components/Shell.svelte";
   import Welcome from "./lib/components/Welcome.svelte";
-  import { t } from "./lib/i18n";
+  import { language, t } from "./lib/i18n";
   import { isEditable } from "./lib/dom/domUtil";
   import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
   import { matchShortcut } from "./lib/shortcuts";
@@ -29,6 +29,19 @@
   // follow the resolved theme (system / light / dark)
   $effect(() => {
     document.documentElement.dataset.theme = session.resolvedTheme;
+  });
+
+  // the page's language (screen readers, hyphenation), and the pieces of the open document that are drawn by code
+  // (the copy button of a code block, the title of a note) are drawn again in the new language
+  let shownLocale = untrack(() => language.locale);
+  $effect(() => {
+    const locale = language.locale;
+    document.documentElement.lang = locale;
+    untrack(() => {
+      if (locale === shownLocale) return;
+      shownLocale = locale;
+      docs.rerender();
+    });
   });
 
   onMount(() => {

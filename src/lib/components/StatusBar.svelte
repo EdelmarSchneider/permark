@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t, tn } from "../i18n";
+  import { formatNumber, t, tn } from "../i18n";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { edit } from "../stores/edit.svelte";
@@ -29,8 +29,8 @@
   );
   const changed = $derived(
     git?.truncated
-      ? t("status.changedMore", { count: vault.changedCount.toLocaleString() })
-      : t("status.changed", { count: vault.changedCount.toLocaleString() }),
+      ? t("status.changedMore", { count: formatNumber(vault.changedCount) })
+      : t("status.changed", { count: formatNumber(vault.changedCount) }),
   );
   const baselineKind = $derived(git?.baseline.kind ?? "lastVisit");
   const baselineText = $derived(
@@ -78,129 +78,132 @@
 </script>
 
 <footer class="statusbar">
-  <IconButton
-    small
-    class="sb-panel-toggle"
-    icon="panel-left"
-    label={t("status.toggleLeft")}
-    pressed={session.left.open}
-    onclick={() => app.toggleLeft()}
-  />
-  {#if vault.info && !vault.info.liveUpdates}
-    <span class="sb-item is-warn" title={t("status.liveOffHint")}>
-      <Icon name="alert" />{t("status.liveOff")}
-    </span>
-  {/if}
-  {#if git?.gitError}
-    <span class="sb-item is-warn" title={git.gitError}>
-      <Icon name="alert" />{t("status.gitUnavailable")}
-    </span>
-  {:else if git && !git.isRepo}
-    <span class="sb-item" title={t("status.noRepoHint")}>{t("status.noRepo")}</span>
-  {:else if git}
-    <span
-      class="sb-item"
-      title={t("status.branchHint", { branch: branchLabel, oid: shortOid ?? "" })}
-    >
-      <Icon name="branch" />{branchLabel}
-    </span>
-    <span class="sb-item" title={t("status.changedHint")}>
-      <span class="rollup" style="margin:0"></span>{changed}
-    </span>
-  {/if}
-  {#if git?.isRepo || git?.gitError}
-    <button
-      type="button"
-      class="sb-item"
-      title={t("status.baselineHint")}
-      data-popover-trigger
-      disabled={!!git?.gitError}
-      onclick={(e) => openMenu("baseline", e)}
-    >
-      {baselineText}<Icon name="chevron-down" class="chev" />
-    </button>
-  {/if}
-  {#if rebasing && git}
-    <span class="sb-chip">{t(`status.chip.${git.repoState}`)}</span>
-  {/if}
-  {#if edit.active}
-    <span class="sb-item">{t("edit.statusMode", { mode: t(`edit.${edit.mode}`) })}</span>
-    {#if edit.mode === "visual" && edit.unsavedBlocks > 0}
-      <span class="sb-item">{tn("edit.unsavedBlocks", edit.unsavedBlocks)}</span>
-    {/if}
-    {#if edit.mode === "source"}
-      <span class="sb-item" aria-live="off">
-        {t("edit.position", { line: edit.caret.line, col: edit.caret.column })}
+  <div class="sb-group sb-group--start">
+    <IconButton
+      small
+      class="sb-panel-toggle"
+      icon="panel-left"
+      label={t("status.toggleLeft")}
+      pressed={session.left.open}
+      onclick={() => app.toggleLeft()}
+    />
+    {#if vault.info && !vault.info.liveUpdates}
+      <span class="sb-item is-warn" title={t("status.liveOffHint")}>
+        <Icon name="alert" />{t("status.liveOff")}
       </span>
     {/if}
-    {#if session.follow}<span class="sb-chip">{t("edit.followPaused")}</span>{/if}
-  {/if}
-  <span class="spacer"></span>
-  {#if update.phase === "available"}
+    {#if git?.gitError}
+      <span class="sb-item is-warn" title={git.gitError}>
+        <Icon name="alert" />{t("status.gitUnavailable")}
+      </span>
+    {:else if git && !git.isRepo}
+      <span class="sb-item" title={t("status.noRepoHint")}>{t("status.noRepo")}</span>
+    {:else if git}
+      <span
+        class="sb-item"
+        title={t("status.branchHint", { branch: branchLabel, oid: shortOid ?? "" })}
+      >
+        <Icon name="branch" />{branchLabel}
+      </span>
+      <span class="sb-item" title={t("status.changedHint")}>
+        <span class="rollup" style="margin:0"></span>{changed}
+      </span>
+    {/if}
+    {#if git?.isRepo || git?.gitError}
+      <button
+        type="button"
+        class="sb-item"
+        title={t("status.baselineHint")}
+        data-popover-trigger
+        disabled={!!git?.gitError}
+        onclick={(e) => openMenu("baseline", e)}
+      >
+        {baselineText}<Icon name="chevron-down" class="chev" />
+      </button>
+    {/if}
+    {#if rebasing && git}
+      <span class="sb-chip">{t(`status.chip.${git.repoState}`)}</span>
+    {/if}
+    {#if edit.active}
+      <span class="sb-item">{t("edit.statusMode", { mode: t(`edit.${edit.mode}`) })}</span>
+      {#if edit.mode === "visual" && edit.unsavedBlocks > 0}
+        <span class="sb-item">{tn("edit.unsavedBlocks", edit.unsavedBlocks)}</span>
+      {/if}
+      {#if edit.mode === "source"}
+        <span class="sb-item" aria-live="off">
+          {t("edit.position", { line: edit.caret.line, col: edit.caret.column })}
+        </span>
+      {/if}
+      {#if session.follow}<span class="sb-chip">{t("edit.followPaused")}</span>{/if}
+    {/if}
+  </div>
+  <div class="sb-group sb-group--end">
+    {#if update.phase === "available"}
+      <button
+        type="button"
+        class="sb-item is-on"
+        title={t("update.statusHint", { version: update.version })}
+        onclick={() => updates.announce()}
+      >
+        <Icon name="download" />{t("update.statusAvailable", { version: update.version })}
+      </button>
+    {:else if update.phase === "downloading" || update.phase === "installing"}
+      <button
+        type="button"
+        class="sb-item is-on"
+        title={describeUpdate(update)}
+        onclick={() => updates.announce()}
+      >
+        <Icon name="download" />{describeUpdate(update)}
+      </button>
+    {/if}
     <button
       type="button"
-      class="sb-item is-on"
-      title={t("update.statusHint", { version: update.version })}
-      onclick={() => updates.announce()}
+      class="sb-item"
+      title={vault.stateLocation === "project"
+        ? t("status.stateProjectHint")
+        : t("status.stateLocalHint")}
+      data-popover-trigger
+      onclick={(e) => openMenu("state", e)}
     >
-      <Icon name="download" />{t("update.statusAvailable", { version: update.version })}
+      <Icon name="folder-cog" />{vault.stateLocation === "project"
+        ? t("status.stateProject")
+        : t("status.stateLocal")}
     </button>
-  {:else if update.phase === "downloading" || update.phase === "installing"}
     <button
       type="button"
-      class="sb-item is-on"
-      title={describeUpdate(update)}
-      onclick={() => updates.announce()}
+      class={["sb-item", session.follow && "is-on"]}
+      aria-pressed={session.follow}
+      title={t("status.followHint")}
+      onclick={() => app.toggleFollow()}
     >
-      <Icon name="download" />{describeUpdate(update)}
+      <Icon name="eye" />{session.follow ? t("status.following") : t("status.follow")}
     </button>
-  {/if}
-  <button
-    type="button"
-    class="sb-item"
-    title={vault.stateLocation === "project"
-      ? t("status.stateProjectHint")
-      : t("status.stateLocalHint")}
-    data-popover-trigger
-    onclick={(e) => openMenu("state", e)}
-  >
-    <Icon name="folder-cog" />{vault.stateLocation === "project"
-      ? t("status.stateProject")
-      : t("status.stateLocal")}
-  </button>
-  <button
-    type="button"
-    class={["sb-item", session.follow && "is-on"]}
-    aria-pressed={session.follow}
-    title={t("status.followHint")}
-    onclick={() => app.toggleFollow()}
-  >
-    <Icon name="eye" />{session.follow ? t("status.following") : t("status.follow")}
-  </button>
-  <button
-    type="button"
-    class="sb-item"
-    title={t("status.zoomHint")}
-    onclick={() => session.setZoom(1)}
-  >
-    {Math.round(session.zoom * 100)}%
-  </button>
-  <button
-    type="button"
-    class="sb-item"
-    title={t("status.widthHint", { name: t(`width.${session.width}`) })}
-    onclick={() => session.cycleWidth()}
-  >
-    <Icon name="width" />{t(`width.${session.width}`)}
-  </button>
-  <IconButton
-    small
-    class="sb-panel-toggle"
-    icon="panel-right"
-    label={t("status.toggleRight")}
-    pressed={session.right.open}
-    onclick={() => app.toggleRight()}
-  />
+    <button
+      type="button"
+      class="sb-item"
+      title={t("status.zoomHint")}
+      onclick={() => session.setZoom(1)}
+    >
+      {Math.round(session.zoom * 100)}%
+    </button>
+    <button
+      type="button"
+      class="sb-item"
+      title={t("status.widthHint", { name: t(`width.${session.width}`) })}
+      onclick={() => session.cycleWidth()}
+    >
+      <Icon name="width" />{t(`width.${session.width}`)}
+    </button>
+    <IconButton
+      small
+      class="sb-panel-toggle"
+      icon="panel-right"
+      label={t("status.toggleRight")}
+      pressed={session.right.open}
+      onclick={() => app.toggleRight()}
+    />
+  </div>
 </footer>
 
 {#if menu}

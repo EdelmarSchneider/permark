@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { EDIT_MODES } from "../editMode";
   import { gitStateLabel } from "../gitLabels";
+  import { noteText } from "../errors";
   import { t } from "../i18n";
   import { basename, breadcrumbs } from "../paths";
   import { formatReference } from "../reference";
@@ -9,7 +9,6 @@
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
   import { session } from "../stores/session.svelte";
-  import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
   import { savedLabel } from "../time";
@@ -17,6 +16,7 @@
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
+  import ModeSwitch from "./ModeSwitch.svelte";
 
   let menuAnchor = $state<DOMRect | null>(null);
 
@@ -32,7 +32,6 @@
         ? null
         : badgeFor(vault.git?.files[path]?.state),
   );
-  const blocked = $derived(edit.blocked);
   const referenceHint = $derived(
     path ? formatReference(session.refTemplate, path) : t("header.copyReference"),
   );
@@ -117,7 +116,7 @@
   }
 </script>
 
-<header class={["doc-header", docs.scrolled && "is-scrolled"]}>
+<header class={["doc-header", docs.scrolled && "is-scrolled", edit.active && "is-editing"]}>
   <div class="nav-group">
     <IconButton
       icon="arrow-left"
@@ -138,7 +137,7 @@
   {#if path}
     <nav class="breadcrumb" aria-label={t("header.path")}>
       {#if vault.isSimple}
-        <span class="current">{file}</span>
+        <span class="current" title={file}>{file}</span>
         <span class="parent">{vault.info?.name}</span>
       {:else}
         {#each folders as crumb (crumb.path)}
@@ -167,12 +166,17 @@
           >
         </span>
       {/if}
-      <span class="doc-meta" role="status">
-        {edit.saving ? t("edit.saving") : (edit.note ?? savedLabel(edit.modifiedMs, clock.now))}
-      </span>
+      {@const meta = edit.saving
+        ? t("edit.saving")
+        : (edit.note ?? savedLabel(edit.modifiedMs, clock.now))}
+      <span class="doc-meta" role="status" title={meta}>{meta}</span>
     {:else if view}
-      <span class="doc-meta">{savedLabel(view.modifiedMs, clock.now)}</span>
-      {#if view.encodingNote}<span class="doc-chip">{view.encodingNote}</span>{/if}
+      {@const saved = savedLabel(view.modifiedMs, clock.now)}
+      <span class="doc-meta" title={saved}>{saved}</span>
+      {#if view.encodingNote}
+        {@const note = noteText(view.encodingNote)}
+        <span class="doc-chip" title={note}>{note}</span>
+      {/if}
     {/if}
   {/if}
 
@@ -190,20 +194,8 @@
         <span>{ui.flashed === "reference" ? t("common.copied") : t("header.copyReference")}</span>
       </button>
     {/if}
+    {#if view || edit.active}<ModeSwitch />{/if}
     {#if edit.active}
-      <div class="seg" role="group" aria-label={t("edit.modes")} title={t("edit.modeHint")}>
-        {#each EDIT_MODES as mode (mode)}
-          <button
-            type="button"
-            class={["seg__btn", edit.mode === mode && "is-on"]}
-            aria-pressed={edit.mode === mode}
-            disabled={edit.switching}
-            onclick={() => void edit.switchTo(mode)}
-          >
-            {t(`edit.${mode}`)}
-          </button>
-        {/each}
-      </div>
       <button
         type="button"
         class="btn btn--sm"
@@ -215,21 +207,11 @@
       </button>
       <button
         type="button"
-        class="btn btn--sm btn--primary"
+        class="btn btn--sm btn--primary btn-done"
         title={t("edit.doneHint")}
         onclick={() => edit.requestExit()}
       >
         <Icon name="check" size="sm" /><span>{t("edit.done")}</span>
-      </button>
-    {:else if view}
-      <button
-        type="button"
-        class={["btn btn--sm", blocked && "is-disabled"]}
-        aria-disabled={blocked !== null}
-        title={blocked ?? t("edit.editHint")}
-        onclick={() => (blocked ? toast.message(blocked, "info") : void edit.enter())}
-      >
-        <Icon name="pencil" size="sm" /><span>{t("edit.edit")}</span>
       </button>
     {/if}
     {#if vault.isSimple}

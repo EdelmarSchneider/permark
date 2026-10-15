@@ -24,6 +24,7 @@
   type="button"
   class={["feed-row", current && "is-current", entry.kind === "removed" && "feed-row--removed"]}
   aria-current={current ? "true" : undefined}
+  title={entry.path}
   onclick={onopen}
 >
   <Icon name={ICONS[entry.kind]} class={`kind kind--${entry.kind}`} />
@@ -35,9 +36,9 @@
       {#if entry.worktree}
         <span class="wt-label"><Icon name="fork" size="xs" />{entry.worktree}</span>
       {/if}
-      <span>{folder}</span>
+      <span class="feed-row__folder">{folder}</span>
       {#if entry.kind === "renamed" && entry.from}
-        <span>· {t("feed.renamedFrom", { name: basename(entry.from) })}</span>
+        <span class="feed-row__tail">· {t("feed.renamedFrom", { name: basename(entry.from) })}</span>
       {:else if entry.kind === "removed"}
         <span>· {t("feed.removed")}</span>
       {:else if entry.saves > 1}

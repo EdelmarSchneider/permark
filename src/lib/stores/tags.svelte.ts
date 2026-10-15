@@ -2,7 +2,7 @@
 // tags of the open document. The backend does the counting; this store keeps the answers fresh.
 
 import { api } from "../api";
-import { errorText } from "../errors";
+import { errorMessage } from "../errors";
 import { t } from "../i18n";
 import {
   countTags,
@@ -156,7 +156,7 @@ class TagsStore {
       if (token === this.tokens.meta && this.meta?.path === path) this.meta = meta;
       return true;
     } catch (error) {
-      toast.message(t("tags.saveFailed", { message: errorText(error) }), "warn");
+      toast.message(t("tags.saveFailed", { message: errorMessage(error) }), "warn");
       await this.preload(path);
       return false;
     }
@@ -166,7 +166,7 @@ class TagsStore {
     try {
       await api.cleanUpMeta();
     } catch (error) {
-      toast.message(t("tags.saveFailed", { message: errorText(error) }), "warn");
+      toast.message(t("tags.saveFailed", { message: errorMessage(error) }), "warn");
     }
     await this.refreshOverview();
   }

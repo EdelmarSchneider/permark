@@ -1,7 +1,8 @@
 // The mock backend behind `mockApi` (VITE_MOCK=1). Loaded lazily by api.ts.
 
 import type { Api } from "../api";
-import type { SessionState } from "../types";
+import { parsePreference, type LanguagePreference } from "../i18n";
+import type { SessionState, ShellState } from "../types";
 import {
   cleanUp,
   fileMeta,
@@ -50,8 +51,31 @@ let savedSession: SessionState | null = {
   rightTab: "changes",
   linkUpdate: "ask",
   editMode: "visual",
+  initHintNever: false,
 };
 let stateLocation: "appData" | "project" = "appData";
+/** The file manager entries of the mock "system": on, so the Settings section shows in the browser. */
+const mockShell: ShellState = {
+  supported: true,
+  contextMenu: true,
+  association: false,
+  isDefault: false,
+};
+const LANGUAGE_KEY = "trailmark.mock.language";
+
+/** `?lang=de` picks the language for a run; otherwise the one chosen in Settings last time. */
+function mockLanguage(): LanguagePreference {
+  let stored: string | null = null;
+  try {
+    stored = localStorage.getItem(LANGUAGE_KEY);
+  } catch {
+    stored = null;
+  }
+  const asked =
+    typeof location === "undefined" ? null : new URLSearchParams(location.search).get("lang");
+  return parsePreference(asked ?? stored);
+}
+
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const mockImpl: Api = {
@@ -67,6 +91,32 @@ export const mockImpl: Api = {
   initialPath: async () =>
     typeof location === "undefined" ? null : new URLSearchParams(location.search).get("open"),
   recentVaults: async () => mockRecents,
+  appLanguage: async () => mockLanguage(),
+  setAppLanguage: async (language) => {
+    try {
+      localStorage.setItem(LANGUAGE_KEY, language);
+    } catch {
+      // the browser mock forgets it on reload
+    }
+  },
+  shellIntegrationState: async () => ({ ...mockShell }),
+  setShellContextMenu: async (enabled, locale) => {
+    console.info("[mock] right-click menu entry:", enabled, locale);
+    mockShell.contextMenu = enabled;
+    return { ...mockShell };
+  },
+  setShellFileAssociation: async (enabled, locale) => {
+    console.info("[mock] file association:", enabled, locale);
+    mockShell.association = enabled;
+    if (!enabled) mockShell.isDefault = false;
+    return { ...mockShell };
+  },
+  refreshShellLabels: async (locale) => {
+    console.info("[mock] reword the file manager entries:", locale);
+  },
+  openDefaultApps: async () => {
+    console.info("[mock] open the default apps settings");
+  },
   listTree: async () => mockTree(),
   readDocument: async (path) => {
     await wait(40);
@@ -95,6 +145,8 @@ export const mockImpl: Api = {
     await wait(60);
     return searchDocs(query, limit);
   },
+  // `docs/design/wireframes.md` embeds it from another folder
+  referencedImages: async () => ["docs/images/pipeline.svg"],
   initProjectFolder: async () => {
     await wait(400);
     stateLocation = "project";

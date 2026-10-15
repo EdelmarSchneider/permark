@@ -5,6 +5,7 @@
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { docs } from "../stores/docs.svelte";
+  import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
   import { baselineLabel } from "../time";
@@ -19,7 +20,9 @@
   const groups = $derived(since ? groupSince(since.files) : []);
   const when = $derived(since?.sinceMs != null ? baselineLabel(since.sinceMs, clock.now) : null);
   const byFileTimes = $derived(!git?.isRepo || git.gitError !== null);
-  const showHint = $derived(vault.stateLocation === "appData" && !ui.hintDismissed);
+  const showHint = $derived(
+    vault.stateLocation === "appData" && !ui.hintDismissed && !session.initHintNever,
+  );
   const fixCommand = $derived(
     git?.gitError && isDubiousOwnership(git.gitError) && vault.info
       ? safeDirectoryCommand(vault.info.root)

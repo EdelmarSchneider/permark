@@ -2,13 +2,22 @@
   import { onDestroy } from "svelte";
   import { LINK_UPDATES } from "../fileOps";
   import { EDIT_MODES } from "../editMode";
-  import { t } from "../i18n";
+  import {
+    LANGUAGE_NAMES,
+    LANGUAGE_PREFERENCES,
+    language,
+    t,
+    type LanguagePreference,
+  } from "../i18n";
   import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { docs } from "../stores/docs.svelte";
+  import { chooseLanguage } from "../stores/languageChoice.svelte";
   import { session } from "../stores/session.svelte";
+  import { shell } from "../stores/shell.svelte";
   import { ui } from "../stores/ui.svelte";
   import { updates } from "../stores/updates.svelte";
+  import type { ShellState } from "../types";
   import { describeUpdate, isBusy } from "../updates";
   import IconButton from "./IconButton.svelte";
   import Popover, { type Anchor } from "./Popover.svelte";
@@ -25,6 +34,11 @@
   const simple = anchor.left > window.innerWidth / 2;
 
   const themes = ["system", "light", "dark"] as const;
+
+  // each language is written in itself, so it can be found whatever the interface says now
+  function languageName(choice: LanguagePreference): string {
+    return choice === "system" ? t("settings.languageSystem") : LANGUAGE_NAMES[choice];
+  }
   const preview = $derived(formatReference(session.refTemplate, docs.path ?? SAMPLE));
   const update = $derived(updates.state);
   // the button already says "Checking..."
@@ -32,16 +46,52 @@
 
   // "You're up to date" is the answer to the last check; it is not kept for the next time the popover opens
   onDestroy(() => updates.dismissResult());
+
+  // The file manager entries are read from the system whenever the popover opens and whenever the window regains focus
+  // (the person may have picked the default app in Windows Settings meanwhile).
+  const fileManager = $derived(shell.state);
+  $effect(() => {
+    void shell.load();
+    const reload = (): void => void shell.load();
+    window.addEventListener("focus", reload);
+    return () => window.removeEventListener("focus", reload);
+  });
+
+  // Writes the change, then shows what the system has: when the write failed the box goes back to where it was.
+  async function toggle(
+    box: HTMLInputElement,
+    change: (enabled: boolean) => Promise<void>,
+    actual: (state: ShellState) => boolean,
+  ): Promise<void> {
+    await change(box.checked);
+    if (shell.state) box.checked = actual(shell.state);
+  }
 </script>
 
 <Popover
   {anchor}
   variant="panel"
+  scroll
   side={simple ? "bottom" : "right"}
   align={simple ? "end" : "start"}
   label={t("settings.title")}
   onclose={() => (ui.settingsOpen = false)}
 >
+  <div class="field">
+    <label class="field__label" for="app-language">{t("settings.language")}</label>
+    <select
+      id="app-language"
+      class="text-input select-input"
+      value={language.preference}
+      onchange={(e) => void chooseLanguage(e.currentTarget.value as LanguagePreference)}
+    >
+      {#each LANGUAGE_PREFERENCES as choice (choice)}
+        <option value={choice} lang={choice === "system" ? undefined : choice}>
+          {languageName(choice)}
+        </option>
+      {/each}
+    </select>
+  </div>
   <div class="field">
     <span class="field__label">{t("settings.theme")}</span>
     <div class="segmented" role="group" aria-label={t("settings.theme")}>
@@ -138,6 +188,59 @@
     />
     <span class="field__preview" aria-live="polite">{t("settings.refPreview", { preview })}</span>
   </div>
+  {#if fileManager?.supported}
+    <div class="field">
+      <span class="field__label">{t("settings.fileManager")}</span>
+      <label class="filter__check">
+        <input
+          type="checkbox"
+          checked={fileManager.contextMenu}
+          disabled={shell.busy}
+          aria-describedby="shell-menu-hint"
+          onchange={(e) =>
+            void toggle(
+              e.currentTarget,
+              (on) => shell.setContextMenu(on),
+              (state) => state.contextMenu,
+            )}
+        />
+        <span class="filter__text">
+          <span>{t("settings.shellMenu")}</span>
+          <span id="shell-menu-hint" class="filter__hint">{t("settings.shellMenuHint")}</span>
+        </span>
+      </label>
+      <label class="filter__check">
+        <input
+          type="checkbox"
+          checked={fileManager.association}
+          disabled={shell.busy}
+          aria-describedby="shell-assoc-hint"
+          onchange={(e) =>
+            void toggle(
+              e.currentTarget,
+              (on) => shell.setAssociation(on),
+              (state) => state.association,
+            )}
+        />
+        <span class="filter__text">
+          <span>{t("settings.shellAssoc")}</span>
+          <span id="shell-assoc-hint" class="filter__hint">{t("settings.shellAssocHint")}</span>
+        </span>
+      </label>
+      {#if fileManager.association}
+        {#if fileManager.isDefault}
+          <span class="field__status" role="status">{t("settings.shellIsDefault")}</span>
+        {:else}
+          <div class="field__row">
+            <button type="button" class="btn btn--sm" onclick={() => void shell.makeDefault()}>
+              {t("settings.shellDefault")}
+            </button>
+          </div>
+          <span class="field__status">{t("settings.shellDefaultHint")}</span>
+        {/if}
+      {/if}
+    </div>
+  {/if}
   <div class="field">
     <span class="field__label">{t("settings.updates")}</span>
     <div class="field__row">

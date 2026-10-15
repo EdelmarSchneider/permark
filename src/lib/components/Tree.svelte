@@ -11,7 +11,7 @@
     topLevelOnly,
   } from "../fileOps";
   import { gitStateLabel } from "../gitLabels";
-  import { t, tn } from "../i18n";
+  import { formatNumber, t, tn } from "../i18n";
   import { dirname, isMarkdown } from "../paths";
   import { nearestScrollTop } from "../reveal";
   import { app } from "../stores/app.svelte";
@@ -438,6 +438,13 @@
         ></span>
       {/if}
       {#if branch}<span class="branch-chip">{branch}</span>{/if}
+      {#if row.node.large !== undefined}
+        <span
+          class="branch-chip"
+          title={t("tree.largeFolderTitle", { n: formatNumber(row.node.large) })}
+          >{t("tree.largeFolder")}</span
+        >
+      {/if}
       {#if rollup}
         <span
           class={[

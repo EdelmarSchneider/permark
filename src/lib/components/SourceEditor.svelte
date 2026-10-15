@@ -38,6 +38,7 @@
             onFiles: (files, source) => void edit.addFiles(files, source),
           },
           start.atEnd === true,
+          start.top,
         );
         bridge.editor = view;
         // the reading view is hidden while editing, so the Outline is built from, and scrolls, this editor

@@ -1,5 +1,6 @@
-// English strings (the default locale). Placeholders are `{name}`. Plural keys come in `.one` / `.other`
-// pairs and are read with `tn()`, which fills `{n}`.
+// English strings: the source language and the fallback of every other table. Placeholders are `{name}`. Plural
+// keys come in `.one` / `.other` pairs and are read with `tn()`, which fills `{n}`. Every other language has
+// exactly these keys (`i18n.test.ts` checks it); see docs/design/i18n.md for the conventions.
 export const en = {
   "app.name": "TrailMark",
   "app.loading": "Loading",
@@ -14,6 +15,8 @@ export const en = {
   "common.open": "Open",
   "copy.failed": "Couldn't copy to the clipboard.",
   "dialog.filter.docs": "Documents",
+  "dialog.openFolder": "Open folder",
+  "dialog.openFile": "Open file",
 
   // ---- welcome
   "welcome.tagline": "Read, navigate and follow your Markdown docs.",
@@ -80,6 +83,8 @@ export const en = {
   "tree.files": "Files",
   "tree.worktrees": "Worktrees",
   "tree.containsChanges": "Contains changes",
+  "tree.largeFolder": "large folder",
+  "tree.largeFolderTitle": "Not opened: it holds more than {n} items.",
 
   // ---- Explorer filter (docs/design/v0.2.md section 13)
   "filter.title": "Filter files",
@@ -90,6 +95,8 @@ export const en = {
   "filter.docsAndAssets": "Docs and assets",
   "filter.docsAndAssetsHint": "Documents plus images, JSON, YAML, TOML, XML and CSV",
   "filter.everything": "Everything",
+  "filter.everythingHint":
+    "All file types. Ignored and hidden files have their own switches below.",
   "filter.custom": "Custom",
   "filter.categories": "File types",
   "filter.categoryDocuments": "Documents",
@@ -104,8 +111,12 @@ export const en = {
   "filter.invalidGlob": "Not a valid pattern: {pattern}",
   "filter.assetsNearDocs": "Only assets next to documents",
   "filter.assetsNearDocsHint":
-    "Images, data and XML files show only when their folder, or the one above it, holds a document.",
+    "Images, data and XML show only next to a document (same folder or the one above). Images also show when a document links to them, or in folders like assets or images.",
   "filter.hideEmptyFolders": "Hide folders with no visible files",
+  "filter.showHidden": "Show hidden files and folders",
+  "filter.showHiddenHint": "Names that start with a dot, like .github.",
+  "filter.showIgnored": "Show files ignored by git",
+  "filter.showIgnoredHint": "Build output and local files. Very large folders are not opened.",
   "filter.showingOf.one": "Showing {shown} of {n} file",
   "filter.showingOf.other": "Showing {shown} of {n} files",
   "filter.showingAll.one": "Showing all {n} file",
@@ -286,6 +297,10 @@ export const en = {
   "hint.initialize": "Initialize .trailmark/",
   "hint.dismiss": "Dismiss hint",
   "hint.dismissHint": "Don't show again",
+  "initHint.text": "Keep tags and TrailMark settings with this project?",
+  "initHint.initialize": "Initialize",
+  "initHint.notNow": "Not now",
+  "initHint.never": "Never for this folder",
   "init.title": "Initialize TrailMark in this project?",
   "init.intro": "TrailMark will create .trailmark/ in {name}:",
   "init.config": "shared settings, safe to commit",
@@ -344,6 +359,7 @@ export const en = {
   "tags.savedApp": "Saved in TrailMark, not in the file.",
   "tags.savedProject": "Saved in .trailmark/meta.toml (shared with the project).",
   "tags.done": "Done",
+  "tags.initialize": "Initialize .trailmark",
   "tags.empty": "No tags yet.",
   "tags.emptyHint": "Press T on a doc to tag it, or add `tags:` to its frontmatter.",
   "tags.noMatch": "No tags match '{query}'",
@@ -418,6 +434,9 @@ export const en = {
 
   // ---- settings
   "settings.title": "Settings",
+  "settings.language": "Language",
+  "settings.languageSystem": "System default",
+  "settings.languageNotSaved": "Couldn't keep the language for next time: {message}",
   "settings.theme": "Theme",
   "settings.width": "Reading width",
   "settings.zoom": "Zoom",
@@ -425,6 +444,15 @@ export const en = {
   "settings.refTemplate": "Reference template",
   "settings.refPreview": "Preview: {preview}",
   "settings.updates": "Updates",
+  "settings.fileManager": "File manager",
+  "settings.shellMenu": 'Add "Open with TrailMark" to the right-click menu',
+  "settings.shellMenuHint": 'On Windows 11 it is under "Show more options".',
+  "settings.shellAssoc": "Associate .md files with TrailMark",
+  "settings.shellAssocHint": 'Adds TrailMark to the "Open with" list of Markdown files.',
+  "settings.shellDefault": "Make default...",
+  "settings.shellDefaultHint":
+    "Only Windows can set the default app: choose .md in the list that opens.",
+  "settings.shellIsDefault": "TrailMark is the default app for .md files.",
 
   // ---- updates
   "update.check": "Check for updates...",
@@ -441,30 +469,74 @@ export const en = {
   "update.statusHint": "Update available: v{version}. Click to see the options.",
   "update.installFailed": "The update could not be installed: {message}",
 
+  // ---- notes about a document (the backend sends codes; see noteText)
+  "note.invalidUtf8": "Not valid UTF-8; unreadable bytes were replaced",
+  "note.utf16Le": "Converted from UTF-16 LE",
+  "note.utf16LeLossy": "Converted from UTF-16 LE; some characters could not be decoded",
+  "note.utf16Be": "Converted from UTF-16 BE",
+  "note.utf16BeLossy": "Converted from UTF-16 BE; some characters could not be decoded",
+  "note.deepNesting": "Shown as plain text: nesting too deep to render",
+
+  // ---- errors from the backend, worded by kind (see errorMessage); {subject} is a path or a name, {detail} is
+  // diagnostic text from the system that is shown as it is
+  "error.noVault": "No folder is open.",
+  "error.superseded": "Another folder was opened in the meantime.",
+  "error.internal": "Something went wrong inside TrailMark: {detail}",
+  "error.pathEscape": "{subject} is outside the open folder.",
+  "error.invalidPath": "{subject} isn't a valid path.",
+  "error.notFound": "Not found: {subject}",
+  "error.io": "Couldn't access {subject}: {detail}",
+  "error.denied": "No permission to use {subject}.",
+  "error.watch": "Couldn't watch the folder for changes: {detail}",
+  "error.git": "Git reported a problem: {detail}",
+  "error.gitUnavailable": "Git isn't available right now.",
+  "error.session": "Couldn't read or save TrailMark's saved state: {detail}",
+  "error.metaUnreadable": "Can't read .trailmark/meta.toml{where}: {detail}",
+  "error.binary": "{subject} is a binary file, so it can't be edited.",
+  "error.tooLarge": "{subject} is too large.",
+  "error.notMarkdown": "{subject} isn't a Markdown file.",
+  "error.encoding": "{subject} isn't UTF-8 text, so it can't be edited here.",
+  "error.exists": "{subject} already exists.",
+  "error.unsupported": "Not available when a single file is opened on its own.",
+  "error.invalidData": "The image data isn't valid: {detail}",
+  "error.intoItself": "{subject} can't be moved into itself.",
+  "error.otherRoot":
+    "{subject} is in another root: files can't be moved between the project and a worktree.",
+  "error.protected": "{subject} can't be changed here.",
+  "error.holdsWorktree":
+    "{subject} holds the linked worktree {detail}, so it can't be moved or deleted here.",
+  "error.overlap": "{subject} overlaps another item of the same move.",
+  "error.nothing": "There is nothing to do.",
+  "error.unknownPlan": "That preview is no longer available. Try again.",
+  "error.unknownOperation": "That operation can no longer be undone.",
+  "error.partlyMoved":
+    "The move stopped partway. These could not be put back and stay where they were moved to: {subject}",
+  "error.trash": "Couldn't move to the recycle bin: {detail}",
+  "error.shell": "Couldn't change the file manager entries: {detail}",
+  "error.nameNoStem": "The name needs something before the extension",
+  "error.imageEmpty": "The image is empty",
+
   // ---- time
   "time.justNow": "just now",
   "time.seconds": "{n}s",
   "time.minutes": "{n}m",
   "time.hours": "{n}h",
   "time.days": "{n}d",
-  "time.ago.seconds.one": "{n} second ago",
-  "time.ago.seconds.other": "{n} seconds ago",
-  "time.ago.minutes.one": "{n} minute ago",
-  "time.ago.minutes.other": "{n} minutes ago",
-  "time.ago.hours.one": "{n} hour ago",
-  "time.ago.hours.other": "{n} hours ago",
-  "time.ago.days.one": "{n} day ago",
-  "time.ago.days.other": "{n} days ago",
+
+  // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
+  "mode.label": "Mode",
+  "mode.read": "Read",
+  "mode.readHint": "Read this document",
+  "mode.visualHint": "Edit in the visual editor",
+  "mode.sourceHint": "Edit the Markdown source",
+  "mode.withKeys": "{hint} ({keys})",
 
   // ---- editing (docs/design/v0.2.md section 3)
-  "edit.edit": "Edit",
-  "edit.editHint": "Edit this document (E)",
   "edit.done": "Done",
   "edit.doneHint": "Back to reading (Ctrl+E or Esc)",
   "edit.save": "Save",
   "edit.saveHint": "Save (Ctrl+S)",
   "edit.saving": "Saving...",
-  "edit.modes": "Editor",
   "edit.visual": "Visual",
   "edit.source": "Source",
   "edit.unsaved": "Unsaved",
@@ -496,7 +568,6 @@ export const en = {
   "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "The editor could not be loaded.",
   "edit.bars": "Editing notices",
-  "edit.modeHint": "Switch between Visual and Source (Ctrl+Alt+E)",
   "edit.switchFailed": "Couldn't switch editors: {message}",
   "edit.switchTyping": "the text kept changing while it was read. Try again.",
   "edit.blocksUnreadable":
@@ -550,6 +621,10 @@ export const en = {
   "toolbar.deleteRow": "Delete row",
   "toolbar.deleteCol": "Delete column",
   "toolbar.deleteTable": "Delete table",
+  "toolbar.tableNeedsCell": "Put the cursor in a table cell first",
+  "toolbar.tableHeaderNoRowAbove":
+    "The header row stays first: use Add row below to add the first row",
+  "toolbar.tableHeaderNoDelete": "A table needs its header row: delete the whole table instead",
   "toolbar.codeBlock": "Code block",
   "toolbar.language": "Language of the code block",
   "toolbar.plainText": "Plain text",
@@ -683,3 +758,6 @@ export const en = {
   "feed.op.folder": "New folder",
   "feed.op.undone": "Undo",
 } as const;
+
+/** The shape of a table for any language: the keys of English, each a string. */
+export type Messages = { readonly [K in keyof typeof en]: string };

@@ -69,18 +69,20 @@ const source = (path: string, text: string, hash: string): SourceDoc => ({
 });
 
 /** An editor that is only a string. */
-function fakeEditor(initial: string): EditorApi & { text: string; line: number } {
+function fakeEditor(initial: string): EditorApi & { text: string; line: number; top: number } {
   const editor = {
     ...noOutline,
     mode: "source" as const,
     text: initial,
     line: 0,
+    top: 0,
     getText: () => editor.text,
     setText: (text: string, line: number) => {
       editor.text = text;
       editor.line = line;
     },
     caretLine: () => editor.line,
+    topLine: () => editor.top,
     focus: vi.fn(),
     insertImage: (rel: string) => {
       editor.text += `![](${rel})`;

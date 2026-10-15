@@ -14,6 +14,8 @@
     variant?: "menu" | "panel" | "bar";
     /** A panel that needs room for chips and lists. */
     wide?: boolean;
+    /** A panel that can be taller than the window: it scrolls instead of running off the screen. */
+    scroll?: boolean;
     label: string;
     onclose: () => void;
     children: Snippet;
@@ -24,6 +26,7 @@
     align = "start",
     variant = "menu",
     wide = false,
+    scroll = false,
     label,
     onclose,
     children,
@@ -68,7 +71,12 @@
     const timer = setTimeout(() => window.addEventListener("pointerdown", close, true), 0);
     window.addEventListener("blur", onclose);
     window.addEventListener("resize", onclose);
+    // content that arrives after the popover opened (a section that waits for the backend) changes its height: place it again
+    const resized =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => place());
+    if (el) resized?.observe(el);
     return () => {
+      resized?.disconnect();
       clearTimeout(timer);
       unregister();
       restore();
@@ -86,6 +94,7 @@
     variant === "menu" && "popover--menu",
     variant === "panel" && "popover--panel",
     wide && "popover--wide",
+    scroll && "popover--scroll",
   ]}
   style:left="{pos?.left ?? 0}px"
   style:top="{pos?.top ?? 0}px"

@@ -288,6 +288,7 @@ describe("renaming and moving", () => {
       getText: () => editor.text,
       setText: vi.fn(),
       caretLine: () => 0,
+      topLine: () => 0,
       focus: vi.fn(),
       insertImage: vi.fn(),
       applyChanges: vi.fn((edits: { from: number; to: number; insert: string }[]) => {
@@ -346,6 +347,7 @@ describe("renaming and moving", () => {
       text: () => "[a](api.md)\n",
       status: () => ({ dirty, changed: dirty ? 1 : 0 }),
       caretLine: () => 0,
+      topLine: () => 0,
       caretBlock: () => 0,
       lineOfBlock: () => 0,
       load: vi.fn(),

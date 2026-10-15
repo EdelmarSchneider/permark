@@ -937,9 +937,9 @@ fn a_folder_with_a_linked_worktree_in_it_is_not_moved_or_deleted() {
     );
     assert_eq!(
         kind(svc.preview_move(&moves(&[("agents", "elsewhere")]), true, &[])),
-        "protected"
+        "holdsWorktree"
     );
-    assert_eq!(kind(svc.delete(&["agents".to_owned()])), "protected");
+    assert_eq!(kind(svc.delete(&["agents".to_owned()])), "holdsWorktree");
     assert!(fx.exists("agents/trees/x/code.rs"));
 }
 

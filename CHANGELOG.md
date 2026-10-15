@@ -3,6 +3,81 @@
 All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.2.1] - 2026-10-14
+
+TrailMark now speaks Português (Brasil), Español and Deutsch, opens from the Windows file manager, and gets a single
+Read | Visual | Source switch, a window that remembers its place, and an Explorer that handles workspaces of several repositories.
+
+### Added
+- **One mode switch in the header: Read | Visual | Source.** It replaces the **Edit** button and the Visual / Source switch that only showed while
+  editing, and it is always there while a document is open (Simple mode too). One click goes to any mode, keeping your place (the block at the
+  top of the view stays at the top, in all three) and your unsaved work; leaving an editor for Read with unsaved changes asks, as before, to
+  Save, Discard or Keep editing. `Ctrl+E` and `E` open the editor you used last (the **Open files for editing in** setting until you use one),
+  `Ctrl+Alt+E` toggles Visual and Source, or from Read opens the editor you did not use last. For a file that cannot be edited the Visual and Source
+  segments are dimmed, with the reason as their tooltip. In a narrow header the labels become icons, and the switch works with the arrow keys,
+  Home and End, with tooltips that name the shortcut.
+- **Repositories inside a project are always in the tree.** A folder with its own `.git` shows up even when the project's `.gitignore`
+  leaves it out, which is how a workspace folder that collects several independent repositories is usually set up. Inside each one its own
+  `.gitignore` and `.git/info/exclude` decide what is listed, not the project's. Search, Quick open, tags and live updates cover their files
+  too. Linked worktrees work as before.
+- **Two new switches in the Explorer filter**, saved with it and off by default: **Show hidden files and folders** (names that start with a dot) and
+  **Show files ignored by git**. Folders with more than 2,000 entries that git ignores (`node_modules`, `target`, build output) are listed
+  closed, with a "large folder" tag, instead of being read.
+- **`.trailmark/` is easier to find.** A quiet banner offers to keep tags and settings with the project when you open a git repository that
+  doesn't have a `.trailmark/` folder yet (**Initialize**, **Not now**, **Never for this folder**), and the tag editor has an **Initialize .trailmark**
+  link next to "Saved in TrailMark, not in the file". Both open the existing Initialize dialog.
+- **The window remembers its size and position.** TrailMark opens where you left it, including maximized, with no jump: the window is
+  placed before it is shown. Each project folder keeps its own place (in the project's private state, never in a file you commit), and
+  the last window is used for the welcome screen, a folder opened for the first time and a single file. If the screen it was on is gone,
+  or the resolution or display scale changed, the window comes back on the main screen at a size that fits.
+- **Translations.** The interface now comes in **Português (Brasil)**, **Español** and **Deutsch** besides English. **Settings → Language** offers
+  *System default* (the first language of your system that TrailMark speaks, else English) and each language written in itself; the change
+  applies at once, without a restart, and is kept for all your projects. Plurals, numbers, dates and relative times follow the language,
+  key names in tooltips follow the keyboard of the language (`Strg+Umschalt+O` in German), and the native dialogs, errors and document
+  notes are worded in it too.
+- **Windows installer languages.** The installer asks for English, Português (Brasil), Español or Deutsch, and TrailMark starts in that language
+  until you pick one in Settings. A language chosen in the app always wins, and an update never changes it.
+- A test fails when a translation misses a key, has an extra one, changes a placeholder, or leaves a long sentence in English. See
+  `docs/design/i18n.md` for the conventions and how to add a language.
+- **"Open with TrailMark" in the Windows file manager.** Right-click a folder, the empty space inside a folder, or a `.md` / `.markdown` file and
+  choose **Open with TrailMark** (on Windows 11 it is under *Show more options*). A second, separate option lists TrailMark in the **Open with**
+  menu of Markdown files; it never takes over your default app (Windows keeps that for you), and **Settings → File manager → Make default...**
+  opens the Windows page where you pick it. Both options are in the installer (on by default for a new install, on its first page) and in
+  **Settings → File manager**, which adds or removes the entries at once and always shows what is registered now. The text of the entry follows the
+  language of the interface. Nothing needs administrator rights. An update keeps what you chose (it never adds back what you removed, nor
+  removes what you kept), and uninstalling removes every entry.
+
+### Changed
+- Hidden files and folders (`.github`, `.claude`, `.vscode`, `.gitignore`, ...) are no longer listed by default, in any preset. Turn on **Show
+  hidden files and folders** to see them; a hidden file that is open still shows, dimmed, in its folder. A hidden folder hides its images too, even
+  ones a document links to.
+- The **Everything** preset says that files ignored by git (including those in `.git/info/exclude`, such as a local-only script) have their own switch.
+- **The Explorer filter keeps your documentation images.** With **Only assets next to documents** on, an image used to show only when its
+  folder, or the one above it, held a document, so the pictures of a top-level `assets/` or `site/assets/` folder were hidden. Now an image
+  also shows when a Markdown document links to it (`![](...)`, a reference definition, or an HTML `<img>`, resolved from that document, wherever the
+  image is), or when it sits in a folder named `assets`, `images`, `img`, `media`, `attachments`, `screenshots`, `figures`, `diagrams` or
+  `pictures`. The icons of a code folder stay out unless a document uses them. Data and XML files keep the old rule, and `+pattern` / `-pattern`
+  entries still win. The set of linked images is kept up to date as documents change, reading only the document that changed.
+- Errors from the backend carry a kind and the name or text they are about, and the interface words them; a few messages that used to be fixed
+  English sentences (a file that is not UTF-8, a document shown as plain text because of its nesting) are now worded by the interface.
+- **Enter works like a spreadsheet inside a table in the Visual editor.** A table cell can't hold a line break, and Enter used to leave the table.
+  Now **Enter** moves to the same column one row down (and adds a row from the last row), **Shift+Enter** moves one row up, and **Ctrl+Enter**
+  (**Cmd+Enter** on macOS) leaves the table. **Tab** and **Shift+Tab** still move between cells, and Tab in the last cell adds a row. Undo
+  takes an added row away in one step. Enter outside a table is unchanged.
+- **The Settings panel scrolls** when the window is shorter than it is (it grew with the new File manager section), and a popover whose
+  content changes size after it opened is placed again.
+
+### Fixed
+- The folded **More formatting** menu of the Visual toolbar (in a narrow window) now has the table actions (add and delete rows and
+  columns), with the reason as a tooltip when one can't be used.
+- Opening a drive root from the file manager (`"C:\"` on the command line) works.
+- The welcome screen opens at the top with a long list of recent folders, instead of scrolled down past the logo.
+- **Quick open** opens a file the Explorer filter hides with one Enter when it is the only kind of match.
+- The file name in the header stays readable while editing in longer languages: the "saved ... ago" note and the folders shrink
+  first, and **Copy reference** becomes an icon in a narrow window.
+
 ## [0.2.0] - 2026-10-14
 
 TrailMark grows from a reader into a Markdown IDE: organize, edit and reorganize the documents you read, with the same promise as

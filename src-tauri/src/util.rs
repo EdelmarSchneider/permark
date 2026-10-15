@@ -34,6 +34,25 @@ pub(crate) fn hash_hex(bytes: &[u8]) -> String {
     format!("{:016x}", hash_bytes(bytes))
 }
 
+/// The MIME type of an image file, from its extension.
+pub(crate) fn image_mime(rel: &str) -> Option<&'static str> {
+    let ext = Path::new(rel)
+        .extension()?
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "svg" => "image/svg+xml",
+        _ => return None,
+    })
+}
+
 /// Windows sharing (32) and lock (33) violations, which are transient while another process writes.
 pub(crate) fn is_sharing_violation(err: &io::Error) -> bool {
     matches!(err.raw_os_error(), Some(32 | 33))

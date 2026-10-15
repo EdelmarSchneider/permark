@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from "../i18n";
+  import { showInitHint } from "../initHint";
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
   import { session } from "../stores/session.svelte";
@@ -12,6 +13,17 @@
   const repoState = $derived(vault.git?.repoState ?? "clean");
   const showRepo = $derived(repoState !== "clean" && ui.dismissedRepoState !== repoState);
   const deleted = $derived(docs.deleted);
+  const root = $derived(vault.info?.root ?? "");
+  const showInit = $derived(
+    showInitHint({
+      simple: vault.isSimple,
+      isRepo: vault.git?.isRepo === true,
+      stateLocation: vault.stateLocation,
+      never: session.initHintNever,
+      snoozed: ui.initHintSnoozed.has(root),
+      dialogOpen: ui.initDialog,
+    }),
+  );
 
   // the banner comes back the next time the state changes
   $effect(() => {
@@ -31,6 +43,29 @@
     >
       {t("common.dismiss")}
     </button>
+  </div>
+{/if}
+
+{#if showInit}
+  <div class="banner banner--info" role="status">
+    <Icon name="lightbulb" />
+    <div>{t("initHint.text")}</div>
+    <span class="spacer"></span>
+    <div class="banner__actions">
+      <button type="button" class="btn btn--sm" onclick={() => (ui.initDialog = true)}>
+        {t("initHint.initialize")}
+      </button>
+      <button
+        type="button"
+        class="btn btn--ghost btn--sm"
+        onclick={() => ui.initHintSnoozed.add(root)}
+      >
+        {t("initHint.notNow")}
+      </button>
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => session.neverHintInit()}>
+        {t("initHint.never")}
+      </button>
+    </div>
   </div>
 {/if}
 

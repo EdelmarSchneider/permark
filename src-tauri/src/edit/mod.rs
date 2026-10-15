@@ -47,13 +47,57 @@ pub enum EditError {
     #[error("a file named {0} already exists")]
     Exists(String),
     #[error("{0}")]
-    InvalidName(String),
+    InvalidName(NameProblem),
     #[error("{0}")]
     Unsupported(String),
-    #[error("{0}")]
+    #[error("the image data is not valid: {0}")]
     InvalidData(String),
     #[error("cannot write {path}: {source}")]
     Io { path: String, source: io::Error },
+}
+
+/// Why a name cannot be used. The English text is for logs; the UI shows its own words for [`NameProblem::code`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NameProblem {
+    Empty,
+    ForbiddenChars,
+    EdgeSpaceOrDot,
+    NoStem,
+    Reserved,
+    TooLong,
+    NotImage,
+    EmptyImage,
+}
+
+impl NameProblem {
+    /// A short stable identifier for the UI.
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::Empty => "empty",
+            Self::ForbiddenChars => "forbiddenChars",
+            Self::EdgeSpaceOrDot => "edgeSpaceOrDot",
+            Self::NoStem => "noStem",
+            Self::Reserved => "reserved",
+            Self::TooLong => "tooLong",
+            Self::NotImage => "notImage",
+            Self::EmptyImage => "emptyImage",
+        }
+    }
+}
+
+impl std::fmt::Display for NameProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Empty => "The name is empty",
+            Self::ForbiddenChars => "Names can't contain \\ / : * ? \" < > |",
+            Self::EdgeSpaceOrDot => "Names can't start with a space or end with a space or a dot",
+            Self::NoStem => "The name needs something before the extension",
+            Self::Reserved => "That name is reserved by the system",
+            Self::TooLong => "The name is too long",
+            Self::NotImage => "Only images can be added here (PNG, JPG, GIF, WebP, SVG)",
+            Self::EmptyImage => "The image is empty",
+        })
+    }
 }
 
 impl EditError {
@@ -258,7 +302,7 @@ impl<'a> Editor<'a> {
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .ok_or_else(|| VaultError::Invalid(rel.clone()))?;
-        validate_file_name(&name)?;
+        validate_file_name(&name).map_err(EditError::InvalidName)?;
 
         let bytes = text.as_bytes();
         let hash = hash_bytes(bytes);
@@ -370,27 +414,26 @@ fn write_new_file(abs: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// Whether `name` can be the name of a new file on every system we run on.
-pub(crate) fn validate_file_name(name: &str) -> Result<(), EditError> {
+pub(crate) fn validate_file_name(name: &str) -> Result<(), NameProblem> {
     const FORBIDDEN: [char; 9] = ['\\', '/', ':', '*', '?', '"', '<', '>', '|'];
-    let bad = |why: &str| Err(EditError::InvalidName(why.to_owned()));
     let stem = name.split('.').next().unwrap_or_default();
     // Windows also treats `con .md` as the device: spaces before the extension do not count.
     let device_stem = stem.trim_end();
     if name.is_empty() || name == "." || name == ".." {
-        bad("The name is empty")
+        Err(NameProblem::Empty)
     } else if name
         .chars()
         .any(|c| FORBIDDEN.contains(&c) || c.is_control())
     {
-        bad("Names can't contain \\ / : * ? \" < > |")
+        Err(NameProblem::ForbiddenChars)
     } else if name.ends_with('.') || name.ends_with(' ') || name.starts_with(' ') {
-        bad("Names can't start with a space or end with a space or a dot")
+        Err(NameProblem::EdgeSpaceOrDot)
     } else if stem.is_empty() {
-        bad("The name needs something before the extension")
+        Err(NameProblem::NoStem)
     } else if RESERVED_NAMES.contains(&device_stem.to_ascii_lowercase().as_str()) {
-        bad("That name is reserved by the system")
+        Err(NameProblem::Reserved)
     } else if name.len() > 255 {
-        bad("The name is too long")
+        Err(NameProblem::TooLong)
     } else {
         Ok(())
     }
@@ -863,7 +906,7 @@ graph LR
             (EditError::NotMarkdown("a".into()), "notMarkdown"),
             (EditError::Encoding("a".into()), "encoding"),
             (EditError::Exists("a".into()), "exists"),
-            (EditError::InvalidName("a".into()), "invalidName"),
+            (EditError::InvalidName(NameProblem::Empty), "invalidName"),
             (EditError::Unsupported("a".into()), "unsupported"),
             (EditError::InvalidData("a".into()), "invalidData"),
             (

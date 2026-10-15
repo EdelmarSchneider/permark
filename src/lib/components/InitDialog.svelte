@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { errorText } from "../errors";
+  import { errorMessage } from "../errors";
   import { t } from "../i18n";
   import { registerOverlay, rememberFocus } from "../overlays";
   import { app } from "../stores/app.svelte";
@@ -23,7 +23,7 @@
       await app.initProject();
       ui.initDialog = false;
     } catch (e) {
-      error = t("init.failed", { message: errorText(e) });
+      error = t("init.failed", { message: errorMessage(e) });
     } finally {
       busy = false;
     }

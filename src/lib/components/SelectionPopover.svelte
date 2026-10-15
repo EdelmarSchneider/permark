@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { selectionIn } from "../dom/domUtil";
-  import { t } from "../i18n";
+  import { keys, t } from "../i18n";
   import { copyText } from "../platform";
   import { app } from "../stores/app.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -92,7 +92,7 @@
       <span
         >{ui.flashed === "selection" ? t("common.copied") : t("selection.copyWithReference")}</span
       >
-      <kbd class="hint-kbd">Ctrl+Alt+C</kbd>
+      <kbd class="hint-kbd">{keys("Ctrl+Alt+C")}</kbd>
     </button>
     <span class="divider"></span>
     <button type="button" class="btn" onclick={copyPlain}>

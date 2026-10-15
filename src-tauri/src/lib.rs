@@ -4,8 +4,10 @@
 //! [`render`] (documents to HTML), [`links`], [`search`], [`watch`] (filesystem events), [`git`] and
 //! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor),
 //! [`fileops`] (rename, move, delete and new folders with the links kept working).
-//! [`nav`] keeps the window on the app's own page. [`workspace`] wires them together for one open folder, and
-//! [`commands`] exposes it to the UI.
+//! [`refs`] knows which images the documents use (for the Explorer filter).
+//! [`shell_integration`] adds "Open with TrailMark" to the file manager.
+//! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
+//! rest together for one open folder, and [`commands`] exposes it to the UI.
 
 mod commands;
 mod edit;
@@ -15,12 +17,15 @@ mod git;
 mod links;
 mod meta;
 mod nav;
+mod refs;
 mod render;
 mod search;
 mod session;
+mod shell_integration;
 mod util;
 mod vault;
 mod watch;
+mod window;
 mod workspace;
 
 use tauri::plugin::{Builder as PluginBuilder, TauriPlugin};
@@ -58,6 +63,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
+        // The window starts hidden; this puts it where it was and shows it.
+        .setup(|app| {
+            window::setup(app);
+            Ok(())
+        })
         // Images of the open folder: answered from the folder that is open now (see `serve_asset`).
         .register_asynchronous_uri_scheme_protocol(
             commands::ASSET_SCHEME,
@@ -69,6 +79,13 @@ pub fn run() {
             commands::open_vault,
             commands::initial_path,
             commands::recent_vaults,
+            commands::app_language,
+            commands::set_app_language,
+            commands::shell_integration_state,
+            commands::set_shell_context_menu,
+            commands::set_shell_file_association,
+            commands::refresh_shell_labels,
+            commands::open_default_apps,
             commands::list_tree,
             commands::read_document,
             commands::resolve_link,
@@ -81,6 +98,7 @@ pub fn run() {
             commands::open_external,
             commands::reveal_in_folder,
             commands::search,
+            commands::referenced_images,
             commands::init_project_folder,
             commands::state_location,
             commands::file_meta,
@@ -105,18 +123,21 @@ pub fn run() {
         .build(context)
         .expect("error while building tauri application");
 
-    app.run(|handle, event| match event {
-        // The last visit is saved when the window closes and again on exit.
-        RunEvent::WindowEvent {
-            event: WindowEvent::CloseRequested { .. },
-            ..
-        } => handle.state::<AppState>().save_last_visit(),
-        // Back in the foreground: other tools may have changed git state meanwhile.
-        RunEvent::WindowEvent {
-            event: WindowEvent::Focused(true),
-            ..
-        } => handle.state::<AppState>().refresh_on_focus(),
-        RunEvent::Exit => handle.state::<AppState>().shutdown(),
-        _ => {}
+    app.run(|handle, event| {
+        window::on_event(handle, &event);
+        match event {
+            // The last visit is saved when the window closes and again on exit.
+            RunEvent::WindowEvent {
+                event: WindowEvent::CloseRequested { .. },
+                ..
+            } => handle.state::<AppState>().save_last_visit(),
+            // Back in the foreground: other tools may have changed git state meanwhile.
+            RunEvent::WindowEvent {
+                event: WindowEvent::Focused(true),
+                ..
+            } => handle.state::<AppState>().refresh_on_focus(),
+            RunEvent::Exit => handle.state::<AppState>().shutdown(),
+            _ => {}
+        }
     });
 }

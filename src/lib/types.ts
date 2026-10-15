@@ -31,15 +31,32 @@ export type TreeFilter = {
   hideEmptyFolders: boolean;
   /** Images, data and XML files show only in folders that hold documents (see `treeFilter.ts`). */
   assetsNearDocs: boolean;
+  /** Also list the files that version control ignores (the tree is loaded without ignore rules; see `vault.refreshTree`). */
+  showIgnored: boolean;
+  /** Also list hidden files and folders (names that start with a dot). Applies to every preset. */
+  showHidden: boolean;
 };
 /** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
 export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
+/** What "Open with TrailMark" has registered with the file manager, as the system has it right now. */
+export type ShellState = {
+  /** False where TrailMark cannot register anything (every platform but Windows, for now). */
+  supported: boolean;
+  /** TrailMark is in the right-click menu of folders and Markdown files. */
+  contextMenu: boolean;
+  /** TrailMark is in the "Open with" list of Markdown files. */
+  association: boolean;
+  /** Windows' own choice for `.md` files is TrailMark. */
+  isDefault: boolean;
+};
 export type TreeNode = {
   name: string;
   path: string;
   kind: "dir" | "file" | "worktree" | "link";
   children?: TreeNode[];
+  /** An ignored folder that was too large to load: it holds more than this many entries and shows no children. */
+  large?: number;
 };
 export type DocumentView = {
   path: string;
@@ -50,7 +67,7 @@ export type DocumentView = {
   frontmatter: [string, string][] | null;
   modifiedMs: number;
   sizeBytes: number;
-  /** A short remark shown next to the title: an odd encoding, or a rendering fallback. */
+  /** Codes for what to tell the reader next to the title (an odd encoding, a rendering fallback), several joined with a comma; `noteText` words them. */
   encodingNote: string | null;
 };
 export type LinkTarget =
@@ -117,6 +134,8 @@ export type SessionState = {
   linkUpdate: LinkUpdate;
   /** How a document opens for editing. */
   editMode: EditMode;
+  /** "Never for this folder" was chosen on the hint to keep settings with the project. */
+  initHintNever: boolean;
 };
 
 // ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------

@@ -2,7 +2,7 @@
   // The toolbar of Visual mode (docs/design/v0.2.md section 3): block type, marks, link, lists, quote, table, code block, image and
   // rule. Sticky under the header. When the pane is narrow the last buttons fold into a `[...]` menu. It only draws; what a
   // button does is decided by the callbacks, and what is pressed comes from the selection (`format`).
-  import { t } from "../i18n";
+  import { keys, t } from "../i18n";
   import type { CommandId, FormatState } from "../editor/visual/format";
   import {
     BLOCK_TYPES,
@@ -10,6 +10,8 @@
     LANGUAGE_WIDTH,
     TOOLBAR_ITEMS,
     blockLabel,
+    moreMenuEntries,
+    tableMenuEntries,
     visibleCount,
     type ToolbarItem,
   } from "../editor/visual/toolbarModel";
@@ -46,7 +48,7 @@
   const folded = $derived(TOOLBAR_ITEMS.slice(shown));
 
   function hintOf(entry: ToolbarItem): string {
-    return entry.hint ? `${t(entry.label)} (${entry.hint})` : t(entry.label);
+    return entry.hint ? `${t(entry.label)} (${keys(entry.hint)})` : t(entry.label);
   }
 
   function open(kind: NonNullable<typeof menu>["kind"], e: MouseEvent): void {
@@ -75,54 +77,7 @@
     })),
   );
 
-  const tableEntries = $derived<MenuEntry[]>([
-    { id: "insert", label: t("toolbar.insertTable"), icon: "table", onselect: () => run("table") },
-    { type: "separator" },
-    {
-      id: "rowBefore",
-      label: t("toolbar.rowAbove"),
-      disabled: !format.table || format.tableHeader,
-      onselect: () => run("rowBefore"),
-    },
-    {
-      id: "rowAfter",
-      label: t("toolbar.rowBelow"),
-      disabled: !format.table,
-      onselect: () => run("rowAfter"),
-    },
-    {
-      id: "colBefore",
-      label: t("toolbar.colLeft"),
-      disabled: !format.table,
-      onselect: () => run("colBefore"),
-    },
-    {
-      id: "colAfter",
-      label: t("toolbar.colRight"),
-      disabled: !format.table,
-      onselect: () => run("colAfter"),
-    },
-    { type: "separator" },
-    {
-      id: "deleteRow",
-      label: t("toolbar.deleteRow"),
-      disabled: !format.table || format.tableHeader,
-      onselect: () => run("deleteRow"),
-    },
-    {
-      id: "deleteCol",
-      label: t("toolbar.deleteCol"),
-      disabled: !format.table,
-      onselect: () => run("deleteCol"),
-    },
-    {
-      id: "deleteTable",
-      label: t("toolbar.deleteTable"),
-      icon: "trash",
-      disabled: !format.table,
-      onselect: () => run("deleteTable"),
-    },
-  ]);
+  const tableEntries = $derived<MenuEntry[]>(tableMenuEntries(format, t, run));
 
   const languageEntries = $derived<MenuEntry[]>([
     {
@@ -139,20 +94,8 @@
     })),
   ]);
 
-  const moreEntries = $derived<MenuEntry[]>(
-    folded.map((entry) => ({
-      id: entry.id,
-      label: t(entry.label),
-      icon: entry.icon,
-      hint: entry.hint,
-      checked:
-        entry.id === "table" || entry.id === "link" || entry.id === "image"
-          ? undefined
-          : entry.active(format),
-      disabled: off,
-      onselect: () => (entry.id === "table" ? run("table") : activate(entry)),
-    })),
-  );
+  // the table button is a menu of its own: folded away, its entries go into this one
+  const moreEntries = $derived<MenuEntry[]>(moreMenuEntries(folded, format, off, t, activate, run));
 
   // Left and Right walk the buttons (a toolbar is one tab stop's worth of work); Esc gives the focus back to the text
   function onkeydown(e: KeyboardEvent): void {

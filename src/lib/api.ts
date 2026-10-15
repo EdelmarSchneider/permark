@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import type { LanguagePreference } from "./i18n";
 import type {
   AssetWritten,
   BufferText,
@@ -25,6 +26,7 @@ import type {
   SaveOutcome,
   SearchHit,
   SessionState,
+  ShellState,
   SourceDoc,
   TaggedFile,
   TagOverview,
@@ -40,6 +42,7 @@ export type EventMap = {
   "git-status-changed": GitSnapshot;
   "index-progress": { indexed: number; total: number };
   "meta-changed": null;
+  "image-refs-changed": null;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
@@ -49,8 +52,23 @@ export interface Api {
   /** The CLI argument, if any. */
   initialPath(): Promise<string | null>;
   recentVaults(): Promise<RecentVault[]>;
+  /** The language the interface starts in: the one picked in Settings, else the one the installer recorded, else "system". */
+  appLanguage(): Promise<LanguagePreference>;
+  /** Keeps the language picked in Settings (an app-wide choice, not a project one). */
+  setAppLanguage(language: LanguagePreference): Promise<void>;
+  /** What "Open with TrailMark" has registered with the file manager, read from the system each time. */
+  shellIntegrationState(): Promise<ShellState>;
+  /** Adds or removes the right-click menu entry; `locale` (`en`, `pt-BR`, `es`, `de`) is the language it is worded in. */
+  setShellContextMenu(enabled: boolean, locale: string): Promise<ShellState>;
+  /** Adds or removes TrailMark in the "Open with" list of Markdown files. */
+  setShellFileAssociation(enabled: boolean, locale: string): Promise<ShellState>;
+  /** Rewords the entries that exist after the interface language changed. */
+  refreshShellLabels(locale: string): Promise<void>;
+  /** Opens the page of Windows Settings where the default app of a file type is chosen. */
+  openDefaultApps(): Promise<void>;
   /** Main root plus worktrees as top-level roots. */
-  listTree(): Promise<TreeNode>;
+  /** The folder's tree. `showIgnored` also lists what version control ignores; `showHidden` lists `.trailmark/`. */
+  listTree(showIgnored: boolean, showHidden: boolean): Promise<TreeNode>;
   readDocument(path: string): Promise<DocumentView>;
   resolveLink(from: string, href: string): Promise<LinkTarget>;
   gitSnapshot(): Promise<GitSnapshot>;
@@ -66,6 +84,8 @@ export interface Api {
   /** Shows a file or folder of the open folder in the system's file manager. */
   revealInFolder(path: string): Promise<void>;
   search(query: string, limit?: number): Promise<SearchHit[]>;
+  /** The images some Markdown document of the folder links to, embeds or defines a reference for (folder paths). */
+  referencedImages(): Promise<string[]>;
   /** Creates `.trailmark/` in the project. */
   initProjectFolder(): Promise<void>;
   stateLocation(): Promise<"appData" | "project">;
@@ -125,7 +145,16 @@ export const tauriApi: Api = {
   openVault: (path) => invoke<VaultInfo>("open_vault", { path }),
   initialPath: () => invoke<string | null>("initial_path"),
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
-  listTree: () => invoke<TreeNode>("list_tree"),
+  appLanguage: () => invoke<LanguagePreference>("app_language"),
+  setAppLanguage: (language) => invoke<void>("set_app_language", { language }),
+  shellIntegrationState: () => invoke<ShellState>("shell_integration_state"),
+  setShellContextMenu: (enabled, locale) =>
+    invoke<ShellState>("set_shell_context_menu", { enabled, locale }),
+  setShellFileAssociation: (enabled, locale) =>
+    invoke<ShellState>("set_shell_file_association", { enabled, locale }),
+  refreshShellLabels: (locale) => invoke<void>("refresh_shell_labels", { locale }),
+  openDefaultApps: () => invoke<void>("open_default_apps"),
+  listTree: (showIgnored, showHidden) => invoke<TreeNode>("list_tree", { showIgnored, showHidden }),
   readDocument: (path) => invoke<DocumentView>("read_document", { path }),
   resolveLink: (from, href) => invoke<LinkTarget>("resolve_link", { from, href }),
   gitSnapshot: () => invoke<GitSnapshot>("git_snapshot"),
@@ -137,6 +166,7 @@ export const tauriApi: Api = {
   openExternal: (path) => invoke<void>("open_external", { path }),
   revealInFolder: (path) => invoke<void>("reveal_in_folder", { path }),
   search: (query, limit) => invoke<SearchHit[]>("search", { query, limit }),
+  referencedImages: () => invoke<string[]>("referenced_images"),
   initProjectFolder: () => invoke<void>("init_project_folder"),
   stateLocation: () => invoke<"appData" | "project">("state_location"),
   fileMeta: (path) => invoke<FileMeta>("file_meta", { path }),
@@ -204,6 +234,13 @@ function createMockApi(): Api {
     openVault: command("openVault"),
     initialPath: command("initialPath"),
     recentVaults: command("recentVaults"),
+    appLanguage: command("appLanguage"),
+    setAppLanguage: command("setAppLanguage"),
+    shellIntegrationState: command("shellIntegrationState"),
+    setShellContextMenu: command("setShellContextMenu"),
+    setShellFileAssociation: command("setShellFileAssociation"),
+    refreshShellLabels: command("refreshShellLabels"),
+    openDefaultApps: command("openDefaultApps"),
     listTree: command("listTree"),
     readDocument: command("readDocument"),
     resolveLink: command("resolveLink"),
@@ -216,6 +253,7 @@ function createMockApi(): Api {
     openExternal: command("openExternal"),
     revealInFolder: command("revealInFolder"),
     search: command("search"),
+    referencedImages: command("referencedImages"),
     initProjectFolder: command("initProjectFolder"),
     stateLocation: command("stateLocation"),
     fileMeta: command("fileMeta"),

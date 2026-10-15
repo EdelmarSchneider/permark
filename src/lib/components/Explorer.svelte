@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { targetFolder } from "../editor/newFile";
-  import { LOCALE, t, tn } from "../i18n";
+  import { formatNumber, t, tn } from "../i18n";
   import { app } from "../stores/app.svelte";
   import { basename } from "../paths";
   import { docs } from "../stores/docs.svelte";
@@ -63,7 +63,7 @@
     filter.showAll
       ? tn("filter.showingAll", filter.total)
       : tn("filter.showingOf", filter.total, {
-          shown: filter.shownByFilter.toLocaleString(LOCALE),
+          shown: formatNumber(filter.shownByFilter),
         }),
   );
 
@@ -91,7 +91,7 @@
     aria-label={t("filter.buttonLabel", { name: filterName })}
     aria-haspopup="dialog"
     aria-expanded={filterAnchor !== null}
-    title={t("filter.hint")}
+    title={`${filterName} · ${t("filter.hint")}`}
     data-popover-trigger
     onclick={toggleFilter}
   >
@@ -153,7 +153,7 @@
 </div>
 {#if filter.hiddenByFilter > 0}
   <div class="tree-footer">
-    <span class="tree-footer__text">{footer}</span>
+    <span class="tree-footer__text" title={footer}>{footer}</span>
     <button type="button" class="link-btn" onclick={() => filter.setShowAll(!filter.showAll)}>
       {filter.showAll ? t("filter.useFilter") : t("filter.showAll")}
     </button>

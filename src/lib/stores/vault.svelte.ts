@@ -5,7 +5,9 @@ import { api } from "../api";
 import { mapPath, mapSet } from "../fileOps";
 import { planReveal } from "../reveal";
 import { collectFiles, rollups, splitRoots } from "../tree";
+import { treeLoadOf } from "../treeFilter";
 import type { ChangedSince, GitSnapshot, Move, TreeNode, VaultInfo } from "../types";
+import { session } from "./session.svelte";
 import { ui } from "./ui.svelte";
 
 export type WorktreeInfo = VaultInfo["worktrees"][number];
@@ -18,6 +20,8 @@ class VaultStore {
   sinceLoaded = $state(false);
   stateLocation = $state<"appData" | "project">("appData");
   indexProgress = $state.raw<{ indexed: number; total: number } | null>(null);
+  /** Images some document links to, wherever they are (project paths): one of the reasons the Explorer filter shows an image. */
+  imageRefs = $state.raw<ReadonlySet<string>>(new Set());
   expanded = new SvelteSet<string>();
   /** Asks the tree to scroll a row into view. */
   reveal = $state.raw<{ path: string; n: number } | null>(null);
@@ -29,6 +33,7 @@ class VaultStore {
   changedCount = $derived(this.git ? Object.keys(this.git.files).length : 0);
 
   private revealCount = 0;
+  private treeRequest = 0;
 
   reset(): void {
     this.info = null;
@@ -37,6 +42,7 @@ class VaultStore {
     this.since = null;
     this.sinceLoaded = false;
     this.indexProgress = null;
+    this.imageRefs = new Set();
     this.expanded.clear();
     this.reveal = null;
   }
@@ -45,11 +51,27 @@ class VaultStore {
     return this.info?.worktrees.find((w) => w.name === name);
   }
 
+  /** Loads the tree the way the person's filter asks for it (with ignored and hidden files or without). */
   async refreshTree(): Promise<void> {
+    const request = ++this.treeRequest;
     try {
-      this.tree = await api.listTree();
+      const load = treeLoadOf(session.treeFilter);
+      const tree = await api.listTree(load.showIgnored, load.showHidden);
+      // a newer request (the filter changed meanwhile) has the last word
+      if (request === this.treeRequest) this.tree = tree;
     } catch {
       // keep the previous tree; the next tree-changed event retries
+    }
+  }
+
+  /** Asks which images the documents use. Called when the project opens and when the backend says the set changed. */
+  async refreshImageRefs(): Promise<void> {
+    const info = this.info;
+    try {
+      const images = await api.referencedImages();
+      if (this.info === info) this.imageRefs = new Set(images);
+    } catch {
+      // keep what is known; the next image-refs-changed event retries
     }
   }
 

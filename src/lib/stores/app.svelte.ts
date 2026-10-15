@@ -6,7 +6,7 @@ import { api, type Unlisten } from "../api";
 import { bridge } from "../bridge";
 import { isTextSelected } from "../dom/domUtil";
 import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
-import { errorKind, errorText } from "../errors";
+import { errorKind, errorMessage } from "../errors";
 import { followCandidate } from "../follow";
 import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
@@ -16,6 +16,7 @@ import type { ShortcutAction } from "../shortcuts";
 import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
+import { normalizeTreeFilter, treeLoadOf } from "../treeFilter";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
@@ -123,7 +124,7 @@ class AppStore {
       const path = await pickFolder();
       if (path) await this.openProject(path);
     } catch (error) {
-      this.openError = errorText(error);
+      this.openError = errorMessage(error);
     }
   }
 
@@ -132,7 +133,7 @@ class AppStore {
       const path = await pickFile();
       if (path) await this.openProject(path);
     } catch (error) {
-      this.openError = errorText(error);
+      this.openError = errorMessage(error);
     }
   }
 
@@ -166,7 +167,7 @@ class AppStore {
       try {
         info = await api.openVault(path);
       } catch (error) {
-        const message = t("welcome.openFailed", { path, message: errorText(error) });
+        const message = t("welcome.openFailed", { path, message: errorMessage(error) });
         this.openError = message;
         if (this.screen !== "project") this.missingRecents.add(path);
         else toast.message(message, "warn");
@@ -197,9 +198,14 @@ class AppStore {
       ui.treeCursor = null;
       vault.info = info;
 
+      // the tree is loaded the way the saved Explorer filter asks for it (ignored and hidden files)
+      const storedSession = api.loadSession().catch(() => null);
       const [stored, tree, git, location] = await Promise.all([
-        api.loadSession().catch(() => null),
-        api.listTree(),
+        storedSession,
+        storedSession.then((s) => {
+          const load = treeLoadOf(normalizeTreeFilter(s?.treeFilter));
+          return api.listTree(load.showIgnored, load.showHidden);
+        }),
         api.gitSnapshot(),
         api.stateLocation().catch(() => "appData" as const),
       ]);
@@ -207,7 +213,10 @@ class AppStore {
       vault.git = git;
       vault.stateLocation = location;
       void vault.refreshSince();
-      if (info.mode === "ide") void tags.refreshIndex();
+      if (info.mode === "ide") {
+        void tags.refreshIndex();
+        void vault.refreshImageRefs();
+      }
       const restored = session.load(stored);
       this.screen = "project";
 
@@ -220,7 +229,7 @@ class AppStore {
       }
       return true;
     } catch (error) {
-      this.openError = t("welcome.openFailed", { path, message: errorText(error) });
+      this.openError = t("welcome.openFailed", { path, message: errorMessage(error) });
       return false;
     } finally {
       this.opening = false;
@@ -254,6 +263,9 @@ class AppStore {
       }),
       await api.on("meta-changed", () => {
         if (this.screen === "project" && !vault.isSimple) tags.onMetaChanged();
+      }),
+      await api.on("image-refs-changed", () => {
+        if (this.screen === "project" && !vault.isSimple) void vault.refreshImageRefs();
       }),
     );
   }
@@ -367,7 +379,7 @@ class AppStore {
     try {
       target = await api.resolveLink(from, href);
     } catch (error) {
-      toast.message(errorText(error), "warn");
+      toast.message(errorMessage(error), "warn");
       return null;
     }
     switch (target.kind) {
@@ -378,7 +390,7 @@ class AppStore {
         try {
           await openExternalUrl(target.url);
         } catch (error) {
-          toast.message(t("link.openFailed", { message: errorText(error) }), "warn");
+          toast.message(t("link.openFailed", { message: errorMessage(error) }), "warn");
         }
         return null;
       case "anchor":
@@ -420,7 +432,7 @@ class AppStore {
     try {
       await api.createDocument(path, blankTemplate(name));
     } catch (error) {
-      return errorKind(error) === "exists" ? t("newFile.exists") : errorText(error);
+      return errorKind(error) === "exists" ? t("newFile.exists") : errorMessage(error);
     }
     ui.newFile = null;
     await vault.refreshTree();
@@ -438,7 +450,7 @@ class AppStore {
       vault.git = await api.setGitBaseline(kind);
       await vault.refreshSince();
     } catch (error) {
-      toast.message(errorText(error), "warn");
+      toast.message(errorMessage(error), "warn");
     }
   }
 
@@ -593,7 +605,7 @@ class AppStore {
     try {
       await this.copy((await api.absolutePath(path)).replace(/\\/g, "/"), flashId);
     } catch (error) {
-      toast.message(errorText(error), "warn");
+      toast.message(errorMessage(error), "warn");
     }
   }
 
@@ -608,7 +620,7 @@ class AppStore {
     try {
       await api.openExternal(path);
     } catch (error) {
-      toast.message(t("doc.externalFailed", { message: errorText(error) }), "warn");
+      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
     }
   }
 
@@ -616,7 +628,7 @@ class AppStore {
     try {
       await api.revealInFolder(path);
     } catch (error) {
-      toast.message(t("doc.externalFailed", { message: errorText(error) }), "warn");
+      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
     }
   }
 
@@ -665,7 +677,7 @@ class AppStore {
         if (docs.current || edit.active) edit.toggle();
         return;
       case "toggleEditMode":
-        if (edit.active) void edit.toggleMode();
+        if (docs.current || edit.active) void edit.toggleMode();
         return;
       case "save":
         if (edit.active) void edit.save();

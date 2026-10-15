@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { t, tn } from "../i18n";
+  import { formatNumber, t, tn } from "../i18n";
   import { crumbOf, sanitizeSnippet } from "../searchModel";
   import { knownTagsHint } from "../tagModel";
   import { app } from "../stores/app.svelte";
@@ -212,8 +212,8 @@
 {#if indexing && progress}
   <div class="index-progress">
     {t("search.indexing", {
-      indexed: progress.indexed.toLocaleString(),
-      total: progress.total.toLocaleString(),
+      indexed: formatNumber(progress.indexed),
+      total: formatNumber(progress.total),
     })}
     <div
       class="bar"
