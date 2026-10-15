@@ -32,6 +32,11 @@ const SHOWN_MESSAGE: &str =
     "Shown in TrailMark. It does not take focus; the person sees a notice with a way back \
 and looks when ready.";
 
+/// What `open` says when the person is editing: nothing moved on their screen.
+const EDITING_MESSAGE: &str =
+    "The person is editing, so TrailMark did not move them to it. It showed a notice with a button \
+to the place instead, and they look when they are done or ready.";
+
 /// How long `open` waits for TrailMark to start and listen.
 pub const LAUNCH_WAIT: Duration = Duration::from_secs(25);
 /// How often it looks while waiting.
@@ -567,10 +572,20 @@ fn shown(opened: Value, started: bool) -> Map<String, Value> {
         .get("headingNotFound")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let message = if heading_missing {
-        format!("{SHOWN_MESSAGE} The document has no such heading, so it opened at its top.")
-    } else {
-        SHOWN_MESSAGE.to_owned()
+    // The window does not move a person who is editing: it only showed a notice.
+    let editing = fields
+        .get("editing")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let message = match (editing, heading_missing) {
+        (false, false) => SHOWN_MESSAGE.to_owned(),
+        (false, true) => {
+            format!("{SHOWN_MESSAGE} The document has no such heading, so it opened at its top.")
+        }
+        (true, false) => EDITING_MESSAGE.to_owned(),
+        (true, true) => {
+            format!("{EDITING_MESSAGE} The document has no such heading, so it opens at its top.")
+        }
     };
     fields.insert("message".to_owned(), json!(message));
     if started {
@@ -1207,6 +1222,48 @@ mod tests {
     /// The window is started by the program that has the turn, and the turn is kept until that is over.
     #[tokio::test]
     async fn the_turn_to_start_the_window_is_held_while_it_starts() {
+    /// The window only shows a notice to a person who is editing; the agent is told, so it does not report that the
+    /// person is looking at the place.
+    #[tokio::test]
+    async fn open_says_that_only_a_notice_was_shown_when_the_person_is_editing() {
+        let fx = fx();
+        fx.set_connection(true);
+        fx.bridge.set_enabled(true);
+        let core = fx.core(no_launch());
+        let publish = |mode| {
+            fx.bridge.publish(AgentContext {
+                document: Some("README.md".to_owned()),
+                mode: Some(mode),
+                ..AgentContext::default()
+            });
+        };
+        publish(ViewMode::Reading);
+        let reading = core.open("docs/plan.md", Some(3), None).await;
+        assert_eq!(status(&reading), "ok", "{reading:?}");
+        assert!(reading.value.get("editing").is_none());
+        assert!(reading.value["message"]
+            .as_str()
+            .expect("message")
+            .starts_with("Shown in TrailMark"));
+
+        for mode in [ViewMode::Visual, ViewMode::Source] {
+            publish(mode);
+            let editing = core
+                .open("docs/plan.md", Some(3), Some("Nonexistent"))
+                .await;
+            // the status values stay what clients know
+            assert_eq!(status(&editing), "ok", "{editing:?}");
+            assert!(!editing.is_error);
+            assert_eq!(editing.value["editing"], true);
+            assert_eq!(editing.value["path"], "docs/plan.md");
+            let message = editing.value["message"].as_str().expect("message");
+            assert!(message.contains("is editing"), "{message}");
+            assert!(message.contains("notice"), "{message}");
+            assert!(message.contains("no such heading"), "{message}");
+        }
+        fx.bridge.shutdown();
+    }
+
         let fx = fx();
         fx.set_connection(true);
         let held = Arc::new(AtomicUsize::new(0));

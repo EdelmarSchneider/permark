@@ -17,7 +17,7 @@ use crate::util::now_ms;
 use crate::vault::Vault;
 
 use super::answers;
-use super::context::{AgentContext, Published};
+use super::context::{AgentContext, Published, ViewMode};
 use super::protocol::{
     Call, ErrorKind, Hits, Opened, ProtocolError, Reply, Request, UnreadList, DEFAULT_SEARCH_HITS,
     MAX_SEARCH_HITS,
@@ -165,6 +165,14 @@ impl Hub {
         lock(&self.latest).clone()
     }
 
+    /// The window last said the person is in an editor (Visual or Source) rather than reading.
+    fn person_is_editing(&self) -> bool {
+        matches!(
+            lock(&self.latest).context.mode,
+            Some(ViewMode::Visual | ViewMode::Source)
+        )
+    }
+
     /// The place an agent asked to be shown, if the window has not picked it up yet.
     pub fn take_open(&self) -> Option<Opened> {
         lock(&self.pending_open).take()
@@ -285,7 +293,15 @@ impl Hub {
                 Ok(opened) => {
                     *lock(&self.pending_open) = Some(opened.clone());
                     self.events.open_requested();
-                    Reply::success(id, json(&opened))
+                    let mut shown = json(&opened);
+                    // The window does not take a person away from what they are writing: it shows a notice with a way
+                    // to the place instead, and the agent should know that nothing moved on the screen.
+                    if self.person_is_editing() {
+                        if let Some(fields) = shown.as_object_mut() {
+                            fields.insert("editing".to_owned(), serde_json::Value::Bool(true));
+                        }
+                    }
+                    Reply::success(id, shown)
                 }
                 Err(error) => Reply::failure(id, error),
             },
@@ -615,6 +631,49 @@ mod tests {
         let place = hub.take_open().expect("a place waits");
         assert_eq!((place.path.as_str(), place.line), ("docs/plan.md", Some(5)));
         assert_eq!(hub.take_open(), None, "it is handed over once");
+    }
+
+    /// A person who is editing is not taken away from the work: the window shows a notice, and the agent is told so.
+    #[test]
+    fn open_tells_the_agent_when_the_person_is_editing() {
+        use crate::bridge::context::ViewMode;
+
+        let (_dir, vault) = project();
+        let (hub, _) = hub(vault);
+        let open = || {
+            hub.handle(call(
+                8,
+                Request::Open {
+                    path: "docs/plan.md".to_owned(),
+                    line: Some(3),
+                    heading: None,
+                },
+            ))
+            .into_result()
+            .expect("a result")
+        };
+        // nothing published yet, and reading: the window goes there
+        assert_eq!(open(), json!({ "path": "docs/plan.md", "line": 3 }));
+        hub.publish(AgentContext {
+            document: Some("docs/plan.md".to_owned()),
+            mode: Some(ViewMode::Reading),
+            ..AgentContext::default()
+        });
+        assert_eq!(open(), json!({ "path": "docs/plan.md", "line": 3 }));
+        for mode in [ViewMode::Visual, ViewMode::Source] {
+            hub.publish(AgentContext {
+                document: Some("docs/plan.md".to_owned()),
+                mode: Some(mode),
+                ..AgentContext::default()
+            });
+            assert_eq!(
+                open(),
+                json!({ "path": "docs/plan.md", "line": 3, "editing": true }),
+                "{mode:?}"
+            );
+        }
+        // the place that waits for the window is the same either way
+        assert_eq!(hub.take_open().expect("a place").line, Some(3));
     }
 
     #[test]
