@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- In Spanish the Source mode is called **Código**, the usual short name, so the mode switch stays compact.
+- Semantic search is now planned for v0.5 (the disabled **Semantic** toggle in Search says so); v0.4 brings an optional, local
+  connection between TrailMark and your coding agent. See the roadmap.
+
 ## [0.2.1] - 2026-10-14
 
 TrailMark now speaks Português (Brasil), Español and Deutsch, opens from the Windows file manager, and gets a single

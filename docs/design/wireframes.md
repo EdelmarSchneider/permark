@@ -1,6 +1,6 @@
 # TrailMark MVP: wireframes, flows, keyboard, components
 
-Scope: the **MVP section of `plan.md`** only. Visual reference: `mockup.html` (IDE mode, light/dark).
+Scope: the **MVP** only. Visual reference: `mockup.html` (IDE mode, light/dark).
 Tokens and type come from the design system. Lucide icons only.
 
 Legend: `[@]` copy reference, `[E]` open in external editor (**the slot "Edit" takes in v0.2**), `[:]` more menu,

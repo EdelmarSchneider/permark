@@ -322,10 +322,10 @@ export const ptBR = {
   "search.clear": "Limpar pesquisa",
   "search.clearHint": "Limpar (Esc)",
   "search.semantic": "Semântica",
-  "search.semanticLabel": "Pesquisa semântica (v0.3)",
+  "search.semanticLabel": "Pesquisa semântica (v0.5)",
   "search.semanticHint":
-    "A pesquisa por significado chega na v0.3 (modelo local opcional, baixado sob demanda)",
-  "search.soon": "v0.3",
+    "A pesquisa por significado chega na v0.5 (modelo local opcional, baixado sob demanda)",
+  "search.soon": "v0.5",
   "search.summary": "{hits} em {files}",
   "search.files.one": "{n} arquivo",
   "search.files.other": "{n} arquivos",

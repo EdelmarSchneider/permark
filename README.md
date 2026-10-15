@@ -76,7 +76,7 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - Section-level full-text search (`Ctrl+Shift+F`): results show `file › heading › snippet` and jump to the exact spot
 - Accent- and case-insensitive, with light stemming, and incremental updates as files change
 - Filter by tag right in the search box (`tag:needs-review retry policy`)
-- Semantic search with a local multilingual model is planned for v0.3 (see the [roadmap](#roadmap))
+- Semantic search with a local multilingual model is planned for v0.5 (see the [roadmap](#roadmap))
 
 ![Section search with a tag filter: "lanterns" in the files tagged needs-review, each file with its description, and the match highlighted in the open document](docs/assets/screenshot-search.png)
 
@@ -232,13 +232,22 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 
 **v0.3**
 - Search everywhere (`Ctrl+T`): files, sections, tags and commands in one box
-- Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words it uses
 - Unread markers ("changed since I last read it") and clickable code references (`src/main.rs:42`)
 - "Open with TrailMark" in the macOS and Linux file managers (Windows has it already)
 
+**v0.4: your agent sees what you see**
+- An optional, local connection (MCP, plus a plain file for tools without it) that lets any coding agent know which document and
+  section you are reading and what you selected, so "rewrite this paragraph" just works
+- Review notes: comment on passages while you read, and your agent picks up the open ones
+- Your agent can ask TrailMark "where is X described?" and point you to a section, and it knows what you have not read yet.
+  Off by default, per project, and read-only: an agent can show you a document, never edit through it
+
+**v0.5**
+- Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words it uses.
+  Your agent gets the same search
+
 **Later**, no promises
-- Spec-driven workflows, review comments that turn into a prompt for your agent, and an MCP server so any agent can ask TrailMark
-  "where is X described?"
+- Spec-driven workflows
 - A rendered diff against the last commit or your last read, rich JSON and XML views, backlinks, and installer extras
   (`trailmark` on the `PATH`)
 
