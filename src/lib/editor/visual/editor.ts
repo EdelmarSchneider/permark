@@ -10,7 +10,13 @@ import {
 } from "@milkdown/kit/preset/commonmark";
 import { strikethroughKeymap } from "@milkdown/kit/preset/gfm";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import { EditorState, NodeSelection, Selection, TextSelection } from "@milkdown/kit/prose/state";
+import {
+  EditorState,
+  NodeSelection,
+  Selection,
+  TextSelection,
+  type Transaction,
+} from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { SELECTION_READ_LIMIT, type SelectedText } from "../../agentContext";
 import type { HeadingInfo } from "../../outline";
@@ -21,13 +27,14 @@ import {
   analyze,
   buildDoc,
   composeDoc,
+  isEmptyParagraph,
   lineOfNode,
   originOf,
   type Analysis,
   type Built,
   type LoadReport,
 } from "./doc";
-import { createCore, LOCKED, type Core, type LockedHost } from "./core";
+import { createCore, LOCKED, TM_BLOCK, type Core, type LockedHost } from "./core";
 import { formatState, insertImage, runCommand, setCodeLanguage } from "./commands";
 import { NO_FORMAT, type CommandId, type FormatState } from "./format";
 import { applyLink, linkTarget, type LinkTarget } from "./link";
@@ -98,7 +105,7 @@ export class VisualEditor {
   readonly mode = "visual" as const;
   private built: Built | null = null;
   private initialDirty = false;
-  private readonly cache = new WeakMap<PMNode, Analysis>();
+  private cache = new WeakMap<PMNode, Analysis>();
   private readonly headingCache = new WeakMap<PMNode, DocHeading[]>();
   private slashOpen = false;
   private slashDismissed = false;
@@ -295,12 +302,25 @@ export class VisualEditor {
   }
 
   /**
-   * Starts over from the blocks of the text that was just saved. The selection stays where it was (the document is the same
-   * text, so the same positions mean the same place). The undo history starts over too.
+   * Goes on from the blocks of the text that was just saved: the unsaved-block bar clears and the next save compares with what was
+   * written. Typing never stops for it, so the document is left alone: its top-level nodes are the blocks of the saved text (they are
+   * given the new block numbers, outside the undo history), and the focus, the selection and Ctrl+Z all stay as they were. Only when
+   * the nodes are not the ones the saved text makes (the editor writes something that reads back differently) the document is loaded
+   * again, keeping the focus and the selection but not the undo history.
    */
   rebase(map: BlockMap): void {
     const { view } = this.core;
+    const next = buildDoc(this.core, { map });
+    const tr = this.renumbering(next);
+    if (tr) {
+      this.built = next;
+      this.initialDirty = false;
+      this.cache = new WeakMap();
+      view.dispatch(tr.setMeta("addToHistory", false));
+      return;
+    }
     const { anchor, head } = view.state.selection;
+    const focused = view.hasFocus();
     this.load({ map, dirty: false });
     const { doc } = view.state;
     const at = (pos: number): number => Math.min(Math.max(pos, 0), doc.content.size);
@@ -313,6 +333,41 @@ export class VisualEditor {
     } catch {
       // the caret stays at the start of the document
     }
+    if (focused) view.focus();
+  }
+
+  /**
+   * What gives the nodes of the document the block numbers of a document just built from the saved text, or null when the nodes are
+   * not those blocks (the written nodes, in order, are the blocks; an empty paragraph is not written and belongs to none).
+   */
+  private renumbering(next: Built): Transaction | null {
+    const { state } = this.core.view;
+    const tr = state.tr;
+    let block = 0;
+    let same = true;
+    state.doc.forEach((node, pos) => {
+      if (!same) return;
+      if (isEmptyParagraph(node)) {
+        if (originOf(node) !== null) tr.setNodeAttribute(pos, TM_BLOCK, null);
+        return;
+      }
+      const original = next.originals[block];
+      if (
+        !original ||
+        !node.hasMarkup(
+          original.type,
+          { ...original.attrs, [TM_BLOCK]: node.attrs[TM_BLOCK] },
+          original.marks,
+        ) ||
+        !node.content.eq(original.content)
+      ) {
+        same = false;
+        return;
+      }
+      if (originOf(node) !== block) tr.setNodeAttribute(pos, TM_BLOCK, block);
+      block++;
+    });
+    return same && block === next.originals.length ? tr : null;
   }
 
   /** The top-level node the selection is in. */

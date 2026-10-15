@@ -104,7 +104,7 @@ export function originOf(node: PMNode): number | null {
   return typeof value === "number" ? value : null;
 }
 
-function isEmptyParagraph(node: PMNode): boolean {
+export function isEmptyParagraph(node: PMNode): boolean {
   return node.type.name === "paragraph" && node.content.size === 0;
 }
 

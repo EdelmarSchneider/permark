@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { closeHistory, undo } from "@milkdown/kit/prose/history";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mockParseBlocks } from "../../mock/mockBlocks";
@@ -344,5 +345,71 @@ describe("rebase", () => {
     expect(editor.status()).toEqual({ dirty: false, changed: 0 });
     expect(editor.text()).toBe(saved);
     expect(view.state.selection.from).toBe(at);
+  });
+
+  it("does not replace the document: the focus stays and undo goes back past the save", () => {
+    const text = "# T\n\nsome words here\n";
+    load(text);
+    const { view } = editor.core;
+    caret(1, 4);
+    view.dispatch(view.state.tr.insertText("X"));
+    view.focus();
+    expect(view.hasFocus()).toBe(true);
+    const doc = view.state.doc;
+    const saved = editor.text();
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    // the nodes of the editor are the ones it had: nothing was loaded again
+    expect(view.state.doc.child(1)).toBe(doc.child(1));
+    expect(view.hasFocus()).toBe(true);
+    // typing goes on after the save (a pause, so a new undo step), and Ctrl+Z walks back through what was typed before it
+    view.dispatch(closeHistory(view.state.tr).insertText("Y"));
+    expect(editor.text()).toBe("# T\n\nsomeXY words here\n");
+    expect(undo(view.state, view.dispatch)).toBe(true);
+    expect(editor.text()).toBe(saved);
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    expect(undo(view.state, view.dispatch)).toBe(true);
+    expect(editor.text()).toBe(text);
+    expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+  });
+
+  it("follows the blocks of the saved text when one was removed", () => {
+    const text = "one\n\ntwo\n\nthree\n";
+    load(text);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.delete(inside(1) - 1, inside(2) - 1));
+    const saved = editor.text();
+    expect(saved).toBe("one\n\nthree\n");
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    // the last paragraph is now the second block of the text: an edit there touches that block only
+    view.dispatch(view.state.tr.insertText("!", inside(1, 5)));
+    expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+    expect(editor.text()).toBe("one\n\nthree!\n");
+  });
+
+  it("forgets an empty paragraph the saved text does not have", () => {
+    const text = "one\n\ntwo\n";
+    load(text);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.delete(inside(0), inside(0, 3)));
+    const saved = editor.text();
+    expect(saved).toBe("two\n");
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    expect(editor.text()).toBe(saved);
+  });
+
+  it("loads the saved blocks again when the document does not hold them, keeping the focus and the caret", () => {
+    const text = "# T\n\nsome words here\n";
+    load(text);
+    const { view } = editor.core;
+    caret(1, 4);
+    view.focus();
+    const other = "# T\n\nsome words here\n\nand one more\n";
+    editor.rebase(buildBlockMap(other, mockParseBlocks(other)));
+    expect(editor.text()).toBe(other);
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    expect(view.hasFocus()).toBe(true);
+    expect(view.state.selection.from).toBe(inside(1, 4));
   });
 });
