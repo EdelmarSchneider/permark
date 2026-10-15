@@ -331,11 +331,15 @@ mod tests {
         assert_eq!(r.images(), ["@wt/f2/x.png", "x.png"]);
     }
 
-    #[cfg(windows)]
     #[test]
-    fn documents_are_found_whatever_the_case_of_their_path_on_windows() {
+    fn documents_are_found_whatever_the_case_of_their_path_where_the_system_ignores_case() {
         let mut r = refs(&[("Docs/A.md", &["x.png"])]);
-        assert!(r.remove_doc("docs/a.md"));
-        assert_eq!(r.images(), Vec::<String>::new());
+        assert_eq!(r.remove_doc("docs/a.md"), crate::vault::CASE_INSENSITIVE);
+        let left = if crate::vault::CASE_INSENSITIVE {
+            Vec::new()
+        } else {
+            vec!["x.png"]
+        };
+        assert_eq!(r.images(), left);
     }
 }

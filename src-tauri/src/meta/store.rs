@@ -465,7 +465,7 @@ by = \"ana\"
         let mut e = Entries::default();
         e.set_tags("Docs/A.md", &tags(&["x"]));
         assert_eq!(e.get("Docs/A.md").map(|x| x.tags.len()), Some(1));
-        assert_eq!(e.get("docs/a.md").is_some(), cfg!(windows));
+        assert_eq!(e.get("docs/a.md").is_some(), crate::vault::CASE_INSENSITIVE);
         assert!(e.remove("Docs/A.md"));
         assert!(e.is_empty());
     }

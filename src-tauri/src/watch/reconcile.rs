@@ -115,8 +115,8 @@ impl Pass<'_> {
             return; // a folder's mtime changing is not interesting; its children report themselves
         }
         self.out.tree_changed = true;
-        if !p.created {
-            return;
+        if !p.created || self.env.vault.is_shallow() {
+            return; // a single-file session shows one folder level: the files inside are out of view
         }
         // A folder that appeared (created, or moved in by a rename/checkout): its files may not
         // produce events of their own, so list them.
@@ -516,6 +516,29 @@ mod tests {
         let small = Fx::new();
         small.write("small/a.md", "x");
         let r = small.run(&[("small", Hint::Create)]);
+        assert!(!r.truncated);
+    }
+
+    #[test]
+    fn a_folder_that_appears_beside_a_single_file_is_not_listed() {
+        // A single-file session looks at one folder level: what is inside a new folder is out of view.
+        let dir = tempfile::tempdir().expect("tempdir");
+        for rel in ["todo.md", "sub/deep.md"] {
+            let p = dir.path().join(rel);
+            fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
+            fs::write(p, "x").expect("write");
+        }
+        let vault = Vault::open(&dir.path().join("todo.md")).expect("open");
+        assert!(vault.is_shallow());
+        let f = Fx {
+            _dir: dir,
+            filter: PathFilter::new(&[(vault.root().to_path_buf(), None)], &[]),
+            vault,
+            sigs: SigStore::new(),
+        };
+        let r = f.run(&[("sub", Hint::Create)]);
+        assert!(r.changes.is_empty(), "{:?}", r.changes);
+        assert!(r.tree_changed, "the folder itself shows in the tree");
         assert!(!r.truncated);
     }
 

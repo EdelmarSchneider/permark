@@ -89,10 +89,15 @@ pub struct Vault {
     initial_file: Option<String>,
 }
 
-/// Case-folded form of a vault-relative path, used as a map key. Windows file systems are
-/// case-insensitive, so `README.md` and `readme.md` are the same file there.
+/// Whether names are compared without regard to case on this system: the default file systems of Windows
+/// (NTFS) and macOS (APFS, HFS+) ignore it, so `README.md` and `readme.md` are one file there. Which kind of
+/// volume a folder is on is not known from here, so the choice follows the system; a case-sensitive volume
+/// on macOS, or a case-insensitive one on Linux, is the rare exception.
+pub const CASE_INSENSITIVE: bool = cfg!(any(windows, target_os = "macos"));
+
+/// Case-folded form of a vault-relative path, used as a map key (see [`CASE_INSENSITIVE`]).
 pub fn key(rel: &str) -> String {
-    if cfg!(windows) {
+    if CASE_INSENSITIVE {
         rel.to_lowercase()
     } else {
         rel.to_owned()
@@ -100,7 +105,7 @@ pub fn key(rel: &str) -> String {
 }
 
 fn name_eq(a: &OsStr, b: &OsStr) -> bool {
-    if cfg!(windows) {
+    if CASE_INSENSITIVE {
         a.to_string_lossy().to_lowercase() == b.to_string_lossy().to_lowercase()
     } else {
         a == b
@@ -693,8 +698,9 @@ mod tests {
     }
 
     #[test]
-    fn key_folds_case_only_on_windows() {
-        assert_eq!(key("A/b.md") == key("a/B.md"), cfg!(windows));
+    fn key_folds_case_only_where_the_system_does() {
+        assert_eq!(key("A/b.md") == key("a/B.md"), CASE_INSENSITIVE);
+        assert_eq!(CASE_INSENSITIVE, cfg!(any(windows, target_os = "macos")));
     }
 
     #[test]

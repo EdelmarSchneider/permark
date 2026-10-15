@@ -152,6 +152,17 @@ pub fn assemble(
     })
 }
 
+/// Which side of a rename a path is, when the OS does not say: the disk does. A path that exists now is
+/// where something arrived (a file moved in, or the new name), one that does not is where it left. Both are
+/// only hints: the flush looks at the disk again.
+fn rename_side(path: &Path) -> Hint {
+    if std::fs::symlink_metadata(path).is_ok() {
+        Hint::Create
+    } else {
+        Hint::Remove
+    }
+}
+
 /// Translates a `notify` event into path hints.
 pub(crate) fn raw_events(ev: &notify::Event) -> Vec<RawEvent> {
     let mk = |abs: &PathBuf, hint, is_dir| RawEvent {
@@ -185,6 +196,12 @@ pub(crate) fn raw_events(ev: &notify::Event) -> Vec<RawEvent> {
             to.rename_from = Some(ev.paths[0].clone());
             vec![mk(&ev.paths[0], Hint::Remove, None), to]
         }
+        // macOS (FSEvents) reports each side of a rename on its own and does not say which side it is.
+        EventKind::Modify(ModifyKind::Name(RenameMode::Any | RenameMode::Other)) => ev
+            .paths
+            .iter()
+            .map(|p| mk(p, rename_side(p), None))
+            .collect(),
         _ => ev.paths.iter().map(|p| mk(p, Hint::Modify, None)).collect(),
     }
 }
@@ -532,6 +549,103 @@ mod tests {
         );
         let folder = raw_events(&ev(EventKind::Create(CreateKind::Folder), &["d"]));
         assert_eq!(folder[0].is_dir, Some(true));
+    }
+
+    /// A rename that arrives one path at a time with no direction (what `FSEvents` reports on macOS): the
+    /// hint comes from the disk.
+    fn rename_any(path: &Path) -> notify::Event {
+        let mut e = notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Any)));
+        e.paths = vec![path.to_path_buf()];
+        e
+    }
+
+    #[test]
+    fn a_rename_without_a_direction_is_told_by_the_disk() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let here = dir.path().join("here.md");
+        fs::write(&here, "x").expect("write");
+        let gone = dir.path().join("gone.md");
+        for mode in [RenameMode::Any, RenameMode::Other] {
+            let mut e = rename_any(&here);
+            e.kind = EventKind::Modify(ModifyKind::Name(mode));
+            e.paths.push(gone.clone());
+            let hints: Vec<Hint> = raw_events(&e).iter().map(|r| r.hint).collect();
+            assert_eq!(hints, [Hint::Create, Hint::Remove], "{mode:?}");
+        }
+    }
+
+    /// Runs `events` through the aggregator and the disk reconciliation, like one flush of the watcher.
+    fn flush_of(
+        vault: &Vault,
+        filter: &PathFilter,
+        sigs: &SigStore,
+        events: &[notify::Event],
+    ) -> Vec<(ChangeKind, String, Option<String>)> {
+        let mut agg = Aggregator::new(QUIET, MAX_WAIT);
+        let now = Instant::now();
+        for raw in events.iter().flat_map(raw_events) {
+            agg.push(raw, vault, filter, now);
+        }
+        let env = Env {
+            vault,
+            filter,
+            sigs,
+        };
+        reconcile(&env, agg.take().paths, 1)
+            .changes
+            .into_iter()
+            .map(|c| (c.kind, c.path, c.from))
+            .collect()
+    }
+
+    #[test]
+    fn a_file_renamed_in_two_separate_events_is_one_rename() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let vault = Vault::open(dir.path()).expect("open");
+        let root = vault.root().to_path_buf();
+        let filter = PathFilter::new(&[(root.clone(), None)], &[]);
+        let sigs = SigStore::new();
+        fs::write(root.join("old.md"), "the same words").expect("write");
+        let seen =
+            notify::Event::new(EventKind::Create(CreateKind::File)).add_path(root.join("old.md"));
+        assert_eq!(flush_of(&vault, &filter, &sigs, &[seen]).len(), 1);
+
+        fs::rename(root.join("old.md"), root.join("new.md")).expect("rename");
+        let moved = [
+            rename_any(&root.join("old.md")),
+            rename_any(&root.join("new.md")),
+        ];
+        assert_eq!(
+            flush_of(&vault, &filter, &sigs, &moved),
+            [(
+                ChangeKind::Renamed,
+                "new.md".to_owned(),
+                Some("old.md".to_owned())
+            )]
+        );
+    }
+
+    #[test]
+    fn a_folder_moved_in_and_reported_as_a_rename_has_its_files_listed() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let vault = Vault::open(dir.path()).expect("open");
+        let root = vault.root().to_path_buf();
+        let filter = PathFilter::new(&[(root.clone(), None)], &[]);
+        let sigs = SigStore::new();
+        let outside = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(outside.path().join("big/sub")).expect("mkdir");
+        fs::write(outside.path().join("big/a.md"), "a").expect("write");
+        fs::write(outside.path().join("big/sub/b.md"), "b").expect("write");
+        fs::rename(outside.path().join("big"), root.join("big")).expect("move in");
+
+        let mut found: Vec<String> =
+            flush_of(&vault, &filter, &sigs, &[rename_any(&root.join("big"))])
+                .into_iter()
+                .inspect(|(kind, ..)| assert_eq!(*kind, ChangeKind::Created))
+                .map(|(_, path, _)| path)
+                .collect();
+        found.sort();
+        assert_eq!(found, ["big/a.md", "big/sub/b.md"]);
     }
 
     struct Live {
