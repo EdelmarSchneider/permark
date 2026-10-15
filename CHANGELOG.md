@@ -5,23 +5,23 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Your AI agent can see what you are reading, and you can leave it notes.
+Your AI agent can see what you are reading, and you can leave it comments on passages.
 
 ### Added
 - **Agent connection.** TrailMark tells an AI agent what you are looking at, over the Model Context Protocol (MCP), so it works with
   any tool that supports MCP. Turn it on per project in **Settings → Agent connection**, which shows the setup lines for your agent
   with the program's path filled in, then add TrailMark as an MCP server (`<path to TrailMark> mcp`). The agent can ask for the open
   document, the section on screen and your selection (`get_context`), the documents that changed since you read them (`list_unread`),
-  "where is X described?" (`search`), and your review notes (`list_notes`, `resolve_note`). It can also show you a place (`open`)
-  without taking the focus from its terminal. It only reads, shows a place and checks off your notes: it cannot create notes or edit
+  "where is X described?" (`search`), and your comments (`list_comments`, `resolve_comment`). It can also show you a place (`open`)
+  without taking the focus from its terminal. It only reads, shows a place and checks off your comments: it cannot create comments or edit
   documents, and it sees only the project you opened. Most tools still work when TrailMark is closed, and `open` starts it.
 - **`trailmark context`** prints where you are as one short line, for tools that add it to every prompt from a hook. While the
   connection is on, a project with `.trailmark/` also gets the same answer as a file, `.trailmark/local/agent.json`.
 - **Agent** in the status bar while the connection is on, with a dot that fills while an agent is connected. Click it to see what is
   shared and what was asked lately, or to turn the connection off.
-- **Review notes.** Select a passage and press `N` (or **Note** in the selection toolbar) to leave a note. A bar marks the passage in
-  the margin, and the **Notes** tab of the right panel lists the open notes by document. Notes follow their passage when the
-  document changes, and a note whose passage was rewritten is marked **Passage changed**. They are personal (kept in
+- **Comments.** Select a passage and press `C` (or **Comment** in the selection toolbar) to leave a comment. A bar marks the passage in
+  the margin, and the **Comments** tab of the right panel lists the open comments by document. Comments follow their passage when the
+  document changes, and a comment whose passage was rewritten is marked **Passage changed**. They are personal (kept in
   `.trailmark/local/`, never committed), work without the agent connection, and an agent can mark one done with a short reply.
 
 ### Security

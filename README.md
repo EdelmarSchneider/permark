@@ -148,7 +148,7 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - **Copy reference** (`@docs/plan.md`) and **copy selection with reference**: a quoted excerpt plus path and section,
   ready to paste into any AI chat or CLI
 - Configurable reference template
-- **Review notes** (coming in v0.4): select a passage, press `N` and write a note; your agent can read the open ones and mark them done
+- **Comments** (coming in v0.4): select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
   (see [Use with an AI agent](#use-with-an-ai-agent))
 
 ### 🗂️ Zero footprint by default
@@ -198,13 +198,13 @@ You can also drag and drop a folder or a `.md` file onto the window.
 > **Coming in v0.4.** This section describes the next release; v0.3.0 does not have it yet.
 
 TrailMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this
-paragraph" or "go through my notes" and the agent knows which document, which section and which words you mean. It talks to
+paragraph" or "go through my comments" and the agent knows which document, which section and which words you mean. It talks to
 TrailMark through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so it works with any tool that supports MCP
 (Claude Code, Cursor, opencode, Codex, Gemini CLI, Claude Desktop and others), and without one of them nothing changes.
 
 **It is off by default, per project, and local.** TrailMark shares nothing until you turn it on in **Settings → Agent connection** (or
 **Agent connection: turn on** in the command palette), and it only talks to programs on your computer: it has no server and sends
-nothing over the network. The agent you connect is another matter. It may send what it reads (your selection, your notes, search
+nothing over the network. The agent you connect is another matter. It may send what it reads (your selection, your comments, search
 results) to its AI service, as it would anything else you show it. The switch is yours alone: it is kept in TrailMark's own data
 folder, so nothing inside a project, such as a cloned repository, can turn it on. While it is on, the status bar shows **Agent**, with
 a dot that fills while an agent is connected. Click it to see what is shared and what was asked lately, and to turn it off in one click.
@@ -244,13 +244,13 @@ is TrailMark running as you, and not another program that took the name.
 | `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters) and whether there are unsaved edits |
 | `list_unread` | The documents that changed since you last read them, newest first |
 | `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere |
-| `list_notes` | Your [review notes](#review-notes): the open ones, each with the quoted passage, its section and line, and your text |
-| `resolve_note` | Marks a note done, with an optional short reply that you read under the note |
+| `list_comments` | Your [comments](#comments): the open ones, each with the quoted passage, its section and line, and your text |
+| `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
 
-The agent only reads, shows you a place, and checks off notes you wrote. It cannot create notes and it cannot edit a document through
+The agent only reads, shows you a place, and checks off comments you wrote. It cannot create comments and it cannot edit a document through
 TrailMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. When TrailMark is
-closed, `list_unread`, `search`, `list_notes` and `resolve_note` still work from the project's files, `get_context` says that
+closed, `list_unread`, `search`, `list_comments` and `resolve_comment` still work from the project's files, `get_context` says that
 TrailMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
 
 ### Add what you are reading to every prompt
@@ -279,16 +279,16 @@ command prints nothing, so a hook never adds noise to a prompt. A project that k
 the open document, the section on screen and your selected text, and any program running as you can read it, as can a folder-sync tool
 that watches the project.** It stays out of git (`local/` ignores itself) and is deleted when the connection is turned off.
 
-### Review notes
+### Comments
 
-Select a passage while you read and press `N` (or choose **Note** in the selection toolbar), type a note and press `Enter`. A thin
-bar marks the passage in the margin, and the **Notes** tab of the right panel lists the open notes by document, with the ones you
-finished folded away. A click on a note goes to its passage. Check a note off yourself, or ask your agent to "go through my notes":
-it reads them with `list_notes`, and when it marks one done its reply appears under the note.
+Select a passage while you read and press `C` (or choose **Comment** in the selection toolbar), type a comment and press `Enter`. A thin
+bar marks the passage in the margin, and the **Comments** tab of the right panel lists the open comments by document, with the ones you
+finished folded away. A click on a comment goes to its passage. Check a comment off yourself, or ask your agent to "go through my comments":
+it reads them with `list_comments`, and when it marks one done its reply appears under the comment.
 
-Notes follow their passage when the document changes: they are found again by their words, then by their section, then by their
-line. A note whose passage was rewritten stays in the list marked **Passage changed**. Notes are yours, kept next to the other local
-state (`.trailmark/local/notes.json` once you initialize TrailMark in the project, otherwise in your user profile), never committed (the folder ignores itself),
+Comments follow their passage when the document changes: they are found again by their words, then by their section, then by their
+line. A comment whose passage was rewritten stays in the list marked **Passage changed**. Comments are yours, kept next to the other local
+state (`.trailmark/local/comments.json` once you initialize TrailMark in the project, otherwise in your user profile), never committed (the folder ignores itself),
 and they work without the agent connection.
 
 ## Keyboard shortcuts
@@ -314,7 +314,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Back / forward | `Alt+←` / `Alt+→` |
 | Copy reference (or selection with reference) | `Ctrl+Alt+C` |
 | Edit tags and description | `T` |
-| Leave a note on the selected passage | `N` |
+| Leave a comment on the selected passage | `C` |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 
 **Editing**
@@ -360,7 +360,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 **v0.4: your agent sees what you see**
 - An optional, local connection (MCP, plus a plain file for tools without it) that lets any coding agent know which document and
   section you are reading and what you selected, so "rewrite this paragraph" just works
-- Review notes: comment on passages while you read, and your agent picks up the open ones
+- Comments: leave them on passages while you read, and your agent picks up the open ones
 - Your agent can ask TrailMark "where is X described?" and point you to a section, and it knows what you have not read yet.
   Off by default, per project, and read-only: an agent can show you a document, never edit through it
 
