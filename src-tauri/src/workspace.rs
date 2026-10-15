@@ -626,7 +626,20 @@ impl Workspace {
             .into_iter()
             .map(|r| (r.to_path_buf(), info_exclude.clone()))
             .collect();
-        let filter = Arc::new(PathFilter::new(&roots, &config.ignore));
+        // The notes are private: a notes folder inside the project is not part of what is indexed, searched or listed as unread
+        // (the agent connection answers from those).
+        let mut ignore = config.ignore.clone();
+        if !notes_kind {
+            ignore.extend(crate::notes::folder::ignore_inside(
+                app_data_dir,
+                crate::session::AppSettingsStore::new(app_data_dir)
+                    .load()
+                    .notes_folder
+                    .as_deref(),
+                vault.root(),
+            ));
+        }
+        let filter = Arc::new(PathFilter::new(&roots, &ignore));
         let sigs = Arc::new(SigStore::new());
         let index = Arc::new(RwLock::new(Bm25Index::new()));
 
@@ -2398,6 +2411,34 @@ deepword
         assert_eq!(store.location(), StateLocation::AppData);
         assert!(store.agent_path().is_none());
         again.close();
+    }
+
+    /// A notes folder chosen inside a project is the person's private notes: the search the agent connection answers from
+    /// (the index of the open project) holds none of their text.
+    #[test]
+    fn a_notes_folder_inside_the_project_is_not_in_its_index() {
+        let fx = Fx::new();
+        write(fx.project.path(), "README.md", "# Home\n\nlighthouseword\n");
+        write(
+            fx.project.path(),
+            "my-notes/idea.md",
+            "# Idea\n\nlighthouseword and a pelicanword\n",
+        );
+        let notes = dunce::canonicalize(fx.project.path())
+            .expect("canonical")
+            .join("my-notes");
+        crate::session::AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        let ws = fx.open();
+        fx.indexed();
+        let hits = ws.search("lighthouseword", None);
+        assert_eq!(
+            hits.iter().map(|h| h.path.as_str()).collect::<Vec<_>>(),
+            ["README.md"]
+        );
+        assert_eq!(ws.search("pelicanword", None).len(), 0);
+        ws.close();
     }
 
     #[test]

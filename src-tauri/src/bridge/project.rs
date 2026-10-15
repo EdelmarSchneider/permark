@@ -98,9 +98,19 @@ impl Project {
             Discovery::Repo(context) => context.info_exclude(),
             Discovery::NoRepo | Discovery::Error(_) => None,
         };
+        // the notes are private: a notes folder inside the project is not part of what is searched or listed
+        let mut ignore = config.ignore.clone();
+        ignore.extend(notes::folder::ignore_inside(
+            app_data_dir,
+            AppSettingsStore::new(app_data_dir)
+                .load()
+                .notes_folder
+                .as_deref(),
+            vault.root(),
+        ));
         let filter = Arc::new(PathFilter::new(
             &[(vault.root().to_path_buf(), info_exclude)],
-            &config.ignore,
+            &ignore,
         ));
         let comments = CommentBook::new(Arc::clone(&vault), store.comments_path());
         Ok(Self {
@@ -380,6 +390,46 @@ mod tests {
             .map(|h| h.path)
             .collect();
         assert_eq!(paths, ["docs/plan.md"]);
+    }
+
+    /// A project can hold the notes folder (a notes folder chosen inside it): the notes are private, and nothing the
+    /// project's agent can ask for (the search, the unread documents) shows a word of them.
+    #[test]
+    fn the_notes_folder_inside_a_project_is_not_searched_nor_listed_as_unread() {
+        let fx = fx();
+        write(
+            &fx,
+            "notes/secret.md",
+            "# Secret\n\nThe beacon passphrase is pelican.\n",
+        );
+        write(&fx, "notes/.trailmark/state.json", "{}");
+        let notes = root(&fx).join("notes");
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        // before the folder is the notes folder it is a folder of the project like any other
+        let before = project.search("pelican", 10);
+        assert_eq!(before.len(), 1, "the control: the note is found");
+        drop(project);
+
+        AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        assert_eq!(project.search("pelican", 10), Vec::<Hit>::new());
+        // the rest of the project is still searched
+        assert_eq!(project.search("beacon", 10).len(), 1);
+        // and an edit to a note does not bring it in later
+        write(&fx, "notes/more.md", "# More\n\nA second pelican.\n");
+        assert_eq!(project.search("pelican", 10), Vec::<Hit>::new());
+        let hash = format!("{:016x}", crate::util::hash_bytes(b"old"));
+        let read = store(&fx).read_path();
+        fs::create_dir_all(read.parent().expect("parent")).expect("mkdir");
+        fs::write(&read, format!("{{\"README.md\": \"{hash}\"}}")).expect("write");
+        let unread = project.unread();
+        assert!(
+            unread.unread.iter().all(|d| !d.path.starts_with("notes/")),
+            "{:?}",
+            unread.unread.iter().map(|d| &d.path).collect::<Vec<_>>()
+        );
     }
 
     #[test]

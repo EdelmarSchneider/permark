@@ -150,6 +150,44 @@ pub(crate) fn contains(app_data: &Path, chosen: Option<&str>, path: &Path) -> bo
     crate::vault::strip_root(&canonical(path), &canonical(&folder)).is_some()
 }
 
+/// The ignore line that keeps the notes folder out of the project in `root`, when the notes folder lies inside it (a project
+/// that holds the folder of the notes, or a notes folder chosen inside a project). The line is anchored at the project's root,
+/// so it names this folder only, and it is added to the project's own ignore globs: what is ignored is not indexed, not searched
+/// and not listed as unread, so an agent connected to the project is never shown a note by them (a note the person shares is read
+/// through `read_note`, one at a time).
+pub(crate) fn ignore_inside(app_data: &Path, chosen: Option<&str>, root: &Path) -> Option<String> {
+    let folder = configured(app_data, chosen);
+    let canonical = |p: &Path| canonicalize_lenient(p).unwrap_or_else(|| p.to_path_buf());
+    let (folder, root) = (canonical(&folder), canonical(root));
+    let inside = crate::vault::strip_root(&folder, &root)?;
+    if inside.is_empty() {
+        return None;
+    }
+    let mut line = String::from("/");
+    for part in inside {
+        line.push_str(&escaped_glob(&part.to_string_lossy()));
+        line.push('/');
+    }
+    Some(line)
+}
+
+/// A name as one piece of an ignore line, with the characters that mean something in one taken literally.
+fn escaped_glob(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for c in name.chars() {
+        if matches!(c, '\\' | '*' | '?' | '[' | ']') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    // a space at the end of a line is dropped unless it is escaped
+    if out.ends_with(' ') {
+        out.pop();
+        out.push_str("\\ ");
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,6 +285,34 @@ mod tests {
         // a folder the person picked on purpose is theirs
         let sync = abs("/sync/notes");
         assert_eq!(debug.resolve(Some(&sync), None), Path::new(&sync));
+    }
+
+    #[test]
+    fn a_project_that_holds_the_notes_folder_ignores_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dunce::canonicalize(dir.path()).expect("canonical");
+        let app = root.join("app-data");
+        let notes = root.join("docs").join("My [notes]");
+        let chosen = notes.display().to_string();
+        assert_eq!(
+            ignore_inside(&app, Some(&chosen), &root).as_deref(),
+            Some("/docs/My \\[notes\\]/")
+        );
+        // the folder that is not there yet is ignored as well
+        assert!(!notes.exists());
+        // a project beside the notes, or the notes folder itself, has nothing to ignore
+        let beside = root.join("project");
+        assert_eq!(ignore_inside(&app, Some(&chosen), &beside), None);
+        assert_eq!(ignore_inside(&app, Some(&chosen), &notes), None);
+        // and a project inside the notes folder is not one (it is never found), so it has nothing to ignore either
+        assert_eq!(ignore_inside(&app, Some(&chosen), &notes.join("sub")), None);
+    }
+
+    #[test]
+    fn a_name_is_taken_literally_in_an_ignore_line() {
+        assert_eq!(escaped_glob("plain"), "plain");
+        assert_eq!(escaped_glob("a*b?c[d]e\\f"), "a\\*b\\?c\\[d\\]e\\\\f");
+        assert_eq!(escaped_glob("trailing "), "trailing\\ ");
     }
 
     #[test]
