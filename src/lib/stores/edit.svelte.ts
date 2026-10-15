@@ -179,8 +179,8 @@ class EditStore {
   private closeGuardToken = 0;
   private hintSeen = readHintSeen();
   private slowTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Closing the window was refused once because the note could not be saved. */
-  private closeRefused = false;
+  /** How many times closing the window was refused because the note could not be saved (the bar that says why is seen first). */
+  private closeRefusals = 0;
   /**
    * The text kept apart from the open loose file, which is never written until the person saves; null when none is kept. A
    * loose file is edited with explicit saves (Ctrl+S) and what is typed in between is kept here, so a restart finds it.
@@ -412,6 +412,7 @@ class EditStore {
     this.saving = false;
     this.touched = false;
     this.pendingText = null;
+    this.closeRefusals = 0;
     this.overwriteAsk = false;
     this.setDirty(false);
     docs.editing = false;
@@ -491,13 +492,22 @@ class EditStore {
    * the same three choices as the bar. Resolves to false when the person keeps editing or the save did not work.
    */
   async confirmLeave(reason: "close" | "restart"): Promise<boolean> {
-    // a note is saved first, and that is all: closing never asks. A note that cannot be saved keeps the window open once, so
-    // the bar that says why (with "Copy all") is seen; the next try closes it.
+    // a note is saved first, and that is all: closing never asks. A note that cannot be saved keeps the window open, so the bar
+    // that says why (with "Copy all") is seen. The next try writes it again (the cause may be gone) and, if it still cannot,
+    // keeps the text as a note of its own; only when not even that works the window is kept open once more, then it closes.
     if (this.autosave) {
       if (await this.flush()) return true;
-      if (reason === "restart" || this.closeRefused) return reason === "close";
-      this.closeRefused = true;
-      return false;
+      if (reason === "restart") return false;
+      if (this.closeRefusals === 0) {
+        this.closeRefusals = 1;
+        return false;
+      }
+      if (await this.keepAsNewNote()) return true;
+      if (this.closeRefusals === 1) {
+        this.closeRefusals = 2;
+        return false;
+      }
+      return true;
     }
     if (!this.dirty) return true;
     const message = reason === "close" ? "edit.closePrompt" : "edit.restartPrompt";
@@ -723,7 +733,7 @@ class EditStore {
         this.noteHooks.renamed?.(path, outcome.path);
       }
       await this.adopt(text, outcome.hash, outcome.modifiedMs);
-      this.closeRefused = false;
+      this.closeRefusals = 0;
       this.noteHooks.written?.({ path: this.path ?? outcome.path, created: outcome.created, text });
       return true;
     } catch (error) {
@@ -734,7 +744,10 @@ class EditStore {
     }
   }
 
-  /** Saves what is waiting now, and resolves to whether the open note is saved (always true when nothing is open). */
+  /**
+   * Saves what is waiting now, and resolves to whether the open note is saved (always true when nothing is open). A save that
+   * failed earlier left the text unsaved with nothing to try again, so it is tried again here: the cause may be gone.
+   */
   async flush(): Promise<boolean> {
     if (!this.autosave || !this.active) return true;
     try {
@@ -747,7 +760,18 @@ class EditStore {
       await this.keepPending();
       return this.saveError === null || this.failedAt === "save";
     }
+    if (this.dirty && !this.saving && this.conflict === null) await this.save();
     return !this.dirty && this.saveError === null;
+  }
+
+  /** The text of the open note, written as a new note: what is left when the note itself cannot be written. */
+  private async keepAsNewNote(): Promise<boolean> {
+    try {
+      const outcome = await api.saveNote(await api.newNote(), this.currentText(), "");
+      return outcome.result === "saved";
+    } catch {
+      return false;
+    }
   }
 
   /** The autosave timer fired: save the note, or keep the text typed into a loose file, if either needs it. */

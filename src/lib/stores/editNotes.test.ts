@@ -9,6 +9,7 @@ const fake = vi.hoisted(() => ({
   documentSource: vi.fn(),
   parseBlocks: vi.fn(),
   saveNote: vi.fn(),
+  newNote: vi.fn(),
   saveDocument: vi.fn(),
   readDocument: vi.fn(),
   fileMeta: vi.fn(),
@@ -188,6 +189,19 @@ describe("autosave", () => {
     expect(edit.dirty).toBe(true);
   });
 
+  it("flush tries again after a save that failed, so a note whose problem is gone is saved", async () => {
+    const editor = await openNote();
+    fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: PATH });
+    type(editor, "# Plan\nnewer");
+    expect(await edit.flush()).toBe(false);
+    expect(edit.saveError).not.toBeNull();
+    fake.saveNote.mockResolvedValue(saved("h2"));
+    expect(await edit.flush()).toBe(true);
+    expect(fake.saveNote).toHaveBeenLastCalledWith(PATH, "# Plan\nnewer", "h1");
+    expect(edit.saveError).toBeNull();
+    expect(edit.dirty).toBe(false);
+  });
+
   it("flushes nothing while no note is open", async () => {
     expect(await edit.flush()).toBe(true);
     expect(fake.saveNote).not.toHaveBeenCalled();
@@ -260,12 +274,41 @@ describe("never asking", () => {
     expect(await edit.confirmLeave("restart")).toBe(false);
   });
 
-  it("a note that cannot be saved keeps the window open once so the bar is seen, then lets it close", async () => {
+  it("a note that cannot be saved keeps the window open so the bar is seen, and the next try saves it once the problem is gone", async () => {
     const editor = await openNote();
     fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: PATH });
     type(editor, "# Plan\nunsaved");
     expect(await edit.confirmLeave("close")).toBe(false);
     expect(edit.saveError).not.toBeNull();
+    // the file was made writable again: closing writes the text (it is not forgotten with the save that failed)
+    fake.saveNote.mockResolvedValue(saved("h2"));
+    expect(await edit.confirmLeave("close")).toBe(true);
+    expect(fake.saveNote).toHaveBeenLastCalledWith(PATH, "# Plan\nunsaved", "h1");
+    expect(edit.dirty).toBe(false);
+  });
+
+  it("when the note still cannot be written the second close keeps the text as a note of its own", async () => {
+    const editor = await openNote();
+    const denied = { kind: "denied", message: "no", subject: PATH };
+    fake.saveNote.mockImplementation(async (path: string) => {
+      if (path === PATH) throw denied;
+      return saved("n1", path);
+    });
+    fake.newNote.mockResolvedValue("2026-10-15 1500.md");
+    type(editor, "# Plan\nunsaved");
+    expect(await edit.confirmLeave("close")).toBe(false);
+    expect(fake.newNote).not.toHaveBeenCalled();
+    expect(await edit.confirmLeave("close")).toBe(true);
+    expect(fake.saveNote).toHaveBeenLastCalledWith("2026-10-15 1500.md", "# Plan\nunsaved", "");
+  });
+
+  it("closing is refused once more when not even a copy could be written, and the third try closes", async () => {
+    const editor = await openNote();
+    fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: PATH });
+    fake.newNote.mockResolvedValue("2026-10-15 1500.md");
+    type(editor, "# Plan\nunsaved");
+    expect(await edit.confirmLeave("close")).toBe(false);
+    expect(await edit.confirmLeave("close")).toBe(false);
     expect(await edit.confirmLeave("close")).toBe(true);
   });
 });
