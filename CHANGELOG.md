@@ -18,6 +18,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
   at the top of the view; with no command it opens the file with the system's default app as before. If the command can't be run, a message says
   which program was not found and takes you to Settings.
 
+### Fixed
+- On macOS, files and folders moved or renamed outside TrailMark now show up at once in the tree and in search, and the tags of a renamed
+  file follow it, where such a move went unnoticed.
+- On macOS, renaming a file or folder in the Explorer so that only the case of its name changes (`readme.md` to `README.md`) works.
+- In Simple mode, a folder created next to the open file no longer reports the files inside it as new.
+
 ### Changed
 - In Spanish the Source mode is called **Código**, the usual short name, so the mode switch stays compact.
 - Semantic search is now planned for v0.5 (the disabled **Semantic** toggle in Search says so); v0.4 brings an optional, local
