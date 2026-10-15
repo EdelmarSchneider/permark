@@ -8,7 +8,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use super::context::Published;
-use crate::util::write_atomic;
+use crate::session::{remove_local_state, write_local_state};
 
 /// The file is rewritten at most this often. One constant to change.
 pub const WRITE_INTERVAL: Duration = Duration::from_millis(300);
@@ -125,7 +125,7 @@ impl Drop for ContextFile {
 fn write(path: &Path, published: &Published) {
     // Best effort: a project folder that cannot be written to just has no state file.
     if let Ok(bytes) = serde_json::to_vec_pretty(published) {
-        let _ = write_atomic(path, &bytes);
+        let _ = write_local_state(path, &bytes);
     }
 }
 
@@ -145,7 +145,7 @@ fn run(rx: &Receiver<Msg>, mut path: PathBuf, interval: Duration, initial: Publi
                 throttle.changed();
             }
             Ok(Msg::Relocate(new_path)) => {
-                let _ = std::fs::remove_file(&path);
+                let _ = remove_local_state(&path);
                 path = new_path;
                 throttle.changed();
             }
@@ -171,7 +171,7 @@ fn run(rx: &Receiver<Msg>, mut path: PathBuf, interval: Duration, initial: Publi
             throttle.written(now);
         }
     }
-    let _ = std::fs::remove_file(&path);
+    let _ = remove_local_state(&path);
 }
 
 #[cfg(test)]
@@ -272,6 +272,34 @@ mod tests {
         file.flush();
         assert!(!first.exists());
         assert_eq!(read(&second), Some(published("a.md", 1)));
+    }
+
+    /// A repository can commit `.trailmark/local` as a link to some other folder.
+    #[test]
+    fn nothing_is_written_or_deleted_behind_a_link() {
+        use crate::util::testing::{dir_link, remove_link};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("outside");
+        let theirs = outside.path().join("agent.json");
+        std::fs::write(&theirs, "not ours").expect("write");
+        let trailmark = dir.path().join(".trailmark");
+        std::fs::create_dir(&trailmark).expect("mkdir");
+        dir_link(&trailmark.join("local"), outside.path());
+        let path = trailmark.join("local").join("agent.json");
+
+        let mut file = ContextFile::start(path.clone(), FOREVER, published("a.md", 1));
+        file.flush();
+        file.relocate(trailmark.join("local").join("other.json"));
+        file.flush();
+        file.stop();
+        assert_eq!(
+            std::fs::read_to_string(&theirs).expect("read"),
+            "not ours",
+            "neither overwritten nor deleted"
+        );
+        assert!(!outside.path().join("other.json").exists());
+        remove_link(&trailmark.join("local"));
     }
 
     #[test]

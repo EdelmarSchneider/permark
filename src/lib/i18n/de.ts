@@ -345,6 +345,10 @@ export const de = {
   "agent.shares.unread": "Welche Dokumente sich seit dem letzten Lesen geändert haben",
   "agent.shares.search": "Suchergebnisse aus den Dokumenten dieses Projekts",
   "agent.shares.show": "Ein Agent kann auch eine Stelle zeigen. Er ändert nie ein Dokument.",
+  "agent.shares.leaves":
+    "TrailMark spricht nur mit Programmen auf diesem Computer. Ein Agent kann das Gelesene an seinen KI-Dienst senden.",
+  "agent.shares.file":
+    "Solange die Verbindung an ist, werden das geöffnete Dokument, der Abschnitt und der markierte Text auch in .trailmark/local/agent.json geschrieben (für Skripte), wenn das Projekt seine Einstellungen in .trailmark/ ablegt.",
   "agent.recent": "Letzte Anfragen",
   "agent.recent.none": "Noch keine Anfragen.",
   "agent.request.get_context": "Gelesen, was gerade angezeigt wird",
@@ -411,7 +415,8 @@ export const de = {
   "agent.request.resolve_note": "Eine Notiz als erledigt markiert",
   "error.notADocument": "{subject} ist kein Markdown-Dokument dieses Projekts.",
   "error.emptyNote": "Eine Notiz braucht eine ausgewählte Stelle und etwas Text.",
-  "error.tooManyNotes": "Dieses Projekt hat bereits die höchste Zahl an Notizen, die es speichern kann.",
+  "error.tooManyNotes":
+    "Dieses Projekt hat bereits die höchste Zahl an Notizen, die es speichern kann.",
   "error.noteNotFound": "Diese Notiz gibt es nicht mehr.",
   "error.noteSingleFile": "Notizen gehören zu einem Projektordner, nicht zu einer einzelnen Datei.",
 
@@ -659,7 +664,7 @@ export const de = {
   "settings.agent": "Agentenverbindung",
   "settings.agentSwitch": "KI-Agenten sehen lassen, was gerade angezeigt wird",
   "settings.agentHint":
-    "Standardmäßig aus und nur für dieses Projekt. Ein Agent kann lesen, was auf dem Bildschirm steht, und eine Stelle zeigen. Er ändert nie ein Dokument. Alles bleibt auf diesem Computer.",
+    "Standardmäßig aus und nur für dieses Projekt. Ein Agent kann lesen, was auf dem Bildschirm steht, und eine Stelle zeigen. Er ändert nie ein Dokument. TrailMark spricht nur mit Programmen auf diesem Computer, aber ein Agent kann das Gelesene an seinen KI-Dienst senden. Solange die Verbindung an ist, wird das, was du ansiehst, außerdem in .trailmark/local/agent.json geschrieben, wenn das Projekt seine Einstellungen in .trailmark ablegt.",
   "settings.agentUnavailable": "Für eine einzelne Datei nicht verfügbar.",
   "settings.agentSetup": "Agenten verbinden",
   "settings.agentSetupHint":

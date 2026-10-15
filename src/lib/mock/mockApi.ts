@@ -55,7 +55,6 @@ let savedSession: SessionState | null = {
   linkUpdate: "ask",
   editMode: "visual",
   initHintNever: false,
-  agentConnection: false,
 };
 let stateLocation: "appData" | "project" = "appData";
 let mockEditorCommand = "";

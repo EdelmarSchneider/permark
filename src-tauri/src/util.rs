@@ -586,3 +586,36 @@ mod tests {
         assert_ne!(hash_hex(b"abc"), hash_hex(b"abd"));
     }
 }
+
+/// Helpers for tests that need the file system to behave in ways a plain temp folder does not.
+#[cfg(test)]
+pub(crate) mod testing {
+    use std::path::Path;
+
+    /// Makes `link` a link to the folder `target`: a symbolic link, or on Windows a junction (it needs no
+    /// privileges, unlike a symbolic link). Panics when the system refuses.
+    pub(crate) fn dir_link(link: &Path, target: &Path) {
+        #[cfg(windows)]
+        {
+            // `mklink` reads a `/` in a path as a switch
+            let backslashes = |path: &Path| path.to_string_lossy().replace('/', "\\");
+            let made = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(backslashes(link))
+                .arg(backslashes(target))
+                .output()
+                .expect("run mklink");
+            assert!(made.status.success(), "{made:?}");
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).expect("symlink");
+    }
+
+    /// Removes a link made by [`dir_link`] and leaves what it points to.
+    pub(crate) fn remove_link(link: &Path) {
+        #[cfg(windows)]
+        std::fs::remove_dir(link).expect("remove the junction");
+        #[cfg(unix)]
+        std::fs::remove_file(link).expect("remove the symlink");
+    }
+}

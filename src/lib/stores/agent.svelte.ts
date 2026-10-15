@@ -17,7 +17,6 @@ import type { AgentContext, AgentStatus } from "../types";
 import { docs } from "./docs.svelte";
 import { edit } from "./edit.svelte";
 import { outline } from "./outline.svelte";
-import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 import { vault } from "./vault.svelte";
 
@@ -105,12 +104,11 @@ class AgentStore {
 
   // ---- the switch -----------------------------------------------------------------------------------
 
-  /** Turns the connection on or off for the open project. The setting is saved first: the programs that talk to the window read it. */
+  /** Turns the connection on or off for the open project. The backend remembers the switch, in the app's own data. */
   async setEnabled(on: boolean): Promise<void> {
     if (this.busy || vault.isSimple) return;
     this.busy = true;
     try {
-      await session.setAgentConnection(on);
       this.onStatus(await api.setAgentConnection(on));
       this.lastSent = null;
       if (on) this.schedule(0);

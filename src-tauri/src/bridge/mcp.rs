@@ -270,7 +270,7 @@ mod tests {
     use crate::bridge::service::AgentBridge;
     use crate::bridge::socket::Endpoint;
     use crate::bridge::tools::Launcher;
-    use crate::session::{SessionState, StateStore};
+    use crate::session::StateStore;
     use crate::vault::Vault;
 
     const WAIT: Duration = Duration::from_secs(10);
@@ -295,10 +295,7 @@ mod tests {
                 "# Plan\n\nIntro.\n\n## Rollout\n\nShip it.\n",
             )
             .expect("write");
-            let sockets = tempfile::Builder::new()
-                .prefix("tm")
-                .tempdir_in(std::env::temp_dir())
-                .expect("sockets");
+            let sockets = crate::bridge::socket::socket_folder();
             let root = dunce::canonicalize(project.path()).expect("canonical");
             let fake = Arc::new(Fake::default());
             let bridge = Arc::new(AgentBridge::new(
@@ -320,11 +317,8 @@ mod tests {
 
         fn connection(&self, on: bool) {
             StateStore::open(self.app.path(), &self.root)
-                .save_session(&SessionState {
-                    agent_connection: on,
-                    ..SessionState::default()
-                })
-                .expect("save the session");
+                .set_agent_connection(on)
+                .expect("remember the switch");
         }
 
         fn core(&self) -> Arc<Core> {
@@ -566,7 +560,10 @@ mod tests {
         let reply = client.call(3, "get_context", &json!({})).await;
         let answer = &reply["result"]["structuredContent"];
         assert_eq!(answer["status"], "notOpen");
-        assert_eq!(answer["message"], "TrailMark is not open on this project.");
+        assert!(answer["message"]
+            .as_str()
+            .expect("a message")
+            .starts_with("TrailMark is not open on this project."));
         client.close().await.expect("the server ended cleanly");
     }
 

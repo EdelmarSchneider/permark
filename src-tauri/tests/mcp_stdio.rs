@@ -6,7 +6,6 @@
 //! client code over a real socket on every platform; these tests have no window, which is also a case that must work.
 
 use std::io::{BufRead, BufReader, Write};
-use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
@@ -24,10 +23,15 @@ struct Session {
 }
 
 impl Session {
-    fn start(project: &Path) -> Self {
+    /// Starts `trailmark mcp` in the project, with the data folder of the fixture (never the person's own).
+    fn start(fixture: &Fixture) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_trailmark"))
             .arg("mcp")
-            .current_dir(project)
+            .current_dir(fixture.project.path())
+            .env(
+                trailmark_lib::test_support::DATA_DIR_VARIABLE,
+                fixture.data.path(),
+            )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -118,10 +122,17 @@ impl Session {
     }
 }
 
-/// A project with a document, a `.trailmark/` folder (which makes TrailMark know it and keeps its settings with it),
-/// and the agent connection turned on or off in the saved session.
-fn project(connection: Option<bool>) -> tempfile::TempDir {
+/// A project and the data folder the program uses for it.
+struct Fixture {
+    project: tempfile::TempDir,
+    data: tempfile::TempDir,
+}
+
+/// A project with a document and a `.trailmark/` folder (which makes TrailMark know it and keeps its settings with
+/// it), and a data folder of its own in which the agent connection is turned on or off, as the app does.
+fn project(connection: Option<bool>) -> Fixture {
     let project = tempfile::tempdir().expect("project folder");
+    let data = tempfile::tempdir().expect("data folder");
     std::fs::create_dir_all(project.path().join("docs")).expect("docs folder");
     std::fs::write(
         project.path().join("docs/plan.md"),
@@ -130,19 +141,16 @@ fn project(connection: Option<bool>) -> tempfile::TempDir {
     .expect("a document");
     std::fs::create_dir_all(project.path().join(".trailmark/local")).expect("state folder");
     if let Some(on) = connection {
-        std::fs::write(
-            project.path().join(".trailmark/local/session.json"),
-            json!({ "agentConnection": on }).to_string(),
-        )
-        .expect("a session");
+        trailmark_lib::test_support::set_agent_connection(data.path(), project.path(), on)
+            .expect("remember the switch");
     }
-    project
+    Fixture { project, data }
 }
 
 #[test]
 fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_its_input_closes() {
     let project = project(Some(true));
-    let mut session = Session::start(project.path());
+    let mut session = Session::start(&project);
 
     let tools = session.request("tools/list", &json!({}));
     let mut names: Vec<_> = tools["result"]["tools"]
@@ -168,7 +176,10 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
     let (context, is_error) = session.call("get_context", &json!({}));
     assert!(!is_error);
     assert_eq!(context["status"], "notOpen");
-    assert_eq!(context["message"], "TrailMark is not open on this project.");
+    assert!(context["message"]
+        .as_str()
+        .expect("a message")
+        .starts_with("TrailMark is not open on this project."));
 
     let (found, is_error) = session.call("search", &json!({ "query": "beacon" }));
     assert!(!is_error, "{found}");
@@ -199,7 +210,7 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
 #[test]
 fn review_notes_are_listed_and_resolved_in_the_projects_files_without_a_window() {
     let project = project(Some(true));
-    let notes = project.path().join(".trailmark/local/notes.json");
+    let notes = project.project.path().join(".trailmark/local/notes.json");
     std::fs::write(
         &notes,
         json!({ "version": 1, "notes": [{
@@ -218,7 +229,7 @@ fn review_notes_are_listed_and_resolved_in_the_projects_files_without_a_window()
         .to_string(),
     )
     .expect("a note");
-    let mut session = Session::start(project.path());
+    let mut session = Session::start(&project);
 
     // the passage is found again in the document, which is not where the note remembers it
     let (listed, is_error) = session.call("list_notes", &json!({}));
@@ -256,19 +267,24 @@ fn review_notes_are_listed_and_resolved_in_the_projects_files_without_a_window()
     assert!(kept.contains("Named it"), "{kept}");
 }
 
+/// Every tool, with arguments that would do something if the connection were on.
+fn every_tool() -> [(&'static str, Value); 6] {
+    [
+        ("get_context", json!({})),
+        ("list_unread", json!({})),
+        ("search", json!({ "query": "beacon" })),
+        ("open", json!({ "path": "docs/plan.md" })),
+        ("list_notes", json!({})),
+        ("resolve_note", json!({ "id": "n00000001" })),
+    ]
+}
+
 #[test]
 fn with_the_connection_off_every_tool_says_how_to_turn_it_on() {
     for connection in [None, Some(false)] {
         let project = project(connection);
-        let mut session = Session::start(project.path());
-        for (tool, arguments) in [
-            ("get_context", json!({})),
-            ("list_unread", json!({})),
-            ("search", json!({ "query": "beacon" })),
-            ("open", json!({ "path": "docs/plan.md" })),
-            ("list_notes", json!({})),
-            ("resolve_note", json!({ "id": "n00000001" })),
-        ] {
+        let mut session = Session::start(&project);
+        for (tool, arguments) in every_tool() {
             let (answer, is_error) = session.call(tool, &arguments);
             assert!(!is_error, "{tool}: {answer}");
             assert_eq!(answer["status"], "off", "{tool}");
@@ -277,4 +293,28 @@ fn with_the_connection_off_every_tool_says_how_to_turn_it_on() {
         }
         assert!(session.finish().success());
     }
+}
+
+/// A repository can carry any `.trailmark/` folder, so what is in it cannot be what turns the connection on.
+#[test]
+fn a_project_folder_that_says_the_connection_is_on_is_still_off() {
+    let project = project(None);
+    let local = project.project.path().join(".trailmark/local");
+    std::fs::write(
+        local.join("session.json"),
+        json!({ "agentConnection": true }).to_string(),
+    )
+    .expect("a session");
+    std::fs::write(
+        local.join("agent-connection.json"),
+        json!({ "enabled": true }).to_string(),
+    )
+    .expect("a switch");
+    let mut session = Session::start(&project);
+    for (tool, arguments) in every_tool() {
+        let (answer, is_error) = session.call(tool, &arguments);
+        assert!(!is_error, "{tool}: {answer}");
+        assert_eq!(answer["status"], "off", "{tool}: {answer}");
+    }
+    assert!(session.finish().success());
 }

@@ -136,8 +136,6 @@ export type SessionState = {
   editMode: EditMode;
   /** "Never for this folder" was chosen on the hint to keep settings with the project. */
   initHintNever: boolean;
-  /** An AI agent may ask this project's window what the person is looking at (off until turned on). */
-  agentConnection: boolean;
 };
 
 // ---- the agent connection (docs/design/v0.4.md) ------------------------------------------------------

@@ -6,6 +6,7 @@
 
 mod app_settings;
 mod config;
+mod private;
 mod recent;
 mod store;
 mod window;
@@ -18,6 +19,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 pub use app_settings::{effective_language, installer_language, AppSettingsStore, Language};
 pub use config::{Config, TreeConfig, TreeShow};
+pub(crate) use private::{open_lock_file, remove_local_state, write_local_state};
 pub use recent::{RecentStore, RecentVault};
 pub(crate) use store::project_key;
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};
@@ -228,10 +230,6 @@ pub struct SessionState {
     /// the app's own storage, so nothing about it is written into the project.
     #[serde(deserialize_with = "or_default")]
     pub init_hint_never: bool,
-    /// An AI agent may ask this project's window what the person is looking at (the agent connection). Off unless
-    /// the person turned it on; a value this build cannot read reads as off.
-    #[serde(deserialize_with = "or_default")]
-    pub agent_connection: bool,
 }
 
 impl Default for SessionState {
@@ -256,7 +254,6 @@ impl Default for SessionState {
             link_update: LinkUpdate::Ask,
             edit_mode: EditMode::Visual,
             init_hint_never: false,
-            agent_connection: false,
         }
     }
 }
@@ -272,7 +269,7 @@ mod tests {
             "refTemplate": "@{path}", "leftPanel": {"open": false, "width": 300.5},
             "rightPanel": {"open": true, "width": 320.5}, "theme": "dark", "follow": true,
             "autoReveal": false, "rightTab": "outline", "linkUpdate": "always",
-            "editMode": "source", "initHintNever": true, "agentConnection": true,
+            "editMode": "source", "initHintNever": true,
             "treeFilter": {"show": "custom", "categories": ["documents", "data"],
                            "patterns": "+*.sql -archive/**", "hideEmptyFolders": false,
                            "assetsNearDocs": false, "showIgnored": true, "showHidden": true}
@@ -292,7 +289,6 @@ mod tests {
         assert!(!filter.assets_near_docs);
         assert!(filter.show_ignored && filter.show_hidden);
         assert!(s.init_hint_never);
-        assert!(s.agent_connection);
         assert_eq!(serde_json::to_value(&s).expect("json"), json);
     }
 
@@ -576,20 +572,17 @@ mod tests {
         }
     }
 
+    /// The agent connection's switch is not part of the session: a session file lives in the project's folder, which
+    /// a repository can fill, and the switch is kept in the app's own data (see `StateStore::agent_connection`).
     #[test]
-    fn the_agent_connection_is_off_unless_the_person_turned_it_on() {
-        assert!(!SessionState::default().agent_connection);
-        let s: SessionState = serde_json::from_str("{\"zoom\": 2}").expect("parse");
-        assert!(!s.agent_connection, "a session saved before it existed");
-        let s: SessionState = serde_json::from_str("{\"agentConnection\": true}").expect("parse");
-        assert!(s.agent_connection);
-        // a value this build cannot read reads as off and keeps the session
-        for value in ["null", "\"yes\"", "1", "[]", "{}"] {
-            let json = format!("{{\"follow\": true, \"agentConnection\": {value}}}");
-            let s: SessionState = serde_json::from_str(&json)
-                .unwrap_or_else(|e| panic!("{value} lost the session: {e}"));
-            assert!(!s.agent_connection && s.follow, "{value}");
-        }
+    fn a_session_file_has_no_say_in_the_agent_connection() {
+        let s: SessionState =
+            serde_json::from_str("{\"follow\": true, \"agentConnection\": true}").expect("parse");
+        assert!(s.follow, "the rest of the session is kept");
+        assert!(serde_json::to_value(&s)
+            .expect("json")
+            .get("agentConnection")
+            .is_none());
     }
 
     #[test]

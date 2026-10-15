@@ -58,25 +58,17 @@ afterEach(() => {
 });
 
 describe("the switch", () => {
-  it("saves the setting first, so the programs that read the session find it, then starts the connection", async () => {
-    const order: string[] = [];
-    fake.saveSession.mockImplementation(async (s: { agentConnection: boolean }) => {
-      order.push(`saved ${s.agentConnection}`);
-    });
-    fake.setAgentConnection.mockImplementation(async (on: boolean) => {
-      order.push(`backend ${on}`);
-      return ON;
-    });
+  it("leaves remembering the switch to the backend: the window's session never carries it", async () => {
     await agent.setEnabled(true);
-    expect(order).toEqual(["saved true", "backend true"]);
-    expect(session.agentConnection).toBe(true);
+    expect(fake.setAgentConnection).toHaveBeenCalledWith(true);
+    expect(fake.saveSession).not.toHaveBeenCalled();
+    expect(session.snapshot()).not.toHaveProperty("agentConnection");
     expect(agent.enabled).toBe(true);
   });
 
   it("turns it off the same way, and forgets who was connected", async () => {
     await agent.setEnabled(true);
     await agent.setEnabled(false);
-    expect(session.agentConnection).toBe(false);
     expect(agent.enabled).toBe(false);
     expect(fake.setAgentConnection).toHaveBeenLastCalledWith(false);
   });

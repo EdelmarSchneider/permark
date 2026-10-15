@@ -12,9 +12,27 @@ describe("programWord", () => {
   it("quotes a path with spaces and leaves a plain one alone", () => {
     expect(programWord(WINDOWS)).toBe(`"${WINDOWS}"`);
     expect(programWord("/usr/local/bin/trailmark")).toBe("/usr/local/bin/trailmark");
-    expect(programWord('/odd "name"/trailmark')).toBe('"/odd \\"name\\"/trailmark"');
+    expect(programWord('C:\\odd "name"\\trailmark.exe')).toBe(
+      '"C:\\odd \\"name\\"\\trailmark.exe"',
+    );
     // backslashes alone are enough: Git Bash would eat them
     expect(programWord("C:\\TrailMark\\trailmark.exe")).toBe('"C:\\TrailMark\\trailmark.exe"');
+    expect(programWord("C:/Program Files/TrailMark/trailmark.exe")).toBe(
+      '"C:/Program Files/TrailMark/trailmark.exe"',
+    );
+  });
+
+  it("single-quotes a Unix path a shell would otherwise read into, so $ and backticks stay what they are", () => {
+    expect(programWord("/Applications/TrailMark.app/Contents/MacOS/trailmark")).toBe(
+      "/Applications/TrailMark.app/Contents/MacOS/trailmark",
+    );
+    expect(programWord("/home/ada/My Apps/TrailMark.AppImage")).toBe(
+      "'/home/ada/My Apps/TrailMark.AppImage'",
+    );
+    expect(programWord("/home/ada/$HOME/trailmark")).toBe("'/home/ada/$HOME/trailmark'");
+    expect(programWord("/home/ada/`id`/trailmark")).toBe("'/home/ada/`id`/trailmark'");
+    expect(programWord('/odd "name"/trailmark')).toBe("'/odd \"name\"/trailmark'");
+    expect(programWord("/ada's apps/trailmark")).toBe("'/ada'\\''s apps/trailmark'");
   });
 });
 

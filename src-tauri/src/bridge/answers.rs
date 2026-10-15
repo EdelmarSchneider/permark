@@ -5,7 +5,7 @@
 //! Paths are the project's, relative with `/` separators. A linked worktree lives outside the project folder, so
 //! nothing from one is ever listed, found or opened here.
 
-use crate::render::decode_text;
+use crate::render::{decode_text, MAX_RENDER_BYTES};
 use crate::search::chunk::chunk_markdown;
 use crate::search::SearchHit;
 use crate::util::modified_ms;
@@ -141,6 +141,10 @@ pub(crate) fn prepare_open(
     }
     let wanted = heading.map(str::trim).filter(|h| !h.is_empty());
     let found = wanted.and_then(|wanted| {
+        // A document over the size the app reads is not read for a heading either; it opens at its top.
+        if std::fs::metadata(&resolved.abs).ok()?.len() > MAX_RENDER_BYTES {
+            return None;
+        }
         let bytes = std::fs::read(&resolved.abs).ok()?;
         locate_heading(&decode_text(&bytes)?, wanted)
     });
@@ -315,6 +319,22 @@ mod tests {
         // A blank heading is no heading.
         let blank = prepare_open(&vault, "docs/plan.md", None, Some("  ")).expect("open");
         assert!(!blank.heading_not_found);
+    }
+
+    /// A heading is looked for in the document's text, so a document too big to read is not read for it.
+    #[test]
+    fn a_document_over_the_size_the_app_reads_is_not_searched_for_a_heading() {
+        let (dir, vault) = project();
+        let mut text = String::from("# Big\n\n## Rollout\n\n");
+        text.push_str(&"\n".repeat(usize::try_from(MAX_RENDER_BYTES).expect("fits") + 1));
+        std::fs::write(dir.path().join("docs/big.md"), &text).expect("write");
+        let opened =
+            prepare_open(&vault, "docs/big.md", Some(1), Some("Rollout")).expect("it still opens");
+        assert!(opened.heading_not_found, "not searched");
+        assert_eq!(opened.line, Some(1), "the line it came with");
+        // and under the size the same heading is found
+        let small = prepare_open(&vault, "docs/plan.md", None, Some("Rollout")).expect("open");
+        assert!(!small.heading_not_found);
     }
 
     #[test]

@@ -1,5 +1,5 @@
 //! A project as `trailmark mcp` sees it when it is not talking to the window: found from the folder an agent works
-//! in, with its setting read from the saved session, and its unread documents and search index worked out from the
+//! in, with its setting read from the app's own data, and its unread documents and search index worked out from the
 //! files. Nothing here needs the window, and nothing here changes the project.
 
 use std::path::{Path, PathBuf};
@@ -17,9 +17,17 @@ use crate::watch::{PathFilter, SigStore};
 use super::answers;
 use super::protocol::{Hit, NoteList, Opened, ProtocolError, UnreadList};
 
+/// The environment variable that points a debug build at another data folder, so that the tests which run the real
+/// program never touch the person's own. Release builds ignore it.
+pub(crate) const TEST_DATA_DIR_VARIABLE: &str = "TRAILMARK_TEST_DATA_DIR";
+
 /// Where TrailMark keeps its data for the current user: the folder the window itself uses (`app_data_dir`), which
 /// is named after the app's identifier. `None` when the system has no such folder.
 pub(crate) fn app_data_dir(identifier: &str) -> Option<PathBuf> {
+    #[cfg(debug_assertions)]
+    if let Some(dir) = std::env::var_os(TEST_DATA_DIR_VARIABLE).filter(|dir| !dir.is_empty()) {
+        return Some(PathBuf::from(dir));
+    }
     dirs::data_dir().map(|dir| dir.join(identifier))
 }
 
@@ -34,11 +42,10 @@ pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf>
         .map(Path::to_path_buf)
 }
 
-/// Whether the person turned the agent connection on for the project in `root`.
+/// Whether the person turned the agent connection on for the project in `root`. Only the app's own data says so: a
+/// project's files (`.trailmark/` can be committed to a repository) have no say in who is shown the person's reading.
 pub(crate) fn connection_is_on(app_data_dir: &Path, root: &Path) -> bool {
-    StateStore::open(app_data_dir, root)
-        .load_session()
-        .is_some_and(|session| session.agent_connection)
+    StateStore::open(app_data_dir, root).agent_connection()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -231,27 +238,52 @@ mod tests {
     }
 
     #[test]
-    fn the_setting_is_read_from_the_saved_session_and_is_off_without_one() {
+    fn the_setting_is_the_one_the_app_kept_and_is_off_without_one() {
         let fx = fx();
         assert!(!connection_is_on(fx.app.path(), &root(&fx)));
-        let mut session = SessionState::default();
-        store(&fx).save_session(&session).expect("save");
+        store(&fx)
+            .save_session(&SessionState::default())
+            .expect("save");
         assert!(!connection_is_on(fx.app.path(), &root(&fx)));
-        session.agent_connection = true;
-        store(&fx).save_session(&session).expect("save");
+        store(&fx).set_agent_connection(true).expect("on");
         assert!(connection_is_on(fx.app.path(), &root(&fx)));
-        // It follows the state into a project that keeps it in `.trailmark/`.
+        // It stays with the person when the project starts keeping its other settings in `.trailmark/`.
         let mut moved = store(&fx);
         moved.init_project_folder().expect("init");
         assert!(connection_is_on(fx.app.path(), &root(&fx)));
-        fs::remove_file(
-            moved
-                .agent_path()
-                .expect("a path")
-                .with_file_name("session.json"),
-        )
-        .expect("rm");
+        store(&fx).set_agent_connection(false).expect("off");
         assert!(!connection_is_on(fx.app.path(), &root(&fx)));
+    }
+
+    /// A repository decides what is in its `.trailmark/` folder (it can be committed); it must not decide who sees
+    /// the person's reading.
+    #[test]
+    fn a_project_cannot_turn_the_connection_on_for_itself() {
+        let fx = fx();
+        write(
+            &fx,
+            ".trailmark/local/session.json",
+            r#"{"agentConnection": true}"#,
+        );
+        write(
+            &fx,
+            ".trailmark/local/agent-connection.json",
+            r#"{"enabled": true}"#,
+        );
+        write(
+            &fx,
+            ".trailmark/agent-connection.json",
+            r#"{"enabled": true}"#,
+        );
+        assert!(!connection_is_on(fx.app.path(), &root(&fx)));
+        // the folder is known (it has a `.trailmark/`), and still answers off
+        assert_eq!(
+            find_project(fx.app.path(), fx.project.path()),
+            Some(root(&fx))
+        );
+        // and the person's own choice is the only thing that changes it
+        store(&fx).set_agent_connection(true).expect("on");
+        assert!(connection_is_on(fx.app.path(), &root(&fx)));
     }
 
     #[test]

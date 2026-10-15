@@ -338,6 +338,10 @@ export const en = {
   "agent.shares.unread": "Which documents changed since you last read them",
   "agent.shares.search": "Search results from this project's documents",
   "agent.shares.show": "An agent can also show you a place. It never changes a document.",
+  "agent.shares.leaves":
+    "TrailMark only talks to programs on this computer. An agent may send what it reads to its AI service.",
+  "agent.shares.file":
+    "While this is on, the open document, the section and your selection are also written to .trailmark/local/agent.json (for scripts), if the project keeps its settings in .trailmark/.",
   "agent.recent": "Latest requests",
   "agent.recent.none": "No requests yet.",
   "agent.request.get_context": "Read what you are looking at",
@@ -641,7 +645,7 @@ export const en = {
   "settings.agent": "Agent connection",
   "settings.agentSwitch": "Let AI agents see what I'm looking at",
   "settings.agentHint":
-    "Off by default, and only for this project. An agent can read what is on your screen and show you a place. It never changes a document. Everything stays on this computer.",
+    "Off by default, and only for this project. An agent can read what is on your screen and show you a place. It never changes a document. TrailMark only talks to programs on this computer, but an agent may send what it reads to its AI service. While this is on, what you are looking at is also written to .trailmark/local/agent.json, if the project keeps its settings in .trailmark.",
   "settings.agentUnavailable": "Not available for a single file.",
   "settings.agentSetup": "Connect an agent",
   "settings.agentSetupHint":

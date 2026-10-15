@@ -100,10 +100,14 @@ fn cut(text: &mut String, max: usize) -> bool {
     }
 }
 
+/// The headings above a passage, each on one line (a heading that wraps, or text taken from the page with its line
+/// breaks, is one line of words: the paragraph a hook prints must stay one line), cut, without blanks, and no deeper
+/// than [`MAX_HEADING_DEPTH`].
 fn clean_path(path: Vec<String>) -> Vec<String> {
     let mut path: Vec<String> = path
         .into_iter()
-        .map(|mut heading| {
+        .map(|heading| {
+            let mut heading = heading.split_whitespace().collect::<Vec<_>>().join(" ");
             cut(&mut heading, MAX_HEADING_CHARS);
             heading.trim().to_owned()
         })
@@ -409,6 +413,20 @@ mod tests {
             end_line: None,
         });
         assert!(numbered.sanitize(&vault).section.is_some());
+    }
+
+    #[test]
+    fn a_heading_that_wraps_is_one_line_in_the_summary_a_hook_prints() {
+        let (_dir, vault) = project();
+        let mut context = full();
+        context.section.as_mut().expect("section").heading_path = vec![
+            "Plan\nfor  the\r\nyear".to_owned(),
+            "Roll\tout\u{a0}now".to_owned(),
+        ];
+        let shared = context.sanitize(&vault);
+        let section = shared.section.as_ref().expect("section");
+        assert_eq!(section.heading_path, ["Plan for the year", "Roll out now"]);
+        assert!(!shared.summary().contains(['\n', '\r', '\t']), "one line");
     }
 
     #[test]

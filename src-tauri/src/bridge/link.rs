@@ -17,7 +17,7 @@ use tokio::time::timeout;
 use super::protocol::{
     read_line, write_line, Call, ProtocolError, Reply, Request, MAX_REPLY_BYTES,
 };
-use super::socket::Endpoint;
+use super::socket::{ConnectError, Endpoint};
 
 /// How long to wait for the window to accept a connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -36,6 +36,9 @@ pub enum LinkError {
     Io(#[from] io::Error),
     #[error("TrailMark did not answer in time")]
     TimedOut,
+    /// Something listens where TrailMark would, but it is not shown to be this user's TrailMark: nothing was sent to it.
+    #[error("not trusted, so nothing was sent: {0}")]
+    Untrusted(String),
 }
 
 struct Connection {
@@ -63,6 +66,11 @@ impl Link {
                 next_id: 1,
             }),
         }
+    }
+
+    /// Where the window's socket is, for a message.
+    pub(crate) fn place(&self) -> String {
+        self.endpoint.describe()
     }
 
     /// Asks the window and returns its result.
@@ -101,7 +109,7 @@ impl Link {
     async fn connect(&self) -> Result<Connection, LinkError> {
         let stream = match timeout(CONNECT_TIMEOUT, self.endpoint.connect()).await {
             Err(_) => return Err(LinkError::TimedOut),
-            Ok(Err(error))
+            Ok(Err(ConnectError::Io(error)))
                 if matches!(
                     error.kind(),
                     io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
@@ -109,7 +117,8 @@ impl Link {
             {
                 return Err(LinkError::NotRunning)
             }
-            Ok(Err(error)) => return Err(LinkError::Io(error)),
+            Ok(Err(ConnectError::Io(error))) => return Err(LinkError::Io(error)),
+            Ok(Err(ConnectError::Untrusted(why))) => return Err(LinkError::Untrusted(why)),
             Ok(Ok(stream)) => stream,
         };
         let (recv, writer) = stream.split();

@@ -8,14 +8,16 @@ use std::sync::{mpsc, Arc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use interprocess::local_socket::tokio::{Listener, Stream};
-use interprocess::local_socket::traits::tokio::{Listener as _, Stream as _};
+use interprocess::local_socket::tokio::Stream;
+use interprocess::local_socket::traits::tokio::Stream as _;
 use tokio::io::BufReader;
 use tokio::sync::oneshot;
 
 use super::hub::Hub;
-use super::protocol::{read_line, write_line, Call, MAX_REQUEST_BYTES};
-use super::socket::{Endpoint, ListenError};
+use super::protocol::{
+    read_line, write_line, Call, ErrorKind, ProtocolError, Reply, MAX_REQUEST_BYTES,
+};
+use super::socket::{Endpoint, ListenError, Listening};
 
 /// More connections than this are turned away. An agent holds one; this leaves room for hooks and several agents.
 const MAX_CONNECTIONS: usize = 16;
@@ -111,7 +113,7 @@ impl Drop for BridgeServer {
     }
 }
 
-async fn accept_loop(listener: Listener, hub: Arc<Hub>, mut stopped: oneshot::Receiver<()>) {
+async fn accept_loop(listener: Listening, hub: Arc<Hub>, mut stopped: oneshot::Receiver<()>) {
     loop {
         tokio::select! {
             _ = &mut stopped => break,
@@ -144,6 +146,22 @@ impl Drop for Counted {
     }
 }
 
+/// The hub's answer to one request, worked out off the thread that serves every connection: a slow one (a list of
+/// thousands of notes, each document read and searched for its passage) must not hold up the other connections, nor
+/// the switch that stops this server.
+async fn answer(hub: &Arc<Hub>, call: Call) -> Reply {
+    let id = call.id;
+    let worker = Arc::clone(hub);
+    tokio::task::spawn_blocking(move || worker.handle(call))
+        .await
+        .unwrap_or_else(|_| {
+            Reply::failure(
+                id,
+                ProtocolError::new(ErrorKind::Unavailable, "TrailMark could not answer"),
+            )
+        })
+}
+
 /// Answers the requests of one connection, one line each, until the client closes it or sends nonsense that is
 /// too large to be a request.
 async fn serve_connection(stream: Stream, hub: Arc<Hub>) {
@@ -155,7 +173,7 @@ async fn serve_connection(stream: Stream, hub: Arc<Hub>) {
             continue;
         }
         let reply = match serde_json::from_str::<Call>(&line) {
-            Ok(call) => hub.handle(call),
+            Ok(call) => answer(&hub, call).await,
             Err(_) => Hub::reject(&line),
         };
         if write_line(&mut send, &reply).await.is_err() {

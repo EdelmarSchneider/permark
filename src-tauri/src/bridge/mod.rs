@@ -8,7 +8,7 @@
 //! ```
 //!
 //! - [`context`] is what the person is looking at; [`protocol`] the lines on the socket; [`socket`] where the socket
-//!   is and who may use it.
+//!   is and who may use it (and, on Windows, `identity` tells whose process serves the pipe).
 //! - The window's side: [`hub`] keeps the state and answers, [`server`] listens, [`file`] keeps `agent.json`, and
 //!   [`service`] ties them to the switch in the settings.
 //! - The agent's side: [`link`] connects, [`tools`] is what each tool does, [`mcp`] speaks MCP, and [`cli`] runs
@@ -22,6 +22,8 @@ pub(crate) mod cli;
 pub(crate) mod context;
 pub(crate) mod file;
 pub(crate) mod hub;
+#[cfg(windows)]
+pub(crate) mod identity;
 pub(crate) mod link;
 pub(crate) mod mcp;
 pub(crate) mod project;

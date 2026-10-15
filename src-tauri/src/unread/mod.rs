@@ -36,7 +36,8 @@ use state::{is_tracked, Tracker};
 pub type Notify = Arc<dyn Fn(&[String]) + Send + Sync>;
 
 use crate::render::markdown::is_markdown_path;
-use crate::util::{hash_bytes, modified_ms, read_with_retry, write_atomic, Coalescer};
+use crate::session::write_local_state;
+use crate::util::{hash_bytes, modified_ms, read_with_retry, Coalescer};
 use crate::vault::{key, NodeKind, Vault, VaultError, WalkItem};
 use crate::watch::{FsChange, PathFilter, Verdict};
 
@@ -169,7 +170,7 @@ impl Shared {
             g.dirty = false;
             (bytes, g.path.clone())
         };
-        if write_atomic(&path, &bytes).is_ok() {
+        if write_local_state(&path, &bytes).is_ok() {
             true
         } else {
             lock(&self.inner).dirty = true;

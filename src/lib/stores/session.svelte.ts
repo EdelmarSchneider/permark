@@ -41,8 +41,6 @@ class SessionStore {
   lastEditMode = $state<EditMode | null>(null);
   /** "Never for this folder" was chosen on the hint to keep settings with the project. */
   initHintNever = $state(false);
-  /** An AI agent may ask this project's window what the person is looking at. Off unless turned on (see `agent.svelte.ts`). */
-  agentConnection = $state(false);
   systemDark = $state(false);
 
   lastDoc: string | null = null;
@@ -80,7 +78,6 @@ class SessionStore {
     this.linkUpdate = s.linkUpdate;
     this.editMode = s.editMode;
     this.initHintNever = s.initHintNever;
-    this.agentConnection = s.agentConnection;
     this.lastDoc = s.lastDoc;
     this.scrollTop = s.scrollTop;
     this.enabled = true;
@@ -104,7 +101,6 @@ class SessionStore {
       linkUpdate: this.linkUpdate,
       editMode: this.editMode,
       initHintNever: this.initHintNever,
-      agentConnection: this.agentConnection,
     };
   }
 
@@ -205,12 +201,6 @@ class SessionStore {
   neverHintInit(): void {
     this.initHintNever = true;
     this.persist();
-  }
-
-  /** Remembers the switch right away: the programs that talk to the window read it from the saved session. */
-  async setAgentConnection(on: boolean): Promise<void> {
-    this.agentConnection = on;
-    await this.flush();
   }
 
   toggleAutoReveal(): void {
