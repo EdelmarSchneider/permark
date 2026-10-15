@@ -1914,6 +1914,9 @@ tags = [\"team\"]
         let fx = Fx::new();
         write(fx.project.path(), "old.md", "# Same content\n");
         let ws = fx.open();
+        // The index build gives the watcher its first look at every file. A rename made before it is done can be
+        // swallowed (the build sees the new name already and the watcher takes it for known), so the test waits.
+        fx.indexed();
         ws.set_file_tags("old.md", &["keep".to_owned()])
             .expect("tags");
         std::fs::rename(
@@ -2109,6 +2112,7 @@ exclude = [\"archive/**\"]
         write(fx.project.path(), "docs/extra/api.md", "# API\n");
         let ws = fx.open();
         ws.unread.flush();
+        fx.indexed();
         ws.mark_unread("docs/extra/api.md").expect("mark");
 
         let rename = [Move {
@@ -2785,10 +2789,7 @@ exclude = [\"archive/**\"]
 
         assert_eq!(fx.current_root(), root_of(&fx.b), "the last request wins");
         // The folder on screen keeps receiving its events (it used to be muted for good).
-        write(fx.b.path(), "later.md", "x");
-        wait_until("B reports its change", || {
-            fs_paths(&fx.rec).contains(&"later.md".to_owned())
-        });
+        write_until_reported(&fx.rec, fx.b.path(), "later.md", "B reports its change");
         fx.host.shutdown();
     }
 
