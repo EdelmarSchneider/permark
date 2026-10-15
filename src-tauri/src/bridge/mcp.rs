@@ -560,7 +560,10 @@ mod tests {
         let reply = client.call(3, "get_context", &json!({})).await;
         let answer = &reply["result"]["structuredContent"];
         assert_eq!(answer["status"], "notOpen");
-        assert_eq!(answer["message"], "TrailMark is not open on this project.");
+        assert!(answer["message"]
+            .as_str()
+            .expect("a message")
+            .starts_with("TrailMark is not open on this project."));
         client.close().await.expect("the server ended cleanly");
     }
 

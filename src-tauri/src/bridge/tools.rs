@@ -281,9 +281,24 @@ impl Core {
         if !self.is_on() {
             return Answer::off(self.known);
         }
+        let link = match &self.link {
+            Ok(link) => link,
+            // No place to look: that is not the same as a window that is closed.
+            Err(why) => {
+                return Answer::failed(format!("the connection to TrailMark cannot be used: {why}"))
+            }
+        };
         match self.ask(Request::GetContext).await {
             Ok(context) => Answer::ok(object(context)),
-            Err(LinkError::NotRunning) => Answer::notice("notOpen", NOT_OPEN_MESSAGE),
+            // Where it looked is said, because a program started with another environment (no runtime folder, a
+            // different temporary folder) looks somewhere else than the window listens.
+            Err(LinkError::NotRunning) => Answer::notice(
+                "notOpen",
+                &format!(
+                    "{NOT_OPEN_MESSAGE} Its connection was looked for at {}.",
+                    link.place()
+                ),
+            ),
             Err(error) => Answer::failed(error.to_string()),
         }
     }
@@ -755,11 +770,36 @@ mod tests {
         fx.set_connection(true);
         let answer = fx.core(no_launch()).get_context().await;
         assert_eq!(status(&answer), "notOpen");
-        assert_eq!(
-            answer.value["message"],
-            "TrailMark is not open on this project."
+        let message = answer.value["message"].as_str().expect("a message");
+        assert!(
+            message.starts_with("TrailMark is not open on this project."),
+            "{message}"
         );
+        // it says where it looked, to tell a closed window from a program that looks somewhere else
+        let place = Endpoint::in_folder(fx.sockets.path(), &fx.root, "tester")
+            .expect("endpoint")
+            .describe();
+        assert!(message.contains(&place), "{message}");
         assert!(!answer.is_error);
+    }
+
+    #[tokio::test]
+    async fn a_socket_that_cannot_be_named_is_not_a_closed_window() {
+        let fx = fx();
+        fx.set_connection(true);
+        let core = Core::new(
+            fx.root.clone(),
+            Some(fx.app.path().to_path_buf()),
+            true,
+            |_: &Path| Err::<Endpoint, _>("the path is too long"),
+            no_launch(),
+        );
+        let answer = core.get_context().await;
+        assert!(answer.is_error, "{answer:?}");
+        assert!(answer.value["message"]
+            .as_str()
+            .expect("a message")
+            .contains("the path is too long"));
     }
 
     #[tokio::test]

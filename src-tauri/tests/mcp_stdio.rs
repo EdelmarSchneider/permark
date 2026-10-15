@@ -176,7 +176,10 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
     let (context, is_error) = session.call("get_context", &json!({}));
     assert!(!is_error);
     assert_eq!(context["status"], "notOpen");
-    assert_eq!(context["message"], "TrailMark is not open on this project.");
+    assert!(context["message"]
+        .as_str()
+        .expect("a message")
+        .starts_with("TrailMark is not open on this project."));
 
     let (found, is_error) = session.call("search", &json!({ "query": "beacon" }));
     assert!(!is_error, "{found}");

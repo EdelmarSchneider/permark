@@ -78,15 +78,42 @@ fn socket_id(project_root: &Path, user: &str) -> String {
 #[cfg(unix)]
 fn default_folder(user: &str) -> PathBuf {
     #[cfg(target_os = "linux")]
-    if let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR")
-        .map(PathBuf::from)
-        .filter(|dir| dir.is_absolute())
-    {
+    if let Some(runtime) = runtime_folder(
+        std::env::var_os("XDG_RUNTIME_DIR"),
+        our_uid(),
+        Path::new("/run/user"),
+    ) {
         return runtime.join("trailmark");
     }
-    // macOS has no runtime folder; its temporary folder is already private to the user. Where it is shared (`/tmp`
-    // when a Linux session sets no runtime folder), the user's name keeps the folders apart.
-    std::env::temp_dir().join(format!("trailmark-{user}"))
+    temp_folder(&std::env::temp_dir(), user, cfg!(target_os = "macos"))
+}
+
+/// The user's runtime folder on Linux: `$XDG_RUNTIME_DIR`, or `/run/user/<uid>` when the variable is not set and that
+/// folder is there. A program started by `sudo`, `cron`, `ssh` or an MCP client with a cleaned environment has no
+/// variable, and must still find the folder the window listens in.
+#[cfg(target_os = "linux")]
+fn runtime_folder(
+    variable: Option<std::ffi::OsString>,
+    uid: u32,
+    run_user: &Path,
+) -> Option<PathBuf> {
+    variable
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .or_else(|| Some(run_user.join(uid.to_string())).filter(|dir| dir.is_dir()))
+}
+
+/// The folder for sockets inside the temporary folder `temp`. On macOS the temporary folder is already private to the
+/// user (`per_user_temp`), so the user's name adds nothing, and leaving it out keeps the socket's path short for a long
+/// name. Where the folder is shared (`/tmp`, or a Linux session without a runtime folder), the user's name keeps the
+/// folders of different users apart.
+#[cfg(unix)]
+fn temp_folder(temp: &Path, user: &str, per_user_temp: bool) -> PathBuf {
+    if per_user_temp && temp != Path::new("/tmp") {
+        temp.join("trailmark")
+    } else {
+        temp.join(format!("trailmark-{user}"))
+    }
 }
 
 /// Makes `dir` a folder only this user can enter. A folder that exists keeps its contents but gets the mode;
@@ -588,6 +615,60 @@ mod tests {
                 !is_private_folder(false, ours, 0o120_700, ours),
                 "a link or a file"
             );
+        }
+
+        #[test]
+        fn the_temporary_folder_names_the_user_only_where_it_is_shared() {
+            let long_user = "u".repeat(32);
+            // macOS: the temporary folder is the user's own, so the name is left out and the path stays short
+            let mac = temp_folder(
+                Path::new("/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T"),
+                &long_user,
+                true,
+            );
+            assert!(mac.ends_with("T/trailmark"), "{mac:?}");
+            let socket = Endpoint::in_folder(&mac, Path::new("/work/notes"), &long_user)
+                .expect("a long user name still fits");
+            assert!(socket.describe().len() <= MAX_SOCKET_PATH);
+            // a shared /tmp keeps the users apart, on macOS too
+            assert_eq!(
+                temp_folder(Path::new("/tmp"), "ada", true),
+                Path::new("/tmp/trailmark-ada")
+            );
+            assert_eq!(
+                temp_folder(Path::new("/tmp"), "ada", false),
+                Path::new("/tmp/trailmark-ada")
+            );
+            // Linux without a runtime folder: the temporary folder is shared
+            assert_eq!(
+                temp_folder(Path::new("/var/tmp"), "ada", false),
+                Path::new("/var/tmp/trailmark-ada")
+            );
+        }
+
+        #[cfg(target_os = "linux")]
+        #[test]
+        fn a_program_without_the_runtime_variable_finds_the_runtime_folder() {
+            let run_user = tempfile::tempdir().expect("run/user");
+            // the variable wins when it is a path
+            assert_eq!(
+                runtime_folder(Some("/run/user/7".into()), 1000, run_user.path()),
+                Some(PathBuf::from("/run/user/7"))
+            );
+            // not set, and no folder for the user: nothing, so the temporary folder is used
+            assert_eq!(runtime_folder(None, 1000, run_user.path()), None);
+            // not set, and the user's folder is there: that is where the window listens
+            std::fs::create_dir(run_user.path().join("1000")).expect("mkdir");
+            assert_eq!(
+                runtime_folder(None, 1000, run_user.path()),
+                Some(run_user.path().join("1000"))
+            );
+            // a variable that is not an absolute path counts as not set
+            assert_eq!(
+                runtime_folder(Some("relative".into()), 1000, run_user.path()),
+                Some(run_user.path().join("1000"))
+            );
+            assert_eq!(runtime_folder(None, 1001, run_user.path()), None);
         }
 
         #[test]

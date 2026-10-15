@@ -68,6 +68,11 @@ impl Link {
         }
     }
 
+    /// Where the window's socket is, for a message.
+    pub(crate) fn place(&self) -> String {
+        self.endpoint.describe()
+    }
+
     /// Asks the window and returns its result.
     pub async fn call(&self, request: Request) -> Result<Value, LinkError> {
         let mut inner = self.inner.lock().await;
