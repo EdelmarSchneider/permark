@@ -102,7 +102,8 @@ the project), whether they are reading or editing it, the section on screen (hea
 text they selected (with its section and lines) and whether it has unsaved edits. Call this when the person \
 says \"this\", \"here\", \"the selected text\", \"this section\", \"what I'm reading\" or otherwise points at \
 something on their screen without naming it. Needs TrailMark open on the project with its agent connection on; \
-otherwise it says so."
+otherwise it says so.",
+        annotations(read_only_hint = true)
     )]
     async fn get_context(&self) -> Result<CallToolResult, ErrorData> {
         Ok(result(self.core.get_context().await))
@@ -112,7 +113,8 @@ otherwise it says so."
         description = "The Markdown documents that changed since the person last read them in TrailMark, newest \
 change first, with the time of the change. Call this when the person asks what changed, what they have not read \
 yet, or to catch up (for example after you or another agent edited documents). Also works when TrailMark is \
-closed, from the project's files."
+closed, from the project's files.",
+        annotations(read_only_hint = true)
     )]
     async fn list_unread(&self) -> Result<CallToolResult, ErrorData> {
         Ok(result(self.core.list_unread().await))
@@ -122,7 +124,8 @@ closed, from the project's files."
         description = "Find where something is described in the project's Markdown documents. Returns the best \
 matching sections ranked, each with its path, heading path, line and a short snippet (the same index as \
 TrailMark's Search everywhere). Use it to locate documentation before reading whole files, for example to find \
-the section that defines a term or a decision. Also works when TrailMark is closed, from the project's files."
+the section that defines a term or a decision. Also works when TrailMark is closed, from the project's files.",
+        annotations(read_only_hint = true)
     )]
     async fn search(
         &self,
@@ -137,8 +140,10 @@ documents (\"this contradicts section 2\", \"simplify\"). Each has an id, the do
 passage, its heading path and line, the comment text, when it was made, and `state`: `anchored` when the quote is \
 still in the document (the line is where it is now), `passageChanged` when the passage was rewritten (the line \
 is the best guess) or `documentGone`. Open comments by default; pass `which` = `done` or `all` for others. Call \
-this when the person asks you to go through, address or apply their comments on the documents. Also \
-works when TrailMark is closed, from the project's files."
+this when the person asks you to go through, address or apply their comments on the documents. A `warning` \
+says when the comments file could not be read, which is why the list is empty. Also works when TrailMark is \
+closed, from the project's files.",
+        annotations(read_only_hint = true)
     )]
     async fn list_comments(
         &self,
@@ -160,7 +165,8 @@ works when TrailMark is closed, from the project's files."
         description = "Mark one comment done after you addressed it, with an optional short `reply` saying \
 what you did (\"Rewritten in 3f2a1c\"), which TrailMark shows under the comment. Use the `id` from list_comments. This \
 is the only change an agent can make through TrailMark: it cannot write comments or edit documents. Also works \
-when TrailMark is closed, on the project's files."
+when TrailMark is closed, on the project's files.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn resolve_comment(
         &self,
@@ -176,7 +182,8 @@ when TrailMark is closed, on the project's files."
 TrailMark opens it in its window without taking focus from your terminal, highlights the section and shows a \
 notice with a way back; the person looks when ready. Use it after you wrote or found something they should see \
 (\"see the new section in docs/plan.md\"). It starts TrailMark on the project if it is closed. It only shows; \
-it never changes a document."
+it never changes a document.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn open(
         &self,
@@ -433,6 +440,32 @@ mod tests {
         assert_eq!(result["serverInfo"]["version"], env!("CARGO_PKG_VERSION"));
         assert!(result["capabilities"]["tools"].is_object());
         client.close().await.expect("the server ended cleanly");
+    }
+
+    /// A client that asks before running a tool that changes something can run the others without asking.
+    #[tokio::test]
+    async fn the_tools_say_which_of_them_change_anything() {
+        let world = World::new();
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+        let reply = client.request(2, "tools/list", &json!({})).await;
+        let tools = reply["result"]["tools"].as_array().expect("a list");
+        let annotations = |name: &str| {
+            tools
+                .iter()
+                .find(|t| t["name"] == name)
+                .map(|t| t["annotations"].clone())
+                .expect("a tool")
+        };
+        for name in ["get_context", "list_unread", "search", "list_comments"] {
+            assert_eq!(annotations(name)["readOnlyHint"], json!(true), "{name}");
+        }
+        // Showing a place and marking a comment done are changes, but they destroy nothing.
+        for name in ["open", "resolve_comment"] {
+            let hints = annotations(name);
+            assert_eq!(hints["readOnlyHint"], json!(false), "{name}");
+            assert_eq!(hints["destructiveHint"], json!(false), "{name}");
+        }
     }
 
     #[tokio::test]

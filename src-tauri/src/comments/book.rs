@@ -15,8 +15,8 @@ use crate::vault::Vault;
 use super::anchor::{Analysis, Placement, Probe, Resolution};
 use super::store::CommentStore;
 use super::{
-    clip, Anchor, Comment, CommentError, CommentView, Done, DoneBy, PassageState, MAX_COMMENTS,
-    MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLY_CHARS,
+    clip, Anchor, Comment, CommentError, CommentView, Done, DoneBy, FileProblem, PassageState,
+    MAX_COMMENTS, MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLY_CHARS,
 };
 
 /// Called after a change that someone watching the comments should see.
@@ -87,6 +87,11 @@ impl CommentBook {
     /// The project keeps its state somewhere else from now on.
     pub(crate) fn relocate(&self, file: PathBuf) {
         self.store.relocate(file);
+    }
+
+    /// Why the list is empty when the file is the reason (see [`FileProblem`]); `None` when it is fine.
+    pub(crate) fn problem(&self) -> Option<FileProblem> {
+        self.store.problem()
     }
 
     fn changed(&self) {

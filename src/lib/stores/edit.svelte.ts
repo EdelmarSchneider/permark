@@ -222,7 +222,7 @@ class EditStore {
     this.saving = false;
     this.saveError = null;
     this.conflict = null;
-    this.prompt = null;
+    this.dropPrompt();
     this.note = null;
     this.touched = false;
     this.path = source.path;
@@ -278,7 +278,7 @@ class EditStore {
     this.unsavedBlocks = 0;
     this.saveError = null;
     this.conflict = null;
-    this.prompt = null;
+    this.dropPrompt();
     this.note = null;
     this.saving = false;
     this.touched = false;
@@ -376,14 +376,19 @@ class EditStore {
     this.prompt = prompt;
     if (first) {
       // Esc is "Keep editing"
-      const forget = registerOverlay(() => this.keepEditing());
-      this.forgetPrompt = forget;
+      this.forgetPrompt = registerOverlay(() => this.keepEditing());
     }
   }
 
+  /** Takes the bar's entry out of the Esc stack; set only while the bar is up. */
   private forgetPrompt: (() => void) | null = null;
 
-  private endPrompt(): UnsavedPrompt | null {
+  /**
+   * The one way the bar goes away: every path that clears `prompt` (an answer, a clean leave, a new session) comes through here, so
+   * its entry in the overlay stack is released with it. A leftover entry would make Follow and the single-letter shortcuts think a
+   * dialog is open for good.
+   */
+  private dropPrompt(): UnsavedPrompt | null {
     const prompt = this.prompt;
     this.prompt = null;
     this.forgetPrompt?.();
@@ -404,7 +409,7 @@ class EditStore {
   }
 
   private finishPrompt(): void {
-    const prompt = this.endPrompt();
+    const prompt = this.dropPrompt();
     if (!prompt) return;
     void this.leave({ refresh: prompt.reason === "exit" }).then(() => prompt.resume?.());
   }
@@ -412,7 +417,7 @@ class EditStore {
   /** "Keep editing" on the bar (and Esc). */
   keepEditing(): void {
     if (!this.prompt) return;
-    this.endPrompt();
+    this.dropPrompt();
     bridge.editor?.focus();
   }
 

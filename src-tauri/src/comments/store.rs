@@ -114,6 +114,18 @@ impl CommentStore {
         }
     }
 
+    /// What is wrong with the file when that is why [`CommentStore::load`] has no comments to show; `None` when the
+    /// file is fine, or there is none and never was.
+    pub(crate) fn problem(&self) -> Option<Problem> {
+        let path = lock(&self.path);
+        match read(&path) {
+            Ok(Read::Comments(_)) => None,
+            Ok(Read::Unusable) => Some(Problem::Damaged),
+            Ok(Read::Missing) => set_aside_exists(&path).then_some(Problem::SetAside),
+            Err(_) => Some(Problem::Unreadable),
+        }
+    }
+
     /// Changes the comments. `change` says whether it changed anything; only then is the file written.
     pub(crate) fn update<T>(
         &self,
@@ -144,15 +156,46 @@ impl CommentStore {
     }
 }
 
-/// Renames a file this version cannot read to `comments.unreadable-<time>.json` next to it, so a new file can be written
-/// and the old one can be recovered by hand.
-fn set_aside(path: &Path) -> Result<(), CommentError> {
+/// What is wrong with the comments file, for a list that is empty because of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Problem {
+    /// The file is there and holds nothing this version can use. The next change sets it aside.
+    Damaged,
+    /// A file like that was set aside (see [`set_aside`]) and no comment has been saved since.
+    SetAside,
+    /// The file could not be read just now; it may be fine a moment later.
+    Unreadable,
+}
+
+/// The name a file set aside starts with: `comments.unreadable-` for `comments.json`.
+fn set_aside_prefix(path: &Path) -> String {
     let stem = path.file_stem().map_or_else(
         || "comments".to_owned(),
         |stem| stem.to_string_lossy().into_owned(),
     );
-    let target = path.with_file_name(format!("{stem}.unreadable-{}.json", now_ms()));
+    format!("{stem}.unreadable-")
+}
+
+/// Renames a file this version cannot read to `comments.unreadable-<time>.json` next to it, so a new file can be written
+/// and the old one can be recovered by hand.
+fn set_aside(path: &Path) -> Result<(), CommentError> {
+    let target = path.with_file_name(format!("{}{}.json", set_aside_prefix(path), now_ms()));
     std::fs::rename(path, &target).map_err(|error| io_error(path, error))
+}
+
+/// Whether a file was set aside next to `path` (see [`set_aside`]).
+fn set_aside_exists(path: &Path) -> bool {
+    let Some(folder) = path.parent() else {
+        return false;
+    };
+    let prefix = set_aside_prefix(path);
+    std::fs::read_dir(folder).is_ok_and(|entries| {
+        entries.filter_map(Result::ok).any(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(&prefix) && name.ends_with(".json")
+        })
+    })
 }
 
 #[cfg(test)]
@@ -289,6 +332,51 @@ mod tests {
         assert_eq!(kept.len(), 1, "{kept:?}");
         let old = std::fs::read_to_string(path.with_file_name(&kept[0])).expect("read");
         assert_eq!(old, "{ not json");
+    }
+
+    #[test]
+    fn what_is_wrong_with_the_file_is_told_apart_when_it_leaves_no_comments() {
+        let (dir, store) = store();
+        let path = dir.path().join("local").join("comments.json");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        // nothing yet: no problem
+        assert_eq!(store.problem(), None);
+        // a file of comments: no problem
+        store
+            .update(|comments| {
+                comments.push(comment("c1"));
+                Ok(((), true))
+            })
+            .expect("update");
+        assert_eq!(store.problem(), None);
+        // a file that is no good
+        std::fs::write(&path, "{ not json").expect("write");
+        assert_eq!(store.problem(), Some(Problem::Damaged));
+        std::fs::write(&path, r#"{"version": 99, "comments": []}"#).expect("write");
+        assert_eq!(store.problem(), Some(Problem::Damaged), "a newer version");
+        // set aside by the next change, which leaves the list empty until a comment is saved
+        store
+            .update(|_| Ok(((), false)))
+            .expect("a change that writes nothing still sets the file aside");
+        assert!(!path.exists());
+        assert_eq!(store.problem(), Some(Problem::SetAside));
+        // and once a comment is saved there is a file again
+        store
+            .update(|comments| {
+                comments.push(comment("c2"));
+                Ok(((), true))
+            })
+            .expect("update");
+        assert_eq!(store.problem(), None);
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_read_now_is_a_problem_of_its_own() {
+        let (dir, store) = store();
+        let path = dir.path().join("local").join("comments.json");
+        // a folder where the file should be: reading it fails
+        std::fs::create_dir_all(&path).expect("mkdir");
+        assert_eq!(store.problem(), Some(Problem::Unreadable));
     }
 
     /// A file that cannot be read for now (an antivirus scan, a sync client, a disk hiccup) is not a file that is

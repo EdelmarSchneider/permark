@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
-use crate::comments::CommentFilter;
+use crate::comments::{CommentFilter, FileProblem};
 
 use super::link::{Link, LinkError};
 use super::project::{connection_is_on, find_project, Project};
@@ -31,6 +31,11 @@ const RESOLVED_MESSAGE: &str =
 const SHOWN_MESSAGE: &str =
     "Shown in TrailMark. It does not take focus; the person sees a notice with a way back \
 and looks when ready.";
+
+/// What `open` says when the person is editing: nothing moved on their screen.
+const EDITING_MESSAGE: &str =
+    "The person is editing, so TrailMark did not move them to it. It showed a notice with a button \
+to the place instead, and they look when they are done or ready.";
 
 /// How long `open` waits for TrailMark to start and listen.
 pub const LAUNCH_WAIT: Duration = Duration::from_secs(25);
@@ -382,6 +387,12 @@ impl Core {
             },
         };
         list.insert("source".to_owned(), json!(source));
+        // An empty list can be the file's doing; say so rather than let it read as "no comments".
+        if list.get("total").and_then(Value::as_u64) == Some(0) {
+            if let Ok(Some(problem)) = self.offline(Project::comments_problem).await {
+                list.insert("warning".to_owned(), json!(comments_warning(problem)));
+            }
+        }
         Answer::ok(with_readable_comment_times(list))
     }
 
@@ -465,8 +476,9 @@ impl Core {
     /// The window is closed: check the place first (nothing is started for a path that is not a document), start
     /// TrailMark on the project, and hand the place over once it listens.
     ///
-    /// One start at a time: calls made while TrailMark is starting wait for that start and use its window, and after a
-    /// start that did not come up listening none is made again for a while (see [`LAUNCH_PAUSE`]).
+    /// One start at a time, also across programs (two `trailmark mcp` at once take turns on a lock file): calls made
+    /// while TrailMark is starting wait for that start and use its window, and after a start that did not come up
+    /// listening none is made again for a while (see [`LAUNCH_PAUSE`]).
     async fn start_and_open(&self, request: Request) -> Answer {
         let Request::Open {
             path,
@@ -504,6 +516,26 @@ impl Core {
 Try again in a few seconds. If it stays like this, look at the agent connection in TrailMark's status bar.",
             );
         }
+        // The calls of this program are one at a time by now; another program (a second agent, a second `trailmark
+        // mcp`) may be starting the window at this moment. It holds the turn until the window listens, and this one
+        // then waits for that window instead of starting another.
+        let turn = match self.link.as_ref().map(Link::try_launch_lock) {
+            Ok(Ok(Some(turn))) => Some(turn),
+            Ok(Ok(None)) => return self.wait_for_window(&request).await,
+            // The turn cannot be had (no place for the file): start the window as before.
+            Ok(Err(_)) | Err(_) => None,
+        };
+        if turn.is_some() {
+            // The program that had the turn before may have finished just before this one took it.
+            match self.ask(request.clone()).await {
+                Ok(opened) => {
+                    self.window_answered();
+                    return Answer::ok(shown(opened, false));
+                }
+                Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+                Err(_) => {}
+            }
+        }
         if let Err(error) = (self.launcher)(&self.root) {
             return Answer::failed(format!("TrailMark could not be started: {error}"));
         }
@@ -511,6 +543,14 @@ Try again in a few seconds. If it stays like this, look at the agent connection 
             .failed_launch
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(tokio::time::Instant::now());
+        let answer = self.wait_for_window(&request).await;
+        // The turn is kept until the window answers (or the wait is over).
+        drop(turn);
+        answer
+    }
+
+    /// Hands the place over once the window listens, looking every [`LAUNCH_POLL`] until the launch wait is over.
+    async fn wait_for_window(&self, request: &Request) -> Answer {
         let deadline = tokio::time::Instant::now() + self.launch_wait;
         loop {
             match self.ask(request.clone()).await {
@@ -531,6 +571,23 @@ Try again in a few seconds. If it stays like this, look at the agent connection 
     }
 }
 
+/// What a list of comments that is empty because of the comments file says about it.
+fn comments_warning(problem: FileProblem) -> &'static str {
+    match problem {
+        FileProblem::Damaged => {
+            "The comments file could not be read, so no comments are listed. TrailMark keeps it as it is and \
+sets it aside, as comments.unreadable-<time>.json next to it, when the person next leaves a comment."
+        }
+        FileProblem::SetAside => {
+            "The comments file could not be read and was set aside (as comments.unreadable-<time>.json next to \
+it), so there are no comments in the new one yet. The person's earlier comments are in the file that was set aside."
+        }
+        FileProblem::Unreadable => {
+            "The comments file could not be read just now, so no comments are listed. Try again in a moment."
+        }
+    }
+}
+
 /// The `open` answer: where the person was taken, and what to expect.
 fn shown(opened: Value, started: bool) -> Map<String, Value> {
     let mut fields = object(opened);
@@ -538,10 +595,20 @@ fn shown(opened: Value, started: bool) -> Map<String, Value> {
         .get("headingNotFound")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let message = if heading_missing {
-        format!("{SHOWN_MESSAGE} The document has no such heading, so it opened at its top.")
-    } else {
-        SHOWN_MESSAGE.to_owned()
+    // The window does not move a person who is editing: it only showed a notice.
+    let editing = fields
+        .get("editing")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let message = match (editing, heading_missing) {
+        (false, false) => SHOWN_MESSAGE.to_owned(),
+        (false, true) => {
+            format!("{SHOWN_MESSAGE} The document has no such heading, so it opened at its top.")
+        }
+        (true, false) => EDITING_MESSAGE.to_owned(),
+        (true, true) => {
+            format!("{EDITING_MESSAGE} The document has no such heading, so it opens at its top.")
+        }
     };
     fields.insert("message".to_owned(), json!(message));
     if started {
@@ -676,6 +743,13 @@ mod tests {
                 launcher,
             )
             .with_launch_wait(Duration::from_secs(10))
+        }
+    }
+
+    impl Fx {
+        /// The project's endpoint, as another program of the same user finds it.
+        fn endpoint(&self) -> Endpoint {
+            Endpoint::in_folder(self.sockets.path(), &self.root, "tester").expect("endpoint")
         }
     }
 
@@ -897,6 +971,65 @@ mod tests {
         }
     }
 
+    /// An empty list that is empty because the file is no good must not read as "the person left no comments".
+    #[tokio::test]
+    async fn a_comments_file_that_cannot_be_read_is_said_in_the_empty_list() {
+        let fx = fx();
+        fx.set_connection(true);
+        let core = fx.core(no_launch());
+        let warning = |answer: &Answer| {
+            answer
+                .value
+                .get("warning")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+
+        // no comments and no problem
+        let none = core.list_comments(None).await;
+        assert_eq!(status(&none), "ok", "{none:?}");
+        assert_eq!(none.value["total"], 0);
+        assert_eq!(warning(&none), None);
+
+        // a file that is no good
+        let path = StateStore::open(fx.app.path(), &fx.root).comments_path();
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "{ not json").expect("write");
+        let damaged = core.list_comments(None).await;
+        assert_eq!(status(&damaged), "ok", "{damaged:?}");
+        assert_eq!(damaged.value["total"], 0);
+        assert!(!damaged.is_error);
+        let text = warning(&damaged).expect("a warning");
+        assert!(text.contains("could not be read"), "{text}");
+        assert!(text.contains("unreadable"), "{text}");
+
+        // the window answers the same way: the file is the same
+        fx.bridge.set_enabled(true);
+        let live = core.list_comments(None).await;
+        assert_eq!(live.value["source"], "window");
+        assert_eq!(warning(&live), warning(&damaged));
+        fx.bridge.shutdown();
+
+        // once the file is set aside (the person's next comment, here a change that writes nothing), the answer says so
+        let book = comment_book(&fx);
+        assert!(book.resolve("nope", None).is_err());
+        assert!(!path.exists());
+        let aside = warning(&core.list_comments(None).await).expect("a warning");
+        assert!(aside.contains("was set aside"), "{aside}");
+
+        // and a comment saved since is a file again, with comments in it and nothing to warn about
+        book.add(new_comment(
+            "docs/plan.md",
+            "Ship the beacon",
+            "Which beacon?",
+        ))
+        .expect("a comment");
+        let healthy = core.list_comments(None).await;
+        assert_eq!(healthy.value["total"], 1);
+        assert_eq!(warning(&healthy), None);
+        fx.bridge.shutdown();
+    }
+
     #[tokio::test]
     async fn with_the_window_open_comments_come_from_it_and_resolving_reaches_it() {
         let fx = fx();
@@ -1089,6 +1222,48 @@ mod tests {
         fx.bridge.shutdown();
     }
 
+    /// The window only shows a notice to a person who is editing; the agent is told, so it does not report that the
+    /// person is looking at the place.
+    #[tokio::test]
+    async fn open_says_that_only_a_notice_was_shown_when_the_person_is_editing() {
+        let fx = fx();
+        fx.set_connection(true);
+        fx.bridge.set_enabled(true);
+        let core = fx.core(no_launch());
+        let publish = |mode| {
+            fx.bridge.publish(AgentContext {
+                document: Some("README.md".to_owned()),
+                mode: Some(mode),
+                ..AgentContext::default()
+            });
+        };
+        publish(ViewMode::Reading);
+        let reading = core.open("docs/plan.md", Some(3), None).await;
+        assert_eq!(status(&reading), "ok", "{reading:?}");
+        assert!(reading.value.get("editing").is_none());
+        assert!(reading.value["message"]
+            .as_str()
+            .expect("message")
+            .starts_with("Shown in TrailMark"));
+
+        for mode in [ViewMode::Visual, ViewMode::Source] {
+            publish(mode);
+            let editing = core
+                .open("docs/plan.md", Some(3), Some("Nonexistent"))
+                .await;
+            // the status values stay what clients know
+            assert_eq!(status(&editing), "ok", "{editing:?}");
+            assert!(!editing.is_error);
+            assert_eq!(editing.value["editing"], true);
+            assert_eq!(editing.value["path"], "docs/plan.md");
+            let message = editing.value["message"].as_str().expect("message");
+            assert!(message.contains("is editing"), "{message}");
+            assert!(message.contains("notice"), "{message}");
+            assert!(message.contains("no such heading"), "{message}");
+        }
+        fx.bridge.shutdown();
+    }
+
     #[tokio::test]
     async fn nothing_is_started_for_a_path_that_is_not_a_document() {
         let fx = fx();
@@ -1146,6 +1321,95 @@ mod tests {
             assert_eq!(status(answer), "ok", "{answer:?}");
         }
         assert_eq!(started.load(Ordering::SeqCst), 1, "one start for all three");
+        fx.bridge.shutdown();
+    }
+
+    /// Two agents, or two `trailmark mcp` programs, ask at the same moment while the window is closed: each has its own
+    /// `Core`, so only the turn on the file keeps them from starting two windows.
+    #[tokio::test]
+    async fn parallel_opens_from_separate_programs_start_trailmark_once() {
+        let fx = fx();
+        fx.set_connection(true);
+        let (launcher, started) = counting_launcher(&fx, true);
+        let (first, second) = (fx.core(launcher.clone()), fx.core(launcher));
+        let (a, b) = tokio::join!(
+            first.open("README.md", None, None),
+            second.open("docs/plan.md", Some(3), None),
+        );
+        for answer in [&a, &b] {
+            assert_eq!(status(answer), "ok", "{answer:?}");
+        }
+        assert_eq!(started.load(Ordering::SeqCst), 1, "one start for both");
+        fx.bridge.shutdown();
+    }
+
+    /// The window is started by the program that has the turn, and the turn is kept until that is over.
+    #[tokio::test]
+    async fn the_turn_to_start_the_window_is_held_while_it_starts() {
+        let fx = fx();
+        fx.set_connection(true);
+        let held = Arc::new(AtomicUsize::new(0));
+        let launcher: Launcher = {
+            let (bridge, held, endpoint) =
+                (Arc::clone(&fx.bridge), Arc::clone(&held), fx.endpoint());
+            Arc::new(move |_| {
+                // another program asking now finds the turn taken
+                if endpoint.try_launch_lock()?.is_none() {
+                    held.fetch_add(1, Ordering::SeqCst);
+                }
+                bridge.set_enabled(true);
+                Ok(())
+            })
+        };
+        let answer = fx.core(launcher).open("README.md", None, None).await;
+        assert_eq!(status(&answer), "ok", "{answer:?}");
+        assert_eq!(held.load(Ordering::SeqCst), 1);
+        // and it is given up afterwards
+        assert!(fx.endpoint().try_launch_lock().expect("lock").is_some());
+        fx.bridge.shutdown();
+    }
+
+    /// Another program is starting the window right now: this one does not start a second, and says that the window is
+    /// on its way.
+    #[tokio::test]
+    async fn a_program_that_finds_another_one_starting_the_window_does_not_start_one() {
+        let fx = fx();
+        fx.set_connection(true);
+        let _other_program = fx
+            .endpoint()
+            .try_launch_lock()
+            .expect("lock")
+            .expect("turn");
+        let answer = fx
+            .core(no_launch())
+            .with_launch_wait(Duration::ZERO)
+            .open("README.md", None, None)
+            .await;
+        assert_eq!(status(&answer), "starting", "{answer:?}");
+        assert!(!answer.is_error);
+    }
+
+    /// ... and when the window of the other program comes up, the place is handed over to it.
+    #[tokio::test]
+    async fn the_place_is_handed_to_the_window_another_program_started() {
+        let fx = fx();
+        fx.set_connection(true);
+        let other_program = fx
+            .endpoint()
+            .try_launch_lock()
+            .expect("lock")
+            .expect("turn");
+        let core = fx.core(no_launch());
+        let waiting = core.open("docs/plan.md", Some(3), None);
+        let window = async {
+            // the other program's window comes up and it gives the turn up
+            fx.bridge.set_enabled(true);
+            drop(other_program);
+        };
+        let (answer, ()) = tokio::join!(waiting, window);
+        assert_eq!(status(&answer), "ok", "{answer:?}");
+        let place = fx.bridge.take_open().expect("the place was handed over");
+        assert_eq!((place.path.as_str(), place.line), ("docs/plan.md", Some(3)));
         fx.bridge.shutdown();
     }
 

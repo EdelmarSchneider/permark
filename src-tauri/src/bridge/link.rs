@@ -17,7 +17,7 @@ use tokio::time::timeout;
 use super::protocol::{
     read_line, write_line, Call, ProtocolError, Reply, Request, MAX_REPLY_BYTES,
 };
-use super::socket::{ConnectError, Endpoint};
+use super::socket::{ConnectError, Endpoint, LaunchLock};
 
 /// How long to wait for the window to accept a connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -71,6 +71,11 @@ impl Link {
     /// Where the window's socket is, for a message.
     pub(crate) fn place(&self) -> String {
         self.endpoint.describe()
+    }
+
+    /// The turn to start this project's window (see [`Endpoint::try_launch_lock`]).
+    pub(crate) fn try_launch_lock(&self) -> io::Result<Option<LaunchLock>> {
+        self.endpoint.try_launch_lock()
     }
 
     /// Asks the window and returns its result.

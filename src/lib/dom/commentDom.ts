@@ -2,23 +2,12 @@
 // around it), the lines and headings it is under, and the highlight that keeps it visible while a comment is typed.
 
 import { headingAtLine, headingPath } from "../agentContext";
-import { selectionLines, sectionOf } from "./domUtil";
+import { readableText, selectionLines, sectionOf } from "./domUtil";
 import { readHeadingLines } from "./outlineDom";
-
-/** What the app adds to the text of a document and the reader did not write: a heading's anchor, a code block's label. */
-const DRAWN = ".anchor, .code-block__lang, .code-block__copy, .markdown-alert-title, script, style";
-/** Elements whose end is a line break in the text a reader selects. */
-const LINE_ENDS =
-  "p, li, h1, h2, h3, h4, h5, h6, tr, pre, blockquote, dt, dd, figcaption, summary, div, br";
 
 /** The text of a selection: what the reader selected, with a line break where a block ends and a tab between cells. */
 export function quoteOf(range: Range): string {
-  const holder = document.createElement("div");
-  holder.append(range.cloneContents());
-  holder.querySelectorAll(DRAWN).forEach((el) => el.remove());
-  holder.querySelectorAll("td, th").forEach((cell) => cell.append("\t"));
-  holder.querySelectorAll(LINE_ENDS).forEach((el) => el.append("\n"));
-  return (holder.textContent ?? "").replace(/\s*\n\s*/g, "\n").trim();
+  return readableText(range);
 }
 
 /** A selection in the reading view that a comment can be written on. */

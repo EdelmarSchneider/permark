@@ -26,6 +26,7 @@ mod store;
 mod tests;
 
 pub(crate) use book::{CommentBook, Listener, NewComment};
+pub(crate) use store::Problem as FileProblem;
 
 use serde::{Deserialize, Serialize};
 

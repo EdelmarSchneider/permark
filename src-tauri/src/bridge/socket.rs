@@ -11,6 +11,10 @@
 //!   `<id>.lock` beside the socket for as long as it lives, so a second window on the same project is refused
 //!   instead of replacing the first one's socket, and a window removes only a socket that is its own.
 //!
+//! A program that has to start the window first takes a second lock, `<id>.launch` in the same folder (in the temporary
+//! folder on Windows), for as long as it starts the window and waits for it to listen. Programs that find it taken
+//! wait for the window instead of starting another one.
+//!
 //! `<id>` is a hash of the project's key (the one that names its state folder) and the user's name.
 
 use std::io;
@@ -47,6 +51,9 @@ pub(crate) struct Endpoint {
     /// What identifies it: the pipe name on Windows, the socket file elsewhere.
     #[cfg(windows)]
     pipe: String,
+    /// Where the launch lock lives (see [`Endpoint::try_launch_lock`]); a pipe has no folder of its own.
+    #[cfg(windows)]
+    folder: PathBuf,
     #[cfg(unix)]
     path: PathBuf,
 }
@@ -148,12 +155,12 @@ impl Endpoint {
         #[cfg(unix)]
         let folder = default_folder(&user);
         #[cfg(windows)]
-        let folder = PathBuf::new();
+        let folder = std::env::temp_dir();
         Self::in_folder(&folder, project_root, &user)
     }
 
-    /// Like [`Endpoint::for_project`] with the folder and the user's name given (the folder is ignored on
-    /// Windows, where a pipe lives in its own namespace).
+    /// Like [`Endpoint::for_project`] with the folder and the user's name given (on Windows the pipe lives in its own
+    /// namespace and the folder only holds the launch lock).
     // A pipe's name cannot be refused, so on Windows this always succeeds; the signature is the same on every system.
     #[allow(clippy::unnecessary_wraps)]
     pub(crate) fn in_folder(
@@ -164,9 +171,9 @@ impl Endpoint {
         let id = socket_id(project_root, user);
         #[cfg(windows)]
         {
-            let _ = folder;
             Ok(Self {
                 pipe: format!("trailmark-{id}"),
+                folder: folder.to_path_buf(),
             })
         }
         #[cfg(unix)]
@@ -258,6 +265,46 @@ impl Endpoint {
             Ok(()) => Ok(file),
             Err(TryLockError::WouldBlock) => Err(ListenError::InUse(self.describe())),
             Err(TryLockError::Error(source)) => Err(failed(source)),
+        }
+    }
+
+    /// The file whose lock says that a program is starting this project's window. It is not the listener's lock: the
+    /// window being started has to be able to take that one.
+    fn launch_lock_path(&self) -> PathBuf {
+        #[cfg(windows)]
+        {
+            self.folder.join(format!("{}.launch", self.pipe))
+        }
+        #[cfg(unix)]
+        {
+            self.path.with_extension("launch")
+        }
+    }
+
+    /// Takes the turn to start this project's window, so that programs asking for it at the same moment start one
+    /// window between them: `Some` is the turn, kept until the lock is dropped; `None` means that another program has
+    /// it and is starting the window now. The lock is the operating system's, so it ends with the program that holds it
+    /// and no program can hold it twice (also within one process, where each call opens the file again).
+    pub(crate) fn try_launch_lock(&self) -> io::Result<Option<LaunchLock>> {
+        use std::fs::{OpenOptions, TryLockError};
+
+        let path = self.launch_lock_path();
+        if let Some(folder) = path.parent() {
+            #[cfg(unix)]
+            make_private(folder).map_err(|error| io::Error::other(error.to_string()))?;
+            #[cfg(windows)]
+            std::fs::create_dir_all(folder)?;
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(LaunchLock { _file: file })),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(source)) => Err(source),
         }
     }
 
@@ -418,6 +465,12 @@ fn check_peer(stream: &Stream, place: &str) -> Result<(), ConnectError> {
             "cannot tell who serves it (process {pid}): {error}"
         ))),
     }
+}
+
+/// The turn to start a project's window (see [`Endpoint::try_launch_lock`]). Dropping it gives the turn up.
+#[derive(Debug)]
+pub(crate) struct LaunchLock {
+    _file: std::fs::File,
 }
 
 /// A socket that is listening. Dropping it closes the socket and, on Unix, removes the socket file and then lets go of
@@ -841,6 +894,68 @@ mod tests {
         // and once the first is gone the name is free for a new one
         drop(first);
         drop(endpoint.listen().expect("free again"));
+    }
+
+    #[test]
+    fn the_turn_to_start_a_window_is_one_at_a_time_and_belongs_to_one_project() {
+        let dir = folder();
+        let notes = endpoint(&dir, "/work/notes");
+        let turn = notes
+            .try_launch_lock()
+            .expect("the lock can be made")
+            .expect("the turn is free");
+        // another program is the same as another open of the file
+        assert!(notes.try_launch_lock().expect("lock").is_none());
+        assert!(endpoint(&dir, "/work/notes")
+            .try_launch_lock()
+            .expect("lock")
+            .is_none());
+        // another project is not held up
+        assert!(endpoint(&dir, "/work/other")
+            .try_launch_lock()
+            .expect("lock")
+            .is_some());
+        // giving the turn up frees it
+        drop(turn);
+        assert!(notes.try_launch_lock().expect("lock").is_some());
+    }
+
+    /// Programs that ask at the same moment: exactly one gets the turn, however the threads interleave.
+    #[test]
+    fn of_many_programs_asking_at_once_one_gets_the_turn() {
+        use std::sync::Barrier;
+
+        const ASKING: usize = 8;
+        let dir = folder();
+        let endpoint = endpoint(&dir, "/work/crowd");
+        // Nobody gives the turn up before everybody has asked, so there is no timing to rely on.
+        let asked = Barrier::new(ASKING);
+        let turns = std::thread::scope(|scope| {
+            let threads: Vec<_> = (0..ASKING)
+                .map(|_| {
+                    scope.spawn(|| {
+                        let turn = endpoint.try_launch_lock().expect("lock");
+                        asked.wait();
+                        turn.is_some()
+                    })
+                })
+                .collect();
+            threads
+                .into_iter()
+                .map(|thread| thread.join().expect("thread"))
+                .filter(|&had_the_turn| had_the_turn)
+                .count()
+        });
+        assert_eq!(turns, 1);
+    }
+
+    /// The window that is being started must be able to listen while the program that started it holds the turn.
+    #[tokio::test]
+    async fn the_window_can_listen_while_another_program_holds_the_turn_to_start_it() {
+        let dir = folder();
+        let endpoint = endpoint(&dir, "/work/starting");
+        let _turn = endpoint.try_launch_lock().expect("lock").expect("turn");
+        let _listener = endpoint.listen().expect("the window listens");
     }
 
     #[cfg(unix)]

@@ -40,6 +40,7 @@ vi.mock("../editor/imageName", async (original) => ({
 import { bridge } from "../bridge";
 import { noOutline } from "../editor/outlineStub";
 import { mockParseBlocks } from "../mock/mockBlocks";
+import { hasOpenOverlay } from "../overlays";
 import { askUnsaved, checkForUpdate } from "../platform";
 import { INITIAL_UPDATE_STATE } from "../updates";
 import { docs } from "./docs.svelte";
@@ -598,6 +599,58 @@ describe("leaving", () => {
     expect(await docs.open("docs/b.md")).toBe(false);
     expect(edit.prompt?.reason).toBe("navigate");
     expect(docs.path).toBe(PATH);
+  });
+});
+
+describe("the unsaved-changes bar and the Esc stack", () => {
+  it("the bar holds an overlay entry while it is up, and Keep editing releases it", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    expect(hasOpenOverlay()).toBe(false);
+    edit.requestExit();
+    expect(hasOpenOverlay()).toBe(true);
+    edit.keepEditing();
+    expect(hasOpenOverlay()).toBe(false);
+  });
+
+  it("a toolbar Save under the bar and a second click away leave no overlay entry behind", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    fake.readDocument.mockResolvedValue(view("docs/b.md"));
+    fake.fileMeta.mockResolvedValue({ tags: [], description: null });
+    // click another document: the bar appears
+    expect(await docs.open("docs/b.md")).toBe(false);
+    expect(edit.prompt?.reason).toBe("navigate");
+    expect(hasOpenOverlay()).toBe(true);
+    // the toolbar Save (not the bar's) writes the file; the bar stays up
+    fake.saveDocument.mockResolvedValue({ result: "saved", hash: "h2", modifiedMs: 200 });
+    expect(await edit.save()).toBe(true);
+    expect(edit.dirty).toBe(false);
+    expect(edit.prompt?.reason).toBe("navigate");
+    // click the other document again: editing ends with the bar still up
+    await docs.open("docs/b.md");
+    await vi.waitFor(() => expect(edit.active).toBe(false));
+    expect(edit.prompt).toBeNull();
+    expect(hasOpenOverlay()).toBe(false);
+  });
+
+  it("closing the project while the bar is up releases the entry too", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    edit.requestExit();
+    expect(hasOpenOverlay()).toBe(true);
+    edit.reset();
+    expect(edit.prompt).toBeNull();
+    expect(hasOpenOverlay()).toBe(false);
+  });
+
+  it("a bar that is asked twice holds one entry", async () => {
+    const editor = await startEditing();
+    type(editor, `${ORIGINAL}x\n`);
+    edit.requestExit();
+    edit.requestExit();
+    edit.keepEditing();
+    expect(hasOpenOverlay()).toBe(false);
   });
 });
 

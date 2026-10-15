@@ -1,5 +1,6 @@
 <script lang="ts">
   // The agent connection from the status bar: what is shared, what agents asked lately, and the way to turn it off.
+  import { agentFailureText } from "../errors";
   import { t } from "../i18n";
   import { agent } from "../stores/agent.svelte";
   import { clock } from "../stores/clock.svelte";
@@ -23,7 +24,7 @@
   const status = $derived(agent.status);
   const state = $derived(
     status.error !== null
-      ? t("agent.state.error", { message: status.error })
+      ? t("agent.state.error", { message: agentFailureText(status.error) })
       : agent.connected
         ? t("agent.state.connected")
         : t("agent.state.idle"),
@@ -51,7 +52,8 @@
     <span class={["agent-dot", agent.connected && "is-connected"]} aria-hidden="true"></span>
     <div>
       <span class="agent-pop__title">{t("agent.title")}</span>
-      <span class="field__status" role="status">{state}</span>
+      <!-- the system's own words (the place and the error) are the tooltip of a reason worded here -->
+      <span class="field__status" role="status" title={status.error?.message}>{state}</span>
     </div>
   </div>
   <div class="field">

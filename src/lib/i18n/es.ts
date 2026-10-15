@@ -338,6 +338,10 @@ export const es = {
   "agent.state.idle": "Activa en este proyecto. No hay nada conectado.",
   "agent.state.connected": "Activa en este proyecto. Hay un agente conectado.",
   "agent.state.error": "Activa en este proyecto, pero no pudo iniciarse: {message}",
+  "agent.error.inUse": "otro programa está usando el nombre de la conexión",
+  "agent.error.folderNotPrivate": "la carpeta de la conexión no es privada",
+  "agent.error.pathTooLong":
+    "la ruta de la conexión es demasiado larga. Define XDG_RUNTIME_DIR o TMPDIR con una carpeta más corta",
   "agent.shares": "Lo que un agente puede ver",
   "agent.shares.context": "El documento abierto, la sección en pantalla y el texto seleccionado",
   "agent.shares.unread": "Qué documentos cambiaron desde la última vez que los leíste",

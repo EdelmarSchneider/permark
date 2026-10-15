@@ -1,6 +1,7 @@
 //! The agent connection of one open project: the switch, the socket while it is on, the state file, and what the
 //! window publishes. [`AgentBridge`] ties the pieces together; the pieces are tested on their own.
 
+use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -9,10 +10,10 @@ use crate::vault::Vault;
 
 use super::context::AgentContext;
 use super::file::{ContextFile, WRITE_INTERVAL};
-use super::hub::{AgentEvents, AgentStatus, Backend, Hub};
+use super::hub::{AgentEvents, AgentStatus, Backend, FailureKind, Hub, StartFailure};
 use super::protocol::Opened;
-use super::server::BridgeServer;
-use super::socket::{Endpoint, SocketError};
+use super::server::{BridgeServer, StartError};
+use super::socket::{Endpoint, ListenError, SocketError};
 use super::tools::program_path;
 
 /// What exists while the connection is on.
@@ -23,7 +24,7 @@ struct Running {
 
 pub struct AgentBridge {
     hub: Arc<Hub>,
-    endpoint: Result<Endpoint, String>,
+    endpoint: Result<Endpoint, StartFailure>,
     /// Where `agent.json` goes: only a project that keeps its state in `.trailmark/` has one.
     agent_path: Mutex<Option<PathBuf>>,
     running: Mutex<Option<Running>>,
@@ -31,6 +32,44 @@ pub struct AgentBridge {
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Whether a failure to listen means that another program already holds the name. A named pipe's first instance is
+/// exclusive on Windows: the second is refused with "access denied" (or "pipe busy" when every instance is in use);
+/// a socket file that is in the way is "address in use".
+fn name_is_taken(source: &io::Error) -> bool {
+    const ACCESS_DENIED: i32 = 5;
+    const PIPE_BUSY: i32 = 231;
+    source.kind() == io::ErrorKind::AddrInUse
+        || (cfg!(windows) && matches!(source.raw_os_error(), Some(ACCESS_DENIED | PIPE_BUSY)))
+}
+
+/// A socket that cannot be made, in the terms the interface words.
+fn socket_failure(error: &SocketError) -> StartFailure {
+    let kind = match error {
+        SocketError::PathTooLong(_) => FailureKind::PathTooLong,
+        SocketError::Folder { .. } => FailureKind::FolderNotPrivate,
+    };
+    StartFailure {
+        kind,
+        message: error.to_string(),
+    }
+}
+
+/// A listener that cannot start, in the terms the interface words.
+fn start_failure(error: &StartError) -> StartFailure {
+    let kind = match error {
+        StartError::Listen(ListenError::Socket(error)) => return socket_failure(error),
+        StartError::Listen(ListenError::InUse(_)) => FailureKind::InUse,
+        StartError::Listen(ListenError::Io { source, .. }) if name_is_taken(source) => {
+            FailureKind::InUse
+        }
+        StartError::Listen(ListenError::Io { .. }) | StartError::Thread(_) => FailureKind::Other,
+    };
+    StartFailure {
+        kind,
+        message: error.to_string(),
+    }
 }
 
 impl AgentBridge {
@@ -47,17 +86,18 @@ impl AgentBridge {
                 Hub::new(vault, backend, events)
                     .with_program(program_path().map(|path| path.display().to_string())),
             ),
-            endpoint: endpoint.map_err(|error| error.to_string()),
+            endpoint: endpoint.map_err(|error| socket_failure(&error)),
             agent_path: Mutex::new(agent_path),
             running: Mutex::new(None),
         }
     }
 
     /// Turns the connection on or off. A connection that cannot start (the socket cannot be made) stays "on" as
-    /// a setting and reports why in the status, instead of failing the caller.
+    /// a setting and reports why in the status, instead of failing the caller. Off always clears that state (there
+    /// is nothing running to stop, but the failure is not kept), and on again tries again.
     pub fn set_enabled(&self, enabled: bool) -> AgentStatus {
         let mut running = lock(&self.running);
-        if enabled == running.is_some() {
+        if enabled && running.is_some() {
             return self.hub.status();
         }
         if enabled {
@@ -75,10 +115,10 @@ impl AgentBridge {
         self.hub.status()
     }
 
-    fn start(&self) -> Result<Running, String> {
+    fn start(&self) -> Result<Running, StartFailure> {
         let endpoint = self.endpoint.as_ref().map_err(Clone::clone)?;
-        let server =
-            BridgeServer::start(endpoint, Arc::clone(&self.hub)).map_err(|e| e.to_string())?;
+        let server = BridgeServer::start(endpoint, Arc::clone(&self.hub))
+            .map_err(|error| start_failure(&error))?;
         let file = lock(&self.agent_path)
             .clone()
             .map(|path| ContextFile::start(path, WRITE_INTERVAL, self.hub.context()));
@@ -409,7 +449,9 @@ mod tests {
         let status = other.set_enabled(true);
         // the person's choice stands, and the status says why nothing listens
         assert!(status.enabled && !status.listening, "{status:?}");
-        assert!(status.error.is_some());
+        let why = status.error.expect("the reason");
+        assert_eq!(why.kind, FailureKind::InUse, "{why:?}");
+        assert!(!why.message.is_empty(), "the system's own words are kept");
         // the first window still answers, also after the second one closed
         let link = link(&fx);
         assert!(link.call(Request::GetContext).await.is_ok());
@@ -418,6 +460,96 @@ mod tests {
         assert!(link.call(Request::GetContext).await.is_ok());
         assert_eq!(fx.bridge.status().connections, 1);
         fx.bridge.shutdown();
+    }
+
+    fn listen_error(source: io::Error) -> StartError {
+        StartError::Listen(ListenError::Io {
+            place: "the place".to_owned(),
+            source,
+        })
+    }
+
+    /// The interface words each kind in its own language, so the kinds have to tell the causes apart.
+    #[test]
+    fn a_connection_that_cannot_start_says_why_in_kinds_the_interface_can_word() {
+        let kind = |error: &StartError| start_failure(error).kind;
+        assert_eq!(
+            kind(&StartError::Listen(ListenError::InUse("socket".to_owned()))),
+            FailureKind::InUse
+        );
+        assert_eq!(
+            kind(&listen_error(io::Error::from(io::ErrorKind::AddrInUse))),
+            FailureKind::InUse
+        );
+        assert_eq!(
+            kind(&StartError::Listen(ListenError::Socket(
+                SocketError::PathTooLong("a/long/path".to_owned())
+            ))),
+            FailureKind::PathTooLong
+        );
+        let folder = SocketError::Folder {
+            path: "/run/user/1000/trailmark".to_owned(),
+            source: io::Error::from(io::ErrorKind::PermissionDenied),
+        };
+        assert_eq!(socket_failure(&folder).kind, FailureKind::FolderNotPrivate);
+        assert_eq!(
+            kind(&StartError::Listen(ListenError::Socket(folder))),
+            FailureKind::FolderNotPrivate
+        );
+        // anything else keeps the system's words
+        let other = start_failure(&listen_error(io::Error::from(io::ErrorKind::NotFound)));
+        assert_eq!(other.kind, FailureKind::Other);
+        assert!(other.message.contains("the place"), "{}", other.message);
+        assert_eq!(
+            kind(&StartError::Thread(io::Error::other("no thread"))),
+            FailureKind::Other
+        );
+    }
+
+    /// What Windows says when the name of the pipe is held by another program: "Access is denied. (os error 5)".
+    #[cfg(windows)]
+    #[test]
+    fn a_pipe_that_another_program_holds_is_in_use_not_a_permission_problem() {
+        for code in [5, 231] {
+            let error = listen_error(io::Error::from_raw_os_error(code));
+            assert_eq!(start_failure(&error).kind, FailureKind::InUse, "{code}");
+        }
+        let other = listen_error(io::Error::from_raw_os_error(2));
+        assert_eq!(start_failure(&other).kind, FailureKind::Other);
+    }
+
+    /// A connection that could not start is "on, could not start" until the person turns it off; off clears that, and on
+    /// again tries again.
+    #[test]
+    fn turning_it_off_clears_a_connection_that_could_not_start_and_turning_it_on_retries() {
+        let fx = fx("failed", None);
+        assert!(fx.bridge.set_enabled(true).listening);
+        let vault = Arc::new(Vault::open(fx.project.path()).expect("vault"));
+        let other = AgentBridge::new(
+            vault,
+            Endpoint::in_folder(fx.sockets.path(), Path::new("failed"), "tester"),
+            None,
+            fx.fake.clone(),
+            fx.fake.clone(),
+        );
+        let status = other.set_enabled(true);
+        assert!(status.enabled && !status.listening, "{status:?}");
+        assert!(status.error.is_some());
+
+        let status = other.set_enabled(false);
+        assert!(
+            !status.enabled && !status.listening && status.error.is_none(),
+            "off leaves nothing of the failure: {status:?}"
+        );
+        assert_eq!(other.status(), status);
+
+        // Still taken: on says so again. Free: on listens.
+        assert!(other.set_enabled(true).error.is_some());
+        fx.bridge.set_enabled(false);
+        let status = other.set_enabled(true);
+        assert!(status.enabled && status.listening, "{status:?}");
+        assert!(status.error.is_none());
+        other.shutdown();
     }
 
     #[test]

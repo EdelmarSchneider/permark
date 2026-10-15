@@ -44,7 +44,8 @@ class AgentStore {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private pulseTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSent: AgentContext | null = null;
-  private lastRequestAt = 0;
+  /** When the latest request seen was made; null until a status has been seen, so the first one is a starting point, not news. */
+  private lastRequestAt: number | null = null;
   /** Bumped when the project changes, so a message still being built for the old one is dropped. */
   private generation = 0;
 
@@ -62,7 +63,7 @@ class AgentStore {
   async onProjectOpened(): Promise<void> {
     this.generation++;
     this.lastSent = null;
-    this.lastRequestAt = 0;
+    this.lastRequestAt = null;
     this.status = OFF;
     if (vault.isSimple) return;
     try {
@@ -78,6 +79,7 @@ class AgentStore {
     this.generation++;
     this.clearTimer();
     this.lastSent = null;
+    this.lastRequestAt = null;
     this.status = OFF;
     this.pulsing = false;
   }
@@ -85,11 +87,13 @@ class AgentStore {
   /** The backend says the connection changed (switched, an agent came or went, or one asked something). */
   onStatus(status: AgentStatus): void {
     const latest = status.recent[0]?.atMs ?? 0;
-    if (latest > this.lastRequestAt) {
-      if (this.lastRequestAt !== 0) this.pulse();
-      this.lastRequestAt = latest;
-    }
-    if (!status.enabled) this.lastRequestAt = 0;
+    const seen = this.lastRequestAt;
+    // the first status after the window opened or the switch went on only says where things stand: a request already
+    // in it was made before, whether or not there was one (a window without requests has `latest` 0, and the first
+    // request that comes is news)
+    if (seen !== null && latest > seen) this.pulse();
+    // off forgets the starting point: the list of requests outlives the switch
+    this.lastRequestAt = status.enabled ? Math.max(latest, seen ?? 0) : null;
     this.status = status;
   }
 

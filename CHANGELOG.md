@@ -24,6 +24,12 @@ Your AI agent can see what you are reading, and you can leave it comments on pas
   document changes, and a comment whose passage was rewritten is marked **Passage changed**. They are personal (kept in
   `.trailmark/local/`, never committed), work without the agent connection, and an agent can mark one done with a short reply.
 
+### Fixed
+- After using **Save** in the toolbar while the "Unsaved changes" bar was showing, the single-letter shortcuts (`T`, `E`, `Alt+U`,
+  `C`) did nothing and `Esc` no longer left the editor until the window was reloaded.
+- Selecting text across a heading no longer includes the `#` of the heading's link when you copy it with a reference or an agent
+  asks for your selection.
+
 ### Security
 - The connection is off by default and its switch is kept in TrailMark's own data folder, so nothing inside a project, such as a
   cloned repository, can turn it on. TrailMark only talks to programs on your computer, and `trailmark mcp` checks that what answers

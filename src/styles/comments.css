@@ -250,12 +250,12 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+/* Where the comment is and when it was made: it wraps rather than being cut, whatever the language and the heading's length. */
 .comment-meta {
-  overflow: hidden;
   color: var(--faint);
   font-size: var(--fs-ui-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 .comment-delete {
   opacity: 0;

@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { editorProblem, errorKind, errorMessage, errorText, noteText } from "./errors";
+import {
+  agentFailureText,
+  editorProblem,
+  errorKind,
+  errorMessage,
+  errorText,
+  noteText,
+} from "./errors";
 import { language, LOCALES } from "./i18n";
+import type { AgentFailure, AgentFailureKind } from "./types";
 
 describe("errorText", () => {
   it("reads strings and Error instances", () => {
@@ -177,6 +185,34 @@ describe("errorMessage", () => {
     }
     language.preference = "en";
     expect(errorMessage({ kind: "editor", reason: "newer", message: "raw text" })).toBe("raw text");
+  });
+
+  it("words why the agent connection could not start in every language, and keeps the system's text for the rest", () => {
+    const failure = (kind: AgentFailureKind): AgentFailure => ({
+      kind,
+      message: `cannot listen on \\\\.\\pipe\\trailmark-1: Access is denied. (os error 5) [${kind}]`,
+    });
+    for (const locale of LOCALES) {
+      language.preference = locale;
+      for (const kind of ["inUse", "folderNotPrivate", "pathTooLong"] as const) {
+        const text = agentFailureText(failure(kind));
+        expect(text, `${locale} ${kind}`).not.toContain("Access is denied");
+        expect(text, `${locale} ${kind}`).not.toBe("");
+        if (locale !== "en") {
+          language.preference = "en";
+          const english = agentFailureText(failure(kind));
+          language.preference = locale;
+          expect(text, `${locale} ${kind}`).not.toBe(english);
+        }
+      }
+    }
+    language.preference = "en";
+    expect(agentFailureText(failure("inUse"))).toBe(
+      "another program is using the connection's name",
+    );
+    // `other` is the system's own words, and so is a kind a newer backend added
+    expect(agentFailureText(failure("other"))).toContain("Access is denied");
+    expect(agentFailureText({ kind: "newer" as AgentFailureKind, message: "RAW" })).toBe("RAW");
   });
 
   it("has words, in every language, for every kind the backend reports", () => {
