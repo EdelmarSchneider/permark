@@ -1861,7 +1861,10 @@ deepword
             ws.file_meta("a.md")
                 .is_ok_and(|m| m.description == "edited" && m.tags.len() == 1)
         });
-        assert!(fx.rec.meta.load(Ordering::SeqCst) > told);
+        // the UI is told after the edit is read in, not at the same moment
+        wait_until("the UI to be told", || {
+            fx.rec.meta.load(Ordering::SeqCst) > told
+        });
         wait_until("the edit in the feed", || {
             fs_paths(&fx.rec).iter().any(|p| p.ends_with("meta.toml"))
         });
@@ -2719,10 +2722,7 @@ exclude = [\"archive/**\"]
         );
         // A change in the old folder is not reported any more; one in the new folder is.
         write(fx.a.path(), "late-a.md", "x");
-        write(fx.b.path(), "late-b.md", "x");
-        wait_until("B reports its change", || {
-            fs_paths(&fx.rec).contains(&"late-b.md".to_owned())
-        });
+        write_until_reported(&fx.rec, fx.b.path(), "late-b.md", "B reports its change");
         assert!(!fs_paths(&fx.rec).contains(&"late-a.md".to_owned()));
         fx.host.shutdown();
     }
