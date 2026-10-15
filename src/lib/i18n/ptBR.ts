@@ -1054,6 +1054,9 @@ export const ptBR = {
   "notes.rename.empty": "Digite um nome para o arquivo.",
   "notes.rename.exists": "Já existe uma nota chamada {name}.",
   "notes.rename.notSaved": "A nota não pôde ser salva, então ainda não pode ser renomeada.",
+  "notes.delete.notSaved": "A nota não pôde ser salva antes, então nada foi excluído.",
+  "notes.versions.notSaved":
+    "A nota não pôde ser salva antes, então ainda não dá para restaurar uma versão anterior.",
   "notes.versions.of": "Versões anteriores de “{name}”",
   "notes.versions.list": "Versões",
   "notes.versions.preview": "Texto da versão",

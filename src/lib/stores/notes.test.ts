@@ -686,6 +686,69 @@ describe("deleting", () => {
     expect(notes.entries.some((n) => n.path === "sticky.md")).toBe(true);
   });
 
+  it("saves the open note before it goes to the bin, so Undo brings back what was typed", async () => {
+    await start();
+    fake.deleteNotes.mockResolvedValue({ deleted: ["a.md"], undoId: 7 });
+    type("# A\ntyped last");
+    list = list.filter((n) => n.path !== "a.md");
+    await notes.deleteNotes(["a.md"]);
+    expect(fake.saveNote).toHaveBeenCalledWith("a.md", "# A\ntyped last", "h-a.md");
+    expect(fake.saveNote.mock.invocationCallOrder[0]).toBeLessThan(
+      fake.deleteNotes.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not delete the open note when what was typed cannot be saved", async () => {
+    await start();
+    fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: "a.md" });
+    type("# A\ntyped last");
+    await notes.deleteNotes(["a.md"]);
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
+    expect(notes.current).toBe("a.md");
+    expect(edit.active).toBe(true);
+    expect(toast.current).toMatchObject({ tone: "warn" });
+  });
+
+  it("saves the open copied note first and then keeps it, because it was edited after it was copied", async () => {
+    list = list.map((n) => ({ ...n, copied: n.path !== "sticky.md" }));
+    await start();
+    expect(notes.copiedCount).toBe(2);
+    fake.deleteCopiedNotes.mockResolvedValue({ deleted: ["b.md"], undoId: 9 });
+    type("# A\nedited after the copy");
+    list = list.filter((n) => n.path !== "b.md");
+    await notes.deleteCopied();
+    expect(fake.saveNote).toHaveBeenCalledWith("a.md", "# A\nedited after the copy", "h-a.md");
+    expect(fake.saveNote.mock.invocationCallOrder[0]).toBeLessThan(
+      fake.deleteCopiedNotes.mock.invocationCallOrder[0],
+    );
+    // the note being typed in is no longer a copied one: it stays open
+    expect(notes.current).toBe("a.md");
+    expect(edit.active).toBe(true);
+  });
+
+  it("does not delete the copied notes when the open one cannot be saved", async () => {
+    list = list.map((n) => ({ ...n, copied: n.path !== "sticky.md" }));
+    await start();
+    fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: "a.md" });
+    type("# A\nedited after the copy");
+    await notes.deleteCopied();
+    expect(fake.deleteCopiedNotes).not.toHaveBeenCalled();
+    expect(notes.current).toBe("a.md");
+    expect(toast.current).toMatchObject({ tone: "warn" });
+  });
+
+  it("opens a neighbour, not a new note, when the open note is deleted elsewhere", async () => {
+    await start();
+    expect(notes.current).toBe("a.md");
+    // the file is gone from the folder
+    disk.delete("a.md");
+    list = list.filter((n) => n.path !== "a.md");
+    edit.noteHooks.gone?.("a.md");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(notes.current).toBe("b.md");
+    expect(fake.newNote).not.toHaveBeenCalled();
+  });
+
   it("does nothing in a window that can only read", async () => {
     fake.openNotes.mockResolvedValue(opened("locked"));
     await start();
@@ -769,6 +832,40 @@ describe("earlier versions", () => {
     expect(fake.restoreNoteVersion).toHaveBeenCalledWith("a.md", "20261015-140000-000");
     expect(notes.versions).toBeNull();
     expect((bridge.editor as ReturnType<typeof fakeEditor>).text).toBe("# A\nolder");
+  });
+});
+
+describe("earlier versions of a note with text that cannot be saved", () => {
+  beforeEach(async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    fake.noteVersions.mockResolvedValue([
+      { id: "20261015-143200-123", writtenMs: NOW, sizeBytes: 20 },
+    ]);
+    fake.noteVersionText.mockResolvedValue("# A\nolder");
+  });
+
+  it("does not put a version back over text that was not saved", async () => {
+    await notes.showVersions();
+    fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: "a.md" });
+    type("# A\ntyped and not saved");
+    await notes.restoreVersion();
+    expect(fake.restoreNoteVersion).not.toHaveBeenCalled();
+    expect(notes.versions?.failed).toBe(
+      "The note couldn't be saved first, so an earlier version can't be put back yet.",
+    );
+    expect((bridge.editor as ReturnType<typeof fakeEditor>).text).toBe("# A\ntyped and not saved");
+    expect(edit.dirty).toBe(true);
+  });
+
+  it("does not open the list while the note cannot be saved", async () => {
+    fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: "a.md" });
+    type("# A\ntyped and not saved");
+    await notes.showVersions();
+    expect(notes.versions).toBeNull();
+    expect(fake.noteVersions).not.toHaveBeenCalled();
+    expect(toast.current).toMatchObject({ tone: "warn" });
   });
 });
 

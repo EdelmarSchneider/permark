@@ -1033,6 +1033,9 @@ export const en = {
   "notes.rename.empty": "Type a name for the file.",
   "notes.rename.exists": "A note named {name} already exists.",
   "notes.rename.notSaved": "The note couldn't be saved, so it can't be renamed yet.",
+  "notes.delete.notSaved": "The note couldn't be saved first, so nothing was deleted.",
+  "notes.versions.notSaved":
+    "The note couldn't be saved first, so an earlier version can't be put back yet.",
   "notes.versions.of": "Earlier versions of “{name}”",
   "notes.versions.list": "Versions",
   "notes.versions.preview": "Text of the version",

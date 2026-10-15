@@ -662,13 +662,15 @@ class NotesStore {
   /** The note on screen is gone from the folder (deleted by another program) and has nothing unsaved. */
   private async noteGone(path: string): Promise<void> {
     if (this.current !== path) return;
+    // the neighbour is chosen while the note is still in the list: afterwards the list does not have it any more
+    const next = this.nextAfter([path]);
     edit.abandon();
     this.current = null;
     this.unborn = false;
     this.frozen = null;
     await this.refresh();
     toast.message(t("notes.gone"), "info");
-    await this.openNeighbourOrNew(path);
+    await this.openNeighbourOrNew(next);
   }
 
   // ---- loose files ---------------------------------------------------------------------------------
@@ -1097,8 +1099,13 @@ class NotesStore {
           : tn("notes.deletePinnedMany", pinned.length);
       if (!(await askYesNo(question, t("notes.delete"), t("common.cancel")))) return;
     }
-    // the open note goes first: its autosave must not write it back
+    // the open note goes first: its autosave must not write it back. What was typed into it is saved before (Undo brings back
+    // the latest text, not an older one); a note that cannot be saved is not deleted.
     const wasOpen = this.current !== null && known.includes(this.current);
+    if (wasOpen && !(await edit.flush())) {
+      toast.message(t("notes.delete.notSaved"), "warn");
+      return;
+    }
     const next = wasOpen ? this.nextAfter(known) : null;
     if (wasOpen) {
       edit.abandon();
@@ -1160,6 +1167,13 @@ class NotesStore {
   /** "Delete copied notes": every note that was copied and not edited since, but never a pinned one. */
   async deleteCopied(): Promise<void> {
     if (this.guardWrite()) return;
+    // What was typed into the open note is saved first. If it was edited after it was copied, saving it takes the "copied" mark off
+    // (so the list below no longer has it, and it is not deleted); if not, it is deleted with the others, and Undo brings it back as
+    // it was typed.
+    if (this.entries.some((n) => n.path === this.current && n.copied) && !(await edit.flush())) {
+      toast.message(t("notes.delete.notSaved"), "warn");
+      return;
+    }
     const copied = this.entries.filter((n) => n.copied && !n.pinned).map((n) => n.path);
     if (copied.length === 0) return;
     const wasOpen = this.current !== null && copied.includes(this.current);
@@ -1201,7 +1215,11 @@ class NotesStore {
   /** "Show earlier versions": a dialog that lists them and restores one. */
   async showVersions(path = this.current): Promise<void> {
     if (!path || this.unborn) return;
-    await edit.flush();
+    // the text the note has now is one of its versions: it is saved before the list is read
+    if (path === this.current && !(await edit.flush())) {
+      toast.message(t("notes.versions.notSaved"), "warn");
+      return;
+    }
     this.versions = { path, items: [], selected: null, text: null, loading: true, failed: null };
     try {
       const items = await api.noteVersions(path);
@@ -1244,7 +1262,11 @@ class NotesStore {
     if (!dialog?.selected || this.guardWrite()) return;
     const { path, selected } = dialog;
     try {
-      if (path === this.current) await edit.flush();
+      // what was typed is saved first (it becomes a version): the restore reloads the editor, and would overwrite text that was not
+      if (path === this.current && !(await edit.flush())) {
+        this.versions = { ...dialog, failed: t("notes.versions.notSaved") };
+        return;
+      }
       await api.restoreNoteVersion(path, selected);
     } catch (error) {
       this.versions = { ...dialog, failed: errorMessage(error) };

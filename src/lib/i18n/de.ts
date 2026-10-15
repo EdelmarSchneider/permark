@@ -1070,6 +1070,10 @@ export const de = {
   "notes.rename.exists": "Eine Notiz namens {name} gibt es schon.",
   "notes.rename.notSaved":
     "Die Notiz konnte nicht gespeichert werden und lässt sich deshalb noch nicht umbenennen.",
+  "notes.delete.notSaved":
+    "Die Notiz konnte vorher nicht gespeichert werden, deshalb wurde nichts gelöscht.",
+  "notes.versions.notSaved":
+    "Die Notiz konnte vorher nicht gespeichert werden, deshalb lässt sich noch keine frühere Version wiederherstellen.",
   "notes.versions.of": "Frühere Versionen von „{name}“",
   "notes.versions.list": "Versionen",
   "notes.versions.preview": "Text der Version",

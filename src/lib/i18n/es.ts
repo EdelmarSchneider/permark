@@ -1060,6 +1060,9 @@ export const es = {
   "notes.rename.exists": "Ya existe una nota llamada {name}.",
   "notes.rename.notSaved":
     "No se pudo guardar la nota, así que todavía no se le puede cambiar el nombre.",
+  "notes.delete.notSaved": "No se pudo guardar la nota antes, así que no se eliminó nada.",
+  "notes.versions.notSaved":
+    "No se pudo guardar la nota antes, así que todavía no se puede restaurar una versión anterior.",
   "notes.versions.of": "Versiones anteriores de “{name}”",
   "notes.versions.list": "Versiones",
   "notes.versions.preview": "Texto de la versión",
