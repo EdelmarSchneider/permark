@@ -6,6 +6,16 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Notes.** A window of its own for quick notes, drafts and prompts: open it with `Ctrl+Shift+D` (or the sticky-note icon, or **Notes** on
+  the welcome screen), press `Ctrl+Shift+N` from any TrailMark window to start a note, and type. Notes are plain Markdown files in
+  `Documents/TrailMark Notes` (**Settings → Notes** changes the folder, and **On start** can open the Notes window instead of the
+  welcome screen). A note is saved as you type, and closing never asks; it has no file until you type something, and is titled by its first line.
+  The list has pinned notes (drag or `Alt+↑` / `Alt+↓` to order them, `Ctrl+1` … `9` to open them), then Today, Yesterday, This week, This month
+  and Older, and a filter. **Copy** (`Ctrl+Shift+C`) puts the exact Markdown on the clipboard and marks the note, with **Delete note** in the toast
+  and **Delete copied notes** in the menu; in a project, `Ctrl+Shift+C` copies the whole open document. Delete goes to the system trash with Undo,
+  **Show earlier versions** restores an earlier text, and **Rename** (`F2`) gives a note a file name.
+  A note changed on disk while you write is never overwritten (your text is kept as a "(conflict ...)" copy), a save is durable
+  (the folder is flushed after the rename), and a second TrailMark process opens the same notes read-only.
 - **A Microsoft Store build.** TrailMark can now be packaged for the Microsoft Store (`scripts/build-msix.ps1` builds an unsigned
   MSIX; see `docs/msstore.md`). The Store version is the same program with a few differences: the Store updates it, so it has no
   "Check for updates" and makes no update requests; it puts `trailmark` on your `PATH`, so the agent setup lines in Settings are the

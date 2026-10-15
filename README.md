@@ -151,6 +151,27 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - **Comments**: select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
   (see [Use with an AI agent](#use-with-an-ai-agent))
 
+### 📝 Notes
+Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick.
+- **A notes window of its own** (`Ctrl+Shift+D`, or the sticky-note icon in the activity bar, or **Notes** on the welcome screen). `Ctrl+Shift+N`
+  starts a new note from any TrailMark window, in the Visual editor with the caret ready. A note is a plain Markdown file in
+  `Documents/TrailMark Notes` (change it in **Settings → Notes**); its name is the date and time (`2026-10-15 1432.md`), its title is its
+  first line, and a note you never typed in leaves no file behind
+- **Saved as you type**: 750 ms after you stop, and at least every 3 seconds. Switching notes, leaving the window or closing it saves too, and closing
+  never asks. Each note remembers its mode and where you were. TrailMark writes nothing inside a note's text, and never overwrites a version
+  it has not seen: if something else changed the file, your text is kept next to it as a "(conflict ...)" copy
+- **Pinned notes first, then Today, Yesterday, This week, This month and Older.** A note moves up when you leave it, not while you type.
+  Pin a note and put it where you want it (drag, or `Alt+↑` / `Alt+↓`); `Ctrl+1` … `9` jump to the pinned ones. The filter box and
+  `Ctrl+P`, `Ctrl+T` and `Ctrl+Shift+F` search the notes
+- **Copy** (`Ctrl+Shift+C`) puts the exact Markdown of the note on the clipboard and marks it, with a **Delete note** button right in the toast,
+  for the prompts and snippets you write only to paste. **Delete copied notes** clears the marked ones and keeps the pinned. In a project,
+  `Ctrl+Shift+C` copies the whole open document
+- **Deleting is gentle**: the note goes to the system trash, the toast has **Undo**, and a pinned note asks first. **Show earlier versions** restores
+  an earlier text of the note (one is kept at the first save after you open a note and about every 10 minutes after, for 30 days)
+- **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
+  with any tool, and TrailMark picks the change up. Another TrailMark process can't write to the same notes at once (the second one opens read-only)
+- **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
+
 ### 🗂️ Zero footprint by default
 TrailMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
 **Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
@@ -339,6 +360,18 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Link / inline code | `Ctrl+K` / ``Ctrl+` `` |
 | Headings 1 to 4 / paragraph (Visual) | `Ctrl+Alt+1` … `4` / `Ctrl+Alt+0` |
 | Block menu (Visual) | `/` in an empty paragraph |
+
+**Notes**
+
+| Action | Shortcut |
+|---|---|
+| New note (from any TrailMark window) | `Ctrl+Shift+N` |
+| Show the Notes window | `Ctrl+Shift+D` |
+| Copy the note's text (in a project: the open document) | `Ctrl+Shift+C` |
+| Open a pinned note | `Ctrl+1` … `9` |
+| Next / previous note | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Move the selected pinned note up / down | `Alt+↑` / `Alt+↓` |
+| Rename the note / delete it | `F2` / `Del` |
 
 **In the Explorer**
 
