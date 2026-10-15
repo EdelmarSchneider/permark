@@ -159,6 +159,7 @@ pub enum RightTab {
     #[default]
     Changes,
     Outline,
+    Comments,
 }
 
 /// What happens to the links of documents when files are moved or renamed in the Explorer. The UI
@@ -499,6 +500,7 @@ mod tests {
         for (name, tab) in [
             ("changes", RightTab::Changes),
             ("outline", RightTab::Outline),
+            ("comments", RightTab::Comments),
         ] {
             let json = format!("{{\"rightTab\": \"{name}\"}}");
             let s: SessionState = serde_json::from_str(&json).expect("parse");
