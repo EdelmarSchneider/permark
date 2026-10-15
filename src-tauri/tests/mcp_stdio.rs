@@ -152,7 +152,17 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
         .map(|tool| tool["name"].as_str().expect("a name").to_owned())
         .collect();
     names.sort();
-    assert_eq!(names, ["get_context", "list_unread", "open", "search"]);
+    assert_eq!(
+        names,
+        [
+            "get_context",
+            "list_notes",
+            "list_unread",
+            "open",
+            "resolve_note",
+            "search"
+        ]
+    );
 
     // No window is open: what needs it says so, what does not still works.
     let (context, is_error) = session.call("get_context", &json!({}));

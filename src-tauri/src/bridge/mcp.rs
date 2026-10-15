@@ -16,6 +16,8 @@ use rmcp::transport::{stdio, IntoTransport};
 use rmcp::{tool, tool_handler, tool_router, ErrorData, RoleServer, ServerHandler, ServiceExt};
 use serde::Deserialize;
 
+use crate::notes::NoteFilter;
+
 use super::tools::{launch_app, Answer, Core};
 
 /// Why the MCP server stopped with an error.
@@ -39,6 +41,22 @@ struct SearchArgs {
     query: String,
     /// How many sections to return (1 to 25). Ten when left out.
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+struct ListNotesArgs {
+    /// Which notes: `open` (the default), `done` or `all`.
+    which: Option<String>,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+struct ResolveNoteArgs {
+    /// The note's `id`, as `list_notes` gives it.
+    id: String,
+    /// A short note to the person saying what you did, such as `Rewritten in 3f2a1c`. They read it under the note.
+    reply: Option<String>,
 }
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
@@ -114,6 +132,44 @@ the section that defines a term or a decision. Also works when TrailMark is clos
     }
 
     #[tool(
+        description = "The review notes the person left in TrailMark on passages of the project's Markdown \
+documents (\"this contradicts section 2\", \"simplify\"). Each has an id, the document path, the quoted \
+passage, its heading path and line, the note text, when it was made, and `state`: `anchored` when the quote is \
+still in the document (the line is where it is now), `passageChanged` when the passage was rewritten (the line \
+is the best guess) or `documentGone`. Open notes by default; pass `which` = `done` or `all` for others. Call \
+this when the person asks you to go through, address or apply their notes or comments on the documents. Also \
+works when TrailMark is closed, from the project's files."
+    )]
+    async fn list_notes(
+        &self,
+        Parameters(ListNotesArgs { which }): Parameters<ListNotesArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let filter = match which.as_deref().map(str::trim) {
+            None | Some("" | "open") => Ok(NoteFilter::Open),
+            Some("done") => Ok(NoteFilter::Done),
+            Some("all") => Ok(NoteFilter::All),
+            Some(other) => Err(format!("`which` is open, done or all, not {other:?}")),
+        };
+        Ok(result(match filter {
+            Ok(filter) => self.core.list_notes(Some(filter)).await,
+            Err(message) => Answer::failed(message),
+        }))
+    }
+
+    #[tool(
+        description = "Mark one review note done after you addressed it, with an optional short `reply` saying \
+what you did (\"Rewritten in 3f2a1c\"), which TrailMark shows under the note. Use the `id` from list_notes. This \
+is the only change an agent can make through TrailMark: it cannot write notes or edit documents. Also works \
+when TrailMark is closed, on the project's files."
+    )]
+    async fn resolve_note(
+        &self,
+        Parameters(ResolveNoteArgs { id, reply }): Parameters<ResolveNoteArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(result(self.core.resolve_note(&id, reply.as_deref()).await))
+    }
+
+    #[tool(
         description = "Show the person a place in TrailMark: a document, optionally at a line or a heading. \
 TrailMark opens it in its window without taking focus from your terminal, highlights the section and shows a \
 notice with a way back; the person looks when ready. Use it after you wrote or found something they should see \
@@ -139,8 +195,9 @@ it never changes a document."
     router = self.tool_router,
     name = "trailmark",
     instructions = "TrailMark reads and follows the Markdown documents of a project. These tools let you see what \
-the person is looking at in TrailMark, what changed since they last read, where something is described, and show \
-them a place. They are available only while the person has turned on the agent connection for the project."
+the person is looking at in TrailMark, what changed since they last read, where something is described, the review \
+notes they left on passages (and mark one done), and show them a place. They are available only while the person \
+has turned on the agent connection for the project."
 )]
 impl ServerHandler for AgentServer {
     // The client is ready: connect to the window now, so it shows that an agent is here before the first question.
@@ -209,7 +266,7 @@ mod tests {
 
     use super::*;
     use crate::bridge::context::{AgentContext, ViewMode};
-    use crate::bridge::hub::testing::Fake;
+    use crate::bridge::hub::testing::{note, Fake};
     use crate::bridge::service::AgentBridge;
     use crate::bridge::socket::Endpoint;
     use crate::bridge::tools::Launcher;
@@ -393,8 +450,15 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().expect("name"))
             .collect();
-        assert_eq!(names.len(), 4, "{names:?}");
-        for name in ["get_context", "list_unread", "search", "open"] {
+        assert_eq!(names.len(), 6, "{names:?}");
+        for name in [
+            "get_context",
+            "list_unread",
+            "search",
+            "list_notes",
+            "resolve_note",
+            "open",
+        ] {
             assert!(names.contains(&name), "{name} is missing from {names:?}");
         }
         let description = |name: &str| {
@@ -411,6 +475,9 @@ mod tests {
         assert!(description("list_unread").contains("what changed"));
         assert!(description("search").contains("locate documentation"));
         assert!(description("open").contains("without taking focus"));
+        assert!(description("list_notes").contains("go through"));
+        assert!(description("list_notes").contains("passageChanged"));
+        assert!(description("resolve_note").contains("only change an agent can make"));
         // Arguments are described to the agent.
         let search = tools
             .iter()
@@ -422,6 +489,14 @@ mod tests {
             .is_some());
         let open = tools.iter().find(|t| t["name"] == "open").expect("open");
         assert_eq!(open["inputSchema"]["required"], json!(["path"]));
+        let resolve = tools
+            .iter()
+            .find(|t| t["name"] == "resolve_note")
+            .expect("resolve_note");
+        assert_eq!(resolve["inputSchema"]["required"], json!(["id"]));
+        assert!(resolve["inputSchema"]["properties"]["reply"]["description"]
+            .as_str()
+            .is_some());
         client.close().await.expect("the server ended cleanly");
     }
 
@@ -436,6 +511,8 @@ mod tests {
             (4, "list_unread", json!({})),
             (5, "search", json!({ "query": "plan" })),
             (6, "open", json!({ "path": "docs/plan.md" })),
+            (7, "list_notes", json!({})),
+            (8, "resolve_note", json!({ "id": "n1", "reply": "Done" })),
         ] {
             let reply = client.call(id, tool, &arguments).await;
             let answer = &reply["result"];
@@ -528,6 +605,56 @@ mod tests {
             .await;
         assert_eq!(reply["result"]["isError"], true);
         assert_eq!(reply["result"]["structuredContent"]["status"], "error");
+        client.close().await.expect("the server ended cleanly");
+        world.bridge.shutdown();
+    }
+
+    #[tokio::test]
+    async fn review_notes_are_listed_and_resolved_over_mcp() {
+        let world = World::new();
+        world.connection(true);
+        world.bridge.set_enabled(true);
+        *world.fake.notes.lock().expect("lock") = vec![note("n1", "docs/plan.md", 5)];
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+
+        let reply = client.call(3, "list_notes", &json!({})).await;
+        let answer = &reply["result"]["structuredContent"];
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert_eq!(answer["status"], "ok");
+        assert_eq!(answer["total"], 1);
+        assert_eq!(answer["notes"][0]["id"], "n1");
+        assert_eq!(answer["notes"][0]["state"], "anchored");
+
+        let reply = client
+            .call(4, "resolve_note", &json!({ "id": "n1", "reply": "Fixed" }))
+            .await;
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert_eq!(reply["result"]["structuredContent"]["note"]["done"], true);
+        assert_eq!(
+            reply["result"]["structuredContent"]["note"]["reply"],
+            "Fixed"
+        );
+
+        // done notes are listed when asked for
+        let reply = client
+            .call(5, "list_notes", &json!({ "which": "done" }))
+            .await;
+        assert_eq!(reply["result"]["structuredContent"]["total"], 1);
+        let reply = client.call(6, "list_notes", &json!({})).await;
+        assert_eq!(reply["result"]["structuredContent"]["total"], 0);
+
+        // arguments that no note fits are errors an agent can read
+        let reply = client
+            .call(7, "list_notes", &json!({ "which": "bogus" }))
+            .await;
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        let reply = client
+            .call(8, "resolve_note", &json!({ "id": "nope" }))
+            .await;
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        let reply = client.call(9, "resolve_note", &json!({})).await;
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
         client.close().await.expect("the server ended cleanly");
         world.bridge.shutdown();
     }

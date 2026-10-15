@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 
+use crate::notes::{NoteError, NoteView};
 use crate::search::SearchHit;
 use crate::util::now_ms;
 use crate::vault::Vault;
@@ -31,6 +32,10 @@ pub trait Backend: Send + Sync + 'static {
     fn unread(&self) -> Vec<String>;
     /// The best sections for a query.
     fn search(&self, query: &str, limit: usize) -> Vec<SearchHit>;
+    /// Every review note, with its passage found again in the document as it is now.
+    fn notes(&self) -> Vec<NoteView>;
+    /// Marks a review note done by an agent.
+    fn resolve_note(&self, id: &str, reply: Option<&str>) -> Result<NoteView, NoteError>;
 }
 
 /// What the interface hears about.
@@ -230,6 +235,23 @@ impl Hub {
                 let hits = answers::plain_hits(self.backend.search(query, limit));
                 Reply::success(id, json(&Hits { hits }))
             }
+            Request::ListNotes { which } => {
+                let list = answers::note_list(self.backend.notes(), which.unwrap_or_default());
+                Reply::success(id, json(&list))
+            }
+            Request::ResolveNote { note, reply } => {
+                match self.backend.resolve_note(&note, reply.as_deref()) {
+                    Ok(view) => Reply::success(id, json(&view)),
+                    Err(error @ NoteError::NotFound(_)) => Reply::failure(
+                        id,
+                        ProtocolError::new(ErrorKind::NotFound, error.to_string()),
+                    ),
+                    Err(error) => Reply::failure(
+                        id,
+                        ProtocolError::new(ErrorKind::Unavailable, error.to_string()),
+                    ),
+                }
+            }
             Request::Open {
                 path,
                 line,
@@ -269,6 +291,8 @@ pub(crate) mod testing {
     pub struct Fake {
         pub unread: Mutex<Vec<String>>,
         pub corpus: Mutex<Vec<SearchHit>>,
+        pub notes: Mutex<Vec<NoteView>>,
+        pub resolved: Mutex<Vec<(String, Option<String>)>>,
         pub statuses: Mutex<Vec<AgentStatus>>,
         pub opens: AtomicUsize,
     }
@@ -286,6 +310,22 @@ pub(crate) mod testing {
                 .cloned()
                 .collect()
         }
+
+        fn notes(&self) -> Vec<NoteView> {
+            lock(&self.notes).clone()
+        }
+
+        fn resolve_note(&self, id: &str, reply: Option<&str>) -> Result<NoteView, NoteError> {
+            let mut notes = lock(&self.notes);
+            let note = notes
+                .iter_mut()
+                .find(|note| note.id == id)
+                .ok_or_else(|| NoteError::NotFound(id.to_owned()))?;
+            note.done = true;
+            note.reply = reply.map(str::to_owned);
+            lock(&self.resolved).push((id.to_owned(), reply.map(str::to_owned)));
+            Ok(note.clone())
+        }
     }
 
     impl AgentEvents for Fake {
@@ -295,6 +335,25 @@ pub(crate) mod testing {
 
         fn open_requested(&self) {
             self.opens.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// An open note on a passage of `path`, as the window lists it.
+    pub fn note(id: &str, path: &str, line: u32) -> NoteView {
+        NoteView {
+            id: id.to_owned(),
+            path: path.to_owned(),
+            text: format!("note {id}"),
+            quote: "Ship it".to_owned(),
+            heading_path: vec!["Plan".to_owned()],
+            line,
+            end_line: line,
+            created_ms: 1_760_520_600_000,
+            state: crate::notes::PassageState::Anchored,
+            done: false,
+            done_ms: None,
+            done_by: None,
+            reply: None,
         }
     }
 
@@ -311,9 +370,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::testing::hub;
+    use super::testing::{hub, note};
     use super::*;
     use crate::bridge::context::ViewMode;
+    use crate::notes::NoteFilter;
 
     fn project() -> (tempfile::TempDir, Arc<Vault>) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -435,6 +495,72 @@ mod tests {
         ));
         assert!(!empty.ok);
         assert_eq!(empty.error.expect("error").kind, ErrorKind::BadRequest);
+    }
+
+    #[test]
+    fn notes_come_from_the_backend_open_ones_unless_more_is_asked() {
+        let (_dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        let mut closed = note("n3", "docs/plan.md", 7);
+        closed.done = true;
+        *lock(&fake.notes) = vec![
+            note("n2", "docs/plan.md", 7),
+            note("n1", "docs/plan.md", 1),
+            closed,
+        ];
+        let ids = |which| {
+            let result = hub
+                .handle(call(8, Request::ListNotes { which }))
+                .into_result()
+                .expect("a result");
+            result["notes"]
+                .as_array()
+                .expect("a list")
+                .iter()
+                .map(|n| n["id"].as_str().expect("id").to_owned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(None), ["n1", "n2"]);
+        assert_eq!(ids(Some(NoteFilter::Done)), ["n3"]);
+        assert_eq!(ids(Some(NoteFilter::All)), ["n1", "n2", "n3"]);
+        let result = hub
+            .handle(call(9, Request::ListNotes { which: None }))
+            .into_result()
+            .expect("a result");
+        assert_eq!(result["total"], 2);
+        assert_eq!(result["notes"][0]["state"], "anchored");
+        assert_eq!(result["notes"][0]["headingPath"], json!(["Plan"]));
+    }
+
+    #[test]
+    fn a_note_is_resolved_through_the_backend_and_an_unknown_one_is_not_found() {
+        let (_dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        *lock(&fake.notes) = vec![note("n1", "docs/plan.md", 1)];
+        let result = hub
+            .handle(call(
+                10,
+                Request::ResolveNote {
+                    note: "n1".to_owned(),
+                    reply: Some("Rewritten".to_owned()),
+                },
+            ))
+            .into_result()
+            .expect("a result");
+        assert_eq!(result["done"], true);
+        assert_eq!(result["reply"], "Rewritten");
+        assert_eq!(
+            *lock(&fake.resolved),
+            [("n1".to_owned(), Some("Rewritten".to_owned()))]
+        );
+        let missing = hub.handle(call(
+            11,
+            Request::ResolveNote {
+                note: "nope".to_owned(),
+                reply: None,
+            },
+        ));
+        assert_eq!(missing.error.expect("error").kind, ErrorKind::NotFound);
     }
 
     #[test]

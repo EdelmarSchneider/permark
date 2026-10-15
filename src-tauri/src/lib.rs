@@ -6,7 +6,7 @@
 //! [`fileops`] (rename, move, delete and new folders with the links kept working), [`external_editor`] (the command that
 //! opens a file in the person's editor).
 //! [`refs`] knows which images the documents use (for the Explorer filter); [`unread`] knows which documents
-//! changed since they were last read.
+//! changed since they were last read; [`notes`] keeps the review notes a person leaves on passages.
 //! [`shell_integration`] adds "Open with TrailMark" to the file manager (Windows); [`open_request`] receives what the
 //! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
@@ -23,6 +23,7 @@ mod git;
 mod links;
 mod meta;
 mod nav;
+mod notes;
 mod open_request;
 mod refs;
 mod render;
@@ -148,6 +149,10 @@ pub fn run() {
             commands::agent_status,
             commands::publish_agent_context,
             commands::take_agent_open,
+            commands::add_note,
+            commands::list_notes,
+            commands::set_note_done,
+            commands::delete_note,
         ])
         .build(context)
         .expect("error while building tauri application");

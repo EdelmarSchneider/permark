@@ -12,6 +12,7 @@ use crate::external_editor::EditorError;
 use crate::fileops::FileOpError;
 use crate::git::GitError;
 use crate::meta::MetaError;
+use crate::notes::NoteError;
 use crate::render::RenderError;
 use crate::session::SessionError;
 use crate::shell_integration::ShellError;
@@ -40,6 +41,8 @@ pub enum AppError {
     Shell(#[from] ShellError),
     #[error(transparent)]
     Editor(#[from] EditorError),
+    #[error(transparent)]
+    Notes(#[from] NoteError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -70,6 +73,7 @@ impl AppError {
             Self::FileOps(e) => e.kind(),
             Self::Shell(_) => "shell",
             Self::Editor(_) => "editor",
+            Self::Notes(e) => e.kind(),
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -202,6 +206,13 @@ impl AppError {
                 subject: e.subject().map(str::to_owned),
                 detail: e.detail(),
                 reason: Some(e.reason().to_owned()),
+            },
+            Self::Notes(e) => match e {
+                NoteError::NotADocument(subject) | NoteError::NotFound(subject) => {
+                    Details::subject(subject)
+                }
+                NoteError::Io { path, source } => Details::io(path, source),
+                NoteError::Empty | NoteError::TooMany | NoteError::SingleFile => Details::default(),
             },
             Self::Git(GitError::WorkerGone) | Self::NoVault | Self::Superseded => {
                 Details::default()

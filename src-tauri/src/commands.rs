@@ -23,6 +23,7 @@ use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
+use crate::notes::{NewNote, NoteView};
 use crate::open_request::OpenInbox;
 #[cfg(target_os = "macos")]
 use crate::open_request::{self, Action};
@@ -81,6 +82,10 @@ impl EventSink for TauriSink {
 
     fn agent_open(&self) {
         let _ = self.0.emit("agent-open", ());
+    }
+
+    fn notes_changed(&self) {
+        let _ = self.0.emit("notes-changed", ());
     }
 }
 
@@ -682,6 +687,39 @@ pub async fn mark_all_read(state: State<'_, AppState>) -> Result<(), AppError> {
 pub async fn mark_folder_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
     let ws = state.current()?;
     blocking(move || ws.mark_folder_read(&path)).await
+}
+
+/// Writes a note on a passage of a document (the person selected it in the reading view).
+#[tauri::command]
+pub async fn add_note(state: State<'_, AppState>, note: NewNote) -> Result<NoteView, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.add_note(note)).await
+}
+
+/// Every note of the folder, each with its passage found again in the document as it is now (the `notes-changed`
+/// event says when to ask again).
+#[tauri::command]
+pub async fn list_notes(state: State<'_, AppState>) -> Result<Vec<NoteView>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.list_notes())).await
+}
+
+/// The person checks a note off (`done`), or opens it again.
+#[tauri::command]
+pub async fn set_note_done(
+    state: State<'_, AppState>,
+    id: String,
+    done: bool,
+) -> Result<NoteView, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_note_done(&id, done)).await
+}
+
+/// Deletes a note.
+#[tauri::command]
+pub async fn delete_note(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.delete_note(&id)).await
 }
 
 /// Turns the agent connection of the open folder on or off (the setting itself is saved with the session). Never fails

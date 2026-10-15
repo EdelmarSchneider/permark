@@ -11,6 +11,8 @@ use std::time::Duration;
 
 use serde_json::{json, Map, Value};
 
+use crate::notes::NoteFilter;
+
 use super::link::{Link, LinkError};
 use super::project::{connection_is_on, find_project, Project};
 use super::protocol::{Request, DEFAULT_SEARCH_HITS, MAX_SEARCH_HITS};
@@ -24,6 +26,8 @@ const UNKNOWN_MESSAGE: &str =
     "TrailMark has not been used on this folder. The person can open the project in \
 TrailMark and turn on Settings > Agent connection.";
 const NOT_OPEN_MESSAGE: &str = "TrailMark is not open on this project.";
+const RESOLVED_MESSAGE: &str =
+    "Marked done. The person sees it checked off in TrailMark, with your reply under the note.";
 const SHOWN_MESSAGE: &str =
     "Shown in TrailMark. It does not take focus; the person sees a notice with a way back \
 and looks when ready.";
@@ -61,7 +65,7 @@ impl Answer {
         }
     }
 
-    fn failed(message: impl Into<String>) -> Self {
+    pub(crate) fn failed(message: impl Into<String>) -> Self {
         Self {
             value: json!({ "status": "error", "message": message.into() }),
             is_error: true,
@@ -113,6 +117,23 @@ fn with_readable_times(mut list: Map<String, Value>) -> Map<String, Value> {
         }
     }
     list
+}
+
+/// Adds a readable `created` time beside each `createdMs` of a note list, and beside the `createdMs` of a single note.
+fn with_readable_note_times(mut value: Map<String, Value>) -> Map<String, Value> {
+    fn stamp(note: &mut Value) {
+        let ms = note.get("createdMs").and_then(Value::as_u64);
+        if let (Some(ms), Some(note)) = (ms, note.as_object_mut()) {
+            note.insert("created".to_owned(), json!(iso8601_utc(ms)));
+        }
+    }
+    if let Some(Value::Array(notes)) = value.get_mut("notes") {
+        notes.iter_mut().for_each(stamp);
+    }
+    if let Some(note) = value.get_mut("note") {
+        stamp(note);
+    }
+    value
 }
 
 /// Opens the project's files for reading, once, when something needs them.
@@ -308,6 +329,65 @@ impl Core {
         Answer::ok(hits)
     }
 
+    /// The review notes the person left. The open ones unless asked for more.
+    pub async fn list_notes(&self, which: Option<NoteFilter>) -> Answer {
+        if !self.is_on() {
+            return Answer::off(self.known);
+        }
+        let which = which.unwrap_or_default();
+        let (mut list, source) = match self.ask(Request::ListNotes { which: Some(which) }).await {
+            Ok(list) => (object(list), "window"),
+            Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+            Err(_) => match self
+                .offline(move |project| serde_json::to_value(project.notes(which)))
+                .await
+            {
+                Ok(Ok(list)) => (object(list), "files"),
+                Ok(Err(error)) => return Answer::failed(error.to_string()),
+                Err(error) => return Answer::failed(error),
+            },
+        };
+        list.insert("source".to_owned(), json!(source));
+        Answer::ok(with_readable_note_times(list))
+    }
+
+    /// Marks a review note done, with an optional short reply the person sees under it. The only change an agent
+    /// can make; it works from the project's files when TrailMark is closed.
+    pub async fn resolve_note(&self, id: &str, reply: Option<&str>) -> Answer {
+        if !self.is_on() {
+            return Answer::off(self.known);
+        }
+        let id = id.trim().to_owned();
+        if id.is_empty() {
+            return Answer::failed("the note id is empty");
+        }
+        let reply = reply.map(str::to_owned);
+        let request = Request::ResolveNote {
+            note: id.clone(),
+            reply: reply.clone(),
+        };
+        let (note, source) = match self.ask(request).await {
+            Ok(note) => (note, "window"),
+            Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+            Err(_) => {
+                match self
+                    .offline(move |project| project.resolve_note(&id, reply.as_deref()))
+                    .await
+                {
+                    Ok(Ok(note)) => (json!(note), "files"),
+                    Ok(Err(error)) => return Answer::failed(error.to_string()),
+                    Err(error) => return Answer::failed(error),
+                }
+            }
+        };
+        let fields = Map::from_iter([
+            ("note".to_owned(), note),
+            ("source".to_owned(), json!(source)),
+            ("message".to_owned(), json!(RESOLVED_MESSAGE)),
+        ]);
+        Answer::ok(with_readable_note_times(fields))
+    }
+
     /// Shows the person a place. Starts TrailMark when it is closed.
     pub async fn open(&self, path: &str, line: Option<u32>, heading: Option<&str>) -> Answer {
         if !self.is_on() {
@@ -444,8 +524,9 @@ mod tests {
 
     use super::*;
     use crate::bridge::context::{AgentContext, ViewMode};
-    use crate::bridge::hub::testing::Fake;
+    use crate::bridge::hub::testing::{note, Fake};
     use crate::bridge::service::AgentBridge;
+    use crate::notes::{NewNote, NoteFilter, Notebook};
     use crate::search::SearchHit;
     use crate::session::{SessionState, StateStore};
     use crate::vault::Vault;
@@ -539,6 +620,8 @@ mod tests {
             core.get_context().await,
             core.list_unread().await,
             core.search("lighthouse", None).await,
+            core.list_notes(None).await,
+            core.resolve_note("n1", Some("done")).await,
             core.open("README.md", None, None).await,
         ] {
             assert_eq!(status(&answer), "off", "{answer:?}");
@@ -665,6 +748,98 @@ mod tests {
         assert_eq!(found.value["source"], "window");
         assert_eq!(found.value["hits"][0]["snippet"], "The lighthouse");
         fx.bridge.shutdown();
+    }
+
+    /// The notes of the project's files, as the window would have written them.
+    fn notebook(fx: &Fx) -> Notebook {
+        let state = StateStore::open(fx.app.path(), &fx.root);
+        Notebook::new(
+            Arc::new(Vault::open(&fx.root).expect("vault")),
+            state.notes_path(),
+        )
+    }
+
+    fn new_note(path: &str, quote: &str, text: &str) -> NewNote {
+        NewNote {
+            path: path.to_owned(),
+            quote: quote.to_owned(),
+            text: text.to_owned(),
+            heading_path: Vec::new(),
+            line: 0,
+            end_line: 0,
+        }
+    }
+
+    #[tokio::test]
+    async fn with_the_window_open_notes_come_from_it_and_resolving_reaches_it() {
+        let fx = fx();
+        fx.set_connection(true);
+        fx.bridge.set_enabled(true);
+        *fx.fake.notes.lock().expect("lock") = vec![note("n1", "docs/plan.md", 5)];
+        let core = fx.core(no_launch());
+        let listed = core.list_notes(None).await;
+        assert_eq!(status(&listed), "ok", "{listed:?}");
+        assert_eq!(listed.value["source"], "window");
+        assert_eq!(listed.value["total"], 1);
+        assert_eq!(listed.value["notes"][0]["id"], "n1");
+        let created = listed.value["notes"][0]["created"]
+            .as_str()
+            .expect("a time");
+        assert_eq!(created, "2025-10-15T09:30:00Z");
+
+        let resolved = core.resolve_note(" n1 ", Some("Rewritten")).await;
+        assert_eq!(status(&resolved), "ok", "{resolved:?}");
+        assert_eq!(resolved.value["source"], "window");
+        assert_eq!(resolved.value["note"]["done"], true);
+        assert_eq!(resolved.value["note"]["reply"], "Rewritten");
+        assert!(resolved.value["note"]["created"].as_str().is_some());
+        assert_eq!(fx.fake.resolved.lock().expect("lock").len(), 1);
+
+        // a note that is done is not in the open list any more
+        assert_eq!(core.list_notes(None).await.value["total"], 0);
+        let all = core.list_notes(Some(NoteFilter::All)).await;
+        assert_eq!(all.value["total"], 1);
+
+        let missing = core.resolve_note("nope", None).await;
+        assert!(missing.is_error, "{missing:?}");
+        assert!(core.resolve_note("   ", None).await.is_error);
+        fx.bridge.shutdown();
+    }
+
+    #[tokio::test]
+    async fn with_the_window_closed_notes_are_read_and_resolved_in_the_files() {
+        let fx = fx();
+        fx.set_connection(true);
+        let book = notebook(&fx);
+        let added = book
+            .add(new_note("docs/plan.md", "Ship the beacon", "Which beacon?"))
+            .expect("a note");
+        let core = fx.core(no_launch());
+
+        let listed = core.list_notes(None).await;
+        assert_eq!(status(&listed), "ok", "{listed:?}");
+        assert_eq!(listed.value["source"], "files");
+        let first = &listed.value["notes"][0];
+        assert_eq!(first["id"], added.id);
+        assert_eq!(first["path"], "docs/plan.md");
+        assert_eq!(first["quote"], "Ship the beacon");
+        assert_eq!(first["text"], "Which beacon?");
+        assert_eq!(first["headingPath"], serde_json::json!(["Plan", "Rollout"]));
+        assert_eq!(first["line"], 7);
+        assert_eq!(first["state"], "anchored");
+        assert!(first["created"].as_str().expect("a time").ends_with('Z'));
+
+        let resolved = core.resolve_note(&added.id, Some("Named it")).await;
+        assert_eq!(status(&resolved), "ok", "{resolved:?}");
+        assert_eq!(resolved.value["source"], "files");
+        assert_eq!(core.list_notes(None).await.value["total"], 0);
+        let done = core.list_notes(Some(NoteFilter::Done)).await;
+        assert_eq!(done.value["notes"][0]["reply"], "Named it");
+        assert_eq!(done.value["notes"][0]["doneBy"], "agent");
+        // the window, opened later, finds it checked off
+        assert_eq!(book.list(false)[0].reply.as_deref(), Some("Named it"));
+
+        assert!(core.resolve_note("nope", None).await.is_error);
     }
 
     #[tokio::test]
