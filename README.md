@@ -168,6 +168,13 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
   `Ctrl+Shift+C` copies the whole open document
 - **Deleting is gentle**: the note goes to the system trash, the toast has **Undo**, and a pinned note asks first. **Show earlier versions** restores
   an earlier text of the note (one is kept at the first save after you open a note and about every 10 minutes after, for 30 days)
+- **Files from anywhere** join the list under **Files**: open a Markdown or text file with "Open with TrailMark", with `Ctrl+Shift+O`, or by
+  dropping it on the Notes window (a file inside the project you have open still opens in that project). A file is never written on its own: it
+  opens in Read, `E` edits it, and `Ctrl+S` saves it. What you type before you save is kept apart from the file and comes back after a
+  restart, with an "unsaved" mark; closing the window asks nothing. If the file changes on disk while it is open, what you see stays until you
+  choose **Reload** (your typed text is kept as a note first) or **Keep mine** (the next save asks once more before it replaces the version on
+  disk). A file that is not found stays in the list, dimmed, with **Locate...** and **Remove from list**, and a rename in its folder is followed.
+  Text files (`.txt`) are edited in Source. Removing a file from the list never touches the file
 - **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
   with any tool, and TrailMark picks the change up. Another TrailMark process can't write to the same notes at once (the second one opens read-only)
 - **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
@@ -369,6 +376,8 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Show the Notes window | `Ctrl+Shift+D` |
 | Copy the note's text (in a project: the open document) | `Ctrl+Shift+C` |
 | Open a pinned note | `Ctrl+1` … `9` |
+| Open a file (listed under Files) | `Ctrl+Shift+O` |
+| Save a file you opened (a note saves itself) | `Ctrl+S` |
 | Next / previous note | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Move the selected pinned note up / down | `Alt+↑` / `Alt+↓` |
 | Rename the note / delete it | `F2` / `Del` |

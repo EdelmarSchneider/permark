@@ -16,6 +16,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
   **Show earlier versions** restores an earlier text, and **Rename** (`F2`) gives a note a file name.
   A note changed on disk while you write is never overwritten (your text is kept as a "(conflict ...)" copy), a save is durable
   (the folder is flushed after the rename), and a second TrailMark process opens the same notes read-only.
+- **Files in the Notes window.** A Markdown or text file opened with "Open with TrailMark", `Ctrl+Shift+O` or a drop on the Notes window is
+  listed under **Files** (a file inside the project you have open still opens in that project, and a file of the notes folder opens as a
+  note). A file is never written on its own: it opens in Read, `E` edits it, `Ctrl+S` saves it, and what you type before is kept apart and
+  comes back after a restart. When the file changes on disk, what you see stays until you choose **Reload** (your text is kept as a note) or
+  **Keep mine** (the next save asks once more); a file that is gone stays in the list, dimmed, with **Locate...** and **Remove from list**,
+  and a rename in its folder is followed. `.txt` files are edited in Source. A setting reloads a changed file that nothing was typed into.
 - **A Microsoft Store build.** TrailMark can now be packaged for the Microsoft Store (`scripts/build-msix.ps1` builds an unsigned
   MSIX; see `docs/msstore.md`). The Store version is the same program with a few differences: the Store updates it, so it has no
   "Check for updates" and makes no update requests; it puts `trailmark` on your `PATH`, so the agent setup lines in Settings are the
