@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -203,6 +204,9 @@ fn is_program_without_extension(path: &Path) -> bool {
 fn is_program_without_extension(_path: &Path) -> bool {
     false
 }
+
+/// How long a closing window waits for the unread markers' file to be written (see [`Workspace::save_last_visit`]).
+const CLOSE_WAIT: Duration = Duration::from_millis(500);
 
 pub struct Workspace {
     vault: Arc<Vault>,
@@ -984,9 +988,8 @@ impl Workspace {
             .collect()
     }
 
-    /// Remembers "now", the current HEAD and the uncommitted files as the last visit (called on
-    /// close and on exit).
-    pub fn save_last_visit(&self) {
+    /// Remembers "now", the current HEAD and the uncommitted files as the last visit.
+    fn record_visit(&self) {
         let oid = self.git_ctx.as_ref().and_then(git::read_head_oid);
         let visit = LastVisit {
             time_ms: now_ms(),
@@ -996,8 +999,14 @@ impl Workspace {
         if let Ok(store) = self.store.lock() {
             let _ = store.save_last_visit(&visit);
         }
-        // The window may close before the unread markers' write has settled.
-        self.unread.flush();
+    }
+
+    /// Remembers the last visit when the window closes. The unread markers' file is written too, if it can be
+    /// soon: the thread that keeps it may be in the middle of a look at a big project, and a closing window must
+    /// not wait for that. What is not written then is written when the workspace is closed on exit.
+    pub fn save_last_visit(&self) {
+        self.record_visit();
+        self.unread.flush_within(CLOSE_WAIT);
     }
 
     /// Saves the last visit and stops every background task. Safe to call more than once.
@@ -1005,7 +1014,9 @@ impl Workspace {
         if self.closed.swap(true, Ordering::SeqCst) {
             return;
         }
-        self.save_last_visit();
+        // No flush of the unread markers here: stopping them writes the file, and sets the flag that cuts a
+        // look at the disk short, which a flush queued behind it would not.
+        self.record_visit();
         // The watcher goes first: what it reports last (a rename that moves tags) is still written.
         if let Ok(mut w) = self.watcher.lock() {
             if let Some(w) = w.take() {
