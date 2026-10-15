@@ -48,6 +48,7 @@ export function defaultSession(): SessionState {
     linkUpdate: DEFAULT_LINK_UPDATE,
     editMode: DEFAULT_EDIT_MODE,
     initHintNever: false,
+    agentConnection: false,
   };
 }
 
@@ -84,5 +85,6 @@ export function normalizeSession(stored: Partial<SessionState> | null | undefine
     linkUpdate: normalizeLinkUpdate(stored.linkUpdate),
     editMode: normalizeEditMode(stored.editMode),
     initHintNever: stored.initHintNever === true,
+    agentConnection: stored.agentConnection === true,
   };
 }

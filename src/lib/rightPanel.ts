@@ -1,7 +1,7 @@
-// The right panel's views (docs/design/v0.2.md section 0): a segmented switch between Changes and Outline,
-// built so a third view can be added to the list. The choice is remembered per project (the session's `rightTab`).
+// The right panel's views (docs/design/v0.2.md section 0, v0.4.md section 3): a segmented switch between Changes, Outline
+// and Notes, built so another view can be added to the list. The choice is remembered per project (the session's `rightTab`).
 
-export const RIGHT_TABS = ["changes", "outline"] as const;
+export const RIGHT_TABS = ["changes", "outline", "notes"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 export const DEFAULT_RIGHT_TAB: RightTab = "changes";

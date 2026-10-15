@@ -27,6 +27,8 @@ import {
   searchDocs,
 } from "./fixtures";
 import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./mockFileOps";
+import { agentStatus, publishAgentContext, setAgentConnection, takeAgentOpen } from "./mockAgent";
+import { addNote, deleteNote, listNotes, setNoteDone } from "./mockNotes";
 import { listUnread, markAllRead, markFolderRead, markRead, markUnread } from "./mockUnread";
 import {
   createDocument,
@@ -53,6 +55,7 @@ let savedSession: SessionState | null = {
   linkUpdate: "ask",
   editMode: "visual",
   initHintNever: false,
+  agentConnection: false,
 };
 let stateLocation: "appData" | "project" = "appData";
 let mockEditorCommand = "";
@@ -219,5 +222,13 @@ export const mockImpl: Api = {
   markUnread: async (path) => markUnread(path),
   markAllRead: async () => markAllRead(),
   markFolderRead: async (path) => markFolderRead(path),
+  setAgentConnection: async (enabled) => setAgentConnection(enabled),
+  agentStatus: async () => agentStatus(),
+  publishAgentContext: async (context) => publishAgentContext(context),
+  takeAgentOpen: async () => takeAgentOpen(),
+  addNote: async (note) => addNote(note),
+  listNotes: async () => listNotes(),
+  setNoteDone: async (id, done) => setNoteDone(id, done),
+  deleteNote: async (id) => deleteNote(id),
   on: async () => () => {},
 };

@@ -38,12 +38,18 @@ tauri-plugin-updater = "2.13.3"
 tauri-plugin-process = "2.4.0"
 base64 = "0.23.1"
 trash = "5.2.9"
+rmcp = { version = "3.5.0", default-features = false, features = ["server", "macros", "transport-io"] }
+tokio = { version = "1", features = ["rt", "io-util", "macros", "net", "sync", "time"] }
+interprocess = { version = "2.4.4", features = ["tokio"] }
+dirs = "7.0.0"
 
 # The Windows installer records the language it ran in; the app reads it once, on a first start. The same registry holds
 # the file manager entries ("Open with TrailMark"), and the shell is told when they change.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell"] }
 winreg = "0.56.0"
+# The access list of the agent connection's named pipe is handed to Windows as a wide string.
+widestring = "1.2.1"
 
 [lints.rust]
 unsafe_code = "deny"
@@ -65,3 +71,4 @@ strip = true
 
 [dev-dependencies]
 tempfile = "3.27.0"
+tokio = { version = "1", features = ["macros", "time"] }

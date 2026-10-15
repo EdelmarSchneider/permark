@@ -55,6 +55,7 @@ const IDLE: CommandContext = {
   stateInProject: false,
   hasRepo: false,
   hasUnread: false,
+  agentOn: false,
 };
 const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
 
@@ -137,11 +138,40 @@ describe("availableCommands", () => {
     }
   });
 
+  it("offers the review notes in a folder: adding one to the selection while reading, showing them always", () => {
+    const folder = idsOf(availableCommands(IDLE));
+    expect(folder).toContain("showNotes");
+    expect(folder).not.toContain("addNote");
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true }))).toContain("addNote");
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, editing: true }))).not.toContain(
+      "addNote",
+    );
+    // a single file has no project to keep notes in
+    const simple = idsOf(availableCommands({ ...IDLE, ide: false, hasDoc: true }));
+    expect(simple).not.toContain("addNote");
+    expect(simple).not.toContain("showNotes");
+  });
+
   it("offers Initialize until the state is kept in the project", () => {
     expect(idsOf(availableCommands(IDLE))).toContain("initProject");
     expect(idsOf(availableCommands({ ...IDLE, stateInProject: true }))).not.toContain(
       "initProject",
     );
+  });
+
+  it("offers the agent connection's switch for the state it is in, and its setup in a folder", () => {
+    const off = idsOf(availableCommands(IDLE));
+    expect(off).toContain("agentOn");
+    expect(off).not.toContain("agentOff");
+    const on = idsOf(availableCommands({ ...IDLE, agentOn: true }));
+    expect(on).toContain("agentOff");
+    expect(on).not.toContain("agentOn");
+    expect(on).toContain("agentCopySetup");
+    // a single file is no project: nothing of it applies
+    const simple = idsOf(availableCommands({ ...IDLE, ide: false }));
+    for (const id of ["agentOn", "agentOff", "agentCopySetup"]) {
+      expect(simple, id).not.toContain(id);
+    }
   });
 
   it("offers the git baselines only in a repository", () => {

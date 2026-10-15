@@ -1,6 +1,8 @@
 // Imperative hooks that DocView registers for code that lives outside it (global shortcuts, the find
 // bar, the selection popover). Components that need DOM access to the rendered document go through here.
 
+import type { Heading, SelectedText } from "./agentContext";
+import type { NoteTarget } from "./dom/noteDom";
 import type { BlockMap } from "./editor/blockModel";
 import type { VisualInput } from "./editor/visual/editor";
 import type { FindMode } from "./find";
@@ -49,6 +51,8 @@ export type SourceApi = OutlineSource & {
   caretLine(): number;
   /** The line at the top of the viewport (0-based): the place to keep when the view changes to another mode. */
   topLine(): number;
+  /** The selected text with the lines it spans (from 1), or null when nothing is selected. */
+  selection?(): SelectedText | null;
   focus(): void;
   /** Inserts the image `rel` (a path relative to the document) at the caret, replacing the selection. */
   insertImage(rel: string): void;
@@ -70,6 +74,8 @@ export type VisualApi = OutlineSource & {
   caretLine(): number;
   /** The line, in `text()`, of the block at the top of the viewport (0-based): the place to keep when the view changes to another mode. */
   topLine(): number;
+  /** The selected text, or null when nothing is selected (the lines it spans are not known here). */
+  selection?(): SelectedText | null;
   /** The block of the loaded text the caret is in, or null in a block that was added. */
   caretBlock(): number | null;
   /** The line, in `text()`, where a block of the loaded text starts (null: the caret's block). */
@@ -84,6 +90,16 @@ export type VisualApi = OutlineSource & {
 
 export type EditorApi = SourceApi | VisualApi;
 
+/** What the reading view can say about the document on screen, for an agent that asks (`agentContext.ts`). */
+export type ReadingSnapshot = {
+  /** Every heading of the document, in order, with its line. */
+  headings: Heading[];
+  /** The last line of the document. */
+  lastLine: number;
+  /** The selected text, with the lines of the blocks it touches. */
+  selection: SelectedText | null;
+};
+
 export type DocBridge = {
   /** F7 / Shift+F7: move to the next or previous changed block or removed marker. */
   jumpChange?: (direction: 1 | -1) => void;
@@ -97,6 +113,10 @@ export type DocBridge = {
   editorOutline?: OutlineApi;
   /** The 1-based source line of the block at the top of the viewport, where editing starts. */
   topLine?: () => number | null;
+  /** The headings and the selection of the document in the reading view. */
+  readingSnapshot?: () => ReadingSnapshot | null;
+  /** The selection in the reading view, ready for a review note: the text, its lines and headings, where it is. */
+  noteTarget?: () => NoteTarget | null;
   /** Set while the source editor is on screen. */
   editor?: EditorApi;
 };

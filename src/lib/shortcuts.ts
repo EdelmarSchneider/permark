@@ -15,6 +15,7 @@ export const SHORTCUT_ACTIONS = [
   "explorer",
   "tagsView",
   "editTags",
+  "addNote",
   "edit",
   "toggleEdit",
   "toggleEditMode",
@@ -84,6 +85,7 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
   if (!mod && !alt && key === "F7") return shift ? "prevChange" : "nextChange";
   // A plain letter: the caller leaves it alone while the user is typing in a field or an overlay is open.
   if (!mod && !alt && !shift && key === "t") return "editTags";
+  if (!mod && !alt && !shift && key === "n") return "addNote";
   if (!mod && !alt && !shift && key === "e") return "edit";
   if (!mod && alt && shift && key === "c") return "copyPath";
   if (!mod) return null;
@@ -164,6 +166,7 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
 export function yieldsToTyping(action: ShortcutAction, mac: boolean): boolean {
   switch (action) {
     case "editTags":
+    case "addNote":
     case "edit":
     case "nextUnread":
       return true;

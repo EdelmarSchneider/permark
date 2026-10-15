@@ -1,0 +1,354 @@
+//! A project as `trailmark mcp` sees it when it is not talking to the window: found from the folder an agent works
+//! in, with its setting read from the saved session, and its unread documents and search index worked out from the
+//! files. Nothing here needs the window, and nothing here changes the project.
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
+
+use crate::git::{self, Discovery};
+use crate::notes::{NoteError, NoteFilter, NoteView, Notebook};
+use crate::search::indexer::Indexer;
+use crate::search::{Bm25Index, SearchProvider};
+use crate::session::StateStore;
+use crate::unread;
+use crate::vault::{Vault, VaultError};
+use crate::watch::{PathFilter, SigStore};
+
+use super::answers;
+use super::protocol::{Hit, NoteList, Opened, ProtocolError, UnreadList};
+
+/// Where TrailMark keeps its data for the current user: the folder the window itself uses (`app_data_dir`), which
+/// is named after the app's identifier. `None` when the system has no such folder.
+pub(crate) fn app_data_dir(identifier: &str) -> Option<PathBuf> {
+    dirs::data_dir().map(|dir| dir.join(identifier))
+}
+
+/// The nearest folder at or above `start` that TrailMark knows: one with a `.trailmark/` folder, or one the app
+/// kept state for. `None` when `start` is not inside any such folder.
+pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf> {
+    let start =
+        dunce::canonicalize(start).unwrap_or_else(|_| dunce::simplified(start).to_path_buf());
+    start
+        .ancestors()
+        .find(|dir| StateStore::open(app_data_dir, dir).is_known())
+        .map(Path::to_path_buf)
+}
+
+/// Whether the person turned the agent connection on for the project in `root`.
+pub(crate) fn connection_is_on(app_data_dir: &Path, root: &Path) -> bool {
+    StateStore::open(app_data_dir, root)
+        .load_session()
+        .is_some_and(|session| session.agent_connection)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ProjectError {
+    #[error(transparent)]
+    Vault(#[from] VaultError),
+}
+
+/// What is built the first time something is searched, and kept up to date from then on.
+struct Searcher {
+    index: Arc<RwLock<Bm25Index>>,
+    indexer: Indexer,
+}
+
+/// A project read from its files.
+pub(crate) struct Project {
+    vault: Arc<Vault>,
+    filter: Arc<PathFilter>,
+    read_path: PathBuf,
+    notes: Notebook,
+    searcher: Mutex<Option<Searcher>>,
+}
+
+impl Project {
+    /// Opens the project in `root` for reading. `home` keeps a repository in the user's home folder from being
+    /// taken for the project's (see `git::discover`).
+    pub(crate) fn open(
+        root: &Path,
+        app_data_dir: &Path,
+        home: Option<&Path>,
+    ) -> Result<Self, ProjectError> {
+        let vault = Arc::new(Vault::open(root)?);
+        let store = StateStore::open(app_data_dir, vault.root());
+        let config = store.config();
+        // Only what the repository ignores is needed from git; linked worktrees are outside the project.
+        let info_exclude = match git::discover(vault.root(), home) {
+            Discovery::Repo(context) => context.info_exclude(),
+            Discovery::NoRepo | Discovery::Error(_) => None,
+        };
+        let filter = Arc::new(PathFilter::new(
+            &[(vault.root().to_path_buf(), info_exclude)],
+            &config.ignore,
+        ));
+        let notes = Notebook::new(Arc::clone(&vault), store.notes_path());
+        Ok(Self {
+            vault,
+            filter,
+            read_path: store.read_path(),
+            notes,
+            searcher: Mutex::new(None),
+        })
+    }
+
+    /// The documents that changed since the person last read them, newest change first.
+    pub(crate) fn unread(&self) -> UnreadList {
+        let paths = unread::unread_on_disk(&self.vault, &self.filter, &self.read_path);
+        UnreadList::new(answers::unread_docs(&self.vault, &paths))
+    }
+
+    /// The best sections for `query`. The index is built from the files on the first call and brought up to date
+    /// on the later ones (only files whose size or time changed are read again).
+    pub(crate) fn search(&self, query: &str, limit: usize) -> Vec<Hit> {
+        let mut searcher = self.searcher.lock().unwrap_or_else(PoisonError::into_inner);
+        let never = std::sync::atomic::AtomicBool::new(false);
+        let searcher = searcher.get_or_insert_with(|| {
+            let index = Arc::new(RwLock::new(Bm25Index::new()));
+            let mut indexer = Indexer::new(
+                Arc::clone(&self.vault),
+                Arc::clone(&self.filter),
+                Arc::clone(&index),
+                Arc::new(SigStore::new()),
+            );
+            indexer.build(&never, &mut |_, _| {});
+            Searcher { index, indexer }
+        });
+        searcher.indexer.rescan(&never);
+        answers::plain_hits(searcher.index.search(query, limit))
+    }
+
+    /// The review notes of the kind asked for. Read-only: the places that moved are not written down here.
+    pub(crate) fn notes(&self, which: NoteFilter) -> NoteList {
+        answers::note_list(self.notes.list(false), which)
+    }
+
+    /// Marks a review note done by an agent.
+    pub(crate) fn resolve_note(
+        &self,
+        id: &str,
+        reply: Option<&str>,
+    ) -> Result<NoteView, NoteError> {
+        self.notes.resolve(id, reply)
+    }
+
+    /// Checks a place an agent wants shown (see [`answers::prepare_open`]).
+    pub(crate) fn check_open(
+        &self,
+        path: &str,
+        line: Option<u32>,
+        heading: Option<&str>,
+    ) -> Result<Opened, ProtocolError> {
+        answers::prepare_open(&self.vault, path, line, heading)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::session::SessionState;
+
+    struct Fx {
+        app: tempfile::TempDir,
+        project: tempfile::TempDir,
+    }
+
+    fn fx() -> Fx {
+        let fx = Fx {
+            app: tempfile::tempdir().expect("app data"),
+            project: tempfile::tempdir().expect("project"),
+        };
+        write(&fx, "README.md", "# Home\n\nWelcome to the lighthouse.\n");
+        write(
+            &fx,
+            "docs/plan.md",
+            "# Plan\n\nIntro.\n\n## Rollout\n\nShip the beacon on Friday.\n",
+        );
+        fx
+    }
+
+    fn write(fx: &Fx, rel: &str, text: &str) {
+        let path = fx.project.path().join(rel);
+        fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        fs::write(path, text).expect("write");
+    }
+
+    fn root(fx: &Fx) -> PathBuf {
+        dunce::canonicalize(fx.project.path()).expect("canonical")
+    }
+
+    fn store(fx: &Fx) -> StateStore {
+        StateStore::open(fx.app.path(), &root(fx))
+    }
+
+    #[test]
+    fn the_data_folder_is_named_after_the_app() {
+        let dir = app_data_dir("dev.example.app").expect("a data folder");
+        assert!(dir.ends_with("dev.example.app"));
+        assert!(dir.is_absolute());
+    }
+
+    #[test]
+    fn a_program_started_inside_a_project_finds_the_project() {
+        let fx = fx();
+        let nested = fx.project.path().join("docs").join("deep").join("er");
+        fs::create_dir_all(&nested).expect("mkdir");
+        // TrailMark has never seen this folder.
+        assert_eq!(find_project(fx.app.path(), &nested), None);
+        // Once the app kept state for it, any folder inside finds it.
+        store(&fx)
+            .save_session(&SessionState::default())
+            .expect("save");
+        assert_eq!(find_project(fx.app.path(), &nested), Some(root(&fx)));
+        assert_eq!(
+            find_project(fx.app.path(), fx.project.path()),
+            Some(root(&fx))
+        );
+    }
+
+    #[test]
+    fn the_nearest_known_folder_wins() {
+        let fx = fx();
+        store(&fx)
+            .save_session(&SessionState::default())
+            .expect("save");
+        let inner = fx.project.path().join("docs");
+        fs::create_dir(inner.join(".trailmark")).expect("mkdir");
+        let found = find_project(fx.app.path(), &inner);
+        assert_eq!(found, Some(dunce::canonicalize(&inner).expect("canonical")));
+    }
+
+    #[test]
+    fn a_folder_with_a_trailmark_folder_is_a_project() {
+        let fx = fx();
+        fs::create_dir(fx.project.path().join(".trailmark")).expect("mkdir");
+        assert_eq!(
+            find_project(fx.app.path(), fx.project.path()),
+            Some(root(&fx))
+        );
+    }
+
+    #[test]
+    fn the_setting_is_read_from_the_saved_session_and_is_off_without_one() {
+        let fx = fx();
+        assert!(!connection_is_on(fx.app.path(), &root(&fx)));
+        let mut session = SessionState::default();
+        store(&fx).save_session(&session).expect("save");
+        assert!(!connection_is_on(fx.app.path(), &root(&fx)));
+        session.agent_connection = true;
+        store(&fx).save_session(&session).expect("save");
+        assert!(connection_is_on(fx.app.path(), &root(&fx)));
+        // It follows the state into a project that keeps it in `.trailmark/`.
+        let mut moved = store(&fx);
+        moved.init_project_folder().expect("init");
+        assert!(connection_is_on(fx.app.path(), &root(&fx)));
+        fs::remove_file(
+            moved
+                .agent_path()
+                .expect("a path")
+                .with_file_name("session.json"),
+        )
+        .expect("rm");
+        assert!(!connection_is_on(fx.app.path(), &root(&fx)));
+    }
+
+    #[test]
+    fn search_builds_the_index_from_the_files_and_follows_edits() {
+        let fx = fx();
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        let hits = project.search("beacon", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "docs/plan.md");
+        assert_eq!(hits[0].heading_path, ["Plan", "Rollout"]);
+        assert_eq!(hits[0].line, 5);
+        assert!(hits[0].snippet.contains("beacon"));
+        assert!(!hits[0].snippet.contains("<mark>"), "plain text");
+        assert_eq!(project.search("nonexistentword", 10), Vec::<Hit>::new());
+
+        // A document written after the first search is found by the next one.
+        write(&fx, "docs/new.md", "# New\n\nA second beacon.\n");
+        let hits = project.search("beacon", 10);
+        assert_eq!(hits.len(), 2);
+        // And one that was deleted is gone.
+        fs::remove_file(fx.project.path().join("docs/plan.md")).expect("rm");
+        let hits = project.search("beacon", 10);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].path, "docs/new.md");
+    }
+
+    #[test]
+    fn search_respects_the_projects_ignore_rules() {
+        let fx = fx();
+        write(&fx, ".gitignore", "secret/\n");
+        write(&fx, "secret/keys.md", "# Keys\n\nthe beacon passphrase\n");
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        let paths: Vec<_> = project
+            .search("beacon", 10)
+            .into_iter()
+            .map(|h| h.path)
+            .collect();
+        assert_eq!(paths, ["docs/plan.md"]);
+    }
+
+    #[test]
+    fn the_unread_documents_come_from_the_saved_state() {
+        let fx = fx();
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        assert_eq!(project.unread().total, 0, "never looked at: the baseline");
+        // The app saved that README.md was read as it was; then both documents changed.
+        let hash = format!("{:016x}", crate::util::hash_bytes(b"old readme"));
+        let read = store(&fx).read_path();
+        fs::create_dir_all(read.parent().expect("parent")).expect("mkdir");
+        fs::write(&read, format!("{{\"README.md\": \"{hash}\"}}")).expect("write");
+        let unread = project.unread();
+        let mut paths: Vec<_> = unread.unread.iter().map(|d| d.path.as_str()).collect();
+        paths.sort_unstable();
+        assert_eq!(paths, ["README.md", "docs/plan.md"]);
+        assert_eq!(unread.total, 2);
+    }
+
+    #[test]
+    fn review_notes_are_read_and_resolved_from_the_saved_state() {
+        use crate::notes::{NewNote, NoteFilter};
+        let fx = fx();
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        assert_eq!(project.notes(NoteFilter::All).total, 0);
+        // the window wrote a note
+        let book = Notebook::new(
+            Arc::new(Vault::open(&root(&fx)).expect("vault")),
+            store(&fx).notes_path(),
+        );
+        let note = book
+            .add(NewNote {
+                path: "docs/plan.md".to_owned(),
+                quote: "Ship the beacon".to_owned(),
+                text: "Which beacon?".to_owned(),
+                heading_path: Vec::new(),
+                line: 0,
+                end_line: 0,
+            })
+            .expect("a note");
+        let open = project.notes(NoteFilter::Open);
+        assert_eq!(open.total, 1);
+        assert_eq!(open.notes[0].line, 7);
+        let resolved = project
+            .resolve_note(&note.id, Some("Named it"))
+            .expect("resolved");
+        assert!(resolved.done);
+        assert_eq!(project.notes(NoteFilter::Open).total, 0);
+        assert_eq!(project.notes(NoteFilter::Done).total, 1);
+        assert!(project.resolve_note("nope", None).is_err());
+    }
+
+    #[test]
+    fn what_is_shown_must_be_a_document_of_the_project() {
+        let fx = fx();
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        assert!(project
+            .check_open("docs/plan.md", None, Some("Rollout"))
+            .is_ok());
+        assert!(project.check_open("../x.md", None, None).is_err());
+    }
+}

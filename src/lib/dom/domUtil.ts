@@ -1,5 +1,7 @@
 // Small DOM helpers shared by the document view, the selection popover and Follow.
 
+import { parseSourcepos } from "../sourcepos";
+
 /** True while the user has text selected (Follow must not yank the page away then). */
 export function isTextSelected(): boolean {
   const selection = window.getSelection();
@@ -42,6 +44,26 @@ export function selectionIn(body: HTMLElement): SelectionInfo | null {
     section: sectionOf(selection.anchorNode ?? range.startContainer, body),
     rect: range.getBoundingClientRect(),
   };
+}
+
+/** The top-level block of the rendered document that contains `node`. */
+function blockOf(node: Node, body: HTMLElement): HTMLElement | null {
+  let el: Element | null =
+    node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  while (el && el.parentElement !== body) el = el.parentElement;
+  return el instanceof HTMLElement ? el : null;
+}
+
+/** The source lines of the blocks the selection starts and ends in; null when it is not inside blocks that know theirs. */
+export function selectionLines(body: HTMLElement): { startLine: number; endLine: number } | null {
+  const selection = window.getSelection();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+  const range = selection.getRangeAt(0);
+  const first = blockOf(range.startContainer, body);
+  const last = blockOf(range.endContainer, body);
+  const start = parseSourcepos(first?.getAttribute("data-sourcepos"));
+  const end = parseSourcepos(last?.getAttribute("data-sourcepos"));
+  return start && end ? { startLine: start.startLine, endLine: end.endLine } : null;
 }
 
 /** Finds an element by id inside `root` without colliding with the app's own ids. */

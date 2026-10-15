@@ -6,12 +6,14 @@
 //! [`fileops`] (rename, move, delete and new folders with the links kept working), [`external_editor`] (the command that
 //! opens a file in the person's editor).
 //! [`refs`] knows which images the documents use (for the Explorer filter); [`unread`] knows which documents
-//! changed since they were last read.
+//! changed since they were last read; [`notes`] keeps the review notes a person leaves on passages.
 //! [`shell_integration`] adds "Open with TrailMark" to the file manager (Windows); [`open_request`] receives what the
 //! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
+//! [`bridge`] is the agent connection: `trailmark mcp` runs without a window and speaks the Model Context Protocol.
 
+mod bridge;
 mod commands;
 mod edit;
 mod error;
@@ -21,6 +23,7 @@ mod git;
 mod links;
 mod meta;
 mod nav;
+mod notes;
 mod open_request;
 mod refs;
 mod render;
@@ -47,14 +50,22 @@ fn navigation_guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
         .build()
 }
 
-/// Builds and runs the Tauri application.
+/// Builds and runs the Tauri application. Started as `trailmark mcp` or `trailmark context`, it instead runs that command
+/// without a window (see [`bridge`]): `mcp` serves MCP over standard input and output until the input closes, `context`
+/// prints what the person is looking at and exits.
 ///
 /// # Panics
 ///
 /// Panics if the Tauri runtime fails to start.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// The app's command list is one expression, and it grows with the app.
+#[allow(clippy::too_many_lines)]
 pub fn run() {
     let context = tauri::generate_context!();
+    if let Some(command) = bridge::subcommand(std::env::args_os()) {
+        // The app's identifier names its data folder, where the project's saved settings are.
+        std::process::exit(bridge::cli::run(command, &context.config().identifier));
+    }
     let dev_url = if cfg!(debug_assertions) {
         context.config().build.dev_url.clone()
     } else {
@@ -134,6 +145,14 @@ pub fn run() {
             commands::mark_unread,
             commands::mark_all_read,
             commands::mark_folder_read,
+            commands::set_agent_connection,
+            commands::agent_status,
+            commands::publish_agent_context,
+            commands::take_agent_open,
+            commands::add_note,
+            commands::list_notes,
+            commands::set_note_done,
+            commands::delete_note,
         ])
         .build(context)
         .expect("error while building tauri application");
