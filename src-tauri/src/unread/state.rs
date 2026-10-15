@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::render::markdown::is_markdown_path;
-use crate::vault::key;
+use crate::vault::{key, WORKTREE_PREFIX};
 
 /// Whether the file name says Markdown: the only documents that are tracked.
 pub fn is_tracked(path: &str) -> bool {
@@ -50,6 +50,16 @@ pub struct Tracker {
     forced: BTreeSet<String>,
     /// Set while a look at the disk is under way.
     scan: Option<ScanLog>,
+}
+
+/// The linked worktree a path is in, as a key (`@wt/<name>`).
+fn worktree_of(path: &str) -> Option<String> {
+    let name = path
+        .strip_prefix(WORKTREE_PREFIX)?
+        .split('/')
+        .next()
+        .filter(|name| !name.is_empty())?;
+    Some(key(&format!("{WORKTREE_PREFIX}{name}")))
 }
 
 /// The folder part of a key, ready to be a prefix of the keys below it.
@@ -137,13 +147,16 @@ impl Tracker {
 
     /// Every Markdown document of the project, as the disk shows them (`files` are paths with hashes). A
     /// document that is not in the list is gone and is forgotten, unless the app made it since
-    /// [`Tracker::begin_scan`]. With no read state yet, everything that is there counts as read. Returns whether
-    /// `read.json` has to be written.
+    /// [`Tracker::begin_scan`]. With no read state yet, everything that is there counts as read, and so do the
+    /// documents of a linked worktree the project did not have before (agents create worktrees all the time: it
+    /// would be a flood of dots). Returns whether `read.json` has to be written.
     pub fn scanned(&mut self, files: Vec<(String, u64)>) -> bool {
         let before = self.saved();
         let baseline = std::mem::take(&mut self.baseline_pending);
         let forced = std::mem::take(&mut self.forced);
         let log = self.scan.take().unwrap_or_default();
+        let known_worktrees: BTreeSet<String> =
+            self.docs.keys().filter_map(|k| worktree_of(k)).collect();
         let mut docs = BTreeMap::new();
         for (path, hash) in files {
             let k = key(&path);
@@ -164,9 +177,10 @@ impl Tracker {
                 current: None,
                 read: None,
             });
+            let new_worktree = worktree_of(&path).is_some_and(|w| !known_worktrees.contains(&w));
             doc.path = path;
             doc.current = Some(hash);
-            if baseline && doc.read.is_none() && !forced.contains(&k) {
+            if (baseline || new_worktree) && doc.read.is_none() && !forced.contains(&k) {
                 doc.read = Some(hash);
             }
             docs.insert(k, doc);
@@ -612,6 +626,77 @@ mod tests {
         let mut t = Tracker::new(Some(saved(&[("docs/a.md", 1)])));
         t.scanned(files(&[("docs/a.md", 1)]));
         assert_eq!(t.saved(), saved(&[("docs/a.md", 1)]));
+    }
+
+    // ---- linked worktrees ----
+
+    #[test]
+    fn a_worktree_that_appears_after_the_baseline_starts_read() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        let wrote = t.scanned(files(&[
+            ("a.md", 1),
+            ("@wt/feature/docs/x.md", 5),
+            ("@wt/feature/y.md", 6),
+        ]));
+        assert!(wrote, "what starts read is saved");
+        assert_eq!(t.unread(), NOTHING);
+        assert_eq!(
+            t.saved(),
+            saved(&[
+                ("a.md", 1),
+                ("@wt/feature/docs/x.md", 5),
+                ("@wt/feature/y.md", 6)
+            ])
+        );
+    }
+
+    #[test]
+    fn a_new_document_in_a_worktree_the_project_knows_is_unread() {
+        let mut t = Tracker::new(Some(saved(&[("@wt/feature/x.md", 5)])));
+        t.scanned(files(&[("@wt/feature/x.md", 5), ("@wt/feature/new.md", 6)]));
+        assert_eq!(t.unread(), ["@wt/feature/new.md"]);
+        // and a document that changed there is unread as anywhere
+        let mut t = Tracker::new(Some(saved(&[("@wt/feature/x.md", 5)])));
+        t.scanned(files(&[("@wt/feature/x.md", 55)]));
+        assert_eq!(t.unread(), ["@wt/feature/x.md"]);
+    }
+
+    #[test]
+    fn a_worktree_whose_documents_are_all_unread_is_still_a_known_one() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        t.scanned(files(&[("a.md", 1), ("@wt/feature/x.md", 5)]));
+        t.mark_unread("@wt/feature/x.md");
+        assert_eq!(t.unread(), ["@wt/feature/x.md"]);
+        // another look at the disk finds more there: they are news
+        t.scanned(files(&[
+            ("a.md", 1),
+            ("@wt/feature/x.md", 5),
+            ("@wt/feature/z.md", 7),
+        ]));
+        assert_eq!(t.unread(), ["@wt/feature/x.md", "@wt/feature/z.md"]);
+    }
+
+    #[test]
+    fn only_a_worktree_is_a_fresh_start_not_any_new_folder() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        t.scanned(files(&[
+            ("a.md", 1),
+            ("docs/new/z.md", 7),
+            ("@wt/feature/x.md", 5),
+        ]));
+        assert_eq!(t.unread(), ["docs/new/z.md"]);
+    }
+
+    #[test]
+    fn two_new_worktrees_are_each_a_fresh_start() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        t.scanned(files(&[
+            ("a.md", 1),
+            ("@wt/one/x.md", 5),
+            ("@wt/two/x.md", 6),
+        ]));
+        assert_eq!(t.unread(), NOTHING);
+        assert_eq!(t.saved().len(), 3);
     }
 
     // ---- what the app does while the disk is being walked ----
