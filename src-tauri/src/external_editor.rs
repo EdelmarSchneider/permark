@@ -29,6 +29,18 @@ pub enum TemplateProblem {
     PlaceholderInProgram,
 }
 
+impl TemplateProblem {
+    /// A stable code the UI words itself (the text above is English, for logs).
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::MissingProgram => "missingProgram",
+            Self::UnclosedQuote => "unclosedQuote",
+            Self::UnknownPlaceholder(_) => "unknownPlaceholder",
+            Self::PlaceholderInProgram => "placeholderInProgram",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EditorError {
     #[error("the editor command is not valid: {0}")]
@@ -48,7 +60,7 @@ impl EditorError {
     /// A stable code the UI words itself.
     pub fn reason(&self) -> &'static str {
         match self {
-            Self::Template(_) => "template",
+            Self::Template(problem) => problem.code(),
             Self::NotFound { .. } => "notFound",
             Self::Spawn {
                 bad_arguments: true,
@@ -58,20 +70,20 @@ impl EditorError {
         }
     }
 
-    /// The program that could not be run, when the error is about one.
-    pub fn program(&self) -> Option<&str> {
+    /// What the error is about: the program that could not be run, or the placeholder the command does not know.
+    pub fn subject(&self) -> Option<&str> {
         match self {
             Self::NotFound { program } | Self::Spawn { program, .. } => Some(program),
+            Self::Template(TemplateProblem::UnknownPlaceholder(name)) => Some(name),
             Self::Template(_) => None,
         }
     }
 
-    /// Diagnostic text the UI shows as it is.
+    /// Diagnostic text from the system, which the UI shows as it is.
     pub fn detail(&self) -> Option<String> {
         match self {
-            Self::Template(problem) => Some(problem.to_string()),
             Self::Spawn { detail, .. } => Some(detail.clone()),
-            Self::NotFound { .. } => None,
+            Self::Template(_) | Self::NotFound { .. } => None,
         }
     }
 }
@@ -778,7 +790,7 @@ mod tests {
             }
         );
         assert_eq!(error.reason(), "notFound");
-        assert_eq!(error.program(), Some("no-such-editor"));
+        assert_eq!(error.subject(), Some("no-such-editor"));
         assert_eq!(error.to_string(), "can't run 'no-such-editor': not found");
     }
 
@@ -1108,20 +1120,31 @@ mod tests {
 
     #[test]
     fn errors_carry_what_the_ui_needs_to_word_them() {
-        let template = EditorError::Template(TemplateProblem::UnknownPlaceholder("x".into()));
-        assert_eq!(template.reason(), "template");
-        assert_eq!(template.program(), None);
-        assert_eq!(
-            template.detail().as_deref(),
-            Some("unknown placeholder {x}")
-        );
+        // what is wrong with a command travels as a code, not as English
+        let unknown = EditorError::Template(TemplateProblem::UnknownPlaceholder("x".into()));
+        assert_eq!(unknown.reason(), "unknownPlaceholder");
+        assert_eq!(unknown.subject(), Some("x"));
+        assert_eq!(unknown.detail(), None);
+        for (problem, code) in [
+            (TemplateProblem::MissingProgram, "missingProgram"),
+            (TemplateProblem::UnclosedQuote, "unclosedQuote"),
+            (
+                TemplateProblem::PlaceholderInProgram,
+                "placeholderInProgram",
+            ),
+        ] {
+            let error = EditorError::Template(problem);
+            assert_eq!(error.reason(), code);
+            assert_eq!(error.subject(), None);
+            assert_eq!(error.detail(), None);
+        }
         let spawn = EditorError::Spawn {
             program: "ed".into(),
             bad_arguments: false,
             detail: "boom".into(),
         };
         assert_eq!(spawn.reason(), "spawn");
-        assert_eq!(spawn.program(), Some("ed"));
+        assert_eq!(spawn.subject(), Some("ed"));
         assert_eq!(spawn.detail().as_deref(), Some("boom"));
     }
 }

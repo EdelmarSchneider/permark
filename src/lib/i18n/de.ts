@@ -554,6 +554,10 @@ export const de = {
     "„{subject}“ konnte nicht ausgeführt werden: {detail}. In den Einstellungen den Editor-Befehl festlegen.",
   "error.editorTemplate":
     "Der Editor-Befehl ist ungültig: {detail}. In den Einstellungen den Editor-Befehl festlegen.",
+  "error.editorProblemMissingProgram": "das Programm fehlt",
+  "error.editorProblemUnclosedQuote": "ein Anführungszeichen ist nicht geschlossen",
+  "error.editorProblemUnknownPlaceholder": "unbekannter Platzhalter {subject}",
+  "error.editorProblemPlaceholderInProgram": "das Programm kann kein Platzhalter sein",
   "settings.editor": "Externer Editor",
   "settings.editorCommand": "Befehl",
   "settings.editorPlaceholder": "Die Standard-App des Systems",

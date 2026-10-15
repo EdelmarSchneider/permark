@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { errorKind, errorMessage, errorText, noteText } from "./errors";
+import { editorProblem, errorKind, errorMessage, errorText, noteText } from "./errors";
 import { language, LOCALES } from "./i18n";
 
 describe("errorText", () => {
@@ -125,23 +125,54 @@ describe("errorMessage", () => {
       errorMessage({ kind: "editor", reason: "badArguments", subject: "x.cmd", message: "r" }),
     ).toContain("can't take this file path");
     expect(
-      errorMessage({
-        kind: "editor",
-        reason: "template",
-        detail: "unknown placeholder {file}",
-        message: "r",
-      }),
+      errorMessage({ kind: "editor", reason: "unknownPlaceholder", subject: "file", message: "r" }),
     ).toBe(
       "The editor command isn't valid: unknown placeholder {file}. Set the editor command in Settings.",
     );
+    expect(errorMessage({ kind: "editor", reason: "unclosedQuote", message: "r" })).toBe(
+      "The editor command isn't valid: a quote is not closed. Set the editor command in Settings.",
+    );
+  });
+
+  it("words what is wrong with an editor command on its own, for the field that shows it", () => {
+    expect(editorProblem({ kind: "editor", reason: "missingProgram", message: "r" })).toBe(
+      "the program is missing",
+    );
+    expect(
+      editorProblem({ kind: "editor", reason: "unknownPlaceholder", subject: "x", message: "r" }),
+    ).toBe("unknown placeholder {x}");
+    expect(editorProblem({ kind: "editor", reason: "placeholderInProgram", message: "r" })).toBe(
+      "the program can't be a placeholder",
+    );
+    // a command that could not be run is not a problem with its text
+    expect(editorProblem({ kind: "editor", reason: "notFound", subject: "code" })).toBeNull();
+    expect(editorProblem({ kind: "io", reason: "unclosedQuote" })).toBeNull();
+    expect(editorProblem("boom")).toBeNull();
   });
 
   it("words an editor error in every language, and keeps the backend's text for a reason it does not know", () => {
     for (const locale of LOCALES) {
       language.preference = locale;
-      for (const reason of ["notFound", "badArguments", "spawn", "template"]) {
+      const reasons = ["notFound", "badArguments", "spawn"];
+      const problems = [
+        "missingProgram",
+        "unclosedQuote",
+        "unknownPlaceholder",
+        "placeholderInProgram",
+      ];
+      for (const reason of [...reasons, ...problems]) {
         const error = { kind: "editor", reason, subject: "S", detail: "D", message: "RAW" };
         expect(errorMessage(error), `${locale} ${reason}`).not.toBe("RAW");
+      }
+      // the words of a problem are the language's own, not the backend's English
+      if (locale !== "en") {
+        for (const reason of problems) {
+          const error = { kind: "editor", reason, subject: "S", message: "RAW" };
+          language.preference = "en";
+          const english = editorProblem(error);
+          language.preference = locale;
+          expect(editorProblem(error), `${locale} ${reason}`).not.toBe(english);
+        }
       }
     }
     language.preference = "en";
