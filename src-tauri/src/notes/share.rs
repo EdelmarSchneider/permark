@@ -84,7 +84,7 @@ fn shared_file(root: &Path, data: &NotesData, name: &str) -> Option<PathBuf> {
 
 /// The shared notes that are there, the newest first.
 pub fn list_shared(root: &Path) -> Vec<SharedNote> {
-    let data = NotesData::load(root);
+    let data = NotesData::read(root);
     let mut notes: Vec<SharedNote> = data
         .shared
         .iter()
@@ -109,7 +109,7 @@ pub fn list_shared(root: &Path) -> Vec<SharedNote> {
 
 /// The text of a shared note. A note that is not shared is [`ShareError::NotShared`], whatever else is true of it.
 pub fn read_shared(root: &Path, name: &str) -> Result<SharedText, ShareError> {
-    let data = NotesData::load(root);
+    let data = NotesData::read(root);
     let path = shared_file(root, &data, name).ok_or(ShareError::NotShared)?;
     let meta = std::fs::metadata(&path).map_err(|_| ShareError::NotShared)?;
     if meta.len() > MAX_SHARED_BYTES {

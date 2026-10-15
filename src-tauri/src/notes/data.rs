@@ -17,6 +17,8 @@ use crate::util::write_atomic;
 /// The folder next to the notes where TrailMark keeps its own data. The notes' watcher and index ignore it.
 pub(crate) const STATE_DIR: &str = ".trailmark";
 const FILE_NAME: &str = "notes.json";
+/// Where a `notes.json` that cannot be read is kept before it is replaced.
+const BACKUP_NAME: &str = "notes.json.bak";
 const VERSION: u32 = 1;
 
 /// The modes a note can be shown in.
@@ -80,6 +82,33 @@ pub(crate) struct NotesData {
     pub loose: Vec<LooseFile>,
     /// The notes the person shared with agents, by file name. Only these can be listed and read through an agent connection.
     pub shared: Vec<String>,
+    /// The file was written by a newer version of TrailMark. It is read for what this version understands and never written
+    /// over, so going back to an older version does not strip what the newer one keeps in it.
+    #[serde(skip)]
+    pub(crate) newer: bool,
+}
+
+/// How a `notes.json` that exists reads.
+enum Health {
+    Sound,
+    /// Not a JSON object: it cannot be used, and saving would replace it.
+    Damaged,
+    /// Written by a newer version.
+    Newer,
+}
+
+fn health(bytes: &[u8]) -> Health {
+    match serde_json::from_slice::<Value>(bytes) {
+        Ok(Value::Object(root)) => {
+            let version = root.get("version").and_then(Value::as_u64);
+            if version.is_some_and(|v| v > u64::from(VERSION)) {
+                Health::Newer
+            } else {
+                Health::Sound
+            }
+        }
+        _ => Health::Damaged,
+    }
 }
 
 /// Reads one field of the file, leniently: a value of the wrong shape reads as the default.
@@ -168,6 +197,7 @@ impl NotesData {
             cache: entries(&root, "cache"),
             loose: loose_files(&root),
             shared: shared_names(&root),
+            newer: matches!(health(bytes), Health::Newer),
         }
     }
 
@@ -176,14 +206,31 @@ impl NotesData {
         root.join(STATE_DIR).join(FILE_NAME)
     }
 
-    /// The data kept in the notes folder `root` (the defaults when there is none or it cannot be read).
-    pub(crate) fn load(root: &Path) -> Self {
+    /// The data kept in the notes folder `root`, read and nothing else (the defaults when there is none or it cannot be read).
+    /// What reads the notes for an agent uses this: it changes nothing in the folder.
+    pub(crate) fn read(root: &Path) -> Self {
         std::fs::read(Self::path(root))
             .map_or_else(|_| Self::default(), |bytes| Self::parse(&bytes))
     }
 
-    /// Writes the data to the notes folder `root`.
+    /// [`NotesData::read`] for the program that keeps the data. A file that is damaged is copied to `notes.json.bak` first: the
+    /// next save replaces it, and what it held may still be wanted.
+    pub(crate) fn load(root: &Path) -> Self {
+        let path = Self::path(root);
+        let Ok(bytes) = std::fs::read(&path) else {
+            return Self::default();
+        };
+        if !bytes.iter().all(u8::is_ascii_whitespace) && matches!(health(&bytes), Health::Damaged) {
+            let _ = std::fs::write(path.with_file_name(BACKUP_NAME), &bytes);
+        }
+        Self::parse(&bytes)
+    }
+
+    /// Writes the data to the notes folder `root` (not over a file that a newer version wrote).
     pub(crate) fn save(&self, root: &Path) -> io::Result<()> {
+        if self.newer {
+            return Ok(());
+        }
         let mut data = self.clone();
         data.version = VERSION;
         let bytes = serde_json::to_vec_pretty(&data).map_err(io::Error::other)?;
@@ -330,6 +377,57 @@ mod tests {
         }
         sample().save(dir.path()).expect("save");
         assert_eq!(NotesData::load(dir.path()).pins, ["b.md", "a.md"]);
+    }
+
+    #[test]
+    fn a_damaged_file_is_kept_as_a_copy_before_the_next_save_replaces_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = NotesData::path(dir.path());
+        let backup = path.with_file_name("notes.json.bak");
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&path, "{\"pins\": [\"a.md\", ").expect("write");
+        assert_eq!(NotesData::load(dir.path()), NotesData::default());
+        assert_eq!(
+            std::fs::read(&backup).expect("a copy"),
+            b"{\"pins\": [\"a.md\", "
+        );
+        // the next save replaces the file and leaves the copy alone
+        sample().save(dir.path()).expect("save");
+        assert_eq!(NotesData::load(dir.path()).pins, ["b.md", "a.md"]);
+        assert_eq!(
+            std::fs::read(&backup).expect("still there"),
+            b"{\"pins\": [\"a.md\", "
+        );
+        // a file with nothing in it has nothing worth a copy
+        std::fs::remove_file(&backup).expect("rm");
+        std::fs::write(&path, "  \n").expect("write");
+        assert_eq!(NotesData::load(dir.path()), NotesData::default());
+        assert!(!backup.exists());
+    }
+
+    #[test]
+    fn a_file_from_a_newer_version_is_read_and_never_written_over() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = NotesData::path(dir.path());
+        std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+        let newer = br#"{"version": 2, "pins": ["a.md"], "folders": {"work": ["a.md"]}}"#;
+        std::fs::write(&path, newer).expect("write");
+        let mut data = NotesData::load(dir.path());
+        assert_eq!(data.pins, ["a.md"], "what this version understands is used");
+        data.pins.push("b.md".to_owned());
+        data.save(dir.path()).expect("saving is not an error");
+        assert_eq!(
+            std::fs::read(&path).expect("read"),
+            newer,
+            "the newer version's file is as it was"
+        );
+        assert!(!path.with_file_name("notes.json.bak").exists());
+        // and the version this one writes is written over its own
+        std::fs::write(&path, br#"{"version": 1, "pins": ["a.md"]}"#).expect("write");
+        let mut own = NotesData::load(dir.path());
+        own.pins.push("c.md".to_owned());
+        own.save(dir.path()).expect("save");
+        assert_eq!(NotesData::load(dir.path()).pins, ["a.md", "c.md"]);
     }
 
     #[test]
