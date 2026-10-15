@@ -199,7 +199,7 @@ impl AppError {
             Self::Shell(ShellError::Registry(source)) => Details::detail(&source.to_string()),
             Self::Shell(ShellError::Unsupported) => Details::default(),
             Self::Editor(e) => Details {
-                subject: e.program().map(str::to_owned),
+                subject: e.subject().map(str::to_owned),
                 detail: e.detail(),
                 reason: Some(e.reason().to_owned()),
             },
@@ -343,9 +343,15 @@ mod tests {
             crate::external_editor::TemplateProblem::UnclosedQuote,
         ));
         let value = json(&e);
-        assert_eq!(value["reason"], "template");
-        assert_eq!(value["detail"], "a quote is not closed");
+        assert_eq!(value["reason"], "unclosedQuote");
+        assert!(value.get("detail").is_none(), "the UI words it");
         assert!(value.get("subject").is_none());
+        let e = AppError::from(EditorError::Template(
+            crate::external_editor::TemplateProblem::UnknownPlaceholder("file".to_owned()),
+        ));
+        let value = json(&e);
+        assert_eq!(value["reason"], "unknownPlaceholder");
+        assert_eq!(value["subject"], "file");
     }
 
     #[test]

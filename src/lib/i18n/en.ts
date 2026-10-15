@@ -575,6 +575,10 @@ export const en = {
   "error.editorSpawn": "Couldn't run '{subject}': {detail}. Set the editor command in Settings.",
   "error.editorTemplate":
     "The editor command isn't valid: {detail}. Set the editor command in Settings.",
+  "error.editorProblemMissingProgram": "the program is missing",
+  "error.editorProblemUnclosedQuote": "a quote is not closed",
+  "error.editorProblemUnknownPlaceholder": "unknown placeholder {subject}",
+  "error.editorProblemPlaceholderInProgram": "the program can't be a placeholder",
   "settings.editor": "External editor",
   "settings.editorCommand": "Command",
   "settings.editorPlaceholder": "The system's default app",

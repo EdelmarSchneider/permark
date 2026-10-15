@@ -169,8 +169,8 @@ export const mockImpl: Api = {
       if (!["path", "line", "col"].includes(match[1])) {
         throw {
           kind: "editor",
-          reason: "template",
-          detail: `unknown placeholder {${match[1]}}`,
+          reason: "unknownPlaceholder",
+          subject: match[1],
           message: `the editor command is not valid: unknown placeholder {${match[1]}}`,
         };
       }
@@ -178,8 +178,7 @@ export const mockImpl: Api = {
     if ((command.match(/"/g)?.length ?? 0) % 2 === 1) {
       throw {
         kind: "editor",
-        reason: "template",
-        detail: "a quote is not closed",
+        reason: "unclosedQuote",
         message: "the editor command is not valid: a quote is not closed",
       };
     }

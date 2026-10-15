@@ -58,6 +58,15 @@ describe("descriptionMatch", () => {
   });
 });
 
+describe("searchFiles with several words", () => {
+  it("finds a file whose path has every word, in any order", () => {
+    for (const text of ["live feed", "feed live", "specs feed", "feed md"]) {
+      expect(paths(searchFiles(input({ text }))), text).toContain("docs/specs/live-feed.md");
+    }
+    expect(paths(searchFiles(input({ text: "live zebra" })))).toEqual([]);
+  });
+});
+
 describe("searchFiles", () => {
   it("ranks by name like Quick open always did", () => {
     const found = searchFiles(input({ text: "watch" }));

@@ -3,15 +3,17 @@
 // quote) is not kept; the last good one stays in force and the field says why.
 
 import { api } from "../api";
-import { errorText } from "../errors";
+import { editorProblem, errorText } from "../errors";
 import { t } from "../i18n";
 import { commandOf, presetOf, type EditorPresetId } from "../externalEditor";
 
 /** The command is kept this long after the last keystroke. */
 const SAVE_DELAY_MS = 400;
 
-/** The diagnostic the backend attaches to an error (what is wrong with the command), else its message. */
+/** What is wrong with the command, in the language of the interface; else the diagnostic the backend attaches, else its message. */
 function detailOf(error: unknown): string {
+  const problem = editorProblem(error);
+  if (problem !== null) return problem;
   if (error && typeof error === "object") {
     const detail = (error as Record<string, unknown>).detail;
     if (typeof detail === "string" && detail !== "") return detail;

@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -211,6 +212,22 @@ const EXTERNAL_EXTENSIONS: &[&str] = &[
     "conf", "html", "htm", "css", "svg", "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico",
     "pdf",
 ];
+
+/// Whether a file without an extension is a program: on macOS and Linux one with an execute bit (a script such as
+/// `gradlew`, a binary) is run, in a terminal, when the system "opens" it. Windows decides by the extension alone.
+#[cfg(unix)]
+fn is_program_without_extension(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
+}
+
+#[cfg(not(unix))]
+fn is_program_without_extension(_path: &Path) -> bool {
+    false
+}
+
+/// How long a closing window waits for the unread markers' file to be written (see [`Workspace::save_last_visit`]).
+const CLOSE_WAIT: Duration = Duration::from_millis(500);
 
 pub struct Workspace {
     vault: Arc<Vault>,
@@ -778,22 +795,24 @@ impl Workspace {
 
     /// The file to hand to the system's default application for "Open externally".
     ///
-    /// The path must stay inside the folder, name an existing file, and be a document or an image:
-    /// a program or script in the folder is never started from here.
+    /// The path must stay inside the folder, name an existing file, and be a document or an image (or a plain file
+    /// without an extension): a program or script in the folder is never started from here, and neither is a file
+    /// without an extension that the system would run (see [`is_program_without_extension`]).
     pub fn external_target(&self, path: &str) -> Result<PathBuf, AppError> {
         let resolved = self.vault.resolve(path)?;
         if !resolved.abs.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
-        let allowed = resolved.abs.extension().is_none_or(|e| {
-            let e = e.to_string_lossy().to_ascii_lowercase();
-            EXTERNAL_EXTENSIONS.contains(&e.as_str())
-        });
+        let allowed = resolved.abs.extension().map_or_else(
+            // No extension: a plain file (`LICENSE`, `Makefile`) is a document, a program is not.
+            || !is_program_without_extension(&resolved.abs),
+            |e| {
+                let e = e.to_string_lossy().to_ascii_lowercase();
+                EXTERNAL_EXTENSIONS.contains(&e.as_str())
+            },
+        );
         if !allowed {
-            return Err(VaultError::Invalid(format!(
-                "{path} is not a document or an image, so it is not opened from here"
-            ))
-            .into());
+            return Err(VaultError::Invalid(path.to_owned()).into());
         }
         Ok(resolved.abs)
     }
@@ -1093,9 +1112,8 @@ impl Workspace {
             .collect()
     }
 
-    /// Remembers "now", the current HEAD and the uncommitted files as the last visit (called on
-    /// close and on exit).
-    pub fn save_last_visit(&self) {
+    /// Remembers "now", the current HEAD and the uncommitted files as the last visit.
+    fn record_visit(&self) {
         let oid = self.git_ctx.as_ref().and_then(git::read_head_oid);
         let visit = LastVisit {
             time_ms: now_ms(),
@@ -1105,8 +1123,14 @@ impl Workspace {
         if let Ok(store) = self.store.lock() {
             let _ = store.save_last_visit(&visit);
         }
-        // The window may close before the unread markers' write has settled.
-        self.unread.flush();
+    }
+
+    /// Remembers the last visit when the window closes. The unread markers' file is written too, if it can be
+    /// soon: the thread that keeps it may be in the middle of a look at a big project, and a closing window must
+    /// not wait for that. What is not written then is written when the workspace is closed on exit.
+    pub fn save_last_visit(&self) {
+        self.record_visit();
+        self.unread.flush_within(CLOSE_WAIT);
     }
 
     /// Saves the last visit and stops every background task. Safe to call more than once.
@@ -1116,7 +1140,9 @@ impl Workspace {
         }
         // Agents are let go first, and the socket is free for the next window of this folder.
         self.agent.shutdown();
-        self.save_last_visit();
+        // No flush of the unread markers here: stopping them writes the file, and sets the flag that cuts a
+        // look at the disk short, which a flush queued behind it would not.
+        self.record_visit();
         // The watcher goes first: what it reports last (a rename that moves tags) is still written.
         if let Ok(mut w) = self.watcher.lock() {
             if let Some(w) = w.take() {
@@ -1971,7 +1997,10 @@ deepword
             ws.file_meta("a.md")
                 .is_ok_and(|m| m.description == "edited" && m.tags.len() == 1)
         });
-        assert!(fx.rec.meta.load(Ordering::SeqCst) > told);
+        // the UI is told after the edit is read in, not at the same moment
+        wait_until("the UI to be told", || {
+            fx.rec.meta.load(Ordering::SeqCst) > told
+        });
         wait_until("the edit in the feed", || {
             fs_paths(&fx.rec).iter().any(|p| p.ends_with("meta.toml"))
         });
@@ -2024,6 +2053,9 @@ tags = [\"team\"]
         let fx = Fx::new();
         write(fx.project.path(), "old.md", "# Same content\n");
         let ws = fx.open();
+        // The index build gives the watcher its first look at every file. A rename made before it is done can be
+        // swallowed (the build sees the new name already and the watcher takes it for known), so the test waits.
+        fx.indexed();
         ws.set_file_tags("old.md", &["keep".to_owned()])
             .expect("tags");
         std::fs::rename(
@@ -2219,6 +2251,7 @@ exclude = [\"archive/**\"]
         write(fx.project.path(), "docs/extra/api.md", "# API\n");
         let ws = fx.open();
         ws.unread.flush();
+        fx.indexed();
         ws.mark_unread("docs/extra/api.md").expect("mark");
 
         let rename = [Move {
@@ -2260,7 +2293,7 @@ exclude = [\"archive/**\"]
     }
 
     #[test]
-    fn the_read_state_moves_into_the_project_when_it_is_initialized() {
+    fn the_read_state_is_written_into_the_project_when_it_is_initialized() {
         let fx = Fx::new();
         write(fx.project.path(), "a.md", "# A\n");
         let ws = fx.open();
@@ -2269,6 +2302,8 @@ exclude = [\"archive/**\"]
         assert!(before.starts_with(fx.app.path()) && before.is_file());
 
         ws.init_project_folder().expect("init");
+        // like the session, the last visit and the window, it is copied: the app's data folder keeps its file
+        assert!(before.is_file());
         ws.mark_unread("a.md").expect("mark");
         ws.unread.flush();
         let local = fx.project.path().join(".trailmark/local/read.json");
@@ -2645,6 +2680,15 @@ exclude = [\"archive/**\"]
             ws.external_target("run.exe").expect_err("exe").kind(),
             "invalidPath"
         );
+        // what the UI words the refusal with is the file, not an English sentence
+        assert_eq!(
+            ws.external_target("run.exe")
+                .expect_err("exe")
+                .details()
+                .subject
+                .as_deref(),
+            Some("run.exe")
+        );
 
         // An editor command opens any file of the folder, but still only files of the folder.
         for ok in ["a.md", "main.py", "run.exe", "Makefile", "script.ps1"] {
@@ -2671,6 +2715,61 @@ exclude = [\"archive/**\"]
         assert!(ws.reveal_target("run.exe").is_ok());
         assert!(ws.reveal_target("../outside.md").is_err());
         assert!(ws.reveal_target("missing.md").is_err());
+        ws.close();
+    }
+
+    /// macOS opens an executable without an extension in Terminal and runs it: a cloned repository's `gradlew` or
+    /// `bin/setup` must not be started by "Open in external editor" with no editor command.
+    #[cfg(unix)]
+    #[test]
+    fn a_program_without_an_extension_is_not_handed_to_the_system() {
+        use std::os::unix::fs::PermissionsExt;
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "gradlew",
+            "#!/bin/sh
+",
+        );
+        write(
+            fx.project.path(),
+            "bin/setup",
+            "#!/bin/sh
+",
+        );
+        write(
+            fx.project.path(),
+            "LICENSE",
+            "text
+",
+        );
+        write(
+            fx.project.path(),
+            "script.sh",
+            "#!/bin/sh
+",
+        );
+        let chmod = |rel: &str, mode: u32| {
+            std::fs::set_permissions(
+                fx.project.path().join(rel),
+                std::fs::Permissions::from_mode(mode),
+            )
+            .expect("chmod");
+        };
+        chmod("gradlew", 0o755);
+        chmod("bin/setup", 0o700);
+        chmod("LICENSE", 0o644);
+        chmod("script.sh", 0o755);
+        let ws = fx.open();
+
+        for bad in ["gradlew", "bin/setup", "script.sh"] {
+            let error = ws.external_target(bad).expect_err(bad);
+            assert_eq!(error.kind(), "invalidPath", "{bad}");
+            assert_eq!(error.details().subject.as_deref(), Some(bad));
+        }
+        assert!(ws.external_target("LICENSE").expect("plain file").is_file());
+        // the person's own editor command takes any file as an argument
+        assert!(ws.editor_target("gradlew").is_ok());
         ws.close();
     }
 
@@ -2761,10 +2860,7 @@ exclude = [\"archive/**\"]
         );
         // A change in the old folder is not reported any more; one in the new folder is.
         write(fx.a.path(), "late-a.md", "x");
-        write(fx.b.path(), "late-b.md", "x");
-        wait_until("B reports its change", || {
-            fs_paths(&fx.rec).contains(&"late-b.md".to_owned())
-        });
+        write_until_reported(&fx.rec, fx.b.path(), "late-b.md", "B reports its change");
         assert!(!fs_paths(&fx.rec).contains(&"late-a.md".to_owned()));
         fx.host.shutdown();
     }
@@ -2831,10 +2927,7 @@ exclude = [\"archive/**\"]
 
         assert_eq!(fx.current_root(), root_of(&fx.b), "the last request wins");
         // The folder on screen keeps receiving its events (it used to be muted for good).
-        write(fx.b.path(), "later.md", "x");
-        wait_until("B reports its change", || {
-            fs_paths(&fx.rec).contains(&"later.md".to_owned())
-        });
+        write_until_reported(&fx.rec, fx.b.path(), "later.md", "B reports its change");
         fx.host.shutdown();
     }
 

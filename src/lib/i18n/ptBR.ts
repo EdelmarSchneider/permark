@@ -588,6 +588,10 @@ export const ptBR = {
     "Não foi possível executar '{subject}': {detail}. Defina o comando do editor em Configurações.",
   "error.editorTemplate":
     "O comando do editor não é válido: {detail}. Defina o comando do editor em Configurações.",
+  "error.editorProblemMissingProgram": "o programa está faltando",
+  "error.editorProblemUnclosedQuote": "uma aspa não foi fechada",
+  "error.editorProblemUnknownPlaceholder": "marcador desconhecido {subject}",
+  "error.editorProblemPlaceholderInProgram": "o programa não pode ser um marcador",
   "settings.editor": "Editor externo",
   "settings.editorCommand": "Comando",
   "settings.editorPlaceholder": "O app padrão do sistema",

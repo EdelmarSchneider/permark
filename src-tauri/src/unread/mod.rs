@@ -244,10 +244,21 @@ impl Worker {
 
     /// Reads every document and hands the answer to the tracker. Returns whether `read.json` is behind.
     fn scan(&mut self) -> bool {
+        match self.walk() {
+            Some(found) => self.settle(found),
+            None => false,
+        }
+    }
+
+    /// Hashes every document of the project: the tracker is told first, so that what the app changes while the
+    /// walk is under way (it takes a while on a big project) is not undone by its answer. `None` when the service
+    /// was stopped midway.
+    fn walk(&mut self) -> Option<Vec<(String, u64)>> {
+        lock(&self.shared.inner).tracker.begin_scan();
         let mut found = Vec::new();
         for item in self.documents() {
             if self.stop.load(Ordering::Relaxed) {
-                return false;
+                return None;
             }
             let Ok(meta) = std::fs::metadata(&item.abs) else {
                 continue;
@@ -269,6 +280,11 @@ impl Worker {
         }
         let present: HashSet<String> = found.iter().map(|(path, _)| key(path)).collect();
         self.stamps.retain(|k, _| present.contains(k));
+        Some(found)
+    }
+
+    /// Hands what the walk found to the tracker. Returns whether `read.json` is behind.
+    fn settle(&self, found: Vec<(String, u64)>) -> bool {
         self.shared.update(|tracker| tracker.scanned(found))
     }
 
@@ -282,6 +298,10 @@ impl Worker {
         }
         let mut steps = Vec::new();
         for change in changes {
+            // A big batch (a checkout) is a lot of reading: closing does not wait for all of it.
+            if self.stop.load(Ordering::Relaxed) {
+                break;
+            }
             if let Some(from) = &change.from {
                 steps.push(Step::Renamed(from.clone(), change.path.clone()));
             }
@@ -550,16 +570,22 @@ impl UnreadService {
         self.send(Msg::Relocate(read_path));
     }
 
-    /// Writes `read.json` now if it is behind, and waits for the thread to have caught up with everything
-    /// sent to it before.
-    pub fn flush(&self) {
+    /// Writes `read.json` now if it is behind, and waits for the thread to have caught up with everything sent
+    /// to it before, but not longer than `limit`: the thread may be in the middle of a look at a big project, and
+    /// whoever is waiting (a window that is closing) must not hang until it is done. Returns whether the thread
+    /// answered in time. When it did not, it still writes as soon as it gets to it, and always once it stops.
+    pub fn flush_within(&self, limit: Duration) -> bool {
         let Some(tx) = &self.tx else {
-            return;
+            return true;
         };
         let (ack, done) = mpsc::channel();
-        if tx.send(Msg::Flush(ack)).is_ok() {
-            let _ = done.recv();
-        }
+        tx.send(Msg::Flush(ack)).is_ok() && done.recv_timeout(limit).is_ok()
+    }
+
+    /// [`UnreadService::flush_within`] for as long as it takes: how the tests wait for the thread.
+    #[cfg(test)]
+    pub fn flush(&self) {
+        self.flush_within(Duration::MAX);
     }
 
     /// Writes what is pending and stops the thread. Safe to call more than once.

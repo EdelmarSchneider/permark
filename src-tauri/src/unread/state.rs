@@ -4,13 +4,13 @@
 //!
 //! A document is unread when the two differ, or when it was never read. Paths are the vault paths the UI
 //! uses (`@wt/<name>/...` in a linked worktree) and are compared the way the file system compares them
-//! (case-folded on Windows and macOS).
+//! (case-folded on Windows and macOS, see [`crate::vault::CASE_INSENSITIVE`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use crate::render::markdown::is_markdown_path;
-use crate::vault::key;
+use crate::vault::{key, WORKTREE_PREFIX};
 
 /// Whether the file name says Markdown: the only documents that are tracked.
 pub fn is_tracked(path: &str) -> bool {
@@ -27,6 +27,17 @@ struct Doc {
     read: Option<u64>,
 }
 
+/// What the app changed while a look at the disk was walking it ([`Tracker::begin_scan`]). The walk reports the
+/// project as it was when it passed, so it must not undo what happened meanwhile.
+#[derive(Debug, Default)]
+struct ScanLog {
+    /// Documents that were marked, moved to a new place, rewritten or made by the app: their entries are newer than
+    /// anything the walk saw.
+    touched: BTreeSet<String>,
+    /// Documents that moved away or were removed: a walk that still saw them must not bring them back.
+    gone: BTreeSet<String>,
+}
+
 /// The documents of a project and their read state.
 #[derive(Debug, Default)]
 pub struct Tracker {
@@ -37,6 +48,18 @@ pub struct Tracker {
     baseline_pending: bool,
     /// Documents marked unread before the baseline was taken: they stay unread through it.
     forced: BTreeSet<String>,
+    /// Set while a look at the disk is under way.
+    scan: Option<ScanLog>,
+}
+
+/// The linked worktree a path is in, as a key (`@wt/<name>`).
+fn worktree_of(path: &str) -> Option<String> {
+    let name = path
+        .strip_prefix(WORKTREE_PREFIX)?
+        .split('/')
+        .next()
+        .filter(|name| !name.is_empty())?;
+    Some(key(&format!("{WORKTREE_PREFIX}{name}")))
 }
 
 /// The folder part of a key, ready to be a prefix of the keys below it.
@@ -66,6 +89,21 @@ impl Tracker {
             docs,
             baseline_pending,
             forced: BTreeSet::new(),
+            scan: None,
+        }
+    }
+
+    /// The entry of `k` was changed by the app (see [`ScanLog::touched`]).
+    fn touched(&mut self, k: &str) {
+        if let Some(log) = &mut self.scan {
+            log.touched.insert(k.to_owned());
+        }
+    }
+
+    /// `k` is not a document any more, at least not under this name (see [`ScanLog::gone`]).
+    fn left(&mut self, k: &str) {
+        if let Some(log) = &mut self.scan {
+            log.gone.insert(k.to_owned());
         }
     }
 
@@ -100,27 +138,58 @@ impl Tracker {
             .collect()
     }
 
-    /// Every Markdown document of the project, as the disk shows them now (`files` are paths with hashes).
-    /// A document that is not in the list is gone and is forgotten. With no read state yet, everything that
-    /// is there counts as read. Returns whether `read.json` has to be written.
+    /// A look at the disk begins. Walking a big project takes a while, and the app changes things meanwhile (a
+    /// move in the Explorer, a document it just made, a mark): [`Tracker::scanned`] leaves those alone, because
+    /// the walk may have passed before they happened.
+    pub fn begin_scan(&mut self) {
+        self.scan = Some(ScanLog::default());
+    }
+
+    /// Every Markdown document of the project, as the disk shows them (`files` are paths with hashes). A
+    /// document that is not in the list is gone and is forgotten, unless the app made it since
+    /// [`Tracker::begin_scan`]. With no read state yet, everything that is there counts as read, and so do the
+    /// documents of a linked worktree the project did not have before (agents create worktrees all the time: it
+    /// would be a flood of dots). Returns whether `read.json` has to be written.
     pub fn scanned(&mut self, files: Vec<(String, u64)>) -> bool {
         let before = self.saved();
         let baseline = std::mem::take(&mut self.baseline_pending);
         let forced = std::mem::take(&mut self.forced);
+        let log = self.scan.take().unwrap_or_default();
+        let known_worktrees: BTreeSet<String> =
+            self.docs.keys().filter_map(|k| worktree_of(k)).collect();
         let mut docs = BTreeMap::new();
         for (path, hash) in files {
             let k = key(&path);
-            let mut doc = self.docs.remove(&k).unwrap_or(Doc {
+            let known = self.docs.remove(&k);
+            if log.touched.contains(&k) {
+                // the app's entry is newer than the walk: it stands, and only gains what it did not know
+                if let Some(mut doc) = known {
+                    doc.current.get_or_insert(hash);
+                    docs.insert(k, doc);
+                    continue;
+                }
+            }
+            if known.is_none() && log.gone.contains(&k) {
+                continue; // moved away or removed after the walk saw it
+            }
+            let mut doc = known.unwrap_or(Doc {
                 path: String::new(),
                 current: None,
                 read: None,
             });
+            let new_worktree = worktree_of(&path).is_some_and(|w| !known_worktrees.contains(&w));
             doc.path = path;
             doc.current = Some(hash);
-            if baseline && doc.read.is_none() && !forced.contains(&k) {
+            if (baseline || new_worktree) && doc.read.is_none() && !forced.contains(&k) {
                 doc.read = Some(hash);
             }
             docs.insert(k, doc);
+        }
+        // Made or moved to by the app while the walk was under way: not on the disk when it passed.
+        for k in log.touched {
+            if let Some(doc) = self.docs.remove(&k) {
+                docs.insert(k, doc);
+            }
         }
         self.docs = docs;
         // The baseline is written even when it is empty: the file is what tells "nothing was read yet" from
@@ -160,12 +229,14 @@ impl Tracker {
             return false;
         }
         let mut moving: Vec<(String, Doc)> = Vec::new();
+        self.left(&key(from));
         if let Some(doc) = self.docs.remove(&key(from)) {
             moving.push((to.to_owned(), doc));
         }
         // Below a folder: the part after the folder's name stays, whatever the case it was spelled in.
         let depth = from.trim_end_matches('/').split('/').count();
         for k in self.keys_under(from) {
+            self.left(&k);
             if let Some(doc) = self.docs.remove(&k) {
                 let rest = doc
                     .path
@@ -181,7 +252,9 @@ impl Tracker {
             wrote |= doc.read.is_some();
             if is_tracked(&path) {
                 doc.path.clone_from(&path);
-                self.docs.insert(key(&path), doc);
+                let k = key(&path);
+                self.touched(&k);
+                self.docs.insert(k, doc);
             }
         }
         wrote
@@ -192,7 +265,9 @@ impl Tracker {
         if self.baseline_pending || !is_tracked(path) {
             return false;
         }
-        let doc = self.docs.entry(key(path)).or_insert_with(|| Doc {
+        let k = key(path);
+        self.touched(&k);
+        let doc = self.docs.entry(k).or_insert_with(|| Doc {
             path: String::new(),
             current: None,
             read: None,
@@ -211,9 +286,14 @@ impl Tracker {
             }
             return false;
         }
-        self.docs
+        let forgot = self
+            .docs
             .get_mut(&k)
-            .is_some_and(|doc| doc.read.take().is_some())
+            .is_some_and(|doc| doc.read.take().is_some());
+        if forgot {
+            self.touched(&k);
+        }
+        forgot
     }
 
     fn read_all_of(&mut self, keys: &[String]) -> bool {
@@ -223,6 +303,7 @@ impl Tracker {
                 if doc.current.is_some() && doc.read != doc.current {
                     doc.read = doc.current;
                     wrote = true;
+                    self.touched(k);
                 }
             }
         }
@@ -250,19 +331,19 @@ impl Tracker {
     /// The app rewrote a document (the links in it) and it went from `old` to `new`: a document that had been
     /// read stays read, because the change is the app's own doing. Returns whether `read.json` has to be written.
     pub fn rewritten(&mut self, path: &str, old: u64, new: u64) -> bool {
-        let Some(doc) = self.docs.get_mut(&key(path)) else {
+        let k = key(path);
+        let Some(doc) = self.docs.get_mut(&k) else {
             return false;
         };
-        if doc.read == Some(old) {
+        let wrote = doc.read == Some(old);
+        if wrote {
             doc.read = Some(new);
             doc.current = Some(new);
-            true
-        } else {
-            if doc.current == Some(old) {
-                doc.current = Some(new);
-            }
-            false
+        } else if doc.current == Some(old) {
+            doc.current = Some(new);
         }
+        self.touched(&k);
+        wrote
     }
 }
 
@@ -531,7 +612,7 @@ mod tests {
         let mut t = scanned(&[("Docs/A.md", 1)]);
         t.changed("docs/a.md", 2);
         assert_eq!(t.unread(), ["docs/a.md"]);
-        // Where case does not matter that is the same document, now spelled as the disk spells it.
+        // Where the file system folds case that is the same document, now spelled as it was last seen.
         let spelling = if crate::vault::CASE_INSENSITIVE {
             "docs/a.md"
         } else {
@@ -545,6 +626,180 @@ mod tests {
         let mut t = Tracker::new(Some(saved(&[("docs/a.md", 1)])));
         t.scanned(files(&[("docs/a.md", 1)]));
         assert_eq!(t.saved(), saved(&[("docs/a.md", 1)]));
+    }
+
+    // ---- linked worktrees ----
+
+    #[test]
+    fn a_worktree_that_appears_after_the_baseline_starts_read() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        let wrote = t.scanned(files(&[
+            ("a.md", 1),
+            ("@wt/feature/docs/x.md", 5),
+            ("@wt/feature/y.md", 6),
+        ]));
+        assert!(wrote, "what starts read is saved");
+        assert_eq!(t.unread(), NOTHING);
+        assert_eq!(
+            t.saved(),
+            saved(&[
+                ("a.md", 1),
+                ("@wt/feature/docs/x.md", 5),
+                ("@wt/feature/y.md", 6)
+            ])
+        );
+    }
+
+    #[test]
+    fn a_new_document_in_a_worktree_the_project_knows_is_unread() {
+        let mut t = Tracker::new(Some(saved(&[("@wt/feature/x.md", 5)])));
+        t.scanned(files(&[("@wt/feature/x.md", 5), ("@wt/feature/new.md", 6)]));
+        assert_eq!(t.unread(), ["@wt/feature/new.md"]);
+        // and a document that changed there is unread as anywhere
+        let mut t = Tracker::new(Some(saved(&[("@wt/feature/x.md", 5)])));
+        t.scanned(files(&[("@wt/feature/x.md", 55)]));
+        assert_eq!(t.unread(), ["@wt/feature/x.md"]);
+    }
+
+    #[test]
+    fn a_worktree_whose_documents_are_all_unread_is_still_a_known_one() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        t.scanned(files(&[("a.md", 1), ("@wt/feature/x.md", 5)]));
+        t.mark_unread("@wt/feature/x.md");
+        assert_eq!(t.unread(), ["@wt/feature/x.md"]);
+        // another look at the disk finds more there: they are news
+        t.scanned(files(&[
+            ("a.md", 1),
+            ("@wt/feature/x.md", 5),
+            ("@wt/feature/z.md", 7),
+        ]));
+        assert_eq!(t.unread(), ["@wt/feature/x.md", "@wt/feature/z.md"]);
+    }
+
+    #[test]
+    fn only_a_worktree_is_a_fresh_start_not_any_new_folder() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        t.scanned(files(&[
+            ("a.md", 1),
+            ("docs/new/z.md", 7),
+            ("@wt/feature/x.md", 5),
+        ]));
+        assert_eq!(t.unread(), ["docs/new/z.md"]);
+    }
+
+    #[test]
+    fn two_new_worktrees_are_each_a_fresh_start() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        t.scanned(files(&[
+            ("a.md", 1),
+            ("@wt/one/x.md", 5),
+            ("@wt/two/x.md", 6),
+        ]));
+        assert_eq!(t.unread(), NOTHING);
+        assert_eq!(t.saved().len(), 3);
+    }
+
+    // ---- what the app does while the disk is being walked ----
+    //
+    // The walk (`begin_scan` ... `scanned`) takes a while on a big project and reports the disk as it was when it
+    // passed. The app moves, makes and marks documents meanwhile; the walk must not undo that.
+
+    #[test]
+    fn a_move_during_the_walk_is_not_undone_by_a_walk_that_saw_the_old_name() {
+        let mut t = Tracker::new(Some(saved(&[("old.md", 1), ("keep.md", 2)])));
+        t.begin_scan();
+        assert!(t.renamed("old.md", "new.md"));
+        // the walk passed before the move and lists the old name
+        t.scanned(files(&[("old.md", 1), ("keep.md", 2)]));
+        assert_eq!(t.saved(), saved(&[("new.md", 1), ("keep.md", 2)]));
+        // the watcher reports the move afterwards and finds the document where it is
+        t.renamed("old.md", "new.md");
+        t.changed("new.md", 1);
+        assert_eq!(t.unread(), NOTHING, "it was read and it is the same file");
+    }
+
+    #[test]
+    fn a_move_during_the_walk_is_not_undone_by_a_walk_that_saw_the_new_name() {
+        let mut t = Tracker::new(Some(saved(&[("old.md", 1)])));
+        t.begin_scan();
+        t.renamed("old.md", "new.md");
+        // the walk passed after the move and lists the new name, with what it holds
+        t.scanned(files(&[("new.md", 1)]));
+        assert_eq!(t.saved(), saved(&[("new.md", 1)]));
+        assert_eq!(t.unread(), NOTHING);
+    }
+
+    #[test]
+    fn a_folder_moved_during_the_walk_keeps_everything_in_it_read() {
+        let mut t = Tracker::new(Some(saved(&[("old/a.md", 1), ("old/sub/b.md", 2)])));
+        t.begin_scan();
+        t.renamed("old", "new");
+        t.scanned(files(&[("old/a.md", 1), ("old/sub/b.md", 2)]));
+        assert_eq!(t.saved(), saved(&[("new/a.md", 1), ("new/sub/b.md", 2)]));
+    }
+
+    #[test]
+    fn a_document_made_by_the_app_during_the_walk_stays_read() {
+        // the walk did not see it
+        let mut t = scanned(&[("a.md", 1)]);
+        t.begin_scan();
+        t.mark_read("made.md", 9);
+        t.scanned(files(&[("a.md", 1)]));
+        assert_eq!(t.saved(), saved(&[("a.md", 1), ("made.md", 9)]));
+        assert_eq!(t.unread(), NOTHING);
+        // the walk saw it, and what it held then
+        t.begin_scan();
+        t.mark_read("again.md", 5);
+        t.scanned(files(&[("a.md", 1), ("made.md", 9), ("again.md", 4)]));
+        assert_eq!(t.unread(), NOTHING, "the person's version is the one read");
+        assert_eq!(
+            t.saved(),
+            saved(&[("a.md", 1), ("made.md", 9), ("again.md", 5)])
+        );
+    }
+
+    #[test]
+    fn marks_made_during_the_walk_stand() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1), ("b.md", 2), ("c.md", 3)])));
+        t.begin_scan();
+        t.mark_unread("a.md");
+        t.mark_read("b.md", 22); // read in the version it has now, which the walk saw before it changed
+        t.scanned(files(&[("a.md", 1), ("b.md", 2), ("c.md", 33)]));
+        assert_eq!(t.unread(), ["a.md", "c.md"]);
+        assert_eq!(t.saved(), saved(&[("b.md", 22), ("c.md", 3)]));
+    }
+
+    #[test]
+    fn marking_everything_read_during_the_walk_stands() {
+        let mut t = scanned(&[("a.md", 1)]);
+        t.changed("a.md", 2);
+        t.begin_scan();
+        assert!(t.mark_all_read());
+        t.scanned(files(&[("a.md", 1)]));
+        assert_eq!(t.unread(), NOTHING);
+        assert_eq!(t.saved(), saved(&[("a.md", 2)]));
+    }
+
+    #[test]
+    fn links_rewritten_during_the_walk_keep_a_read_document_read() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        t.begin_scan();
+        assert!(t.rewritten("a.md", 1, 10));
+        t.scanned(files(&[("a.md", 1)])); // the walk read it before the rewrite
+        assert_eq!(t.unread(), NOTHING);
+        assert_eq!(t.saved(), saved(&[("a.md", 10)]));
+    }
+
+    #[test]
+    fn what_the_app_did_is_only_protected_from_the_walk_it_happened_in() {
+        let mut t = scanned(&[]);
+        t.begin_scan();
+        t.mark_read("made.md", 9);
+        t.scanned(Vec::new());
+        assert_eq!(t.saved(), saved(&[("made.md", 9)]));
+        // a later look at the disk that does not list it: it is gone
+        t.scanned(Vec::new());
+        assert_eq!(t.saved(), saved(&[]));
     }
 
     #[test]

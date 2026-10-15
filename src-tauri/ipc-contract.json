@@ -57,5 +57,5 @@
     "publish_agent_context": ["context"],
     "take_agent_open": []
   },
-  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "agent-status", "agent-open"]
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "show-in-project", "agent-status", "agent-open"]
 }

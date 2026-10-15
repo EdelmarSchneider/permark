@@ -16,6 +16,8 @@ export class UnreadStore {
   count = $derived(this.paths.length);
   /** The Explorer lists only what is unread. */
   onlyUnread = $state(false);
+  /** The Explorer lists only what is unread and nothing is: it says "All caught up." (the open document may stay listed). */
+  caughtUp = $derived(this.onlyUnread && this.count === 0);
 
   private tracker: ReadTracker;
   private request = 0;

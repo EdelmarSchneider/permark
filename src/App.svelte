@@ -15,7 +15,7 @@
   import { language, t } from "./lib/i18n";
   import { isEditable } from "./lib/dom/domUtil";
   import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
-  import { matchShortcut } from "./lib/shortcuts";
+  import { isMacPlatform, matchShortcut, yieldsToTyping } from "./lib/shortcuts";
   import { app } from "./lib/stores/app.svelte";
   import { docs } from "./lib/stores/docs.svelte";
   import { edit } from "./lib/stores/edit.svelte";
@@ -25,6 +25,8 @@
   import { unread } from "./lib/stores/unread.svelte";
   import { updates } from "./lib/stores/updates.svelte";
   import { vault } from "./lib/stores/vault.svelte";
+
+  const mac = typeof navigator !== "undefined" && isMacPlatform(navigator.userAgent);
 
   type MockPanel = typeof import("./lib/mock/MockControls.svelte").default;
   let MockControls = $state<MockPanel | null>(null);
@@ -86,9 +88,11 @@
     if (e.defaultPrevented) return;
     const action = matchShortcut(e);
     if (!action) return;
-    // "T" and "E" are plain letters: they only mean something while reading
-    const plainLetter = action === "editTags" || action === "edit";
-    if (plainLetter && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) return;
+    // "T" and "E" are plain letters, and Option+U and Option+Arrow are typing on macOS: they only mean something
+    // while reading
+    if (yieldsToTyping(action, mac) && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) {
+      return;
+    }
     e.preventDefault();
     app.run(action);
   }
