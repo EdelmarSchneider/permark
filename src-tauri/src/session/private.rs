@@ -107,6 +107,27 @@ pub(crate) fn write_local_state(path: &Path, bytes: &[u8]) -> io::Result<()> {
     write_atomic(path, bytes)
 }
 
+/// Opens the file that stands for a lock on another file of the local state (made when missing), for a program that
+/// keeps `File::lock` on it while it reads, changes and writes that file. The lock file itself holds nothing. It is
+/// made with the same care as the files it protects, and a link in its place is not written through.
+pub(crate) fn open_lock_file(path: &Path) -> io::Result<std::fs::File> {
+    if let Some(dir) = path.parent() {
+        prepare(dir)?;
+        std::fs::create_dir_all(dir)?;
+    }
+    match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            std::fs::OpenOptions::new().read(true).open(path)
+        }
+        made => made,
+    }
+}
+
 /// Deletes a file of the local state, unless it is behind a link.
 pub(crate) fn remove_local_state(path: &Path) -> io::Result<()> {
     if let Some(dir) = path.parent() {

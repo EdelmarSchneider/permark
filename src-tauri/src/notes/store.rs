@@ -2,20 +2,27 @@
 //!
 //! Every change reads the file again, changes it and writes it back (atomically), under a lock, so two parts of
 //! this program never overwrite each other and a change made by `trailmark mcp` while the window was closed is
-//! not lost. A file that cannot be read is set aside, not overwritten: the notes in it are the person's.
+//! not lost. The lock is a `notes.lock` file next to the notes, because the window and `trailmark mcp` are two
+//! programs. A file that is not valid notes is set aside, not overwritten: the notes in it are the person's. A file
+//! that merely cannot be read right now is left alone, and the change fails.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-use crate::session::write_local_state;
-use crate::util::now_ms;
+use crate::session::{open_lock_file, write_local_state};
+use crate::util::{now_ms, read_with_retry};
 
 use super::{Note, NoteError};
 
 /// The version of the file's layout. A file written by a newer version is set aside rather than rewritten.
 const VERSION: u32 = 1;
+/// How long a change waits for another program to finish its own. A change takes a few milliseconds.
+const LOCK_WAIT: Duration = Duration::from_secs(10);
+/// How often it looks while waiting.
+const LOCK_POLL: Duration = Duration::from_millis(10);
 
 #[derive(Serialize, Deserialize)]
 struct Contents {
@@ -28,19 +35,46 @@ enum Read {
     /// There is no file yet.
     Missing,
     Notes(Vec<Note>),
-    /// There is a file this version cannot use.
+    /// There is a file, and what is in it is not notes this version can use.
     Unusable,
 }
 
-fn read(path: &Path) -> Read {
-    let bytes = match std::fs::read(path) {
+/// The file's notes. A file that cannot be read at all (as opposed to one that was read and is no good) is an error:
+/// it may be fine a moment later.
+fn read(path: &Path) -> std::io::Result<Read> {
+    let bytes = match read_with_retry(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Read::Missing,
-        Err(_) => return Read::Unusable,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Read::Missing),
+        Err(error) => return Err(error),
     };
-    match serde_json::from_slice::<Contents>(&bytes) {
+    Ok(match serde_json::from_slice::<Contents>(&bytes) {
         Ok(contents) if contents.version <= VERSION => Read::Notes(contents.notes),
         _ => Read::Unusable,
+    })
+}
+
+/// The lock file of the notes file `path`: `notes.lock` for `notes.json`.
+fn lock_path(path: &Path) -> PathBuf {
+    path.with_extension("lock")
+}
+
+/// Takes the exclusive lock on `lock` (a file for that, see [`open_lock_file`]), waiting up to `wait` for another
+/// program to let go. It is released when the returned file is dropped, or when the program ends.
+fn acquire(lock: &Path, wait: Duration) -> std::io::Result<std::fs::File> {
+    let file = open_lock_file(lock)?;
+    let deadline = Instant::now() + wait;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::Error(error)) => return Err(error),
+            Err(std::fs::TryLockError::WouldBlock) if Instant::now() >= deadline => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "another program is changing the notes",
+                ))
+            }
+            Err(std::fs::TryLockError::WouldBlock) => std::thread::sleep(LOCK_POLL),
+        }
     }
 }
 
@@ -75,8 +109,8 @@ impl NoteStore {
     pub(crate) fn load(&self) -> Vec<Note> {
         let path = lock(&self.path);
         match read(&path) {
-            Read::Notes(notes) => notes,
-            Read::Missing | Read::Unusable => Vec::new(),
+            Ok(Read::Notes(notes)) => notes,
+            Ok(Read::Missing | Read::Unusable) | Err(_) => Vec::new(),
         }
     }
 
@@ -86,7 +120,10 @@ impl NoteStore {
         change: impl FnOnce(&mut Vec<Note>) -> Result<(T, bool), NoteError>,
     ) -> Result<T, NoteError> {
         let path = lock(&self.path);
-        let mut notes = match read(&path) {
+        // Other programs (the window, `trailmark mcp`) change the same file: nobody reads or writes it meanwhile.
+        let _locked =
+            acquire(&lock_path(&path), LOCK_WAIT).map_err(|error| io_error(&path, error))?;
+        let mut notes = match read(&path).map_err(|error| io_error(&path, error))? {
             Read::Notes(notes) => notes,
             Read::Missing => Vec::new(),
             Read::Unusable => {
@@ -252,6 +289,73 @@ mod tests {
         assert_eq!(kept.len(), 1, "{kept:?}");
         let old = std::fs::read_to_string(path.with_file_name(&kept[0])).expect("read");
         assert_eq!(old, "{ not json");
+    }
+
+    /// A file that cannot be read for now (an antivirus scan, a sync client, a disk hiccup) is not a file that is
+    /// no good: the notes in it are still there when it can be read again.
+    #[test]
+    fn a_file_that_cannot_be_read_is_an_error_and_is_never_set_aside() {
+        let (dir, store) = store();
+        let path = dir.path().join("local").join("notes.json");
+        // a folder where the file should be: reading it fails, and it is not a damaged file
+        std::fs::create_dir_all(&path).expect("mkdir");
+        let result = store.update(|notes| {
+            notes.push(note("n1"));
+            Ok(((), true))
+        });
+        assert!(matches!(result, Err(NoteError::Io { .. })), "{result:?}");
+        assert!(path.is_dir(), "left where it was");
+        let names: Vec<_> = std::fs::read_dir(path.parent().expect("parent"))
+            .expect("ls")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names.iter().all(|name| !name.contains("unreadable")),
+            "nothing was renamed: {names:?}"
+        );
+        assert!(store.load().is_empty(), "nothing to show meanwhile");
+    }
+
+    /// The window and `trailmark mcp` are two programs: each change reads the file again under a lock they share.
+    #[test]
+    fn writers_in_different_programs_do_not_lose_each_others_changes() {
+        const WRITERS: usize = 4;
+        const NOTES_EACH: usize = 15;
+        let (dir, _store) = store();
+        let path = dir.path().join("local").join("notes.json");
+        let handles: Vec<_> = (0..WRITERS)
+            .map(|writer| {
+                // a store of its own, as another program has: they share nothing but the file
+                let store = NoteStore::new(path.clone());
+                std::thread::spawn(move || {
+                    for n in 0..NOTES_EACH {
+                        store
+                            .update(|notes| {
+                                notes.push(note(&format!("w{writer}n{n}")));
+                                Ok(((), true))
+                            })
+                            .expect("update");
+                    }
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().expect("writer");
+        }
+        assert_eq!(NoteStore::new(path).load().len(), WRITERS * NOTES_EACH);
+    }
+
+    #[test]
+    fn a_lock_that_stays_taken_is_given_up_after_the_wait() {
+        let (dir, _store) = store();
+        let path = dir.path().join("local").join("notes.json");
+        let lock = lock_path(&path);
+        let held = acquire(&lock, Duration::ZERO).expect("free");
+        let error = acquire(&lock, Duration::ZERO).expect_err("taken");
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
+        drop(held);
+        acquire(&lock, Duration::ZERO).expect("free again");
     }
 
     #[test]

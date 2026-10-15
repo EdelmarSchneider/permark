@@ -369,7 +369,9 @@ impl Core {
         let (note, source) = match self.ask(request).await {
             Ok(note) => (note, "window"),
             Err(LinkError::Remote(error)) => return Answer::failed(error.message),
-            Err(_) => {
+            // The file is written directly only when there is no window to write it. A window that is there but
+            // slow, or that dropped the connection, may be changing the same notes: its answer is what counts.
+            Err(LinkError::NotRunning) => {
                 match self
                     .offline(move |project| project.resolve_note(&id, reply.as_deref()))
                     .await
@@ -379,6 +381,7 @@ impl Core {
                     Err(error) => return Answer::failed(error),
                 }
             }
+            Err(error) => return Answer::failed(error.to_string()),
         };
         let fields = Map::from_iter([
             ("note".to_owned(), note),
@@ -862,6 +865,39 @@ mod tests {
         assert_eq!(book.list(false)[0].reply.as_deref(), Some("Named it"));
 
         assert!(core.resolve_note("nope", None).await.is_error);
+    }
+
+    /// A window that is there but does not answer (busy, or its connection broke) may be changing the notes itself:
+    /// the file is not written around it.
+    #[tokio::test]
+    async fn a_window_that_does_not_answer_is_not_written_around() {
+        use interprocess::local_socket::traits::tokio::Listener as _;
+
+        let fx = fx();
+        fx.set_connection(true);
+        let book = notebook(&fx);
+        let added = book
+            .add(new_note("docs/plan.md", "Ship the beacon", "Which beacon?"))
+            .expect("a note");
+        // something listens and hangs up on whoever connects
+        let endpoint =
+            Endpoint::in_folder(fx.sockets.path(), &fx.root, "tester").expect("endpoint");
+        let listener = endpoint.listen().expect("listen");
+        let hanging_up = tokio::spawn(async move {
+            loop {
+                drop(listener.accept().await);
+            }
+        });
+        let answer = fx
+            .core(no_launch())
+            .resolve_note(&added.id, Some("Named it"))
+            .await;
+        hanging_up.abort();
+        assert!(answer.is_error, "{answer:?}");
+        assert!(
+            !book.list(false)[0].done,
+            "the notes file was not written around the window"
+        );
     }
 
     #[tokio::test]
