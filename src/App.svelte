@@ -5,7 +5,7 @@
   import InitDialog from "./lib/components/InitDialog.svelte";
   import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
   import OutlinePopover from "./lib/components/OutlinePopover.svelte";
-  import QuickOpen from "./lib/components/QuickOpen.svelte";
+  import SearchEverywhere from "./lib/components/SearchEverywhere.svelte";
   import TagEditor from "./lib/components/TagEditor.svelte";
   import SelectionPopover from "./lib/components/SelectionPopover.svelte";
   import SettingsPopover from "./lib/components/SettingsPopover.svelte";
@@ -107,7 +107,7 @@
   <Welcome />
 {:else if app.screen === "project"}
   <Shell />
-  {#if ui.quickOpen}<QuickOpen />{/if}
+  {#if ui.searchBox}<SearchEverywhere />{/if}
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
   {#if fileops.prompt}<LinkUpdateDialog prompt={fileops.prompt} />{/if}

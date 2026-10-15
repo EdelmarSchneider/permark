@@ -12,7 +12,7 @@ import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
 import { formatQuote, formatReference } from "../reference";
 import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
-import type { ShortcutAction } from "../shortcuts";
+import type { CommandAction } from "../commands";
 import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
@@ -30,6 +30,7 @@ import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
 import { ui } from "./ui.svelte";
+import { updates } from "./updates.svelte";
 import { vault } from "./vault.svelte";
 
 const HIDDEN_RECENTS_KEY = "trailmark.recents.hidden";
@@ -187,7 +188,7 @@ class AppStore {
       vault.reset();
       ui.followChip = null;
       ui.find.open = false;
-      ui.quickOpen = false;
+      ui.closeSearch();
       ui.tagEditor = null;
       ui.outlinePopover = false;
       ui.changesNotify = false;
@@ -367,8 +368,8 @@ class AppStore {
     return this.openDoc(path, { fromChange: true });
   }
 
-  async openHit(hit: SearchHit): Promise<void> {
-    const query = search.answered || search.query.trim();
+  /** Opens the file at the section a search hit is in, marking the words that were searched for. */
+  async openHit(hit: SearchHit, query = search.answered || search.query.trim()): Promise<void> {
     await this.openDoc(hit.path, {
       locate: { line: hit.startLine, find: query ? { query, mode: "terms" } : null },
     });
@@ -646,7 +647,8 @@ class AppStore {
 
   // ---- keyboard ------------------------------------------------------------------------------------------
 
-  run(action: ShortcutAction): void {
+  /** Runs an action of the keyboard map, or a command of Search everywhere that has no key (`commands.ts`). */
+  run(action: CommandAction): void {
     if (this.screen === "welcome") {
       if (action === "openFolder") void this.chooseFolder();
       else if (action === "openFile") void this.chooseFile();
@@ -659,8 +661,14 @@ class AppStore {
         return void this.chooseFolder();
       case "openFile":
         return void this.chooseFile();
+      case "searchEverywhere":
+        if (ide) ui.openSearch();
+        return;
       case "quickOpen":
-        if (ide) ui.quickOpen = true;
+        if (ide) ui.openSearch("files");
+        return;
+      case "commands":
+        ui.openSearch("commands");
         return;
       case "searchAll":
         return this.showSearch();
@@ -725,7 +733,40 @@ class AppStore {
       case "settings":
         ui.settingsOpen = true;
         return;
+      case "initProject":
+        if (ide && vault.stateLocation !== "project") ui.initDialog = true;
+        return;
+      case "checkUpdates":
+        // the answer ("You're up to date", or the offer) shows in the settings
+        ui.settingsOpen = true;
+        return void updates.check(true);
+      case "newFolder":
+        if (!ide) return;
+        this.openExplorerPanel();
+        return fileops.startNewFolder(targetFolder(ui.treeCursor, docs.path));
+      case "collapseAll":
+        if (!ide) return;
+        this.showExplorer();
+        return vault.collapseAll();
+      case "revealInTree":
+        if (docs.path) this.revealInTree(docs.path);
+        return;
+      case "baselineLastVisit":
+        if (ide) void this.setBaseline("lastVisit");
+        return;
+      case "baselineCommit":
+        if (ide) void this.setBaseline("head");
+        return;
+      case "openContainingFolder":
+        if (!ide) void this.openContainingFolder();
+        return;
     }
+  }
+
+  /** The Explorer is the sidebar's view and the sidebar is open; the focus stays where it is. */
+  private openExplorerPanel(): void {
+    ui.sidebarView = "explorer";
+    if (!session.left.open) session.setPanel("left", { open: true });
   }
 }
 

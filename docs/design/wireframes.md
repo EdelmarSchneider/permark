@@ -411,7 +411,9 @@ Since last visit header reads "By file times, since Mon 18:40".
 | Action | Shortcut | Notes |
 |---|---|---|
 | Open folder / open file | Ctrl+O / Ctrl+Shift+O | Replaces the current project (session is saved) |
-| Quick open (file names) | Ctrl+P | Empty query lists recent changes |
+| Search everywhere (files, sections, tags, commands) | Ctrl+T | Tab / Shift+Tab switch the scope; `>` is Commands, `#` is Sections (v0.3 section 1) |
+| Quick open (file names) | Ctrl+P | Search everywhere in the Files scope; empty query lists recent changes |
+| Commands | Ctrl+Shift+P | Search everywhere in the Commands scope |
 | Search all docs (sections) | Ctrl+Shift+F | Opens the Search view, selects the query |
 | Explorer view | Ctrl+Shift+X | Focuses the tree |
 | Find in page | Ctrl+F, Enter, Shift+Enter, Esc | |

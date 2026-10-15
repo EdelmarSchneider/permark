@@ -29,6 +29,7 @@
   import ChevronsLeft from "@lucide/svelte/icons/chevrons-left";
   import ChevronsRight from "@lucide/svelte/icons/chevrons-right";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
+  import Command from "@lucide/svelte/icons/command";
   import Copy from "@lucide/svelte/icons/copy";
   import Download from "@lucide/svelte/icons/download";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
@@ -101,6 +102,7 @@
     "chevrons-left": ChevronsLeft,
     "chevrons-right": ChevronsRight,
     "circle-alert": CircleAlert,
+    command: Command,
     copy: Copy,
     download: Download,
     more: Ellipsis,

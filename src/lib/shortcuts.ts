@@ -1,36 +1,45 @@
 // The keyboard map (docs/design/wireframes.md, section 13) as a pure function, so it can be tested.
-// Ctrl+K stays unbound (the command palette will use it; in the editor it is the link).
+// Ctrl+K stays unbound (in the editor it is the link).
 
-export type ShortcutAction =
-  | "openFolder"
-  | "openFile"
-  | "quickOpen"
-  | "searchAll"
-  | "explorer"
-  | "tagsView"
-  | "editTags"
-  | "edit"
-  | "toggleEdit"
-  | "toggleEditMode"
-  | "save"
-  | "newFile"
-  | "find"
-  | "back"
-  | "forward"
-  | "nextChange"
-  | "prevChange"
-  | "toggleFollow"
-  | "copyReference"
-  | "copyPath"
-  | "openExternal"
-  | "toggleLeft"
-  | "toggleRight"
-  | "zoomIn"
-  | "zoomOut"
-  | "zoomReset"
-  | "cycleWidth"
-  | "toggleOutline"
-  | "settings";
+/**
+ * Every action the keyboard map reaches. The list is the source of the type, so a test can walk it: the command
+ * registry (`commands.ts`) has to account for each one.
+ */
+export const SHORTCUT_ACTIONS = [
+  "openFolder",
+  "openFile",
+  "searchEverywhere",
+  "commands",
+  "quickOpen",
+  "searchAll",
+  "explorer",
+  "tagsView",
+  "editTags",
+  "edit",
+  "toggleEdit",
+  "toggleEditMode",
+  "save",
+  "newFile",
+  "find",
+  "back",
+  "forward",
+  "nextChange",
+  "prevChange",
+  "toggleFollow",
+  "copyReference",
+  "copyPath",
+  "openExternal",
+  "toggleLeft",
+  "toggleRight",
+  "zoomIn",
+  "zoomOut",
+  "zoomReset",
+  "cycleWidth",
+  "toggleOutline",
+  "settings",
+] as const;
+
+export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
 
 export type KeyInfo = {
   key: string;
@@ -104,6 +113,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "explorer";
       case "t":
         return "tagsView";
+      case "p":
+        return "commands";
       case "l":
         return "toggleFollow";
       case "e":
@@ -118,6 +129,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
       return "openFolder";
     case "p":
       return "quickOpen";
+    case "t":
+      return "searchEverywhere";
     case "f":
       return "find";
     case "e":
@@ -138,4 +151,41 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
       return "settings";
   }
   return null;
+}
+
+// ---- how a shortcut is written ---------------------------------------------------------------------
+
+export type Combo = { ctrl: boolean; alt: boolean; shift: boolean; key: string };
+
+/** Reads a combo as the menus write it: "Ctrl+Shift+P", "Alt+Left", "F7", "T". */
+export function parseCombo(combo: string): Combo {
+  const out: Combo = { ctrl: false, alt: false, shift: false, key: combo };
+  for (;;) {
+    const match = /^(Ctrl|Alt|Shift)\+(.+)$/.exec(out.key);
+    if (!match) return out;
+    if (match[1] === "Ctrl") out.ctrl = true;
+    else if (match[1] === "Alt") out.alt = true;
+    else out.shift = true;
+    out.key = match[2];
+  }
+}
+
+/** Whether the webview runs on macOS, from its user agent. */
+export function isMacPlatform(userAgent: string): boolean {
+  return /Mac/.test(userAgent);
+}
+
+/**
+ * A combo written the way the platform prints it. Combos are written with Windows names, where "Ctrl" is the main
+ * modifier; on macOS that key is Command, and "Ctrl+Shift+P" reads "⇧⌘P" (Option, Shift, Command, then the key).
+ * Elsewhere `localize` writes the key names of the interface's language.
+ */
+export function shortcutLabel(
+  combo: string,
+  mac: boolean,
+  localize: (combo: string) => string,
+): string {
+  if (!mac) return localize(combo);
+  const { ctrl, alt, shift, key } = parseCombo(combo);
+  return `${alt ? "⌥" : ""}${shift ? "⇧" : ""}${ctrl ? "⌘" : ""}${key}`;
 }
