@@ -295,10 +295,13 @@ pub(crate) mod testing {
         pub resolved: Mutex<Vec<(String, Option<String>)>>,
         pub statuses: Mutex<Vec<AgentStatus>>,
         pub opens: AtomicUsize,
+        /// How many times the unread list was asked for (counted before it waits for its lock).
+        pub unread_asked: AtomicUsize,
     }
 
     impl Backend for Fake {
         fn unread(&self) -> Vec<String> {
+            self.unread_asked.fetch_add(1, Ordering::SeqCst);
             lock(&self.unread).clone()
         }
 

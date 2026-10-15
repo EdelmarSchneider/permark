@@ -325,6 +325,51 @@ mod tests {
         fx.bridge.shutdown();
     }
 
+    /// One slow answer does not hold up another connection, or the window's own switch.
+    #[tokio::test]
+    async fn a_slow_answer_does_not_hold_up_the_others() {
+        use std::sync::atomic::Ordering;
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let fx = fx("slow", None);
+        fx.bridge.set_enabled(true);
+        // The unread list waits for a lock that another thread holds until it is told to let go.
+        let (locked, is_locked) = mpsc::channel();
+        let (release, released) = mpsc::channel::<()>();
+        let fake = Arc::clone(&fx.fake);
+        let holder = std::thread::spawn(move || {
+            let held = fake.unread.lock().expect("lock");
+            locked.send(()).expect("say so");
+            let _ = released.recv();
+            drop(held);
+        });
+        is_locked.recv().expect("the lock is held");
+
+        let slow = {
+            let link = link(&fx);
+            tokio::spawn(async move { link.call(Request::ListUnread).await })
+        };
+        // Wait for the slow request to be inside the window's answer, so that what follows is really behind it.
+        while fx.fake.unread_asked.load(Ordering::SeqCst) == 0 {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let other =
+            tokio::time::timeout(Duration::from_secs(10), link(&fx).call(Request::GetContext))
+                .await
+                .expect("answered while the slow answer is still being worked out");
+        assert!(other.is_ok(), "{other:?}");
+
+        release.send(()).expect("let go");
+        let slow = slow
+            .await
+            .expect("task")
+            .expect("the slow one is answered too");
+        assert_eq!(slow["total"], 0);
+        holder.join().expect("holder");
+        fx.bridge.shutdown();
+    }
+
     #[tokio::test]
     async fn turning_it_off_closes_the_socket_and_a_running_agent_finds_out() {
         let fx = fx("switch", None);
