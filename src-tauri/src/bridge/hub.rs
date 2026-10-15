@@ -58,6 +58,29 @@ pub struct RequestRecord {
     pub at_ms: u64,
 }
 
+/// Why the connection could not start, as far as the interface words it in its own language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FailureKind {
+    /// Another program holds the name the connection listens on.
+    InUse,
+    /// The folder of the connection's socket is not one only the user can enter.
+    FolderNotPrivate,
+    /// The socket's path is longer than the system allows.
+    PathTooLong,
+    /// Something else; only the system's own words say what.
+    Other,
+}
+
+/// A connection that could not start.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartFailure {
+    pub kind: FailureKind,
+    /// The system's own words, in English: the place and the error, for a tooltip and for logs.
+    pub message: String,
+}
+
 /// What the status bar and its popover show. Matches the UI's `AgentStatus`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,7 +93,8 @@ pub struct AgentStatus {
     pub connections: usize,
     /// The latest requests, newest first.
     pub recent: Vec<RequestRecord>,
-    pub error: Option<String>,
+    /// Why it is not listening, when it was meant to (see [`FailureKind`]).
+    pub error: Option<StartFailure>,
     /// The program an agent starts (`<program> mcp`): where this one is, for the setup snippets.
     pub program: Option<String>,
 }
@@ -79,7 +103,7 @@ pub struct AgentStatus {
 struct State {
     enabled: bool,
     listening: bool,
-    error: Option<String>,
+    error: Option<StartFailure>,
     connections: usize,
     recent: VecDeque<RequestRecord>,
     program: Option<String>,
@@ -174,7 +198,7 @@ impl Hub {
     }
 
     /// The connection was turned on or off, and whether the program is listening now.
-    pub fn set_lifecycle(&self, enabled: bool, listening: bool, error: Option<String>) {
+    pub fn set_lifecycle(&self, enabled: bool, listening: bool, error: Option<StartFailure>) {
         self.update(|state| {
             state.enabled = enabled;
             state.listening = listening;
@@ -648,10 +672,14 @@ mod tests {
         let (hub, _) = hub(vault);
         hub.set_lifecycle(true, true, None);
         hub.connection_opened();
-        hub.set_lifecycle(true, false, Some("no socket".to_owned()));
+        let failure = StartFailure {
+            kind: FailureKind::InUse,
+            message: "no socket".to_owned(),
+        };
+        hub.set_lifecycle(true, false, Some(failure.clone()));
         let status = hub.status();
         assert_eq!(status.connections, 0);
-        assert_eq!(status.error.as_deref(), Some("no socket"));
+        assert_eq!(status.error, Some(failure));
     }
 
     #[test]

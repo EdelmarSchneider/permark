@@ -170,6 +170,16 @@ export type AgentRequest = {
   atMs: number;
 };
 
+/** Why the agent connection could not start; the interface words each kind itself (`agentFailureText`). */
+export type AgentFailureKind = "inUse" | "folderNotPrivate" | "pathTooLong" | "other";
+
+/** A connection that was meant to listen and could not. */
+export type AgentFailure = {
+  kind: AgentFailureKind;
+  /** The system's own words, in English (the place and the error): for a tooltip, and the text of a kind the interface has no words for. */
+  message: string;
+};
+
 /** The agent connection of the open project. */
 export type AgentStatus = {
   enabled: boolean;
@@ -179,7 +189,7 @@ export type AgentStatus = {
   connections: number;
   /** The latest requests, newest first. */
   recent: AgentRequest[];
-  error: string | null;
+  error: AgentFailure | null;
   /** The program an agent starts (`<program> mcp`): where this one is, for the setup lines; null when unknown. */
   program: string | null;
 };

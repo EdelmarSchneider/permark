@@ -337,6 +337,10 @@ export const ptBR = {
   "agent.state.idle": "Ativa neste projeto. Nada está conectado.",
   "agent.state.connected": "Ativa neste projeto. Há um agente conectado.",
   "agent.state.error": "Ativa neste projeto, mas não conseguiu iniciar: {message}",
+  "agent.error.inUse": "outro programa está usando o nome da conexão",
+  "agent.error.folderNotPrivate": "a pasta da conexão não é privada para você",
+  "agent.error.pathTooLong":
+    "o caminho da conexão é longo demais. Defina XDG_RUNTIME_DIR ou TMPDIR com uma pasta mais curta",
   "agent.shares": "O que um agente pode ver",
   "agent.shares.context": "O documento aberto, a seção na tela e o texto selecionado",
   "agent.shares.unread": "Quais documentos mudaram desde a última vez que você os leu",

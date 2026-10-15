@@ -339,6 +339,10 @@ export const de = {
   "agent.state.idle": "Für dieses Projekt eingeschaltet. Nichts ist verbunden.",
   "agent.state.connected": "Für dieses Projekt eingeschaltet. Ein Agent ist verbunden.",
   "agent.state.error": "Für dieses Projekt eingeschaltet, konnte aber nicht starten: {message}",
+  "agent.error.inUse": "ein anderes Programm verwendet den Namen der Verbindung",
+  "agent.error.folderNotPrivate": "der Ordner der Verbindung ist nicht privat",
+  "agent.error.pathTooLong":
+    "der Pfad der Verbindung ist zu lang. XDG_RUNTIME_DIR oder TMPDIR muss auf einen kürzeren Ordner zeigen",
   "agent.shares": "Was ein Agent sehen kann",
   "agent.shares.context":
     "Das geöffnete Dokument, der Abschnitt auf dem Bildschirm und der markierte Text",
