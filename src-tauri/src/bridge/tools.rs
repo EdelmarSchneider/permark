@@ -465,8 +465,9 @@ impl Core {
     /// The window is closed: check the place first (nothing is started for a path that is not a document), start
     /// TrailMark on the project, and hand the place over once it listens.
     ///
-    /// One start at a time: calls made while TrailMark is starting wait for that start and use its window, and after a
-    /// start that did not come up listening none is made again for a while (see [`LAUNCH_PAUSE`]).
+    /// One start at a time, also across programs (two `trailmark mcp` at once take turns on a lock file): calls made
+    /// while TrailMark is starting wait for that start and use its window, and after a start that did not come up
+    /// listening none is made again for a while (see [`LAUNCH_PAUSE`]).
     async fn start_and_open(&self, request: Request) -> Answer {
         let Request::Open {
             path,
@@ -504,6 +505,26 @@ impl Core {
 Try again in a few seconds. If it stays like this, look at the agent connection in TrailMark's status bar.",
             );
         }
+        // The calls of this program are one at a time by now; another program (a second agent, a second `trailmark
+        // mcp`) may be starting the window at this moment. It holds the turn until the window listens, and this one
+        // then waits for that window instead of starting another.
+        let turn = match self.link.as_ref().map(Link::try_launch_lock) {
+            Ok(Ok(Some(turn))) => Some(turn),
+            Ok(Ok(None)) => return self.wait_for_window(&request).await,
+            // The turn cannot be had (no place for the file): start the window as before.
+            Ok(Err(_)) | Err(_) => None,
+        };
+        if turn.is_some() {
+            // The program that had the turn before may have finished just before this one took it.
+            match self.ask(request.clone()).await {
+                Ok(opened) => {
+                    self.window_answered();
+                    return Answer::ok(shown(opened, false));
+                }
+                Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+                Err(_) => {}
+            }
+        }
         if let Err(error) = (self.launcher)(&self.root) {
             return Answer::failed(format!("TrailMark could not be started: {error}"));
         }
@@ -511,6 +532,14 @@ Try again in a few seconds. If it stays like this, look at the agent connection 
             .failed_launch
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(tokio::time::Instant::now());
+        let answer = self.wait_for_window(&request).await;
+        // The turn is kept until the window answers (or the wait is over).
+        drop(turn);
+        answer
+    }
+
+    /// Hands the place over once the window listens, looking every [`LAUNCH_POLL`] until the launch wait is over.
+    async fn wait_for_window(&self, request: &Request) -> Answer {
         let deadline = tokio::time::Instant::now() + self.launch_wait;
         loop {
             match self.ask(request.clone()).await {
@@ -676,6 +705,13 @@ mod tests {
                 launcher,
             )
             .with_launch_wait(Duration::from_secs(10))
+        }
+    }
+
+    impl Fx {
+        /// The project's endpoint, as another program of the same user finds it.
+        fn endpoint(&self) -> Endpoint {
+            Endpoint::in_folder(self.sockets.path(), &self.root, "tester").expect("endpoint")
         }
     }
 
@@ -1146,6 +1182,95 @@ mod tests {
             assert_eq!(status(answer), "ok", "{answer:?}");
         }
         assert_eq!(started.load(Ordering::SeqCst), 1, "one start for all three");
+        fx.bridge.shutdown();
+    }
+
+    /// Two agents, or two `trailmark mcp` programs, ask at the same moment while the window is closed: each has its own
+    /// `Core`, so only the turn on the file keeps them from starting two windows.
+    #[tokio::test]
+    async fn parallel_opens_from_separate_programs_start_trailmark_once() {
+        let fx = fx();
+        fx.set_connection(true);
+        let (launcher, started) = counting_launcher(&fx, true);
+        let (first, second) = (fx.core(launcher.clone()), fx.core(launcher));
+        let (a, b) = tokio::join!(
+            first.open("README.md", None, None),
+            second.open("docs/plan.md", Some(3), None),
+        );
+        for answer in [&a, &b] {
+            assert_eq!(status(answer), "ok", "{answer:?}");
+        }
+        assert_eq!(started.load(Ordering::SeqCst), 1, "one start for both");
+        fx.bridge.shutdown();
+    }
+
+    /// The window is started by the program that has the turn, and the turn is kept until that is over.
+    #[tokio::test]
+    async fn the_turn_to_start_the_window_is_held_while_it_starts() {
+        let fx = fx();
+        fx.set_connection(true);
+        let held = Arc::new(AtomicUsize::new(0));
+        let launcher: Launcher = {
+            let (bridge, held, endpoint) =
+                (Arc::clone(&fx.bridge), Arc::clone(&held), fx.endpoint());
+            Arc::new(move |_| {
+                // another program asking now finds the turn taken
+                if endpoint.try_launch_lock()?.is_none() {
+                    held.fetch_add(1, Ordering::SeqCst);
+                }
+                bridge.set_enabled(true);
+                Ok(())
+            })
+        };
+        let answer = fx.core(launcher).open("README.md", None, None).await;
+        assert_eq!(status(&answer), "ok", "{answer:?}");
+        assert_eq!(held.load(Ordering::SeqCst), 1);
+        // and it is given up afterwards
+        assert!(fx.endpoint().try_launch_lock().expect("lock").is_some());
+        fx.bridge.shutdown();
+    }
+
+    /// Another program is starting the window right now: this one does not start a second, and says that the window is
+    /// on its way.
+    #[tokio::test]
+    async fn a_program_that_finds_another_one_starting_the_window_does_not_start_one() {
+        let fx = fx();
+        fx.set_connection(true);
+        let _other_program = fx
+            .endpoint()
+            .try_launch_lock()
+            .expect("lock")
+            .expect("turn");
+        let answer = fx
+            .core(no_launch())
+            .with_launch_wait(Duration::ZERO)
+            .open("README.md", None, None)
+            .await;
+        assert_eq!(status(&answer), "starting", "{answer:?}");
+        assert!(!answer.is_error);
+    }
+
+    /// ... and when the window of the other program comes up, the place is handed over to it.
+    #[tokio::test]
+    async fn the_place_is_handed_to_the_window_another_program_started() {
+        let fx = fx();
+        fx.set_connection(true);
+        let other_program = fx
+            .endpoint()
+            .try_launch_lock()
+            .expect("lock")
+            .expect("turn");
+        let core = fx.core(no_launch());
+        let waiting = core.open("docs/plan.md", Some(3), None);
+        let window = async {
+            // the other program's window comes up and it gives the turn up
+            fx.bridge.set_enabled(true);
+            drop(other_program);
+        };
+        let (answer, ()) = tokio::join!(waiting, window);
+        assert_eq!(status(&answer), "ok", "{answer:?}");
+        let place = fx.bridge.take_open().expect("the place was handed over");
+        assert_eq!((place.path.as_str(), place.line), ("docs/plan.md", Some(3)));
         fx.bridge.shutdown();
     }
 
