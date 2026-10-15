@@ -172,6 +172,8 @@ switches it at once, no restart. The Windows installer asks for a language too.
 
 > Prebuilt installers for Windows, macOS and Linux are published on the [Releases](../../releases) page.
 > TrailMark updates itself: when a new version is out, you'll be offered a one-click restart to update.
+>
+> On Windows you can also get it from the [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps it up to date.
 
 **Build from source** (requires [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 20+ and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)):
