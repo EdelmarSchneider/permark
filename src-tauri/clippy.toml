@@ -1,2 +1,2 @@
 # Product and platform names that appear in doc comments.
-doc-valid-idents = ["TrailMark", "AppData", "OneDrive", ".."]
+doc-valid-idents = ["TrailMark", "AppData", "AppImage", "OneDrive", ".."]

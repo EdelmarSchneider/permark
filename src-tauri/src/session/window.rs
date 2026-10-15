@@ -8,8 +8,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::private::write_local_state;
 use super::{or_default, SessionError, StateStore};
-use crate::util::write_atomic;
 
 /// Name of the file, in a project's state folder and in the app's own folder.
 pub(crate) const FILE_NAME: &str = "window.json";
@@ -83,7 +83,7 @@ impl WindowState {
         let bytes =
             serde_json::to_vec_pretty(self).map_err(|e| SessionError::Json(e.to_string()))?;
         let path = dir.join(FILE_NAME);
-        write_atomic(&path, &bytes).map_err(|e| SessionError::io(&path, e))
+        write_local_state(&path, &bytes).map_err(|e| SessionError::io(&path, e))
     }
 }
 

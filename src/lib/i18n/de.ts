@@ -55,7 +55,7 @@ export const de = {
   "panel.resizeHint": "Zum Ändern ziehen, Doppelklick setzt zurück",
 
   // ---- right panel tabs and the outline
-  "panel.label": "Änderungen und Gliederung",
+  "panel.label": "Änderungen, Gliederung und Kommentare",
   "panel.tabs": "Ansichten des rechten Panels",
   "panel.tabChanges": "Änderungen",
   "panel.tabChangesHint": "Live-Änderungen und was sich seit dem letzten Besuch geändert hat",
@@ -326,10 +326,105 @@ export const de = {
   "unread.showOnlyUnread": "Nur Ungelesene anzeigen",
   "unread.allCaughtUp": "Alles gelesen.",
   "unread.onlyListed": "Es werden nur ungelesene Dokumente angezeigt",
+
+  // ---- Agentenverbindung (docs/design/v0.4.md)
+  "cmd.agentOn": "Agentenverbindung: einschalten",
+  "cmd.agentOff": "Agentenverbindung: ausschalten",
+  "cmd.agentCopySetup": "Agenten-Einrichtung kopieren",
+  "agent.title": "Agentenverbindung",
+  "agent.item": "Agent",
+  "agent.item.idle": "Agentenverbindung: an, nichts verbunden",
+  "agent.item.connected": "Agentenverbindung: an, ein Agent ist verbunden",
+  "agent.item.error": "Agentenverbindung: an, konnte aber nicht starten",
+  "agent.state.idle": "Für dieses Projekt eingeschaltet. Nichts ist verbunden.",
+  "agent.state.connected": "Für dieses Projekt eingeschaltet. Ein Agent ist verbunden.",
+  "agent.state.error": "Für dieses Projekt eingeschaltet, konnte aber nicht starten: {message}",
+  "agent.error.inUse": "ein anderes Programm verwendet den Namen der Verbindung",
+  "agent.error.folderNotPrivate": "der Ordner der Verbindung ist nicht privat",
+  "agent.error.pathTooLong":
+    "der Pfad der Verbindung ist zu lang. XDG_RUNTIME_DIR oder TMPDIR muss auf einen kürzeren Ordner zeigen",
+  "agent.shares": "Was ein Agent sehen kann",
+  "agent.shares.context":
+    "Das geöffnete Dokument, der Abschnitt auf dem Bildschirm und der markierte Text",
+  "agent.shares.unread": "Welche Dokumente sich seit dem letzten Lesen geändert haben",
+  "agent.shares.search": "Suchergebnisse aus den Dokumenten dieses Projekts",
+  "agent.shares.show": "Ein Agent kann auch eine Stelle zeigen. Er ändert nie ein Dokument.",
+  "agent.shares.leaves":
+    "TrailMark spricht nur mit Programmen auf diesem Computer. Ein Agent kann das Gelesene an seinen KI-Dienst senden.",
+  "agent.shares.file":
+    "Solange die Verbindung an ist, werden das geöffnete Dokument, der Abschnitt und der markierte Text auch in .trailmark/local/agent.json geschrieben (für Skripte), wenn das Projekt seine Einstellungen in .trailmark/ ablegt.",
+  "agent.recent": "Letzte Anfragen",
+  "agent.recent.none": "Noch keine Anfragen.",
+  "agent.request.get_context": "Gelesen, was gerade angezeigt wird",
+  "agent.request.list_unread": "Ungelesene Dokumente aufgelistet",
+  "agent.request.search": "Gesucht nach {subject}",
+  "agent.request.open": "{subject} gezeigt",
+  "agent.turnOff": "Ausschalten",
+  "agent.setup": "Agenten einrichten ...",
+  "agent.setupCopied":
+    "Einrichtung für MCP-Clients (JSON) kopiert. Claude Code und der Prompt-Hook: Einstellungen > Agentenverbindung.",
+  "agent.failed": "Die Agentenverbindung konnte nicht geändert werden: {message}",
+  "agent.opened": "Von einem Agenten geöffnet",
+  "agent.openedNoHeading":
+    "Von einem Agenten geöffnet. Das Dokument hat keine solche Überschrift, es öffnet sich oben.",
+  "agent.back": "Zurück",
+  "agent.openWhileEditing":
+    "Ein Agent möchte {path} zeigen. Es wird gerade bearbeitet, daher wurde nichts geöffnet.",
+  "agent.show": "Zeigen",
   "selection.label": "Auswahl",
   "selection.copyWithReference": "Mit Verweis kopieren",
   "selection.copy": "Kopieren",
   "reference.section": 'Abschnitt "{name}"',
+
+  // ---- Kommentare
+  "panel.tabComments": "Kommentare",
+  "panel.tabCommentsHint": "Deine Kommentare zu den Dokumenten",
+  "cmd.addComment": "Kommentar zur Auswahl hinzufügen",
+  "cmd.showComments": "Kommentare anzeigen",
+  "comments.add": "Kommentar",
+  "comments.addHint": "Einen Kommentar zu dieser Stelle hinterlassen",
+  "comments.selectFirst":
+    "Wähle zuerst eine Stelle im Dokument aus und füge dann den Kommentar hinzu.",
+  "comments.field.label": "Kommentar zur ausgewählten Stelle",
+  "comments.field.placeholder": "Kommentar schreiben...",
+  "comments.field.hint": "Eingabe speichert, Esc bricht ab",
+  "comments.failed": "Der Kommentar konnte nicht gespeichert werden: {message}",
+  "comments.bar": "Kommentar: {text}",
+  "comments.empty.title": "Noch keine Kommentare",
+  "comments.empty.text":
+    "Wähle eine Stelle in einem Dokument und drücke C, um einen Kommentar zu hinterlassen. Ein verbundener Agent kann deine Kommentare lesen und als erledigt markieren.",
+  "comments.allDone": "Alle Kommentare sind erledigt.",
+  "comments.done.one": "{n} erledigt",
+  "comments.done.other": "{n} erledigt",
+  "comments.count.one": "{n} Kommentar",
+  "comments.count.other": "{n} Kommentare",
+  "comments.statusHint": "Offene Kommentare. Klicken, um sie zu sehen.",
+  "comments.list": "Kommentare",
+  "comments.groupLabel": "Kommentare in {path}",
+  "comments.markDone": "Als erledigt markieren",
+  "comments.reopen": "Als offen markieren",
+  "comments.jump": "Zur Stelle gehen",
+  "comments.delete": "Kommentar löschen",
+  "comments.line": "Zeile {line}",
+  "comments.reply": "Antwort",
+  "comments.state.passageChanged": "Stelle geändert",
+  "comments.state.passageChangedHint":
+    "Dieser Text steht nicht mehr im Dokument. Der Kommentar zeigt auf die nächstgelegene Stelle.",
+  "comments.state.documentGone": "Dokument fehlt",
+  "comments.state.documentGoneHint":
+    "Das Dokument wurde gelöscht oder außerhalb von TrailMark verschoben.",
+  "comments.jump.gone": "{path} ist nicht mehr im Projekt.",
+  "agent.shares.comments":
+    "Deine Kommentare. Ein Agent kann einen Kommentar als erledigt markieren, mehr nicht.",
+  "agent.request.list_comments": "Deine Kommentare gelesen",
+  "agent.request.resolve_comment": "Einen Kommentar erledigt",
+  "error.notADocument": "{subject} ist kein Markdown-Dokument dieses Projekts.",
+  "error.emptyComment": "Ein Kommentar braucht eine ausgewählte Stelle und etwas Text.",
+  "error.tooManyComments":
+    "Dieses Projekt hat bereits die höchste Zahl an Kommentaren, die es speichern kann.",
+  "error.commentNotFound": "Diesen Kommentar gibt es nicht mehr.",
+  "error.commentSingleFile":
+    "Kommentare gehören zu einem Projektordner, nicht zu einer einzelnen Datei.",
 
   // ---- live changes
   "live.label": "Live-Änderungen",
@@ -402,10 +497,10 @@ export const de = {
   "search.clear": "Suche löschen",
   "search.clearHint": "Löschen (Esc)",
   "search.semantic": "Semantisch",
-  "search.semanticLabel": "Semantische Suche (v0.5)",
+  "search.semanticLabel": "Semantische Suche (v0.6)",
   "search.semanticHint":
-    "Die Suche nach Bedeutung kommt mit v0.5 (optionales lokales Modell, bei Bedarf geladen)",
-  "search.soon": "v0.5",
+    "Die Suche nach Bedeutung kommt mit v0.6 (optionales lokales Modell, bei Bedarf geladen)",
+  "search.soon": "v0.6",
   "search.summary": "{hits} in {files}",
   "search.files.one": "{n} Datei",
   "search.files.other": "{n} Dateien",
@@ -572,6 +667,17 @@ export const de = {
   "settings.editor.sublime": "Sublime Text",
   "settings.editor.jetbrains": "JetBrains-IDEs",
   "settings.editor.custom": "Benutzerdefiniert",
+  "settings.agent": "Agentenverbindung",
+  "settings.agentSwitch": "KI-Agenten sehen lassen, was gerade angezeigt wird",
+  "settings.agentHint":
+    "Standardmäßig aus und nur für dieses Projekt. Ein Agent kann lesen, was auf dem Bildschirm steht, und eine Stelle zeigen. Er ändert nie ein Dokument. TrailMark spricht nur mit Programmen auf diesem Computer, aber ein Agent kann das Gelesene an seinen KI-Dienst senden. Solange die Verbindung an ist, wird das, was du ansiehst, außerdem in .trailmark/local/agent.json geschrieben, wenn das Projekt seine Einstellungen in .trailmark ablegt.",
+  "settings.agentUnavailable": "Für eine einzelne Datei nicht verfügbar.",
+  "settings.agentSetup": "Agenten verbinden",
+  "settings.agentSetupHint":
+    "Eine dieser Zeilen dort einfügen, wo der Agent eingerichtet wird. Steht trailmark im PATH, kann der Name den Programmpfad ersetzen.",
+  "settings.agentClaude": "Claude Code",
+  "settings.agentJson": "Andere MCP-Clients (JSON)",
+  "settings.agentHook": "Jedem Prompt hinzufügen, was gerade angezeigt wird (Claude-Code-Hook)",
   "settings.updates": "Updates",
   "settings.fileManager": "Dateimanager",
   "settings.shellMenu": "„Mit TrailMark öffnen“ zum Kontextmenü hinzufügen",

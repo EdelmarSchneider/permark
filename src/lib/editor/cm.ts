@@ -13,6 +13,7 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { SELECTION_READ_LIMIT } from "../agentContext";
 import type { SourceApi } from "../bridge";
 import { currentHeading } from "../outline";
 import { imageMarkdown } from "./imageName";
@@ -231,6 +232,17 @@ export function createSourceView(
       });
     },
     caretLine: () => view.state.doc.lineAt(view.state.selection.main.head).number - 1,
+    selection() {
+      const { from, to } = view.state.selection.main;
+      if (from === to) return null;
+      const { doc } = view.state;
+      return {
+        // only what an agent can be told is read, so a selection of the whole file stays cheap
+        text: doc.sliceString(from, Math.min(to, from + SELECTION_READ_LIMIT)),
+        startLine: doc.lineAt(from).number,
+        endLine: doc.lineAt(to).number,
+      };
+    },
     topLine() {
       // the document's own coordinates of the top edge of the view
       const edge = view.scrollDOM.getBoundingClientRect().top;

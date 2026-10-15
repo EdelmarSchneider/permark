@@ -10,6 +10,10 @@ use tauri::http::{self, header, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, State, UriSchemeResponder};
 use tauri_plugin_opener::OpenerExt;
 
+use crate::bridge::context::AgentContext;
+use crate::bridge::hub::AgentStatus;
+use crate::bridge::protocol::Opened;
+use crate::comments::{CommentView, NewComment};
 use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::external_editor::{self, EditorError, EditorTemplate};
@@ -70,6 +74,18 @@ impl EventSink for TauriSink {
 
     fn unread_changed(&self, unread: &[String]) {
         let _ = self.0.emit("unread-changed", unread);
+    }
+
+    fn agent_status(&self, status: &AgentStatus) {
+        let _ = self.0.emit("agent-status", status);
+    }
+
+    fn agent_open(&self) {
+        let _ = self.0.emit("agent-open", ());
+    }
+
+    fn comments_changed(&self) {
+        let _ = self.0.emit("comments-changed", ());
     }
 }
 
@@ -671,6 +687,81 @@ pub async fn mark_all_read(state: State<'_, AppState>) -> Result<(), AppError> {
 pub async fn mark_folder_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
     let ws = state.current()?;
     blocking(move || ws.mark_folder_read(&path)).await
+}
+
+/// Writes a comment on a passage of a document (the person selected it in the reading view).
+#[tauri::command]
+pub async fn add_comment(
+    state: State<'_, AppState>,
+    comment: NewComment,
+) -> Result<CommentView, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.add_comment(comment)).await
+}
+
+/// Every comment of the folder, each with its passage found again in the document as it is now (the `comments-changed`
+/// event says when to ask again).
+#[tauri::command]
+pub async fn list_comments(state: State<'_, AppState>) -> Result<Vec<CommentView>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.list_comments())).await
+}
+
+/// The person checks a comment off (`done`), or opens it again.
+#[tauri::command]
+pub async fn set_comment_done(
+    state: State<'_, AppState>,
+    id: String,
+    done: bool,
+) -> Result<CommentView, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_comment_done(&id, done)).await
+}
+
+/// Deletes a comment.
+#[tauri::command]
+pub async fn delete_comment(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.delete_comment(&id)).await
+}
+
+/// Turns the agent connection of the open folder on or off and remembers the switch in the app's own data. Does not
+/// fail for a connection that cannot start: the status says why.
+#[tauri::command]
+pub async fn set_agent_connection(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<AgentStatus, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_agent_connection(enabled)).await
+}
+
+/// The state of the agent connection: on or off, whether an agent is connected, and its latest requests.
+#[tauri::command]
+pub async fn agent_status(state: State<'_, AppState>) -> Result<AgentStatus, AppError> {
+    let ws = state.current()?;
+    Ok(ws.agent_status())
+}
+
+/// What the window shows, for an agent that asks (open document, section on screen, selection). Sent when it changes.
+#[tauri::command]
+pub async fn publish_agent_context(
+    state: State<'_, AppState>,
+    context: AgentContext,
+) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        ws.publish_agent_context(context);
+        Ok(())
+    })
+    .await
+}
+
+/// The place an agent asked to be shown, if the window has not picked it up yet (the `agent-open` event says there is one).
+#[tauri::command]
+pub async fn take_agent_open(state: State<'_, AppState>) -> Result<Option<Opened>, AppError> {
+    let ws = state.current()?;
+    Ok(ws.take_agent_open())
 }
 
 /// The URI scheme that serves the images of the open folder to the document view. Requests are

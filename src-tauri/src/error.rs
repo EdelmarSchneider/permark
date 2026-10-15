@@ -7,6 +7,7 @@ use std::io;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
+use crate::comments::CommentError;
 use crate::edit::EditError;
 use crate::external_editor::EditorError;
 use crate::fileops::FileOpError;
@@ -40,6 +41,8 @@ pub enum AppError {
     Shell(#[from] ShellError),
     #[error(transparent)]
     Editor(#[from] EditorError),
+    #[error(transparent)]
+    Comments(#[from] CommentError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -70,6 +73,7 @@ impl AppError {
             Self::FileOps(e) => e.kind(),
             Self::Shell(_) => "shell",
             Self::Editor(_) => "editor",
+            Self::Comments(e) => e.kind(),
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -202,6 +206,15 @@ impl AppError {
                 subject: e.subject().map(str::to_owned),
                 detail: e.detail(),
                 reason: Some(e.reason().to_owned()),
+            },
+            Self::Comments(e) => match e {
+                CommentError::NotADocument(subject) | CommentError::NotFound(subject) => {
+                    Details::subject(subject)
+                }
+                CommentError::Io { path, source } => Details::io(path, source),
+                CommentError::Empty | CommentError::TooMany | CommentError::SingleFile => {
+                    Details::default()
+                }
             },
             Self::Git(GitError::WorkerGone) | Self::NoVault | Self::Superseded => {
                 Details::default()

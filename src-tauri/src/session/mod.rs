@@ -6,6 +6,7 @@
 
 mod app_settings;
 mod config;
+mod private;
 mod recent;
 mod store;
 mod window;
@@ -18,7 +19,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 pub use app_settings::{effective_language, installer_language, AppSettingsStore, Language};
 pub use config::{Config, TreeConfig, TreeShow};
+pub(crate) use private::{open_lock_file, remove_local_state, write_local_state};
 pub use recent::{RecentStore, RecentVault};
+pub(crate) use store::project_key;
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};
 pub use window::{saved_for_launch, WindowState};
 
@@ -156,6 +159,7 @@ pub enum RightTab {
     #[default]
     Changes,
     Outline,
+    Comments,
 }
 
 /// What happens to the links of documents when files are moved or renamed in the Explorer. The UI
@@ -183,6 +187,8 @@ pub enum EditMode {
 /// an older save take their defaults.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
+// The settings are independent on/off choices that the UI stores as they are.
+#[allow(clippy::struct_excessive_bools)]
 pub struct SessionState {
     pub last_doc: Option<String>,
     pub scroll_top: f64,
@@ -494,6 +500,7 @@ mod tests {
         for (name, tab) in [
             ("changes", RightTab::Changes),
             ("outline", RightTab::Outline),
+            ("comments", RightTab::Comments),
         ] {
             let json = format!("{{\"rightTab\": \"{name}\"}}");
             let s: SessionState = serde_json::from_str(&json).expect("parse");
@@ -565,6 +572,19 @@ mod tests {
             assert!((s.zoom - 1.5).abs() < f64::EPSILON);
             assert_eq!(s.edit_mode, EditMode::Visual, "{mode}");
         }
+    }
+
+    /// The agent connection's switch is not part of the session: a session file lives in the project's folder, which
+    /// a repository can fill, and the switch is kept in the app's own data (see `StateStore::agent_connection`).
+    #[test]
+    fn a_session_file_has_no_say_in_the_agent_connection() {
+        let s: SessionState =
+            serde_json::from_str("{\"follow\": true, \"agentConnection\": true}").expect("parse");
+        assert!(s.follow, "the rest of the session is kept");
+        assert!(serde_json::to_value(&s)
+            .expect("json")
+            .get("agentConnection")
+            .is_none());
     }
 
     #[test]

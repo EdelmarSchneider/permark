@@ -138,6 +138,109 @@ export type SessionState = {
   initHintNever: boolean;
 };
 
+// ---- the agent connection (docs/design/v0.4.md) ------------------------------------------------------
+
+/** How the open document is shown. */
+export type AgentViewMode = "reading" | "visual" | "source";
+
+/** What the window publishes for an agent that asks: the document, the section on screen and the selection. */
+export type AgentContext = {
+  /** The open document (a path of the project), or null. */
+  document: string | null;
+  mode: AgentViewMode | null;
+  /** The section on screen: its heading path and its lines (from 1, both included). */
+  section: { headingPath: string[]; startLine?: number; endLine?: number } | null;
+  /** The selected text; the lines are missing when the editor cannot tell. */
+  selection: {
+    text: string;
+    headingPath: string[];
+    startLine?: number;
+    endLine?: number;
+  } | null;
+  /** The editor holds changes that are not saved to the file. */
+  unsaved: boolean;
+};
+
+/** One request an agent made. */
+export type AgentRequest = {
+  /** The tool: `get_context`, `list_unread`, `search` or `open`. */
+  tool: string;
+  /** What it was about (the query, the path). */
+  subject: string | null;
+  atMs: number;
+};
+
+/** Why the agent connection could not start; the interface words each kind itself (`agentFailureText`). */
+export type AgentFailureKind = "inUse" | "folderNotPrivate" | "pathTooLong" | "other";
+
+/** A connection that was meant to listen and could not. */
+export type AgentFailure = {
+  kind: AgentFailureKind;
+  /** The system's own words, in English (the place and the error): for a tooltip, and the text of a kind the interface has no words for. */
+  message: string;
+};
+
+/** The agent connection of the open project. */
+export type AgentStatus = {
+  enabled: boolean;
+  /** The window is listening (not when the socket could not be opened; `error` says why). */
+  listening: boolean;
+  /** Programs connected now (an agent's `trailmark mcp`, a hook's `trailmark context`). */
+  connections: number;
+  /** The latest requests, newest first. */
+  recent: AgentRequest[];
+  error: AgentFailure | null;
+  /** The program an agent starts (`<program> mcp`): where this one is, for the setup lines; null when unknown. */
+  program: string | null;
+};
+
+/** A place an agent asked to be shown. */
+export type AgentOpen = {
+  path: string;
+  /** The line to show (from 1): the one asked for, or the one the heading is on. */
+  line?: number;
+  /** A heading was asked for and the document has none like it. */
+  headingNotFound?: boolean;
+};
+
+// ---- comments (docs/design/v0.4.md section 3) ---------------------------------------------------
+
+/** Whether a comment's passage could be found again in the document. */
+export type CommentPassage = "anchored" | "passageChanged" | "documentGone";
+
+/** A comment with its place worked out against the document as it is now. */
+export type Comment = {
+  id: string;
+  /** The document (a path of the project). */
+  path: string;
+  /** What the person wrote. */
+  text: string;
+  /** The passage the comment is on, as it was selected. */
+  quote: string;
+  /** The headings above the passage, its own section last. */
+  headingPath: string[];
+  /** Where the passage is now (lines from 1); the best guess unless `state` is `anchored`. */
+  line: number;
+  endLine: number;
+  createdMs: number;
+  state: CommentPassage;
+  done: boolean;
+  doneMs?: number;
+  doneBy?: "person" | "agent";
+  /** A short answer from the agent that marked the comment done. */
+  reply?: string;
+};
+
+/** A comment the person just wrote: the passage as the reading view knows it. */
+export type NewComment = {
+  path: string;
+  quote: string;
+  text: string;
+  headingPath: string[];
+  line: number;
+  endLine: number;
+};
+
 // ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------
 /** What a top-level block is; decides what the Visual editor may do with it (locked blocks keep their bytes). */
 export type BlockKind =

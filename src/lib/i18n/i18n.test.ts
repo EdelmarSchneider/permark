@@ -124,13 +124,28 @@ describe("keys", () => {
 });
 
 describe("the Semantic teaser", () => {
-  it("names the release it is planned for (v0.5), everywhere it shows, in every language", () => {
+  it("names the release it is planned for (v0.6), everywhere it shows, in every language", () => {
     for (const locale of LOCALES) {
       language.preference = locale;
       for (const key of ["search.soon", "search.semanticLabel", "search.semanticHint"] as const) {
-        expect(t(key), `${locale} ${key}`).toContain("v0.5");
-        expect(t(key), `${locale} ${key}`).not.toContain("v0.2");
+        expect(t(key), `${locale} ${key}`).toContain("v0.6");
+        expect(t(key), `${locale} ${key}`).not.toContain("v0.5");
       }
+    }
+  });
+});
+
+describe("what the agent connection says about privacy", () => {
+  it("does not claim that everything stays on the computer, and says where the context is also written, in every language", () => {
+    for (const locale of LOCALES) {
+      language.preference = locale;
+      // the old promise was about the whole outcome; the agent's own service is outside TrailMark
+      expect(en["settings.agentHint"], locale).not.toContain("Everything stays");
+      for (const key of ["settings.agentHint", "agent.shares.file"] as const) {
+        expect(t(key), `${locale} ${key}`).toContain(".trailmark/local/agent.json");
+      }
+      // a sentence of its own that says an agent may pass what it reads on
+      expect(t("agent.shares.leaves").length, locale).toBeGreaterThan(40);
     }
   });
 });

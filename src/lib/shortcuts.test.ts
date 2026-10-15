@@ -33,6 +33,7 @@ describe("matchShortcut", () => {
     ["Ctrl+Shift+T", ctrl("T", { shiftKey: true }), "tagsView"],
     ["T (reading)", press("t"), "editTags"],
     ["E (reading)", press("e"), "edit"],
+    ["C (reading)", press("c"), "addComment"],
     ["Ctrl+E", ctrl("e"), "toggleEdit"],
     ["Ctrl+S", ctrl("s"), "save"],
     ["Ctrl+N", ctrl("n"), "newFile"],
@@ -76,6 +77,17 @@ describe("matchShortcut", () => {
 
   it("treats Cmd like Ctrl", () => {
     expect(matchShortcut(press("p", { metaKey: true }))).toBe("quickOpen");
+  });
+
+  it("means a comment by a plain C only, and leaves plain N alone", () => {
+    expect(matchShortcut(press("c"))).toBe("addComment");
+    expect(matchShortcut(press("n"))).toBeNull();
+    // copying stays with the webview, and the two copy shortcuts keep their keys
+    expect(matchShortcut(ctrl("c"))).toBeNull();
+    expect(matchShortcut(press("C", { shiftKey: true }))).toBeNull();
+    expect(matchShortcut(press("c", { altKey: true }))).toBeNull();
+    expect(matchShortcut(press("C", { altKey: true, shiftKey: true }))).toBe("copyPath");
+    expect(matchShortcut(ctrl("c", { altKey: true }))).toBe("copyReference");
   });
 
   it("leaves Ctrl+K (the editor's link) and plain typing alone", () => {
@@ -147,6 +159,7 @@ describe("yieldsToTyping", () => {
     for (const mac of [false, true]) {
       expect(yieldsToTyping("editTags", mac)).toBe(true);
       expect(yieldsToTyping("edit", mac)).toBe(true);
+      expect(yieldsToTyping("addComment", mac)).toBe(true);
       expect(yieldsToTyping("nextUnread", mac)).toBe(true);
     }
   });

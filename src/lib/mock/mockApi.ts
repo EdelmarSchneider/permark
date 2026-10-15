@@ -27,6 +27,8 @@ import {
   searchDocs,
 } from "./fixtures";
 import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./mockFileOps";
+import { agentStatus, publishAgentContext, setAgentConnection, takeAgentOpen } from "./mockAgent";
+import { addComment, deleteComment, listComments, setCommentDone } from "./mockComments";
 import { listUnread, markAllRead, markFolderRead, markRead, markUnread } from "./mockUnread";
 import {
   createDocument,
@@ -219,5 +221,13 @@ export const mockImpl: Api = {
   markUnread: async (path) => markUnread(path),
   markAllRead: async () => markAllRead(),
   markFolderRead: async (path) => markFolderRead(path),
+  setAgentConnection: async (enabled) => setAgentConnection(enabled),
+  agentStatus: async () => agentStatus(),
+  publishAgentContext: async (context) => publishAgentContext(context),
+  takeAgentOpen: async () => takeAgentOpen(),
+  addComment: async (comment) => addComment(comment),
+  listComments: async () => listComments(),
+  setCommentDone: async (id, done) => setCommentDone(id, done),
+  deleteComment: async (id) => deleteComment(id),
   on: async () => () => {},
 };

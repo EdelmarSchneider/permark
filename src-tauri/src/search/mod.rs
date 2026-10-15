@@ -4,7 +4,7 @@
 //! fuse BM25 results with embedding results (reciprocal rank fusion) behind the same interface.
 
 mod bm25;
-mod chunk;
+pub(crate) mod chunk;
 mod fold;
 pub mod indexer;
 

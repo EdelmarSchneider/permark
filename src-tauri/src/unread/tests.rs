@@ -596,6 +596,40 @@ fn a_state_that_cannot_be_written_does_not_stop_anything() {
     service.stop();
 }
 
+fn on_disk(fx: &Fx) -> Vec<String> {
+    let vault = Vault::open(fx.project.path()).expect("vault");
+    let filter = PathFilter::new(&[(vault.root().to_path_buf(), None)], &[]);
+    unread_on_disk(&vault, &filter, &fx.read_path())
+}
+
+#[test]
+fn with_no_window_the_unread_documents_are_read_from_the_saved_state_and_the_disk() {
+    let fx = Fx::new(&[("a.md", "one"), ("docs/b.md", "two"), ("notes.txt", "text")]);
+    // Never looked at: everything counts as read, as in the app.
+    assert_eq!(on_disk(&fx), NOTHING);
+    // Read state as the app saved it; then a document changes, one is new, one is gone.
+    let service = fx.open();
+    service.stop();
+    assert_eq!(on_disk(&fx), NOTHING);
+    fx.write("a.md", "changed");
+    fx.write("c.md", "new");
+    fx.write("notes.txt", "also changed, but not Markdown");
+    fx.remove("docs/b.md");
+    assert_eq!(on_disk(&fx), ["a.md", "c.md"]);
+    // The state file is only read: asking never marks anything as read.
+    assert_eq!(on_disk(&fx), ["a.md", "c.md"]);
+    assert_eq!(fx.saved_paths(), ["a.md", "docs/b.md"]);
+}
+
+#[test]
+fn a_damaged_state_file_leaves_the_documents_unread_like_the_service_does() {
+    let fx = Fx::new(&[("a.md", "one")]);
+    fs::write(fx.read_path(), "{ not json").expect("write");
+    assert_eq!(on_disk(&fx), NOTHING, "no usable state: the baseline");
+    fs::write(fx.read_path(), r#"{"a.md": "not a hash"}"#).expect("write");
+    assert_eq!(on_disk(&fx), ["a.md"]);
+}
+
 #[test]
 fn the_hex_form_is_sixteen_lowercase_digits() {
     assert_eq!(hash_to_hex(0xAB), "00000000000000ab");

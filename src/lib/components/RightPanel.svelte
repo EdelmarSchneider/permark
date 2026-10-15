@@ -9,6 +9,7 @@
   import { ago, relativeTime } from "../time";
   import FeedPanel from "./FeedPanel.svelte";
   import IconButton from "./IconButton.svelte";
+  import CommentsPanel from "./CommentsPanel.svelte";
   import OutlineList from "./OutlineList.svelte";
   import Resizer from "./Resizer.svelte";
   import SinceLastVisit from "./SinceLastVisit.svelte";
@@ -30,6 +31,7 @@
   const labels: Record<RightTab, { name: MessageKey; hint: MessageKey }> = {
     changes: { name: "panel.tabChanges", hint: "panel.tabChangesHint" },
     outline: { name: "panel.tabOutline", hint: "panel.tabOutlineHint" },
+    comments: { name: "panel.tabComments", hint: "panel.tabCommentsHint" },
   };
 
   let tablist: HTMLElement | undefined = $state();
@@ -123,6 +125,15 @@
       hidden={session.rightTab !== "outline"}
     >
       <OutlineList active={session.rightTab === "outline" && session.right.open} />
+    </div>
+    <div
+      id="rpanel-view-comments"
+      class="panel-inner"
+      role="tabpanel"
+      aria-labelledby="rpanel-tab-comments"
+      hidden={session.rightTab !== "comments"}
+    >
+      <CommentsPanel active={session.rightTab === "comments" && session.right.open} />
     </div>
   </div>
 </aside>

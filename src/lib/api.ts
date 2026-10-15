@@ -6,6 +6,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LanguagePreference } from "./i18n";
 import type {
+  AgentContext,
+  AgentOpen,
+  AgentStatus,
   AssetWritten,
   BufferText,
   ChangedSince,
@@ -21,6 +24,8 @@ import type {
   Move,
   MoveOutcome,
   MovePreview,
+  NewComment,
+  Comment,
   ParsedBlocks,
   RecentVault,
   SaveOutcome,
@@ -49,6 +54,12 @@ export type EventMap = {
   "open-path": string;
   /** The system asked for a file of the project this window shows (macOS: Finder): its path in the project. */
   "show-in-project": string;
+  /** The agent connection changed: switched, an agent came or went, or one asked something. */
+  "agent-status": AgentStatus;
+  /** An agent asked to show a place: `takeAgentOpen` has it. */
+  "agent-open": null;
+  /** The comments changed: one was added, completed or deleted, or a document moved. `listComments` has them. */
+  "comments-changed": null;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
@@ -159,6 +170,24 @@ export interface Api {
   markAllRead(): Promise<void>;
   /** Every document in a folder, and below it, counts as read. */
   markFolderRead(path: string): Promise<void>;
+  /**
+   * Turns the agent connection of the open project on or off (the setting is saved with the session). A connection that
+   * cannot start still resolves: the status says why.
+   */
+  setAgentConnection(enabled: boolean): Promise<AgentStatus>;
+  /** The state of the agent connection (the `agent-status` event carries the same). */
+  agentStatus(): Promise<AgentStatus>;
+  /** What the window shows, for an agent that asks. Sent when it changes. */
+  publishAgentContext(context: AgentContext): Promise<void>;
+  /** The place an agent asked to be shown, once; null when there is none. */
+  takeAgentOpen(): Promise<AgentOpen | null>;
+  /** Writes a comment on a passage of a document. Rejects with kind "emptyComment" or "notADocument". */
+  addComment(comment: NewComment): Promise<Comment>;
+  /** Every comment of the project, each with its passage found again in the document as it is now (by document and line). */
+  listComments(): Promise<Comment[]>;
+  /** Checks a comment off (`done`), or opens it again. */
+  setCommentDone(id: string, done: boolean): Promise<Comment>;
+  deleteComment(id: string): Promise<void>;
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -226,6 +255,14 @@ export const tauriApi: Api = {
   markUnread: (path) => invoke<void>("mark_unread", { path }),
   markAllRead: () => invoke<void>("mark_all_read"),
   markFolderRead: (path) => invoke<void>("mark_folder_read", { path }),
+  setAgentConnection: (enabled) => invoke<AgentStatus>("set_agent_connection", { enabled }),
+  agentStatus: () => invoke<AgentStatus>("agent_status"),
+  publishAgentContext: (context) => invoke<void>("publish_agent_context", { context }),
+  takeAgentOpen: () => invoke<AgentOpen | null>("take_agent_open"),
+  addComment: (comment) => invoke<Comment>("add_comment", { comment }),
+  listComments: () => invoke<Comment[]>("list_comments"),
+  setCommentDone: (id, done) => invoke<Comment>("set_comment_done", { id, done }),
+  deleteComment: (id) => invoke<void>("delete_comment", { id }),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -316,6 +353,14 @@ function createMockApi(): Api {
     markUnread: command("markUnread"),
     markAllRead: command("markAllRead"),
     markFolderRead: command("markFolderRead"),
+    setAgentConnection: command("setAgentConnection"),
+    agentStatus: command("agentStatus"),
+    publishAgentContext: command("publishAgentContext"),
+    takeAgentOpen: command("takeAgentOpen"),
+    addComment: command("addComment"),
+    listComments: command("listComments"),
+    setCommentDone: command("setCommentDone"),
+    deleteComment: command("deleteComment"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

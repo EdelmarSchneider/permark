@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::config::{Config, DEFAULT_CONFIG_TOML};
+use super::private;
 use super::window::{self, WindowState};
 use super::{SessionError, SessionState};
 use crate::util::{hash_hex, write_atomic};
@@ -13,7 +14,11 @@ use crate::util::{hash_hex, write_atomic};
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
 const READ_FILE: &str = "read.json";
+const COMMENTS_FILE: &str = "comments.json";
+const AGENT_FILE: &str = "agent.json";
 const META_FILE: &str = "meta.toml";
+/// The agent connection's switch, in the project's folder in AppData (see [`StateStore::agent_connection`]).
+const CONNECTION_FILE: &str = "agent-connection.json";
 const TRAILMARK_DIR: &str = ".trailmark";
 const PROJECT_GITIGNORE: &str = "\
 # TrailMark private state: not shared.
@@ -49,6 +54,12 @@ pub struct LastVisit {
     pub dirty: BTreeMap<String, FileStamp>,
 }
 
+/// The agent connection's switch as it is kept.
+#[derive(Serialize, Deserialize)]
+struct ConnectionSwitch {
+    enabled: bool,
+}
+
 #[derive(Debug)]
 pub struct StateStore {
     /// Canonical project root.
@@ -61,7 +72,7 @@ pub struct StateStore {
 }
 
 /// Stable, case-insensitive-on-Windows key for a project folder.
-fn project_key(root: &Path) -> String {
+pub(crate) fn project_key(root: &Path) -> String {
     let mut s = dunce::simplified(root).to_string_lossy().replace('\\', "/");
     while s.ends_with('/') && s.len() > 1 {
         s.pop();
@@ -73,7 +84,9 @@ fn project_key(root: &Path) -> String {
 }
 
 impl StateStore {
-    /// Uses `.trailmark/local/` when the project has a `.trailmark/` folder, AppData otherwise.
+    /// Uses `.trailmark/local/` when the project has a `.trailmark/` folder, AppData otherwise. A `.trailmark/` or
+    /// `.trailmark/local/` that is a link (a repository can carry one) is not used: the state stays in AppData, so
+    /// nothing is written or deleted wherever the link points.
     pub fn open(app_data_dir: &Path, root: &Path) -> Self {
         // Canonical when possible, so every spelling of a folder (8.3 short names, `..`, case on Windows) maps to
         // one key. The workspace already passes the vault's canonical root, for which this changes nothing.
@@ -81,7 +94,7 @@ impl StateStore {
             dunce::canonicalize(root).unwrap_or_else(|_| dunce::simplified(root).to_path_buf());
         let trailmark = root.join(TRAILMARK_DIR);
         let outside = app_data_dir.join("projects").join(project_key(&root));
-        let (location, dir) = if trailmark.is_dir() {
+        let (location, dir) = if private::usable_in(&trailmark) {
             (StateLocation::Project, trailmark.join("local"))
         } else {
             (StateLocation::AppData, outside.clone())
@@ -109,6 +122,24 @@ impl StateStore {
         self.dir.join(READ_FILE)
     }
 
+    /// Where the comments are kept: `comments.json` with the rest of the local state. Personal, like `read.json`.
+    pub fn comments_path(&self) -> PathBuf {
+        self.dir.join(COMMENTS_FILE)
+    }
+
+    /// Where the agent connection keeps what the person is looking at: `agent.json` with the rest of the local
+    /// state, but only in a project that keeps its state in `.trailmark/` (nothing is written into AppData for
+    /// other programs to find).
+    pub fn agent_path(&self) -> Option<PathBuf> {
+        (self.location == StateLocation::Project).then(|| self.dir.join(AGENT_FILE))
+    }
+
+    /// Whether TrailMark has been used on this folder: it has a `.trailmark/` folder, or the app kept state for it.
+    /// This is how a program started somewhere inside a project finds the project.
+    pub fn is_known(&self) -> bool {
+        self.location == StateLocation::Project || self.dir.is_dir()
+    }
+
     /// Where the tags and descriptions added in the app are kept: `.trailmark/meta.toml` (shared with
     /// the project) once the project has a `.trailmark/` folder, a file next to the AppData state before.
     pub fn meta_path(&self) -> PathBuf {
@@ -124,9 +155,37 @@ impl StateStore {
         (self.location == StateLocation::Project).then(|| self.appdata_dir.join(META_FILE))
     }
 
+    /// Whether the person turned the agent connection on for this project.
+    ///
+    /// The switch lives only in the app's own data folder, never in the project: a project's files are content that
+    /// somebody else may have written (a cloned repository can carry a `.trailmark/` folder), and what they say must
+    /// not be able to share the person's reading with an agent. Nothing in `.trailmark/` is read for it.
+    pub fn agent_connection(&self) -> bool {
+        std::fs::read(self.appdata_dir.join(CONNECTION_FILE))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<ConnectionSwitch>(&bytes).ok())
+            .is_some_and(|switch| switch.enabled)
+    }
+
+    /// Remembers the switch of the agent connection (see [`StateStore::agent_connection`]). Turning it off for a
+    /// project that never had it on writes nothing.
+    pub fn set_agent_connection(&self, enabled: bool) -> Result<(), SessionError> {
+        let path = self.appdata_dir.join(CONNECTION_FILE);
+        if !enabled && !path.exists() {
+            return Ok(());
+        }
+        let bytes = serde_json::to_vec(&ConnectionSwitch { enabled })
+            .map_err(|e| SessionError::Json(e.to_string()))?;
+        write_atomic(&path, &bytes).map_err(|e| SessionError::io(&path, e))
+    }
+
     /// Project settings from `.trailmark/config.toml`; defaults when missing or invalid.
     pub fn config(&self) -> Config {
-        std::fs::read_to_string(self.root.join(TRAILMARK_DIR).join("config.toml"))
+        let trailmark = self.root.join(TRAILMARK_DIR);
+        if !private::is_real_folder(&trailmark) {
+            return Config::default();
+        }
+        std::fs::read_to_string(trailmark.join("config.toml"))
             .ok()
             .and_then(|t| Config::parse(&t).ok())
             .unwrap_or_default()
@@ -141,7 +200,7 @@ impl StateStore {
         let bytes =
             serde_json::to_vec_pretty(value).map_err(|e| SessionError::Json(e.to_string()))?;
         let path = self.dir.join(file);
-        write_atomic(&path, &bytes).map_err(|e| SessionError::io(&path, e))
+        private::write_local_state(&path, &bytes).map_err(|e| SessionError::io(&path, e))
     }
 
     /// The saved session, if any (unreadable data counts as none).
@@ -170,8 +229,9 @@ impl StateStore {
         state.save(&self.dir)
     }
 
-    /// Creates `.trailmark/{config.toml, .gitignore, cache/, local/}` (existing files are kept),
-    /// carries the AppData state over, and switches to project storage.
+    /// Creates `.trailmark/{config.toml, .gitignore, cache/, local/}` (existing files are kept; `cache/` and `local/`
+    /// ignore themselves), carries the AppData state over, and switches to project storage. A `.trailmark/` or one
+    /// of its folders that is a link is refused.
     pub fn init_project_folder(&mut self) -> Result<(), SessionError> {
         let tm = self.root.join(TRAILMARK_DIR);
         let io = |p: &Path| {
@@ -180,22 +240,27 @@ impl StateStore {
         };
         for sub in ["cache", "local"] {
             let dir = tm.join(sub);
-            std::fs::create_dir_all(&dir).map_err(io(&dir))?;
+            private::prepare(&dir).map_err(io(&dir))?;
         }
         for (name, content) in [
             ("config.toml", DEFAULT_CONFIG_TOML),
             (".gitignore", PROJECT_GITIGNORE),
         ] {
             let path = tm.join(name);
-            if !path.exists() {
-                std::fs::write(&path, content).map_err(io(&path))?;
-            }
+            private::create_if_missing(&path, content).map_err(io(&path))?;
         }
         let local = tm.join("local");
         if self.location == StateLocation::AppData {
-            for file in [SESSION_FILE, LAST_VISIT_FILE, READ_FILE, window::FILE_NAME] {
+            for file in [
+                SESSION_FILE,
+                LAST_VISIT_FILE,
+                READ_FILE,
+                COMMENTS_FILE,
+                window::FILE_NAME,
+            ] {
                 let (from, to) = (self.dir.join(file), local.join(file));
-                if from.is_file() && !to.exists() {
+                // nothing there at all: a link in place of the file would be written through
+                if from.is_file() && std::fs::symlink_metadata(&to).is_err() {
                     std::fs::copy(&from, &to).map_err(io(&from))?;
                 }
             }
@@ -385,6 +450,152 @@ mod tests {
         assert!(!f.app.path().join("projects").exists());
     }
 
+    /// A folder `outside` the project that a link can point to, with a marker file in it.
+    fn outside() -> tempfile::TempDir {
+        let outside = tempfile::tempdir().expect("outside");
+        fs::write(outside.path().join("marker.txt"), "precious").expect("write");
+        outside
+    }
+
+    /// Nothing but the marker is in `outside`: the project's state did not go there.
+    fn untouched(outside: &tempfile::TempDir) {
+        let mut names: Vec<_> = fs::read_dir(outside.path())
+            .expect("ls")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            ["marker.txt"],
+            "something was written behind the link"
+        );
+    }
+
+    #[test]
+    fn a_trailmark_folder_that_is_a_link_is_not_used() {
+        use crate::util::testing::{dir_link, remove_link};
+
+        let f = fx();
+        let outside = outside();
+        let link = f.project.path().join(".trailmark");
+        dir_link(&link, outside.path());
+        let mut s = f.store();
+        assert_eq!(s.location(), StateLocation::AppData);
+        assert_eq!(s.agent_path(), None);
+        assert!(s.dir().starts_with(f.app.path()));
+        // the state is kept, but not behind the link
+        s.save_session(&SessionState::default()).expect("save");
+        s.save_last_visit(&LastVisit::default()).expect("save");
+        assert!(s.dir().join("session.json").is_file());
+        // what the link points to has no say either
+        fs::write(outside.path().join("config.toml"), "baseline = \"head\"\n").expect("write");
+        assert_eq!(s.config(), Config::default());
+        fs::remove_file(outside.path().join("config.toml")).expect("rm");
+        // and it is not made into a project folder
+        assert!(s.init_project_folder().is_err());
+        untouched(&outside);
+        assert_eq!(s.location(), StateLocation::AppData);
+        remove_link(&link);
+    }
+
+    #[test]
+    fn a_local_folder_that_is_a_link_is_not_used() {
+        use crate::util::testing::{dir_link, remove_link};
+
+        let f = fx();
+        let outside = outside();
+        let trailmark = f.project.path().join(".trailmark");
+        fs::create_dir(&trailmark).expect("mkdir");
+        let link = trailmark.join("local");
+        dir_link(&link, outside.path());
+        let mut s = f.store();
+        assert_eq!(
+            s.location(),
+            StateLocation::AppData,
+            "the state stays in the app's data"
+        );
+        assert_eq!(s.agent_path(), None);
+        s.save_session(&SessionState::default()).expect("save");
+        s.save_window(&WindowState {
+            x: 0,
+            y: 0,
+            width: 800,
+            height: 600,
+            scale: 1.0,
+            maximized: false,
+        })
+        .expect("save");
+        assert!(s.init_project_folder().is_err());
+        untouched(&outside);
+        remove_link(&link);
+    }
+
+    #[test]
+    fn a_state_folder_that_turns_into_a_link_while_the_app_runs_is_not_written_through() {
+        use crate::util::testing::{dir_link, remove_link};
+
+        let f = fx();
+        fs::create_dir(f.project.path().join(".trailmark")).expect("mkdir");
+        let s = f.store();
+        assert_eq!(s.location(), StateLocation::Project);
+        s.save_session(&SessionState::default()).expect("save");
+        // a branch that was checked out brings a link in place of the folder
+        let outside = outside();
+        let local = f.project.path().join(".trailmark/local");
+        fs::remove_dir_all(&local).expect("rm");
+        dir_link(&local, outside.path());
+        assert!(s.save_session(&SessionState::default()).is_err());
+        assert!(s.save_last_visit(&LastVisit::default()).is_err());
+        untouched(&outside);
+        remove_link(&local);
+    }
+
+    #[test]
+    fn the_private_folders_ignore_themselves() {
+        let f = fx();
+        let mut s = f.store();
+        s.init_project_folder().expect("init");
+        let tm = f.project.path().join(".trailmark");
+        for folder in ["local", "cache"] {
+            let ignore = fs::read_to_string(tm.join(folder).join(".gitignore")).expect(folder);
+            assert!(
+                ignore.lines().any(|line| line == "*"),
+                "{folder}: {ignore:?}"
+            );
+        }
+    }
+
+    /// A project can commit `.trailmark/` without a `.gitignore` (or with one that says nothing about `local/`).
+    #[test]
+    fn the_local_state_stays_out_of_git_whatever_the_projects_gitignore_says() {
+        let f = fx();
+        let repo = git2::Repository::init(f.project.path()).expect("git init");
+        let tm = f.project.path().join(".trailmark");
+        fs::create_dir(&tm).expect("mkdir");
+        fs::write(tm.join("config.toml"), "").expect("write");
+        fs::write(tm.join(".gitignore"), "# nothing about local\n").expect("write");
+        let s = f.store();
+        s.save_session(&SessionState::default()).expect("save");
+        fs::write(s.comments_path(), "{}").expect("write");
+        assert!(s.dir().join(".gitignore").is_file());
+        for file in ["session.json", "comments.json"] {
+            let path = Path::new(".trailmark/local").join(file);
+            assert!(repo.status_should_ignore(&path).expect("status"), "{file}");
+        }
+        // the shared part is not hidden
+        assert!(!repo
+            .status_should_ignore(Path::new(".trailmark/config.toml"))
+            .expect("status"));
+        // a folder that ignores itself is kept as the project wrote it when it already has a .gitignore
+        fs::write(s.dir().join(".gitignore"), "mine\n").expect("write");
+        s.save_session(&SessionState::default()).expect("save");
+        assert_eq!(
+            fs::read_to_string(s.dir().join(".gitignore")).expect("read"),
+            "mine\n"
+        );
+    }
+
     #[test]
     fn init_creates_the_documented_layout() {
         let f = fx();
@@ -457,6 +668,48 @@ mod tests {
         );
         // never in the part of .trailmark that is shared
         assert_eq!(f.store().read_path(), s.read_path());
+    }
+
+    #[test]
+    fn comments_are_kept_with_the_local_state_and_follow_it_into_the_project() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.comments_path(), s.dir().join("comments.json"));
+        assert!(s.comments_path().starts_with(f.app.path()));
+        fs::create_dir_all(s.dir()).expect("mkdir");
+        fs::write(s.comments_path(), r#"{"version": 1, "comments": []}"#).expect("write");
+        s.init_project_folder().expect("init");
+        let local = Path::new(".trailmark").join("local").join("comments.json");
+        assert!(s.comments_path().ends_with(&local));
+        assert_eq!(
+            fs::read_to_string(s.comments_path()).expect("carried over"),
+            r#"{"version": 1, "comments": []}"#
+        );
+        // in the part of .trailmark that is not shared
+        assert_eq!(f.store().comments_path(), s.comments_path());
+    }
+
+    #[test]
+    fn the_agent_state_file_is_written_only_into_a_project_that_keeps_its_state_there() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.agent_path(), None, "nothing is written into AppData");
+        s.init_project_folder().expect("init");
+        let local = Path::new(".trailmark").join("local").join("agent.json");
+        assert!(s.agent_path().expect("a path").ends_with(&local));
+        assert_eq!(f.store().agent_path(), s.agent_path());
+    }
+
+    #[test]
+    fn a_folder_is_known_once_the_app_kept_state_for_it_or_it_has_a_trailmark_folder() {
+        let f = fx();
+        assert!(!f.store().is_known(), "never opened");
+        let s = f.store();
+        s.save_session(&SessionState::default()).expect("save");
+        assert!(f.store().is_known(), "the app kept state for it");
+        let other = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(other.path().join(".trailmark")).expect("mkdir");
+        assert!(StateStore::open(f.app.path(), other.path()).is_known());
     }
 
     #[test]

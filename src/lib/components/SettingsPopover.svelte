@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import { claudeCodeCommand, hookJson, mcpJson } from "../agentSetup";
   import { LINK_UPDATES } from "../fileOps";
   import { EDIT_MODES } from "../editMode";
   import {
@@ -15,13 +16,16 @@
     t,
     type LanguagePreference,
   } from "../i18n";
+  import { copyText } from "../platform";
   import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
+  import { agent } from "../stores/agent.svelte";
   import { docs } from "../stores/docs.svelte";
   import { editorCommand } from "../stores/editorCommand.svelte";
   import { chooseLanguage } from "../stores/languageChoice.svelte";
   import { session } from "../stores/session.svelte";
   import { shell } from "../stores/shell.svelte";
+  import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
   import { updates } from "../stores/updates.svelte";
   import { vault } from "../stores/vault.svelte";
@@ -79,6 +83,32 @@
     window.addEventListener("focus", reload);
     return () => window.removeEventListener("focus", reload);
   });
+
+  // The lines that connect an agent, each with the program's own path (see `agentSetup.ts`).
+  type SetupLine = { id: string; label: string; text: string };
+  const setupLines = $derived<SetupLine[]>([
+    {
+      id: "claude",
+      label: t("settings.agentClaude"),
+      text: claudeCodeCommand(agent.status.program),
+    },
+    { id: "json", label: t("settings.agentJson"), text: mcpJson(agent.status.program) },
+    { id: "hook", label: t("settings.agentHook"), text: hookJson(agent.status.program) },
+  ]);
+  let copiedLine = $state<string | null>(null);
+  let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+  onDestroy(() => {
+    if (copiedTimer !== null) clearTimeout(copiedTimer);
+  });
+  async function copySetup(line: SetupLine): Promise<void> {
+    if (!(await copyText(line.text))) {
+      toast.message(t("copy.failed"), "warn");
+      return;
+    }
+    copiedLine = line.id;
+    if (copiedTimer !== null) clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copiedLine = null), 1500);
+  }
 
   // Writes the change, then shows what the system has: when the write failed the box goes back to where it was.
   async function toggle(
@@ -297,6 +327,51 @@
       {/if}
     </div>
   {/if}
+  <div class="field">
+    <span class="field__label">{t("settings.agent")}</span>
+    <label class="filter__check">
+      <input
+        type="checkbox"
+        checked={agent.enabled}
+        disabled={agent.busy || vault.isSimple}
+        aria-describedby="agent-hint"
+        onchange={async (e) => {
+          const box = e.currentTarget;
+          await agent.setEnabled(box.checked);
+          // when the change did not go through the box goes back to what is true
+          box.checked = agent.enabled;
+        }}
+      />
+      <span class="filter__text">
+        <span>{t("settings.agentSwitch")}</span>
+        <span id="agent-hint" class="filter__hint"
+          >{vault.isSimple ? t("settings.agentUnavailable") : t("settings.agentHint")}</span
+        >
+      </span>
+    </label>
+    {#if agent.enabled}
+      <div class="agent-setup">
+        <span class="field__label">{t("settings.agentSetup")}</span>
+        {#each setupLines as line (line.id)}
+          <div class="agent-setup__head">
+            <span>{line.label}</span>
+            <button type="button" class="btn btn--sm" onclick={() => void copySetup(line)}>
+              {copiedLine === line.id ? t("common.copied") : t("common.copy")}
+            </button>
+          </div>
+          <textarea
+            class="agent-code"
+            readonly
+            wrap="off"
+            spellcheck="false"
+            rows={line.text.split("\n").length}
+            aria-label={line.label}
+            value={line.text}></textarea>
+        {/each}
+        <span class="field__status">{t("settings.agentSetupHint")}</span>
+      </div>
+    {/if}
+  </div>
   <div class="field">
     <span class="field__label">{t("settings.updates")}</span>
     <div class="field__row">

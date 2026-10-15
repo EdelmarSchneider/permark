@@ -1,0 +1,131 @@
+/* Agent connection: the status bar item, its popover, and the setup lines in Settings. The dot uses the accent, which is
+   what the app uses for "live": hollow while nothing is connected, filled while an agent is. */
+.agent-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex: none;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.agent-dot.is-connected {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* A request: a ring spreads from the dot once and fades. With reduced motion it is a still ring for as long as it lasts. */
+.agent-item.is-pulsing .agent-dot {
+  animation: tm-agent-pulse 900ms ease-out;
+}
+@keyframes tm-agent-pulse {
+  from {
+    box-shadow: 0 0 0 0 var(--accent-muted);
+  }
+  to {
+    box-shadow: 0 0 0 7px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-item.is-pulsing .agent-dot {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--accent-muted);
+  }
+}
+
+/* The popover ---------------------------------------------------------------------------- */
+.agent-pop__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.agent-pop__head .agent-dot {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.agent-pop__title {
+  display: block;
+  font-weight: 600;
+}
+.agent-list,
+.agent-requests {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-ui-sm);
+  line-height: 1.4;
+}
+.agent-list li {
+  position: relative;
+  padding-left: 12px;
+  color: var(--text);
+}
+.agent-list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0.55em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+.agent-requests li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.agent-requests__what {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-requests__when {
+  flex: none;
+  color: var(--faint);
+}
+.agent-pop__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The setup lines in Settings ----------------------------------------------------------- */
+.agent-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.agent-setup__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-ui-sm);
+}
+.agent-code {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  overflow: auto;
+  resize: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font: 11px/1.45 var(--font-code);
+  white-space: pre;
+}
+.agent-code:focus {
+  outline: 0;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}

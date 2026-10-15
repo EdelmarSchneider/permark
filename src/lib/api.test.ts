@@ -70,6 +70,31 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   markUnread: ["docs/a.md"],
   markAllRead: [],
   markFolderRead: ["docs"],
+  setAgentConnection: [true],
+  agentStatus: [],
+  publishAgentContext: [
+    {
+      document: "docs/a.md",
+      mode: "reading",
+      section: { headingPath: ["A"], startLine: 1, endLine: 4 },
+      selection: null,
+      unsaved: false,
+    },
+  ],
+  takeAgentOpen: [],
+  addComment: [
+    {
+      path: "docs/a.md",
+      quote: "a passage",
+      text: "Too vague.",
+      headingPath: ["A"],
+      line: 3,
+      endLine: 3,
+    },
+  ],
+  listComments: [],
+  setCommentDone: ["c1a2b3c4d", true],
+  deleteComment: ["c1a2b3c4d"],
 };
 
 describe("tauriApi", () => {

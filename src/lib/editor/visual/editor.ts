@@ -12,6 +12,7 @@ import { strikethroughKeymap } from "@milkdown/kit/preset/gfm";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
 import { EditorState, NodeSelection, Selection, TextSelection } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
+import { SELECTION_READ_LIMIT, type SelectedText } from "../../agentContext";
 import type { HeadingInfo } from "../../outline";
 import { currentHeading } from "../../outline";
 import type { BlockMap } from "../blockModel";
@@ -236,6 +237,20 @@ export class VisualEditor {
   /** The file text a save would write: untouched blocks and separators as they were, edited blocks as the editor writes them. */
   text(): string {
     return this.built ? composeDoc(this.core, this.built, this.core.view.state.doc).text : "";
+  }
+
+  /** The selected text, or null when nothing is selected. */
+  selection(): SelectedText | null {
+    const { doc, selection } = this.core.view.state;
+    if (selection.empty) return null;
+    // an image shows its alt text, a line break a space; only what an agent can be told is read
+    const text = doc.textBetween(
+      selection.from,
+      Math.min(selection.to, selection.from + SELECTION_READ_LIMIT),
+      "\n",
+      (leaf) => (leaf.type.name === "image" ? String(leaf.attrs.alt ?? "") : " "),
+    );
+    return { text };
   }
 
   /** The 0-based line of the caret's block in `text()`. */

@@ -2,6 +2,7 @@
 // Tauri rejects with the serialized `AppError`, which may be a string or an object with a message.
 
 import { MESSAGES, t, type MessageKey, type Params } from "./i18n";
+import type { AgentFailure } from "./types";
 
 /** The stable `kind` the backend gave an error (`exists`, `denied`, `notFound`...), or null when it has none. */
 export function errorKind(error: unknown): string | null {
@@ -173,6 +174,22 @@ export function errorMessage(error: unknown): string {
     }
   }
   return errorText(error);
+}
+
+/** The keys that word each reason the agent connection could not start. */
+const AGENT_FAILURES = {
+  inUse: "agent.error.inUse",
+  folderNotPrivate: "agent.error.folderNotPrivate",
+  pathTooLong: "agent.error.pathTooLong",
+} as const satisfies Record<string, MessageKey>;
+
+/**
+ * Why the agent connection could not start, in the language of the interface. A reason the interface has no words for
+ * (`other`, or one a newer backend added) keeps the system's own text.
+ */
+export function agentFailureText(failure: AgentFailure): string {
+  const key = (AGENT_FAILURES as Record<string, MessageKey>)[failure.kind];
+  return key === undefined ? failure.message : t(key);
 }
 
 /** The words for the notes the backend attaches to a document (`utf16Le,deepNesting`), joined into one line. */

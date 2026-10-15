@@ -6,13 +6,16 @@
 //! [`fileops`] (rename, move, delete and new folders with the links kept working), [`external_editor`] (the command that
 //! opens a file in the person's editor).
 //! [`refs`] knows which images the documents use (for the Explorer filter); [`unread`] knows which documents
-//! changed since they were last read.
+//! changed since they were last read; [`comments`] keeps the comments a person leaves on passages.
 //! [`shell_integration`] adds "Open with TrailMark" to the file manager (Windows); [`open_request`] receives what the
 //! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
+//! [`bridge`] is the agent connection: `trailmark mcp` runs without a window and speaks the Model Context Protocol.
 
+mod bridge;
 mod commands;
+mod comments;
 mod edit;
 mod error;
 mod external_editor;
@@ -34,6 +37,31 @@ mod watch;
 mod window;
 mod workspace;
 
+/// What the integration tests need to run the real program without a window against a data folder of their own.
+/// Not part of the program's interface.
+#[doc(hidden)]
+pub mod test_support {
+    use std::path::Path;
+
+    /// The environment variable that points a debug build of the program at another data folder.
+    pub const DATA_DIR_VARIABLE: &str = crate::bridge::project::TEST_DATA_DIR_VARIABLE;
+
+    /// Remembers, in the data folder `app_data_dir`, that the person turned the agent connection of `project` on or off.
+    ///
+    /// # Errors
+    ///
+    /// The reason the switch could not be written.
+    pub fn set_agent_connection(
+        app_data_dir: &Path,
+        project: &Path,
+        on: bool,
+    ) -> Result<(), String> {
+        crate::session::StateStore::open(app_data_dir, project)
+            .set_agent_connection(on)
+            .map_err(|error| error.to_string())
+    }
+}
+
 use tauri::plugin::{Builder as PluginBuilder, TauriPlugin};
 use tauri::{Manager, RunEvent, Url, WindowEvent, Wry};
 
@@ -47,14 +75,22 @@ fn navigation_guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
         .build()
 }
 
-/// Builds and runs the Tauri application.
+/// Builds and runs the Tauri application. Started as `trailmark mcp` or `trailmark context`, it instead runs that command
+/// without a window (see [`bridge`]): `mcp` serves MCP over standard input and output until the input closes, `context`
+/// prints what the person is looking at and exits.
 ///
 /// # Panics
 ///
 /// Panics if the Tauri runtime fails to start.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+// The app's command list is one expression, and it grows with the app.
+#[allow(clippy::too_many_lines)]
 pub fn run() {
     let context = tauri::generate_context!();
+    if let Some(command) = bridge::subcommand(std::env::args_os()) {
+        // The app's identifier names its data folder, where the project's saved settings are.
+        std::process::exit(bridge::cli::run(command, &context.config().identifier));
+    }
     let dev_url = if cfg!(debug_assertions) {
         context.config().build.dev_url.clone()
     } else {
@@ -134,6 +170,14 @@ pub fn run() {
             commands::mark_unread,
             commands::mark_all_read,
             commands::mark_folder_read,
+            commands::set_agent_connection,
+            commands::agent_status,
+            commands::publish_agent_context,
+            commands::take_agent_open,
+            commands::add_comment,
+            commands::list_comments,
+            commands::set_comment_done,
+            commands::delete_comment,
         ])
         .build(context)
         .expect("error while building tauri application");

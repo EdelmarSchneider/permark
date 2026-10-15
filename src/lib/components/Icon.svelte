@@ -16,6 +16,7 @@
   import Pilcrow from "@lucide/svelte/icons/pilcrow";
   import Quote from "@lucide/svelte/icons/quote";
   import SquareCode from "@lucide/svelte/icons/square-code";
+  import MessageSquare from "@lucide/svelte/icons/message-square";
   import Strikethrough from "@lucide/svelte/icons/strikethrough";
   import Table from "@lucide/svelte/icons/table";
   import Activity from "@lucide/svelte/icons/activity";
@@ -25,12 +26,14 @@
   import AtSign from "@lucide/svelte/icons/at-sign";
   import Check from "@lucide/svelte/icons/check";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
+  import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import ChevronUp from "@lucide/svelte/icons/chevron-up";
   import ChevronsLeft from "@lucide/svelte/icons/chevrons-left";
   import ChevronsRight from "@lucide/svelte/icons/chevrons-right";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Command from "@lucide/svelte/icons/command";
   import Copy from "@lucide/svelte/icons/copy";
+  import CornerDownRight from "@lucide/svelte/icons/corner-down-right";
   import Download from "@lucide/svelte/icons/download";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import ExternalLink from "@lucide/svelte/icons/external-link";
@@ -89,6 +92,7 @@
     pilcrow: Pilcrow,
     quote: Quote,
     "square-code": SquareCode,
+    comment: MessageSquare,
     strike: Strikethrough,
     table: Table,
     activity: Activity,
@@ -98,12 +102,14 @@
     at: AtSign,
     check: Check,
     "chevron-down": ChevronDown,
+    "chevron-right": ChevronRight,
     "chevron-up": ChevronUp,
     "chevrons-left": ChevronsLeft,
     "chevrons-right": ChevronsRight,
     "circle-alert": CircleAlert,
     command: Command,
     copy: Copy,
+    "corner-down-right": CornerDownRight,
     download: Download,
     more: Ellipsis,
     external: ExternalLink,
