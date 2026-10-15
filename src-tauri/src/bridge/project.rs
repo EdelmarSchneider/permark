@@ -5,8 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
+use crate::comments::{CommentBook, CommentError, CommentFilter, CommentView};
 use crate::git::{self, Discovery};
-use crate::notes::{NoteError, NoteFilter, NoteView, Notebook};
 use crate::search::indexer::Indexer;
 use crate::search::{Bm25Index, SearchProvider};
 use crate::session::StateStore;
@@ -15,7 +15,7 @@ use crate::vault::{Vault, VaultError};
 use crate::watch::{PathFilter, SigStore};
 
 use super::answers;
-use super::protocol::{Hit, NoteList, Opened, ProtocolError, UnreadList};
+use super::protocol::{CommentList, Hit, Opened, ProtocolError, UnreadList};
 
 /// The environment variable that points a debug build at another data folder, so that the tests which run the real
 /// program never touch the person's own. Release builds ignore it.
@@ -65,7 +65,7 @@ pub(crate) struct Project {
     vault: Arc<Vault>,
     filter: Arc<PathFilter>,
     read_path: PathBuf,
-    notes: Notebook,
+    comments: CommentBook,
     searcher: Mutex<Option<Searcher>>,
 }
 
@@ -89,12 +89,12 @@ impl Project {
             &[(vault.root().to_path_buf(), info_exclude)],
             &config.ignore,
         ));
-        let notes = Notebook::new(Arc::clone(&vault), store.notes_path());
+        let comments = CommentBook::new(Arc::clone(&vault), store.comments_path());
         Ok(Self {
             vault,
             filter,
             read_path: store.read_path(),
-            notes,
+            comments,
             searcher: Mutex::new(None),
         })
     }
@@ -125,18 +125,18 @@ impl Project {
         answers::plain_hits(searcher.index.search(query, limit))
     }
 
-    /// The review notes of the kind asked for. Read-only: the places that moved are not written down here.
-    pub(crate) fn notes(&self, which: NoteFilter) -> NoteList {
-        answers::note_list(self.notes.list(false), which)
+    /// The comments of the kind asked for. Read-only: the places that moved are not written down here.
+    pub(crate) fn comments(&self, which: CommentFilter) -> CommentList {
+        answers::comment_list(self.comments.list(false), which)
     }
 
-    /// Marks a review note done by an agent.
-    pub(crate) fn resolve_note(
+    /// Marks a comment done by an agent.
+    pub(crate) fn resolve_comment(
         &self,
         id: &str,
         reply: Option<&str>,
-    ) -> Result<NoteView, NoteError> {
-        self.notes.resolve(id, reply)
+    ) -> Result<CommentView, CommentError> {
+        self.comments.resolve(id, reply)
     }
 
     /// Checks a place an agent wants shown (see [`answers::prepare_open`]).
@@ -342,18 +342,18 @@ mod tests {
     }
 
     #[test]
-    fn review_notes_are_read_and_resolved_from_the_saved_state() {
-        use crate::notes::{NewNote, NoteFilter};
+    fn comments_are_read_and_resolved_from_the_saved_state() {
+        use crate::comments::{CommentFilter, NewComment};
         let fx = fx();
         let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
-        assert_eq!(project.notes(NoteFilter::All).total, 0);
-        // the window wrote a note
-        let book = Notebook::new(
+        assert_eq!(project.comments(CommentFilter::All).total, 0);
+        // the window wrote a comment
+        let book = CommentBook::new(
             Arc::new(Vault::open(&root(&fx)).expect("vault")),
-            store(&fx).notes_path(),
+            store(&fx).comments_path(),
         );
-        let note = book
-            .add(NewNote {
+        let comment = book
+            .add(NewComment {
                 path: "docs/plan.md".to_owned(),
                 quote: "Ship the beacon".to_owned(),
                 text: "Which beacon?".to_owned(),
@@ -361,17 +361,17 @@ mod tests {
                 line: 0,
                 end_line: 0,
             })
-            .expect("a note");
-        let open = project.notes(NoteFilter::Open);
+            .expect("a comment");
+        let open = project.comments(CommentFilter::Open);
         assert_eq!(open.total, 1);
-        assert_eq!(open.notes[0].line, 7);
+        assert_eq!(open.comments[0].line, 7);
         let resolved = project
-            .resolve_note(&note.id, Some("Named it"))
+            .resolve_comment(&comment.id, Some("Named it"))
             .expect("resolved");
         assert!(resolved.done);
-        assert_eq!(project.notes(NoteFilter::Open).total, 0);
-        assert_eq!(project.notes(NoteFilter::Done).total, 1);
-        assert!(project.resolve_note("nope", None).is_err());
+        assert_eq!(project.comments(CommentFilter::Open).total, 0);
+        assert_eq!(project.comments(CommentFilter::Done).total, 1);
+        assert!(project.resolve_comment("nope", None).is_err());
     }
 
     #[test]

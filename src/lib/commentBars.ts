@@ -1,6 +1,6 @@
-// Where the margin bars of the review notes go (docs/design/v0.4.md section 3). A note knows the lines of its
+// Where the margin bars of the comments go (docs/design/v0.4.md section 3). A comment knows the lines of its
 // passage; the rendered document has blocks that know theirs. A bar spans the innermost blocks that touch the
-// note's lines. Pure: the document view measures the blocks and draws what this returns.
+// comment's lines. Pure: the document view measures the blocks and draws what this returns.
 
 /** A block of the rendered document: its lines in the source, how deep it sits in the page, and where it is on screen. */
 export type BlockBox = {
@@ -32,7 +32,7 @@ const inside = (inner: BlockBox, outer: BlockBox): boolean =>
 
 /**
  * The bar for lines `start` to `end`: from the top of the first block that holds the passage to the bottom of the last,
- * where a block that holds another touching block is left out in favour of the inner one (a note on one list item does
+ * where a block that holds another touching block is left out in favour of the inner one (a comment on one list item does
  * not span the whole list). `null` when no block shows those lines.
  */
 export function barFor(boxes: readonly BlockBox[], start: number, end: number): Bar | null {

@@ -7,12 +7,12 @@ use std::io;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
+use crate::comments::CommentError;
 use crate::edit::EditError;
 use crate::external_editor::EditorError;
 use crate::fileops::FileOpError;
 use crate::git::GitError;
 use crate::meta::MetaError;
-use crate::notes::NoteError;
 use crate::render::RenderError;
 use crate::session::SessionError;
 use crate::shell_integration::ShellError;
@@ -42,7 +42,7 @@ pub enum AppError {
     #[error(transparent)]
     Editor(#[from] EditorError),
     #[error(transparent)]
-    Notes(#[from] NoteError),
+    Comments(#[from] CommentError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -73,7 +73,7 @@ impl AppError {
             Self::FileOps(e) => e.kind(),
             Self::Shell(_) => "shell",
             Self::Editor(_) => "editor",
-            Self::Notes(e) => e.kind(),
+            Self::Comments(e) => e.kind(),
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -207,12 +207,14 @@ impl AppError {
                 detail: e.detail(),
                 reason: Some(e.reason().to_owned()),
             },
-            Self::Notes(e) => match e {
-                NoteError::NotADocument(subject) | NoteError::NotFound(subject) => {
+            Self::Comments(e) => match e {
+                CommentError::NotADocument(subject) | CommentError::NotFound(subject) => {
                     Details::subject(subject)
                 }
-                NoteError::Io { path, source } => Details::io(path, source),
-                NoteError::Empty | NoteError::TooMany | NoteError::SingleFile => Details::default(),
+                CommentError::Io { path, source } => Details::io(path, source),
+                CommentError::Empty | CommentError::TooMany | CommentError::SingleFile => {
+                    Details::default()
+                }
             },
             Self::Git(GitError::WorkerGone) | Self::NoVault | Self::Superseded => {
                 Details::default()

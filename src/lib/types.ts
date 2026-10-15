@@ -193,19 +193,19 @@ export type AgentOpen = {
   headingNotFound?: boolean;
 };
 
-// ---- review notes (docs/design/v0.4.md section 3) ---------------------------------------------------
+// ---- comments (docs/design/v0.4.md section 3) ---------------------------------------------------
 
-/** Whether a note's passage could be found again in the document. */
-export type NotePassage = "anchored" | "passageChanged" | "documentGone";
+/** Whether a comment's passage could be found again in the document. */
+export type CommentPassage = "anchored" | "passageChanged" | "documentGone";
 
-/** A note with its place worked out against the document as it is now. */
-export type Note = {
+/** A comment with its place worked out against the document as it is now. */
+export type Comment = {
   id: string;
   /** The document (a path of the project). */
   path: string;
   /** What the person wrote. */
   text: string;
-  /** The passage the note is on, as it was selected. */
+  /** The passage the comment is on, as it was selected. */
   quote: string;
   /** The headings above the passage, its own section last. */
   headingPath: string[];
@@ -213,16 +213,16 @@ export type Note = {
   line: number;
   endLine: number;
   createdMs: number;
-  state: NotePassage;
+  state: CommentPassage;
   done: boolean;
   doneMs?: number;
   doneBy?: "person" | "agent";
-  /** A short answer from the agent that marked the note done. */
+  /** A short answer from the agent that marked the comment done. */
   reply?: string;
 };
 
-/** A note the person just wrote: the passage as the reading view knows it. */
-export type NewNote = {
+/** A comment the person just wrote: the passage as the reading view knows it. */
+export type NewComment = {
   path: string;
   quote: string;
   text: string;

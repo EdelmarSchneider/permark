@@ -11,10 +11,10 @@ use crate::search::SearchHit;
 use crate::util::modified_ms;
 use crate::vault::{Vault, WORKTREE_PREFIX};
 
-use crate::notes::{NoteFilter, NoteView};
+use crate::comments::{CommentFilter, CommentView};
 
 use super::protocol::{
-    ErrorKind, Hit, NoteList, Opened, ProtocolError, UnreadDoc, MAX_NOTES_LISTED,
+    CommentList, ErrorKind, Hit, Opened, ProtocolError, UnreadDoc, MAX_COMMENTS_LISTED,
 };
 
 /// Whether a path of the vault is inside the project folder itself.
@@ -70,19 +70,19 @@ pub(crate) fn unread_docs(vault: &Vault, paths: &[String]) -> Vec<UnreadDoc> {
     docs
 }
 
-/// The review notes an agent is told about: the kind asked for, by document and line. Notes on a document of a
+/// The comments an agent is told about: the kind asked for, by document and line. Comments on a document of a
 /// linked worktree are left out like everything else that lives outside the project folder.
-pub(crate) fn note_list(notes: Vec<NoteView>, which: NoteFilter) -> NoteList {
-    let mut notes: Vec<NoteView> = notes
+pub(crate) fn comment_list(comments: Vec<CommentView>, which: CommentFilter) -> CommentList {
+    let mut comments: Vec<CommentView> = comments
         .into_iter()
-        .filter(|note| in_project(&note.path) && which.admits(note))
+        .filter(|comment| in_project(&comment.path) && which.admits(comment))
         .collect();
-    notes.sort_by(|a, b| {
+    comments.sort_by(|a, b| {
         (&a.path, a.line, a.created_ms, &a.id).cmp(&(&b.path, b.line, b.created_ms, &b.id))
     });
-    let total = notes.len();
-    notes.truncate(MAX_NOTES_LISTED);
-    NoteList { notes, total }
+    let total = comments.len();
+    comments.truncate(MAX_COMMENTS_LISTED);
+    CommentList { comments, total }
 }
 
 /// Heading text as it is compared: no case, no spare spaces, no closing `#`s.
@@ -171,46 +171,46 @@ mod tests {
     }
 
     #[test]
-    fn notes_are_listed_by_the_kind_asked_for_without_what_lives_outside_the_project() {
-        use crate::bridge::hub::testing::note;
-        let mut done = note("n3", "docs/plan.md", 7);
+    fn comments_are_listed_by_the_kind_asked_for_without_what_lives_outside_the_project() {
+        use crate::bridge::hub::testing::comment;
+        let mut done = comment("c3", "docs/plan.md", 7);
         done.done = true;
         let all = vec![
-            note("n2", "docs/plan.md", 7),
-            note("n1", "docs/plan.md", 1),
+            comment("c2", "docs/plan.md", 7),
+            comment("c1", "docs/plan.md", 1),
             done,
-            note("n9", "@wt/feature/docs/plan.md", 1),
-            note("n0", "a.md", 40),
+            comment("c9", "@wt/feature/docs/plan.md", 1),
+            comment("c0", "a.md", 40),
         ];
         let ids = |which| {
-            note_list(all.clone(), which)
-                .notes
+            comment_list(all.clone(), which)
+                .comments
                 .into_iter()
                 .map(|n| n.id)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(ids(NoteFilter::Open), ["n0", "n1", "n2"]);
-        assert_eq!(ids(NoteFilter::Done), ["n3"]);
-        assert_eq!(ids(NoteFilter::All), ["n0", "n1", "n2", "n3"]);
-        assert_eq!(note_list(all, NoteFilter::Open).total, 3);
+        assert_eq!(ids(CommentFilter::Open), ["c0", "c1", "c2"]);
+        assert_eq!(ids(CommentFilter::Done), ["c3"]);
+        assert_eq!(ids(CommentFilter::All), ["c0", "c1", "c2", "c3"]);
+        assert_eq!(comment_list(all, CommentFilter::Open).total, 3);
     }
 
     #[test]
-    fn a_long_list_of_notes_is_cut_and_still_counts_everything() {
-        use crate::bridge::hub::testing::note;
-        let many: Vec<_> = (0..MAX_NOTES_LISTED + 7)
+    fn a_long_list_of_comments_is_cut_and_still_counts_everything() {
+        use crate::bridge::hub::testing::comment;
+        let many: Vec<_> = (0..MAX_COMMENTS_LISTED + 7)
             .map(|n| {
-                note(
-                    &format!("n{n}"),
+                comment(
+                    &format!("c{n}"),
                     "docs/plan.md",
                     u32::try_from(n).unwrap_or(0) + 1,
                 )
             })
             .collect();
-        let list = note_list(many, NoteFilter::Open);
-        assert_eq!(list.notes.len(), MAX_NOTES_LISTED);
-        assert_eq!(list.total, MAX_NOTES_LISTED + 7);
-        assert_eq!(list.notes[0].id, "n0");
+        let list = comment_list(many, CommentFilter::Open);
+        assert_eq!(list.comments.len(), MAX_COMMENTS_LISTED);
+        assert_eq!(list.total, MAX_COMMENTS_LISTED + 7);
+        assert_eq!(list.comments[0].id, "c0");
     }
 
     #[test]

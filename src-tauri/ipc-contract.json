@@ -56,10 +56,10 @@
     "agent_status": [],
     "publish_agent_context": ["context"],
     "take_agent_open": [],
-    "add_note": ["note"],
-    "list_notes": [],
-    "set_note_done": ["id", "done"],
-    "delete_note": ["id"]
+    "add_comment": ["comment"],
+    "list_comments": [],
+    "set_comment_done": ["id", "done"],
+    "delete_comment": ["id"]
   },
-  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "show-in-project", "agent-status", "agent-open", "notes-changed"]
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "show-in-project", "agent-status", "agent-open", "comments-changed"]
 }

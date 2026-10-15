@@ -15,8 +15,8 @@
     get_context: "agent.request.get_context",
     list_unread: "agent.request.list_unread",
     search: "agent.request.search",
-    list_notes: "agent.request.list_notes",
-    resolve_note: "agent.request.resolve_note",
+    list_comments: "agent.request.list_comments",
+    resolve_comment: "agent.request.resolve_comment",
     open: "agent.request.open",
   } as const;
 
@@ -60,7 +60,7 @@
       <li>{t("agent.shares.context")}</li>
       <li>{t("agent.shares.unread")}</li>
       <li>{t("agent.shares.search")}</li>
-      <li>{t("agent.shares.notes")}</li>
+      <li>{t("agent.shares.comments")}</li>
       <li>{t("agent.shares.show")}</li>
     </ul>
     <span class="field__status">{t("agent.shares.leaves")}</span>

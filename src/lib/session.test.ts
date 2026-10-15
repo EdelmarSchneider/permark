@@ -123,7 +123,7 @@ describe("normalizeSession", () => {
   });
 
   it("keeps the right panel view through a save and a load", () => {
-    for (const rightTab of ["changes", "outline", "notes"] as const) {
+    for (const rightTab of ["changes", "outline", "comments"] as const) {
       const saved = { ...defaultSession(), rightTab };
       expect(normalizeSession(JSON.parse(JSON.stringify(saved))).rightTab).toBe(rightTab);
     }

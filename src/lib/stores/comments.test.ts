@@ -3,26 +3,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // The backend is replaced: these tests are about what the store asks it, when, and what it keeps meanwhile.
 const fake = vi.hoisted(() => ({
-  addNote: vi.fn(),
-  listNotes: vi.fn(),
-  setNoteDone: vi.fn(),
-  deleteNote: vi.fn(),
+  addComment: vi.fn(),
+  listComments: vi.fn(),
+  setCommentDone: vi.fn(),
+  deleteComment: vi.fn(),
 }));
 vi.mock("../api", () => ({ api: { ...fake, on: async () => () => {} } }));
 
 import { bridge } from "../bridge";
-import type { NoteTarget } from "../dom/noteDom";
-import type { DocumentView, FsBatch, Note, VaultInfo } from "../types";
+import type { CommentTarget } from "../dom/commentDom";
+import type { DocumentView, FsBatch, Comment, VaultInfo } from "../types";
 import { docs } from "./docs.svelte";
-import { NotesStore, REFRESH_DELAY_MS, REMEMBER_MS } from "./notes.svelte";
+import { CommentsStore, REFRESH_DELAY_MS, REMEMBER_MS } from "./comments.svelte";
 import { toast } from "./toast.svelte";
 import { vault } from "./vault.svelte";
 
 let counter = 0;
-const note = (patch: Partial<Note> = {}): Note => ({
+const comment = (patch: Partial<Comment> = {}): Comment => ({
   id: `n${++counter}`,
   path: "docs/plan.md",
-  text: "A note",
+  text: "A comment",
   quote: "a passage",
   headingPath: ["Plan"],
   line: 3,
@@ -33,7 +33,7 @@ const note = (patch: Partial<Note> = {}): Note => ({
   ...patch,
 });
 
-const target = (patch: Partial<NoteTarget> = {}): NoteTarget => ({
+const target = (patch: Partial<CommentTarget> = {}): CommentTarget => ({
   quote: "ship it on Friday",
   startLine: 7,
   endLine: 7,
@@ -50,8 +50,8 @@ const batch = (...paths: string[]): FsBatch => ({
 });
 
 let clockMs = 0;
-let store: NotesStore;
-let selection: NoteTarget | null;
+let store: CommentsStore;
+let selection: CommentTarget | null;
 
 function openDocument(path: string | null, kind: DocumentView["kind"] = "markdown"): void {
   docs.current = path === null ? null : ({ path, kind } as DocumentView);
@@ -60,19 +60,19 @@ function openDocument(path: string | null, kind: DocumentView["kind"] = "markdow
 beforeEach(() => {
   vi.useFakeTimers();
   for (const fn of Object.values(fake)) fn.mockReset();
-  fake.listNotes.mockResolvedValue([]);
+  fake.listComments.mockResolvedValue([]);
   toast.clear();
   clockMs = 1_000_000;
-  store = new NotesStore(() => clockMs);
+  store = new CommentsStore(() => clockMs);
   selection = target();
-  bridge.noteTarget = () => selection;
+  bridge.commentTarget = () => selection;
   openDocument("docs/plan.md");
   docs.editing = false;
   vault.info = { mode: "ide" } as VaultInfo;
 });
 
 afterEach(() => {
-  bridge.noteTarget = undefined;
+  bridge.commentTarget = undefined;
   openDocument(null);
   vault.info = null;
   vi.useRealTimers();
@@ -80,8 +80,8 @@ afterEach(() => {
 
 describe("the list", () => {
   it("is what the backend says, asked for when the project opens", async () => {
-    const list = [note({ line: 2 }), note({ done: true })];
-    fake.listNotes.mockResolvedValue(list);
+    const list = [comment({ line: 2 }), comment({ done: true })];
+    fake.listComments.mockResolvedValue(list);
     await store.refresh();
     expect(store.all).toEqual(list);
     expect(store.count).toBe(1);
@@ -92,34 +92,34 @@ describe("the list", () => {
   it("is not asked for in a single file, which has no project", async () => {
     vault.info = { mode: "simple" } as VaultInfo;
     await store.refresh();
-    expect(fake.listNotes).not.toHaveBeenCalled();
+    expect(fake.listComments).not.toHaveBeenCalled();
   });
 
   it("is not overwritten by an answer that a newer question has overtaken", async () => {
-    let answer: (notes: Note[]) => void = () => {};
-    fake.listNotes.mockReturnValueOnce(new Promise<Note[]>((resolve) => (answer = resolve)));
+    let answer: (comments: Comment[]) => void = () => {};
+    fake.listComments.mockReturnValueOnce(new Promise<Comment[]>((resolve) => (answer = resolve)));
     const old = store.refresh();
-    fake.listNotes.mockResolvedValueOnce([note({ text: "new" })]);
+    fake.listComments.mockResolvedValueOnce([comment({ text: "new" })]);
     await store.refresh();
-    answer([note({ text: "old" })]);
+    answer([comment({ text: "old" })]);
     await old;
     expect(store.all.map((n) => n.text)).toEqual(["new"]);
   });
 
   it("is forgotten when the project changes, and an answer on its way is dropped", async () => {
-    let answer: (notes: Note[]) => void = () => {};
-    fake.listNotes.mockReturnValueOnce(new Promise<Note[]>((resolve) => (answer = resolve)));
+    let answer: (comments: Comment[]) => void = () => {};
+    fake.listComments.mockReturnValueOnce(new Promise<Comment[]>((resolve) => (answer = resolve)));
     const pending = store.refresh();
     store.reset();
-    answer([note()]);
+    answer([comment()]);
     await pending;
     expect(store.all).toEqual([]);
   });
 
   it("keeps what it had when the question fails", async () => {
-    fake.listNotes.mockResolvedValue([note()]);
+    fake.listComments.mockResolvedValue([comment()]);
     await store.refresh();
-    fake.listNotes.mockRejectedValue(new Error("no"));
+    fake.listComments.mockRejectedValue(new Error("no"));
     await store.refresh();
     expect(store.all).toHaveLength(1);
   });
@@ -127,57 +127,57 @@ describe("the list", () => {
 
 describe("keeping up with the documents", () => {
   beforeEach(async () => {
-    fake.listNotes.mockResolvedValue([note({ path: "docs/plan.md" })]);
+    fake.listComments.mockResolvedValue([comment({ path: "docs/plan.md" })]);
     await store.refresh();
-    fake.listNotes.mockClear();
+    fake.listComments.mockClear();
   });
 
-  it("asks again, once, a moment after a document with notes is drawn again", async () => {
+  it("asks again, once, a moment after a document with comments is drawn again", async () => {
     store.documentChanged();
     store.documentChanged();
-    expect(fake.listNotes).not.toHaveBeenCalled();
+    expect(fake.listComments).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(REFRESH_DELAY_MS);
-    expect(fake.listNotes).toHaveBeenCalledTimes(1);
+    expect(fake.listComments).toHaveBeenCalledTimes(1);
   });
 
-  it("asks again when files with notes change on disk, and not for other files", async () => {
+  it("asks again when files with comments change on disk, and not for other files", async () => {
     store.filesChanged(batch("docs/other.md"));
     await vi.advanceTimersByTimeAsync(REFRESH_DELAY_MS * 2);
-    expect(fake.listNotes).not.toHaveBeenCalled();
+    expect(fake.listComments).not.toHaveBeenCalled();
     store.filesChanged(batch("docs/plan.md"));
     await vi.advanceTimersByTimeAsync(REFRESH_DELAY_MS);
-    expect(fake.listNotes).toHaveBeenCalledTimes(1);
+    expect(fake.listComments).toHaveBeenCalledTimes(1);
   });
 
   it("asks again for a rescan or a bulk change, which could have touched anything", async () => {
     store.filesChanged({ changes: [], bulk: null, rescan: true });
     await vi.advanceTimersByTimeAsync(REFRESH_DELAY_MS);
-    expect(fake.listNotes).toHaveBeenCalledTimes(1);
+    expect(fake.listComments).toHaveBeenCalledTimes(1);
     store.filesChanged({
       changes: [],
       bulk: { count: 900, reason: "gitOperation", paths: [] },
       rescan: false,
     });
     await vi.advanceTimersByTimeAsync(REFRESH_DELAY_MS);
-    expect(fake.listNotes).toHaveBeenCalledTimes(2);
+    expect(fake.listComments).toHaveBeenCalledTimes(2);
   });
 
-  it("asks at once when the backend says the notes changed", async () => {
+  it("asks at once when the backend says the comments changed", async () => {
     store.onChanged();
     await vi.advanceTimersByTimeAsync(0);
-    expect(fake.listNotes).toHaveBeenCalledTimes(1);
+    expect(fake.listComments).toHaveBeenCalledTimes(1);
   });
 
-  it("does not ask while there are no notes: no document can have gained one", async () => {
+  it("does not ask while there are no comments: no document can have gained one", async () => {
     store.reset();
     store.documentChanged();
     store.filesChanged(batch("docs/plan.md"));
     await vi.advanceTimersByTimeAsync(REFRESH_DELAY_MS * 2);
-    expect(fake.listNotes).not.toHaveBeenCalled();
+    expect(fake.listComments).not.toHaveBeenCalled();
   });
 });
 
-describe("writing a note", () => {
+describe("writing a comment", () => {
   it("opens the field on the selection, with the document it is in", () => {
     expect(store.begin()).toBe(true);
     expect(store.draft?.path).toBe("docs/plan.md");
@@ -189,7 +189,7 @@ describe("writing a note", () => {
     expect(store.begin()).toBe(false);
     expect(store.draft).toBeNull();
     expect(toast.current?.type === "message" && toast.current.text).toBe(
-      "Select a passage in the document first, then add the note.",
+      "Select a passage in the document first, then add the comment.",
     );
   });
 
@@ -233,12 +233,12 @@ describe("writing a note", () => {
     expect(store.draft?.target.quote).toBe("another passage");
   });
 
-  it("saves the note with the passage as the view knew it, then closes the field and asks for the list", async () => {
+  it("saves the comment with the passage as the view knew it, then closes the field and asks for the list", async () => {
     store.begin();
-    fake.addNote.mockResolvedValue(note());
-    fake.listNotes.mockResolvedValue([note({ text: "Too vague." })]);
+    fake.addComment.mockResolvedValue(comment());
+    fake.listComments.mockResolvedValue([comment({ text: "Too vague." })]);
     expect(await store.save("  Too vague.  ")).toBe(true);
-    expect(fake.addNote).toHaveBeenCalledWith({
+    expect(fake.addComment).toHaveBeenCalledWith({
       path: "docs/plan.md",
       quote: "ship it on Friday",
       text: "Too vague.",
@@ -251,36 +251,36 @@ describe("writing a note", () => {
     expect(store.saving).toBe(false);
   });
 
-  it("does not save an empty note", async () => {
+  it("does not save an empty comment", async () => {
     store.begin();
     expect(await store.save("   ")).toBe(false);
-    expect(fake.addNote).not.toHaveBeenCalled();
+    expect(fake.addComment).not.toHaveBeenCalled();
     expect(store.draft).not.toBeNull();
   });
 
-  it("keeps the field open, with a message, when the note cannot be saved", async () => {
+  it("keeps the field open, with a message, when the comment cannot be saved", async () => {
     store.begin();
-    fake.addNote.mockRejectedValue({ kind: "emptyNote", message: "x" });
+    fake.addComment.mockRejectedValue({ kind: "emptyComment", message: "x" });
     expect(await store.save("Words")).toBe(false);
     expect(store.draft).not.toBeNull();
     expect(store.saving).toBe(false);
     expect(toast.current?.type === "message" && toast.current.text).toContain(
-      "Couldn't save the note",
+      "Couldn't save the comment",
     );
   });
 
   it("saves once while a save is on its way", async () => {
     store.begin();
-    let finish: (n: Note) => void = () => {};
-    fake.addNote.mockReturnValue(new Promise<Note>((resolve) => (finish = resolve)));
+    let finish: (n: Comment) => void = () => {};
+    fake.addComment.mockReturnValue(new Promise<Comment>((resolve) => (finish = resolve)));
     const first = store.save("Words");
     expect(await store.save("Words")).toBe(false);
-    finish(note());
+    finish(comment());
     await first;
-    expect(fake.addNote).toHaveBeenCalledTimes(1);
+    expect(fake.addComment).toHaveBeenCalledTimes(1);
   });
 
-  it("closes without a note", () => {
+  it("closes without a comment", () => {
     store.begin();
     store.cancel();
     expect(store.draft).toBeNull();
@@ -289,43 +289,43 @@ describe("writing a note", () => {
 });
 
 describe("the list's own actions", () => {
-  it("checks a note off and keeps what the backend answered", async () => {
-    const open = note();
-    fake.listNotes.mockResolvedValue([open]);
+  it("checks a comment off and keeps what the backend answered", async () => {
+    const open = comment();
+    fake.listComments.mockResolvedValue([open]);
     await store.refresh();
-    fake.setNoteDone.mockResolvedValue({ ...open, done: true, doneMs: 5, doneBy: "person" });
+    fake.setCommentDone.mockResolvedValue({ ...open, done: true, doneMs: 5, doneBy: "person" });
     await store.setDone(open.id, true);
-    expect(fake.setNoteDone).toHaveBeenCalledWith(open.id, true);
+    expect(fake.setCommentDone).toHaveBeenCalledWith(open.id, true);
     expect(store.count).toBe(0);
     expect(store.done.map((n) => n.id)).toEqual([open.id]);
   });
 
-  it("asks the backend again when it could not change a note", async () => {
-    const open = note();
-    fake.listNotes.mockResolvedValue([open]);
+  it("asks the backend again when it could not change a comment", async () => {
+    const open = comment();
+    fake.listComments.mockResolvedValue([open]);
     await store.refresh();
-    fake.setNoteDone.mockRejectedValue({ kind: "noteNotFound", message: "gone" });
-    fake.listNotes.mockClear();
+    fake.setCommentDone.mockRejectedValue({ kind: "commentNotFound", message: "gone" });
+    fake.listComments.mockClear();
     await store.setDone(open.id, true);
-    expect(fake.listNotes).toHaveBeenCalledTimes(1);
+    expect(fake.listComments).toHaveBeenCalledTimes(1);
     expect(toast.current?.type).toBe("message");
   });
 
-  it("deletes a note", async () => {
-    const [one, two] = [note(), note()];
-    fake.listNotes.mockResolvedValue([one, two]);
+  it("deletes a comment", async () => {
+    const [one, two] = [comment(), comment()];
+    fake.listComments.mockResolvedValue([one, two]);
     await store.refresh();
-    fake.deleteNote.mockResolvedValue(undefined);
+    fake.deleteComment.mockResolvedValue(undefined);
     await store.remove(one.id);
-    expect(fake.deleteNote).toHaveBeenCalledWith(one.id);
+    expect(fake.deleteComment).toHaveBeenCalledWith(one.id);
     expect(store.all.map((n) => n.id)).toEqual([two.id]);
   });
 
-  it("asks the panel to show a note, again on every request", () => {
-    store.show("n1");
+  it("asks the panel to show a comment, again on every request", () => {
+    store.show("c1");
     const first = store.focus;
-    store.show("n1");
-    expect(store.focus?.id).toBe("n1");
+    store.show("c1");
+    expect(store.focus?.id).toBe("c1");
     expect(store.focus?.n).toBeGreaterThan(first?.n ?? 0);
   });
 });

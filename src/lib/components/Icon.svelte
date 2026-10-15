@@ -16,7 +16,7 @@
   import Pilcrow from "@lucide/svelte/icons/pilcrow";
   import Quote from "@lucide/svelte/icons/quote";
   import SquareCode from "@lucide/svelte/icons/square-code";
-  import StickyNote from "@lucide/svelte/icons/sticky-note";
+  import MessageSquare from "@lucide/svelte/icons/message-square";
   import Strikethrough from "@lucide/svelte/icons/strikethrough";
   import Table from "@lucide/svelte/icons/table";
   import Activity from "@lucide/svelte/icons/activity";
@@ -92,7 +92,7 @@
     pilcrow: Pilcrow,
     quote: Quote,
     "square-code": SquareCode,
-    note: StickyNote,
+    comment: MessageSquare,
     strike: Strikethrough,
     table: Table,
     activity: Activity,

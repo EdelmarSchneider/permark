@@ -1,4 +1,4 @@
-//! [`Notebook`]: the notes of one project. It reads the documents the notes are on to say where each passage is now,
+//! [`CommentBook`]: the comments of one project. It reads the documents the comments are on to say where each passage is now,
 //! and keeps the file (see [`super::store`]).
 
 use std::collections::HashMap;
@@ -13,19 +13,19 @@ use crate::util::{hash_hex, now_ms, on_parser_stack, read_with_retry};
 use crate::vault::Vault;
 
 use super::anchor::{Analysis, Placement, Probe, Resolution};
-use super::store::NoteStore;
+use super::store::CommentStore;
 use super::{
-    clip, Anchor, Done, DoneBy, Note, NoteError, NoteView, PassageState, MAX_NOTES, MAX_NOTE_CHARS,
-    MAX_QUOTE_CHARS, MAX_REPLY_CHARS,
+    clip, Anchor, Comment, CommentError, CommentView, Done, DoneBy, PassageState, MAX_COMMENTS,
+    MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLY_CHARS,
 };
 
-/// Called after a change that someone watching the notes should see.
+/// Called after a change that someone watching the comments should see.
 pub type Listener = Arc<dyn Fn() + Send + Sync>;
 
-/// What the window sends when the person writes a note on a selection.
+/// What the window sends when the person writes a comment on a selection.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NewNote {
+pub struct NewComment {
     pub path: String,
     /// The selected text.
     pub quote: String,
@@ -41,7 +41,7 @@ pub struct NewNote {
     pub end_line: u32,
 }
 
-/// A document as far as a note is concerned.
+/// A document as far as a comment is concerned.
 enum Doc {
     /// There is no such file (any more).
     Gone,
@@ -50,9 +50,9 @@ enum Doc {
     Read(Analysis),
 }
 
-pub(crate) struct Notebook {
+pub(crate) struct CommentBook {
     vault: Arc<Vault>,
-    store: NoteStore,
+    store: CommentStore,
     listener: Option<Listener>,
 }
 
@@ -68,16 +68,16 @@ fn moved(path: &str, from: &str, to: &str, is_dir: bool) -> Option<String> {
     None
 }
 
-impl Notebook {
+impl CommentBook {
     pub(crate) fn new(vault: Arc<Vault>, file: PathBuf) -> Self {
         Self {
             vault,
-            store: NoteStore::new(file),
+            store: CommentStore::new(file),
             listener: None,
         }
     }
 
-    /// Calls `listener` after every change made through this notebook.
+    /// Calls `listener` after every change made through this `CommentBook`.
     #[must_use]
     pub(crate) fn with_listener(mut self, listener: Listener) -> Self {
         self.listener = Some(listener);
@@ -119,9 +119,9 @@ impl Notebook {
         Doc::Read(on_parser_stack(|| Analysis::of(&text)))
     }
 
-    /// The note with its place worked out, and the place when the quote was found.
-    fn view(note: &Note, doc: &Doc) -> (NoteView, Option<Placement>) {
-        let stored = &note.anchor;
+    /// The comment with its place worked out, and the place when the quote was found.
+    fn view(comment: &Comment, doc: &Doc) -> (CommentView, Option<Placement>) {
+        let stored = &comment.anchor;
         let (state, line, end_line, heading_path, placement) = match doc {
             Doc::Gone => (
                 PassageState::DocumentGone,
@@ -154,53 +154,53 @@ impl Notebook {
                 ),
             },
         };
-        let view = NoteView {
-            id: note.id.clone(),
-            path: note.path.clone(),
-            text: note.text.clone(),
+        let view = CommentView {
+            id: comment.id.clone(),
+            path: comment.path.clone(),
+            text: comment.text.clone(),
             quote: stored.quote.clone(),
             heading_path,
             line,
             end_line,
-            created_ms: note.created_ms,
+            created_ms: comment.created_ms,
             state,
-            done: note.done.is_some(),
-            done_ms: note.done.as_ref().map(|done| done.at_ms),
-            done_by: note.done.as_ref().map(|done| done.by),
-            reply: note.done.as_ref().and_then(|done| done.reply.clone()),
+            done: comment.done.is_some(),
+            done_ms: comment.done.as_ref().map(|done| done.at_ms),
+            done_by: comment.done.as_ref().map(|done| done.by),
+            reply: comment.done.as_ref().and_then(|done| done.reply.clone()),
         };
         (view, placement)
     }
 
     // ---- listing ----------------------------------------------------------------------------------------
 
-    /// Every note, by document and line. `keep_places` writes down the places that moved, so a later edit that
+    /// Every comment, by document and line. `keep_places` writes down the places that moved, so a later edit that
     /// removes the passage still finds its way back to roughly the same section.
-    pub(crate) fn list(&self, keep_places: bool) -> Vec<NoteView> {
-        let notes = self.store.load();
+    pub(crate) fn list(&self, keep_places: bool) -> Vec<CommentView> {
+        let comments = self.store.load();
         let mut docs: HashMap<&str, Doc> = HashMap::new();
-        let mut views = Vec::with_capacity(notes.len());
+        let mut views = Vec::with_capacity(comments.len());
         let mut moved_places: Vec<(&str, Placement)> = Vec::new();
-        for note in &notes {
+        for comment in &comments {
             let doc = docs
-                .entry(note.path.as_str())
-                .or_insert_with(|| self.read_doc(&note.path));
-            let (view, placement) = Self::view(note, doc);
+                .entry(comment.path.as_str())
+                .or_insert_with(|| self.read_doc(&comment.path));
+            let (view, placement) = Self::view(comment, doc);
             if let Some(place) = placement {
-                if keep_places && differs(&note.anchor, &place) {
-                    moved_places.push((note.id.as_str(), place));
+                if keep_places && differs(&comment.anchor, &place) {
+                    moved_places.push((comment.id.as_str(), place));
                 }
             }
             views.push(view);
         }
         if !moved_places.is_empty() {
-            // a note that cannot be written down is still shown where it is
+            // a comment that cannot be written down is still shown where it is
             let _ = self.store.update(|stored| {
                 let mut changed = false;
                 for (id, place) in &moved_places {
-                    if let Some(note) = stored.iter_mut().find(|note| note.id == *id) {
-                        if differs(&note.anchor, place) {
-                            apply(&mut note.anchor, place);
+                    if let Some(comment) = stored.iter_mut().find(|comment| comment.id == *id) {
+                        if differs(&comment.anchor, place) {
+                            apply(&mut comment.anchor, place);
                             changed = true;
                         }
                     }
@@ -214,36 +214,36 @@ impl Notebook {
         views
     }
 
-    /// One note as it is now.
-    fn view_of(&self, id: &str) -> Result<NoteView, NoteError> {
-        let note = self
+    /// One comment as it is now.
+    fn view_of(&self, id: &str) -> Result<CommentView, CommentError> {
+        let comment = self
             .store
             .load()
             .into_iter()
-            .find(|note| note.id == id)
-            .ok_or_else(|| NoteError::NotFound(id.to_owned()))?;
-        let doc = self.read_doc(&note.path);
-        Ok(Self::view(&note, &doc).0)
+            .find(|comment| comment.id == id)
+            .ok_or_else(|| CommentError::NotFound(id.to_owned()))?;
+        let doc = self.read_doc(&comment.path);
+        Ok(Self::view(&comment, &doc).0)
     }
 
     // ---- changing ---------------------------------------------------------------------------------------
 
-    /// Writes a note on a passage of a document.
-    pub(crate) fn add(&self, new: NewNote) -> Result<NoteView, NoteError> {
+    /// Writes a comment on a passage of a document.
+    pub(crate) fn add(&self, new: NewComment) -> Result<CommentView, CommentError> {
         if self.vault.is_shallow() {
-            return Err(NoteError::SingleFile);
+            return Err(CommentError::SingleFile);
         }
         let quote = clip(new.quote.trim(), MAX_QUOTE_CHARS);
-        let text = clip(new.text.trim(), MAX_NOTE_CHARS);
+        let text = clip(new.text.trim(), MAX_COMMENT_CHARS);
         if quote.is_empty() || text.is_empty() {
-            return Err(NoteError::Empty);
+            return Err(CommentError::Empty);
         }
         let resolved = self
             .vault
             .resolve(&new.path)
-            .map_err(|_| NoteError::NotADocument(new.path.clone()))?;
+            .map_err(|_| CommentError::NotADocument(new.path.clone()))?;
         if !resolved.abs.is_file() || !is_markdown_path(&resolved.abs) {
-            return Err(NoteError::NotADocument(new.path));
+            return Err(CommentError::NotADocument(new.path));
         }
         let line = new.line.max(1);
         let mut anchor = Anchor {
@@ -265,12 +265,12 @@ impl Notebook {
         }
         let created_ms = now_ms();
         let path = resolved.rel;
-        let id = self.store.update(|notes| {
-            if notes.len() >= MAX_NOTES {
-                return Err(NoteError::TooMany);
+        let id = self.store.update(|comments| {
+            if comments.len() >= MAX_COMMENTS {
+                return Err(CommentError::TooMany);
             }
-            let id = new_id(notes, &path, &anchor.quote, created_ms);
-            notes.push(Note {
+            let id = new_id(comments, &path, &anchor.quote, created_ms);
+            comments.push(Comment {
                 id: id.clone(),
                 path: path.clone(),
                 text,
@@ -284,11 +284,11 @@ impl Notebook {
         self.view_of(&id)
     }
 
-    /// Marks a note done by the person, or open again.
-    pub(crate) fn set_done(&self, id: &str, done: bool) -> Result<NoteView, NoteError> {
-        self.edit(id, |note| match (done, &note.done) {
+    /// Marks a comment done by the person, or open again.
+    pub(crate) fn set_done(&self, id: &str, done: bool) -> Result<CommentView, CommentError> {
+        self.edit(id, |comment| match (done, &comment.done) {
             (true, None) => {
-                note.done = Some(Done {
+                comment.done = Some(Done {
                     at_ms: now_ms(),
                     by: DoneBy::Person,
                     reply: None,
@@ -296,21 +296,25 @@ impl Notebook {
                 true
             }
             (false, Some(_)) => {
-                note.done = None;
+                comment.done = None;
                 true
             }
             _ => false,
         })
     }
 
-    /// Marks a note done by an agent, with a short reply. A note that is done already keeps who did it and when; the
+    /// Marks a comment done by an agent, with a short reply. A comment that is done already keeps who did it and when; the
     /// reply is added to it.
-    pub(crate) fn resolve(&self, id: &str, reply: Option<&str>) -> Result<NoteView, NoteError> {
+    pub(crate) fn resolve(
+        &self,
+        id: &str,
+        reply: Option<&str>,
+    ) -> Result<CommentView, CommentError> {
         let reply = reply
             .map(|text| clip(text.trim(), MAX_REPLY_CHARS))
             .filter(|text| !text.is_empty());
-        self.edit(id, |note| {
-            let before = note.done.clone();
+        self.edit(id, |comment| {
+            let before = comment.done.clone();
             let done = match before.clone() {
                 Some(done) => Done {
                     reply: reply.clone().or(done.reply),
@@ -323,7 +327,7 @@ impl Notebook {
                 },
             };
             let changed = before.as_ref() != Some(&done);
-            note.done = Some(done);
+            comment.done = Some(done);
             changed
         })
     }
@@ -331,14 +335,14 @@ impl Notebook {
     fn edit(
         &self,
         id: &str,
-        change: impl FnOnce(&mut Note) -> bool,
-    ) -> Result<NoteView, NoteError> {
-        let changed = self.store.update(|notes| {
-            let note = notes
+        change: impl FnOnce(&mut Comment) -> bool,
+    ) -> Result<CommentView, CommentError> {
+        let changed = self.store.update(|comments| {
+            let comment = comments
                 .iter_mut()
-                .find(|note| note.id == id)
-                .ok_or_else(|| NoteError::NotFound(id.to_owned()))?;
-            let changed = change(note);
+                .find(|comment| comment.id == id)
+                .ok_or_else(|| CommentError::NotFound(id.to_owned()))?;
+            let changed = change(comment);
             Ok((changed, changed))
         })?;
         if changed {
@@ -347,13 +351,13 @@ impl Notebook {
         self.view_of(id)
     }
 
-    /// Removes a note.
-    pub(crate) fn delete(&self, id: &str) -> Result<(), NoteError> {
-        self.store.update(|notes| {
-            let before = notes.len();
-            notes.retain(|note| note.id != id);
-            if notes.len() == before {
-                return Err(NoteError::NotFound(id.to_owned()));
+    /// Removes a comment.
+    pub(crate) fn delete(&self, id: &str) -> Result<(), CommentError> {
+        self.store.update(|comments| {
+            let before = comments.len();
+            comments.retain(|comment| comment.id != id);
+            if comments.len() == before {
+                return Err(CommentError::NotFound(id.to_owned()));
             }
             Ok(((), true))
         })?;
@@ -361,13 +365,13 @@ impl Notebook {
         Ok(())
     }
 
-    /// A document (or a folder, with `is_dir`) was renamed or moved in the Explorer: its notes follow it.
+    /// A document (or a folder, with `is_dir`) was renamed or moved in the Explorer: its comments follow it.
     pub(crate) fn renamed(&self, from: &str, to: &str, is_dir: bool) {
-        let followed = self.store.update(|notes| {
+        let followed = self.store.update(|comments| {
             let mut any = false;
-            for note in notes.iter_mut() {
-                if let Some(path) = moved(&note.path, from, to, is_dir) {
-                    note.path = path;
+            for comment in comments.iter_mut() {
+                if let Some(path) = moved(&comment.path, from, to, is_dir) {
+                    comment.path = path;
                     any = true;
                 }
             }
@@ -379,7 +383,7 @@ impl Notebook {
     }
 }
 
-/// Whether the place found says something the note does not know yet.
+/// Whether the place found says something the comment does not know yet.
 fn differs(anchor: &Anchor, place: &Placement) -> bool {
     anchor.line != place.start_line
         || anchor.end_line != place.end_line
@@ -396,12 +400,15 @@ fn apply(anchor: &mut Anchor, place: &Placement) {
     anchor.after.clone_from(&place.after);
 }
 
-/// A short id that no note has: `n` and eight hexadecimal digits.
-fn new_id(notes: &[Note], path: &str, quote: &str, created_ms: u64) -> String {
+/// A short id that no comment has: `n` and eight hexadecimal digits.
+fn new_id(comments: &[Comment], path: &str, quote: &str, created_ms: u64) -> String {
     for attempt in 0_u32.. {
-        let seed = format!("{created_ms}\n{path}\n{quote}\n{}\n{attempt}", notes.len());
-        let id = format!("n{}", &hash_hex(seed.as_bytes())[..8]);
-        if notes.iter().all(|note| note.id != id) {
+        let seed = format!(
+            "{created_ms}\n{path}\n{quote}\n{}\n{attempt}",
+            comments.len()
+        );
+        let id = format!("c{}", &hash_hex(seed.as_bytes())[..8]);
+        if comments.iter().all(|comment| comment.id != id) {
             return id;
         }
     }

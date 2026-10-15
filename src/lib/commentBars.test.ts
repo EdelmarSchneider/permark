@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barFor, MIN_BAR_HEIGHT, type BlockBox } from "./noteBars";
+import { barFor, MIN_BAR_HEIGHT, type BlockBox } from "./commentBars";
 
 const box = (
   startLine: number,

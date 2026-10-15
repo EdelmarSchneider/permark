@@ -82,7 +82,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
     },
   ],
   takeAgentOpen: [],
-  addNote: [
+  addComment: [
     {
       path: "docs/a.md",
       quote: "a passage",
@@ -92,9 +92,9 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
       endLine: 3,
     },
   ],
-  listNotes: [],
-  setNoteDone: ["n1a2b3c4d", true],
-  deleteNote: ["n1a2b3c4d"],
+  listComments: [],
+  setCommentDone: ["c1a2b3c4d", true],
+  deleteComment: ["c1a2b3c4d"],
 };
 
 describe("tauriApi", () => {

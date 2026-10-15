@@ -24,8 +24,8 @@ import type {
   Move,
   MoveOutcome,
   MovePreview,
-  NewNote,
-  Note,
+  NewComment,
+  Comment,
   ParsedBlocks,
   RecentVault,
   SaveOutcome,
@@ -58,8 +58,8 @@ export type EventMap = {
   "agent-status": AgentStatus;
   /** An agent asked to show a place: `takeAgentOpen` has it. */
   "agent-open": null;
-  /** The review notes changed: one was added, completed or deleted, or a document moved. `listNotes` has them. */
-  "notes-changed": null;
+  /** The comments changed: one was added, completed or deleted, or a document moved. `listComments` has them. */
+  "comments-changed": null;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
@@ -181,13 +181,13 @@ export interface Api {
   publishAgentContext(context: AgentContext): Promise<void>;
   /** The place an agent asked to be shown, once; null when there is none. */
   takeAgentOpen(): Promise<AgentOpen | null>;
-  /** Writes a note on a passage of a document. Rejects with kind "emptyNote" or "notADocument". */
-  addNote(note: NewNote): Promise<Note>;
-  /** Every note of the project, each with its passage found again in the document as it is now (by document and line). */
-  listNotes(): Promise<Note[]>;
-  /** Checks a note off (`done`), or opens it again. */
-  setNoteDone(id: string, done: boolean): Promise<Note>;
-  deleteNote(id: string): Promise<void>;
+  /** Writes a comment on a passage of a document. Rejects with kind "emptyComment" or "notADocument". */
+  addComment(comment: NewComment): Promise<Comment>;
+  /** Every comment of the project, each with its passage found again in the document as it is now (by document and line). */
+  listComments(): Promise<Comment[]>;
+  /** Checks a comment off (`done`), or opens it again. */
+  setCommentDone(id: string, done: boolean): Promise<Comment>;
+  deleteComment(id: string): Promise<void>;
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -259,10 +259,10 @@ export const tauriApi: Api = {
   agentStatus: () => invoke<AgentStatus>("agent_status"),
   publishAgentContext: (context) => invoke<void>("publish_agent_context", { context }),
   takeAgentOpen: () => invoke<AgentOpen | null>("take_agent_open"),
-  addNote: (note) => invoke<Note>("add_note", { note }),
-  listNotes: () => invoke<Note[]>("list_notes"),
-  setNoteDone: (id, done) => invoke<Note>("set_note_done", { id, done }),
-  deleteNote: (id) => invoke<void>("delete_note", { id }),
+  addComment: (comment) => invoke<Comment>("add_comment", { comment }),
+  listComments: () => invoke<Comment[]>("list_comments"),
+  setCommentDone: (id, done) => invoke<Comment>("set_comment_done", { id, done }),
+  deleteComment: (id) => invoke<void>("delete_comment", { id }),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -357,10 +357,10 @@ function createMockApi(): Api {
     agentStatus: command("agentStatus"),
     publishAgentContext: command("publishAgentContext"),
     takeAgentOpen: command("takeAgentOpen"),
-    addNote: command("addNote"),
-    listNotes: command("listNotes"),
-    setNoteDone: command("setNoteDone"),
-    deleteNote: command("deleteNote"),
+    addComment: command("addComment"),
+    listComments: command("listComments"),
+    setCommentDone: command("setCommentDone"),
+    deleteComment: command("deleteComment"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

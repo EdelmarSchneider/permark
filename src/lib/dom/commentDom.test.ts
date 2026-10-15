@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from "vitest";
-import { noteTargetIn, quoteOf } from "./noteDom";
+import { commentTargetIn, quoteOf } from "./commentDom";
 
 let body: HTMLElement;
 
@@ -68,7 +68,7 @@ describe("quoteOf", () => {
   });
 });
 
-describe("noteTargetIn", () => {
+describe("commentTargetIn", () => {
   const DOC =
     '<h1 data-sourcepos="1:1-1:6">Plan</h1>' +
     '<p data-sourcepos="3:1-3:16">Intro paragraph.</p>' +
@@ -79,7 +79,7 @@ describe("noteTargetIn", () => {
     render(DOC);
     const node = text("p:nth-of-type(2)");
     select(node, 0, node, 11);
-    const target = noteTargetIn(body);
+    const target = commentTargetIn(body);
     expect(target?.quote).toBe("Ship it on");
     expect(target?.startLine).toBe(7);
     expect(target?.endLine).toBe(8);
@@ -92,14 +92,14 @@ describe("noteTargetIn", () => {
     render(DOC);
     const node = text("p");
     select(node, 0, node, 5);
-    expect(noteTargetIn(body)?.headingPath).toEqual(["Plan"]);
+    expect(commentTargetIn(body)?.headingPath).toEqual(["Plan"]);
   });
 
   it("has no lines for blocks that do not know theirs, and the nearest heading only", () => {
     render("<h2>Rollout</h2><p>Ship it.</p>");
     const node = text("p");
     select(node, 0, node, 4);
-    const target = noteTargetIn(body);
+    const target = commentTargetIn(body);
     expect(target?.startLine).toBe(0);
     expect(target?.endLine).toBe(0);
     expect(target?.headingPath).toEqual(["Rollout"]);
@@ -107,20 +107,20 @@ describe("noteTargetIn", () => {
 
   it("is nothing when there is no selection, an empty one, or one outside the document", () => {
     render(DOC);
-    expect(noteTargetIn(body)).toBeNull();
+    expect(commentTargetIn(body)).toBeNull();
     const node = text("p");
     select(node, 3, node, 3);
-    expect(noteTargetIn(body)).toBeNull();
+    expect(commentTargetIn(body)).toBeNull();
     const outside = document.createElement("p");
     outside.textContent = "elsewhere";
     document.body.append(outside);
     select(outside.firstChild as Text, 0, outside.firstChild as Text, 5);
-    expect(noteTargetIn(body)).toBeNull();
+    expect(commentTargetIn(body)).toBeNull();
     // only spaces
     const spaces = document.createElement("p");
     spaces.textContent = "   ";
     body.append(spaces);
     select(spaces.firstChild as Text, 0, spaces.firstChild as Text, 3);
-    expect(noteTargetIn(body)).toBeNull();
+    expect(commentTargetIn(body)).toBeNull();
   });
 });

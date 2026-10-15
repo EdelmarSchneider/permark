@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 
-use crate::notes::{NoteError, NoteView};
+use crate::comments::{CommentError, CommentView};
 use crate::search::SearchHit;
 use crate::util::now_ms;
 use crate::vault::Vault;
@@ -32,10 +32,10 @@ pub trait Backend: Send + Sync + 'static {
     fn unread(&self) -> Vec<String>;
     /// The best sections for a query.
     fn search(&self, query: &str, limit: usize) -> Vec<SearchHit>;
-    /// Every review note, with its passage found again in the document as it is now.
-    fn notes(&self) -> Vec<NoteView>;
-    /// Marks a review note done by an agent.
-    fn resolve_note(&self, id: &str, reply: Option<&str>) -> Result<NoteView, NoteError>;
+    /// Every comment, with its passage found again in the document as it is now.
+    fn comments(&self) -> Vec<CommentView>;
+    /// Marks a comment done by an agent.
+    fn resolve_comment(&self, id: &str, reply: Option<&str>) -> Result<CommentView, CommentError>;
 }
 
 /// What the interface hears about.
@@ -235,14 +235,15 @@ impl Hub {
                 let hits = answers::plain_hits(self.backend.search(query, limit));
                 Reply::success(id, json(&Hits { hits }))
             }
-            Request::ListNotes { which } => {
-                let list = answers::note_list(self.backend.notes(), which.unwrap_or_default());
+            Request::ListComments { which } => {
+                let list =
+                    answers::comment_list(self.backend.comments(), which.unwrap_or_default());
                 Reply::success(id, json(&list))
             }
-            Request::ResolveNote { note, reply } => {
-                match self.backend.resolve_note(&note, reply.as_deref()) {
+            Request::ResolveComment { comment, reply } => {
+                match self.backend.resolve_comment(&comment, reply.as_deref()) {
                     Ok(view) => Reply::success(id, json(&view)),
-                    Err(error @ NoteError::NotFound(_)) => Reply::failure(
+                    Err(error @ CommentError::NotFound(_)) => Reply::failure(
                         id,
                         ProtocolError::new(ErrorKind::NotFound, error.to_string()),
                     ),
@@ -291,7 +292,7 @@ pub(crate) mod testing {
     pub struct Fake {
         pub unread: Mutex<Vec<String>>,
         pub corpus: Mutex<Vec<SearchHit>>,
-        pub notes: Mutex<Vec<NoteView>>,
+        pub comments: Mutex<Vec<CommentView>>,
         pub resolved: Mutex<Vec<(String, Option<String>)>>,
         pub statuses: Mutex<Vec<AgentStatus>>,
         pub opens: AtomicUsize,
@@ -314,20 +315,24 @@ pub(crate) mod testing {
                 .collect()
         }
 
-        fn notes(&self) -> Vec<NoteView> {
-            lock(&self.notes).clone()
+        fn comments(&self) -> Vec<CommentView> {
+            lock(&self.comments).clone()
         }
 
-        fn resolve_note(&self, id: &str, reply: Option<&str>) -> Result<NoteView, NoteError> {
-            let mut notes = lock(&self.notes);
-            let note = notes
+        fn resolve_comment(
+            &self,
+            id: &str,
+            reply: Option<&str>,
+        ) -> Result<CommentView, CommentError> {
+            let mut comments = lock(&self.comments);
+            let comment = comments
                 .iter_mut()
-                .find(|note| note.id == id)
-                .ok_or_else(|| NoteError::NotFound(id.to_owned()))?;
-            note.done = true;
-            note.reply = reply.map(str::to_owned);
+                .find(|comment| comment.id == id)
+                .ok_or_else(|| CommentError::NotFound(id.to_owned()))?;
+            comment.done = true;
+            comment.reply = reply.map(str::to_owned);
             lock(&self.resolved).push((id.to_owned(), reply.map(str::to_owned)));
-            Ok(note.clone())
+            Ok(comment.clone())
         }
     }
 
@@ -341,18 +346,18 @@ pub(crate) mod testing {
         }
     }
 
-    /// An open note on a passage of `path`, as the window lists it.
-    pub fn note(id: &str, path: &str, line: u32) -> NoteView {
-        NoteView {
+    /// An open comment on a passage of `path`, as the window lists it.
+    pub fn comment(id: &str, path: &str, line: u32) -> CommentView {
+        CommentView {
             id: id.to_owned(),
             path: path.to_owned(),
-            text: format!("note {id}"),
+            text: format!("comment {id}"),
             quote: "Ship it".to_owned(),
             heading_path: vec!["Plan".to_owned()],
             line,
             end_line: line,
             created_ms: 1_760_520_600_000,
-            state: crate::notes::PassageState::Anchored,
+            state: crate::comments::PassageState::Anchored,
             done: false,
             done_ms: None,
             done_by: None,
@@ -373,10 +378,10 @@ mod tests {
 
     use serde_json::json;
 
-    use super::testing::{hub, note};
+    use super::testing::{comment, hub};
     use super::*;
     use crate::bridge::context::ViewMode;
-    use crate::notes::NoteFilter;
+    use crate::comments::CommentFilter;
 
     fn project() -> (tempfile::TempDir, Arc<Vault>) {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -501,50 +506,50 @@ mod tests {
     }
 
     #[test]
-    fn notes_come_from_the_backend_open_ones_unless_more_is_asked() {
+    fn comments_come_from_the_backend_open_ones_unless_more_is_asked() {
         let (_dir, vault) = project();
         let (hub, fake) = hub(vault);
-        let mut closed = note("n3", "docs/plan.md", 7);
+        let mut closed = comment("c3", "docs/plan.md", 7);
         closed.done = true;
-        *lock(&fake.notes) = vec![
-            note("n2", "docs/plan.md", 7),
-            note("n1", "docs/plan.md", 1),
+        *lock(&fake.comments) = vec![
+            comment("c2", "docs/plan.md", 7),
+            comment("c1", "docs/plan.md", 1),
             closed,
         ];
         let ids = |which| {
             let result = hub
-                .handle(call(8, Request::ListNotes { which }))
+                .handle(call(8, Request::ListComments { which }))
                 .into_result()
                 .expect("a result");
-            result["notes"]
+            result["comments"]
                 .as_array()
                 .expect("a list")
                 .iter()
                 .map(|n| n["id"].as_str().expect("id").to_owned())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(ids(None), ["n1", "n2"]);
-        assert_eq!(ids(Some(NoteFilter::Done)), ["n3"]);
-        assert_eq!(ids(Some(NoteFilter::All)), ["n1", "n2", "n3"]);
+        assert_eq!(ids(None), ["c1", "c2"]);
+        assert_eq!(ids(Some(CommentFilter::Done)), ["c3"]);
+        assert_eq!(ids(Some(CommentFilter::All)), ["c1", "c2", "c3"]);
         let result = hub
-            .handle(call(9, Request::ListNotes { which: None }))
+            .handle(call(9, Request::ListComments { which: None }))
             .into_result()
             .expect("a result");
         assert_eq!(result["total"], 2);
-        assert_eq!(result["notes"][0]["state"], "anchored");
-        assert_eq!(result["notes"][0]["headingPath"], json!(["Plan"]));
+        assert_eq!(result["comments"][0]["state"], "anchored");
+        assert_eq!(result["comments"][0]["headingPath"], json!(["Plan"]));
     }
 
     #[test]
-    fn a_note_is_resolved_through_the_backend_and_an_unknown_one_is_not_found() {
+    fn a_comment_is_resolved_through_the_backend_and_an_unknown_one_is_not_found() {
         let (_dir, vault) = project();
         let (hub, fake) = hub(vault);
-        *lock(&fake.notes) = vec![note("n1", "docs/plan.md", 1)];
+        *lock(&fake.comments) = vec![comment("c1", "docs/plan.md", 1)];
         let result = hub
             .handle(call(
                 10,
-                Request::ResolveNote {
-                    note: "n1".to_owned(),
+                Request::ResolveComment {
+                    comment: "c1".to_owned(),
                     reply: Some("Rewritten".to_owned()),
                 },
             ))
@@ -554,12 +559,12 @@ mod tests {
         assert_eq!(result["reply"], "Rewritten");
         assert_eq!(
             *lock(&fake.resolved),
-            [("n1".to_owned(), Some("Rewritten".to_owned()))]
+            [("c1".to_owned(), Some("Rewritten".to_owned()))]
         );
         let missing = hub.handle(call(
             11,
-            Request::ResolveNote {
-                note: "nope".to_owned(),
+            Request::ResolveComment {
+                comment: "nope".to_owned(),
                 reply: None,
             },
         ));
