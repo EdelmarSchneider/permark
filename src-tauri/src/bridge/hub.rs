@@ -66,6 +66,8 @@ pub struct AgentStatus {
     /// The latest requests, newest first.
     pub recent: Vec<RequestRecord>,
     pub error: Option<String>,
+    /// The program an agent starts (`<program> mcp`): where this one is, for the setup snippets.
+    pub program: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -75,6 +77,7 @@ struct State {
     error: Option<String>,
     connections: usize,
     recent: VecDeque<RequestRecord>,
+    program: Option<String>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -107,6 +110,13 @@ impl Hub {
             pending_open: Mutex::new(None),
             state: Mutex::new(State::default()),
         }
+    }
+
+    /// Says where the program is, so the setup snippets can name it.
+    #[must_use]
+    pub fn with_program(self, program: Option<String>) -> Self {
+        lock(&self.state).program = program;
+        self
     }
 
     // ---- what the window publishes -----------------------------------------------------------------
@@ -144,6 +154,7 @@ impl Hub {
             connections: state.connections,
             recent: state.recent.iter().cloned().collect(),
             error: state.error.clone(),
+            program: state.program.clone(),
         }
     }
 

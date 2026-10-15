@@ -55,6 +55,7 @@ const IDLE: CommandContext = {
   stateInProject: false,
   hasRepo: false,
   hasUnread: false,
+  agentOn: false,
 };
 const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
 
@@ -142,6 +143,21 @@ describe("availableCommands", () => {
     expect(idsOf(availableCommands({ ...IDLE, stateInProject: true }))).not.toContain(
       "initProject",
     );
+  });
+
+  it("offers the agent connection's switch for the state it is in, and its setup in a folder", () => {
+    const off = idsOf(availableCommands(IDLE));
+    expect(off).toContain("agentOn");
+    expect(off).not.toContain("agentOff");
+    const on = idsOf(availableCommands({ ...IDLE, agentOn: true }));
+    expect(on).toContain("agentOff");
+    expect(on).not.toContain("agentOn");
+    expect(on).toContain("agentCopySetup");
+    // a single file is no project: nothing of it applies
+    const simple = idsOf(availableCommands({ ...IDLE, ide: false }));
+    for (const id of ["agentOn", "agentOff", "agentCopySetup"]) {
+      expect(simple, id).not.toContain(id);
+    }
   });
 
   it("offers the git baselines only in a repository", () => {

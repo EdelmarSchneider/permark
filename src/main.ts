@@ -11,6 +11,7 @@ import "./styles/editor.css";
 import "./styles/fileops.css";
 import "./styles/visual.css";
 import "./styles/unread.css";
+import "./styles/agent.css";
 import App from "./App.svelte";
 import { loadLanguage } from "./lib/stores/languageChoice.svelte";
 

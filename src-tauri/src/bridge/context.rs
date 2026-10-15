@@ -33,13 +33,16 @@ pub enum ViewMode {
     Source,
 }
 
-/// The section on screen: its heading path and the lines it spans (1-based, both included).
+/// The section on screen: its heading path and the lines it spans (1-based, both included). The lines are missing
+/// when the editor cannot tell.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Section {
     pub heading_path: Vec<String>,
-    pub start_line: u32,
-    pub end_line: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
 }
 
 /// The text the person selected, with where it is. The lines are missing when the editor cannot tell.
@@ -144,11 +147,13 @@ impl AgentContext {
         };
         self.document = Some(document);
         self.section = self.section.take().and_then(|section| {
-            let (start, end) = range(Some(section.start_line), Some(section.end_line));
-            Some(Section {
-                heading_path: clean_path(section.heading_path),
-                start_line: start?,
-                end_line: end.or(start)?,
+            let heading_path = clean_path(section.heading_path);
+            let (start_line, end_line) = range(section.start_line, section.end_line);
+            // A section that says neither where it is nor what it is called says nothing.
+            (!heading_path.is_empty() || start_line.is_some()).then_some(Section {
+                heading_path,
+                start_line,
+                end_line,
             })
         });
         self.selection = self.selection.take().and_then(|mut selection| {
@@ -183,11 +188,9 @@ impl AgentContext {
                 out.push_str(" › ");
                 out.push_str(heading);
             }
-            let _ = write!(
-                out,
-                " (lines {})",
-                lines(section.start_line, Some(section.end_line))
-            );
+            if let Some(start) = section.start_line {
+                let _ = write!(out, " (lines {})", lines(start, section.end_line));
+            }
         }
         if self.unsaved {
             out.push_str(", with unsaved edits");
@@ -242,8 +245,8 @@ mod tests {
             mode: Some(ViewMode::Reading),
             section: Some(Section {
                 heading_path: vec!["Plan".to_owned(), "Rollout".to_owned()],
-                start_line: 40,
-                end_line: 62,
+                start_line: Some(40),
+                end_line: Some(62),
             }),
             selection: Some(Selection {
                 text: "ship it on Friday".to_owned(),
@@ -360,8 +363,8 @@ mod tests {
         let mut context = full();
         context.section = Some(Section {
             heading_path: vec![],
-            start_line: 0,
-            end_line: 5,
+            start_line: Some(0),
+            end_line: Some(5),
         });
         let selection = context.selection.as_mut().expect("selection");
         selection.start_line = Some(9);
@@ -380,6 +383,32 @@ mod tests {
         selection.end_line = None;
         let selection = single.sanitize(&vault).selection.expect("selection");
         assert_eq!((selection.start_line, selection.end_line), (Some(7), None));
+    }
+
+    #[test]
+    fn a_section_may_have_a_name_without_lines_or_lines_without_a_name() {
+        let (_dir, vault) = project();
+        let mut named = full();
+        named.section = Some(Section {
+            heading_path: vec!["Plan".to_owned()],
+            start_line: None,
+            end_line: None,
+        });
+        let shared = named.clone().sanitize(&vault);
+        assert_eq!(shared.section, named.section);
+        assert_eq!(
+            shared.summary(),
+            "Viewing docs/plan.md › Plan, selected (lines 44-46): 'ship it on Friday'."
+        );
+        let json = serde_json::to_value(&shared.section).expect("json");
+        assert_eq!(json, serde_json::json!({ "headingPath": ["Plan"] }));
+        let mut numbered = full();
+        numbered.section = Some(Section {
+            heading_path: vec![],
+            start_line: Some(3),
+            end_line: None,
+        });
+        assert!(numbered.sanitize(&vault).section.is_some());
     }
 
     #[test]

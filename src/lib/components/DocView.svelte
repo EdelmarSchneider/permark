@@ -5,8 +5,8 @@
   import { codeRefsContextFor } from "../dom/codeRefsContext";
   import { DomFind } from "../dom/domFind";
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
-  import { anchorTarget, findById, selectionIn } from "../dom/domUtil";
-  import { readBlocks } from "../dom/outlineDom";
+  import { anchorTarget, findById, selectionIn, selectionLines } from "../dom/domUtil";
+  import { readBlocks, readHeadingLines } from "../dom/outlineDom";
   import { enhanceContextFor } from "../dom/enhanceContext";
   import type { EnhanceContext } from "../dom/enhance";
   import { ICON_CHECK, ICON_COPY } from "../dom/enhance";
@@ -443,7 +443,18 @@
       }
       return null;
     };
+    bridge.readingSnapshot = () => {
+      if (!body) return null;
+      const { headings, lastLine } = readHeadingLines(body);
+      const selected = selectionIn(body);
+      return {
+        headings,
+        lastLine,
+        selection: selected ? { text: selected.text, ...selectionLines(body) } : null,
+      };
+    };
     return () => {
+      bridge.readingSnapshot = undefined;
       bridge.topLine = undefined;
       bridge.jumpChange = undefined;
       bridge.find = undefined;

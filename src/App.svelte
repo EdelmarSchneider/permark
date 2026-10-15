@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
+  import AgentPublisher from "./lib/components/AgentPublisher.svelte";
   import ImageZoom from "./lib/components/ImageZoom.svelte";
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
@@ -125,6 +126,7 @@
   {#if ui.tagEditor}<TagEditor />{/if}
   {#if ui.outlinePopover}<OutlinePopover />{/if}
   <SelectionPopover />
+  <AgentPublisher />
 {:else}
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>
 {/if}

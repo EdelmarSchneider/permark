@@ -15,9 +15,11 @@
     setRepoState,
   } from "./driver";
   import { mockFiles } from "./fixtures";
+  import { agentAsks, agentConnects, agentOpens } from "./mockAgent";
   import { setMetaProblem } from "./mockMeta";
 
   let open = $state(false);
+  let agentHere = $state(false);
   let rebasing = $state(false);
   let gitError = $state(false);
   let metaConflict = $state(false);
@@ -74,6 +76,22 @@
         }}
       >
         Next save fails {failSave ? "(armed)" : "off"}
+      </button>
+      <button
+        class="btn"
+        onclick={() => {
+          agentHere = !agentHere;
+          agentConnects(agentHere);
+        }}
+      >
+        Agent {agentHere ? "leaves" : "connects"}
+      </button>
+      <button class="btn" onclick={() => agentAsks("get_context")}>Agent asks context</button>
+      <button class="btn" onclick={() => agentAsks("search", "rollout plan")}>
+        Agent searches
+      </button>
+      <button class="btn" onclick={() => agentOpens("docs/specs/watcher.md", 12)}>
+        Agent opens a place
       </button>
     {/if}
   </div>

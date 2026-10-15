@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatNumber, t, tn } from "../i18n";
+  import { agent } from "../stores/agent.svelte";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { edit } from "../stores/edit.svelte";
@@ -9,6 +10,7 @@
   import { vault } from "../stores/vault.svelte";
   import { baselineLabel } from "../time";
   import { describeUpdate } from "../updates";
+  import AgentPopover from "./AgentPopover.svelte";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
@@ -75,6 +77,24 @@
     const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
     menu = menu?.kind === kind ? null : { kind, anchor };
   }
+
+  // the agent connection: its item in the status bar and the popover under it
+  let agentAnchor = $state<DOMRect | null>(null);
+  const agentTitle = $derived(
+    agent.status.error !== null
+      ? t("agent.item.error")
+      : agent.connected
+        ? t("agent.item.connected")
+        : t("agent.item.idle"),
+  );
+  function toggleAgent(e: MouseEvent): void {
+    const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    agentAnchor = agentAnchor === null ? anchor : null;
+  }
+  // turned off from elsewhere (Settings, the palette): the popover has nothing to show
+  $effect(() => {
+    if (!agent.enabled) agentAnchor = null;
+  });
 </script>
 
 <footer class="statusbar">
@@ -157,6 +177,27 @@
         <Icon name="download" />{describeUpdate(update)}
       </button>
     {/if}
+    {#if agent.enabled}
+      <button
+        type="button"
+        class={[
+          "sb-item",
+          "agent-item",
+          agent.connected && "is-on",
+          agent.pulsing && "is-pulsing",
+          agent.status.error !== null && "is-warn",
+        ]}
+        title={agentTitle}
+        aria-label={agentTitle}
+        aria-haspopup="dialog"
+        aria-expanded={agentAnchor !== null}
+        data-popover-trigger
+        onclick={toggleAgent}
+      >
+        <span class={["agent-dot", agent.connected && "is-connected"]} aria-hidden="true"></span>
+        {t("agent.item")}
+      </button>
+    {/if}
     <button
       type="button"
       class="sb-item"
@@ -205,6 +246,10 @@
     />
   </div>
 </footer>
+
+{#if agentAnchor}
+  <AgentPopover anchor={agentAnchor} onclose={() => (agentAnchor = null)} />
+{/if}
 
 {#if menu}
   <Menu

@@ -151,7 +151,7 @@ export type AgentContext = {
   document: string | null;
   mode: AgentViewMode | null;
   /** The section on screen: its heading path and its lines (from 1, both included). */
-  section: { headingPath: string[]; startLine: number; endLine: number } | null;
+  section: { headingPath: string[]; startLine?: number; endLine?: number } | null;
   /** The selected text; the lines are missing when the editor cannot tell. */
   selection: {
     text: string;
@@ -182,6 +182,8 @@ export type AgentStatus = {
   /** The latest requests, newest first. */
   recent: AgentRequest[];
   error: string | null;
+  /** The program an agent starts (`<program> mcp`): where this one is, for the setup lines; null when unknown. */
+  program: string | null;
 };
 
 /** A place an agent asked to be shown. */

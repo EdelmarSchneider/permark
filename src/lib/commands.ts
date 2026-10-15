@@ -24,7 +24,10 @@ export type MenuAction =
   | "revealInTree"
   | "baselineLastVisit"
   | "baselineCommit"
-  | "openContainingFolder";
+  | "openContainingFolder"
+  | "agentOn"
+  | "agentOff"
+  | "agentCopySetup";
 
 /** What `app.run` can do. */
 export type CommandAction = ShortcutAction | MenuAction;
@@ -46,6 +49,8 @@ export type CommandContext = {
   hasRepo: boolean;
   /** Some document is unread. */
   hasUnread: boolean;
+  /** The agent connection is on for this project. */
+  agentOn: boolean;
 };
 
 export type Command = {
@@ -122,7 +127,11 @@ export const COMMANDS: readonly Command[] = [
   { id: "newFolder", label: "cmd.newFolder", available: inFolder },
   { id: "collapseAll", label: "cmd.collapseAll", available: inFolder },
   { id: "markAllRead", label: "cmd.markAllRead", available: (ctx) => ctx.ide && ctx.hasUnread },
-  { id: "markFolderRead", label: "cmd.markFolderRead", available: (ctx) => ctx.ide && ctx.hasUnread },
+  {
+    id: "markFolderRead",
+    label: "cmd.markFolderRead",
+    available: (ctx) => ctx.ide && ctx.hasUnread,
+  },
   { id: "showOnlyUnread", label: "cmd.showOnlyUnread", available: inFolder },
   {
     id: "baselineLastVisit",
@@ -135,6 +144,9 @@ export const COMMANDS: readonly Command[] = [
     label: "cmd.initProject",
     available: (ctx) => ctx.ide && !ctx.stateInProject,
   },
+  { id: "agentOn", label: "cmd.agentOn", available: (ctx) => ctx.ide && !ctx.agentOn },
+  { id: "agentOff", label: "cmd.agentOff", available: (ctx) => ctx.ide && ctx.agentOn },
+  { id: "agentCopySetup", label: "cmd.agentCopySetup", available: inFolder },
   { id: "openContainingFolder", label: "cmd.openContainingFolder", available: (ctx) => !ctx.ide },
   { id: "checkUpdates", label: "cmd.checkUpdates" },
 ];

@@ -3,6 +3,7 @@
 
 import { SvelteSet } from "svelte/reactivity";
 import { api, type Unlisten } from "../api";
+import { mcpJson } from "../agentSetup";
 import { bridge } from "../bridge";
 import { refLabel } from "../codeRefs";
 import { isTextSelected } from "../dom/domUtil";
@@ -21,7 +22,8 @@ import { selectOnly } from "../tagModel";
 import { batchTouches, nextUnread } from "../unread";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import { normalizeTreeFilter, treeLoadOf } from "../treeFilter";
-import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
+import type { AgentOpen, FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
+import { agent } from "./agent.svelte";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
 import { edit } from "./edit.svelte";
@@ -189,6 +191,7 @@ class AppStore {
       }
 
       session.suspend();
+      agent.reset();
       edit.reset();
       docs.reset();
       feed.clear();
@@ -243,6 +246,9 @@ class AppStore {
           silent: true,
         });
       }
+      void agent.onProjectOpened();
+      // a place an agent asked for while TrailMark was starting
+      void this.openFromAgent();
       return true;
     } catch (error) {
       this.openError = t("welcome.openFailed", { path, message: errorMessage(error) });
@@ -287,7 +293,66 @@ class AppStore {
         if (this.screen === "project" && !vault.isSimple) unread.onChanged(paths);
       }),
       await api.on("open-path", (path) => void this.openProject(path)),
+      await api.on("agent-status", (status) => {
+        if (this.screen === "project") agent.onStatus(status);
+      }),
+      await api.on("agent-open", () => void this.openFromAgent()),
     );
+  }
+
+  // ---- agent connection -----------------------------------------------------------------------------
+
+  /**
+   * An agent asked to show a place. It is shown without taking focus from the agent's terminal: the document opens,
+   * the section is tinted, and a notice offers the way back. A person who is editing is not taken away from their
+   * work: the notice offers the place instead.
+   */
+  async openFromAgent(): Promise<void> {
+    if (this.screen !== "project" || vault.isSimple) return;
+    let place: AgentOpen | null;
+    try {
+      place = await api.takeAgentOpen();
+    } catch {
+      return;
+    }
+    if (place) await this.showAgentPlace(place);
+  }
+
+  private async showAgentPlace(place: AgentOpen): Promise<void> {
+    if (edit.active) {
+      toast.message(t("agent.openWhileEditing", { path: place.path }), "info", {
+        label: t("agent.show"),
+        run: () => void this.leaveEditingForAgent(place),
+      });
+      return;
+    }
+    const from = docs.path;
+    const locate = place.line === undefined ? null : { line: place.line, find: null };
+    const opened = await this.openDoc(place.path, { locate });
+    if (!opened) return;
+    // "Back" goes to the document the person was reading; moving within one has nowhere to go back to
+    const back =
+      from !== null && from !== place.path
+        ? { label: t("agent.back"), run: () => void docs.back() }
+        : undefined;
+    toast.message(
+      place.headingNotFound ? t("agent.openedNoHeading") : t("agent.opened"),
+      "info",
+      back,
+    );
+  }
+
+  /** The person chose to see what an agent wanted to show them while they were editing. */
+  private async leaveEditingForAgent(place: AgentOpen): Promise<void> {
+    await this.openDoc(place.path, {
+      locate: place.line === undefined ? null : { line: place.line, find: null },
+    });
+  }
+
+  /** "Copy agent setup": the line every MCP client takes, with the program's own path. */
+  async copyAgentSetup(): Promise<void> {
+    const copied = await copyText(mcpJson(agent.status.program));
+    toast.message(copied ? t("agent.setupCopied") : t("copy.failed"), copied ? "info" : "warn");
   }
 
   private onTreeChanged(): void {
@@ -880,6 +945,15 @@ class AppStore {
         return;
       case "openContainingFolder":
         if (!ide) void this.openContainingFolder();
+        return;
+      case "agentOn":
+        if (ide) void agent.setEnabled(true);
+        return;
+      case "agentOff":
+        if (ide) void agent.setEnabled(false);
+        return;
+      case "agentCopySetup":
+        if (ide) void this.copyAgentSetup();
         return;
     }
   }

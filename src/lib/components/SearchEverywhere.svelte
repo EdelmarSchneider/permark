@@ -35,6 +35,7 @@
   import { TagQueryState } from "../tagQueryState.svelte";
   import { highlightSegments } from "../text";
   import type { SearchHit } from "../types";
+  import { agent } from "../stores/agent.svelte";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { docs } from "../stores/docs.svelte";
@@ -266,6 +267,7 @@
     stateInProject: vault.stateLocation === "project",
     hasRepo: !!vault.git?.isRepo && !vault.git.gitError,
     hasUnread: unread.count > 0,
+    agentOn: agent.enabled,
   });
 
   const commandList = $derived(

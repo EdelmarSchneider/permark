@@ -12,6 +12,7 @@ use super::hub::{AgentEvents, AgentStatus, Backend, Hub};
 use super::protocol::Opened;
 use super::server::BridgeServer;
 use super::socket::{Endpoint, SocketError};
+use super::tools::program_path;
 
 /// What exists while the connection is on.
 struct Running {
@@ -41,7 +42,10 @@ impl AgentBridge {
         events: Arc<dyn AgentEvents>,
     ) -> Self {
         Self {
-            hub: Arc::new(Hub::new(vault, backend, events)),
+            hub: Arc::new(
+                Hub::new(vault, backend, events)
+                    .with_program(program_path().map(|path| path.display().to_string())),
+            ),
             endpoint: endpoint.map_err(|error| error.to_string()),
             agent_path: Mutex::new(agent_path),
             running: Mutex::new(None),
@@ -202,6 +206,8 @@ mod tests {
             Err(LinkError::NotRunning)
         ));
         assert!(!fx.bridge.status().enabled);
+        // Even off, the status says where the program is, for the setup lines.
+        assert!(fx.bridge.status().program.is_some());
     }
 
     #[tokio::test]
@@ -214,8 +220,8 @@ mod tests {
             mode: Some(ViewMode::Reading),
             section: Some(Section {
                 heading_path: vec!["Plan".to_owned(), "Rollout".to_owned()],
-                start_line: 5,
-                end_line: 7,
+                start_line: Some(5),
+                end_line: Some(7),
             }),
             ..AgentContext::default()
         });

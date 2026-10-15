@@ -387,11 +387,32 @@ fn shown(opened: Value, started: bool) -> Map<String, Value> {
     fields
 }
 
+/// Where the program is: what an agent's configuration starts (`<program> mcp`). An AppImage runs from a folder that is
+/// mounted for that run only; the file the person started is what lasts, and the AppImage runtime names it.
+fn program_from(
+    appimage: Option<std::ffi::OsString>,
+    running: io::Result<PathBuf>,
+) -> Option<PathBuf> {
+    appimage
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| running.ok())
+        .map(|path| dunce::simplified(&path).to_path_buf())
+}
+
+/// The program that is running, in the form that can be started again later.
+pub(crate) fn program_path() -> Option<PathBuf> {
+    program_from(std::env::var_os("APPIMAGE"), std::env::current_exe())
+}
+
 /// Starts TrailMark on a project and lets it go its own way.
 pub(crate) fn launch_app(project: &Path) -> io::Result<()> {
     use std::process::{Command, Stdio};
 
-    let mut command = Command::new(std::env::current_exe()?);
+    let program =
+        program_path().ok_or_else(|| io::Error::other("the program's own path is unknown"))?;
+    let mut command = Command::new(program);
     command
         .arg(project)
         .stdin(Stdio::null())
@@ -778,6 +799,35 @@ mod tests {
         core.get_context().await;
         assert_eq!(fx.bridge.status().connections, 1);
         fx.bridge.shutdown();
+    }
+
+    #[test]
+    fn the_program_is_the_running_file_except_in_an_appimage() {
+        let running = || Ok(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"));
+        assert_eq!(
+            program_from(None, running()),
+            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"))
+        );
+        // The AppImage runtime names the file that was started; its mount is gone after the run.
+        let appimage = if cfg!(windows) {
+            "C:\\Apps\\TrailMark.AppImage"
+        } else {
+            "/home/ada/Apps/TrailMark.AppImage"
+        };
+        assert_eq!(
+            program_from(Some(appimage.into()), running()),
+            Some(PathBuf::from(appimage))
+        );
+        // Something that is not a path to a file is not trusted over the running program.
+        assert_eq!(
+            program_from(Some("TrailMark.AppImage".into()), running()),
+            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"))
+        );
+        assert_eq!(
+            program_from(Some("".into()), running()),
+            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"))
+        );
+        assert_eq!(program_from(None, Err(io::Error::other("unknown"))), None);
     }
 
     #[test]

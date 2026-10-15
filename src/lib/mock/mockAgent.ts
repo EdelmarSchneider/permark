@@ -7,13 +7,21 @@ import { docExists } from "./fixtures";
 
 const RECENT = 8;
 
-let status: AgentStatus = {
-  enabled: false,
-  listening: false,
-  connections: 0,
-  recent: [],
-  error: null,
-};
+/** Where the mock "installed" TrailMark: a path with spaces, so the setup lines show their quoting. */
+const PROGRAM = "C:\\Program Files\\TrailMark\\trailmark.exe";
+
+function emptyStatus(): AgentStatus {
+  return {
+    enabled: false,
+    listening: false,
+    connections: 0,
+    recent: [],
+    error: null,
+    program: PROGRAM,
+  };
+}
+
+let status: AgentStatus = emptyStatus();
 let latest: AgentContext | null = null;
 let waiting: AgentOpen | null = null;
 
@@ -27,9 +35,7 @@ export function agentStatus(): AgentStatus {
 }
 
 export function setAgentConnection(enabled: boolean): AgentStatus {
-  status = enabled
-    ? { ...status, enabled: true, listening: true, error: null }
-    : { enabled: false, listening: false, connections: 0, recent: [], error: null };
+  status = enabled ? { ...status, enabled: true, listening: true, error: null } : emptyStatus();
   announce();
   return agentStatus();
 }
