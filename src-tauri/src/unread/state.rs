@@ -4,7 +4,7 @@
 //!
 //! A document is unread when the two differ, or when it was never read. Paths are the vault paths the UI
 //! uses (`@wt/<name>/...` in a linked worktree) and are compared the way the file system compares them
-//! (case-folded on Windows).
+//! (case-folded on Windows and macOS, see [`crate::vault::CASE_INSENSITIVE`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -525,14 +525,14 @@ mod tests {
         assert!(!t.rewritten("unknown.md", 1, 2));
     }
 
-    // Windows compares paths without regard to case; nothing else does.
+    // Windows and macOS compare paths without regard to case; Linux does not.
     #[test]
     fn paths_are_compared_the_way_the_file_system_compares_them() {
         let mut t = scanned(&[("Docs/A.md", 1)]);
         t.changed("docs/a.md", 2);
         assert_eq!(t.unread(), ["docs/a.md"]);
-        // On Windows that is the same document, now spelled as the disk spells it.
-        let spelling = if cfg!(windows) {
+        // Where the file system folds case that is the same document, now spelled as it was last seen.
+        let spelling = if crate::vault::CASE_INSENSITIVE {
             "docs/a.md"
         } else {
             "Docs/A.md"
