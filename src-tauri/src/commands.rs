@@ -19,6 +19,9 @@ use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
+use crate::open_request::OpenInbox;
+#[cfg(target_os = "macos")]
+use crate::open_request::{self, Action};
 use crate::render::DocumentView;
 use crate::search::SearchHit;
 use crate::session::{
@@ -103,12 +106,41 @@ pub async fn open_vault(
     .await
 }
 
+/// The path the app starts with: the one the system delivered while the app was starting (macOS hands over what
+/// Finder opens that way, see [`crate::open_request`]), else the one given on the command line.
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri hands injected state over by value
+pub fn initial_path(inbox: State<'_, OpenInbox>) -> Option<String> {
+    inbox.take_launch_path().or_else(command_line_path)
+}
+
 /// The path given on the command line (`trailmark <path>`), if it exists. Relative paths resolve
 /// against the current directory.
-#[tauri::command]
-pub fn initial_path() -> Option<String> {
+pub fn command_line_path() -> Option<String> {
     let arg = std::env::args_os().nth(1)?;
     initial_path_from(arg, std::env::current_dir().ok())
+}
+
+/// A path was opened from outside the app (macOS: Finder, the Dock icon). Delivered by `RunEvent::Opened`, both while
+/// the app starts and while it runs.
+#[cfg(target_os = "macos")]
+pub fn opened(app: &AppHandle, urls: &[tauri::Url]) {
+    let project_open = app.state::<AppState>().current().is_ok();
+    let actions = app
+        .state::<OpenInbox>()
+        .receive(open_request::paths_from_urls(urls), project_open);
+    for action in actions {
+        match action {
+            Action::OpenHere(path) => {
+                crate::window::raise(app);
+                let _ = app.emit("open-path", path);
+            }
+            // Best effort: a process that cannot start leaves nothing to report to.
+            Action::NewProcess(path) => {
+                let _ = open_request::spawn_instance(&path);
+            }
+        }
+    }
 }
 
 /// A drive root passed from the file manager's "Open with TrailMark" entry is `"C:\"` on the command line, and

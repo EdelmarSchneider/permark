@@ -43,13 +43,15 @@ export type EventMap = {
   "index-progress": { indexed: number; total: number };
   "meta-changed": null;
   "image-refs-changed": null;
+  /** The system asked this window (which shows no project) to open a file or folder (macOS: Finder, the Dock icon). */
+  "open-path": string;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
 
 export interface Api {
   openVault(path: string): Promise<VaultInfo>;
-  /** The CLI argument, if any. */
+  /** The path the app starts with: the one the system opened it with, else the CLI argument, if any. */
   initialPath(): Promise<string | null>;
   recentVaults(): Promise<RecentVault[]>;
   /** The language the interface starts in: the one picked in Settings, else the one the installer recorded, else "system". */

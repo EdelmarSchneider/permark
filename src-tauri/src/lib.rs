@@ -5,7 +5,8 @@
 //! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor),
 //! [`fileops`] (rename, move, delete and new folders with the links kept working).
 //! [`refs`] knows which images the documents use (for the Explorer filter).
-//! [`shell_integration`] adds "Open with TrailMark" to the file manager.
+//! [`shell_integration`] adds "Open with TrailMark" to the file manager (Windows); [`open_request`] receives what the
+//! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
 
@@ -17,6 +18,7 @@ mod git;
 mod links;
 mod meta;
 mod nav;
+mod open_request;
 mod refs;
 mod render;
 mod search;
@@ -63,6 +65,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
+        .manage(open_request::OpenInbox::default())
         // The window starts hidden; this puts it where it was and shows it.
         .setup(|app| {
             window::setup(app);
@@ -137,6 +140,9 @@ pub fn run() {
                 ..
             } => handle.state::<AppState>().refresh_on_focus(),
             RunEvent::Exit => handle.state::<AppState>().shutdown(),
+            // Finder opened a file or folder with the app (double-click, "Open With", a drop on the Dock icon).
+            #[cfg(target_os = "macos")]
+            RunEvent::Opened { urls } => commands::opened(handle, &urls),
             _ => {}
         }
     });
