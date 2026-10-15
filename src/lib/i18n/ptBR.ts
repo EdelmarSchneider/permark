@@ -670,10 +670,13 @@ export const ptBR = {
   "settings.agentSetup": "Conectar um agente",
   "settings.agentSetupHint":
     "Cole uma destas linhas onde o agente é configurado. Se o trailmark estiver no seu PATH, o nome pode substituir o caminho do programa.",
+  "settings.agentSetupHintStore":
+    "Cole uma destas linhas onde o agente é configurado. A versão da Microsoft Store coloca o trailmark no seu PATH, então estas linhas usam esse nome.",
   "settings.agentClaude": "Claude Code",
   "settings.agentJson": "Outros clientes MCP (JSON)",
   "settings.agentHook": "Incluir o que você está vendo em cada prompt (hook do Claude Code)",
   "settings.updates": "Atualizações",
+  "settings.updatesStore": "As atualizações vêm da Microsoft Store.",
   "settings.fileManager": "Gerenciador de arquivos",
   "settings.shellMenu": 'Adicionar "Abrir com o TrailMark" ao menu de clique direito',
   "settings.shellMenuHint": 'No Windows 11, fica em "Mostrar mais opções".',

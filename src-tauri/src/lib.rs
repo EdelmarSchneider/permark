@@ -12,10 +12,12 @@
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
 //! [`bridge`] is the agent connection: `trailmark mcp` runs without a window and speaks the Model Context Protocol.
+//! [`distribution`] tells the build the project publishes from the one in the Microsoft Store, which updates differently.
 
 mod bridge;
 mod commands;
 mod comments;
+mod distribution;
 mod edit;
 mod error;
 mod external_editor;
@@ -96,13 +98,16 @@ pub fn run() {
     } else {
         None
     };
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(navigation_guard(dev_url))
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        // In-app updates: the updater checks the GitHub release endpoint from `tauri.conf.json`,
-        // the process plugin restarts the app once an update is installed.
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init());
+    // In-app updates: the updater checks the GitHub release endpoint from `tauri.conf.json`. The Microsoft Store build
+    // leaves it out: the Store updates that app, and its package cannot replace itself (see `distribution`).
+    #[cfg(not(feature = "store"))]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    let app = builder
+        // The process plugin restarts the app once an update is installed.
         .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .manage(open_request::OpenInbox::default())
@@ -123,6 +128,7 @@ pub fn run() {
             commands::initial_path,
             commands::recent_vaults,
             commands::app_language,
+            commands::app_distribution,
             commands::set_app_language,
             commands::shell_integration_state,
             commands::set_shell_context_menu,

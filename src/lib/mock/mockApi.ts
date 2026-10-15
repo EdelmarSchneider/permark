@@ -96,6 +96,11 @@ export const mockImpl: Api = {
     typeof location === "undefined" ? null : new URLSearchParams(location.search).get("open"),
   recentVaults: async () => mockRecents,
   appLanguage: async () => mockLanguage(),
+  // `?store` shows the Microsoft Store build of the interface in the browser mock.
+  appDistribution: async () =>
+    typeof location !== "undefined" && new URLSearchParams(location.search).has("store")
+      ? "store"
+      : "standard",
   setAppLanguage: async (language) => {
     try {
       localStorage.setItem(LANGUAGE_KEY, language);

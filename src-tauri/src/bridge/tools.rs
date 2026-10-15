@@ -637,6 +637,12 @@ pub(crate) fn program_path() -> Option<PathBuf> {
 }
 
 /// Starts TrailMark on a project and lets it go its own way.
+///
+/// In the Microsoft Store build the program is a file inside the package's folder (under `WindowsApps`), which only
+/// the package's own processes may start. That holds here: `trailmark mcp` and `trailmark context` are started through
+/// the package's alias, so they are packaged processes, and a process started by a packaged process is part of the same
+/// package. Starting the program from a process outside the package by that path would be refused, which is why the
+/// agent setup names the alias instead (see `distribution::agent_program`).
 pub(crate) fn launch_app(project: &Path) -> io::Result<()> {
     use std::process::{Command, Stdio};
 

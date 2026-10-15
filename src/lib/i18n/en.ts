@@ -654,10 +654,13 @@ export const en = {
   "settings.agentSetup": "Connect an agent",
   "settings.agentSetupHint":
     "Paste one of these where the agent is set up. Where trailmark is on your PATH, the name can stand in for the program path.",
+  "settings.agentSetupHintStore":
+    "Paste one of these where the agent is set up. The Microsoft Store version puts trailmark on your PATH, so these lines use that name.",
   "settings.agentClaude": "Claude Code",
   "settings.agentJson": "Other MCP clients (JSON)",
   "settings.agentHook": "Add what you are looking at to every prompt (Claude Code hook)",
   "settings.updates": "Updates",
+  "settings.updatesStore": "Updates come from the Microsoft Store.",
   "settings.fileManager": "File manager",
   "settings.shellMenu": 'Add "Open with TrailMark" to the right-click menu',
   "settings.shellMenuHint": 'On Windows 11 it is under "Show more options".',

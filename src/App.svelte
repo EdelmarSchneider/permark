@@ -68,7 +68,7 @@
 
   onMount(() => {
     void app.boot();
-    updates.scheduleStartupCheck();
+    void updates.scheduleStartupCheck();
     if (import.meta.env.VITE_MOCK === "1") {
       void import("./lib/mock/driver").then((driver) => {
         const quiet = new URLSearchParams(location.search).get("mock") === "quiet";

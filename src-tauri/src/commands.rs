@@ -14,6 +14,7 @@ use crate::bridge::context::AgentContext;
 use crate::bridge::hub::AgentStatus;
 use crate::bridge::protocol::Opened;
 use crate::comments::{CommentView, NewComment};
+use crate::distribution::{self, Distribution};
 use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::external_editor::{self, EditorError, EditorTemplate};
@@ -225,6 +226,12 @@ pub async fn app_language(app: AppHandle) -> Result<Language, AppError> {
         Ok(effective_language(stored, installer_language()))
     })
     .await
+}
+
+/// Which build this is (see [`crate::distribution`]): the interface leaves out what the Microsoft Store build does without.
+#[tauri::command]
+pub fn app_distribution() -> Distribution {
+    distribution::current()
 }
 
 /// Keeps the language picked in Settings (the app-wide choice that outranks the installer's).

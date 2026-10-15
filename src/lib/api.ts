@@ -15,6 +15,7 @@ import type {
   CreatedDoc,
   CreatedFolder,
   DeleteOutcome,
+  Distribution,
   DocumentView,
   FileMeta,
   FsBatch,
@@ -71,6 +72,8 @@ export interface Api {
   recentVaults(): Promise<RecentVault[]>;
   /** The language the interface starts in: the one picked in Settings, else the one the installer recorded, else "system". */
   appLanguage(): Promise<LanguagePreference>;
+  /** Which build this is: the Microsoft Store build leaves out what the Store does for the app (updates). */
+  appDistribution(): Promise<Distribution>;
   /** Keeps the language picked in Settings (an app-wide choice, not a project one). */
   setAppLanguage(language: LanguagePreference): Promise<void>;
   /** What "Open with TrailMark" has registered with the file manager, read from the system each time. */
@@ -201,6 +204,7 @@ export const tauriApi: Api = {
   initialPath: () => invoke<string | null>("initial_path"),
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
   appLanguage: () => invoke<LanguagePreference>("app_language"),
+  appDistribution: () => invoke<Distribution>("app_distribution"),
   setAppLanguage: (language) => invoke<void>("set_app_language", { language }),
   shellIntegrationState: () => invoke<ShellState>("shell_integration_state"),
   setShellContextMenu: (enabled, locale) =>
@@ -306,6 +310,7 @@ function createMockApi(): Api {
     initialPath: command("initialPath"),
     recentVaults: command("recentVaults"),
     appLanguage: command("appLanguage"),
+    appDistribution: command("appDistribution"),
     setAppLanguage: command("setAppLanguage"),
     shellIntegrationState: command("shellIntegrationState"),
     setShellContextMenu: command("setShellContextMenu"),

@@ -38,6 +38,7 @@
   import { agent } from "../stores/agent.svelte";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
+  import { distribution } from "../stores/distribution.svelte";
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
   import { feed } from "../stores/feed.svelte";
@@ -268,6 +269,7 @@
     hasRepo: !!vault.git?.isRepo && !vault.git.gitError,
     hasUnread: unread.count > 0,
     agentOn: agent.enabled,
+    storeBuild: distribution.isStore,
   });
 
   const commandList = $derived(
