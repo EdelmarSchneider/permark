@@ -1240,6 +1240,33 @@ describe("loose files", () => {
     expect(notes.entries.find((n) => n.path === FILE)?.unsaved).toBe(false);
   });
 
+  it("does not bring the kept text back after Ctrl+S saved it, when keeping it was still running", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nhalf a sentence");
+    // keeping the text is slow: it is still in flight when Ctrl+S is pressed
+    let finishKeeping: () => void = () => {};
+    fake.savePending.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishKeeping = resolve;
+        }),
+    );
+    await vi.advanceTimersByTimeAsync(800);
+    expect(fake.savePending).toHaveBeenCalledTimes(1);
+    const saving = edit.save();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.saveDocument).not.toHaveBeenCalled();
+    finishKeeping();
+    expect(await saving).toBe(true);
+    await vi.advanceTimersByTimeAsync(10);
+    // the file holds the text and nothing is kept apart any more: no "unsaved" mark comes back
+    expect(fake.saveDocument).toHaveBeenCalledTimes(1);
+    expect(edit.dirty).toBe(false);
+    expect(notes.entries.find((n) => n.path === FILE)?.unsaved).toBe(false);
+  });
+
   it("forgets the kept text when it becomes the file's own text again", async () => {
     typedInto(FILE, "# Proposal\nmore", IN_SOURCE);
     openName = FILE;

@@ -192,6 +192,8 @@ class EditStore {
   private overwriteAsk = false;
   /** Kept text was reopened over a file that is not the version it was typed over (the bar says so until a choice is made). */
   private keptOverOther = false;
+  /** Keeping the text typed into a loose file apart is on its way to the disk. */
+  private keeping: Promise<void> | null = null;
   /** Saves the open note a moment after the last edit (see `autosave.ts`); idle outside the Notes window. */
   private readonly saver = new Autosaver({ save: () => this.autosaveNow() });
 
@@ -653,6 +655,10 @@ class EditStore {
       this.conflictFocus++;
       return false;
     }
+    // Keeping the typed text apart may still be on its way to the disk. It finishes first: if it ended after the file was written
+    // it would bring back the text and the "unsaved" mark that the save has just made unnecessary, and the next open would
+    // show a change that is not one.
+    if (this.keeping) await this.keeping;
     const text = this.currentText();
     // a note is saved as it is typed; a loose file is written only here, when the person asks
     const loose = this.loose;
@@ -812,7 +818,15 @@ class EditStore {
    * Keeps the text typed into the open loose file apart from it (never in it), with the version of the file it was typed over; and
    * forgets what was kept once the text is the file's own again. A restart finds the text and the "unsaved" mark.
    */
-  private async keepPending(): Promise<void> {
+  private keepPending(): Promise<void> {
+    const flight: Promise<void> = this.keepPendingNow().finally(() => {
+      if (this.keeping === flight) this.keeping = null;
+    });
+    this.keeping = flight;
+    return flight;
+  }
+
+  private async keepPendingNow(): Promise<void> {
     const path = this.path;
     const base = this.base;
     if (!path || !base) return;
