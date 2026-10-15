@@ -380,7 +380,8 @@ fn a_symbolic_link_is_moved_itself_not_its_target() {
     std::os::unix::fs::symlink(d.path().join("target.md"), d.path().join("link.md"))
         .expect("symlink");
     let valid = check_moves(&vault, &[mv("link.md", "renamed.md")]).expect("valid");
-    assert_eq!(valid[0].abs_from, d.path().join("link.md"));
+    // paths come from the vault's canonical root: the temp folder itself may be behind a link (`/var`)
+    assert_eq!(valid[0].abs_from, vault.root().join("link.md"));
     assert!(!valid[0].is_dir);
 }
 
