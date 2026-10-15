@@ -11,7 +11,7 @@ import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
 import { errorKind, errorMessage } from "../errors";
 import { usesSystemApp } from "../externalEditor";
 import { followCandidate } from "../follow";
-import { t } from "../i18n";
+import { t, tn } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
 import { basename, isMarkdown } from "../paths";
 import { formatQuote, formatReference } from "../reference";
@@ -27,6 +27,7 @@ import type {
   FsBatch,
   LinkTarget,
   Comment,
+  NotesOverview,
   RecentVault,
   SearchHit,
   VaultInfo,
@@ -41,6 +42,7 @@ import { feed } from "./feed.svelte";
 import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
 import { comments } from "./comments.svelte";
+import { notes } from "./notes.svelte";
 import { outline } from "./outline.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
@@ -67,10 +69,13 @@ function readHiddenRecents(): string[] {
 }
 
 class AppStore {
-  screen = $state<"boot" | "welcome" | "project">("boot");
+  /** "notes" is the Notes window: a program of its own (see `notes.svelte.ts`). */
+  screen = $state<"boot" | "welcome" | "project" | "notes">("boot");
   opening = $state(false);
   openError = $state<string | null>(null);
   recents = $state.raw<RecentVault[]>([]);
+  /** The notes folder and the pinned and latest notes, for the column of the welcome screen. */
+  notesOverview = $state.raw<NotesOverview | null>(null);
   /** Recent folders that failed to open in this run (dimmed, only "Remove" is offered). */
   missingRecents = new SvelteSet<string>();
   hiddenRecents = new SvelteSet<string>(readHiddenRecents());
@@ -92,6 +97,15 @@ class AppStore {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") void session.flush();
     });
+    // The Notes window is a program of its own: it has no project to open, and nothing to check for updates (a window of a
+    // project does that)
+    const mode = await api.launchMode().catch(() => ({ notes: false }));
+    if (mode.notes) {
+      this.screen = "notes";
+      await notes.start();
+      return;
+    }
+    void updates.scheduleStartupCheck();
     // a document counts as read only in a window the person is looking at
     const noteFocus = (): void =>
       unread.setFocused(document.hasFocus() && document.visibilityState === "visible");
@@ -130,7 +144,50 @@ class AppStore {
     } catch {
       this.recents = [];
     }
+    // the Notes column is a convenience: the screen is there without it
+    this.notesOverview = await api.notesOverview().catch(() => null);
     this.screen = "welcome";
+  }
+
+  /** `Ctrl+Shift+N` from any window: the Notes window comes forward with a new note ready (and starts when it is not running). */
+  async newNote(): Promise<void> {
+    if (this.screen === "notes") return notes.newNote();
+    await this.showNotes(true, null);
+  }
+
+  /** `Ctrl+Shift+D`, the Notes icon: the Notes window comes forward as it was, or shows a given note. */
+  async showNotes(newNote = false, open: string | null = null): Promise<void> {
+    if (this.screen === "notes") {
+      notes.focusList();
+      return;
+    }
+    try {
+      await api.showNotes(newNote, open);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+    }
+  }
+
+  /**
+   * `Ctrl+Shift+C`: copies the whole open document as plain text, exactly as the file holds it (what the editor has, while
+   * editing). In the Notes window it copies the note.
+   */
+  async copyDocument(): Promise<void> {
+    if (this.screen === "notes") return notes.copyNote();
+    const path = docs.path;
+    if (!path) return;
+    let text: string;
+    try {
+      text = edit.active ? edit.exactText() : (await api.documentSource(path)).text;
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+      return;
+    }
+    if (!(await copyText(text))) {
+      toast.message(t("copy.failed"), "warn");
+      return;
+    }
+    toast.message(tn("notes.copied", Array.from(text).length), "info");
   }
 
   get visibleRecents(): RecentVault[] {
@@ -311,11 +368,16 @@ class AppStore {
       await api.on("open-path", (path) => void this.openProject(path)),
       await api.on("show-in-project", (path) => {
         if (this.screen === "project" && !vault.isSimple) void this.openDoc(path);
+        else if (this.screen === "notes") void notes.openNote(path);
       }),
       await api.on("agent-status", (status) => {
         if (this.screen === "project") agent.onStatus(status);
       }),
       await api.on("agent-open", () => void this.openFromAgent()),
+      await api.on("notes-request", () => {
+        if (this.screen === "notes")
+          void api.takeNotesRequest().then((r) => notes.handleRequest(r));
+      }),
     );
   }
 
@@ -375,6 +437,10 @@ class AppStore {
   }
 
   private onTreeChanged(): void {
+    if (this.screen === "notes") {
+      notes.folderChanged();
+      return;
+    }
     if (this.treeTimer !== null) clearTimeout(this.treeTimer);
     this.treeTimer = setTimeout(() => void vault.refreshTree(), TREE_REFRESH_MS);
   }
@@ -385,6 +451,13 @@ class AppStore {
   }
 
   private onFsChange(batch: FsBatch): void {
+    if (this.screen === "notes") {
+      // another program wrote in the notes folder: the note on screen is looked at, and the list is asked for again
+      edit.onFsChange(batch);
+      docs.handleBatch(batch, false);
+      notes.folderChanged();
+      return;
+    }
     if (this.screen !== "project") return;
     edit.onFsChange(batch);
     const now = Date.now();
@@ -464,6 +537,8 @@ class AppStore {
 
   /** Opens a document (the Explorer shows it too, unless "Always select the opened file" is off). */
   openDoc(path: string, opts: OpenOptions = {}): Promise<boolean> {
+    // in the Notes window a document is a note: leaving the one that is open and entering the editor is the notes' to do
+    if (this.screen === "notes") return notes.openNote(path);
     return docs.open(path, opts);
   }
 
@@ -864,8 +939,11 @@ class AppStore {
     if (this.screen === "welcome") {
       if (action === "openFolder") void this.chooseFolder();
       else if (action === "openFile") void this.chooseFile();
+      else if (action === "newNote") void this.newNote();
+      else if (action === "showNotes") void this.showNotes();
       return;
     }
+    if (this.screen === "notes") return this.runInNotes(action);
     if (this.screen !== "project") return;
     const ide = !vault.isSimple;
     switch (action) {
@@ -947,6 +1025,12 @@ class AppStore {
       case "toggleFollow":
         if (ide) this.toggleFollow();
         return;
+      case "newNote":
+        return void this.newNote();
+      case "showNotes":
+        return void this.showNotes();
+      case "copyDocument":
+        return void this.copyDocument();
       case "copyReference":
         return void this.copyReferenceContextAware();
       case "copyPath":
@@ -1009,6 +1093,66 @@ class AppStore {
         return;
       case "agentCopySetup":
         if (ide) void this.copyAgentSetup();
+        return;
+    }
+  }
+
+  /** The keyboard map of the Notes window: the project actions that make no sense there do nothing. */
+  private runInNotes(action: CommandAction): void {
+    switch (action) {
+      case "newNote":
+      case "newFile":
+        return void notes.newNote();
+      case "showNotes":
+        return notes.focusList();
+      case "copyDocument":
+        return void notes.copyNote();
+      case "searchEverywhere":
+        return ui.openSearch();
+      case "quickOpen":
+        return ui.openSearch("files");
+      case "searchAll":
+        return ui.openSearch("sections");
+      case "commands":
+        return ui.openSearch("commands");
+      case "edit":
+        if (docs.current && !edit.active) void edit.enter();
+        return;
+      case "toggleEdit":
+        if (docs.current || edit.active) edit.toggle();
+        return;
+      case "toggleEditMode":
+        if (docs.current || edit.active) void edit.toggleMode();
+        return;
+      case "save":
+        // the note is saved as it is typed: Ctrl+S only makes sure it is written now
+        if (edit.active) void edit.flush();
+        return;
+      case "find":
+        if (!edit.active) this.openFind();
+        return;
+      case "toggleLeft":
+        return this.toggleLeft();
+      case "zoomIn":
+        return session.zoomBy(1);
+      case "zoomOut":
+        return session.zoomBy(-1);
+      case "zoomReset":
+        return session.setZoom(1);
+      case "cycleWidth":
+        return session.cycleWidth();
+      case "toggleOutline":
+        ui.outlinePopover = !ui.outlinePopover;
+        return;
+      case "settings":
+        ui.settingsOpen = true;
+        return;
+      case "checkUpdates":
+        if (distribution.isStore) return;
+        ui.settingsOpen = true;
+        return void updates.check(true);
+      default:
+        // git, unread markers, comments, tags, the Explorer and the agent connection are not in this window
         return;
     }
   }

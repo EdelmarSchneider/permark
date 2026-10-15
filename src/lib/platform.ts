@@ -16,12 +16,13 @@ export const isMock = import.meta.env.VITE_MOCK === "1";
 const MOCK_FOLDER = "C:/Users/demo/trailmark-docs";
 const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
 
-export async function pickFolder(): Promise<string | null> {
+/** Asks for a folder; `title` is the dialog's (the default asks to open a folder). */
+export async function pickFolder(title?: string): Promise<string | null> {
   if (isMock) return MOCK_FOLDER;
   const picked = await openDialog({
     directory: true,
     multiple: false,
-    title: t("dialog.openFolder"),
+    title: title ?? t("dialog.openFolder"),
   });
   return typeof picked === "string" ? picked : null;
 }

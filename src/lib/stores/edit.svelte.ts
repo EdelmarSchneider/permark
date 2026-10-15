@@ -7,6 +7,7 @@
 
 import { tick } from "svelte";
 import { api } from "../api";
+import { Autosaver } from "../autosave";
 import { bridge, type EditorApi } from "../bridge";
 import {
   blockAtLine,
@@ -49,6 +50,8 @@ const CONFIRM_RELOAD_BLOCKS = 5;
 const DISK_CHECK_DELAY_MS = 250;
 /** "Saved, 2 blocks changed" stays this long in the header. */
 const NOTE_MS = 3000;
+/** A save of a note that takes longer than this says "Saving..." (a quick one just says "Saved"). */
+const SLOW_SAVE_MS = 1000;
 const HINT_KEY = "trailmark.hint.firstSave";
 
 type Base = {
@@ -76,6 +79,17 @@ export type VisualStart = VisualInput;
 
 /** The "Unsaved changes" bar: what the person was doing, and how to carry on after Save or Discard. */
 export type UnsavedPrompt = { reason: "exit" | "navigate"; resume: (() => void) | null };
+
+/** Where the editor starts in a document: the line of the caret and the line at the top of the view (both from 0). */
+export type EnterAt = { caret: number; top: number };
+
+/** What the notes are told when a note was written. */
+export type NoteWritten = {
+  path: string;
+  /** The file did not exist before this save. */
+  created: boolean;
+  text: string;
+};
 
 function readHintSeen(): boolean {
   try {
@@ -116,6 +130,22 @@ class EditStore {
   visualStart = $state.raw<VisualStart | null>(null);
   /** Bumped for the bars to move the keyboard focus (Ctrl+S during a conflict). */
   conflictFocus = $state(0);
+  /**
+   * The Notes window: the text is saved as it is typed (docs/design/v0.5.md section 4), nothing asks "Save changes?", and a
+   * note that changed on disk meanwhile is never overwritten (the text is kept as a copy).
+   */
+  autosave = $state(false);
+  /** A save of a note has taken longer than a second: the status bar says "Saving...". */
+  savingSlow = $state(false);
+  /** Why nothing can be edited here (the notes of a second window can only be read), worded for the person. */
+  readOnlyReason = $state<string | null>(null);
+  /** The notes hear of each save, of a note that got another name, and of a text kept as a copy. */
+  noteHooks: {
+    written?: (note: NoteWritten) => void;
+    renamed?: (from: string, to: string) => void;
+    conflict?: (copy: string) => void;
+    gone?: (path: string) => void;
+  } = {};
 
   active = $derived(this.path !== null);
 
@@ -133,6 +163,11 @@ class EditStore {
   private stopCloseGuard: (() => void) | null = null;
   private closeGuardToken = 0;
   private hintSeen = readHintSeen();
+  private slowTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Closing the window was refused once because the note could not be saved. */
+  private closeRefused = false;
+  /** Saves the open note a moment after the last edit (see `autosave.ts`); idle outside the Notes window. */
+  private readonly saver = new Autosaver({ save: () => this.autosaveNow() });
 
   constructor() {
     docs.guard = (resume) => this.holdNavigation(resume);
@@ -149,6 +184,7 @@ class EditStore {
 
   /** Why the open document cannot be edited (null when it can). */
   get blocked(): string | null {
+    if (this.readOnlyReason) return this.readOnlyReason;
     const reason = editBlock(docs.current);
     return reason ? t(EDIT_BLOCK_TEXT[reason]) : null;
   }
@@ -158,11 +194,16 @@ class EditStore {
   /**
    * Starts editing the open document, in `mode` (the editor used last when not given), with the caret on the block at the top of
    * the viewport and that block kept at the top. A document that was just made (`fresh`) opens with the caret after its title.
+   * `at` starts it at a given place instead (a note comes back where it was left).
    */
-  async enter(fresh = false, mode?: EditMode): Promise<boolean> {
+  async enter(fresh = false, mode?: EditMode, at?: EnterAt): Promise<boolean> {
     if (this.active) return true;
     const path = docs.path;
     if (this.loading || !path || !docs.current || docs.deleted) return false;
+    if (this.readOnlyReason) {
+      toast.message(this.readOnlyReason, "warn");
+      return false;
+    }
     const blocked = editBlock(docs.current);
     if (blocked) {
       toast.message(t(EDIT_BLOCK_TEXT[blocked]), "warn");
@@ -172,8 +213,8 @@ class EditStore {
     try {
       const source = await api.documentSource(path);
       if (docs.path !== path || this.active) return false;
-      const line = fresh ? 0 : Math.max(0, (bridge.topLine?.() ?? 1) - 1);
-      this.begin(source, line, fresh, mode ?? this.lastEditMode);
+      const line = at ? at.caret : fresh ? 0 : Math.max(0, (bridge.topLine?.() ?? 1) - 1);
+      this.begin(source, line, fresh, mode ?? this.lastEditMode, at?.top);
       return true;
     } catch (error) {
       const reason = editBlockFromKind(errorKind(error));
@@ -189,7 +230,13 @@ class EditStore {
     }
   }
 
-  private begin(source: SourceDoc, line: number, atEnd: boolean, mode: EditMode): void {
+  private begin(
+    source: SourceDoc,
+    line: number,
+    atEnd: boolean,
+    mode: EditMode,
+    top?: number,
+  ): void {
     const { buffer, format } = toBuffer(source.text);
     const map = buildBlockMap(source.text, source);
     this.base = {
@@ -215,8 +262,9 @@ class EditStore {
         atEnd,
         dirty: false,
         reveal: "start",
+        ...(top === undefined ? {} : { top: Math.max(0, blockAtLine(map, top)) }),
       };
-    } else this.initial = { buffer, line, atEnd, top: line };
+    } else this.initial = { buffer, line, atEnd, top: top ?? line };
     this.caret = { line: line + 1, column: 1 };
     this.dirty = false;
     this.saving = false;
@@ -238,6 +286,13 @@ class EditStore {
   /** Done, Read, Ctrl+E or Esc: back to reading, after asking when there is unsaved work. */
   requestExit(): void {
     if (!this.active) return;
+    if (this.autosave) {
+      // a note is saved, not asked about
+      void this.flush().then((saved) => {
+        if (saved) return this.leave({ refresh: true });
+      });
+      return;
+    }
     if (this.dirty) {
       this.ask({ reason: "exit", resume: null });
       return;
@@ -289,8 +344,12 @@ class EditStore {
   private cancelTimers(): void {
     if (this.noteTimer !== null) clearTimeout(this.noteTimer);
     if (this.diskTimer !== null) clearTimeout(this.diskTimer);
+    if (this.slowTimer !== null) clearTimeout(this.slowTimer);
     this.noteTimer = null;
     this.diskTimer = null;
+    this.slowTimer = null;
+    this.savingSlow = false;
+    this.saver.cancel();
   }
 
   // ---- unsaved work -----------------------------------------------------------------------------
@@ -301,6 +360,7 @@ class EditStore {
     if (!base) return;
     if (length !== base.buffer.length) this.setDirty(true);
     else this.setDirty(this.sourceBuffer() !== base.buffer);
+    this.touchAutosave();
   }
 
   /** The Visual editor reports every change of the document or the selection. */
@@ -310,6 +370,12 @@ class EditStore {
     const status = editor.status();
     this.unsavedBlocks = status.changed;
     this.setDirty(status.dirty);
+    this.touchAutosave();
+  }
+
+  /** An edit was made in a note: a save is due soon. */
+  private touchAutosave(): void {
+    if (this.autosave && this.dirty) this.saver.touch();
   }
 
   /** The text of the Source editor's buffer (no BOM, LF line endings), or the saved one when there is no Source editor. */
@@ -325,6 +391,8 @@ class EditStore {
   private setDirty(dirty: boolean): void {
     if (this.dirty === dirty) return;
     this.dirty = dirty;
+    // the Notes window closes without asking (the notes flush first) and has no unsaved mark in its title
+    if (this.autosave) return;
     const title = dirty
       ? t("edit.windowTitle", { name: basename(this.path ?? "") })
       : t("app.name");
@@ -345,6 +413,14 @@ class EditStore {
    * the same three choices as the bar. Resolves to false when the person keeps editing or the save did not work.
    */
   async confirmLeave(reason: "close" | "restart"): Promise<boolean> {
+    // a note is saved first, and that is all: closing never asks. A note that cannot be saved keeps the window open once, so
+    // the bar that says why (with "Copy all") is seen; the next try closes it.
+    if (this.autosave) {
+      if (await this.flush()) return true;
+      if (reason === "restart" || this.closeRefused) return reason === "close";
+      this.closeRefused = true;
+      return false;
+    }
     if (!this.dirty) return true;
     const message = reason === "close" ? "edit.closePrompt" : "edit.restartPrompt";
     const choice = await askUnsaved(t(message, { name: basename(this.path ?? "") }), {
@@ -363,6 +439,19 @@ class EditStore {
    */
   holdNavigation(resume: () => void): boolean {
     if (!this.active) return false;
+    if (this.autosave) {
+      if (!this.dirty && !this.saver.busy) {
+        void this.leave({ refresh: false });
+        return false;
+      }
+      // a note is saved first; the move goes on once it is (a note that cannot be saved is not left)
+      void this.flush().then(async (saved) => {
+        if (!saved) return;
+        await this.leave({ refresh: false });
+        resume();
+      });
+      return true;
+    }
     if (!this.dirty) {
       void this.leave({ refresh: false });
       return false;
@@ -450,6 +539,7 @@ class EditStore {
       return false;
     }
     const text = this.currentText();
+    if (this.autosave) return this.saveNote(base, path, text);
     this.beginSave();
     try {
       const outcome = await api.saveDocument(path, text, base.hash);
@@ -472,12 +562,89 @@ class EditStore {
     this.saving = true;
     this.saveGeneration++;
     this.saveError = null;
+    if (this.autosave) {
+      if (this.slowTimer !== null) clearTimeout(this.slowTimer);
+      this.slowTimer = setTimeout(() => {
+        this.slowTimer = null;
+        if (this.saving) this.savingSlow = true;
+      }, SLOW_SAVE_MS);
+    }
   }
 
   private endSave(): void {
     this.saving = false;
     this.saveGeneration++;
+    if (this.slowTimer !== null) clearTimeout(this.slowTimer);
+    this.slowTimer = null;
+    this.savingSlow = false;
     this.runRecheck();
+  }
+
+  /**
+   * Saves the text of a note (autosave, a flush, Ctrl+S). The note is written unless it changed since the editor started from it:
+   * then nothing of the other version is overwritten, the text the person has is kept as a copy of its own, and the editor shows
+   * the version on disk. A new note has no file until its text has something in it; its first save may give it another name.
+   */
+  private async saveNote(base: Base, path: string, text: string): Promise<boolean> {
+    this.beginSave();
+    try {
+      let outcome = await api.saveNote(path, text, base.hash);
+      if (this.path !== path) return false;
+      for (let again = 0; outcome.result === "conflict" && again < 3; again++) {
+        this.noteHooks.conflict?.(outcome.copy);
+        // typed while the save ran: that goes to a copy as well, so the editor can take the version on disk
+        const typed = this.currentText();
+        if (typed === text) break;
+        text = typed;
+        outcome = await api.saveNote(path, text, base.hash);
+        if (this.path !== path) return false;
+      }
+      if (outcome.result === "blank") return true;
+      if (outcome.result === "conflict") {
+        await this.reloadTheirs(true);
+        return false;
+      }
+      if (outcome.path !== path) {
+        this.path = outcome.path;
+        this.noteHooks.renamed?.(path, outcome.path);
+      }
+      await this.adopt(text, outcome.hash, outcome.modifiedMs);
+      this.closeRefused = false;
+      this.noteHooks.written?.({ path: this.path ?? outcome.path, created: outcome.created, text });
+      return true;
+    } catch (error) {
+      if (this.path === path) this.saveError = errorMessage(error);
+      return false;
+    } finally {
+      this.endSave();
+    }
+  }
+
+  /** Saves what is waiting now, and resolves to whether the open note is saved (always true when nothing is open). */
+  async flush(): Promise<boolean> {
+    if (!this.autosave || !this.active) return true;
+    try {
+      await this.saver.flush();
+    } catch {
+      // the failure is on the bar already
+    }
+    return !this.dirty && this.saveError === null;
+  }
+
+  /** The autosave timer fired: save the note, if it needs it. */
+  private async autosaveNow(): Promise<void> {
+    if (!this.path || !this.dirty) return;
+    await this.save();
+  }
+
+  /** Ends editing at once, without saving what was typed since the last save (the note was deleted, or is no longer wanted). */
+  abandon(): void {
+    this.clear();
+  }
+
+  /** The text the document holds as the editor has it now, as a file would (the note's text for "Copy"). */
+  exactText(): string {
+    return this.currentText();
   }
 
   /** A disk check that had to wait (for another check or a save) runs now. */
@@ -508,11 +675,13 @@ class EditStore {
     this.touched = true;
     // without blocks to go by, the editor keeps the ones it has (they give the same text), unless there is nothing in the text to lose
     this.followSave(text, parsed !== null || text.trim() === "" ? map : null, bridge.editor);
-    this.showNote(changed > 0 ? tn("edit.savedBlocks", changed) : t("edit.saved"));
+    // a note says "Saved" in the status bar and nothing in the header
+    if (!this.autosave)
+      this.showNote(changed > 0 ? tn("edit.savedBlocks", changed) : t("edit.saved"));
     if (unreadable !== null) {
       toast.message(t("edit.blocksUnreadable", { message: errorMessage(unreadable) }), "warn");
     }
-    if (!this.hintSeen) {
+    if (!this.hintSeen && !this.autosave) {
       this.hintSeen = true;
       this.hint = true;
       try {
@@ -660,16 +829,32 @@ class EditStore {
         this.conflict = null;
         return;
       }
-      if (this.dirty) this.setConflict(source.hash);
-      else this.applyDisk(source, true);
+      if (this.dirty) {
+        // a note is never left waiting for an answer: the save keeps the text as a copy and the editor shows the version on disk
+        if (this.autosave) void this.save();
+        else this.setConflict(source.hash);
+      } else this.applyDisk(source, !this.autosave);
     } catch (error) {
       if (this.path !== path) return;
       if (generation !== this.saveGeneration) this.recheck = true;
-      else if (errorKind(error) === "notFound") this.setConflict(null);
+      else if (errorKind(error) === "notFound") this.fileGone(path);
     } finally {
       this.checking = false;
       this.runRecheck();
     }
+  }
+
+  /**
+   * The file being edited is gone. A document asks what to do (the bar); a note that has unsaved text is written again, and one that
+   * has none is simply no longer there.
+   */
+  private fileGone(path: string): void {
+    if (!this.autosave) {
+      this.setConflict(null);
+      return;
+    }
+    if (this.dirty) void this.save();
+    else this.noteHooks.gone?.(path);
   }
 
   private setConflict(diskHash: string | null): void {
@@ -727,9 +912,9 @@ class EditStore {
         }
       }
       const source = await api.documentSource(path);
-      if (this.path === path) this.applyDisk(source, true);
+      if (this.path === path) this.applyDisk(source, !this.autosave);
     } catch (error) {
-      if (errorKind(error) === "notFound") this.setConflict(null);
+      if (errorKind(error) === "notFound") this.fileGone(path);
       else this.saveError = errorMessage(error);
     }
   }

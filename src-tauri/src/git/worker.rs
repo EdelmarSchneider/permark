@@ -565,9 +565,15 @@ mod tests {
         // A commit by another tool: only .git changes.
         commit_all(&fx.repo, "agent commit");
         assert!(fx.wait_events(2), "commit must be noticed");
+        // A commit is several writes (the index, then the branch): on a busy machine the first of them can be announced on
+        // its own, so the announcement of the finished commit is waited for, not counted.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !fx.last_event().files.is_empty() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
         let e = fx.last_event();
         assert!(e.files.is_empty());
-        assert_eq!(e.generation, 3);
+        assert!(e.generation >= 3);
     }
 
     #[test]

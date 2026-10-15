@@ -47,6 +47,7 @@ function eventFor(combo: string): KeyInfo {
 
 const IDLE: CommandContext = {
   ide: true,
+  notes: false,
   hasDoc: false,
   editing: false,
   canBack: false,
@@ -89,6 +90,66 @@ describe("the registry", () => {
     for (const command of COMMANDS) {
       expect(command.shortcut !== undefined, command.id).toBe(shortcutIds.has(command.id));
     }
+  });
+});
+
+describe("the notes", () => {
+  const NOTES: CommandContext = {
+    ...IDLE,
+    notes: true,
+    hasDoc: true,
+    hasRepo: true,
+    hasUnread: true,
+  };
+
+  it("have commands in every window: a new note, the Notes window, and the whole document as text", () => {
+    for (const ctx of [IDLE, { ...IDLE, ide: false }, NOTES]) {
+      const ids = idsOf(availableCommands({ ...ctx, hasDoc: true }));
+      expect(ids).toEqual(expect.arrayContaining(["newNote", "showNotes", "copyDocument"]));
+    }
+    expect(idsOf(availableCommands(IDLE))).not.toContain("copyDocument");
+  });
+
+  it("leave out of the Notes window what belongs to a project", () => {
+    const ids = idsOf(availableCommands(NOTES));
+    for (const projectOnly of [
+      "explorer",
+      "tagsView",
+      "toggleRight",
+      "showComments",
+      "toggleFollow",
+      "nextUnread",
+      "markUnread",
+      "markAllRead",
+      "baselineCommit",
+      "baselineLastVisit",
+      "agentOn",
+      "initProject",
+      "newFile",
+      "openFolder",
+      "openFile",
+      "copyReference",
+      "copyPath",
+      "openExternal",
+      "editTags",
+      "addComment",
+    ]) {
+      expect(ids, projectOnly).not.toContain(projectOnly);
+    }
+    // what a note shares with a document stays: searching the notes, editing, the list, the zoom
+    expect(ids).toEqual(
+      expect.arrayContaining(["quickOpen", "searchAll", "toggleLeft", "toggleEdit", "zoomIn"]),
+    );
+    // and a project window still has them all
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, hasRepo: true }))).toEqual(
+      expect.arrayContaining([
+        "explorer",
+        "toggleRight",
+        "openFolder",
+        "copyReference",
+        "copyPath",
+      ]),
+    );
   });
 });
 

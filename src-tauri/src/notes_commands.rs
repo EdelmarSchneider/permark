@@ -119,7 +119,18 @@ fn notes_of(state: &State<'_, AppState>) -> Result<Arc<Workspace>, AppError> {
 /// Whether this program is the Notes window.
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri hands injected state over by value
-pub fn launch_mode(launch: State<'_, NotesLaunch>) -> LaunchMode {
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+pub fn launch_mode(app: AppHandle, launch: State<'_, NotesLaunch>) -> LaunchMode {
+    // Finder opened something while the program started as the Notes window: that gets a window of its own
+    #[cfg(target_os = "macos")]
+    if launch.is_notes_window {
+        if let Some(path) = app
+            .state::<crate::open_request::OpenInbox>()
+            .take_launch_path()
+        {
+            let _ = crate::open_request::spawn_instance(&path);
+        }
+    }
     LaunchMode {
         notes: launch.is_notes_window,
     }

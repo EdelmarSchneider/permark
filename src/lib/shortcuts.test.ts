@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isMacPlatform,
+  matchNotesShortcut,
   matchShortcut,
   parseCombo,
   shortcutLabel,
@@ -47,6 +48,9 @@ describe("matchShortcut", () => {
     ["Ctrl+Alt+C", ctrl("c", { altKey: true }), "copyReference"],
     ["Shift+Alt+C", press("C", { altKey: true, shiftKey: true }), "copyPath"],
     ["Ctrl+Shift+E", ctrl("E", { shiftKey: true }), "openExternal"],
+    ["Ctrl+Shift+N", ctrl("N", { shiftKey: true }), "newNote"],
+    ["Ctrl+Shift+D", ctrl("D", { shiftKey: true }), "showNotes"],
+    ["Ctrl+Shift+C", ctrl("C", { shiftKey: true }), "copyDocument"],
     ["Ctrl+B", ctrl("b"), "toggleLeft"],
     ["Ctrl+Alt+B", ctrl("b", { altKey: true }), "toggleRight"],
     ["Ctrl+=", ctrl("=", {}, "Equal"), "zoomIn"],
@@ -105,6 +109,32 @@ describe("matchShortcut", () => {
     expect(matchShortcut(press("E", { shiftKey: true }))).toBeNull();
     expect(matchShortcut(press("e", { altKey: true }))).toBeNull();
     expect(matchShortcut(press("x"))).toBeNull();
+  });
+});
+
+describe("matchNotesShortcut", () => {
+  it("jumps to the pinned notes with Ctrl+1 to Ctrl+9, by the physical key", () => {
+    expect(matchNotesShortcut(ctrl("1", {}, "Digit1"))).toEqual({ kind: "pinned", n: 1 });
+    expect(matchNotesShortcut(ctrl("9", {}, "Digit9"))).toEqual({ kind: "pinned", n: 9 });
+    expect(matchNotesShortcut(ctrl("&", {}, "Digit1"))).toEqual({ kind: "pinned", n: 1 });
+    expect(matchNotesShortcut(press("1", { metaKey: true }, "Digit1"))).toEqual({ kind: "pinned", n: 1 });
+    expect(matchNotesShortcut(ctrl("0", {}, "Digit0"))).toBeNull();
+    expect(matchNotesShortcut(press("1"))).toBeNull();
+    expect(matchNotesShortcut(ctrl("1", { altKey: true }, "Digit1"))).toBeNull();
+    expect(matchNotesShortcut(ctrl("1", { shiftKey: true }, "Digit1"))).toBeNull();
+  });
+
+  it("steps through the notes with Ctrl+Tab and Ctrl+Shift+Tab", () => {
+    expect(matchNotesShortcut(ctrl("Tab"))).toEqual({ kind: "step", direction: 1 });
+    expect(matchNotesShortcut(ctrl("Tab", { shiftKey: true }))).toEqual({ kind: "step", direction: -1 });
+    expect(matchNotesShortcut(press("Tab"))).toBeNull();
+    expect(matchNotesShortcut(press("Tab", { metaKey: true }))).toBeNull();
+  });
+
+  it("renames with F2 and leaves the other keys alone", () => {
+    expect(matchNotesShortcut(press("F2"))).toEqual({ kind: "rename" });
+    expect(matchNotesShortcut(press("F2", { shiftKey: true }))).toBeNull();
+    expect(matchNotesShortcut(ctrl("p"))).toBeNull();
   });
 });
 

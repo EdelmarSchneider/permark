@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::util::canonicalize_lenient;
+
 /// The name of the default folder.
 pub(crate) const FOLDER_NAME: &str = "TrailMark Notes";
 /// The environment variable that points a debug build at another notes folder. Release builds ignore it.
@@ -143,8 +145,8 @@ pub(crate) fn create(path: &Path) -> io::Result<()> {
 /// Whether `path` is the notes folder or inside it. The agent connection never serves it.
 pub(crate) fn contains(app_data: &Path, chosen: Option<&str>, path: &Path) -> bool {
     let folder = configured(app_data, chosen);
-    let canonical =
-        |p: &Path| dunce::canonicalize(p).unwrap_or_else(|_| dunce::simplified(p).to_path_buf());
+    // canonical even where the end of the path is not there (yet): `/var` is `/private/var` on macOS, a short name is a long one
+    let canonical = |p: &Path| canonicalize_lenient(p).unwrap_or_else(|| p.to_path_buf());
     crate::vault::strip_root(&canonical(path), &canonical(&folder)).is_some()
 }
 

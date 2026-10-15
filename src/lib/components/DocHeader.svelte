@@ -68,6 +68,14 @@
           { type: "separator" },
         ] satisfies MenuEntry[])),
     {
+      id: "document",
+      label: t("menu.copyDocument"),
+      icon: "copy",
+      hint: "Ctrl+Shift+C",
+      disabled: !view,
+      onselect: () => void app.copyDocument(),
+    },
+    {
       id: "path",
       label: t("menu.copyPath"),
       icon: "copy",
