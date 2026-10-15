@@ -553,7 +553,7 @@ export const es = {
   "edit.saveHint": "Guardar (Ctrl+S)",
   "edit.saving": "Guardando...",
   "edit.visual": "Visual",
-  "edit.source": "Código fuente",
+  "edit.source": "Código",
   "edit.unsaved": "Sin guardar",
   "edit.saved": "Guardado",
   "edit.savedBlocks.one": "Guardado, {n} bloque cambiado",
@@ -589,7 +589,7 @@ export const es = {
   "edit.blocksUnreadable":
     "Guardado, pero no se pudieron leer los bloques de la nueva versión ({message}). El editor visual mantiene su vista hasta el próximo guardado.",
   "edit.visualFailed":
-    "No se pudo cargar el editor visual, así que este documento se abrió en modo Código fuente.",
+    "No se pudo cargar el editor visual, así que este documento se abrió en modo Código.",
   "edit.visualLabel": "Editor visual de {name}",
   "edit.visualLoading": "Cargando el editor",
   "edit.editInSource": "Editar el código fuente",
