@@ -147,8 +147,9 @@ pub(crate) enum Guarded<R> {
 }
 
 /// Writes a file atomically: the bytes go to a temp file in the same directory, which is flushed to
-/// disk before it is renamed into place, so a power loss leaves the old file or the new one but never
-/// an empty one. A rename that fails because another program holds the target (antivirus, a sync
+/// disk before it is renamed into place, and the rename itself is made durable (the folder is flushed on
+/// Unix, the rename is written through on Windows), so a power loss leaves the old file or the new one
+/// but never an empty one. A rename that fails because another program holds the target (antivirus, a sync
 /// client) is retried briefly. The permissions of the file being replaced (the mode bits on Unix, the
 /// read-only attribute on Windows) are given to the new one; ACLs, ownership and hard links are not
 /// carried over.
@@ -195,7 +196,7 @@ pub(crate) fn write_atomic_guarded<R>(
                     refused = Some(why);
                     return Ok(());
                 }
-                std::fs::rename(&tmp, path)
+                rename_durably(&tmp, path)
             })
         });
     match (result, refused) {
@@ -208,6 +209,79 @@ pub(crate) fn write_atomic_guarded<R>(
             discard(&tmp);
             Err(e)
         }
+    }
+}
+
+/// Renames `from` over `to` and does not return before the rename is on the disk, so a power cut right after a save
+/// cannot bring the old file back (or lose both).
+///
+/// Unix: the rename, then a flush of the folder that holds the new name (a failure to flush is ignored: the
+/// rename has happened, and some file systems cannot flush a folder). Windows: one `MoveFileExW` that replaces the
+/// target and returns when the move is written through to the disk.
+fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        move_file_write_through(from, to)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(from, to)?;
+        #[cfg(unix)]
+        if let Some(dir) = to.parent() {
+            sync_directory(dir);
+        }
+        Ok(())
+    }
+}
+
+/// Flushes a folder's entries to the disk, as far as the system lets this be done.
+#[cfg(unix)]
+fn sync_directory(dir: &Path) {
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    if let Ok(folder) = std::fs::File::open(dir) {
+        let _ = folder.sync_all();
+    }
+}
+
+/// `MoveFileExW` replacing the target, with the write-through flag. `std::fs::rename` does not ask for the flag.
+#[cfg(windows)]
+// MoveFileExW has no safe wrapper in std; both arguments are NUL-terminated wide strings owned by this function.
+#[allow(unsafe_code)]
+fn move_file_write_through(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let wide = |path: &Path| -> io::Result<Vec<u16>> {
+        let mut units: Vec<u16> = path.as_os_str().encode_wide().collect();
+        if units.contains(&0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the path contains a NUL",
+            ));
+        }
+        units.push(0);
+        Ok(units)
+    };
+    let (from, to) = (wide(from)?, wide(to)?);
+    // SAFETY: both pointers come from live, NUL-terminated buffers that outlive the call.
+    let moved = unsafe {
+        MoveFileExW(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
 }
 
@@ -490,6 +564,23 @@ mod tests {
         assert!(failed.is_err());
         assert_eq!(std::fs::read(&p).expect("read"), b"new");
         assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    #[test]
+    fn a_durable_rename_replaces_the_target_and_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (from, to) = (dir.path().join("new.md"), dir.path().join("old.md"));
+        std::fs::write(&from, "new").expect("write");
+        std::fs::write(&to, "old").expect("write");
+        rename_durably(&from, &to).expect("rename");
+        assert_eq!(std::fs::read(&to).expect("read"), b"new");
+        assert_eq!(names_in(dir.path()), ["old.md"]);
+        // a name that is free works too, and a missing source is an error
+        let fresh = dir.path().join("fresh.md");
+        std::fs::write(dir.path().join("x.md"), "x").expect("write");
+        rename_durably(&dir.path().join("x.md"), &fresh).expect("rename");
+        assert!(rename_durably(&dir.path().join("gone.md"), &fresh).is_err());
+        assert_eq!(std::fs::read(&fresh).expect("read"), b"x");
     }
 
     #[test]
