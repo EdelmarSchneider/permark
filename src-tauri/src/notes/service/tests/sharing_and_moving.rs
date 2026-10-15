@@ -448,6 +448,71 @@ fn undo_brings_the_note_back_and_takes_the_copy_away_when_nobody_changed_it() {
 }
 
 #[test]
+fn undo_leaves_a_copy_with_text_typed_into_it_and_keeps_that_text() {
+    let f = fx();
+    let note = f.new_note("# One\n");
+    let project = project();
+    let target = project.path().join("one.md");
+    let moved = f.service.move_to(&note, &target, T0).expect("move");
+    // the copy is open in the Notes window and has text typed into it, which is kept apart from the file until it is saved
+    let copy = moved.file.clone();
+    f.service
+        .save_pending(
+            &copy,
+            "# One\n\nTYPED IN THE COPY",
+            &hash_hex(&fs::read(&target).expect("read")),
+            T0,
+        )
+        .expect("kept");
+
+    let undone = f
+        .service
+        .undo_move(moved.undo_id.expect("an undo"))
+        .expect("undo");
+    assert!(!undone.removed, "a copy with typed text is not taken away");
+    assert!(target.is_file());
+    assert_eq!(f.read(&note), "# One\n", "the note is back");
+    // the text is where it was, and the copy is still listed with its mark
+    assert_eq!(
+        f.service
+            .load_pending(&copy)
+            .expect("listed")
+            .map(|kept| kept.text),
+        Some("# One\n\nTYPED IN THE COPY".to_owned())
+    );
+    let row = f
+        .service
+        .list()
+        .notes
+        .into_iter()
+        .find(|n| n.path == copy)
+        .expect("still listed");
+    assert!(row.unsaved);
+}
+
+#[test]
+fn an_undo_that_cannot_put_the_note_back_keeps_the_record_of_the_move() {
+    let f = fx();
+    let note = f.new_note("# One\n");
+    let project = project();
+    let moved = f
+        .service
+        .move_to(&note, &project.path().join("one.md"), T0)
+        .expect("move");
+    let id = moved.undo_id.expect("an undo");
+    // what the bin held for the note is gone (it was pushed out), so the note cannot be put back
+    lock(&f.service.state).undo.clear();
+    assert!(f.service.undo_move(id).is_err());
+    assert!(
+        lock(&f.service.state)
+            .moves
+            .iter()
+            .any(|record| record.undo_id == id),
+        "the toast's Undo is not answered as if there never was a move"
+    );
+}
+
+#[test]
 fn undo_leaves_a_copy_that_was_changed_since_and_keeps_it_listed() {
     let f = fx();
     let note = f.new_note("# One\n");

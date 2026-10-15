@@ -1030,6 +1030,37 @@ describe("moving a note into a project", () => {
     expect(toast.current).toMatchObject({ text: "“Launch plan” is back in your notes." });
   });
 
+  it("keeps what is typed into the copy before Undo, so that Undo cannot take that text away", async () => {
+    await start();
+    await notes.moveToProject();
+    // the copy is opened under Files and some text is typed into it (kept apart from the file until it is saved)
+    disk.set(COPY, { text: "# Launch plan\n", hash: `h-${COPY}` });
+    list = list.map((n) => (n.path === COPY ? { ...n, unsaved: true } : n));
+    fake.loadPending.mockResolvedValue({
+      path: "C:/work/plan/launch-plan.md",
+      baseHash: `h-${COPY}`,
+      text: "# Launch plan\ntyped in the copy",
+      savedMs: 5,
+    });
+    expect(await notes.openNote(COPY)).toBe(true);
+    bridge.editor = fakeEditor(edit.initial?.buffer ?? "");
+    type("# Launch plan\ntyped in the copy, and more");
+    fake.undoMoveNote.mockImplementation(async () => {
+      list = [...list, entry("a.md", { title: "Launch plan" })];
+      return { note: "a.md", removed: false };
+    });
+    toast.runAction("second");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.savePending).toHaveBeenCalledWith(
+      COPY,
+      "# Launch plan\ntyped in the copy, and more",
+      `h-${COPY}`,
+    );
+    expect(fake.savePending.mock.invocationCallOrder[0]).toBeLessThan(
+      fake.undoMoveNote.mock.invocationCallOrder[0],
+    );
+  });
+
   it("says when the copy was left in the project because it was changed", async () => {
     await start();
     await notes.moveToProject();

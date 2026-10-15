@@ -1305,7 +1305,7 @@ class NotesStore {
       { label: t("notes.moved.open"), run: () => void this.openInProject(destination) },
       undoId === null
         ? undefined
-        : { label: t("notes.undo"), run: () => void this.undoMove(undoId, name) },
+        : { label: t("notes.undo"), run: () => void this.undoMove(undoId, name, moved.file) },
     );
     if (wasOpen) await this.openNeighbourOrNew(next);
   }
@@ -1319,9 +1319,13 @@ class NotesStore {
     }
   }
 
-  /** Undo of a move: the note is back, and the copy in the project goes unless it was changed. */
-  private async undoMove(undoId: number, name: string): Promise<void> {
+  /**
+   * Undo of a move: the note is back, and the copy in the project goes unless it was changed. Text typed into the copy and not
+   * saved counts as a change: it is kept apart first (when the copy is the file on screen), and the copy then stays.
+   */
+  private async undoMove(undoId: number, name: string, copy: string): Promise<void> {
     try {
+      if (this.current === copy && edit.active) await edit.flush();
       const undone = await api.undoMoveNote(undoId);
       await this.refresh();
       void vault.refreshTree();

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use super::super::loose;
 use super::super::names::{first_free, is_note_name, EXTENSION};
 use super::super::text::{head_of, stem_from_title, title_of};
 use super::{lock, MovedNote, NotesError, NotesService};
@@ -182,10 +183,22 @@ impl NotesService {
                 .ok_or(NotesError::UnknownUndo)?;
             state.moves.remove(at)
         };
-        let back = self.undo_delete(undo_id)?;
+        let back = match self.undo_delete(undo_id) {
+            Ok(back) => back,
+            Err(error) => {
+                // nothing was put back, so the record stays: asking again must not find the move forgotten
+                lock(&self.state).moves.push(record);
+                return Err(error);
+            }
+        };
         let unchanged = read_with_retry(&record.destination)
             .is_ok_and(|bytes| hash_bytes(&bytes) == record.hash);
+        // Text typed into the copy and kept apart from the file (it is written only by Ctrl+S) is the person's as much as a change
+        // in the file: taking the copy away would take the row, and with it that text, so the copy stays.
+        let typed_into =
+            loose::id_of(&record.file).is_some_and(|id| self.pending.ids().contains(id));
         let removed = unchanged
+            && !typed_into
             && self
                 .recycler
                 .recycle(std::slice::from_ref(&record.destination))
