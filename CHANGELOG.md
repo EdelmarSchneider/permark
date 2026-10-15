@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-14
+
+TrailMark now speaks Português (Brasil), Español and Deutsch, opens from the Windows file manager, and gets a single
+Read | Visual | Source switch, a window that remembers its place, and an Explorer that handles workspaces of several repositories.
+
 ### Added
 - **One mode switch in the header: Read | Visual | Source.** It replaces the **Edit** button and the Visual / Source switch that only showed while
   editing, and it is always there while a document is open (Simple mode too). One click goes to any mode, keeping your place (the block at the
@@ -63,7 +68,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
   takes an added row away in one step. Enter outside a table is unchanged.
 - **The Settings panel scrolls** when the window is shorter than it is (it grew with the new File manager section), and a popover whose
   content changes size after it opened is placed again.
+
+### Fixed
+- The folded **More formatting** menu of the Visual toolbar (in a narrow window) now has the table actions (add and delete rows and
+  columns), with the reason as a tooltip when one can't be used.
 - Opening a drive root from the file manager (`"C:\"` on the command line) works.
+- The welcome screen opens at the top with a long list of recent folders, instead of scrolled down past the logo.
+- **Quick open** opens a file the Explorer filter hides with one Enter when it is the only kind of match.
+- The file name in the header stays readable while editing in longer languages: the "saved ... ago" note and the folders shrink
+  first, and **Copy reference** becomes an icon in a narrow window.
 
 ## [0.2.0] - 2026-10-14
 
