@@ -107,10 +107,11 @@ where
         .map_err(|e| AppError::Internal(e.to_string()))?
 }
 
+/// The app's data folder: the one answer for the whole program (see `bridge::project::app_data_dir`), so that what the
+/// program decides at start, before any window exists, and what a command later reads are the same folder.
 pub(crate) fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| AppError::Internal(e.to_string()))
+    crate::bridge::project::app_data_dir(&app.config().identifier)
+        .ok_or_else(|| AppError::Internal("the system has no folder for the app's data".to_owned()))
 }
 
 #[tauri::command]
@@ -950,6 +951,27 @@ mod tests {
             "generate_handler! in lib.rs"
         );
         assert_eq!(emitted_events(), events, "events emitted to the webview");
+    }
+
+    /// The data folder has one answer. Asking Tauri for it directly ignores `TRAILMARK_TEST_DATA_DIR` in a debug build, which
+    /// the code that decides whether this program is the Notes window honours: the two then disagreed about where the notes'
+    /// settings and the socket live, and a project window could not start a note.
+    #[test]
+    fn every_part_of_the_program_finds_the_data_folder_the_same_way() {
+        let asked_of_tauri = format!("{}app_data_dir()", ".path().");
+        for (name, source) in [
+            ("commands.rs", production_source()),
+            ("window/mod.rs", include_str!("window/mod.rs").to_owned()),
+            ("lib.rs", LIB_SRC.to_owned()),
+        ] {
+            assert!(
+                !source
+                    .split_whitespace()
+                    .collect::<String>()
+                    .contains(&asked_of_tauri),
+                "{name} asks Tauri for the data folder; use commands::app_data_dir"
+            );
+        }
     }
 
     fn os(s: &str) -> OsString {

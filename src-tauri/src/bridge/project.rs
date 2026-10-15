@@ -24,12 +24,32 @@ pub(crate) const TEST_DATA_DIR_VARIABLE: &str = "TRAILMARK_TEST_DATA_DIR";
 
 /// Where TrailMark keeps its data for the current user: the folder the window itself uses (`app_data_dir`), which
 /// is named after the app's identifier. `None` when the system has no such folder.
+///
+/// The whole program asks for it here (the windows through `commands::app_data_dir`): a folder found two ways would split the
+/// settings, the notes' socket and the saved state of the same app in two.
 pub(crate) fn app_data_dir(identifier: &str) -> Option<PathBuf> {
-    #[cfg(debug_assertions)]
-    if let Some(dir) = std::env::var_os(TEST_DATA_DIR_VARIABLE).filter(|dir| !dir.is_empty()) {
-        return Some(PathBuf::from(dir));
+    data_dir_from(
+        identifier,
+        std::env::var_os(TEST_DATA_DIR_VARIABLE),
+        dirs::data_dir(),
+        cfg!(debug_assertions),
+    )
+}
+
+/// [`app_data_dir`] with what it reads from the system given: the test variable (honoured in a debug build only), and the
+/// system's data folder.
+fn data_dir_from(
+    identifier: &str,
+    test_dir: Option<std::ffi::OsString>,
+    system: Option<PathBuf>,
+    debug: bool,
+) -> Option<PathBuf> {
+    if debug {
+        if let Some(dir) = test_dir.filter(|dir| !dir.is_empty()) {
+            return Some(PathBuf::from(dir));
+        }
     }
-    dirs::data_dir().map(|dir| dir.join(identifier))
+    system.map(|dir| dir.join(identifier))
 }
 
 /// The nearest folder at or above `start` that TrailMark knows: one with a `.trailmark/` folder, or one the app
@@ -227,6 +247,31 @@ mod tests {
         let dir = app_data_dir("dev.example.app").expect("a data folder");
         assert!(dir.ends_with("dev.example.app"));
         assert!(dir.is_absolute());
+    }
+
+    #[test]
+    fn the_test_variable_moves_the_data_folder_in_a_debug_build_only() {
+        let test = Some(std::ffi::OsString::from("/tmp/test-data"));
+        let system = Some(PathBuf::from("/home/ana/.local/share"));
+        assert_eq!(
+            data_dir_from("dev.example.app", test.clone(), system.clone(), true),
+            Some(PathBuf::from("/tmp/test-data"))
+        );
+        assert_eq!(
+            data_dir_from("dev.example.app", test, system.clone(), false),
+            Some(PathBuf::from("/home/ana/.local/share/dev.example.app"))
+        );
+        // an empty variable is no variable, and a system without a data folder has none
+        assert_eq!(
+            data_dir_from(
+                "dev.example.app",
+                Some(std::ffi::OsString::new()),
+                system,
+                true
+            ),
+            Some(PathBuf::from("/home/ana/.local/share/dev.example.app"))
+        );
+        assert_eq!(data_dir_from("dev.example.app", None, None, true), None);
     }
 
     #[test]

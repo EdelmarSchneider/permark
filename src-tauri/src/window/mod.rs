@@ -91,7 +91,7 @@ pub fn setup(app: &App) {
     let Some(window) = app.get_webview_window(MAIN) else {
         return;
     };
-    if let Ok(app_data) = app.path().app_data_dir() {
+    if let Ok(app_data) = commands::app_data_dir(app.handle()) {
         // The Notes window has a place of its own: it is not the project window's, and not another project's.
         let notes_window = app
             .try_state::<NotesLaunch>()
