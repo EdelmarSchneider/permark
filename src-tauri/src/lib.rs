@@ -11,7 +11,9 @@
 //! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
+//! [`bridge`] is the agent connection: `trailmark mcp` runs without a window and speaks the Model Context Protocol.
 
+mod bridge;
 mod commands;
 mod edit;
 mod error;
@@ -47,13 +49,17 @@ fn navigation_guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
         .build()
 }
 
-/// Builds and runs the Tauri application.
+/// Builds and runs the Tauri application. Started as `trailmark mcp`, it instead serves MCP over standard input and output
+/// (see [`bridge`]), without a window, and exits when the input closes.
 ///
 /// # Panics
 ///
 /// Panics if the Tauri runtime fails to start.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if bridge::wants_mcp(std::env::args_os()) {
+        std::process::exit(bridge::mcp::run_cli());
+    }
     let context = tauri::generate_context!();
     let dev_url = if cfg!(debug_assertions) {
         context.config().build.dev_url.clone()
