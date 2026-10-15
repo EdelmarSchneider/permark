@@ -4,12 +4,15 @@
 import { SvelteSet } from "svelte/reactivity";
 import { api, type Unlisten } from "../api";
 import { bridge } from "../bridge";
+import { refLabel } from "../codeRefs";
 import { isTextSelected } from "../dom/domUtil";
 import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
 import { errorKind, errorMessage } from "../errors";
+import { usesSystemApp } from "../externalEditor";
 import { followCandidate } from "../follow";
 import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
+import { basename, isMarkdown } from "../paths";
 import { formatQuote, formatReference } from "../reference";
 import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
 import type { ShortcutAction } from "../shortcuts";
@@ -21,6 +24,7 @@ import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
 import { edit } from "./edit.svelte";
+import { editorCommand } from "./editorCommand.svelte";
 import { feed } from "./feed.svelte";
 import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
@@ -574,9 +578,17 @@ class AppStore {
     }
   }
 
-  async copyReference(path = docs.path, flashId = "reference"): Promise<void> {
+  /** Copies the reference to a file, with a line (`@src/main.rs:42`) when the reference has one. */
+  async copyReference(
+    path = docs.path,
+    flashId = "reference",
+    line: number | null = null,
+  ): Promise<void> {
     if (!path) return;
-    const text = formatReference(session.refTemplate, await this.referencePath(path));
+    const text = formatReference(
+      session.refTemplate,
+      refLabel(await this.referencePath(path), line),
+    );
     await this.copy(text, flashId);
   }
 
@@ -615,13 +627,71 @@ class AppStore {
     else toast.message(t("copy.failed"), "warn");
   }
 
+  /**
+   * "Open in external editor" (Ctrl+Shift+E, the menus): the file opens in the editor of the settings. For the open document
+   * the line is the block at the top of the view, so the editor lands where the reader is.
+   */
   async openExternally(path = docs.path): Promise<void> {
     if (!path) return;
+    await this.openInEditor(path, path === docs.path ? this.topLine() : undefined);
+  }
+
+  /** The 1-based source line of the block at the top of the open document's view (the editor's, while editing). */
+  private topLine(): number | undefined {
+    const line = bridge.editor ? bridge.editor.topLine() + 1 : bridge.topLine?.();
+    return line ?? undefined;
+  }
+
+  /**
+   * Runs the editor command of the settings for a file, at a line and column (from 1). Images and PDF files go to the
+   * system's application, which shows them better than a code editor does. A failure is a toast, with a way to Settings.
+   */
+  async openInEditor(path: string, line?: number, col?: number): Promise<void> {
     try {
-      await api.openExternal(path);
+      if (usesSystemApp(path)) await api.openExternal(path);
+      else await api.openInEditor(path, line, col);
     } catch (error) {
-      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
+      await this.editorFailed(path, error);
     }
+  }
+
+  private async editorFailed(path: string, error: unknown): Promise<void> {
+    const settings = {
+      label: t("settings.title"),
+      run: () => {
+        ui.settingsOpen = true;
+      },
+    };
+    if (errorKind(error) === "editor") {
+      toast.message(errorMessage(error), "warn", settings);
+      return;
+    }
+    // The system's default app only opens documents and images: for a code file the way out is an editor command.
+    if (errorKind(error) === "invalidPath") {
+      await editorCommand.load();
+      if (editorCommand.command.trim() === "") {
+        toast.message(t("codeRef.systemCantOpen", { name: basename(path) }), "warn", settings);
+        return;
+      }
+    }
+    toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
+  }
+
+  /**
+   * Follows a code reference. A Markdown file opens here, at the line; any other file opens in the editor, and so does a
+   * Markdown file when `external` is set (Ctrl+click).
+   */
+  async openCodeRef(
+    path: string,
+    line: number | null,
+    col: number | null,
+    external = false,
+  ): Promise<void> {
+    if (!external && isMarkdown(path)) {
+      await this.openDoc(path, line === null ? {} : { locate: { line, find: null } });
+      return;
+    }
+    await this.openInEditor(path, line ?? undefined, col ?? undefined);
   }
 
   async revealInFolder(path: string): Promise<void> {

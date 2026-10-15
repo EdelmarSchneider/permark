@@ -458,6 +458,39 @@ export const de = {
   "settings.editMode": "Dateien zum Bearbeiten öffnen in",
   "settings.refTemplate": "Verweisvorlage",
   "settings.refPreview": "Vorschau: {preview}",
+
+  // ---- Code-Verweise und externer Editor (docs/design/v0.3.md, Abschnitt 3)
+  "codeRef.title": "{path}\nIm Editor öffnen",
+  "codeRef.titleAt": "{path}\nIm Editor in Zeile {line} öffnen",
+  "codeRef.titleDoc": "{path}\nÖffnen (Strg+Klick: im eigenen Editor)",
+  "codeRef.titleDocAt": "{path}\nIn Zeile {line} öffnen (Strg+Klick: im eigenen Editor)",
+  "codeRef.titleMany": "{count} Dateien passen. Klicken, um eine auszuwählen.",
+  "codeRef.chooseLabel": "Passende Dateien",
+  "codeRef.menuLabel": "Code-Verweis",
+  "codeRef.systemCantOpen":
+    "{name} lässt sich nicht mit der Standard-App des Systems öffnen. In den Einstellungen einen Editor wählen.",
+  "error.editorNotFound":
+    "„{subject}“ konnte nicht ausgeführt werden: nicht gefunden. In den Einstellungen den Editor-Befehl festlegen.",
+  "error.editorBadArguments":
+    "„{subject}“ konnte nicht ausgeführt werden: Der Dateipfad lässt sich nicht als Argument übergeben. In den Einstellungen den Editor-Befehl festlegen.",
+  "error.editorSpawn":
+    "„{subject}“ konnte nicht ausgeführt werden: {detail}. In den Einstellungen den Editor-Befehl festlegen.",
+  "error.editorTemplate":
+    "Der Editor-Befehl ist ungültig: {detail}. In den Einstellungen den Editor-Befehl festlegen.",
+  "settings.editor": "Externer Editor",
+  "settings.editorCommand": "Befehl",
+  "settings.editorPlaceholder": "Die Standard-App des Systems",
+  "settings.editorHint":
+    "Platzhalter: {path}, {line}, {col}. Anführungszeichen fassen Wörter zusammen. Es wird keine Shell verwendet.",
+  "settings.editorPreview": "Vorschau: {preview}",
+  "settings.editorNotSaved": "Nicht gespeichert: {detail}",
+  "settings.editor.system": "Standard-App des Systems",
+  "settings.editor.vscode": "VS Code",
+  "settings.editor.cursor": "Cursor",
+  "settings.editor.zed": "Zed",
+  "settings.editor.sublime": "Sublime Text",
+  "settings.editor.jetbrains": "JetBrains-IDEs",
+  "settings.editor.custom": "Benutzerdefiniert",
   "settings.updates": "Updates",
   "settings.fileManager": "Dateimanager",
   "settings.shellMenu": "„Mit TrailMark öffnen“ zum Kontextmenü hinzufügen",

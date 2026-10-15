@@ -54,6 +54,14 @@ const NAME_REASONS = {
   emptyImage: "error.imageEmpty",
 } as const satisfies Record<string, MessageKey>;
 
+/** The keys that word each reason an `editor` error gives (the editor command could not be run). */
+const EDITOR_REASONS = {
+  notFound: "error.editorNotFound",
+  badArguments: "error.editorBadArguments",
+  spawn: "error.editorSpawn",
+  template: "error.editorTemplate",
+} as const satisfies Record<string, MessageKey>;
+
 /** The kinds the UI words itself, and the string for each (the same name under `error.`, except where one exists already). */
 const KIND_KEYS = {
   noVault: "error.noVault",
@@ -111,6 +119,9 @@ export function errorMessage(error: unknown): string {
     let key: MessageKey | undefined;
     if (kind === "invalidName") {
       key = reason !== undefined ? (NAME_REASONS as Record<string, MessageKey>)[reason] : undefined;
+    } else if (kind === "editor") {
+      key =
+        reason !== undefined ? (EDITOR_REASONS as Record<string, MessageKey>)[reason] : undefined;
     } else if (kind !== null) {
       key = (KIND_KEYS as Record<string, MessageKey>)[kind];
     }

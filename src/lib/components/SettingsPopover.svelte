@@ -3,6 +3,12 @@
   import { LINK_UPDATES } from "../fileOps";
   import { EDIT_MODES } from "../editMode";
   import {
+    EDITOR_CHOICES,
+    previewCommand,
+    sampleFile,
+    type EditorPresetId,
+  } from "../externalEditor";
+  import {
     LANGUAGE_NAMES,
     LANGUAGE_PREFERENCES,
     language,
@@ -12,11 +18,13 @@
   import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { docs } from "../stores/docs.svelte";
+  import { editorCommand } from "../stores/editorCommand.svelte";
   import { chooseLanguage } from "../stores/languageChoice.svelte";
   import { session } from "../stores/session.svelte";
   import { shell } from "../stores/shell.svelte";
   import { ui } from "../stores/ui.svelte";
   import { updates } from "../stores/updates.svelte";
+  import { vault } from "../stores/vault.svelte";
   import type { ShellState } from "../types";
   import { describeUpdate, isBusy } from "../updates";
   import IconButton from "./IconButton.svelte";
@@ -44,8 +52,23 @@
   // the button already says "Checking..."
   const status = $derived(update.phase === "checking" ? "" : describeUpdate(update));
 
+  // what the editor command would run for the open file, at a sample position
+  const editorPreview = $derived(
+    previewCommand(
+      editorCommand.draft,
+      sampleFile(vault.info?.root, docs.path ?? "src/main.rs"),
+      42,
+      1,
+    ),
+  );
+  // the saved command is read each time the popover opens; what was typed is kept when it closes
+  void editorCommand.load();
+
   // "You're up to date" is the answer to the last check; it is not kept for the next time the popover opens
-  onDestroy(() => updates.dismissResult());
+  onDestroy(() => {
+    updates.dismissResult();
+    void editorCommand.flush();
+  });
 
   // The file manager entries are read from the system whenever the popover opens and whenever the window regains focus
   // (the person may have picked the default app in Windows Settings meanwhile).
@@ -187,6 +210,39 @@
       oninput={(e) => session.setRefTemplate(e.currentTarget.value)}
     />
     <span class="field__preview" aria-live="polite">{t("settings.refPreview", { preview })}</span>
+  </div>
+  <div class="field">
+    <label class="field__label" for="editor-preset">{t("settings.editor")}</label>
+    <select
+      id="editor-preset"
+      class="text-input select-input"
+      value={editorCommand.preset}
+      onchange={(e) => editorCommand.pick(e.currentTarget.value as EditorPresetId)}
+    >
+      {#each EDITOR_CHOICES as choice (choice)}
+        <option value={choice}>{t(`settings.editor.${choice}`)}</option>
+      {/each}
+    </select>
+    <input
+      id="editor-command"
+      class="text-input"
+      aria-label={t("settings.editorCommand")}
+      aria-describedby="editor-hint"
+      aria-invalid={editorCommand.error !== null}
+      value={editorCommand.draft}
+      placeholder={t("settings.editorPlaceholder")}
+      spellcheck="false"
+      autocomplete="off"
+      oninput={(e) => editorCommand.type(e.currentTarget.value)}
+    />
+    {#if editorCommand.error}
+      <span class="field__status field__status--error" role="alert">{editorCommand.error}</span>
+    {:else if editorPreview !== ""}
+      <span class="field__preview" aria-live="polite"
+        >{t("settings.editorPreview", { preview: editorPreview })}</span
+      >
+    {/if}
+    <span id="editor-hint" class="field__status">{t("settings.editorHint")}</span>
   </div>
   {#if fileManager?.supported}
     <div class="field">

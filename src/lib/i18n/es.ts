@@ -458,6 +458,39 @@ export const es = {
   "settings.editMode": "Abrir archivos para editar en",
   "settings.refTemplate": "Plantilla de referencia",
   "settings.refPreview": "Vista previa: {preview}",
+
+  // ---- referencias de código y editor externo (docs/design/v0.3.md, sección 3)
+  "codeRef.title": "{path}\nAbrir en el editor",
+  "codeRef.titleAt": "{path}\nAbrir en el editor en la línea {line}",
+  "codeRef.titleDoc": "{path}\nAbrir (Ctrl+clic: en tu editor)",
+  "codeRef.titleDocAt": "{path}\nAbrir en la línea {line} (Ctrl+clic: en tu editor)",
+  "codeRef.titleMany": "{count} archivos coinciden. Haz clic para elegir uno.",
+  "codeRef.chooseLabel": "Archivos que coinciden",
+  "codeRef.menuLabel": "Referencia de código",
+  "codeRef.systemCantOpen":
+    "{name} no se puede abrir con la aplicación predeterminada del sistema. Elige un editor en Configuración.",
+  "error.editorNotFound":
+    "No se pudo ejecutar '{subject}': no se encontró. Define el comando del editor en Configuración.",
+  "error.editorBadArguments":
+    "No se pudo ejecutar '{subject}': no admite esta ruta de archivo como argumento. Define el comando del editor en Configuración.",
+  "error.editorSpawn":
+    "No se pudo ejecutar '{subject}': {detail}. Define el comando del editor en Configuración.",
+  "error.editorTemplate":
+    "El comando del editor no es válido: {detail}. Define el comando del editor en Configuración.",
+  "settings.editor": "Editor externo",
+  "settings.editorCommand": "Comando",
+  "settings.editorPlaceholder": "La app predeterminada del sistema",
+  "settings.editorHint":
+    "Marcadores: {path}, {line}, {col}. Las comillas agrupan palabras. No se usa ningún shell.",
+  "settings.editorPreview": "Vista previa: {preview}",
+  "settings.editorNotSaved": "No guardado: {detail}",
+  "settings.editor.system": "Aplicación predeterminada del sistema",
+  "settings.editor.vscode": "VS Code",
+  "settings.editor.cursor": "Cursor",
+  "settings.editor.zed": "Zed",
+  "settings.editor.sublime": "Sublime Text",
+  "settings.editor.jetbrains": "IDE de JetBrains",
+  "settings.editor.custom": "Personalizado",
   "settings.updates": "Actualizaciones",
   "settings.fileManager": "Administrador de archivos",
   "settings.shellMenu": 'Agregar "Abrir con TrailMark" al menú de clic derecho',

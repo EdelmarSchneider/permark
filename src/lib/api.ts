@@ -81,6 +81,16 @@ export interface Api {
   absolutePath(path: string): Promise<string>;
   /** Opens a document or image of the folder with the system's default application. */
   openExternal(path: string): Promise<void>;
+  /**
+   * Opens a file of the folder in the person's editor at a line and column (from 1): runs the editor command of the
+   * settings, or the system's default application when there is none. Rejects with kind "editor" (and a `reason`:
+   * `notFound`, `badArguments`, `spawn`, `template`) when the command can't be run.
+   */
+  openInEditor(path: string, line?: number, col?: number): Promise<void>;
+  /** The editor command, such as `code -g {path}:{line}:{col}`; blank means the system's default application. */
+  editorCommand(): Promise<string>;
+  /** Keeps the editor command. Rejects (kind "editor", reason "template") when it can't be read: an unknown placeholder, an open quote. */
+  setEditorCommand(command: string): Promise<void>;
   /** Shows a file or folder of the open folder in the system's file manager. */
   revealInFolder(path: string): Promise<void>;
   search(query: string, limit?: number): Promise<SearchHit[]>;
@@ -164,6 +174,9 @@ export const tauriApi: Api = {
   loadSession: () => invoke<SessionState | null>("load_session"),
   absolutePath: (path) => invoke<string>("absolute_path", { path }),
   openExternal: (path) => invoke<void>("open_external", { path }),
+  openInEditor: (path, line, col) => invoke<void>("open_in_editor", { path, line, col }),
+  editorCommand: () => invoke<string>("editor_command"),
+  setEditorCommand: (command) => invoke<void>("set_editor_command", { command }),
   revealInFolder: (path) => invoke<void>("reveal_in_folder", { path }),
   search: (query, limit) => invoke<SearchHit[]>("search", { query, limit }),
   referencedImages: () => invoke<string[]>("referenced_images"),
@@ -251,6 +264,9 @@ function createMockApi(): Api {
     loadSession: command("loadSession"),
     absolutePath: command("absolutePath"),
     openExternal: command("openExternal"),
+    openInEditor: command("openInEditor"),
+    editorCommand: command("editorCommand"),
+    setEditorCommand: command("setEditorCommand"),
     revealInFolder: command("revealInFolder"),
     search: command("search"),
     referencedImages: command("referencedImages"),
