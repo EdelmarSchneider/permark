@@ -4,7 +4,7 @@
   import { onMount, tick } from "svelte";
   import { trackPointerDrag } from "../dom/treeDrag";
   import { keys, t } from "../i18n";
-  import { GROUP_ORDER, drawnOrder, type GroupId } from "../notesModel";
+  import { GROUP_ORDER, drawnOrder, fullPlace, shortFolder, type GroupId } from "../notesModel";
   import { clock } from "../stores/clock.svelte";
   import { notes } from "../stores/notes.svelte";
   import type { NoteEntry } from "../types";
@@ -411,7 +411,7 @@
       data-note={note.path}
       data-pin={pinned ? "" : undefined}
       aria-current={current ? "true" : undefined}
-      title={fresh ? t("notes.untitled") : file ? (note.folder ?? note.title) : note.path}
+      title={fresh ? t("notes.untitled") : file ? fullPlace(note.folder, note.title) : note.path}
       onclick={() => onrowclick(note)}
       onkeydown={(e) => onrowkeydown(e, note)}
       onpointerdown={pinned ? (e) => onpinpointerdown(e, note) : undefined}
@@ -443,7 +443,7 @@
         <span class="note-row__snippet note-row__folder">
           {#if note.missing}<Icon name="alert" size="xs" />{t(
               "notes.file.notFound",
-            )}{:else}{note.folder ?? ""}{/if}
+            )}{:else}{shortFolder(note.folder ?? "")}{/if}
         </span>
       {:else if note.snippet !== ""}
         <span class="note-row__snippet">{note.snippet}</span>

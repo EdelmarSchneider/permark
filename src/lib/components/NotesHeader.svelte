@@ -5,6 +5,7 @@
   import { keys, t } from "../i18n";
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
+  import { fullPlace } from "../notesModel";
   import { notes } from "../stores/notes.svelte";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
@@ -203,7 +204,11 @@
     {:else}
       <div
         class="notes-header__title"
-        title={fresh ? t("notes.untitled") : isFile ? (entry?.folder ?? title) : path}
+        title={fresh
+          ? t("notes.untitled")
+          : isFile
+            ? fullPlace(entry?.folder ?? null, title)
+            : path}
       >
         <span class="notes-header__text">{title}</span>
         {#if pinned}<Icon name="pin" size="xs" class="notes-header__pin" />{/if}

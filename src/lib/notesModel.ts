@@ -145,6 +145,39 @@ export function placeOf(path: string): { file: string; folder: string } {
   return { file: parts.at(-1) ?? "", folder: parts.at(-2) ?? "" };
 }
 
+/** How many characters of a folder label the list shows (the rest is in the tooltip). */
+export const FOLDER_LABEL_CHARS = 34;
+
+/**
+ * A folder label (`~\AppData\Local\Temp\notes\loose\a`) cut in the middle when it is longer than `max` characters: the first part
+ * and the last folders stay, since the last ones are what tell two files of the same name apart, and `…` stands for what is
+ * left out (`~\…\loose\a`). A label that fits is left as it is.
+ */
+export function shortFolder(folder: string, max = FOLDER_LABEL_CHARS): string {
+  if (folder.length <= max) return folder;
+  const sep = folder.includes("\\") ? "\\" : "/";
+  const parts = folder.split(sep);
+  if (parts.length <= 2) return `…${folder.slice(folder.length - (max - 1))}`;
+  const head = parts[0];
+  let kept: string[] = [];
+  for (let n = 1; n < parts.length; n++) {
+    const tail = parts.slice(parts.length - n);
+    const label = `${head}${sep}…${sep}${tail.join(sep)}`;
+    if (label.length > max && n > 1) break;
+    kept = tail;
+  }
+  const last = kept.join(sep);
+  const label = `${head}${sep}…${sep}${last}`;
+  // even the last folder alone is too long: its end is what is shown
+  return label.length <= max ? label : `…${folder.slice(folder.length - (max - 1))}`;
+}
+
+/** The place of a loose file as a tooltip shows it: its folder label and its name, with the separator the label uses. */
+export function fullPlace(folder: string | null, name: string): string {
+  if (!folder) return name;
+  return `${folder}${folder.includes("\\") ? "\\" : "/"}${name}`;
+}
+
 /** What the status bar says about saving: nothing, "Unsaved changes", "Saving...", "Saved", or the note a loose file shows for a moment. */
 export type SaveStatus = "none" | "unsaved" | "saving" | "saved" | "note";
 

@@ -9,8 +9,10 @@ import {
   movePinned,
   neighbour,
   pinnedAt,
+  fullPlace,
   placeOf,
   saveStatus,
+  shortFolder,
 } from "./notesModel";
 import type { NoteEntry } from "./types";
 
@@ -219,6 +221,43 @@ describe("jumping between notes", () => {
     expect(neighbour(shown, null, -1)).toBe("c.md");
     expect(neighbour(shown, "gone.md", 1)).toBe("a.md");
     expect(neighbour([], "a.md", 1)).toBeNull();
+  });
+});
+
+describe("shortFolder", () => {
+  it("leaves a label that fits as it is", () => {
+    expect(shortFolder("~\\Downloads")).toBe("~\\Downloads");
+    expect(shortFolder("~/Documents/plans", 40)).toBe("~/Documents/plans");
+  });
+
+  it("cuts a long one in the middle, so the folders that tell two files apart stay", () => {
+    const a = "~\\AppData\\Local\\Temp\\claude\\scratchpad\\loose\\a";
+    const b = "~\\AppData\\Local\\Temp\\claude\\scratchpad\\loose\\b";
+    expect(shortFolder(a)).toBe("~\\…\\Temp\\claude\\scratchpad\\loose\\a");
+    expect(shortFolder(b)).toBe("~\\…\\Temp\\claude\\scratchpad\\loose\\b");
+    expect(shortFolder(a)).not.toBe(shortFolder(b));
+    expect(shortFolder(a).length).toBeLessThanOrEqual(34);
+    expect(shortFolder(a, 20)).toBe("~\\…\\loose\\a");
+    // the same on a system that separates with a slash
+    expect(shortFolder("~/projects/clients/acme/docs/proposals/2026/q4", 30)).toBe(
+      "~/…/docs/proposals/2026/q4",
+    );
+  });
+
+  it("shows the end of a folder name that is long by itself", () => {
+    const long = `~\\${"x".repeat(60)}\\sub`;
+    const short = shortFolder(long, 24);
+    expect(short.length).toBeLessThanOrEqual(24);
+    expect(short.endsWith("sub")).toBe(true);
+    expect(shortFolder(`C:${"y".repeat(60)}`, 20)).toHaveLength(20);
+  });
+});
+
+describe("fullPlace", () => {
+  it("is the folder label and the name, with the separator of the label", () => {
+    expect(fullPlace("~\\Downloads", "proposal.md")).toBe("~\\Downloads\\proposal.md");
+    expect(fullPlace("~/Documents", "todo.txt")).toBe("~/Documents/todo.txt");
+    expect(fullPlace(null, "proposal.md")).toBe("proposal.md");
   });
 });
 
