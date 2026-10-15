@@ -133,6 +133,8 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - **Copy reference** (`@docs/plan.md`) and **copy selection with reference**: a quoted excerpt plus path and section,
   ready to paste into any AI chat or CLI
 - Configurable reference template
+- **Review notes**: select a passage, press `N` and write a note; your agent can read the open ones and mark them done
+  (see [Use with an AI agent](#use-with-an-ai-agent))
 
 ### 🗂️ Zero footprint by default
 TrailMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
@@ -173,6 +175,98 @@ trailmark docs/plan.md     # open a single file in simple mode
 
 You can also drag and drop a folder or a `.md` file onto the window.
 
+## Use with an AI agent
+
+TrailMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this
+paragraph" or "go through my notes" and the agent knows which document, which section and which words you mean. It talks to
+TrailMark through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so it works with any tool that supports MCP
+(Claude Code, Cursor, opencode, Codex, Gemini CLI, Claude Desktop and others), and without one of them nothing changes.
+
+**It is off by default, per project, and local.** Nothing leaves your machine, and TrailMark shares nothing until you turn it on in
+**Settings → Agent connection** (or **Agent connection: turn on** in the command palette). While it is on, the status bar shows
+**Agent**, with a dot that fills while an agent is connected. Click it to see what is shared and what was asked lately, and to turn
+it off in one click.
+
+### Connect an agent
+
+Turn the connection on, then add TrailMark to your agent as an MCP server. **Settings → Agent connection** shows the lines below with
+the right path filled in, and a Copy button for each.
+
+- **Claude Code**
+
+  ```bash
+  claude mcp add trailmark -- "<path to TrailMark>" mcp
+  ```
+
+- **Any other MCP client** (Cursor, Claude Desktop, ...): add this to its MCP servers configuration.
+
+  ```json
+  {
+    "mcpServers": {
+      "trailmark": { "command": "<path to TrailMark>", "args": ["mcp"] }
+    }
+  }
+  ```
+
+`<path to TrailMark>` is the full path of the program, which Settings shows for the copy you are running: the program the
+installer put on your machine, the one inside `TrailMark.app` on macOS, or the AppImage file. **Use the full path:** on Windows and
+macOS `trailmark` is not on your `PATH` after an install, so the bare name only works where you put it there yourself. Quote the
+path when it has spaces. The agent runs in your project's folder, and TrailMark finds the project from it, so one
+configuration serves every project you have opened in TrailMark.
+
+### What an agent can do
+
+| Tool | What it answers or does |
+|---|---|
+| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters) and whether there are unsaved edits |
+| `list_unread` | The documents that changed since you last read them, newest first |
+| `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere |
+| `list_notes` | Your [review notes](#review-notes): the open ones, each with the quoted passage, its section and line, and your text |
+| `resolve_note` | Marks a note done, with an optional short reply that you read under the note |
+| `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
+
+The agent only reads, shows you a place, and checks off notes you wrote. It cannot create notes and it cannot edit a document through
+TrailMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. When TrailMark is
+closed, `list_unread`, `search`, `list_notes` and `resolve_note` still work from the project's files, `get_context` says that
+TrailMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
+
+### Add what you are reading to every prompt
+
+`trailmark context` prints where you are as one short line and exits, for tools that can run a command before each prompt:
+
+```text
+Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday'.
+```
+
+In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your user settings) adds it to every prompt:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "\"<path to TrailMark>\" context" }] }
+    ]
+  }
+}
+```
+
+Other tools can do the same from their own hooks. When there is nothing to say (the connection is off, or TrailMark is not open), the
+command prints nothing, so a hook never adds noise to a prompt. A project that keeps its settings in `.trailmark/` also has
+`.trailmark/local/agent.json` while the connection is on: the same answer as a file, for a script or a tool without MCP. It is
+private to you (`local/` is gitignored) and deleted when the connection is turned off.
+
+### Review notes
+
+Select a passage while you read and press `N` (or choose **Note** in the selection toolbar), type a note and press `Enter`. A thin
+bar marks the passage in the margin, and the **Notes** tab of the right panel lists the open notes by document, with the ones you
+finished folded away. A click on a note goes to its passage. Check a note off yourself, or ask your agent to "go through my notes":
+it reads them with `list_notes`, and when it marks one done its reply appears under the note.
+
+Notes follow their passage when the document changes: they are found again by their words, then by their section, then by their
+line. A note whose passage was rewritten stays in the list marked **Passage changed**. Notes are yours, kept next to the other local
+state (`.trailmark/local/notes.json` once you initialize TrailMark in the project, otherwise in your user profile), never committed,
+and they work without the agent connection.
+
 ## Keyboard shortcuts
 
 On macOS, use `Cmd` where this table says `Ctrl`.
@@ -194,6 +288,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Back / forward | `Alt+←` / `Alt+→` |
 | Copy reference (or selection with reference) | `Ctrl+Alt+C` |
 | Edit tags and description | `T` |
+| Leave a note on the selected passage | `N` |
 | Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 
 **Editing**
