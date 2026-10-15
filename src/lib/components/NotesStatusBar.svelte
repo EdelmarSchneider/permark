@@ -14,13 +14,18 @@
   const update = $derived(updates.state);
   // "Saved" when the note is on disk; "Saving..." only when a save takes longer than a second; nothing while typing
   const saveState = $derived(
-    !notes.current || notes.unborn
+    !notes.current || notes.unborn || notes.currentMissing
       ? ""
-      : edit.savingSlow
-        ? t("notes.status.saving")
-        : edit.dirty || edit.saving
-          ? ""
-          : t("notes.status.saved"),
+      : notes.isFile
+        ? // a loose file is written when asked: it says "Unsaved changes" until then, and "Saved" for a moment after
+          edit.dirty
+          ? t("notes.status.unsaved")
+          : (edit.note ?? "")
+        : edit.savingSlow
+          ? t("notes.status.saving")
+          : edit.dirty || edit.saving
+            ? ""
+            : t("notes.status.saved"),
   );
 </script>
 
@@ -43,7 +48,7 @@
     {#if saveState !== ""}
       <span class="sb-item" role="status" aria-live="polite">{saveState}</span>
     {/if}
-    {#if notes.current && !notes.unborn}
+    {#if notes.current && !notes.unborn && !notes.currentMissing}
       <span class="sb-item">{tn("notes.status.words", notes.words)}</span>
     {/if}
     {#if edit.active && edit.mode === "source"}

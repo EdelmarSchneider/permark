@@ -20,7 +20,14 @@ import type { CommandAction } from "../commands";
 import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
 import { batchTouches, nextUnread } from "../unread";
-import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
+import {
+  closeThisWindow,
+  copyText,
+  openExternalUrl,
+  pickFile,
+  pickFolder,
+  watchFileDrop,
+} from "../platform";
 import { normalizeTreeFilter, treeLoadOf } from "../treeFilter";
 import type {
   AgentOpen,
@@ -132,8 +139,14 @@ class AppStore {
       initial = null;
     }
     if (initial) {
-      const ok = await this.openProject(initial);
-      if (ok) return;
+      const where = await api.classifyPath(initial).catch(() => null);
+      if (where?.kind === "file") {
+        // a file the system opened with this window (Finder does it after the program started) is the Notes window's: this
+        // window has nothing to show
+        if (await this.openFile(initial, null)) await closeThisWindow();
+      } else if (await this.openProject(initial)) {
+        return;
+      }
     }
     await this.showWelcome();
   }
@@ -213,11 +226,30 @@ class AppStore {
   }
 
   async chooseFile(): Promise<void> {
+    // in the Notes window a file is opened there: under Files, or as the note it is
+    if (this.screen === "notes") return notes.chooseFile();
     try {
       const path = await pickFile();
       if (path) await this.openProject(path);
     } catch (error) {
       this.openError = errorMessage(error);
+    }
+  }
+
+  /**
+   * A file is not a project. Inside the folder this window shows it opens here; anywhere else it is a loose file of the Notes
+   * window, which comes forward with it (and starts when it is not running). This window stays as it is.
+   */
+  private async openFile(path: string, inProject: string | null): Promise<boolean> {
+    if (inProject !== null && this.screen === "project") return this.openDoc(inProject);
+    try {
+      await api.showNotes(false, null, path);
+      return true;
+    } catch (error) {
+      const message = t("welcome.openFailed", { path, message: errorMessage(error) });
+      if (this.screen === "project") toast.message(message, "warn");
+      else this.openError = message;
+      return false;
     }
   }
 
@@ -236,9 +268,11 @@ class AppStore {
     await this.openProject(paths[0]);
   }
 
-  /** Opens a folder (IDE mode) or a file (Simple mode), replacing the current project. */
+  /** Opens a folder as the project of this window (replacing the current one); a file is shown where files are (see `openFile`). */
   async openProject(path: string): Promise<boolean> {
     if (this.opening) return false;
+    const where = await api.classifyPath(path).catch(() => null);
+    if (where?.kind === "file") return this.openFile(path, where.inProject);
     // unsaved edits are asked about first; the answer carries on with this
     if (this.screen === "project" && edit.holdNavigation(() => void this.openProject(path))) {
       return false;
@@ -1125,9 +1159,11 @@ class AppStore {
         if (docs.current || edit.active) void edit.toggleMode();
         return;
       case "save":
-        // the note is saved as it is typed: Ctrl+S only makes sure it is written now
-        if (edit.active) void edit.flush();
+        // a note is saved as it is typed: Ctrl+S only makes sure it is written now. A loose file is written only here.
+        if (edit.active) void (edit.loose ? edit.save() : edit.flush());
         return;
+      case "openFile":
+        return void notes.chooseFile();
       case "find":
         if (!edit.active) this.openFind();
         return;

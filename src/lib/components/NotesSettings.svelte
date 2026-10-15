@@ -88,3 +88,18 @@
   </div>
   <span class="field__status">{t("settings.startInHint")}</span>
 </div>
+<div class="field">
+  <span class="field__label">{t("settings.files")}</span>
+  <label class="filter__check">
+    <input
+      type="checkbox"
+      checked={notes.autoReload}
+      aria-describedby="auto-reload-hint"
+      onchange={(e) => notes.setAutoReload(e.currentTarget.checked)}
+    />
+    <span class="filter__text">
+      <span>{t("settings.autoReload")}</span>
+      <span id="auto-reload-hint" class="filter__hint">{t("settings.autoReloadHint")}</span>
+    </span>
+  </label>
+</div>

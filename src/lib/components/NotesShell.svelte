@@ -16,6 +16,7 @@
   import IconButton from "./IconButton.svelte";
   import Notice from "./Notice.svelte";
   import NotesActivityBar from "./NotesActivityBar.svelte";
+  import NotesFileBar from "./NotesFileBar.svelte";
   import NotesHeader from "./NotesHeader.svelte";
   import NotesList from "./NotesList.svelte";
   import NotesStatusBar from "./NotesStatusBar.svelte";
@@ -55,13 +56,24 @@
           <div>{t(`notes.readOnly.${notes.readOnly}`)}</div>
         </div>
       {/if}
+      <NotesFileBar />
       {#if edit.active}<EditBars />{/if}
-      <DocView />
+      {#if !(notes.currentMissing && !edit.active)}<DocView />{/if}
       {#if edit.active}
         <!-- one editor per note and mode: opening another note, or the other mode, starts a fresh one -->
         {#key `${edit.path}:${edit.mode}`}
           {#if edit.mode === "visual"}<VisualEditor />{:else}<SourceEditor />{/if}
         {/key}
+      {/if}
+      {#if notes.currentMissing && !edit.active}
+        <!-- a file that was opened and is gone: nothing to show, and the bar above says what can be done -->
+        <div class="notes-missing">
+          <Notice
+            icon="folder-search"
+            title={t("notes.file.missingTitle", { name: notes.currentEntry?.title ?? "" })}
+            text={t("notes.file.missingText", { folder: notes.currentEntry?.folder ?? "" })}
+          />
+        </div>
       {/if}
       {#if !notes.current}
         <div class="notes-none">

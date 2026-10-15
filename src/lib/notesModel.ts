@@ -9,7 +9,8 @@ export const GROUP_ORDER = ["today", "yesterday", "week", "month", "older"] as c
 export type GroupId = (typeof GROUP_ORDER)[number];
 
 export type NoteGroup = { id: GroupId; notes: NoteEntry[] };
-export type ArrangedNotes = { pinned: NoteEntry[]; groups: NoteGroup[] };
+/** The list as drawn: the pinned rows, the groups of notes by time, and the loose files (by when they were opened). */
+export type ArrangedNotes = { pinned: NoteEntry[]; groups: NoteGroup[]; files: NoteEntry[] };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -39,8 +40,9 @@ export function groupOf(modifiedMs: number, now: number): GroupId {
 export type Frozen = { path: string; modifiedMs: number };
 
 /**
- * The pinned notes first, in the order the backend gives them (the person's order), then the others newest first in their
- * groups. A note that is `frozen` counts as last edited when it was frozen, so typing in it does not move it.
+ * The pinned rows first, in the order the backend gives them (the person's order), then the notes that are not pinned, newest
+ * first in their groups, then the loose files that are not pinned in the order the backend gives them (the one opened last
+ * first). A note that is `frozen` counts as last edited when it was frozen, so typing in it does not move it.
  */
 export function arrange(
   entries: readonly NoteEntry[],
@@ -51,17 +53,30 @@ export function arrange(
   const effective = (note: NoteEntry): number =>
     frozen?.path === note.path ? frozen.modifiedMs : note.modifiedMs;
   const rest = entries
-    .filter((note) => !note.pinned)
+    .filter((note) => !note.pinned && note.kind === "note")
     .sort((a, b) => effective(b) - effective(a) || a.path.localeCompare(b.path));
   const groups: NoteGroup[] = GROUP_ORDER.map((id) => ({ id, notes: [] }));
   for (const note of rest) {
     const group = groups.find((g) => g.id === groupOf(effective(note), now));
     group?.notes.push(note);
   }
-  return { pinned, groups: groups.filter((group) => group.notes.length > 0) };
+  return {
+    pinned,
+    groups: groups.filter((group) => group.notes.length > 0),
+    files: entries.filter((note) => !note.pinned && note.kind === "file"),
+  };
 }
 
-/** Whether `note` matches what was typed in the filter box: every word is in its title or snippet, or the search found it. */
+/** Every row of an arrangement in the order the list draws it: the pinned ones, each group, then the files. */
+export function drawnOrder(arranged: ArrangedNotes): NoteEntry[] {
+  return [
+    ...arranged.pinned,
+    ...arranged.groups.flatMap((group) => group.notes),
+    ...arranged.files,
+  ];
+}
+
+/** Whether `note` matches what was typed in the filter box: every word is in its title, snippet or folder, or the search found it. */
 export function matchesFilter(
   note: NoteEntry,
   query: string,
@@ -70,7 +85,7 @@ export function matchesFilter(
   const words = foldChars(query.trim()).split(/\s+/).filter(Boolean);
   if (words.length === 0) return true;
   if (found?.has(note.path)) return true;
-  const text = foldChars(`${note.title}\n${note.snippet}`);
+  const text = foldChars(`${note.title}\n${note.snippet}\n${note.folder ?? ""}`);
   return words.every((word) => text.includes(word));
 }
 

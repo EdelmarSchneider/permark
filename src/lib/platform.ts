@@ -151,6 +151,19 @@ export async function setWindowTitle(title: string): Promise<void> {
   }
 }
 
+/**
+ * Closes this window (and with it the program, when it was the only one) without the questions closing asks: the caller has
+ * nothing of its own to lose. The browser mock does nothing.
+ */
+export async function closeThisWindow(): Promise<void> {
+  if (isMock) return;
+  try {
+    await getCurrentWindow().destroy();
+  } catch {
+    // the window stays: the welcome screen is what it shows
+  }
+}
+
 /** A native yes/no question. */
 export async function askYesNo(text: string, yes: string, no: string): Promise<boolean> {
   if (isMock) return window.confirm(text);

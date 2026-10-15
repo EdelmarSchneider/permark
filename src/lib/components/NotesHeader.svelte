@@ -62,46 +62,94 @@
     }
   }
 
-  const entries = $derived<MenuEntry[]>([
-    {
-      id: "pin",
-      label: pinned ? t("notes.unpin") : t("notes.pin"),
-      icon: pinned ? "pin-off" : "pin",
-      disabled: !path || fresh || readOnly,
-      onselect: () => path && void notes.togglePin(path),
-    },
-    {
-      id: "rename",
-      label: t("notes.rename"),
-      icon: "pencil",
-      hint: "F2",
-      disabled: !path || fresh || readOnly,
-      onselect: () => (notes.renaming = true),
-    },
-    { type: "separator" },
-    {
-      id: "versions",
-      label: t("notes.versionsMenu"),
-      icon: "restore",
-      disabled: !path || fresh,
-      onselect: () => void notes.showVersions(),
-    },
-    { type: "separator" },
-    {
-      id: "delete",
-      label: t("notes.delete"),
-      icon: "trash",
-      disabled: !path || fresh || readOnly,
-      onselect: () => path && void notes.deleteNotes([path]),
-    },
-    { type: "separator" },
-    {
-      id: "folder",
-      label: t("notes.openFolder"),
-      icon: "folder-open",
-      onselect: () => void notes.openFolder(),
-    },
-  ]);
+  const isFile = $derived(entry?.kind === "file");
+  const missing = $derived(entry?.missing === true);
+  const unsaved = $derived(isFile && (entry?.unsaved === true || (edit.loose && edit.dirty)));
+
+  // A loose file keeps its name, has no earlier versions here, and is taken out of the list rather than deleted: the file is
+  // not ours.
+  const entries = $derived<MenuEntry[]>(
+    isFile
+      ? [
+          {
+            id: "pin",
+            label: pinned ? t("notes.unpin") : t("notes.pin"),
+            icon: pinned ? "pin-off" : "pin",
+            disabled: !path || readOnly,
+            onselect: () => path && void notes.togglePin(path),
+          },
+          { type: "separator" },
+          {
+            id: "show",
+            label: t("notes.file.showInFolder"),
+            icon: "folder-open",
+            disabled: !path || missing,
+            onselect: () => path && void notes.revealFile(path),
+          },
+          {
+            id: "locate",
+            label: t("notes.file.locate"),
+            icon: "folder-search",
+            disabled: !path || readOnly,
+            onselect: () => path && void notes.locateFile(path),
+          },
+          { type: "separator" },
+          {
+            id: "remove",
+            label: t("notes.file.remove"),
+            icon: "x",
+            disabled: !path || readOnly,
+            onselect: () => path && void notes.removeFile(path),
+          },
+          { type: "separator" },
+          {
+            id: "folder",
+            label: t("notes.openFolder"),
+            icon: "folder-open",
+            onselect: () => void notes.openFolder(),
+          },
+        ]
+      : [
+          {
+            id: "pin",
+            label: pinned ? t("notes.unpin") : t("notes.pin"),
+            icon: pinned ? "pin-off" : "pin",
+            disabled: !path || fresh || readOnly,
+            onselect: () => path && void notes.togglePin(path),
+          },
+          {
+            id: "rename",
+            label: t("notes.rename"),
+            icon: "pencil",
+            hint: "F2",
+            disabled: !path || fresh || readOnly,
+            onselect: () => (notes.renaming = true),
+          },
+          { type: "separator" },
+          {
+            id: "versions",
+            label: t("notes.versionsMenu"),
+            icon: "restore",
+            disabled: !path || fresh,
+            onselect: () => void notes.showVersions(),
+          },
+          { type: "separator" },
+          {
+            id: "delete",
+            label: t("notes.delete"),
+            icon: "trash",
+            disabled: !path || fresh || readOnly,
+            onselect: () => path && void notes.deleteNotes([path]),
+          },
+          { type: "separator" },
+          {
+            id: "folder",
+            label: t("notes.openFolder"),
+            icon: "folder-open",
+            onselect: () => void notes.openFolder(),
+          },
+        ],
+  );
 
   function toggleMenu(e: MouseEvent): void {
     menuAnchor = menuAnchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -136,9 +184,18 @@
         {#if problem}<span class="notes-rename__problem" role="alert">{problem}</span>{/if}
       </div>
     {:else}
-      <div class="notes-header__title" title={fresh ? t("notes.untitled") : path}>
+      <div
+        class="notes-header__title"
+        title={fresh ? t("notes.untitled") : isFile ? (entry?.folder ?? title) : path}
+      >
         <span class="notes-header__text">{title}</span>
         {#if pinned}<Icon name="pin" size="xs" class="notes-header__pin" />{/if}
+        {#if unsaved}
+          <span class="notes-header__unsaved" title={t("notes.file.unsaved")}>
+            <span class="note-row__dot" aria-hidden="true"></span>
+            <span class="sr-only">{t("notes.file.unsaved")}</span>
+          </span>
+        {/if}
       </div>
     {/if}
   {/if}
@@ -146,7 +203,18 @@
   <span class="spacer"></span>
 
   <div class="actions">
-    {#if path}
+    {#if path && isFile && edit.active && edit.dirty}
+      <!-- a loose file is written when asked: this is how, with the key beside it -->
+      <button
+        type="button"
+        class="btn btn--primary btn--sm"
+        title={t("edit.saveHint")}
+        onclick={() => void edit.save()}
+      >
+        {t("edit.save")}
+      </button>
+    {/if}
+    {#if path && !missing}
       <button
         type="button"
         class="btn btn--ghost btn--sm"

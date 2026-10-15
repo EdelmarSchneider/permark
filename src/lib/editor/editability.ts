@@ -6,14 +6,18 @@ import type { DocumentView } from "../types";
 
 export type EditBlock = "binary" | "tooLarge" | "nonMarkdown" | "encoding";
 
-/** Why a document cannot be edited, or null when it can. */
+/**
+ * Why a document cannot be edited, or null when it can. A plain text file (`text`) is edited where the window takes them
+ * (`allowText`: the loose files of the Notes window), in Source.
+ */
 export function editBlock(
   view: Pick<DocumentView, "kind" | "encodingNote"> | null,
+  allowText = false,
 ): EditBlock | null {
   if (!view) return null;
   if (view.kind === "binary") return "binary";
   if (view.kind === "tooLarge") return "tooLarge";
-  if (view.kind !== "markdown") return "nonMarkdown";
+  if (view.kind !== "markdown" && !(allowText && view.kind === "text")) return "nonMarkdown";
   // UTF-16, or bytes that are not UTF-8: saving would write UTF-8 over them
   if (view.encodingNote) return "encoding";
   return null;

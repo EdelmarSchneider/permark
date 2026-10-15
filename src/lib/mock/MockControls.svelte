@@ -18,6 +18,7 @@
   import { agentAsks, agentConnects, agentOpens } from "./mockAgent";
   import { agentResolves } from "./mockComments";
   import { setMetaProblem } from "./mockMeta";
+  import { removeOnDisk, touchLoose } from "./mockNotes";
 
   let open = $state(false);
   let agentHere = $state(false);
@@ -97,6 +98,14 @@
       <button class="btn" onclick={() => agentOpens("docs/specs/watcher.md", 12)}>
         Agent opens a place
       </button>
+      {#if vault.isNotes}
+        <button class="btn" onclick={() => touchLoose(docs.path ?? edit.path ?? "")}>
+          Change the open file on disk
+        </button>
+        <button class="btn" onclick={() => removeOnDisk(docs.path ?? edit.path ?? "")}>
+          Delete the open file on disk
+        </button>
+      {/if}
     {/if}
   </div>
 {/if}

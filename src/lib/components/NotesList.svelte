@@ -4,7 +4,7 @@
   import { onMount, tick } from "svelte";
   import { trackPointerDrag } from "../dom/treeDrag";
   import { keys, t } from "../i18n";
-  import { GROUP_ORDER, type GroupId } from "../notesModel";
+  import { GROUP_ORDER, drawnOrder, type GroupId } from "../notesModel";
   import { clock } from "../stores/clock.svelte";
   import { notes } from "../stores/notes.svelte";
   import type { NoteEntry } from "../types";
@@ -25,9 +25,7 @@
   let afterDrag = false;
 
   const arranged = $derived(notes.arrangement(clock.now));
-  const paths = $derived(
-    [...arranged.pinned, ...arranged.groups.flatMap((g) => g.notes)].map((n) => n.path),
-  );
+  const paths = $derived(drawnOrder(arranged).map((n) => n.path));
   const empty = $derived(notes.entries.length === 0 && !notes.unborn);
   const nothingMatches = $derived(!empty && paths.length === 0);
 
@@ -86,6 +84,8 @@
         break;
       case "F2":
         e.preventDefault();
+        // a loose file keeps the name it has: it is not ours to rename
+        if (note.kind === "file") break;
         if (note.path === notes.current) notes.renaming = true;
         else void notes.openNote(note.path).then(() => (notes.renaming = true));
         break;
@@ -151,6 +151,7 @@
   function rowEntries(path: string): MenuEntry[] {
     const note = notes.entries.find((n) => n.path === path);
     if (!note) return [];
+    if (note.kind === "file") return fileEntries(note);
     return [
       {
         id: "pin",
@@ -181,6 +182,47 @@
         icon: "trash",
         hint: "Del",
         onselect: () => void notes.deleteNotes([path]),
+      },
+    ];
+  }
+
+  /** What can be done with a loose file in the list: it can be pinned, found again, shown, and taken out of the list. */
+  function fileEntries(file: NoteEntry): MenuEntry[] {
+    return [
+      {
+        id: "pin",
+        label: file.pinned ? t("notes.unpin") : t("notes.pin"),
+        icon: file.pinned ? "pin-off" : "pin",
+        onselect: () => void notes.togglePin(file.path),
+      },
+      { type: "separator" },
+      {
+        id: "copy",
+        label: t("notes.copy"),
+        icon: "copy",
+        disabled: file.missing,
+        onselect: () => void notes.copyNote(file.path),
+      },
+      {
+        id: "show",
+        label: t("notes.file.showInFolder"),
+        icon: "folder-open",
+        disabled: file.missing,
+        onselect: () => void notes.revealFile(file.path),
+      },
+      {
+        id: "locate",
+        label: t("notes.file.locate"),
+        icon: "folder-search",
+        onselect: () => void notes.locateFile(file.path),
+      },
+      { type: "separator" },
+      {
+        id: "remove",
+        label: t("notes.file.remove"),
+        icon: "x",
+        hint: "Del",
+        onselect: () => void notes.removeFile(file.path),
       },
     ];
   }
@@ -323,16 +365,27 @@
         </div>
       {/if}
     {/each}
+    {#if arranged.files.length > 0}
+      <div class="notes-group">
+        <div class="notes-group__title">{t("notes.group.files")}</div>
+        {#each arranged.files as note (note.path)}
+          {@render row(note, false)}
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>
 
 {#snippet row(note: NoteEntry, pinned: boolean)}
   {@const current = note.path === notes.current}
   {@const fresh = current && notes.unborn}
+  {@const file = note.kind === "file"}
   <div
     class={[
       "note-row",
       current && "is-current",
+      file && "is-file",
+      file && note.missing && "is-missing",
       drag?.over === note.path && drag.from !== note.path && "is-drop",
       drag?.from === note.path && "is-dragged",
     ]}
@@ -344,7 +397,7 @@
       data-note={note.path}
       data-pin={pinned ? "" : undefined}
       aria-current={current ? "true" : undefined}
-      title={fresh ? t("notes.untitled") : note.path}
+      title={fresh ? t("notes.untitled") : file ? (note.folder ?? note.title) : note.path}
       onclick={() => onrowclick(note)}
       onkeydown={(e) => onrowkeydown(e, note)}
       onpointerdown={pinned ? (e) => onpinpointerdown(e, note) : undefined}
@@ -352,16 +405,28 @@
     >
       <span class="note-row__head">
         <span class={["note-row__title", note.title === "" && "is-untitled"]}>{title(note)}</span>
+        {#if file && note.unsaved}
+          <span class="note-row__unsaved" title={t("notes.file.unsaved")}>
+            <span class="note-row__dot" aria-hidden="true"></span>
+            <span class="sr-only">{t("notes.file.unsaved")}</span>
+          </span>
+        {/if}
         {#if note.copied}
           <span class="note-row__copied" title={t("notes.copiedMark")}>
             <Icon name="check" size="xs" /><span class="sr-only">{t("notes.copiedMark")}</span>
           </span>
         {/if}
-        {#if !fresh}
+        {#if !fresh && !file}
           <span class="note-row__time">{relativeTime(note.modifiedMs, clock.now)}</span>
         {/if}
       </span>
-      {#if note.snippet !== ""}
+      {#if file}
+        <span class="note-row__snippet note-row__folder">
+          {#if note.missing}<Icon name="alert" size="xs" />{t(
+              "notes.file.notFound",
+            )}{:else}{note.folder ?? ""}{/if}
+        </span>
+      {:else if note.snippet !== ""}
         <span class="note-row__snippet">{note.snippet}</span>
       {/if}
     </button>

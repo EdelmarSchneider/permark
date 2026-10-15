@@ -6,12 +6,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EditorApi } from "../bridge";
 import type {
   DocumentView,
+  LooseStatus,
   NoteEntry,
   NoteList,
   NoteSaved,
   NotesOpened,
   NotesRequest,
   ParsedBlocks,
+  SaveOutcome,
   SourceDoc,
 } from "../types";
 
@@ -47,6 +49,17 @@ const fake = vi.hoisted(() => ({
   restoreNoteVersion: vi.fn(),
   search: vi.fn(),
   openNotesFolder: vi.fn(),
+  openLooseFile: vi.fn(),
+  looseStatus: vi.fn(),
+  removeLooseFile: vi.fn(),
+  locateLooseFile: vi.fn(),
+  loadPending: vi.fn(),
+  savePending: vi.fn(),
+  clearPending: vi.fn(),
+  keepEditsAsNote: vi.fn(),
+  saveDocument: vi.fn(),
+  createDocument: vi.fn(),
+  revealInFolder: vi.fn(),
 }));
 vi.mock("../api", () => ({
   api: {
@@ -62,6 +75,8 @@ const platform = vi.hoisted(() => ({
   askYesNo: vi.fn(async (_text: string, _yes: string, _no: string) => true),
   copyText: vi.fn(async () => true),
   guardWindowClose: vi.fn(async () => () => {}),
+  watchFileDrop: vi.fn(async () => () => {}),
+  pickFile: vi.fn(async (): Promise<string | null> => null),
   checkForUpdate: vi.fn(),
   assetUrl: (p: string) => p,
   isMock: true,
@@ -98,7 +113,7 @@ const entry = (path: string, over: Partial<NoteEntry> = {}): NoteEntry => ({
 
 const view = (path: string): DocumentView => ({
   path,
-  kind: "markdown",
+  kind: /\.txt$/i.test(path) ? "text" : "markdown",
   html: "",
   blocks: [],
   title: null,
@@ -188,6 +203,16 @@ function backend(): void {
   fake.fileMeta.mockResolvedValue({ path: "", tags: [], description: "", writable: true });
   fake.markNoteCopied.mockResolvedValue(undefined);
   fake.search.mockResolvedValue([]);
+  fake.loadPending.mockResolvedValue(null);
+  fake.savePending.mockResolvedValue(undefined);
+  fake.clearPending.mockResolvedValue(undefined);
+  fake.looseStatus.mockResolvedValue([]);
+  fake.removeLooseFile.mockResolvedValue(undefined);
+  fake.revealInFolder.mockResolvedValue(undefined);
+  fake.saveDocument.mockImplementation(async (path: string, text: string): Promise<SaveOutcome> => {
+    disk.set(path, { text, hash: `h${++counter}` });
+    return { result: "saved", hash: disk.get(path)?.hash ?? "", modifiedMs: NOW };
+  });
   fake.saveNote.mockImplementation(async (path: string, text: string): Promise<NoteSaved> => {
     disk.set(path, { text, hash: `h${++counter}` });
     return {
@@ -203,6 +228,32 @@ function backend(): void {
 function addNote(path: string, text: string, over: Partial<NoteEntry> = {}): void {
   disk.set(path, { text, hash: `h-${path}` });
   list = [...list, entry(path, over)];
+}
+
+const FILE = "@file/0a1b2c3d/proposal.md";
+const OTHER = "@file/1b2c3d4e/todo.txt";
+
+/** A loose file: a file of the disk that is listed under Files. It opens in Read. */
+function addFile(path: string, text: string, over: Partial<NoteEntry> = {}): void {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  disk.set(path, { text, hash: `h-${path}` });
+  list = [
+    ...list,
+    entry(path, {
+      kind: "file",
+      title: name,
+      folder: "~\\Downloads",
+      view: null,
+      ...over,
+    }),
+  ];
+}
+
+/** What the backend says of the loose files. */
+function looseState(...statuses: Partial<LooseStatus>[]): void {
+  fake.looseStatus.mockResolvedValue(
+    statuses.map((s) => ({ path: FILE, state: "same", stamp: "10-1", was: null, ...s })),
+  );
 }
 
 async function start(): Promise<void> {
@@ -736,5 +787,413 @@ describe("what belongs to a project is off", () => {
     for (const name of ["gitSnapshot", "sinceLastVisit", "getUnread", "agentStatus"]) {
       expect(Object.keys(fake)).not.toContain(name);
     }
+  });
+});
+
+// ---- loose files -----------------------------------------------------------------------------------------------
+
+/** A loose file with text typed into it and not saved: the window opens it in the editor over the file as it is. */
+function typedInto(
+  path: string,
+  text: string,
+  over: Partial<NoteEntry> = {},
+  baseHash?: string,
+): void {
+  addFile(path, "# Proposal\n", { unsaved: true, ...over });
+  fake.loadPending.mockResolvedValue({
+    path: "C:/Users/ana/Downloads/proposal.md",
+    baseHash: baseHash ?? `h-${path}`,
+    text,
+    savedMs: 5,
+  });
+}
+
+const IN_SOURCE = { view: { mode: "source", caret: null, scroll: null } } as const;
+
+describe("loose files", () => {
+  it("opens a file in Read, listed under Files, and not in the editor on its own", async () => {
+    addNote("a.md", "# A\n");
+    addFile(FILE, "# Proposal\n");
+    openName = FILE;
+    await start();
+    expect(notes.current).toBe(FILE);
+    expect(notes.isFile).toBe(true);
+    expect(edit.active).toBe(false);
+    expect(docs.path).toBe(FILE);
+    expect(fake.noteOpened).toHaveBeenCalledWith(FILE);
+    expect(notes.arrangement(NOW).files.map((n) => n.path)).toEqual([FILE]);
+    expect(notes.arrangement(NOW).groups.flatMap((g) => g.notes.map((n) => n.path))).toEqual([
+      "a.md",
+    ]);
+    expect(fake.saveNote).not.toHaveBeenCalled();
+    expect(fake.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it("opens a file that has text typed into it in the editor, with that text and the unsaved mark", async () => {
+    typedInto(FILE, "# Proposal\nhalf a sentence", IN_SOURCE);
+    openName = FILE;
+    await start();
+    expect(edit.active).toBe(true);
+    expect(edit.dirty).toBe(true);
+    expect(edit.initial?.buffer).toBe("# Proposal\nhalf a sentence");
+    expect(edit.diskHash).toBe(`h-${FILE}`);
+    expect(notes.looseNotice).toBeNull();
+  });
+
+  it("tells the person when the file is not the version the text was typed over", async () => {
+    typedInto(FILE, "# Proposal\nhalf a sentence", IN_SOURCE, "an-older-hash");
+    openName = FILE;
+    await start();
+    expect(edit.dirty).toBe(true);
+    expect(notes.looseNotice?.kind).toBe("changed");
+  });
+
+  it("keeps what is typed apart from the file and writes the file only when asked", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nhalf a sentence");
+    await vi.advanceTimersByTimeAsync(800);
+    expect(fake.savePending).toHaveBeenCalledWith(FILE, "# Proposal\nhalf a sentence", `h-${FILE}`);
+    expect(fake.saveDocument).not.toHaveBeenCalled();
+    expect(fake.saveNote).not.toHaveBeenCalled();
+    expect(notes.entries.find((n) => n.path === FILE)?.unsaved).toBe(true);
+
+    // Ctrl+S is what writes it
+    expect(await edit.save()).toBe(true);
+    expect(fake.saveDocument).toHaveBeenCalledWith(
+      FILE,
+      "# Proposal\nhalf a sentence",
+      `h-${FILE}`,
+    );
+    expect(edit.dirty).toBe(false);
+    expect(notes.entries.find((n) => n.path === FILE)?.unsaved).toBe(false);
+  });
+
+  it("forgets the kept text when it becomes the file's own text again", async () => {
+    typedInto(FILE, "# Proposal\nmore", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\n");
+    await vi.advanceTimersByTimeAsync(800);
+    expect(edit.dirty).toBe(false);
+    expect(fake.clearPending).toHaveBeenCalledWith(FILE);
+    expect(notes.entries.find((n) => n.path === FILE)?.unsaved).toBe(false);
+  });
+
+  it("keeps the text apart when another note is opened, and never asks", async () => {
+    addNote("a.md", "# A\n");
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nhalf a sentence");
+    expect(await notes.openNote("a.md")).toBe(true);
+    expect(notes.current).toBe("a.md");
+    expect(fake.savePending).toHaveBeenCalledWith(FILE, "# Proposal\nhalf a sentence", `h-${FILE}`);
+    expect(platform.askUnsaved).not.toHaveBeenCalled();
+    expect(fake.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it("keeps the text apart when the window closes, and never asks", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nhalf a sentence");
+    expect(await edit.confirmLeave("close")).toBe(true);
+    expect(fake.savePending).toHaveBeenCalledTimes(1);
+    expect(platform.askUnsaved).not.toHaveBeenCalled();
+  });
+
+  it("asks, as a document does, before leaving the editor for Read with text that was not saved", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    edit.requestExit();
+    expect(edit.prompt).not.toBeNull();
+    // discarding it means it is not kept either
+    edit.promptDiscard();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.clearPending).toHaveBeenCalledWith(FILE);
+  });
+
+  it("shows the bar when the file changed and keeps what is shown; Reload keeps the typed text as a note first", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nhalf a sentence");
+    looseState({ state: "changed", stamp: "10-2" });
+    await notes.checkLoose();
+    expect(notes.looseNotice).toEqual({ path: FILE, kind: "changed", stamp: "10-2" });
+    expect(edit.exactText()).toBe("# Proposal\nhalf a sentence");
+
+    disk.set(FILE, { text: "# Theirs\n", hash: "h-theirs" });
+    fake.keepEditsAsNote.mockResolvedValue("proposal (my edits).md");
+    await notes.reloadFile();
+    expect(fake.keepEditsAsNote).toHaveBeenCalledWith(FILE, "# Proposal\nhalf a sentence");
+    expect(edit.exactText()).toBe("# Theirs\n");
+    expect(edit.dirty).toBe(false);
+    expect(notes.looseNotice).toBeNull();
+  });
+
+  it("keeps what is typed over the version on disk, and asks once more before it replaces that version", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nmine");
+    looseState({ state: "changed", stamp: "10-2" });
+    await notes.checkLoose();
+    disk.set(FILE, { text: "# Theirs\n", hash: "h-theirs" });
+    await notes.keepMine();
+    expect(notes.looseNotice).toBeNull();
+    expect(edit.exactText()).toBe("# Proposal\nmine");
+    expect(fake.saveDocument).not.toHaveBeenCalled();
+
+    platform.askYesNo.mockResolvedValue(false);
+    expect(await edit.save()).toBe(false);
+    expect(fake.saveDocument).not.toHaveBeenCalled();
+
+    platform.askYesNo.mockResolvedValue(true);
+    expect(await edit.save()).toBe(true);
+    expect(fake.saveDocument).toHaveBeenCalledWith(FILE, "# Proposal\nmine", "h-theirs");
+  });
+
+  it("does not write over a version that changed meanwhile: the bar asks", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nmine");
+    fake.saveDocument.mockResolvedValue({ result: "conflict", diskHash: "h-theirs" });
+    expect(await edit.save()).toBe(false);
+    expect(notes.looseNotice?.kind).toBe("changed");
+    expect(edit.dirty).toBe(true);
+  });
+
+  it("while only reading, 'Keep mine' leaves that version of the change alone until the file changes again", async () => {
+    addFile(FILE, "# Proposal\n");
+    openName = FILE;
+    await start();
+    looseState({ state: "changed", stamp: "10-2" });
+    await notes.checkLoose();
+    expect(notes.looseNotice?.kind).toBe("changed");
+    await notes.keepMine();
+    expect(notes.looseNotice).toBeNull();
+    await notes.checkLoose();
+    expect(notes.looseNotice).toBeNull();
+    looseState({ state: "changed", stamp: "10-3" });
+    await notes.checkLoose();
+    expect(notes.looseNotice).toEqual({ path: FILE, kind: "changed", stamp: "10-3" });
+  });
+
+  it("reloads a changed file by itself only when the setting is on and nothing was typed into it", async () => {
+    addFile(FILE, "# Proposal\n");
+    openName = FILE;
+    await start();
+    // off unless the person turns it on
+    expect(notes.autoReload).toBe(false);
+    looseState({ state: "changed", stamp: "10-2" });
+    await notes.checkLoose();
+    expect(notes.looseNotice?.kind).toBe("changed");
+    await notes.keepMine();
+
+    notes.setAutoReload(true);
+    fake.readDocument.mockClear();
+    looseState({ state: "changed", stamp: "10-3" });
+    await notes.checkLoose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.readDocument).toHaveBeenCalled();
+    expect(notes.looseNotice).toBeNull();
+    notes.setAutoReload(false);
+  });
+
+  it("asks even with the setting on when text was typed into the file", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    notes.setAutoReload(true);
+    looseState({ state: "changed", stamp: "10-2" });
+    await notes.checkLoose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(notes.looseNotice?.kind).toBe("changed");
+    expect(edit.exactText()).toBe("# Proposal\nhalf");
+    expect(fake.keepEditsAsNote).not.toHaveBeenCalled();
+    notes.setAutoReload(false);
+  });
+
+  it("reloads a file that is only being read by reading it again", async () => {
+    addFile(FILE, "# Proposal\n");
+    openName = FILE;
+    await start();
+    looseState({ state: "changed", stamp: "10-2" });
+    await notes.checkLoose();
+    fake.readDocument.mockClear();
+    await notes.reloadFile();
+    expect(fake.readDocument).toHaveBeenCalled();
+    expect(fake.keepEditsAsNote).not.toHaveBeenCalled();
+    expect(notes.looseNotice).toBeNull();
+  });
+
+  it("dims a file that is gone, and says what can be done when it is the one on screen", async () => {
+    addFile(FILE, "# Proposal\n");
+    addFile(OTHER, "buy milk\n");
+    openName = FILE;
+    await start();
+    looseState({ state: "missing", stamp: "" }, { path: OTHER, state: "same" });
+    await notes.checkLoose();
+    expect(notes.entries.find((n) => n.path === FILE)?.missing).toBe(true);
+    expect(notes.entries.find((n) => n.path === OTHER)?.missing).toBe(false);
+    expect(notes.looseNotice?.kind).toBe("missing");
+    // it came back
+    looseState({ state: "same" }, { path: OTHER, state: "same" });
+    await notes.checkLoose();
+    expect(notes.entries.find((n) => n.path === FILE)?.missing).toBe(false);
+    expect(notes.looseNotice).toBeNull();
+  });
+
+  it("follows a file that was renamed in its folder", async () => {
+    addFile(FILE, "# Proposal\n");
+    openName = FILE;
+    await start();
+    const renamed = "@file/0a1b2c3d/proposal v2.md";
+    disk.set(renamed, disk.get(FILE) ?? { text: "", hash: "" });
+    looseState({ path: renamed, was: FILE });
+    fake.listNotes.mockClear();
+    await notes.checkLoose();
+    expect(notes.current).toBe(renamed);
+    expect(fake.listNotes).toHaveBeenCalled();
+  });
+
+  it("looks at nothing while no file is listed", async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    await notes.checkLoose();
+    expect(fake.looseStatus).not.toHaveBeenCalled();
+  });
+
+  it("takes a file out of the list without deleting it, and asks first when text of it was not saved", async () => {
+    addNote("a.md", "# A\n");
+    addFile(FILE, "# Proposal\n", { unsaved: true });
+    openName = "a.md";
+    await start();
+    platform.askYesNo.mockResolvedValue(false);
+    await notes.removeFile(FILE);
+    expect(fake.removeLooseFile).not.toHaveBeenCalled();
+    platform.askYesNo.mockResolvedValue(true);
+    await notes.removeFile(FILE);
+    expect(fake.removeLooseFile).toHaveBeenCalledWith(FILE);
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
+  });
+
+  it("takes a file out of the list, and deletes nothing, when Delete is pressed on it", async () => {
+    addNote("a.md", "# A\n");
+    addFile(FILE, "# Proposal\n");
+    openName = "a.md";
+    await start();
+    await notes.deleteNotes([FILE]);
+    expect(fake.removeLooseFile).toHaveBeenCalledWith(FILE);
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
+  });
+
+  it("opens the file that a launch or another window carries", async () => {
+    addNote("a.md", "# A\n");
+    addFile(FILE, "# Proposal\n");
+    fake.openLooseFile.mockResolvedValue({ kind: "file", path: FILE });
+    request = { newNote: false, open: null, openFile: "C:/Users/ana/Downloads/proposal.md" };
+    await start();
+    expect(fake.openLooseFile).toHaveBeenCalledWith("C:/Users/ana/Downloads/proposal.md");
+    expect(notes.current).toBe(FILE);
+    // and while it runs
+    await notes.handleRequest({ newNote: false, open: null, openFile: "D:/more.md" });
+    expect(fake.openLooseFile).toHaveBeenCalledWith("D:/more.md");
+  });
+
+  it("says why a file could not be opened and goes on to what it would have shown", async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    fake.openLooseFile.mockRejectedValue({ kind: "binaryFile", message: "x", subject: "x.png" });
+    request = { newNote: false, open: null, openFile: "C:/x.png" };
+    await start();
+    expect(notes.current).toBe("a.md");
+    expect(toast.current).toMatchObject({ type: "message", tone: "warn" });
+  });
+
+  it("shows a file that is not there as such, and its kept text can be saved as a note", async () => {
+    addFile(FILE, "", { missing: true, unsaved: true });
+    fake.loadPending.mockResolvedValue({
+      path: "C:/Users/ana/Downloads/proposal.md",
+      baseHash: "h",
+      text: "what I typed",
+      savedMs: 5,
+    });
+    openName = FILE;
+    await start();
+    expect(notes.currentMissing).toBe(true);
+    expect(edit.active).toBe(false);
+    expect(notes.looseNotice?.kind).toBe("missing");
+    expect(notes.missingKept?.text).toBe("what I typed");
+
+    addNote("proposal (my edits).md", "what I typed");
+    fake.keepEditsAsNote.mockResolvedValue("proposal (my edits).md");
+    await notes.saveMissingAsNote();
+    expect(fake.keepEditsAsNote).toHaveBeenCalledWith(FILE, "what I typed");
+    expect(notes.current).toBe("proposal (my edits).md");
+  });
+
+  it("writes a file that is not there again, with the text kept for it", async () => {
+    addFile(FILE, "", { missing: true, unsaved: true });
+    fake.loadPending.mockResolvedValue({
+      path: "C:/Users/ana/Downloads/proposal.md",
+      baseHash: "h",
+      text: "what I typed",
+      savedMs: 5,
+    });
+    // the file is written again: it is there, and nothing is kept for it any more
+    fake.createDocument.mockImplementation(async () => {
+      list = list.map((n) => ({ ...n, missing: false, unsaved: false }));
+      disk.set(FILE, { text: "what I typed", hash: "h-new" });
+      fake.loadPending.mockResolvedValue(null);
+      return { path: FILE, hash: "h-new", modifiedMs: NOW };
+    });
+    openName = FILE;
+    await start();
+    await notes.saveMissingAgain();
+    expect(fake.createDocument).toHaveBeenCalledWith(FILE, "what I typed");
+    expect(notes.missingKept).toBeNull();
+    expect(notes.looseNotice).toBeNull();
+  });
+
+  it("edits a plain text file in Source only", async () => {
+    typedInto(OTHER, "buy milk\nand eggs", { view: { mode: "visual", caret: null, scroll: null } });
+    openName = OTHER;
+    await start();
+    expect(edit.active).toBe(true);
+    expect(edit.mode).toBe("source");
+    expect(edit.sourceOnly).toBe(true);
+    expect(edit.blocked).toBeNull();
+    expect(await edit.switchTo("visual")).toBe(false);
+  });
+
+  it("keeps a pin on a file like a note's", async () => {
+    addFile(FILE, "# Proposal\n", { pinned: true });
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    expect(notes.arrangement(NOW).pinned.map((n) => n.path)).toEqual([FILE]);
+    expect(notes.order(NOW)).toEqual([FILE, "a.md"]);
+    await notes.togglePin(FILE);
+    expect(fake.setNotePinned).toHaveBeenCalledWith(FILE, false);
+  });
+
+  it("copies the text of a file, and offers nothing to delete: the file is not ours", async () => {
+    addFile(FILE, "# Proposal\ntext\n");
+    openName = FILE;
+    await start();
+    await notes.copyNote();
+    expect(platform.copyText).toHaveBeenCalledWith("# Proposal\ntext\n");
+    expect(fake.markNoteCopied).not.toHaveBeenCalled();
+    expect(toast.current).toMatchObject({ type: "message" });
+    expect(
+      toast.current && "action" in toast.current ? toast.current.action : undefined,
+    ).toBeUndefined();
   });
 });

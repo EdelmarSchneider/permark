@@ -149,6 +149,32 @@
   color: var(--faint);
   font-size: var(--fs-ui-sm);
 }
+/* a loose file shows the folder it is in; one that is not there is dimmed and says so */
+.note-row__folder {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.note-row.is-missing .note-row__title {
+  color: var(--muted);
+  font-weight: 400;
+}
+.note-row.is-missing .note-row__button {
+  opacity: 0.75;
+}
+/* text typed into a loose file and not saved */
+.note-row__unsaved,
+.notes-header__unsaved {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+}
+.note-row__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 
 /* ---- header ------------------------------------------------------------------------------ */
 .notes-header__title {
@@ -193,6 +219,12 @@
   display: grid;
   place-items: center;
   background: var(--bg);
+}
+/* a loose file that is not there: in the flow under the header and the bar that says what can be done */
+.notes-missing {
+  flex: 1;
+  display: grid;
+  place-items: center;
 }
 .notes-problem {
   display: grid;

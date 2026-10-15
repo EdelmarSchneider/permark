@@ -84,7 +84,8 @@ const canEdit = (ctx: CommandContext): boolean => ctx.hasDoc || ctx.editing;
  */
 export const COMMANDS: readonly Command[] = [
   { id: "openFolder", label: "cmd.openFolder", shortcut: "Ctrl+O", available: notInNotes },
-  { id: "openFile", label: "cmd.openFile", shortcut: "Ctrl+Shift+O", available: notInNotes },
+  // a file opened in the Notes window is listed under Files (or is the note it is)
+  { id: "openFile", label: "cmd.openFile", shortcut: "Ctrl+Shift+O" },
   { id: "quickOpen", label: "cmd.quickOpen", shortcut: "Ctrl+P", available: inFolder },
   { id: "searchAll", label: "cmd.searchAll", shortcut: "Ctrl+Shift+F", available: inFolder },
   { id: "nextUnread", label: "cmd.nextUnread", shortcut: "Alt+U", available: inProject },

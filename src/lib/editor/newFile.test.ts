@@ -115,6 +115,11 @@ describe("editBlock", () => {
       "encoding",
     );
     expect(editBlock(null)).toBeNull();
+    // the Notes window edits the plain text files it lists, and still refuses the other kinds and odd encodings
+    expect(editBlock({ kind: "text", encodingNote: null }, true)).toBeNull();
+    expect(editBlock({ kind: "text", encodingNote: "invalidUtf8" }, true)).toBe("encoding");
+    expect(editBlock({ kind: "json", encodingNote: null }, true)).toBe("nonMarkdown");
+    expect(editBlock({ kind: "text", encodingNote: null }, false)).toBe("nonMarkdown");
   });
 
   it("maps the backend's error kinds to the same reasons", () => {

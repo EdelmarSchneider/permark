@@ -127,7 +127,6 @@ describe("the notes", () => {
       "initProject",
       "newFile",
       "openFolder",
-      "openFile",
       "copyReference",
       "copyPath",
       "openExternal",
@@ -136,9 +135,16 @@ describe("the notes", () => {
     ]) {
       expect(ids, projectOnly).not.toContain(projectOnly);
     }
-    // what a note shares with a document stays: searching the notes, editing, the list, the zoom
+    // what a note shares with a document stays: searching the notes, editing, the list, the zoom; and a file can be opened
     expect(ids).toEqual(
-      expect.arrayContaining(["quickOpen", "searchAll", "toggleLeft", "toggleEdit", "zoomIn"]),
+      expect.arrayContaining([
+        "quickOpen",
+        "searchAll",
+        "toggleLeft",
+        "toggleEdit",
+        "zoomIn",
+        "openFile",
+      ]),
     );
     // and a project window still has them all
     expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, hasRepo: true }))).toEqual(

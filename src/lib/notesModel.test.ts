@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   arrange,
+  drawnOrder,
   dropPinned,
   filterNotes,
   groupOf,
@@ -78,7 +79,38 @@ describe("arrange", () => {
   });
 
   it("leaves out the groups with nothing in them", () => {
-    expect(arrange([], NOW)).toEqual({ pinned: [], groups: [] });
+    expect(arrange([], NOW)).toEqual({ pinned: [], groups: [], files: [] });
+  });
+
+  it("puts the loose files after the groups, as given, and the pinned ones among the pinned rows", () => {
+    const file = (path: string, extra: Partial<NoteEntry> = {}): NoteEntry =>
+      note(path, 0, { kind: "file", title: path, folder: "~\\Downloads", ...extra });
+    const mixed = [
+      file("@file/00000001/opened-last.md"),
+      note("today.md", at(2026, 10, 15, 8)),
+      file("@file/00000002/sticky.md", { pinned: true }),
+      file("@file/00000003/opened-first.md"),
+      note("sticky-note.md", at(2026, 3, 1), { pinned: true }),
+    ];
+    const arranged = arrange(mixed, NOW);
+    expect(arranged.pinned.map((n) => n.path)).toEqual([
+      "@file/00000002/sticky.md",
+      "sticky-note.md",
+    ]);
+    expect(arranged.groups.map((g) => g.notes.map((n) => n.path))).toEqual([["today.md"]]);
+    expect(arranged.files.map((n) => n.path)).toEqual([
+      "@file/00000001/opened-last.md",
+      "@file/00000003/opened-first.md",
+    ]);
+    expect(drawnOrder(arranged).map((n) => n.path)).toEqual([
+      "@file/00000002/sticky.md",
+      "sticky-note.md",
+      "today.md",
+      "@file/00000001/opened-last.md",
+      "@file/00000003/opened-first.md",
+    ]);
+    // a file's time of last change does not group it
+    expect(arrange([file("@file/00000004/x.md", { modifiedMs: NOW })], NOW).groups).toEqual([]);
   });
 
   it("keeps the note being edited where it was until it is left", () => {
@@ -101,6 +133,17 @@ describe("arrange", () => {
 });
 
 describe("the filter", () => {
+  it("finds a loose file by its name or by the folder it is in", () => {
+    const file = note("@file/0a1b2c3d/proposal.md", 0, {
+      kind: "file",
+      title: "proposal.md",
+      folder: "~\\Downloads",
+    });
+    expect(matchesFilter(file, "proposal")).toBe(true);
+    expect(matchesFilter(file, "downloads")).toBe(true);
+    expect(matchesFilter(file, "archive")).toBe(false);
+  });
+
   const a = note("a.md", NOW, { title: "Server IPs and ports", snippet: "api 10.0.0.4 db" });
   const b = note("b.md", NOW, { title: "Weekly checklist", snippet: "backups, patches" });
 

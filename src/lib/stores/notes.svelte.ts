@@ -5,9 +5,11 @@
 import { api } from "../api";
 import { errorKind, errorMessage } from "../errors";
 import { t, tn } from "../i18n";
+import { isLoosePath, isPlainTextName } from "../looseFile";
 import { countWords, isBlank } from "../noteText";
 import {
   arrange,
+  drawnOrder,
   dropPinned,
   filterNotes,
   movePinned,
@@ -16,8 +18,16 @@ import {
   type ArrangedNotes,
   type Frozen,
 } from "../notesModel";
-import { askYesNo, copyText, guardWindowClose, setWindowTitle } from "../platform";
+import {
+  askYesNo,
+  copyText,
+  guardWindowClose,
+  pickFile,
+  setWindowTitle,
+  watchFileDrop,
+} from "../platform";
 import type {
+  LooseStatus,
   NoteEntry,
   NoteMode,
   NoteVersion,
@@ -25,6 +35,7 @@ import type {
   NotesFolder,
   NotesReadOnly,
   NotesRequest,
+  PendingEdits,
 } from "../types";
 import { bridge } from "../bridge";
 import { docs } from "./docs.svelte";
@@ -35,6 +46,18 @@ import { vault } from "./vault.svelte";
 
 /** The list is asked for again this long after the files in the folder changed. */
 const REFRESH_DELAY_MS = 250;
+/** The loose files are looked at this often while the window is in front, and at once when it gets the focus. */
+const LOOSE_WATCH_MS = 2000;
+/** The setting that reloads a loose file that changed on disk when nothing was typed into it (off unless the person turns it on). */
+const AUTO_RELOAD_KEY = "trailmark.notes.autoReload";
+
+function readAutoReload(): boolean {
+  try {
+    return localStorage.getItem(AUTO_RELOAD_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 /** The text search behind the filter box waits for a pause in typing. */
 const SEARCH_DELAY_MS = 180;
 /** A new note starts in this editor. */
@@ -48,6 +71,17 @@ export type VersionsDialog = {
   text: string | null;
   loading: boolean;
   failed: string | null;
+};
+
+/**
+ * What the loose file on screen needs the person to decide: it changed on disk (what is shown stays until they choose), or it
+ * is not there any more.
+ */
+export type LooseNotice = {
+  path: string;
+  kind: "changed" | "missing";
+  /** How the file looked when this was found, so that "Keep mine" can be remembered for that version only. */
+  stamp: string;
 };
 
 class NotesStore {
@@ -76,9 +110,19 @@ class NotesStore {
   /** The word count and the length of the note as it was last saved or opened (the status bar). */
   words = $state(0);
   savedAtMs = $state<number | null>(null);
+  /** The loose file on screen changed on disk or is gone, and waits for the person's choice. */
+  looseNotice = $state.raw<LooseNotice | null>(null);
+  /** The loose file on screen is not there, so nothing is shown of it: the text kept for it (if any) is what can be saved. */
+  missingKept = $state.raw<PendingEdits | null>(null);
+  /** Reload a loose file that changed on disk by itself when nothing was typed into it (Settings, Notes). Off by default. */
+  autoReload = $state(readAutoReload());
 
   /** The note was blank when it was opened: if it still is when it is left, it was never written in. */
   private openedBlank = false;
+  /** The versions of loose files whose change the person chose to ignore ("Keep mine" while reading): path to stamp. */
+  private ignored = new Map<string, string>();
+  private looseTimer: ReturnType<typeof setInterval> | null = null;
+  private checkingLoose = false;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
   private searchToken = 0;
@@ -103,12 +147,15 @@ class NotesStore {
     this.current ? (this.entries.find((n) => n.path === this.current) ?? null) : null,
   );
 
-  /** The paths in the order the list draws them: the pinned ones, then each group. */
+  /** The open row is a loose file: a file of the disk that is not in the notes folder. */
+  isFile = $derived(this.currentEntry?.kind === "file" || isLoosePath(this.current));
+
+  /** The loose file on screen is not there: there is no text to show, only what to do about it. */
+  currentMissing = $derived(this.currentEntry?.kind === "file" && this.currentEntry.missing);
+
+  /** The paths in the order the list draws them: the pinned ones, each group, then the files. */
   order(now = Date.now()): string[] {
-    const arranged = this.arrangement(now);
-    return [...arranged.pinned, ...arranged.groups.flatMap((group) => group.notes)].map(
-      (n) => n.path,
-    );
+    return drawnOrder(this.arrangement(now)).map((n) => n.path);
   }
 
   arrangement(now: number): ArrangedNotes {
@@ -152,6 +199,9 @@ class NotesStore {
     this.renaming = false;
     this.words = 0;
     this.savedAtMs = null;
+    this.looseNotice = null;
+    this.missingKept = null;
+    this.ignored.clear();
     this.openedBlank = false;
     this.switching = false;
   }
@@ -212,6 +262,7 @@ class NotesStore {
 
   /** What to show first: what another window asked for, else the note this window was left on, else a new note. */
   private async restore(open: string | null, request: NotesRequest | null): Promise<void> {
+    if (request?.openFile && (await this.openFile(request.openFile))) return;
     if (request?.newNote) return this.newNote();
     if (request?.open && this.has(request.open)) return void (await this.openNote(request.open));
     if (open && this.has(open)) return void (await this.openNote(open));
@@ -226,11 +277,15 @@ class NotesStore {
   /** Window-wide listeners: what leaves the window flushes the note. Registered once. */
   private wire(): void {
     edit.autosave = true;
+    // a plain text file of the disk is edited here, in Source
+    edit.textFiles = (path) => isLoosePath(path) && isPlainTextName(path);
     edit.noteHooks = {
       written: (note) => this.written(note),
       renamed: (from, to) => this.renamedByTheSave(from, to),
       conflict: (copy) => this.keptAsCopy(copy),
       gone: (path) => void this.noteGone(path),
+      pending: (path, kept) => this.keptApart(path, kept),
+      looseConflict: (path, diskHash) => this.savedOverAnotherVersion(path, diskHash),
     };
     // Closing never asks: the note is saved first. The window has no per-edit guard, this one stays for good.
     void guardWindowClose(async () => {
@@ -238,9 +293,20 @@ class NotesStore {
       return edit.confirmLeave("close");
     });
     window.addEventListener("blur", () => void edit.flush());
+    window.addEventListener("focus", () => void this.checkLoose());
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") void edit.flush();
     });
+    // a file dropped on the window is opened: a loose file under Files (a note of the folder, as a note)
+    void watchFileDrop({
+      over: () => {},
+      leave: () => {},
+      drop: (paths) => void this.openFiles(paths),
+    });
+    // the loose files are looked at while the window is in front (and again at once when it comes back)
+    this.looseTimer = setInterval(() => {
+      if (document.visibilityState === "visible" && document.hasFocus()) void this.checkLoose();
+    }, LOOSE_WATCH_MS);
   }
 
   /** The window is closing: where the note was left is remembered with the note. */
@@ -364,6 +430,8 @@ class NotesStore {
     this.current = null;
     this.unborn = false;
     this.frozen = null;
+    this.looseNotice = null;
+    this.missingKept = null;
     // it moves up the list now that it is left
     void this.refresh();
     return true;
@@ -411,6 +479,7 @@ class NotesStore {
   /** Shows a note in the editor it was left in. A new note (`fresh`) has no file yet and starts in Visual with the caret ready. */
   private async show(path: string, fresh: boolean): Promise<boolean> {
     const entry = this.entries.find((n) => n.path === path) ?? null;
+    if (entry?.kind === "file") return this.showFile(path, entry);
     const view = entry?.view ?? null;
     const mode: NoteMode = fresh ? NEW_NOTE_MODE : (view?.mode ?? "visual");
     this.current = path;
@@ -438,6 +507,55 @@ class NotesStore {
       await edit.enter(fresh, mode, at);
     }
     if (!fresh) this.words = await this.wordsOf(path);
+    return true;
+  }
+
+  /**
+   * Shows a loose file. It opens in Read, and is never written on its own. When text was typed into it and not saved (kept
+   * apart from it), it opens in the editor with that text and the "unsaved" mark. A file that is not there shows what can be done.
+   */
+  private async showFile(path: string, entry: NoteEntry): Promise<boolean> {
+    const view = entry.view;
+    this.current = path;
+    this.unborn = false;
+    this.openedBlank = false;
+    this.frozen = null;
+    this.looseNotice = null;
+    this.missingKept = null;
+    this.words = 0;
+    this.savedAtMs = null;
+    const kept = entry.unsaved ? await api.loadPending(path).catch(() => null) : null;
+    if (entry.missing) {
+      // nothing to read: the text that was kept (if any) can still be saved as a note or written again
+      docs.reset();
+      this.missingKept = kept;
+      this.looseNotice = { path, kind: "missing", stamp: "" };
+      void api.noteOpened(path).catch(() => {});
+      return true;
+    }
+    const opened = await docs.open(path, {
+      locate:
+        !kept && view?.mode === "read" && view.scroll != null
+          ? { line: view.scroll + 1, find: null, tint: false, align: "top" }
+          : null,
+    });
+    if (!opened) {
+      this.current = null;
+      return false;
+    }
+    void api.noteOpened(path).catch(() => {});
+    if (kept && !this.readOnly) {
+      // back to the editor the text was typed in, over the file as it is now
+      const mode: NoteMode = view?.mode && view.mode !== "read" ? view.mode : "visual";
+      const at =
+        view?.caret != null ? { caret: view.caret, top: view.scroll ?? view.caret } : undefined;
+      await edit.enter(false, mode, at, kept);
+      // the file is not the version the text was typed over: that is the person's to decide
+      if (edit.active && edit.diskHash !== null && edit.diskHash !== kept.baseHash) {
+        this.looseNotice = { path, kind: "changed", stamp: "" };
+      }
+    }
+    this.words = await this.wordsOf(path);
     return true;
   }
 
@@ -485,6 +603,7 @@ class NotesStore {
   /** Another window or launch asked for something: a new note, a note, or just to be shown (the window is up already). */
   async handleRequest(request: NotesRequest | null): Promise<void> {
     if (this.phase !== "ready" || !request) return;
+    if (request.openFile && (await this.openFile(request.openFile))) return;
     if (request.newNote) await this.newNote();
     else if (request.open && this.has(request.open)) await this.openNote(request.open);
     else this.focusList();
@@ -549,6 +668,288 @@ class NotesStore {
     await this.refresh();
     toast.message(t("notes.gone"), "info");
     await this.openNeighbourOrNew(path);
+  }
+
+  // ---- loose files ---------------------------------------------------------------------------------
+
+  /** Opens a file of the disk: a note when it is one of the notes folder, else a loose file under Files. Resolves to whether it opened. */
+  async openFile(path: string): Promise<boolean> {
+    if (this.phase !== "ready") return false;
+    if (this.guardWrite()) return false;
+    let opened;
+    try {
+      opened = await api.openLooseFile(path);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+      return false;
+    }
+    this.filter = "";
+    this.found = null;
+    await this.refresh();
+    return this.openNote(opened.path);
+  }
+
+  /** Files were dropped on the window: each is opened, the last one stays on screen. */
+  async openFiles(paths: readonly string[]): Promise<void> {
+    for (const path of paths) await this.openFile(path);
+  }
+
+  /** `Ctrl+Shift+O` and "Open file...": the person picks a file. */
+  async chooseFile(): Promise<void> {
+    try {
+      const path = await pickFile();
+      if (path) await this.openFile(path);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+    }
+  }
+
+  /** Text typed into a loose file is kept apart from it, or nothing is kept any more (the row says "unsaved"). */
+  private keptApart(path: string, kept: boolean): void {
+    this.entries = this.entries.map((n) => (n.path === path ? { ...n, unsaved: kept } : n));
+  }
+
+  /**
+   * Looks at every loose file: which are not there (the list dims them), which were found again under another name in their
+   * folder, and whether the one on screen changed or is gone. What is on screen is never replaced: the person decides.
+   */
+  async checkLoose(): Promise<void> {
+    if (
+      this.phase !== "ready" ||
+      this.checkingLoose ||
+      !this.entries.some((n) => n.kind === "file")
+    ) {
+      return;
+    }
+    this.checkingLoose = true;
+    let statuses: LooseStatus[];
+    try {
+      statuses = await api.looseStatus();
+    } catch {
+      return;
+    } finally {
+      this.checkingLoose = false;
+    }
+    this.applyLoose(statuses);
+  }
+
+  private applyLoose(statuses: readonly LooseStatus[]): void {
+    const renamed = statuses.filter((s) => s.was !== null);
+    for (const status of renamed) if (status.was) this.followRename(status.was, status.path);
+    const missing = new Map(statuses.map((s) => [s.path, s.state === "missing"]));
+    const flips = (n: NoteEntry): boolean =>
+      n.kind === "file" && missing.has(n.path) && missing.get(n.path) !== n.missing;
+    if (renamed.length > 0) void this.refresh();
+    else if (this.entries.some(flips)) {
+      // the list dims the files that are gone, and shows the ones that came back
+      this.entries = this.entries.map((n) =>
+        flips(n) ? { ...n, missing: missing.get(n.path) ?? n.missing } : n,
+      );
+    }
+    const path = this.current;
+    const status = path ? statuses.find((s) => s.path === path) : undefined;
+    if (!path || !status) return;
+    const notice = this.looseNotice;
+    if (status.state === "missing") {
+      if (notice?.kind !== "missing") this.looseNotice = { path, kind: "missing", stamp: "" };
+    } else if (notice?.kind === "missing" && this.currentEntry?.missing === false) {
+      // it is back
+      this.looseNotice = null;
+    }
+    if (status.state === "changed" && this.ignored.get(path) !== status.stamp) {
+      if (!notice || notice.kind !== "changed") {
+        this.looseNotice = { path, kind: "changed", stamp: status.stamp };
+        // the setting reloads a file nothing was typed into, without asking; one with text typed into it always asks
+        if (this.autoReload && !(edit.active && edit.dirty)) void this.reloadFile();
+      }
+    }
+  }
+
+  /** Turns on or off the reloading of a loose file that changed on disk when nothing was typed into it. */
+  setAutoReload(on: boolean): void {
+    this.autoReload = on;
+    try {
+      localStorage.setItem(AUTO_RELOAD_KEY, on ? "1" : "0");
+    } catch {
+      // the choice holds for this run
+    }
+  }
+
+  /** The file on screen was found under another name: the window follows it. */
+  private followRename(from: string, to: string): void {
+    if (this.current !== from) return;
+    this.current = to;
+    if (this.frozen) this.frozen = { ...this.frozen, path: to };
+    if (this.looseNotice) this.looseNotice = { ...this.looseNotice, path: to };
+    const moves = [{ from, to }];
+    edit.followMoves(moves);
+    void docs.followMoves(moves);
+  }
+
+  /** A save of the open loose file found it is not the version the person started from: nothing was written. */
+  private savedOverAnotherVersion(path: string, diskHash: string | null): void {
+    if (this.current !== path) return;
+    this.looseNotice = { path, kind: diskHash === null ? "missing" : "changed", stamp: "" };
+  }
+
+  /**
+   * "Reload": the file's own version replaces what is shown. Text typed into it and not saved is kept first, as a note named
+   * "{name} (my edits)", so that nothing typed is lost.
+   */
+  async reloadFile(): Promise<void> {
+    const notice = this.looseNotice;
+    const path = this.current;
+    if (!notice || !path || notice.kind !== "changed") return;
+    if (edit.active && edit.dirty) {
+      try {
+        const note = await api.keepEditsAsNote(path, edit.exactText());
+        toast.message(t("notes.file.editsKept", { name: note }), "info");
+      } catch (error) {
+        toast.message(errorMessage(error), "warn");
+        return;
+      }
+    }
+    this.looseNotice = null;
+    this.ignored.delete(path);
+    if (edit.active) await edit.reloadTheirs(true);
+    else await docs.refresh();
+    this.words = await this.wordsOf(path);
+    await this.refresh();
+  }
+
+  /**
+   * "Keep mine": what is shown stays. It is not written now: the next save of the file asks once more before it replaces the
+   * version on disk. While only reading, the change is simply left alone (until the file changes again).
+   */
+  async keepMine(): Promise<void> {
+    const notice = this.looseNotice;
+    const path = this.current;
+    if (!notice || !path || notice.kind !== "changed") return;
+    this.looseNotice = null;
+    if (edit.active) {
+      try {
+        // reading it is what makes it the version that is overwritten, with the person's say
+        const source = await api.documentSource(path);
+        edit.keepMineOver(source.hash);
+      } catch (error) {
+        toast.message(errorMessage(error), "warn");
+        this.looseNotice = notice;
+      }
+      return;
+    }
+    if (notice.stamp !== "") this.ignored.set(path, notice.stamp);
+  }
+
+  /** Takes a file out of the list; the file itself is not touched. Text typed into it and not saved asks first. */
+  async removeFile(path: string): Promise<void> {
+    if (this.guardWrite()) return;
+    const entry = this.entries.find((n) => n.path === path && n.kind === "file");
+    if (!entry) return;
+    if (entry.unsaved || (path === this.current && edit.active && edit.dirty)) {
+      const question = t("notes.file.removeUnsaved", { name: entry.title });
+      if (!(await askYesNo(question, t("notes.file.remove"), t("common.cancel")))) return;
+    }
+    const wasOpen = this.current === path;
+    const next = wasOpen ? this.nextAfter([path]) : null;
+    if (wasOpen) {
+      edit.abandon();
+      this.current = null;
+      this.looseNotice = null;
+      this.missingKept = null;
+      docs.reset();
+    }
+    try {
+      await api.removeLooseFile(path);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+      await this.refresh();
+      return;
+    }
+    this.ignored.delete(path);
+    await this.refresh();
+    toast.message(t("notes.file.removed", { name: entry.title }), "info");
+    if (wasOpen) await this.openNeighbourOrNew(next);
+  }
+
+  /** "Locate...": the person picks the file this one became. */
+  async locateFile(path: string): Promise<void> {
+    if (this.guardWrite()) return;
+    let picked: string | null;
+    try {
+      picked = await pickFile();
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+      return;
+    }
+    if (!picked) return;
+    try {
+      const opened = await api.locateLooseFile(path, picked);
+      await this.refresh();
+      if (this.current === path) {
+        this.current = null;
+        this.looseNotice = null;
+        this.missingKept = null;
+      }
+      await this.openNote(opened.path);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+    }
+  }
+
+  /** "Show in folder": the file in the system's file manager. */
+  async revealFile(path: string): Promise<void> {
+    try {
+      await api.revealInFolder(path);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+    }
+  }
+
+  /** The text of the loose file that is not there: what is being edited, else what was kept for it. */
+  private textOfMissing(): string | null {
+    if (edit.active) return edit.exactText();
+    return this.missingKept?.text ?? null;
+  }
+
+  /** "Save as note": the text of a file that is gone becomes a note, "{name} (my edits)". */
+  async saveMissingAsNote(): Promise<void> {
+    const path = this.current;
+    const text = this.textOfMissing();
+    if (!path || text === null || this.guardWrite()) return;
+    try {
+      const note = await api.keepEditsAsNote(path, text);
+      await this.refresh();
+      toast.message(t("notes.file.editsKept", { name: note }), "info");
+      await this.openNote(note);
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+    }
+  }
+
+  /** "Save it again": the file that is gone is written where it was, with the text typed into it. */
+  async saveMissingAgain(): Promise<void> {
+    const path = this.current;
+    if (!path || this.guardWrite()) return;
+    if (edit.active) {
+      await edit.saveAsNew();
+    } else {
+      const text = this.missingKept?.text;
+      if (text === undefined) return;
+      try {
+        await api.createDocument(path, text);
+      } catch (error) {
+        toast.message(errorMessage(error), "warn");
+        return;
+      }
+    }
+    this.looseNotice = null;
+    this.missingKept = null;
+    await this.refresh();
+    // shown again as the file it is
+    if (!edit.active) {
+      this.current = null;
+      await this.openNote(path);
+    }
   }
 
   // ---- pinning -------------------------------------------------------------------------------------
@@ -656,7 +1057,8 @@ class NotesStore {
       return;
     }
     const length = Array.from(text).length;
-    const entry = this.entries.find((n) => n.path === path);
+    // only notes are marked as copied and offered for deleting: a loose file is somebody's file
+    const entry = this.entries.find((n) => n.path === path && n.kind === "note");
     if (entry) {
       void api
         .markNoteCopied(path)
@@ -680,7 +1082,10 @@ class NotesStore {
   /** Deletes notes (to the recycle bin), with Undo in the toast. A pinned note asks first. */
   async deleteNotes(paths: string[]): Promise<void> {
     if (this.guardWrite()) return;
-    const known = paths.filter((p) => this.entries.some((n) => n.path === p));
+    // a loose file is taken out of the list, not deleted: the file is not ours
+    const files = paths.filter((p) => this.entries.some((n) => n.path === p && n.kind === "file"));
+    for (const file of files) await this.removeFile(file);
+    const known = paths.filter((p) => !files.includes(p) && this.entries.some((n) => n.path === p));
     if (known.length === 0) return;
     const pinned = this.entries.filter((n) => known.includes(n.path) && n.pinned);
     if (pinned.length > 0) {
