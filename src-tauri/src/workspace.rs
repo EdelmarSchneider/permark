@@ -354,10 +354,7 @@ fn agent_bridge(
         }),
         Arc::new(AgentSink(Arc::clone(sink))),
     );
-    let wanted = !vault.is_shallow()
-        && store
-            .load_session()
-            .is_some_and(|session| session.agent_connection);
+    let wanted = !vault.is_shallow() && store.agent_connection();
     (bridge, wanted)
 }
 
@@ -1026,13 +1023,15 @@ impl Workspace {
     // ---- agent connection -----------------------------------------------------------------------
 
     /// Turns the agent connection of this folder on or off: while it is on, an agent can ask this window what the
-    /// person is looking at. The setting itself is saved with the rest of the session by the UI. A single file
+    /// person is looking at. The switch is remembered first, in the app's own data (the programs that talk to the
+    /// window read it there, and nothing in the project can change it); if that fails nothing changes. A single file
     /// (Simple mode) is no project, so it never connects.
-    pub fn set_agent_connection(&self, enabled: bool) -> AgentStatus {
+    pub fn set_agent_connection(&self, enabled: bool) -> Result<AgentStatus, AppError> {
         if self.vault.is_shallow() {
-            return self.agent.status();
+            return Ok(self.agent.status());
         }
-        self.agent.set_enabled(enabled)
+        self.lock_store()?.set_agent_connection(enabled)?;
+        Ok(self.agent.set_enabled(enabled))
     }
 
     pub fn agent_status(&self) -> AgentStatus {
@@ -1965,6 +1964,78 @@ deepword
             .any(|c| c.path.contains("local") || c.path.contains("cache"));
         assert!(!leaked);
         ws.close();
+    }
+
+    /// The folder's own files are not the person's choice: a repository can carry a `.trailmark/` folder with any
+    /// content, and opening it must not share the person's reading with an agent.
+    #[test]
+    fn a_project_that_says_the_agent_connection_is_on_does_not_turn_it_on() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        write(
+            fx.project.path(),
+            ".trailmark/local/session.json",
+            r#"{"agentConnection": true}"#,
+        );
+        write(
+            fx.project.path(),
+            ".trailmark/local/agent-connection.json",
+            r#"{"enabled": true}"#,
+        );
+        let ws = fx.open();
+        assert!(!ws.agent_wanted, "nothing in the project turns it on");
+        ws.activate();
+        let status = ws.agent_status();
+        assert!(!status.enabled && !status.listening, "{status:?}");
+        assert!(
+            !fx.project
+                .path()
+                .join(".trailmark/local/agent.json")
+                .exists(),
+            "no context is written"
+        );
+        ws.close();
+    }
+
+    #[test]
+    fn the_agent_connection_is_the_persons_choice_and_is_remembered_by_the_app() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let ws = fx.open();
+        assert!(!ws.agent_wanted);
+        let status = ws.set_agent_connection(true).expect("on");
+        assert!(status.enabled, "{status:?}");
+        ws.close();
+
+        // opened again, it is on without anything in the project saying so
+        let ws = fx.open();
+        assert!(ws.agent_wanted, "remembered in the app's data");
+        assert!(!fx.project.path().join(".trailmark").exists());
+        assert!(!ws.set_agent_connection(false).expect("off").enabled);
+        ws.close();
+        let ws = fx.open();
+        assert!(!ws.agent_wanted);
+        ws.close();
+    }
+
+    /// Whether the app kept an agent connection switch anywhere in `dir`.
+    fn remembered(dir: &Path) -> bool {
+        std::fs::read_dir(dir).is_ok_and(|entries| {
+            entries.filter_map(Result::ok).any(|entry| {
+                entry.file_name() == "agent-connection.json" || remembered(&entry.path())
+            })
+        })
+    }
+
+    #[test]
+    fn a_single_file_never_connects_and_remembers_nothing() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let ws = fx.open_path(&fx.project.path().join("a.md"));
+        let status = ws.set_agent_connection(true).expect("answers");
+        assert!(!status.enabled);
+        ws.close();
+        assert!(!remembered(fx.app.path()));
     }
 
     fn new_note(path: &str, quote: &str, text: &str) -> NewNote {

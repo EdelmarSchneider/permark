@@ -722,15 +722,15 @@ pub async fn delete_note(state: State<'_, AppState>, id: String) -> Result<(), A
     blocking(move || ws.delete_note(&id)).await
 }
 
-/// Turns the agent connection of the open folder on or off (the setting itself is saved with the session). Never fails
-/// for a connection that cannot start: the status says why.
+/// Turns the agent connection of the open folder on or off and remembers the switch in the app's own data. Does not
+/// fail for a connection that cannot start: the status says why.
 #[tauri::command]
 pub async fn set_agent_connection(
     state: State<'_, AppState>,
     enabled: bool,
 ) -> Result<AgentStatus, AppError> {
     let ws = state.current()?;
-    blocking(move || Ok(ws.set_agent_connection(enabled))).await
+    blocking(move || ws.set_agent_connection(enabled)).await
 }
 
 /// The state of the agent connection: on or off, whether an agent is connected, and its latest requests.

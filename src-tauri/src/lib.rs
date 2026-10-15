@@ -37,6 +37,31 @@ mod watch;
 mod window;
 mod workspace;
 
+/// What the integration tests need to run the real program without a window against a data folder of their own.
+/// Not part of the program's interface.
+#[doc(hidden)]
+pub mod test_support {
+    use std::path::Path;
+
+    /// The environment variable that points a debug build of the program at another data folder.
+    pub const DATA_DIR_VARIABLE: &str = crate::bridge::project::TEST_DATA_DIR_VARIABLE;
+
+    /// Remembers, in the data folder `app_data_dir`, that the person turned the agent connection of `project` on or off.
+    ///
+    /// # Errors
+    ///
+    /// The reason the switch could not be written.
+    pub fn set_agent_connection(
+        app_data_dir: &Path,
+        project: &Path,
+        on: bool,
+    ) -> Result<(), String> {
+        crate::session::StateStore::open(app_data_dir, project)
+            .set_agent_connection(on)
+            .map_err(|error| error.to_string())
+    }
+}
+
 use tauri::plugin::{Builder as PluginBuilder, TauriPlugin};
 use tauri::{Manager, RunEvent, Url, WindowEvent, Wry};
 

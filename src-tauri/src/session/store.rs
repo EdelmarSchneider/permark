@@ -16,6 +16,8 @@ const READ_FILE: &str = "read.json";
 const NOTES_FILE: &str = "notes.json";
 const AGENT_FILE: &str = "agent.json";
 const META_FILE: &str = "meta.toml";
+/// The agent connection's switch, in the project's folder in AppData (see [`StateStore::agent_connection`]).
+const CONNECTION_FILE: &str = "agent-connection.json";
 const TRAILMARK_DIR: &str = ".trailmark";
 const PROJECT_GITIGNORE: &str = "\
 # TrailMark private state: not shared.
@@ -49,6 +51,12 @@ pub struct LastVisit {
     /// of the app have none.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub dirty: BTreeMap<String, FileStamp>,
+}
+
+/// The agent connection's switch as it is kept.
+#[derive(Serialize, Deserialize)]
+struct ConnectionSwitch {
+    enabled: bool,
 }
 
 #[derive(Debug)]
@@ -142,6 +150,30 @@ impl StateStore {
     /// folder existed may still be in it, and have to be merged into the project's file.
     pub fn legacy_meta_path(&self) -> Option<PathBuf> {
         (self.location == StateLocation::Project).then(|| self.appdata_dir.join(META_FILE))
+    }
+
+    /// Whether the person turned the agent connection on for this project.
+    ///
+    /// The switch lives only in the app's own data folder, never in the project: a project's files are content that
+    /// somebody else may have written (a cloned repository can carry a `.trailmark/` folder), and what they say must
+    /// not be able to share the person's reading with an agent. Nothing in `.trailmark/` is read for it.
+    pub fn agent_connection(&self) -> bool {
+        std::fs::read(self.appdata_dir.join(CONNECTION_FILE))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<ConnectionSwitch>(&bytes).ok())
+            .is_some_and(|switch| switch.enabled)
+    }
+
+    /// Remembers the switch of the agent connection (see [`StateStore::agent_connection`]). Turning it off for a
+    /// project that never had it on writes nothing.
+    pub fn set_agent_connection(&self, enabled: bool) -> Result<(), SessionError> {
+        let path = self.appdata_dir.join(CONNECTION_FILE);
+        if !enabled && !path.exists() {
+            return Ok(());
+        }
+        let bytes = serde_json::to_vec(&ConnectionSwitch { enabled })
+            .map_err(|e| SessionError::Json(e.to_string()))?;
+        write_atomic(&path, &bytes).map_err(|e| SessionError::io(&path, e))
     }
 
     /// Project settings from `.trailmark/config.toml`; defaults when missing or invalid.

@@ -528,7 +528,7 @@ mod tests {
     use crate::bridge::service::AgentBridge;
     use crate::notes::{NewNote, NoteFilter, Notebook};
     use crate::search::SearchHit;
-    use crate::session::{SessionState, StateStore};
+    use crate::session::StateStore;
     use crate::vault::Vault;
 
     struct Fx {
@@ -582,11 +582,8 @@ mod tests {
     impl Fx {
         fn set_connection(&self, on: bool) {
             StateStore::open(self.app.path(), &self.root)
-                .save_session(&SessionState {
-                    agent_connection: on,
-                    ..SessionState::default()
-                })
-                .expect("save the session");
+                .set_agent_connection(on)
+                .expect("remember the switch");
         }
 
         fn core(&self, launcher: Launcher) -> Core {
@@ -649,6 +646,31 @@ mod tests {
             .as_str()
             .expect("a message")
             .contains("not been used"));
+    }
+
+    /// A folder that was never opened in TrailMark, with a `.trailmark/` folder that says the connection is on (a
+    /// repository can carry one): nothing is shared, and the answer is the same as for any project that is off.
+    #[tokio::test]
+    async fn what_a_project_folder_says_about_the_connection_does_not_count() {
+        let fx = fx();
+        let local = fx.root.join(".trailmark").join("local");
+        std::fs::create_dir_all(&local).expect("mkdir");
+        std::fs::write(local.join("session.json"), r#"{"agentConnection": true}"#).expect("write");
+        std::fs::write(local.join("agent-connection.json"), r#"{"enabled": true}"#).expect("write");
+        let core = fx.core(no_launch());
+        for answer in [
+            core.get_context().await,
+            core.list_unread().await,
+            core.search("beacon", None).await,
+            core.list_notes(None).await,
+            core.resolve_note("n1", None).await,
+            core.open("README.md", None, None).await,
+        ] {
+            assert_eq!(status(&answer), "off", "{answer:?}");
+        }
+        // the person's own switch is what turns it on
+        fx.set_connection(true);
+        assert_eq!(status(&core.get_context().await), "notOpen");
     }
 
     #[tokio::test]
