@@ -8,6 +8,7 @@ use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 use crate::edit::EditError;
+use crate::external_editor::EditorError;
 use crate::fileops::FileOpError;
 use crate::git::GitError;
 use crate::meta::MetaError;
@@ -37,6 +38,8 @@ pub enum AppError {
     FileOps(#[from] FileOpError),
     #[error(transparent)]
     Shell(#[from] ShellError),
+    #[error(transparent)]
+    Editor(#[from] EditorError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -66,6 +69,7 @@ impl AppError {
             Self::Edit(e) => e.kind(),
             Self::FileOps(e) => e.kind(),
             Self::Shell(_) => "shell",
+            Self::Editor(_) => "editor",
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -194,6 +198,11 @@ impl AppError {
             Self::FileOps(e) => file_op_details(e),
             Self::Shell(ShellError::Registry(source)) => Details::detail(&source.to_string()),
             Self::Shell(ShellError::Unsupported) => Details::default(),
+            Self::Editor(e) => Details {
+                subject: e.program().map(str::to_owned),
+                detail: e.detail(),
+                reason: Some(e.reason().to_owned()),
+            },
             Self::Git(GitError::WorkerGone) | Self::NoVault | Self::Superseded => {
                 Details::default()
             }
@@ -314,6 +323,29 @@ mod tests {
         let unsupported = json(&AppError::from(ShellError::Unsupported));
         assert_eq!(unsupported["kind"], "shell");
         assert!(unsupported.get("detail").is_none());
+    }
+
+    #[test]
+    fn an_editor_error_names_the_program_and_why() {
+        let e = AppError::from(EditorError::NotFound {
+            program: "code".to_owned(),
+        });
+        assert_eq!(
+            json(&e),
+            serde_json::json!({
+                "kind": "editor",
+                "message": "can't run 'code': not found",
+                "subject": "code",
+                "reason": "notFound"
+            })
+        );
+        let e = AppError::from(EditorError::Template(
+            crate::external_editor::TemplateProblem::UnclosedQuote,
+        ));
+        let value = json(&e);
+        assert_eq!(value["reason"], "template");
+        assert_eq!(value["detail"], "a quote is not closed");
+        assert!(value.get("subject").is_none());
     }
 
     #[test]

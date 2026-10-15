@@ -5,6 +5,7 @@
 
 import { resolveRelative } from "../paths";
 import { viewBoxWidth } from "./breakout";
+import { decorateCodeRefs, type CodeRefsContext } from "./codeRefsDom";
 
 export type EnhanceLabels = {
   copyCode: string;
@@ -20,6 +21,8 @@ export type EnhanceContext = {
   labels: EnhanceLabels;
   /** Resolves a vault-relative image path to a URL the webview can load. */
   resolveImage: (path: string) => Promise<string>;
+  /** Makes the code references (`src/main.rs:42`) links. Only the reading view sets it: nothing handles their clicks elsewhere. */
+  codeRefs?: CodeRefsContext;
 };
 
 const SVG_ATTRS =
@@ -95,6 +98,7 @@ function enhanceInside(root: HTMLElement, ctx: EnhanceContext, tasks: Promise<vo
   root.querySelectorAll<HTMLImageElement>("img[data-tm-path]").forEach((img) => {
     tasks.push(loadImage(img, ctx));
   });
+  if (ctx.codeRefs) decorateCodeRefs(root, ctx.codeRefs);
 }
 
 function wrapTable(table: HTMLElement): HTMLElement {

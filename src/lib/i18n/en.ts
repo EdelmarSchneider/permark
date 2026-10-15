@@ -504,6 +504,38 @@ export const en = {
   "settings.editMode": "Open files for editing in",
   "settings.refTemplate": "Reference template",
   "settings.refPreview": "Preview: {preview}",
+
+  // ---- code references and the external editor (docs/design/v0.3.md section 3)
+  "codeRef.title": "{path}\nOpen in editor",
+  "codeRef.titleAt": "{path}\nOpen in editor at line {line}",
+  "codeRef.titleDoc": "{path}\nOpen (Ctrl+click: in your editor)",
+  "codeRef.titleDocAt": "{path}\nOpen at line {line} (Ctrl+click: in your editor)",
+  "codeRef.titleMany": "{count} files match. Click to choose one.",
+  "codeRef.chooseLabel": "Files that match",
+  "codeRef.menuLabel": "Code reference",
+  "codeRef.systemCantOpen":
+    "{name} can't be opened with the system's default app. Choose an editor in Settings.",
+  "error.editorNotFound":
+    "Couldn't run '{subject}': not found. Set the editor command in Settings.",
+  "error.editorBadArguments":
+    "Couldn't run '{subject}': it can't take this file path as an argument. Set the editor command in Settings.",
+  "error.editorSpawn": "Couldn't run '{subject}': {detail}. Set the editor command in Settings.",
+  "error.editorTemplate":
+    "The editor command isn't valid: {detail}. Set the editor command in Settings.",
+  "settings.editor": "External editor",
+  "settings.editorCommand": "Command",
+  "settings.editorPlaceholder": "The system's default app",
+  "settings.editorHint":
+    "Placeholders: {path}, {line}, {col}. Quotes group words. No shell is used.",
+  "settings.editorPreview": "Preview: {preview}",
+  "settings.editorNotSaved": "Not saved: {detail}",
+  "settings.editor.system": "System default app",
+  "settings.editor.vscode": "VS Code",
+  "settings.editor.cursor": "Cursor",
+  "settings.editor.zed": "Zed",
+  "settings.editor.sublime": "Sublime Text",
+  "settings.editor.jetbrains": "JetBrains IDEs",
+  "settings.editor.custom": "Custom",
   "settings.updates": "Updates",
   "settings.fileManager": "File manager",
   "settings.shellMenu": 'Add "Open with TrailMark" to the right-click menu',

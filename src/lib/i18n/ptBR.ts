@@ -516,6 +516,39 @@ export const ptBR = {
   "settings.editMode": "Abrir arquivos para edição no modo",
   "settings.refTemplate": "Modelo de referência",
   "settings.refPreview": "Prévia: {preview}",
+
+  // ---- referências de código e editor externo (docs/design/v0.3.md, seção 3)
+  "codeRef.title": "{path}\nAbrir no editor",
+  "codeRef.titleAt": "{path}\nAbrir no editor na linha {line}",
+  "codeRef.titleDoc": "{path}\nAbrir (Ctrl+clique: no seu editor)",
+  "codeRef.titleDocAt": "{path}\nAbrir na linha {line} (Ctrl+clique: no seu editor)",
+  "codeRef.titleMany": "{count} arquivos correspondem. Clique para escolher um.",
+  "codeRef.chooseLabel": "Arquivos correspondentes",
+  "codeRef.menuLabel": "Referência de código",
+  "codeRef.systemCantOpen":
+    "{name} não pode ser aberto com o app padrão do sistema. Escolha um editor em Configurações.",
+  "error.editorNotFound":
+    "Não foi possível executar '{subject}': não encontrado. Defina o comando do editor em Configurações.",
+  "error.editorBadArguments":
+    "Não foi possível executar '{subject}': ele não aceita este caminho de arquivo como argumento. Defina o comando do editor em Configurações.",
+  "error.editorSpawn":
+    "Não foi possível executar '{subject}': {detail}. Defina o comando do editor em Configurações.",
+  "error.editorTemplate":
+    "O comando do editor não é válido: {detail}. Defina o comando do editor em Configurações.",
+  "settings.editor": "Editor externo",
+  "settings.editorCommand": "Comando",
+  "settings.editorPlaceholder": "O app padrão do sistema",
+  "settings.editorHint":
+    "Marcadores: {path}, {line}, {col}. Aspas agrupam palavras. Nenhum shell é usado.",
+  "settings.editorPreview": "Prévia: {preview}",
+  "settings.editorNotSaved": "Não salvo: {detail}",
+  "settings.editor.system": "App padrão do sistema",
+  "settings.editor.vscode": "VS Code",
+  "settings.editor.cursor": "Cursor",
+  "settings.editor.zed": "Zed",
+  "settings.editor.sublime": "Sublime Text",
+  "settings.editor.jetbrains": "IDEs JetBrains",
+  "settings.editor.custom": "Personalizado",
   "settings.updates": "Atualizações",
   "settings.fileManager": "Gerenciador de arquivos",
   "settings.shellMenu": 'Adicionar "Abrir com o TrailMark" ao menu de clique direito',

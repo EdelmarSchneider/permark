@@ -76,6 +76,14 @@ pub struct AppSettings {
         skip_serializing_if = "Option::is_none"
     )]
     pub language: Option<Language>,
+    /// The command that opens a file in the person's editor (`code -g {path}:{line}:{col}`). `None` or blank: the
+    /// system's default application. It lives here, not with the project, so a folder can never choose what is run.
+    #[serde(
+        rename = "editorCommand",
+        deserialize_with = "lenient_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub editor_command: Option<String>,
     /// Keys written by other versions, kept as they were.
     #[serde(flatten)]
     extra: BTreeMap<String, serde_json::Value>,
@@ -110,8 +118,19 @@ impl AppSettingsStore {
     pub fn set_language(&self, language: Language) -> Result<(), SessionError> {
         let mut settings = self.load();
         settings.language = Some(language);
+        self.save(&settings)
+    }
+
+    /// Records the editor command (blank: the system's default application), keeping every other setting.
+    pub fn set_editor_command(&self, command: &str) -> Result<(), SessionError> {
+        let mut settings = self.load();
+        settings.editor_command = Some(command.trim().to_owned());
+        self.save(&settings)
+    }
+
+    fn save(&self, settings: &AppSettings) -> Result<(), SessionError> {
         let bytes =
-            serde_json::to_vec_pretty(&settings).map_err(|e| SessionError::Json(e.to_string()))?;
+            serde_json::to_vec_pretty(settings).map_err(|e| SessionError::Json(e.to_string()))?;
         write_atomic(&self.file, &bytes).map_err(|e| SessionError::io(&self.file, e))
     }
 }
@@ -217,6 +236,38 @@ mod tests {
         assert_eq!(s.load(), AppSettings::default());
         s.set_language(Language::Es).expect("save");
         assert_eq!(s.load().language, Some(Language::Es));
+    }
+
+    #[test]
+    fn the_editor_command_is_kept_trimmed_and_does_not_disturb_the_language() {
+        let (_d, s) = store();
+        assert_eq!(s.load().editor_command, None);
+        s.set_language(Language::De).expect("save");
+        s.set_editor_command("  code -g {path}:{line}:{col} \n")
+            .expect("save");
+        let settings = s.load();
+        assert_eq!(
+            settings.editor_command.as_deref(),
+            Some("code -g {path}:{line}:{col}")
+        );
+        assert_eq!(settings.language, Some(Language::De));
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&s.file).expect("read")).expect("json");
+        assert_eq!(json["editorCommand"], "code -g {path}:{line}:{col}");
+        // a blank command is a choice too: the system's default application
+        s.set_editor_command("").expect("save");
+        assert_eq!(s.load().editor_command.as_deref(), Some(""));
+        s.set_language(Language::En).expect("save");
+        assert_eq!(s.load().editor_command.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn an_editor_command_this_build_does_not_understand_reads_as_not_chosen() {
+        for value in ["7", "true", "[\"code\"]", "{}", "null"] {
+            let (_d, s) = store();
+            std::fs::write(&s.file, format!("{{\"editorCommand\": {value}}}")).expect("write");
+            assert_eq!(s.load().editor_command, None, "{value}");
+        }
     }
 
     #[test]

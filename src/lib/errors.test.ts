@@ -108,6 +108,46 @@ describe("errorMessage", () => {
     expect(errorMessage(new Error("bad path"))).toBe("bad path");
   });
 
+  it("words an editor command that could not be run, with the program and a way out", () => {
+    expect(
+      errorMessage({ kind: "editor", reason: "notFound", subject: "code", message: "raw" }),
+    ).toBe("Couldn't run 'code': not found. Set the editor command in Settings.");
+    expect(
+      errorMessage({
+        kind: "editor",
+        reason: "spawn",
+        subject: "zed",
+        detail: "boom",
+        message: "r",
+      }),
+    ).toBe("Couldn't run 'zed': boom. Set the editor command in Settings.");
+    expect(
+      errorMessage({ kind: "editor", reason: "badArguments", subject: "x.cmd", message: "r" }),
+    ).toContain("can't take this file path");
+    expect(
+      errorMessage({
+        kind: "editor",
+        reason: "template",
+        detail: "unknown placeholder {file}",
+        message: "r",
+      }),
+    ).toBe(
+      "The editor command isn't valid: unknown placeholder {file}. Set the editor command in Settings.",
+    );
+  });
+
+  it("words an editor error in every language, and keeps the backend's text for a reason it does not know", () => {
+    for (const locale of LOCALES) {
+      language.preference = locale;
+      for (const reason of ["notFound", "badArguments", "spawn", "template"]) {
+        const error = { kind: "editor", reason, subject: "S", detail: "D", message: "RAW" };
+        expect(errorMessage(error), `${locale} ${reason}`).not.toBe("RAW");
+      }
+    }
+    language.preference = "en";
+    expect(errorMessage({ kind: "editor", reason: "newer", message: "raw text" })).toBe("raw text");
+  });
+
   it("has words, in every language, for every kind the backend reports", () => {
     // the kinds of AppError::kind() and the sub-errors in src-tauri/src (kept in step by hand)
     const kinds = [

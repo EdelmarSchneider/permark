@@ -648,6 +648,17 @@ impl Workspace {
         Ok(resolved.abs)
     }
 
+    /// The file to hand to the person's editor command. It must stay inside the folder and name an existing file; any
+    /// kind of file will do, because it is only ever an argument to the program the person chose (the program
+    /// itself comes from their settings, never from the folder).
+    pub fn editor_target(&self, path: &str) -> Result<PathBuf, AppError> {
+        let resolved = self.vault.resolve(path)?;
+        if !resolved.abs.is_file() {
+            return Err(VaultError::NotFound(path.to_owned()).into());
+        }
+        Ok(resolved.abs)
+    }
+
     /// The folder (or file) to show in the system's file manager for "Reveal in folder".
     pub fn reveal_target(&self, path: &str) -> Result<PathBuf, AppError> {
         let resolved = self.vault.resolve(path)?;
@@ -2243,6 +2254,26 @@ exclude = [\"archive/**\"]
         assert_eq!(
             ws.external_target("run.exe").expect_err("exe").kind(),
             "invalidPath"
+        );
+
+        // An editor command opens any file of the folder, but still only files of the folder.
+        for ok in ["a.md", "main.py", "run.exe", "Makefile", "script.ps1"] {
+            assert!(ws.editor_target(ok).expect(ok).is_file(), "{ok}");
+        }
+        for bad in [
+            "dir",
+            "missing.md",
+            "../outside.md",
+            "/etc/passwd",
+            "C:\\x.rs",
+        ] {
+            assert!(ws.editor_target(bad).is_err(), "{bad} must not be passed");
+        }
+        assert_eq!(
+            ws.editor_target("../outside.md")
+                .expect_err("escape")
+                .kind(),
+            "pathEscape"
         );
 
         // Revealing is harmless for anything inside the folder, folders included.

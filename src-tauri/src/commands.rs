@@ -12,6 +12,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
+use crate::external_editor::{self, EditorError, EditorTemplate};
 use crate::fileops::{
     BufferText, CreatedFolder, DeleteOutcome, Move, MoveOutcome, MovePreview, UndoOutcome,
 };
@@ -310,7 +311,16 @@ pub async fn absolute_path(state: State<'_, AppState>, path: String) -> Result<S
     blocking(move || ws.absolute_path(&path)).await
 }
 
-/// Opens a file of the folder with the system's default application (the "external editor").
+/// Hands a file of the folder to the system's default application. Only documents and images go: a program or script
+/// in the folder is never started from here.
+fn open_with_system(app: &AppHandle, ws: &Workspace, path: &str) -> Result<(), AppError> {
+    let target = ws.external_target(path)?;
+    app.opener()
+        .open_path(target.display().to_string(), None::<&str>)
+        .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+/// Opens a file of the folder with the system's default application.
 #[tauri::command]
 pub async fn open_external(
     app: AppHandle,
@@ -318,11 +328,63 @@ pub async fn open_external(
     path: String,
 ) -> Result<(), AppError> {
     let ws = state.current()?;
+    blocking(move || open_with_system(&app, &ws, &path)).await
+}
+
+/// Opens a file of the folder in the person's editor, at a line and column (both from 1): runs the editor command of
+/// the settings, or the system's default application when there is none (the line is then ignored).
+#[tauri::command]
+pub async fn open_in_editor(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Result<(), AppError> {
+    let ws = state.current()?;
+    let dir = app_data_dir(&app)?;
     blocking(move || {
-        let target = ws.external_target(&path)?;
-        app.opener()
-            .open_path(target.display().to_string(), None::<&str>)
-            .map_err(|e| AppError::Internal(e.to_string()))
+        let command = AppSettingsStore::new(&dir)
+            .load()
+            .editor_command
+            .unwrap_or_default();
+        match EditorTemplate::parse(&command).map_err(EditorError::Template)? {
+            None => open_with_system(&app, &ws, &path),
+            Some(template) => {
+                let target = ws.editor_target(&path)?;
+                Ok(external_editor::run(
+                    &template,
+                    &target,
+                    line.unwrap_or(1),
+                    col.unwrap_or(1),
+                )?)
+            }
+        }
+    })
+    .await
+}
+
+/// The editor command of the settings; blank means the system's default application.
+#[tauri::command]
+pub async fn editor_command(app: AppHandle) -> Result<String, AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || {
+        Ok(AppSettingsStore::new(&dir)
+            .load()
+            .editor_command
+            .unwrap_or_default())
+    })
+    .await
+}
+
+/// Keeps the editor command. A command that can't be parsed (an unknown placeholder, an open quote) is refused, so what
+/// is saved always runs.
+#[tauri::command]
+pub async fn set_editor_command(app: AppHandle, command: String) -> Result<(), AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || {
+        EditorTemplate::parse(&command).map_err(EditorError::Template)?;
+        Ok(AppSettingsStore::new(&dir).set_editor_command(&command)?)
     })
     .await
 }

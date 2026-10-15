@@ -5,6 +5,19 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Clickable code references.** A path in inline code (`` `src/main.rs` ``, `` `src/main.rs:42` ``, `` `lib.rs#L10-L20` ``) or in plain text with a
+  line (src/main.rs:42:7) becomes a link when it names a file of the project: it is looked up from the project root, then from the document's
+  folder, then by file name (a name that several files share asks which one on click). A Markdown file opens in TrailMark at the line, with the
+  section tint; any other file opens in your editor at the line. `Ctrl`+click on a Markdown reference uses the editor too, and the right-click
+  menu has Open, Open in external editor, Copy path and Copy reference. Prose that only looks like a reference (versions, times, URLs, drive
+  paths), code blocks and existing links are left alone.
+- **External editor setting.** Settings has a new **External editor** field with presets for VS Code, Cursor, Zed, Sublime Text and JetBrains IDEs,
+  or any command of your own (`code -g {path}:{line}:{col}`). The command is split into arguments before the file is filled in, so a path with
+  spaces is always one argument, and it runs without a shell. **Open in external editor** (`Ctrl+Shift+E`, the menus) uses it too, at the block
+  at the top of the view; with no command it opens the file with the system's default app as before. If the command can't be run, a message says
+  which program was not found and takes you to Settings.
+
 ### Changed
 - In Spanish the Source mode is called **Código**, the usual short name, so the mode switch stays compact.
 - Semantic search is now planned for v0.5 (the disabled **Semantic** toggle in Search says so); v0.4 brings an optional, local

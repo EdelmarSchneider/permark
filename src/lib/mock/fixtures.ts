@@ -600,6 +600,46 @@ const docs: Record<string, MockDoc> = {
     age: 5 * 60 * MIN,
     blocks: () => [code("rust", 'fn main() {\n    println!("hello from the mock vault");\n}')],
   },
+  "src/watch/aggregate.rs": {
+    kind: "text",
+    title: null,
+    age: 5 * 60 * MIN,
+    blocks: () => [code("rust", "pub struct Aggregator {\n    quiet_ms: u64,\n}")],
+  },
+  "src/watch/mod.rs": {
+    kind: "text",
+    title: null,
+    age: 5 * 60 * MIN,
+    blocks: () => [code("rust", "mod aggregate;")],
+  },
+  "src/fs/mod.rs": {
+    kind: "text",
+    title: null,
+    age: 5 * 60 * MIN,
+    blocks: () => [code("rust", "pub mod walk;")],
+  },
+  "docs/design/code-refs.md": doc("Code references", [
+    h(1, "Code references"),
+    p(
+      "A path in inline code, such as <code>src/main.rs</code> or <code>src/watch/aggregate.rs:2</code>, opens the file at that line in your editor. A line makes plain text a reference too: the batching lives in src/watch/aggregate.rs:1 and ends in src/main.rs:2:5.",
+      2,
+    ),
+    p(
+      "A Markdown file opens here: <code>docs/specs/watcher.md:3</code> and <code>docs/research/storage.md#L1</code> scroll to the line. Hold Ctrl to open the Markdown file in your editor instead.",
+      2,
+    ),
+    p(
+      "A name that several files share asks which one: <code>mod.rs:1</code> is in <code>src/watch</code> and in <code>src/fs</code>, and none of them is next to this document.",
+      2,
+    ),
+    h(2, "What stays plain"),
+    ul([
+      "A file the project does not have: <code>src/missing.rs:10</code> and src/gone.rs:3.",
+      "Prose that only looks like one: version 1:2, a meeting at 10:30, https://example.com/src/main.rs:42 and C:\\Users\\me\\main.rs:42.",
+      'Links keep working as links: <a href="../../src/main.rs">src/main.rs:1</a>.',
+    ]),
+    code("text", "src/main.rs:2   (a code block is never changed)"),
+  ]),
   "@wt/feature-ui/README.md": doc("Feature UI", [
     h(1, "Feature UI"),
     p("A worktree checkout used by the UI agent."),
@@ -929,6 +969,7 @@ function baseTree(keep: (nodes: TreeNode[]) => TreeNode[]): TreeNode {
       dir("data", [file("data/config.json")]),
       dir("docs", [
         dir("docs/design", [
+          file("docs/design/code-refs.md"),
           file("docs/design/long-outline.md"),
           file("docs/design/outline.md"),
           file("docs/design/reading-width.md"),
@@ -954,7 +995,11 @@ function baseTree(keep: (nodes: TreeNode[]) => TreeNode[]): TreeNode {
           file("docs/world/style-guide.md"),
         ]),
       ]),
-      dir("src", [file("src/main.rs")]),
+      dir("src", [
+        dir("src/fs", [file("src/fs/mod.rs")]),
+        dir("src/watch", [file("src/watch/aggregate.rs"), file("src/watch/mod.rs")]),
+        file("src/main.rs"),
+      ]),
       file("CHANGELOG.md"),
       file("plan.md"),
       file("README.md"),
