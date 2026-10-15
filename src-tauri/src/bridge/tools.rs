@@ -623,10 +623,7 @@ mod tests {
             "# Plan\n\nIntro.\n\n## Rollout\n\nShip the beacon.\n",
         )
         .expect("write");
-        let sockets = tempfile::Builder::new()
-            .prefix("tm")
-            .tempdir_in(std::env::temp_dir())
-            .expect("sockets");
+        let sockets = crate::bridge::socket::socket_folder();
         let root = dunce::canonicalize(project.path()).expect("canonical");
         let fake = Arc::new(Fake::default());
         let bridge = Arc::new(AgentBridge::new(

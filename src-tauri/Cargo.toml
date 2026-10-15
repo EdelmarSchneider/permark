@@ -46,10 +46,22 @@ dirs = "7.0.0"
 # The Windows installer records the language it ran in; the app reads it once, on a first start. The same registry holds
 # the file manager entries ("Open with TrailMark"), and the shell is told when they change.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell"] }
+# The shell is told when the file manager entries change. The agent connection asks Windows who runs the program on
+# the other end of its pipe (`bridge::identity`), and opens the pipe so that the server cannot act as the client.
+windows-sys = { version = "0.61.2", features = [
+    "Win32_UI_Shell",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Threading",
+] }
 winreg = "0.56.0"
 # The access list of the agent connection's named pipe is handed to Windows as a wide string.
 widestring = "1.2.1"
+
+# Who the user is, to check that the agent connection's socket folder and the program listening on it are the user's.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.5", features = ["process"] }
 
 [lints.rust]
 unsafe_code = "deny"

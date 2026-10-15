@@ -179,10 +179,7 @@ mod tests {
             "# Plan\n\nIntro.\n\n## Rollout\n\nShip it.\n",
         )
         .expect("write");
-        let sockets = tempfile::Builder::new()
-            .prefix("tm")
-            .tempdir_in(std::env::temp_dir())
-            .expect("sockets");
+        let sockets = crate::bridge::socket::socket_folder();
         let vault = Arc::new(Vault::open(project.path()).expect("vault"));
         let fake = Arc::new(Fake::default());
         let endpoint =

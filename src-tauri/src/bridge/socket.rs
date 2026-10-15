@@ -17,7 +17,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use interprocess::local_socket::tokio::{Listener, Stream};
-use interprocess::local_socket::traits::tokio::{Listener as _, Stream as _};
+use interprocess::local_socket::traits::tokio::Listener as _;
+#[cfg(unix)]
+use interprocess::local_socket::traits::tokio::Stream as _;
 use interprocess::local_socket::{ListenerOptions, Name};
 
 use crate::util::hash_hex;
@@ -232,9 +234,162 @@ impl Endpoint {
         }
     }
 
-    /// Connects to the window of the project.
-    pub(crate) async fn connect(&self) -> io::Result<Stream> {
-        Stream::connect(self.name()?).await
+    /// Connects to the window of the project, once it is clear that what listens is this user's: nothing is sent to a
+    /// program that is not.
+    ///
+    /// The names are guessable and the socket can be taken while the window is closed, so a client does not assume
+    /// that whoever answers is TrailMark. On Linux and macOS the folder of the socket must be a folder of the user's
+    /// that nobody else can enter, and the program that listens must run as the user. On Windows the pipe is opened so
+    /// that the server cannot act as the client, and the program that serves it must run as the user.
+    pub(crate) async fn connect(&self) -> Result<Stream, ConnectError> {
+        let place = self.describe();
+        #[cfg(unix)]
+        let stream = {
+            self.check_folder()?;
+            Stream::connect(self.name()?).await?
+        };
+        #[cfg(windows)]
+        let stream = connect_pipe(&place).await?;
+        check_peer(&stream, &place)?;
+        Ok(stream)
+    }
+
+    /// The folder holding the socket is one only this user can use (see [`Endpoint::connect`]).
+    #[cfg(unix)]
+    fn check_folder(&self) -> Result<(), ConnectError> {
+        use std::os::unix::fs::MetadataExt;
+
+        let Some(folder) = self.path.parent() else {
+            return Ok(());
+        };
+        match std::fs::symlink_metadata(folder) {
+            Ok(meta)
+                if is_private_folder(
+                    meta.file_type().is_dir(),
+                    meta.uid(),
+                    meta.mode(),
+                    our_uid(),
+                ) =>
+            {
+                Ok(())
+            }
+            Ok(_) => Err(ConnectError::Untrusted(format!(
+                "{} is not a private folder of this user, so what listens in it is not trusted",
+                folder.display()
+            ))),
+            // No folder, no socket: connecting says that nobody listens.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+}
+
+/// Why a client could not reach the window.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ConnectError {
+    /// The connection could not be made (nothing listens, or the system refused).
+    #[error(transparent)]
+    Io(#[from] io::Error),
+    /// Something listens, but it is not shown to be this user's TrailMark, so nothing is sent to it.
+    #[error("{0}")]
+    Untrusted(String),
+}
+
+/// The user this program runs as.
+#[cfg(unix)]
+fn our_uid() -> u32 {
+    rustix::process::geteuid().as_raw()
+}
+
+/// Whether a folder is one only the user `ours` can use: a real folder (not a link) that is theirs and closed to
+/// everybody else. `uid` and `mode` are the folder's owner and permissions.
+#[cfg(unix)]
+// The permission bits of the group and others (`rwxrwx` in octal) are what this tests; `trailing_zeros` would hide it.
+#[allow(clippy::verbose_bit_mask)]
+fn is_private_folder(is_dir: bool, uid: u32, mode: u32, ours: u32) -> bool {
+    is_dir && uid == ours && mode & 0o077 == 0
+}
+
+/// Whether the program on the other end of the connection runs as the user `ours`.
+#[cfg(unix)]
+fn peer_is_us(peer: Option<u32>, ours: u32) -> bool {
+    peer == Some(ours)
+}
+
+/// The program that listens runs as this user.
+#[cfg(unix)]
+fn check_peer(stream: &Stream, place: &str) -> Result<(), ConnectError> {
+    use interprocess::local_socket::traits::StreamCommon as _;
+
+    let creds = stream.peer_creds().map_err(|error| {
+        ConnectError::Untrusted(format!("cannot tell who listens on {place}: {error}"))
+    })?;
+    if peer_is_us(creds.euid(), our_uid()) {
+        Ok(())
+    } else {
+        Err(ConnectError::Untrusted(format!(
+            "the program that listens on {place} does not run as this user"
+        )))
+    }
+}
+
+/// Opens the pipe at `path` so that the server can tell who connects but cannot act as them. At the default level
+/// (`SECURITY_IMPERSONATION`) a server with the right privilege could call `ImpersonateNamedPipeClient` and use the
+/// client's rights; `SECURITY_IDENTIFICATION` makes the token it gets good for nothing but looking.
+#[cfg(windows)]
+async fn connect_pipe(path: &str) -> Result<Stream, ConnectError> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::OwnedHandle;
+
+    use interprocess::os::windows::named_pipe::local_socket::tokio::Stream as PipeStream;
+    use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_OVERLAPPED, SECURITY_IDENTIFICATION};
+
+    /// `ERROR_PIPE_BUSY`: every instance of the pipe has a client; the server makes a new one in a moment.
+    const PIPE_BUSY: i32 = 231;
+    const BUSY_TRIES: u32 = 100;
+    const BUSY_PAUSE: std::time::Duration = std::time::Duration::from_millis(10);
+
+    let mut tried = 0;
+    let file = loop {
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED)
+            .security_qos_flags(SECURITY_IDENTIFICATION)
+            .open(path)
+        {
+            Ok(file) => break file,
+            Err(error) if error.raw_os_error() == Some(PIPE_BUSY) && tried < BUSY_TRIES => {
+                tried += 1;
+                tokio::time::sleep(BUSY_PAUSE).await;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    };
+    let pipe = PipeStream::try_from(OwnedHandle::from(file))
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    Ok(Stream::from(pipe))
+}
+
+/// The program that serves the pipe runs as this user (see [`identity`](super::identity)).
+#[cfg(windows)]
+fn check_peer(stream: &Stream, place: &str) -> Result<(), ConnectError> {
+    use interprocess::local_socket::traits::StreamCommon as _;
+
+    let untrusted = |why: String| ConnectError::Untrusted(format!("{place}: {why}"));
+    let pid = stream
+        .peer_creds()
+        .map_err(|error| untrusted(format!("cannot tell who serves it: {error}")))?
+        .pid()
+        .ok_or_else(|| untrusted("cannot tell who serves it".to_owned()))?;
+    match super::identity::runs_as_this_user(pid) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(untrusted(format!(
+            "the program that serves it (process {pid}) runs as another user"
+        ))),
+        Err(error) => Err(untrusted(format!(
+            "cannot tell who serves it (process {pid}): {error}"
+        ))),
     }
 }
 
@@ -277,8 +432,27 @@ fn owner_only() -> io::Result<interprocess::os::windows::security_descriptor::Se
     SecurityDescriptor::deserialize(&sddl)
 }
 
+/// A folder for the sockets of a test, short enough for the Unix limit on every system (a CI runner's temp folder is
+/// long) and, as a real socket folder is, closed to everybody else.
+#[cfg(test)]
+pub(crate) fn socket_folder() -> tempfile::TempDir {
+    let dir = tempfile::Builder::new()
+        .prefix("tm")
+        .tempdir_in(std::env::temp_dir())
+        .expect("a folder for sockets");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("close the folder to others");
+    }
+    dir
+}
+
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    use interprocess::local_socket::traits::tokio::Stream as _;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::time::{timeout, Duration};
 
@@ -286,12 +460,8 @@ mod tests {
 
     const WAIT: Duration = Duration::from_secs(10);
 
-    /// A folder for sockets short enough for the Unix limit on every system (a CI runner's temp folder is long).
     fn folder() -> tempfile::TempDir {
-        tempfile::Builder::new()
-            .prefix("tm")
-            .tempdir_in(std::env::temp_dir())
-            .expect("tempdir")
+        socket_folder()
     }
 
     fn endpoint(dir: &tempfile::TempDir, project: &str) -> Endpoint {
@@ -380,11 +550,185 @@ mod tests {
             .expect_err("nothing listens");
         assert!(
             matches!(
-                error.kind(),
-                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+                &error,
+                ConnectError::Io(e)
+                    if matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused)
             ),
             "{error:?}"
         );
+    }
+
+    #[cfg(unix)]
+    mod unix_trust {
+        use std::os::unix::fs::PermissionsExt;
+
+        use super::*;
+
+        #[test]
+        fn a_folder_is_private_when_it_is_the_users_and_closed_to_others() {
+            let ours = 1000;
+            assert!(is_private_folder(true, ours, 0o040_700, ours));
+            assert!(
+                !is_private_folder(true, ours, 0o040_750, ours),
+                "the group can enter"
+            );
+            assert!(
+                !is_private_folder(true, ours, 0o040_705, ours),
+                "others can enter"
+            );
+            assert!(
+                !is_private_folder(true, 1001, 0o040_700, ours),
+                "somebody else's"
+            );
+            assert!(
+                !is_private_folder(true, 0, 0o040_700, ours),
+                "root's is not the user's"
+            );
+            assert!(
+                !is_private_folder(false, ours, 0o120_700, ours),
+                "a link or a file"
+            );
+        }
+
+        #[test]
+        fn only_a_program_of_this_user_is_trusted() {
+            assert!(peer_is_us(Some(1000), 1000));
+            assert!(!peer_is_us(Some(1001), 1000));
+            assert!(!peer_is_us(Some(0), 1000));
+            assert!(!peer_is_us(None, 1000), "unknown is not trusted");
+        }
+
+        /// `/tmp/trailmark-<user>` is a name anybody can make first: a folder somebody else made, or one that is not
+        /// closed, holds a socket that nothing is sent to.
+        #[tokio::test]
+        async fn a_folder_that_is_not_closed_to_others_is_not_trusted() {
+            let dir = folder();
+            let private = dir.path().join("sockets");
+            let endpoint = Endpoint::in_folder(&private, Path::new("/work/loose"), "tester")
+                .expect("endpoint");
+            let _listener = endpoint.listen().expect("listen");
+            timeout(WAIT, endpoint.connect())
+                .await
+                .expect("in time")
+                .expect("a private folder is trusted");
+            std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod");
+            let error = timeout(WAIT, endpoint.connect())
+                .await
+                .expect("in time")
+                .expect_err("not trusted");
+            assert!(matches!(error, ConnectError::Untrusted(_)), "{error:?}");
+        }
+
+        #[tokio::test]
+        async fn a_link_in_place_of_the_folder_is_not_trusted() {
+            let dir = folder();
+            let real = dir.path().join("real");
+            let endpoint =
+                Endpoint::in_folder(&real, Path::new("/work/linked"), "tester").expect("endpoint");
+            let _listener = endpoint.listen().expect("listen");
+            let link = dir.path().join("link");
+            std::os::unix::fs::symlink(&real, &link).expect("symlink");
+            let through_link =
+                Endpoint::in_folder(&link, Path::new("/work/linked"), "tester").expect("endpoint");
+            // the socket is there, behind the link
+            assert!(link
+                .join(through_link.path.file_name().expect("a name"))
+                .exists());
+            let error = timeout(WAIT, through_link.connect())
+                .await
+                .expect("in time")
+                .expect_err("not trusted");
+            assert!(matches!(error, ConnectError::Untrusted(_)), "{error:?}");
+        }
+
+        #[tokio::test]
+        async fn a_folder_that_is_not_there_means_nobody_listens() {
+            let dir = folder();
+            let missing = dir.path().join("missing");
+            let endpoint =
+                Endpoint::in_folder(&missing, Path::new("/work/none"), "tester").expect("endpoint");
+            let error = endpoint.connect().await.expect_err("nothing listens");
+            assert!(matches!(error, ConnectError::Io(_)), "{error:?}");
+        }
+    }
+
+    #[cfg(windows)]
+    mod windows_trust {
+        use std::io::{Read, Write};
+        use std::thread::JoinHandle;
+
+        use interprocess::os::windows::named_pipe::{pipe_mode, PipeListenerOptions};
+
+        use super::*;
+
+        /// `ERROR_BAD_IMPERSONATION_LEVEL`: what a server gets when it tries to use a client it may only identify.
+        const BAD_IMPERSONATION_LEVEL: i32 = 1346;
+
+        fn pipe_name(name: &str) -> String {
+            format!(r"\\.\pipe\trailmark-test-{}-{name}", std::process::id())
+        }
+
+        /// A server that does what a squatter with the right privilege does: reads the client's first byte, acts as
+        /// the client, and tries to open a file with the client's rights. It answers with the error it got, if any.
+        fn impersonating_server(pipe: &str) -> JoinHandle<io::Result<Option<i32>>> {
+            let listener = PipeListenerOptions::new()
+                .path(Path::new(pipe))
+                .create_duplex::<pipe_mode::Bytes>()
+                .expect("a pipe");
+            std::thread::spawn(move || {
+                let mut connection = listener.accept()?;
+                let mut byte = [0_u8; 1];
+                connection.read_exact(&mut byte)?;
+                let _acting_as_the_client = connection.impersonate_client()?;
+                let program = std::env::current_exe()?;
+                Ok(std::fs::File::open(program)
+                    .err()
+                    .and_then(|error| error.raw_os_error()))
+            })
+        }
+
+        /// The point of the identification level: the server can see who the client is but cannot act as them.
+        #[tokio::test]
+        async fn the_server_cannot_act_as_the_client() {
+            let pipe = pipe_name("identification");
+            let server = impersonating_server(&pipe);
+            let stream = timeout(WAIT, connect_pipe(&pipe))
+                .await
+                .expect("in time")
+                .expect("connected");
+            let (_receive, mut send) = stream.split();
+            send.write_all(&[1]).await.expect("write");
+            assert_eq!(
+                server.join().expect("server thread").expect("server"),
+                Some(BAD_IMPERSONATION_LEVEL)
+            );
+        }
+
+        /// What it would be without that: opening the pipe the plain way lets the same server use the client's rights.
+        #[test]
+        fn a_plainly_opened_pipe_does_let_the_server_act_as_the_client() {
+            let pipe = pipe_name("plain");
+            let server = impersonating_server(&pipe);
+            let mut client = std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open(&pipe)
+                .expect("connected");
+            client.write_all(&[1]).expect("write");
+            assert_eq!(server.join().expect("server thread").expect("server"), None);
+        }
+
+        #[tokio::test]
+        async fn a_server_of_this_user_is_trusted() {
+            let dir = folder();
+            let endpoint = endpoint(&dir, "/work/trusted");
+            let _listener = endpoint.listen().expect("listen");
+            timeout(WAIT, endpoint.connect())
+                .await
+                .expect("in time")
+                .expect("this user's server is trusted");
+        }
     }
 
     #[tokio::test]
