@@ -408,7 +408,10 @@ describe("a new note", () => {
     // a blank text makes no file
     fake.saveNote.mockResolvedValue({ result: "blank" } satisfies NoteSaved);
     type(editor, "  ");
-    await edit.flush();
+    // it counts as saved (there is nothing to lose), so the note can be left, and the next text still makes the file
+    expect(await edit.flush()).toBe(true);
+    expect(edit.dirty).toBe(false);
+    expect(fake.saveNote).toHaveBeenCalledTimes(1);
     expect(fake.saveNote).toHaveBeenCalledWith("2026-10-15 1432.md", "  ", "");
     expect(written).not.toHaveBeenCalled();
     // the first text that is not blank does; its name was taken meanwhile

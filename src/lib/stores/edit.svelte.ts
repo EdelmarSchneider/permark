@@ -723,7 +723,12 @@ class EditStore {
         outcome = await api.saveNote(path, text, base.hash);
         if (this.path !== path) return false;
       }
-      if (outcome.result === "blank") return true;
+      if (outcome.result === "blank") {
+        // a blank new note has no file and needs none: what the editor holds is what it goes on from (the hash stays empty, so the
+        // first text with something in it still makes the file), and the note is not "unsaved", so it can be left
+        await this.adopt(text, base.hash, base.modifiedMs);
+        return true;
+      }
       if (outcome.result === "conflict") {
         await this.reloadTheirs(true);
         return false;

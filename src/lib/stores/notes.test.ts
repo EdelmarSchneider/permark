@@ -522,6 +522,20 @@ describe("a new note", () => {
     expect(notes.entries.some((n) => n.path === "new-1.md")).toBe(true);
   });
 
+  it("with only blank text typed in can be left for another note", async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    await notes.newNote();
+    const fresh = notes.current ?? "";
+    fake.saveNote.mockResolvedValue({ result: "blank" } satisfies NoteSaved);
+    type("  \n");
+    await notes.openNote("a.md");
+    expect(fake.saveNote).toHaveBeenCalledWith(fresh, "  \n", "");
+    expect(notes.current).toBe("a.md");
+    expect(fake.forgetNewNote).toHaveBeenCalledWith(fresh);
+  });
+
   it("does not make a second new note on top of one that is still empty", async () => {
     await start();
     expect(fake.newNote).toHaveBeenCalledTimes(1);
