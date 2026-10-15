@@ -1062,15 +1062,17 @@ mod tests {
 
     #[test]
     fn windows_looks_only_where_path_says_and_completes_names_with_pathext() {
+        // a folder that is written the same way on every system the test runs on
+        let tools = home().join("Tools");
         let env = SearchEnv::new(
             Platform::Windows,
             &Vars {
-                path: Some(std::env::join_paths(["C:\\Tools"]).expect("join")),
+                path: Some(std::env::join_paths([&tools]).expect("join")),
                 pathext: Some(".COM;.EXE;.VBS;.CMD".to_owned()),
-                home: Some(PathBuf::from("C:\\Users\\jo")),
+                home: Some(home()),
             },
         );
-        assert_eq!(env.dirs, [PathBuf::from("C:\\Tools")]);
+        assert_eq!(env.dirs, [tools]);
         assert_eq!(env.extensions, [".com", ".exe", ".cmd"]);
         // without PATHEXT the usual four
         let env = SearchEnv::new(Platform::Windows, &Vars::default());
