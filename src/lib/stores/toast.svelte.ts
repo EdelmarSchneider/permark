@@ -22,6 +22,8 @@ export type ToastModel =
       tone: "info" | "warn";
       /** A button on the toast (Undo): it runs once and the toast goes away. */
       action?: ToastAction;
+      /** A second button, after the first. */
+      second?: ToastAction;
     }
   /** An app update; the text and buttons follow the updater state (`stores/updates.svelte.ts`). */
   | { id: number; type: "update" };
@@ -57,17 +59,24 @@ class ToastStore {
     });
   }
 
-  message(text: string, tone: "info" | "warn" = "info", action?: ToastAction): void {
+  /** A plain message, with a button (Undo) or two (Open in project, Undo). */
+  message(
+    text: string,
+    tone: "info" | "warn" = "info",
+    action?: ToastAction,
+    second?: ToastAction,
+  ): void {
     this.show(
-      { id: this.nextId++, type: "message", text, tone, action },
+      { id: this.nextId++, type: "message", text, tone, action, second },
       action ? ACTION_HIDE_MS : AUTO_HIDE_MS,
     );
   }
 
-  /** The button of the toast was pressed: the toast goes, then the action runs. */
-  runAction(): void {
+  /** A button of the toast was pressed: the toast goes, then the action runs. */
+  runAction(which: "first" | "second" = "first"): void {
     const current = this.current;
-    const action = current?.type === "message" ? current.action : undefined;
+    const message = current?.type === "message" ? current : undefined;
+    const action = which === "first" ? message?.action : message?.second;
     this.dismiss();
     action?.run();
   }

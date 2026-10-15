@@ -878,6 +878,24 @@
   gap: 4px;
   margin-top: 6px;
 }
+/* the buttons of a plain message: Undo, or Open in project and Undo */
+.toast__buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* two buttons are too wide to share the row with the message (it would be left a few words wide, and cut in a longer language):
+   they go on a row of their own under it, and the message has the whole width */
+.toast--stacked .toast__text {
+  grid-column: 2 / 4;
+  grid-row: 1;
+}
+.toast--stacked .toast__buttons {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  justify-self: start;
+  margin-left: -8px;
+}
 .toast__progress {
   height: 3px;
   margin-top: 8px;

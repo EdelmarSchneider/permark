@@ -13,6 +13,7 @@ import "./styles/visual.css";
 import "./styles/unread.css";
 import "./styles/agent.css";
 import "./styles/comments.css";
+import "./styles/notes.css";
 import App from "./App.svelte";
 import { loadLanguage } from "./lib/stores/languageChoice.svelte";
 

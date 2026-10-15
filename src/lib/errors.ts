@@ -108,6 +108,18 @@ const KIND_KEYS = {
   partlyMoved: "error.partlyMoved",
   trash: "error.trash",
   shell: "error.shell",
+  notesLocked: "error.notesLocked",
+  notesUnwritable: "error.notesUnwritable",
+  notANote: "error.notANote",
+  unknownUndo: "error.unknownUndo",
+  noSuchVersion: "error.noSuchVersion",
+  notText: "error.notText",
+  changed: "error.changed",
+  notesNotOpen: "error.notesNotOpen",
+  notAFile: "error.notAFile",
+  binaryFile: "error.binaryFile",
+  moveInside: "error.moveInside",
+  notesNewer: "error.notesNewer",
 } as const satisfies Record<string, MessageKey>;
 
 function field(error: Record<string, unknown>, name: string): string | undefined {

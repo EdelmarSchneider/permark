@@ -9,6 +9,7 @@ use crate::distribution::{self, agent_program};
 use crate::session::remove_local_state;
 use crate::vault::Vault;
 
+use super::answers;
 use super::context::AgentContext;
 use super::file::{ContextFile, WRITE_INTERVAL};
 use super::hub::{AgentEvents, AgentStatus, Backend, FailureKind, Hub, StartFailure};
@@ -91,6 +92,12 @@ impl AgentBridge {
             agent_path: Mutex::new(agent_path),
             running: Mutex::new(None),
         }
+    }
+
+    /// Says which folder of the project is the person's private notes: nothing in it is shown to an agent (see
+    /// [`answers::PrivateTree`]).
+    pub(crate) fn hide(&self, private: answers::PrivateTree) {
+        self.hub.set_private(private);
     }
 
     /// Turns the connection on or off. A connection that cannot start (the socket cannot be made) stays "on" as

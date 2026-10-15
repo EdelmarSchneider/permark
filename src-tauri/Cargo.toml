@@ -47,6 +47,7 @@ rmcp = { version = "3.5.0", default-features = false, features = ["server", "mac
 tokio = { version = "1", features = ["rt", "io-util", "macros", "net", "sync", "time"] }
 interprocess = { version = "2.4.4", features = ["tokio"] }
 dirs = "7.0.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 # The Windows installer records the language it ran in; the app reads it once, on a first start. The same registry holds
 # the file manager entries ("Open with TrailMark"), and the shell is told when they change.

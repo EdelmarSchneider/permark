@@ -18,14 +18,22 @@
   let group = $state<HTMLElement>();
 
   const current = $derived<DocMode>(edit.active ? edit.mode : "read");
+  // why a mode is off: the document cannot be edited at all, or (a plain text file) Visual is for Markdown
   const blocked = $derived(edit.blocked);
+  const visualBlocked = $derived(blocked ?? (edit.sourceOnly ? t("edit.visualForMarkdown") : null));
+
+  function reason(mode: DocMode): string | null {
+    if (mode === "read") return null;
+    return mode === "visual" ? visualBlocked : blocked;
+  }
 
   function isOff(mode: DocMode): boolean {
-    return mode !== "read" && blocked !== null;
+    return reason(mode) !== null;
   }
 
   function title(mode: DocMode): string {
-    if (isOff(mode) && blocked) return blocked;
+    const why = reason(mode);
+    if (why) return why;
     const hint = t(`mode.${mode}Hint`);
     const shortcut = shortcutToward(mode, current, edit.lastEditMode);
     return shortcut ? t("mode.withKeys", { hint, keys: keys(shortcut) }) : hint;
@@ -33,9 +41,10 @@
 
   function choose(mode: DocMode): void {
     if (mode === current || edit.switching || edit.loading) return;
-    if (isOff(mode) && blocked) {
+    const why = reason(mode);
+    if (why) {
       // the segment stays reachable (so its tooltip can say why), and a click says it too
-      toast.message(blocked, "info");
+      toast.message(why, "info");
       return;
     }
     void edit.goTo(mode);

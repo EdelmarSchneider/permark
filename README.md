@@ -151,6 +151,39 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - **Comments**: select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
   (see [Use with an AI agent](#use-with-an-ai-agent))
 
+### 📝 Notes
+Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick.
+- **A notes window of its own** (`Ctrl+Shift+D`, or the sticky-note icon in the activity bar, or **Notes** on the welcome screen). `Ctrl+Shift+N`
+  starts a new note from any TrailMark window, in the Visual editor with the caret ready. A note is a plain Markdown file in
+  `Documents/TrailMark Notes` (change it in **Settings → Notes**); its name is the date and time (`2026-10-15 1432.md`), its title is its
+  first line, and a note you never typed in leaves no file behind
+- **Saved as you type**: 750 ms after you stop, and at least every 3 seconds. Switching notes, leaving the window or closing it saves too, and closing
+  never asks. Each note remembers its mode and where you were. TrailMark writes nothing inside a note's text, and never overwrites a version
+  it has not seen: if something else changed the file, your text is kept next to it as a "(conflict ...)" copy
+- **Pinned notes first, then Today, Yesterday, This week, This month and Older.** A note moves up when you leave it, not while you type.
+  Pin a note and put it where you want it (drag, or `Alt+↑` / `Alt+↓`); `Ctrl+1` … `9` jump to the pinned ones. The filter box and
+  `Ctrl+P`, `Ctrl+T` and `Ctrl+Shift+F` search the notes
+- **Copy** (`Ctrl+Shift+C`) puts the exact Markdown of the note on the clipboard and marks it, with a **Delete note** button right in the toast,
+  for the prompts and snippets you write only to paste. **Delete copied notes** clears the marked ones and keeps the pinned. In a project,
+  `Ctrl+Shift+C` copies the whole open document
+- **Deleting is gentle**: the note goes to the system trash, the toast has **Undo**, and a pinned note asks first. **Show earlier versions** restores
+  an earlier text of the note (one is kept at the first save after you open a note and about every 10 minutes after, for 30 days)
+- **Files from anywhere** join the list under **Files**: open a Markdown or text file with "Open with TrailMark", with `Ctrl+Shift+O`, or by
+  dropping it on the Notes window (a file inside the project you have open still opens in that project). A file is never written on its own: it
+  opens in Read, `E` edits it, and `Ctrl+S` saves it. What you type before you save is kept apart from the file and comes back after a
+  restart, with an "unsaved" mark; closing the window asks nothing. If the file changes on disk while it is open, what you see stays until you
+  choose **Reload** (your typed text is kept as a note first) or **Keep mine** (the next save asks once more before it replaces the version on
+  disk). A file that is not found stays in the list, dimmed, with **Locate...** and **Remove from list**, and a rename in its folder is followed.
+  Text files (`.txt`) are edited in Source. Removing a file from the list never touches the file
+- **Move to project...** (`Ctrl+Shift+S`) is for a note that grew into a document: the Save dialog opens in the project you used last, with a name made
+  from the title; the note is written there exactly as it is, goes to the system trash, and its row moves to **Files**. The toast has
+  **Open in project** and **Undo** (which brings the note back, and takes the copy away unless you changed it since)
+- **Share with agents** marks a note that an AI agent connected to any of your projects may read (see
+  [What an agent can do](#what-an-agent-can-do)); a small mark shows it in the list and in the header. Notes you did not share stay private
+- **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
+  with any tool, and TrailMark picks the change up. Another TrailMark process can't write to the same notes at once (the second one opens read-only)
+- **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
+
 ### 🗂️ Zero footprint by default
 TrailMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
 **Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
@@ -253,10 +286,15 @@ is TrailMark running as you, and not another program that took the name.
 | `list_comments` | Your [comments](#comments): the open ones, each with the quoted passage, its section and line, and your text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
+| `list_notes` | The [notes](#-notes) you chose to share with agents, each with its title, when it changed and its size |
+| `read_note` | The text of one shared note, by the name `list_notes` gave |
 
 The agent only reads, shows you a place, and checks off comments you wrote. It cannot create comments and it cannot edit a document through
-TrailMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. When TrailMark is
-closed, `list_unread`, `search`, `list_comments` and `resolve_comment` still work from the project's files, `get_context` says that
+TrailMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. Your notes are private:
+the agent sees only the notes you shared one by one (**Share with agents** in a note's menu, **Stop sharing** takes it back at once), through
+`list_notes` and `read_note`, in any project whose connection is on; it cannot list the notes folder, read a note you did not share, or change
+one, and a notes folder that lies inside a project is not part of that project's search. When TrailMark is
+closed, `list_unread`, `search`, `list_comments`, `resolve_comment`, `list_notes` and `read_note` still work from the files, `get_context` says that
 TrailMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
 
 ### Add what you are reading to every prompt
@@ -341,6 +379,21 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Link / inline code | `Ctrl+K` / ``Ctrl+` `` |
 | Headings 1 to 4 / paragraph (Visual) | `Ctrl+Alt+1` … `4` / `Ctrl+Alt+0` |
 | Block menu (Visual) | `/` in an empty paragraph |
+
+**Notes**
+
+| Action | Shortcut |
+|---|---|
+| New note (from any TrailMark window) | `Ctrl+Shift+N` |
+| Show the Notes window | `Ctrl+Shift+D` |
+| Copy the note's text (in a project: the open document) | `Ctrl+Shift+C` |
+| Open a pinned note | `Ctrl+1` … `9` |
+| Open a file (listed under Files) | `Ctrl+Shift+O` |
+| Save a file you opened (a note saves itself) | `Ctrl+S` |
+| Move the note into a project | `Ctrl+Shift+S` |
+| Next / previous note | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
+| Move the selected pinned note up / down | `Alt+↑` / `Alt+↓` |
+| Rename the note / delete it | `F2` / `Del` |
 
 **In the Explorer**
 

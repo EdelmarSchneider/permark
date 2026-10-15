@@ -7,20 +7,22 @@
 //! out through [`AgentEvents`].
 
 use std::collections::VecDeque;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 
 use crate::comments::{CommentError, CommentView};
+use crate::notes::share::{self, ShareError};
 use crate::search::SearchHit;
 use crate::util::now_ms;
 use crate::vault::Vault;
 
-use super::answers;
+use super::answers::{self, PrivateTree};
 use super::context::{AgentContext, Published, ViewMode};
 use super::protocol::{
-    Call, ErrorKind, Hits, Opened, ProtocolError, Reply, Request, UnreadList, DEFAULT_SEARCH_HITS,
-    MAX_SEARCH_HITS,
+    Call, ErrorKind, Hits, NoteList, Opened, ProtocolError, Reply, Request, UnreadList,
+    DEFAULT_SEARCH_HITS, MAX_SEARCH_HITS,
 };
 
 /// How many requests the popover can list. One constant to change.
@@ -36,6 +38,8 @@ pub trait Backend: Send + Sync + 'static {
     fn comments(&self) -> Vec<CommentView>;
     /// Marks a comment done by an agent.
     fn resolve_comment(&self, id: &str, reply: Option<&str>) -> Result<CommentView, CommentError>;
+    /// The folder of the notes, where the notes the person shared are read from (not part of any project).
+    fn notes_folder(&self) -> Option<PathBuf>;
 }
 
 /// What the interface hears about.
@@ -124,6 +128,8 @@ pub struct Hub {
     latest: Mutex<Published>,
     pending_open: Mutex<Option<Opened>>,
     state: Mutex<State>,
+    /// The folder of the notes, when it is inside the project: nothing in it is shown, opened, found or commented on.
+    private: Mutex<PrivateTree>,
 }
 
 impl Hub {
@@ -138,7 +144,18 @@ impl Hub {
             }),
             pending_open: Mutex::new(None),
             state: Mutex::new(State::default()),
+            private: Mutex::new(PrivateTree::default()),
         }
+    }
+
+    /// Says which folder of the project is the person's private notes (see [`PrivateTree`]).
+    pub fn set_private(&self, private: PrivateTree) {
+        *lock(&self.private) = private;
+    }
+
+    /// Whether the document `rel` of the project is in the private notes folder.
+    fn is_private(&self, rel: &str) -> bool {
+        lock(&self.private).covers_path(&self.vault, rel)
     }
 
     /// Says where the program is, so the setup snippets can name it.
@@ -152,8 +169,17 @@ impl Hub {
 
     /// Keeps what the window shows (after deciding what may be shared) and returns it with its time.
     pub fn publish(&self, context: AgentContext) -> Published {
+        let mut context = context.sanitize(&self.vault);
+        // a private note the person has open is shown to nobody: it is as if no document were open
+        if context
+            .document
+            .as_deref()
+            .is_some_and(|document| self.is_private(document))
+        {
+            context = AgentContext::default();
+        }
         let published = Published {
-            context: context.sanitize(&self.vault),
+            context,
             updated_at_ms: now_ms(),
         };
         *lock(&self.latest) = published.clone();
@@ -229,10 +255,16 @@ impl Hub {
         lock(&self.state).connections
     }
 
-    fn note(&self, request: &Request) {
+    /// Remembers that an agent asked this, for the popover. `subject` says what it was about when that is not what the request
+    /// names (a note is told by its title, not by its file name).
+    fn note(&self, request: &Request, subject: Option<String>) {
+        self.note_tool(request.tool(), subject.or_else(|| request.subject()));
+    }
+
+    fn note_tool(&self, tool: &str, subject: Option<String>) {
         let record = RequestRecord {
-            tool: request.tool().to_owned(),
-            subject: request.subject(),
+            tool: tool.to_owned(),
+            subject,
             at_ms: now_ms(),
         };
         self.update(|state| {
@@ -246,11 +278,20 @@ impl Hub {
     /// The reply to one request.
     pub fn handle(&self, call: Call) -> Reply {
         let Call { id, request } = call;
-        self.note(&request);
+        // a read of a note is remembered by the note's title, which is known once it was read
+        if !matches!(request, Request::ReadNote { .. }) {
+            self.note(&request, None);
+        }
         match request {
             Request::GetContext => Reply::success(id, json(&self.context())),
             Request::ListUnread => {
-                let docs = answers::unread_docs(&self.vault, &self.backend.unread());
+                let unread: Vec<String> = self
+                    .backend
+                    .unread()
+                    .into_iter()
+                    .filter(|path| !self.is_private(path))
+                    .collect();
+                let docs = answers::unread_docs(&self.vault, &unread);
                 Reply::success(id, json(&UnreadList::new(docs)))
             }
             Request::Search { query, limit } => {
@@ -264,15 +305,35 @@ impl Hub {
                 let limit = limit
                     .unwrap_or(DEFAULT_SEARCH_HITS)
                     .clamp(1, MAX_SEARCH_HITS);
-                let hits = answers::plain_hits(self.backend.search(query, limit));
+                let found: Vec<SearchHit> = self
+                    .backend
+                    .search(query, limit)
+                    .into_iter()
+                    .filter(|hit| !self.is_private(&hit.path))
+                    .collect();
+                let hits = answers::plain_hits(found);
                 Reply::success(id, json(&Hits { hits }))
             }
             Request::ListComments { which } => {
                 let list =
-                    answers::comment_list(self.backend.comments(), which.unwrap_or_default());
+                    answers::comment_list(self.visible_comments(), which.unwrap_or_default());
                 Reply::success(id, json(&list))
             }
             Request::ResolveComment { comment, reply } => {
+                // a comment on a private note is a comment that is not there
+                if !self
+                    .visible_comments()
+                    .iter()
+                    .any(|known| known.id == comment)
+                {
+                    return Reply::failure(
+                        id,
+                        ProtocolError::new(
+                            ErrorKind::NotFound,
+                            CommentError::NotFound(comment).to_string(),
+                        ),
+                    );
+                }
                 match self.backend.resolve_comment(&comment, reply.as_deref()) {
                     Ok(view) => Reply::success(id, json(&view)),
                     Err(error @ CommentError::NotFound(_)) => Reply::failure(
@@ -289,23 +350,73 @@ impl Hub {
                 path,
                 line,
                 heading,
-            } => match answers::prepare_open(&self.vault, &path, line, heading.as_deref()) {
-                Ok(opened) => {
-                    *lock(&self.pending_open) = Some(opened.clone());
-                    self.events.open_requested();
-                    let mut shown = json(&opened);
-                    // The window does not take a person away from what they are writing: it shows a notice with a way
-                    // to the place instead, and the agent should know that nothing moved on the screen.
-                    if self.person_is_editing() {
-                        if let Some(fields) = shown.as_object_mut() {
-                            fields.insert("editing".to_owned(), serde_json::Value::Bool(true));
-                        }
-                    }
-                    Reply::success(id, shown)
-                }
-                Err(error) => Reply::failure(id, error),
-            },
+            } => self.open(id, &path, line, heading.as_deref()),
+            Request::ListNotes => {
+                let shared = self
+                    .backend
+                    .notes_folder()
+                    .map(|root| share::list_shared(&root))
+                    .unwrap_or_default();
+                Reply::success(id, json(&NoteList::new(shared)))
+            }
+            Request::ReadNote { note } => self.read_note(id, &note),
         }
+    }
+
+    /// An agent reads a note the person shared. The popover tells the note by its title when it was read, and by the name asked for
+    /// when it was not; a note that is not shared is a note that is not there, and nothing is said of what exists.
+    fn read_note(&self, id: u64, note: &str) -> Reply {
+        let read = self
+            .backend
+            .notes_folder()
+            .map(|root| share::read_shared(&root, note));
+        let subject = match &read {
+            Some(Ok(text)) if !text.title.is_empty() => text.title.clone(),
+            _ => note.trim().to_owned(),
+        };
+        self.note_tool("read_note", Some(subject.chars().take(80).collect()));
+        match read {
+            Some(Ok(text)) => Reply::success(id, json(&text)),
+            Some(Err(error @ (ShareError::TooLarge | ShareError::NotText))) => Reply::failure(
+                id,
+                ProtocolError::new(ErrorKind::Unavailable, error.to_string()),
+            ),
+            Some(Err(ShareError::NotShared)) | None => Reply::failure(
+                id,
+                ProtocolError::new(ErrorKind::NotFound, ShareError::NotShared.to_string()),
+            ),
+        }
+    }
+
+    /// An agent asks to be shown a place: it is checked (a private note is a path that does not exist), and the window picks it up.
+    fn open(&self, id: u64, path: &str, line: Option<u32>, heading: Option<&str>) -> Reply {
+        let checked =
+            answers::prepare_open_hiding(&self.vault, &lock(&self.private), path, line, heading);
+        match checked {
+            Ok(opened) => {
+                *lock(&self.pending_open) = Some(opened.clone());
+                self.events.open_requested();
+                let mut shown = json(&opened);
+                // The window does not take a person away from what they are writing: it shows a notice with a way
+                // to the place instead, and the agent should know that nothing moved on the screen.
+                if self.person_is_editing() {
+                    if let Some(fields) = shown.as_object_mut() {
+                        fields.insert("editing".to_owned(), serde_json::Value::Bool(true));
+                    }
+                }
+                Reply::success(id, shown)
+            }
+            Err(error) => Reply::failure(id, error),
+        }
+    }
+
+    /// The comments of the project that are not on a private note.
+    fn visible_comments(&self) -> Vec<CommentView> {
+        self.backend
+            .comments()
+            .into_iter()
+            .filter(|comment| !self.is_private(&comment.path))
+            .collect()
     }
 
     /// The line of a client that is not a request: the id it carried, if any, is answered with the error.
@@ -338,9 +449,15 @@ pub(crate) mod testing {
         pub opens: AtomicUsize,
         /// How many times the unread list was asked for (counted before it waits for its lock).
         pub unread_asked: AtomicUsize,
+        /// Where the notes are (none until a test makes a folder of notes).
+        pub notes: Mutex<Option<PathBuf>>,
     }
 
     impl Backend for Fake {
+        fn notes_folder(&self) -> Option<PathBuf> {
+            lock(&self.notes).clone()
+        }
+
         fn unread(&self) -> Vec<String> {
             self.unread_asked.fetch_add(1, Ordering::SeqCst);
             lock(&self.unread).clone()
@@ -611,6 +728,104 @@ mod tests {
         assert_eq!(missing.error.expect("error").kind, ErrorKind::NotFound);
     }
 
+    /// A folder of notes: `shared one.md` is shared, `private.md` is not.
+    fn notes() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir_all(dir.path().join(".trailmark")).expect("mkdir");
+        std::fs::write(
+            dir.path().join("shared one.md"),
+            "# Server IPs\napi 10.0.0.4\n",
+        )
+        .expect("write");
+        std::fs::write(dir.path().join("private.md"), "# Private\n").expect("write");
+        std::fs::write(
+            dir.path().join(".trailmark").join("notes.json"),
+            r#"{"shared": ["shared one.md"]}"#,
+        )
+        .expect("notes.json");
+        dir
+    }
+
+    #[test]
+    fn shared_notes_are_listed_and_read_and_the_popover_tells_the_note_by_its_title() {
+        let (_dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        let notes = notes();
+        *lock(&fake.notes) = Some(notes.path().to_path_buf());
+
+        let reply = hub.handle(call(1, Request::ListNotes));
+        assert!(reply.ok, "{reply:?}");
+        let list = reply.result.expect("a list");
+        assert_eq!(list["total"], 1);
+        assert_eq!(list["notes"][0]["note"], "shared one.md");
+        assert_eq!(list["notes"][0]["title"], "Server IPs");
+
+        let reply = hub.handle(call(
+            2,
+            Request::ReadNote {
+                note: "shared one.md".to_owned(),
+            },
+        ));
+        assert_eq!(
+            reply.result.expect("text")["text"],
+            "# Server IPs\napi 10.0.0.4\n"
+        );
+        let recent = hub.status().recent;
+        assert_eq!(recent[0].tool, "read_note");
+        assert_eq!(recent[0].subject.as_deref(), Some("Server IPs"));
+        assert_eq!(recent[1].tool, "list_notes");
+        assert_eq!(recent[1].subject, None);
+    }
+
+    #[test]
+    fn a_note_that_is_not_shared_is_not_found_whatever_is_true_of_it() {
+        let (_dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        let notes = notes();
+        *lock(&fake.notes) = Some(notes.path().to_path_buf());
+        for name in [
+            "private.md",
+            "nothing.md",
+            "../private.md",
+            ".trailmark/notes.json",
+        ] {
+            let reply = hub.handle(call(
+                1,
+                Request::ReadNote {
+                    note: name.to_owned(),
+                },
+            ));
+            assert!(!reply.ok, "{name}");
+            let error = reply.error.expect("an error");
+            assert_eq!(error.kind, ErrorKind::NotFound, "{name}");
+            assert!(
+                !error.message.contains("private"),
+                "{name}: {}",
+                error.message
+            );
+        }
+        // the popover still says what was asked
+        assert_eq!(
+            hub.status().recent[0].subject.as_deref(),
+            Some(".trailmark/notes.json")
+        );
+    }
+
+    #[test]
+    fn without_a_notes_folder_nothing_is_shared() {
+        let (_dir, vault) = project();
+        let (hub, _fake) = hub(vault);
+        let reply = hub.handle(call(1, Request::ListNotes));
+        assert_eq!(reply.result.expect("a list")["total"], 0);
+        let reply = hub.handle(call(
+            2,
+            Request::ReadNote {
+                note: "shared one.md".to_owned(),
+            },
+        ));
+        assert_eq!(reply.error.expect("an error").kind, ErrorKind::NotFound);
+    }
+
     #[test]
     fn open_waits_for_the_window_and_tells_it_once() {
         let (_dir, vault) = project();
@@ -693,6 +908,121 @@ mod tests {
         }
         assert_eq!(fake.opens.load(Ordering::SeqCst), 0);
         assert_eq!(hub.take_open(), None);
+    }
+
+    /// The notes folder can lie inside a project. What an agent asks about it is answered as if it were not there: not opened (and
+    /// no word on its headings), not the open document, not commented on, not listed and not found.
+    #[test]
+    fn the_notes_folder_inside_the_project_is_answered_as_a_path_that_does_not_exist() {
+        use super::super::answers::PrivateTree;
+        let (dir, vault) = project();
+        std::fs::create_dir_all(dir.path().join("notes")).expect("mkdir");
+        std::fs::write(
+            dir.path().join("notes/n1.md"),
+            "# Private\n\n## Secret heading\n\nthe pelican\n",
+        )
+        .expect("write");
+        let (hub, fake) = hub(vault);
+        let notes = dunce::canonicalize(dir.path().join("notes")).expect("canonical");
+        hub.set_private(PrivateTree::at(notes));
+
+        let asked = |hub: &Hub, path: &str, heading: Option<&str>| {
+            let reply = hub.handle(call(
+                7,
+                Request::Open {
+                    path: path.to_owned(),
+                    line: Some(2),
+                    heading: heading.map(str::to_owned),
+                },
+            ));
+            let error = reply.error.expect("it is refused");
+            (error.kind, error.message.replace(path, "<path>"))
+        };
+        // the same answer as for a note that is not there, with or without a heading to find out about
+        let missing = asked(&hub, "notes/zzz.md", Some("Secret heading"));
+        assert_eq!(missing.0, ErrorKind::NotFound);
+        for path in [
+            "notes/n1.md",
+            "NOTES\\n1.md",
+            "./notes/n1.md",
+            "notes/../notes/n1.md",
+        ] {
+            assert_eq!(asked(&hub, path, Some("Secret heading")), missing, "{path}");
+            assert_eq!(asked(&hub, path, Some("Not a heading")), missing, "{path}");
+            assert_eq!(asked(&hub, path, None), missing, "{path}");
+        }
+        assert_eq!(fake.opens.load(Ordering::SeqCst), 0);
+        assert_eq!(hub.take_open(), None);
+        // the rest of the project still opens
+        assert!(
+            hub.handle(call(
+                8,
+                Request::Open {
+                    path: "docs/plan.md".to_owned(),
+                    line: None,
+                    heading: None
+                }
+            ))
+            .ok
+        );
+
+        // the person looking at a note shows an agent nothing at all
+        hub.publish(AgentContext {
+            document: Some("notes/n1.md".to_owned()),
+            mode: Some(ViewMode::Source),
+            unsaved: true,
+            ..AgentContext::default()
+        });
+        assert_eq!(hub.context().context, AgentContext::default());
+
+        // a comment on a note is not listed, and cannot be resolved by its id
+        *lock(&fake.comments) = vec![
+            comment("c1", "notes/n1.md", 3),
+            comment("c2", "docs/plan.md", 5),
+        ];
+        let listed = hub
+            .handle(call(9, Request::ListComments { which: None }))
+            .into_result()
+            .expect("a result");
+        let ids: Vec<_> = listed["comments"]
+            .as_array()
+            .expect("a list")
+            .iter()
+            .map(|c| c["id"].as_str().expect("id").to_owned())
+            .collect();
+        assert_eq!(ids, ["c2"]);
+        let refused = hub.handle(call(
+            10,
+            Request::ResolveComment {
+                comment: "c1".to_owned(),
+                reply: None,
+            },
+        ));
+        assert_eq!(refused.error.expect("refused").kind, ErrorKind::NotFound);
+        assert!(lock(&fake.resolved).is_empty());
+
+        // and what the backend lists as unread or finds is held back too
+        *lock(&fake.unread) = vec!["notes/n1.md".to_owned(), "docs/plan.md".to_owned()];
+        let unread = hub
+            .handle(call(11, Request::ListUnread))
+            .into_result()
+            .expect("a result");
+        assert_eq!(unread["total"], 1);
+        *lock(&fake.corpus) = vec![
+            hit("notes/n1.md", "the pelican"),
+            hit("docs/plan.md", "the pelican"),
+        ];
+        let found = hub
+            .handle(call(
+                12,
+                Request::Search {
+                    query: "pelican".to_owned(),
+                    limit: None,
+                },
+            ))
+            .into_result()
+            .expect("a result");
+        assert_eq!(found["hits"].as_array().expect("hits").len(), 1);
     }
 
     #[test]

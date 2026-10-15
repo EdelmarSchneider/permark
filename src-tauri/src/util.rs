@@ -147,8 +147,9 @@ pub(crate) enum Guarded<R> {
 }
 
 /// Writes a file atomically: the bytes go to a temp file in the same directory, which is flushed to
-/// disk before it is renamed into place, so a power loss leaves the old file or the new one but never
-/// an empty one. A rename that fails because another program holds the target (antivirus, a sync
+/// disk before it is renamed into place, and the rename itself is made durable (the folder is flushed on
+/// Unix, the rename is written through on Windows), so a power loss leaves the old file or the new one
+/// but never an empty one. A rename that fails because another program holds the target (antivirus, a sync
 /// client) is retried briefly. The permissions of the file being replaced (the mode bits on Unix, the
 /// read-only attribute on Windows) are given to the new one; ACLs, ownership and hard links are not
 /// carried over.
@@ -195,7 +196,7 @@ pub(crate) fn write_atomic_guarded<R>(
                     refused = Some(why);
                     return Ok(());
                 }
-                std::fs::rename(&tmp, path)
+                rename_durably(&tmp, path)
             })
         });
     match (result, refused) {
@@ -209,6 +210,135 @@ pub(crate) fn write_atomic_guarded<R>(
             Err(e)
         }
     }
+}
+
+/// Renames `from` over `to` and does not return before the rename is on the disk, so a power cut right after a save
+/// cannot bring the old file back (or lose both).
+///
+/// Unix: the rename, then a flush of the folder that holds the new name (a failure to flush is ignored: the
+/// rename has happened, and some file systems cannot flush a folder). Windows: one `MoveFileExW` that replaces the
+/// target and returns when the move is written through to the disk.
+fn rename_durably(from: &Path, to: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        move_file_write_through(from, to)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(from, to)?;
+        #[cfg(unix)]
+        if let Some(dir) = to.parent() {
+            sync_directory(dir);
+        }
+        Ok(())
+    }
+}
+
+/// Makes the name of a file that was just created durable, as far as the system lets this be done: on Unix the folder that holds
+/// it is flushed (the file's own `sync_all` does not cover its entry in the folder, so a power cut could still lose the file);
+/// Windows has no call for it, and the flush of the file is what there is. A failure is ignored: the file is there.
+pub(crate) fn sync_parent(path: &Path) {
+    #[cfg(unix)]
+    if let Some(dir) = path.parent() {
+        sync_directory(dir);
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
+/// Flushes a folder's entries to the disk, as far as the system lets this be done.
+#[cfg(unix)]
+fn sync_directory(dir: &Path) {
+    let dir = if dir.as_os_str().is_empty() {
+        Path::new(".")
+    } else {
+        dir
+    };
+    if let Ok(folder) = std::fs::File::open(dir) {
+        let _ = folder.sync_all();
+    }
+}
+
+/// `MoveFileExW` replacing the target, with the write-through flag. `std::fs::rename` does not ask for the flag.
+#[cfg(windows)]
+// MoveFileExW has no safe wrapper in std; both arguments are NUL-terminated wide strings owned by this function.
+#[allow(unsafe_code)]
+fn move_file_write_through(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    let wide = |path: &Path| -> io::Result<Vec<u16>> {
+        let mut units: Vec<u16> = path.as_os_str().encode_wide().collect();
+        if units.contains(&0) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "the path contains a NUL",
+            ));
+        }
+        units.push(0);
+        Ok(units)
+    };
+    let (from, to) = (wide(&extended(from))?, wide(&extended(to))?);
+    // SAFETY: both pointers come from live, NUL-terminated buffers that outlive the call.
+    let moved = unsafe {
+        MoveFileExW(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+/// The paths shorter than this many UTF-16 units are given to Windows as they are (it reads at most 259 plus the NUL without the prefix).
+#[cfg(windows)]
+const SHORT_PATH_UNITS: usize = 240;
+
+/// A path as `MoveFileExW` can read it when it is long: an absolute one of 240 UTF-16 units or more gets the `\\?\` prefix (`\\?\UNC\`
+/// for `\\server\share`). `std::fs` does this by itself, but the function called directly does not, and without it a file deeper than
+/// 260 characters could not be saved. Anything else (short, relative, already prefixed, with a `..` in it) is returned as it was.
+#[cfg(windows)]
+fn extended(path: &Path) -> std::path::PathBuf {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStrExt;
+    use std::path::{Component, Prefix};
+
+    if path.as_os_str().encode_wide().count() < SHORT_PATH_UNITS || !path.is_absolute() {
+        return path.to_path_buf();
+    }
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return path.to_path_buf();
+    };
+    let mut out = OsString::from(r"\\?\");
+    match prefix.kind() {
+        Prefix::Disk(letter) => out.push(format!("{}:", char::from(letter))),
+        Prefix::UNC(server, share) => {
+            out.push(r"UNC\");
+            out.push(server);
+            out.push(r"\");
+            out.push(share);
+        }
+        _ => return path.to_path_buf(),
+    }
+    for component in components {
+        match component {
+            Component::Normal(name) => {
+                out.push(r"\");
+                out.push(name);
+            }
+            Component::RootDir | Component::CurDir => {}
+            Component::ParentDir | Component::Prefix(_) => return path.to_path_buf(),
+        }
+    }
+    out.into()
 }
 
 /// Removes a temp file that is not going to be used. It may carry the read-only attribute of the file it
@@ -413,12 +543,72 @@ mod tests {
     }
 
     #[test]
+    fn syncing_the_folder_of_a_new_file_is_best_effort_and_never_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("new.md");
+        std::fs::write(&file, "x").expect("write");
+        sync_parent(&file);
+        // a file in a folder that is not there, one with no folder part, and the root: nothing to flush, nothing to fail
+        sync_parent(&dir.path().join("gone").join("new.md"));
+        sync_parent(Path::new("new.md"));
+        sync_parent(Path::new("/"));
+        assert_eq!(std::fs::read(&file).expect("read"), b"x");
+    }
+
+    #[test]
     fn write_atomic_replaces_existing_file() {
         let dir = tempfile::tempdir().expect("tempdir");
         let p = dir.path().join("sub").join("a.json");
         write_atomic(&p, b"one").expect("first write");
         write_atomic(&p, b"two").expect("second write");
         assert_eq!(std::fs::read(&p).expect("read"), b"two");
+    }
+
+    /// A file whose path is longer than the 260 characters Windows reads without the `\\?\` prefix: the rename that
+    /// makes a save durable has to be given the prefix, or it fails with "path not found".
+    #[cfg(windows)]
+    #[test]
+    fn write_atomic_replaces_a_file_whose_path_is_over_260_characters() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let mut folder = dir.path().to_path_buf();
+        while folder.as_os_str().len() < 300 {
+            folder.push("a-folder-with-a-long-enough-name-to-get-there-fast");
+        }
+        let p = folder.join("note.md");
+        assert!(p.as_os_str().len() > 260);
+        write_atomic(&p, b"one").expect("first write");
+        write_atomic(&p, b"two").expect("second write");
+        assert_eq!(std::fs::read(&p).expect("read"), b"two");
+        let names: Vec<_> = std::fs::read_dir(&folder)
+            .expect("read_dir")
+            .map(|e| e.expect("entry").file_name())
+            .collect();
+        assert_eq!(names.len(), 1, "no temp file is left: {names:?}");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn extended_paths_get_the_prefix_only_when_they_are_long() {
+        let short = Path::new(r"C:\Users\ana\notes\a.md");
+        assert_eq!(extended(short), short);
+        let long_name = "x".repeat(250);
+        let long = Path::new(r"C:\Users\ana").join(&long_name).join("a.md");
+        assert_eq!(
+            extended(&long),
+            Path::new(&format!(r"\\?\C:\Users\ana\{long_name}\a.md"))
+        );
+        let share = Path::new(r"\\server\share\docs")
+            .join(&long_name)
+            .join("a.md");
+        assert_eq!(
+            extended(&share),
+            Path::new(&format!(r"\\?\UNC\server\share\docs\{long_name}\a.md"))
+        );
+        // already extended, or not absolute: left alone
+        let verbatim = Path::new(r"\\?\C:\Users").join(&long_name);
+        assert_eq!(extended(&verbatim), verbatim);
+        let relative = Path::new("docs").join(&long_name);
+        assert_eq!(extended(&relative), relative);
     }
 
     #[test]
@@ -490,6 +680,23 @@ mod tests {
         assert!(failed.is_err());
         assert_eq!(std::fs::read(&p).expect("read"), b"new");
         assert_eq!(names_in(dir.path()), ["a.md"]);
+    }
+
+    #[test]
+    fn a_durable_rename_replaces_the_target_and_leaves_nothing_behind() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (from, to) = (dir.path().join("new.md"), dir.path().join("old.md"));
+        std::fs::write(&from, "new").expect("write");
+        std::fs::write(&to, "old").expect("write");
+        rename_durably(&from, &to).expect("rename");
+        assert_eq!(std::fs::read(&to).expect("read"), b"new");
+        assert_eq!(names_in(dir.path()), ["old.md"]);
+        // a name that is free works too, and a missing source is an error
+        let fresh = dir.path().join("fresh.md");
+        std::fs::write(dir.path().join("x.md"), "x").expect("write");
+        rename_durably(&dir.path().join("x.md"), &fresh).expect("rename");
+        assert!(rename_durably(&dir.path().join("gone.md"), &fresh).is_err());
+        assert_eq!(std::fs::read(&fresh).expect("read"), b"x");
     }
 
     #[test]

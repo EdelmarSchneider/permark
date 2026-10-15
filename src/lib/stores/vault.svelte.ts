@@ -30,6 +30,8 @@ class VaultStore {
   rollups = $derived(this.git ? rollups(this.git.files) : new Map<string, never>());
   files = $derived(this.tree ? collectFiles(this.tree.children ?? []) : []);
   isSimple = $derived(this.info?.mode === "simple");
+  /** The notes folder of the Notes window: no git, no unread markers, no agent connection. */
+  isNotes = $derived(this.info?.kind === "notes");
   changedCount = $derived(this.git ? Object.keys(this.git.files).length : 0);
 
   private revealCount = 0;

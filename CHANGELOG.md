@@ -6,12 +6,40 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Notes.** A window of its own for quick notes, drafts and prompts: open it with `Ctrl+Shift+D` (or the sticky-note icon, or **Notes** on
+  the welcome screen), press `Ctrl+Shift+N` from any TrailMark window to start a note, and type. Notes are plain Markdown files in
+  `Documents/TrailMark Notes` (**Settings → Notes** changes the folder, and **On start** can open the Notes window instead of the
+  welcome screen). A note is saved as you type, and closing never asks; it has no file until you type something, and is titled by its first line.
+  The list has pinned notes (drag or `Alt+↑` / `Alt+↓` to order them, `Ctrl+1` … `9` to open them), then Today, Yesterday, This week, This month
+  and Older, and a filter. **Copy** (`Ctrl+Shift+C`) puts the exact Markdown on the clipboard and marks the note, with **Delete note** in the toast
+  and **Delete copied notes** in the menu; in a project, `Ctrl+Shift+C` copies the whole open document. Delete goes to the system trash with Undo,
+  **Show earlier versions** restores an earlier text, and **Rename** (`F2`) gives a note a file name.
+  A note changed on disk while you write is never overwritten (your text is kept as a "(conflict ...)" copy), a save is durable
+  (the folder is flushed after the rename), and a second TrailMark process opens the same notes read-only.
+- **Files in the Notes window.** A Markdown or text file opened with "Open with TrailMark", `Ctrl+Shift+O` or a drop on the Notes window is
+  listed under **Files** (a file inside the project you have open still opens in that project, and a file of the notes folder opens as a
+  note). A file is never written on its own: it opens in Read, `E` edits it, `Ctrl+S` saves it, and what you type before is kept apart and
+  comes back after a restart. When the file changes on disk, what you see stays until you choose **Reload** (your text is kept as a note) or
+  **Keep mine** (the next save asks once more); a file that is gone stays in the list, dimmed, with **Locate...** and **Remove from list**,
+  and a rename in its folder is followed. `.txt` files are edited in Source. A setting reloads a changed file that nothing was typed into.
+- **Move a note to a project, and share a note with agents.** **Move to project...** (`Ctrl+Shift+S`) writes a note, exactly as it is, where the
+  Save dialog says (it opens in the project you used last), sends the note to the trash and lists the copy under **Files**; the toast has
+  **Open in project** and **Undo**. **Share with agents** marks a note, and an agent connected to any project whose connection is on can list
+  the shared notes (`list_notes`) and read one (`read_note`); it sees no other note, and **Stop sharing** takes it back at once. The Agent
+  popover lists "Read the note ..." like any other request.
 - **A Microsoft Store build.** TrailMark can now be packaged for the Microsoft Store (`scripts/build-msix.ps1` builds an unsigned
   MSIX; see `docs/msstore.md`). The Store version is the same program with a few differences: the Store updates it, so it has no
   "Check for updates" and makes no update requests; it puts `trailmark` on your `PATH`, so the agent setup lines in Settings are the
   short ones (`trailmark mcp`); and Markdown files can be opened with it from the "Open with" menu. The right-click "Open with
   TrailMark" entry on folders is not in the Store version.
 - A [privacy policy](https://edelmarschneider.github.io/trailmark/privacy.html) page on the website.
+
+### Fixed
+- Visual editing keeps the keyboard focus and `Ctrl+Z` across a save. A save used to load the document again: after `Ctrl+S` (and after every
+  autosave of a note) the characters typed next were lost, undo stopped at the last save, and a space typed just before the save
+  (`alpha ` then `beta`) was dropped, so the words joined.
+- `C` (comment), `E` (edit) and `T` (tags) work right after a result of Search everywhere is opened; they used to do nothing until `Esc`.
+- A save works for a file whose path is longer than 260 characters on Windows. Since 0.4.0 it failed with "path not found".
 
 ## [0.4.0] - 2026-10-15
 

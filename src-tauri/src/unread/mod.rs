@@ -394,6 +394,26 @@ pub struct UnreadService {
 }
 
 impl UnreadService {
+    /// Unread markers that are off: no thread, no file, nothing ever unread. The notes folder has them: the person
+    /// writes those documents, and no other program is followed there.
+    pub fn off(vault: Arc<Vault>) -> Self {
+        Self {
+            vault,
+            shared: Arc::new(Shared {
+                inner: Mutex::new(Inner {
+                    tracker: Tracker::new(None),
+                    path: PathBuf::new(),
+                    announced: Vec::new(),
+                    dirty: false,
+                }),
+                notify: Arc::new(|_: &[String]| {}),
+            }),
+            tx: None,
+            stop: Arc::new(AtomicBool::new(false)),
+            handle: Mutex::new(None),
+        }
+    }
+
     /// Loads `read_path` (a missing or unreadable file means the project has no read state yet) and starts
     /// the thread, which looks at every document first. `notify` is called with the unread documents each time
     /// they change. A vault that is a single file has no markers.

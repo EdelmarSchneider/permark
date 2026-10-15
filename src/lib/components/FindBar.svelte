@@ -51,7 +51,7 @@
   }
 
   onMount(() => {
-    const unregister = registerOverlay(close);
+    const unregister = registerOverlay(close, false);
     if (ui.find.takeFocus) {
       input?.focus();
       input?.select();

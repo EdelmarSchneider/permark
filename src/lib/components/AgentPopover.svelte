@@ -19,6 +19,8 @@
     list_comments: "agent.request.list_comments",
     resolve_comment: "agent.request.resolve_comment",
     open: "agent.request.open",
+    list_notes: "agent.request.list_notes",
+    read_note: "agent.request.read_note",
   } as const;
 
   const status = $derived(agent.status);

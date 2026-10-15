@@ -43,7 +43,13 @@ use crate::workspace::{Asset, ChangedSince, EventSink, VaultInfo, Workspace, Wor
 pub type AppState = WorkspaceHost;
 
 /// Emits the contract's events to the webview.
-struct TauriSink(AppHandle);
+pub(crate) struct TauriSink(AppHandle);
+
+impl TauriSink {
+    pub(crate) fn new(app: AppHandle) -> Self {
+        Self(app)
+    }
+}
 
 impl EventSink for TauriSink {
     fn fs_change(&self, batch: &FsBatch) {
@@ -91,7 +97,7 @@ impl EventSink for TauriSink {
 }
 
 /// Runs blocking work on the blocking thread pool.
-async fn blocking<T, F>(f: F) -> Result<T, AppError>
+pub(crate) async fn blocking<T, F>(f: F) -> Result<T, AppError>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, AppError> + Send + 'static,
@@ -101,10 +107,11 @@ where
         .map_err(|e| AppError::Internal(e.to_string()))?
 }
 
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| AppError::Internal(e.to_string()))
+/// The app's data folder: the one answer for the whole program (see `bridge::project::app_data_dir`), so that what the
+/// program decides at start, before any window exists, and what a command later reads are the same folder.
+pub(crate) fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+    crate::bridge::project::app_data_dir(&app.config().identifier)
+        .ok_or_else(|| AppError::Internal("the system has no folder for the app's data".to_owned()))
 }
 
 #[tauri::command]
@@ -195,7 +202,7 @@ fn unquote_drive_root(arg: OsString) -> OsString {
     }
 }
 
-fn initial_path_from(arg: OsString, cwd: Option<PathBuf>) -> Option<String> {
+pub(crate) fn initial_path_from(arg: OsString, cwd: Option<PathBuf>) -> Option<String> {
     if arg.to_string_lossy().starts_with('-') {
         return None; // a flag, not a path
     }
@@ -826,13 +833,16 @@ mod tests {
     const CONTRACT: &str = include_str!("../ipc-contract.json");
     const LIB_SRC: &str = include_str!("lib.rs");
     const COMMANDS_SRC: &str = include_str!("commands.rs");
+    const NOTES_COMMANDS_SRC: &str = include_str!("notes_commands.rs");
 
-    /// This file without its test module (whose own text would match the scans below).
-    fn production_source() -> &'static str {
-        COMMANDS_SRC
+    /// The commands of the app: this file without its test module (whose own text would match the scans below), and the
+    /// commands of the Notes window.
+    fn production_source() -> String {
+        let own = COMMANDS_SRC
             .split("#[cfg(test)]")
             .next()
-            .unwrap_or_default()
+            .unwrap_or_default();
+        format!("{own}\n{NOTES_COMMANDS_SRC}")
     }
 
     /// Splits a parameter list at the commas that are not inside `<...>` or `(...)`.
@@ -858,7 +868,8 @@ mod tests {
     /// (everything except the injected `AppHandle` and `State`).
     fn declared_commands() -> BTreeMap<String, Vec<String>> {
         let mut out = BTreeMap::new();
-        for chunk in production_source()
+        let source = production_source();
+        for chunk in source
             .split(
                 "
 #[tauri::command]",
@@ -901,14 +912,19 @@ mod tests {
             .and_then(|rest| rest.split(']').next())
             .expect("generate_handler! in lib.rs");
         list.split(',')
-            .filter_map(|item| item.trim().strip_prefix("commands::"))
+            .filter_map(|item| {
+                let item = item.trim();
+                item.strip_prefix("commands::")
+                    .or_else(|| item.strip_prefix("notes_commands::"))
+            })
             .map(str::to_owned)
             .collect()
     }
 
-    /// The event names passed to `.emit("...")` in this file.
+    /// The event names passed to `.emit("...")` in the files of the commands.
     fn emitted_events() -> BTreeSet<String> {
-        production_source()
+        let source = production_source();
+        source
             .split(".emit(")
             .skip(1)
             .filter_map(|rest| {
@@ -935,6 +951,27 @@ mod tests {
             "generate_handler! in lib.rs"
         );
         assert_eq!(emitted_events(), events, "events emitted to the webview");
+    }
+
+    /// The data folder has one answer. Asking Tauri for it directly ignores `TRAILMARK_TEST_DATA_DIR` in a debug build, which
+    /// the code that decides whether this program is the Notes window honours: the two then disagreed about where the notes'
+    /// settings and the socket live, and a project window could not start a note.
+    #[test]
+    fn every_part_of_the_program_finds_the_data_folder_the_same_way() {
+        let asked_of_tauri = format!("{}app_data_dir()", ".path().");
+        for (name, source) in [
+            ("commands.rs", production_source()),
+            ("window/mod.rs", include_str!("window/mod.rs").to_owned()),
+            ("lib.rs", LIB_SRC.to_owned()),
+        ] {
+            assert!(
+                !source
+                    .split_whitespace()
+                    .collect::<String>()
+                    .contains(&asked_of_tauri),
+                "{name} asks Tauri for the data folder; use commands::app_data_dir"
+            );
+        }
     }
 
     fn os(s: &str) -> OsString {

@@ -15,6 +15,12 @@
   // Up/Down/Enter/Del work as soon as the screen appears (without scrolling the logo away when the list is long)
   onMount(() => list?.focus({ preventScroll: true }));
 
+  // The Notes column: the pinned notes, then the three latest, then the button that starts a new one.
+  const overview = $derived(app.notesOverview);
+  const shownNotes = $derived(
+    overview ? [...overview.summary.pinned, ...overview.summary.latest] : [],
+  );
+
   function missing(root: string): boolean {
     return app.missingRecents.has(root);
   }
@@ -66,59 +72,98 @@
   </div>
   {#if app.openError}<p class="welcome__error" role="alert">{app.openError}</p>{/if}
 
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-  <div
-    class="recents"
-    tabindex="0"
-    role="group"
-    aria-label={t("welcome.recent")}
-    bind:this={list}
-    {onkeydown}
-  >
-    <div class="menu-label">{t("welcome.recent")}</div>
-    {#if recents.length === 0}
-      <p class="panel-note" style="padding-left:8px">{t("welcome.noRecents")}</p>
-    {:else}
-      <ul class="recents__list">
-        {#each recents as recent, i (recent.root)}
-          <li>
-            <div
-              class={[
-                "recent-row",
-                i === active && "is-active",
-                missing(recent.root) && "is-missing",
-              ]}
-              role="button"
-              tabindex="-1"
-              onclick={() => {
-                active = i;
-                void open(recent.root);
-              }}
-              onkeydown={() => {}}
-            >
-              <span class="recent-row__name">{recent.name}</span>
-              <span class="recent-row__path">
-                {recent.root}{missing(recent.root) ? ` ${t("welcome.notFound")}` : ""}
-              </span>
-              {#if missing(recent.root)}
-                <button
-                  type="button"
-                  class="btn btn--ghost btn--sm"
-                  onclick={(e) => {
-                    e.stopPropagation();
-                    app.removeRecent(recent.root);
-                  }}
-                >
-                  {t("welcome.remove")}
-                </button>
-              {:else}
-                <span class="recent-row__time">{relativeTime(recent.lastOpenedMs, clock.now)}</span>
-              {/if}
-            </div>
-          </li>
-        {/each}
-      </ul>
-    {/if}
+  <div class="welcome__columns">
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+    <div
+      class="recents"
+      tabindex="0"
+      role="group"
+      aria-label={t("welcome.recent")}
+      bind:this={list}
+      {onkeydown}
+    >
+      <div class="menu-label">{t("welcome.recent")}</div>
+      {#if recents.length === 0}
+        <p class="panel-note" style="padding-left:8px">{t("welcome.noRecents")}</p>
+      {:else}
+        <ul class="recents__list">
+          {#each recents as recent, i (recent.root)}
+            <li>
+              <div
+                class={[
+                  "recent-row",
+                  i === active && "is-active",
+                  missing(recent.root) && "is-missing",
+                ]}
+                role="button"
+                tabindex="-1"
+                onclick={() => {
+                  active = i;
+                  void open(recent.root);
+                }}
+                onkeydown={() => {}}
+              >
+                <span class="recent-row__name">{recent.name}</span>
+                <span class="recent-row__path">
+                  {recent.root}{missing(recent.root) ? ` ${t("welcome.notFound")}` : ""}
+                </span>
+                {#if missing(recent.root)}
+                  <button
+                    type="button"
+                    class="btn btn--ghost btn--sm"
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      app.removeRecent(recent.root);
+                    }}
+                  >
+                    {t("welcome.remove")}
+                  </button>
+                {:else}
+                  <span class="recent-row__time"
+                    >{relativeTime(recent.lastOpenedMs, clock.now)}</span
+                  >
+                {/if}
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+    <section class="welcome-notes" aria-label={t("welcome.notes")}>
+      <div class="menu-label">{t("welcome.notes")}</div>
+      {#if overview?.folder.status === "missing"}
+        <p class="panel-note" style="padding-left:8px">
+          {t("welcome.notesMissing", { path: overview.folder.path })}
+        </p>
+      {:else if shownNotes.length === 0}
+        <p class="panel-note" style="padding-left:8px">{t("welcome.noNotes")}</p>
+      {:else}
+        <ul class="recents__list">
+          {#each shownNotes as note (note.path)}
+            <li>
+              <button
+                type="button"
+                class="recent-row recent-row--note"
+                title={note.title === "" ? t("notes.untitled") : note.title}
+                onclick={() => void app.showNotes(false, note.path)}
+              >
+                <span class="recent-row__pin">
+                  {#if note.pinned}<Icon name="pin" size="xs" />{/if}
+                </span>
+                <span class={["recent-row__name", note.title === "" && "is-untitled"]}>
+                  {note.title === "" ? t("notes.untitled") : note.title}
+                </span>
+                <span class="recent-row__time">{relativeTime(note.modifiedMs, clock.now)}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      <button type="button" class="btn welcome-notes__new" onclick={() => void app.newNote()}>
+        <Icon name="sticky-note" size="sm" />{t("welcome.newNote")}
+        <kbd>{keys("Ctrl+Shift+N")}</kbd>
+      </button>
+    </section>
   </div>
   <p class="welcome__hint">{t("welcome.dropHint")}</p>
 </div>

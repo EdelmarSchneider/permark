@@ -43,6 +43,7 @@
   import { edit } from "../stores/edit.svelte";
   import { feed } from "../stores/feed.svelte";
   import { filter } from "../stores/filter.svelte";
+  import { notes } from "../stores/notes.svelte";
   import { outline } from "../stores/outline.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -115,7 +116,11 @@
 
   /** The files the box may list. */
   const files = $derived(revealHidden ? vault.files : filter.files);
-  const describe = (path: string): string => tags.index.get(path)?.description ?? "";
+  // a note is told by its first line: that is the description the rows show, and the words typed match it
+  const describe = (path: string): string =>
+    vault.isNotes
+      ? (notes.entries.find((n) => n.path === path)?.title ?? "")
+      : (tags.index.get(path)?.description ?? "");
 
   // chips of tags no file has, and a `tag:x` being typed that nothing matches
   const unknown = $derived([
@@ -260,7 +265,9 @@
 
   const context = $derived<CommandContext>({
     ide: !vault.isSimple,
+    notes: vault.isNotes,
     hasDoc: docs.current !== null,
+    movableNote: notes.movable,
     editing: edit.active,
     canBack: docs.canBack,
     canForward: docs.canForward,

@@ -9,19 +9,27 @@
   import OutlinePopover from "./lib/components/OutlinePopover.svelte";
   import SearchEverywhere from "./lib/components/SearchEverywhere.svelte";
   import TagEditor from "./lib/components/TagEditor.svelte";
+  import NotesShell from "./lib/components/NotesShell.svelte";
+  import NotesVersions from "./lib/components/NotesVersions.svelte";
   import SelectionPopover from "./lib/components/SelectionPopover.svelte";
   import SettingsPopover from "./lib/components/SettingsPopover.svelte";
   import Shell from "./lib/components/Shell.svelte";
   import Welcome from "./lib/components/Welcome.svelte";
   import { language, t } from "./lib/i18n";
   import { isEditable } from "./lib/dom/domUtil";
-  import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
-  import { isMacPlatform, matchShortcut, yieldsToTyping } from "./lib/shortcuts";
+  import { closeTopOverlay, hasKeyOverlay, hasOpenOverlay } from "./lib/overlays";
+  import {
+    isMacPlatform,
+    matchNotesShortcut,
+    matchShortcut,
+    yieldsToTyping,
+  } from "./lib/shortcuts";
   import { app } from "./lib/stores/app.svelte";
   import { docs } from "./lib/stores/docs.svelte";
   import { edit } from "./lib/stores/edit.svelte";
   import { fileops } from "./lib/stores/fileops.svelte";
   import { comments } from "./lib/stores/comments.svelte";
+  import { notes } from "./lib/stores/notes.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
   import { unread } from "./lib/stores/unread.svelte";
@@ -68,7 +76,6 @@
 
   onMount(() => {
     void app.boot();
-    void updates.scheduleStartupCheck();
     if (import.meta.env.VITE_MOCK === "1") {
       void import("./lib/mock/driver").then((driver) => {
         const quiet = new URLSearchParams(location.search).get("mock") === "quiet";
@@ -94,19 +101,34 @@
     }
     // the editor took the key (Ctrl+B is bold there, not the sidebar)
     if (e.defaultPrevented) return;
+    if (app.screen === "notes" && notesKey(e)) return;
     const action = matchShortcut(e);
     if (!action) return;
     // "T" and "E" are plain letters, and Option+U and Option+Arrow are typing on macOS: they only mean something
     // while reading
-    if (yieldsToTyping(action, mac) && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) {
+    if (yieldsToTyping(action, mac) && (isEditable(e.target) || hasKeyOverlay())) {
       return;
     }
     e.preventDefault();
     app.run(action);
   }
 
-  // mouse buttons 4 and 5 are back and forward
+  /** The keys that only the Notes window has: the pinned notes, stepping through the notes, renaming. Returns whether one was used. */
+  function notesKey(e: KeyboardEvent): boolean {
+    const key = matchNotesShortcut(e);
+    if (key === null) return false;
+    // an overlay (the search box, the versions dialog) keeps its own keys
+    if (hasOpenOverlay() && key.kind !== "step") return false;
+    e.preventDefault();
+    if (key.kind === "pinned") void notes.openPinned(key.n);
+    else if (key.kind === "step") void notes.step(key.direction);
+    else if (notes.current && !notes.unborn && !notes.readOnly) notes.renaming = true;
+    return true;
+  }
+
+  // mouse buttons 4 and 5 are back and forward (not in the Notes window, where a note is not a page to go back to)
   function onmouseup(e: MouseEvent): void {
+    if (app.screen === "notes") return;
     if (e.button === 3) {
       e.preventDefault();
       void docs.back();
@@ -140,6 +162,12 @@
   <SelectionPopover />
   {#if comments.draft}<CommentField />{/if}
   <AgentPublisher />
+{:else if app.screen === "notes"}
+  <NotesShell />
+  {#if ui.searchBox}<SearchEverywhere />{/if}
+  {#if ui.settingsOpen}<SettingsPopover />{/if}
+  {#if ui.outlinePopover}<OutlinePopover />{/if}
+  {#if notes.versions}<NotesVersions />{/if}
 {:else}
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>
 {/if}

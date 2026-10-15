@@ -21,12 +21,30 @@ import type {
   FsBatch,
   GitSnapshot,
   IndexEntry,
+  LaunchMode,
   LinkTarget,
   Move,
   MoveOutcome,
   MovePreview,
   NewComment,
   Comment,
+  LooseStatus,
+  MoveSuggestion,
+  MoveUndone,
+  NoteDeleted,
+  NoteList,
+  NoteMoved,
+  OpenedFile,
+  PathClass,
+  PendingEdits,
+  NoteRestored,
+  NoteSaved,
+  NotesFolder,
+  NotesOpened,
+  NotesOverview,
+  NotesRequest,
+  NoteVersion,
+  NoteView,
   ParsedBlocks,
   RecentVault,
   SaveOutcome,
@@ -34,6 +52,7 @@ import type {
   SessionState,
   ShellState,
   SourceDoc,
+  StartIn,
   TaggedFile,
   TagOverview,
   TreeNode,
@@ -61,6 +80,8 @@ export type EventMap = {
   "agent-open": null;
   /** The comments changed: one was added, completed or deleted, or a document moved. `listComments` has them. */
   "comments-changed": null;
+  /** Another window or launch asked the Notes window to come forward: `takeNotesRequest` has what it asked for. */
+  "notes-request": null;
 };
 export type EventName = keyof EventMap;
 export type Unlisten = () => void;
@@ -191,6 +212,97 @@ export interface Api {
   /** Checks a comment off (`done`), or opens it again. */
   setCommentDone(id: string, done: boolean): Promise<Comment>;
   deleteComment(id: string): Promise<void>;
+
+  // ---- notes ------------------------------------------------------------------------------------
+
+  /** What this program is: the Notes window (started with `--notes`) or a window for a project. */
+  launchMode(): Promise<LaunchMode>;
+  /** The notes folder: where it is and whether it is there. */
+  notesFolder(): Promise<NotesFolder>;
+  /** Points the notes at another folder, one that exists ("Locate..." and Settings). Rejects when it is not a folder. */
+  setNotesFolder(path: string): Promise<NotesFolder>;
+  /** Makes the notes folder that is not there ("Create it"); nothing else makes it. */
+  createNotesFolder(): Promise<NotesFolder>;
+  /** Where TrailMark opens when it is started with nothing to open. */
+  notesStartIn(): Promise<StartIn>;
+  setNotesStartIn(startIn: StartIn): Promise<void>;
+  /** The notes folder and what the welcome screen shows of it. Any window can ask; the folder is only read. */
+  notesOverview(): Promise<NotesOverview>;
+  /** Opens the notes folder as this window's workspace (the Notes window). Rejects when the folder is not there. */
+  openNotes(): Promise<NotesOpened>;
+  /** The notes, the pinned ones first. */
+  listNotes(): Promise<NoteList>;
+  /** The name of a new note. No file is made until its text has something in it. */
+  newNote(): Promise<string>;
+  /** A new note that was left without being written is forgotten. */
+  forgetNewNote(path: string): Promise<void>;
+  /**
+   * Saves a note's text. `expectedHash` is the hash the editor started from, or "" for a new note (its file is made by the
+   * first text that is not blank). A note that changed meanwhile is not overwritten: the text is kept as a copy.
+   */
+  saveNote(path: string, text: string, expectedHash: string): Promise<NoteSaved>;
+  /** The note was opened: it is the one to come back to, and its next save keeps an earlier version. */
+  noteOpened(path: string): Promise<void>;
+  /** No note is open any more. */
+  closeNote(): Promise<void>;
+  /** Where a note was left: the editor, the caret and the scroll position. */
+  setNoteView(path: string, view: NoteView): Promise<void>;
+  setNotePinned(path: string, pinned: boolean): Promise<void>;
+  /** The order of the pinned notes. */
+  setPinOrder(order: string[]): Promise<void>;
+  /** Gives a note a real file name; resolves to the name it has now. Rejects with kind "exists" or "invalidName". */
+  renameNote(path: string, name: string): Promise<string>;
+  /** Sends notes to the recycle bin; `undoDeleteNotes` brings them back while the program runs. */
+  deleteNotes(paths: string[]): Promise<NoteDeleted>;
+  /** Puts back the notes of a deletion; resolves to the names they have now. */
+  undoDeleteNotes(undoId: number): Promise<string[]>;
+  /** Sends the notes that were copied and not edited since to the recycle bin. Pinned notes stay. */
+  deleteCopiedNotes(): Promise<NoteDeleted>;
+  /** The note was copied: it shows as copied until it is edited. */
+  markNoteCopied(path: string): Promise<void>;
+  /** The earlier versions of a note, the newest first. */
+  noteVersions(path: string): Promise<NoteVersion[]>;
+  noteVersionText(path: string, id: string): Promise<string>;
+  /** Puts an earlier version back; the text the note has now becomes a version first. */
+  restoreNoteVersion(path: string, id: string): Promise<NoteRestored>;
+  /** Removes a note that was never written in (blank, not pinned). Resolves to whether it was removed. */
+  discardBlankNote(path: string): Promise<boolean>;
+  /** Shows the notes folder in the system's file manager. */
+  openNotesFolder(): Promise<void>;
+  /** Shares a note with agents, or stops sharing it. */
+  setNoteShared(path: string, shared: boolean): Promise<void>;
+  /** What the Save dialog starts with for a note: the project opened last, and a name made from the title. */
+  moveSuggestion(path: string): Promise<MoveSuggestion>;
+  /** Moves a note into a project: the text is written to `destination`, the note goes to the recycle bin, the copy is a file of the list. */
+  moveNoteToProject(path: string, destination: string): Promise<NoteMoved>;
+  /** Undoes a move: the note is back, and the copy goes unless it was changed since. */
+  undoMoveNote(undoId: number): Promise<MoveUndone>;
+  /** Starts TrailMark on the project that holds a file, showing it. */
+  openInProject(path: string): Promise<void>;
+  /** The file this program was started to show once its project is open; asked once. */
+  launchShow(): Promise<string | null>;
+  /** What a path of the disk is, and where it is in the open project (when this window shows one that holds it). */
+  classifyPath(path: string): Promise<PathClass>;
+  /** Opens a file in the Notes window: a note when it is one of the notes folder, else a loose file under Files. */
+  openLooseFile(path: string): Promise<OpenedFile>;
+  /** Looks at every loose file: as it was read, changed since, or gone (a rename in its folder is followed). */
+  looseStatus(): Promise<LooseStatus[]>;
+  /** Takes a loose file out of the list; the file is not touched. */
+  removeLooseFile(path: string): Promise<void>;
+  /** Points a listed file at another file ("Locate..."). */
+  locateLooseFile(path: string, newPath: string): Promise<OpenedFile>;
+  /** Keeps the text typed into a loose file, which is never written until the person saves. */
+  savePending(path: string, text: string, baseHash: string): Promise<void>;
+  /** The text kept for a loose file, if any. */
+  loadPending(path: string): Promise<PendingEdits | null>;
+  clearPending(path: string): Promise<void>;
+  /** Makes a note of the text typed into a loose file, "{name} (my edits)"; resolves to the note's name. */
+  keepEditsAsNote(path: string, text: string): Promise<string>;
+  /** Brings the Notes window forward, with a new note ready, a note shown or a file of the disk opened. Starts it when it is not running. */
+  showNotes(newNote: boolean, open: string | null, openFile?: string | null): Promise<void>;
+  /** What was asked of the Notes window while it was not looking, once; null when nothing. */
+  takeNotesRequest(): Promise<NotesRequest | null>;
+
   /** Subscribes to a backend event. Resolves to the function that unsubscribes. */
   on<E extends EventName>(event: E, handler: (payload: EventMap[E]) => void): Promise<Unlisten>;
 }
@@ -267,6 +379,53 @@ export const tauriApi: Api = {
   listComments: () => invoke<Comment[]>("list_comments"),
   setCommentDone: (id, done) => invoke<Comment>("set_comment_done", { id, done }),
   deleteComment: (id) => invoke<void>("delete_comment", { id }),
+  launchMode: () => invoke<LaunchMode>("launch_mode"),
+  notesFolder: () => invoke<NotesFolder>("notes_folder"),
+  setNotesFolder: (path) => invoke<NotesFolder>("set_notes_folder", { path }),
+  createNotesFolder: () => invoke<NotesFolder>("create_notes_folder"),
+  notesStartIn: () => invoke<StartIn>("notes_start_in"),
+  setNotesStartIn: (startIn) => invoke<void>("set_notes_start_in", { startIn }),
+  notesOverview: () => invoke<NotesOverview>("notes_overview"),
+  openNotes: () => invoke<NotesOpened>("open_notes"),
+  listNotes: () => invoke<NoteList>("list_notes"),
+  newNote: () => invoke<string>("new_note"),
+  forgetNewNote: (path) => invoke<void>("forget_new_note", { path }),
+  saveNote: (path, text, expectedHash) =>
+    invoke<NoteSaved>("save_note", { path, text, expectedHash }),
+  noteOpened: (path) => invoke<void>("note_opened", { path }),
+  closeNote: () => invoke<void>("close_note"),
+  setNoteView: (path, view) => invoke<void>("set_note_view", { path, view }),
+  setNotePinned: (path, pinned) => invoke<void>("set_note_pinned", { path, pinned }),
+  setPinOrder: (order) => invoke<void>("set_pin_order", { order }),
+  renameNote: (path, name) => invoke<string>("rename_note", { path, name }),
+  deleteNotes: (paths) => invoke<NoteDeleted>("delete_notes", { paths }),
+  undoDeleteNotes: (undoId) => invoke<string[]>("undo_delete_notes", { undoId }),
+  deleteCopiedNotes: () => invoke<NoteDeleted>("delete_copied_notes"),
+  markNoteCopied: (path) => invoke<void>("mark_note_copied", { path }),
+  noteVersions: (path) => invoke<NoteVersion[]>("note_versions", { path }),
+  noteVersionText: (path, id) => invoke<string>("note_version_text", { path, id }),
+  restoreNoteVersion: (path, id) => invoke<NoteRestored>("restore_note_version", { path, id }),
+  discardBlankNote: (path) => invoke<boolean>("discard_blank_note", { path }),
+  openNotesFolder: () => invoke<void>("open_notes_folder"),
+  setNoteShared: (path, shared) => invoke<void>("set_note_shared", { path, shared }),
+  moveSuggestion: (path) => invoke<MoveSuggestion>("move_suggestion", { path }),
+  moveNoteToProject: (path, destination) =>
+    invoke<NoteMoved>("move_note_to_project", { path, destination }),
+  undoMoveNote: (undoId) => invoke<MoveUndone>("undo_move_note", { undoId }),
+  openInProject: (path) => invoke<void>("open_in_project", { path }),
+  launchShow: () => invoke<string | null>("launch_show"),
+  classifyPath: (path) => invoke<PathClass>("classify_path", { path }),
+  openLooseFile: (path) => invoke<OpenedFile>("open_loose_file", { path }),
+  looseStatus: () => invoke<LooseStatus[]>("loose_status"),
+  removeLooseFile: (path) => invoke<void>("remove_loose_file", { path }),
+  locateLooseFile: (path, newPath) => invoke<OpenedFile>("locate_loose_file", { path, newPath }),
+  savePending: (path, text, baseHash) => invoke<void>("save_pending", { path, text, baseHash }),
+  loadPending: (path) => invoke<PendingEdits | null>("load_pending", { path }),
+  clearPending: (path) => invoke<void>("clear_pending", { path }),
+  keepEditsAsNote: (path, text) => invoke<string>("keep_edits_as_note", { path, text }),
+  showNotes: (newNote, open, openFile = null) =>
+    invoke<void>("show_notes", { newNote, open, openFile }),
+  takeNotesRequest: () => invoke<NotesRequest | null>("take_notes_request"),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
 
@@ -366,6 +525,50 @@ function createMockApi(): Api {
     listComments: command("listComments"),
     setCommentDone: command("setCommentDone"),
     deleteComment: command("deleteComment"),
+    launchMode: command("launchMode"),
+    notesFolder: command("notesFolder"),
+    setNotesFolder: command("setNotesFolder"),
+    createNotesFolder: command("createNotesFolder"),
+    notesStartIn: command("notesStartIn"),
+    setNotesStartIn: command("setNotesStartIn"),
+    notesOverview: command("notesOverview"),
+    openNotes: command("openNotes"),
+    listNotes: command("listNotes"),
+    newNote: command("newNote"),
+    forgetNewNote: command("forgetNewNote"),
+    saveNote: command("saveNote"),
+    noteOpened: command("noteOpened"),
+    closeNote: command("closeNote"),
+    setNoteView: command("setNoteView"),
+    setNotePinned: command("setNotePinned"),
+    setPinOrder: command("setPinOrder"),
+    renameNote: command("renameNote"),
+    deleteNotes: command("deleteNotes"),
+    undoDeleteNotes: command("undoDeleteNotes"),
+    deleteCopiedNotes: command("deleteCopiedNotes"),
+    markNoteCopied: command("markNoteCopied"),
+    noteVersions: command("noteVersions"),
+    noteVersionText: command("noteVersionText"),
+    restoreNoteVersion: command("restoreNoteVersion"),
+    discardBlankNote: command("discardBlankNote"),
+    openNotesFolder: command("openNotesFolder"),
+    setNoteShared: command("setNoteShared"),
+    moveSuggestion: command("moveSuggestion"),
+    moveNoteToProject: command("moveNoteToProject"),
+    undoMoveNote: command("undoMoveNote"),
+    openInProject: command("openInProject"),
+    launchShow: command("launchShow"),
+    classifyPath: command("classifyPath"),
+    openLooseFile: command("openLooseFile"),
+    looseStatus: command("looseStatus"),
+    removeLooseFile: command("removeLooseFile"),
+    locateLooseFile: command("locateLooseFile"),
+    savePending: command("savePending"),
+    loadPending: command("loadPending"),
+    clearPending: command("clearPending"),
+    keepEditsAsNote: command("keepEditsAsNote"),
+    showNotes: command("showNotes"),
+    takeNotesRequest: command("takeNotesRequest"),
     on: async (event, handler) => addMockListener(event, handler),
   };
 }

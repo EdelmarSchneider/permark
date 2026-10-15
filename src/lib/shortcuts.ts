@@ -30,6 +30,10 @@ export const SHORTCUT_ACTIONS = [
   "toggleFollow",
   "copyReference",
   "copyPath",
+  "copyDocument",
+  "moveToProject",
+  "newNote",
+  "showNotes",
   "openExternal",
   "toggleLeft",
   "toggleRight",
@@ -123,6 +127,14 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "toggleFollow";
       case "e":
         return "openExternal";
+      case "n":
+        return "newNote";
+      case "d":
+        return "showNotes";
+      case "c":
+        return "copyDocument";
+      case "s":
+        return "moveToProject";
       case "=": // Ctrl+Shift+= is Ctrl++ on most layouts
         return "zoomIn";
     }
@@ -153,6 +165,27 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
       return "zoomReset";
     case ",":
       return "settings";
+  }
+  return null;
+}
+
+/** The keys of the Notes window besides the shared map: the pinned notes, stepping through the notes, renaming. */
+export type NotesShortcut =
+  { kind: "pinned"; n: number } | { kind: "step"; direction: 1 | -1 } | { kind: "rename" };
+
+/**
+ * `Ctrl+1` to `Ctrl+9` jump to the pinned notes, `Ctrl+Tab` and `Ctrl+Shift+Tab` go to the next and the previous note, `F2`
+ * renames the open one. Only the Notes window reads these.
+ */
+export function matchNotesShortcut(e: KeyInfo): NotesShortcut | null {
+  const mod = e.ctrlKey || e.metaKey === true;
+  if (!e.altKey && !e.shiftKey && !mod && e.key === "F2") return { kind: "rename" };
+  if (e.ctrlKey && !e.altKey && e.key === "Tab") {
+    return { kind: "step", direction: e.shiftKey ? -1 : 1 };
+  }
+  if (mod && !e.altKey && !e.shiftKey) {
+    const key = keyName(e);
+    if (/^[1-9]$/.test(key)) return { kind: "pinned", n: Number(key) };
   }
   return null;
 }
