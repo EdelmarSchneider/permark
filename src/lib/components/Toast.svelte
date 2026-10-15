@@ -27,6 +27,7 @@
     class={[
       "toast",
       current.type === "message" && current.tone === "warn" && "toast--warn",
+      current.type === "message" && current.second && "toast--stacked",
       toast.leaving && "is-leaving",
     ]}
     role={current.type === "message" && current.tone === "warn" ? "alert" : "status"}
@@ -111,7 +112,7 @@
       </div>
       <span></span>
     {:else}
-      <div style="min-width:0">
+      <div class="toast__text" style="min-width:0">
         <div class="toast__title" style="white-space:normal">{current.text}</div>
       </div>
       {#if current.action}
