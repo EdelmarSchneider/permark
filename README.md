@@ -60,7 +60,8 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
   documents that matter, and tells you how many files it hides
 - Workspaces that collect several repositories show each one, even when the parent's `.gitignore` leaves it out. Hidden
   files and files ignored by git have their own switches in the filter, off by default
-- The window opens where you left it, with its own size and place for each project
+- The window opens where you left it, with its own size and place for each project, and its title names the document and the project,
+  so several windows are easy to tell apart in the taskbar and `Alt+Tab`
 - The Explorer **follows the file you open**, however you got there: quick open, a link, search, the feed, back and forward
 - Quick open (`Ctrl+P`), find in page (`Ctrl+F`), session restore and recent projects
 - **Code references are links.** `src/main.rs:42`, `lib.rs#L10-L20` or `` `docs/plan.md` `` in a document opens the file at the line:

@@ -18,6 +18,7 @@
   import { language, t } from "./lib/i18n";
   import { isEditable } from "./lib/dom/domUtil";
   import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
+  import { setWindowTitle } from "./lib/platform";
   import {
     isMacPlatform,
     matchNotesShortcut,
@@ -35,6 +36,8 @@
   import { unread } from "./lib/stores/unread.svelte";
   import { updates } from "./lib/stores/updates.svelte";
   import { vault } from "./lib/stores/vault.svelte";
+  import { currentTitleState } from "./lib/stores/windowTitleState";
+  import { windowTitle } from "./lib/windowTitle";
 
   const mac = typeof navigator !== "undefined" && isMacPlatform(navigator.userAgent);
 
@@ -57,6 +60,13 @@
       shownLocale = locale;
       docs.rerender();
     });
+  });
+
+  // The title of the window (the taskbar, Alt+Tab) tells windows apart: the document, the project, an unsaved mark. It is computed in
+  // one place (`windowTitle.ts`); the derived string changes only when the title does, so the window is asked only then.
+  const title = $derived(windowTitle(currentTitleState()));
+  $effect(() => {
+    void setWindowTitle(title);
   });
 
   // The reading rule needs the Markdown document on show and whether its reading view is up (not the editor, not

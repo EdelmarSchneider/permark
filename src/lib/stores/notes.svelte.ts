@@ -25,7 +25,6 @@ import {
   guardWindowClose,
   pickFile,
   pickSavePath,
-  setWindowTitle,
   watchFileDrop,
 } from "../platform";
 import type {
@@ -217,7 +216,6 @@ class NotesStore {
       this.started = true;
       this.wire();
     }
-    void setWindowTitle(t("notes.windowTitle"));
     try {
       this.folder = await api.notesFolder();
     } catch (error) {

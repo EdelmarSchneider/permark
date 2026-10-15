@@ -7,6 +7,14 @@ export const ptBR = {
   "app.name": "TrailMark",
   "app.loading": "Carregando",
 
+  // ---- window title
+  "window.title.project": "{document} - {project} - TrailMark",
+  "window.title.projectOnly": "{project} - TrailMark",
+  "window.title.file": "{document} - TrailMark",
+  "window.title.notes": "{document} - Notas - TrailMark",
+  "window.title.notesOnly": "Notas - TrailMark",
+  "window.title.unsaved": "* {title}",
+
   // ---- common
   "common.cancel": "Cancelar",
   "common.close": "Fechar",
@@ -797,7 +805,6 @@ export const ptBR = {
   "edit.closePrompt": "Alterações não salvas em {name}. Salvar antes de fechar?",
   "edit.restartPrompt":
     "Alterações não salvas em {name}. Salvar antes de reiniciar para atualizar?",
-  "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "Não foi possível carregar o editor.",
   "edit.bars": "Avisos de edição",
   "edit.switchFailed": "Não foi possível trocar de editor: {message}",
@@ -996,7 +1003,6 @@ export const ptBR = {
   "feed.op.undone": "Desfazer",
 
   // ---- notas (docs/design/v0.5.md)
-  "notes.windowTitle": "Notas do TrailMark",
   "notes.title": "Notas",
   "notes.listLabel": "Lista de notas",
   "notes.untitled": "Nota sem título",

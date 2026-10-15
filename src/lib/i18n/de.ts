@@ -8,6 +8,14 @@ export const de = {
   "app.name": "TrailMark",
   "app.loading": "Wird geladen",
 
+  // ---- window title
+  "window.title.project": "{document} - {project} - TrailMark",
+  "window.title.projectOnly": "{project} - TrailMark",
+  "window.title.file": "{document} - TrailMark",
+  "window.title.notes": "{document} - Notizen - TrailMark",
+  "window.title.notesOnly": "Notizen - TrailMark",
+  "window.title.unsaved": "* {title}",
+
   // ---- common
   "common.cancel": "Abbrechen",
   "common.close": "Schließen",
@@ -804,7 +812,6 @@ export const de = {
   "edit.closePrompt": "Ungespeicherte Änderungen in {name}. Vor dem Schließen speichern?",
   "edit.restartPrompt":
     "Ungespeicherte Änderungen in {name}. Vor dem Neustart für das Update speichern?",
-  "edit.windowTitle": "* {name} - TrailMark",
   "edit.loadFailed": "Der Editor konnte nicht geladen werden.",
   "edit.bars": "Bearbeitungshinweise",
   "edit.switchFailed": "Editor konnte nicht gewechselt werden: {message}",
@@ -1010,7 +1017,6 @@ export const de = {
   "feed.op.undone": "Rückgängig",
 
   // ---- Notizen (docs/design/v0.5.md)
-  "notes.windowTitle": "TrailMark Notizen",
   "notes.title": "Notizen",
   "notes.listLabel": "Liste der Notizen",
   "notes.untitled": "Unbenannte Notiz",
