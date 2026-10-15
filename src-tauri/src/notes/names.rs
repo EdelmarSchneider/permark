@@ -58,6 +58,11 @@ pub(crate) fn recovered_stem(base: &str) -> String {
     format!("{base} (recovered)")
 }
 
+/// The base of the name of the note that keeps the text typed into a loose file when the person takes the file's own version.
+pub(crate) fn edits_stem(base: &str) -> String {
+    format!("{base} (my edits)")
+}
+
 /// The base a copy of a note is named after: its title, else the base of its own file name.
 pub(crate) fn copy_base(title: &str, file_name: &str) -> String {
     stem_from_title(title).unwrap_or_else(|| {

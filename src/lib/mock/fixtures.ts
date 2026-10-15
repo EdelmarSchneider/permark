@@ -723,7 +723,10 @@ export const mockFiles = {
 /** What kind of file a mock path is (null when there is no such file). */
 export function mockDocKind(path: string): MockDoc["kind"] | null {
   if (mockState.deleted.has(path)) return null;
-  if (mockState.vault === "notes") return mockNoteFiles.has(path) ? "markdown" : null;
+  if (mockState.vault === "notes") {
+    if (!mockNoteFiles.has(path)) return null;
+    return /\.txt$/i.test(path) ? "text" : "markdown";
+  }
   if (mockFiles.created.has(path)) return "markdown";
   return registry()[path]?.kind ?? null;
 }
@@ -779,6 +782,21 @@ export function mockFrontmatter(path: string): [string, string][] | null {
 }
 
 function writtenView(path: string, text: string, mtime: number): DocumentView {
+  // a plain text file of the Notes window is shown as it is
+  if (/\.txt$/i.test(path)) {
+    const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return {
+      path,
+      kind: "text",
+      html: `<pre>${escaped}</pre>`,
+      blocks: [],
+      title: null,
+      frontmatter: null,
+      modifiedMs: mtime,
+      sizeBytes: new TextEncoder().encode(text).length,
+      encodingNote: null,
+    };
+  }
   const view = markdownToView(text);
   return {
     path,

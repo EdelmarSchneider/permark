@@ -28,8 +28,12 @@ import type {
   MovePreview,
   NewComment,
   Comment,
+  LooseStatus,
   NoteDeleted,
   NoteList,
+  OpenedFile,
+  PathClass,
+  PendingEdits,
   NoteRestored,
   NoteSaved,
   NotesFolder,
@@ -262,8 +266,25 @@ export interface Api {
   discardBlankNote(path: string): Promise<boolean>;
   /** Shows the notes folder in the system's file manager. */
   openNotesFolder(): Promise<void>;
-  /** Brings the Notes window forward, with a new note ready or a note shown. Starts the window when it is not running. */
-  showNotes(newNote: boolean, open: string | null): Promise<void>;
+  /** What a path of the disk is, and where it is in the open project (when this window shows one that holds it). */
+  classifyPath(path: string): Promise<PathClass>;
+  /** Opens a file in the Notes window: a note when it is one of the notes folder, else a loose file under Files. */
+  openLooseFile(path: string): Promise<OpenedFile>;
+  /** Looks at every loose file: as it was read, changed since, or gone (a rename in its folder is followed). */
+  looseStatus(): Promise<LooseStatus[]>;
+  /** Takes a loose file out of the list; the file is not touched. */
+  removeLooseFile(path: string): Promise<void>;
+  /** Points a listed file at another file ("Locate..."). */
+  locateLooseFile(path: string, newPath: string): Promise<OpenedFile>;
+  /** Keeps the text typed into a loose file, which is never written until the person saves. */
+  savePending(path: string, text: string, baseHash: string): Promise<void>;
+  /** The text kept for a loose file, if any. */
+  loadPending(path: string): Promise<PendingEdits | null>;
+  clearPending(path: string): Promise<void>;
+  /** Makes a note of the text typed into a loose file, "{name} (my edits)"; resolves to the note's name. */
+  keepEditsAsNote(path: string, text: string): Promise<string>;
+  /** Brings the Notes window forward, with a new note ready, a note shown or a file of the disk opened. Starts it when it is not running. */
+  showNotes(newNote: boolean, open: string | null, openFile?: string | null): Promise<void>;
   /** What was asked of the Notes window while it was not looking, once; null when nothing. */
   takeNotesRequest(): Promise<NotesRequest | null>;
 
@@ -371,7 +392,17 @@ export const tauriApi: Api = {
   restoreNoteVersion: (path, id) => invoke<NoteRestored>("restore_note_version", { path, id }),
   discardBlankNote: (path) => invoke<boolean>("discard_blank_note", { path }),
   openNotesFolder: () => invoke<void>("open_notes_folder"),
-  showNotes: (newNote, open) => invoke<void>("show_notes", { newNote, open }),
+  classifyPath: (path) => invoke<PathClass>("classify_path", { path }),
+  openLooseFile: (path) => invoke<OpenedFile>("open_loose_file", { path }),
+  looseStatus: () => invoke<LooseStatus[]>("loose_status"),
+  removeLooseFile: (path) => invoke<void>("remove_loose_file", { path }),
+  locateLooseFile: (path, newPath) => invoke<OpenedFile>("locate_loose_file", { path, newPath }),
+  savePending: (path, text, baseHash) => invoke<void>("save_pending", { path, text, baseHash }),
+  loadPending: (path) => invoke<PendingEdits | null>("load_pending", { path }),
+  clearPending: (path) => invoke<void>("clear_pending", { path }),
+  keepEditsAsNote: (path, text) => invoke<string>("keep_edits_as_note", { path, text }),
+  showNotes: (newNote, open, openFile = null) =>
+    invoke<void>("show_notes", { newNote, open, openFile }),
   takeNotesRequest: () => invoke<NotesRequest | null>("take_notes_request"),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
@@ -499,6 +530,15 @@ function createMockApi(): Api {
     restoreNoteVersion: command("restoreNoteVersion"),
     discardBlankNote: command("discardBlankNote"),
     openNotesFolder: command("openNotesFolder"),
+    classifyPath: command("classifyPath"),
+    openLooseFile: command("openLooseFile"),
+    looseStatus: command("looseStatus"),
+    removeLooseFile: command("removeLooseFile"),
+    locateLooseFile: command("locateLooseFile"),
+    savePending: command("savePending"),
+    loadPending: command("loadPending"),
+    clearPending: command("clearPending"),
+    keepEditsAsNote: command("keepEditsAsNote"),
     showNotes: command("showNotes"),
     takeNotesRequest: command("takeNotesRequest"),
     on: async (event, handler) => addMockListener(event, handler),

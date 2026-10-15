@@ -130,7 +130,9 @@ export const mockImpl: Api = {
   listTree: async () => mockTree(),
   readDocument: async (path) => {
     await wait(40);
-    return mockNotes.unbornView(path) ?? getDocument(path);
+    const view = mockNotes.unbornView(path) ?? getDocument(path);
+    mockNotes.seenLoose(path);
+    return view;
   },
   resolveLink: async (from, href) => resolveMockLink(from, href),
   gitSnapshot: async () => mockSnapshot(),
@@ -211,11 +213,20 @@ export const mockImpl: Api = {
   filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
   metaIndex: async () => metaIndex(),
   cleanUpMeta: async () => cleanUp(),
-  documentSource: async (path) => mockNotes.unbornSource(path) ?? (await documentSource(path)),
+  documentSource: async (path) => {
+    const source = mockNotes.unbornSource(path) ?? (await documentSource(path));
+    mockNotes.seenLoose(path);
+    return source;
+  },
   parseBlocks: (text) => parseBlocks(text),
   renderFragments: (texts) => renderFragments(texts),
-  saveDocument: (path, text, expectedHash) => saveDocument(path, text, expectedHash),
-  createDocument: (path, text) => createDocument(path, text),
+  saveDocument: async (path, text, expectedHash) => {
+    const outcome = await saveDocument(path, text, expectedHash);
+    if (outcome.result === "saved") mockNotes.savedLoose(path);
+    return outcome;
+  },
+  createDocument: async (path, text) =>
+    path.startsWith("@file/") ? mockNotes.recreateLoose(path, text) : createDocument(path, text),
   writeAsset: (docPath, nameHint, data) => writeAsset(docPath, nameHint, data),
   previewMove: (moves, scanLinks, heldBack) => previewMove(moves, scanLinks, heldBack),
   applyMove: (planId, updateLinks, buffers) => applyMove(planId, updateLinks, buffers),
@@ -270,7 +281,16 @@ export const mockImpl: Api = {
   openNotesFolder: async () => {
     console.info("[mock] open the notes folder");
   },
-  showNotes: async (newNote, open) => mockNotes.showNotes(newNote, open),
+  classifyPath: async (path) => mockNotes.classifyPath(path),
+  openLooseFile: async (path) => mockNotes.openLooseFile(path),
+  looseStatus: async () => mockNotes.looseStatus(),
+  removeLooseFile: async (path) => mockNotes.removeLooseFile(path),
+  locateLooseFile: async (path, newPath) => mockNotes.locateLooseFile(path, newPath),
+  savePending: async (path, text, baseHash) => mockNotes.savePending(path, text, baseHash),
+  loadPending: async (path) => mockNotes.loadPending(path),
+  clearPending: async (path) => mockNotes.clearPending(path),
+  keepEditsAsNote: async (path, text) => mockNotes.keepEditsAsNote(path, text),
+  showNotes: async (newNote, open, openFile = null) => mockNotes.showNotes(newNote, open, openFile),
   takeNotesRequest: async () => mockNotes.takeNotesRequest(),
   on: async () => () => {},
 };

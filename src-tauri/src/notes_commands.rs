@@ -27,10 +27,11 @@ pub struct NotesLaunch {
 }
 
 impl NotesLaunch {
-    pub fn new(is_notes_window: bool) -> Self {
+    /// `first` is what the window was started to show (the file a launch carried); nothing when it is the default.
+    pub fn new(is_notes_window: bool, first: NotesRequest) -> Self {
         Self {
             is_notes_window,
-            pending: Mutex::new(None),
+            pending: Mutex::new((first != NotesRequest::default()).then_some(first)),
         }
     }
 
@@ -47,6 +48,7 @@ impl NotesLaunch {
             Some(before) => NotesRequest {
                 new_note: before.new_note || request.new_note,
                 open: request.open.or(before.open),
+                open_file: request.open_file.or(before.open_file),
             },
             None => request,
         };
@@ -121,14 +123,22 @@ fn notes_of(state: &State<'_, AppState>) -> Result<Arc<Workspace>, AppError> {
 #[allow(clippy::needless_pass_by_value)] // Tauri hands injected state over by value
 #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
 pub fn launch_mode(app: AppHandle, launch: State<'_, NotesLaunch>) -> LaunchMode {
-    // Finder opened something while the program started as the Notes window: that gets a window of its own
+    // Finder opened something while the program started as the Notes window: a file is shown here, a folder gets a window of
+    // its own
     #[cfg(target_os = "macos")]
     if launch.is_notes_window {
         if let Some(path) = app
             .state::<crate::open_request::OpenInbox>()
             .take_launch_path()
         {
-            let _ = crate::open_request::spawn_instance(&path);
+            if std::path::Path::new(&path).is_file() {
+                launch.push(NotesRequest {
+                    open_file: Some(path),
+                    ..NotesRequest::default()
+                });
+            } else {
+                let _ = crate::open_request::spawn_instance(&path);
+            }
         }
     }
     LaunchMode {
@@ -214,6 +224,7 @@ pub async fn open_notes(
     state: State<'_, AppState>,
 ) -> Result<NotesOpened, AppError> {
     let app_data = app_data_dir(&app)?;
+    let home = app.path().home_dir().ok();
     let host = state.inner().clone();
     let request = host.request();
     let sink: Arc<dyn EventSink> = Arc::new(TauriSink::new(app));
@@ -229,7 +240,7 @@ pub async fn open_notes(
             return Err(VaultError::NotFound(path.display().to_string()).into());
         }
         host.open(request, &sink, |sink| {
-            Workspace::open_notes(&path, &app_data, sink)
+            Workspace::open_notes(&path, &app_data, home.as_deref(), sink)
         })?;
         let ws = host.current()?;
         Ok(opened(&ws))
@@ -449,17 +460,157 @@ pub async fn open_notes_folder(app: AppHandle) -> Result<(), AppError> {
     .await
 }
 
-/// Brings the Notes window forward, with a new note ready or a given note shown. Starts the window when it is not
-/// running. This is what `Ctrl+Shift+N` and `Ctrl+Shift+D` do from a project window.
+// ---- loose files -----------------------------------------------------------------------------------------
+
+/// What kind of thing a path of the disk is, and where it is in the project this window shows. Matches the UI's `PathClass`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PathClass {
+    pub kind: PathKind,
+    /// The path in the open project, for a file inside the folder this window shows.
+    pub in_project: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PathKind {
+    Folder,
+    File,
+    Missing,
+}
+
+/// What a path the person picked, dropped or was handed is: a folder opens as a project, a file inside the open project
+/// is shown there, and any other file is a loose file of the Notes window.
+#[tauri::command]
+pub async fn classify_path(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<PathClass, AppError> {
+    let ws = state.current().ok();
+    blocking(move || {
+        let path = std::path::Path::new(&path);
+        let kind = if path.is_dir() {
+            PathKind::Folder
+        } else if path.is_file() {
+            PathKind::File
+        } else {
+            PathKind::Missing
+        };
+        let in_project = ws.and_then(|ws| ws.locate_in_project(path));
+        Ok(PathClass { kind, in_project })
+    })
+    .await
+}
+
+/// Opens a file in the Notes window: a note when it is one of the notes folder, else a loose file, listed under Files.
+/// Resolves to what to show.
+#[tauri::command]
+pub async fn open_loose_file(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<notes::OpenedFile, AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || {
+        Ok(ws
+            .notes()?
+            .open_file(std::path::Path::new(&path), crate::util::now_ms())?)
+    })
+    .await
+}
+
+/// Looks at every loose file: as it was read, changed since, or gone (and found again under another name).
+#[tauri::command]
+pub async fn loose_status(state: State<'_, AppState>) -> Result<Vec<notes::LooseStatus>, AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || Ok(ws.notes()?.loose_status())).await
+}
+
+/// Takes a loose file out of the list. The file itself is not touched.
+#[tauri::command]
+pub async fn remove_loose_file(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || Ok(ws.notes()?.remove_file(&path)?)).await
+}
+
+/// Points a listed file at another file ("Locate..."). Resolves to what to show.
+#[tauri::command]
+pub async fn locate_loose_file(
+    state: State<'_, AppState>,
+    path: String,
+    new_path: String,
+) -> Result<notes::OpenedFile, AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || {
+        Ok(ws.notes()?.locate_file(
+            &path,
+            std::path::Path::new(&new_path),
+            crate::util::now_ms(),
+        )?)
+    })
+    .await
+}
+
+/// Keeps the text typed into a loose file, which is never written until the person saves.
+#[tauri::command]
+pub async fn save_pending(
+    state: State<'_, AppState>,
+    path: String,
+    text: String,
+    base_hash: String,
+) -> Result<(), AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || {
+        Ok(ws
+            .notes()?
+            .save_pending(&path, &text, &base_hash, crate::util::now_ms())?)
+    })
+    .await
+}
+
+/// The text kept for a loose file, if any.
+#[tauri::command]
+pub async fn load_pending(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Option<notes::PendingEdits>, AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || Ok(ws.notes()?.load_pending(&path)?)).await
+}
+
+/// Forgets the text kept for a loose file.
+#[tauri::command]
+pub async fn clear_pending(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || Ok(ws.notes()?.clear_pending(&path)?)).await
+}
+
+/// Makes a note of the text typed into a loose file, "{name} (my edits)". Resolves to the note's name.
+#[tauri::command]
+pub async fn keep_edits_as_note(
+    state: State<'_, AppState>,
+    path: String,
+    text: String,
+) -> Result<String, AppError> {
+    let ws = notes_of(&state)?;
+    blocking(move || Ok(ws.notes()?.keep_edits_as_note(&path, &text)?)).await
+}
+
+/// Brings the Notes window forward, with a new note ready, a given note shown, or a file of the disk opened. Starts the
+/// window when it is not running. This is what `Ctrl+Shift+N` and `Ctrl+Shift+D` do from a project window.
 #[tauri::command]
 pub async fn show_notes(
     app: AppHandle,
     new_note: bool,
     open: Option<String>,
+    open_file: Option<String>,
 ) -> Result<(), AppError> {
     let dir = app_data_dir(&app)?;
     let endpoint = Endpoint::for_notes(&dir).map_err(|e| AppError::Internal(e.to_string()))?;
-    let request = NotesRequest { new_note, open };
+    let request = NotesRequest {
+        new_note,
+        open,
+        open_file,
+    };
     notes::show_or_start(&endpoint, &request, start_notes_window)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))

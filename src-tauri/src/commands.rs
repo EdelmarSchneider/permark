@@ -201,7 +201,7 @@ fn unquote_drive_root(arg: OsString) -> OsString {
     }
 }
 
-fn initial_path_from(arg: OsString, cwd: Option<PathBuf>) -> Option<String> {
+pub(crate) fn initial_path_from(arg: OsString, cwd: Option<PathBuf>) -> Option<String> {
     if arg.to_string_lossy().starts_with('-') {
         return None; // a flag, not a path
     }

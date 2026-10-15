@@ -8,8 +8,10 @@
 import { emitMock } from "../api";
 import { isBlank, noteTitle } from "../noteText";
 import type {
+  CreatedDoc,
   DocumentView,
   LaunchMode,
+  LooseStatus,
   NoteDeleted,
   NoteEntry,
   NoteList,
@@ -23,6 +25,9 @@ import type {
   NotesSummary,
   NoteVersion,
   NoteView,
+  OpenedFile,
+  PathClass,
+  PendingEdits,
   SourceDoc,
   StartIn,
   VaultInfo,
@@ -41,8 +46,21 @@ const FOLDER = "C:/Users/demo/Documents/TrailMark Notes";
 const flag = (): string | null =>
   typeof location === "undefined" ? null : new URLSearchParams(location.search).get("notes");
 
+/** A loose file of the mock: a file of the disk that is not in the notes folder. */
+type MockLoose = {
+  id: string;
+  name: string;
+  folder: string;
+  openedMs: number;
+  missing: boolean;
+  /** Someone else changed it since it was last read. */
+  changed: boolean;
+};
+
 const notes = {
   seeded: false,
+  loose: [] as MockLoose[],
+  pending: new Map<string, PendingEdits>(),
   folderMissing: false,
   startIn: "welcome" as StartIn,
   pins: [] as string[],
@@ -100,6 +118,57 @@ function seed(): void {
   make("2026-09-02 1700.md", "An old idea about tags\n", 43 * DAY);
   notes.pins = ["Server IPs and ports.md", "Weekly checklist.md"];
   notes.copied.set("2026-10-15 1105.md", sourceMtime("2026-10-15 1105.md"));
+  const sent = (
+    id: string,
+    name: string,
+    folder: string,
+    text: string,
+    openedAgo: number,
+    missing = false,
+  ): void => {
+    const loose: MockLoose = {
+      id,
+      name,
+      folder,
+      openedMs: now - openedAgo,
+      missing,
+      changed: false,
+    };
+    notes.loose.push(loose);
+    if (!missing) putNote(looseUi(loose), text, now - openedAgo - DAY);
+  };
+  sent(
+    "0a1b2c3d",
+    "proposal.md",
+    "~\\Downloads",
+    "# Proposal\n\nThe plan for the next release, as it came in an email.\n\n- scope\n- dates\n",
+    90 * MINUTE,
+  );
+  sent("1b2c3d4e", "todo.txt", "~\\Documents", "buy milk\nrenew the passport\n", 5 * DAY);
+  sent("2c3d4e5f", "old-plan.md", "D:\\Archive", "", 30 * DAY, true);
+}
+
+const looseUi = (file: MockLoose): string => `@file/${file.id}/${file.name}`;
+const looseFile = (path: string): MockLoose | undefined =>
+  notes.loose.find((file) => path.startsWith(`@file/${file.id}/`));
+
+function looseEntry(file: MockLoose): NoteEntry {
+  const path = looseUi(file);
+  const text = file.missing ? "" : textOf(path);
+  return {
+    kind: "file",
+    path,
+    title: file.name,
+    snippet: "",
+    modifiedMs: file.missing ? 0 : sourceMtime(path),
+    sizeBytes: new TextEncoder().encode(text).length,
+    pinned: notes.pins.includes(path),
+    copied: false,
+    view: notes.views.get(path) ?? null,
+    folder: file.folder,
+    missing: file.missing,
+    unsaved: notes.pending.has(path),
+  };
 }
 
 const existing = (): string[] =>
@@ -121,6 +190,7 @@ function entry(name: string): NoteEntry {
     .slice(0, 160);
   const modifiedMs = sourceMtime(name);
   return {
+    kind: "note",
     path: name,
     title: noteTitle(text),
     snippet,
@@ -129,17 +199,25 @@ function entry(name: string): NoteEntry {
     pinned: notes.pins.includes(name),
     copied: notes.copied.get(name) === modifiedMs,
     view: notes.views.get(name) ?? null,
+    folder: null,
+    missing: false,
+    unsaved: false,
   };
 }
 
+/** The notes, then the loose files (the one opened last first), the pinned ones of both first in the order they were pinned. */
 function sortedEntries(): NoteEntry[] {
-  const all = existing().map(entry);
+  const files = [...notes.loose].sort((a, b) => b.openedMs - a.openedMs).map(looseEntry);
+  const all = [...existing().map(entry), ...files];
   const rank = (n: NoteEntry): number => notes.pins.indexOf(n.path);
+  const kindRank = (n: NoteEntry): number => (n.kind === "note" ? 0 : 1);
   return all.sort((a, b) => {
     const [x, y] = [rank(a), rank(b)];
     if (x >= 0 && y >= 0) return x - y;
     if (x >= 0) return -1;
     if (y >= 0) return 1;
+    if (a.kind !== b.kind) return kindRank(a) - kindRank(b);
+    if (a.kind === "file") return 0;
     return b.modifiedMs - a.modifiedMs || a.path.localeCompare(b.path);
   });
 }
@@ -210,7 +288,7 @@ export function setNotesStartIn(startIn: StartIn): void {
 
 export function notesOverview(): NotesOverview {
   seed();
-  const all = sortedEntries();
+  const all = sortedEntries().filter((n) => n.kind === "note");
   const summary: NotesSummary = {
     pinned: all.filter((n) => n.pinned),
     latest: all.filter((n) => !n.pinned).slice(0, 3),
@@ -461,10 +539,166 @@ export function discardBlankNote(path: string): boolean {
   return true;
 }
 
-export function showNotes(newNoteWanted: boolean, open: string | null): void {
-  console.info("[mock] show the Notes window:", { newNote: newNoteWanted, open });
-  notes.request = { newNote: newNoteWanted, open };
+export function showNotes(
+  newNoteWanted: boolean,
+  open: string | null,
+  openFile: string | null = null,
+): void {
+  console.info("[mock] show the Notes window:", { newNote: newNoteWanted, open, openFile });
+  notes.request = { newNote: newNoteWanted, open, openFile };
   emitMock("notes-request", null);
+}
+
+// ---- loose files ---------------------------------------------------------------------------------------------
+
+const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path;
+const folderOf = (path: string): string => path.slice(0, path.length - baseName(path).length - 1);
+
+/** Opens a file of the disk: what it is when it is one of the notes, else a loose file under Files. */
+export function openLooseFile(path: string): OpenedFile {
+  writable();
+  seed();
+  const name = baseName(path);
+  if (/binary|\.(png|pdf|zip|exe)$/i.test(name)) {
+    throw new MockBackendError("binaryFile", `${name} is not a text file`, { subject: name });
+  }
+  if (path.replace(/\\/g, "/").startsWith(`${FOLDER}/`) && existing().includes(name)) {
+    return { kind: "note", path: name };
+  }
+  const known = notes.loose.find((file) => `${file.folder}\\${file.name}` === path);
+  const now = Date.now();
+  if (known) {
+    known.openedMs = now;
+    return { kind: "file", path: looseUi(known) };
+  }
+  const id = (0x3d4e5f60 + notes.loose.length * 0x11111111).toString(16).padStart(8, "0").slice(-8);
+  const file: MockLoose = {
+    id,
+    name,
+    folder: folderOf(path) || "~\\Downloads",
+    openedMs: now,
+    missing: false,
+    changed: false,
+  };
+  notes.loose.push(file);
+  const text = /\.txt$/i.test(name) ? "a plain text file\n" : `# ${name.replace(/\.\w+$/, "")}\n`;
+  putNote(looseUi(file), text, now - DAY);
+  return { kind: "file", path: looseUi(file) };
+}
+
+/** What the mock calls "reading" a loose file: it is the version seen from now on. */
+export function seenLoose(path: string): void {
+  const file = looseFile(path);
+  if (file) file.changed = false;
+}
+
+export function looseStatus(): LooseStatus[] {
+  return notes.loose.map((file) => {
+    const path = looseUi(file);
+    return {
+      path,
+      state: file.missing ? "missing" : file.changed ? "changed" : "same",
+      stamp: file.missing ? "" : `${sourceMtime(path)}-${textOf(path).length}`,
+      was: null,
+    };
+  });
+}
+
+export function removeLooseFile(path: string): void {
+  writable();
+  const file = looseFile(path);
+  if (!file) throw new MockBackendError("notANote", `${path} is not a note`, { subject: path });
+  notes.loose = notes.loose.filter((other) => other !== file);
+  notes.pins = notes.pins.filter((pin) => pin !== path);
+  notes.pending.delete(path);
+  notes.views.delete(path);
+  if (notes.open === path) notes.open = null;
+}
+
+export function locateLooseFile(path: string, newPath: string): OpenedFile {
+  writable();
+  const file = looseFile(path);
+  if (!file) throw new MockBackendError("notANote", `${path} is not a note`, { subject: path });
+  const was = looseUi(file);
+  file.name = baseName(newPath);
+  file.folder = folderOf(newPath);
+  file.missing = false;
+  file.changed = false;
+  const now = Date.now();
+  putNote(looseUi(file), textOf(was) || `# ${file.name}\n`, now - DAY);
+  notes.pins = notes.pins.map((pin) => (pin === was ? looseUi(file) : pin));
+  return { kind: "file", path: looseUi(file) };
+}
+
+export function savePending(path: string, text: string, baseHash: string): void {
+  writable();
+  notes.pending.set(path, { path, baseHash, text, savedMs: Date.now() });
+}
+
+export function loadPending(path: string): PendingEdits | null {
+  return notes.pending.get(path) ?? null;
+}
+
+export function clearPending(path: string): void {
+  notes.pending.delete(path);
+}
+
+/** A save of a loose file in the mock: the edits kept for it are written into it, so they go. */
+export function savedLoose(path: string): void {
+  notes.pending.delete(path);
+  seenLoose(path);
+}
+
+/** "Save it again": a file that is gone is written where it was. */
+export function recreateLoose(path: string, text: string): CreatedDoc {
+  writable();
+  const file = looseFile(path);
+  if (!file) throw new MockBackendError("notANote", `${path} is not a note`, { subject: path });
+  if (!file.missing) {
+    throw new MockBackendError("exists", `a file named ${file.name} already exists`, {
+      subject: file.name,
+    });
+  }
+  const now = Date.now();
+  file.missing = false;
+  file.changed = false;
+  putNote(looseUi(file), text, now);
+  notes.pending.delete(path);
+  return { path, hash: mockHash(text), modifiedMs: now };
+}
+
+export function keepEditsAsNote(path: string, text: string): string {
+  writable();
+  const file = looseFile(path);
+  if (!file) throw new MockBackendError("notANote", `${path} is not a note`, { subject: path });
+  const name = freeName(`${file.name.replace(/\.\w+$/, "")} (my edits)`, " ");
+  putNote(name, text, Date.now());
+  notes.pending.delete(path);
+  emitMock("tree-changed", null);
+  return name;
+}
+
+export function classifyPath(path: string): PathClass {
+  if (/missing|not-there/i.test(path)) return { kind: "missing", inProject: null };
+  return { kind: /\.\w+$/.test(baseName(path)) ? "file" : "folder", inProject: null };
+}
+
+/** The mock's "someone else saved the open loose file": it changes on disk. */
+export function touchLoose(path: string): void {
+  const file = looseFile(path);
+  if (!file || file.missing) return;
+  const ui = looseUi(file);
+  putNote(ui, `${textOf(ui).replace(/\n*$/, "\n")}\nAdded by someone else.\n`, Date.now());
+  file.changed = true;
+}
+
+/** The mock's "someone deleted the open loose file". */
+export function removeOnDisk(path: string): void {
+  const file = looseFile(path);
+  if (!file) return;
+  file.missing = true;
+  mockState.deleted.add(looseUi(file));
+  mockNoteFiles.delete(looseUi(file));
 }
 
 export function takeNotesRequest(): NotesRequest | null {

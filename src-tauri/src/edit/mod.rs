@@ -176,11 +176,34 @@ pub struct CreatedDoc {
 pub struct Editor<'a> {
     vault: &'a Vault,
     own: &'a OwnWrites,
+    /// Plain text files (`.txt`) are edited too, not only Markdown.
+    text_files: bool,
 }
 
 impl<'a> Editor<'a> {
     pub fn new(vault: &'a Vault, own: &'a OwnWrites) -> Self {
-        Self { vault, own }
+        Self {
+            vault,
+            own,
+            text_files: false,
+        }
+    }
+
+    /// An editor that also reads and saves plain text files (`.txt`), which a project's editor leaves alone.
+    #[must_use]
+    pub fn with_text_files(mut self) -> Self {
+        self.text_files = true;
+        self
+    }
+
+    /// Markdown by file name, or plain text when this editor takes it (a file that holds binary data is caught by the
+    /// content checks).
+    fn check_kind(&self, abs: &Path, rel: &str) -> Result<(), EditError> {
+        if is_markdown_path(abs) || (self.text_files && is_plain_text_path(abs)) {
+            Ok(())
+        } else {
+            Err(EditError::NotMarkdown(rel.to_owned()))
+        }
     }
 
     /// The text of a Markdown file and its blocks. Binary files, files over the size limit, files that are
@@ -188,7 +211,7 @@ impl<'a> Editor<'a> {
     pub fn source(&self, path: &str) -> Result<SourceDoc, EditError> {
         let resolved = self.vault.resolve(path)?;
         let rel = resolved.rel;
-        check_markdown(&resolved.abs, &rel)?;
+        self.check_kind(&resolved.abs, &rel)?;
         let meta = std::fs::metadata(&resolved.abs).map_err(|e| EditError::io(&rel, e))?;
         if !meta.is_file() {
             return Err(VaultError::NotFound(rel).into());
@@ -235,7 +258,7 @@ impl<'a> Editor<'a> {
     ) -> Result<SaveOutcome, EditError> {
         let resolved = self.vault.resolve(path)?;
         let rel = resolved.rel;
-        check_markdown(&resolved.abs, &rel)?;
+        self.check_kind(&resolved.abs, &rel)?;
         check_size(text, &rel)?;
         let meta = match std::fs::metadata(&resolved.abs) {
             Ok(meta) if meta.is_file() => meta,
@@ -295,7 +318,7 @@ impl<'a> Editor<'a> {
     pub fn create(&self, path: &str, text: &str) -> Result<CreatedDoc, EditError> {
         let resolved = self.vault.resolve(path)?;
         let rel = resolved.rel;
-        check_markdown(&resolved.abs, &rel)?;
+        self.check_kind(&resolved.abs, &rel)?;
         check_size(text, &rel)?;
         let name = resolved
             .abs
@@ -371,13 +394,12 @@ fn conflict_with_disk(abs: &Path, expected_hash: &str) -> io::Result<Option<Save
     }
 }
 
-/// Markdown by file name only (a `.md` file that holds binary data is caught by the content checks).
-fn check_markdown(abs: &Path, rel: &str) -> Result<(), EditError> {
-    if is_markdown_path(abs) {
-        Ok(())
-    } else {
-        Err(EditError::NotMarkdown(rel.to_owned()))
-    }
+/// Whether the file name says plain text (`.txt`).
+pub(crate) fn is_plain_text_path(path: &Path) -> bool {
+    path.extension().is_some_and(|e| {
+        let e = e.to_string_lossy().to_ascii_lowercase();
+        matches!(e.as_str(), "txt" | "text")
+    })
 }
 
 fn check_size(text: &str, rel: &str) -> Result<(), EditError> {
@@ -725,6 +747,25 @@ mod tests {
         assert_eq!(kind_of(ed.save("C:/Windows/x.md", "y", &h)), "invalidPath");
         assert_eq!(kind_of(ed.save("n.txt", "y", &h)), "notMarkdown");
         assert_eq!(fx.read("n.txt"), b"x");
+    }
+
+    #[test]
+    fn an_editor_that_takes_text_files_reads_and_saves_them_and_still_refuses_other_kinds() {
+        let fx = Fx::new(&[
+            ("n.txt", b"plain\r\ntext\r\n"),
+            ("d.json", b"{}"),
+            ("a.md", b"x"),
+        ]);
+        let ed = fx.editor().with_text_files();
+        let source = ed.source("n.txt").expect("text is edited");
+        assert_eq!(source.text, "plain\r\ntext\r\n");
+        let saved = ed.save("n.txt", "plain\r\nmore\r\n", &source.hash);
+        assert!(matches!(saved, Ok(SaveOutcome::Saved { .. })));
+        assert_eq!(fx.read("n.txt"), b"plain\r\nmore\r\n");
+        assert_eq!(kind_of(ed.source("d.json")), "notMarkdown");
+        assert!(ed.source("a.md").is_ok());
+        // the plain editor of a project leaves text files alone
+        assert_eq!(kind_of(fx.editor().source("n.txt")), "notMarkdown");
     }
 
     #[test]

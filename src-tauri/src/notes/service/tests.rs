@@ -49,7 +49,14 @@ fn open_in(
 ) -> (NotesService, OpenReport) {
     let vault = Arc::new(Vault::open(dir).expect("open the folder"));
     let recycler: Arc<dyn Recycler> = bin.clone();
-    NotesService::open(vault, Arc::new(OwnWrites::new()), recycler, T0, is_running)
+    NotesService::open(
+        vault,
+        Arc::new(OwnWrites::new()),
+        recycler,
+        None,
+        T0,
+        is_running,
+    )
 }
 
 fn fx() -> Fx {
@@ -882,3 +889,5 @@ fn a_note_that_is_too_big_is_refused_with_its_name() {
     assert_eq!(error.kind(), "tooLarge");
     assert_eq!(f.files(), Vec::<String>::new());
 }
+
+mod loose_files;

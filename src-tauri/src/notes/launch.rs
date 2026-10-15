@@ -9,6 +9,7 @@
 //! The conversation is one line each way: the request as JSON, then `ok`.
 
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,12 +31,26 @@ const START_POLL: Duration = Duration::from_millis(100);
 /// A request is a few bytes; more than this is not one.
 const MAX_REQUEST_BYTES: u64 = 4096;
 
-/// Whether the program is to be the Notes window: it was started with `--notes`, or with nothing to open while the person
-/// chose to start in Notes. `args` are the program's arguments, the program itself first.
-pub(crate) fn is_notes_launch(args: &[std::ffi::OsString], start_in: StartIn) -> bool {
+/// What the program is asked for when it is to be the Notes window, or `None` when it is not: it was started with `--notes`
+/// (nothing more), with a file to open (any file: it is listed under Files, or is a note when it is in the notes folder), or
+/// with nothing to open while the person chose to start in Notes. A folder is a project's. `args` are the program's
+/// arguments, the program itself first; a relative path is the one `cwd` holds.
+pub(crate) fn notes_launch(
+    args: &[std::ffi::OsString],
+    start_in: StartIn,
+    cwd: Option<&Path>,
+) -> Option<NotesRequest> {
     match args.get(1) {
-        Some(first) => first == NOTES_FLAG,
-        None => start_in == StartIn::Notes,
+        Some(first) if first == NOTES_FLAG => Some(NotesRequest::default()),
+        Some(first) => {
+            let path =
+                crate::commands::initial_path_from(first.clone(), cwd.map(Path::to_path_buf))?;
+            Path::new(&path).is_file().then(|| NotesRequest {
+                open_file: Some(path),
+                ..NotesRequest::default()
+            })
+        }
+        None => (start_in == StartIn::Notes).then(NotesRequest::default),
     }
 }
 
@@ -47,6 +62,8 @@ pub struct NotesRequest {
     pub new_note: bool,
     /// Show this note.
     pub open: Option<String>,
+    /// Open this file of the disk (its full path): a note when it is in the notes folder, else a loose file.
+    pub open_file: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -233,6 +250,7 @@ mod tests {
         NotesRequest {
             new_note: true,
             open: None,
+            open_file: None,
         }
     }
 
@@ -247,6 +265,7 @@ mod tests {
             &NotesRequest {
                 new_note: false,
                 open: Some("a.md".to_owned()),
+                open_file: Some("C:\\x\\y.md".to_owned()),
             },
         )
         .await
@@ -260,7 +279,8 @@ mod tests {
                 new_note(),
                 NotesRequest {
                     new_note: false,
-                    open: Some("a.md".to_owned())
+                    open: Some("a.md".to_owned()),
+                    open_file: Some("C:\\x\\y.md".to_owned())
                 },
                 NotesRequest::default()
             ]
@@ -362,22 +382,62 @@ mod tests {
     }
 
     #[test]
-    fn the_program_is_the_notes_window_when_asked_to_be_or_when_it_has_nothing_to_open_and_the_person_chose_notes(
+    fn the_program_is_the_notes_window_when_asked_to_be_when_given_a_file_or_when_it_has_nothing_to_open_and_the_person_chose_notes(
     ) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("proposal.md"), "# P\n").expect("write");
+        std::fs::create_dir(dir.path().join("docs")).expect("mkdir");
+        let file = dunce::canonicalize(dir.path().join("proposal.md"))
+            .expect("canonical")
+            .display()
+            .to_string();
         let args = |rest: &[&str]| -> Vec<std::ffi::OsString> {
             std::iter::once("trailmark")
                 .chain(rest.iter().copied())
                 .map(Into::into)
                 .collect()
         };
+        let launch = |rest: &[&str], start| notes_launch(&args(rest), start, Some(dir.path()));
+        let plain = Some(NotesRequest::default());
         for start in [StartIn::Welcome, StartIn::Notes] {
-            assert!(is_notes_launch(&args(&["--notes"]), start));
-            // something to open is a project, whatever the start setting says
-            assert!(!is_notes_launch(&args(&["F:/docs"]), start));
-            assert!(!is_notes_launch(&args(&["mcp"]), start));
+            assert_eq!(launch(&["--notes"], start), plain);
+            // a folder is a project, whatever the start setting says; so is what is not there, and a flag
+            assert_eq!(launch(&["docs"], start), None);
+            assert_eq!(launch(&["F:/docs-that-is-not-there"], start), None);
+            assert_eq!(launch(&["mcp"], start), None);
+            assert_eq!(launch(&["--other"], start), None);
+            // a file is a loose file of the Notes window, by its full path, whether it was given in full or from the folder
+            let opening = Some(NotesRequest {
+                open_file: Some(file.clone()),
+                ..NotesRequest::default()
+            });
+            assert_eq!(launch(&["proposal.md"], start), opening);
+            assert_eq!(launch(&[file.as_str()], start), opening);
         }
-        assert!(!is_notes_launch(&args(&[]), StartIn::Welcome));
-        assert!(is_notes_launch(&args(&[]), StartIn::Notes));
+        assert_eq!(launch(&[], StartIn::Welcome), None);
+        assert_eq!(launch(&[], StartIn::Notes), plain);
+    }
+
+    #[test]
+    fn a_request_to_open_a_file_travels_over_the_socket_with_its_path() {
+        let request = NotesRequest {
+            open_file: Some("C:\\Users\\ana\\Downloads\\proposal.md".to_owned()),
+            ..NotesRequest::default()
+        };
+        let line = serde_json::to_string(&request).expect("json");
+        assert_eq!(
+            serde_json::from_str::<NotesRequest>(&line).expect("back"),
+            request
+        );
+        // a request from a version that knew no files still reads
+        assert_eq!(
+            serde_json::from_str::<NotesRequest>(r#"{"newNote":true}"#).expect("old"),
+            NotesRequest {
+                new_note: true,
+                ..NotesRequest::default()
+            }
+        );
+        assert!((line.len() as u64) < MAX_REQUEST_BYTES);
     }
 
     #[test]

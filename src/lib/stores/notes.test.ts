@@ -81,6 +81,7 @@ import { vault } from "./vault.svelte";
 const NOW = 1_792_074_720_000;
 
 const entry = (path: string, over: Partial<NoteEntry> = {}): NoteEntry => ({
+  kind: "note",
   path,
   title: path.replace(/\.md$/, ""),
   snippet: "",
@@ -89,6 +90,9 @@ const entry = (path: string, over: Partial<NoteEntry> = {}): NoteEntry => ({
   pinned: false,
   copied: false,
   view: { mode: "source", caret: null, scroll: null },
+  folder: null,
+  missing: false,
+  unsaved: false,
   ...over,
 });
 
@@ -296,13 +300,13 @@ describe("starting", () => {
     addNote("a.md", "# A\n");
     addNote("b.md", "# B\n");
     openName = "a.md";
-    request = { newNote: false, open: "b.md" };
+    request = { newNote: false, open: "b.md", openFile: null };
     await start();
     expect(notes.current).toBe("b.md");
     notes.reset();
     edit.reset();
     docs.reset();
-    request = { newNote: true, open: null };
+    request = { newNote: true, open: null, openFile: null };
     await start();
     expect(notes.unborn).toBe(true);
   });

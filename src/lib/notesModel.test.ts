@@ -18,6 +18,7 @@ const at = (y: number, m: number, d: number, h = 12, min = 0): number =>
 const NOW = at(2026, 10, 15, 14, 32);
 
 const note = (path: string, modifiedMs: number, extra: Partial<NoteEntry> = {}): NoteEntry => ({
+  kind: "note",
   path,
   title: path.replace(/\.md$/, ""),
   snippet: "",
@@ -26,6 +27,9 @@ const note = (path: string, modifiedMs: number, extra: Partial<NoteEntry> = {}):
   pinned: false,
   copied: false,
   view: null,
+  folder: null,
+  missing: false,
+  unsaved: false,
   ...extra,
 });
 

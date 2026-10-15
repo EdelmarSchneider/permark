@@ -19,7 +19,9 @@ pub(crate) mod folder;
 mod history;
 mod launch;
 mod lock;
+mod loose;
 mod names;
+mod pending;
 mod recover;
 mod service;
 mod text;
@@ -27,11 +29,13 @@ mod text;
 pub use data::NoteView;
 pub use folder::{FolderStatus, NotesFolder};
 pub(crate) use launch::{
-    claim, is_notes_launch, serve, show_or_start, Claim, NotesRequest, NOTES_FLAG,
+    claim, notes_launch, serve, show_or_start, Claim, NotesRequest, NOTES_FLAG,
 };
+pub(crate) use loose::{is_loose_path, ui_path as loose_ui_path};
 pub(crate) use names::Moment;
+pub use pending::PendingEdits;
 pub(crate) use recover::process_is_running;
 pub use service::{
-    summary, NoteDeleted, NoteList, NoteSaved, NoteVersion, NotesError, NotesService, NotesSummary,
-    OpenReport, ReadOnlyReason, Restored,
+    summary, LooseDoc, LooseStatus, NoteDeleted, NoteList, NoteSaved, NoteVersion, NotesError,
+    NotesService, NotesSummary, OpenReport, OpenedFile, ReadOnlyReason, Restored,
 };

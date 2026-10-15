@@ -88,7 +88,16 @@
     "restore_note_version": ["path", "id"],
     "discard_blank_note": ["path"],
     "open_notes_folder": [],
-    "show_notes": ["new_note", "open"],
+    "classify_path": ["path"],
+    "open_loose_file": ["path"],
+    "loose_status": [],
+    "remove_loose_file": ["path"],
+    "locate_loose_file": ["path", "new_path"],
+    "save_pending": ["path", "text", "base_hash"],
+    "load_pending": ["path"],
+    "clear_pending": ["path"],
+    "keep_edits_as_note": ["path", "text"],
+    "show_notes": ["new_note", "open", "open_file"],
     "take_notes_request": []
   },
   "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "show-in-project", "agent-status", "agent-open", "comments-changed", "notes-request"]

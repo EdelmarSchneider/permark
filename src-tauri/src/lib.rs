@@ -79,17 +79,19 @@ fn navigation_guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
         .build()
 }
 
-/// What this program is, once the Notes window has been looked for.
+/// What this program is, once the Notes window has been looked for. One of these is made when the program starts.
+#[allow(clippy::large_enum_variant)]
 enum NotesRole {
     /// An ordinary window for a project (or the welcome screen).
     Project,
-    /// The Notes window; the socket other windows ask it over, when it could be made.
-    Window(Option<bridge::socket::Listening>),
+    /// The Notes window: what it was asked to show when it started (a file the file manager opened), and the socket other
+    /// windows ask it over, when it could be made.
+    Window(notes::NotesRequest, Option<bridge::socket::Listening>),
 }
 
-/// Decides whether this program is the Notes window (started with `--notes`, or with nothing to open when the person chose
-/// to start in Notes) and, if so, whether one is running already: then that one is asked to come forward and this program
-/// ends. Otherwise this one listens, so that the next launch finds it.
+/// Decides whether this program is the Notes window (started with `--notes`, with a file to open, or with nothing to open
+/// when the person chose to start in Notes) and, if so, whether one is running already: then that one is asked to come
+/// forward (and to show the file) and this program ends. Otherwise this one listens, so that the next launch finds it.
 fn claim_notes_window(identifier: &str) -> NotesRole {
     use std::ffi::OsString;
 
@@ -101,19 +103,19 @@ fn claim_notes_window(identifier: &str) -> NotesRole {
         .load()
         .start_in
         .unwrap_or_default();
-    if !notes::is_notes_launch(&args, start_in) {
+    let cwd = std::env::current_dir().ok();
+    let Some(request) = notes::notes_launch(&args, start_in, cwd.as_deref()) else {
         return NotesRole::Project;
-    }
-    let Ok(endpoint) = bridge::socket::Endpoint::for_notes(&app_data) else {
-        return NotesRole::Window(None);
     };
-    let claimed =
-        tauri::async_runtime::block_on(notes::claim(&endpoint, &notes::NotesRequest::default()));
+    let Ok(endpoint) = bridge::socket::Endpoint::for_notes(&app_data) else {
+        return NotesRole::Window(request, None);
+    };
+    let claimed = tauri::async_runtime::block_on(notes::claim(&endpoint, &request));
     match claimed {
         notes::Claim::Forwarded => std::process::exit(0),
-        notes::Claim::Listening(listening) => NotesRole::Window(Some(listening)),
+        notes::Claim::Listening(listening) => NotesRole::Window(request, Some(listening)),
         // no socket: the window runs anyway, and other windows will start another one when they ask
-        notes::Claim::Unavailable => NotesRole::Window(None),
+        notes::Claim::Unavailable => NotesRole::Window(request, None),
     }
 }
 
@@ -140,9 +142,9 @@ pub fn run() {
     };
     // The Notes window is one program for each app data folder: a second launch asks it to come forward and ends.
     let notes_socket = claim_notes_window(&context.config().identifier);
-    let (notes_window, notes_listener) = match notes_socket {
-        NotesRole::Window(listener) => (true, listener),
-        NotesRole::Project => (false, None),
+    let (notes_window, notes_request, notes_listener) = match notes_socket {
+        NotesRole::Window(request, listener) => (true, request, listener),
+        NotesRole::Project => (false, notes::NotesRequest::default(), None),
     };
     let builder = tauri::Builder::default()
         .plugin(navigation_guard(dev_url))
@@ -157,7 +159,10 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .manage(open_request::OpenInbox::default())
-        .manage(notes_commands::NotesLaunch::new(notes_window))
+        .manage(notes_commands::NotesLaunch::new(
+            notes_window,
+            notes_request,
+        ))
         // The window starts hidden; this puts it where it was and shows it.
         .setup(move |app| {
             window::setup(app);
@@ -266,6 +271,15 @@ pub fn run() {
             notes_commands::restore_note_version,
             notes_commands::discard_blank_note,
             notes_commands::open_notes_folder,
+            notes_commands::classify_path,
+            notes_commands::open_loose_file,
+            notes_commands::loose_status,
+            notes_commands::remove_loose_file,
+            notes_commands::locate_loose_file,
+            notes_commands::save_pending,
+            notes_commands::load_pending,
+            notes_commands::clear_pending,
+            notes_commands::keep_edits_as_note,
             notes_commands::show_notes,
             notes_commands::take_notes_request,
         ])

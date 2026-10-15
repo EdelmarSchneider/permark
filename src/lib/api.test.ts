@@ -123,7 +123,16 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   restoreNoteVersion: ["a.md", "20261015-143200-123"],
   discardBlankNote: ["a.md"],
   openNotesFolder: [],
-  showNotes: [true, null],
+  classifyPath: ["C:/Users/ana/Downloads/proposal.md"],
+  openLooseFile: ["C:/Users/ana/Downloads/proposal.md"],
+  looseStatus: [],
+  removeLooseFile: ["@file/0a1b2c3d/proposal.md"],
+  locateLooseFile: ["@file/0a1b2c3d/proposal.md", "D:/Archive/proposal.md"],
+  savePending: ["@file/0a1b2c3d/proposal.md", "# Proposal", "00000000000000ab"],
+  loadPending: ["@file/0a1b2c3d/proposal.md"],
+  clearPending: ["@file/0a1b2c3d/proposal.md"],
+  keepEditsAsNote: ["@file/0a1b2c3d/proposal.md", "# My words"],
+  showNotes: [true, null, "C:/Users/ana/Downloads/proposal.md"],
   takeNotesRequest: [],
 };
 

@@ -25,10 +25,12 @@ use serde::Serialize;
 use super::data::{Cached, NoteView, NotesData, Stamp};
 use super::history::{Cadence, History};
 use super::lock::{self, Access, FolderLock};
+use super::loose;
 use super::names::{
     conflict_stem, copy_base, first_free, is_note_name, note_stem, recovered_stem, Moment,
     EXTENSION, MAX_TRIES,
 };
+use super::pending::PendingStore;
 use super::recover::{parse_temp_name, recoverable_text, recovered_name};
 use super::text::{is_blank, snippet_of, title_of, HEAD_BYTES};
 use crate::edit::{EditError, Editor, SaveOutcome};
@@ -71,6 +73,10 @@ pub enum NotesError {
     Changed(String),
     #[error("this window does not show notes")]
     NotOpen,
+    #[error("{0} is not a file")]
+    NotAFile(String),
+    #[error("{0} is not a text file, so it cannot be listed")]
+    BinaryFile(String),
 }
 
 impl NotesError {
@@ -90,6 +96,8 @@ impl NotesError {
             Self::NotText(_) => "notText",
             Self::Changed(_) => "changed",
             Self::NotOpen => "notesNotOpen",
+            Self::NotAFile(_) => "notAFile",
+            Self::BinaryFile(_) => "binaryFile",
         }
     }
 
@@ -125,13 +133,26 @@ pub struct OpenReport {
     pub recovered: Vec<String>,
 }
 
+/// What a row of the list is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryKind {
+    /// A note: a file in the notes folder.
+    Note,
+    /// A loose file: one opened here that is somewhere else (see [`loose`]).
+    File,
+}
+
 /// A note in the list. Matches the UI's `NoteEntry`.
+// The flags are what the row of the list shows; the UI reads them one by one.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NoteEntry {
-    /// The note's file name in the notes folder.
+    pub kind: EntryKind,
+    /// The note's file name in the notes folder; for a loose file, its UI path (`@file/<id>/<name>`).
     pub path: String,
-    /// The first line, without Markdown marks. Empty for a note with no text.
+    /// The first line, without Markdown marks. Empty for a note with no text. A loose file shows its name.
     pub title: String,
     pub snippet: String,
     pub modified_ms: u64,
@@ -141,6 +162,12 @@ pub struct NoteEntry {
     pub copied: bool,
     /// Where the person left it.
     pub view: Option<NoteView>,
+    /// A loose file: the folder it is in, as the list shows it.
+    pub folder: Option<String>,
+    /// A loose file that is not where it was.
+    pub missing: bool,
+    /// A loose file with text that was typed and not saved.
+    pub unsaved: bool,
 }
 
 /// The notes of the folder, the pinned ones first in the person's order, then the others by last change.
@@ -229,6 +256,8 @@ struct State {
     reserved: BTreeMap<String, String>,
     undo: Vec<DeletedBatch>,
     next_undo: u64,
+    /// How each loose file looked when it was last read here: a file that looks different now changed on disk.
+    seen: BTreeMap<String, Stamp>,
 }
 
 /// Whether this program may write the notes, and the lock that says so.
@@ -242,6 +271,10 @@ pub struct NotesService {
     own: Arc<OwnWrites>,
     recycler: Arc<dyn Recycler>,
     history: History,
+    /// The text typed into loose files and not saved.
+    pending: PendingStore,
+    /// The person's home folder, which the list shows as `~`.
+    home: Option<PathBuf>,
     writing: Writing,
     state: Mutex<State>,
 }
@@ -332,6 +365,7 @@ fn entries(root: &Path, data: &mut NotesData) -> (Vec<NoteEntry>, bool) {
                 (title, snippet)
             };
             NoteEntry {
+                kind: EntryKind::Note,
                 path: file.name.clone(),
                 title,
                 snippet,
@@ -340,22 +374,45 @@ fn entries(root: &Path, data: &mut NotesData) -> (Vec<NoteEntry>, bool) {
                 pinned: data.is_pinned(&file.name),
                 copied: data.copied.get(&file.name) == Some(&file.stamp),
                 view: data.views.get(&file.name).cloned(),
+                folder: None,
+                missing: false,
+                unsaved: false,
             }
         })
         .collect();
-    notes.sort_by(|a, b| {
-        let rank = |note: &NoteEntry| data.pins.iter().position(|pin| *pin == note.path);
-        match (rank(a), rank(b)) {
-            (Some(x), Some(y)) => x.cmp(&y),
-            (Some(_), None) => std::cmp::Ordering::Less,
-            (None, Some(_)) => std::cmp::Ordering::Greater,
-            (None, None) => b
+    sort_entries(&mut notes, &data.pins);
+    (notes, changed)
+}
+
+/// What the pins and the places are kept under for a row: a note's file name, a loose file's `@file/<id>`.
+fn key_of_entry(entry: &NoteEntry) -> String {
+    match entry.kind {
+        EntryKind::Note => entry.path.clone(),
+        EntryKind::File => loose::id_of(&entry.path).map_or_else(String::new, loose::key_of),
+    }
+}
+
+/// The order of the list: the pinned ones in the person's order, then the notes by last change, then the loose files by the
+/// time they were opened (the list gives them in that order already).
+fn sort_entries(entries: &mut [NoteEntry], pins: &[String]) {
+    let rank = |entry: &NoteEntry| {
+        let key = key_of_entry(entry);
+        pins.iter().position(|pin| *pin == key)
+    };
+    entries.sort_by(|a, b| match (rank(a), rank(b)) {
+        (Some(x), Some(y)) => x.cmp(&y),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => match (a.kind, b.kind) {
+            (EntryKind::Note, EntryKind::File) => std::cmp::Ordering::Less,
+            (EntryKind::File, EntryKind::Note) => std::cmp::Ordering::Greater,
+            (EntryKind::File, EntryKind::File) => std::cmp::Ordering::Equal,
+            (EntryKind::Note, EntryKind::Note) => b
                 .modified_ms
                 .cmp(&a.modified_ms)
                 .then_with(|| a.path.cmp(&b.path)),
-        }
+        },
     });
-    (notes, changed)
 }
 
 /// What the welcome screen shows of the notes in `root`: read from the files, without a service and without a lock, so
@@ -378,6 +435,7 @@ impl NotesService {
         vault: Arc<Vault>,
         own: Arc<OwnWrites>,
         recycler: Arc<dyn Recycler>,
+        home: Option<PathBuf>,
         now_ms: u64,
         is_running: &dyn Fn(u32) -> bool,
     ) -> (Self, OpenReport) {
@@ -388,6 +446,8 @@ impl NotesService {
         };
         let service = Self {
             history: History::new(vault.root()),
+            pending: PendingStore::new(vault.root()),
+            home,
             vault,
             own,
             recycler,
@@ -398,10 +458,13 @@ impl NotesService {
                 reserved: BTreeMap::new(),
                 undo: Vec::new(),
                 next_undo: 1,
+                seen: BTreeMap::new(),
             }),
         };
         let root = service.root().to_path_buf();
         let mut data = NotesData::load(&root);
+        // the list of loose files is lost with a damaged `notes.json`; the text typed into them is not
+        service.relist_unsaved(&mut data);
         let names: BTreeSet<String> = scan(&root).into_iter().map(|f| f.name).collect();
         data.retain_existing(&names);
         lock(&service.state).data = data;
@@ -468,25 +531,28 @@ impl NotesService {
 
     // ---- the list ------------------------------------------------------------------------------------
 
-    /// The notes, in the order the list shows them.
+    /// The notes and the loose files, in the order the list shows them.
     pub fn list(&self) -> NoteList {
-        let (notes, changed) = {
+        let (notes, open, changed) = {
             let mut state = lock(&self.state);
-            let (notes, changed) = entries(self.root(), &mut state.data);
-            if state
-                .data
-                .open
-                .as_ref()
-                .is_some_and(|open| !notes.iter().any(|note| note.path == *open))
-            {
+            let (mut notes, changed) = entries(self.root(), &mut state.data);
+            notes.extend(self.loose_entries(&state.data));
+            sort_entries(&mut notes, &state.data.pins);
+            // the open one is a note or a file that is listed
+            let open = state.data.open.clone().and_then(|key| {
+                notes
+                    .iter()
+                    .find(|note| key_of_entry(note) == key)
+                    .map(|note| note.path.clone())
+            });
+            if open.is_none() {
                 state.data.open = None;
             }
-            (notes, changed)
+            (notes, open, changed)
         };
         if changed {
             self.persist();
         }
-        let open = lock(&self.state).data.open.clone();
         NoteList { notes, open }
     }
 
@@ -893,13 +959,24 @@ impl NotesService {
 
     // ---- what is remembered ---------------------------------------------------------------------------
 
+    /// What the notes remember about `path` is kept under: a note's file name, a loose file's `@file/<id>`. A note must be a
+    /// file that is there when `must_exist`; a loose file must be listed.
+    fn key_for(&self, path: &str, must_exist: bool) -> Result<String, NotesError> {
+        if loose::is_loose_path(path) {
+            let entry = self.loose_file(path)?;
+            return Ok(entry.key());
+        }
+        let (name, abs) = self.resolve_note(path)?;
+        if must_exist && !abs.is_file() {
+            return Err(VaultError::NotFound(name).into());
+        }
+        Ok(name)
+    }
+
     /// Pins a note (it goes to the end of the pinned ones) or unpins it.
     pub fn set_pinned(&self, path: &str, pinned: bool) -> Result<(), NotesError> {
         self.require_writable()?;
-        let (name, abs) = self.resolve_note(path)?;
-        if pinned && !abs.is_file() {
-            return Err(VaultError::NotFound(name).into());
-        }
+        let name = self.key_for(path, pinned)?;
         {
             let mut state = lock(&self.state);
             state.data.pins.retain(|pin| *pin != name);
@@ -911,7 +988,7 @@ impl NotesService {
         Ok(())
     }
 
-    /// Sets the order of the pinned notes. Names that are not pinned are ignored; pinned notes the order leaves out keep
+    /// Sets the order of the pinned notes. Notes that are not pinned are ignored; pinned notes the order leaves out keep
     /// their place after the others.
     pub fn set_pin_order(&self, order: &[String]) -> Result<(), NotesError> {
         self.require_writable()?;
@@ -919,9 +996,13 @@ impl NotesService {
             let mut state = lock(&self.state);
             let pinned = state.data.pins.clone();
             let mut next: Vec<String> = Vec::new();
-            for name in order {
-                if pinned.contains(name) && !next.contains(name) {
-                    next.push(name.clone());
+            for path in order {
+                let key = match loose::id_of(path) {
+                    Some(id) => loose::key_of(id),
+                    None => path.clone(),
+                };
+                if pinned.contains(&key) && !next.contains(&key) {
+                    next.push(key);
                 }
             }
             let left_out: Vec<String> = pinned
@@ -935,8 +1016,13 @@ impl NotesService {
         Ok(())
     }
 
-    /// The note was opened: it is the one to come back to, and its next save takes a version.
+    /// The note was opened: it is the one to come back to, and its next save takes a version. A loose file is the one to
+    /// come back to as well, and goes to the top of the files.
     pub fn opened(&self, path: &str) {
+        if loose::is_loose_path(path) {
+            self.loose_opened(path);
+            return;
+        }
         let Ok((name, _)) = self.resolve_note(path) else {
             return;
         };
@@ -956,15 +1042,18 @@ impl NotesService {
 
     /// Remembers where a note was left.
     pub fn set_view(&self, path: &str, view: NoteView) {
-        let Ok((name, _)) = self.resolve_note(path) else {
+        let Ok(key) = self.key_for(path, false) else {
             return;
         };
-        lock(&self.state).data.views.insert(name, view);
+        lock(&self.state).data.views.insert(key, view);
         self.persist();
     }
 
-    /// The note was copied: it shows as copied until it is edited.
+    /// The note was copied: it shows as copied until it is edited. Only notes have the mark.
     pub fn mark_copied(&self, path: &str) -> Result<(), NotesError> {
+        if loose::is_loose_path(path) {
+            return Ok(());
+        }
         let (name, abs) = self.resolve_note(path)?;
         let meta = std::fs::metadata(&abs).map_err(|e| NotesError::io(&name, e))?;
         lock(&self.state).data.copied.insert(
@@ -1044,6 +1133,9 @@ impl NotesService {
 fn modified_of(path: &Path) -> Option<u64> {
     std::fs::metadata(path).ok().map(|meta| modified_ms(&meta))
 }
+
+mod files;
+pub use files::{LooseDoc, LooseStatus, OpenedFile};
 
 #[cfg(test)]
 mod tests;

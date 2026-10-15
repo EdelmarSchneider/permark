@@ -33,7 +33,9 @@ use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
 use crate::meta::{MetaService, Timing};
-use crate::notes::{self, NoteSaved, NotesError, NotesService, OpenReport, ReadOnlyReason};
+use crate::notes::{
+    self, LooseDoc, NoteSaved, NotesError, NotesService, OpenReport, ReadOnlyReason,
+};
 use crate::refs::ImageRefs;
 use crate::render::{self, DocumentView, Registry};
 use crate::search::indexer::{IndexWorker, Indexer};
@@ -44,7 +46,7 @@ use crate::session::{
 };
 use crate::unread::{Timing as UnreadTiming, UnreadService};
 use crate::util::{image_mime, modified_ms, now_ms, on_parser_stack, read_with_retry};
-use crate::vault::{NodeKind, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
+use crate::vault::{NodeKind, Resolved, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
 use crate::watch::{
@@ -546,12 +548,13 @@ impl Workspace {
     pub fn open_notes(
         folder: &Path,
         app_data_dir: &Path,
+        home: Option<&Path>,
         sink: &Arc<dyn EventSink>,
     ) -> Result<Self, AppError> {
         Self::open_with(
             folder,
             app_data_dir,
-            None,
+            home,
             sink,
             start_watcher,
             WorkspaceKind::Notes,
@@ -706,6 +709,7 @@ impl Workspace {
                 Arc::clone(&vault),
                 Arc::clone(&own_writes),
                 Arc::new(OsRecycler),
+                home.map(Path::to_path_buf),
                 now_ms(),
                 &notes::process_is_running,
             );
@@ -789,7 +793,43 @@ impl Workspace {
         self.vault.tree_with(opts)
     }
 
+    /// Whether `path` is the path of a loose file of this window's notes.
+    fn is_loose(&self, path: &str) -> bool {
+        self.notes.is_some() && notes::is_loose_path(path)
+    }
+
+    /// The scope of a loose file, for a UI path of one (`@file/<id>/<name>`) in the Notes window; `None` for any other path.
+    /// A loose file is reached through its id only: the file, and the images next to it.
+    fn loose_doc(&self, path: &str) -> Result<Option<LooseDoc>, AppError> {
+        match &self.notes {
+            Some(part) if notes::is_loose_path(path) => Ok(Some(part.service.loose_doc(path)?)),
+            _ => Ok(None),
+        }
+    }
+
+    /// [`Vault::resolve`] for the paths of the folder, and for the paths of a loose file the file's own place.
+    fn resolve_path(&self, path: &str) -> Result<Resolved, AppError> {
+        if let Some(doc) = self.loose_doc(path)? {
+            let target = doc.asset.as_deref().unwrap_or(&doc.name);
+            let mut resolved = doc.vault.resolve(target)?;
+            resolved.rel = notes::loose_ui_path(&doc.id, target);
+            return Ok(resolved);
+        }
+        Ok(self.vault.resolve(path)?)
+    }
+
     pub fn read_document(&self, path: &str) -> Result<DocumentView, AppError> {
+        if let Some(doc) = self.loose_doc(path)? {
+            if doc.asset.is_some() {
+                return Err(VaultError::NotFound(path.to_owned()).into());
+            }
+            let resolved = doc.vault.resolve(&doc.name)?;
+            // looked at first: a change after this point is a change to the version that is shown
+            self.notes()?.mark_seen(&doc.id);
+            return Ok(on_parser_stack(|| {
+                render::load_document(&self.registry, &resolved.abs, &doc.ui_path)
+            })?);
+        }
         let resolved = self.vault.resolve(path)?;
         // a new note has a name and no file yet: it reads as empty
         if self.is_unborn_note(path) {
@@ -815,6 +855,19 @@ impl Workspace {
 
     /// A Markdown file as the editor needs it: the exact text, its hash and its blocks.
     pub fn document_source(&self, path: &str) -> Result<SourceDoc, AppError> {
+        if let Some(doc) = self.loose_doc(path)? {
+            if doc.asset.is_some() {
+                return Err(VaultError::NotFound(path.to_owned()).into());
+            }
+            self.notes()?.mark_seen(&doc.id);
+            // a loose file's editor takes plain text too, and nothing it does is the notes watcher's business
+            let own = OwnWrites::new();
+            let mut source = Editor::new(&doc.vault, &own)
+                .with_text_files()
+                .source(&doc.name)?;
+            source.path = doc.ui_path;
+            return Ok(source);
+        }
         if self.is_unborn_note(path) {
             let resolved = self.vault.resolve(path)?;
             // no hash: the first save of the text makes the file
@@ -836,6 +889,10 @@ impl Workspace {
         text: &str,
         expected_hash: &str,
     ) -> Result<SaveOutcome, AppError> {
+        // a loose file is written only here, when the person asks, and nothing of it is news or unread
+        if self.is_loose(path) {
+            return Ok(self.notes()?.save_file(path, text, expected_hash)?);
+        }
         self.require_writable()?;
         let outcome = self.editor().save(path, text, expected_hash)?;
         // What the person wrote is read by definition.
@@ -847,6 +904,10 @@ impl Workspace {
 
     /// Creates a new Markdown file (never overwrites).
     pub fn create_document(&self, path: &str, text: &str) -> Result<CreatedDoc, AppError> {
+        // the only file a loose file's path can create is the file itself, again, where it was
+        if self.is_loose(path) {
+            return Ok(self.notes()?.recreate_file(path, text)?);
+        }
         self.require_writable()?;
         let created = self.editor().create(path, text)?;
         self.unread.mark_written(&created.path, &created.hash);
@@ -861,6 +922,11 @@ impl Workspace {
         data: &[u8],
     ) -> Result<AssetWritten, AppError> {
         self.require_writable()?;
+        // a loose file takes no images: its folder is not ours to add to (the vault of one file says so)
+        if let Some(doc) = self.loose_doc(doc_path)? {
+            let own = OwnWrites::new();
+            return Ok(Editor::new(&doc.vault, &own).write_asset(&doc.name, name_hint, data)?);
+        }
         Ok(self.editor().write_asset(doc_path, name_hint, data)?)
     }
 
@@ -877,6 +943,19 @@ impl Workspace {
     /// What opening the notes found: whether they can only be read, and the notes made from a crash's leftovers.
     pub fn notes_opened(&self) -> Option<&OpenReport> {
         self.notes.as_ref().map(|part| &part.opened)
+    }
+
+    /// Where a file of the disk is in this project, when this window shows a folder and the file is inside it: its path in the
+    /// project. A file anywhere else (and every file in the Notes window) is not in a project.
+    pub fn locate_in_project(&self, path: &Path) -> Option<String> {
+        if self.notes.is_some() || self.vault.is_shallow() {
+            return None;
+        }
+        let canonical = dunce::canonicalize(path).ok()?;
+        if !canonical.is_file() {
+            return None;
+        }
+        self.vault.locate(&canonical).map(|located| located.rel)
     }
 
     /// Whether this workspace is the notes, and in the folder `folder`.
@@ -967,11 +1046,18 @@ impl Workspace {
     }
 
     pub fn resolve_link(&self, from: &str, href: &str) -> LinkTarget {
+        if let Ok(Some(doc)) = self.loose_doc(from) {
+            // a loose file is read by itself: what it links to in its folder is not part of any project
+            return match links::resolve(&doc.vault, &doc.name, href) {
+                LinkTarget::Internal { path, .. } => LinkTarget::Missing { path },
+                other => other,
+            };
+        }
         links::resolve(&self.vault, from, href)
     }
 
     pub fn absolute_path(&self, path: &str) -> Result<String, AppError> {
-        Ok(self.vault.resolve(path)?.abs.display().to_string())
+        Ok(self.resolve_path(path)?.abs.display().to_string())
     }
 
     /// An image for the document view. It is looked up like any other path of the folder, so nothing
@@ -979,10 +1065,23 @@ impl Workspace {
     /// the images next to the opened file are served, because that folder is often Downloads or the
     /// home folder.
     pub fn read_asset(&self, path: &str) -> Result<Asset, AppError> {
+        // the images of a loose file are the ones next to it, and no others
+        if let Some(doc) = self.loose_doc(path)? {
+            let Some(name) = doc.asset.as_deref() else {
+                return Err(VaultError::NotFound(path.to_owned()).into());
+            };
+            return Self::read_image(&doc.vault, name);
+        }
+        Self::read_image(&self.vault, path)
+    }
+
+    /// An image of `vault`, looked up like any other path of it, so nothing outside it can be read. A vault of one file
+    /// (Simple mode, a loose file) serves the images next to the file only.
+    fn read_image(vault: &Vault, path: &str) -> Result<Asset, AppError> {
         let mime =
             image_mime(path).ok_or_else(|| VaultError::Invalid(format!("not an image: {path}")))?;
-        let resolved = self.vault.resolve(path)?;
-        if self.vault.is_shallow() && resolved.rel.contains('/') {
+        let resolved = vault.resolve(path)?;
+        if vault.is_shallow() && resolved.rel.contains('/') {
             return Err(VaultError::Escapes(path.to_owned()).into());
         }
         let meta =
@@ -1000,7 +1099,7 @@ impl Workspace {
     /// without an extension): a program or script in the folder is never started from here, and neither is a file
     /// without an extension that the system would run (see [`is_program_without_extension`]).
     pub fn external_target(&self, path: &str) -> Result<PathBuf, AppError> {
-        let resolved = self.vault.resolve(path)?;
+        let resolved = self.resolve_path(path)?;
         if !resolved.abs.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
@@ -1022,7 +1121,7 @@ impl Workspace {
     /// kind of file will do, because it is only ever an argument to the program the person chose (the program
     /// itself comes from their settings, never from the folder).
     pub fn editor_target(&self, path: &str) -> Result<PathBuf, AppError> {
-        let resolved = self.vault.resolve(path)?;
+        let resolved = self.resolve_path(path)?;
         if !resolved.abs.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
@@ -1031,7 +1130,7 @@ impl Workspace {
 
     /// The folder (or file) to show in the system's file manager for "Reveal in folder".
     pub fn reveal_target(&self, path: &str) -> Result<PathBuf, AppError> {
-        let resolved = self.vault.resolve(path)?;
+        let resolved = self.resolve_path(path)?;
         if !resolved.abs.exists() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
@@ -2218,7 +2317,8 @@ deepword
     impl Fx {
         fn open_notes(&self) -> Workspace {
             let sink: Arc<dyn EventSink> = self.rec.clone();
-            Workspace::open_notes(self.project.path(), self.app.path(), &sink).expect("open notes")
+            Workspace::open_notes(self.project.path(), self.app.path(), None, &sink)
+                .expect("open notes")
         }
     }
 
@@ -2290,9 +2390,10 @@ deepword
         write(fx.project.path(), "a.md", "# A\n");
         let sink: Arc<dyn EventSink> = fx.rec.clone();
         let file = fx.project.path().join("a.md");
-        assert!(Workspace::open_notes(&file, fx.app.path(), &sink).is_err());
+        assert!(Workspace::open_notes(&file, fx.app.path(), None, &sink).is_err());
         assert!(
-            Workspace::open_notes(&fx.project.path().join("nope"), fx.app.path(), &sink).is_err()
+            Workspace::open_notes(&fx.project.path().join("nope"), fx.app.path(), None, &sink)
+                .is_err()
         );
         let project = fx.open();
         assert_eq!(project.info().kind, WorkspaceKind::Project);
@@ -2301,6 +2402,186 @@ deepword
             Some("notesNotOpen")
         );
         assert_eq!(project.notes_read_only(), None);
+    }
+
+    /// A folder that is not the notes folder, with a file someone sent and the image it shows.
+    fn sent_files() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            dir.path(),
+            "proposal.md",
+            "# Proposal\n\n![the plan](pic.png)\n\n[next](other.md) and [web](https://example.com)\n",
+        );
+        write(dir.path(), "pic.png", "not really a picture");
+        write(dir.path(), "other.md", "# Other\n");
+        write(dir.path(), "todo.txt", "buy milk\n");
+        dir
+    }
+
+    fn open_loose(ws: &Workspace, file: &Path) -> String {
+        ws.notes()
+            .expect("notes")
+            .open_file(file, now_ms())
+            .expect("open the file")
+            .path
+    }
+
+    /// A loose file is read, edited, saved and served through its own paths, and nothing of the notes folder is involved.
+    #[test]
+    fn a_loose_file_is_read_edited_and_saved_through_paths_of_its_own() {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let path = open_loose(&ws, &sent.path().join("proposal.md"));
+        let id = path
+            .strip_prefix("@file/")
+            .and_then(|rest| rest.split('/').next())
+            .expect("an id")
+            .to_owned();
+
+        let view = ws.read_document(&path).expect("read");
+        assert_eq!(view.path, path);
+        assert!(view.html.contains("Proposal") && view.html.contains("pic.png"));
+        let source = ws.document_source(&path).expect("source");
+        assert_eq!(source.path, path);
+        assert!(source.text.starts_with("# Proposal"));
+
+        // the image next to it is served, nothing else of its folder is
+        let image = ws
+            .read_asset(&format!("@file/{id}/pic.png"))
+            .expect("image");
+        assert_eq!(image.mime, "image/png");
+        assert!(ws.read_asset(&format!("@file/{id}/sub/pic.png")).is_err());
+        assert!(ws.read_asset(&format!("@file/{id}/../pic.png")).is_err());
+        assert!(
+            ws.read_asset(&path).is_err(),
+            "the document is not an image"
+        );
+        assert!(ws.read_document(&format!("@file/{id}/pic.png")).is_err());
+        assert!(ws.read_document("@file/ffffffff/proposal.md").is_err());
+
+        // saving writes the file only when asked, and nothing else
+        let outcome = ws
+            .save_document(&path, "# Proposal\nedited\n", &source.hash)
+            .expect("save");
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+        assert_eq!(
+            std::fs::read_to_string(sent.path().join("proposal.md")).expect("read"),
+            "# Proposal\nedited\n"
+        );
+        let in_notes: Vec<String> = std::fs::read_dir(fx.project.path())
+            .expect("ls")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .filter(|name| name != ".trailmark")
+            .collect();
+        assert_eq!(in_notes, Vec::<String>::new(), "no file made in the notes");
+        // a save based on a version that is not the file's any more writes nothing
+        let stale = ws
+            .save_document(&path, "# Mine\n", &source.hash)
+            .expect("save");
+        assert!(matches!(stale, SaveOutcome::Conflict { .. }));
+
+        // images cannot be added next to a file that is not ours
+        assert!(ws.write_asset(&path, "x.png", &[1, 2, 3]).is_err());
+        assert!(!sent.path().join("assets").exists());
+
+        // what its links lead to
+        assert!(matches!(
+            ws.resolve_link(&path, "other.md"),
+            LinkTarget::Missing { .. }
+        ));
+        assert!(matches!(
+            ws.resolve_link(&path, "https://example.com"),
+            LinkTarget::External { .. }
+        ));
+        assert!(matches!(
+            ws.resolve_link(&path, "#top"),
+            LinkTarget::Anchor { .. }
+        ));
+
+        // the places the system is handed
+        let file = dunce::canonicalize(sent.path().join("proposal.md")).expect("canonical");
+        assert_eq!(
+            ws.absolute_path(&path).expect("abs"),
+            file.display().to_string()
+        );
+        assert_eq!(ws.external_target(&path).expect("external"), file);
+        assert_eq!(ws.reveal_target(&path).expect("reveal"), file);
+        assert_eq!(ws.editor_target(&path).expect("editor"), file);
+        ws.close();
+    }
+
+    #[test]
+    fn a_text_file_opens_for_editing_in_the_notes_and_stays_read_only_in_a_project() {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let path = open_loose(&ws, &sent.path().join("todo.txt"));
+        let source = ws.document_source(&path).expect("a text file is edited");
+        assert_eq!(source.text, "buy milk\n");
+        ws.save_document(&path, "buy milk\nand eggs\n", &source.hash)
+            .expect("saved");
+        assert_eq!(
+            std::fs::read_to_string(sent.path().join("todo.txt")).expect("read"),
+            "buy milk\nand eggs\n"
+        );
+        ws.close();
+
+        let project = Fx::new();
+        write(project.project.path(), "todo.txt", "buy milk\n");
+        let ws = project.open();
+        assert_eq!(
+            ws.document_source("todo.txt").err().map(|e| e.kind()),
+            Some("notMarkdown")
+        );
+        ws.close();
+    }
+
+    #[test]
+    fn a_loose_file_that_is_gone_is_written_again_by_the_create_that_a_project_uses_for_new_files()
+    {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let file = sent.path().join("proposal.md");
+        let path = open_loose(&ws, &file);
+        std::fs::remove_file(&file).expect("remove");
+        let created = ws
+            .create_document(&path, "# Back again\n")
+            .expect("written again");
+        assert_eq!(created.path, path);
+        assert_eq!(
+            std::fs::read_to_string(&file).expect("read"),
+            "# Back again\n"
+        );
+        assert!(ws.create_document(&path, "# Over it\n").is_err());
+        ws.close();
+    }
+
+    #[test]
+    fn a_file_is_in_the_project_only_when_the_open_folder_holds_it() {
+        let fx = Fx::new();
+        write(fx.project.path(), "docs/a.md", "# A\n");
+        let ws = fx.open();
+        let inside = fx.project.path().join("docs").join("a.md");
+        assert_eq!(ws.locate_in_project(&inside).as_deref(), Some("docs/a.md"));
+        assert_eq!(ws.locate_in_project(&fx.project.path().join("docs")), None);
+        let sent = sent_files();
+        assert_eq!(ws.locate_in_project(&sent.path().join("proposal.md")), None);
+        assert_eq!(
+            ws.locate_in_project(&fx.project.path().join("gone.md")),
+            None
+        );
+        ws.close();
+        // the Notes window has no project
+        let notes_window = Fx::new();
+        let notes = notes_window.open_notes();
+        write(notes_window.project.path(), "n.md", "# N\n");
+        assert_eq!(
+            notes.locate_in_project(&notes_window.project.path().join("n.md")),
+            None
+        );
+        notes.close();
     }
 
     #[test]

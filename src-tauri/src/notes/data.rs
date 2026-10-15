@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::loose::{self, LooseFile};
 use crate::util::write_atomic;
 
 /// The folder next to the notes where TrailMark keeps its own data. The notes' watcher and index ignore it.
@@ -74,6 +75,9 @@ pub(crate) struct NotesData {
     /// The notes that were copied, with the file as it was then.
     pub copied: BTreeMap<String, Stamp>,
     pub cache: BTreeMap<String, Cached>,
+    /// The files opened here that are not in the notes folder. Their pins, places and the open one are kept under the
+    /// key of the file (`@file/<id>`), which a rename does not change.
+    pub loose: Vec<LooseFile>,
 }
 
 /// Reads one field of the file, leniently: a value of the wrong shape reads as the default.
@@ -103,6 +107,28 @@ fn entries<T: for<'de> Deserialize<'de>>(
         .collect()
 }
 
+/// Reads the loose files, one by one: an entry that is not a file with an id and a path is dropped, and so is a second one
+/// with an id (or a place) that an earlier one has.
+fn loose_files(root: &serde_json::Map<String, Value>) -> Vec<LooseFile> {
+    let Some(Value::Array(items)) = root.get("loose") else {
+        return Vec::new();
+    };
+    let mut files: Vec<LooseFile> = Vec::new();
+    for item in items.iter().filter(|item| item.is_object()) {
+        let Ok(file) = serde_json::from_value::<LooseFile>(item.clone()) else {
+            continue;
+        };
+        let usable = loose::is_id(&file.id) && !file.path.is_empty();
+        let repeated = files
+            .iter()
+            .any(|known| known.id == file.id || loose::same_path(&known.path, &file.path));
+        if usable && !repeated {
+            files.push(file);
+        }
+    }
+    files
+}
+
 impl NotesData {
     /// Reads the text of a `notes.json`. Whatever does not make sense is left out: the notes are listed from their files
     /// either way.
@@ -124,6 +150,7 @@ impl NotesData {
                 .collect(),
             copied: entries(&root, "copied"),
             cache: entries(&root, "cache"),
+            loose: loose_files(&root),
         }
     }
 
@@ -165,19 +192,28 @@ impl NotesData {
         self.cache.remove(from);
     }
 
-    /// Forgets what is kept about notes that are not in `existing` (called when a notes folder is opened).
+    /// Forgets what is kept about notes that are not in `existing` (called when a notes folder is opened). What is kept
+    /// under the key of a loose file stays as long as the file is listed.
     pub(crate) fn retain_existing(&mut self, existing: &std::collections::BTreeSet<String>) {
-        self.pins.retain(|name| existing.contains(name));
-        if self
-            .open
-            .as_ref()
-            .is_some_and(|name| !existing.contains(name))
-        {
+        let listed: std::collections::BTreeSet<String> =
+            self.loose.iter().map(LooseFile::key).collect();
+        let known = |name: &String| existing.contains(name) || listed.contains(name);
+        self.pins.retain(|name| known(name));
+        if self.open.as_ref().is_some_and(|name| !known(name)) {
             self.open = None;
         }
-        self.views.retain(|name, _| existing.contains(name));
+        self.views.retain(|name, _| known(name));
         self.copied.retain(|name, _| existing.contains(name));
         self.cache.retain(|name, _| existing.contains(name));
+    }
+
+    /// Forgets what is kept under the key of a loose file that is not listed any more.
+    pub(crate) fn forget_loose(&mut self, key: &str) {
+        self.pins.retain(|pin| pin != key);
+        if self.open.as_deref() == Some(key) {
+            self.open = None;
+        }
+        self.views.remove(key);
     }
 
     pub(crate) fn is_pinned(&self, name: &str) -> bool {
@@ -221,6 +257,15 @@ mod tests {
                 snippet: "s".to_owned(),
             },
         );
+        data.loose.push(LooseFile {
+            id: "0a1b2c3d".to_owned(),
+            path: "/home/ana/Downloads/proposal.md".to_owned(),
+            opened_ms: 50,
+            stamp: Stamp {
+                size: 9,
+                modified_ms: 8,
+            },
+        });
         data
     }
 
@@ -311,5 +356,47 @@ mod tests {
         assert_eq!(data.pins, ["a.md"]);
         assert!(data.copied.is_empty());
         assert!(data.is_pinned("a.md") && !data.is_pinned("b.md"));
+    }
+
+    #[test]
+    fn what_is_kept_for_a_loose_file_stays_while_it_is_listed_and_goes_when_it_is_not() {
+        let mut data = sample();
+        data.pins.push("@file/0a1b2c3d".to_owned());
+        data.pins.push("@file/ffffffff".to_owned());
+        data.open = Some("@file/0a1b2c3d".to_owned());
+        data.views
+            .insert("@file/0a1b2c3d".to_owned(), NoteView::default());
+        data.retain_existing(&std::collections::BTreeSet::new());
+        assert_eq!(
+            data.pins,
+            ["@file/0a1b2c3d"],
+            "a file that is not listed has no pin"
+        );
+        assert_eq!(data.open.as_deref(), Some("@file/0a1b2c3d"));
+        assert!(data.views.contains_key("@file/0a1b2c3d"));
+        data.forget_loose("@file/0a1b2c3d");
+        assert!(data.pins.is_empty() && data.open.is_none() && data.views.is_empty());
+    }
+
+    #[test]
+    fn loose_files_are_read_one_by_one_and_what_is_wrong_with_one_drops_only_it() {
+        let data = NotesData::parse(
+            br#"{
+              "loose": [
+                {"id": "0a1b2c3d", "path": "/a/one.md", "openedMs": 5, "stamp": {"size": 1, "modifiedMs": 2}},
+                {"id": "0a1b2c3d", "path": "/a/again.md"},
+                {"id": "1b2c3d4e", "path": "/a/one.md"},
+                {"id": "NOT-AN-ID", "path": "/a/two.md"},
+                {"id": "2c3d4e5f", "path": ""},
+                {"id": "3d4e5f60", "path": "/a/three.md", "openedMs": "yesterday"},
+                "text",
+                {"id": "4e5f6071", "path": "/a/four.md"}
+              ]
+            }"#,
+        );
+        let ids: Vec<&str> = data.loose.iter().map(|file| file.id.as_str()).collect();
+        assert_eq!(ids, ["0a1b2c3d", "4e5f6071"]);
+        assert_eq!(data.loose[0].opened_ms, 5);
+        assert_eq!(NotesData::parse(br#"{"loose": 5}"#).loose.len(), 0);
     }
 }

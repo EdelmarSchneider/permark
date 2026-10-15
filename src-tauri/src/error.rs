@@ -192,6 +192,8 @@ fn notes_details(e: &NotesError) -> Details {
         NotesError::Exists(subject)
         | NotesError::NotANote(subject)
         | NotesError::NotText(subject)
+        | NotesError::NotAFile(subject)
+        | NotesError::BinaryFile(subject)
         | NotesError::Changed(subject) => Details::subject(subject),
         NotesError::Locked
         | NotesError::Unwritable

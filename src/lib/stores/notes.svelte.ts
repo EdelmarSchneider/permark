@@ -117,6 +117,7 @@ class NotesStore {
 
   private virtualEntry(path: string): NoteEntry {
     return {
+      kind: "note",
       path,
       title: "",
       snippet: "",
@@ -125,6 +126,9 @@ class NotesStore {
       pinned: false,
       copied: false,
       view: null,
+      folder: null,
+      missing: false,
+      unsaved: false,
     };
   }
 
