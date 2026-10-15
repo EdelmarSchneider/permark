@@ -4,7 +4,7 @@
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { edit } from "../stores/edit.svelte";
-  import { notes } from "../stores/notes.svelte";
+  import { comments } from "../stores/comments.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { updates } from "../stores/updates.svelte";
@@ -178,14 +178,14 @@
         <Icon name="download" />{describeUpdate(update)}
       </button>
     {/if}
-    {#if notes.count > 0 && !vault.isSimple}
+    {#if comments.count > 0 && !vault.isSimple}
       <button
         type="button"
         class="sb-item"
-        title={t("notes.statusHint")}
-        onclick={() => app.showNotes()}
+        title={t("comments.statusHint")}
+        onclick={() => app.showComments()}
       >
-        <Icon name="note" />{tn("notes.count", notes.count)}
+        <Icon name="comment" />{tn("comments.count", comments.count)}
       </button>
     {/if}
     {#if agent.enabled}

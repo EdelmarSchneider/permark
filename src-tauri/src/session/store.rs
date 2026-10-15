@@ -14,7 +14,7 @@ use crate::util::{hash_hex, write_atomic};
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
 const READ_FILE: &str = "read.json";
-const NOTES_FILE: &str = "notes.json";
+const COMMENTS_FILE: &str = "comments.json";
 const AGENT_FILE: &str = "agent.json";
 const META_FILE: &str = "meta.toml";
 /// The agent connection's switch, in the project's folder in AppData (see [`StateStore::agent_connection`]).
@@ -122,9 +122,9 @@ impl StateStore {
         self.dir.join(READ_FILE)
     }
 
-    /// Where the review notes are kept: `notes.json` with the rest of the local state. Personal, like `read.json`.
-    pub fn notes_path(&self) -> PathBuf {
-        self.dir.join(NOTES_FILE)
+    /// Where the comments are kept: `comments.json` with the rest of the local state. Personal, like `read.json`.
+    pub fn comments_path(&self) -> PathBuf {
+        self.dir.join(COMMENTS_FILE)
     }
 
     /// Where the agent connection keeps what the person is looking at: `agent.json` with the rest of the local
@@ -255,7 +255,7 @@ impl StateStore {
                 SESSION_FILE,
                 LAST_VISIT_FILE,
                 READ_FILE,
-                NOTES_FILE,
+                COMMENTS_FILE,
                 window::FILE_NAME,
             ] {
                 let (from, to) = (self.dir.join(file), local.join(file));
@@ -577,9 +577,9 @@ mod tests {
         fs::write(tm.join(".gitignore"), "# nothing about local\n").expect("write");
         let s = f.store();
         s.save_session(&SessionState::default()).expect("save");
-        fs::write(s.notes_path(), "{}").expect("write");
+        fs::write(s.comments_path(), "{}").expect("write");
         assert!(s.dir().join(".gitignore").is_file());
-        for file in ["session.json", "notes.json"] {
+        for file in ["session.json", "comments.json"] {
             let path = Path::new(".trailmark/local").join(file);
             assert!(repo.status_should_ignore(&path).expect("status"), "{file}");
         }
@@ -671,22 +671,22 @@ mod tests {
     }
 
     #[test]
-    fn review_notes_are_kept_with_the_local_state_and_follow_it_into_the_project() {
+    fn comments_are_kept_with_the_local_state_and_follow_it_into_the_project() {
         let f = fx();
         let mut s = f.store();
-        assert_eq!(s.notes_path(), s.dir().join("notes.json"));
-        assert!(s.notes_path().starts_with(f.app.path()));
+        assert_eq!(s.comments_path(), s.dir().join("comments.json"));
+        assert!(s.comments_path().starts_with(f.app.path()));
         fs::create_dir_all(s.dir()).expect("mkdir");
-        fs::write(s.notes_path(), r#"{"version": 1, "notes": []}"#).expect("write");
+        fs::write(s.comments_path(), r#"{"version": 1, "comments": []}"#).expect("write");
         s.init_project_folder().expect("init");
-        let local = Path::new(".trailmark").join("local").join("notes.json");
-        assert!(s.notes_path().ends_with(&local));
+        let local = Path::new(".trailmark").join("local").join("comments.json");
+        assert!(s.comments_path().ends_with(&local));
         assert_eq!(
-            fs::read_to_string(s.notes_path()).expect("carried over"),
-            r#"{"version": 1, "notes": []}"#
+            fs::read_to_string(s.comments_path()).expect("carried over"),
+            r#"{"version": 1, "comments": []}"#
         );
         // in the part of .trailmark that is not shared
-        assert_eq!(f.store().notes_path(), s.notes_path());
+        assert_eq!(f.store().comments_path(), s.comments_path());
     }
 
     #[test]

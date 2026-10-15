@@ -1,6 +1,6 @@
-//! Finding a note's passage again after the document changed. Pure: it takes Markdown text and returns places.
+//! Finding a comment's passage again after the document changed. Pure: it takes Markdown text and returns places.
 //!
-//! A note keeps the text that was selected, the few words around it, the headings above it and its lines. To find the
+//! A comment keeps the text that was selected, the few words around it, the headings above it and its lines. To find the
 //! passage in a document as it is now:
 //!
 //! 1. **The quote.** The document is turned into the text a reader sees (formatting, link addresses and list markers
@@ -11,7 +11,7 @@
 //! 2. **The heading.** If the quote is gone, the section it was in still points to the right neighbourhood.
 //! 3. **The line.** If that is gone too, the line it was on (kept inside the document).
 //!
-//! Only the first step is a [`Resolution::Found`]; the others say the passage changed, and the note stays.
+//! Only the first step is a [`Resolution::Found`]; the others say the passage changed, and the comment stays.
 
 use std::cmp::Reverse;
 
@@ -77,7 +77,7 @@ pub struct Placement {
     pub after: String,
 }
 
-/// What a note's anchor comes to in a document.
+/// What a comment's anchor comes to in a document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolution {
     /// The quote was found.
@@ -534,7 +534,7 @@ Ship it now.
         let after = "# T\n\nNew text.\n\nMore text.\n\nOne.\n\nThe passage.\n";
         let old = found(before, "The passage.");
         assert_eq!(old.start_line, 5);
-        let note = Anchor {
+        let comment = Anchor {
             quote: "The passage.".to_owned(),
             before: old.before,
             after: old.after,
@@ -542,7 +542,7 @@ Ship it now.
             line: 5,
             end_line: 5,
         };
-        match Analysis::of(after).resolve(&note) {
+        match Analysis::of(after).resolve(&comment) {
             Resolution::Found(now) => assert_eq!((now.start_line, now.end_line), (9, 9)),
             other @ Resolution::Changed { .. } => panic!("lost: {other:?}"),
         }
@@ -550,7 +550,7 @@ Ship it now.
 
     #[test]
     fn a_passage_that_was_rewritten_falls_back_to_its_heading() {
-        let note = Anchor {
+        let comment = Anchor {
             quote: "Ship it on Thursday".to_owned(),
             heading_path: vec!["Plan".to_owned(), "Rollout".to_owned()],
             line: 3,
@@ -558,13 +558,13 @@ Ship it now.
             ..Anchor::default()
         };
         assert_eq!(
-            Analysis::of(PLAN).resolve(&note),
+            Analysis::of(PLAN).resolve(&comment),
             Resolution::Changed { line: 7 }
         );
         // the heading matches without regard to case and punctuation
         let loose = Anchor {
             heading_path: vec!["plan".to_owned(), "ROLLOUT!".to_owned()],
-            ..note.clone()
+            ..comment.clone()
         };
         assert_eq!(
             Analysis::of(PLAN).resolve(&loose),
@@ -573,7 +573,7 @@ Ship it now.
         // a section that moved under another heading is still found by its own title
         let moved = Anchor {
             heading_path: vec!["Old parent".to_owned(), "Rollout".to_owned()],
-            ..note
+            ..comment
         };
         assert_eq!(
             Analysis::of(PLAN).resolve(&moved),
@@ -583,7 +583,7 @@ Ship it now.
 
     #[test]
     fn a_passage_and_heading_that_are_gone_fall_back_to_the_line_inside_the_document() {
-        let note = Anchor {
+        let comment = Anchor {
             quote: "something that is gone".to_owned(),
             heading_path: vec!["Deleted section".to_owned()],
             line: 40,
@@ -591,28 +591,28 @@ Ship it now.
             ..Anchor::default()
         };
         let doc = Analysis::of("# Short\n\nOnly this.\n");
-        assert_eq!(doc.resolve(&note), Resolution::Changed { line: 3 });
+        assert_eq!(doc.resolve(&comment), Resolution::Changed { line: 3 });
         assert_eq!(
             Analysis::of("").resolve(&Anchor {
                 line: 0,
-                ..note.clone()
+                ..comment.clone()
             }),
             Resolution::Changed { line: 1 }
         );
-        let early = Anchor { line: 2, ..note };
+        let early = Anchor { line: 2, ..comment };
         assert_eq!(doc.resolve(&early), Resolution::Changed { line: 2 });
     }
 
     #[test]
-    fn a_note_above_the_first_heading_keeps_its_line() {
-        let note = Anchor {
+    fn a_comment_above_the_first_heading_keeps_its_line() {
+        let comment = Anchor {
             quote: "gone".to_owned(),
             line: 1,
             end_line: 1,
             ..Anchor::default()
         };
         assert_eq!(
-            Analysis::of(PLAN).resolve(&note),
+            Analysis::of(PLAN).resolve(&comment),
             Resolution::Changed { line: 1 }
         );
     }

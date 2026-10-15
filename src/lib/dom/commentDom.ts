@@ -1,5 +1,5 @@
-// Reads the reading view for the review notes: the passage the person selected (as text, without what the app drew
-// around it), the lines and headings it is under, and the highlight that keeps it visible while a note is typed.
+// Reads the reading view for the comments: the passage the person selected (as text, without what the app drew
+// around it), the lines and headings it is under, and the highlight that keeps it visible while a comment is typed.
 
 import { headingAtLine, headingPath } from "../agentContext";
 import { selectionLines, sectionOf } from "./domUtil";
@@ -21,8 +21,8 @@ export function quoteOf(range: Range): string {
   return (holder.textContent ?? "").replace(/\s*\n\s*/g, "\n").trim();
 }
 
-/** A selection in the reading view that a note can be written on. */
-export type NoteTarget = {
+/** A selection in the reading view that a comment can be written on. */
+export type CommentTarget = {
   /** The selected text. */
   quote: string;
   /** The lines of the blocks the selection touches (from 1); 0 when the view cannot tell. */
@@ -32,12 +32,12 @@ export type NoteTarget = {
   headingPath: string[];
   /** Where the selection is on screen. */
   rect: DOMRect;
-  /** The selected range, kept so the passage can be highlighted while the note is typed. */
+  /** The selected range, kept so the passage can be highlighted while the comment is typed. */
   range: Range;
 };
 
-/** The selection inside `body`, ready for a note; `null` when nothing there is selected. */
-export function noteTargetIn(body: HTMLElement): NoteTarget | null {
+/** The selection inside `body`, ready for a comment; `null` when nothing there is selected. */
+export function commentTargetIn(body: HTMLElement): CommentTarget | null {
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
   const range = selection.getRangeAt(0);
@@ -69,7 +69,9 @@ type Highlights = { set(name: string, value: unknown): void; delete(name: string
 /** Paints a range with the CSS Custom Highlight API (nothing happens where it is missing), or clears the highlight. */
 export function highlight(name: string, range: Range | null): void {
   const registry =
-    typeof CSS === "undefined" ? undefined : (CSS as unknown as { highlights?: Highlights }).highlights;
+    typeof CSS === "undefined"
+      ? undefined
+      : (CSS as unknown as { highlights?: Highlights }).highlights;
   if (!registry) return;
   const Ctor = (globalThis as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
   if (range && Ctor) registry.set(name, new Ctor(range));

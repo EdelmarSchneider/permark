@@ -17,6 +17,9 @@ use crate::bridge::hub::{AgentEvents, AgentStatus, Backend};
 use crate::bridge::protocol::Opened;
 use crate::bridge::service::AgentBridge;
 use crate::bridge::socket::Endpoint;
+use crate::comments::{
+    CommentBook, CommentError, CommentView, Listener as CommentsListener, NewComment,
+};
 use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::fileops::{
@@ -30,7 +33,6 @@ use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
 use crate::meta::{MetaService, Timing};
-use crate::notes::{Listener as NotesListener, NewNote, NoteError, NoteView, Notebook};
 use crate::refs::ImageRefs;
 use crate::render::{self, DocumentView, Registry};
 use crate::search::indexer::{IndexWorker, Indexer};
@@ -77,8 +79,8 @@ pub trait EventSink: Send + Sync + 'static {
     fn agent_status(&self, status: &AgentStatus);
     /// An agent asked to show a place (`agent-open`); the UI picks it up with `take_agent_open`.
     fn agent_open(&self);
-    /// The review notes changed: one was added, completed or deleted, or a document moved (`notes-changed`).
-    fn notes_changed(&self);
+    /// The comments changed: one was added, completed or deleted, or a document moved (`comments-changed`).
+    fn comments_changed(&self);
 }
 
 /// Forwards events only while its workspace is the one that may emit, so a folder that is being
@@ -159,9 +161,9 @@ impl EventSink for GuardedSink {
         }
     }
 
-    fn notes_changed(&self) {
+    fn comments_changed(&self) {
         if self.live() {
-            self.inner.notes_changed();
+            self.inner.comments_changed();
         }
     }
 }
@@ -256,8 +258,8 @@ pub struct Workspace {
     meta: Arc<MetaService>,
     /// Which documents changed since they were last read.
     unread: Arc<UnreadService>,
-    /// The review notes the person left on passages.
-    notes: Arc<Notebook>,
+    /// The comments the person left on passages.
+    comments: Arc<CommentBook>,
     /// Content the editor is writing, so the watcher does not report it back as an external change.
     own_writes: Arc<OwnWrites>,
     /// Rename, move, delete and new folder in the Explorer.
@@ -276,7 +278,7 @@ pub struct Workspace {
 struct AppFollower {
     meta: Arc<MetaService>,
     unread: Arc<UnreadService>,
-    notes: Arc<Notebook>,
+    comments: Arc<CommentBook>,
 }
 
 impl Followers for AppFollower {
@@ -287,7 +289,7 @@ impl Followers for AppFollower {
             self.meta.rename(from, to);
         }
         self.unread.renamed(from, to);
-        self.notes.renamed(from, to, is_dir);
+        self.comments.renamed(from, to, is_dir);
     }
 
     fn rewritten(&self, path: &str, old_hash: &str, new_hash: &str) {
@@ -295,11 +297,11 @@ impl Followers for AppFollower {
     }
 }
 
-/// What only the open folder can tell an agent: the live search index, the live unread markers and the review notes.
+/// What only the open folder can tell an agent: the live search index, the live unread markers and the comments.
 struct LiveBackend {
     index: Arc<RwLock<Bm25Index>>,
     unread: Arc<UnreadService>,
-    notes: Arc<Notebook>,
+    comments: Arc<CommentBook>,
 }
 
 impl Backend for LiveBackend {
@@ -311,12 +313,12 @@ impl Backend for LiveBackend {
         self.index.search(query, limit)
     }
 
-    fn notes(&self) -> Vec<NoteView> {
-        self.notes.list(true)
+    fn comments(&self) -> Vec<CommentView> {
+        self.comments.list(true)
     }
 
-    fn resolve_note(&self, id: &str, reply: Option<&str>) -> Result<NoteView, NoteError> {
-        self.notes.resolve(id, reply)
+    fn resolve_comment(&self, id: &str, reply: Option<&str>) -> Result<CommentView, CommentError> {
+        self.comments.resolve(id, reply)
     }
 }
 
@@ -340,7 +342,7 @@ fn agent_bridge(
     store: &StateStore,
     index: &Arc<RwLock<Bm25Index>>,
     unread: &Arc<UnreadService>,
-    notes: &Arc<Notebook>,
+    comments: &Arc<CommentBook>,
     sink: &Arc<dyn EventSink>,
 ) -> (AgentBridge, bool) {
     let bridge = AgentBridge::new(
@@ -350,7 +352,7 @@ fn agent_bridge(
         Arc::new(LiveBackend {
             index: Arc::clone(index),
             unread: Arc::clone(unread),
-            notes: Arc::clone(notes),
+            comments: Arc::clone(comments),
         }),
         Arc::new(AgentSink(Arc::clone(sink))),
     );
@@ -557,10 +559,11 @@ impl Workspace {
         ));
 
         let unread = start_unread(&vault, &filter, store.read_path(), sink);
-        let notes_sink = Arc::clone(sink);
-        let notes_heard: NotesListener = Arc::new(move || notes_sink.notes_changed());
-        let notes = Arc::new(
-            Notebook::new(Arc::clone(&vault), store.notes_path()).with_listener(notes_heard),
+        let comments_sink = Arc::clone(sink);
+        let comments_heard: CommentsListener = Arc::new(move || comments_sink.comments_changed());
+        let comments = Arc::new(
+            CommentBook::new(Arc::clone(&vault), store.comments_path())
+                .with_listener(comments_heard),
         );
 
         let own_writes = Arc::new(OwnWrites::new());
@@ -570,7 +573,7 @@ impl Workspace {
             Arc::new(AppFollower {
                 meta: Arc::clone(&meta),
                 unread: Arc::clone(&unread),
-                notes: Arc::clone(&notes),
+                comments: Arc::clone(&comments),
             }),
             Arc::new(OsRecycler),
         );
@@ -618,7 +621,7 @@ impl Workspace {
         );
 
         // Started by `activate`, once this folder has replaced the previous one (which must let go of the socket first).
-        let (agent, agent_wanted) = agent_bridge(&vault, &store, &index, &unread, &notes, sink);
+        let (agent, agent_wanted) = agent_bridge(&vault, &store, &index, &unread, &comments, sink);
         Ok(Self {
             vault,
             registry: Registry::with_defaults(),
@@ -634,7 +637,7 @@ impl Workspace {
             filter,
             meta,
             unread,
-            notes,
+            comments,
             own_writes,
             fileops,
             agent,
@@ -933,7 +936,7 @@ impl Workspace {
             // The tags and descriptions added so far move into `.trailmark/meta.toml`.
             self.meta.migrate_to(store.meta_path(), true)?;
             self.unread.relocate(store.read_path());
-            self.notes.relocate(store.notes_path());
+            self.comments.relocate(store.comments_path());
             self.agent.relocate_file(store.agent_path());
         }
         Ok(())
@@ -999,25 +1002,25 @@ impl Workspace {
         Ok(self.unread.mark_folder_read(path)?)
     }
 
-    // ---- review notes ---------------------------------------------------------------------------
+    // ---- comments ---------------------------------------------------------------------------
 
-    /// Writes a note on a passage of a document.
-    pub fn add_note(&self, note: NewNote) -> Result<NoteView, AppError> {
-        Ok(self.notes.add(note)?)
+    /// Writes a comment on a passage of a document.
+    pub fn add_comment(&self, comment: NewComment) -> Result<CommentView, AppError> {
+        Ok(self.comments.add(comment)?)
     }
 
-    /// Every note with its passage found again in the document as it is now.
-    pub fn list_notes(&self) -> Vec<NoteView> {
-        self.notes.list(true)
+    /// Every comment with its passage found again in the document as it is now.
+    pub fn list_comments(&self) -> Vec<CommentView> {
+        self.comments.list(true)
     }
 
-    /// The person checks a note off, or opens it again.
-    pub fn set_note_done(&self, id: &str, done: bool) -> Result<NoteView, AppError> {
-        Ok(self.notes.set_done(id, done)?)
+    /// The person checks a comment off, or opens it again.
+    pub fn set_comment_done(&self, id: &str, done: bool) -> Result<CommentView, AppError> {
+        Ok(self.comments.set_done(id, done)?)
     }
 
-    pub fn delete_note(&self, id: &str) -> Result<(), AppError> {
-        Ok(self.notes.delete(id)?)
+    pub fn delete_comment(&self, id: &str) -> Result<(), AppError> {
+        Ok(self.comments.delete(id)?)
     }
 
     // ---- agent connection -----------------------------------------------------------------------
@@ -1343,7 +1346,7 @@ mod tests {
         unread: Mutex<Vec<Vec<String>>>,
         agent: Mutex<Vec<AgentStatus>>,
         agent_opens: AtomicUsize,
-        notes: AtomicUsize,
+        comments: AtomicUsize,
         git: Mutex<Vec<GitSnapshot>>,
         progress: Mutex<Vec<(usize, usize)>>,
     }
@@ -1376,8 +1379,8 @@ mod tests {
         fn agent_open(&self) {
             self.agent_opens.fetch_add(1, Ordering::SeqCst);
         }
-        fn notes_changed(&self) {
-            self.notes.fetch_add(1, Ordering::SeqCst);
+        fn comments_changed(&self) {
+            self.comments.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -2038,8 +2041,8 @@ deepword
         assert!(!remembered(fx.app.path()));
     }
 
-    fn new_note(path: &str, quote: &str, text: &str) -> NewNote {
-        NewNote {
+    fn new_comment(path: &str, quote: &str, text: &str) -> NewComment {
+        NewComment {
             path: path.to_owned(),
             quote: quote.to_owned(),
             text: text.to_owned(),
@@ -2050,7 +2053,7 @@ deepword
     }
 
     #[test]
-    fn review_notes_are_kept_with_the_local_state_follow_their_document_and_tell_the_ui() {
+    fn comments_are_kept_with_the_local_state_follow_their_document_and_tell_the_ui() {
         let fx = Fx::new();
         write(
             fx.project.path(),
@@ -2061,48 +2064,52 @@ The zebra crosses.
 ",
         );
         let ws = fx.open();
-        let note = ws
-            .add_note(new_note("docs/guide.md", "zebra crosses", "Which zebra?"))
-            .expect("a note");
+        let comment = ws
+            .add_comment(new_comment(
+                "docs/guide.md",
+                "zebra crosses",
+                "Which zebra?",
+            ))
+            .expect("a comment");
         assert_eq!(
-            (note.line, note.heading_path.clone()),
+            (comment.line, comment.heading_path.clone()),
             (3, vec!["Guide".to_owned()])
         );
-        assert_eq!(fx.rec.notes.load(Ordering::SeqCst), 1);
+        assert_eq!(fx.rec.comments.load(Ordering::SeqCst), 1);
         // the state is in the app's data folder until the project is initialized
-        let before = ws.lock_store().expect("store").notes_path();
+        let before = ws.lock_store().expect("store").comments_path();
         assert!(before.starts_with(fx.app.path()), "{before:?}");
         assert!(before.is_file());
 
-        // a rename in the Explorer takes the note along, and the UI is told
+        // a rename in the Explorer takes the comment along, and the UI is told
         let rename = [Move {
             from: "docs/guide.md".to_owned(),
             to: "docs/manual.md".to_owned(),
         }];
         let preview = ws.preview_move(&rename, false, &[]).expect("preview");
         ws.apply_move(preview.plan_id, false, &[]).expect("apply");
-        let listed = ws.list_notes();
+        let listed = ws.list_comments();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].path, "docs/manual.md");
-        assert_eq!(listed[0].state, crate::notes::PassageState::Anchored);
-        assert_eq!(fx.rec.notes.load(Ordering::SeqCst), 2);
+        assert_eq!(listed[0].state, crate::comments::PassageState::Anchored);
+        assert_eq!(fx.rec.comments.load(Ordering::SeqCst), 2);
 
-        // Initialize moves the notes into the project's local folder, and the next ones go there
+        // Initialize moves the comments into the project's local folder, and the next ones go there
         ws.init_project_folder().expect("init");
-        let local = fx.project.path().join(".trailmark/local/notes.json");
+        let local = fx.project.path().join(".trailmark/local/comments.json");
         assert!(local.is_file(), "carried over");
-        ws.set_note_done(&note.id, true).expect("done");
+        ws.set_comment_done(&comment.id, true).expect("done");
         assert!(std::fs::read_to_string(&local)
             .expect("read")
             .contains("person"));
-        assert_eq!(ws.list_notes().len(), 1);
-        ws.delete_note(&note.id).expect("deleted");
-        assert!(ws.list_notes().is_empty(), "no notes left");
+        assert_eq!(ws.list_comments().len(), 1);
+        ws.delete_comment(&comment.id).expect("deleted");
+        assert!(ws.list_comments().is_empty(), "no comments left");
         ws.close();
     }
 
     #[test]
-    fn a_single_file_takes_no_notes() {
+    fn a_single_file_takes_no_comments() {
         let fx = Fx::new();
         write(
             fx.project.path(),
@@ -2114,9 +2121,9 @@ words
         );
         let ws = fx.open_path(&fx.project.path().join("a.md"));
         let error = ws
-            .add_note(new_note("a.md", "words", "note"))
+            .add_comment(new_comment("a.md", "words", "comment"))
             .expect_err("no project");
-        assert_eq!(error.kind(), "noteSingleFile");
+        assert_eq!(error.kind(), "commentSingleFile");
         ws.close();
     }
 

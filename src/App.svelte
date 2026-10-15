@@ -5,7 +5,7 @@
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
   import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
-  import NoteField from "./lib/components/NoteField.svelte";
+  import CommentField from "./lib/components/CommentField.svelte";
   import OutlinePopover from "./lib/components/OutlinePopover.svelte";
   import SearchEverywhere from "./lib/components/SearchEverywhere.svelte";
   import TagEditor from "./lib/components/TagEditor.svelte";
@@ -21,7 +21,7 @@
   import { docs } from "./lib/stores/docs.svelte";
   import { edit } from "./lib/stores/edit.svelte";
   import { fileops } from "./lib/stores/fileops.svelte";
-  import { notes } from "./lib/stores/notes.svelte";
+  import { comments } from "./lib/stores/comments.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
   import { unread } from "./lib/stores/unread.svelte";
@@ -39,7 +39,7 @@
   });
 
   // the page's language (screen readers, hyphenation), and the pieces of the open document that are drawn by code
-  // (the copy button of a code block, the title of a note) are drawn again in the new language
+  // (the copy button of a code block, the title of an alert) are drawn again in the new language
   let shownLocale = untrack(() => language.locale);
   $effect(() => {
     const locale = language.locale;
@@ -60,10 +60,10 @@
     unread.watch(onShow, !docs.editing && !edit.active && docs.deleted === null);
   });
 
-  // The review notes are found again in a document each time it is drawn (opened, saved, changed by someone else).
+  // The comments are found again in a document each time it is drawn (opened, saved, changed by someone else).
   $effect(() => {
     void docs.request?.rev;
-    untrack(() => notes.documentChanged());
+    untrack(() => comments.documentChanged());
   });
 
   onMount(() => {
@@ -138,7 +138,7 @@
   {#if ui.tagEditor}<TagEditor />{/if}
   {#if ui.outlinePopover}<OutlinePopover />{/if}
   <SelectionPopover />
-  {#if notes.draft}<NoteField />{/if}
+  {#if comments.draft}<CommentField />{/if}
   <AgentPublisher />
 {:else}
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>

@@ -2,7 +2,7 @@
 //! there.
 //!
 //! A repository decides what is in its `.trailmark/` folder, links included. A link in place of `.trailmark/` or
-//! `local/` would send what TrailMark writes there (the session, the review notes, the agent's context) and the file
+//! `local/` would send what TrailMark writes there (the session, the comments, the agent's context) and the file
 //! it deletes to wherever the link points, so a folder that is a link (a symbolic link, or a junction on Windows) is
 //! never used. And the project's own `.gitignore` may or may not say that these folders are private, so each of them
 //! ignores itself: a `.gitignore` with `*` inside keeps its contents out of the repository whatever the parent says.
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn the_state_folder_ignores_itself() {
         let project = project();
-        let file = project.path().join(".trailmark/local/notes.json");
+        let file = project.path().join(".trailmark/local/comments.json");
         write_local_state(&file, b"{}").expect("write");
         assert_eq!(fs::read(&file).expect("read"), b"{}");
         let ignore = fs::read_to_string(project.path().join(".trailmark/local/.gitignore"))
@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn other_folders_are_written_as_they_are() {
         let dir = tempfile::tempdir().expect("dir");
-        let file = dir.path().join("projects/abc/notes.json");
+        let file = dir.path().join("projects/abc/comments.json");
         write_local_state(&file, b"{}").expect("write");
         assert!(!dir.path().join("projects/abc/.gitignore").exists());
     }
@@ -223,7 +223,7 @@ mod tests {
         // the same when .trailmark itself is the link
         fs::remove_dir(&trailmark).expect("rmdir");
         dir_link(&trailmark, outside.path());
-        assert!(write_local_state(&trailmark.join("local/notes.json"), b"{}").is_err());
+        assert!(write_local_state(&trailmark.join("local/comments.json"), b"{}").is_err());
         assert!(!outside.path().join("local").exists());
         remove_link(&trailmark);
     }
@@ -247,10 +247,10 @@ mod tests {
         fs::write(&target, "precious").expect("write");
         let local = project.path().join(".trailmark/local");
         fs::create_dir_all(&local).expect("mkdir");
-        std::os::unix::fs::symlink(&target, local.join("notes.json")).expect("symlink");
-        write_local_state(&local.join("notes.json"), b"{}").expect("write");
+        std::os::unix::fs::symlink(&target, local.join("comments.json")).expect("symlink");
+        write_local_state(&local.join("comments.json"), b"{}").expect("write");
         assert_eq!(fs::read_to_string(&target).expect("read"), "precious");
-        assert_eq!(fs::read(local.join("notes.json")).expect("read"), b"{}");
+        assert_eq!(fs::read(local.join("comments.json")).expect("read"), b"{}");
         std::os::unix::fs::symlink(&target, local.join("agent.json")).expect("symlink");
         remove_local_state(&local.join("agent.json")).expect("deleted");
         assert_eq!(fs::read_to_string(&target).expect("read"), "precious");

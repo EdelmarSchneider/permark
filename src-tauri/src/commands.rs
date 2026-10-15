@@ -13,6 +13,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::bridge::context::AgentContext;
 use crate::bridge::hub::AgentStatus;
 use crate::bridge::protocol::Opened;
+use crate::comments::{CommentView, NewComment};
 use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::external_editor::{self, EditorError, EditorTemplate};
@@ -23,7 +24,6 @@ use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
-use crate::notes::{NewNote, NoteView};
 use crate::open_request::OpenInbox;
 #[cfg(target_os = "macos")]
 use crate::open_request::{self, Action};
@@ -84,8 +84,8 @@ impl EventSink for TauriSink {
         let _ = self.0.emit("agent-open", ());
     }
 
-    fn notes_changed(&self) {
-        let _ = self.0.emit("notes-changed", ());
+    fn comments_changed(&self) {
+        let _ = self.0.emit("comments-changed", ());
     }
 }
 
@@ -689,37 +689,40 @@ pub async fn mark_folder_read(state: State<'_, AppState>, path: String) -> Resul
     blocking(move || ws.mark_folder_read(&path)).await
 }
 
-/// Writes a note on a passage of a document (the person selected it in the reading view).
+/// Writes a comment on a passage of a document (the person selected it in the reading view).
 #[tauri::command]
-pub async fn add_note(state: State<'_, AppState>, note: NewNote) -> Result<NoteView, AppError> {
+pub async fn add_comment(
+    state: State<'_, AppState>,
+    comment: NewComment,
+) -> Result<CommentView, AppError> {
     let ws = state.current()?;
-    blocking(move || ws.add_note(note)).await
+    blocking(move || ws.add_comment(comment)).await
 }
 
-/// Every note of the folder, each with its passage found again in the document as it is now (the `notes-changed`
+/// Every comment of the folder, each with its passage found again in the document as it is now (the `comments-changed`
 /// event says when to ask again).
 #[tauri::command]
-pub async fn list_notes(state: State<'_, AppState>) -> Result<Vec<NoteView>, AppError> {
+pub async fn list_comments(state: State<'_, AppState>) -> Result<Vec<CommentView>, AppError> {
     let ws = state.current()?;
-    blocking(move || Ok(ws.list_notes())).await
+    blocking(move || Ok(ws.list_comments())).await
 }
 
-/// The person checks a note off (`done`), or opens it again.
+/// The person checks a comment off (`done`), or opens it again.
 #[tauri::command]
-pub async fn set_note_done(
+pub async fn set_comment_done(
     state: State<'_, AppState>,
     id: String,
     done: bool,
-) -> Result<NoteView, AppError> {
+) -> Result<CommentView, AppError> {
     let ws = state.current()?;
-    blocking(move || ws.set_note_done(&id, done)).await
+    blocking(move || ws.set_comment_done(&id, done)).await
 }
 
-/// Deletes a note.
+/// Deletes a comment.
 #[tauri::command]
-pub async fn delete_note(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
+pub async fn delete_comment(state: State<'_, AppState>, id: String) -> Result<(), AppError> {
     let ws = state.current()?;
-    blocking(move || ws.delete_note(&id)).await
+    blocking(move || ws.delete_comment(&id)).await
 }
 
 /// Turns the agent connection of the open folder on or off and remembers the switch in the app's own data. Does not

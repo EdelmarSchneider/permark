@@ -33,7 +33,7 @@ describe("matchShortcut", () => {
     ["Ctrl+Shift+T", ctrl("T", { shiftKey: true }), "tagsView"],
     ["T (reading)", press("t"), "editTags"],
     ["E (reading)", press("e"), "edit"],
-    ["N (reading)", press("n"), "addNote"],
+    ["N (reading)", press("n"), "addComment"],
     ["Ctrl+E", ctrl("e"), "toggleEdit"],
     ["Ctrl+S", ctrl("s"), "save"],
     ["Ctrl+N", ctrl("n"), "newFile"],
@@ -148,7 +148,7 @@ describe("yieldsToTyping", () => {
     for (const mac of [false, true]) {
       expect(yieldsToTyping("editTags", mac)).toBe(true);
       expect(yieldsToTyping("edit", mac)).toBe(true);
-      expect(yieldsToTyping("addNote", mac)).toBe(true);
+      expect(yieldsToTyping("addComment", mac)).toBe(true);
       expect(yieldsToTyping("nextUnread", mac)).toBe(true);
     }
   });

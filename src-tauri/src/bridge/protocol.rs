@@ -16,7 +16,7 @@ use std::io;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::notes::{NoteFilter, NoteView};
+use crate::comments::{CommentFilter, CommentView};
 
 /// A line longer than this is not a request: the connection is closed.
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
@@ -29,8 +29,8 @@ pub const MAX_SEARCH_HITS: usize = 25;
 pub const DEFAULT_SEARCH_HITS: usize = 10;
 /// The most unread documents listed.
 pub const MAX_UNREAD_LISTED: usize = 200;
-/// The most review notes listed.
-pub const MAX_NOTES_LISTED: usize = 200;
+/// The most comments listed.
+pub const MAX_COMMENTS_LISTED: usize = 200;
 
 /// What a client can ask.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,15 +46,15 @@ pub enum Request {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
     },
-    /// The review notes the person left on passages (the open ones unless asked for more).
-    ListNotes {
+    /// The comments the person left on passages (the open ones unless asked for more).
+    ListComments {
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        which: Option<NoteFilter>,
+        which: Option<CommentFilter>,
     },
-    /// Mark a review note done, with an optional short reply.
-    ResolveNote {
-        /// The note's id (not `id`: that is the request's own).
-        note: String,
+    /// Mark a comment done, with an optional short reply.
+    ResolveComment {
+        /// The comment's id (not `id`: that is the request's own).
+        comment: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply: Option<String>,
     },
@@ -76,8 +76,8 @@ impl Request {
             Self::GetContext => "get_context",
             Self::ListUnread => "list_unread",
             Self::Search { .. } => "search",
-            Self::ListNotes { .. } => "list_notes",
-            Self::ResolveNote { .. } => "resolve_note",
+            Self::ListComments { .. } => "list_comments",
+            Self::ResolveComment { .. } => "resolve_comment",
             Self::Open { .. } => "open",
         }
     }
@@ -86,9 +86,9 @@ impl Request {
     #[must_use]
     pub fn subject(&self) -> Option<String> {
         let subject = match self {
-            Self::GetContext | Self::ListUnread | Self::ListNotes { .. } => return None,
+            Self::GetContext | Self::ListUnread | Self::ListComments { .. } => return None,
             Self::Search { query, .. } => query.trim(),
-            Self::ResolveNote { note, .. } => note.trim(),
+            Self::ResolveComment { comment, .. } => comment.trim(),
             Self::Open { path, .. } => path.trim(),
         };
         Some(subject.chars().take(80).collect())
@@ -228,13 +228,13 @@ impl UnreadList {
     }
 }
 
-/// What `listNotes` answers.
+/// What `listComments` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NoteList {
-    /// By document and line, at most [`MAX_NOTES_LISTED`].
-    pub notes: Vec<NoteView>,
-    /// How many notes there are in all (of the kind asked for).
+pub struct CommentList {
+    /// By document and line, at most [`MAX_COMMENTS_LISTED`].
+    pub comments: Vec<CommentView>,
+    /// How many comments there are in all (of the kind asked for).
     pub total: usize,
 }
 
@@ -323,47 +323,47 @@ mod tests {
     }
 
     #[test]
-    fn note_requests_are_flat_objects_too() {
-        let call: Call = serde_json::from_str(r#"{"id":1,"op":"listNotes"}"#).expect("parse");
-        assert_eq!(call.request, Request::ListNotes { which: None });
+    fn comment_requests_are_flat_objects_too() {
+        let call: Call = serde_json::from_str(r#"{"id":1,"op":"listComments"}"#).expect("parse");
+        assert_eq!(call.request, Request::ListComments { which: None });
         let call: Call =
-            serde_json::from_str(r#"{"id":2,"op":"listNotes","which":"all"}"#).expect("parse");
+            serde_json::from_str(r#"{"id":2,"op":"listComments","which":"all"}"#).expect("parse");
         assert_eq!(
             call.request,
-            Request::ListNotes {
-                which: Some(NoteFilter::All)
+            Request::ListComments {
+                which: Some(CommentFilter::All)
             }
         );
         let call: Call =
-            serde_json::from_str(r#"{"id":3,"op":"resolveNote","note":"n1","reply":"Done"}"#)
+            serde_json::from_str(r#"{"id":3,"op":"resolveComment","comment":"c1","reply":"Done"}"#)
                 .expect("parse");
         assert_eq!(call.id, 3);
         assert_eq!(
             call.request,
-            Request::ResolveNote {
-                note: "n1".to_owned(),
+            Request::ResolveComment {
+                comment: "c1".to_owned(),
                 reply: Some("Done".to_owned())
             }
         );
         // written back the same way
         let line = serde_json::to_string(&call).expect("json");
         assert_eq!(serde_json::from_str::<Call>(&line).expect("parse"), call);
-        assert!(serde_json::from_str::<Call>(r#"{"id":4,"op":"resolveNote"}"#).is_err());
+        assert!(serde_json::from_str::<Call>(r#"{"id":4,"op":"resolveComment"}"#).is_err());
         assert!(
-            serde_json::from_str::<Call>(r#"{"id":5,"op":"listNotes","which":"some"}"#).is_err()
+            serde_json::from_str::<Call>(r#"{"id":5,"op":"listComments","which":"some"}"#).is_err()
         );
     }
 
     #[test]
-    fn the_note_tools_are_named_for_the_status_popover() {
-        let list = Request::ListNotes { which: None };
-        assert_eq!((list.tool(), list.subject()), ("list_notes", None));
-        let resolve = Request::ResolveNote {
-            note: " n1 ".to_owned(),
+    fn the_comment_tools_are_named_for_the_status_popover() {
+        let list = Request::ListComments { which: None };
+        assert_eq!((list.tool(), list.subject()), ("list_comments", None));
+        let resolve = Request::ResolveComment {
+            comment: " c1 ".to_owned(),
             reply: None,
         };
-        assert_eq!(resolve.tool(), "resolve_note");
-        assert_eq!(resolve.subject().as_deref(), Some("n1"));
+        assert_eq!(resolve.tool(), "resolve_comment");
+        assert_eq!(resolve.subject().as_deref(), Some("c1"));
     }
 
     #[test]

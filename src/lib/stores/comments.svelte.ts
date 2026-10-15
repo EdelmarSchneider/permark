@@ -1,15 +1,15 @@
-// Review notes as the window sees them (docs/design/v0.4.md section 3): the notes the backend keeps, the note being
-// written, and what the document view and the Notes tab need to show them. The backend finds each note's passage again
+// Comments as the window sees them (docs/design/v0.4.md section 3): the comments the backend keeps, the comment being
+// written, and what the document view and the Comments tab need to show them. The backend finds each comment's passage again
 // whenever the document changes; this store asks for the list when something could have changed it.
 
 import { api } from "../api";
 import { bridge } from "../bridge";
-import { highlight, type NoteTarget } from "../dom/noteDom";
+import { highlight, type CommentTarget } from "../dom/commentDom";
 import { errorMessage } from "../errors";
 import { t } from "../i18n";
-import { doneNotes, openByDocument, openCount } from "../notes";
+import { doneComments, openByDocument, openCount } from "../comments";
 import { batchTouches } from "../unread";
-import type { FsBatch, Note } from "../types";
+import type { FsBatch, Comment } from "../types";
 import { docs } from "./docs.svelte";
 import { toast } from "./toast.svelte";
 import { vault } from "./vault.svelte";
@@ -18,25 +18,25 @@ import { vault } from "./vault.svelte";
 export const REFRESH_DELAY_MS = 400;
 /** A selection seen a moment ago still counts when the field is asked for from somewhere that took the selection away. */
 export const REMEMBER_MS = 60_000;
-/** The name of the highlight that keeps the passage visible while its note is typed. */
-export const DRAFT_HIGHLIGHT = "tm-note-draft";
+/** The name of the highlight that keeps the passage visible while its comment is typed. */
+export const DRAFT_HIGHLIGHT = "tm-comment-draft";
 
-/** The note being written: the document and the passage. */
-export type NoteDraft = { path: string; target: NoteTarget };
+/** The comment being written: the document and the passage. */
+export type CommentDraft = { path: string; target: CommentTarget };
 
-type Remembered = { path: string; target: NoteTarget; atMs: number };
+type Remembered = { path: string; target: CommentTarget; atMs: number };
 
-export class NotesStore {
-  /** Every note of the project, by document and line. */
-  all = $state.raw<readonly Note[]>([]);
+export class CommentsStore {
+  /** Every comment of the project, by document and line. */
+  all = $state.raw<readonly Comment[]>([]);
   groups = $derived(openByDocument(this.all));
-  done = $derived(doneNotes(this.all));
-  /** How many notes are open. */
+  done = $derived(doneComments(this.all));
+  /** How many comments are open. */
   count = $derived(openCount(this.all));
   /** The field is open on this passage. */
-  draft = $state.raw<NoteDraft | null>(null);
+  draft = $state.raw<CommentDraft | null>(null);
   saving = $state(false);
-  /** A bar in the margin was clicked: the Notes tab shows this note (`n` makes a second click on it count). */
+  /** A bar in the margin was clicked: the Comments tab shows this comment (`n` makes a second click on it count). */
   focus = $state.raw<{ id: string; n: number } | null>(null);
 
   private requests = 0;
@@ -58,34 +58,34 @@ export class NotesStore {
 
   // ---- the list ---------------------------------------------------------------------------------------
 
-  /** Asks the backend for the notes. */
+  /** Asks the backend for the comments. */
   async refresh(): Promise<void> {
     if (vault.isSimple) return;
     const request = ++this.requests;
     try {
-      const notes = await api.listNotes();
+      const comments = await api.listComments();
       // an answer to a question asked before the project changed, or before a newer question, is stale
-      if (request === this.requests) this.all = notes;
+      if (request === this.requests) this.all = comments;
     } catch {
       // the next change asks again
     }
   }
 
-  /** The backend says the notes changed. */
+  /** The backend says the comments changed. */
   onChanged(): void {
     this.clearTimer();
     void this.refresh();
   }
 
-  /** The document on show was drawn again (opened, saved, changed by someone else): its notes may have moved. */
+  /** The document on show was drawn again (opened, saved, changed by someone else): its comments may have moved. */
   documentChanged(): void {
     if (this.all.length > 0) this.schedule();
   }
 
-  /** Files changed on disk: the notes on them may have moved. */
+  /** Files changed on disk: the comments on them may have moved. */
   filesChanged(batch: FsBatch): void {
     if (this.all.length === 0) return;
-    if (batch.bulk !== null || this.all.some((note) => batchTouches(batch, note.path))) {
+    if (batch.bulk !== null || this.all.some((comment) => batchTouches(batch, comment.path))) {
       this.schedule();
     }
   }
@@ -103,9 +103,9 @@ export class NotesStore {
     this.timer = null;
   }
 
-  // ---- writing a note ---------------------------------------------------------------------------------
+  // ---- writing a comment ---------------------------------------------------------------------------------
 
-  /** Takes note of the selection that is on screen, for a field that is asked for after the selection is gone. */
+  /** Takes comment of the selection that is on screen, for a field that is asked for after the selection is gone. */
   remember(): void {
     const target = this.liveTarget();
     if (target && docs.path !== null) {
@@ -113,9 +113,9 @@ export class NotesStore {
     }
   }
 
-  private liveTarget(): NoteTarget | null {
+  private liveTarget(): CommentTarget | null {
     return docs.current?.kind === "markdown" && !docs.editing && !vault.isSimple
-      ? (bridge.noteTarget?.() ?? null)
+      ? (bridge.commentTarget?.() ?? null)
       : null;
   }
 
@@ -133,7 +133,7 @@ export class NotesStore {
       kept && kept.path === docs.path && this.now() - kept.atMs < REMEMBER_MS ? kept.target : null;
     const target = live ?? recent;
     if (!target) {
-      toast.message(t("notes.selectFirst"), "info");
+      toast.message(t("comments.selectFirst"), "info");
       return false;
     }
     this.remembered = null;
@@ -142,14 +142,14 @@ export class NotesStore {
     return true;
   }
 
-  /** The field closes without a note. */
+  /** The field closes without a comment. */
   cancel(): void {
     if (this.draft === null) return;
     this.draft = null;
     highlight(DRAFT_HIGHLIGHT, null);
   }
 
-  /** Saves the note being written. The field stays open, with its words, when that fails. */
+  /** Saves the comment being written. The field stays open, with its words, when that fails. */
   async save(text: string): Promise<boolean> {
     const draft = this.draft;
     const words = text.trim();
@@ -157,7 +157,7 @@ export class NotesStore {
     this.saving = true;
     try {
       const { target } = draft;
-      await api.addNote({
+      await api.addComment({
         path: draft.path,
         quote: target.quote,
         text: words,
@@ -166,7 +166,7 @@ export class NotesStore {
         endLine: target.endLine,
       });
     } catch (error) {
-      toast.message(t("notes.failed", { message: errorMessage(error) }), "warn");
+      toast.message(t("comments.failed", { message: errorMessage(error) }), "warn");
       return false;
     } finally {
       this.saving = false;
@@ -180,11 +180,11 @@ export class NotesStore {
 
   // ---- the list's own actions ------------------------------------------------------------------------------
 
-  /** The person checks a note off, or opens it again. */
+  /** The person checks a comment off, or opens it again. */
   async setDone(id: string, done: boolean): Promise<void> {
     try {
-      const note = await api.setNoteDone(id, done);
-      this.all = this.all.map((candidate) => (candidate.id === id ? note : candidate));
+      const comment = await api.setCommentDone(id, done);
+      this.all = this.all.map((candidate) => (candidate.id === id ? comment : candidate));
     } catch (error) {
       toast.message(errorMessage(error), "warn");
       void this.refresh();
@@ -193,7 +193,7 @@ export class NotesStore {
 
   async remove(id: string): Promise<void> {
     try {
-      await api.deleteNote(id);
+      await api.deleteComment(id);
       this.all = this.all.filter((candidate) => candidate.id !== id);
     } catch (error) {
       toast.message(errorMessage(error), "warn");
@@ -201,10 +201,10 @@ export class NotesStore {
     }
   }
 
-  /** Asks the Notes tab to show a note (it scrolls to it and marks it for a moment). */
+  /** Asks the Comments tab to show a comment (it scrolls to it and marks it for a moment). */
   show(id: string): void {
     this.focus = { id, n: ++this.focusCount };
   }
 }
 
-export const notes = new NotesStore();
+export const comments = new CommentsStore();

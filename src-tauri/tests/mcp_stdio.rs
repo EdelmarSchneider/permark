@@ -164,10 +164,10 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
         names,
         [
             "get_context",
-            "list_notes",
+            "list_comments",
             "list_unread",
             "open",
-            "resolve_note",
+            "resolve_comment",
             "search"
         ]
     );
@@ -208,13 +208,16 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
 }
 
 #[test]
-fn review_notes_are_listed_and_resolved_in_the_projects_files_without_a_window() {
+fn comments_are_listed_and_resolved_in_the_projects_files_without_a_window() {
     let project = project(Some(true));
-    let notes = project.project.path().join(".trailmark/local/notes.json");
+    let comments = project
+        .project
+        .path()
+        .join(".trailmark/local/comments.json");
     std::fs::write(
-        &notes,
-        json!({ "version": 1, "notes": [{
-            "id": "n00000001",
+        &comments,
+        json!({ "version": 1, "comments": [{
+            "id": "c00000001",
             "path": "docs/plan.md",
             "text": "Which beacon?",
             "anchor": {
@@ -228,42 +231,42 @@ fn review_notes_are_listed_and_resolved_in_the_projects_files_without_a_window()
         }]})
         .to_string(),
     )
-    .expect("a note");
+    .expect("a comment");
     let mut session = Session::start(&project);
 
-    // the passage is found again in the document, which is not where the note remembers it
-    let (listed, is_error) = session.call("list_notes", &json!({}));
+    // the passage is found again in the document, which is not where the comment remembers it
+    let (listed, is_error) = session.call("list_comments", &json!({}));
     assert!(!is_error, "{listed}");
     assert_eq!(listed["status"], "ok");
     assert_eq!(listed["source"], "files");
     assert_eq!(listed["total"], 1);
-    let note = &listed["notes"][0];
-    assert_eq!(note["id"], "n00000001");
-    assert_eq!(note["text"], "Which beacon?");
-    assert_eq!(note["state"], "anchored");
-    assert_eq!(note["line"], 7);
-    assert_eq!(note["created"], "2025-10-15T09:30:00Z");
+    let comment = &listed["comments"][0];
+    assert_eq!(comment["id"], "c00000001");
+    assert_eq!(comment["text"], "Which beacon?");
+    assert_eq!(comment["state"], "anchored");
+    assert_eq!(comment["line"], 7);
+    assert_eq!(comment["created"], "2025-10-15T09:30:00Z");
 
     let (resolved, is_error) = session.call(
-        "resolve_note",
-        &json!({ "id": "n00000001", "reply": "Named it" }),
+        "resolve_comment",
+        &json!({ "id": "c00000001", "reply": "Named it" }),
     );
     assert!(!is_error, "{resolved}");
-    assert_eq!(resolved["note"]["done"], true);
-    assert_eq!(resolved["note"]["reply"], "Named it");
+    assert_eq!(resolved["comment"]["done"], true);
+    assert_eq!(resolved["comment"]["reply"], "Named it");
 
-    let (open, _) = session.call("list_notes", &json!({}));
+    let (open, _) = session.call("list_comments", &json!({}));
     assert_eq!(open["total"], 0);
-    let (done, _) = session.call("list_notes", &json!({ "which": "done" }));
-    assert_eq!(done["notes"][0]["doneBy"], "agent");
+    let (done, _) = session.call("list_comments", &json!({ "which": "done" }));
+    assert_eq!(done["comments"][0]["doneBy"], "agent");
 
-    let (missing, is_error) = session.call("resolve_note", &json!({ "id": "n99999999" }));
+    let (missing, is_error) = session.call("resolve_comment", &json!({ "id": "c99999999" }));
     assert!(is_error, "{missing}");
     assert_eq!(missing["status"], "error");
     assert!(session.finish().success());
 
     // what the agent wrote is in the file the window reads
-    let kept = std::fs::read_to_string(notes).expect("the notes file");
+    let kept = std::fs::read_to_string(comments).expect("the comments file");
     assert!(kept.contains("Named it"), "{kept}");
 }
 
@@ -274,8 +277,8 @@ fn every_tool() -> [(&'static str, Value); 6] {
         ("list_unread", json!({})),
         ("search", json!({ "query": "beacon" })),
         ("open", json!({ "path": "docs/plan.md" })),
-        ("list_notes", json!({})),
-        ("resolve_note", json!({ "id": "n00000001" })),
+        ("list_comments", json!({})),
+        ("resolve_comment", json!({ "id": "c00000001" })),
     ]
 }
 

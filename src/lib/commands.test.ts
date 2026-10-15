@@ -138,18 +138,18 @@ describe("availableCommands", () => {
     }
   });
 
-  it("offers the review notes in a folder: adding one to the selection while reading, showing them always", () => {
+  it("offers the comments in a folder: adding one to the selection while reading, showing them always", () => {
     const folder = idsOf(availableCommands(IDLE));
-    expect(folder).toContain("showNotes");
-    expect(folder).not.toContain("addNote");
-    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true }))).toContain("addNote");
+    expect(folder).toContain("showComments");
+    expect(folder).not.toContain("addComment");
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true }))).toContain("addComment");
     expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, editing: true }))).not.toContain(
-      "addNote",
+      "addComment",
     );
-    // a single file has no project to keep notes in
+    // a single file has no project to keep comments in
     const simple = idsOf(availableCommands({ ...IDLE, ide: false, hasDoc: true }));
-    expect(simple).not.toContain("addNote");
-    expect(simple).not.toContain("showNotes");
+    expect(simple).not.toContain("addComment");
+    expect(simple).not.toContain("showComments");
   });
 
   it("offers Initialize until the state is kept in the project", () => {

@@ -1,10 +1,10 @@
 <script lang="ts">
-  // The field a review note is written in: a small box under the selected passage. Enter saves, Shift+Enter starts a new
-  // line, Esc cancels. Clicking elsewhere closes it only while it is empty, so a note that is being written is not lost.
+  // The field a comment is written in: a small box under the selected passage. Enter saves, Shift+Enter starts a new
+  // line, Esc cancels. Clicking elsewhere closes it only while it is empty, so a comment that is being written is not lost.
   import { onMount } from "svelte";
   import { t } from "../i18n";
   import { registerOverlay, rememberFocus } from "../overlays";
-  import { notes } from "../stores/notes.svelte";
+  import { comments } from "../stores/comments.svelte";
 
   const MAX_CHARS = 2000;
   const WIDTH = 360;
@@ -16,14 +16,14 @@
   let input: HTMLTextAreaElement | undefined = $state();
   let text = $state("");
   let pos = $state({ left: 0, top: 0 });
-  /** Where the passage was last seen: the page may draw it again (and the range with it) while the note is written. */
+  /** Where the passage was last seen: the page may draw it again (and the range with it) while the comment is written. */
   let seen: DOMRect | null = null;
 
   function passageRect(): DOMRect | null {
-    const range = notes.draft?.target.range;
+    const range = comments.draft?.target.range;
     const rect = range?.getBoundingClientRect();
     if (rect && (rect.width > 0 || rect.height > 0)) seen = rect;
-    return seen ?? notes.draft?.target.rect ?? null;
+    return seen ?? comments.draft?.target.rect ?? null;
   }
 
   /** Under the passage, above it when there is no room, and always inside the window. */
@@ -51,16 +51,16 @@
       return;
     }
     e.preventDefault();
-    await notes.save(text);
+    await comments.save(text);
   }
 
   onMount(() => {
     const restore = rememberFocus();
-    const unregister = registerOverlay(() => notes.cancel());
+    const unregister = registerOverlay(() => comments.cancel());
     input?.focus();
     place();
     const outside = (e: PointerEvent): void => {
-      if (!el?.contains(e.target as Node) && text.trim() === "") notes.cancel();
+      if (!el?.contains(e.target as Node) && text.trim() === "") comments.cancel();
     };
     window.addEventListener("pointerdown", outside, true);
     window.addEventListener("scroll", place, true);
@@ -77,9 +77,9 @@
 
 <div
   bind:this={el}
-  class="note-field"
+  class="comment-field"
   role="dialog"
-  aria-label={t("notes.field.label")}
+  aria-label={t("comments.field.label")}
   style:left="{pos.left}px"
   style:top="{pos.top}px"
   style:width="{WIDTH}px"
@@ -89,10 +89,10 @@
     bind:value={text}
     rows="2"
     maxlength={MAX_CHARS}
-    placeholder={t("notes.field.placeholder")}
-    aria-label={t("notes.field.label")}
-    disabled={notes.saving}
+    placeholder={t("comments.field.placeholder")}
+    aria-label={t("comments.field.label")}
+    disabled={comments.saving}
     {onkeydown}
     oninput={grow}></textarea>
-  <span class="note-field__hint">{t("notes.field.hint")}</span>
+  <span class="comment-field__hint">{t("comments.field.hint")}</span>
 </div>

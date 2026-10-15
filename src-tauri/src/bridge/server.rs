@@ -147,7 +147,7 @@ impl Drop for Counted {
 }
 
 /// The hub's answer to one request, worked out off the thread that serves every connection: a slow one (a list of
-/// thousands of notes, each document read and searched for its passage) must not hold up the other connections, nor
+/// thousands of comments, each document read and searched for its passage) must not hold up the other connections, nor
 /// the switch that stops this server.
 async fn answer(hub: &Arc<Hub>, call: Call) -> Reply {
     let id = call.id;
