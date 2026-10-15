@@ -139,6 +139,10 @@
   {#if !ui.collapsedSections.has("vault")}
     {#if filter.roots.main.length > 0 || ui.newFile?.folder === ""}
       <Tree bind:this={tree} nodes={filter.roots.main} label={t("tree.files")} root />
+      {#if unread.caughtUp}
+        <!-- the open document stays listed, so the empty state goes under it -->
+        <p class="panel-note">{t("unread.allCaughtUp")}</p>
+      {/if}
     {:else}
       <p class="panel-note">
         {unread.onlyUnread
