@@ -259,14 +259,14 @@ mod tests {
     }
 
     #[test]
-    fn a_created_file_is_recognised_and_paths_ignore_case_on_windows() {
+    fn a_created_file_is_recognised_and_paths_ignore_case_where_the_system_does() {
         let own = OwnWrites::new();
         own.expect("Docs/New.md", 7);
         let sigs = sigs_with("Docs/New.md", 7);
         let mut changes = vec![change(ChangeKind::Created, "Docs/New.md")];
         own.strip(&mut changes, &sigs);
         assert_eq!(changes, Vec::<FsChange>::new());
-        if cfg!(windows) {
+        if crate::vault::CASE_INSENSITIVE {
             own.expect("docs/new.md", 7);
             let mut again = vec![change(ChangeKind::Modified, "DOCS/NEW.md")];
             let sigs = sigs_with("DOCS/NEW.md", 7);

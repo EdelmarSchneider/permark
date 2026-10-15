@@ -805,7 +805,7 @@ mod tests {
         assert_eq!(kind_of(ed.create("docs/New Note.md", "again")), "exists");
         assert_eq!(kind_of(ed.create("docs/old.md", "again")), "exists");
         assert_eq!(fx.read("docs/old.md"), b"keep");
-        if cfg!(windows) {
+        if crate::vault::CASE_INSENSITIVE {
             assert_eq!(kind_of(ed.create("docs/NEW NOTE.md", "x")), "exists");
         }
         assert_eq!(kind_of(ed.create("docs/x.txt", "x")), "notMarkdown");
