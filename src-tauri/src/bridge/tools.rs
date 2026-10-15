@@ -36,6 +36,9 @@ and looks when ready.";
 pub const LAUNCH_WAIT: Duration = Duration::from_secs(25);
 /// How often it looks while waiting.
 const LAUNCH_POLL: Duration = Duration::from_millis(200);
+/// After TrailMark was started and did not come up listening, it is not started again for this long. The window may
+/// be slow to start, or open and unable to listen: either way, another copy would not help.
+const LAUNCH_PAUSE: Duration = Duration::from_secs(120);
 
 /// Starts TrailMark on a project.
 pub type Launcher = Arc<dyn Fn(&Path) -> io::Result<()> + Send + Sync>;
@@ -172,6 +175,12 @@ pub struct Core {
     offline: Arc<Offline>,
     launcher: Launcher,
     launch_wait: Duration,
+    launch_pause: Duration,
+    /// Held while TrailMark is being started and waited for, so that calls made meanwhile wait for that start instead
+    /// of making their own.
+    launching: tokio::sync::Mutex<()>,
+    /// When TrailMark was last started without coming up listening (cleared once it answers).
+    failed_launch: Mutex<Option<tokio::time::Instant>>,
 }
 
 impl Core {
@@ -212,12 +221,21 @@ impl Core {
             link,
             launcher,
             launch_wait: LAUNCH_WAIT,
+            launch_pause: LAUNCH_PAUSE,
+            launching: tokio::sync::Mutex::new(()),
+            failed_launch: Mutex::new(None),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn with_launch_wait(mut self, wait: Duration) -> Self {
         self.launch_wait = wait;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_launch_pause(mut self, pause: Duration) -> Self {
+        self.launch_pause = pause;
         self
     }
 
@@ -402,15 +420,37 @@ impl Core {
             heading: heading.map(str::to_owned),
         };
         match self.ask(request.clone()).await {
-            Ok(opened) => Answer::ok(shown(opened, false)),
+            Ok(opened) => {
+                self.window_answered();
+                Answer::ok(shown(opened, false))
+            }
             Err(LinkError::Remote(error)) => Answer::failed(error.message),
             Err(LinkError::NotRunning) => self.start_and_open(request).await,
             Err(error) => Answer::failed(error.to_string()),
         }
     }
 
+    /// The window answered: a start that did not work before is forgotten.
+    fn window_answered(&self) {
+        self.failed_launch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+    }
+
+    /// Whether TrailMark was started a short while ago and has not come up since.
+    fn launch_failed_recently(&self) -> bool {
+        self.failed_launch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_some_and(|at| at.elapsed() < self.launch_pause)
+    }
+
     /// The window is closed: check the place first (nothing is started for a path that is not a document), start
     /// TrailMark on the project, and hand the place over once it listens.
+    ///
+    /// One start at a time: calls made while TrailMark is starting wait for that start and use its window, and after a
+    /// start that did not come up listening none is made again for a while (see [`LAUNCH_PAUSE`]).
     async fn start_and_open(&self, request: Request) -> Answer {
         let Request::Open {
             path,
@@ -431,13 +471,37 @@ impl Core {
             Ok(Err(error)) => return Answer::failed(error.message),
             Ok(Ok(_)) => {}
         }
+        let _launching = self.launching.lock().await;
+        // Another call may have started TrailMark while this one waited for its turn.
+        match self.ask(request.clone()).await {
+            Ok(opened) => {
+                self.window_answered();
+                return Answer::ok(shown(opened, false));
+            }
+            Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+            Err(_) => {}
+        }
+        if self.launch_failed_recently() {
+            return Answer::notice(
+                "starting",
+                "TrailMark was started on this project a moment ago, but its agent connection is not up yet. \
+Try again in a few seconds. If it stays like this, look at the agent connection in TrailMark's status bar.",
+            );
+        }
         if let Err(error) = (self.launcher)(&self.root) {
             return Answer::failed(format!("TrailMark could not be started: {error}"));
         }
+        *self
+            .failed_launch
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(tokio::time::Instant::now());
         let deadline = tokio::time::Instant::now() + self.launch_wait;
         loop {
             match self.ask(request.clone()).await {
-                Ok(opened) => return Answer::ok(shown(opened, true)),
+                Ok(opened) => {
+                    self.window_answered();
+                    return Answer::ok(shown(opened, true));
+                }
                 Err(LinkError::Remote(error)) => return Answer::failed(error.message),
                 Err(_) if tokio::time::Instant::now() >= deadline => {
                     return Answer::notice(
@@ -1004,6 +1068,95 @@ mod tests {
             .await;
         assert_eq!(status(&answer), "starting");
         assert!(!answer.is_error);
+    }
+
+    /// A launcher that counts how often it is used, and brings the window up like the real one does.
+    fn counting_launcher(fx: &Fx, comes_up: bool) -> (Launcher, Arc<AtomicUsize>) {
+        let started = Arc::new(AtomicUsize::new(0));
+        let launcher: Launcher = {
+            let (bridge, started) = (Arc::clone(&fx.bridge), Arc::clone(&started));
+            Arc::new(move |_| {
+                started.fetch_add(1, Ordering::SeqCst);
+                if comes_up {
+                    bridge.set_enabled(true);
+                }
+                Ok(())
+            })
+        };
+        (launcher, started)
+    }
+
+    /// An agent can call tools in parallel (two at once, or two agents in one project).
+    #[tokio::test]
+    async fn parallel_opens_with_the_window_closed_start_trailmark_once() {
+        let fx = fx();
+        fx.set_connection(true);
+        let (launcher, started) = counting_launcher(&fx, true);
+        let core = fx.core(launcher);
+        let (a, b, c) = tokio::join!(
+            core.open("README.md", None, None),
+            core.open("docs/plan.md", Some(3), None),
+            core.open("docs/plan.md", None, Some("Rollout")),
+        );
+        for answer in [&a, &b, &c] {
+            assert_eq!(status(answer), "ok", "{answer:?}");
+        }
+        assert_eq!(started.load(Ordering::SeqCst), 1, "one start for all three");
+        fx.bridge.shutdown();
+    }
+
+    /// A TrailMark that was started and does not listen (it failed to, or is slow) is not started again by every call.
+    #[tokio::test]
+    async fn a_window_that_never_listens_is_not_started_again_by_every_call() {
+        let fx = fx();
+        fx.set_connection(true);
+        let (launcher, started) = counting_launcher(&fx, false);
+        let core = fx.core(launcher).with_launch_wait(Duration::ZERO);
+        for call in 1..=4 {
+            let answer = core.open("README.md", None, None).await;
+            assert_eq!(status(&answer), "starting", "call {call}: {answer:?}");
+            assert!(!answer.is_error);
+            assert_eq!(started.load(Ordering::SeqCst), 1, "call {call}");
+        }
+        let (a, b) = tokio::join!(
+            core.open("README.md", None, None),
+            core.open("README.md", None, None)
+        );
+        assert_eq!((status(&a), status(&b)), ("starting", "starting"));
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn trailmark_is_started_again_once_the_pause_is_over() {
+        let fx = fx();
+        fx.set_connection(true);
+        let (launcher, started) = counting_launcher(&fx, false);
+        let core = fx
+            .core(launcher)
+            .with_launch_wait(Duration::ZERO)
+            .with_launch_pause(Duration::ZERO);
+        core.open("README.md", None, None).await;
+        core.open("README.md", None, None).await;
+        assert_eq!(started.load(Ordering::SeqCst), 2);
+    }
+
+    /// The pause is only for a start that did not work: a window that came up and was closed later is started again.
+    #[tokio::test]
+    async fn a_window_that_worked_and_was_closed_is_started_again_when_asked() {
+        let fx = fx();
+        fx.set_connection(true);
+        let (launcher, started) = counting_launcher(&fx, true);
+        let core = fx.core(launcher);
+        assert_eq!(status(&core.open("README.md", None, None).await), "ok");
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+        // the window is delivered to again without starting anything
+        assert_eq!(status(&core.open("README.md", None, None).await), "ok");
+        assert_eq!(started.load(Ordering::SeqCst), 1);
+        // the person closes it
+        fx.bridge.shutdown();
+        assert_eq!(status(&core.open("README.md", None, None).await), "ok");
+        assert_eq!(started.load(Ordering::SeqCst), 2);
+        fx.bridge.shutdown();
     }
 
     #[tokio::test]
