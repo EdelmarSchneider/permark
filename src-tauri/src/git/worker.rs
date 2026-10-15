@@ -514,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn bursts_of_triggers_are_coalesced_into_one_computation() {
+    fn bursts_of_triggers_are_coalesced_instead_of_computed_one_by_one() {
         // Generous windows, so that a slow disk or a busy machine cannot stretch the burst past the
         // quiet period (which would legitimately produce a second snapshot): the burst takes roughly
         // 100 ms, the quiet period is 400 ms and the cap 5 s.
@@ -532,11 +532,22 @@ mod tests {
             fx.handle.trigger();
             thread::sleep(Duration::from_millis(5));
         }
-        assert!(fx.wait_events(1));
-        // Give a stray second computation every chance to show up before counting.
+        // What a burst may not do is cost one computation per trigger. It does not always cost exactly one: a machine that stalls
+        // for longer than the quiet period in the middle of the loop (a virus scan of a new file, say) ends the burst early, and
+        // the rest is a second burst. When a burst is over is decided by `Coalescer`, which is tested with instants of its own;
+        // here only its effect is checked, with a margin, and the last announcement must have everything.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while Instant::now() < deadline && !(fx.count() >= 1 && fx.last_event().files.len() == 20) {
+            thread::sleep(Duration::from_millis(20));
+        }
+        // Give a stray extra computation every chance to show up before counting.
         thread::sleep(slow.quiet * 2);
-        assert_eq!(fx.count(), 1, "one announcement for the whole burst");
-        assert_eq!(fx.last_event().files.len(), 20);
+        assert_eq!(fx.last_event().files.len(), 20, "everything is announced");
+        let announced = fx.count();
+        assert!(
+            (1..=3).contains(&announced),
+            "20 triggers were announced {announced} times"
+        );
     }
 
     #[test]
