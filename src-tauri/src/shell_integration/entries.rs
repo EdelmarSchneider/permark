@@ -153,6 +153,29 @@ pub(crate) fn open_with_key(extension: &str) -> String {
     format!(r"{extension}\OpenWithProgids")
 }
 
+/// An extension's own `shell` key (the place for verbs of that extension). Nothing of TrailMark's is written there, but a
+/// leftover empty one is as meaningless as the keys above the entries, and would keep the extension's key from going.
+pub(crate) fn extension_shell_key(extension: &str) -> String {
+    format!(r"{extension}\shell")
+}
+
+/// The keys above `key`, nearest first, that are deleted once turning an entry off leaves nothing in them: every
+/// parent below the first level of `Software\Classes`, and the key of an extension (writing the "Open with" list may
+/// have created it). The first-level classes of Windows itself (`Directory`, `SystemFileAssociations`) are never in
+/// the list, empty or not.
+pub(crate) fn tidy_parents(key: &str) -> Vec<&str> {
+    let mut parents = Vec::new();
+    let mut below = key;
+    while let Some((parent, _)) = below.rsplit_once('\\') {
+        if !parent.contains('\\') && !EXTENSIONS.contains(&parent) {
+            break;
+        }
+        parents.push(parent);
+        below = parent;
+    }
+    parents
+}
+
 /// How the "Open with" list learns about the `ProgID`: a value named after it, with no data, under each extension.
 pub(crate) fn open_with_keys() -> Vec<Key> {
     EXTENSIONS
@@ -319,6 +342,34 @@ mod tests {
             .iter()
             .chain(&menu_keys(&exe(), "x"))
             .all(|k| !k.path.starts_with('.')));
+    }
+
+    #[test]
+    fn the_keys_above_an_entry_are_tidied_up_but_never_the_first_level_ones_of_windows() {
+        assert_eq!(
+            tidy_parents(r"Directory\Background\shell\TrailMark"),
+            [r"Directory\Background\shell", r"Directory\Background"]
+        );
+        assert_eq!(
+            tidy_parents(r"SystemFileAssociations\.md\shell\TrailMark"),
+            [
+                r"SystemFileAssociations\.md\shell",
+                r"SystemFileAssociations\.md"
+            ]
+        );
+        assert_eq!(
+            tidy_parents(r"Directory\shell\TrailMark"),
+            [r"Directory\shell"]
+        );
+        // the key of an extension may go (the "Open with" list can have created it), another first-level key may not
+        assert_eq!(tidy_parents(r".md\OpenWithProgids"), [".md"]);
+        assert_eq!(
+            tidy_parents(&extension_shell_key(".markdown")),
+            [".markdown"]
+        );
+        assert_eq!(tidy_parents("Directory"), Vec::<&str>::new());
+        assert_eq!(tidy_parents(r"Other\shell"), Vec::<&str>::new());
+        assert_eq!(tidy_parents(PROG_ID), Vec::<&str>::new());
     }
 
     #[test]

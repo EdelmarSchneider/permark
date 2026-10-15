@@ -15,7 +15,8 @@
 ;    The choices are remembered as HKCU\Software\TrailMark\OpenWithMenu and \FileAssociation (1 = on, 0 = off). An update
 ;    is not asked anything: it keeps what the person chose (it refreshes the entries that are on so they point at the
 ;    new files, never adds what was left off, never removes what was kept), and an update of an install that predates
-;    this feature changes nothing. Uninstalling removes every entry.
+;    this feature changes nothing. Uninstalling removes every entry. Turning an entry off, or uninstalling, also deletes
+;    the keys above it that are left empty (see "The empty keys that removing the entries leaves").
 ;    The layout is the one src-tauri/src/shell_integration/entries.rs writes from the app; a Rust test keeps them equal.
 ;
 ; The tests compile this file in a small installer of their own and point TRAILMARK_APP_KEY / TRAILMARK_CLASSES_KEY at a
@@ -112,6 +113,57 @@ Var OpenWithChanged
   !insertmacro OPENWITH_LIST_${OP} ".markdown\OpenWithProgids"
 !macroend
 
+; ---- The empty keys that removing the entries leaves --------------------------------------------------------------------
+; Writing an entry creates the keys above it when they are not there; deleting it leaves them behind, empty. Each of these
+; is deleted when nothing at all is in it: no subkey, no value, not even a default value. DeleteRegKey /ifempty alone is
+; not enough: it only looks at subkeys, so it would take the values of the key with it (the program that opens .md files is
+; the default value of the .md key). The one case missed is a default value that is not text, on an otherwise empty key.
+; The first-level keys of Windows itself (Directory, SystemFileAssociations) are never deleted. The list is
+; entries::tidy_parents in the app, and a Rust test keeps the two equal.
+
+!macro OPENWITH_PRUNE KEY
+  Push $R0
+  Push $R1
+  ClearErrors
+  EnumRegKey $R0 HKCU "${TRAILMARK_CLASSES_KEY}\${KEY}" 0
+  ${IfNot} ${Errors}
+  ${AndIf} $R0 == ""
+    ; no subkey. The default value is next, then the named values.
+    ClearErrors
+    ReadRegStr $R1 HKCU "${TRAILMARK_CLASSES_KEY}\${KEY}" ""
+    ${If} ${Errors}
+      EnumRegValue $R1 HKCU "${TRAILMARK_CLASSES_KEY}\${KEY}" 0
+      ${If} $R1 == ""
+        DeleteRegKey /ifempty HKCU "${TRAILMARK_CLASSES_KEY}\${KEY}"
+      ${EndIf}
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  Pop $R1
+  Pop $R0
+!macroend
+
+; Deepest first, so a key is looked at after the keys under it have gone.
+!macro OPENWITH_MENU_TIDY
+  !insertmacro OPENWITH_PRUNE "Directory\shell"
+  !insertmacro OPENWITH_PRUNE "Directory\Background\shell"
+  !insertmacro OPENWITH_PRUNE "Directory\Background"
+  !insertmacro OPENWITH_PRUNE "SystemFileAssociations\.md\shell"
+  !insertmacro OPENWITH_PRUNE "SystemFileAssociations\.md"
+  !insertmacro OPENWITH_PRUNE "SystemFileAssociations\.markdown\shell"
+  !insertmacro OPENWITH_PRUNE "SystemFileAssociations\.markdown"
+!macroend
+
+; The extension's own shell key is not written here, but one left empty would keep the extension's key from going.
+!macro OPENWITH_LIST_TIDY
+  !insertmacro OPENWITH_PRUNE ".md\OpenWithProgids"
+  !insertmacro OPENWITH_PRUNE ".md\shell"
+  !insertmacro OPENWITH_PRUNE ".md"
+  !insertmacro OPENWITH_PRUNE ".markdown\OpenWithProgids"
+  !insertmacro OPENWITH_PRUNE ".markdown\shell"
+  !insertmacro OPENWITH_PRUNE ".markdown"
+!macroend
+
 ; ---- What to do -----------------------------------------------------------------------------------------------------
 
 ; Sets VAR ("1" on, "0" off, "" leave alone) from what the person chose earlier, when the welcome page did not ask. A
@@ -158,6 +210,7 @@ Var OpenWithChanged
     StrCpy $OpenWithChanged 1
   ${ElseIf} $OpenWithMenu == "0"
     !insertmacro OPENWITH_MENU DELETE
+    !insertmacro OPENWITH_MENU_TIDY
     WriteRegDWORD HKCU "${TRAILMARK_APP_KEY}" "${OPENWITH_MENU_CHOICE}" 0
     StrCpy $OpenWithChanged 1
   ${EndIf}
@@ -172,6 +225,7 @@ Var OpenWithChanged
   ${ElseIf} $OpenWithAssoc == "0"
     !insertmacro OPENWITH_LIST DELETE
     !insertmacro OPENWITH_PROGID_DELETE
+    !insertmacro OPENWITH_LIST_TIDY
     WriteRegDWORD HKCU "${TRAILMARK_APP_KEY}" "${OPENWITH_ASSOC_CHOICE}" 0
     StrCpy $OpenWithChanged 1
   ${EndIf}
@@ -276,8 +330,10 @@ FunctionEnd
   ; unless they also ask for the application data to go.
   ${If} $UpdateMode <> 1
     !insertmacro OPENWITH_MENU DELETE
+    !insertmacro OPENWITH_MENU_TIDY
     !insertmacro OPENWITH_LIST DELETE
     !insertmacro OPENWITH_PROGID_DELETE
+    !insertmacro OPENWITH_LIST_TIDY
     !insertmacro UPDATEFILEASSOC
   ${EndIf}
 

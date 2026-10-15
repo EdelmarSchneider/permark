@@ -90,6 +90,36 @@ impl Registry {
         missing_is_fine(handle.delete_value(name))
     }
 
+    /// Deletes the key when nothing is left in it: no subkeys and no values, not even a default value. Says whether
+    /// the key is gone, which it also is when it was never there.
+    fn delete_if_empty(&self, key: &str) -> io::Result<bool> {
+        let path = self.class_path(key);
+        let handle = match hkcu().open_subkey(&path) {
+            Ok(handle) => handle,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(true),
+            Err(e) => return Err(e),
+        };
+        let info = handle.query_info()?;
+        if info.sub_keys > 0 || info.values > 0 {
+            return Ok(false);
+        }
+        drop(handle);
+        missing_is_fine(hkcu().delete_subkey(&path))?;
+        Ok(true)
+    }
+
+    /// Tidies up after an entry was turned off: deletes `key` when it is empty, then each parent in turn, stopping at
+    /// the first one that still holds anything (see [`entries::tidy_parents`] for which ones may go). The entries are
+    /// already gone when this runs and the keys are only clutter, so a key that cannot be deleted is left as it is.
+    fn tidy_up(&self, key: &str) {
+        let parents = entries::tidy_parents(key);
+        for key in std::iter::once(key).chain(parents) {
+            if !matches!(self.delete_if_empty(key), Ok(true)) {
+                break;
+            }
+        }
+    }
+
     fn exists(&self, key: &str) -> bool {
         hkcu().open_subkey(self.class_path(key)).is_ok()
     }
@@ -159,6 +189,7 @@ impl Registry {
         } else {
             for target in &MENU_TARGETS {
                 self.delete_tree(&target.key())?;
+                self.tidy_up(&target.key());
             }
         }
         self.record(MENU_CHOICE, enabled)?;
@@ -182,7 +213,11 @@ impl Registry {
             }
         } else {
             for ext in EXTENSIONS {
-                self.delete_value(&entries::open_with_key(ext), PROG_ID)?;
+                let list = entries::open_with_key(ext);
+                self.delete_value(&list, PROG_ID)?;
+                // the extension's key goes with its last empty child, so its `shell` key is looked at first
+                self.tidy_up(&entries::extension_shell_key(ext));
+                self.tidy_up(&list);
             }
             self.delete_tree(PROG_ID)?;
         }
@@ -363,6 +398,84 @@ mod tests {
         assert_eq!(s.app_choice(MENU_CHOICE), Some(0));
     }
 
+    /// Creates `key` (and what is above it) under the scratch `Classes`, with a default value when `default` is given.
+    fn make(s: &Scratch, key: &str, default: Option<&str>) {
+        let (handle, _) = hkcu()
+            .create_subkey(s.registry.class_path(key))
+            .expect("create");
+        if let Some(text) = default {
+            handle.set_value("", &text).expect("default");
+        }
+    }
+
+    #[test]
+    fn turning_the_menu_off_leaves_no_empty_keys_behind() {
+        let s = Scratch::new();
+        s.registry
+            .set_context_menu(true, &exe(), Language::En)
+            .expect("enable");
+        s.registry
+            .set_context_menu(false, &exe(), Language::En)
+            .expect("disable");
+        for gone in [
+            r"Directory\shell",
+            r"Directory\Background\shell",
+            r"Directory\Background",
+            r"SystemFileAssociations\.md\shell",
+            r"SystemFileAssociations\.md",
+            r"SystemFileAssociations\.markdown\shell",
+            r"SystemFileAssociations\.markdown",
+        ] {
+            assert!(s.class(gone).is_none(), "{gone}");
+        }
+        // the classes of Windows itself stay, even though nothing is in them now
+        assert!(s.class("Directory").is_some());
+        assert!(s.class("SystemFileAssociations").is_some());
+        // the installer reads the choice
+        assert_eq!(s.app_choice(MENU_CHOICE), Some(0));
+    }
+
+    #[test]
+    fn a_parent_that_holds_anything_else_stays() {
+        let s = Scratch::new();
+        // a handler of another program next to `shell`, and a value of another program in `shell` itself
+        make(&s, r"Directory\Background\shellex\Handler", None);
+        make(&s, r"Directory\shell", Some("none"));
+        // a default value, however empty, is a value too
+        make(&s, r"SystemFileAssociations\.md", Some(""));
+        s.registry
+            .set_context_menu(true, &exe(), Language::En)
+            .expect("enable");
+        s.registry
+            .set_context_menu(false, &exe(), Language::En)
+            .expect("disable");
+
+        assert!(s.class(r"Directory\Background\shell").is_none());
+        assert!(s.class(r"Directory\Background\shellex\Handler").is_some());
+        assert!(s.class(r"Directory\Background").is_some());
+        assert_eq!(s.default_of(r"Directory\shell").as_deref(), Some("none"));
+        assert!(s.class(r"SystemFileAssociations\.md").is_some());
+        assert!(s.class(r"SystemFileAssociations\.md\shell").is_none());
+        // what only TrailMark had made is gone
+        assert!(s.class(r"SystemFileAssociations\.markdown").is_none());
+    }
+
+    #[test]
+    fn turning_the_menu_off_again_clears_the_empty_keys_an_earlier_removal_left() {
+        let s = Scratch::new();
+        make(&s, r"Directory\Background\shell", None);
+        make(&s, r"SystemFileAssociations\.md\shell", None);
+        // empty, but not in a place TrailMark writes to
+        make(&s, r"Directory\shellex", None);
+        s.registry
+            .set_context_menu(false, &exe(), Language::En)
+            .expect("disable");
+        assert!(s.class(r"Directory\Background").is_none());
+        assert!(s.class(r"SystemFileAssociations\.md").is_none());
+        assert!(s.class(r"Directory\shellex").is_some());
+        assert!(s.class("Directory").is_some());
+    }
+
     #[test]
     fn turning_things_on_twice_or_off_twice_is_fine() {
         let s = Scratch::new();
@@ -466,6 +579,68 @@ mod tests {
         assert_eq!(s.default_of(".md").as_deref(), Some("md_auto_file"));
         assert!(s.registry.has_value(r".md\OpenWithProgids", "Other.md"));
         assert_eq!(s.app_choice(ASSOCIATION_CHOICE), Some(0));
+    }
+
+    #[test]
+    fn turning_the_association_off_removes_the_extension_keys_it_alone_had_made() {
+        let s = Scratch::new();
+        s.registry
+            .set_association(true, &exe(), Language::En)
+            .expect("enable");
+        // an empty `shell` key some tool left in one of them
+        make(&s, r".markdown\shell", None);
+        s.registry
+            .set_association(false, &exe(), Language::En)
+            .expect("disable");
+        for ext in [".md", ".markdown"] {
+            assert!(s.class(ext).is_none(), "{ext}");
+        }
+        assert!(s.class("TrailMark.Markdown").is_none());
+        assert_eq!(s.app_choice(ASSOCIATION_CHOICE), Some(0));
+    }
+
+    #[test]
+    fn an_extension_that_has_anything_else_stays_intact() {
+        let s = Scratch::new();
+        // `.md` has a default app and a list of other programs; `.markdown` only a default value, which is empty
+        make(&s, ".md", Some("md_auto_file"));
+        let (progids, _) = hkcu()
+            .create_subkey(s.registry.class_path(r".md\OpenWithProgids"))
+            .expect("progids");
+        progids.set_value("Other.md", &"").expect("other");
+        make(&s, ".markdown", Some(""));
+        make(&s, r".markdown\shell\Other\command", None);
+
+        s.registry
+            .set_association(true, &exe(), Language::En)
+            .expect("enable");
+        s.registry
+            .set_association(false, &exe(), Language::En)
+            .expect("disable");
+
+        assert_eq!(s.default_of(".md").as_deref(), Some("md_auto_file"));
+        assert!(s.registry.has_value(r".md\OpenWithProgids", "Other.md"));
+        assert!(!s
+            .registry
+            .has_value(r".md\OpenWithProgids", "TrailMark.Markdown"));
+        // the list TrailMark had made is gone from `.markdown`, and what else is there is untouched
+        assert!(s.class(".markdown").is_some());
+        assert!(s.class(r".markdown\OpenWithProgids").is_none());
+        assert!(s.class(r".markdown\shell\Other\command").is_some());
+    }
+
+    #[test]
+    fn an_extension_with_only_a_default_value_keeps_it() {
+        let s = Scratch::new();
+        make(&s, ".md", Some("md_auto_file"));
+        s.registry
+            .set_association(true, &exe(), Language::En)
+            .expect("enable");
+        s.registry
+            .set_association(false, &exe(), Language::En)
+            .expect("disable");
+        assert_eq!(s.default_of(".md").as_deref(), Some("md_auto_file"));
+        assert!(s.class(r".md\OpenWithProgids").is_none());
     }
 
     #[test]

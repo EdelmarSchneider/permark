@@ -184,6 +184,48 @@ mod tests {
         }
     }
 
+    /// Turning an entry off leaves the keys above it empty; the installer deletes the same ones the app does.
+    #[test]
+    fn the_installer_tidies_the_keys_the_app_tidies() {
+        const HOOKS: &str = include_str!("../../installer/hooks.nsh");
+
+        // what the app looks at: the keys it empties (the "Open with" list, an extension's `shell`) and all above them
+        let mut tidied: Vec<String> = Vec::new();
+        let mut starts: Vec<String> = entries::MENU_TARGETS
+            .iter()
+            .map(entries::MenuTarget::key)
+            .collect();
+        for ext in entries::EXTENSIONS {
+            let list = entries::open_with_key(ext);
+            let shell = entries::extension_shell_key(ext);
+            tidied.push(list.clone());
+            tidied.push(shell.clone());
+            starts.extend([list, shell]);
+        }
+        for start in &starts {
+            tidied.extend(entries::tidy_parents(start).into_iter().map(str::to_owned));
+        }
+
+        let in_script: Vec<&str> = HOOKS
+            .lines()
+            .filter_map(|line| {
+                line.trim()
+                    .strip_prefix("!insertmacro OPENWITH_PRUNE \"")?
+                    .strip_suffix('"')
+            })
+            .collect();
+        for key in &tidied {
+            assert!(in_script.contains(&key.as_str()), "{key}");
+        }
+        for key in &in_script {
+            assert!(tidied.iter().any(|k| k == key), "{key}");
+        }
+        // the classes of Windows itself are never deleted
+        assert!(
+            !in_script.contains(&"Directory") && !in_script.contains(&"SystemFileAssociations")
+        );
+    }
+
     /// The installer's commands and the app's are the same text, with the program's path spelled by the script.
     #[test]
     fn the_installer_quotes_the_program_and_the_argument_like_the_app_does() {
