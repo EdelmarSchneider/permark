@@ -89,7 +89,7 @@ pub fn setup(app: &App) {
         return;
     };
     if let Ok(app_data) = app.path().app_data_dir() {
-        let opening = commands::initial_path();
+        let opening = commands::command_line_path();
         let saved = saved_for_launch(&app_data, opening.as_deref().map(Path::new));
         let placed = saved.and_then(|saved| restore(&window, &saved, min_size(app)));
 
@@ -112,6 +112,16 @@ pub fn setup(app: &App) {
         });
     }
     let _ = window.show();
+}
+
+/// Brings the window to the front, for a path that was opened from outside the app.
+#[cfg(target_os = "macos")]
+pub fn raise(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(MAIN) {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// Follows the window. Called with every event of the app's event loop, before the app handles it.

@@ -267,6 +267,7 @@ class AppStore {
       await api.on("image-refs-changed", () => {
         if (this.screen === "project" && !vault.isSimple) void vault.refreshImageRefs();
       }),
+      await api.on("open-path", (path) => void this.openProject(path)),
     );
   }
 
