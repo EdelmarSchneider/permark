@@ -372,6 +372,43 @@ describe("rebase", () => {
     expect(editor.status()).toEqual({ dirty: true, changed: 1 });
   });
 
+  it("keeps the document as it is when the save does not write what the person has typed (a space at the end)", () => {
+    // Markdown drops a space at the end of a paragraph or a heading, so the saved text has none: the save says "alpha", the
+    // person has "alpha " and goes on typing. Neither the space nor the focus may be lost, and nothing is loaded again.
+    const text = "# T\n\nalpha\n";
+    load(text);
+    const { view } = editor.core;
+    caret(1, 5);
+    view.dispatch(view.state.tr.insertText(" "));
+    view.focus();
+    const doc = view.state.doc;
+    const saved = editor.text();
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    expect(view.state.doc.child(1)).toBe(doc.child(1));
+    expect(view.hasFocus()).toBe(true);
+    expect(view.state.doc.child(1).textContent).toBe("alpha ");
+    // nothing is unsaved after the save, so another autosave is not asked for
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    view.dispatch(view.state.tr.insertText("beta"));
+    expect(view.state.doc.child(1).textContent).toBe("alpha beta");
+    expect(editor.text()).toBe("# T\n\nalpha beta\n");
+    expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+  });
+
+  it("keeps a space at the end of a heading and of a list item through a save too", () => {
+    const text = "# Title\n\n- one\n- two\n";
+    load(text);
+    const { view } = editor.core;
+    caret(0, 5);
+    view.dispatch(view.state.tr.insertText(" "));
+    const before = view.state.doc;
+    const saved = editor.text();
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    expect(view.state.doc.child(0)).toBe(before.child(0));
+    expect(view.state.doc.child(0).textContent).toBe("Title ");
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+  });
+
   it("follows the blocks of the saved text when one was removed", () => {
     const text = "one\n\ntwo\n\nthree\n";
     load(text);
@@ -399,17 +436,28 @@ describe("rebase", () => {
     expect(editor.text()).toBe(saved);
   });
 
-  it("loads the saved blocks again when the document does not hold them, keeping the focus and the caret", () => {
+  it("does not load the document again even when the saved text has another number of blocks: it stays as the person has it", () => {
     const text = "# T\n\nsome words here\n";
     load(text);
     const { view } = editor.core;
     caret(1, 4);
+    view.dispatch(view.state.tr.insertText("X"));
     view.focus();
-    const other = "# T\n\nsome words here\n\nand one more\n";
+    const doc = view.state.doc;
+    const at = view.state.selection.from;
+    const written = editor.text();
+    // the saved text reads back as three blocks while the document has two
+    const other = `${written}\nand one more\n`;
     editor.rebase(buildBlockMap(other, mockParseBlocks(other)));
-    expect(editor.text()).toBe(other);
-    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    expect(view.state.doc).toBe(doc);
+    expect(editor.text()).toBe(written);
     expect(view.hasFocus()).toBe(true);
-    expect(view.state.selection.from).toBe(inside(1, 4));
+    expect(view.state.selection.from).toBe(at);
+    // what was saved is what the document is compared with: it is clean, and the next edit makes it unsaved again
+    expect(editor.status().dirty).toBe(false);
+    view.dispatch(closeHistory(view.state.tr).insertText("Y"));
+    expect(editor.status().dirty).toBe(true);
+    undo(view.state, view.dispatch);
+    expect(editor.status().dirty).toBe(false);
   });
 });

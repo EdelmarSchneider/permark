@@ -10,13 +10,7 @@ import {
 } from "@milkdown/kit/preset/commonmark";
 import { strikethroughKeymap } from "@milkdown/kit/preset/gfm";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
-import {
-  EditorState,
-  NodeSelection,
-  Selection,
-  TextSelection,
-  type Transaction,
-} from "@milkdown/kit/prose/state";
+import { EditorState, NodeSelection, Selection, type Transaction } from "@milkdown/kit/prose/state";
 import type { EditorView } from "@milkdown/kit/prose/view";
 import { SELECTION_READ_LIMIT, type SelectedText } from "../../agentContext";
 import type { HeadingInfo } from "../../outline";
@@ -105,6 +99,8 @@ export class VisualEditor {
   readonly mode = "visual" as const;
   private built: Built | null = null;
   private initialDirty = false;
+  /** The text that was saved when the blocks of the document could not be renumbered to it; the document is clean while it writes this. */
+  private cleanText: string | null = null;
   private cache = new WeakMap<PMNode, Analysis>();
   private readonly headingCache = new WeakMap<PMNode, DocHeading[]>();
   private slashOpen = false;
@@ -193,6 +189,7 @@ export class VisualEditor {
     const built = buildDoc(this.core, { map: input.map, unsaved: input.unsaved });
     this.built = built;
     this.initialDirty = input.dirty ?? false;
+    this.cleanText = null;
     const { view } = this.core;
     view.updateState(
       EditorState.create({
@@ -210,6 +207,7 @@ export class VisualEditor {
   /** Goes back to the document as loaded: the edits and the undo history are dropped (the blocks are not read again). */
   restart(): void {
     if (!this.built) return;
+    this.cleanText = null;
     const { view } = this.core;
     view.updateState(
       EditorState.create({
@@ -238,6 +236,9 @@ export class VisualEditor {
   /** Whether a save would write something other than the saved file, and how many blocks carry the unsaved bar. */
   status(): VisualStatus {
     const a = this.analysis();
+    // after a save that could not renumber the blocks (see `rebase`), what is saved is the text itself that was written
+    if (this.cleanText !== null)
+      return { dirty: this.text() !== this.cleanText, changed: a.changed };
     return { dirty: this.initialDirty || a.structure || a.touched > 0, changed: a.changed };
   }
 
@@ -312,62 +313,47 @@ export class VisualEditor {
     const { view } = this.core;
     const next = buildDoc(this.core, { map });
     const tr = this.renumbering(next);
+    this.initialDirty = false;
     if (tr) {
       this.built = next;
-      this.initialDirty = false;
+      this.cleanText = null;
       this.cache = new WeakMap();
       view.dispatch(tr.setMeta("addToHistory", false));
       return;
     }
-    const { anchor, head } = view.state.selection;
-    const focused = view.hasFocus();
-    this.load({ map, dirty: false });
-    const { doc } = view.state;
-    const at = (pos: number): number => Math.min(Math.max(pos, 0), doc.content.size);
-    try {
-      view.dispatch(
-        view.state.tr.setSelection(
-          TextSelection.between(doc.resolve(at(anchor)), doc.resolve(at(head))),
-        ),
-      );
-    } catch {
-      // the caret stays at the start of the document
-    }
-    if (focused) view.focus();
+    // The nodes are not the blocks of the saved text (the editor wrote something that reads back as another number of blocks).
+    // Even then the document is not loaded again: it stays as the person has it, the blocks it was made from stay too, and what was
+    // just saved is what it is compared with.
+    this.cleanText = this.text();
+    this.cache = new WeakMap();
+    this.options.handlers.changed();
   }
 
   /**
-   * What gives the nodes of the document the block numbers of a document just built from the saved text, or null when the nodes are
-   * not those blocks (the written nodes, in order, are the blocks; an empty paragraph is not written and belongs to none).
+   * What gives the nodes of the document the block numbers of the saved text, or null when the nodes are not its blocks. The written
+   * nodes, in order, are the blocks (an empty paragraph is not written and belongs to none), and the text just saved was written
+   * from them, so that is all that has to hold: the nodes the person has are what they see and are kept, even where the saved
+   * text reads back a little differently (a space at the end of a paragraph, which Markdown drops). Each written node becomes the
+   * original of its block, so that it counts as saved and the next save writes the block's own bytes until it is edited.
    */
   private renumbering(next: Built): Transaction | null {
     const { state } = this.core.view;
     const tr = state.tr;
-    let block = 0;
-    let same = true;
+    const originals: PMNode[] = [];
     state.doc.forEach((node, pos) => {
-      if (!same) return;
       if (isEmptyParagraph(node)) {
         if (originOf(node) !== null) tr.setNodeAttribute(pos, TM_BLOCK, null);
         return;
       }
-      const original = next.originals[block];
-      if (
-        !original ||
-        !node.hasMarkup(
-          original.type,
-          { ...original.attrs, [TM_BLOCK]: node.attrs[TM_BLOCK] },
-          original.marks,
-        ) ||
-        !node.content.eq(original.content)
-      ) {
-        same = false;
-        return;
-      }
+      const block = originals.length;
+      originals.push(
+        node.type.create({ ...node.attrs, [TM_BLOCK]: block }, node.content, node.marks),
+      );
       if (originOf(node) !== block) tr.setNodeAttribute(pos, TM_BLOCK, block);
-      block++;
     });
-    return same && block === next.originals.length ? tr : null;
+    if (originals.length !== next.originals.length) return null;
+    next.originals.splice(0, next.originals.length, ...originals);
+    return tr;
   }
 
   /** The top-level node the selection is in. */
