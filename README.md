@@ -58,6 +58,9 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
   collapse sections you don't need. It keeps working while you edit, and a dot marks the sections an agent just changed
 - A **filter** for the Explorer (Documents, Docs and assets, Everything, or your own patterns) keeps a code repository's tree to the
   documents that matter, and tells you how many files it hides
+- Workspaces that collect several repositories show each one, even when the parent's `.gitignore` leaves it out. Hidden
+  files and files ignored by git have their own switches in the filter, off by default
+- The window opens where you left it, with its own size and place for each project
 - The Explorer **follows the file you open**, however you got there: quick open, a link, search, the feed, back and forward
 - Quick open (`Ctrl+P`), find in page (`Ctrl+F`), session restore and recent projects
 - One process per project: `trailmark ~/code/my-project`
@@ -223,8 +226,9 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - A visual and a source editor with block-preserving saves, safe sharing of a file with agents, new files and images
 - File operations (rename, move, delete) that update links and can be undone
 
-**v0.2.1: translations**
-- Português (Brasil), Español and Deutsch
+**v0.2.1: your language** (released)
+- Português (Brasil), Español and Deutsch, "Open with TrailMark" in the Windows file manager, one Read | Visual | Source switch,
+  a window that remembers its place, and an Explorer for workspaces of several repositories
 
 **v0.3**
 - Search everywhere (`Ctrl+T`): files, sections, tags and commands in one box
@@ -236,7 +240,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - Spec-driven workflows, review comments that turn into a prompt for your agent, and an MCP server so any agent can ask TrailMark
   "where is X described?"
 - A rendered diff against the last commit or your last read, rich JSON and XML views, backlinks, and installer extras
-  (`trailmark` on the `PATH`, `.md` file association)
+  (`trailmark` on the `PATH`)
 
 ## Tech
 
