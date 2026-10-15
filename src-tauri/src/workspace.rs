@@ -604,6 +604,8 @@ impl Workspace {
     pub fn activate(&self) {
         if self.agent_wanted {
             self.agent.set_enabled(true);
+        } else {
+            self.agent.remove_stale_file();
         }
     }
 

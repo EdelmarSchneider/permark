@@ -87,6 +87,14 @@ impl AgentBridge {
         })
     }
 
+    /// Deletes a state file that a window left behind when it was killed while the connection was on. The file is only
+    /// meant to exist while the connection is on, so a project that opens with it off has no use for one.
+    pub fn remove_stale_file(&self) {
+        if let Some(path) = lock(&self.agent_path).as_ref() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
     /// What the window shows now. Kept whether or not the connection is on, so turning it on answers at once.
     pub fn publish(&self, context: AgentContext) {
         let published = self.hub.publish(context);
@@ -384,6 +392,21 @@ mod tests {
         assert!(written["updatedAtMs"].as_u64().is_some());
         fx.bridge.set_enabled(false);
         assert!(!path.exists(), "turning it off deletes the file");
+    }
+
+    #[test]
+    fn a_state_file_left_by_a_killed_window_is_removed_when_the_project_opens_with_the_connection_off(
+    ) {
+        let state = tempfile::tempdir().expect("state");
+        let path = state.path().join("agent.json");
+        std::fs::write(&path, "{}").expect("write");
+        let fx = fx("stale", Some(path.clone()));
+        fx.bridge.remove_stale_file();
+        assert!(!path.exists());
+        // nothing there is nothing to do
+        fx.bridge.remove_stale_file();
+        let without = self::fx("stale2", None);
+        without.bridge.remove_stale_file();
     }
 
     #[test]
