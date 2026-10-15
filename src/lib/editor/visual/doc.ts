@@ -132,8 +132,11 @@ export type Analysis = {
   touched: number;
 };
 
-/** Reads the document against the blocks it was made from. */
-export function analyze(built: Built, doc: PMNode): Analysis {
+/**
+ * Reads the document against the blocks it was made from. `saved` is the set of nodes a save could not give a block of the saved
+ * text (see `VisualEditor.rebase`): they are what the file holds, so they carry no unsaved-block bar until they are edited.
+ */
+export function analyze(built: Built, doc: PMNode, saved: WeakSet<PMNode> | null = null): Analysis {
   const { originals, unsaved: wasUnsaved, map } = built;
   const children: PMNode[] = [];
   doc.forEach((child) => children.push(child));
@@ -162,11 +165,12 @@ export function analyze(built: Built, doc: PMNode): Analysis {
     const untouched = !skip && origin !== null && node.eq(originals[origin]);
     const fromSource = origin !== null && wasUnsaved[origin];
     // an atom is never rewritten, so only the Source edits it came with (or being a copy) make it unsaved
-    const unsaved = skip
-      ? false
-      : node.type.name === LOCKED
-        ? origin === null || fromSource
-        : !untouched || fromSource;
+    const unsaved =
+      skip || saved?.has(node)
+        ? false
+        : node.type.name === LOCKED
+          ? origin === null || fromSource
+          : !untouched || fromSource;
     return { node, skip, origin, untouched, unsaved };
   });
   const written = nodes.filter((n) => !n.skip);

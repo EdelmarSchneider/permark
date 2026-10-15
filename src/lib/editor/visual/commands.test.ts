@@ -3,7 +3,7 @@ import { closeHistory, undo } from "@milkdown/kit/prose/history";
 import { NodeSelection, TextSelection } from "@milkdown/kit/prose/state";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mockParseBlocks } from "../../mock/mockBlocks";
-import { buildBlockMap } from "../blockModel";
+import { buildBlockMap, type BlockMap } from "../blockModel";
 import { VisualEditor } from "./editor";
 import "./jsdomShims";
 
@@ -409,30 +409,6 @@ describe("rebase", () => {
     expect(editor.status()).toEqual({ dirty: false, changed: 0 });
   });
 
-  it("keeps two lists that were apart as two lists in the file when what was between them is deleted", () => {
-    const text = "- a\n\nmid\n\n- b\n";
-    load(text);
-    const { view } = editor.core;
-    view.dispatch(view.state.tr.delete(inside(1) - 1, inside(2) - 1));
-    expect(view.state.doc.childCount).toBe(2);
-    // two lists of one marker side by side are one list when read back: the file says what the view shows
-    const saved = editor.text();
-    expect(saved).toBe("- a\n\n* b\n");
-    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
-    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
-    // the next edit to the second list does not change the structure of the file
-    view.dispatch(closeHistory(view.state.tr).insertText("X", inside(1, 3)));
-    expect(editor.text()).toBe("- a\n\n* bX\n");
-  });
-
-  it("changes only the marker of a list that gives way, and leaves the rest of its bytes as they were", () => {
-    const text = "1. one\n   - nested\n   - items `a\\_b`\n\nmid\n\n1. two\n2. three\n";
-    load(text);
-    const { view } = editor.core;
-    view.dispatch(view.state.tr.delete(inside(1) - 1, inside(2) - 1));
-    expect(editor.text()).toBe("1. one\n   - nested\n   - items `a\\_b`\n\n1) two\n2) three\n");
-  });
-
   it("follows the blocks of the saved text when one was removed", () => {
     const text = "one\n\ntwo\n\nthree\n";
     load(text);
@@ -460,6 +436,24 @@ describe("rebase", () => {
     expect(editor.text()).toBe(saved);
   });
 
+  /**
+   * The map of a saved text that reads back as one more block than the document has: the last paragraph is split in two, as a
+   * parser that sees a block where the editor wrote one may do. The text is the same, so what was saved is what the editor holds.
+   */
+  function splitLastBlock(written: string): BlockMap {
+    const start = written.indexOf("some");
+    const space = written.lastIndexOf(" ");
+    const end = written.length - 1;
+    return buildBlockMap(written, {
+      eol: "lf",
+      blocks: [
+        { startByte: 0, endByte: 3, kind: "heading" },
+        { startByte: start, endByte: space, kind: "paragraph" },
+        { startByte: space + 1, endByte: end, kind: "paragraph" },
+      ],
+    });
+  }
+
   it("does not load the document again even when the saved text has another number of blocks: it stays as the person has it", () => {
     const text = "# T\n\nsome words here\n";
     load(text);
@@ -470,9 +464,7 @@ describe("rebase", () => {
     const doc = view.state.doc;
     const at = view.state.selection.from;
     const written = editor.text();
-    // the saved text reads back as three blocks while the document has two
-    const other = `${written}\nand one more\n`;
-    editor.rebase(buildBlockMap(other, mockParseBlocks(other)));
+    editor.rebase(splitLastBlock(written));
     expect(view.state.doc).toBe(doc);
     expect(editor.text()).toBe(written);
     expect(view.hasFocus()).toBe(true);
@@ -483,5 +475,68 @@ describe("rebase", () => {
     expect(editor.status().dirty).toBe(true);
     undo(view.state, view.dispatch);
     expect(editor.status().dirty).toBe(false);
+    // going back to the text the file had before the save is a change from what the file holds now
+    undo(view.state, view.dispatch);
+    expect(editor.text()).toBe(text);
+    expect(editor.status().dirty).toBe(true);
+  });
+
+  it("shows no unsaved-block bar after a save that could not renumber the blocks, and only for what is edited after it", () => {
+    const text = "# T\n\nsome words here\n";
+    load(text);
+    const { view } = editor.core;
+    caret(1, 4);
+    view.dispatch(view.state.tr.insertText("X"));
+    expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+    editor.rebase(splitLastBlock(editor.text()));
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    // the heading is edited next: its bar is the only one, not the paragraph that was saved
+    view.dispatch(closeHistory(view.state.tr).insertText("Z", inside(0, 1)));
+    expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+    expect(view.dom.querySelectorAll(".tm-unsaved")).toHaveLength(1);
+  });
+
+  it("is clean again when what was typed after a save is taken back, though the nodes differ from the ones that were saved", () => {
+    const text = "# T\n\nalpha\n";
+    load(text);
+    const { view } = editor.core;
+    caret(1, 5);
+    // "alpha " is on screen and the file holds "alpha" (Markdown drops the space at the end)
+    view.dispatch(view.state.tr.insertText(" "));
+    editor.rebase(buildBlockMap(text, mockParseBlocks(text)));
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    // the person takes the space back: the text is the file's, so nothing is unsaved (no bar, no autosave, no close prompt)
+    view.dispatch(closeHistory(view.state.tr).delete(inside(1, 5), inside(1, 6)));
+    expect(view.state.doc.child(1).textContent).toBe("alpha");
+    expect(editor.text()).toBe(text);
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    expect(view.dom.querySelectorAll(".tm-unsaved")).toHaveLength(0);
+    // and a real change is still one
+    view.dispatch(closeHistory(view.state.tr).insertText("!"));
+    expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+  });
+
+  it("keeps two lists that were apart as two lists in the file when what was between them is deleted", () => {
+    const text = "- a\n\nmid\n\n- b\n";
+    load(text);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.delete(inside(1) - 1, inside(2) - 1));
+    expect(view.state.doc.childCount).toBe(2);
+    // two lists of one marker side by side are one list when read back: the file says what the view shows
+    const saved = editor.text();
+    expect(saved).toBe("- a\n\n* b\n");
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    // the next edit to the second list does not change the structure of the file
+    view.dispatch(closeHistory(view.state.tr).insertText("X", inside(1, 3)));
+    expect(editor.text()).toBe("- a\n\n* bX\n");
+  });
+
+  it("changes only the marker of a list that gives way, and leaves the rest of its bytes as they were", () => {
+    const text = "1. one\n   - nested\n   - items `a\\_b`\n\nmid\n\n1. two\n2. three\n";
+    load(text);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.delete(inside(1) - 1, inside(2) - 1));
+    expect(editor.text()).toBe("1. one\n   - nested\n   - items `a\\_b`\n\n1) two\n2) three\n");
   });
 });

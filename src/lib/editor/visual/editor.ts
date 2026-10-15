@@ -15,7 +15,7 @@ import type { EditorView } from "@milkdown/kit/prose/view";
 import { SELECTION_READ_LIMIT, type SelectedText } from "../../agentContext";
 import type { HeadingInfo } from "../../outline";
 import { currentHeading } from "../../outline";
-import type { BlockMap } from "../blockModel";
+import { joinBlockMap, type BlockMap } from "../blockModel";
 import { showsAtTop, watchViewport } from "../viewport";
 import {
   analyze,
@@ -99,8 +99,15 @@ export class VisualEditor {
   readonly mode = "visual" as const;
   private built: Built | null = null;
   private initialDirty = false;
-  /** The text that was saved when the blocks of the document could not be renumbered to it; the document is clean while it writes this. */
-  private cleanText: string | null = null;
+  /** The text that was saved last (see `rebase`); null until the document has been saved since it was loaded. */
+  private savedText: string | null = null;
+  /**
+   * The nodes of the document when a save could not give them the blocks of the saved text: they are what the file holds, so no
+   * unsaved-block bar is drawn for them (and the document is judged by its text alone). Null when the blocks were renumbered.
+   */
+  private savedNodes: WeakSet<PMNode> | null = null;
+  /** The text of the document as it was last composed, for the document and the blocks it was composed from. */
+  private composed: { doc: PMNode; built: Built; text: string } | null = null;
   private cache = new WeakMap<PMNode, Analysis>();
   private readonly headingCache = new WeakMap<PMNode, DocHeading[]>();
   private slashOpen = false;
@@ -189,7 +196,8 @@ export class VisualEditor {
     const built = buildDoc(this.core, { map: input.map, unsaved: input.unsaved });
     this.built = built;
     this.initialDirty = input.dirty ?? false;
-    this.cleanText = null;
+    this.savedText = null;
+    this.savedNodes = null;
     const { view } = this.core;
     view.updateState(
       EditorState.create({
@@ -207,7 +215,8 @@ export class VisualEditor {
   /** Goes back to the document as loaded: the edits and the undo history are dropped (the blocks are not read again). */
   restart(): void {
     if (!this.built) return;
-    this.cleanText = null;
+    this.savedText = null;
+    this.savedNodes = null;
     const { view } = this.core;
     view.updateState(
       EditorState.create({
@@ -223,10 +232,35 @@ export class VisualEditor {
     if (!this.built) return null;
     let analysis = this.cache.get(doc);
     if (!analysis) {
-      analysis = analyze(this.built, doc);
+      analysis = analyze(this.built, doc, this.savedNodes);
+      // A document that writes the text that was saved has nothing unsaved, whatever its nodes say (a space at the end of a
+      // paragraph that was typed and taken back leaves a node that is not the one that was saved, and the same text).
+      if (
+        this.savedText !== null &&
+        (analysis.changed > 0 || analysis.touched > 0 || analysis.structure) &&
+        this.composedText(doc) === this.savedText
+      ) {
+        analysis = {
+          ...analysis,
+          nodes: analysis.nodes.map((info) => (info.unsaved ? { ...info, unsaved: false } : info)),
+          structure: false,
+          changed: 0,
+          touched: 0,
+        };
+      }
       this.cache.set(doc, analysis);
     }
     return analysis;
+  }
+
+  /** The text `doc` writes (the document the editor shows, or one it is asked about). */
+  private composedText(doc: PMNode): string {
+    if (!this.built) return "";
+    const known = this.composed;
+    if (known && known.doc === doc && known.built === this.built) return known.text;
+    const text = composeDoc(this.core, this.built, doc).text;
+    this.composed = { doc, built: this.built, text };
+    return text;
   }
 
   private analysis(): Analysis {
@@ -236,15 +270,18 @@ export class VisualEditor {
   /** Whether a save would write something other than the saved file, and how many blocks carry the unsaved bar. */
   status(): VisualStatus {
     const a = this.analysis();
-    // after a save that could not renumber the blocks (see `rebase`), what is saved is the text itself that was written
-    if (this.cleanText !== null)
-      return { dirty: this.text() !== this.cleanText, changed: a.changed };
-    return { dirty: this.initialDirty || a.structure || a.touched > 0, changed: a.changed };
+    let dirty = this.initialDirty || a.structure || a.touched > 0;
+    // Once it has been saved, what matters is the text: the nodes may be edited and edited back to another node of the same text, and
+    // when the blocks could not be renumbered they say nothing about what the file holds.
+    if (this.savedText !== null && (dirty || this.savedNodes !== null)) {
+      dirty = this.text() !== this.savedText;
+    }
+    return { dirty, changed: a.changed };
   }
 
   /** The file text a save would write: untouched blocks and separators as they were, edited blocks as the editor writes them. */
   text(): string {
-    return this.built ? composeDoc(this.core, this.built, this.core.view.state.doc).text : "";
+    return this.composedText(this.core.view.state.doc);
   }
 
   /** The selected text, or null when nothing is selected. */
@@ -314,18 +351,21 @@ export class VisualEditor {
     const next = buildDoc(this.core, { map });
     const tr = this.renumbering(next);
     this.initialDirty = false;
+    // what was saved: the text the document is compared with from now on (it is what the file holds)
+    this.savedText = joinBlockMap(map);
+    this.cache = new WeakMap();
     if (tr) {
       this.built = next;
-      this.cleanText = null;
-      this.cache = new WeakMap();
+      this.savedNodes = null;
       view.dispatch(tr.setMeta("addToHistory", false));
       return;
     }
     // The nodes are not the blocks of the saved text (the editor wrote something that reads back as another number of blocks).
-    // Even then the document is not loaded again: it stays as the person has it, the blocks it was made from stay too, and what was
-    // just saved is what it is compared with.
-    this.cleanText = this.text();
-    this.cache = new WeakMap();
+    // Even then the document is not loaded again: it stays as the person has it, the blocks it was made from stay too, its nodes
+    // are what was saved (no unsaved-block bar for them), and what was saved is the text it is compared with.
+    const saved = new WeakSet<PMNode>();
+    view.state.doc.forEach((node) => saved.add(node));
+    this.savedNodes = saved;
     this.options.handlers.changed();
   }
 
