@@ -13,6 +13,7 @@ use crate::external_editor::EditorError;
 use crate::fileops::FileOpError;
 use crate::git::GitError;
 use crate::meta::MetaError;
+use crate::notes::NotesError;
 use crate::render::RenderError;
 use crate::session::SessionError;
 use crate::shell_integration::ShellError;
@@ -43,6 +44,8 @@ pub enum AppError {
     Editor(#[from] EditorError),
     #[error(transparent)]
     Comments(#[from] CommentError),
+    #[error(transparent)]
+    Notes(#[from] NotesError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -74,6 +77,7 @@ impl AppError {
             Self::Shell(_) => "shell",
             Self::Editor(_) => "editor",
             Self::Comments(e) => e.kind(),
+            Self::Notes(e) => e.kind(),
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -162,6 +166,41 @@ fn file_op_details(e: &FileOpError) -> Details {
     }
 }
 
+fn edit_details(e: &EditError) -> Details {
+    match e {
+        EditError::Vault(e) => vault_details(e),
+        EditError::Binary(name)
+        | EditError::TooLarge(name)
+        | EditError::NotMarkdown(name)
+        | EditError::Encoding(name)
+        | EditError::Exists(name) => Details::subject(name),
+        EditError::InvalidName(problem) => Details {
+            reason: Some(problem.code().to_owned()),
+            ..Details::default()
+        },
+        EditError::Unsupported(_) => Details::default(),
+        EditError::InvalidData(message) => Details::detail(message),
+        EditError::Io { path, source } => Details::io(path, source),
+    }
+}
+
+fn notes_details(e: &NotesError) -> Details {
+    match e {
+        NotesError::Edit(e) => edit_details(e),
+        NotesError::Vault(e) => vault_details(e),
+        NotesError::Io { path, source } => Details::io(path, source),
+        NotesError::Exists(subject)
+        | NotesError::NotANote(subject)
+        | NotesError::NotText(subject)
+        | NotesError::Changed(subject) => Details::subject(subject),
+        NotesError::Locked
+        | NotesError::Unwritable
+        | NotesError::UnknownUndo
+        | NotesError::NoSuchVersion
+        | NotesError::NotOpen => Details::default(),
+    }
+}
+
 impl AppError {
     /// The blanks the UI fills in when it words this error.
     pub fn details(&self) -> Details {
@@ -184,21 +223,8 @@ impl AppError {
                 MetaError::Io { path, source } => Details::io(path, source),
                 MetaError::Vault(e) => vault_details(e),
             },
-            Self::Edit(e) => match e {
-                EditError::Vault(e) => vault_details(e),
-                EditError::Binary(name)
-                | EditError::TooLarge(name)
-                | EditError::NotMarkdown(name)
-                | EditError::Encoding(name)
-                | EditError::Exists(name) => Details::subject(name),
-                EditError::InvalidName(problem) => Details {
-                    reason: Some(problem.code().to_owned()),
-                    ..Details::default()
-                },
-                EditError::Unsupported(_) => Details::default(),
-                EditError::InvalidData(message) => Details::detail(message),
-                EditError::Io { path, source } => Details::io(path, source),
-            },
+            Self::Edit(e) => edit_details(e),
+            Self::Notes(e) => notes_details(e),
             Self::FileOps(e) => file_op_details(e),
             Self::Shell(ShellError::Registry(source)) => Details::detail(&source.to_string()),
             Self::Shell(ShellError::Unsupported) => Details::default(),

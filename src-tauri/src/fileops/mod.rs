@@ -20,7 +20,7 @@ use std::io;
 
 use serde::{Deserialize, Serialize};
 
-pub use ops::OsRecycler;
+pub use ops::{OsRecycler, Recycler};
 pub use plan::Move;
 pub use service::{FileOpsService, Followers};
 

@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use crate::comments::{CommentBook, CommentError, CommentFilter, CommentView, FileProblem};
 use crate::git::{self, Discovery};
+use crate::notes;
 use crate::search::indexer::Indexer;
 use crate::search::{Bm25Index, SearchProvider};
-use crate::session::StateStore;
+use crate::session::{AppSettingsStore, StateStore};
 use crate::unread;
 use crate::vault::{Vault, VaultError};
 use crate::watch::{PathFilter, SigStore};
@@ -33,7 +34,13 @@ pub(crate) fn app_data_dir(identifier: &str) -> Option<PathBuf> {
 
 /// The nearest folder at or above `start` that TrailMark knows: one with a `.trailmark/` folder, or one the app
 /// kept state for. `None` when `start` is not inside any such folder.
+///
+/// The notes folder is never found, nor anything inside it: it has a `.trailmark/` folder like a project, but the notes
+/// are private and no agent is shown them (the person shares a note on purpose, one at a time).
 pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf> {
+    if in_notes_tree(app_data_dir, start) {
+        return None;
+    }
     let start =
         dunce::canonicalize(start).unwrap_or_else(|_| dunce::simplified(start).to_path_buf());
     start
@@ -45,7 +52,13 @@ pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf>
 /// Whether the person turned the agent connection on for the project in `root`. Only the app's own data says so: a
 /// project's files (`.trailmark/` can be committed to a repository) have no say in who is shown the person's reading.
 pub(crate) fn connection_is_on(app_data_dir: &Path, root: &Path) -> bool {
-    StateStore::open(app_data_dir, root).agent_connection()
+    !in_notes_tree(app_data_dir, root) && StateStore::open(app_data_dir, root).agent_connection()
+}
+
+/// Whether `path` is the person's notes folder or inside it (see [`notes::folder`]).
+fn in_notes_tree(app_data_dir: &Path, path: &Path) -> bool {
+    let chosen = AppSettingsStore::new(app_data_dir).load().notes_folder;
+    notes::folder::contains(app_data_dir, chosen.as_deref(), path)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -195,6 +208,10 @@ mod tests {
         StateStore::open(fx.app.path(), &root(fx))
     }
 
+    fn store_for(fx: &Fx, folder: &Path) -> StateStore {
+        StateStore::open(fx.app.path(), folder)
+    }
+
     #[test]
     fn the_data_folder_is_named_after_the_app() {
         let dir = app_data_dir("dev.example.app").expect("a data folder");
@@ -289,6 +306,42 @@ mod tests {
         // and the person's own choice is the only thing that changes it
         store(&fx).set_agent_connection(true).expect("on");
         assert!(connection_is_on(fx.app.path(), &root(&fx)));
+    }
+
+    /// The notes folder has a `.trailmark/` folder like a project, and is private: it is not found, whatever is inside it.
+    #[test]
+    fn the_notes_folder_is_never_a_project() {
+        let fx = fx();
+        let notes = root(&fx).join("TrailMark Notes");
+        fs::create_dir_all(notes.join(".trailmark")).expect("mkdir");
+        fs::create_dir_all(notes.join("sub")).expect("mkdir");
+        // before it is the notes folder, it looks like any folder with a `.trailmark/`
+        assert_eq!(find_project(fx.app.path(), &notes), Some(notes.clone()));
+
+        AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        for inside in [
+            notes.clone(),
+            notes.join("sub"),
+            notes.join("not-yet").join("x.md"),
+        ] {
+            assert_eq!(find_project(fx.app.path(), &inside), None, "{inside:?}");
+        }
+        // the connection answers off for it, even if a switch was somehow stored
+        store_for(&fx, &notes)
+            .set_agent_connection(true)
+            .expect("on");
+        assert!(!connection_is_on(fx.app.path(), &notes));
+        // the project around it, outside the notes, is found as before
+        assert_eq!(find_project(fx.app.path(), fx.project.path()), None);
+        store(&fx)
+            .save_session(&SessionState::default())
+            .expect("save");
+        assert_eq!(
+            find_project(fx.app.path(), &root(&fx).join("docs")),
+            Some(root(&fx))
+        );
     }
 
     #[test]

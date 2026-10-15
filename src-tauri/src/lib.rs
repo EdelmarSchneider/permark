@@ -26,6 +26,8 @@ mod git;
 mod links;
 mod meta;
 mod nav;
+mod notes;
+mod notes_commands;
 mod open_request;
 mod refs;
 mod render;
@@ -77,6 +79,44 @@ fn navigation_guard(dev_url: Option<Url>) -> TauriPlugin<Wry> {
         .build()
 }
 
+/// What this program is, once the Notes window has been looked for.
+enum NotesRole {
+    /// An ordinary window for a project (or the welcome screen).
+    Project,
+    /// The Notes window; the socket other windows ask it over, when it could be made.
+    Window(Option<bridge::socket::Listening>),
+}
+
+/// Decides whether this program is the Notes window (started with `--notes`, or with nothing to open when the person chose
+/// to start in Notes) and, if so, whether one is running already: then that one is asked to come forward and this program
+/// ends. Otherwise this one listens, so that the next launch finds it.
+fn claim_notes_window(identifier: &str) -> NotesRole {
+    use std::ffi::OsString;
+
+    let Some(app_data) = bridge::project::app_data_dir(identifier) else {
+        return NotesRole::Project;
+    };
+    let args: Vec<OsString> = std::env::args_os().collect();
+    let start_in = session::AppSettingsStore::new(&app_data)
+        .load()
+        .start_in
+        .unwrap_or_default();
+    if !notes::is_notes_launch(&args, start_in) {
+        return NotesRole::Project;
+    }
+    let Ok(endpoint) = bridge::socket::Endpoint::for_notes(&app_data) else {
+        return NotesRole::Window(None);
+    };
+    let claimed =
+        tauri::async_runtime::block_on(notes::claim(&endpoint, &notes::NotesRequest::default()));
+    match claimed {
+        notes::Claim::Forwarded => std::process::exit(0),
+        notes::Claim::Listening(listening) => NotesRole::Window(Some(listening)),
+        // no socket: the window runs anyway, and other windows will start another one when they ask
+        notes::Claim::Unavailable => NotesRole::Window(None),
+    }
+}
+
 /// Builds and runs the Tauri application. Started as `trailmark mcp` or `trailmark context`, it instead runs that command
 /// without a window (see [`bridge`]): `mcp` serves MCP over standard input and output until the input closes, `context`
 /// prints what the person is looking at and exits.
@@ -98,6 +138,12 @@ pub fn run() {
     } else {
         None
     };
+    // The Notes window is one program for each app data folder: a second launch asks it to come forward and ends.
+    let notes_socket = claim_notes_window(&context.config().identifier);
+    let (notes_window, notes_listener) = match notes_socket {
+        NotesRole::Window(listener) => (true, listener),
+        NotesRole::Project => (false, None),
+    };
     let builder = tauri::Builder::default()
         .plugin(navigation_guard(dev_url))
         .plugin(tauri_plugin_dialog::init())
@@ -111,9 +157,18 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
         .manage(open_request::OpenInbox::default())
+        .manage(notes_commands::NotesLaunch::new(notes_window))
         // The window starts hidden; this puts it where it was and shows it.
-        .setup(|app| {
+        .setup(move |app| {
             window::setup(app);
+            if let Some(listening) = notes_listener {
+                // Other windows and launches ask this one to come forward over the socket.
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(notes::serve(
+                    listening,
+                    std::sync::Arc::new(move |request| notes_commands::deliver(&handle, request)),
+                ));
+            }
             Ok(())
         })
         // Images of the open folder: answered from the folder that is open now (see `serve_asset`).
@@ -184,6 +239,35 @@ pub fn run() {
             commands::list_comments,
             commands::set_comment_done,
             commands::delete_comment,
+            notes_commands::launch_mode,
+            notes_commands::notes_folder,
+            notes_commands::set_notes_folder,
+            notes_commands::create_notes_folder,
+            notes_commands::notes_start_in,
+            notes_commands::set_notes_start_in,
+            notes_commands::notes_overview,
+            notes_commands::open_notes,
+            notes_commands::list_notes,
+            notes_commands::new_note,
+            notes_commands::forget_new_note,
+            notes_commands::save_note,
+            notes_commands::note_opened,
+            notes_commands::close_note,
+            notes_commands::set_note_view,
+            notes_commands::set_note_pinned,
+            notes_commands::set_pin_order,
+            notes_commands::rename_note,
+            notes_commands::delete_notes,
+            notes_commands::undo_delete_notes,
+            notes_commands::delete_copied_notes,
+            notes_commands::mark_note_copied,
+            notes_commands::note_versions,
+            notes_commands::note_version_text,
+            notes_commands::restore_note_version,
+            notes_commands::discard_blank_note,
+            notes_commands::open_notes_folder,
+            notes_commands::show_notes,
+            notes_commands::take_notes_request,
         ])
         .build(context)
         .expect("error while building tauri application");

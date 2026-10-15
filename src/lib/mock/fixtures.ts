@@ -684,7 +684,10 @@ const simpleDocs: Record<string, MockDoc> = {
 // Mutable mock state (edited by the mock driver)
 // ---------------------------------------------------------------------------------------------
 
-export type MockVaultKind = "ide" | "simple";
+export type MockVaultKind = "ide" | "simple" | "notes";
+
+/** The files of the notes folder in the browser mock (`mockNotes.ts`); their text is in `mockFiles.written`. */
+export const mockNoteFiles = new Set<string>();
 
 export const mockState = {
   vault: "ide" as MockVaultKind,
@@ -695,6 +698,7 @@ export const mockState = {
 };
 
 function registry(): Record<string, MockDoc> {
+  if (mockState.vault === "notes") return {};
   return mockState.vault === "simple" ? simpleDocs : docs;
 }
 
@@ -719,6 +723,7 @@ export const mockFiles = {
 /** What kind of file a mock path is (null when there is no such file). */
 export function mockDocKind(path: string): MockDoc["kind"] | null {
   if (mockState.deleted.has(path)) return null;
+  if (mockState.vault === "notes") return mockNoteFiles.has(path) ? "markdown" : null;
   if (mockFiles.created.has(path)) return "markdown";
   return registry()[path]?.kind ?? null;
 }
@@ -764,6 +769,7 @@ export function writeSource(path: string, text: string): number {
 }
 
 export function docExists(path: string): boolean {
+  if (mockState.vault === "notes") return mockNoteFiles.has(path) && !mockState.deleted.has(path);
   return (path in registry() || mockFiles.created.has(path)) && !mockState.deleted.has(path);
 }
 
@@ -881,6 +887,7 @@ export const mockWorktrees = [
 export const mockIdeVault: VaultInfo = {
   root: MOCK_ROOT,
   name: "trailmark-docs",
+  kind: "project",
   mode: "ide",
   initialFile: null,
   worktrees: mockWorktrees,
@@ -891,6 +898,7 @@ export const mockIdeVault: VaultInfo = {
 export const mockSimpleVault: VaultInfo = {
   root: "C:/Users/demo/Downloads",
   name: "Downloads",
+  kind: "project",
   mode: "simple",
   initialFile: "proposal.md",
   worktrees: [],
@@ -899,6 +907,14 @@ export const mockSimpleVault: VaultInfo = {
 };
 
 export function mockTree(): TreeNode {
+  if (mockState.vault === "notes") {
+    return {
+      name: "TrailMark Notes",
+      path: "",
+      kind: "dir",
+      children: [...mockNoteFiles].filter((path) => !mockState.deleted.has(path)).map(file),
+    };
+  }
   if (mockState.vault === "simple") {
     return {
       name: "Downloads",

@@ -128,6 +128,7 @@ beforeEach(() => {
   vault.info = {
     root: "/p",
     name: "p",
+    kind: "project",
     mode: "ide",
     initialFile: null,
     worktrees: [],

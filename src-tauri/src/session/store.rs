@@ -107,6 +107,21 @@ impl StateStore {
         }
     }
 
+    /// The state of a folder that is never a project (the notes folder): always in the app's own data, whatever the folder
+    /// holds. Its `.trailmark/` is TrailMark's data about the notes, shared with whoever syncs the folder, and the
+    /// window's settings (theme, zoom, panel sizes) belong to this computer.
+    pub fn open_in_app_data(app_data_dir: &Path, root: &Path) -> Self {
+        let root =
+            dunce::canonicalize(root).unwrap_or_else(|_| dunce::simplified(root).to_path_buf());
+        let outside = app_data_dir.join("projects").join(project_key(&root));
+        Self {
+            root,
+            location: StateLocation::AppData,
+            dir: outside.clone(),
+            appdata_dir: outside,
+        }
+    }
+
     pub fn location(&self) -> StateLocation {
         self.location
     }

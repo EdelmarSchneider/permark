@@ -4868,6 +4868,7 @@ version = "0.4.0"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
+ "chrono",
  "comrak",
  "dirs",
  "dunce",

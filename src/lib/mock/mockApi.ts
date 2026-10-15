@@ -29,6 +29,7 @@ import {
 import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./mockFileOps";
 import { agentStatus, publishAgentContext, setAgentConnection, takeAgentOpen } from "./mockAgent";
 import { addComment, deleteComment, listComments, setCommentDone } from "./mockComments";
+import * as mockNotes from "./mockNotes";
 import { listUnread, markAllRead, markFolderRead, markRead, markUnread } from "./mockUnread";
 import {
   createDocument,
@@ -129,7 +130,7 @@ export const mockImpl: Api = {
   listTree: async () => mockTree(),
   readDocument: async (path) => {
     await wait(40);
-    return getDocument(path);
+    return mockNotes.unbornView(path) ?? getDocument(path);
   },
   resolveLink: async (from, href) => resolveMockLink(from, href),
   gitSnapshot: async () => mockSnapshot(),
@@ -210,7 +211,7 @@ export const mockImpl: Api = {
   filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
   metaIndex: async () => metaIndex(),
   cleanUpMeta: async () => cleanUp(),
-  documentSource: (path) => documentSource(path),
+  documentSource: async (path) => mockNotes.unbornSource(path) ?? (await documentSource(path)),
   parseBlocks: (text) => parseBlocks(text),
   renderFragments: (texts) => renderFragments(texts),
   saveDocument: (path, text, expectedHash) => saveDocument(path, text, expectedHash),
@@ -234,5 +235,42 @@ export const mockImpl: Api = {
   listComments: async () => listComments(),
   setCommentDone: async (id, done) => setCommentDone(id, done),
   deleteComment: async (id) => deleteComment(id),
+  launchMode: async () => mockNotes.launchMode(),
+  notesFolder: async () => mockNotes.notesFolder(),
+  setNotesFolder: async (path) => mockNotes.setNotesFolder(path),
+  createNotesFolder: async () => mockNotes.createNotesFolder(),
+  notesStartIn: async () => mockNotes.notesStartIn(),
+  setNotesStartIn: async (startIn) => mockNotes.setNotesStartIn(startIn),
+  notesOverview: async () => mockNotes.notesOverview(),
+  openNotes: async () => {
+    await wait(120);
+    return mockNotes.openNotes();
+  },
+  listNotes: async () => mockNotes.listNotes(),
+  newNote: async () => mockNotes.newNote(),
+  forgetNewNote: async (path) => mockNotes.forgetNewNote(path),
+  saveNote: async (path, text, expectedHash) => {
+    await wait(80);
+    return mockNotes.saveNote(path, text, expectedHash);
+  },
+  noteOpened: async (path) => mockNotes.noteOpened(path),
+  closeNote: async () => mockNotes.closeNote(),
+  setNoteView: async (path, view) => mockNotes.setNoteView(path, view),
+  setNotePinned: async (path, pinned) => mockNotes.setNotePinned(path, pinned),
+  setPinOrder: async (order) => mockNotes.setPinOrder(order),
+  renameNote: async (path, name) => mockNotes.renameNote(path, name),
+  deleteNotes: async (paths) => mockNotes.deleteNotes(paths),
+  undoDeleteNotes: async (undoId) => mockNotes.undoDeleteNotes(undoId),
+  deleteCopiedNotes: async () => mockNotes.deleteCopiedNotes(),
+  markNoteCopied: async (path) => mockNotes.markNoteCopied(path),
+  noteVersions: async (path) => mockNotes.noteVersions(path),
+  noteVersionText: async (path, id) => mockNotes.noteVersionText(path, id),
+  restoreNoteVersion: async (path, id) => mockNotes.restoreNoteVersion(path, id),
+  discardBlankNote: async (path) => mockNotes.discardBlankNote(path),
+  openNotesFolder: async () => {
+    console.info("[mock] open the notes folder");
+  },
+  showNotes: async (newNote, open) => mockNotes.showNotes(newNote, open),
+  takeNotesRequest: async () => mockNotes.takeNotesRequest(),
   on: async () => () => {},
 };

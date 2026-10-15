@@ -47,6 +47,18 @@ impl Language {
     }
 }
 
+/// Where TrailMark opens when it is started with no folder or file to open.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum StartIn {
+    /// The welcome screen, with the recent folders and the latest notes.
+    #[default]
+    #[serde(rename = "welcome")]
+    Welcome,
+    /// The Notes window.
+    #[serde(rename = "notes")]
+    Notes,
+}
+
 /// Reads an `Option<T>`, or `None` when the stored value is not one this build understands.
 fn lenient_option<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
 where
@@ -84,6 +96,20 @@ pub struct AppSettings {
         skip_serializing_if = "Option::is_none"
     )]
     pub editor_command: Option<String>,
+    /// The folder the person chose for their notes. `None`: the default folder (see `notes::folder`).
+    #[serde(
+        rename = "notesFolder",
+        deserialize_with = "lenient_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub notes_folder: Option<String>,
+    /// Where TrailMark opens when it is started with nothing to open. `None`: the welcome screen.
+    #[serde(
+        rename = "startIn",
+        deserialize_with = "lenient_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub start_in: Option<StartIn>,
     /// Keys written by other versions, kept as they were.
     #[serde(flatten)]
     extra: BTreeMap<String, serde_json::Value>,
@@ -125,6 +151,20 @@ impl AppSettingsStore {
     pub fn set_editor_command(&self, command: &str) -> Result<(), SessionError> {
         let mut settings = self.load();
         settings.editor_command = Some(command.trim().to_owned());
+        self.save(&settings)
+    }
+
+    /// Records the folder the person chose for their notes, keeping every other setting.
+    pub fn set_notes_folder(&self, folder: &str) -> Result<(), SessionError> {
+        let mut settings = self.load();
+        settings.notes_folder = Some(folder.trim().to_owned());
+        self.save(&settings)
+    }
+
+    /// Records where TrailMark opens when it has nothing to open, keeping every other setting.
+    pub fn set_start_in(&self, start_in: StartIn) -> Result<(), SessionError> {
+        let mut settings = self.load();
+        settings.start_in = Some(start_in);
         self.save(&settings)
     }
 
@@ -268,6 +308,45 @@ mod tests {
             std::fs::write(&s.file, format!("{{\"editorCommand\": {value}}}")).expect("write");
             assert_eq!(s.load().editor_command, None, "{value}");
         }
+    }
+
+    #[test]
+    fn the_notes_folder_and_the_start_screen_are_kept_and_disturb_nothing_else() {
+        let (_d, s) = store();
+        let settings = s.load();
+        assert_eq!((settings.notes_folder, settings.start_in), (None, None));
+        s.set_language(Language::De).expect("save");
+        s.set_notes_folder("  /sync/notes ").expect("save");
+        s.set_start_in(StartIn::Notes).expect("save");
+        let settings = s.load();
+        assert_eq!(settings.notes_folder.as_deref(), Some("/sync/notes"));
+        assert_eq!(settings.start_in, Some(StartIn::Notes));
+        assert_eq!(settings.language, Some(Language::De));
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&s.file).expect("read")).expect("json");
+        assert_eq!(json["notesFolder"], "/sync/notes");
+        assert_eq!(json["startIn"], "notes");
+        s.set_start_in(StartIn::Welcome).expect("save");
+        assert_eq!(s.load().start_in, Some(StartIn::Welcome));
+        assert_eq!(s.load().notes_folder.as_deref(), Some("/sync/notes"));
+    }
+
+    #[test]
+    fn a_notes_setting_this_build_does_not_understand_reads_as_not_chosen() {
+        for value in ["7", "true", "[\"x\"]", "{}", "null"] {
+            let (_d, s) = store();
+            std::fs::write(
+                &s.file,
+                format!("{{\"notesFolder\": {value}, \"startIn\": {value}}}"),
+            )
+            .expect("write");
+            let settings = s.load();
+            assert_eq!(settings.notes_folder, None, "{value}");
+            assert_eq!(settings.start_in, None, "{value}");
+        }
+        let (_d, s) = store();
+        std::fs::write(&s.file, "{\"startIn\": \"somewhere\"}").expect("write");
+        assert_eq!(s.load().start_in, None);
     }
 
     #[test]

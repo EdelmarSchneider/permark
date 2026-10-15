@@ -81,6 +81,17 @@ fn socket_id(project_root: &Path, user: &str) -> String {
     hash_hex(format!("{user}\n{}", crate::session::project_key(project_root)).as_bytes())
 }
 
+/// Names the socket of the Notes window: the same for every program of this user that is given the same app data folder.
+fn notes_socket_id(app_data_dir: &Path, user: &str) -> String {
+    hash_hex(
+        format!(
+            "{user}\nnotes\n{}",
+            crate::session::project_key(app_data_dir)
+        )
+        .as_bytes(),
+    )
+}
+
 /// The user's private folder for sockets (see the module documentation).
 #[cfg(unix)]
 fn default_folder(user: &str) -> PathBuf {
@@ -159,16 +170,30 @@ impl Endpoint {
         Self::in_folder(&folder, project_root, &user)
     }
 
+    /// The socket of the Notes window of the app whose data is in `app_data_dir`, for the current user. There is one
+    /// Notes window for each app data folder, so a development build or a sandbox never reaches the installed program's.
+    pub(crate) fn for_notes(app_data_dir: &Path) -> Result<Self, SocketError> {
+        let user = user_name();
+        #[cfg(unix)]
+        let folder = default_folder(&user);
+        #[cfg(windows)]
+        let folder = std::env::temp_dir();
+        Self::named(&folder, &notes_socket_id(app_data_dir, &user))
+    }
+
     /// Like [`Endpoint::for_project`] with the folder and the user's name given (on Windows the pipe lives in its own
     /// namespace and the folder only holds the launch lock).
-    // A pipe's name cannot be refused, so on Windows this always succeeds; the signature is the same on every system.
-    #[allow(clippy::unnecessary_wraps)]
     pub(crate) fn in_folder(
         folder: &Path,
         project_root: &Path,
         user: &str,
     ) -> Result<Self, SocketError> {
-        let id = socket_id(project_root, user);
+        Self::named(folder, &socket_id(project_root, user))
+    }
+
+    // A pipe's name cannot be refused, so on Windows this always succeeds; the signature is the same on every system.
+    #[allow(clippy::unnecessary_wraps)]
+    fn named(folder: &Path, id: &str) -> Result<Self, SocketError> {
         #[cfg(windows)]
         {
             Ok(Self {

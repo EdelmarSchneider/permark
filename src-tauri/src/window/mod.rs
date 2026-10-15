@@ -23,12 +23,15 @@ use tauri::{
 };
 
 use crate::commands::{self, AppState};
+use crate::notes_commands::NotesLaunch;
 use crate::session::{saved_for_launch, WindowState};
 use place::{place, Limits, Rect, Screen};
 use track::{Debounce, Snapshot, Tracker};
 
 /// The label of the window in `tauri.conf.json`.
 const MAIN: &str = "main";
+/// The folder in the app's data where the Notes window keeps its size and position.
+const NOTES_WINDOW_DIR: &str = "notes-window";
 /// The window is looked at once it has been still this long, and at least this often while it is not.
 const STILL_FOR: Duration = Duration::from_millis(400);
 const AT_LEAST_EVERY: Duration = Duration::from_secs(3);
@@ -89,8 +92,21 @@ pub fn setup(app: &App) {
         return;
     };
     if let Ok(app_data) = app.path().app_data_dir() {
+        // The Notes window has a place of its own: it is not the project window's, and not another project's.
+        let notes_window = app
+            .try_state::<NotesLaunch>()
+            .is_some_and(|launch| launch.is_notes_window());
+        let place_dir = if notes_window {
+            app_data.join(NOTES_WINDOW_DIR)
+        } else {
+            app_data.clone()
+        };
         let opening = commands::command_line_path();
-        let saved = saved_for_launch(&app_data, opening.as_deref().map(Path::new));
+        let saved = if notes_window {
+            WindowState::load(&place_dir)
+        } else {
+            saved_for_launch(&app_data, opening.as_deref().map(Path::new))
+        };
         let placed = saved.and_then(|saved| restore(&window, &saved, min_size(app)));
 
         let host = app.state::<AppState>().inner().clone();
@@ -98,8 +114,10 @@ pub fn setup(app: &App) {
             tracker: Mutex::new(Tracker::new(placed)),
             write: Box::new(move |state| {
                 // Best effort: a window that cannot be remembered is not worth an error.
-                let _ = state.save(&app_data);
-                host.save_window(state);
+                let _ = state.save(&place_dir);
+                if !notes_window {
+                    host.save_window(state);
+                }
             }),
         });
         let (handle, looking) = (app.handle().clone(), Arc::clone(&remembered));
@@ -114,8 +132,8 @@ pub fn setup(app: &App) {
     let _ = window.show();
 }
 
-/// Brings the window to the front, for a path that was opened from outside the app.
-#[cfg(target_os = "macos")]
+/// Brings the window to the front, for a path that was opened from outside the app (macOS) and for a request to the Notes
+/// window from another TrailMark window.
 pub fn raise(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN) {
         let _ = window.unminimize();

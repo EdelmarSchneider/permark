@@ -43,7 +43,13 @@ use crate::workspace::{Asset, ChangedSince, EventSink, VaultInfo, Workspace, Wor
 pub type AppState = WorkspaceHost;
 
 /// Emits the contract's events to the webview.
-struct TauriSink(AppHandle);
+pub(crate) struct TauriSink(AppHandle);
+
+impl TauriSink {
+    pub(crate) fn new(app: AppHandle) -> Self {
+        Self(app)
+    }
+}
 
 impl EventSink for TauriSink {
     fn fs_change(&self, batch: &FsBatch) {
@@ -91,7 +97,7 @@ impl EventSink for TauriSink {
 }
 
 /// Runs blocking work on the blocking thread pool.
-async fn blocking<T, F>(f: F) -> Result<T, AppError>
+pub(crate) async fn blocking<T, F>(f: F) -> Result<T, AppError>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, AppError> + Send + 'static,
@@ -101,7 +107,7 @@ where
         .map_err(|e| AppError::Internal(e.to_string()))?
 }
 
-fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
+pub(crate) fn app_data_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
     app.path()
         .app_data_dir()
         .map_err(|e| AppError::Internal(e.to_string()))
@@ -826,13 +832,16 @@ mod tests {
     const CONTRACT: &str = include_str!("../ipc-contract.json");
     const LIB_SRC: &str = include_str!("lib.rs");
     const COMMANDS_SRC: &str = include_str!("commands.rs");
+    const NOTES_COMMANDS_SRC: &str = include_str!("notes_commands.rs");
 
-    /// This file without its test module (whose own text would match the scans below).
-    fn production_source() -> &'static str {
-        COMMANDS_SRC
+    /// The commands of the app: this file without its test module (whose own text would match the scans below), and the
+    /// commands of the Notes window.
+    fn production_source() -> String {
+        let own = COMMANDS_SRC
             .split("#[cfg(test)]")
             .next()
-            .unwrap_or_default()
+            .unwrap_or_default();
+        format!("{own}\n{NOTES_COMMANDS_SRC}")
     }
 
     /// Splits a parameter list at the commas that are not inside `<...>` or `(...)`.
@@ -858,7 +867,8 @@ mod tests {
     /// (everything except the injected `AppHandle` and `State`).
     fn declared_commands() -> BTreeMap<String, Vec<String>> {
         let mut out = BTreeMap::new();
-        for chunk in production_source()
+        let source = production_source();
+        for chunk in source
             .split(
                 "
 #[tauri::command]",
@@ -901,14 +911,19 @@ mod tests {
             .and_then(|rest| rest.split(']').next())
             .expect("generate_handler! in lib.rs");
         list.split(',')
-            .filter_map(|item| item.trim().strip_prefix("commands::"))
+            .filter_map(|item| {
+                let item = item.trim();
+                item.strip_prefix("commands::")
+                    .or_else(|| item.strip_prefix("notes_commands::"))
+            })
             .map(str::to_owned)
             .collect()
     }
 
-    /// The event names passed to `.emit("...")` in this file.
+    /// The event names passed to `.emit("...")` in the files of the commands.
     fn emitted_events() -> BTreeSet<String> {
-        production_source()
+        let source = production_source();
+        source
             .split(".emit(")
             .skip(1)
             .filter_map(|rest| {
