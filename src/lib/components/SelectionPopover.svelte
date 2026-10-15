@@ -4,7 +4,10 @@
   import { keys, t } from "../i18n";
   import { copyText } from "../platform";
   import { app } from "../stores/app.svelte";
+  import { docs } from "../stores/docs.svelte";
+  import { notes } from "../stores/notes.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { vault } from "../stores/vault.svelte";
   import Icon from "./Icon.svelte";
 
   const SHOW_DELAY_MS = 150;
@@ -13,6 +16,9 @@
   let info = $state<{ text: string; section: string | null; rect: DOMRect } | null>(null);
   let pos = $state({ left: 0, top: 0 });
   let timer: ReturnType<typeof setTimeout> | null = null;
+
+  /** A note can be left on a passage of a Markdown document of a project. */
+  const canNote = $derived(!vault.isSimple && docs.current?.kind === "markdown" && !docs.editing);
 
   function hide(): void {
     if (timer !== null) clearTimeout(timer);
@@ -46,6 +52,8 @@
       timer = setTimeout(() => {
         const body = bodyEl();
         info = body ? selectionIn(body) : null;
+        // a note asked for from somewhere that takes the selection away is written on this one
+        if (info) notes.remember();
       }, SHOW_DELAY_MS);
     };
     const onMouseDown = (e: MouseEvent): void => {
@@ -70,6 +78,11 @@
   async function copyWithReference(): Promise<void> {
     if (!info) return;
     await app.copyQuote(info.text, info.section, "selection");
+  }
+
+  function addNote(): void {
+    hide();
+    notes.begin();
   }
 
   async function copyPlain(): Promise<void> {
@@ -99,5 +112,13 @@
       <Icon name={ui.flashed === "selection-plain" ? "check" : "copy"} size="sm" />
       <span>{ui.flashed === "selection-plain" ? t("common.copied") : t("selection.copy")}</span>
     </button>
+    {#if canNote}
+      <span class="divider"></span>
+      <button type="button" class="btn" title={t("notes.addHint")} onclick={addNote}>
+        <Icon name="note" size="sm" />
+        <span>{t("notes.add")}</span>
+        <kbd class="hint-kbd">{keys("N")}</kbd>
+      </button>
+    {/if}
   </div>
 {/if}

@@ -2,6 +2,7 @@
 // bar, the selection popover). Components that need DOM access to the rendered document go through here.
 
 import type { Heading, SelectedText } from "./agentContext";
+import type { NoteTarget } from "./dom/noteDom";
 import type { BlockMap } from "./editor/blockModel";
 import type { VisualInput } from "./editor/visual/editor";
 import type { FindMode } from "./find";
@@ -114,6 +115,8 @@ export type DocBridge = {
   topLine?: () => number | null;
   /** The headings and the selection of the document in the reading view. */
   readingSnapshot?: () => ReadingSnapshot | null;
+  /** The selection in the reading view, ready for a review note: the text, its lines and headings, where it is. */
+  noteTarget?: () => NoteTarget | null;
   /** Set while the source editor is on screen. */
   editor?: EditorApi;
 };

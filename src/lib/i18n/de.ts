@@ -55,7 +55,7 @@ export const de = {
   "panel.resizeHint": "Zum Ändern ziehen, Doppelklick setzt zurück",
 
   // ---- right panel tabs and the outline
-  "panel.label": "Änderungen und Gliederung",
+  "panel.label": "Änderungen, Gliederung und Notizen",
   "panel.tabs": "Ansichten des rechten Panels",
   "panel.tabChanges": "Änderungen",
   "panel.tabChangesHint": "Live-Änderungen und was sich seit dem letzten Besuch geändert hat",
@@ -367,6 +367,53 @@ export const de = {
   "selection.copyWithReference": "Mit Verweis kopieren",
   "selection.copy": "Kopieren",
   "reference.section": 'Abschnitt "{name}"',
+
+  // ---- Review-Notizen
+  "panel.tabNotes": "Notizen",
+  "panel.tabNotesHint": "Deine Review-Notizen zu den Dokumenten",
+  "cmd.addNote": "Notiz zur Auswahl hinzufügen",
+  "cmd.showNotes": "Review-Notizen anzeigen",
+  "notes.add": "Notiz",
+  "notes.addHint": "Eine Notiz zu dieser Stelle hinterlassen",
+  "notes.selectFirst": "Wähle zuerst eine Stelle im Dokument aus und füge dann die Notiz hinzu.",
+  "notes.field.label": "Notiz zur ausgewählten Stelle",
+  "notes.field.placeholder": "Notiz schreiben...",
+  "notes.field.hint": "Eingabe speichert, Esc bricht ab",
+  "notes.failed": "Die Notiz konnte nicht gespeichert werden: {message}",
+  "notes.bar": "Notiz: {text}",
+  "notes.empty.title": "Noch keine Notizen",
+  "notes.empty.text":
+    "Wähle eine Stelle in einem Dokument und drücke N, um eine Notiz zu hinterlassen. Ein verbundener Agent kann deine Notizen lesen und als erledigt markieren.",
+  "notes.allDone": "Alle Notizen sind erledigt.",
+  "notes.done.one": "{n} erledigt",
+  "notes.done.other": "{n} erledigt",
+  "notes.count.one": "{n} Notiz",
+  "notes.count.other": "{n} Notizen",
+  "notes.statusHint": "Offene Review-Notizen. Klicken, um sie zu sehen.",
+  "notes.list": "Review-Notizen",
+  "notes.groupLabel": "Notizen in {path}",
+  "notes.markDone": "Als erledigt markieren",
+  "notes.reopen": "Als offen markieren",
+  "notes.jump": "Zur Stelle gehen",
+  "notes.delete": "Notiz löschen",
+  "notes.line": "Zeile {line}",
+  "notes.reply": "Antwort",
+  "notes.state.passageChanged": "Stelle geändert",
+  "notes.state.passageChangedHint":
+    "Dieser Text steht nicht mehr im Dokument. Die Notiz zeigt auf die nächstgelegene Stelle.",
+  "notes.state.documentGone": "Dokument fehlt",
+  "notes.state.documentGoneHint":
+    "Das Dokument wurde gelöscht oder außerhalb von TrailMark verschoben.",
+  "notes.jump.gone": "{path} ist nicht mehr im Projekt.",
+  "agent.shares.notes":
+    "Deine Review-Notizen. Ein Agent kann eine Notiz als erledigt markieren, mehr nicht.",
+  "agent.request.list_notes": "Deine Review-Notizen gelesen",
+  "agent.request.resolve_note": "Eine Notiz als erledigt markiert",
+  "error.notADocument": "{subject} ist kein Markdown-Dokument dieses Projekts.",
+  "error.emptyNote": "Eine Notiz braucht eine ausgewählte Stelle und etwas Text.",
+  "error.tooManyNotes": "Dieses Projekt hat bereits die höchste Zahl an Notizen, die es speichern kann.",
+  "error.noteNotFound": "Diese Notiz gibt es nicht mehr.",
+  "error.noteSingleFile": "Notizen gehören zu einem Projektordner, nicht zu einer einzelnen Datei.",
 
   // ---- live changes
   "live.label": "Live-Änderungen",

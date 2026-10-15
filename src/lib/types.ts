@@ -195,6 +195,44 @@ export type AgentOpen = {
   headingNotFound?: boolean;
 };
 
+// ---- review notes (docs/design/v0.4.md section 3) ---------------------------------------------------
+
+/** Whether a note's passage could be found again in the document. */
+export type NotePassage = "anchored" | "passageChanged" | "documentGone";
+
+/** A note with its place worked out against the document as it is now. */
+export type Note = {
+  id: string;
+  /** The document (a path of the project). */
+  path: string;
+  /** What the person wrote. */
+  text: string;
+  /** The passage the note is on, as it was selected. */
+  quote: string;
+  /** The headings above the passage, its own section last. */
+  headingPath: string[];
+  /** Where the passage is now (lines from 1); the best guess unless `state` is `anchored`. */
+  line: number;
+  endLine: number;
+  createdMs: number;
+  state: NotePassage;
+  done: boolean;
+  doneMs?: number;
+  doneBy?: "person" | "agent";
+  /** A short answer from the agent that marked the note done. */
+  reply?: string;
+};
+
+/** A note the person just wrote: the passage as the reading view knows it. */
+export type NewNote = {
+  path: string;
+  quote: string;
+  text: string;
+  headingPath: string[];
+  line: number;
+  endLine: number;
+};
+
 // ---- editing (docs/design/v0.2.md section 3) -------------------------------------------------------
 /** What a top-level block is; decides what the Visual editor may do with it (locked blocks keep their bytes). */
 export type BlockKind =

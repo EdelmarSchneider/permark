@@ -5,6 +5,7 @@
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
   import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
+  import NoteField from "./lib/components/NoteField.svelte";
   import OutlinePopover from "./lib/components/OutlinePopover.svelte";
   import SearchEverywhere from "./lib/components/SearchEverywhere.svelte";
   import TagEditor from "./lib/components/TagEditor.svelte";
@@ -20,6 +21,7 @@
   import { docs } from "./lib/stores/docs.svelte";
   import { edit } from "./lib/stores/edit.svelte";
   import { fileops } from "./lib/stores/fileops.svelte";
+  import { notes } from "./lib/stores/notes.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
   import { unread } from "./lib/stores/unread.svelte";
@@ -56,6 +58,12 @@
     const onShow =
       app.screen === "project" && !vault.isSimple && view?.kind === "markdown" ? view.path : null;
     unread.watch(onShow, !docs.editing && !edit.active && docs.deleted === null);
+  });
+
+  // The review notes are found again in a document each time it is drawn (opened, saved, changed by someone else).
+  $effect(() => {
+    void docs.request?.rev;
+    untrack(() => notes.documentChanged());
   });
 
   onMount(() => {
@@ -130,6 +138,7 @@
   {#if ui.tagEditor}<TagEditor />{/if}
   {#if ui.outlinePopover}<OutlinePopover />{/if}
   <SelectionPopover />
+  {#if notes.draft}<NoteField />{/if}
   <AgentPublisher />
 {:else}
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>

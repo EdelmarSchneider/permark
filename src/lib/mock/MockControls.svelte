@@ -16,6 +16,7 @@
   } from "./driver";
   import { mockFiles } from "./fixtures";
   import { agentAsks, agentConnects, agentOpens } from "./mockAgent";
+  import { agentResolves } from "./mockNotes";
   import { setMetaProblem } from "./mockMeta";
 
   let open = $state(false);
@@ -89,6 +90,9 @@
       <button class="btn" onclick={() => agentAsks("get_context")}>Agent asks context</button>
       <button class="btn" onclick={() => agentAsks("search", "rollout plan")}>
         Agent searches
+      </button>
+      <button class="btn" onclick={() => agentResolves("Rewritten in 3f2a1c")}>
+        Agent resolves a note
       </button>
       <button class="btn" onclick={() => agentOpens("docs/specs/watcher.md", 12)}>
         Agent opens a place

@@ -5,6 +5,7 @@ describe("normalizeRightTab", () => {
   it("keeps the views this build knows", () => {
     expect(normalizeRightTab("changes")).toBe("changes");
     expect(normalizeRightTab("outline")).toBe("outline");
+    expect(normalizeRightTab("notes")).toBe("notes");
   });
 
   it("reads anything else as Changes: a missing value, a newer view, a wrong type", () => {
@@ -17,8 +18,10 @@ describe("normalizeRightTab", () => {
 describe("stepTab", () => {
   it("moves to the neighbour and wraps around", () => {
     expect(stepTab("changes", 1)).toBe("outline");
-    expect(stepTab("outline", 1)).toBe("changes");
-    expect(stepTab("changes", -1)).toBe("outline");
+    expect(stepTab("outline", 1)).toBe("notes");
+    expect(stepTab("notes", 1)).toBe("changes");
+    expect(stepTab("changes", -1)).toBe("notes");
+    expect(stepTab("notes", -1)).toBe("outline");
     expect(stepTab("outline", -1)).toBe("changes");
   });
 });

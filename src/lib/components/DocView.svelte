@@ -6,6 +6,7 @@
   import { DomFind } from "../dom/domFind";
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
   import { anchorTarget, findById, selectionIn, selectionLines } from "../dom/domUtil";
+  import { noteTargetIn } from "../dom/noteDom";
   import { readBlocks, readHeadingLines } from "../dom/outlineDom";
   import { enhanceContextFor } from "../dom/enhanceContext";
   import type { EnhanceContext } from "../dom/enhance";
@@ -13,12 +14,15 @@
   import { showsAtTop } from "../editor/viewport";
   import { frontmatterValue } from "../frontmatter";
   import { t, tn } from "../i18n";
+  import { barFor, type BlockBox } from "../noteBars";
+  import { barNotes } from "../notes";
   import { buildOutline, currentHeading } from "../outline";
   import { assetUrl } from "../platform";
   import { basename, decodeFragment } from "../paths";
   import { blockForLine, parseSourcepos } from "../sourcepos";
   import { app } from "../stores/app.svelte";
   import { docs, type LocateRequest, type RenderRequest } from "../stores/docs.svelte";
+  import { notes } from "../stores/notes.svelte";
   import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
   import { toast } from "../stores/toast.svelte";
@@ -51,6 +55,11 @@
   let frame = 0;
   let missing = $state<{ anchor: DOMRect; path: string } | null>(null);
   let refMenu = $state<RefMenu | null>(null);
+  let article: HTMLElement | undefined = $state();
+  /** A bar in the margin beside the passage of an open review note. */
+  type NoteBar = { id: string; top: number; height: number; text: string };
+  let noteBars = $state.raw<NoteBar[]>([]);
+  let barFrame = 0;
 
   const view = $derived(docs.current);
   const showArticle = $derived(!!view && view.kind !== "binary" && view.kind !== "tooLarge");
@@ -124,6 +133,7 @@
     });
     docs.reportRender({ changed: result.changed.length, removed: result.removedMarkers.length });
     reportOutline(view);
+    scheduleBars();
 
     if (req.mode === "fresh") {
       position(req, result);
@@ -144,7 +154,9 @@
     }
     // diagrams, math and images change the layout once they have loaded
     void result.settled.then(() => {
-      if (renderedRev === req.rev) updateCurrent();
+      if (renderedRev !== req.rev) return;
+      updateCurrent();
+      scheduleBars();
     });
     const rerun = (keep: boolean): void => {
       if (renderedRev !== req.rev) return;
@@ -326,7 +338,59 @@
     outline.setCurrent(index);
   }
 
+  // ---- review notes: the bars in the margin ----------------------------------------------------------
+
+  /** The blocks of the rendered document (the ones that know their lines), measured from `origin`. */
+  function measureBlocks(origin: number): BlockBox[] {
+    const boxes: BlockBox[] = [];
+    for (const el of body?.querySelectorAll<HTMLElement>("[data-sourcepos]") ?? []) {
+      const lines = parseSourcepos(el.getAttribute("data-sourcepos"));
+      const rect = el.getBoundingClientRect();
+      if (!lines || rect.height === 0) continue;
+      // a list item that holds a list ends where the list begins: its own text is what a note is on
+      const nested = el.tagName === "LI" ? el.querySelector(":scope > ul, :scope > ol") : null;
+      let depth = 0;
+      for (let up = el.parentElement; up && up !== body; up = up.parentElement) depth++;
+      boxes.push({
+        ...lines,
+        depth,
+        top: rect.top - origin,
+        bottom: (nested ? nested.getBoundingClientRect().top : rect.bottom) - origin,
+      });
+    }
+    return boxes;
+  }
+
+  /** Measures the bars of the open notes of the document on show. */
+  function layoutBars(): void {
+    barFrame = 0;
+    const path = docs.current?.path ?? null;
+    const list = body && article && !docs.editing ? barNotes(notes.all, path) : [];
+    if (list.length === 0) {
+      if (noteBars.length > 0) noteBars = [];
+      return;
+    }
+    const boxes = measureBlocks(article?.getBoundingClientRect().top ?? 0);
+    noteBars = list.flatMap((note) => {
+      const bar = barFor(boxes, note.line, note.endLine);
+      return bar ? [{ id: note.id, ...bar, text: note.text }] : [];
+    });
+  }
+
+  /** Measures the bars once the page has settled (a burst of changes asks once). */
+  function scheduleBars(): void {
+    if (barFrame === 0) barFrame = requestAnimationFrame(layoutBars);
+  }
+
   // ---- effects ----------------------------------------------------------------------------------------
+
+  // the notes, the document or the way it is shown changed: the bars are measured again
+  $effect(() => {
+    void notes.all;
+    void docs.current?.path;
+    void docs.editing;
+    untrack(scheduleBars);
+  });
 
   $effect(() => {
     const req = docs.request;
@@ -453,7 +517,14 @@
         selection: selected ? { text: selected.text, ...selectionLines(body) } : null,
       };
     };
+    bridge.noteTarget = () => (body ? noteTargetIn(body) : null);
+    // images, diagrams, the zoom and the reading width change the height of what is above a note
+    const watcher = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleBars);
+    if (body) watcher?.observe(body);
     return () => {
+      watcher?.disconnect();
+      bridge.noteTarget = undefined;
+      if (barFrame) cancelAnimationFrame(barFrame);
       bridge.readingSnapshot = undefined;
       bridge.topLine = undefined;
       bridge.jumpChange = undefined;
@@ -616,6 +687,7 @@
 
   <div class="doc-column">
     <article
+      bind:this={article}
       class={["md", tombstone && "is-tombstone"]}
       style:--zoom={session.zoom}
       hidden={!showArticle}
@@ -641,6 +713,22 @@
       <!-- the backend's sanitized HTML is injected here by DocRenderer; links and code references are handled in onclick -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div bind:this={body} class="md-body" {onclick} {onkeydown} {oncontextmenu}></div>
+      {#if noteBars.length > 0}
+        <div class="note-bars">
+          {#each noteBars as bar (bar.id)}
+            <button
+              type="button"
+              class="note-bar"
+              tabindex="-1"
+              style:top="{bar.top}px"
+              style:height="{bar.height}px"
+              title={bar.text}
+              aria-label={t("notes.bar", { text: bar.text })}
+              onclick={() => app.showNote(bar.id)}
+            ></button>
+          {/each}
+        </div>
+      {/if}
     </article>
   </div>
 </div>

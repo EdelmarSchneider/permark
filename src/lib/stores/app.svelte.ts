@@ -22,7 +22,15 @@ import { selectOnly } from "../tagModel";
 import { batchTouches, nextUnread } from "../unread";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import { normalizeTreeFilter, treeLoadOf } from "../treeFilter";
-import type { AgentOpen, FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
+import type {
+  AgentOpen,
+  FsBatch,
+  LinkTarget,
+  Note,
+  RecentVault,
+  SearchHit,
+  VaultInfo,
+} from "../types";
 import { agent } from "./agent.svelte";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
@@ -31,6 +39,7 @@ import { editorCommand } from "./editorCommand.svelte";
 import { feed } from "./feed.svelte";
 import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
+import { notes } from "./notes.svelte";
 import { outline } from "./outline.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
@@ -201,6 +210,7 @@ class AppStore {
       search.reset();
       tags.reset();
       toast.clear();
+      notes.reset();
       unread.reset();
       vault.reset();
       ui.followChip = null;
@@ -235,6 +245,7 @@ class AppStore {
         void tags.refreshIndex();
         void vault.refreshImageRefs();
         void unread.refresh();
+        void notes.refresh();
       }
       const restored = session.load(stored);
       this.screen = "project";
@@ -291,6 +302,9 @@ class AppStore {
       }),
       await api.on("unread-changed", (paths) => {
         if (this.screen === "project" && !vault.isSimple) unread.onChanged(paths);
+      }),
+      await api.on("notes-changed", () => {
+        if (this.screen === "project" && !vault.isSimple) notes.onChanged();
       }),
       await api.on("open-path", (path) => void this.openProject(path)),
       await api.on("show-in-project", (path) => {
@@ -379,6 +393,7 @@ class AppStore {
     const update = feed.apply(batch, now);
     if (batch.rescan) void vault.refreshTree();
     tags.onFilesChanged();
+    notes.filesChanged(batch);
 
     const docChanged = update.bulk !== null || update.files.some((f) => f.isDoc);
     if (docChanged && !session.right.open) ui.rightNotify = true;
@@ -453,6 +468,31 @@ class AppStore {
   /** Opens a document because it changed (feed row, toast, Follow): marks what is new in it. */
   openChanged(path: string): Promise<boolean> {
     return this.openDoc(path, { fromChange: true });
+  }
+
+  // ---- review notes -----------------------------------------------------------------------------------
+
+  /** Shows the Notes tab of the right panel, opening the panel when it is collapsed. */
+  showNotes(): void {
+    if (vault.isSimple) return;
+    if (!session.right.open) session.setPanel("right", { open: true });
+    ui.rightNotify = false;
+    this.showRightTab("notes");
+  }
+
+  /** A bar in the margin was clicked: the Notes tab shows the note. */
+  showNote(id: string): void {
+    this.showNotes();
+    notes.show(id);
+  }
+
+  /** Opens the document a note is on at its passage (the section it points to when the passage changed). */
+  async openNote(note: Note): Promise<void> {
+    if (note.state === "documentGone") {
+      toast.message(t("notes.jump.gone", { path: note.path }), "info");
+      return;
+    }
+    await this.openDoc(note.path, { locate: { line: note.line, find: null } });
   }
 
   /** Opens the file at the section a search hit is in, marking the words that were searched for. */
@@ -832,12 +872,14 @@ class AppStore {
       case "openFile":
         return void this.chooseFile();
       case "searchEverywhere":
-        if (ide) ui.openSearch();
+        if (ide) this.openSearchBox();
         return;
       case "quickOpen":
-        if (ide) ui.openSearch("files");
+        if (ide) this.openSearchBox("files");
         return;
       case "commands":
+        // the box takes the selection away: a note asked for from it is on what was selected a moment ago
+        notes.remember();
         ui.openSearch("commands");
         return;
       case "searchAll":
@@ -848,6 +890,12 @@ class AppStore {
         return this.showTags();
       case "editTags":
         if (ide && docs.current && !edit.active) ui.openTagEditor();
+        return;
+      case "addNote":
+        if (ide && !edit.active) notes.begin();
+        return;
+      case "showNotes":
+        if (ide) this.showNotes();
         return;
       case "edit":
         if (docs.current && !edit.active) void edit.enter();
@@ -959,6 +1007,12 @@ class AppStore {
         if (ide) void this.copyAgentSetup();
         return;
     }
+  }
+
+  /** Opens Search everywhere. A note asked for from the box is on what was selected before it opened. */
+  private openSearchBox(scope?: "files"): void {
+    notes.remember();
+    ui.openSearch(scope);
   }
 
   /** The Explorer is the sidebar's view and the sidebar is open; the focus stays where it is. */

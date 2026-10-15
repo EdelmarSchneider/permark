@@ -21,6 +21,7 @@ export type MenuAction =
   | "showOnlyUnread"
   | "markFolderRead"
   | "markUnread"
+  | "showNotes"
   | "revealInTree"
   | "baselineLastVisit"
   | "baselineCommit"
@@ -86,6 +87,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "toggleLeft", label: "cmd.toggleLeft", shortcut: "Ctrl+B", available: inFolder },
   { id: "toggleRight", label: "cmd.toggleRight", shortcut: "Ctrl+Alt+B", available: inFolder },
   { id: "toggleOutline", label: "cmd.toggleOutline", shortcut: "Ctrl+Alt+O" },
+  { id: "showNotes", label: "cmd.showNotes", available: inFolder },
   { id: "toggleFollow", label: "cmd.toggleFollow", shortcut: "Ctrl+Shift+L", available: inFolder },
   { id: "zoomIn", label: "cmd.zoomIn", shortcut: "Ctrl+=" },
   { id: "zoomOut", label: "cmd.zoomOut", shortcut: "Ctrl+-" },
@@ -102,6 +104,12 @@ export const COMMANDS: readonly Command[] = [
     id: "editTags",
     label: "cmd.editTags",
     shortcut: "T",
+    available: (ctx) => ctx.ide && reading(ctx),
+  },
+  {
+    id: "addNote",
+    label: "cmd.addNote",
+    shortcut: "N",
     available: (ctx) => ctx.ide && reading(ctx),
   },
 
