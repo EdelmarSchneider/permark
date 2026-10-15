@@ -171,6 +171,13 @@
     display: none;
   }
 }
+/* While editing, the file name matters more than the label of Copy reference: below this width it is an icon (its tooltip says what it
+   does), so a longer language does not squeeze the name away. */
+@container (max-width: 960px) {
+  .doc-header.is-editing .actions .btn--ghost span {
+    display: none;
+  }
+}
 /* The narrowest header (a window of the minimum size with both panels open) is for the switch, Save and the menu while editing: the file
    name, its git letter and Done (the Read segment does the same) wait until there is room. */
 @container (max-width: 400px) {

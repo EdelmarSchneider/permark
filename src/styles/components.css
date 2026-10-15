@@ -445,6 +445,23 @@
   white-space: nowrap;
   overflow: hidden;
 }
+/* A long folder or a longer word for "saves" never cuts a word in half: the folder gives way first, with an ellipsis, then the
+   name a file was renamed from. */
+.feed-row__meta > span {
+  flex: none;
+}
+.feed-row__meta > .feed-row__folder {
+  flex: 0 200 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-row__meta > .feed-row__tail {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .feed-row__time {
   font-size: var(--fs-ui-xs);
   color: var(--faint);
@@ -1718,10 +1735,22 @@ mark {
 .doc-header .breadcrumb .current {
   overflow: hidden;
   text-overflow: ellipsis;
+  /* the file name is what the person looks for: it keeps a few letters while the folders in front of it shrink first */
+  min-width: 6ch;
+}
+.doc-header .breadcrumb button {
+  min-width: 0;
+  flex-shrink: 10;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doc-header .breadcrumb .sep {
+  flex: none;
 }
 .doc-header .doc-meta,
 .doc-header .doc-chip {
-  flex: 0 1 auto;
+  /* "saved 2 min ago" gives way (with an ellipsis) before the file name does */
+  flex: 0 6 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
