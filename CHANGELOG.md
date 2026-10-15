@@ -36,7 +36,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Visual editing keeps the keyboard focus and `Ctrl+Z` across a save. A save used to load the document again: after `Ctrl+S` (and after every
-  autosave of a note) the characters typed next were lost, and undo stopped at the last save.
+  autosave of a note) the characters typed next were lost, undo stopped at the last save, and a space typed just before the save
+  (`alpha ` then `beta`) was dropped, so the words joined.
+- `C` (comment), `E` (edit) and `T` (tags) work right after a result of Search everywhere is opened; they used to do nothing until `Esc`.
 - A save works for a file whose path is longer than 260 characters on Windows. Since 0.4.0 it failed with "path not found".
 
 ## [0.4.0] - 2026-10-15
