@@ -73,3 +73,50 @@ jobs:
 
       - name: Quality gate
         run: npm run check
+
+  # The build that goes to the Microsoft Store is the same program with the cargo feature `store` (docs/msstore.md). The gate
+  # above covers the default build; this covers the other one, on the one platform it exists for, and checks that the
+  # package manifest and logos are still valid.
+  store-flavor:
+    name: Store flavor (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable, with clippy)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Needed by `tauri::generate_context!`, as in the gate.
+      - name: Build the frontend
+        run: npm run build
+
+      # One command per step: a Windows step only fails on the exit code of its last command.
+      - name: Clippy, store flavor
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features store -- -D warnings
+
+      - name: Tests, store flavor
+        run: cargo test --manifest-path src-tauri/Cargo.toml --features store --lib
+
+      # MakeAppx checks the manifest against the package schema and that every file it names is there. A stand-in
+      # program is packed (the real build takes a release build); this package is not kept.
+      - name: Pack the manifest with a stand-in program
+        shell: pwsh
+        run: ./scripts/build-msix.ps1 -ExePath "$env:SystemRoot\System32\whoami.exe" -OutDir "$env:RUNNER_TEMP\msix-check"

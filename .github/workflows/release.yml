@@ -3,6 +3,9 @@ name: Release
 # Pushing a `v*` tag (made by `git flow release finish`) builds the installers for Windows,
 # macOS (universal) and Linux, signs the updater artifacts and publishes the GitHub release together with
 # `latest.json`, the manifest the in-app updater reads.
+#
+# The same tag also builds the Microsoft Store package (the `msix` job, see docs/msstore.md). It is a workflow artifact,
+# never a release asset: the package is unsigned (the Store signs it), so nobody can install it by hand.
 
 on:
   push:
@@ -14,9 +17,17 @@ on:
         description: "Existing release tag to build (e.g. v0.2.0)"
         required: true
       platforms:
-        description: "Comma-separated runners to build: windows-latest, macos-latest, ubuntu-22.04 (or all)"
+        description: "Comma-separated runners to build: windows-latest, macos-latest, ubuntu-22.04 (or all; none builds no installers)"
         required: true
         default: all
+      msix:
+        description: "Also build the Microsoft Store package (unsigned, kept as an artifact of this run, not a release asset)"
+        type: boolean
+        default: false
+      msix_ref:
+        description: "Store package only: the branch, tag or commit to build it from (default: the tag above). It needs scripts/build-msix.ps1."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -152,3 +163,72 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # The Microsoft Store package: the Store flavor of the program, packed as an unsigned .msix by scripts/build-msix.ps1.
+  # It goes up as an artifact of this run, which is where the person who submits to the Store downloads it (the Store
+  # signs what is uploaded; an unsigned package cannot be installed by users, so it is not a release asset).
+  # A run started by hand (workflow_dispatch with `msix` on) builds one for any branch, tag or commit that has the script.
+  msix:
+    name: Microsoft Store package
+    if: github.event_name == 'push' || inputs.msix
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      REF: ${{ github.event_name == 'workflow_dispatch' && (inputs.msix_ref || inputs.tag) || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REF }}
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # A release is tagged after its version is bumped, so the tag and the app's version are the same number.
+      - name: Check that the tag is the app's version
+        if: github.event_name == 'push'
+        shell: pwsh
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "The tag $env:GITHUB_REF_NAME is not the app's version, $version."
+          }
+
+      - name: Build the Store flavor and pack it
+        id: pack
+        shell: pwsh
+        run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"
+
+      - name: Keep the package
+        uses: actions/upload-artifact@v4
+        with:
+          name: TrailMark-msix-${{ steps.pack.outputs.version }}
+          path: ${{ steps.pack.outputs.msix }}
+          if-no-files-found: error
+
+      - name: Say what was built
+        shell: pwsh
+        run: |
+          $package = Get-Item "${{ steps.pack.outputs.msix }}"
+          $commit = git rev-parse HEAD
+          @(
+            "### Microsoft Store package",
+            "",
+            "Built from ``$env:REF`` at commit ``$commit``.",
+            "",
+            "``$($package.Name)``, $([math]::Round($package.Length / 1MB, 1)) MiB, not signed. Download it from this run's artifacts and upload it in Partner Center."
+          ) | Add-Content -Path $env:GITHUB_STEP_SUMMARY
