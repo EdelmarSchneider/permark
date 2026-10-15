@@ -54,10 +54,11 @@ impl AgentBridge {
     }
 
     /// Turns the connection on or off. A connection that cannot start (the socket cannot be made) stays "on" as
-    /// a setting and reports why in the status, instead of failing the caller.
+    /// a setting and reports why in the status, instead of failing the caller. Off always clears that state (there
+    /// is nothing running to stop, but the failure is not kept), and on again tries again.
     pub fn set_enabled(&self, enabled: bool) -> AgentStatus {
         let mut running = lock(&self.running);
-        if enabled == running.is_some() {
+        if enabled && running.is_some() {
             return self.hub.status();
         }
         if enabled {
@@ -418,6 +419,40 @@ mod tests {
         assert!(link.call(Request::GetContext).await.is_ok());
         assert_eq!(fx.bridge.status().connections, 1);
         fx.bridge.shutdown();
+    }
+
+    /// A connection that could not start is "on, could not start" until the person turns it off; off clears that, and on
+    /// again tries again.
+    #[test]
+    fn turning_it_off_clears_a_connection_that_could_not_start_and_turning_it_on_retries() {
+        let fx = fx("failed", None);
+        assert!(fx.bridge.set_enabled(true).listening);
+        let vault = Arc::new(Vault::open(fx.project.path()).expect("vault"));
+        let other = AgentBridge::new(
+            vault,
+            Endpoint::in_folder(fx.sockets.path(), Path::new("failed"), "tester"),
+            None,
+            fx.fake.clone(),
+            fx.fake.clone(),
+        );
+        let status = other.set_enabled(true);
+        assert!(status.enabled && !status.listening, "{status:?}");
+        assert!(status.error.is_some());
+
+        let status = other.set_enabled(false);
+        assert!(
+            !status.enabled && !status.listening && status.error.is_none(),
+            "off leaves nothing of the failure: {status:?}"
+        );
+        assert_eq!(other.status(), status);
+
+        // Still taken: on says so again. Free: on listens.
+        assert!(other.set_enabled(true).error.is_some());
+        fx.bridge.set_enabled(false);
+        let status = other.set_enabled(true);
+        assert!(status.enabled && status.listening, "{status:?}");
+        assert!(status.error.is_none());
+        other.shutdown();
     }
 
     #[test]
