@@ -175,6 +175,11 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
   choose **Reload** (your typed text is kept as a note first) or **Keep mine** (the next save asks once more before it replaces the version on
   disk). A file that is not found stays in the list, dimmed, with **Locate...** and **Remove from list**, and a rename in its folder is followed.
   Text files (`.txt`) are edited in Source. Removing a file from the list never touches the file
+- **Move to project...** (`Ctrl+Shift+S`) is for a note that grew into a document: the Save dialog opens in the project you used last, with a name made
+  from the title; the note is written there exactly as it is, goes to the system trash, and its row moves to **Files**. The toast has
+  **Open in project** and **Undo** (which brings the note back, and takes the copy away unless you changed it since)
+- **Share with agents** marks a note that an AI agent connected to any of your projects may read (see
+  [What an agent can do](#what-an-agent-can-do)); a small mark shows it in the list and in the header. Notes you did not share stay private
 - **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
   with any tool, and TrailMark picks the change up. Another TrailMark process can't write to the same notes at once (the second one opens read-only)
 - **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
@@ -279,10 +284,15 @@ is TrailMark running as you, and not another program that took the name.
 | `list_comments` | Your [comments](#comments): the open ones, each with the quoted passage, its section and line, and your text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
+| `list_notes` | The [notes](#-notes) you chose to share with agents, each with its title, when it changed and its size |
+| `read_note` | The text of one shared note, by the name `list_notes` gave |
 
 The agent only reads, shows you a place, and checks off comments you wrote. It cannot create comments and it cannot edit a document through
-TrailMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. When TrailMark is
-closed, `list_unread`, `search`, `list_comments` and `resolve_comment` still work from the project's files, `get_context` says that
+TrailMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. Your notes are private:
+the agent sees only the notes you shared one by one (**Share with agents** in a note's menu, **Stop sharing** takes it back at once), through
+`list_notes` and `read_note`, in any project whose connection is on; it cannot list the notes folder, read a note you did not share, or change
+one, and a notes folder that lies inside a project is not part of that project's search. When TrailMark is
+closed, `list_unread`, `search`, `list_comments`, `resolve_comment`, `list_notes` and `read_note` still work from the files, `get_context` says that
 TrailMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
 
 ### Add what you are reading to every prompt
@@ -378,6 +388,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Open a pinned note | `Ctrl+1` … `9` |
 | Open a file (listed under Files) | `Ctrl+Shift+O` |
 | Save a file you opened (a note saves itself) | `Ctrl+S` |
+| Move the note into a project | `Ctrl+Shift+S` |
 | Next / previous note | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Move the selected pinned note up / down | `Alt+↑` / `Alt+↓` |
 | Rename the note / delete it | `F2` / `Del` |

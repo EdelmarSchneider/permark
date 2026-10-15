@@ -22,6 +22,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   comes back after a restart. When the file changes on disk, what you see stays until you choose **Reload** (your text is kept as a note) or
   **Keep mine** (the next save asks once more); a file that is gone stays in the list, dimmed, with **Locate...** and **Remove from list**,
   and a rename in its folder is followed. `.txt` files are edited in Source. A setting reloads a changed file that nothing was typed into.
+- **Move a note to a project, and share a note with agents.** **Move to project...** (`Ctrl+Shift+S`) writes a note, exactly as it is, where the
+  Save dialog says (it opens in the project you used last), sends the note to the trash and lists the copy under **Files**; the toast has
+  **Open in project** and **Undo**. **Share with agents** marks a note, and an agent connected to any project whose connection is on can list
+  the shared notes (`list_notes`) and read one (`read_note`); it sees no other note, and **Stop sharing** takes it back at once. The Agent
+  popover lists "Read the note ..." like any other request.
 - **A Microsoft Store build.** TrailMark can now be packaged for the Microsoft Store (`scripts/build-msix.ps1` builds an unsigned
   MSIX; see `docs/msstore.md`). The Store version is the same program with a few differences: the Store updates it, so it has no
   "Check for updates" and makes no update requests; it puts `trailmark` on your `PATH`, so the agent setup lines in Settings are the
