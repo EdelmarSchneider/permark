@@ -5,7 +5,7 @@
   import InitDialog from "./lib/components/InitDialog.svelte";
   import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
   import OutlinePopover from "./lib/components/OutlinePopover.svelte";
-  import QuickOpen from "./lib/components/QuickOpen.svelte";
+  import SearchEverywhere from "./lib/components/SearchEverywhere.svelte";
   import TagEditor from "./lib/components/TagEditor.svelte";
   import SelectionPopover from "./lib/components/SelectionPopover.svelte";
   import SettingsPopover from "./lib/components/SettingsPopover.svelte";
@@ -14,14 +14,18 @@
   import { language, t } from "./lib/i18n";
   import { isEditable } from "./lib/dom/domUtil";
   import { closeTopOverlay, hasOpenOverlay } from "./lib/overlays";
-  import { matchShortcut } from "./lib/shortcuts";
+  import { isMacPlatform, matchShortcut, yieldsToTyping } from "./lib/shortcuts";
   import { app } from "./lib/stores/app.svelte";
   import { docs } from "./lib/stores/docs.svelte";
   import { edit } from "./lib/stores/edit.svelte";
   import { fileops } from "./lib/stores/fileops.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
+  import { unread } from "./lib/stores/unread.svelte";
   import { updates } from "./lib/stores/updates.svelte";
+  import { vault } from "./lib/stores/vault.svelte";
+
+  const mac = typeof navigator !== "undefined" && isMacPlatform(navigator.userAgent);
 
   type MockPanel = typeof import("./lib/mock/MockControls.svelte").default;
   let MockControls = $state<MockPanel | null>(null);
@@ -42,6 +46,15 @@
       shownLocale = locale;
       docs.rerender();
     });
+  });
+
+  // The reading rule needs the Markdown document on show and whether its reading view is up (not the editor, not
+  // a tombstone); the stores below tell it when the window has the focus and when the person scrolls.
+  $effect(() => {
+    const view = docs.current;
+    const onShow =
+      app.screen === "project" && !vault.isSimple && view?.kind === "markdown" ? view.path : null;
+    unread.watch(onShow, !docs.editing && !edit.active && docs.deleted === null);
   });
 
   onMount(() => {
@@ -74,9 +87,11 @@
     if (e.defaultPrevented) return;
     const action = matchShortcut(e);
     if (!action) return;
-    // "T" and "E" are plain letters: they only mean something while reading
-    const plainLetter = action === "editTags" || action === "edit";
-    if (plainLetter && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) return;
+    // "T" and "E" are plain letters, and Option+U and Option+Arrow are typing on macOS: they only mean something
+    // while reading
+    if (yieldsToTyping(action, mac) && (isEditable(e.target) || hasOpenOverlay() || ui.find.open)) {
+      return;
+    }
     e.preventDefault();
     app.run(action);
   }
@@ -107,7 +122,7 @@
   <Welcome />
 {:else if app.screen === "project"}
   <Shell />
-  {#if ui.quickOpen}<QuickOpen />{/if}
+  {#if ui.searchBox}<SearchEverywhere />{/if}
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
   {#if fileops.prompt}<LinkUpdateDialog prompt={fileops.prompt} />{/if}

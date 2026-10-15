@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { bridge } from "../bridge";
+  import { clearCodeRefs, decorateCodeRefs, refTargetOf, type RefTarget } from "../dom/codeRefsDom";
+  import { codeRefsContextFor } from "../dom/codeRefsContext";
   import { DomFind } from "../dom/domFind";
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
   import { anchorTarget, findById, selectionIn } from "../dom/domUtil";
@@ -21,9 +23,11 @@
   import { session } from "../stores/session.svelte";
   import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { clock as formatClock } from "../time";
   import type { DocumentView } from "../types";
+  import CodeRefMenu, { type RefMenu } from "./CodeRefMenu.svelte";
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import DocMetaStrip from "./DocMetaStrip.svelte";
@@ -46,6 +50,7 @@
   let pinned: number | null = null;
   let frame = 0;
   let missing = $state<{ anchor: DOMRect; path: string } | null>(null);
+  let refMenu = $state<RefMenu | null>(null);
 
   const view = $derived(docs.current);
   const showArticle = $derived(!!view && view.kind !== "binary" && view.kind !== "tooLarge");
@@ -57,8 +62,11 @@
 
   // ---- rendering ----------------------------------------------------------------------------------
 
-  const enhanceContext = (path: string): EnhanceContext =>
-    enhanceContextFor(path, session.resolvedTheme);
+  // The code references (`src/main.rs:42`) are links only here, and only with a project to look in (Simple mode has none).
+  const enhanceContext = (path: string): EnhanceContext => ({
+    ...enhanceContextFor(path, session.resolvedTheme),
+    codeRefs: vault.isSimple ? undefined : codeRefsContextFor(vault.files, path),
+  });
 
   function renderLabels(): RenderLabels {
     const time = formatClock(Date.now());
@@ -355,6 +363,28 @@
     });
   });
 
+  /** Looks the code references up again, in the text that is on screen. */
+  function refreshCodeRefs(): void {
+    if (!body || !view || view.kind === "binary" || view.kind === "tooLarge") return;
+    clearCodeRefs(body);
+    if (!vault.isSimple) decorateCodeRefs(body, codeRefsContextFor(vault.files, view.path));
+    // the find highlights point into text that was just cut up
+    if (ui.find.open && ui.find.query.trim() !== "") {
+      finder?.run(ui.find.query, ui.find.mode, { keepIndex: true });
+    }
+  }
+
+  // The project's files changed (one was made, moved or removed): a reference may have become a file, or stopped being one.
+  let lastFiles = untrack(() => vault.files);
+  $effect(() => {
+    const files = vault.files;
+    untrack(() => {
+      if (files === lastFiles) return;
+      lastFiles = files;
+      refreshCodeRefs();
+    });
+  });
+
   // Editing hides the reading view; a hidden scroller forgets where it was, so the position is taken first and put back.
   let scrollBeforeEdit = 0;
   $effect.pre(() => {
@@ -431,6 +461,8 @@
     frame = requestAnimationFrame(() => {
       frame = 0;
       if (scroller) docs.noteScroll(scroller.scrollTop);
+      // scrolling the reader did by hand counts as reading; a scroll the app made (a restored position) does not
+      if (userScrolled) unread.scrolled();
       updateCurrent();
     });
   }
@@ -459,11 +491,49 @@
     }, 1200);
   }
 
+  /** A click (or Enter) on a code reference: the file it names opens, or a menu asks which of the files it could be. */
+  function followRef(ref: RefTarget, el: Element, external: boolean): void {
+    if (ref.path !== null) {
+      void app.openCodeRef(ref.path, ref.line, ref.col, external);
+      return;
+    }
+    refMenu = { mode: "choose", target: ref, anchor: el.getBoundingClientRect() };
+  }
+
+  function oncontextmenu(e: MouseEvent): void {
+    const el = (e.target as Element).closest(".code-ref");
+    const ref = refTargetOf(el);
+    if (!el || !ref) return;
+    e.preventDefault();
+    // from the keyboard the menu opens at the reference, not at the corner of the window
+    const keyboard = e.clientX === 0 && e.clientY === 0;
+    const anchor = keyboard
+      ? el.getBoundingClientRect()
+      : { left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY };
+    refMenu = { mode: ref.path !== null ? "actions" : "choose", target: ref, anchor };
+  }
+
+  function onkeydown(e: KeyboardEvent): void {
+    if (e.key !== "Enter") return;
+    const el = (e.target as Element).closest(".code-ref");
+    const ref = refTargetOf(el);
+    if (!el || !ref) return;
+    e.preventDefault();
+    followRef(ref, el, e.ctrlKey || e.metaKey);
+  }
+
   async function onclick(e: MouseEvent): Promise<void> {
     const target = e.target as Element;
     const copy = target.closest<HTMLElement>(".code-block__copy");
     if (copy) {
       void copyCode(copy);
+      return;
+    }
+    const codeRef = target.closest(".code-ref");
+    const ref = refTargetOf(codeRef);
+    if (codeRef && ref) {
+      e.preventDefault();
+      followRef(ref, codeRef, e.ctrlKey || e.metaKey);
       return;
     }
     const link = target.closest<HTMLAnchorElement>("a[href]");
@@ -557,12 +627,16 @@
           {/each}
         </dl>
       {/if}
-      <!-- the backend's sanitized HTML is injected here by DocRenderer; links are handled in onclick -->
-      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-      <div bind:this={body} class="md-body" {onclick}></div>
+      <!-- the backend's sanitized HTML is injected here by DocRenderer; links and code references are handled in onclick -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div bind:this={body} class="md-body" {onclick} {onkeydown} {oncontextmenu}></div>
     </article>
   </div>
 </div>
+
+{#if refMenu}
+  <CodeRefMenu menu={refMenu} onclose={() => (refMenu = null)} />
+{/if}
 
 {#if missing}
   <Popover

@@ -39,6 +39,9 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   loadSession: [],
   absolutePath: ["docs/a.md"],
   openExternal: ["docs/a.md"],
+  openInEditor: ["src/main.rs", 42, 7],
+  editorCommand: [],
+  setEditorCommand: ["code -g {path}:{line}:{col}"],
   revealInFolder: ["docs"],
   search: ["query", 5],
   referencedImages: [],
@@ -62,6 +65,11 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   deleteEntries: [["docs/a.md"]],
   newFolder: ["docs/new"],
   undoFileOp: [3],
+  getUnread: [],
+  markRead: ["docs/a.md"],
+  markUnread: ["docs/a.md"],
+  markAllRead: [],
+  markFolderRead: ["docs"],
 };
 
 describe("tauriApi", () => {

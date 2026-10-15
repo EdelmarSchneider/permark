@@ -10,9 +10,11 @@ import {
   treeLoadOf,
 } from "../treeFilter";
 import type { TreeFilter } from "../types";
+import { onlyUnread } from "../unread";
 import { docs } from "./docs.svelte";
 import { fileops } from "./fileops.svelte";
 import { session } from "./session.svelte";
+import { unread } from "./unread.svelte";
 import { vault } from "./vault.svelte";
 
 const NO_PATHS: ReadonlySet<string> = new Set();
@@ -38,9 +40,18 @@ class FilterStore {
     }),
   );
 
-  /** What the Explorer lists. */
-  roots = $derived(
+  /** What the filter lets through. */
+  private filtered = $derived(
     this.showAll ? vault.roots : { main: this.outcome.main, worktrees: this.outcome.worktrees },
+  );
+  /** What the Explorer lists: that, or only what is unread (and the open document, so it does not vanish when read). */
+  roots = $derived(
+    unread.onlyUnread
+      ? {
+          main: onlyUnread(this.filtered.main, unread.set, docs.path),
+          worktrees: onlyUnread(this.filtered.worktrees, unread.set, docs.path),
+        }
+      : this.filtered,
   );
   /** The files Quick open lists. */
   files = $derived(this.showAll ? vault.files : this.outcome.shown);

@@ -7,11 +7,13 @@
   import { search } from "../stores/search.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
   import TagChip from "./TagChip.svelte";
   import TagSuggestions from "./TagSuggestions.svelte";
+  import UnreadDot from "./UnreadDot.svelte";
 
   let input: HTMLInputElement | undefined = $state();
   let list: HTMLElement | undefined = $state();
@@ -301,6 +303,7 @@
           }}
         >
           <Icon name="chevron-down" size="sm" class="twisty" />
+          {#if unread.isUnread(row.group.path)}<UnreadDot />{/if}
           <span class="hit-group__name">{row.group.name}</span>
           <span class="count-pill">{row.group.hits.length}</span>
           <span class="hit-group__path">{row.group.where}</span>

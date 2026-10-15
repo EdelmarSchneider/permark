@@ -29,9 +29,13 @@ const KEPT_OPERATIONS: usize = 20;
 /// A preview lists at most this many links (the counts are always complete).
 const MAX_PREVIEW_LINKS: usize = 2_000;
 
-/// What follows a rename of files or folders: the tags the app keeps for them.
+/// What follows the changes the app makes to files: the tags it keeps for them and whether they were read.
 pub trait Followers: Send + Sync {
+    /// A file or folder was renamed or moved.
     fn renamed(&self, from: &str, to: &str, is_dir: bool);
+    /// The links in a document were rewritten, or put back by an undo: its hash (see [`hash_hex`]) was
+    /// `old_hash` and is `new_hash`. `path` is where the document is after the change.
+    fn rewritten(&self, path: &str, old_hash: &str, new_hash: &str);
 }
 
 /// A preview waiting to be applied.
@@ -275,13 +279,17 @@ impl FileOpsService {
             Ok((hash_hex(&on_disk) != old_hash).then_some(()))
         });
         match written {
-            Ok(Guarded::Written) => Ok(Rewrite {
-                path: resolved.rel,
-                old_hash: old_hash.to_owned(),
-                new_hash: format!("{new_hash:016x}"),
-                inverse: invert_edits(edits),
-                links: edits.len(),
-            }),
+            Ok(Guarded::Written) => {
+                let new_hash = format!("{new_hash:016x}");
+                self.followers.rewritten(&resolved.rel, old_hash, &new_hash);
+                Ok(Rewrite {
+                    path: resolved.rel,
+                    old_hash: old_hash.to_owned(),
+                    new_hash,
+                    inverse: invert_edits(edits),
+                    links: edits.len(),
+                })
+            }
             Ok(Guarded::Refused(())) => {
                 self.own.retract(&resolved.rel, new_hash);
                 Err(SkipReason::Changed)
@@ -454,7 +462,11 @@ impl FileOpsService {
             Ok((hash_hex(&on_disk) != rewrite.new_hash).then_some(()))
         });
         match written {
-            Ok(Guarded::Written) => Ok(wanted.len()),
+            Ok(Guarded::Written) => {
+                self.followers
+                    .rewritten(&resolved.rel, &rewrite.new_hash, &format!("{hash:016x}"));
+                Ok(wanted.len())
+            }
             Ok(Guarded::Refused(())) => {
                 self.own.retract(&resolved.rel, hash);
                 Err(SkipReason::Changed)

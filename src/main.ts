@@ -5,10 +5,12 @@ import "./styles/components.css";
 import "./styles/markdown.css";
 import "./styles/tags.css";
 import "./styles/filter.css";
+import "./styles/everywhere.css";
 import "./styles/outline.css";
 import "./styles/editor.css";
 import "./styles/fileops.css";
 import "./styles/visual.css";
+import "./styles/unread.css";
 import App from "./App.svelte";
 import { loadLanguage } from "./lib/stores/languageChoice.svelte";
 

@@ -12,6 +12,7 @@ use crate::util::{hash_hex, write_atomic};
 
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
+const READ_FILE: &str = "read.json";
 const META_FILE: &str = "meta.toml";
 const TRAILMARK_DIR: &str = ".trailmark";
 const PROJECT_GITIGNORE: &str = "\
@@ -103,6 +104,11 @@ impl StateStore {
         &self.dir
     }
 
+    /// Where the unread markers keep what was last read: `read.json` with the rest of the local state.
+    pub fn read_path(&self) -> PathBuf {
+        self.dir.join(READ_FILE)
+    }
+
     /// Where the tags and descriptions added in the app are kept: `.trailmark/meta.toml` (shared with
     /// the project) once the project has a `.trailmark/` folder, a file next to the AppData state before.
     pub fn meta_path(&self) -> PathBuf {
@@ -187,7 +193,7 @@ impl StateStore {
         }
         let local = tm.join("local");
         if self.location == StateLocation::AppData {
-            for file in [SESSION_FILE, LAST_VISIT_FILE, window::FILE_NAME] {
+            for file in [SESSION_FILE, LAST_VISIT_FILE, READ_FILE, window::FILE_NAME] {
                 let (from, to) = (self.dir.join(file), local.join(file));
                 if from.is_file() && !to.exists() {
                     std::fs::copy(&from, &to).map_err(io(&from))?;
@@ -432,6 +438,25 @@ mod tests {
         assert_eq!(s.load_last_visit().map(|v| v.time_ms), Some(9));
         // A store opened afterwards finds the same data in the project.
         assert_eq!(f.store().load_session(), Some(session));
+    }
+
+    #[test]
+    fn what_was_read_is_kept_with_the_local_state_and_follows_it_into_the_project() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.read_path(), s.dir().join("read.json"));
+        assert!(s.read_path().starts_with(f.app.path()));
+        fs::create_dir_all(s.dir()).expect("mkdir");
+        fs::write(s.read_path(), r#"{"a.md": "00000000000000ab"}"#).expect("write");
+        s.init_project_folder().expect("init");
+        let local = Path::new(".trailmark").join("local").join("read.json");
+        assert!(s.read_path().ends_with(&local));
+        assert_eq!(
+            fs::read_to_string(s.read_path()).expect("carried over"),
+            r#"{"a.md": "00000000000000ab"}"#
+        );
+        // never in the part of .trailmark that is shared
+        assert_eq!(f.store().read_path(), s.read_path());
     }
 
     #[test]

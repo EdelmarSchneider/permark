@@ -4,6 +4,7 @@ import { SvelteSet } from "svelte/reactivity";
 import type { FindMode } from "../find";
 import type { Anchor } from "../components/Popover.svelte";
 import type { RightTab } from "../rightPanel";
+import type { Scope } from "../searchEverywhereModel";
 
 const HINT_KEY = "trailmark.hint.initProject";
 
@@ -17,7 +18,10 @@ function readHintDismissed(): boolean {
 
 class UiStore {
   sidebarView = $state<"explorer" | "search" | "tags">("explorer");
-  quickOpen = $state(false);
+  /** The Search everywhere box (Ctrl+T, Ctrl+P, Ctrl+Shift+P): null while closed, else the scope it was asked to show. */
+  searchBox = $state.raw<{ scope: Scope } | null>(null);
+  /** The scope Ctrl+T opens: the one last picked with Tab or a click on the strip. Kept for the session. */
+  searchScope = $state<Scope>("all");
   settingsOpen = $state(false);
   initDialog = $state(false);
   find = $state({
@@ -82,6 +86,15 @@ class UiStore {
     this.flashTimer = setTimeout(() => {
       this.flashed = null;
     }, 1200);
+  }
+
+  /** Opens the box, or switches it when it is open: at `scope`, else at the scope Ctrl+T remembers. */
+  openSearch(scope: Scope = this.searchScope): void {
+    this.searchBox = { scope };
+  }
+
+  closeSearch(): void {
+    this.searchBox = null;
   }
 
   openTagEditor(anchor: Anchor | null = null): void {

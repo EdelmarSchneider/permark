@@ -12,6 +12,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, SourceDoc};
 use crate::error::AppError;
+use crate::external_editor::{self, EditorError, EditorTemplate};
 use crate::fileops::{
     BufferText, CreatedFolder, DeleteOutcome, Move, MoveOutcome, MovePreview, UndoOutcome,
 };
@@ -19,6 +20,9 @@ use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
+use crate::open_request::OpenInbox;
+#[cfg(target_os = "macos")]
+use crate::open_request::{self, Action};
 use crate::render::DocumentView;
 use crate::search::SearchHit;
 use crate::session::{
@@ -63,6 +67,10 @@ impl EventSink for TauriSink {
     fn image_refs_changed(&self) {
         let _ = self.0.emit("image-refs-changed", ());
     }
+
+    fn unread_changed(&self, unread: &[String]) {
+        let _ = self.0.emit("unread-changed", unread);
+    }
 }
 
 /// Runs blocking work on the blocking thread pool.
@@ -103,12 +111,59 @@ pub async fn open_vault(
     .await
 }
 
+/// The path the app starts with: the one the system delivered while the app was starting (macOS hands over what
+/// Finder opens that way, see [`crate::open_request`]), else the one given on the command line.
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri hands injected state over by value
+pub fn initial_path(inbox: State<'_, OpenInbox>) -> Option<String> {
+    inbox.take_launch_path().or_else(command_line_path)
+}
+
 /// The path given on the command line (`trailmark <path>`), if it exists. Relative paths resolve
 /// against the current directory.
-#[tauri::command]
-pub fn initial_path() -> Option<String> {
+pub fn command_line_path() -> Option<String> {
     let arg = std::env::args_os().nth(1)?;
     initial_path_from(arg, std::env::current_dir().ok())
+}
+
+/// A path was opened from outside the app (macOS: Finder, the Dock icon). Delivered by `RunEvent::Opened`, both while
+/// the app starts and while it runs.
+#[cfg(target_os = "macos")]
+pub fn opened(app: &AppHandle, urls: &[tauri::Url]) {
+    use crate::vault::VaultMode;
+
+    let showing = match app.state::<AppState>().current() {
+        Err(_) => open_request::Showing::Nothing,
+        Ok(ws) => {
+            let info = ws.info();
+            if info.mode == VaultMode::Simple {
+                open_request::Showing::SingleFile
+            } else {
+                open_request::Showing::Project(PathBuf::from(info.root))
+            }
+        }
+    };
+    let actions = app
+        .state::<OpenInbox>()
+        .receive(open_request::paths_from_urls(urls), &showing);
+    for action in actions {
+        match action {
+            Action::OpenHere(path) => {
+                crate::window::raise(app);
+                let _ = app.emit("open-path", path);
+            }
+            Action::ShowInProject(document) => {
+                crate::window::raise(app);
+                if let Some(document) = document {
+                    let _ = app.emit("show-in-project", document);
+                }
+            }
+            // Best effort: a process that cannot start leaves nothing to report to.
+            Action::NewProcess(path) => {
+                let _ = open_request::spawn_instance(&path);
+            }
+        }
+    }
 }
 
 /// A drive root passed from the file manager's "Open with TrailMark" entry is `"C:\"` on the command line, and
@@ -278,7 +333,16 @@ pub async fn absolute_path(state: State<'_, AppState>, path: String) -> Result<S
     blocking(move || ws.absolute_path(&path)).await
 }
 
-/// Opens a file of the folder with the system's default application (the "external editor").
+/// Hands a file of the folder to the system's default application. Only documents and images go: a program or script
+/// in the folder is never started from here.
+fn open_with_system(app: &AppHandle, ws: &Workspace, path: &str) -> Result<(), AppError> {
+    let target = ws.external_target(path)?;
+    app.opener()
+        .open_path(target.display().to_string(), None::<&str>)
+        .map_err(|e| AppError::Internal(e.to_string()))
+}
+
+/// Opens a file of the folder with the system's default application.
 #[tauri::command]
 pub async fn open_external(
     app: AppHandle,
@@ -286,11 +350,63 @@ pub async fn open_external(
     path: String,
 ) -> Result<(), AppError> {
     let ws = state.current()?;
+    blocking(move || open_with_system(&app, &ws, &path)).await
+}
+
+/// Opens a file of the folder in the person's editor, at a line and column (both from 1): runs the editor command of
+/// the settings, or the system's default application when there is none (the line is then ignored).
+#[tauri::command]
+pub async fn open_in_editor(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Result<(), AppError> {
+    let ws = state.current()?;
+    let dir = app_data_dir(&app)?;
     blocking(move || {
-        let target = ws.external_target(&path)?;
-        app.opener()
-            .open_path(target.display().to_string(), None::<&str>)
-            .map_err(|e| AppError::Internal(e.to_string()))
+        let command = AppSettingsStore::new(&dir)
+            .load()
+            .editor_command
+            .unwrap_or_default();
+        match EditorTemplate::parse(&command).map_err(EditorError::Template)? {
+            None => open_with_system(&app, &ws, &path),
+            Some(template) => {
+                let target = ws.editor_target(&path)?;
+                Ok(external_editor::run(
+                    &template,
+                    &target,
+                    line.unwrap_or(1),
+                    col.unwrap_or(1),
+                )?)
+            }
+        }
+    })
+    .await
+}
+
+/// The editor command of the settings; blank means the system's default application.
+#[tauri::command]
+pub async fn editor_command(app: AppHandle) -> Result<String, AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || {
+        Ok(AppSettingsStore::new(&dir)
+            .load()
+            .editor_command
+            .unwrap_or_default())
+    })
+    .await
+}
+
+/// Keeps the editor command. A command that can't be parsed (an unknown placeholder, an open quote) is refused, so what
+/// is saved always runs.
+#[tauri::command]
+pub async fn set_editor_command(app: AppHandle, command: String) -> Result<(), AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || {
+        EditorTemplate::parse(&command).map_err(EditorError::Template)?;
+        Ok(AppSettingsStore::new(&dir).set_editor_command(&command)?)
     })
     .await
 }
@@ -515,6 +631,46 @@ pub async fn new_folder(
 pub async fn undo_file_op(state: State<'_, AppState>, op_id: u64) -> Result<UndoOutcome, AppError> {
     let ws = state.current()?;
     blocking(move || ws.undo_file_op(op_id)).await
+}
+
+/// The documents that changed since they were last read, sorted (the `unread-changed` event carries the
+/// same list). Empty until the folder has been looked at.
+#[tauri::command]
+pub async fn get_unread(state: State<'_, AppState>) -> Result<Vec<String>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.unread())).await
+}
+
+/// The person read a document: whatever it holds now counts as read.
+#[tauri::command]
+pub async fn mark_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.mark_read(&path)).await
+}
+
+/// A document counts as unread again.
+#[tauri::command]
+pub async fn mark_unread(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.mark_unread(&path)).await
+}
+
+/// Every document counts as read.
+#[tauri::command]
+pub async fn mark_all_read(state: State<'_, AppState>) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        ws.mark_all_read();
+        Ok(())
+    })
+    .await
+}
+
+/// Every document in a folder (and below it) counts as read.
+#[tauri::command]
+pub async fn mark_folder_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.mark_folder_read(&path)).await
 }
 
 /// The URI scheme that serves the images of the open folder to the document view. Requests are

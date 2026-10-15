@@ -27,6 +27,7 @@ import {
   searchDocs,
 } from "./fixtures";
 import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./mockFileOps";
+import { listUnread, markAllRead, markFolderRead, markRead, markUnread } from "./mockUnread";
 import {
   createDocument,
   documentSource,
@@ -54,6 +55,7 @@ let savedSession: SessionState | null = {
   initHintNever: false,
 };
 let stateLocation: "appData" | "project" = "appData";
+let mockEditorCommand = "";
 /** The file manager entries of the mock "system": on, so the Settings section shows in the browser. */
 const mockShell: ShellState = {
   supported: true,
@@ -138,6 +140,48 @@ export const mockImpl: Api = {
   openExternal: async (path) => {
     console.info("[mock] open externally:", path);
   },
+  openInEditor: async (path, line, col) => {
+    const program = mockEditorCommand.trim().split(/\s+/)[0] ?? "";
+    // a program that is not "installed" shows how the UI words the failure
+    if (program === "missing-editor") {
+      throw {
+        kind: "editor",
+        reason: "notFound",
+        subject: program,
+        message: `can't run '${program}': not found`,
+      };
+    }
+    console.info(
+      "[mock] open in editor:",
+      mockEditorCommand || "(system default)",
+      path,
+      line,
+      col,
+    );
+  },
+  editorCommand: async () => mockEditorCommand,
+  setEditorCommand: async (command) => {
+    // the backend refuses a command it can't read; the same two mistakes are caught here
+    const unknown = /\{(\w+)\}/g;
+    for (const match of command.matchAll(unknown)) {
+      if (!["path", "line", "col"].includes(match[1])) {
+        throw {
+          kind: "editor",
+          reason: "unknownPlaceholder",
+          subject: match[1],
+          message: `the editor command is not valid: unknown placeholder {${match[1]}}`,
+        };
+      }
+    }
+    if ((command.match(/"/g)?.length ?? 0) % 2 === 1) {
+      throw {
+        kind: "editor",
+        reason: "unclosedQuote",
+        message: "the editor command is not valid: a quote is not closed",
+      };
+    }
+    mockEditorCommand = command.trim();
+  },
   revealInFolder: async (path) => {
     console.info("[mock] reveal in folder:", path);
   },
@@ -170,5 +214,10 @@ export const mockImpl: Api = {
   deleteEntries: (paths) => deleteEntries(paths),
   newFolder: (path) => newFolder(path),
   undoFileOp: (opId) => undoFileOp(opId),
+  getUnread: async () => listUnread(),
+  markRead: async (path) => markRead(path),
+  markUnread: async (path) => markUnread(path),
+  markAllRead: async () => markAllRead(),
+  markFolderRead: async (path) => markFolderRead(path),
   on: async () => () => {},
 };

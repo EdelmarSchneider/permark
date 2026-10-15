@@ -127,6 +127,18 @@
   background: var(--surface);
   border: 1px solid var(--border);
 }
+/* code references (docs/design/v0.2.md section 5): a dotted underline in the muted colour, solid on hover */
+.md .code-ref {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--muted);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.md .code-ref:hover {
+  text-decoration-style: solid;
+  text-decoration-color: var(--text);
+}
 .md kbd {
   font: 500 0.78em var(--font-code);
   padding: 0.05em 0.4em;

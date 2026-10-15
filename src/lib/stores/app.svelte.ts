@@ -4,23 +4,28 @@
 import { SvelteSet } from "svelte/reactivity";
 import { api, type Unlisten } from "../api";
 import { bridge } from "../bridge";
+import { refLabel } from "../codeRefs";
 import { isTextSelected } from "../dom/domUtil";
 import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
 import { errorKind, errorMessage } from "../errors";
+import { usesSystemApp } from "../externalEditor";
 import { followCandidate } from "../follow";
 import { t } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
+import { basename, isMarkdown } from "../paths";
 import { formatQuote, formatReference } from "../reference";
 import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
-import type { ShortcutAction } from "../shortcuts";
+import type { CommandAction } from "../commands";
 import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
+import { batchTouches, nextUnread } from "../unread";
 import { copyText, openExternalUrl, pickFile, pickFolder, watchFileDrop } from "../platform";
 import { normalizeTreeFilter, treeLoadOf } from "../treeFilter";
 import type { FsBatch, LinkTarget, RecentVault, SearchHit, VaultInfo } from "../types";
 import { clock } from "./clock.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
 import { edit } from "./edit.svelte";
+import { editorCommand } from "./editorCommand.svelte";
 import { feed } from "./feed.svelte";
 import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
@@ -30,6 +35,8 @@ import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
 import { ui } from "./ui.svelte";
+import { unread } from "./unread.svelte";
+import { updates } from "./updates.svelte";
 import { vault } from "./vault.svelte";
 
 const HIDDEN_RECENTS_KEY = "trailmark.recents.hidden";
@@ -72,6 +79,13 @@ class AppStore {
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") void session.flush();
     });
+    // a document counts as read only in a window the person is looking at
+    const noteFocus = (): void =>
+      unread.setFocused(document.hasFocus() && document.visibilityState === "visible");
+    window.addEventListener("focus", noteFocus);
+    window.addEventListener("blur", noteFocus);
+    document.addEventListener("visibilitychange", noteFocus);
+    noteFocus();
     this.unlisten.push(
       await watchFileDrop({
         over: (count) => {
@@ -184,10 +198,11 @@ class AppStore {
       search.reset();
       tags.reset();
       toast.clear();
+      unread.reset();
       vault.reset();
       ui.followChip = null;
       ui.find.open = false;
-      ui.quickOpen = false;
+      ui.closeSearch();
       ui.tagEditor = null;
       ui.outlinePopover = false;
       ui.changesNotify = false;
@@ -216,6 +231,7 @@ class AppStore {
       if (info.mode === "ide") {
         void tags.refreshIndex();
         void vault.refreshImageRefs();
+        void unread.refresh();
       }
       const restored = session.load(stored);
       this.screen = "project";
@@ -267,6 +283,13 @@ class AppStore {
       await api.on("image-refs-changed", () => {
         if (this.screen === "project" && !vault.isSimple) void vault.refreshImageRefs();
       }),
+      await api.on("unread-changed", (paths) => {
+        if (this.screen === "project" && !vault.isSimple) unread.onChanged(paths);
+      }),
+      await api.on("open-path", (path) => void this.openProject(path)),
+      await api.on("show-in-project", (path) => {
+        if (this.screen === "project" && !vault.isSimple) void this.openDoc(path);
+      }),
     );
   }
 
@@ -307,6 +330,7 @@ class AppStore {
       }
     }
     docs.handleBatch(batch, session.follow);
+    if (docs.path !== null && batchTouches(batch, docs.path)) unread.contentChanged(docs.path);
 
     if (update.bulk !== null) return;
     for (const file of update.files) {
@@ -366,8 +390,8 @@ class AppStore {
     return this.openDoc(path, { fromChange: true });
   }
 
-  async openHit(hit: SearchHit): Promise<void> {
-    const query = search.answered || search.query.trim();
+  /** Opens the file at the section a search hit is in, marking the words that were searched for. */
+  async openHit(hit: SearchHit, query = search.answered || search.query.trim()): Promise<void> {
     await this.openDoc(hit.path, {
       locate: { line: hit.startLine, find: query ? { query, mode: "terms" } : null },
     });
@@ -399,6 +423,23 @@ class AppStore {
       case "missing":
         return { missing: target.path };
     }
+  }
+
+  // ---- unread ----------------------------------------------------------------------------------------
+
+  /** Alt+U: opens the next unread document (the live feed first, newest first, then the tree), or says there is none. */
+  async openNextUnread(): Promise<void> {
+    const next = nextUnread({
+      unread: unread.set,
+      feed: feed.entries.flatMap((entry) => (entry.type === "file" ? [entry.path] : [])),
+      tree: vault.files,
+      current: docs.path,
+    });
+    if (next === null) {
+      toast.message(t("unread.allCaughtUp"), "info");
+      return;
+    }
+    await this.openDoc(next);
   }
 
   // ---- new file -------------------------------------------------------------------------------------
@@ -574,9 +615,17 @@ class AppStore {
     }
   }
 
-  async copyReference(path = docs.path, flashId = "reference"): Promise<void> {
+  /** Copies the reference to a file, with a line (`@src/main.rs:42`) when the reference has one. */
+  async copyReference(
+    path = docs.path,
+    flashId = "reference",
+    line: number | null = null,
+  ): Promise<void> {
     if (!path) return;
-    const text = formatReference(session.refTemplate, await this.referencePath(path));
+    const text = formatReference(
+      session.refTemplate,
+      refLabel(await this.referencePath(path), line),
+    );
     await this.copy(text, flashId);
   }
 
@@ -615,13 +664,71 @@ class AppStore {
     else toast.message(t("copy.failed"), "warn");
   }
 
+  /**
+   * "Open in external editor" (Ctrl+Shift+E, the menus): the file opens in the editor of the settings. For the open document
+   * the line is the block at the top of the view, so the editor lands where the reader is.
+   */
   async openExternally(path = docs.path): Promise<void> {
     if (!path) return;
+    await this.openInEditor(path, path === docs.path ? this.topLine() : undefined);
+  }
+
+  /** The 1-based source line of the block at the top of the open document's view (the editor's, while editing). */
+  private topLine(): number | undefined {
+    const line = bridge.editor ? bridge.editor.topLine() + 1 : bridge.topLine?.();
+    return line ?? undefined;
+  }
+
+  /**
+   * Runs the editor command of the settings for a file, at a line and column (from 1). Images and PDF files go to the
+   * system's application, which shows them better than a code editor does. A failure is a toast, with a way to Settings.
+   */
+  async openInEditor(path: string, line?: number, col?: number): Promise<void> {
     try {
-      await api.openExternal(path);
+      if (usesSystemApp(path)) await api.openExternal(path);
+      else await api.openInEditor(path, line, col);
     } catch (error) {
-      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
+      await this.editorFailed(path, error);
     }
+  }
+
+  private async editorFailed(path: string, error: unknown): Promise<void> {
+    const settings = {
+      label: t("settings.title"),
+      run: () => {
+        ui.settingsOpen = true;
+      },
+    };
+    if (errorKind(error) === "editor") {
+      toast.message(errorMessage(error), "warn", settings);
+      return;
+    }
+    // The system's default app only opens documents and images: for a code file the way out is an editor command.
+    if (errorKind(error) === "invalidPath") {
+      await editorCommand.load();
+      if (editorCommand.command.trim() === "") {
+        toast.message(t("codeRef.systemCantOpen", { name: basename(path) }), "warn", settings);
+        return;
+      }
+    }
+    toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
+  }
+
+  /**
+   * Follows a code reference. A Markdown file opens here, at the line; any other file opens in the editor, and so does a
+   * Markdown file when `external` is set (Ctrl+click).
+   */
+  async openCodeRef(
+    path: string,
+    line: number | null,
+    col: number | null,
+    external = false,
+  ): Promise<void> {
+    if (!external && isMarkdown(path)) {
+      await this.openDoc(path, line === null ? {} : { locate: { line, find: null } });
+      return;
+    }
+    await this.openInEditor(path, line ?? undefined, col ?? undefined);
   }
 
   async revealInFolder(path: string): Promise<void> {
@@ -645,7 +752,8 @@ class AppStore {
 
   // ---- keyboard ------------------------------------------------------------------------------------------
 
-  run(action: ShortcutAction): void {
+  /** Runs an action of the keyboard map, or a command of Search everywhere that has no key (`commands.ts`). */
+  run(action: CommandAction): void {
     if (this.screen === "welcome") {
       if (action === "openFolder") void this.chooseFolder();
       else if (action === "openFile") void this.chooseFile();
@@ -658,8 +766,14 @@ class AppStore {
         return void this.chooseFolder();
       case "openFile":
         return void this.chooseFile();
+      case "searchEverywhere":
+        if (ide) ui.openSearch();
+        return;
       case "quickOpen":
-        if (ide) ui.quickOpen = true;
+        if (ide) ui.openSearch("files");
+        return;
+      case "commands":
+        ui.openSearch("commands");
         return;
       case "searchAll":
         return this.showSearch();
@@ -696,6 +810,25 @@ class AppStore {
         return bridge.jumpChange?.(1);
       case "prevChange":
         return bridge.jumpChange?.(-1);
+      case "nextUnread":
+        if (ide) void this.openNextUnread();
+        return;
+      case "markAllRead":
+        if (ide) void unread.markAllRead();
+        return;
+      case "showOnlyUnread":
+        if (!ide) return;
+        this.openExplorerPanel();
+        return unread.toggleOnlyUnread();
+      case "markFolderRead": {
+        if (!ide) return;
+        // the folder the tree cursor is in, else the open document's
+        const folder = targetFolder(ui.treeCursor, docs.path);
+        return void (folder === "" ? unread.markAllRead() : unread.markFolderRead(folder));
+      }
+      case "markUnread":
+        if (ide && docs.path) void unread.markUnread(docs.path, true);
+        return;
       case "toggleFollow":
         if (ide) this.toggleFollow();
         return;
@@ -724,7 +857,40 @@ class AppStore {
       case "settings":
         ui.settingsOpen = true;
         return;
+      case "initProject":
+        if (ide && vault.stateLocation !== "project") ui.initDialog = true;
+        return;
+      case "checkUpdates":
+        // the answer ("You're up to date", or the offer) shows in the settings
+        ui.settingsOpen = true;
+        return void updates.check(true);
+      case "newFolder":
+        if (!ide) return;
+        this.openExplorerPanel();
+        return fileops.startNewFolder(targetFolder(ui.treeCursor, docs.path));
+      case "collapseAll":
+        if (!ide) return;
+        this.showExplorer();
+        return vault.collapseAll();
+      case "revealInTree":
+        if (docs.path) this.revealInTree(docs.path);
+        return;
+      case "baselineLastVisit":
+        if (ide) void this.setBaseline("lastVisit");
+        return;
+      case "baselineCommit":
+        if (ide) void this.setBaseline("head");
+        return;
+      case "openContainingFolder":
+        if (!ide) void this.openContainingFolder();
+        return;
     }
+  }
+
+  /** The Explorer is the sidebar's view and the sidebar is open; the focus stays where it is. */
+  private openExplorerPanel(): void {
+    ui.sidebarView = "explorer";
+    if (!session.left.open) session.setPanel("left", { open: true });
   }
 }
 

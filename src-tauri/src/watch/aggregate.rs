@@ -356,13 +356,16 @@ mod tests {
     }
 
     #[test]
-    fn case_differences_merge_on_windows() {
+    fn case_differences_merge_where_the_system_ignores_case() {
         let f = fixture();
         let mut a = Aggregator::new(QUIET, MAX_WAIT);
         let t0 = Instant::now();
         a.push(ev(&f, "Readme.md", Hint::Modify), &f.vault, &f.filter, t0);
         a.push(ev(&f, "README.md", Hint::Modify), &f.vault, &f.filter, t0);
-        assert_eq!(a.take().paths.len(), if cfg!(windows) { 1 } else { 2 });
+        assert_eq!(
+            a.take().paths.len(),
+            if crate::vault::CASE_INSENSITIVE { 1 } else { 2 }
+        );
     }
 
     #[test]

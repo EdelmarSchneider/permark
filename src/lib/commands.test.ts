@@ -1,0 +1,283 @@
+import { describe, expect, it } from "vitest";
+import {
+  availableCommands,
+  COMMANDS,
+  matchCommands,
+  NOT_COMMANDS,
+  unregisteredActions,
+  type Command,
+  type CommandContext,
+  type CommandLabels,
+} from "./commands";
+import { de } from "./i18n/de";
+import { en } from "./i18n/en";
+import { ptBR } from "./i18n/ptBR";
+import { matchShortcut, parseCombo, SHORTCUT_ACTIONS, type KeyInfo } from "./shortcuts";
+
+const labelsIn = (table: Record<string, string>): CommandLabels => ({
+  current: (c) => table[c.label],
+  english: (c) => en[c.label],
+});
+const english = labelsIn(en);
+
+/** The first match of a typed query, as the label of the row. */
+const top = (query: string, labels: CommandLabels = english): string | undefined =>
+  matchCommands(query, COMMANDS, labels)[0]?.command.id;
+const ids = (query: string, labels: CommandLabels = english): string[] =>
+  matchCommands(query, COMMANDS, labels).map((m) => m.command.id);
+
+/** The key event a combo from the registry stands for. */
+function eventFor(combo: string): KeyInfo {
+  const { ctrl, alt, shift, key } = parseCombo(combo);
+  const named: Record<string, { key: string; code?: string }> = {
+    "←": { key: "ArrowLeft" },
+    "→": { key: "ArrowRight" },
+    "=": { key: "=", code: "Equal" },
+    "-": { key: "-", code: "Minus" },
+    ",": { key: ",", code: "Comma" },
+    "0": { key: "0", code: "Digit0" },
+  };
+  const found =
+    named[key] ??
+    (/^[A-Za-z]$/.test(key)
+      ? { key: shift ? key.toUpperCase() : key.toLowerCase(), code: `Key${key.toUpperCase()}` }
+      : { key });
+  return { ...found, ctrlKey: ctrl, metaKey: false, altKey: alt, shiftKey: shift };
+}
+
+const IDLE: CommandContext = {
+  ide: true,
+  hasDoc: false,
+  editing: false,
+  canBack: false,
+  canForward: false,
+  hasChanges: false,
+  stateInProject: false,
+  hasRepo: false,
+  hasUnread: false,
+};
+const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
+
+describe("the registry", () => {
+  it("accounts for every shortcut action: a command, or one of the two that open the box", () => {
+    expect(unregisteredActions()).toEqual([]);
+    expect(NOT_COMMANDS).toEqual(["searchEverywhere", "commands"]);
+    for (const action of SHORTCUT_ACTIONS) {
+      const listed = COMMANDS.some((c) => c.id === action);
+      expect(listed, action).toBe(!(NOT_COMMANDS as readonly string[]).includes(action));
+    }
+  });
+
+  it("lists each command once, with a label of its own", () => {
+    expect(new Set(COMMANDS.map((c) => c.id)).size).toBe(COMMANDS.length);
+    const labels = COMMANDS.map((c) => en[c.label]);
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("names the key that really runs the command", () => {
+    const withKey = COMMANDS.filter((c) => c.shortcut !== undefined);
+    expect(withKey.length).toBeGreaterThan(20);
+    for (const command of withKey) {
+      expect(matchShortcut(eventFor(command.shortcut ?? "")), command.id).toBe(command.id);
+    }
+  });
+
+  it("gives a key to every shortcut action and to nothing else", () => {
+    const shortcutIds = new Set<string>(SHORTCUT_ACTIONS);
+    for (const command of COMMANDS) {
+      expect(command.shortcut !== undefined, command.id).toBe(shortcutIds.has(command.id));
+    }
+  });
+});
+
+describe("availableCommands", () => {
+  it("offers Save only while editing", () => {
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true }))).not.toContain("save");
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, editing: true }))).toContain("save");
+  });
+
+  it("offers next and previous change only for a document with changes, in the reading view", () => {
+    const withChanges = { ...IDLE, hasDoc: true, hasChanges: true };
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true }))).not.toContain("nextChange");
+    expect(idsOf(availableCommands(withChanges))).toEqual(
+      expect.arrayContaining(["nextChange", "prevChange"]),
+    );
+    expect(idsOf(availableCommands({ ...withChanges, editing: true }))).not.toContain("nextChange");
+  });
+
+  it("offers Back and Forward only when there is somewhere to go", () => {
+    expect(idsOf(availableCommands(IDLE))).not.toContain("back");
+    expect(idsOf(availableCommands({ ...IDLE, canBack: true }))).toContain("back");
+    expect(idsOf(availableCommands({ ...IDLE, canBack: true }))).not.toContain("forward");
+    expect(idsOf(availableCommands({ ...IDLE, canForward: true }))).toContain("forward");
+  });
+
+  it("offers the commands of the open document only when there is one", () => {
+    const without = idsOf(availableCommands(IDLE));
+    for (const id of [
+      "copyPath",
+      "copyReference",
+      "openExternal",
+      "find",
+      "edit",
+      "revealInTree",
+    ]) {
+      expect(without, id).not.toContain(id);
+    }
+    const open = idsOf(availableCommands({ ...IDLE, hasDoc: true }));
+    for (const id of [
+      "copyPath",
+      "copyReference",
+      "openExternal",
+      "find",
+      "edit",
+      "revealInTree",
+    ]) {
+      expect(open, id).toContain(id);
+    }
+  });
+
+  it("offers Initialize until the state is kept in the project", () => {
+    expect(idsOf(availableCommands(IDLE))).toContain("initProject");
+    expect(idsOf(availableCommands({ ...IDLE, stateInProject: true }))).not.toContain(
+      "initProject",
+    );
+  });
+
+  it("offers the git baselines only in a repository", () => {
+    expect(idsOf(availableCommands(IDLE))).not.toContain("baselineCommit");
+    const repo = idsOf(availableCommands({ ...IDLE, hasRepo: true }));
+    expect(repo).toEqual(expect.arrayContaining(["baselineLastVisit", "baselineCommit"]));
+  });
+
+  it("leaves the folder commands out of Simple mode, where only the file's own commands remain", () => {
+    const simple = idsOf(availableCommands({ ...IDLE, ide: false, hasDoc: true }));
+    for (const id of ["quickOpen", "searchAll", "explorer", "tagsView", "newFile", "newFolder"]) {
+      expect(simple, id).not.toContain(id);
+    }
+    expect(simple).toEqual(
+      expect.arrayContaining([
+        "openContainingFolder",
+        "zoomIn",
+        "settings",
+        "checkUpdates",
+        "edit",
+      ]),
+    );
+    expect(idsOf(availableCommands(IDLE))).not.toContain("openContainingFolder");
+  });
+
+  it("keeps the registry order", () => {
+    const all = idsOf(availableCommands(IDLE));
+    const registry = idsOf([...COMMANDS]).filter((id) => all.includes(id));
+    expect(all).toEqual(registry);
+  });
+});
+
+describe("matchCommands", () => {
+  it("lists every command, in order, for an empty query", () => {
+    const found = matchCommands("  ", COMMANDS, english);
+    expect(found.map((m) => m.command.id)).toEqual(COMMANDS.map((c) => c.id));
+    expect(found[0].positions).toEqual([]);
+    expect(found[0].alias).toBeNull();
+  });
+
+  it("finds a command by the words of its label, in any order", () => {
+    expect(top("toggle outline")).toBe("toggleOutline");
+    expect(top("outline toggle")).toBe("toggleOutline");
+    expect(top("upd")).toBe("checkUpdates");
+    expect(ids("initialize")).toEqual(["initProject"]);
+  });
+
+  it("ranks a label that starts with the query above one that only contains it", () => {
+    const found = ids("save");
+    expect(found[0]).toBe("save");
+  });
+
+  it("ranks the start of a word above the middle of one", () => {
+    // "path" starts a word of "Copy path"; it is inside the label of no other command
+    expect(top("path")).toBe("copyPath");
+    const found = matchCommands("fol", COMMANDS, english);
+    expect(en[found[0].command.label].toLowerCase()).toMatch(/\bfol/);
+  });
+
+  it("ranks a shorter label first, and keeps the registry order between equal ones", () => {
+    expect(ids("zoom")).toEqual(["zoomIn", "zoomOut", "zoomReset"]);
+    const same: CommandLabels = { current: () => "Go there", english: () => "Go there" };
+    const command = (id: string): Command => COMMANDS.find((c) => c.id === id) as Command;
+    const two = [command("forward"), command("quickOpen")];
+    expect(matchCommands("go", two, same).map((m) => m.command.id)).toEqual([
+      "forward",
+      "quickOpen",
+    ]);
+  });
+
+  it("lists the letters in order only when no label has the words", () => {
+    // "tog" is scattered over "Go to next change" but starts "Toggle ...": only the latter are listed
+    const found = ids("tog");
+    expect(found).toContain("toggleOutline");
+    expect(found).not.toContain("nextChange");
+    expect(ids("gnc")).toContain("nextChange");
+  });
+
+  it("matches letters in order when no word fits", () => {
+    expect(ids("tglol")).toContain("toggleOutline");
+    expect(ids("xyzzy")).toEqual([]);
+  });
+
+  it("ignores case and accents", () => {
+    expect(top("TOGGLE OUTLINE")).toBe("toggleOutline");
+    expect(top("configuracoes", labelsIn(ptBR))).toBe("settings");
+    expect(top("CONFIGURAÇÕES", labelsIn(ptBR))).toBe("settings");
+  });
+
+  it("returns nothing for a query no label has", () => {
+    expect(ids("xyzzy")).toEqual([]);
+  });
+
+  it("points at the matched characters of the label it shows", () => {
+    const [match] = matchCommands("outline", COMMANDS, english);
+    const label = en[match.command.label];
+    expect(match.positions.map((p) => label[p]).join("")).toBe("outline");
+    expect(match.alias).toBeNull();
+  });
+
+  describe("in another language", () => {
+    const pt = labelsIn(ptBR);
+
+    it("matches the label in the current language", () => {
+      expect(ptBR[COMMANDS[0].label]).not.toBe(en[COMMANDS[0].label]);
+      const found = matchCommands("salvar", COMMANDS, pt);
+      expect(found[0].command.id).toBe("save");
+      expect(found[0].alias).toBeNull();
+      expect(found[0].label).toBe(ptBR["cmd.save"]);
+      expect(found[0].positions.length).toBeGreaterThan(0);
+    });
+
+    it("still matches the English label, and says so", () => {
+      const found = matchCommands("toggle outline", COMMANDS, pt);
+      expect(found[0].command.id).toBe("toggleOutline");
+      expect(found[0].label).toBe(ptBR["cmd.toggleOutline"]);
+      expect(found[0].alias).toBe(en["cmd.toggleOutline"]);
+      expect(found[0].positions).toEqual([]);
+    });
+
+    it("points at the current label, with no alias, when it matches too", () => {
+      const found = matchCommands("zoom", COMMANDS, pt);
+      expect(found.map((m) => m.command.id)).toEqual(
+        expect.arrayContaining(["zoomIn", "zoomOut", "zoomReset"]),
+      );
+      for (const match of found) {
+        expect(match.alias, match.command.id).toBeNull();
+        expect(match.positions.length, match.command.id).toBeGreaterThan(0);
+      }
+    });
+
+    it("lists a command once, whichever language matched", () => {
+      const found = ids("settings", labelsIn(de));
+      expect(found.filter((id) => id === "settings")).toHaveLength(1);
+      expect(top("einstellungen", labelsIn(de))).toBe("settings");
+      expect(top("settings", labelsIn(de))).toBe("settings");
+    });
+  });
+});

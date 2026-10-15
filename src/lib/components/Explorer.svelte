@@ -9,6 +9,7 @@
   import { filter } from "../stores/filter.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import FilterPopover from "./FilterPopover.svelte";
   import Icon from "./Icon.svelte";
@@ -41,6 +42,19 @@
       label: t("explorer.autoReveal"),
       checked: session.autoReveal,
       onselect: () => session.toggleAutoReveal(),
+    },
+    { type: "separator" },
+    {
+      id: "markAllRead",
+      label: t("unread.markAllRead"),
+      disabled: unread.count === 0,
+      onselect: () => void unread.markAllRead(),
+    },
+    {
+      id: "onlyUnread",
+      label: t("unread.showOnlyUnread"),
+      checked: unread.onlyUnread,
+      onselect: () => unread.toggleOnlyUnread(),
     },
     { type: "separator" },
     {
@@ -125,9 +139,17 @@
   {#if !ui.collapsedSections.has("vault")}
     {#if filter.roots.main.length > 0 || ui.newFile?.folder === ""}
       <Tree bind:this={tree} nodes={filter.roots.main} label={t("tree.files")} root />
+      {#if unread.caughtUp}
+        <!-- the open document stays listed, so the empty state goes under it -->
+        <p class="panel-note">{t("unread.allCaughtUp")}</p>
+      {/if}
     {:else}
       <p class="panel-note">
-        {filter.hiddenFiles.length > 0 ? t("filter.noneVisible") : t("explorer.empty")}
+        {unread.onlyUnread
+          ? t("unread.allCaughtUp")
+          : filter.hiddenFiles.length > 0
+            ? t("filter.noneVisible")
+            : t("explorer.empty")}
       </p>
     {/if}
   {/if}
@@ -151,7 +173,14 @@
     {/if}
   {/if}
 </div>
-{#if filter.hiddenByFilter > 0}
+{#if unread.onlyUnread}
+  <div class="tree-footer">
+    <span class="tree-footer__text">{t("unread.onlyListed")}</span>
+    <button type="button" class="link-btn" onclick={() => unread.toggleOnlyUnread()}>
+      {t("filter.showAll")}
+    </button>
+  </div>
+{:else if filter.hiddenByFilter > 0}
   <div class="tree-footer">
     <span class="tree-footer__text" title={footer}>{footer}</span>
     <button type="button" class="link-btn" onclick={() => filter.setShowAll(!filter.showAll)}>

@@ -5,6 +5,56 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-15
+
+One box to find anything, a dot for every document that changed since you read it, code references you can click, and
+"Open with TrailMark" on macOS and Linux.
+
+### Added
+- **Search everywhere (`Ctrl+T`).** One box finds files, sections, tags and commands, grouped in that order, with **All**, **Files**,
+  **Sections**, **Tags** and **Commands** scopes (`Tab` / `Shift+Tab` to move between them, or click). `Ctrl+P` opens it on Files and works
+  exactly as Quick open did; `Ctrl+Shift+P` opens Commands. Type `>` first for commands or `#` for sections. Sections come from the same
+  index as the Search panel and open at the heading; Enter on a tag puts it in the box as a `tag:` filter. Commands cover every action of the
+  app, including the ones that only lived in a menu (Initialize TrailMark, Check for updates, New folder...), show their shortcut, appear only
+  when they apply, and can be found by their English name in any language. A query of several words matches files whose path has every word.
+- **Unread markers.** A document that changed since you last read it gets a small dot in the Explorer, in Search everywhere, in the Search
+  panel, in the Tags view and in **Since last visit**; a folder with unread documents inside is shown in semibold, with "N unread" as its
+  tooltip. A document counts as read once it has been on screen in a focused window for 3 seconds or you scrolled it, and your own saves
+  count as read. On the first visit every existing document counts as read. **Alt+U** opens the next unread document (newest change first).
+  The Explorer menu has **Mark all read** and **Show only unread**, a folder's menu has **Mark folder read**, and the document menu has
+  **Mark as unread**. Moves and renames made in TrailMark keep what you have read. The state is kept per project with the rest of its
+  private state (`.trailmark/local/read.json` once the project is initialized), never in a file you commit.
+- **"Open with TrailMark" on macOS and Linux.** On macOS, TrailMark is listed in Finder's **Open With** for Markdown files (without becoming
+  the default app), and a folder dropped on its Dock icon opens as a project. On Linux, the `.deb` and `.rpm` declare Markdown files, so
+  file managers list TrailMark under **Open With**.
+- **Clickable code references.** A path in inline code (`` `src/main.rs` ``, `` `src/main.rs:42` ``, `` `lib.rs#L10-L20` ``) or in plain text with a
+  line (src/main.rs:42:7) becomes a link when it names a file of the project: it is looked up from the project root, then from the document's
+  folder, then by file name (a name that several files share asks which one on click). A Markdown file opens in TrailMark at the line, with the
+  section tint; any other file opens in your editor at the line. `Ctrl`+click on a Markdown reference uses the editor too, and the right-click
+  menu has Open, Open in external editor, Copy path and Copy reference. Prose that only looks like a reference (versions, times, URLs, drive
+  paths), code blocks and existing links are left alone.
+- **External editor setting.** Settings has a new **External editor** field with presets for VS Code, Cursor, Zed, Sublime Text and JetBrains IDEs,
+  or any command of your own (`code -g {path}:{line}:{col}`). The command is split into arguments before the file is filled in, so a path with
+  spaces is always one argument, and it runs without a shell. **Open in external editor** (`Ctrl+Shift+E`, the menus) uses it too, at the block
+  at the top of the view; with no command it opens the file with the system's default app as before. If the command can't be run, a message says
+  which program was not found and takes you to Settings.
+
+### Security
+- The external editor starts in your home folder, never in the project, so a program placed in a cloned project cannot stand in for a
+  command the editor runs. On macOS and Linux, a file without an extension that is marked executable is not handed to the system to open,
+  since that would run it.
+
+### Fixed
+- On macOS, files and folders moved or renamed outside TrailMark now show up at once in the tree and in search, and the tags of a renamed
+  file follow it, where such a move went unnoticed.
+- On macOS, renaming a file or folder in the Explorer so that only the case of its name changes (`readme.md` to `README.md`) works.
+- In Simple mode, a folder created next to the open file no longer reports the files inside it as new.
+
+### Changed
+- In Spanish the Source mode is called **Código**, the usual short name, so the mode switch stays compact.
+- Semantic search is now planned for v0.5 (the disabled **Semantic** toggle in Search says so); v0.4 brings an optional, local
+  connection between TrailMark and your coding agent. See the roadmap.
+
 ## [0.2.1] - 2026-10-14
 
 TrailMark now speaks Português (Brasil), Español and Deutsch, opens from the Windows file manager, and gets a single

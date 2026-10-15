@@ -3,25 +3,31 @@
 //! The core modules are plain Rust with no Tauri dependency: [`vault`] (roots and path safety),
 //! [`render`] (documents to HTML), [`links`], [`search`], [`watch`] (filesystem events), [`git`] and
 //! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor),
-//! [`fileops`] (rename, move, delete and new folders with the links kept working).
-//! [`refs`] knows which images the documents use (for the Explorer filter).
-//! [`shell_integration`] adds "Open with TrailMark" to the file manager.
+//! [`fileops`] (rename, move, delete and new folders with the links kept working), [`external_editor`] (the command that
+//! opens a file in the person's editor).
+//! [`refs`] knows which images the documents use (for the Explorer filter); [`unread`] knows which documents
+//! changed since they were last read.
+//! [`shell_integration`] adds "Open with TrailMark" to the file manager (Windows); [`open_request`] receives what the
+//! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
 
 mod commands;
 mod edit;
 mod error;
+mod external_editor;
 mod fileops;
 mod git;
 mod links;
 mod meta;
 mod nav;
+mod open_request;
 mod refs;
 mod render;
 mod search;
 mod session;
 mod shell_integration;
+mod unread;
 mod util;
 mod vault;
 mod watch;
@@ -63,6 +69,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(AppState::default())
+        .manage(open_request::OpenInbox::default())
         // The window starts hidden; this puts it where it was and shows it.
         .setup(|app| {
             window::setup(app);
@@ -96,6 +103,9 @@ pub fn run() {
             commands::load_session,
             commands::absolute_path,
             commands::open_external,
+            commands::open_in_editor,
+            commands::editor_command,
+            commands::set_editor_command,
             commands::reveal_in_folder,
             commands::search,
             commands::referenced_images,
@@ -119,6 +129,11 @@ pub fn run() {
             commands::delete_entries,
             commands::new_folder,
             commands::undo_file_op,
+            commands::get_unread,
+            commands::mark_read,
+            commands::mark_unread,
+            commands::mark_all_read,
+            commands::mark_folder_read,
         ])
         .build(context)
         .expect("error while building tauri application");
@@ -137,6 +152,9 @@ pub fn run() {
                 ..
             } => handle.state::<AppState>().refresh_on_focus(),
             RunEvent::Exit => handle.state::<AppState>().shutdown(),
+            // Finder opened a file or folder with the app (double-click, "Open With", a drop on the Dock icon).
+            #[cfg(target_os = "macos")]
+            RunEvent::Opened { urls } => commands::opened(handle, &urls),
             _ => {}
         }
     });

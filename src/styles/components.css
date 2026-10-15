@@ -1060,6 +1060,9 @@ select.select-input {
 .field__status:empty {
   display: none;
 }
+.field__status--error {
+  color: var(--git-deleted-text);
+}
 kbd.hint-kbd {
   font: 500 10.5px var(--font-ui);
   color: var(--faint);
