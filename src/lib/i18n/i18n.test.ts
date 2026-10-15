@@ -124,12 +124,12 @@ describe("keys", () => {
 });
 
 describe("the Semantic teaser", () => {
-  it("names the release it is planned for (v0.5), everywhere it shows, in every language", () => {
+  it("names the release it is planned for (v0.6), everywhere it shows, in every language", () => {
     for (const locale of LOCALES) {
       language.preference = locale;
       for (const key of ["search.soon", "search.semanticLabel", "search.semanticHint"] as const) {
-        expect(t(key), `${locale} ${key}`).toContain("v0.5");
-        expect(t(key), `${locale} ${key}`).not.toContain("v0.2");
+        expect(t(key), `${locale} ${key}`).toContain("v0.6");
+        expect(t(key), `${locale} ${key}`).not.toContain("v0.5");
       }
     }
   });

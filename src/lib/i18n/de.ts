@@ -493,10 +493,10 @@ export const de = {
   "search.clear": "Suche löschen",
   "search.clearHint": "Löschen (Esc)",
   "search.semantic": "Semantisch",
-  "search.semanticLabel": "Semantische Suche (v0.5)",
+  "search.semanticLabel": "Semantische Suche (v0.6)",
   "search.semanticHint":
-    "Die Suche nach Bedeutung kommt mit v0.5 (optionales lokales Modell, bei Bedarf geladen)",
-  "search.soon": "v0.5",
+    "Die Suche nach Bedeutung kommt mit v0.6 (optionales lokales Modell, bei Bedarf geladen)",
+  "search.soon": "v0.6",
   "search.summary": "{hits} in {files}",
   "search.files.one": "{n} Datei",
   "search.files.other": "{n} Dateien",

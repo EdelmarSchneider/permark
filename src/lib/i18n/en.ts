@@ -480,10 +480,10 @@ export const en = {
   "search.clear": "Clear search",
   "search.clearHint": "Clear (Esc)",
   "search.semantic": "Semantic",
-  "search.semanticLabel": "Semantic search (v0.5)",
+  "search.semanticLabel": "Semantic search (v0.6)",
   "search.semanticHint":
-    "Meaning-based search arrives in v0.5 (optional local model, downloaded on demand)",
-  "search.soon": "v0.5",
+    "Meaning-based search arrives in v0.6 (optional local model, downloaded on demand)",
+  "search.soon": "v0.6",
   "search.summary": "{hits} in {files}",
   "search.files.one": "{n} file",
   "search.files.other": "{n} files",
