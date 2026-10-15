@@ -87,3 +87,46 @@ export function countMatches(input: CountMatchesInput): number {
   if (input.text.trim() === "" && input.tags.length === 0) return 0;
   return searchFiles({ ...input, limit: input.files.length }).length;
 }
+
+export type QuickMatchesInput = SearchFilesInput & {
+  /** The files the Explorer filter keeps out. `files` is the rest. */
+  hiddenFiles: readonly string[];
+  /** Every file, hidden or not: what is searched once the hidden matches are listed. */
+  allFiles: readonly string[];
+  /** The "+N hidden files match" row was used. */
+  reveal: boolean;
+};
+
+export type QuickMatches = {
+  found: (FoundFile & { hidden: boolean })[];
+  /** Hidden files that match and are not listed: the number on the "+N hidden files match" row. */
+  moreHidden: number;
+};
+
+/**
+ * What Quick open lists for a typed query. The files the Explorer filter hides stay out of the list and are
+ * counted on a row of their own, unless they were revealed or nothing else matches: then they are listed (marked
+ * hidden) right away, so the first row is the file and a single Enter opens it instead of only revealing it.
+ */
+export function quickMatches(input: QuickMatchesInput): QuickMatches {
+  const { hiddenFiles, allFiles, reveal, ...search } = input;
+  const visible = searchFiles(search);
+  const moreHidden = reveal ? 0 : countMatches({ ...search, files: hiddenFiles });
+  if (!reveal && (visible.length > 0 || moreHidden === 0)) {
+    return { found: visible.map((f) => ({ ...f, hidden: false })), moreHidden };
+  }
+  const hidden = new Set(hiddenFiles);
+  const found = searchFiles({ ...search, files: allFiles }).map((f) => ({
+    ...f,
+    hidden: hidden.has(f.path),
+  }));
+  return { found, moreHidden: 0 };
+}
+
+/**
+ * Whether the selected row is the "+N hidden files match" row, which comes after the `listed` file rows. Enter on
+ * it reveals the hidden matches; on any other row it opens the file.
+ */
+export function onMoreRow(active: number, listed: number, moreHidden: number): boolean {
+  return moreHidden > 0 && active === listed;
+}

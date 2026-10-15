@@ -4,7 +4,7 @@
   import { t, tn } from "../i18n";
   import { basename, dirname, isMarkdown, splitWorktree } from "../paths";
   import { registerOverlay, rememberFocus } from "../overlays";
-  import { countMatches, searchFiles } from "../quickOpenModel";
+  import { onMoreRow, quickMatches, type QuickMatches } from "../quickOpenModel";
   import { knownTagsHint } from "../tagModel";
   import { unknownTags } from "../tagQuery";
   import { TagQueryState } from "../tagQueryState.svelte";
@@ -48,8 +48,8 @@
   /** The "+N hidden files match" row was used: the files the Explorer filter hides are listed too. */
   let revealHidden = $state(false);
 
+  /** The files the recent lists are drawn from. */
   const files = $derived(revealHidden ? vault.files : filter.files);
-  const hiddenSet = $derived(new Set(filter.hiddenFiles));
 
   const recency = $derived.by(() => {
     const map = new Map<string, number>();
@@ -75,9 +75,28 @@
     return map;
   });
 
+  /** The box holds a search (words or tags); otherwise it lists the recent files. */
+  const searching = $derived(q.words !== "" || q.chips.length > 0);
+
+  /** What the search finds. When only files the Explorer filter hides match, they are listed at once. */
+  const matches = $derived.by<QuickMatches | null>(() => {
+    if (!searching || unknown.length > 0) return null;
+    return quickMatches({
+      text: q.words,
+      tags: q.chips,
+      files: filter.files,
+      hiddenFiles: filter.hiddenFiles,
+      allFiles: vault.files,
+      reveal: revealHidden,
+      tagsOf: (path) => tags.index.get(path)?.tags,
+      describe,
+      recency: listRecency,
+      limit: MAX_RESULTS,
+    });
+  });
+
   const rows = $derived.by<Row[]>(() => {
-    const words = q.words;
-    if (words === "" && q.chips.length === 0 && unknown.length === 0) {
+    if (!searching && unknown.length === 0) {
       const exists = new Set(files);
       const changed: Row[] = [];
       for (const e of feed.entries) {
@@ -107,39 +126,18 @@
         }));
       return [...changed, ...opened];
     }
-    if (unknown.length > 0) return [];
-    return searchFiles({
-      text: words,
-      tags: q.chips,
-      files,
-      tagsOf: (path) => tags.index.get(path)?.tags,
-      describe,
-      recency: listRecency,
-      limit: MAX_RESULTS,
-    }).map((r) => ({
+    return (matches?.found ?? []).map((r) => ({
       ...r,
       description: describe(r.path),
       ms: feed.entries.find((e) => e.type === "file" && e.path === r.path)?.atMs ?? null,
-      hidden: revealHidden && hiddenSet.has(r.path),
     }));
   });
 
-  // the files the Explorer filter hides that the query would also find
-  const hiddenCount = $derived(
-    revealHidden || unknown.length > 0
-      ? 0
-      : countMatches({
-          text: q.words,
-          tags: q.chips,
-          files: filter.hiddenFiles,
-          tagsOf: (path) => tags.index.get(path)?.tags,
-          describe,
-          recency: listRecency,
-        }),
-  );
+  // the files the Explorer filter hides that the query would also find, and are not listed
+  const hiddenCount = $derived(matches?.moreHidden ?? 0);
   /** Rows plus the "hidden files match" row, which is selected like any other. */
   const rowCount = $derived(rows.length + (hiddenCount > 0 ? 1 : 0));
-  const moreActive = $derived(hiddenCount > 0 && active === rows.length);
+  const moreActive = $derived(onMoreRow(active, rows.length, hiddenCount));
 
   const emptyText = $derived.by(() => {
     if (unknown.length > 0) {
