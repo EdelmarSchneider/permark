@@ -914,6 +914,13 @@ fn a_note_that_was_never_written_in_is_removed_unless_it_is_pinned_or_has_text()
     f.service.set_pinned("pinned.md", true).expect("pin");
     assert!(f.service.discard_blank("blank.md").expect("discard"));
     assert!(!f.path("blank.md").exists());
+    // a note that was written in and then emptied is not told apart from one that never was, so what is removed goes to the
+    // Recycle Bin, where it can be had back
+    assert_eq!(
+        *lock(&f.bin.given),
+        [f.path("blank.md")],
+        "the file goes to the bin"
+    );
     assert!(!f.service.discard_blank("text.md").expect("discard"));
     assert!(!f.service.discard_blank("pinned.md").expect("discard"));
     assert!(!f.service.discard_blank("gone.md").expect("discard"));

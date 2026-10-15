@@ -1021,7 +1021,9 @@ impl NotesService {
     }
 
     /// Removes a note that was never written in: blank, not pinned. Returns whether it was removed. The person's own text
-    /// is never touched: a note with anything but blank characters stays.
+    /// is never touched: a note with anything but blank characters stays. A note that was written in and then emptied cannot be
+    /// told from one that never was (its earlier texts are versions only some of the time), so the file goes to the Recycle Bin,
+    /// not out of the world.
     pub fn discard_blank(&self, path: &str) -> Result<bool, NotesError> {
         self.require_writable()?;
         let (name, abs) = self.resolve_note(path)?;
@@ -1036,11 +1038,11 @@ impl NotesService {
             return Ok(false);
         }
         self.own.expect_removals(std::slice::from_ref(&name));
-        match std::fs::remove_file(&abs) {
+        match self.recycler.recycle(std::slice::from_ref(&abs)) {
             Ok(()) => Ok(true),
-            Err(e) => {
+            Err(message) => {
                 self.own.retract_removals(std::slice::from_ref(&name));
-                Err(NotesError::io(&name, e))
+                Err(NotesError::io(&name, io::Error::other(message)))
             }
         }
     }
