@@ -148,7 +148,7 @@ Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at a
 - **Copy reference** (`@docs/plan.md`) and **copy selection with reference**: a quoted excerpt plus path and section,
   ready to paste into any AI chat or CLI
 - Configurable reference template
-- **Review notes**: select a passage, press `N` and write a note; your agent can read the open ones and mark them done
+- **Review notes** (coming in v0.4): select a passage, press `N` and write a note; your agent can read the open ones and mark them done
   (see [Use with an AI agent](#use-with-an-ai-agent))
 
 ### 🗂️ Zero footprint by default
@@ -194,6 +194,8 @@ trailmark docs/plan.md     # open a single file in simple mode
 You can also drag and drop a folder or a `.md` file onto the window.
 
 ## Use with an AI agent
+
+> **Coming in v0.4.** This section describes the next release; v0.3.0 does not have it yet.
 
 TrailMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this
 paragraph" or "go through my notes" and the agent knows which document, which section and which words you mean. It talks to
