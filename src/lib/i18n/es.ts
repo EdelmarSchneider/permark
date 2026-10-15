@@ -343,6 +343,10 @@ export const es = {
   "agent.shares.unread": "Qué documentos cambiaron desde la última vez que los leíste",
   "agent.shares.search": "Resultados de búsqueda en los documentos de este proyecto",
   "agent.shares.show": "Un agente también puede mostrarte un lugar. Nunca modifica un documento.",
+  "agent.shares.leaves":
+    "TrailMark solo habla con programas de este equipo. Un agente puede enviar lo que lee a su servicio de IA.",
+  "agent.shares.file":
+    "Mientras esté activada, el documento abierto, la sección y el texto seleccionado también se escriben en .trailmark/local/agent.json (para scripts), si el proyecto guarda sus ajustes en .trailmark/.",
   "agent.recent": "Últimas solicitudes",
   "agent.recent.none": "Aún no hay solicitudes.",
   "agent.request.get_context": "Leyó lo que estás viendo",
@@ -657,7 +661,7 @@ export const es = {
   "settings.agent": "Conexión con agentes",
   "settings.agentSwitch": "Dejar que los agentes de IA vean lo que estoy mirando",
   "settings.agentHint":
-    "Desactivada por defecto y solo para este proyecto. Un agente puede leer lo que hay en tu pantalla y mostrarte un lugar. Nunca modifica un documento. Todo queda en este equipo.",
+    "Desactivada por defecto y solo para este proyecto. Un agente puede leer lo que hay en tu pantalla y mostrarte un lugar. Nunca modifica un documento. TrailMark solo habla con programas de este equipo, pero un agente puede enviar lo que lee a su servicio de IA. Mientras esté activada, lo que estás viendo también se escribe en .trailmark/local/agent.json, si el proyecto guarda sus ajustes en .trailmark.",
   "settings.agentUnavailable": "No disponible para un solo archivo.",
   "settings.agentSetup": "Conectar un agente",
   "settings.agentSetupHint":

@@ -135,6 +135,21 @@ describe("the Semantic teaser", () => {
   });
 });
 
+describe("what the agent connection says about privacy", () => {
+  it("does not claim that everything stays on the computer, and says where the context is also written, in every language", () => {
+    for (const locale of LOCALES) {
+      language.preference = locale;
+      // the old promise was about the whole outcome; the agent's own service is outside TrailMark
+      expect(en["settings.agentHint"], locale).not.toContain("Everything stays");
+      for (const key of ["settings.agentHint", "agent.shares.file"] as const) {
+        expect(t(key), `${locale} ${key}`).toContain(".trailmark/local/agent.json");
+      }
+      // a sentence of its own that says an agent may pass what it reads on
+      expect(t("agent.shares.leaves").length, locale).toBeGreaterThan(40);
+    }
+  });
+});
+
 // ---- choosing the language ---------------------------------------------------------------------------------------
 
 describe("matchLocale", () => {

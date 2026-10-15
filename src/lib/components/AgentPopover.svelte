@@ -63,6 +63,8 @@
       <li>{t("agent.shares.notes")}</li>
       <li>{t("agent.shares.show")}</li>
     </ul>
+    <span class="field__status">{t("agent.shares.leaves")}</span>
+    <span class="field__status">{t("agent.shares.file")}</span>
   </div>
   <div class="field">
     <span class="field__label">{t("agent.recent")}</span>

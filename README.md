@@ -202,10 +202,12 @@ paragraph" or "go through my notes" and the agent knows which document, which se
 TrailMark through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so it works with any tool that supports MCP
 (Claude Code, Cursor, opencode, Codex, Gemini CLI, Claude Desktop and others), and without one of them nothing changes.
 
-**It is off by default, per project, and local.** Nothing leaves your machine, and TrailMark shares nothing until you turn it on in
-**Settings → Agent connection** (or **Agent connection: turn on** in the command palette). While it is on, the status bar shows
-**Agent**, with a dot that fills while an agent is connected. Click it to see what is shared and what was asked lately, and to turn
-it off in one click.
+**It is off by default, per project, and local.** TrailMark shares nothing until you turn it on in **Settings → Agent connection** (or
+**Agent connection: turn on** in the command palette), and it only talks to programs on your computer: it has no server and sends
+nothing over the network. The agent you connect is another matter. It may send what it reads (your selection, your notes, search
+results) to its AI service, as it would anything else you show it. The switch is yours alone: it is kept in TrailMark's own data
+folder, so nothing inside a project, such as a cloned repository, can turn it on. While it is on, the status bar shows **Agent**, with
+a dot that fills while an agent is connected. Click it to see what is shared and what was asked lately, and to turn it off in one click.
 
 ### Connect an agent
 
@@ -232,7 +234,8 @@ the right path filled in, and a Copy button for each.
 installer put on your machine, the one inside `TrailMark.app` on macOS, or the AppImage file. **Use the full path:** on Windows and
 macOS `trailmark` is not on your `PATH` after an install, so the bare name only works where you put it there yourself. Quote the
 path when it has spaces. The agent runs in your project's folder, and TrailMark finds the project from it, so one
-configuration serves every project you have opened in TrailMark.
+configuration serves every project you have opened in TrailMark. Before it sends anything, `trailmark mcp` checks that what answers
+is TrailMark running as you, and not another program that took the name.
 
 ### What an agent can do
 
@@ -272,8 +275,9 @@ In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your us
 
 Other tools can do the same from their own hooks. When there is nothing to say (the connection is off, or TrailMark is not open), the
 command prints nothing, so a hook never adds noise to a prompt. A project that keeps its settings in `.trailmark/` also has
-`.trailmark/local/agent.json` while the connection is on: the same answer as a file, for a script or a tool without MCP. It is
-private to you (`local/` is gitignored) and deleted when the connection is turned off.
+`.trailmark/local/agent.json` while the connection is on: the same answer as a file, for a script or a tool without MCP. **It holds
+the open document, the section on screen and your selected text, and any program running as you can read it, as can a folder-sync tool
+that watches the project.** It stays out of git (`local/` ignores itself) and is deleted when the connection is turned off.
 
 ### Review notes
 
@@ -284,7 +288,7 @@ it reads them with `list_notes`, and when it marks one done its reply appears un
 
 Notes follow their passage when the document changes: they are found again by their words, then by their section, then by their
 line. A note whose passage was rewritten stays in the list marked **Passage changed**. Notes are yours, kept next to the other local
-state (`.trailmark/local/notes.json` once you initialize TrailMark in the project, otherwise in your user profile), never committed,
+state (`.trailmark/local/notes.json` once you initialize TrailMark in the project, otherwise in your user profile), never committed (the folder ignores itself),
 and they work without the agent connection.
 
 ## Keyboard shortcuts
