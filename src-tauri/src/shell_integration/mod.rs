@@ -21,12 +21,15 @@ use std::io;
 
 use serde::Serialize;
 
+#[cfg(windows)]
+use crate::distribution;
+
 /// The Windows Settings page where the default app of a file type is chosen.
 pub const DEFAULT_APPS_URI: &str = "ms-settings:defaultapps";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ShellError {
-    #[error("the file manager entries are only available on Windows")]
+    #[error("the file manager entries are not available in this build of the program")]
     Unsupported,
     // The registry only exists on Windows.
     #[cfg_attr(not(windows), allow(dead_code))]
@@ -54,6 +57,9 @@ pub struct ShellState {
 /// What is registered now.
 #[cfg(windows)]
 pub fn state() -> ShellState {
+    if distribution::current().is_store() {
+        return ShellState::default();
+    }
     registry::Registry::current_user().state()
 }
 
@@ -65,6 +71,7 @@ pub fn state() -> ShellState {
 /// Adds or removes the context-menu entries, worded in `locale` (`en`, `pt-BR`, `es`, `de`).
 #[cfg(windows)]
 pub fn set_context_menu(enabled: bool, locale: &str) -> Result<ShellState, ShellError> {
+    refuse_in_store_build()?;
     let registry = registry::Registry::current_user();
     let exe = current_exe()?;
     registry
@@ -76,6 +83,7 @@ pub fn set_context_menu(enabled: bool, locale: &str) -> Result<ShellState, Shell
 /// Adds or removes TrailMark from the "Open with" list of Markdown files, worded in `locale`.
 #[cfg(windows)]
 pub fn set_association(enabled: bool, locale: &str) -> Result<ShellState, ShellError> {
+    refuse_in_store_build()?;
     let registry = registry::Registry::current_user();
     let exe = current_exe()?;
     registry
@@ -87,6 +95,9 @@ pub fn set_association(enabled: bool, locale: &str) -> Result<ShellState, ShellE
 /// Rewords the entries that exist in `locale`, after the interface language changed.
 #[cfg(windows)]
 pub fn refresh_labels(locale: &str) -> Result<(), ShellError> {
+    if distribution::current().is_store() {
+        return Ok(()); // there are no entries to reword
+    }
     registry::Registry::current_user()
         .refresh_labels(entries::language_for(locale))
         .map_err(ShellError::Registry)
@@ -106,6 +117,19 @@ pub fn set_association(_enabled: bool, _locale: &str) -> Result<ShellState, Shel
 #[allow(clippy::unnecessary_wraps)] // Same signature as the Windows version.
 pub fn refresh_labels(_locale: &str) -> Result<(), ShellError> {
     Ok(())
+}
+
+/// The Microsoft Store build writes no entries. Its package declares the file association in its manifest, and what a
+/// packaged program writes under `HKEY_CURRENT_USER` goes to a private copy of the registry that the shell never reads,
+/// so a switch in Settings would do nothing. The "Open with TrailMark" menu on folders has no counterpart in a package:
+/// it needs a shell extension, which this build does not have.
+#[cfg(windows)]
+fn refuse_in_store_build() -> Result<(), ShellError> {
+    if distribution::current().is_store() {
+        Err(ShellError::Unsupported)
+    } else {
+        Ok(())
+    }
 }
 
 /// The program the entries start: this one.
@@ -236,6 +260,23 @@ mod tests {
         // the script's version, `$\"$OpenWithExe$\" $\"${ARGUMENT}$\"`, is the same shape
         assert!(HOOKS.contains(r#""$\"$OpenWithExe$\" $\"${ARGUMENT}$\"""#));
         assert!(HOOKS.contains(r#""$\"$OpenWithExe$\" $\"%1$\"""#));
+    }
+
+    /// Checked in the CI job that builds the store flavor. Neither call reaches the registry, so the test is safe to run
+    /// on a machine that has TrailMark installed.
+    #[cfg(all(windows, feature = "store"))]
+    #[test]
+    fn the_store_build_registers_nothing_and_shows_no_section() {
+        assert_eq!(state(), ShellState::default());
+        assert!(matches!(
+            set_context_menu(true, "en"),
+            Err(ShellError::Unsupported)
+        ));
+        assert!(matches!(
+            set_association(true, "en"),
+            Err(ShellError::Unsupported)
+        ));
+        assert!(refresh_labels("en").is_ok());
     }
 
     #[test]

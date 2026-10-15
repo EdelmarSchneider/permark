@@ -5,6 +5,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::distribution::{self, agent_program};
 use crate::session::remove_local_state;
 use crate::vault::Vault;
 
@@ -84,7 +85,7 @@ impl AgentBridge {
         Self {
             hub: Arc::new(
                 Hub::new(vault, backend, events)
-                    .with_program(program_path().map(|path| path.display().to_string())),
+                    .with_program(agent_program(distribution::current(), program_path())),
             ),
             endpoint: endpoint.map_err(|error| socket_failure(&error)),
             agent_path: Mutex::new(agent_path),

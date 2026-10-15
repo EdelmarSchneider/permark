@@ -23,6 +23,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   initialPath: [],
   recentVaults: [],
   appLanguage: [],
+  appDistribution: [],
   setAppLanguage: ["de"],
   shellIntegrationState: [],
   setShellContextMenu: [true, "de"],

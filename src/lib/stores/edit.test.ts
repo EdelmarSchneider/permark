@@ -16,6 +16,7 @@ vi.mock("../api", () => ({
   api: {
     ...fake,
     metaIndex: async () => [],
+    appDistribution: async () => "standard",
     listTags: async () => ({ tags: [], untagged: 0, missing: 0, status: {} }),
     on: async () => () => {},
   },

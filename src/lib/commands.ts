@@ -52,6 +52,8 @@ export type CommandContext = {
   hasUnread: boolean;
   /** The agent connection is on for this project. */
   agentOn: boolean;
+  /** This is the Microsoft Store build, which the Store updates (it has no "Check for updates"). */
+  storeBuild: boolean;
 };
 
 export type Command = {
@@ -156,7 +158,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "agentOff", label: "cmd.agentOff", available: (ctx) => ctx.ide && ctx.agentOn },
   { id: "agentCopySetup", label: "cmd.agentCopySetup", available: inFolder },
   { id: "openContainingFolder", label: "cmd.openContainingFolder", available: (ctx) => !ctx.ide },
-  { id: "checkUpdates", label: "cmd.checkUpdates" },
+  { id: "checkUpdates", label: "cmd.checkUpdates", available: (ctx) => !ctx.storeBuild },
 ];
 
 /**

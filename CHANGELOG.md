@@ -5,6 +5,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **A Microsoft Store build.** TrailMark can now be packaged for the Microsoft Store (`scripts/build-msix.ps1` builds an unsigned
+  MSIX; see `docs/msstore.md`). The Store version is the same program with a few differences: the Store updates it, so it has no
+  "Check for updates" and makes no update requests; it puts `trailmark` on your `PATH`, so the agent setup lines in Settings are the
+  short ones (`trailmark mcp`); and Markdown files can be opened with it from the "Open with" menu. The right-click "Open with
+  TrailMark" entry on folders is not in the Store version.
+- A [privacy policy](https://edelmarschneider.github.io/trailmark/privacy.html) page on the website.
+
 ## [0.4.0] - 2026-10-15
 
 Your AI agent can see what you are reading, and you can leave it comments on passages.

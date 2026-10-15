@@ -56,6 +56,7 @@ const IDLE: CommandContext = {
   hasRepo: false,
   hasUnread: false,
   agentOn: false,
+  storeBuild: false,
 };
 const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
 
@@ -157,6 +158,20 @@ describe("availableCommands", () => {
     expect(idsOf(availableCommands({ ...IDLE, stateInProject: true }))).not.toContain(
       "initProject",
     );
+  });
+
+  it('offers "Check for updates" everywhere except the Microsoft Store build, which the Store updates', () => {
+    expect(idsOf(availableCommands(IDLE))).toContain("checkUpdates");
+    expect(idsOf(availableCommands({ ...IDLE, ide: false }))).toContain("checkUpdates");
+    const store = { ...IDLE, storeBuild: true };
+    expect(idsOf(availableCommands(store))).not.toContain("checkUpdates");
+    expect(idsOf(availableCommands({ ...store, ide: false, hasDoc: true }))).not.toContain(
+      "checkUpdates",
+    );
+    // the rest of the list is the same
+    const others = (ctx: CommandContext): string[] =>
+      idsOf(availableCommands(ctx)).filter((id) => id !== "checkUpdates");
+    expect(others(store)).toEqual(others(IDLE));
   });
 
   it("offers the agent connection's switch for the state it is in, and its setup in a folder", () => {

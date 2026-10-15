@@ -20,6 +20,7 @@
   import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { agent } from "../stores/agent.svelte";
+  import { distribution } from "../stores/distribution.svelte";
   import { docs } from "../stores/docs.svelte";
   import { editorCommand } from "../stores/editorCommand.svelte";
   import { chooseLanguage } from "../stores/languageChoice.svelte";
@@ -368,32 +369,40 @@
             aria-label={line.label}
             value={line.text}></textarea>
         {/each}
-        <span class="field__status">{t("settings.agentSetupHint")}</span>
+        <span class="field__status"
+          >{distribution.isStore
+            ? t("settings.agentSetupHintStore")
+            : t("settings.agentSetupHint")}</span
+        >
       </div>
     {/if}
   </div>
   <div class="field">
     <span class="field__label">{t("settings.updates")}</span>
-    <div class="field__row">
-      {#if update.phase === "available"}
-        <button
-          type="button"
-          class="btn btn--sm btn--primary"
-          onclick={() => void updates.install()}
-        >
-          {t("update.restart")}
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="btn btn--sm"
-          disabled={isBusy(update)}
-          onclick={() => void updates.check(true)}
-        >
-          {update.phase === "checking" ? t("update.checking") : t("update.check")}
-        </button>
-      {/if}
-    </div>
-    <span class="field__status" role="status">{status}</span>
+    {#if distribution.isStore}
+      <span class="field__status">{t("settings.updatesStore")}</span>
+    {:else}
+      <div class="field__row">
+        {#if update.phase === "available"}
+          <button
+            type="button"
+            class="btn btn--sm btn--primary"
+            onclick={() => void updates.install()}
+          >
+            {t("update.restart")}
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="btn btn--sm"
+            disabled={isBusy(update)}
+            onclick={() => void updates.check(true)}
+          >
+            {update.phase === "checking" ? t("update.checking") : t("update.check")}
+          </button>
+        {/if}
+      </div>
+      <span class="field__status" role="status">{status}</span>
+    {/if}
   </div>
 </Popover>

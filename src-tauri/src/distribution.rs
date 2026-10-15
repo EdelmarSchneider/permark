@@ -1,0 +1,136 @@
+//! Which build of the program this is: the one the project publishes itself, or the one in the Microsoft Store.
+//!
+//! The two builds are the same code, told apart when the program is compiled (the cargo feature `store`, set together
+//! with `tauri.msstore.conf.json` by the packaging script). What the Store build does differently:
+//!
+//! * **It does not update itself.** The Store updates the apps it installs, and a package cannot replace its own files.
+//!   The updater plugin is not registered, and the interface leaves out "Check for updates".
+//! * **An agent starts it by its alias.** The package puts `trailmark` on the `PATH` (an app execution alias). The
+//!   program's own path is inside the package's folder, which changes with every version and is not meant to be run
+//!   directly, so the setup lines an agent is given name the alias instead (see [`agent_program`]).
+//! * **It writes no file manager entries.** The package declares its file association in its manifest, and what a
+//!   packaged program writes to the registry goes to a private copy the shell never reads (see [`shell_integration`]).
+//!   The folder "Open with TrailMark" menu has no counterpart in a package: it needs a shell extension, which this
+//!   build does not have.
+//!
+//! [`shell_integration`]: crate::shell_integration
+
+use std::path::PathBuf;
+
+use serde::Serialize;
+
+/// Where the running program comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Distribution {
+    /// Installed from the project's own installers (and run from a development checkout).
+    Standard,
+    /// Installed from the Microsoft Store.
+    Store,
+}
+
+impl Distribution {
+    pub const fn is_store(self) -> bool {
+        matches!(self, Self::Store)
+    }
+}
+
+/// The build that is running.
+pub const fn current() -> Distribution {
+    if cfg!(feature = "store") {
+        Distribution::Store
+    } else {
+        Distribution::Standard
+    }
+}
+
+/// The name of the program's app execution alias: what the package puts on the `PATH` (`AppxManifest.xml`).
+const STORE_ALIAS: &str = "trailmark";
+
+/// The program an agent should start (`<program> mcp`), as the setup lines name it: the alias in the Store build, where
+/// the program's own path is not meant to be run, and the path of the running program (`running`) anywhere else.
+pub(crate) fn agent_program(
+    distribution: Distribution,
+    running: Option<PathBuf>,
+) -> Option<String> {
+    if distribution.is_store() {
+        Some(STORE_ALIAS.to_owned())
+    } else {
+        running.map(|path| path.display().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_build_follows_the_cargo_feature() {
+        assert_eq!(current().is_store(), cfg!(feature = "store"));
+        assert_eq!(
+            current() == Distribution::Standard,
+            !cfg!(feature = "store")
+        );
+    }
+
+    #[test]
+    fn the_interface_is_told_the_build_by_name() {
+        let names = |distribution| serde_json::to_value(distribution).expect("serializes");
+        assert_eq!(names(Distribution::Standard), "standard");
+        assert_eq!(names(Distribution::Store), "store");
+    }
+
+    #[test]
+    fn the_store_build_names_its_alias_whatever_its_own_path_is() {
+        let packaged = PathBuf::from(
+            r"C:\Program Files\WindowsApps\EdelmarSchneider.TrailMark_0.4.0.0_x64__abc123\trailmark.exe",
+        );
+        assert_eq!(
+            agent_program(Distribution::Store, Some(packaged)).as_deref(),
+            Some("trailmark")
+        );
+        // Even when the program cannot tell where it is.
+        assert_eq!(
+            agent_program(Distribution::Store, None).as_deref(),
+            Some("trailmark")
+        );
+    }
+
+    /// The setup lines name an alias; the package has to declare that alias, for the program it holds.
+    #[test]
+    fn the_package_declares_the_alias_the_setup_lines_name() {
+        const MANIFEST: &str = include_str!("../msstore/AppxManifest.xml");
+        let program = format!("{}.exe", env!("CARGO_PKG_NAME"));
+        assert_eq!(program, format!("{STORE_ALIAS}.exe"));
+        assert!(MANIFEST.contains(&format!(r#"Alias="{program}""#)));
+        assert!(MANIFEST.contains(&format!(r#"Executable="{program}""#)));
+        // a file association hands the file's path over as the first argument, as `trailmark <path>` takes it
+        assert!(MANIFEST.contains(r#"Parameters="&quot;%1&quot;""#));
+        // the tokens the packaging script fills in
+        assert!(MANIFEST.contains(r#"Version="@VERSION@""#));
+        assert!(MANIFEST.contains(r#"Description="@DESCRIPTION@""#));
+    }
+
+    /// The Store build is configured without the updater: the overlay the packaging script builds with removes its
+    /// settings and the signed update files that go with them.
+    #[test]
+    fn the_store_overlay_removes_the_updater() {
+        const OVERLAY: &str = include_str!("../tauri.msstore.conf.json");
+        let overlay: serde_json::Value = serde_json::from_str(OVERLAY).expect("valid json");
+        assert!(overlay["plugins"]["updater"].is_null());
+        assert!(overlay["plugins"]
+            .as_object()
+            .is_some_and(|plugins| plugins.contains_key("updater")));
+        assert_eq!(overlay["bundle"]["createUpdaterArtifacts"], false);
+    }
+
+    #[test]
+    fn the_standard_build_names_its_own_path() {
+        let path = PathBuf::from("/opt/trailmark/trailmark");
+        assert_eq!(
+            agent_program(Distribution::Standard, Some(path.clone())),
+            Some(path.display().to_string())
+        );
+        assert_eq!(agent_program(Distribution::Standard, None), None);
+    }
+}

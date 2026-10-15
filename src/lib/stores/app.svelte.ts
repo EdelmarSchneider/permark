@@ -33,6 +33,7 @@ import type {
 } from "../types";
 import { agent } from "./agent.svelte";
 import { clock } from "./clock.svelte";
+import { distribution } from "./distribution.svelte";
 import { docs, type OpenOptions } from "./docs.svelte";
 import { edit } from "./edit.svelte";
 import { editorCommand } from "./editorCommand.svelte";
@@ -83,6 +84,7 @@ class AppStore {
   // ---- boot and projects ------------------------------------------------------------------------
 
   async boot(): Promise<void> {
+    void distribution.load();
     session.watchSystemTheme();
     clock.start();
     await this.subscribe();
@@ -974,6 +976,8 @@ class AppStore {
         if (ide && vault.stateLocation !== "project") ui.initDialog = true;
         return;
       case "checkUpdates":
+        // the Microsoft Store updates the app: there is nothing to check (the command is not offered either)
+        if (distribution.isStore) return;
         // the answer ("You're up to date", or the offer) shows in the settings
         ui.settingsOpen = true;
         return void updates.check(true);

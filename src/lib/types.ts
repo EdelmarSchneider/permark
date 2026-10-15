@@ -39,6 +39,11 @@ export type TreeFilter = {
 /** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
 export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
+/**
+ * Which build of the app this is: the one the project publishes ("standard"), or the one in the Microsoft Store
+ * ("store"), which the Store updates, so it has no "Check for updates".
+ */
+export type Distribution = "standard" | "store";
 /** What "Open with TrailMark" has registered with the file manager, as the system has it right now. */
 export type ShellState = {
   /** False where TrailMark cannot register anything (every platform but Windows, for now). */

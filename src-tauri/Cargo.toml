@@ -14,6 +14,11 @@ edition = "2021"
 name = "trailmark_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# The build that goes to the Microsoft Store (see `distribution`): no self-update, and the agent setup lines name the
+# `trailmark` alias the package puts on the PATH. Built with `tauri.msstore.conf.json`, by `scripts/build-msix.ps1`.
+store = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

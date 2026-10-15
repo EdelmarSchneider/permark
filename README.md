@@ -235,8 +235,9 @@ the right path filled in, and a Copy button for each.
 
 `<path to TrailMark>` is the full path of the program, which Settings shows for the copy you are running: the program the
 installer put on your machine, the one inside `TrailMark.app` on macOS, or the AppImage file. **Use the full path:** on Windows and
-macOS `trailmark` is not on your `PATH` after an install, so the bare name only works where you put it there yourself. Quote the
-path when it has spaces. The agent runs in your project's folder, and TrailMark finds the project from it, so one
+macOS `trailmark` is not on your `PATH` after an install, so the bare name only works where you put it there yourself. (The Microsoft
+Store version on Windows is the exception: it puts `trailmark` on your `PATH`, so there Settings shows the short lines, such as
+`claude mcp add trailmark -- trailmark mcp`.) Quote the path when it has spaces. The agent runs in your project's folder, and TrailMark finds the project from it, so one
 configuration serves every project you have opened in TrailMark. Before it sends anything, `trailmark mcp` checks that what answers
 is TrailMark running as you, and not another program that took the name.
 
