@@ -409,6 +409,30 @@ describe("rebase", () => {
     expect(editor.status()).toEqual({ dirty: false, changed: 0 });
   });
 
+  it("keeps two lists that were apart as two lists in the file when what was between them is deleted", () => {
+    const text = "- a\n\nmid\n\n- b\n";
+    load(text);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.delete(inside(1) - 1, inside(2) - 1));
+    expect(view.state.doc.childCount).toBe(2);
+    // two lists of one marker side by side are one list when read back: the file says what the view shows
+    const saved = editor.text();
+    expect(saved).toBe("- a\n\n* b\n");
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    // the next edit to the second list does not change the structure of the file
+    view.dispatch(closeHistory(view.state.tr).insertText("X", inside(1, 3)));
+    expect(editor.text()).toBe("- a\n\n* bX\n");
+  });
+
+  it("changes only the marker of a list that gives way, and leaves the rest of its bytes as they were", () => {
+    const text = "1. one\n   - nested\n   - items `a\\_b`\n\nmid\n\n1. two\n2. three\n";
+    load(text);
+    const { view } = editor.core;
+    view.dispatch(view.state.tr.delete(inside(1) - 1, inside(2) - 1));
+    expect(editor.text()).toBe("1. one\n   - nested\n   - items `a\\_b`\n\n1) two\n2) three\n");
+  });
+
   it("follows the blocks of the saved text when one was removed", () => {
     const text = "one\n\ntwo\n\nthree\n";
     load(text);
