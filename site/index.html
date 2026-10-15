@@ -145,21 +145,21 @@
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/></svg>
             </span>
             <h3>Navigate like a wiki</h3>
-            <p>Open a folder for IDE mode or a single file for a distraction-free reader. Relative links and images resolve in the app, with back and forward and quick open. An <strong>outline</strong> follows you through long documents, and an Explorer filter keeps a code repository down to its docs.</p>
+            <p>Open a folder for IDE mode or a single file for a distraction-free reader. Relative links and images resolve in the app, with back and forward. Code references like <code>src/main.rs:42</code> open the file at the line, in TrailMark or your editor. An <strong>outline</strong> follows you through long documents, and an Explorer filter keeps a code repository down to its docs.</p>
           </li>
           <li class="card card--accent">
             <span class="card__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             </span>
             <h3>Follow your agents live</h3>
-            <p>Docs reload without losing your scroll position. Changed blocks glow, removed blocks leave a marker, and a live feed shows every file being touched, across git worktrees too.</p>
+            <p>Docs reload without losing your scroll position. Changed blocks glow, removed blocks leave a marker, and a live feed shows every file being touched, across git worktrees too. <strong>Unread dots</strong> mark every document that changed since you read it.</p>
           </li>
           <li class="card">
             <span class="card__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
             </span>
             <h3>Find anything, to the section</h3>
-            <p>Section-level full-text search shows <code>file › heading › snippet</code> and jumps to the exact spot. Accent- and case-insensitive, with light stemming, updated as files change.</p>
+            <p><strong>Search everywhere</strong> (<kbd>Ctrl</kbd>+<kbd>T</kbd>) finds files, sections, tags and commands in one box. Section-level full-text search shows <code>file › heading › snippet</code> and jumps to the exact spot. Accent- and case-insensitive, with light stemming, updated as files change.</p>
           </li>
           <li class="card">
             <span class="card__icon" aria-hidden="true">
@@ -384,7 +384,10 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
             <thead><tr><th scope="col">Action</th><th scope="col">Shortcut</th></tr></thead>
             <tbody>
               <tr class="keys__group"><th scope="rowgroup" colspan="2">Reading and navigating</th></tr>
+              <tr><td>Search everywhere</td><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td></tr>
               <tr><td>Quick open file</td><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td></tr>
+              <tr><td>Commands</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></td></tr>
+              <tr><td>Next unread document</td><td><kbd>Alt</kbd>+<kbd>U</kbd></td></tr>
               <tr><td>Search all docs, by section</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td></tr>
               <tr><td>Find in page</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
               <tr><td>Show the Explorer / the Tags view</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd></td></tr>
@@ -446,7 +449,8 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
             </ul>
           </li>
           <li class="milestone">
-            <span class="milestone__tag milestone__tag--later">v0.3</span>
+            <span class="milestone__tag">v0.3</span>
+            <span class="milestone__state">Released</span>
             <ul>
               <li><strong>Search everywhere</strong> (<kbd>Ctrl</kbd>+<kbd>T</kbd>): files, sections, tags and commands in one box</li>
               <li><strong>Unread markers</strong>, clickable <strong>code references</strong> and <strong>"Open with TrailMark"</strong> on macOS and Linux</li>
