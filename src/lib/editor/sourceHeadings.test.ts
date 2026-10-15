@@ -90,7 +90,12 @@ describe("sourceHeadings", () => {
 
   it("handles a long document with many headings", () => {
     const doc = Array.from({ length: 1500 }, (_, i) => `## Section ${i + 1}\n\ntext\n`).join("\n");
-    const found = sourceHeadings(state(doc)).headings;
+    // Each call parses for a bounded time and picks up where the last one stopped, so a slow machine needs a few.
+    const s = state(doc);
+    let result = sourceHeadings(s);
+    for (let tries = 0; !result.complete && tries < 1000; tries++) result = sourceHeadings(s);
+    expect(result.complete).toBe(true);
+    const found = result.headings;
     expect(found).toHaveLength(1500);
     expect(found[1499].text).toBe("Section 1500");
   });
