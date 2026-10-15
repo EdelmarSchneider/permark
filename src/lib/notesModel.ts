@@ -138,3 +138,31 @@ export function neighbour(
   if (at < 0) return shown[step === 1 ? 0 : shown.length - 1];
   return shown[(at + step + shown.length) % shown.length];
 }
+
+/** What the status bar says about saving: nothing, "Unsaved changes", "Saving...", "Saved", or the note a loose file shows for a moment. */
+export type SaveStatus = "none" | "unsaved" | "saving" | "saved" | "note";
+
+/** What `saveStatus` looks at. */
+export type SaveFacts = {
+  /** A note or a file is open (the new note that has no file yet and the file that is not found count as not). */
+  shown: boolean;
+  /** The window can only read: nothing is ever written, so nothing is said about saving. */
+  readOnly: boolean;
+  /** The open document is a loose file, written only when asked. */
+  isFile: boolean;
+  dirty: boolean;
+  saving: boolean;
+  /** A save is taking longer than a second. */
+  savingSlow: boolean;
+};
+
+/**
+ * "Saved" when the note is on disk; "Saving..." only when a save takes longer than a second; nothing while typing. A loose file
+ * is written when asked: it says "Unsaved changes" until then. A window that can only read says nothing: it never saves.
+ */
+export function saveStatus(facts: SaveFacts): SaveStatus {
+  if (!facts.shown || facts.readOnly) return "none";
+  if (facts.isFile) return facts.dirty ? "unsaved" : "note";
+  if (facts.savingSlow) return "saving";
+  return facts.dirty || facts.saving ? "none" : "saved";
+}

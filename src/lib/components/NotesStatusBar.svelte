@@ -4,6 +4,7 @@
   import { tn, t } from "../i18n";
   import { app } from "../stores/app.svelte";
   import { edit } from "../stores/edit.svelte";
+  import { saveStatus } from "../notesModel";
   import { notes } from "../stores/notes.svelte";
   import { session } from "../stores/session.svelte";
   import { updates } from "../stores/updates.svelte";
@@ -12,20 +13,27 @@
   import IconButton from "./IconButton.svelte";
 
   const update = $derived(updates.state);
-  // "Saved" when the note is on disk; "Saving..." only when a save takes longer than a second; nothing while typing
+  // what is said about saving (see `saveStatus`); a loose file shows "Saved" for a moment after it is written
+  const saved = $derived(
+    saveStatus({
+      shown: !!notes.current && !notes.unborn && !notes.currentMissing,
+      readOnly: notes.readOnly !== null,
+      isFile: notes.isFile,
+      dirty: edit.dirty,
+      saving: edit.saving,
+      savingSlow: edit.savingSlow,
+    }),
+  );
   const saveState = $derived(
-    !notes.current || notes.unborn || notes.currentMissing
-      ? ""
-      : notes.isFile
-        ? // a loose file is written when asked: it says "Unsaved changes" until then, and "Saved" for a moment after
-          edit.dirty
-          ? t("notes.status.unsaved")
-          : (edit.note ?? "")
-        : edit.savingSlow
-          ? t("notes.status.saving")
-          : edit.dirty || edit.saving
-            ? ""
-            : t("notes.status.saved"),
+    saved === "unsaved"
+      ? t("notes.status.unsaved")
+      : saved === "saving"
+        ? t("notes.status.saving")
+        : saved === "saved"
+          ? t("notes.status.saved")
+          : saved === "note"
+            ? (edit.note ?? "")
+            : "",
   );
 </script>
 

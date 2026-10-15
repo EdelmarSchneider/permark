@@ -9,6 +9,7 @@ import {
   movePinned,
   neighbour,
   pinnedAt,
+  saveStatus,
 } from "./notesModel";
 import type { NoteEntry } from "./types";
 
@@ -217,5 +218,35 @@ describe("jumping between notes", () => {
     expect(neighbour(shown, null, -1)).toBe("c.md");
     expect(neighbour(shown, "gone.md", 1)).toBe("a.md");
     expect(neighbour([], "a.md", 1)).toBeNull();
+  });
+});
+
+describe("saveStatus", () => {
+  const facts = {
+    shown: true,
+    readOnly: false,
+    isFile: false,
+    dirty: false,
+    saving: false,
+    savingSlow: false,
+  };
+
+  it("says Saved for a note that is on disk, and nothing while it is typed in or being saved", () => {
+    expect(saveStatus(facts)).toBe("saved");
+    expect(saveStatus({ ...facts, dirty: true })).toBe("none");
+    expect(saveStatus({ ...facts, saving: true })).toBe("none");
+    expect(saveStatus({ ...facts, saving: true, savingSlow: true })).toBe("saving");
+  });
+
+  it("says nothing in a window that can only read, where nothing is saved", () => {
+    expect(saveStatus({ ...facts, readOnly: true })).toBe("none");
+    expect(saveStatus({ ...facts, readOnly: true, dirty: true })).toBe("none");
+    expect(saveStatus({ ...facts, readOnly: true, isFile: true })).toBe("none");
+  });
+
+  it("says nothing without an open note, and Unsaved changes for a loose file with typed text", () => {
+    expect(saveStatus({ ...facts, shown: false })).toBe("none");
+    expect(saveStatus({ ...facts, isFile: true })).toBe("note");
+    expect(saveStatus({ ...facts, isFile: true, dirty: true })).toBe("unsaved");
   });
 });
