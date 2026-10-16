@@ -13,6 +13,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **The Git letters are explained.** Hover over a badge in the Explorer for what it means in plain words ("M · Modified: this file changed since
   your last visit..."), or open **What do these letters mean?** from the info button in the status bar or from the Explorer menu: it lists M, A, U,
   D, R and C, and says that TrailMark only reads Git and never commits, stages or creates repositories.
+- **Italiano (Italian).** The interface now comes in Italian besides English, Português (Brasil), Español, Deutsch and 简体中文.
+  **Settings → Language** lists it, and *System default* picks it for any Italian system language (`it-IT`, `it-CH` and the others). The
+  Windows installer offers it, "Open with TrailMark" in the file manager is worded in it ("Apri con TrailMark"), and the Microsoft Store
+  package declares it.
 
 ### Changed
 - **The Initialize dialog and the hint to keep settings with the project say what they do**: no repository is created and nothing is committed,

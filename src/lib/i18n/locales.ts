@@ -1,7 +1,7 @@
 // The languages the interface comes in, and how a person's choice (or the system's language) turns into one of them.
 // Pure functions only; the reactive state lives in `language.svelte.ts`.
 
-export const LOCALES = ["en", "pt-BR", "es", "de", "zh-CN"] as const;
+export const LOCALES = ["en", "pt-BR", "es", "de", "zh-CN", "it"] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /** The source language: its table is complete, and it answers whenever another table lacks a string. */
@@ -19,6 +19,7 @@ export const LANGUAGE_NAMES: Record<Locale, string> = {
   es: "Español",
   de: "Deutsch",
   "zh-CN": "简体中文",
+  it: "Italiano",
 };
 
 /** The BCP 47 tag `Intl` formats numbers and dates with. */
@@ -28,6 +29,7 @@ export const INTL_TAGS: Record<Locale, string> = {
   es: "es",
   de: "de-DE",
   "zh-CN": "zh-CN",
+  it: "it-IT",
 };
 
 /**
@@ -47,6 +49,8 @@ export function matchLocale(tag: string): Locale | null {
       return "de";
     case "zh":
       return "zh-CN";
+    case "it":
+      return "it";
     default:
       return null;
   }

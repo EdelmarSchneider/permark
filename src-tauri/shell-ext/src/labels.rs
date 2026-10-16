@@ -9,6 +9,7 @@ pub(crate) const PORTUGUESE: &str = "Abrir com o TrailMark";
 pub(crate) const SPANISH: &str = "Abrir con TrailMark";
 pub(crate) const GERMAN: &str = "Mit TrailMark öffnen";
 pub(crate) const CHINESE: &str = "用 TrailMark 打开";
+pub(crate) const ITALIAN: &str = "Apri con TrailMark";
 
 /// The text for the first of `preferred` (Windows' display languages, best first, as tags such as `pt-BR`) that the app
 /// is translated into. English when none is.
@@ -29,6 +30,7 @@ fn for_language(tag: &str) -> Option<&'static str> {
         "es" => Some(SPANISH),
         "de" => Some(GERMAN),
         "zh" => Some(CHINESE),
+        "it" => Some(ITALIAN),
         _ => None,
     }
 }
@@ -44,6 +46,7 @@ mod tests {
         assert_eq!(for_languages(&["es-ES"]), "Abrir con TrailMark");
         assert_eq!(for_languages(&["de-DE"]), "Mit TrailMark öffnen");
         assert_eq!(for_languages(&["zh-CN"]), "用 TrailMark 打开");
+        assert_eq!(for_languages(&["it-IT"]), "Apri con TrailMark");
     }
 
     #[test]
@@ -55,6 +58,8 @@ mod tests {
         assert_eq!(for_languages(&["PT-br"]), PORTUGUESE);
         assert_eq!(for_languages(&["de"]), GERMAN);
         assert_eq!(for_languages(&["de_DE"]), GERMAN);
+        assert_eq!(for_languages(&["it-CH"]), ITALIAN);
+        assert_eq!(for_languages(&["it_IT"]), ITALIAN);
     }
 
     #[test]
@@ -88,5 +93,6 @@ mod tests {
         assert_eq!(for_languages(&[""]), ENGLISH);
         // a tag that only starts like a supported one
         assert_eq!(for_languages(&["deu-DE", "pty", "zho-CN"]), ENGLISH);
+        assert_eq!(for_languages(&["ita-IT", "itx"]), ENGLISH);
     }
 }
