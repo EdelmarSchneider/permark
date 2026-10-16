@@ -76,6 +76,20 @@ input {
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--muted);
 }
+/* The side panels hold the long lists (files, tags, changes): their thumb is always there, quiet, so it is
+   clear that there is more below; the reading pane keeps its thumb for when the pointer is over it. */
+.sidebar ::-webkit-scrollbar-thumb,
+.rpanel ::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--faint) 55%, transparent);
+}
+.sidebar :hover::-webkit-scrollbar-thumb,
+.rpanel :hover::-webkit-scrollbar-thumb {
+  background-color: var(--faint);
+}
+.sidebar ::-webkit-scrollbar-thumb:hover,
+.rpanel ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted);
+}
 .sr-only {
   position: absolute;
   width: 1px;
