@@ -20,6 +20,7 @@ const camel = (snake: string): string => snake.replace(/_(\w)/g, (_, c: string) 
 /** One call per `Api` method; the type makes a new method fail to compile until it is listed here. */
 const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   openVault: ["/project"],
+  closeVault: [],
   initialPath: [],
   recentVaults: [],
   appLanguage: [],

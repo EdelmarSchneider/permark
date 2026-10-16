@@ -95,6 +95,7 @@ export const mockImpl: Api = {
     mockState.vault = simple ? "simple" : "ide";
     return simple ? mockSimpleVault : mockIdeVault;
   },
+  closeVault: async () => {},
   initialPath: async () =>
     typeof location === "undefined" ? null : new URLSearchParams(location.search).get("open"),
   recentVaults: async () => mockRecents,
