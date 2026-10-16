@@ -332,6 +332,9 @@
 .md th,
 .md td {
   padding: 8px 14px;
+  /* a column keeps room for about three CJK characters (they may break after each one, so without this a narrow pane would
+     squeeze a cell to one character per line); a table that needs more than the pane has scrolls inside its wrapper */
+  min-width: 5em;
   text-align: left;
   border-bottom: 1px solid var(--border);
 }

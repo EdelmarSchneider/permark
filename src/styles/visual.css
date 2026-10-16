@@ -104,16 +104,24 @@
 .ProseMirror th {
   position: relative;
   vertical-align: top;
-  min-width: 3em;
 }
-/* the reader draws a table in a bordered, rounded wrapper; here the table itself carries the border */
+/* the reader draws a table in a bordered, rounded wrapper; here the table itself carries the border. It is a scrolling box
+   (the rows are the table inside it, at least as wide as the box), so a table wider than the column scrolls on its own
+   instead of squeezing its cells or widening the whole editor */
 .ProseMirror table {
+  display: block;
+  max-width: 100%;
   margin: 0 0 1em;
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   border-collapse: separate;
   border-spacing: 0;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.ProseMirror table > tbody {
+  display: table;
+  min-width: 100%;
 }
 .ProseMirror .tableWrapper {
   overflow-x: auto;
