@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { FILE_CATEGORIES, categoryOf, isFileCategory } from "./fileKinds";
+import {
+  FILE_CATEGORIES,
+  assetKindOf,
+  categoryOf,
+  extensionOf,
+  isFileCategory,
+  isMediaViewKind,
+} from "./fileKinds";
 
 describe("categoryOf", () => {
   it.each([
@@ -11,6 +18,10 @@ describe("categoryOf", () => {
     ["logo.png", "images"],
     ["art/photo.JPG", "images"],
     ["icon.svg", "images"],
+    ["talk.mp4", "media"],
+    ["sounds/Ping.WAV", "media"],
+    ["clip.mkv", "media"],
+    ["voice.opus", "media"],
     ["package.json", "data"],
     ["ci/pipeline.yml", "data"],
     ["Cargo.toml", "data"],
@@ -32,9 +43,78 @@ describe("categoryOf", () => {
   });
 
   it("covers every category in the list", () => {
-    expect(new Set(FILE_CATEGORIES).size).toBe(6);
+    expect(new Set(FILE_CATEGORIES).size).toBe(7);
+    expect(isFileCategory("media")).toBe(true);
     expect(isFileCategory("images")).toBe(true);
     expect(isFileCategory("pictures")).toBe(false);
     expect(isFileCategory(3)).toBe(false);
+  });
+});
+
+describe("what a picture, sound or video is", () => {
+  it.each([
+    ["logo.png", "image"],
+    ["a/b/photo.JPEG", "image"],
+    ["icon.ico", "image"],
+    ["song.mp3", "audio"],
+    ["x.flac", "audio"],
+    ["x.weba", "audio"],
+    ["movie.mp4", "video"],
+    ["movie.MOV", "video"],
+    ["movie.mkv", "video"],
+    ["old.avi", "video"],
+    ["notes.md", null],
+    ["data.json", null],
+    ["archive.zip", null],
+    ["mp4", null],
+    [".mp4", null],
+    ["name.", null],
+  ])("%s is %s", (path, kind) => {
+    expect(assetKindOf(path)).toBe(kind);
+  });
+
+  it("puts every sound and video in the media category and every picture in images", () => {
+    for (const path of [
+      "a.mp3",
+      "a.wav",
+      "a.ogg",
+      "a.oga",
+      "a.opus",
+      "a.flac",
+      "a.m4a",
+      "a.aac",
+      "a.weba",
+    ]) {
+      expect([assetKindOf(path), categoryOf(path)]).toEqual(["audio", "media"]);
+    }
+    for (const path of ["a.mp4", "a.m4v", "a.webm", "a.ogv", "a.mov"]) {
+      expect([assetKindOf(path), categoryOf(path)]).toEqual(["video", "media"]);
+    }
+    for (const path of [
+      "a.png",
+      "a.jpg",
+      "a.jpeg",
+      "a.gif",
+      "a.webp",
+      "a.avif",
+      "a.bmp",
+      "a.ico",
+      "a.svg",
+    ]) {
+      expect([assetKindOf(path), categoryOf(path)]).toEqual(["image", "images"]);
+    }
+  });
+
+  it("reads the extension of a name, and none from a dotfile or a trailing dot", () => {
+    expect(extensionOf("a/b.c/d.TXT")).toBe("txt");
+    expect(extensionOf(".gitignore")).toBeNull();
+    expect(extensionOf("v1.2/readme")).toBeNull();
+    expect(extensionOf("end.")).toBeNull();
+  });
+
+  it("tells the kinds of document view that are drawn from the file", () => {
+    for (const kind of ["image", "audio", "video"]) expect(isMediaViewKind(kind)).toBe(true);
+    for (const kind of ["markdown", "binary", "tooLarge", "text"])
+      expect(isMediaViewKind(kind)).toBe(false);
   });
 });

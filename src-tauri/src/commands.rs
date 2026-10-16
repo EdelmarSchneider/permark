@@ -37,7 +37,7 @@ use crate::session::{
 use crate::shell_integration::{self, ShellError, ShellState};
 use crate::vault::{TreeNode, TreeOptions};
 use crate::watch::FsBatch;
-use crate::workspace::{Asset, ChangedSince, EventSink, VaultInfo, Workspace, WorkspaceHost};
+use crate::workspace::{Asset, ChangedSince, EventSink, Part, VaultInfo, Workspace, WorkspaceHost};
 
 /// The folder that is currently open, if any, and the rules for switching folders.
 pub type AppState = WorkspaceHost;
@@ -381,6 +381,25 @@ pub async fn open_external(
 ) -> Result<(), AppError> {
     let ws = state.current()?;
     blocking(move || open_with_system(&app, &ws, &path)).await
+}
+
+/// Opens a file of the folder with the system's default application, whatever kind of file it is, except a program,
+/// script, installer, shortcut or macro document: those are refused with their kind named, because a file that an agent
+/// or a repository put in the folder must never be started by a click.
+#[tauri::command]
+pub async fn open_with_default_app(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        let target = ws.default_app_target(&path)?;
+        app.opener()
+            .open_path(target.display().to_string(), None::<&str>)
+            .map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
 }
 
 /// Opens a file of the folder in the person's editor, at a line and column (both from 1): runs the editor command of
@@ -778,20 +797,40 @@ pub async fn take_agent_open(state: State<'_, AppState>) -> Result<Option<Opened
     Ok(ws.take_agent_open())
 }
 
-/// The URI scheme that serves the images of the open folder to the document view. Requests are
+/// The URI scheme that serves the pictures, sound and video of the open folder to the document view. Requests are
 /// answered from the folder that is open now, through the same path checks as every other file, so
-/// nothing outside it (or from a folder that has been closed) can be read.
+/// nothing outside it (or from a folder that has been closed) can be read. A sound or video is answered in parts to
+/// the `Range` requests a player makes, so that it plays, and seeks, without being held whole in memory.
 pub const ASSET_SCHEME: &str = "tmasset";
 
-/// The vault path a request for [`ASSET_SCHEME`] asks for: the URL path, decoded, without its leading slash.
+/// The vault path a request for [`ASSET_SCHEME`] asks for: the URL path, decoded, without its leading slash. The query
+/// (the version the UI adds to fetch a changed file again) is not part of the path.
 fn asset_request_path(uri: &http::Uri) -> String {
     links::percent_decode(uri.path().trim_start_matches('/'))
 }
 
-/// The HTTP answer for an image lookup.
+/// The HTTP answer for a lookup of a picture, sound or video.
 fn asset_response(result: Result<Asset, AppError>) -> http::Response<Vec<u8>> {
+    let mut builder = http::Response::builder();
     let (status, content_type, body) = match result {
-        Ok(asset) => (StatusCode::OK, asset.mime, asset.bytes),
+        Ok(asset) => {
+            builder = builder.header(header::ACCEPT_RANGES, "bytes");
+            match asset.part {
+                Part::Whole => (StatusCode::OK, asset.mime, asset.bytes),
+                Part::Range { start, end } => {
+                    builder = builder.header(
+                        header::CONTENT_RANGE,
+                        format!("bytes {start}-{end}/{}", asset.total),
+                    );
+                    (StatusCode::PARTIAL_CONTENT, asset.mime, asset.bytes)
+                }
+                Part::Unsatisfiable => {
+                    builder =
+                        builder.header(header::CONTENT_RANGE, format!("bytes */{}", asset.total));
+                    (StatusCode::RANGE_NOT_SATISFIABLE, "text/plain", Vec::new())
+                }
+            }
+        }
         Err(e) => {
             let status = match e.kind() {
                 "notFound" => StatusCode::NOT_FOUND,
@@ -801,9 +840,10 @@ fn asset_response(result: Result<Asset, AppError>) -> http::Response<Vec<u8>> {
             (status, "text/plain", Vec::new())
         }
     };
-    http::Response::builder()
+    builder
         .status(status)
         .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_LENGTH, body.len())
         .header(header::CACHE_CONTROL, "no-cache")
         .header("X-Content-Type-Options", "nosniff")
         // An SVG shown as a document of its own could not run scripts or load anything.
@@ -816,11 +856,20 @@ fn asset_response(result: Result<Asset, AppError>) -> http::Response<Vec<u8>> {
 }
 
 /// Answers a request for [`ASSET_SCHEME`] on the blocking pool (reading a file must not stall the UI).
-pub fn serve_asset(app: &AppHandle, uri: &http::Uri, responder: UriSchemeResponder) {
+pub fn serve_asset(
+    app: &AppHandle,
+    request: &http::Request<Vec<u8>>,
+    responder: UriSchemeResponder,
+) {
     let host = app.state::<AppState>().inner().clone();
-    let path = asset_request_path(uri);
+    let path = asset_request_path(request.uri());
+    let range = request
+        .headers()
+        .get(header::RANGE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     tauri::async_runtime::spawn_blocking(move || {
-        responder.respond(asset_response(host.read_asset(&path)));
+        responder.respond(asset_response(host.read_asset(&path, range.as_deref())));
     });
 }
 
@@ -1069,7 +1118,10 @@ mod tests {
     fn app_state_starts_empty_and_reports_no_vault() {
         let state = AppState::default();
         assert!(matches!(state.current(), Err(AppError::NoVault)));
-        assert!(matches!(state.read_asset("a.png"), Err(AppError::NoVault)));
+        assert!(matches!(
+            state.read_asset("a.png", None),
+            Err(AppError::NoVault)
+        ));
         state.save_last_visit();
         state.refresh_on_focus();
         state.shutdown();
@@ -1088,6 +1140,11 @@ mod tests {
             "@wt/feat/p.png"
         );
         assert_eq!(path("http://tmasset.localhost/"), "");
+        // the version the UI adds to fetch a changed file again is not part of the path
+        assert_eq!(
+            path("http://tmasset.localhost/clips%2Fa.mp4?v=1760000000000"),
+            "clips/a.mp4"
+        );
     }
 
     #[test]
@@ -1095,10 +1152,15 @@ mod tests {
         let ok = asset_response(Ok(Asset {
             bytes: vec![1, 2, 3],
             mime: "image/png",
+            total: 3,
+            part: Part::Whole,
         }));
         assert_eq!(ok.status(), StatusCode::OK);
         assert_eq!(ok.headers()[header::CONTENT_TYPE], "image/png");
         assert_eq!(ok.headers()["x-content-type-options"], "nosniff");
+        assert_eq!(ok.headers()[header::CONTENT_LENGTH], "3");
+        assert_eq!(ok.headers()[header::ACCEPT_RANGES], "bytes");
+        assert!(!ok.headers().contains_key(header::CONTENT_RANGE));
         assert!(ok.headers().contains_key(header::CONTENT_SECURITY_POLICY));
         assert_eq!(ok.body(), &vec![1, 2, 3]);
 
@@ -1121,5 +1183,43 @@ mod tests {
             assert_eq!(r.status(), status);
             assert!(r.body().is_empty(), "no details leak into the body");
         }
+    }
+
+    #[test]
+    fn a_part_of_a_video_is_a_206_that_says_where_it_sits_in_the_file() {
+        let partial = asset_response(Ok(Asset {
+            bytes: vec![9; 100],
+            mime: "video/mp4",
+            total: 5000,
+            part: Part::Range {
+                start: 400,
+                end: 499,
+            },
+        }));
+        assert_eq!(partial.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(
+            partial.headers()[header::CONTENT_RANGE],
+            "bytes 400-499/5000"
+        );
+        assert_eq!(partial.headers()[header::CONTENT_LENGTH], "100");
+        assert_eq!(partial.headers()[header::ACCEPT_RANGES], "bytes");
+        assert_eq!(partial.headers()[header::CONTENT_TYPE], "video/mp4");
+        assert_eq!(partial.body().len(), 100);
+
+        let beyond = asset_response(Ok(Asset {
+            bytes: Vec::new(),
+            mime: "video/mp4",
+            total: 5000,
+            part: Part::Unsatisfiable,
+        }));
+        assert_eq!(beyond.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(beyond.headers()[header::CONTENT_RANGE], "bytes */5000");
+        assert!(beyond.body().is_empty(), "nothing is carried");
+    }
+
+    #[test]
+    fn the_command_for_the_default_app_is_registered_and_in_the_contract() {
+        assert!(registered_commands().contains("open_with_default_app"));
+        assert!(declared_commands().contains_key("open_with_default_app"));
     }
 }

@@ -3,6 +3,7 @@ import {
   badgeFor,
   childNames,
   collectFiles,
+  collectFolders,
   findNode,
   flattenTree,
   isDirPath,
@@ -41,6 +42,12 @@ describe("splitRoots / collectFiles / findNode", () => {
     const { main, worktrees } = splitRoots(root);
     expect(main.map((n) => n.name)).toEqual(["docs", "README.md"]);
     expect(worktrees.map((n) => n.path)).toEqual(["@wt/feature-ui"]);
+  });
+
+  it("collects every folder, nested ones and worktree roots included, and no file", () => {
+    expect(collectFolders(root.children ?? [])).toEqual(["docs", "docs/specs", "@wt/feature-ui"]);
+    expect(collectFolders([file("README.md")])).toEqual([]);
+    expect(collectFolders([])).toEqual([]);
   });
 
   it("collects every file including worktree files", () => {

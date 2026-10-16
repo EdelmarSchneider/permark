@@ -51,6 +51,7 @@ import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
 import { comments } from "./comments.svelte";
 import { notes } from "./notes.svelte";
+import { media } from "./media.svelte";
 import { outline } from "./outline.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
@@ -876,6 +877,13 @@ class AppStore {
     vault.revealPath(path);
   }
 
+  /** A folder found in Quick open or Search everywhere: the Explorer opens the folders above it, selects it and opens it. */
+  revealFolder(path: string): void {
+    if (vault.isSimple) return;
+    this.revealInTree(path);
+    vault.expanded.add(path);
+  }
+
   openFind(prefill?: string): void {
     if (!docs.current) return;
     const selected = prefill ?? bridge.getSelection?.()?.text;
@@ -1016,6 +1024,39 @@ class AppStore {
     await this.openInEditor(path, line ?? undefined, col ?? undefined);
   }
 
+  /**
+   * "Open with default app": the file goes to the program the system has for its type, whatever the file is. A program,
+   * script, installer or shortcut is refused by the backend; the message names its kind and offers to show the file in
+   * the file manager instead.
+   */
+  async openWithDefaultApp(path = docs.path): Promise<void> {
+    if (!path) return;
+    try {
+      await api.openWithDefaultApp(path);
+    } catch (error) {
+      if (errorKind(error) === "blockedType") {
+        toast.message(errorMessage(error), "warn", {
+          label: t("menu.showInFileManager"),
+          run: () => void this.revealInFolder(path),
+        });
+        return;
+      }
+      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
+    }
+  }
+
+  /** Ctrl+= and Ctrl+-: the zoom of the picture on show, else of the text. */
+  zoomBy(direction: 1 | -1): void {
+    if (docs.current?.kind === "image") media.zoomBy(direction);
+    else session.zoomBy(direction);
+  }
+
+  /** Ctrl+0: a picture goes back to fitting the pane, the text to its usual size. */
+  resetZoom(): void {
+    if (docs.current?.kind === "image") media.reset();
+    else session.setZoom(1);
+  }
+
   async revealInFolder(path: string): Promise<void> {
     try {
       await api.revealInFolder(path);
@@ -1140,6 +1181,9 @@ class AppStore {
         return void this.copyPath();
       case "openExternal":
         return void this.openExternally();
+      case "openDefaultApp":
+        if (ide) void this.openWithDefaultApp();
+        return;
       case "toggleLeft":
         if (ide) this.toggleLeft();
         return;
@@ -1147,11 +1191,11 @@ class AppStore {
         if (ide) this.toggleRight();
         return;
       case "zoomIn":
-        return session.zoomBy(1);
+        return this.zoomBy(1);
       case "zoomOut":
-        return session.zoomBy(-1);
+        return this.zoomBy(-1);
       case "zoomReset":
-        return session.setZoom(1);
+        return this.resetZoom();
       case "cycleWidth":
         return session.cycleWidth();
       case "toggleOutline":
@@ -1242,11 +1286,11 @@ class AppStore {
       case "toggleLeft":
         return this.toggleLeft();
       case "zoomIn":
-        return session.zoomBy(1);
+        return this.zoomBy(1);
       case "zoomOut":
-        return session.zoomBy(-1);
+        return this.zoomBy(-1);
       case "zoomReset":
-        return session.setZoom(1);
+        return this.resetZoom();
       case "cycleWidth":
         return session.cycleWidth();
       case "toggleOutline":

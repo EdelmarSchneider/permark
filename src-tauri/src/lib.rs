@@ -5,7 +5,8 @@
 //! [`session`] (per-project state), [`edit`] (safe saves, new files, block ranges for the editor),
 //! [`fileops`] (rename, move, delete and new folders with the links kept working), [`external_editor`] (the command that
 //! opens a file in the person's editor).
-//! [`refs`] knows which images the documents use (for the Explorer filter); [`unread`] knows which documents
+//! [`media`] knows the pictures, sound and video of a folder, serves them in parts and decides which files the system may open.
+//! [`refs`] knows which images and media the documents use (for the Explorer filter); [`unread`] knows which documents
 //! changed since they were last read; [`comments`] keeps the comments a person leaves on passages.
 //! [`shell_integration`] adds "Open with TrailMark" to the file manager (Windows); [`open_request`] receives what the
 //! macOS Finder opens with the app.
@@ -24,6 +25,7 @@ mod external_editor;
 mod fileops;
 mod git;
 mod links;
+mod media;
 mod meta;
 mod nav;
 mod notes;
@@ -174,11 +176,11 @@ pub fn run() {
             }
             Ok(())
         })
-        // Images of the open folder: answered from the folder that is open now (see `serve_asset`).
+        // Pictures, sound and video of the open folder: answered from the folder that is open now (see `serve_asset`).
         .register_asynchronous_uri_scheme_protocol(
             commands::ASSET_SCHEME,
             |ctx, request, responder| {
-                commands::serve_asset(ctx.app_handle(), request.uri(), responder);
+                commands::serve_asset(ctx.app_handle(), &request, responder);
             },
         )
         .invoke_handler(tauri::generate_handler![
@@ -203,6 +205,7 @@ pub fn run() {
             commands::load_session,
             commands::absolute_path,
             commands::open_external,
+            commands::open_with_default_app,
             commands::open_in_editor,
             commands::editor_command,
             commands::set_editor_command,

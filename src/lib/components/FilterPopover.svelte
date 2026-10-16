@@ -24,6 +24,7 @@
   const categoryNames: Record<FileCategory, MessageKey> = {
     documents: "filter.categoryDocuments",
     images: "filter.categoryImages",
+    media: "filter.categoryMedia",
     data: "filter.categoryData",
     xml: "filter.categoryXml",
     text: "filter.categoryText",

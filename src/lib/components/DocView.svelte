@@ -12,6 +12,7 @@
   import type { EnhanceContext } from "../dom/enhance";
   import { ICON_CHECK, ICON_COPY } from "../dom/enhance";
   import { showsAtTop } from "../editor/viewport";
+  import { isMediaViewKind } from "../fileKinds";
   import { frontmatterValue } from "../frontmatter";
   import { t, tn } from "../i18n";
   import { barFor, type BlockBox } from "../commentBars";
@@ -35,6 +36,7 @@
   import Icon from "./Icon.svelte";
   import Notice from "./Notice.svelte";
   import DocMetaStrip from "./DocMetaStrip.svelte";
+  import MediaView from "./MediaView.svelte";
   import Popover from "./Popover.svelte";
 
   let scroller: HTMLElement | undefined = $state();
@@ -62,7 +64,11 @@
   let barFrame = 0;
 
   const view = $derived(docs.current);
-  const showArticle = $derived(!!view && view.kind !== "binary" && view.kind !== "tooLarge");
+  /** A picture, a sound or a video: drawn from the file itself by the media view, with no text to render. */
+  const mediaView = $derived(view && isMediaViewKind(view.kind) ? { ...view, kind: view.kind } : null);
+  const showArticle = $derived(
+    !!view && view.kind !== "binary" && view.kind !== "tooLarge" && !mediaView,
+  );
   const tombstone = $derived(docs.deleted !== null);
   // `tags:` moved to the strip above the document
   const frontmatter = $derived(
@@ -110,7 +116,7 @@
     missing = null;
     const view = req.view;
 
-    if (view.kind === "binary" || view.kind === "tooLarge") {
+    if (view.kind === "binary" || view.kind === "tooLarge" || isMediaViewKind(view.kind)) {
       renderer.clear();
       finder.clear();
       clearOutline();
@@ -429,7 +435,7 @@
 
   /** Looks the code references up again, in the text that is on screen. */
   function refreshCodeRefs(): void {
-    if (!body || !view || view.kind === "binary" || view.kind === "tooLarge") return;
+    if (!body || !view || view.kind === "binary" || view.kind === "tooLarge" || mediaView) return;
     clearCodeRefs(body);
     if (!vault.isSimple) decorateCodeRefs(body, codeRefsContextFor(vault.files, view.path));
     // the find highlights point into text that was just cut up
@@ -643,7 +649,7 @@
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
   bind:this={scroller}
-  class="doc-scroll"
+  class={["doc-scroll", mediaView && "doc-scroll--media"]}
   hidden={docs.editing}
   role="region"
   tabindex="-1"
@@ -663,6 +669,8 @@
     >
       {@render fileActions(view.path)}
     </Notice>
+  {:else if mediaView}
+    <MediaView view={mediaView} />
   {:else if view && view.kind === "tooLarge"}
     <Notice
       icon="file"
@@ -760,6 +768,9 @@
 {/if}
 
 {#snippet fileActions(path: string)}
+  <button type="button" class="btn" onclick={() => void app.openWithDefaultApp(path)}>
+    {t("media.openDefault")}
+  </button>
   <button type="button" class="btn" onclick={() => void app.openExternally(path)}>
     {t("doc.openExternal")}
   </button>

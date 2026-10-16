@@ -12,6 +12,7 @@ use crate::edit::EditError;
 use crate::external_editor::EditorError;
 use crate::fileops::FileOpError;
 use crate::git::GitError;
+use crate::media::OpenError;
 use crate::meta::MetaError;
 use crate::notes::NotesError;
 use crate::render::RenderError;
@@ -46,6 +47,8 @@ pub enum AppError {
     Comments(#[from] CommentError),
     #[error(transparent)]
     Notes(#[from] NotesError),
+    #[error(transparent)]
+    Open(#[from] OpenError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -78,6 +81,7 @@ impl AppError {
             Self::Editor(_) => "editor",
             Self::Comments(e) => e.kind(),
             Self::Notes(e) => e.kind(),
+            Self::Open(OpenError::Blocked { .. }) => "blockedType",
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -229,6 +233,7 @@ impl AppError {
             },
             Self::Edit(e) => edit_details(e),
             Self::Notes(e) => notes_details(e),
+            Self::Open(OpenError::Blocked { label }) => Details::subject(label),
             Self::FileOps(e) => file_op_details(e),
             Self::Shell(ShellError::Registry(source)) => Details::detail(&source.to_string()),
             Self::Shell(ShellError::Unsupported) => Details::default(),
@@ -395,6 +400,21 @@ mod tests {
         let value = json(&e);
         assert_eq!(value["reason"], "unknownPlaceholder");
         assert_eq!(value["subject"], "file");
+    }
+
+    #[test]
+    fn a_refused_file_names_its_kind_for_the_ui_to_word() {
+        let e = AppError::from(OpenError::Blocked {
+            label: ".ps1".to_owned(),
+        });
+        assert_eq!(
+            json(&e),
+            serde_json::json!({
+                "kind": "blockedType",
+                "message": ".ps1 files are programs or scripts and are not opened from here",
+                "subject": ".ps1"
+            })
+        );
     }
 
     #[test]

@@ -14,6 +14,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use crate::media::AssetKind;
 use crate::util::{modified_ms, read_with_retry};
 pub(crate) use decode::normalize_newlines;
 use decode::{decode, Decoded};
@@ -55,6 +56,22 @@ pub enum DocKind {
     Text,
     Binary,
     TooLarge,
+    /// A picture, shown by the UI from the file itself (no text is read).
+    Image,
+    /// A sound.
+    Audio,
+    /// A video.
+    Video,
+}
+
+impl From<AssetKind> for DocKind {
+    fn from(kind: AssetKind) -> Self {
+        match kind {
+            AssetKind::Image => Self::Image,
+            AssetKind::Audio => Self::Audio,
+            AssetKind::Video => Self::Video,
+        }
+    }
 }
 
 /// Matches the UI's `DocumentView`.
@@ -196,6 +213,23 @@ pub fn render_bytes(
     }
 }
 
+/// The view of a picture, sound or video: only the file's size and time are read. The UI draws the file itself, through
+/// the asset scheme, and takes the time as the version to ask for (so a changed file is fetched again).
+pub fn asset_view(abs: &Path, rel: &str, kind: AssetKind) -> Result<DocumentView, RenderError> {
+    let io_err = |source| RenderError::Io {
+        path: rel.to_owned(),
+        source,
+    };
+    let meta = std::fs::metadata(abs).map_err(io_err)?;
+    if !meta.is_file() {
+        return Err(io_err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "not a file",
+        )));
+    }
+    Ok(empty_view(rel, kind.into(), modified_ms(&meta), meta.len()))
+}
+
 /// Reads and renders a file from disk (retrying transient sharing violations).
 pub fn load_document(
     registry: &Registry,
@@ -270,6 +304,39 @@ mod tests {
         assert_eq!(v.kind, DocKind::Binary);
         assert_eq!(v.size_bytes, 11);
         assert!(v.html.is_empty() && v.blocks.is_empty());
+    }
+
+    #[test]
+    fn a_picture_sound_or_video_is_described_without_being_read() {
+        let d = tempfile::tempdir().expect("tempdir");
+        for (name, kind) in [
+            ("a.png", DocKind::Image),
+            ("a.mp3", DocKind::Audio),
+            ("a.mp4", DocKind::Video),
+        ] {
+            let p = d.path().join(name);
+            fs::write(&p, b"twenty bytes of data").expect("write");
+            let asset = crate::media::asset_kind(name).expect("a media name");
+            let v = asset_view(&p, name, asset).expect("view");
+            assert_eq!(v.kind, kind, "{name}");
+            assert_eq!(v.size_bytes, 20, "{name}");
+            assert!(v.modified_ms > 0 && v.html.is_empty() && v.blocks.is_empty());
+        }
+        let missing = asset_view(&d.path().join("none.png"), "none.png", AssetKind::Image);
+        assert!(matches!(missing, Err(RenderError::Io { .. })));
+        assert!(asset_view(d.path(), "dir.png", AssetKind::Image).is_err());
+    }
+
+    #[test]
+    fn media_kinds_are_written_the_way_the_ui_reads_them() {
+        for (kind, text) in [
+            (DocKind::Image, "\"image\""),
+            (DocKind::Audio, "\"audio\""),
+            (DocKind::Video, "\"video\""),
+            (DocKind::TooLarge, "\"tooLarge\""),
+        ] {
+            assert_eq!(serde_json::to_string(&kind).expect("json"), text);
+        }
     }
 
     #[test]

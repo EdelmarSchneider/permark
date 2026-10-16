@@ -4,18 +4,20 @@
   import { bridge } from "../bridge";
   import { availableCommands, matchCommands, type CommandContext } from "../commands";
   import { errorMessage } from "../errors";
+  import { fileIconOf } from "../fileIcons";
   import { gitStateLabel } from "../gitLabels";
   import { keys, t, tn, type MessageKey } from "../i18n";
   import { en } from "../i18n/en";
-  import { basename, dirname, isMarkdown, splitWorktree } from "../paths";
+  import { basename, dirname, splitWorktree } from "../paths";
   import { registerOverlay, rememberFocus } from "../overlays";
-  import { quickMatches, type QuickMatches } from "../quickOpenModel";
+  import { quickMatches, searchFolders, withAssets, type QuickMatches } from "../quickOpenModel";
   import {
     allowedScope,
     applyPrefix,
     buildView,
     commandRows,
     fileRows,
+    folderRows,
     moveActive,
     outlineRows,
     RESULT_LIMIT,
@@ -25,6 +27,7 @@
     stepScope,
     tagRows,
     type FileRow,
+    type FolderRow,
     type GroupTitle,
     type Row,
     type Scope,
@@ -50,7 +53,7 @@
   import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { relativeTime } from "../time";
-  import { badgeFor } from "../tree";
+  import { badgeFor, collectFolders } from "../tree";
   import Icon from "./Icon.svelte";
   import TagChip from "./TagChip.svelte";
   import TagSuggestions from "./TagSuggestions.svelte";
@@ -78,6 +81,7 @@
   const GROUP_NAME = {
     changed: "quick.recentChanged",
     opened: "quick.recentOpened",
+    folders: "everywhere.group.folders",
     files: SCOPE_NAME.files,
     sections: SCOPE_NAME.sections,
     tags: SCOPE_NAME.tags,
@@ -155,14 +159,17 @@
     return map;
   });
 
+  /** The files the box lists by name: the Explorer filter's, and the pictures, sound and video it hides. */
+  const listed = $derived(withAssets(filter.files, filter.hiddenFiles));
+
   /** What the file search finds. When only files the Explorer filter hides match, they are listed at once. */
   const matches = $derived.by<QuickMatches | null>(() => {
     if ((scope !== "all" && scope !== "files") || idle || unknown.length > 0) return null;
     return quickMatches({
       text: q.words,
       tags: q.chips,
-      files: filter.files,
-      hiddenFiles: filter.hiddenFiles,
+      files: listed.files,
+      hiddenFiles: listed.hidden,
       allFiles: vault.files,
       reveal: revealHidden,
       tagsOf: (path) => tags.index.get(path)?.tags,
@@ -191,6 +198,21 @@
     return fileRows(matches?.found ?? [], describe, changedAt);
   });
   const hiddenCount = $derived(matches?.moreHidden ?? 0);
+
+  // ---- folders ---------------------------------------------------------------------------------------
+
+  /** The folders the Explorer shows: one that is not in the tree cannot be revealed in it. The Notes window has none. */
+  const folderPaths = $derived(
+    (scope === "all" || scope === "files") && hasWords && !vault.isNotes
+      ? collectFolders([...filter.roots.main, ...filter.roots.worktrees])
+      : [],
+  );
+  const folderList = $derived<FolderRow[]>(
+    // tags belong to files: a search by tag lists files only
+    q.chips.length > 0 || unknown.length > 0
+      ? []
+      : folderRows(searchFolders(q.words, folderPaths, recency, RESULT_LIMIT)),
+  );
 
   // ---- sections --------------------------------------------------------------------------------------
 
@@ -299,6 +321,7 @@
       idle,
       hasWords,
       files: fileList,
+      folders: folderList,
       moreHidden: hiddenCount,
       sections: sectionList,
       tags: tagList,
@@ -368,6 +391,10 @@
         void (row.ms !== null && row.group === "changed"
           ? app.openChanged(row.path)
           : app.openDoc(row.path));
+        return;
+      case "folder":
+        close();
+        app.revealFolder(row.path);
         return;
       case "section": {
         close();
@@ -448,7 +475,7 @@
 
   // ---- drawing ---------------------------------------------------------------------------------------
 
-  function nameSegments(row: FileRow) {
+  function nameSegments(row: Pick<FileRow, "path" | "positions">) {
     const start = row.path.lastIndexOf("/") + 1;
     return highlightSegments(
       basename(row.path),
@@ -460,7 +487,7 @@
     return highlightSegments(row.description, row.descriptionPositions);
   }
 
-  function folderSegments(row: FileRow) {
+  function folderSegments(row: Pick<FileRow, "path" | "positions">) {
     const { worktree, rel } = splitWorktree(row.path);
     const dir = dirname(rel);
     if (worktree) {
@@ -592,7 +619,7 @@
             >
               {#if row.type === "file"}
                 {@const badge = badgeFor(vault.git?.files[row.path]?.state)}
-                <Icon name={isMarkdown(row.path) ? "file-text" : "file"} size="sm" />
+                <Icon name={fileIconOf(row.path)} size="sm" />
                 <div class="palette__body">
                   <div class="palette__line">
                     {#if unread.isUnread(row.path)}<UnreadDot />{/if}
@@ -619,6 +646,21 @@
                           >{:else}{seg.text}{/if}{/each}
                     </div>
                   {/if}
+                </div>
+              {:else if row.type === "folder"}
+                <Icon name="folder" size="sm" />
+                <div class="palette__body">
+                  <div class="palette__line">
+                    <span class="palette__name">
+                      {#each nameSegments(row) as seg, s (s)}{#if seg.match}<b>{seg.text}</b
+                          >{:else}{seg.text}{/if}{/each}
+                    </span>
+                    <span class="palette__path">
+                      {#each folderSegments(row) as seg, s (s)}{#if seg.match}<b>{seg.text}</b
+                          >{:else}{seg.text}{/if}{/each}
+                    </span>
+                    <span class="palette__time">{t("everywhere.revealFolder")}</span>
+                  </div>
                 </div>
               {:else if row.type === "section"}
                 <Icon name="heading" size="sm" />

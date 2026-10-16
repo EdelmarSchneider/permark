@@ -1,13 +1,16 @@
 <script lang="ts">
   import { gitStateLabel } from "../gitLabels";
   import { noteText } from "../errors";
+  import { isMediaViewKind } from "../fileKinds";
   import { t } from "../i18n";
+  import { mediaSummary } from "../mediaInfo";
   import { basename, breadcrumbs } from "../paths";
   import { formatReference } from "../reference";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
+  import { media } from "../stores/media.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { unread } from "../stores/unread.svelte";
@@ -32,6 +35,17 @@
       : vault.isSimple
         ? null
         : badgeFor(vault.git?.files[path]?.state),
+  );
+  /** What the header says of a picture, sound or video: its pixels, how long it plays, its size on disk. */
+  const mediaLine = $derived(
+    view && isMediaViewKind(view.kind)
+      ? mediaSummary(view.kind, view.sizeBytes, media.path === view.path ? media.facts : {}).join(" · ")
+      : "",
+  );
+  /** A file the app does not show as text: the system's application is what is left. */
+  const opensByDefaultApp = $derived(
+    !!view &&
+      (view.kind === "binary" || view.kind === "tooLarge" || isMediaViewKind(view.kind)),
   );
   const referenceHint = $derived(
     path ? formatReference(session.refTemplate, path) : t("header.copyReference"),
@@ -109,6 +123,16 @@
       disabled: !view,
       onselect: () => void app.openExternally(),
     },
+    ...(opensByDefaultApp
+      ? ([
+          {
+            id: "defaultApp",
+            label: t("menu.openDefaultApp"),
+            icon: "external",
+            onselect: () => void app.openWithDefaultApp(),
+          },
+        ] satisfies MenuEntry[])
+      : []),
     { type: "separator" },
     {
       id: "width",
@@ -116,13 +140,13 @@
       hint: "Ctrl+Alt+W",
       onselect: () => session.cycleWidth(),
     },
-    { id: "zoomIn", label: t("menu.zoomIn"), hint: "Ctrl+=", onselect: () => session.zoomBy(1) },
-    { id: "zoomOut", label: t("menu.zoomOut"), hint: "Ctrl+-", onselect: () => session.zoomBy(-1) },
+    { id: "zoomIn", label: t("menu.zoomIn"), hint: "Ctrl+=", onselect: () => app.zoomBy(1) },
+    { id: "zoomOut", label: t("menu.zoomOut"), hint: "Ctrl+-", onselect: () => app.zoomBy(-1) },
     {
       id: "zoomReset",
       label: t("menu.zoomReset"),
       hint: "Ctrl+0",
-      onselect: () => session.setZoom(1),
+      onselect: () => app.resetZoom(),
     },
   ]);
 
@@ -188,6 +212,9 @@
     {:else if view}
       {@const saved = savedLabel(view.modifiedMs, clock.now)}
       <span class="doc-meta" title={saved}>{saved}</span>
+      {#if mediaLine !== ""}
+        <span class="doc-chip" title={mediaLine} role="status">{mediaLine}</span>
+      {/if}
       {#if view.encodingNote}
         {@const note = noteText(view.encodingNote)}
         <span class="doc-chip" title={note}>{note}</span>
@@ -233,10 +260,10 @@
       <button
         type="button"
         class="btn btn--ghost btn--sm"
-        title={t("status.zoomHint")}
-        onclick={() => session.setZoom(1)}
+        title={view?.kind === "image" ? t("status.imageZoomHint") : t("status.zoomHint")}
+        onclick={() => app.resetZoom()}
       >
-        {Math.round(session.zoom * 100)}%
+        {view?.kind === "image" ? media.label : `${Math.round(session.zoom * 100)}%`}
       </button>
     {/if}
     <IconButton

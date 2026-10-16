@@ -44,20 +44,27 @@ function copySourcepos(from: Element, to: Element): void {
   if (pos) to.setAttribute("data-sourcepos", pos);
 }
 
-// ---- before insertion: images -----------------------------------------------------------------
+// ---- before insertion: images, sound and video ---------------------------------------------------
 
 /**
- * Detaches relative image sources from a not-yet-inserted fragment, so the webview does not request
- * them from the app origin. They are resolved to asset URLs after insertion.
+ * Detaches relative image and player sources (`img`, `video`, `audio`, `source`, and the poster of a video) from a
+ * not-yet-inserted fragment, so the webview does not request them from the app origin. They are resolved to asset URLs
+ * after insertion.
  */
 export function stashRelativeImages(root: ParentNode, docPath: string): void {
-  for (const img of Array.from(root.querySelectorAll("img"))) {
-    const src = img.getAttribute("src");
+  for (const el of Array.from(root.querySelectorAll("img, video[src], audio[src], source[src]"))) {
+    const src = el.getAttribute("src");
     if (src === null) continue;
     const resolved = resolveRelative(docPath, src);
     if (resolved === null) continue;
-    img.setAttribute("data-tm-path", resolved);
-    img.removeAttribute("src");
+    el.setAttribute("data-tm-path", resolved);
+    el.removeAttribute("src");
+  }
+  for (const video of Array.from(root.querySelectorAll("video[poster]"))) {
+    const resolved = resolveRelative(docPath, video.getAttribute("poster") ?? "");
+    if (resolved === null) continue;
+    video.setAttribute("data-tm-poster", resolved);
+    video.removeAttribute("poster");
   }
 }
 
@@ -98,6 +105,7 @@ function enhanceInside(root: HTMLElement, ctx: EnhanceContext, tasks: Promise<vo
   root.querySelectorAll<HTMLImageElement>("img[data-tm-path]").forEach((img) => {
     tasks.push(loadImage(img, ctx));
   });
+  for (const player of playersOf(root)) tasks.push(loadPlayer(player, ctx));
   if (ctx.codeRefs) decorateCodeRefs(root, ctx.codeRefs);
 }
 
@@ -270,6 +278,54 @@ async function loadImage(img: HTMLImageElement, ctx: EnhanceContext): Promise<vo
     img.src = await url;
   } catch {
     img.classList.add("is-broken");
+  }
+}
+
+/** The players in a block (or the block itself) that have files of the folder to load. */
+function playersOf(root: HTMLElement): HTMLMediaElement[] {
+  const wants = (el: HTMLMediaElement): boolean =>
+    el.hasAttribute("data-tm-path") ||
+    el.hasAttribute("data-tm-poster") ||
+    el.querySelector(":scope > source[data-tm-path]") !== null;
+  return [root, ...Array.from(root.querySelectorAll("video, audio"))].filter(
+    (el): el is HTMLMediaElement => el instanceof HTMLMediaElement && wants(el),
+  );
+}
+
+/** The URL of a file of the folder, asked for once however many players and pictures name it. */
+function assetUrlOf(path: string, ctx: EnhanceContext): Promise<string> {
+  let url = imageUrls.get(path);
+  if (!url) {
+    url = ctx.resolveImage(path);
+    imageUrls.set(path, url);
+    url.catch(() => imageUrls.delete(path));
+  }
+  return url;
+}
+
+/**
+ * Points a player of the document at its files: its own `src`, its poster, and the `source` elements inside it. A player
+ * whose sources were set after it was drawn has to load again to read them.
+ */
+async function loadPlayer(player: HTMLMediaElement, ctx: EnhanceContext): Promise<void> {
+  player.addEventListener("error", () => player.classList.add("is-broken"), {
+    once: true,
+    capture: true,
+  });
+  try {
+    const own = player.getAttribute("data-tm-path");
+    const poster = player.getAttribute("data-tm-poster");
+    const sources = Array.from(
+      player.querySelectorAll<HTMLSourceElement>(":scope > source[data-tm-path]"),
+    );
+    if (poster) player.setAttribute("poster", await assetUrlOf(poster, ctx));
+    if (own) player.setAttribute("src", await assetUrlOf(own, ctx));
+    for (const source of sources) {
+      source.setAttribute("src", await assetUrlOf(source.getAttribute("data-tm-path") ?? "", ctx));
+    }
+    if (own || sources.length > 0) player.load();
+  } catch {
+    player.classList.add("is-broken");
   }
 }
 

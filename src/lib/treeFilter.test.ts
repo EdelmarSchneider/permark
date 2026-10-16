@@ -80,7 +80,7 @@ describe("presets", () => {
     ]);
   });
 
-  it("Docs and assets adds images, JSON, YAML, TOML, XML and CSV", () => {
+  it("Docs and assets adds images, audio and video, JSON, YAML, TOML, XML and CSV", () => {
     expect(shownOf(DEFAULT_TREE_FILTER, paths)).toEqual([
       "README.md",
       "docs/guide.markdown",
@@ -273,7 +273,7 @@ describe("withShow / normalizeTreeFilter", () => {
   it("Custom starts from what the previous preset showed", () => {
     const f = withShow(DEFAULT_TREE_FILTER, "custom");
     expect(f.show).toBe("custom");
-    expect(f.categories).toEqual(["documents", "text", "images", "data", "xml"]);
+    expect(f.categories).toEqual(["documents", "text", "images", "media", "data", "xml"]);
     // going back and forth inside Custom keeps the person's boxes
     const edited = { ...f, categories: ["documents" as const] };
     expect(withShow(edited, "custom")).toBe(edited);
@@ -582,7 +582,7 @@ describe("assets next to documents", () => {
   });
 });
 
-describe("images beyond the folders of documents", () => {
+describe("images, sound and video beyond the folders of documents", () => {
   const testOf = (filter: TreeFilter, refs: string[] = [], paths = REPO) =>
     fileTest(filter, documentFolders(paths), refs);
 
@@ -615,11 +615,65 @@ describe("images beyond the folders of documents", () => {
     ]) {
       expect(test(`tools/${name}/a.png`), name).toBe(true);
     }
+    // the folders made for sound and video count as well, and the same rule applies to what is in them
+    for (const name of [
+      "audio",
+      "sounds",
+      "sound",
+      "music",
+      "recordings",
+      "video",
+      "videos",
+      "movies",
+      "clips",
+      "screencasts",
+    ]) {
+      expect(test(`tools/${name}/a.mp4`), name).toBe(true);
+      expect(test(`tools/${name}/a.flac`), name).toBe(true);
+    }
     expect(test("tools/Images/a.PNG")).toBe(true);
     expect(test("web/public/media/deep/er/a.webp")).toBe(true);
     expect(test("tools/icons/a.png")).toBe(false);
     expect(test("tools/assets.png")).toBe(false); // a file named like the folder is not a folder
     expect(test("tools/my-assets/a.png")).toBe(false); // the whole name has to match
+  });
+
+  it("treats sound and video like images: next to a document, in a folder for them, or linked", () => {
+    const test = testOf(DEFAULT_TREE_FILTER, ["build/out/demo.mp4"]);
+    // next to a document (the folder of README.md, or the one above)
+    expect(test("docs/demo.mp4")).toBe(true);
+    expect(test("docs/sub/talk.webm")).toBe(true);
+    // in a folder made for them
+    expect(test("site/assets/intro.mp4")).toBe(true);
+    expect(test("app/videos/intro.mkv")).toBe(true);
+    // linked by a document
+    expect(test("build/out/demo.mp4")).toBe(true);
+    // none of the three: a code folder keeps its test fixtures out of the Explorer
+    expect(test("src-tauri/tests/fixtures/sample.mp4")).toBe(false);
+    expect(test("build/out/other.mp3")).toBe(false);
+    // a hidden folder hides them as it hides everything
+    expect(test(".claude/assets/demo.mp4")).toBe(false);
+    // the box off: every one shows
+    const off = { ...DEFAULT_TREE_FILTER, assetsNearDocs: false };
+    expect(testOf(off)("src-tauri/tests/fixtures/sample.mp4")).toBe(true);
+  });
+
+  it("has its own box: Documents hides sound and video, Custom without Media does too", () => {
+    const refs = ["build/out/demo.mp4"];
+    const documents = { ...DEFAULT_TREE_FILTER, show: "documents" as const };
+    expect(testOf(documents, refs)("site/assets/intro.mp4")).toBe(false);
+    const imagesOnly: TreeFilter = {
+      ...DEFAULT_TREE_FILTER,
+      show: "custom",
+      categories: ["images"],
+    };
+    expect(testOf(imagesOnly, refs)("site/assets/intro.mp4")).toBe(false);
+    expect(testOf(imagesOnly, refs)("site/assets/logo.svg")).toBe(true);
+    const mediaOnly: TreeFilter = { ...DEFAULT_TREE_FILTER, show: "custom", categories: ["media"] };
+    expect(testOf(mediaOnly, refs)("site/assets/intro.mp4")).toBe(true);
+    expect(testOf(mediaOnly, refs)("build/out/demo.mp4")).toBe(true);
+    expect(testOf(mediaOnly, refs)("site/assets/logo.svg")).toBe(false);
+    expect(testOf({ ...DEFAULT_TREE_FILTER, show: "everything" })("x/y/z.mp4")).toBe(true);
   });
 
   it("keeps data and XML to the folders of documents", () => {
@@ -1066,11 +1120,7 @@ describe("hidden folders and the rule for images", () => {
     ".claude/diagram.png",
     ".claude/run.sh",
   ];
-  const REFS = [
-    ".claude/diagram.png",
-    "docs/.cache/chart.png",
-    ".github/assets/banner.png",
-  ];
+  const REFS = [".claude/diagram.png", "docs/.cache/chart.png", ".github/assets/banner.png"];
   const testOf = (filter: TreeFilter, refs: string[] = REFS) =>
     fileTest(filter, documentFolders(PATHS), refs);
   const shown = (filter: TreeFilter, refs?: string[]): string[] =>
@@ -1082,19 +1132,11 @@ describe("hidden folders and the rule for images", () => {
     expect(test("docs/.cache/chart.png")).toBe(false); // linked, next to a document
     expect(test(".github/assets/banner.png")).toBe(false); // linked and in an `assets` folder
     expect(test("assets/logo.png")).toBe(true); // the image rule itself is untouched
-    expect(shown(DEFAULT_TREE_FILTER)).toEqual([
-      "README.md",
-      "assets/logo.png",
-      "docs/guide.md",
-    ]);
+    expect(shown(DEFAULT_TREE_FILTER)).toEqual(["README.md", "assets/logo.png", "docs/guide.md"]);
   });
 
   it("hides them in every preset", () => {
-    for (const show of [
-      "documents",
-      "docs-and-assets",
-      "everything",
-    ] as const) {
+    for (const show of ["documents", "docs-and-assets", "everything"] as const) {
       const filter = { ...DEFAULT_TREE_FILTER, show };
       expect(shown(filter).filter(isHiddenPath), show).toEqual([]);
     }
@@ -1137,9 +1179,7 @@ describe("hidden folders and the rule for images", () => {
       ".claude/run.sh",
     ]);
     const withHidden = { ...custom, showHidden: true, patterns: "-.claude/**" };
-    expect(shown(withHidden).filter((p) => p.startsWith(".claude"))).toEqual(
-      [],
-    );
+    expect(shown(withHidden).filter((p) => p.startsWith(".claude"))).toEqual([]);
   });
 
   it("keeps an open file of a hidden folder in the tree, dimmed, linked image or not", () => {
@@ -1150,23 +1190,12 @@ describe("hidden folders and the rule for images", () => {
         keep,
         showHidden: false,
       });
-    expect(run(null).main.map((n) => n.path)).toEqual([
-      "README.md",
-      "assets",
-      "docs",
-    ]);
+    expect(run(null).main.map((n) => n.path)).toEqual(["README.md", "assets", "docs"]);
     const open = run(".claude/diagram.png");
-    expect(open.main.map((n) => n.path)).toEqual([
-      "README.md",
-      "assets",
-      "docs",
-      ".claude",
-    ]);
+    expect(open.main.map((n) => n.path)).toEqual(["README.md", "assets", "docs", ".claude"]);
     expect([...open.forced]).toEqual([".claude/diagram.png"]);
     expect(open.shown).not.toContain(".claude/diagram.png");
     // the dimmed file is the only one of its folder that is listed
-    expect(open.main[3].children?.map((n) => n.path)).toEqual([
-      ".claude/diagram.png",
-    ]);
+    expect(open.main[3].children?.map((n) => n.path)).toEqual([".claude/diagram.png"]);
   });
 });

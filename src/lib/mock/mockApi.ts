@@ -150,6 +150,19 @@ export const mockImpl: Api = {
   openExternal: async (path) => {
     console.info("[mock] open externally:", path);
   },
+  // Never starts anything: it says what the real command would do. The programs and scripts it refuses are the ones
+  // the backend refuses (`media.rs`), so the message can be seen here.
+  openWithDefaultApp: async (path) => {
+    const ext = path.split(".").pop()?.toLowerCase() ?? "";
+    if (["exe", "bat", "cmd", "ps1", "sh", "msi", "js", "vbs", "lnk", "jar"].includes(ext)) {
+      throw {
+        kind: "blockedType",
+        subject: `.${ext}`,
+        message: `.${ext} files are programs or scripts and are not opened from here`,
+      };
+    }
+    console.info("[mock] open with the default app:", path);
+  },
   openInEditor: async (path, line, col) => {
     const program = mockEditorCommand.trim().split(/\s+/)[0] ?? "";
     // a program that is not "installed" shows how the UI words the failure

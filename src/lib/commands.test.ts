@@ -143,6 +143,7 @@ describe("the notes", () => {
       "copyReference",
       "copyPath",
       "openExternal",
+      "openDefaultApp",
       "editTags",
       "addComment",
     ]) {
@@ -200,6 +201,7 @@ describe("availableCommands", () => {
       "copyPath",
       "copyReference",
       "openExternal",
+      "openDefaultApp",
       "find",
       "edit",
       "revealInTree",
@@ -211,6 +213,7 @@ describe("availableCommands", () => {
       "copyPath",
       "copyReference",
       "openExternal",
+      "openDefaultApp",
       "find",
       "edit",
       "revealInTree",

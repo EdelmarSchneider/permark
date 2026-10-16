@@ -67,7 +67,7 @@ export type TreeNode = {
 };
 export type DocumentView = {
   path: string;
-  kind: "markdown" | "json" | "xml" | "text" | "binary" | "tooLarge";
+  kind: "markdown" | "json" | "xml" | "text" | "binary" | "tooLarge" | "image" | "audio" | "video";
   html: string;
   blocks: string[] /* per top-level block hash, for the LCS diff */;
   title: string | null;
