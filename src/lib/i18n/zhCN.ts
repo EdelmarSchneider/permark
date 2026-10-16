@@ -200,6 +200,7 @@ export const zhCN = {
   "doc.codeAuto": "自动：{name}",
   "doc.codeAutoHint": "根据代码推测。在起始的反引号后写上语言名即可指定。",
   "doc.anchorLabel": "链接到 {name}",
+  "doc.footnoteBackref": "返回引用 {ref}",
   "doc.diagramRendering": "正在渲染图表...",
   "doc.diagramFailed": "无法渲染图表",
   "doc.imageZoomed": "放大的图片",

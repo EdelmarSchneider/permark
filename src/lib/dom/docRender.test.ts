@@ -18,6 +18,7 @@ const enhance: EnhanceContext = {
   labels: {
     copyCode: "Copy",
     anchorLabel: (name) => `Link to ${name}`,
+    footnoteBackref: (ref) => `Back ${ref}`,
     diagramPending: "Drawing",
     diagramFailed: "Failed",
     alertTitles: {},

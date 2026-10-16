@@ -209,6 +209,7 @@ export const de = {
   "doc.codeAutoHint":
     "Aus dem Code erkannt. Nenne die Sprache nach den öffnenden Backticks, um sie festzulegen.",
   "doc.anchorLabel": "Link zu {name}",
+  "doc.footnoteBackref": "Zurück zur Referenz {ref}",
   "doc.diagramRendering": "Diagramm wird gezeichnet ...",
   "doc.diagramFailed": "Diagramm konnte nicht gezeichnet werden",
   "doc.imageZoomed": "Vergrößertes Bild",

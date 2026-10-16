@@ -202,6 +202,7 @@ export const en = {
   "doc.codeAutoHint":
     "Guessed from the code. Name the language after the opening backticks to set it.",
   "doc.anchorLabel": "Link to {name}",
+  "doc.footnoteBackref": "Back to reference {ref}",
   "doc.diagramRendering": "Rendering diagram...",
   "doc.diagramFailed": "Diagram could not be rendered",
   "doc.imageZoomed": "Enlarged image",
