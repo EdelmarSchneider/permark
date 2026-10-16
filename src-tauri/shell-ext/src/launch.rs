@@ -9,7 +9,7 @@
 use std::collections::HashSet;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 /// The program, by the name the package gives it (`Executable` in `AppxManifest.xml`).
 pub(crate) const PROGRAM: &str = "trailmark.exe";
@@ -56,27 +56,33 @@ pub(crate) fn command(program: &Path, folder: &Path) -> Command {
     command
 }
 
-/// Starts `program` once for each of `folders`. Fine when it started for at least one; the first error when it did not
-/// start at all. It does not wait for the program.
-pub(crate) fn open(program: &Path, folders: &[PathBuf]) -> io::Result<()> {
+/// Starts `program` once for each of `folders`, and returns what started and the first error of what did not.
+fn start(program: &Path, folders: &[PathBuf]) -> (Vec<Child>, Option<io::Error>) {
+    let mut started = Vec::new();
     let mut first_error = None;
-    let mut started = 0;
     for folder in folders {
         match command(program, folder).spawn() {
-            // The program runs on its own; its handle is not needed.
-            Ok(_child) => started += 1,
+            Ok(child) => started.push(child),
             Err(error) => {
                 first_error.get_or_insert(error);
             }
         }
     }
-    match (started, first_error) {
-        (0, Some(error)) => Err(error),
-        (0, None) => Err(io::Error::new(
+    (started, first_error)
+}
+
+/// Starts `program` once for each of `folders`. Fine when it started for at least one; the first error when it did not
+/// start at all. It does not wait for the program.
+pub(crate) fn open(program: &Path, folders: &[PathBuf]) -> io::Result<()> {
+    // The programs run on their own: the handles of the ones that started are closed when `started` goes, nothing waits.
+    let (started, first_error) = start(program, folders);
+    match (started.is_empty(), first_error) {
+        (true, Some(error)) => Err(error),
+        (true, None) => Err(io::Error::new(
             io::ErrorKind::NotFound,
             "there is no folder to open",
         )),
-        _ => Ok(()),
+        (false, _) => Ok(()),
     }
 }
 
@@ -186,6 +192,13 @@ mod tests {
             return;
         }
         let folders = paths(&[r"C:\one", r"C:\two"]);
-        assert!(open(&stand_in, &folders).is_ok());
+        let (started, error) = start(&stand_in, &folders);
+        // wait for them, so that no process of the test outlives it
+        let ended: Vec<_> = started
+            .into_iter()
+            .map(|mut child| child.wait().is_ok())
+            .collect();
+        assert!(error.is_none());
+        assert_eq!(ended, [true, true]);
     }
 }

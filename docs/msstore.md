@@ -187,7 +187,9 @@ Windows must load the package's declaration for any of this, so these are untest
 * that the entry appears (the manifest passes `MakeAppx`'s schema check, but only Windows says that it registers it), in the Windows 11
   first-level menu, with the right title and icon;
 * that Windows loads the DLL into `dllhost.exe` with the package's identity, and calls `GetTitle`, `GetIcon`, `GetState` and `Invoke`
-  as the in-process tests do (they call them directly, not across processes);
+  as the in-process tests do (they call them directly, not across processes). The command is not agile (it lives in the surrogate's
+  single-threaded apartment, `Agile = false`), so Explorer reaches it through COM's standard marshaling, with the system's own
+  proxies for `IExplorerCommand` and `IObjectWithSite`;
 * that `GetModuleFileNameW` reports the DLL's path inside the package folder, so that `trailmark.exe` is found beside it;
 * that the program started with `CreateProcess` from the helper runs **with the package's identity** (so it shares settings and
   recent folders with the app started from the Start menu). Windows Terminal's extension starts its program the same way, but if

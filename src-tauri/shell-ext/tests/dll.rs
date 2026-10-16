@@ -143,17 +143,32 @@ impl Loaded {
 impl Drop for Loaded {
     fn drop(&mut self) {
         // Everything made from the DLL is gone by now (the tests declare it after the `Loaded`), so it can be unloaded and
-        // its copy deleted. The stand-in program may still be ending; the folder is tried for a moment.
+        // its copy deleted. The stand-in program that `Invoke` started cannot be waited for (the test has no handle to it),
+        // and Windows will not delete the file of a running program, so the folder is tried until the program has ended,
+        // for as long as a slow computer (a virus scanner holding the file, say) can take. Past that it is a failure of
+        // the test, and not a folder left behind.
         // SAFETY: the module was loaded by `new`, once.
         unsafe {
             let _ = FreeLibrary(self.module);
         }
-        for _ in 0..40 {
-            if fs::remove_dir_all(&self.folder).is_ok() {
-                return;
+        let mut last = None;
+        for _ in 0..600 {
+            match fs::remove_dir_all(&self.folder) {
+                Ok(()) => return,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+                Err(error) => last = Some(error),
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
+        // A test that failed already is not made to panic a second time (that would abort the whole test program).
+        if std::thread::panicking() {
+            return;
+        }
+        panic!(
+            "{} could not be removed after 30 s: {}",
+            self.folder.display(),
+            last.map_or_else(String::new, |error| error.to_string())
+        );
     }
 }
 

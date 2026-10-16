@@ -10,7 +10,8 @@ edition = "2021"
 publish = false
 
 # Its own workspace: the program's build (and its release profile, which aborts on a panic) does not reach it, and the
-# component has its own build settings in `.cargo/config.toml`.
+# component has build settings of its own: `build.rs` links the Visual C++ runtime statically (`static_vcruntime`), and
+# `[profile.release]` below unwinds on a panic.
 [workspace]
 
 [lib]

@@ -27,7 +27,10 @@ use crate::launch;
 use crate::module::{self, InUse};
 use crate::{labels, shell, CLSID_OPEN_WITH_TRAILMARK};
 
-#[implement(IExplorerCommand, IObjectWithSite)]
+// `Agile = false`: the default makes the object agile (callable from any apartment, through the free-threaded marshaler),
+// which is not what it is. It lives in the surrogate's single-threaded apartment, and the `RefCell` and the site it keeps
+// (an Explorer object, bound to that apartment) rely on that.
+#[implement(IExplorerCommand, IObjectWithSite, Agile = false)]
 pub(crate) struct OpenWithTrailMark {
     /// Explorer's site: how the command finds the folder when it was used on the background of one. Explorer calls the
     /// command on one thread (the COM class is declared `STA`), so a `RefCell` is enough.
