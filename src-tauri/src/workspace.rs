@@ -3721,26 +3721,37 @@ exclude = [\"archive/**\"]
         ws.close();
     }
 
-    /// A link inside the folder that leads out of it is not followed to a file elsewhere.
-    #[cfg(unix)]
+    /// A link inside the folder (a symbolic link, or a junction on Windows) that leads out of it is not followed to a
+    /// file elsewhere, for a folder link and, where the system allows one without privileges, for a file link.
     #[test]
     fn a_link_that_leaves_the_folder_does_not_serve_the_file_it_points_at() {
         let fx = Fx::new();
         let outside = tempfile::tempdir().expect("tempdir");
         write(outside.path(), "secret.mp4", "SECRET");
         write(outside.path(), "secret.png", "SECRET");
-        std::os::unix::fs::symlink(
-            outside.path().join("secret.mp4"),
-            fx.project.path().join("link.mp4"),
-        )
-        .expect("symlink");
-        std::os::unix::fs::symlink(outside.path(), fx.project.path().join("dir")).expect("symlink");
+        crate::util::testing::dir_link(&fx.project.path().join("dir"), outside.path());
+        #[cfg(unix)]
+        let leaving = {
+            std::os::unix::fs::symlink(
+                outside.path().join("secret.mp4"),
+                fx.project.path().join("link.mp4"),
+            )
+            .expect("symlink");
+            ["dir/secret.png", "dir/secret.mp4", "link.mp4"]
+        };
+        #[cfg(not(unix))]
+        let leaving = ["dir/secret.png", "dir/secret.mp4"];
         let ws = fx.open();
-        for bad in ["link.mp4", "dir/secret.png"] {
+        for bad in leaving {
             assert_eq!(
                 ws.read_asset(bad, Some("bytes=0-"))
                     .expect_err("outside")
                     .kind(),
+                "pathEscape",
+                "{bad}"
+            );
+            assert_eq!(
+                ws.default_app_target(bad).expect_err("outside").kind(),
                 "pathEscape",
                 "{bad}"
             );
