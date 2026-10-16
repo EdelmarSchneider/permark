@@ -21,6 +21,23 @@ export function stepTab(tab: RightTab, direction: 1 | -1): RightTab {
   return RIGHT_TABS[(RIGHT_TABS.indexOf(tab) + direction + n) % n];
 }
 
+/**
+ * The "show panel" button in the top-right corner of the document header, where the panel's own collapse button was.
+ * It exists only while there is a panel to bring back: Simple mode (one file) has none, and an open panel has its own button.
+ */
+export function reopenButtonShown(state: { simple: boolean; open: boolean }): boolean {
+  return !state.simple && !state.open;
+}
+
+/** The dot on that button when something new arrived while the panel was collapsed (the activity bar's toggle shows the same one). */
+export function reopenDotShown(state: {
+  simple: boolean;
+  open: boolean;
+  notify: boolean;
+}): boolean {
+  return reopenButtonShown(state) && state.notify;
+}
+
 export type PanelView = {
   /** The panel is open (not collapsed). */
   open: boolean;

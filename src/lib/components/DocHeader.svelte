@@ -4,6 +4,7 @@
   import { t } from "../i18n";
   import { basename, breadcrumbs } from "../paths";
   import { formatReference } from "../reference";
+  import { reopenButtonShown, reopenDotShown } from "../rightPanel";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { docs } from "../stores/docs.svelte";
@@ -20,6 +21,12 @@
   import ModeSwitch from "./ModeSwitch.svelte";
 
   let menuAnchor = $state<DOMRect | null>(null);
+
+  const reopen = $derived({
+    simple: vault.isSimple,
+    open: session.right.open,
+    notify: ui.rightNotify,
+  });
 
   const view = $derived(docs.current);
   const path = $derived(docs.path ?? "");
@@ -254,6 +261,18 @@
         data-popover-trigger
         onclick={() => (ui.settingsOpen = !ui.settingsOpen)}
       />
+    {/if}
+    <!-- the corner of the window the panel's own collapse button sat in, now that the panel is collapsed -->
+    {#if reopenButtonShown(reopen)}
+      <IconButton
+        class="reopen-btn"
+        icon="chevrons-left"
+        label={t("panel.showRight")}
+        hint={t("panel.showRightHint")}
+        onclick={() => app.toggleRight()}
+      >
+        {#if reopenDotShown(reopen)}<span class="notify-dot"></span>{/if}
+      </IconButton>
     {/if}
   </div>
   {#if docs.loadingVisible}<div

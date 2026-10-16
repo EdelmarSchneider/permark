@@ -55,6 +55,8 @@ export const en = {
   "panel.collapseLeftHint": "Collapse sidebar (Ctrl+B)",
   "panel.collapseRight": "Collapse right panel",
   "panel.collapseRightHint": "Collapse right panel (Ctrl+Alt+B)",
+  "panel.showRight": "Show right panel",
+  "panel.showRightHint": "Show right panel (Ctrl+Alt+B)",
   "panel.resizeLeft": "Resize sidebar",
   "panel.resizeRight": "Resize right panel",
   "panel.resizeHint": "Drag to resize, double-click to reset",
