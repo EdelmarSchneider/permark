@@ -90,6 +90,10 @@ input {
 .rpanel ::-webkit-scrollbar-thumb:hover {
   background-color: var(--muted);
 }
+/* where two scrollbars meet (a code box that scrolls both ways) the corner follows the theme, not white */
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
 .sr-only {
   position: absolute;
   width: 1px;
