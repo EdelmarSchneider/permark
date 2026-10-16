@@ -5,3 +5,4 @@
 #![allow(dead_code)]
 
 pub mod diff;
+pub mod store;

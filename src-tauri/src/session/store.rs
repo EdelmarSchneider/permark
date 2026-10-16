@@ -14,6 +14,9 @@ use crate::util::{hash_hex, write_atomic};
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
 const READ_FILE: &str = "read.json";
+const REVIEWED_FILE: &str = "reviewed.json";
+#[allow(dead_code)] // the review reads it once it is wired to the workspace
+const REVIEWED_DIR: &str = "reviewed";
 const COMMENTS_FILE: &str = "comments.json";
 const AGENT_FILE: &str = "agent.json";
 const META_FILE: &str = "meta.toml";
@@ -135,6 +138,19 @@ impl StateStore {
     /// Where the unread markers keep what was last read: `read.json` with the rest of the local state.
     pub fn read_path(&self) -> PathBuf {
         self.dir.join(READ_FILE)
+    }
+
+    /// Where the review keeps which version of each document the person approved: `reviewed.json`, next to
+    /// `read.json`, and in the `reviewed/` folder the text of those versions (see [`StateStore::reviewed_dir`]).
+    #[allow(dead_code)] // the review reads it once it is wired to the workspace
+    pub fn reviewed_path(&self) -> PathBuf {
+        self.dir.join(REVIEWED_FILE)
+    }
+
+    /// The folder of the copies of the approved versions, one file named for the hash of its text.
+    #[allow(dead_code)] // the review reads it once it is wired to the workspace
+    pub fn reviewed_dir(&self) -> PathBuf {
+        self.dir.join(REVIEWED_DIR)
     }
 
     /// Where the comments are kept: `comments.json` with the rest of the local state. Personal, like `read.json`.
@@ -270,6 +286,7 @@ impl StateStore {
                 SESSION_FILE,
                 LAST_VISIT_FILE,
                 READ_FILE,
+                REVIEWED_FILE,
                 COMMENTS_FILE,
                 window::FILE_NAME,
             ] {
@@ -683,6 +700,25 @@ mod tests {
         );
         // never in the part of .trailmark that is shared
         assert_eq!(f.store().read_path(), s.read_path());
+    }
+
+    #[test]
+    fn the_approved_versions_are_kept_next_to_what_was_read_and_follow_it_into_the_project() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.reviewed_path(), s.dir().join("reviewed.json"));
+        assert_eq!(s.reviewed_dir(), s.dir().join("reviewed"));
+        assert!(s.reviewed_path().starts_with(f.app.path()));
+        fs::create_dir_all(s.dir()).expect("mkdir");
+        fs::write(s.reviewed_path(), r#"{"a.md": "00000000000000ab"}"#).expect("write");
+        s.init_project_folder().expect("init");
+        let local = Path::new(".trailmark").join("local");
+        assert!(s.reviewed_path().ends_with(local.join("reviewed.json")));
+        assert!(s.reviewed_dir().ends_with(local.join("reviewed")));
+        assert_eq!(
+            fs::read_to_string(s.reviewed_path()).expect("carried over"),
+            r#"{"a.md": "00000000000000ab"}"#
+        );
     }
 
     #[test]

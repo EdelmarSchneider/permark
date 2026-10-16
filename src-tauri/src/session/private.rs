@@ -60,12 +60,25 @@ fn trailmark_of(dir: &Path) -> Option<&Path> {
         .filter(|parent| parent.file_name().is_some_and(|name| name == TRAILMARK_DIR))
 }
 
-/// Fails when `dir`, a state folder of a project, or the `.trailmark` folder above it is a link.
+/// The state folder of a project (`.trailmark/local`) that `dir` is, or that holds it directly: the folder of
+/// copies the review keeps in `local/` is private like the files next to it.
+fn state_folder_of(dir: &Path) -> Option<&Path> {
+    if trailmark_of(dir).is_some() {
+        Some(dir)
+    } else {
+        dir.parent().filter(|parent| trailmark_of(parent).is_some())
+    }
+}
+
+/// Fails when `dir`, a state folder of a project (or a folder in one), or the `.trailmark` folder above it is a link.
 fn check_not_linked(dir: &Path) -> io::Result<()> {
-    let Some(trailmark) = trailmark_of(dir) else {
+    let Some(state) = state_folder_of(dir) else {
         return Ok(());
     };
-    [trailmark, dir]
+    let Some(trailmark) = trailmark_of(state) else {
+        return Ok(());
+    };
+    [trailmark, state, dir]
         .into_iter()
         .find(|folder| matches!(entry(folder), Entry::Other))
         .map_or(Ok(()), |folder| Err(refused(folder)))
@@ -84,17 +97,18 @@ pub(super) fn create_if_missing(path: &Path, content: &str) -> io::Result<()> {
     }
 }
 
-/// Makes a state folder of a project ready: made when it is missing, never behind a link, and ignoring itself. Any
-/// other folder is left to the caller.
+/// Makes a state folder of a project ready: made when it is missing, never behind a link, and ignoring itself. A folder
+/// inside a state folder is made ready the same way and left to the state folder's own `.gitignore`. Any other folder
+/// is left to the caller.
 pub(super) fn prepare(dir: &Path) -> io::Result<()> {
-    if trailmark_of(dir).is_none() {
+    let Some(state) = state_folder_of(dir) else {
         return Ok(());
-    }
+    };
     check_not_linked(dir)?;
     std::fs::create_dir_all(dir)?;
     // The folder is looked at again once it exists: it is the folder that gets the file.
     check_not_linked(dir)?;
-    create_if_missing(&dir.join(".gitignore"), SELF_IGNORE)
+    create_if_missing(&state.join(".gitignore"), SELF_IGNORE)
 }
 
 /// Writes a file of the local state (atomically, see [`write_atomic`]). In a project's `.trailmark/` folder it first
@@ -191,6 +205,48 @@ mod tests {
             fs::read_to_string(project.path().join(".trailmark/local/.gitignore")).expect("read"),
             "mine\n"
         );
+    }
+
+    #[test]
+    fn a_folder_inside_the_state_folder_is_private_too() {
+        let project = project();
+        let file = project.path().join(".trailmark/local/reviewed/abc");
+        write_local_state(&file, b"copy").expect("write");
+        assert_eq!(fs::read(&file).expect("read"), b"copy");
+        let ignore = fs::read_to_string(project.path().join(".trailmark/local/.gitignore"))
+            .expect("the state folder's .gitignore covers it");
+        assert!(ignore.lines().any(|line| line == "*"), "{ignore:?}");
+        assert!(!project
+            .path()
+            .join(".trailmark/local/reviewed/.gitignore")
+            .exists());
+        remove_local_state(&file).expect("deleted");
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn nothing_is_written_or_deleted_behind_a_link_in_a_folder_inside_the_state_folder() {
+        let project = project();
+        let outside = tempfile::tempdir().expect("outside");
+        fs::write(outside.path().join("abc"), "precious").expect("write");
+        let local = project.path().join(".trailmark/local");
+        fs::create_dir_all(&local).expect("mkdir");
+        dir_link(&local.join("reviewed"), outside.path());
+        let file = local.join("reviewed/abc");
+        assert!(write_local_state(&file, b"copy").is_err());
+        assert!(remove_local_state(&file).is_err());
+        assert_eq!(
+            fs::read_to_string(outside.path().join("abc")).expect("read"),
+            "precious"
+        );
+        remove_link(&local.join("reviewed"));
+
+        // and when local itself is the link
+        fs::remove_dir(&local).expect("rmdir");
+        dir_link(&local, outside.path());
+        assert!(write_local_state(&local.join("reviewed/abc"), b"copy").is_err());
+        assert!(!outside.path().join("reviewed").exists());
+        remove_link(&local);
     }
 
     #[test]

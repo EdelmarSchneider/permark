@@ -84,6 +84,7 @@ impl Fx {
             read_path,
             timing,
             Arc::new(move |unread: &[String]| lock(&heard).push(unread.to_vec())),
+            None,
         );
         // the first look at the disk is done once the thread answers
         service.flush();
@@ -662,6 +663,7 @@ fn parts(fx: &Fx, saved: Option<BTreeMap<String, u64>>) -> (UnreadService, Worke
             dirty: false,
         }),
         notify: Arc::new(move |unread: &[String]| lock(&heard).push(unread.to_vec())),
+        observer: None,
     });
     let stop = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel();
@@ -809,6 +811,7 @@ fn a_flush_gives_up_on_a_thread_that_is_busy_and_the_thread_still_writes_later()
                 let _ = lock(&release_rx).recv();
             }
         }),
+        None,
     );
     entered_rx.recv().expect("the thread is busy");
 
@@ -834,5 +837,186 @@ fn a_flush_with_no_thread_has_nothing_to_wait_for() {
     let vault = Arc::new(Vault::open(&fx.project.path().join("a.md")).expect("vault"));
     let service = fx.service(vault, fx.read_path(), NEVER);
     assert!(service.flush_within(Duration::ZERO));
+    service.stop();
+}
+
+// ---- following the read state (the review of changes) ----
+
+/// What a follower was told, in order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Told {
+    Reading(String, u64, Vec<u8>),
+    Changed {
+        moves: Vec<(String, String)>,
+        looked: bool,
+        docs: Vec<(String, Option<u64>, Option<u64>)>,
+    },
+}
+
+#[derive(Default)]
+struct Follower(Mutex<Vec<Told>>);
+
+impl Follower {
+    fn told(&self) -> Vec<Told> {
+        lock(&self.0).clone()
+    }
+
+    fn last_docs(&self) -> Vec<(String, Option<u64>, Option<u64>)> {
+        match self.told().pop() {
+            Some(Told::Changed { docs, .. }) => docs,
+            other => panic!("expected the documents, got {other:?}"),
+        }
+    }
+}
+
+impl ReadObserver for Follower {
+    fn reading(&self, path: &str, hash: u64, bytes: &[u8]) {
+        lock(&self.0).push(Told::Reading(path.to_owned(), hash, bytes.to_vec()));
+    }
+
+    fn changed(&self, moves: Vec<(String, String)>, looked: bool, docs: Vec<DocState>) {
+        lock(&self.0).push(Told::Changed {
+            moves,
+            looked,
+            docs: docs
+                .into_iter()
+                .map(|d| (d.path, d.current, d.read))
+                .collect(),
+        });
+    }
+}
+
+fn open_followed(fx: &Fx) -> (UnreadService, Arc<Follower>) {
+    let follower = Arc::new(Follower::default());
+    let vault = Arc::new(Vault::open(fx.project.path()).expect("vault"));
+    let filter = Arc::new(PathFilter::new(&[(vault.root().to_path_buf(), None)], &[]));
+    let service = UnreadService::open(
+        vault,
+        filter,
+        fx.read_path(),
+        NEVER,
+        Arc::new(|_: &[String]| {}),
+        Some(Arc::clone(&follower) as Arc<dyn ReadObserver>),
+    );
+    service.flush();
+    (service, follower)
+}
+
+fn hash_of(text: &str) -> u64 {
+    hash_bytes(text.as_bytes())
+}
+
+#[test]
+fn a_follower_hears_the_documents_once_the_disk_has_been_looked_at() {
+    let fx = Fx::new(&[("a.md", "one\n"), ("b.md", "two\n")]);
+    let (service, follower) = open_followed(&fx);
+    let told = follower.told();
+    assert_eq!(told.len(), 1, "{told:?}");
+    assert_eq!(
+        told[0],
+        Told::Changed {
+            moves: Vec::new(),
+            looked: true,
+            docs: vec![
+                (
+                    "a.md".to_owned(),
+                    Some(hash_of("one\n")),
+                    Some(hash_of("one\n"))
+                ),
+                (
+                    "b.md".to_owned(),
+                    Some(hash_of("two\n")),
+                    Some(hash_of("two\n"))
+                ),
+            ],
+        }
+    );
+    service.stop();
+}
+
+#[test]
+fn a_follower_hears_what_an_agent_writes_as_the_documents_change() {
+    let fx = Fx::new(&[("a.md", "one\n")]);
+    let (service, follower) = open_followed(&fx);
+    fx.write("a.md", "one, then two\n");
+    fx.write("new.md", "new\n");
+    service.apply(&[
+        change(ChangeKind::Modified, "a.md"),
+        change(ChangeKind::Created, "new.md"),
+    ]);
+    service.flush();
+    assert_eq!(
+        follower.last_docs(),
+        [
+            (
+                "a.md".to_owned(),
+                Some(hash_of("one, then two\n")),
+                Some(hash_of("one\n"))
+            ),
+            ("new.md".to_owned(), Some(hash_of("new\n")), None),
+        ]
+    );
+    fx.remove("new.md");
+    service.apply(&[change(ChangeKind::Removed, "new.md")]);
+    service.flush();
+    assert_eq!(
+        follower.last_docs().len(),
+        1,
+        "a deleted document is not listed"
+    );
+    service.stop();
+}
+
+#[test]
+fn the_person_reading_a_document_is_told_with_its_bytes_before_it_counts_as_read() {
+    let fx = Fx::new(&[("a.md", "one\n")]);
+    let (service, follower) = open_followed(&fx);
+    fx.write("a.md", "two\n");
+    service.apply(&[change(ChangeKind::Modified, "a.md")]);
+    service.flush();
+    let before = follower.told().len();
+
+    service.mark_read("a.md").expect("read");
+    let told = follower.told();
+    assert_eq!(
+        told[before],
+        Told::Reading("a.md".to_owned(), hash_of("two\n"), b"two\n".to_vec())
+    );
+    assert!(
+        matches!(&told[before + 1], Told::Changed { docs, .. }
+            if docs == &[("a.md".to_owned(), Some(hash_of("two\n")), Some(hash_of("two\n")))]),
+        "{told:?}"
+    );
+    service.stop();
+}
+
+#[test]
+fn moves_by_the_app_and_by_the_watcher_are_told_to_a_follower() {
+    let fx = Fx::new(&[("a.md", "a\n"), ("docs/b.md", "b\n")]);
+    let (service, follower) = open_followed(&fx);
+    service.renamed("a.md", "z.md");
+    fs::rename(
+        fx.project.path().join("docs/b.md"),
+        fx.project.path().join("docs/c.md"),
+    )
+    .expect("rename");
+    service.apply(&[renamed("docs/b.md", "docs/c.md")]);
+    service.flush();
+    let moved: Vec<(String, String)> = follower
+        .told()
+        .into_iter()
+        .filter_map(|t| match t {
+            Told::Changed { moves, .. } => Some(moves),
+            Told::Reading(..) => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(
+        moved,
+        [
+            ("a.md".to_owned(), "z.md".to_owned()),
+            ("docs/b.md".to_owned(), "docs/c.md".to_owned())
+        ]
+    );
     service.stop();
 }

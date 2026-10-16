@@ -30,10 +30,24 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+pub use state::DocState;
 use state::{is_tracked, Tracker};
 
 /// Called with the unread documents each time they change.
 pub type Notify = Arc<dyn Fn(&[String]) + Send + Sync>;
+
+/// Follows the read state: what the review of changes needs to keep the text of the version that was read.
+/// Both calls are made under the service's lock, so they arrive in order and must return quickly.
+pub trait ReadObserver: Send + Sync {
+    /// The person is reading the document, which holds `bytes` (their hash is `hash`). It counts as read from
+    /// the call that follows.
+    fn reading(&self, path: &str, hash: u64, bytes: &[u8]);
+
+    /// Something changed. `moves` are the documents that moved since the last call (`(from, to)`); `docs` is
+    /// every document now, sorted; `looked` says whether the disk has been looked at (before that, no document
+    /// has a `current` hash).
+    fn changed(&self, moves: Vec<(String, String)>, looked: bool, docs: Vec<DocState>);
+}
 
 use crate::render::markdown::is_markdown_path;
 use crate::session::write_local_state;
@@ -99,8 +113,8 @@ fn encode(read: &BTreeMap<String, u64>) -> Option<Vec<u8>> {
 
 /// What a path is on disk right now.
 enum Disk {
-    /// A document that can be hashed, with its hash.
-    Doc(u64),
+    /// A document that can be hashed, with its hash and its bytes.
+    Doc { hash: u64, bytes: Vec<u8> },
     /// Nothing is there.
     Gone,
     /// A folder, a file too large to hash, or something that cannot be read now.
@@ -111,7 +125,10 @@ fn look(abs: &Path) -> Disk {
     match std::fs::metadata(abs) {
         Ok(meta) if meta.is_file() && meta.len() <= MAX_HASHED_BYTES => {
             match read_with_retry(abs) {
-                Ok(bytes) => Disk::Doc(hash_bytes(&bytes)),
+                Ok(bytes) => Disk::Doc {
+                    hash: hash_bytes(&bytes),
+                    bytes,
+                },
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Disk::Gone,
                 Err(_) => Disk::Other,
             }
@@ -138,11 +155,13 @@ struct Inner {
 struct Shared {
     inner: Mutex<Inner>,
     notify: Notify,
+    observer: Option<Arc<dyn ReadObserver>>,
 }
 
 impl Shared {
     /// Changes the tracker, tells the listener if the unread documents are different now, and returns
-    /// whether `read.json` is behind. The listener is called under the lock, so what it hears is in order.
+    /// whether `read.json` is behind. The listener and the observer are called under the lock, so what they
+    /// hear is in order.
     fn update(&self, change: impl FnOnce(&mut Tracker) -> bool) -> bool {
         let mut g = lock(&self.inner);
         let wrote = change(&mut g.tracker);
@@ -151,6 +170,10 @@ impl Shared {
         if now != g.announced {
             (self.notify)(&now);
             g.announced = now;
+        }
+        if let Some(observer) = &self.observer {
+            let moves = g.tracker.take_moves();
+            observer.changed(moves, g.tracker.looked(), g.tracker.states());
         }
         wrote
     }
@@ -310,11 +333,11 @@ impl Worker {
                 continue;
             };
             match look(&resolved.abs) {
-                Disk::Doc(hash) if is_tracked(&resolved.rel) => {
+                Disk::Doc { hash, .. } if is_tracked(&resolved.rel) => {
                     steps.push(Step::Changed(resolved.rel, hash));
                 }
                 Disk::Gone => steps.push(Step::Removed(resolved.rel)),
-                Disk::Doc(_) | Disk::Other => {}
+                Disk::Doc { .. } | Disk::Other => {}
             }
         }
         self.shared.update(|tracker| {
@@ -407,6 +430,7 @@ impl UnreadService {
                     dirty: false,
                 }),
                 notify: Arc::new(|_: &[String]| {}),
+                observer: None,
             }),
             tx: None,
             stop: Arc::new(AtomicBool::new(false)),
@@ -416,13 +440,15 @@ impl UnreadService {
 
     /// Loads `read_path` (a missing or unreadable file means the project has no read state yet) and starts
     /// the thread, which looks at every document first. `notify` is called with the unread documents each time
-    /// they change. A vault that is a single file has no markers.
+    /// they change. A vault that is a single file has no markers. `observer` follows the read state (see
+    /// [`ReadObserver`]).
     pub fn open(
         vault: Arc<Vault>,
         filter: Arc<PathFilter>,
         read_path: PathBuf,
         timing: Timing,
         notify: Notify,
+        observer: Option<Arc<dyn ReadObserver>>,
     ) -> Self {
         let saved = std::fs::read(&read_path).ok().and_then(|b| decode(&b));
         let shared = Arc::new(Shared {
@@ -433,6 +459,7 @@ impl UnreadService {
                 dirty: false,
             }),
             notify,
+            observer,
         });
         let stop = Arc::new(AtomicBool::new(false));
         if vault.is_shallow() {
@@ -491,7 +518,10 @@ impl UnreadService {
         if self.tx.is_none() || !is_tracked(&resolved.rel) {
             return Ok(());
         }
-        if let Disk::Doc(hash) = look(&resolved.abs) {
+        if let Disk::Doc { hash, bytes } = look(&resolved.abs) {
+            if let Some(observer) = &self.shared.observer {
+                observer.reading(&resolved.rel, hash, &bytes);
+            }
             let wrote = self
                 .shared
                 .update(|tracker| tracker.mark_read(&resolved.rel, hash));

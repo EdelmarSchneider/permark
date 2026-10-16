@@ -27,6 +27,17 @@ struct Doc {
     read: Option<u64>,
 }
 
+/// A document as the tracker knows it, for whoever follows the read state (the review of changes).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocState {
+    /// The path as the UI spells it.
+    pub path: String,
+    /// The hash of the content on disk now (`None`: the disk has not been looked at yet).
+    pub current: Option<u64>,
+    /// The hash of the content when the document was last read (`None`: never read).
+    pub read: Option<u64>,
+}
+
 /// What the app changed while a look at the disk was walking it ([`Tracker::begin_scan`]). The walk reports the
 /// project as it was when it passed, so it must not undo what happened meanwhile.
 #[derive(Debug, Default)]
@@ -50,6 +61,10 @@ pub struct Tracker {
     forced: BTreeSet<String>,
     /// Set while a look at the disk is under way.
     scan: Option<ScanLog>,
+    /// The disk has been looked at at least once.
+    looked: bool,
+    /// Documents that moved since [`Tracker::take_moves`], as `(from, to)`.
+    moves: Vec<(String, String)>,
 }
 
 /// The linked worktree a path is in, as a key (`@wt/<name>`).
@@ -90,6 +105,8 @@ impl Tracker {
             baseline_pending,
             forced: BTreeSet::new(),
             scan: None,
+            looked: false,
+            moves: Vec::new(),
         }
     }
 
@@ -110,6 +127,28 @@ impl Tracker {
     /// Whether the first look at the disk, which decides what counts as read, has not happened yet.
     pub fn baseline_pending(&self) -> bool {
         self.baseline_pending
+    }
+
+    /// Whether the disk has been looked at: the documents' content is known from then on.
+    pub fn looked(&self) -> bool {
+        self.looked
+    }
+
+    /// Every document, sorted by path: what it holds now and what was read.
+    pub fn states(&self) -> Vec<DocState> {
+        self.docs
+            .values()
+            .map(|doc| DocState {
+                path: doc.path.clone(),
+                current: doc.current,
+                read: doc.read,
+            })
+            .collect()
+    }
+
+    /// The documents that moved since this was last called, as `(from, to)` pairs of the paths they had and have.
+    pub fn take_moves(&mut self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.moves)
     }
 
     /// What `read.json` holds: the hash of every document that was read.
@@ -152,6 +191,7 @@ impl Tracker {
     /// would be a flood of dots). Returns whether `read.json` has to be written.
     pub fn scanned(&mut self, files: Vec<(String, u64)>) -> bool {
         let before = self.saved();
+        self.looked = true;
         let baseline = std::mem::take(&mut self.baseline_pending);
         let forced = std::mem::take(&mut self.forced);
         let log = self.scan.take().unwrap_or_default();
@@ -250,6 +290,7 @@ impl Tracker {
         let mut wrote = false;
         for (path, mut doc) in moving {
             wrote |= doc.read.is_some();
+            self.moves.push((doc.path.clone(), path.clone()));
             if is_tracked(&path) {
                 doc.path.clone_from(&path);
                 let k = key(&path);
@@ -604,6 +645,73 @@ mod tests {
         t.mark_read("a.md", 10);
         assert_eq!(t.unread(), NOTHING);
         assert!(!t.rewritten("unknown.md", 1, 2));
+    }
+
+    // ---- what the review follows ----
+
+    #[test]
+    fn the_tracker_says_when_the_disk_has_been_looked_at() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1)])));
+        assert!(!t.looked());
+        t.scanned(files(&[("a.md", 1)]));
+        assert!(t.looked());
+    }
+
+    #[test]
+    fn every_document_is_listed_with_what_it_holds_and_what_was_read() {
+        let mut t = Tracker::new(Some(saved(&[("a.md", 1), ("gone.md", 3)])));
+        assert_eq!(
+            t.states(),
+            [
+                DocState {
+                    path: "a.md".to_owned(),
+                    current: None,
+                    read: Some(1)
+                },
+                DocState {
+                    path: "gone.md".to_owned(),
+                    current: None,
+                    read: Some(3)
+                },
+            ],
+            "known from read.json, not looked at yet"
+        );
+        t.scanned(files(&[("a.md", 11), ("new.md", 2)]));
+        let states = t.states();
+        let states: Vec<(&str, Option<u64>, Option<u64>)> = states
+            .iter()
+            .map(|d| (d.path.as_str(), d.current, d.read))
+            .collect();
+        assert_eq!(
+            states,
+            [("a.md", Some(11), Some(1)), ("new.md", Some(2), None)]
+        );
+    }
+
+    #[test]
+    fn moves_are_told_one_document_at_a_time_and_only_once() {
+        let mut t = scanned(&[("a.md", 1), ("old/b.md", 2), ("old/deep/c.md", 3)]);
+        t.changed("unread.md", 9);
+        assert_eq!(t.take_moves().len(), 0);
+        t.renamed("a.md", "x/a2.md");
+        t.renamed("old", "new/place");
+        t.renamed("unread.md", "unread2.md");
+        assert_eq!(
+            t.take_moves(),
+            [
+                ("a.md".to_owned(), "x/a2.md".to_owned()),
+                ("old/b.md".to_owned(), "new/place/b.md".to_owned()),
+                ("old/deep/c.md".to_owned(), "new/place/deep/c.md".to_owned()),
+                ("unread.md".to_owned(), "unread2.md".to_owned()),
+            ]
+        );
+        assert_eq!(t.take_moves().len(), 0);
+        t.renamed("x/a2.md", "a.txt");
+        assert_eq!(
+            t.take_moves(),
+            [("x/a2.md".to_owned(), "a.txt".to_owned())],
+            "a move out of the tracked names is told too"
+        );
     }
 
     // Windows and macOS compare paths without regard to case; Linux does not.

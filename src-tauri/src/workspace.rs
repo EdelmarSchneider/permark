@@ -532,6 +532,7 @@ fn start_unread(
         read_path,
         UnreadTiming::default(),
         Arc::new(move |paths: &[String]| sink.unread_changed(paths)),
+        None,
     ))
 }
 
