@@ -15,7 +15,8 @@ use std::sync::OnceLock;
 
 use windows::core::{Interface, GUID, HRESULT, PCSTR, PCWSTR};
 use windows::Win32::Foundation::{
-    CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_FAIL, E_NOTIMPL, S_FALSE, S_OK,
+    FreeLibrary, CLASS_E_CLASSNOTAVAILABLE, CLASS_E_NOAGGREGATION, E_FAIL, E_NOTIMPL, HMODULE,
+    S_FALSE, S_OK,
 };
 use windows::Win32::System::Com::{
     CoInitializeEx, CoTaskMemFree, IClassFactory, COINIT_APARTMENTTHREADED,
@@ -63,7 +64,7 @@ fn built_dll() -> PathBuf {
 /// A copy of the DLL, loaded, in a folder of its own.
 struct Loaded {
     folder: PathBuf,
-    dll: PathBuf,
+    module: HMODULE,
     get_class_object: GetClassObject,
     can_unload_now: CanUnloadNow,
 }
@@ -93,7 +94,7 @@ impl Loaded {
         // SAFETY: a null-terminated path to a DLL that was just copied there.
         let module = unsafe { LoadLibraryW(PCWSTR(wide.as_ptr())) }.expect("LoadLibrary");
         // SAFETY: the names are the DLL's exports, whose signatures these types are (the same ones COM defines). The
-        // module is never freed, so the functions stay valid for the test.
+        // module is freed only when the `Loaded` is dropped, after everything made from it.
         let (get_class_object, can_unload_now) = unsafe {
             let get = GetProcAddress(module, PCSTR(c"DllGetClassObject".as_ptr().cast()))
                 .expect("DllGetClassObject is exported");
@@ -106,7 +107,7 @@ impl Loaded {
         };
         Self {
             folder,
-            dll,
+            module,
             get_class_object,
             can_unload_now,
         }
@@ -131,13 +132,28 @@ impl Loaded {
         // SAFETY: a call to the export, which takes nothing.
         unsafe { (self.can_unload_now)() }
     }
+
+    /// Whether the DLL exports `name`.
+    fn exports(&self, name: &std::ffi::CStr) -> bool {
+        // SAFETY: looking up a name that is not there is allowed and answers `None`.
+        unsafe { GetProcAddress(self.module, PCSTR(name.as_ptr().cast())) }.is_some()
+    }
 }
 
 impl Drop for Loaded {
     fn drop(&mut self) {
-        // The DLL stays loaded (its folder cannot go while it is), so only what can go is removed.
-        let _ = fs::remove_file(self.folder.join("trailmark.exe"));
-        let _ = fs::remove_dir_all(&self.folder);
+        // Everything made from the DLL is gone by now (the tests declare it after the `Loaded`), so it can be unloaded and
+        // its copy deleted. The stand-in program may still be ending; the folder is tried for a moment.
+        // SAFETY: the module was loaded by `new`, once.
+        unsafe {
+            let _ = FreeLibrary(self.module);
+        }
+        for _ in 0..40 {
+            if fs::remove_dir_all(&self.folder).is_ok() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
 
@@ -166,15 +182,11 @@ fn selection(folders: &[&Path]) -> IShellItemArray {
 #[test]
 fn the_dll_exports_what_com_asks_of_a_server_and_nothing_to_register() {
     let loaded = Loaded::new("exports", false);
-    // Loading found both exports (see `Loaded::new`). A package needs no registration code: Windows reads the manifest.
-    let wide: Vec<u16> = loaded.dll.as_os_str().encode_wide().chain([0]).collect();
-    // SAFETY: as in `Loaded::new`; the module is already loaded, and this gets the same one.
-    let module = unsafe { LoadLibraryW(PCWSTR(wide.as_ptr())) }.expect("loaded");
-    // SAFETY: looking up a name that is not there is allowed and answers `None`.
-    unsafe {
-        assert!(GetProcAddress(module, PCSTR(c"DllRegisterServer".as_ptr().cast())).is_none());
-        assert!(GetProcAddress(module, PCSTR(c"DllUnregisterServer".as_ptr().cast())).is_none());
-    }
+    assert!(loaded.exports(c"DllGetClassObject"));
+    assert!(loaded.exports(c"DllCanUnloadNow"));
+    // A package needs no registration code: Windows reads the manifest.
+    assert!(!loaded.exports(c"DllRegisterServer"));
+    assert!(!loaded.exports(c"DllUnregisterServer"));
 }
 
 #[test]
