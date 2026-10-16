@@ -20,7 +20,7 @@
 //! But a save while a version is held does not release it either, so the person's own edit then shows in the
 //! changes, next to the ones still unreviewed.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
 use serde::Serialize;
@@ -82,8 +82,9 @@ pub struct Book {
     reviewed: BTreeMap<String, Version>,
     /// The earlier version kept for a review that is open.
     held: BTreeMap<String, u64>,
-    /// Documents the person is reading: when their read version moves, the one before is held.
-    opened: BTreeSet<String>,
+    /// The version the person read of a document they opened, until the unread markers say it counts as read: when the
+    /// read version moves to it, the one before is held.
+    opened: BTreeMap<String, u64>,
     /// The documents as the last look at the project showed them.
     seen: BTreeMap<String, Seen>,
     /// The disk has been looked at: a document that is not there is gone.
@@ -142,10 +143,11 @@ impl Book {
             .collect()
     }
 
-    /// The person is reading the document: if the version that counts as read moves with the next look at
-    /// the project, the one before it is held.
-    pub fn opening(&mut self, path: &str) {
-        self.opened.insert(key(path));
+    /// The person is reading the document, which holds `hash`: when the version that counts as read moves to it, the
+    /// one before it is held. (It is the version that decides, not the order of the looks at the project, which a
+    /// watcher can get between the reading and the look that says it.)
+    pub fn opening(&mut self, path: &str, hash: u64) {
+        self.opened.insert(key(path), hash);
     }
 
     /// Takes in a look at the project: the documents that moved, and every document as it is now.
@@ -171,6 +173,10 @@ impl Book {
                     Some(seen) if seen.read != Some(read) => self.advance(&k, &doc.path, read),
                     Some(_) => {}
                 }
+                // the reading was taken in: it is no longer waiting
+                if self.opened.get(&k) == Some(&read) {
+                    self.opened.remove(&k);
+                }
             }
             if let Some(version) = self.reviewed.get_mut(&k) {
                 version.path.clone_from(&doc.path);
@@ -184,7 +190,6 @@ impl Book {
                 },
             );
         }
-        self.opened.clear();
         self.seen = now;
         self.saved() != before
     }
@@ -201,7 +206,7 @@ impl Book {
             },
         );
         if let Some(old) = old.filter(|old| *old != read) {
-            if self.opened.contains(k) && !self.held.contains_key(k) {
+            if self.opened.get(k) == Some(&read) && !self.held.contains_key(k) {
                 self.held.insert(k.to_owned(), old);
             }
         }
@@ -232,8 +237,8 @@ impl Book {
         if let Some(hash) = held {
             self.held.insert(to_key.clone(), hash);
         }
-        if opened {
-            self.opened.insert(to_key);
+        if let Some(hash) = opened {
+            self.opened.insert(to_key, hash);
         }
     }
 

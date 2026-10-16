@@ -215,8 +215,8 @@ enum Msg {
         looked: bool,
         docs: Vec<DocState>,
     },
-    /// The person is reading a document.
-    Opening(String),
+    /// The person is reading a document, which holds the version with this hash.
+    Opening(String, u64),
     /// Something to write: `reviewed.json`, or a clean-up.
     Touch,
     /// The files live somewhere else now.
@@ -454,7 +454,7 @@ fn run(rx: &Receiver<Msg>, worker: &Worker, timing: Timing) {
                     pending.touch(now);
                 }
             }
-            Ok(Msg::Opening(path)) => lock(&worker.shared.inner).book.opening(&path),
+            Ok(Msg::Opening(path, hash)) => lock(&worker.shared.inner).book.opening(&path, hash),
             Ok(Msg::Touch) => pending.touch(now),
             Ok(Msg::Relocate(paths)) => {
                 worker.relocate(paths);
@@ -1027,10 +1027,10 @@ impl ReviewService {
 }
 
 impl ReadObserver for ReviewService {
-    fn reading(&self, path: &str, _hash: u64, bytes: &[u8]) {
+    fn reading(&self, path: &str, hash: u64, bytes: &[u8]) {
         if self.tx.is_some() {
             let _ = self.keep_copy(bytes);
-            self.send(Msg::Opening(path.to_owned()));
+            self.send(Msg::Opening(path.to_owned(), hash));
         }
     }
 

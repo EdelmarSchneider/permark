@@ -83,7 +83,7 @@ fn opening_a_changed_document_holds_the_version_it_was_read_from() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
 
-    book.opening("a.md");
+    book.opening("a.md", 2);
     let changed = book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     assert!(changed);
     assert_eq!(book.reviewed("a.md"), Some(2), "it counts as read");
@@ -107,11 +107,11 @@ fn a_document_read_without_opening_it_holds_nothing() {
 fn a_later_reading_keeps_the_version_that_is_held() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     // the agent writes again while the document is open, and it is read again
     book.observe(&[], true, &[doc("a.md", Some(3), Some(2))]);
-    book.opening("a.md");
+    book.opening("a.md", 3);
     book.observe(&[], true, &[doc("a.md", Some(3), Some(3))]);
     assert_eq!(book.held("a.md"), Some(1), "all of it is still to review");
     assert_eq!(book.reviewed("a.md"), Some(3));
@@ -121,7 +121,7 @@ fn a_later_reading_keeps_the_version_that_is_held() {
 fn the_held_version_goes_when_the_document_is_back_at_it() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     // every change was reverted: the file is what it was, and the app wrote it
     book.observe(&[], true, &[doc("a.md", Some(1), Some(1))]);
@@ -134,7 +134,7 @@ fn the_held_version_goes_when_the_document_is_back_at_it() {
 fn a_save_of_the_person_while_a_version_is_held_does_not_release_it() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     book.observe(&[], true, &[doc("a.md", Some(7), Some(7))]);
     assert_eq!(book.reviewed("a.md"), Some(7));
@@ -146,7 +146,7 @@ fn a_save_of_the_person_while_a_version_is_held_does_not_release_it() {
 fn releasing_lets_the_held_version_go() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     book.release("a.md");
     assert_eq!(book.baseline("a.md"), Some(2));
@@ -157,12 +157,36 @@ fn releasing_lets_the_held_version_go() {
 #[test]
 fn opening_without_a_change_of_the_read_version_is_forgotten_by_the_next_look() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
-    book.opening("a.md"); // opened with nothing new
+    book.opening("a.md", 1); // opened with nothing new
     book.observe(&[], true, &[doc("a.md", Some(1), Some(1))]);
     // much later a bulk reading moves the version: that is not the person opening it
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     assert_eq!(book.held("a.md"), None);
+}
+
+#[test]
+fn a_look_at_the_project_that_comes_between_the_reading_and_its_own_look_does_not_lose_the_hold() {
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
+    book.opening("a.md", 2);
+    // a look caused by the watcher, from before the reading was counted
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
+    assert_eq!(book.held("a.md"), Some(1));
+}
+
+#[test]
+fn a_reading_of_one_version_does_not_hold_for_the_reading_of_another() {
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    book.opening("a.md", 5);
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
+    assert_eq!(
+        book.held("a.md"),
+        None,
+        "that was not the version the person opened"
+    );
 }
 
 #[test]
@@ -174,7 +198,7 @@ fn marking_unread_keeps_the_approved_version_and_reading_again_moves_it() {
     assert_eq!(book.reviewed("a.md"), Some(1));
     // changed while marked unread, then read
     book.observe(&[], true, &[doc("a.md", Some(2), None)]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     assert_eq!(book.held("a.md"), Some(1));
 }
@@ -227,7 +251,7 @@ fn moved_documents_take_their_versions_along() {
             doc("dir/b.md", Some(2), Some(2)),
         ],
     );
-    book.opening("a.md");
+    book.opening("a.md", 11);
     book.observe(
         &[],
         true,
@@ -268,7 +292,7 @@ fn a_document_moved_to_a_name_that_is_not_tracked_is_forgotten() {
 fn a_move_while_a_document_is_being_opened_still_holds_the_version() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(
         &[("a.md".to_owned(), "b.md".to_owned())],
         true,
@@ -289,7 +313,7 @@ fn keeping_a_change_moves_the_baseline_and_not_what_was_read() {
 
     // with one held, that one moves, and the approved one stays what was read
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     assert_eq!(book.held("a.md"), Some(10));
     assert!(!book.set_baseline("a.md", 11), "reviewed.json is the same");
@@ -305,7 +329,7 @@ fn keeping_a_change_moves_the_baseline_and_not_what_was_read() {
 fn accepting_approves_the_document_as_it_is_and_lets_the_held_version_go() {
     let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
     assert!(!book.accept("a.md", 2), "it is approved at that already");
     assert_eq!(book.held("a.md"), None);
@@ -351,7 +375,7 @@ fn the_versions_that_need_a_copy_say_what_the_document_holds() {
         true,
         &[doc("a.md", Some(2), Some(1)), doc("b.md", Some(5), Some(5))],
     );
-    book.opening("a.md");
+    book.opening("a.md", 2);
     book.observe(
         &[],
         true,
