@@ -500,6 +500,8 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 **v0.5: Notes** (released)
 - Open TrailMark, type, close: notes save themselves, with no name to choose and no folder to pick. Keep a sticky note for
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
+- v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
+  show up in Quick open
 
 **v0.6**
 - Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words it uses.
