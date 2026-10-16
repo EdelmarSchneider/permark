@@ -5,6 +5,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Search finds Chinese and Japanese words.** These languages are written without spaces, so a sentence used to count as one giant word and
+  searching for a word inside it found nothing. Search now matches the characters and character pairs of Chinese, Japanese kanji, hiragana and
+  katakana text, in section results and in the agent bridge alike: "搜索" finds it inside a long sentence, a longer query ranks the section that
+  holds all of it first, and a single character works too. Mixed text such as `使用Rust编写` is split at the script change. Matches are
+  highlighted as one stretch in the result snippets.
+
 ## [0.5.2] - 2026-10-16
 
 Pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and Notes is simpler to start with.
