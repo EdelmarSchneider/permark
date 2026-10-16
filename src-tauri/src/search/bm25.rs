@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::chunk::Chunk;
-use super::fold::{tokenize, Token};
+use super::fold::{is_cjk, tokenize, Token, TokenKind};
 use super::{SearchHit, SearchProvider};
 use crate::util::escape_html;
 use crate::vault::key;
@@ -182,7 +182,12 @@ impl Bm25Index {
     /// Ranked sections for a free-text query. The last word also matches as a prefix (search-as-you-type).
     #[allow(clippy::cast_precision_loss)] // counts stay far below 2^24
     pub fn search(&self, query: &str, limit: usize) -> Vec<SearchHit> {
-        let q = tokenize(query);
+        // The index holds every CJK character and every pair; a query only needs the pairs (a single
+        // character has no pair, so it stays and matches the unigrams).
+        let q: Vec<Token> = tokenize(query)
+            .into_iter()
+            .filter(|t| t.kind != TokenKind::CjkRunUnigram)
+            .collect();
         if q.is_empty() || self.live == 0 || limit == 0 {
             return Vec::new();
         }
@@ -198,7 +203,8 @@ impl Bm25Index {
         for (i, tok) in q.iter().enumerate() {
             matcher.terms.insert(tok.term.clone());
             let mut candidates: Vec<(&str, f32)> = vec![(tok.term.as_str(), 1.0)];
-            if i == last {
+            // CJK terms have no longer forms to complete: every character is already indexed alone.
+            if i == last && tok.kind == TokenKind::Word {
                 matcher.prefix = Some(tok.folded.clone());
                 candidates.extend(
                     self.postings
@@ -296,7 +302,7 @@ fn snippet(text: &str, heading_path: &[String], matcher: &Matcher) -> String {
         }
     };
     let first = toks.iter().position(|t| matcher.matches(t));
-    let mut start = first.map_or(0, |i| toks[i.saturating_sub(SNIPPET_LEAD_WORDS)].start);
+    let mut start = first.map_or(0, |i| lead_start(&toks, i));
     if first.is_none() {
         start = 0;
     }
@@ -305,11 +311,23 @@ fn snippet(text: &str, heading_path: &[String], matcher: &Matcher) -> String {
         end -= 1;
     }
     // Do not cut the last word in half.
-    if end < source.len() {
+    if end < source.len() && splits_a_word(&source, end) {
         if let Some(sp) = source[start..end].rfind(char::is_whitespace) {
             if sp > 0 {
                 end = start + sp;
             }
+        }
+    }
+
+    // Matched tokens can overlap (CJK pairs and characters) or touch: one mark per stretch.
+    let mut marks: Vec<(usize, usize)> = Vec::new();
+    for t in toks
+        .iter()
+        .filter(|t| t.start >= start && t.end <= end && matcher.matches(t))
+    {
+        match marks.last_mut() {
+            Some((_, e)) if t.start <= *e => *e = (*e).max(t.end),
+            _ => marks.push((t.start, t.end)),
         }
     }
 
@@ -318,21 +336,39 @@ fn snippet(text: &str, heading_path: &[String], matcher: &Matcher) -> String {
         out.push('…');
     }
     let mut cursor = start;
-    for t in toks
-        .iter()
-        .filter(|t| t.start >= start && t.end <= end && matcher.matches(t))
-    {
-        out.push_str(&escape_html(&collapse(&source[cursor..t.start])));
+    for (s, e) in marks {
+        out.push_str(&escape_html(&collapse(&source[cursor..s])));
         out.push_str("<mark>");
-        out.push_str(&escape_html(&source[t.start..t.end]));
+        out.push_str(&escape_html(&source[s..e]));
         out.push_str("</mark>");
-        cursor = t.end;
+        cursor = e;
     }
     out.push_str(&escape_html(&collapse(&source[cursor..end])));
     if end < source.len() {
         out.push('…');
     }
     out
+}
+
+/// Where the excerpt starts: a few words before the match `toks[first]`. A CJK character counts as a
+/// word; its duplicate unigram does not.
+fn lead_start(toks: &[Token], first: usize) -> usize {
+    let mut i = first;
+    let mut words = 0;
+    while i > 0 && words < SNIPPET_LEAD_WORDS {
+        i -= 1;
+        if toks[i].kind != TokenKind::CjkRunUnigram {
+            words += 1;
+        }
+    }
+    toks[i].start
+}
+
+/// True when `at` falls inside a word of a spaced script. CJK text has no words to protect from a cut,
+/// and falling back to a far-away space there would throw the match out of the excerpt.
+fn splits_a_word(s: &str, at: usize) -> bool {
+    let in_word = |c: char| c.is_alphanumeric() && !is_cjk(c);
+    s[..at].chars().next_back().is_some_and(in_word) && s[at..].chars().next().is_some_and(in_word)
 }
 
 /// Newlines and runs of spaces become single spaces.
@@ -535,5 +571,147 @@ mod tests {
         );
         let _ = i.search("検索テスト", 3);
         let _ = i.search("emoji", 3);
+    }
+
+    const ZH_FULL: &str =
+        "# 笔记\n\n## 引擎\n\n这是一个用来检查搜索测试是否可行的很长的句子，没有任何空格。\n";
+    const ZH_PART: &str = "# 笔记\n\n## 其他\n\n我们昨天讨论了搜索功能，还有别的内容。\n";
+    const ZH_OTHER: &str = "# 食物\n\n## 汤\n\n煮水，加盐，然后喝汤。\n";
+
+    fn chinese_index() -> Bm25Index {
+        let mut i = Bm25Index::new();
+        i.add_doc("zh/full.md", ZH_FULL);
+        i.add_doc("zh/part.md", ZH_PART);
+        i.add_doc("zh/other.md", ZH_OTHER);
+        i
+    }
+
+    #[test]
+    fn a_two_character_word_is_found_inside_a_long_sentence() {
+        let i = chinese_index();
+        let hits = i.search("空格", 5);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert_eq!(hits[0].path, "zh/full.md");
+        let hits = i.search("搜索", 5);
+        let paths: Vec<&str> = hits.iter().map(|h| h.path.as_str()).collect();
+        assert_eq!(paths.len(), 2, "{paths:?}");
+        assert!(paths.contains(&"zh/full.md") && paths.contains(&"zh/part.md"));
+        // Characters that are not adjacent in the text are not a word.
+        assert_eq!(i.search("搜测", 5).len(), 0);
+        assert_eq!(i.search("苹果", 5).len(), 0);
+    }
+
+    #[test]
+    fn the_section_holding_the_whole_chinese_query_ranks_first() {
+        let hits = chinese_index().search("搜索测试", 5);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert_eq!(hits[0].path, "zh/full.md");
+        assert_eq!(hits[1].path, "zh/part.md");
+        assert!(hits[0].score > hits[1].score);
+    }
+
+    #[test]
+    fn a_single_character_finds_it_inside_a_longer_run() {
+        let i = chinese_index();
+        // 句 only occurs inside 一个用来…的句子.
+        let hits = i.search("句", 5);
+        assert_eq!(hits.len(), 1, "{hits:?}");
+        assert_eq!(hits[0].path, "zh/full.md");
+        assert!(hits[0].snippet.contains("<mark>句</mark>"));
+        // 汤 is a run of one character in 然后喝汤 and a heading: both count.
+        assert_eq!(i.search("汤", 5)[0].path, "zh/other.md");
+        // A character that is part of several words matches all of them.
+        assert_eq!(i.search("索", 5).len(), 2);
+    }
+
+    #[test]
+    fn japanese_words_are_found_in_kana_and_kanji_text() {
+        let mut i = Bm25Index::new();
+        i.add_doc("ja.md", "# メモ\n\nこれは日本語の検索テストです。\n");
+        i.add_doc("other.md", "# メモ\n\nきょうはいい天気です。\n");
+        for q in ["検索", "テスト", "検索テスト", "日本語", "テ"] {
+            let hits = i.search(q, 3);
+            assert_eq!(hits[0].path, "ja.md", "query {q}");
+        }
+        assert_eq!(i.search("検索", 3).len(), 1);
+        assert_eq!(i.search("天気", 3)[0].path, "other.md");
+    }
+
+    #[test]
+    fn mixed_cjk_and_latin_words_match_separately() {
+        let mut i = Bm25Index::new();
+        i.add_doc("m.md", "# T\n\n使用Rust编写的 tooling 工具\n");
+        for q in ["rust", "使用", "编写", "RUST 编写", "使用Rust"] {
+            assert_eq!(i.search(q, 3).len(), 1, "query {q}");
+        }
+        // The last Latin word still matches as a prefix, also after CJK words.
+        assert_eq!(i.search("编写 tool", 3).len(), 1);
+        assert_eq!(i.search("rus", 3).len(), 1);
+        assert_eq!(i.search("工具 zzz", 3).len(), 1);
+    }
+
+    #[test]
+    fn chinese_snippets_mark_matches_and_merge_overlaps() {
+        let i = chinese_index();
+        // The three bigrams of the query overlap: one mark covers them all.
+        let s = &i.search("搜索测试", 1)[0].snippet;
+        assert!(s.contains("<mark>搜索测试</mark>"), "{s}");
+        assert_eq!(s.matches("<mark>").count(), 1, "{s}");
+        // A single bigram marks just itself.
+        let s = &i.search("空格", 1)[0].snippet;
+        assert!(s.contains("<mark>空格</mark>"), "{s}");
+        // Adjacent single characters merge as well.
+        let s = &i.search("搜 索", 1)[0].snippet;
+        assert_eq!(s.matches("<mark>").count(), 1, "{s}");
+    }
+
+    #[test]
+    fn long_runs_of_matching_characters_make_one_mark_without_panicking() {
+        let mut i = Bm25Index::new();
+        i.add_doc("a.md", &format!("# T\n\n{}。结束\n", "あ".repeat(300)));
+        let s = &i.search("あ", 1)[0].snippet;
+        assert_eq!(s.matches("<mark>").count(), 1, "{s}");
+        assert!(s.ends_with('…'), "{s}");
+        let s = &i.search("ああ", 1)[0].snippet;
+        assert_eq!(s.matches("<mark>").count(), 1, "{s}");
+    }
+
+    #[test]
+    fn a_far_space_does_not_shrink_a_chinese_snippet_past_the_match() {
+        // Only one space, near the start: the "do not cut a word" rule must not fall back to it.
+        let filler = "字".repeat(120);
+        let mut i = Bm25Index::new();
+        i.add_doc("far.md", &format!("# T\n\n字字字字字字 搜索{filler}\n"));
+        let s = &i.search("搜索", 1)[0].snippet;
+        assert!(s.contains("<mark>搜索</mark>"), "{s}");
+        assert!(s.ends_with('…'), "{s}");
+    }
+
+    #[test]
+    fn a_match_deep_in_a_chinese_paragraph_gets_a_windowed_snippet() {
+        let filler = "字".repeat(200);
+        let mut i = Bm25Index::new();
+        i.add_doc("deep.md", &format!("# T\n\n{filler}搜索{filler}\n"));
+        let s = &i.search("搜索", 1)[0].snippet;
+        assert!(s.starts_with('…') && s.ends_with('…'), "{s}");
+        assert!(s.contains("<mark>搜索</mark>"), "{s}");
+        assert!(s.chars().count() < 120, "{}", s.chars().count());
+    }
+
+    #[test]
+    fn chinese_headings_match_and_are_boosted() {
+        let mut i = Bm25Index::new();
+        i.add_doc("a.md", "# 甲\n\n## 搜索引擎\n\n无关内容。\n");
+        i.add_doc(
+            "b.md",
+            "# 乙\n\n正文里提到一次搜索引擎，还有很多别的字词来拉长这一段文字。\n",
+        );
+        let hits = i.search("搜索", 5);
+        assert_eq!(hits[0].path, "a.md");
+        assert!(
+            hits[0].snippet.contains("<mark>搜索</mark>"),
+            "{}",
+            hits[0].snippet
+        );
     }
 }
