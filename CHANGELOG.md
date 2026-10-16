@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-16
+
+TrailMark speaks Italian, the light theme comes in softer tones, and the Git letters explain themselves.
+
+
 ### Added
 - **Soft light tones.** **Settings → Light tone** adds **Paper** (warm cream), **Sage** (soft green) and **Gray** (soft warm gray) beside the plain
   **White** of the light theme, for readers who find pure white tiring. The tone applies whenever the theme is light (also when *System* picks
@@ -16,9 +21,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Italiano (Italian).** The interface now comes in Italian besides English, Português (Brasil), Español, Deutsch and 简体中文.
   **Settings → Language** lists it, and *System default* picks it for any Italian system language (`it-IT`, `it-CH` and the others). The
   Windows installer offers it, "Open with TrailMark" in the file manager is worded in it ("Apri con TrailMark"), and the Microsoft Store
-  package declares it.
+  package declares it. Thanks to @kelvin-mariano for the translation.
+
+### Fixed
+- **Buttons look like buttons again** in the Settings, tag and agent panels, and the tag editor's **Done** is readable in the dark theme.
+- **A tag that was typed but not yet added is kept** when the tag editor closes (Done, Esc or a click outside); a hint says Enter adds it.
+- **Long lists show their scrollbar**: with hundreds of files the thumb no longer shrinks out of sight.
+- **Links in the light theme** have more contrast.
 
 ### Changed
+- **Settings are grouped** into Reading, Editing, Integration and Updates, and long explanations fold behind an info button.
+- **简体中文 wording** follows a native speaker's review (批注 for comments, a clearer note / caution pair, 描述, 基准).
 - **The Initialize dialog and the hint to keep settings with the project say what they do**: no repository is created and nothing is committed,
   and the lines for `cache/` and `local/` describe what they hold.
 

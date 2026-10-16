@@ -4864,7 +4864,7 @@ dependencies = [
 
 [[package]]
 name = "trailmark"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "ammonia",
  "base64 0.23.1",

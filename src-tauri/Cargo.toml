@@ -1,6 +1,6 @@
 [package]
 name = "trailmark"
-version = "0.5.3"
+version = "0.5.4"
 description = "Read what your AI writes. Write what it reads. A free, open-source Markdown app."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/trailmark"
