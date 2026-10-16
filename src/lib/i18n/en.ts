@@ -1111,6 +1111,7 @@ export const en = {
   "dialog.filter.markdown": "Markdown",
   "agent.request.list_notes": "Listed your shared notes",
   "agent.request.read_note": "Read the note {subject}",
+  "agent.request.list_tags": "Looked through your tags",
   "cmd.moveToProject": "Move the note to a project...",
   "error.moveInside": "A note can't be moved into the notes folder. Choose a place in a project.",
   "error.notesNewer":

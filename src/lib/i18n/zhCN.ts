@@ -1080,6 +1080,7 @@ export const zhCN = {
   "dialog.filter.markdown": "Markdown",
   "agent.request.list_notes": "列出了你共享的笔记",
   "agent.request.read_note": "读取了笔记 {subject}",
+  "agent.request.list_tags": "查看了你的标签",
   "cmd.moveToProject": "将笔记移到项目...",
   "error.moveInside": "笔记不能移到笔记文件夹中。请选择项目中的位置。",
   "error.notesNewer":

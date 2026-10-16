@@ -19,6 +19,7 @@ use crate::comments::{CommentFilter, CommentView};
 
 use super::protocol::{
     CommentList, ErrorKind, Hit, Opened, ProtocolError, UnreadDoc, MAX_COMMENTS_LISTED,
+    MAX_SNIPPET_CHARS,
 };
 
 /// Whether a path of the vault is inside the project folder itself.
@@ -38,7 +39,22 @@ pub(crate) fn plain_snippet(html: &str) -> String {
         .replace("&amp;", "&")
 }
 
-/// Search hits as an agent reads them.
+/// `text` cut to at most `max` characters, at a word when there is one near the end, with an ellipsis where it was cut.
+pub(crate) fn shorten(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let kept: String = text.chars().take(max.saturating_sub(1)).collect();
+    // do not leave half a word, unless that would throw most of the text away
+    let kept = match kept.rfind(char::is_whitespace) {
+        Some(at) if at > kept.len() / 2 => &kept[..at],
+        _ => &kept,
+    };
+    format!("{}…", kept.trim_end())
+}
+
+/// Search hits as an agent reads them: the snippet is cut to about [`MAX_SNIPPET_CHARS`] (the window around the match
+/// starts a few words before it, so the match is kept).
 pub(crate) fn plain_hits(hits: Vec<SearchHit>) -> Vec<Hit> {
     hits.into_iter()
         .filter(|hit| in_project(&hit.path))
@@ -46,7 +62,10 @@ pub(crate) fn plain_hits(hits: Vec<SearchHit>) -> Vec<Hit> {
             path: hit.path,
             heading_path: hit.heading_path,
             line: hit.start_line,
-            snippet: plain_snippet(&hit.snippet),
+            snippet: shorten(&plain_snippet(&hit.snippet), MAX_SNIPPET_CHARS),
+            // the document's tags and description are put in by whoever knows them (see `DocIndex::describe`)
+            tags: Vec::new(),
+            description: String::new(),
         })
         .collect()
 }
@@ -285,6 +304,39 @@ mod tests {
             plain_snippet("&lt;mark&gt;x&lt;/mark&gt;"),
             "<mark>x</mark>"
         );
+    }
+
+    #[test]
+    fn a_long_text_is_cut_at_a_word_with_an_ellipsis_and_a_short_one_is_left_alone() {
+        assert_eq!(shorten("short enough", 160), "short enough");
+        let exact = "x".repeat(20);
+        assert_eq!(shorten(&exact, 20), exact);
+        let cut = shorten("alpha beta gamma delta epsilon", 18);
+        assert_eq!(cut, "alpha beta gamma…");
+        assert!(cut.chars().count() <= 18);
+        // a long word with no space is cut where it is, and CJK text has no spaces at all
+        assert_eq!(shorten("abcdefghijklmnop", 8), "abcdefg…");
+        assert_eq!(shorten("日本語のテキストです", 5), "日本語の…");
+        // a space near the start is not worth throwing the rest away for
+        assert_eq!(shorten("ab cdefghijklmnopqrstuv", 12), "ab cdefghij…");
+    }
+
+    #[test]
+    fn a_long_snippet_is_cut_in_the_hit_but_keeps_its_match_near_the_start() {
+        let long = format!(
+            "…the retry <mark>policy</mark> says {} and more…",
+            "words ".repeat(60)
+        );
+        let hits = plain_hits(vec![SearchHit {
+            path: "a.md".to_owned(),
+            heading_path: vec![],
+            snippet: long,
+            start_line: 1,
+            score: 1.0,
+        }]);
+        assert!(hits[0].snippet.chars().count() <= MAX_SNIPPET_CHARS);
+        assert!(hits[0].snippet.starts_with("…the retry policy says"));
+        assert!(hits[0].snippet.ends_with('…'));
     }
 
     #[test]

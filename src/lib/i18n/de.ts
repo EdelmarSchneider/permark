@@ -1148,6 +1148,7 @@ export const de = {
   "dialog.filter.markdown": "Markdown",
   "agent.request.list_notes": "Deine geteilten Notizen aufgelistet",
   "agent.request.read_note": "Die Notiz {subject} gelesen",
+  "agent.request.list_tags": "Deine Tags durchgesehen",
   "cmd.moveToProject": "Notiz in ein Projekt verschieben ...",
   "error.notesNewer":
     "Diese Notizen wurden zuletzt mit einem neueren TrailMark benutzt, deshalb lässt sich von hier aus keine Notiz teilen. Das Teilen zu beenden funktioniert weiterhin.",

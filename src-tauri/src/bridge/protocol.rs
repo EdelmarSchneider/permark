@@ -33,6 +33,20 @@ pub const MAX_UNREAD_LISTED: usize = 200;
 pub const MAX_COMMENTS_LISTED: usize = 200;
 /// The most shared notes listed.
 pub const MAX_NOTES_LISTED: usize = 200;
+/// What a search with neither words nor tags says.
+pub const EMPTY_QUERY: &str =
+    "the query is empty: give words to look for, or tags to list the documents that have them";
+/// How many tags `list_tags` lists when the client does not say: the answer of one step should stay small (a few
+/// thousand characters) even in a project of a thousand documents.
+pub const DEFAULT_TAGS_LISTED: usize = 50;
+/// The most tags listed, whatever the client asks for.
+pub const MAX_TAGS_LISTED: usize = 200;
+/// How many documents are listed for a tag (or tags) when the client does not say.
+pub const DEFAULT_TAGGED_LISTED: usize = 20;
+/// The most documents listed for a tag (or tags), whatever the client asks for.
+pub const MAX_TAGGED_LISTED: usize = 100;
+/// A snippet in an answer is cut to about this many characters (the match is near its start).
+pub const MAX_SNIPPET_CHARS: usize = 160;
 
 /// What a client can ask.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,9 +56,20 @@ pub enum Request {
     GetContext,
     /// The documents that changed since they were last read, newest first.
     ListUnread,
-    /// Where something is described.
+    /// Where something is described. With `tags`, only in the documents that have all of them; with no `query`, the
+    /// documents that have them instead of sections.
     Search {
         query: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<usize>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        tags: Vec<String>,
+    },
+    /// The tags in use, with how many documents have each; or, with `tag`, the documents that have it.
+    ListTags {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tag: Option<String>,
+        /// How many tags (or, with `tag`, documents) to list at most.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         limit: Option<usize>,
     },
@@ -85,6 +110,7 @@ impl Request {
             Self::GetContext => "get_context",
             Self::ListUnread => "list_unread",
             Self::Search { .. } => "search",
+            Self::ListTags { .. } => "list_tags",
             Self::ListComments { .. } => "list_comments",
             Self::ResolveComment { .. } => "resolve_comment",
             Self::Open { .. } => "open",
@@ -100,7 +126,19 @@ impl Request {
             Self::GetContext | Self::ListUnread | Self::ListComments { .. } | Self::ListNotes => {
                 return None
             }
+            // tags alone are told the way the search box takes them: `tag:adr tag:api`
+            Self::Search { query, tags, .. } if query.trim().is_empty() && !tags.is_empty() => {
+                let told: Vec<String> = tags
+                    .iter()
+                    .map(|tag| format!("tag:{}", tag.trim()))
+                    .collect();
+                return Some(told.join(" ").chars().take(80).collect());
+            }
             Self::Search { query, .. } => query.trim(),
+            Self::ListTags { tag, .. } => match tag.as_deref().map(str::trim) {
+                Some(tag) if !tag.is_empty() => tag,
+                _ => return None,
+            },
             Self::ResolveComment { comment, .. } => comment.trim(),
             Self::Open { path, .. } => path.trim(),
             Self::ReadNote { note } => note.trim(),
@@ -195,6 +233,12 @@ pub struct Hit {
     pub heading_path: Vec<String>,
     pub line: u32,
     pub snippet: String,
+    /// The tags of the document the section is in, written in it or added in TrailMark, alphabetical. Left out when it has none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// The one-line description of that document. Left out when it has none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
 }
 
 /// A document that changed since it was last read.
@@ -351,9 +395,86 @@ mod tests {
             call.request,
             Request::Search {
                 query: "rollout".to_owned(),
+                limit: None,
+                tags: Vec::new()
+            }
+        );
+    }
+
+    #[test]
+    fn the_tag_requests_are_flat_objects_and_say_nothing_they_do_not_carry() {
+        let call: Call =
+            serde_json::from_str(r#"{"id":1,"op":"search","query":"retry","tags":["adr","api"]}"#)
+                .expect("parse");
+        assert_eq!(
+            call.request,
+            Request::Search {
+                query: "retry".to_owned(),
+                limit: None,
+                tags: vec!["adr".to_owned(), "api".to_owned()]
+            }
+        );
+        // a search without tags is written as it always was
+        let plain = Call {
+            id: 2,
+            request: Request::Search {
+                query: "retry".to_owned(),
+                limit: Some(3),
+                tags: Vec::new(),
+            },
+        };
+        assert_eq!(
+            serde_json::to_string(&plain).expect("json"),
+            r#"{"id":2,"op":"search","query":"retry","limit":3}"#
+        );
+        let call: Call = serde_json::from_str(r#"{"id":3,"op":"listTags"}"#).expect("parse");
+        assert_eq!(
+            call.request,
+            Request::ListTags {
+                tag: None,
                 limit: None
             }
         );
+        let call: Call = serde_json::from_str(r#"{"id":4,"op":"listTags","tag":"adr","limit":5}"#)
+            .expect("parse");
+        assert_eq!(
+            call.request,
+            Request::ListTags {
+                tag: Some("adr".to_owned()),
+                limit: Some(5)
+            }
+        );
+        let line = serde_json::to_string(&call).expect("json");
+        assert_eq!(serde_json::from_str::<Call>(&line).expect("parse"), call);
+    }
+
+    #[test]
+    fn a_hit_says_the_tags_and_description_only_when_the_document_has_them() {
+        let bare = Hit {
+            path: "a.md".to_owned(),
+            heading_path: Vec::new(),
+            line: 1,
+            snippet: "x".to_owned(),
+            tags: Vec::new(),
+            description: String::new(),
+        };
+        let json = serde_json::to_value(&bare).expect("json");
+        assert!(json.get("tags").is_none() && json.get("description").is_none());
+        let described = Hit {
+            tags: vec!["adr".to_owned()],
+            description: "Why.".to_owned(),
+            ..bare.clone()
+        };
+        let json = serde_json::to_value(&described).expect("json");
+        assert_eq!(
+            (&json["tags"], &json["description"]),
+            (&serde_json::json!(["adr"]), &serde_json::json!("Why."))
+        );
+        // an answer from before the fields existed still reads
+        let old: Hit =
+            serde_json::from_str(r#"{"path":"a.md","headingPath":[],"line":1,"snippet":"x"}"#)
+                .expect("parse");
+        assert_eq!(old, bare);
     }
 
     #[test]
@@ -470,9 +591,27 @@ mod tests {
         let search = Request::Search {
             query: "  rollout plan ".to_owned(),
             limit: Some(3),
+            tags: vec!["adr".to_owned()],
         };
         assert_eq!(search.tool(), "search");
         assert_eq!(search.subject().as_deref(), Some("rollout plan"));
+        // tags alone are told the way the search box takes them
+        let tagged = Request::Search {
+            query: "  ".to_owned(),
+            limit: None,
+            tags: vec![" adr ".to_owned(), "api".to_owned()],
+        };
+        assert_eq!(tagged.subject().as_deref(), Some("tag:adr tag:api"));
+        let tags = Request::ListTags {
+            tag: None,
+            limit: None,
+        };
+        assert_eq!((tags.tool(), tags.subject()), ("list_tags", None));
+        let one = Request::ListTags {
+            tag: Some(" adr ".to_owned()),
+            limit: None,
+        };
+        assert_eq!(one.subject().as_deref(), Some("adr"));
         assert_eq!(Request::GetContext.tool(), "get_context");
         assert_eq!(Request::GetContext.subject(), None);
         assert_eq!(Request::ListUnread.tool(), "list_unread");

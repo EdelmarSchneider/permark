@@ -16,8 +16,9 @@ use crate::notes::share;
 
 use super::link::{Link, LinkError};
 use super::project::{connection_is_on, find_project, Project};
-use super::protocol::{NoteList, Request, DEFAULT_SEARCH_HITS, MAX_SEARCH_HITS};
+use super::protocol::{Hits, NoteList, Request, DEFAULT_SEARCH_HITS, EMPTY_QUERY, MAX_SEARCH_HITS};
 use super::socket::Endpoint;
+use super::tags::names_a_tag;
 
 /// Shown to the agent (and through it to the person) when the connection is off. One place to change the words.
 const OFF_MESSAGE: &str = "The agent connection is off for this project, so TrailMark shares nothing. The person \
@@ -352,37 +353,80 @@ impl Core {
         Answer::ok(with_readable_times(list))
     }
 
-    /// Where something is described.
-    pub async fn search(&self, query: &str, limit: Option<usize>) -> Answer {
+    /// Where something is described: in the documents that have all of `tags` (every document when there are none).
+    /// Tags alone, without words, list the documents that have them.
+    pub async fn search(&self, query: &str, limit: Option<usize>, tags: &[String]) -> Answer {
         if !self.is_on() {
             return Answer::off(self.known);
         }
         let query = query.trim().to_owned();
-        if query.is_empty() {
-            return Answer::failed("the query is empty");
+        if query.is_empty() && !names_a_tag(tags) {
+            return Answer::failed(EMPTY_QUERY);
         }
-        let limit = limit
+        // what the number counts depends on the question: sections for words, documents for tags alone
+        let hits = limit
             .unwrap_or(DEFAULT_SEARCH_HITS)
             .clamp(1, MAX_SEARCH_HITS);
+        let tags = tags.to_vec();
         let request = Request::Search {
             query: query.clone(),
-            limit: Some(limit),
+            limit,
+            tags: tags.clone(),
         };
-        let (mut hits, source) = match self.ask(request).await {
-            Ok(hits) => (object(hits), "window"),
+        let (mut found, source) = match self.ask(request).await {
+            Ok(found) => (object(found), "window"),
+            Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+            Err(_) => match self
+                .offline(move |project| {
+                    if query.is_empty() {
+                        serde_json::to_value(project.docs().tagged(&tags, limit))
+                    } else {
+                        serde_json::to_value(Hits {
+                            hits: project.search(&query, hits, &tags),
+                        })
+                    }
+                })
+                .await
+            {
+                Ok(Ok(found)) => (object(found), "files"),
+                Ok(Err(error)) => return Answer::failed(error.to_string()),
+                Err(error) => return Answer::failed(error),
+            },
+        };
+        found.insert("source".to_owned(), json!(source));
+        Answer::ok(found)
+    }
+
+    /// The tags in use, with how many documents have each; or, with `tag`, the documents that have it. `limit` is how
+    /// many of either to list at most.
+    pub async fn list_tags(&self, tag: Option<&str>, limit: Option<usize>) -> Answer {
+        if !self.is_on() {
+            return Answer::off(self.known);
+        }
+        let tag = tag.map(str::trim).filter(|tag| !tag.is_empty());
+        let request = Request::ListTags {
+            tag: tag.map(str::to_owned),
+            limit,
+        };
+        let (mut list, source) = match self.ask(request).await {
+            Ok(list) => (object(list), "window"),
             Err(LinkError::Remote(error)) => return Answer::failed(error.message),
             Err(_) => {
+                let tag = tag.map(str::to_owned);
                 match self
-                    .offline(move |project| project.search(&query, limit))
+                    .offline(move |project| {
+                        serde_json::to_value(project.docs().list_tags(tag.as_deref(), limit))
+                    })
                     .await
                 {
-                    Ok(hits) => (Map::from_iter([("hits".to_owned(), json!(hits))]), "files"),
+                    Ok(Ok(list)) => (object(list), "files"),
+                    Ok(Err(error)) => return Answer::failed(error.to_string()),
                     Err(error) => return Answer::failed(error),
                 }
             }
         };
-        hits.insert("source".to_owned(), json!(source));
-        Answer::ok(hits)
+        list.insert("source".to_owned(), json!(source));
+        Answer::ok(list)
     }
 
     /// The comments the person left. The open ones unless asked for more.
@@ -768,7 +812,9 @@ mod tests {
     use crate::bridge::context::{AgentContext, ViewMode};
     use crate::bridge::hub::testing::{comment, Fake};
     use crate::bridge::service::AgentBridge;
+    use crate::bridge::tags::Doc;
     use crate::comments::{CommentBook, CommentFilter, NewComment};
+    use crate::meta::store::Entries;
     use crate::search::SearchHit;
     use crate::session::StateStore;
     use crate::vault::Vault;
@@ -862,7 +908,8 @@ mod tests {
         for answer in [
             core.get_context().await,
             core.list_unread().await,
-            core.search("lighthouse", None).await,
+            core.search("lighthouse", None, &[]).await,
+            core.list_tags(None, None).await,
             core.list_comments(None).await,
             core.resolve_comment("c1", Some("done")).await,
             core.open("README.md", None, None).await,
@@ -907,7 +954,8 @@ mod tests {
         for answer in [
             core.get_context().await,
             core.list_unread().await,
-            core.search("beacon", None).await,
+            core.search("beacon", None, &[]).await,
+            core.list_tags(Some("adr"), None).await,
             core.list_comments(None).await,
             core.resolve_comment("c1", None).await,
             core.open("README.md", None, None).await,
@@ -1005,7 +1053,7 @@ mod tests {
         assert!(first["path"].as_str().is_some());
         assert!(first["modified"].as_str().expect("a time").ends_with('Z'));
 
-        let found = core.search("beacon", Some(3)).await;
+        let found = core.search("beacon", Some(3), &[]).await;
         assert_eq!(status(&found), "ok", "{found:?}");
         assert_eq!(found.value["source"], "files");
         assert_eq!(found.value["hits"][0]["path"], "docs/plan.md");
@@ -1016,8 +1064,253 @@ mod tests {
             .expect("snippet")
             .contains("beacon"));
 
-        let empty = core.search("  ", None).await;
+        let empty = core.search("  ", None, &[]).await;
         assert!(empty.is_error);
+        assert!(empty.value["message"]
+            .as_str()
+            .expect("a message")
+            .contains("tags"));
+    }
+
+    fn names(items: &[&str]) -> Vec<String> {
+        items.iter().map(|x| (*x).to_owned()).collect()
+    }
+
+    /// README.md is tagged in its front matter; docs/plan.md in TrailMark, with a description.
+    fn tag_the_project(fx: &Fx, meta: &Path) -> Vec<u8> {
+        std::fs::write(
+            fx.root.join("README.md"),
+            "---\ntags: [Home, adr]\n---\n# Home\n\nThe lighthouse.\n",
+        )
+        .expect("write");
+        let mut entries = Entries::default();
+        entries.set_tags("docs/plan.md", &names(&["adr", "Rollout Plan"]));
+        entries.set_description("docs/plan.md", "How the beacon ships.");
+        std::fs::create_dir_all(meta.parent().expect("parent")).expect("mkdir");
+        std::fs::write(meta, entries.to_toml()).expect("write");
+        std::fs::read(meta).expect("read")
+    }
+
+    #[tokio::test]
+    async fn with_the_window_closed_the_tags_come_from_the_documents_and_the_apps_meta_file() {
+        let fx = fx();
+        fx.set_connection(true);
+        // the project has no `.trailmark/` folder, so the app keeps its tags in its own data
+        let meta = StateStore::open(fx.app.path(), &fx.root).meta_path();
+        assert!(meta.starts_with(fx.app.path()));
+        let before = tag_the_project(&fx, &meta);
+        let core = fx.core(no_launch());
+
+        let tags = core.list_tags(None, None).await;
+        assert_eq!(status(&tags), "ok", "{tags:?}");
+        assert!(!tags.is_error);
+        assert_eq!(tags.value["source"], "files");
+        assert_eq!(tags.value["documents"], 2);
+        assert_eq!(tags.value["untagged"], 0);
+        assert!(tags.value.get("more").is_none());
+        assert_eq!(
+            tags.value["tags"],
+            json!([
+                {"name": "adr", "count": 2, "from": "both"},
+                {"name": "home", "count": 1, "from": "frontMatter"},
+                {"name": "rollout-plan", "count": 1, "from": "trailmark"},
+            ])
+        );
+        assert!(tags.value.get("warning").is_none());
+
+        let adr = core.list_tags(Some(" ADR "), None).await;
+        assert_eq!(adr.value["source"], "files");
+        assert_eq!(adr.value["total"], 2);
+        assert!(adr.value.get("more").is_none());
+        assert_eq!(
+            adr.value["docs"],
+            json!([
+                {"path": "README.md", "tags": ["adr", "home"]},
+                {"path": "docs/plan.md", "description": "How the beacon ships.", "tags": ["adr", "rollout-plan"]},
+            ])
+        );
+        let none = core.list_tags(Some("nothing"), None).await;
+        assert!(!none.is_error);
+        assert_eq!(none.value["total"], 0);
+        assert!(none.value["message"]
+            .as_str()
+            .expect("a message")
+            .contains("list_tags"));
+        // a blank tag is no tag: the distribution
+        assert_eq!(core.list_tags(Some("  "), None).await.value["documents"], 2);
+
+        // a search names the tags and description of each hit's document, and can be narrowed by them
+        let found = core.search("beacon", None, &[]).await;
+        assert_eq!(found.value["hits"][0]["path"], "docs/plan.md");
+        assert_eq!(
+            found.value["hits"][0]["tags"],
+            json!(["adr", "rollout-plan"])
+        );
+        assert_eq!(
+            found.value["hits"][0]["description"],
+            "How the beacon ships."
+        );
+        let narrowed = core.search("beacon", None, &names(&["Rollout Plan"])).await;
+        assert_eq!(narrowed.value["source"], "files");
+        assert_eq!(narrowed.value["hits"].as_array().expect("hits").len(), 1);
+        let others = core.search("beacon", None, &names(&["home"])).await;
+        assert_eq!(others.value["hits"], json!([]));
+        // all of the tags, not any of them
+        let both = core
+            .search("lighthouse", None, &names(&["adr", "home"]))
+            .await;
+        assert_eq!(both.value["hits"][0]["path"], "README.md");
+        let one_short = core
+            .search("lighthouse", None, &names(&["adr", "rollout-plan"]))
+            .await;
+        assert_eq!(one_short.value["hits"], json!([]));
+
+        // tags without words list the documents that have them
+        let listed = core.search("", None, &names(&["adr"])).await;
+        assert!(!listed.is_error, "{listed:?}");
+        assert_eq!(listed.value["source"], "files");
+        assert_eq!(listed.value["total"], 2);
+        assert_eq!(listed.value["docs"][1]["path"], "docs/plan.md");
+        assert!(listed.value.get("hits").is_none());
+        // and neither words nor tags is an error that says what to give
+        assert!(core.search("", None, &[]).await.is_error);
+        assert!(core.search(" ", None, &names(&[" "])).await.is_error);
+
+        // looking changed nothing
+        assert_eq!(std::fs::read(&meta).expect("read"), before);
+        assert!(!fx.root.join(".trailmark").exists());
+    }
+
+    #[tokio::test]
+    async fn the_tags_of_a_project_with_a_trailmark_folder_are_read_from_it_and_from_the_older_file(
+    ) {
+        let fx = fx();
+        fx.set_connection(true);
+        std::fs::create_dir_all(fx.root.join(".trailmark")).expect("mkdir");
+        let store = StateStore::open(fx.app.path(), &fx.root);
+        let meta = store.meta_path();
+        assert_eq!(meta, fx.root.join(".trailmark").join("meta.toml"));
+        tag_the_project(&fx, &meta);
+        // tags added before the folder existed: the window merges them into the project's file when it next opens it
+        let older = store.legacy_meta_path().expect("an older file");
+        let mut entries = Entries::default();
+        entries.set_tags("README.md", &names(&["kept-from-before"]));
+        entries.set_description("README.md", "Before the folder.");
+        std::fs::create_dir_all(older.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&older, entries.to_toml()).expect("write");
+        let core = fx.core(no_launch());
+
+        let tags = core.list_tags(Some("kept-from-before"), None).await;
+        assert_eq!(tags.value["total"], 1, "{tags:?}");
+        assert_eq!(tags.value["docs"][0]["path"], "README.md");
+        assert_eq!(tags.value["docs"][0]["description"], "Before the folder.");
+        assert_eq!(
+            core.list_tags(None, None).await.value["tags"]
+                .as_array()
+                .map(Vec::len),
+            Some(4)
+        );
+        // the older file is only read
+        assert!(older.is_file());
+    }
+
+    #[tokio::test]
+    async fn a_meta_file_that_cannot_be_read_is_said_beside_the_tags_that_are_left() {
+        let fx = fx();
+        fx.set_connection(true);
+        let meta = StateStore::open(fx.app.path(), &fx.root).meta_path();
+        tag_the_project(&fx, &meta);
+        std::fs::write(&meta, "<<<<<<< HEAD\n[files.\"a.md\"]\n").expect("a merge conflict");
+        let core = fx.core(no_launch());
+
+        let tags = core.list_tags(None, None).await;
+        assert_eq!(status(&tags), "ok", "{tags:?}");
+        let warning = tags.value["warning"].as_str().expect("a warning");
+        assert!(warning.contains("meta.toml can't be read"), "{warning}");
+        assert!(warning.contains("front matter"), "{warning}");
+        // the front matter's tags are still there
+        assert_eq!(
+            tags.value["tags"],
+            json!([
+                {"name": "adr", "count": 1, "from": "frontMatter"},
+                {"name": "home", "count": 1, "from": "frontMatter"},
+            ])
+        );
+        let listed = core.search("", None, &names(&["adr"])).await;
+        assert!(listed.value["warning"].is_string());
+        assert_eq!(listed.value["total"], 1);
+    }
+
+    /// Only the Markdown the project keeps counts as a document: the rest is not in the numbers.
+    #[tokio::test]
+    async fn only_the_documents_search_can_find_are_counted() {
+        let fx = fx();
+        fx.set_connection(true);
+        std::fs::write(fx.root.join("notes.txt"), "---\ntags: [text]\n---\n").expect("write");
+        std::fs::write(fx.root.join(".gitignore"), "build/\n").expect("write");
+        std::fs::create_dir_all(fx.root.join("build")).expect("mkdir");
+        std::fs::write(
+            fx.root.join("build/out.md"),
+            "---\ntags: [generated]\n---\n# Out\n",
+        )
+        .expect("write");
+        std::fs::create_dir_all(fx.root.join("node_modules/pkg")).expect("mkdir");
+        std::fs::write(
+            fx.root.join("node_modules/pkg/README.md"),
+            "---\ntags: [vendor]\n---\n# Pkg\n",
+        )
+        .expect("write");
+        let core = fx.core(no_launch());
+        let tags = core.list_tags(None, None).await;
+        assert_eq!(tags.value["documents"], 2, "{tags:?}");
+        assert_eq!(tags.value["untagged"], 2);
+        assert_eq!(tags.value["tags"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn with_the_window_open_the_tags_come_from_it() {
+        let fx = fx();
+        fx.set_connection(true);
+        fx.bridge.set_enabled(true);
+        *fx.fake.docs.lock().expect("lock") = vec![
+            Doc {
+                path: "README.md".to_owned(),
+                file_tags: names(&["adr"]),
+                app_tags: Vec::new(),
+                description: "The home.".to_owned(),
+            },
+            Doc {
+                path: "docs/plan.md".to_owned(),
+                file_tags: Vec::new(),
+                app_tags: names(&["draft"]),
+                description: String::new(),
+            },
+        ];
+        *fx.fake.corpus.lock().expect("lock") = vec![SearchHit {
+            path: "README.md".to_owned(),
+            heading_path: vec!["Home".to_owned()],
+            snippet: "The <mark>lighthouse</mark>".to_owned(),
+            start_line: 1,
+            score: 1.0,
+        }];
+        let core = fx.core(no_launch());
+        let tags = core.list_tags(None, None).await;
+        assert_eq!(tags.value["source"], "window", "{tags:?}");
+        assert_eq!(tags.value["documents"], 2);
+        assert_eq!(tags.value["tags"][0]["name"], "adr");
+        let draft = core.list_tags(Some("draft"), None).await;
+        assert_eq!(draft.value["source"], "window");
+        assert_eq!(draft.value["docs"][0]["path"], "docs/plan.md");
+        let found = core.search("lighthouse", None, &names(&["adr"])).await;
+        assert_eq!(found.value["source"], "window");
+        assert_eq!(found.value["hits"][0]["tags"], json!(["adr"]));
+        assert_eq!(found.value["hits"][0]["description"], "The home.");
+        let none = core.search("lighthouse", None, &names(&["draft"])).await;
+        assert_eq!(none.value["hits"], json!([]));
+        let listed = core.search("", None, &names(&["draft"])).await;
+        assert_eq!(listed.value["source"], "window");
+        assert_eq!(listed.value["total"], 1);
+        fx.bridge.shutdown();
     }
 
     #[tokio::test]
@@ -1037,7 +1330,7 @@ mod tests {
         let unread = core.list_unread().await;
         assert_eq!(unread.value["source"], "window");
         assert_eq!(unread.value["unread"][0]["path"], "README.md");
-        let found = core.search("lighthouse", None).await;
+        let found = core.search("lighthouse", None, &[]).await;
         assert_eq!(found.value["source"], "window");
         assert_eq!(found.value["hits"][0]["snippet"], "The lighthouse");
         fx.bridge.shutdown();

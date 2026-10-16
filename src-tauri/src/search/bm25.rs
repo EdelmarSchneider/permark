@@ -180,8 +180,20 @@ impl Bm25Index {
     }
 
     /// Ranked sections for a free-text query. The last word also matches as a prefix (search-as-you-type).
-    #[allow(clippy::cast_precision_loss)] // counts stay far below 2^24
     pub fn search(&self, query: &str, limit: usize) -> Vec<SearchHit> {
+        self.search_in(query, limit, &|_| true)
+    }
+
+    /// [`Bm25Index::search`] among the documents `allow` lets through (it is given a document's path). The sections
+    /// of the others never compete for a place, so a narrow filter still finds its best sections however many
+    /// sections of the rest of the project match the query better.
+    #[allow(clippy::cast_precision_loss)] // counts stay far below 2^24
+    pub fn search_in(
+        &self,
+        query: &str,
+        limit: usize,
+        allow: &dyn Fn(&str) -> bool,
+    ) -> Vec<SearchHit> {
         // The index holds every CJK character and every pair; a query only needs the pairs (a single
         // character has no pair, so it stays and matches the unigrams).
         let q: Vec<Token> = tokenize(query)
@@ -224,6 +236,9 @@ impl Bm25Index {
                     let Some(entry) = &self.chunks[id as usize] else {
                         continue;
                     };
+                    if !allow(&entry.path) {
+                        continue;
+                    }
                     let tf = tf as f32;
                     let norm =
                         tf * (K1 + 1.0) / (tf + K1 * (1.0 - B + B * entry.len as f32 / avgdl));
@@ -417,6 +432,34 @@ mod tests {
         // The plot section mentions both words in a different form and ranks lower.
         assert!(hits.iter().any(|h| h.path == "story/plot.md"));
         assert!(hits.iter().position(|h| h.path == "story/plot.md") > Some(0));
+    }
+
+    /// A filter is not a cut of the best sections: the documents it lets through keep their own best ones.
+    #[test]
+    fn a_filtered_search_ranks_only_the_documents_let_through() {
+        let mut i = Bm25Index::new();
+        // twenty documents say "retry" better than the one the filter lets through
+        for n in 0..20 {
+            i.add_doc(
+                &format!("loud/{n}.md"),
+                "# Retry\n\nretry retry retry retry retry\n",
+            );
+        }
+        i.add_doc(
+            "quiet/adr.md",
+            "# Decision\n\nWe agreed on a retry policy.\n",
+        );
+        let unfiltered = i.search("retry", 5);
+        assert!(unfiltered.iter().all(|h| h.path.starts_with("loud/")));
+        let only = |path: &str| path.starts_with("quiet/");
+        let filtered = i.search_in("retry", 5, &only);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].path, "quiet/adr.md");
+        assert!(filtered[0].snippet.contains("<mark>retry</mark>"));
+        // nothing let through, nothing found
+        assert_eq!(i.search_in("retry", 5, &|_| false), Vec::<SearchHit>::new());
+        // and no filter is the plain search
+        assert_eq!(i.search_in("retry", 5, &|_| true), unfiltered);
     }
 
     #[test]

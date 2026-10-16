@@ -6,6 +6,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Your agent can find the right documents by their tags.** A new `list_tags` tool shows which tags your documents carry, how many documents
+  have each, where each tag comes from (the documents or TrailMark) and how many documents have no tag at all; give it a tag to see the
+  documents that have it, each with its description. `search` takes an optional list of tags to look only in the documents that have all of
+  them, and every hit now names its document's tags and description; with tags and no words it lists those documents instead. In a project
+  of a thousand documents an agent can narrow down in a call or two and read only the few that fit. Answers stay short (long lists show the
+  first ones and say how many more there are, and `limit` asks for more), and everything works when TrailMark is closed, from the project's
+  files.
 - **Open web pages in your browser.** An `.html` or `.htm` file in your folder now has **Open in browser**: in its right-click menu in the
   Explorer, in the **...** menu of the open page, and in the command palette. The page opens in the application your system uses for web
   pages, which is your browser on almost every computer.

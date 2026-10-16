@@ -12,8 +12,8 @@
 //! - The window's side: [`hub`] keeps the state and answers, [`server`] listens, [`file`] keeps `agent.json`, and
 //!   [`service`] ties them to the switch in the settings.
 //! - The agent's side: [`link`] connects, [`tools`] is what each tool does, [`mcp`] speaks MCP, and [`cli`] runs
-//!   `trailmark mcp` and `trailmark context`. [`project`] reads a project from its files, [`answers`] builds the
-//!   answers both sides share.
+//!   `trailmark mcp` and `trailmark context`. [`project`] reads a project from its files, [`answers`] and [`tags`]
+//!   build the answers both sides share.
 
 use std::ffi::OsString;
 
@@ -31,6 +31,7 @@ pub(crate) mod protocol;
 pub(crate) mod server;
 pub(crate) mod service;
 pub(crate) mod socket;
+pub(crate) mod tags;
 pub(crate) mod tools;
 
 /// The commands the program runs without a window.
