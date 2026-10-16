@@ -25,6 +25,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use super::saved::{Saved, SavedDoc};
 use crate::render::markdown::is_markdown_path;
 use crate::unread::DocState;
 use crate::vault::key;
@@ -38,7 +39,25 @@ fn is_tracked(path: &str) -> bool {
 struct Version {
     path: String,
     hash: u64,
+    /// When the file was first seen to be gone, while it is.
+    deleted_at: Option<u64>,
 }
+
+impl Version {
+    fn new(path: &str, hash: u64) -> Self {
+        Self {
+            path: path.to_owned(),
+            hash,
+            deleted_at: None,
+        }
+    }
+}
+
+/// A document that is gone is forgotten (and its copy let go) after this long.
+const DELETED_KEPT_FOR_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+
+/// Of the documents that are gone, this many are remembered, the most recently deleted ones.
+const MAX_DELETED: usize = 200;
 
 /// A document as the last look at the project showed it.
 #[derive(Debug, Clone)]
@@ -93,11 +112,20 @@ pub struct Book {
 
 impl Book {
     /// `saved` is what `reviewed.json` held: the approved version of each document, by path.
-    pub fn new(saved: BTreeMap<String, u64>) -> Self {
+    pub fn new(saved: Saved) -> Self {
         let reviewed = saved
             .into_iter()
             .filter(|(path, _)| is_tracked(path))
-            .map(|(path, hash)| (key(&path), Version { path, hash }))
+            .map(|(path, doc)| {
+                (
+                    key(&path),
+                    Version {
+                        path,
+                        hash: doc.hash,
+                        deleted_at: doc.deleted_at,
+                    },
+                )
+            })
             .collect();
         Self {
             reviewed,
@@ -106,10 +134,18 @@ impl Book {
     }
 
     /// What `reviewed.json` holds.
-    pub fn saved(&self) -> BTreeMap<String, u64> {
+    pub fn saved(&self) -> Saved {
         self.reviewed
             .values()
-            .map(|v| (v.path.clone(), v.hash))
+            .map(|v| {
+                (
+                    v.path.clone(),
+                    SavedDoc {
+                        hash: v.hash,
+                        deleted_at: v.deleted_at,
+                    },
+                )
+            })
             .collect()
     }
 
@@ -165,10 +201,9 @@ impl Book {
                 match self.seen.get(&k) {
                     // the first time this document is seen: an approved version that was saved stands
                     None => {
-                        self.reviewed.entry(k.clone()).or_insert_with(|| Version {
-                            path: doc.path.clone(),
-                            hash: read,
-                        });
+                        self.reviewed
+                            .entry(k.clone())
+                            .or_insert_with(|| Version::new(&doc.path, read));
                     }
                     Some(seen) if seen.read != Some(read) => self.advance(&k, &doc.path, read),
                     Some(_) => {}
@@ -194,17 +229,44 @@ impl Book {
         self.saved() != before
     }
 
+    /// Keeps the books on documents that are gone, once the disk has been looked at: a document seen to be gone is
+    /// dated `now_ms`, one that is back loses its date, and a document gone for [`DELETED_KEPT_FOR_MS`] is forgotten,
+    /// as are the oldest ones beyond [`MAX_DELETED`]. Returns whether `reviewed.json` changed.
+    pub fn age_deleted(&mut self, now_ms: u64) -> bool {
+        if !self.looked {
+            return false;
+        }
+        let before = self.saved();
+        for (k, version) in &mut self.reviewed {
+            if self.seen.contains_key(k) {
+                version.deleted_at = None;
+            } else {
+                version.deleted_at.get_or_insert(now_ms);
+            }
+        }
+        let cutoff = now_ms.saturating_sub(DELETED_KEPT_FOR_MS);
+        let mut gone: Vec<(u64, String)> = self
+            .reviewed
+            .iter()
+            .filter_map(|(k, v)| Some((v.deleted_at?, k.clone())))
+            .collect();
+        gone.sort();
+        // oldest first: the expired ones are in front, and the ones beyond the cap are the oldest of the rest
+        let expired = gone.partition_point(|(at, _)| *at <= cutoff);
+        let forgotten = gone.len().saturating_sub(MAX_DELETED).max(expired);
+        for (_, k) in &gone[..forgotten] {
+            self.reviewed.remove(k);
+            self.held.remove(k);
+            self.opened.remove(k);
+        }
+        self.saved() != before
+    }
+
     /// What counts as read moved to `read`: so does the approved version, and the one it was is held when the
     /// person is the one who read.
     fn advance(&mut self, k: &str, path: &str, read: u64) {
         let old = self.reviewed.get(k).map(|v| v.hash);
-        self.reviewed.insert(
-            k.to_owned(),
-            Version {
-                path: path.to_owned(),
-                hash: read,
-            },
-        );
+        self.reviewed.insert(k.to_owned(), Version::new(path, read));
         if let Some(old) = old.filter(|old| *old != read) {
             if self.opened.get(k) == Some(&read) && !self.held.contains_key(k) {
                 self.held.insert(k.to_owned(), old);
@@ -265,14 +327,8 @@ impl Book {
     }
 
     fn approve(&mut self, path: &str, hash: u64) -> bool {
-        let old = self.reviewed.insert(
-            key(path),
-            Version {
-                path: path.to_owned(),
-                hash,
-            },
-        );
-        old.map(|v| v.hash) != Some(hash)
+        let old = self.reviewed.insert(key(path), Version::new(path, hash));
+        old.map(|v| (v.hash, v.deleted_at)) != Some((hash, None))
     }
 
     /// The document has no approved version any more (its deletion was accepted). Returns whether

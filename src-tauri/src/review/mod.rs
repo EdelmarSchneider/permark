@@ -33,13 +33,14 @@
 pub mod book;
 pub mod committed;
 pub mod diff;
+pub mod saved;
 pub mod store;
 pub mod view;
 
 #[cfg(test)]
 mod tests;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -54,14 +55,15 @@ pub use view::{ReviewView, ViewStatus};
 
 use book::{Book, Want};
 use diff::Comparison;
+use saved::{decode, encode, Saved};
 use store::{CopyStore, MAX_COPY_BYTES};
 use view::changes_view;
 
 use crate::edit::{EditError, Editor, SaveOutcome};
 use crate::render::markdown::is_markdown_path;
 use crate::session::write_local_state;
-use crate::unread::{decode, encode, hash_to_hex, DocState, ReadObserver, Timing};
-use crate::util::{hash_bytes, read_with_retry, Coalescer};
+use crate::unread::{hash_to_hex, DocState, ReadObserver, Timing};
+use crate::util::{hash_bytes, now_ms, read_with_retry, Coalescer};
 use crate::vault::{key, Vault, VaultError};
 use crate::watch::OwnWrites;
 
@@ -247,8 +249,9 @@ struct Announcer {
 }
 
 impl Announcer {
-    /// The documents that differ from their approved version. A deleted document whose file is there
-    /// after all (the project stopped following it) is left out.
+    /// The documents that differ from their approved version. A deleted document whose file is there after all (the
+    /// project stopped following it), or whose name is no path of the project (a saved file that was made by hand), is
+    /// left out.
     fn entries(&self) -> Vec<Entry> {
         let entries = lock(&self.shared.inner).book.entries();
         entries
@@ -258,7 +261,7 @@ impl Announcer {
                     || self
                         .vault
                         .resolve(&e.path)
-                        .map_or(true, |r| std::fs::symlink_metadata(&r.abs).is_err())
+                        .is_ok_and(|r| std::fs::symlink_metadata(&r.abs).is_err())
             })
             .collect()
     }
@@ -345,7 +348,7 @@ impl Worker {
     fn changed(&self, moves: &[(String, String)], looked: bool, docs: &[DocState]) -> bool {
         let wrote = {
             let mut g = lock(&self.shared.inner);
-            let saved = g.book.observe(moves, looked, docs);
+            let saved = g.book.observe(moves, looked, docs) | g.book.age_deleted(now_ms());
             Shared::after_change(&mut g, saved)
         };
         self.copy_missing();
@@ -537,7 +540,7 @@ impl ReviewService {
         own: Arc<OwnWrites>,
         paths: Paths,
         notify: Notify,
-        saved: BTreeMap<String, u64>,
+        saved: Saved,
     ) -> (Self, Arc<Shared>) {
         let store = CopyStore::new(paths.copies);
         let book = Book::new(saved);
@@ -586,7 +589,7 @@ impl ReviewService {
             own,
             paths,
             Arc::new(|_: &[Entry]| {}),
-            BTreeMap::default(),
+            Saved::default(),
         )
         .0
     }

@@ -10,8 +10,19 @@ fn doc(path: &str, current: Option<u64>, read: Option<u64>) -> DocState {
     }
 }
 
-fn saved(entries: &[(&str, u64)]) -> BTreeMap<String, u64> {
-    entries.iter().map(|(p, h)| ((*p).to_owned(), *h)).collect()
+fn saved(entries: &[(&str, u64)]) -> Saved {
+    entries
+        .iter()
+        .map(|(p, h)| {
+            (
+                (*p).to_owned(),
+                SavedDoc {
+                    hash: *h,
+                    deleted_at: None,
+                },
+            )
+        })
+        .collect()
 }
 
 fn entry(path: &str, status: Status) -> Entry {
@@ -426,4 +437,103 @@ fn paths_are_compared_the_way_the_file_system_compares_them() {
     } else {
         assert_eq!(book.reviewed("docs/a.md"), None);
     }
+}
+
+// ---- documents that are gone ----
+
+const DAY: u64 = 24 * 60 * 60 * 1000;
+
+fn deleted_at(book: &Book, path: &str) -> Option<u64> {
+    book.saved().get(path).and_then(|d| d.deleted_at)
+}
+
+#[test]
+fn a_document_seen_to_be_gone_is_dated_once_and_a_document_that_is_back_loses_its_date() {
+    let mut book = seen(
+        &[],
+        &[doc("a.md", Some(1), Some(1)), doc("b.md", Some(2), Some(2))],
+    );
+    assert!(!book.age_deleted(1000), "nothing is gone");
+    book.observe(&[], true, &[doc("b.md", Some(2), Some(2))]);
+    assert!(book.age_deleted(2000), "a.md is dated");
+    assert_eq!(deleted_at(&book, "a.md"), Some(2000));
+    assert_eq!(deleted_at(&book, "b.md"), None);
+    assert!(!book.age_deleted(9000), "and keeps its first date");
+    assert_eq!(deleted_at(&book, "a.md"), Some(2000));
+    // it comes back (restored, or the branch was switched back)
+    book.observe(
+        &[],
+        true,
+        &[doc("a.md", Some(1), Some(1)), doc("b.md", Some(2), Some(2))],
+    );
+    assert!(book.age_deleted(9500));
+    assert_eq!(deleted_at(&book, "a.md"), None);
+}
+
+#[test]
+fn nothing_is_gone_before_the_disk_has_been_looked_at() {
+    let mut book = Book::new(saved(&[("a.md", 1)]));
+    book.observe(&[], false, &[doc("a.md", None, Some(1))]);
+    assert!(!book.age_deleted(5000));
+    // the document was not there when the disk was looked at
+    book.observe(&[], true, &[]);
+    assert!(book.age_deleted(6000));
+    assert_eq!(deleted_at(&book, "a.md"), Some(6000));
+}
+
+#[test]
+fn the_date_survives_a_restart() {
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    book.observe(&[], true, &[]);
+    book.age_deleted(2000);
+    let mut again = Book::new(book.saved());
+    again.observe(&[], true, &[]);
+    assert!(!again.age_deleted(3000), "the date it had stands");
+    assert_eq!(deleted_at(&again, "a.md"), Some(2000));
+}
+
+#[test]
+fn a_document_gone_for_thirty_days_is_forgotten_with_its_version() {
+    let mut book = seen(
+        &[],
+        &[doc("a.md", Some(1), Some(1)), doc("b.md", Some(2), Some(2))],
+    );
+    book.observe(&[], true, &[]);
+    book.age_deleted(10 * DAY);
+    book.opening("a.md", 1);
+    assert_eq!(book.entries().len(), 2, "both are listed as deleted");
+    assert!(
+        !book.age_deleted(10 * DAY + 29 * DAY),
+        "29 days: still there"
+    );
+    assert_eq!(book.entries().len(), 2);
+    assert!(book.age_deleted(10 * DAY + 30 * DAY), "30 days");
+    assert_eq!(book.entries(), NOTHING);
+    assert_eq!(book.saved(), saved(&[]));
+    assert_eq!(book.roots(), HashSet::new(), "so its copy can go");
+}
+
+#[test]
+fn the_oldest_deleted_documents_go_first_beyond_the_cap() {
+    let docs: Vec<DocState> = (0..205)
+        .map(|i| doc(&format!("d{i:03}.md"), Some(i + 1), Some(i + 1)))
+        .collect();
+    let mut book = seen(&[], &docs);
+    // they disappear one at a time, a minute apart: d000 first
+    for i in 0..205_u64 {
+        book.observe(&[], true, &docs[usize::try_from(i + 1).expect("small")..]);
+        book.age_deleted(100 * DAY + 60_000 * i);
+    }
+    let kept: Vec<String> = book.saved().keys().cloned().collect();
+    assert_eq!(kept.len(), 200);
+    assert_eq!(kept.first().map(String::as_str), Some("d005.md"));
+    assert_eq!(kept.last().map(String::as_str), Some("d204.md"));
+    assert_eq!(book.entries().len(), 200);
+}
+
+#[test]
+fn an_approved_document_that_is_there_is_never_forgotten_whatever_its_age() {
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    assert!(!book.age_deleted(400 * DAY));
+    assert_eq!(book.reviewed("a.md"), Some(1));
 }

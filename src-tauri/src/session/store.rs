@@ -707,14 +707,18 @@ mod tests {
         assert_eq!(s.reviewed_dir(), s.dir().join("reviewed"));
         assert!(s.reviewed_path().starts_with(f.app.path()));
         fs::create_dir_all(s.dir()).expect("mkdir");
-        fs::write(s.reviewed_path(), r#"{"a.md": "00000000000000ab"}"#).expect("write");
+        fs::write(
+            s.reviewed_path(),
+            r#"{"version": 1, "documents": {"a.md": {"hash": "00000000000000ab"}}}"#,
+        )
+        .expect("write");
         s.init_project_folder().expect("init");
         let local = Path::new(".trailmark").join("local");
         assert!(s.reviewed_path().ends_with(local.join("reviewed.json")));
         assert!(s.reviewed_dir().ends_with(local.join("reviewed")));
         assert_eq!(
             fs::read_to_string(s.reviewed_path()).expect("carried over"),
-            r#"{"a.md": "00000000000000ab"}"#
+            r#"{"version": 1, "documents": {"a.md": {"hash": "00000000000000ab"}}}"#
         );
     }
 

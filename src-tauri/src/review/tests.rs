@@ -136,9 +136,16 @@ impl Fx {
         CopyStore::new(self.paths().copies).hashes()
     }
 
+    /// The approved version of each document, as `reviewed.json` has it.
     fn saved(&self) -> Option<BTreeMap<String, String>> {
         let bytes = fs::read(self.paths().state).ok()?;
-        serde_json::from_slice(&bytes).ok()
+        let file: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+        assert_eq!(file["version"], 1);
+        file["documents"]
+            .as_object()?
+            .iter()
+            .map(|(path, doc)| Some((path.clone(), doc["hash"].as_str()?.to_owned())))
+            .collect()
     }
 
     fn last_heard(&self) -> Option<Vec<Entry>> {
@@ -390,7 +397,10 @@ fn a_deleted_document_without_a_kept_text_cannot_be_put_back() {
     // approved at a version nobody has the text of
     fs::write(
         fx.paths().state,
-        format!(r#"{{ "gone.md": "{}" }}"#, hex("lost\n")),
+        format!(
+            r#"{{ "version": 1, "documents": {{ "gone.md": {{ "hash": "{}" }} }} }}"#,
+            hex("lost\n")
+        ),
     )
     .expect("state");
     let service = fx.service();
@@ -1013,4 +1023,83 @@ fn followed_from_the_unread_markers_a_review_lives_through_reading_and_reverting
     assert_eq!(review.entries(), Vec::<Entry>::new());
     unread.stop();
     review.stop();
+}
+
+// ---- documents that are gone ----
+
+/// `reviewed.json` as an earlier run could have left it: `docs` are `(path, approved text, when it was seen to be gone)`.
+fn write_state(fx: &Fx, docs: &[(&str, &str, Option<u64>)]) {
+    let documents: serde_json::Map<String, serde_json::Value> = docs
+        .iter()
+        .map(|(path, text, gone)| {
+            let mut entry = serde_json::json!({ "hash": hex(text) });
+            if let Some(at) = gone {
+                entry["deletedAt"] = serde_json::json!(at);
+            }
+            ((*path).to_owned(), entry)
+        })
+        .collect();
+    fs::create_dir_all(fx.state.path()).expect("mkdir");
+    fs::write(
+        fx.paths().state,
+        serde_json::json!({ "version": 1, "documents": documents }).to_string(),
+    )
+    .expect("state");
+}
+
+#[test]
+fn a_document_seen_to_be_gone_is_dated_in_the_saved_file_and_listed_as_deleted() {
+    let fx = Fx::new(&[("a.md", V0)]);
+    let service = fx.service();
+    tell(&service, &[doc("a.md", Some(V0), Some(V0))]);
+    fx.remove("a.md");
+    let before = now_ms();
+    tell(&service, &[]);
+    assert_eq!(service.entries(), [entry("a.md", Status::Deleted)]);
+    service.flush();
+    let file: serde_json::Value =
+        serde_json::from_slice(&fs::read(fx.paths().state).expect("read")).expect("json");
+    let at = file["documents"]["a.md"]["deletedAt"]
+        .as_u64()
+        .expect("dated");
+    assert!(at >= before && at <= now_ms(), "{at}");
+    service.stop();
+}
+
+#[test]
+fn a_document_that_was_gone_for_over_thirty_days_is_forgotten_when_the_project_is_looked_at() {
+    let fx = Fx::new(&[]);
+    // long ago: 1970
+    write_state(
+        &fx,
+        &[("old.md", "old text\n", Some(1)), ("recent.md", V0, None)],
+    );
+    let service = fx.service();
+    service.keep_copy(b"old text\n").expect("copy");
+    tell(&service, &[]);
+    // recent.md is not on the disk either, and gets its date now
+    assert_eq!(service.entries(), [entry("recent.md", Status::Deleted)]);
+    service.age_copies();
+    service.flush();
+    let saved = fx.saved().expect("saved");
+    assert_eq!(saved.keys().collect::<Vec<_>>(), ["recent.md"]);
+    assert!(!fx.copies().contains(&h("old text\n")), "and its copy goes");
+    service.stop();
+}
+
+#[test]
+fn entries_that_are_not_paths_of_the_project_are_not_listed_as_deleted() {
+    let fx = Fx::new(&[]);
+    write_state(
+        &fx,
+        &[
+            ("../outside.md", V0, None),
+            ("C:/elsewhere.md", V0, None),
+            ("fine.md", V0, None),
+        ],
+    );
+    let service = fx.service();
+    tell(&service, &[]);
+    assert_eq!(service.entries(), [entry("fine.md", Status::Deleted)]);
+    service.stop();
 }
