@@ -128,6 +128,20 @@ impl Book {
         self.held(path).or_else(|| self.reviewed(path))
     }
 
+    /// The versions that are held, with the path of their document.
+    pub fn holds(&self) -> Vec<(String, u64)> {
+        self.held
+            .iter()
+            .map(|(k, hash)| {
+                let path = self
+                    .reviewed
+                    .get(k)
+                    .map_or_else(|| k.clone(), |v| v.path.clone());
+                (path, *hash)
+            })
+            .collect()
+    }
+
     /// What the document held at the last look at the project.
     pub fn current(&self, path: &str) -> Option<u64> {
         self.seen.get(&key(path)).and_then(|s| s.current)

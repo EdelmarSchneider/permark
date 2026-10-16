@@ -37,15 +37,15 @@ use state::{is_tracked, Tracker};
 pub type Notify = Arc<dyn Fn(&[String]) + Send + Sync>;
 
 /// Follows the read state: what the review of changes needs to keep the text of the version that was read.
-/// Both calls are made under the service's lock, so they arrive in order and must return quickly.
 pub trait ReadObserver: Send + Sync {
     /// The person is reading the document, which holds `bytes` (their hash is `hash`). It counts as read from
-    /// the call that follows.
+    /// the [`ReadObserver::changed`] that follows, which says so.
     fn reading(&self, path: &str, hash: u64, bytes: &[u8]);
 
     /// Something changed. `moves` are the documents that moved since the last call (`(from, to)`); `docs` is
     /// every document now, sorted; `looked` says whether the disk has been looked at (before that, no document
-    /// has a `current` hash).
+    /// has a `current` hash). Called under the service's lock, so the calls arrive in order and must return
+    /// quickly.
     fn changed(&self, moves: Vec<(String, String)>, looked: bool, docs: Vec<DocState>);
 }
 
@@ -80,11 +80,11 @@ impl Default for Timing {
 }
 
 /// A hash as `read.json` spells it: 16 lowercase hex digits.
-fn hash_to_hex(hash: u64) -> String {
+pub(crate) fn hash_to_hex(hash: u64) -> String {
     format!("{hash:016x}")
 }
 
-fn hash_from_hex(text: &str) -> Option<u64> {
+pub(crate) fn hash_from_hex(text: &str) -> Option<u64> {
     if text.len() == 16 && text.bytes().all(|b| b.is_ascii_hexdigit()) {
         u64::from_str_radix(text, 16).ok()
     } else {
@@ -94,7 +94,7 @@ fn hash_from_hex(text: &str) -> Option<u64> {
 
 /// The content of `read.json`; `None` when it is not a JSON object (the project then has no read state).
 /// An entry that is not a path with a hash is dropped, which leaves that document unread.
-fn decode(bytes: &[u8]) -> Option<BTreeMap<String, u64>> {
+pub(crate) fn decode(bytes: &[u8]) -> Option<BTreeMap<String, u64>> {
     let map: BTreeMap<String, serde_json::Value> = serde_json::from_slice(bytes).ok()?;
     Some(
         map.into_iter()
@@ -103,7 +103,7 @@ fn decode(bytes: &[u8]) -> Option<BTreeMap<String, u64>> {
     )
 }
 
-fn encode(read: &BTreeMap<String, u64>) -> Option<Vec<u8>> {
+pub(crate) fn encode(read: &BTreeMap<String, u64>) -> Option<Vec<u8>> {
     let map: BTreeMap<&str, String> = read
         .iter()
         .map(|(path, hash)| (path.as_str(), hash_to_hex(*hash)))

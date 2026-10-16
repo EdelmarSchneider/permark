@@ -31,7 +31,7 @@ fn hash_of_name(name: &str) -> Option<u64> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CopyStore {
     dir: PathBuf,
 }
