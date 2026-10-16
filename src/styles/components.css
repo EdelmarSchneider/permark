@@ -1779,6 +1779,11 @@ mark {
 .doc-header .actions {
   flex: none;
 }
+/* "Show right panel": the collapse button sat 4px from the window edge (the panel header's padding). Taking the same
+   inset puts this one under the pointer that just collapsed the panel, so the same spot toggles it back. */
+.doc-header .reopen-btn {
+  margin-right: calc(var(--sp-2) * -1);
+}
 @container (max-width: 640px) {
   .doc-header .doc-chip,
   .doc-header .actions .btn span {

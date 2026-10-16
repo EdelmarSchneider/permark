@@ -4,6 +4,7 @@
   import { t } from "../i18n";
   import { basename, breadcrumbs } from "../paths";
   import { formatReference } from "../reference";
+  import { reopenButtonShown } from "../rightPanel";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { docs } from "../stores/docs.svelte";
@@ -253,6 +254,16 @@
         data-settings-anchor
         data-popover-trigger
         onclick={() => (ui.settingsOpen = !ui.settingsOpen)}
+      />
+    {/if}
+    <!-- the corner of the window the panel's own collapse button sat in, now that the panel is collapsed -->
+    {#if reopenButtonShown({ simple: vault.isSimple, open: session.right.open })}
+      <IconButton
+        class="reopen-btn"
+        icon="chevrons-left"
+        label={t("panel.showRight")}
+        hint={t("panel.showRightHint")}
+        onclick={() => app.toggleRight()}
       />
     {/if}
   </div>

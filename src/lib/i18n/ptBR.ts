@@ -57,6 +57,8 @@ export const ptBR = {
   "panel.collapseLeftHint": "Recolher barra lateral (Ctrl+B)",
   "panel.collapseRight": "Recolher painel direito",
   "panel.collapseRightHint": "Recolher painel direito (Ctrl+Alt+B)",
+  "panel.showRight": "Mostrar painel direito",
+  "panel.showRightHint": "Mostrar painel direito (Ctrl+Alt+B)",
   "panel.resizeLeft": "Redimensionar barra lateral",
   "panel.resizeRight": "Redimensionar painel direito",
   "panel.resizeHint": "Arraste para redimensionar, clique duas vezes para restaurar",

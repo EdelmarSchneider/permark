@@ -58,6 +58,8 @@ export const de = {
   "panel.collapseLeftHint": "Seitenleiste einklappen (Strg+B)",
   "panel.collapseRight": "Rechtes Panel einklappen",
   "panel.collapseRightHint": "Rechtes Panel einklappen (Strg+Alt+B)",
+  "panel.showRight": "Rechtes Panel einblenden",
+  "panel.showRightHint": "Rechtes Panel einblenden (Strg+Alt+B)",
   "panel.resizeLeft": "Größe der Seitenleiste ändern",
   "panel.resizeRight": "Größe des rechten Panels ändern",
   "panel.resizeHint": "Zum Ändern ziehen, Doppelklick setzt zurück",

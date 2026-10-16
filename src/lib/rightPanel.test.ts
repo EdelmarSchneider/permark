@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { normalizeRightTab, stepTab, toggleOutline, type PanelView } from "./rightPanel";
+import {
+  normalizeRightTab,
+  reopenButtonShown,
+  stepTab,
+  toggleOutline,
+  type PanelView,
+} from "./rightPanel";
 
 describe("normalizeRightTab", () => {
   it("keeps the views this build knows", () => {
@@ -23,6 +29,21 @@ describe("stepTab", () => {
     expect(stepTab("changes", -1)).toBe("comments");
     expect(stepTab("comments", -1)).toBe("outline");
     expect(stepTab("outline", -1)).toBe("changes");
+  });
+});
+
+describe("reopenButtonShown (the corner button that brings a collapsed panel back)", () => {
+  it("shows while the panel is collapsed", () => {
+    expect(reopenButtonShown({ simple: false, open: false })).toBe(true);
+  });
+
+  it("hides while the panel is open: its own button collapses it", () => {
+    expect(reopenButtonShown({ simple: false, open: true })).toBe(false);
+  });
+
+  it("never shows in Simple mode, which has no panel to bring back", () => {
+    expect(reopenButtonShown({ simple: true, open: false })).toBe(false);
+    expect(reopenButtonShown({ simple: true, open: true })).toBe(false);
   });
 });
 

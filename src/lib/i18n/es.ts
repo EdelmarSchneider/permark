@@ -57,6 +57,8 @@ export const es = {
   "panel.collapseLeftHint": "Contraer barra lateral (Ctrl+B)",
   "panel.collapseRight": "Contraer panel derecho",
   "panel.collapseRightHint": "Contraer panel derecho (Ctrl+Alt+B)",
+  "panel.showRight": "Mostrar panel derecho",
+  "panel.showRightHint": "Mostrar panel derecho (Ctrl+Alt+B)",
   "panel.resizeLeft": "Cambiar el tamaño de la barra lateral",
   "panel.resizeRight": "Cambiar el tamaño del panel derecho",
   "panel.resizeHint": "Arrastra para cambiar el tamaño, doble clic para restablecer",
