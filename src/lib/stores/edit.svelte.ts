@@ -194,6 +194,8 @@ class EditStore {
   private keptOverOther = false;
   /** Keeping the text typed into a loose file apart is on its way to the disk. */
   private keeping: Promise<void> | null = null;
+  /** A loose file is being written by Ctrl+S or the Save button: nothing is kept apart until that is over. */
+  private explicitSave = false;
   /** Saves the open note a moment after the last edit (see `autosave.ts`); idle outside the Notes window. */
   private readonly saver = new Autosaver({ save: () => this.autosaveNow() });
 
@@ -651,9 +653,23 @@ class EditStore {
       this.conflictFocus++;
       return false;
     }
-    // Keeping the typed text apart may still be on its way to the disk. It finishes first: if it ended after the file was written
-    // it would bring back the text and the "unsaved" mark that the save has just made unnecessary, and the next open would
-    // show a change that is not one.
+    if (!this.loose) return this.saveNow(base, path);
+    // A loose file is written here, and what was kept apart for it goes with the write. From now on nothing is kept apart until
+    // the write is over: the autosave that was due in a moment is dropped (and set again below when the file was not written),
+    // and a keep that a blur or a flush asks for meanwhile does nothing. A keep that ended after the write would bring back the
+    // text and the "unsaved" mark that the write has just made unnecessary, and the next open would show a change that is not one.
+    this.explicitSave = true;
+    this.saver.cancel();
+    try {
+      return await this.saveNow(base, path);
+    } finally {
+      this.explicitSave = false;
+      this.touchAutosave();
+    }
+  }
+
+  private async saveNow(base: Base, path: string): Promise<boolean> {
+    // A keep that was already on its way to the disk finishes first, for the same reason.
     if (this.keeping) await this.keeping;
     const text = this.currentText();
     // a note is saved as it is typed; a loose file is written only here, when the person asks
@@ -825,7 +841,8 @@ class EditStore {
   private async keepPendingNow(): Promise<void> {
     const path = this.path;
     const base = this.base;
-    if (!path || !base) return;
+    // the file is being written: the write keeps nothing apart for the text it writes, and clears what was kept
+    if (!path || !base || this.explicitSave) return;
     if (!this.dirty) {
       if (this.pendingText === null) return;
       this.pendingText = null;

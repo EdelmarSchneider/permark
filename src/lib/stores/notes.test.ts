@@ -1267,6 +1267,54 @@ describe("loose files", () => {
     expect(notes.entries.find((n) => n.path === FILE)?.unsaved).toBe(false);
   });
 
+  it("does not keep the typed text apart after Ctrl+S has written it, when the autosave falls due while the file is being written", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nhalf a sentence");
+    // Ctrl+S is pressed just before the pause that would keep the text apart (750 ms after the last key)
+    await vi.advanceTimersByTimeAsync(700);
+    let finishWrite: () => void = () => {};
+    fake.saveDocument.mockImplementation(
+      () =>
+        new Promise<SaveOutcome>((resolve) => {
+          finishWrite = () => {
+            // the backend clears what it kept apart for the file when it writes it
+            list = list.map((n) => (n.path === FILE ? { ...n, unsaved: false } : n));
+            resolve({ result: "saved", hash: "h-written", modifiedMs: NOW });
+          };
+        }),
+    );
+    const saving = edit.save();
+    // the moment the autosave would have fired passes while the file is still being written, and so does a blur
+    await vi.advanceTimersByTimeAsync(100);
+    expect(fake.saveDocument).toHaveBeenCalledTimes(1);
+    void edit.flush();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.savePending).not.toHaveBeenCalled();
+    finishWrite();
+    expect(await saving).toBe(true);
+    await vi.advanceTimersByTimeAsync(5000);
+    // the file holds the text: nothing is kept apart for it, and its row, its title and its next open say so
+    expect(fake.savePending).not.toHaveBeenCalled();
+    expect(edit.dirty).toBe(false);
+    expect(notes.entries.find((n) => n.path === FILE)?.unsaved).toBe(false);
+  });
+
+  it("goes on keeping the text apart when Ctrl+S could not write the file", async () => {
+    typedInto(FILE, "# Proposal\nhalf", IN_SOURCE);
+    openName = FILE;
+    await start();
+    type("# Proposal\nhalf a sentence");
+    await vi.advanceTimersByTimeAsync(700);
+    // the file changed meanwhile: nothing is written, and the text still has to be kept for a restart
+    fake.saveDocument.mockResolvedValue({ result: "conflict", diskHash: "h-theirs" });
+    expect(await edit.save()).toBe(false);
+    expect(fake.savePending).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(800);
+    expect(fake.savePending).toHaveBeenCalledWith(FILE, "# Proposal\nhalf a sentence", `h-${FILE}`);
+  });
+
   it("forgets the kept text when it becomes the file's own text again", async () => {
     typedInto(FILE, "# Proposal\nmore", IN_SOURCE);
     openName = FILE;

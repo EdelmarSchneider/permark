@@ -186,8 +186,9 @@ export function analyze(built: Built, doc: PMNode, saved: WeakSet<PMNode> | null
 const written = new WeakMap<PMNode, string>();
 
 /**
- * The Markdown the editor writes for one top-level node. A space at the very start or end of a paragraph or heading (what is left
- * after splitting a sentence in the middle) is not written as `&#x20;`: Markdown drops it anyway.
+ * The Markdown the editor writes for one top-level node. A space at the very start or end of a paragraph or heading that the
+ * serializer would escape as `&#x20;` is left out (what is left after splitting a sentence in the middle). A plain space at the
+ * end is written as it is: it is in the file, and taking it out later is a change.
  */
 export function writeNode(core: Core, node: PMNode): string {
   let text = written.get(node);

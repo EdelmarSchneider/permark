@@ -372,9 +372,10 @@ describe("rebase", () => {
     expect(editor.status()).toEqual({ dirty: true, changed: 1 });
   });
 
-  it("keeps the document as it is when the save does not write what the person has typed (a space at the end)", () => {
-    // Markdown drops a space at the end of a paragraph or a heading, so the saved text has none: the save says "alpha", the
-    // person has "alpha " and goes on typing. Neither the space nor the focus may be lost, and nothing is loaded again.
+  it("keeps the document as it is when the text that was saved reads back as another node (a space at the end)", () => {
+    // The space at the end of the paragraph is saved, and a paragraph read from the saved text has none (CommonMark ignores it), so
+    // the node read back differs from the one the person has. The person has "alpha " and goes on typing: neither the space nor
+    // the focus may be lost, and nothing is loaded again.
     const text = "# T\n\nalpha\n";
     load(text);
     const { view } = editor.core;
@@ -383,6 +384,7 @@ describe("rebase", () => {
     view.focus();
     const doc = view.state.doc;
     const saved = editor.text();
+    expect(saved).toBe("# T\n\nalpha \n");
     editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
     expect(view.state.doc.child(1)).toBe(doc.child(1));
     expect(view.hasFocus()).toBe(true);
@@ -500,13 +502,15 @@ describe("rebase", () => {
     const text = "# T\n\nalpha\n";
     load(text);
     const { view } = editor.core;
-    caret(1, 5);
-    // "alpha " is on screen and the file holds "alpha" (Markdown drops the space at the end)
+    caret(1, 0);
+    // a space typed in front of the paragraph is not written: "alpha" is saved while " alpha" is on screen
     view.dispatch(view.state.tr.insertText(" "));
-    editor.rebase(buildBlockMap(text, mockParseBlocks(text)));
+    const saved = editor.text();
+    expect(saved).toBe(text);
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
     expect(editor.status()).toEqual({ dirty: false, changed: 0 });
     // the person takes the space back: the text is the file's, so nothing is unsaved (no bar, no autosave, no close prompt)
-    view.dispatch(closeHistory(view.state.tr).delete(inside(1, 5), inside(1, 6)));
+    view.dispatch(closeHistory(view.state.tr).delete(inside(1, 0), inside(1, 1)));
     expect(view.state.doc.child(1).textContent).toBe("alpha");
     expect(editor.text()).toBe(text);
     expect(editor.status()).toEqual({ dirty: false, changed: 0 });
@@ -514,6 +518,26 @@ describe("rebase", () => {
     // and a real change is still one
     view.dispatch(closeHistory(view.state.tr).insertText("!"));
     expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+  });
+
+  it("counts a space at the end that was saved, and is deleted afterwards, as a change: the file holds it", () => {
+    const text = "# T\n\nalpha\n";
+    load(text);
+    const { view } = editor.core;
+    caret(1, 5);
+    view.dispatch(view.state.tr.insertText(" "));
+    // the save writes the space, so the file really is "alpha "
+    const saved = editor.text();
+    expect(saved).toBe("# T\n\nalpha \n");
+    editor.rebase(buildBlockMap(saved, mockParseBlocks(saved)));
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
+    view.dispatch(closeHistory(view.state.tr).delete(inside(1, 5), inside(1, 6)));
+    expect(editor.text()).toBe(text);
+    expect(editor.status()).toEqual({ dirty: true, changed: 1 });
+    // typing it back is the file's own text again
+    view.dispatch(closeHistory(view.state.tr).insertText(" "));
+    expect(editor.text()).toBe(saved);
+    expect(editor.status()).toEqual({ dirty: false, changed: 0 });
   });
 
   it("keeps two lists that were apart as two lists in the file when what was between them is deleted", () => {

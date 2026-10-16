@@ -233,8 +233,9 @@ export class VisualEditor {
     let analysis = this.cache.get(doc);
     if (!analysis) {
       analysis = analyze(this.built, doc, this.savedNodes);
-      // A document that writes the text that was saved has nothing unsaved, whatever its nodes say (a space at the end of a
-      // paragraph that was typed and taken back leaves a node that is not the one that was saved, and the same text).
+      // A document that writes the text that was saved has nothing unsaved, whatever its nodes say (a space typed in front of a
+      // paragraph is not written: it is on screen, not in the file, and taking it back leaves a node that is not the one that was
+      // saved, and the same text).
       if (
         this.savedText !== null &&
         (analysis.changed > 0 || analysis.touched > 0 || analysis.structure) &&
@@ -373,7 +374,7 @@ export class VisualEditor {
    * What gives the nodes of the document the block numbers of the saved text, or null when the nodes are not its blocks. The written
    * nodes, in order, are the blocks (an empty paragraph is not written and belongs to none), and the text just saved was written
    * from them, so that is all that has to hold: the nodes the person has are what they see and are kept, even where the saved
-   * text reads back a little differently (a space at the end of a paragraph, which Markdown drops). Each written node becomes the
+   * text reads back a little differently (a paragraph read from a text that ends in a space has none at its end). Each written node becomes the
    * original of its block, so that it counts as saved and the next save writes the block's own bytes until it is edited.
    */
   private renumbering(next: Built): Transaction | null {
