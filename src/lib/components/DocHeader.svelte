@@ -36,6 +36,8 @@
   const crumbs = $derived(path ? breadcrumbs(path) : []);
   const folders = $derived(crumbs.slice(0, -1));
   const file = $derived(path ? basename(path) : "");
+  /** The whole path as the breadcrumb writes it: the tooltip of a name the header has cut short. */
+  const fullPath = $derived([...folders.map((crumb) => crumb.name), file].join("/"));
   const badge = $derived(
     docs.deleted
       ? badgeFor("deleted")
@@ -190,14 +192,14 @@
         {#each folders as crumb (crumb.path)}
           <button
             type="button"
-            title={t("header.reveal")}
+            title={`${crumb.name} · ${t("header.reveal")}`}
             onclick={() => app.revealInTree(crumb.path)}
           >
             {crumb.name}
           </button>
           <span class="sep">/</span>
         {/each}
-        <span class="current">{file}</span>
+        <span class="current" title={fullPath}>{file}</span>
       {/if}
     </nav>
     {#if badge}
