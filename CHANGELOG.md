@@ -5,6 +5,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-16
+
+Pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and Notes is simpler to start with.
+
 ### Added
 - **Code blocks in every mode, for about 190 languages.** A fenced block (`` ```python ``) is now highlighted for every language highlight.js
   ships, loaded one language at a time, so reading does not carry them all. Usual short names work (`js`, `ts`, `tsx`, `py`, `sh`, `zsh`, `ps1`,
