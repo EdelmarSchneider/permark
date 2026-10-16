@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Italiano (Italian).** The interface now comes in Italian besides English, Português (Brasil), Español, Deutsch and 简体中文.
+  **Settings → Language** lists it, and *System default* picks it for any Italian system language (`it-IT`, `it-CH` and the others). The
+  Windows installer offers it, "Open with TrailMark" in the file manager is worded in it ("Apri con TrailMark"), and the Microsoft Store
+  package declares it.
+
 ## [0.5.3] - 2026-10-16
 
 TrailMark speaks Simplified Chinese, and search finds words in Chinese and Japanese text.

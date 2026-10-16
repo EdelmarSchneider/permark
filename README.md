@@ -264,7 +264,7 @@ there are no switches for it in Settings, and uninstalling the app removes it.
 Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list TrailMark under **Open With** for Markdown files.
 
 ### 🌍 Your language
-TrailMark speaks **English, Português (Brasil), Español, Deutsch and 简体中文**. It follows your system's language, and **Settings → Language**
+TrailMark speaks **English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano**. It follows your system's language, and **Settings → Language**
 switches it at once, no restart. The Windows installer asks for a language too.
 
 ## Install

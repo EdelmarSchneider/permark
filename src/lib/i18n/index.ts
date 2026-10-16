@@ -1,6 +1,7 @@
 import { de } from "./de";
 import { en, type Messages } from "./en";
 import { es } from "./es";
+import { itIT } from "./it";
 import { language } from "./language.svelte";
 import { INTL_TAGS, type Locale } from "./locales";
 import { ptBR } from "./ptBR";
@@ -18,7 +19,14 @@ export type { LanguagePreference, Locale } from "./locales";
 export { language } from "./language.svelte";
 
 /** Every language's table; English is the source and the fallback. */
-export const MESSAGES: Record<Locale, Messages> = { en, "pt-BR": ptBR, es, de, "zh-CN": zhCN };
+export const MESSAGES: Record<Locale, Messages> = {
+  en,
+  "pt-BR": ptBR,
+  es,
+  de,
+  "zh-CN": zhCN,
+  it: itIT,
+};
 
 function fill(template: string, params?: Params): string {
   if (!params) return template;
@@ -71,9 +79,10 @@ export function t(key: MessageKey, params?: Params): string {
 
 /**
  * Looks up the form of a string that fits a count; `{n}` is filled with the count. A language needs a key for each
- * form it uses (`.one`, `.other`); a category it has no key for (`many` in Spanish and Portuguese, which only
- * applies to exact millions) reads as `.other`. A count of exactly 1 uses `.one` whenever the table has it, whatever
- * CLDR says: Chinese has only `other`, but its `.one` strings can name the one item ("move report.md to the recycle bin?").
+ * form it uses (`.one`, `.other`); a category it has no key for (`many` in Spanish, Portuguese and Italian, which
+ * only applies to exact millions) reads as `.other`. A count of exactly 1 uses `.one` whenever the table has it,
+ * whatever CLDR says: Chinese has only `other`, but its `.one` strings can name the one item ("move report.md to the
+ * recycle bin?").
  */
 export function tn(key: PluralKey, count: number, params?: Params): string {
   const table = MESSAGES[language.locale] as Partial<Record<string, string>>;
@@ -88,6 +97,7 @@ export function tn(key: PluralKey, count: number, params?: Params): string {
 const KEY_NAMES: Partial<Record<Locale, Record<string, string>>> = {
   de: { Ctrl: "Strg", Shift: "Umschalt", Del: "Entf" },
   es: { Shift: "Mayús", Enter: "Intro", Del: "Supr" },
+  it: { Shift: "Maiusc", Enter: "Invio", Del: "Canc" },
 };
 
 /** A key combo written for the interface's language: "Ctrl+Shift+O" is "Strg+Umschalt+O" in German. */

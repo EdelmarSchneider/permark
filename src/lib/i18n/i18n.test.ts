@@ -52,6 +52,11 @@ describe("t", () => {
     expect(t("welcome.openFailed", { path: "F:/x", message: "拒绝访问" })).toBe(
       "无法打开 F:/x：拒绝访问",
     );
+    language.preference = "it";
+    expect(t("common.cancel")).toBe("Annulla");
+    expect(t("welcome.openFailed", { path: "F:/x", message: "accesso negato" })).toBe(
+      "Impossibile aprire F:/x: accesso negato",
+    );
     language.preference = "en";
     expect(t("common.cancel")).toBe("Cancel");
   });
@@ -81,6 +86,12 @@ describe("tn", () => {
     expect(tn("toast.docsChanged", 1200)).toBe("1,200 个文档有更改");
     expect(tn("toast.docsChanged", 1)).toBe("1 个文档有更改");
     expect(tn("doc.removedBlocks", 2, { time: "10:42" })).toBe("已删除 2 个块 · 10:42");
+    // Italian groups the digits from five up: 1200, but 12.345
+    language.preference = "it";
+    expect(tn("toast.docsChanged", 1200)).toBe("1200 documenti modificati");
+    expect(tn("toast.docsChanged", 12_345)).toBe("12.345 documenti modificati");
+    expect(tn("toast.docsChanged", 1)).toBe("1 documento modificato");
+    expect(tn("doc.removedBlocks", 2, { time: "10:42" })).toBe("2 blocchi rimossi · 10:42");
   });
 
   it("reads every count as 'other' in Chinese, which has no plural forms", () => {
@@ -129,6 +140,12 @@ describe("tn", () => {
     expect(tn("fileOps.files", 0)).toBe("0 archivos");
     language.preference = "de";
     expect(tn("fileOps.files", 0)).toBe("0 Dateien");
+    // "file" does not change in Italian; a folder shows the plural
+    language.preference = "it";
+    expect(tn("fileOps.folders", 0)).toBe("0 cartelle");
+    expect(tn("fileOps.folders", 1)).toBe("1 cartella");
+    expect(tn("feed.saves", 0)).toBe("0 salvataggi");
+    expect(tn("fileOps.files", 0)).toBe("0 file");
     language.preference = "en";
     expect(tn("fileOps.files", 0)).toBe("0 files");
   });
@@ -145,12 +162,19 @@ describe("tn", () => {
     language.preference = "es";
     expect(pluralCategory(1)).toBe("one");
     expect(pluralCategory(2)).toBe("other");
+    language.preference = "it";
+    expect(pluralCategory(0)).toBe("other");
+    expect(pluralCategory(1)).toBe("one");
+    expect(pluralCategory(2)).toBe("other");
   });
 
-  it("reads a category a language has no key for (Spanish and Portuguese 'many') as 'other'", () => {
+  it("reads a category a language has no key for (Spanish, Portuguese and Italian 'many') as 'other'", () => {
     language.preference = "es";
     expect(pluralCategory(1_000_000)).toBe("many");
     expect(tn("toast.docsChanged", 1_000_000)).toBe("1.000.000 docs cambiaron");
+    language.preference = "it";
+    expect(pluralCategory(1_000_000)).toBe("many");
+    expect(tn("toast.docsChanged", 1_000_000)).toBe("1.000.000 documenti modificati");
   });
 });
 
@@ -163,6 +187,9 @@ describe("formatNumber", () => {
     expect(formatNumber(12345)).toBe("12.345");
     language.preference = "zh-CN";
     expect(formatNumber(12345)).toBe("12,345");
+    language.preference = "it";
+    expect(formatNumber(12345)).toBe("12.345");
+    expect(formatNumber(1234)).toBe("1234");
   });
 });
 
@@ -181,6 +208,12 @@ describe("keys", () => {
     language.preference = "zh-CN";
     expect(keys("Ctrl+Shift+O")).toBe("Ctrl+Shift+O");
     expect(keys("Del")).toBe("Del");
+    // Italian keyboards: Maiusc, Invio, Canc; Ctrl stays Ctrl
+    language.preference = "it";
+    expect(keys("Ctrl+Shift+O")).toBe("Ctrl+Maiusc+O");
+    expect(keys("Shift+Enter")).toBe("Maiusc+Invio");
+    expect(keys("Del")).toBe("Canc");
+    expect(keys("Ctrl+Alt+B")).toBe("Ctrl+Alt+B");
   });
 });
 
@@ -244,6 +277,15 @@ describe("matchLocale", () => {
     expect(matchLocale("zha")).toBeNull();
     expect(matchLocale("zho-CN")).toBeNull();
   });
+
+  it("reads every Italian tag as Italian, whatever the region", () => {
+    for (const tag of ["it", "it-IT", "it-CH", "it_IT", "IT-it", "it-SM"]) {
+      expect(matchLocale(tag), tag).toBe("it");
+    }
+    // a tag that merely starts with "it" is not Italian
+    expect(matchLocale("ita-IT")).toBeNull();
+    expect(matchLocale("itx")).toBeNull();
+  });
 });
 
 describe("systemLocale and resolveLocale", () => {
@@ -253,6 +295,7 @@ describe("systemLocale and resolveLocale", () => {
     expect(systemLocale(["pt-BR"])).toBe("pt-BR");
     expect(systemLocale(["fr-FR", "zh-Hans-CN", "en"])).toBe("zh-CN");
     expect(systemLocale(["zh-TW", "en-US"])).toBe("zh-CN");
+    expect(systemLocale(["fr-FR", "it-CH", "en"])).toBe("it");
   });
 
   it("falls back to English", () => {
@@ -269,8 +312,9 @@ describe("systemLocale and resolveLocale", () => {
   it("reads anything unknown as the system default", () => {
     expect(parsePreference("de")).toBe("de");
     expect(parsePreference("zh-CN")).toBe("zh-CN");
+    expect(parsePreference("it")).toBe("it");
     expect(parsePreference("system")).toBe("system");
-    for (const bad of ["fr", "PT-br", "zh", "zh-cn", "", null, undefined, 7, {}]) {
+    for (const bad of ["fr", "PT-br", "zh", "zh-cn", "it-IT", "IT", "", null, undefined, 7, {}]) {
       expect(parsePreference(bad)).toBe("system");
     }
   });
@@ -282,8 +326,9 @@ describe("systemLocale and resolveLocale", () => {
       es: "Español",
       de: "Deutsch",
       "zh-CN": "简体中文",
+      it: "Italiano",
     });
-    expect(LANGUAGE_PREFERENCES).toEqual(["system", "en", "pt-BR", "es", "de", "zh-CN"]);
+    expect(LANGUAGE_PREFERENCES).toEqual(["system", "en", "pt-BR", "es", "de", "zh-CN", "it"]);
   });
 });
 
@@ -327,7 +372,7 @@ describe.each(OTHER)("the %s table", (locale) => {
   it("names the same key in every string that names a shortcut", () => {
     // the key after the modifiers is the same in every language (only Ctrl, Shift and Enter get local names)
     const modifiers =
-      /(?:Ctrl|Strg|Alt)\+(?:(?:Shift|Umschalt|Mayús|Alt|Ctrl|Strg)\+)*([^\s+)])(?![A-Za-zÀ-ÿ])/g;
+      /(?:Ctrl|Strg|Alt)\+(?:(?:Shift|Umschalt|Mayús|Maiusc|Alt|Ctrl|Strg)\+)*([^\s+)])(?![A-Za-zÀ-ÿ])/g;
     const wrong: string[] = [];
     for (const k of KEYS) {
       const expected = [...english[k].matchAll(modifiers)].map((m) => m[1]);

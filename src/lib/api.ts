@@ -101,7 +101,7 @@ export interface Api {
   setAppLanguage(language: LanguagePreference): Promise<void>;
   /** What "Open with TrailMark" has registered with the file manager, read from the system each time. */
   shellIntegrationState(): Promise<ShellState>;
-  /** Adds or removes the right-click menu entry; `locale` (`en`, `pt-BR`, `es`, `de`, `zh-CN`) is the language it is worded in. */
+  /** Adds or removes the right-click menu entry; `locale` (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`) is the language it is worded in. */
   setShellContextMenu(enabled: boolean, locale: string): Promise<ShellState>;
   /** Adds or removes TrailMark in the "Open with" list of Markdown files. */
   setShellFileAssociation(enabled: boolean, locale: string): Promise<ShellState>;

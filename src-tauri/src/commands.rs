@@ -255,7 +255,7 @@ pub async fn shell_integration_state() -> Result<ShellState, AppError> {
 }
 
 /// Adds or removes "Open with TrailMark" in the right-click menu. `locale` is the language of the interface
-/// (`en`, `pt-BR`, `es`, `de`, `zh-CN`): the entry is worded in it.
+/// (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`): the entry is worded in it.
 #[tauri::command]
 pub async fn set_shell_context_menu(enabled: bool, locale: String) -> Result<ShellState, AppError> {
     blocking(move || Ok(shell_integration::set_context_menu(enabled, &locale)?)).await

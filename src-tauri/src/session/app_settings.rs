@@ -33,11 +33,13 @@ pub enum Language {
     De,
     #[serde(rename = "zh-CN")]
     ZhCn,
+    #[serde(rename = "it")]
+    It,
 }
 
 impl Language {
-    /// The language an installer wrote down (`en`, `pt-BR`, `es`, `de`, `zh-CN`). "system" is not an installer
-    /// choice, and a code from a newer installer reads as nothing.
+    /// The language an installer wrote down (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`). "system" is not an
+    /// installer choice, and a code from a newer installer reads as nothing.
     pub fn from_installer_code(code: &str) -> Option<Self> {
         match code.trim() {
             "en" => Some(Self::En),
@@ -45,6 +47,7 @@ impl Language {
             "es" => Some(Self::Es),
             "de" => Some(Self::De),
             "zh-CN" => Some(Self::ZhCn),
+            "it" => Some(Self::It),
             _ => None,
         }
     }
@@ -231,6 +234,7 @@ mod tests {
             (Language::Es, "es"),
             (Language::De, "de"),
             (Language::ZhCn, "zh-CN"),
+            (Language::It, "it"),
         ] {
             let (_d, s) = store();
             s.set_language(language).expect("save");
@@ -370,15 +374,17 @@ mod tests {
         assert_eq!(Language::from_installer_code("es"), Some(Language::Es));
         assert_eq!(Language::from_installer_code(" de\r\n"), Some(Language::De));
         assert_eq!(Language::from_installer_code("zh-CN"), Some(Language::ZhCn));
+        assert_eq!(Language::from_installer_code("it"), Some(Language::It));
         for code in [
-            "", "system", "fr", "pt", "pt-br", "zh", "zh-cn", "zh-TW", "2052", "1046",
+            "", "system", "fr", "pt", "pt-br", "zh", "zh-cn", "zh-TW", "2052", "1046", "IT",
+            "it-IT", "ita", "1040",
         ] {
             assert_eq!(Language::from_installer_code(code), None, "{code}");
         }
     }
 
     /// The installer hook (`installer/hooks.nsh`) writes the codes this module reads: every code it can write is
-    /// one the app understands, for each of the five languages, and the config turns the language dialog on.
+    /// one the app understands, for each of the six languages, and the config turns the language dialog on.
     #[test]
     fn the_installer_writes_exactly_the_codes_the_app_reads() {
         const HOOKS: &str = include_str!("../../installer/hooks.nsh");
@@ -390,7 +396,7 @@ mod tests {
             .filter_map(|rest| rest.strip_suffix('"'))
             .filter(|code| !code.is_empty())
             .collect();
-        assert_eq!(written, ["pt-BR", "es", "de", "zh-CN", "en"]);
+        assert_eq!(written, ["pt-BR", "es", "de", "zh-CN", "it", "en"]);
         for code in &written {
             assert!(Language::from_installer_code(code).is_some(), "{code}");
         }
@@ -409,7 +415,7 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
-        // English first: it is the fallback when the system's language is not one of the five
+        // English first: it is the fallback when the system's language is not one of the six
         assert_eq!(
             languages,
             [
@@ -417,7 +423,8 @@ mod tests {
                 "PortugueseBR",
                 "SpanishInternational",
                 "German",
-                "SimpChinese"
+                "SimpChinese",
+                "Italian"
             ]
         );
     }
