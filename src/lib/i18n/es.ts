@@ -21,6 +21,7 @@ export const es = {
   "common.copied": "Copiado",
   "common.copy": "Copiar",
   "common.copyPath": "Copiar ruta",
+  "common.moreAbout": "Más sobre {name}",
   "common.dismiss": "Descartar",
   "common.open": "Abrir",
   "copy.failed": "No se pudo copiar al portapapeles.",
@@ -565,6 +566,7 @@ export const es = {
   "tags.tags": "Etiquetas",
   "tags.inputLabel": "Agregar una etiqueta",
   "tags.inputPlaceholder": "Agregar una etiqueta",
+  "tags.enterHint": "Pulsa Intro para agregar la etiqueta",
   "tags.suggestions": "Sugerencias de etiquetas",
   "tags.createTag": 'Crear la etiqueta "{name}"',
   "tags.removeTag": "Quitar la etiqueta {name}",
@@ -653,6 +655,9 @@ export const es = {
 
   // ---- settings
   "settings.title": "Configuración",
+  "settings.section.reading": "Lectura",
+  "settings.section.editing": "Edición",
+  "settings.section.integration": "Integración",
   "settings.language": "Idioma",
   "settings.languageSystem": "Predeterminado del sistema",
   "settings.languageNotSaved": "No se pudo guardar el idioma para la próxima vez: {message}",

@@ -37,6 +37,14 @@ export function splitTagInput(text: string): { done: string[]; rest: string } {
   return { done: normalizeTags(parts), rest };
 }
 
+/**
+ * The tags still waiting in the box when the editor closes: whatever was typed and not yet confirmed with
+ * Enter or a comma. Nothing the reader typed is dropped.
+ */
+export function pendingTags(typed: string): string[] {
+  return normalizeTags(typed.split(","));
+}
+
 /** Number of characters as the counter shows them (code points, like the limit). */
 export function charCount(text: string): number {
   return Array.from(text).length;

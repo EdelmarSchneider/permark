@@ -10,6 +10,7 @@
   import { notes } from "../stores/notes.svelte";
   import { toast } from "../stores/toast.svelte";
   import type { NotesFolder, StartIn } from "../types";
+  import InfoHint from "./InfoHint.svelte";
 
   const CHOICES: StartIn[] = ["welcome", "notes"];
 
@@ -53,12 +54,19 @@
 </script>
 
 <div class="field">
-  <span class="field__label">{t("settings.notes")}</span>
+  <div class="field__row field__row--info">
+    <span class="field__label">{t("settings.notes")}</span>
+    <InfoHint
+      id="notes-folder-hint"
+      text={t("settings.notesFolderHint")}
+      subject={t("settings.notes")}
+    />
+  </div>
   <span class="field__preview" aria-live="polite" title={folder?.path}>
     {folder ? folder.path : ""}
   </span>
   {#if folder?.status === "missing"}
-    <span class="field__status field__status--error" role="status">
+    <span class="field__hint field__hint--warn" role="status">
       {t("notes.folderMissing", { path: folder.path })}
     </span>
   {/if}
@@ -75,10 +83,12 @@
       {t("notes.openFolder")}
     </button>
   </div>
-  <span class="field__status">{t("settings.notesFolderHint")}</span>
 </div>
 <div class="field">
-  <span class="field__label">{t("settings.startIn")}</span>
+  <div class="field__row field__row--info">
+    <span class="field__label">{t("settings.startIn")}</span>
+    <InfoHint id="start-in-hint" text={t("settings.startInHint")} subject={t("settings.startIn")} />
+  </div>
   <div class="segmented" role="group" aria-label={t("settings.startIn")}>
     {#each CHOICES as choice (choice)}
       <button type="button" aria-pressed={startIn === choice} onclick={() => void choose(choice)}>
@@ -86,20 +96,23 @@
       </button>
     {/each}
   </div>
-  <span class="field__status">{t("settings.startInHint")}</span>
 </div>
 <div class="field">
   <span class="field__label">{t("settings.files")}</span>
-  <label class="filter__check">
-    <input
-      type="checkbox"
-      checked={notes.autoReload}
-      aria-describedby="auto-reload-hint"
-      onchange={(e) => notes.setAutoReload(e.currentTarget.checked)}
-    />
-    <span class="filter__text">
+  <div class="check-row">
+    <label class="filter__check">
+      <input
+        type="checkbox"
+        checked={notes.autoReload}
+        aria-describedby="auto-reload-hint"
+        onchange={(e) => notes.setAutoReload(e.currentTarget.checked)}
+      />
       <span>{t("settings.autoReload")}</span>
-      <span id="auto-reload-hint" class="filter__hint">{t("settings.autoReloadHint")}</span>
-    </span>
-  </label>
+    </label>
+    <InfoHint
+      id="auto-reload-hint"
+      text={t("settings.autoReloadHint")}
+      subject={t("settings.autoReload")}
+    />
+  </div>
 </div>

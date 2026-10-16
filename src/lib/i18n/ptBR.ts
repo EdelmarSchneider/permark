@@ -21,6 +21,7 @@ export const ptBR = {
   "common.copied": "Copiado",
   "common.copy": "Copiar",
   "common.copyPath": "Copiar caminho",
+  "common.moreAbout": "Mais sobre {name}",
   "common.dismiss": "Ignorar",
   "common.open": "Abrir",
   "copy.failed": "Não foi possível copiar para a área de transferência.",
@@ -565,6 +566,7 @@ export const ptBR = {
   "tags.tags": "Tags",
   "tags.inputLabel": "Adicionar uma tag",
   "tags.inputPlaceholder": "Adicionar uma tag",
+  "tags.enterHint": "Pressione Enter para adicionar a tag",
   "tags.suggestions": "Sugestões de tags",
   "tags.createTag": 'Criar a tag "{name}"',
   "tags.removeTag": "Remover a tag {name}",
@@ -652,6 +654,9 @@ export const ptBR = {
 
   // ---- settings
   "settings.title": "Configurações",
+  "settings.section.reading": "Leitura",
+  "settings.section.editing": "Edição",
+  "settings.section.integration": "Integração",
   "settings.language": "Idioma",
   "settings.languageSystem": "Padrão do sistema",
   "settings.languageNotSaved": "Não foi possível guardar o idioma para a próxima vez: {message}",
