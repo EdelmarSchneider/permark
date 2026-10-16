@@ -687,6 +687,8 @@ export const es = {
   "settings.updates": "Actualizaciones",
   "settings.updatesStore": "Las actualizaciones llegan desde Microsoft Store.",
   "settings.fileManager": "Administrador de archivos",
+  "settings.fileManagerStore":
+    'La versión de Microsoft Store pone "Abrir con TrailMark" en el menú de clic derecho de las carpetas y en la lista "Abrir con" de los archivos Markdown. Vienen con la aplicación, así que aquí no hay nada que activar.',
   "settings.shellMenu": 'Agregar "Abrir con TrailMark" al menú de clic derecho',
   "settings.shellMenuHint": 'En Windows 11 aparece en "Mostrar más opciones".',
   "settings.shellAssoc": "Asociar los archivos .md con TrailMark",

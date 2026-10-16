@@ -691,6 +691,8 @@ export const de = {
   "settings.updates": "Updates",
   "settings.updatesStore": "Updates kommen über den Microsoft Store.",
   "settings.fileManager": "Dateimanager",
+  "settings.fileManagerStore":
+    "Die Microsoft-Store-Version legt „Mit TrailMark öffnen“ ins Kontextmenü von Ordnern und in die Liste „Öffnen mit“ von Markdown-Dateien. Beides gehört zur App, hier gibt es also nichts umzuschalten.",
   "settings.shellMenu": "„Mit TrailMark öffnen“ zum Kontextmenü hinzufügen",
   "settings.shellMenuHint": "Unter Windows 11 steht der Eintrag unter „Weitere Optionen anzeigen“.",
   "settings.shellAssoc": "Dateien vom Typ .md mit TrailMark verknüpfen",

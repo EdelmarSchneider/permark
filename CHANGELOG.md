@@ -5,6 +5,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **"Open with TrailMark" on folders in the Microsoft Store version.** Right-click a folder, or the background of a folder, and choose
+  **Open with TrailMark**; on Windows 11 it is in the main menu, not under *Show more options*. The Store package now carries a small
+  Explorer component for it (the one thing a package cannot do with the registry), worded in your Windows display language
+  (English, Português, Español or Deutsch). Select several folders and each opens in its own window. **Settings → File manager** says
+  that the entry comes from the Store package.
+
 ## [0.5.0] - 2026-10-15
 
 Notes: open TrailMark, type, close. Notes save themselves, sticky notes stay for months, and Markdown files from anywhere open in one place.

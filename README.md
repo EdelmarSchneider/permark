@@ -232,6 +232,9 @@ TrailMark keeps its state in your user profile. If you want settings and tags to
 Windows 11). You can also list TrailMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
 **Settings → File manager**, which adds and removes them at once. TrailMark never sets itself as your default app; **Make default...** takes you to the
 Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
+The **Microsoft Store** version has the same entry on folders and on the background of a folder, and on Windows 11 it is in the main
+right-click menu, not under *Show more options*. The package provides it (and the **Open with** entry for Markdown files), so
+there are no switches for it in Settings, and uninstalling the app removes it.
 
 **macOS**: TrailMark is listed in Finder's **Open With** for Markdown files, without becoming the default, and a folder dropped on its
 Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list TrailMark under **Open With** for Markdown files.
