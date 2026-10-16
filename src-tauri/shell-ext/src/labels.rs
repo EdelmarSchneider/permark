@@ -8,6 +8,7 @@ pub(crate) const ENGLISH: &str = "Open with TrailMark";
 pub(crate) const PORTUGUESE: &str = "Abrir com o TrailMark";
 pub(crate) const SPANISH: &str = "Abrir con TrailMark";
 pub(crate) const GERMAN: &str = "Mit TrailMark öffnen";
+pub(crate) const CHINESE: &str = "用 TrailMark 打开";
 
 /// The text for the first of `preferred` (Windows' display languages, best first, as tags such as `pt-BR`) that the app
 /// is translated into. English when none is.
@@ -19,7 +20,7 @@ pub(crate) fn for_languages<S: AsRef<str>>(preferred: &[S]) -> &'static str {
 }
 
 /// The text for one language tag. Only the language counts, not the region: `pt-PT` reads the Brazilian text, which is
-/// the one translation of Portuguese the app has.
+/// the one translation of Portuguese the app has, and every Chinese tag (`zh-Hans-CN`, `zh-TW`) reads the Simplified text.
 fn for_language(tag: &str) -> Option<&'static str> {
     let language = tag.split(['-', '_']).next()?;
     match language.to_ascii_lowercase().as_str() {
@@ -27,6 +28,7 @@ fn for_language(tag: &str) -> Option<&'static str> {
         "pt" => Some(PORTUGUESE),
         "es" => Some(SPANISH),
         "de" => Some(GERMAN),
+        "zh" => Some(CHINESE),
         _ => None,
     }
 }
@@ -41,6 +43,7 @@ mod tests {
         assert_eq!(for_languages(&["pt-BR"]), "Abrir com o TrailMark");
         assert_eq!(for_languages(&["es-ES"]), "Abrir con TrailMark");
         assert_eq!(for_languages(&["de-DE"]), "Mit TrailMark öffnen");
+        assert_eq!(for_languages(&["zh-CN"]), "用 TrailMark 打开");
     }
 
     #[test]
@@ -55,6 +58,23 @@ mod tests {
     }
 
     #[test]
+    fn every_chinese_tag_reads_the_simplified_text() {
+        for tag in [
+            "zh",
+            "zh-CN",
+            "zh-Hans-CN",
+            "zh_CN",
+            "ZH-cn",
+            "zh-SG",
+            "zh-TW",
+            "zh-Hant-HK",
+        ] {
+            assert_eq!(for_languages(&[tag]), CHINESE, "{tag}");
+        }
+        assert_eq!(for_languages(&["fr-FR", "zh-Hans-CN", "en-US"]), CHINESE);
+    }
+
+    #[test]
     fn the_first_language_the_app_has_wins() {
         // a French first choice is skipped; the next one the app is in is used
         assert_eq!(for_languages(&["fr-FR", "de-DE", "en-US"]), GERMAN);
@@ -64,10 +84,9 @@ mod tests {
     #[test]
     fn other_languages_and_an_empty_list_read_as_english() {
         assert_eq!(for_languages(&["fr-FR", "ja-JP"]), ENGLISH);
-        assert_eq!(for_languages(&["zh-Hans-CN"]), ENGLISH);
         assert_eq!(for_languages::<&str>(&[]), ENGLISH);
         assert_eq!(for_languages(&[""]), ENGLISH);
         // a tag that only starts like a supported one
-        assert_eq!(for_languages(&["deu-DE", "pty"]), ENGLISH);
+        assert_eq!(for_languages(&["deu-DE", "pty", "zho-CN"]), ENGLISH);
     }
 }

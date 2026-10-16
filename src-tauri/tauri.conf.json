@@ -43,7 +43,7 @@
     ],
     "windows": {
       "nsis": {
-        "languages": ["English", "PortugueseBR", "SpanishInternational", "German"],
+        "languages": ["English", "PortugueseBR", "SpanishInternational", "German", "SimpChinese"],
         "displayLanguageSelector": true,
         "installerHooks": "installer/hooks.nsh"
       }

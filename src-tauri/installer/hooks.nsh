@@ -2,9 +2,9 @@
 ;
 ; This file does two things. Both write only under HKEY_CURRENT_USER, so no administrator rights are needed.
 ;
-; 1. THE LANGUAGE. The installer asks which language to use (English, Portuguese (Brazil), Spanish, German). After the
-;    files are in place, that language is written down as the code the app uses for its own interface (`en`, `pt-BR`,
-;    `es`, `de`) in HKCU\Software\TrailMark\Language. The app reads it only until a language is picked in Settings, so
+; 1. THE LANGUAGE. The installer asks which language to use (English, Portuguese (Brazil), Spanish, German, Simplified
+;    Chinese). After the files are in place, that language is written down as the code the app uses for its own interface
+;    (`en`, `pt-BR`, `es`, `de`, `zh-CN`) in HKCU\Software\TrailMark\Language. The app reads it only until a language is picked in Settings, so
 ;    an update, or a reinstall in another language, never replaces a choice made in the app.
 ;
 ; 2. "OPEN WITH TRAILMARK" in the file manager. Two options, both offered on the first page of a fresh install (checked
@@ -37,23 +37,27 @@
 !define OPENWITH_MENU_CHOICE "OpenWithMenu"
 !define OPENWITH_ASSOC_CHOICE "FileAssociation"
 
-; The words, in the four languages of the installer (the numbers are the Windows language ids).
+; The words, in the five languages of the installer (the numbers are the Windows language ids).
 LangString OpenWithMenuLabel 1033 "Open with TrailMark"
 LangString OpenWithMenuLabel 1046 "Abrir com o TrailMark"
 LangString OpenWithMenuLabel 3082 "Abrir con TrailMark"
 LangString OpenWithMenuLabel 1031 "Mit TrailMark öffnen"
+LangString OpenWithMenuLabel 2052 "用 TrailMark 打开"
 LangString OpenWithTypeName 1033 "Markdown document"
 LangString OpenWithTypeName 1046 "Documento Markdown"
 LangString OpenWithTypeName 3082 "Documento de Markdown"
 LangString OpenWithTypeName 1031 "Markdown-Dokument"
+LangString OpenWithTypeName 2052 "Markdown 文档"
 LangString OpenWithMenuOption 1033 "Add “Open with TrailMark” to the right-click menu"
 LangString OpenWithMenuOption 1046 "Adicionar “Abrir com o TrailMark” ao menu de clique direito"
 LangString OpenWithMenuOption 3082 "Agregar “Abrir con TrailMark” al menú de clic derecho"
 LangString OpenWithMenuOption 1031 "„Mit TrailMark öffnen“ zum Kontextmenü hinzufügen"
+LangString OpenWithMenuOption 2052 "在右键菜单中添加“用 TrailMark 打开”"
 LangString OpenWithAssocOption 1033 "Associate .md files with TrailMark"
 LangString OpenWithAssocOption 1046 "Associar arquivos .md ao TrailMark"
 LangString OpenWithAssocOption 3082 "Asociar los archivos .md con TrailMark"
 LangString OpenWithAssocOption 1031 "Dateien vom Typ .md mit TrailMark verknüpfen"
+LangString OpenWithAssocOption 2052 "将 .md 文件与 TrailMark 关联"
 
 ; "1" / "0" for what the person ticked on the welcome page; "" when that page did not show (silent and passive installs).
 Var OpenWithMenu
@@ -307,6 +311,8 @@ FunctionEnd
     StrCpy $R8 "es"
   ${ElseIf} $LANGUAGE = 1031
     StrCpy $R8 "de"
+  ${ElseIf} $LANGUAGE = 2052
+    StrCpy $R8 "zh-CN"
   ${ElseIf} $LANGUAGE = 1033
     StrCpy $R8 "en"
   ${EndIf}

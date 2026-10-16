@@ -4,6 +4,7 @@ import { es } from "./es";
 import { language } from "./language.svelte";
 import { INTL_TAGS, type Locale } from "./locales";
 import { ptBR } from "./ptBR";
+import { zhCN } from "./zhCN";
 
 export type MessageKey = keyof typeof en;
 type PluralBase<K> = K extends `${infer B}.one` ? B : never;
@@ -17,7 +18,7 @@ export type { LanguagePreference, Locale } from "./locales";
 export { language } from "./language.svelte";
 
 /** Every language's table; English is the source and the fallback. */
-export const MESSAGES: Record<Locale, Messages> = { en, "pt-BR": ptBR, es, de };
+export const MESSAGES: Record<Locale, Messages> = { en, "pt-BR": ptBR, es, de, "zh-CN": zhCN };
 
 function fill(template: string, params?: Params): string {
   if (!params) return template;

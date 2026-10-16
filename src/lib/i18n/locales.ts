@@ -1,7 +1,7 @@
 // The languages the interface comes in, and how a person's choice (or the system's language) turns into one of them.
 // Pure functions only; the reactive state lives in `language.svelte.ts`.
 
-export const LOCALES = ["en", "pt-BR", "es", "de"] as const;
+export const LOCALES = ["en", "pt-BR", "es", "de", "zh-CN"] as const;
 export type Locale = (typeof LOCALES)[number];
 
 /** The source language: its table is complete, and it answers whenever another table lacks a string. */
@@ -18,6 +18,7 @@ export const LANGUAGE_NAMES: Record<Locale, string> = {
   "pt-BR": "Português (Brasil)",
   es: "Español",
   de: "Deutsch",
+  "zh-CN": "简体中文",
 };
 
 /** The BCP 47 tag `Intl` formats numbers and dates with. */
@@ -26,9 +27,13 @@ export const INTL_TAGS: Record<Locale, string> = {
   "pt-BR": "pt-BR",
   es: "es",
   de: "de-DE",
+  "zh-CN": "zh-CN",
 };
 
-/** The language a browser/OS tag stands for by its primary part (`pt-PT` reads Portuguese too), or null. */
+/**
+ * The language a browser/OS tag stands for by its primary part (`pt-PT` reads Portuguese too), or null. Every Chinese tag
+ * (`zh-TW`, `zh-Hant`, `zh-HK` too) reads Simplified Chinese: it is the one Chinese the app has.
+ */
 export function matchLocale(tag: string): Locale | null {
   const primary = tag.trim().toLowerCase().split(/[-_]/)[0];
   switch (primary) {
@@ -40,6 +45,8 @@ export function matchLocale(tag: string): Locale | null {
       return "es";
     case "de":
       return "de";
+    case "zh":
+      return "zh-CN";
     default:
       return null;
   }

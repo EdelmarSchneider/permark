@@ -38,6 +38,11 @@ describe("t", () => {
     expect(t("common.cancel")).toBe("Cancelar");
     language.preference = "es";
     expect(t("common.cancel")).toBe("Cancelar");
+    language.preference = "zh-CN";
+    expect(t("common.cancel")).toBe("取消");
+    expect(t("welcome.openFailed", { path: "F:/x", message: "拒绝访问" })).toBe(
+      "无法打开 F:/x：拒绝访问",
+    );
     language.preference = "en";
     expect(t("common.cancel")).toBe("Cancel");
   });
@@ -63,6 +68,20 @@ describe("tn", () => {
     expect(tn("toast.docsChanged", 1200)).toBe("1.200 docs alterados");
     language.preference = "es";
     expect(tn("toast.docsChanged", 3)).toBe("3 docs cambiaron");
+    language.preference = "zh-CN";
+    expect(tn("toast.docsChanged", 1200)).toBe("1,200 个文档有更改");
+    expect(tn("toast.docsChanged", 1)).toBe("1 个文档有更改");
+    expect(tn("doc.removedBlocks", 2, { time: "10:42" })).toBe("已删除 2 个块 · 10:42");
+  });
+
+  it("reads every count as 'other' in Chinese, which has no plural forms", () => {
+    language.preference = "zh-CN";
+    for (const count of [0, 1, 2, 5, 1_000_000]) {
+      expect(pluralCategory(count), String(count)).toBe("other");
+    }
+    expect(tn("fileOps.files", 0)).toBe("0 个文件");
+    expect(tn("fileOps.files", 1)).toBe("1 个文件");
+    expect(tn("fileOps.files", 7)).toBe("7 个文件");
   });
 
   it("writes zero as a plural in Brazilian Portuguese and by CLDR in the other languages", () => {
@@ -106,6 +125,8 @@ describe("formatNumber", () => {
     expect(formatNumber(12345)).toBe("12.345");
     language.preference = "pt-BR";
     expect(formatNumber(12345)).toBe("12.345");
+    language.preference = "zh-CN";
+    expect(formatNumber(12345)).toBe("12,345");
   });
 });
 
@@ -120,6 +141,10 @@ describe("keys", () => {
     expect(keys("Ctrl+Shift+O")).toBe("Ctrl+Mayús+O");
     language.preference = "pt-BR";
     expect(keys("Ctrl+Shift+O")).toBe("Ctrl+Shift+O");
+    // Chinese keyboards carry the English key names
+    language.preference = "zh-CN";
+    expect(keys("Ctrl+Shift+O")).toBe("Ctrl+Shift+O");
+    expect(keys("Del")).toBe("Del");
   });
 });
 
@@ -164,6 +189,25 @@ describe("matchLocale", () => {
     expect(matchLocale("fr-FR")).toBeNull();
     expect(matchLocale("")).toBeNull();
   });
+
+  it("reads every Chinese tag as Simplified Chinese, whatever the script or region", () => {
+    for (const tag of [
+      "zh",
+      "zh-CN",
+      "zh-Hans-CN",
+      "zh_CN",
+      "ZH-cn",
+      "zh-SG",
+      "zh-TW",
+      "zh-Hant",
+      "zh-HK",
+    ]) {
+      expect(matchLocale(tag), tag).toBe("zh-CN");
+    }
+    // only the language part counts: a tag that merely starts with "zh" is not Chinese
+    expect(matchLocale("zha")).toBeNull();
+    expect(matchLocale("zho-CN")).toBeNull();
+  });
 });
 
 describe("systemLocale and resolveLocale", () => {
@@ -171,6 +215,8 @@ describe("systemLocale and resolveLocale", () => {
     expect(systemLocale(["de-DE", "en-US"])).toBe("de");
     expect(systemLocale(["fr-FR", "es-419", "en"])).toBe("es");
     expect(systemLocale(["pt-BR"])).toBe("pt-BR");
+    expect(systemLocale(["fr-FR", "zh-Hans-CN", "en"])).toBe("zh-CN");
+    expect(systemLocale(["zh-TW", "en-US"])).toBe("zh-CN");
   });
 
   it("falls back to English", () => {
@@ -186,8 +232,9 @@ describe("systemLocale and resolveLocale", () => {
 
   it("reads anything unknown as the system default", () => {
     expect(parsePreference("de")).toBe("de");
+    expect(parsePreference("zh-CN")).toBe("zh-CN");
     expect(parsePreference("system")).toBe("system");
-    for (const bad of ["fr", "PT-br", "", null, undefined, 7, {}]) {
+    for (const bad of ["fr", "PT-br", "zh", "zh-cn", "", null, undefined, 7, {}]) {
       expect(parsePreference(bad)).toBe("system");
     }
   });
@@ -198,8 +245,9 @@ describe("systemLocale and resolveLocale", () => {
       "pt-BR": "Português (Brasil)",
       es: "Español",
       de: "Deutsch",
+      "zh-CN": "简体中文",
     });
-    expect(LANGUAGE_PREFERENCES).toEqual(["system", "en", "pt-BR", "es", "de"]);
+    expect(LANGUAGE_PREFERENCES).toEqual(["system", "en", "pt-BR", "es", "de", "zh-CN"]);
   });
 });
 
