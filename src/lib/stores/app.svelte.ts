@@ -17,6 +17,8 @@ import { basename, isMarkdown, isWebPage } from "../paths";
 import { formatQuote, formatReference } from "../reference";
 import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
 import type { CommandAction } from "../commands";
+import type { Anchor } from "../components/Popover.svelte";
+import { sameFolder } from "../folderSwitcher";
 import { planReveal } from "../reveal";
 import { selectOnly } from "../tagModel";
 import { batchTouches, nextUnread } from "../unread";
@@ -66,6 +68,19 @@ const HIDDEN_RECENTS_KEY = "trailmark.recents.hidden";
 const FOLLOW_CHIP_MS = 5000;
 const TREE_REFRESH_MS = 250;
 const SINCE_REFRESH_MS = 1200;
+
+/**
+ * Where the folder switcher opens when nothing was clicked (the command in Search everywhere): under the project's name in the
+ * Explorer when that is on screen, else near the top left of the window.
+ */
+function switcherAnchor(): Anchor {
+  const name =
+    session.left.open && ui.sidebarView === "explorer"
+      ? document.querySelector<HTMLElement>("[data-folder-switcher]")
+      : null;
+  const rect = name?.getBoundingClientRect();
+  return rect && rect.width > 0 ? rect : { left: 56, right: 56, top: 40, bottom: 40 };
+}
 
 function readHiddenRecents(): string[] {
   try {
@@ -168,6 +183,12 @@ class AppStore {
   }
 
   async showWelcome(): Promise<void> {
+    await this.loadWelcome();
+    this.screen = "welcome";
+  }
+
+  /** What the welcome screen lists: the recent folders, and the Notes column. */
+  private async loadWelcome(): Promise<void> {
     try {
       this.recents = await api.recentVaults();
     } catch {
@@ -175,7 +196,6 @@ class AppStore {
     }
     // the Notes column is a convenience: the screen is there without it
     this.notesOverview = await api.notesOverview().catch(() => null);
-    this.screen = "welcome";
   }
 
   /** `Ctrl+Shift+N` from any window: the Notes window comes forward with a new note ready (and starts when it is not running). */
@@ -271,8 +291,25 @@ class AppStore {
     return this.recents.filter((r) => !this.hiddenRecents.has(r.root));
   }
 
+  /** Forgets a folder in the list of recent folders. Only the entry goes: the folder and its files are not touched. */
   removeRecent(root: string): void {
     this.hiddenRecents.add(root);
+    this.saveHiddenRecents();
+  }
+
+  /** A folder opened again after it was removed from the list is back in it. */
+  private unhideRecent(root: string): void {
+    let changed = false;
+    for (const hidden of [...this.hiddenRecents]) {
+      if (sameFolder(hidden, root)) {
+        this.hiddenRecents.delete(hidden);
+        changed = true;
+      }
+    }
+    if (changed) this.saveHiddenRecents();
+  }
+
+  private saveHiddenRecents(): void {
     try {
       localStorage.setItem(HIDDEN_RECENTS_KEY, JSON.stringify([...this.hiddenRecents]));
     } catch {
@@ -357,36 +394,16 @@ class AppStore {
       } catch (error) {
         const message = t("welcome.openFailed", { path, message: errorMessage(error) });
         this.openError = message;
-        if (this.screen !== "project") this.missingRecents.add(path);
-        else toast.message(message, "warn");
+        // a recent folder that does not open is dimmed in the lists (the welcome screen, the folder switcher)
+        this.missingRecents.add(path);
+        if (this.screen === "project") toast.message(message, "warn");
         return false;
       }
 
-      session.suspend();
-      agent.reset();
-      edit.reset();
-      docs.reset();
-      feed.clear();
-      fileops.reset();
-      filter.reset();
-      outline.reset();
-      search.reset();
-      tags.reset();
-      toast.clear();
-      comments.reset();
-      unread.reset();
-      vault.reset();
-      ui.followChip = null;
-      ui.find.open = false;
-      ui.closeSearch();
-      ui.tagEditor = null;
-      ui.outlinePopover = false;
-      ui.changesNotify = false;
-      ui.rightTabBack = "changes";
-      ui.sidebarView = "explorer";
-      ui.dismissedRepoState = null;
-      ui.newFile = null;
-      ui.treeCursor = null;
+      this.forgetProject();
+      this.unhideRecent(info.root);
+      this.missingRecents.delete(path);
+      this.missingRecents.delete(info.root);
       vault.info = info;
 
       // the tree is loaded the way the saved Explorer filter asks for it (ignored and hidden files)
@@ -427,6 +444,97 @@ class AppStore {
     } catch (error) {
       this.openError = t("welcome.openFailed", { path, message: errorMessage(error) });
       return false;
+    } finally {
+      this.opening = false;
+    }
+  }
+
+  /** Lets go of everything the window knew about the project it showed (a new project is opened, or none is shown any more). */
+  private forgetProject(): void {
+    session.suspend();
+    agent.reset();
+    edit.reset();
+    docs.reset();
+    feed.clear();
+    fileops.reset();
+    filter.reset();
+    outline.reset();
+    search.reset();
+    tags.reset();
+    toast.clear();
+    comments.reset();
+    unread.reset();
+    vault.reset();
+    ui.followChip = null;
+    ui.find.open = false;
+    ui.closeSearch();
+    ui.folderSwitcher = null;
+    ui.tagEditor = null;
+    ui.outlinePopover = false;
+    ui.changesNotify = false;
+    ui.rightTabBack = "changes";
+    ui.sidebarView = "explorer";
+    ui.dismissedRepoState = null;
+    ui.newFile = null;
+    ui.treeCursor = null;
+  }
+
+  // ---- the folder switcher -----------------------------------------------------------------------
+
+  /** Reads the list of recent folders again: the folder this window shows was added to it when it opened. */
+  async refreshRecents(): Promise<void> {
+    try {
+      this.recents = await api.recentVaults();
+    } catch {
+      // the list that is known stays
+    }
+  }
+
+  /**
+   * Opens the folder switcher (the menu on the project's name), or closes it when it is open. It is placed under `anchor`, else
+   * under the project's name in the Explorer, else near the top left of the window when the Explorer is not on screen.
+   */
+  async openFolderSwitcher(anchor?: Anchor): Promise<void> {
+    if (this.screen !== "project" || vault.isNotes || vault.isSimple) return;
+    if (ui.folderSwitcher) {
+      ui.folderSwitcher = null;
+      return;
+    }
+    await this.refreshRecents();
+    // the window may have changed while the list was read
+    if (this.screen === "project") ui.folderSwitcher = { anchor: anchor ?? switcherAnchor() };
+  }
+
+  /**
+   * Shows another folder in this window. The project that is open is replaced the way it is by "Open folder": unsaved edits are
+   * asked about first (and nothing is lost), and a folder that cannot be opened leaves the open one as it is.
+   */
+  async switchFolder(root: string): Promise<boolean> {
+    if (this.screen !== "project" || sameFolder(root, vault.info?.root)) return false;
+    return this.openProject(root);
+  }
+
+  /**
+   * Closes the folder this window shows and goes back to the welcome screen. Unsaved edits are asked about first, as when another
+   * folder is opened. Nothing on disk is touched: the folder stays in the list of recent folders.
+   */
+  async closeFolder(): Promise<void> {
+    if (this.screen !== "project" || this.opening) return;
+    if (edit.holdNavigation(() => void this.closeFolder())) return;
+    this.opening = true;
+    try {
+      await session.flush();
+      try {
+        await api.closeVault();
+      } catch (error) {
+        toast.message(errorMessage(error), "warn");
+        return;
+      }
+      // the welcome screen is ready before it shows, and the project's views are gone the moment it does
+      await this.loadWelcome();
+      this.forgetProject();
+      this.openError = null;
+      this.screen = "welcome";
     } finally {
       this.opening = false;
     }
@@ -1116,6 +1224,12 @@ class AppStore {
         return void this.chooseFolder();
       case "openFile":
         return void this.chooseFile();
+      case "switchFolder":
+        if (ide) void this.openFolderSwitcher();
+        return;
+      case "closeFolder":
+        if (ide) void this.closeFolder();
+        return;
       case "searchEverywhere":
         if (ide) this.openSearchBox();
         return;

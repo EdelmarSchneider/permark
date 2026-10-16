@@ -135,6 +135,13 @@ pub async fn open_vault(
     .await
 }
 
+/// Closes the open folder: the window has no project afterwards (the welcome screen). Nothing is touched on disk.
+#[tauri::command]
+pub async fn close_vault(state: State<'_, AppState>) -> Result<(), AppError> {
+    let host = state.inner().clone();
+    blocking(move || host.close()).await
+}
+
 /// The path the app starts with: the one the system delivered while the app was starting (macOS hands over what
 /// Finder opens that way, see [`crate::open_request`]), else the one given on the command line.
 #[tauri::command]

@@ -322,6 +322,17 @@ describe("availableCommands", () => {
     expect(idsOf(availableCommands(IDLE))).not.toContain("openContainingFolder");
   });
 
+  it("offers to switch and to close the folder in a project, and nowhere else", () => {
+    for (const id of ["switchFolder", "closeFolder"]) {
+      expect(idsOf(availableCommands(IDLE)), id).toContain(id);
+      // the Notes window's folder is its own workspace, and a single file has no folder to leave
+      expect(idsOf(availableCommands({ ...IDLE, notes: true })), id).not.toContain(id);
+      expect(idsOf(availableCommands({ ...IDLE, ide: false })), id).not.toContain(id);
+    }
+    expect(top("switch folder")).toBe("switchFolder");
+    expect(top("close folder")).toBe("closeFolder");
+  });
+
   it("keeps the registry order", () => {
     const all = idsOf(availableCommands(IDLE));
     const registry = idsOf([...COMMANDS]).filter((id) => all.includes(id));

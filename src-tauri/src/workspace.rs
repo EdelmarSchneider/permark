@@ -1649,6 +1649,21 @@ impl WorkspaceHost {
         Ok(info)
     }
 
+    /// Closes the open folder and leaves none open: the window goes back to the welcome screen. The folder's last visit
+    /// is saved and everything it ran stops, the agent connection included. Closing when nothing is open does nothing.
+    ///
+    /// Like opening, it waits for its turn behind a folder that is still being opened, and it counts as the newest
+    /// request, so an open that was asked for earlier and had not started is dropped rather than carried out afterwards.
+    pub fn close(&self) -> Result<(), AppError> {
+        let _turn = self
+            .gate
+            .lock()
+            .map_err(|_| AppError::Internal("application state is unavailable".to_owned()))?;
+        self.newest.fetch_add(1, Ordering::SeqCst);
+        self.shutdown();
+        Ok(())
+    }
+
     /// Installs a workspace and returns the previous one.
     fn replace(&self, next: Option<Arc<Workspace>>) -> Option<Arc<Workspace>> {
         let mut slot = self.current.lock().ok()?;
@@ -4223,6 +4238,57 @@ exclude = [\"archive/**\"]
         write_until_reported(&fx.rec, fx.b.path(), "late-b.md", "B reports its change");
         assert!(!fs_paths(&fx.rec).contains(&"late-a.md".to_owned()));
         fx.host.shutdown();
+    }
+
+    #[test]
+    fn closing_the_folder_leaves_none_open_and_stops_its_events() {
+        let fx = HostFx::new();
+        fx.open(fx.a.path()).expect("open A");
+        assert!(fx.host.read_asset("only-in-a.png", None).is_ok());
+
+        fx.host.close().expect("close");
+
+        // Nothing is open: commands find no folder and the image protocol serves nothing.
+        assert!(matches!(fx.host.current(), Err(AppError::NoVault)));
+        assert_eq!(
+            fx.host
+                .read_asset("only-in-a.png", None)
+                .expect_err("closed")
+                .kind(),
+            "noVault"
+        );
+        // The folder that was closed reports nothing any more.
+        write(fx.a.path(), "late-a.md", "x");
+        thread::sleep(Duration::from_millis(700));
+        assert!(!fs_paths(&fx.rec).contains(&"late-a.md".to_owned()));
+    }
+
+    #[test]
+    fn a_window_with_no_folder_can_close_again_and_open_one_after_closing() {
+        let fx = HostFx::new();
+        fx.host.close().expect("closing nothing is fine");
+        fx.open(fx.a.path()).expect("open A");
+        fx.host.close().expect("close A");
+        fx.host.close().expect("closing twice is fine");
+        fx.open(fx.b.path()).expect("open B after closing");
+        assert_eq!(fx.current_root(), root_of(&fx.b));
+        write_until_reported(&fx.rec, fx.b.path(), "later.md", "B reports its change");
+        fx.host.shutdown();
+    }
+
+    #[test]
+    fn closing_the_folder_overtakes_an_open_request_that_was_waiting() {
+        let fx = HostFx::new();
+        let waiting = fx.host.request();
+        fx.host.close().expect("close");
+        let err = fx
+            .host
+            .open(waiting, &sink_of(&fx.rec), |sink| {
+                Workspace::open(fx.a.path(), fx.app.path(), None, sink)
+            })
+            .expect_err("superseded by the close");
+        assert_eq!(err.kind(), "superseded");
+        assert!(matches!(fx.host.current(), Err(AppError::NoVault)));
     }
 
     #[test]

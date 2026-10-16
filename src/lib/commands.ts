@@ -13,6 +13,8 @@ import { foldChars } from "./text";
 
 /** Actions that have no key: they live in a menu, the status bar or the settings. */
 export type MenuAction =
+  | "switchFolder"
+  | "closeFolder"
   | "initProject"
   | "checkUpdates"
   | "newFolder"
@@ -93,6 +95,8 @@ export const COMMANDS: readonly Command[] = [
   { id: "openFolder", label: "cmd.openFolder", shortcut: "Ctrl+O", available: notInNotes },
   // a file opened in the Notes window is listed under Files (or is the note it is)
   { id: "openFile", label: "cmd.openFile", shortcut: "Ctrl+Shift+O" },
+  { id: "switchFolder", label: "cmd.switchFolder", available: inProject },
+  { id: "closeFolder", label: "cmd.closeFolder", available: inProject },
   { id: "quickOpen", label: "cmd.quickOpen", shortcut: "Ctrl+P", available: inFolder },
   { id: "searchAll", label: "cmd.searchAll", shortcut: "Ctrl+Shift+F", available: inFolder },
   { id: "nextUnread", label: "cmd.nextUnread", shortcut: "Alt+U", available: inProject },

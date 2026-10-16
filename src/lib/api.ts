@@ -91,6 +91,8 @@ export type Unlisten = () => void;
 
 export interface Api {
   openVault(path: string): Promise<VaultInfo>;
+  /** Closes the open folder: the window has no project afterwards (the welcome screen). Nothing on disk is touched. */
+  closeVault(): Promise<void>;
   /** The path the app starts with: the one the system opened it with, else the CLI argument, if any. */
   initialPath(): Promise<string | null>;
   recentVaults(): Promise<RecentVault[]>;
@@ -333,6 +335,7 @@ export interface Api {
 
 export const tauriApi: Api = {
   openVault: (path) => invoke<VaultInfo>("open_vault", { path }),
+  closeVault: () => invoke<void>("close_vault"),
   initialPath: () => invoke<string | null>("initial_path"),
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
   appLanguage: () => invoke<LanguagePreference>("app_language"),
@@ -490,6 +493,7 @@ function createMockApi(): Api {
       load().then((impl) => (impl[name] as (...a: unknown[]) => unknown)(...args))) as Api[K];
   return {
     openVault: command("openVault"),
+    closeVault: command("closeVault"),
     initialPath: command("initialPath"),
     recentVaults: command("recentVaults"),
     appLanguage: command("appLanguage"),

@@ -185,6 +185,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
+            commands::close_vault,
             commands::initial_path,
             commands::recent_vaults,
             commands::app_language,
