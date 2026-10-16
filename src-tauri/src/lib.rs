@@ -246,6 +246,7 @@ pub fn run() {
             commands::review_keep_all,
             commands::review_revert_all,
             commands::review_restore_deleted,
+            commands::review_undo,
             commands::review_release,
             commands::set_agent_connection,
             commands::agent_status,

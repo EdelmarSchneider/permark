@@ -156,7 +156,8 @@ impl Tracker {
             .collect()
     }
 
-    /// The documents that moved since this was last called, as `(from, to)` pairs of the paths they had and have.
+    /// The documents that moved since this was last called, as `(from, to)` pairs of the paths they had and have. A
+    /// document the app deleted ([`Tracker::deleted`]) is a move to `""`: to nowhere.
     pub fn take_moves(&mut self) -> Vec<(String, String)> {
         std::mem::take(&mut self.moves)
     }
@@ -320,6 +321,22 @@ impl Tracker {
             }
         }
         wrote
+    }
+
+    /// The app deleted a document, or a folder with documents in it (to the recycle bin): gone, as in
+    /// [`Tracker::removed`], and each document is told to a follower as a move to nowhere, so that it forgets what it
+    /// kept of it instead of reporting it deleted. Returns whether `read.json` has to be written.
+    pub fn deleted(&mut self, path: &str) -> bool {
+        let mut keys = self.keys_under(path);
+        keys.push(key(path));
+        for k in keys {
+            if let Some(doc) = self.docs.get(&k) {
+                self.moves.push((doc.path.clone(), String::new()));
+            }
+            // a walk that passed before the delete must not bring it back
+            self.left(&k);
+        }
+        self.removed(path)
     }
 
     /// The person read the document, which holds `hash`. Returns whether `read.json` has to be written.
@@ -789,6 +806,41 @@ mod tests {
         assert!(moved(&t), "a document is gone");
         t.scanned(files(&[("b.md", 3)]));
         assert!(moved(&t), "a look at the disk");
+    }
+
+    #[test]
+    fn documents_the_app_deleted_are_told_as_moves_to_nowhere_and_are_gone() {
+        let mut t = scanned(&[
+            ("a.md", 1),
+            ("docs/b.md", 2),
+            ("docs/deep/c.md", 3),
+            ("keep.md", 4),
+        ]);
+        assert!(t.deleted("docs"));
+        assert_eq!(
+            t.take_moves(),
+            [
+                ("docs/b.md".to_owned(), String::new()),
+                ("docs/deep/c.md".to_owned(), String::new()),
+            ]
+        );
+        assert_eq!(t.saved(), saved(&[("a.md", 1), ("keep.md", 4)]));
+        assert!(t.deleted("a.md"));
+        assert_eq!(t.take_moves(), [("a.md".to_owned(), String::new())]);
+        // nothing there: nothing to tell
+        assert!(!t.deleted("never-there.md"));
+        assert_eq!(t.take_moves().len(), 0);
+    }
+
+    #[test]
+    fn a_walk_that_passed_before_the_app_deleted_a_document_does_not_bring_it_back() {
+        let mut t = scanned(&[("a.md", 1), ("docs/b.md", 2)]);
+        t.begin_scan();
+        t.deleted("docs");
+        t.deleted("a.md");
+        t.scanned(files(&[("a.md", 1), ("docs/b.md", 2), ("c.md", 5)]));
+        let paths: Vec<String> = t.states().into_iter().map(|d| d.path).collect();
+        assert_eq!(paths, ["c.md"]);
     }
 
     // Windows and macOS compare paths without regard to case; Linux does not.

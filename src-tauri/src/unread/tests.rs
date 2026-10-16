@@ -1050,3 +1050,69 @@ fn a_follower_is_told_only_when_something_changed() {
     assert_eq!(follower.told().len(), before + 2);
     service.stop();
 }
+
+#[test]
+fn a_document_the_app_deleted_is_gone_at_once_and_a_follower_is_told_it_was_deleted() {
+    let fx = Fx::new(&[("a.md", "a\n"), ("docs/b.md", "b\n"), ("keep.md", "k\n")]);
+    let (service, follower) = open_followed(&fx);
+    fs::remove_dir_all(fx.project.path().join("docs")).expect("delete");
+    fx.remove("a.md");
+    service.deleted(&["docs".to_owned(), "a.md".to_owned()]);
+    service.flush();
+    let moved: Vec<(String, String)> = follower
+        .told()
+        .into_iter()
+        .filter_map(|t| match t {
+            Told::Changed { moves, .. } => Some(moves),
+            Told::Reading(..) => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(
+        moved,
+        [
+            ("docs/b.md".to_owned(), String::new()),
+            ("a.md".to_owned(), String::new())
+        ]
+    );
+    assert_eq!(
+        follower.last_docs().len(),
+        1,
+        "only keep.md is left, before the watcher has said a word"
+    );
+    // and what the watcher says after is no news
+    let before = follower.told().len();
+    service.apply(&[
+        change(ChangeKind::Removed, "a.md"),
+        change(ChangeKind::Removed, "docs"),
+    ]);
+    service.flush();
+    assert_eq!(follower.told().len(), before);
+    service.stop();
+}
+
+#[test]
+fn a_document_the_app_put_back_is_there_and_unread_without_waiting_for_the_watcher() {
+    let fx = Fx::new(&[("a.md", "a\n"), ("b.md", "b\n")]);
+    let (service, follower) = open_followed(&fx);
+    // deleted by the app, and back again before the watcher had a quiet moment to say anything
+    service.deleted(&["a.md".to_owned()]);
+    service.flush();
+    assert_eq!(follower.last_docs().len(), 1);
+    service.appeared("a.md");
+    service.flush();
+    assert_eq!(
+        follower.last_docs(),
+        [
+            ("a.md".to_owned(), Some(hash_of("a\n")), None),
+            (
+                "b.md".to_owned(),
+                Some(hash_of("b\n")),
+                Some(hash_of("b\n"))
+            ),
+        ],
+        "there, and not read: it was gone for good as far as the markers knew"
+    );
+    assert_eq!(service.unread(), ["a.md"]);
+    service.stop();
+}

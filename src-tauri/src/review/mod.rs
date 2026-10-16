@@ -35,6 +35,7 @@ pub mod committed;
 pub mod diff;
 pub mod saved;
 pub mod store;
+pub mod undo;
 pub mod view;
 
 #[cfg(test)]
@@ -53,10 +54,11 @@ pub use book::{Entry, Status};
 pub use committed::{Committed, GitBlobs};
 pub use view::{ReviewView, ViewStatus};
 
-use book::{Book, Want};
+use book::{Book, Standing, Want};
 use diff::Comparison;
 use saved::{decode, encode, Saved};
 use store::{CopyStore, MAX_COPY_BYTES};
+use undo::{Stacks, Step};
 use view::changes_view;
 
 use crate::edit::{EditError, Editor, SaveOutcome};
@@ -137,15 +139,46 @@ pub struct Basis {
     pub reviewed: Option<String>,
 }
 
-/// What a Revert did, which the caller has to tell the rest of the app about.
+/// What a Revert did, which the caller has to tell the rest of the app about. `rel` is the path of the document in the
+/// project, as the file system has it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reverted {
     /// The file was written: it held `old_hash` and holds `new_hash`.
-    Wrote { old_hash: String, new_hash: String },
-    /// The document is new, so reverting it is deleting it: sending it to the recycle bin is left to the caller.
-    NewDocument,
+    Wrote {
+        rel: String,
+        old_hash: String,
+        new_hash: String,
+    },
+    /// The document is new, so reverting it is deleting it: sending it to the recycle bin is left to the caller, who
+    /// does it with [`ReviewService::discard`].
+    NewDocument(NewDocument),
     /// The document was deleted and is back: the file holds `hash`.
-    Restored { hash: String },
+    Restored { rel: String, hash: String },
+}
+
+/// A document that was never approved, to be sent away: what the review saw of it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewDocument {
+    pub rel: String,
+    /// The hash of the file as the review saw it.
+    hash: u64,
+    /// Its text, to be able to bring it back.
+    text: String,
+}
+
+/// What an undo did, which the caller has to tell the rest of the app about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Undone {
+    /// A keep was taken back: only the approved version moved.
+    Kept,
+    /// A revert was taken back: the file was written; it held `old_hash` and holds `new_hash`.
+    Wrote {
+        rel: String,
+        old_hash: String,
+        new_hash: String,
+    },
+    /// A new document that was sent to the recycle bin is back.
+    Recreated { rel: String },
 }
 
 /// Where the review keeps its files.
@@ -186,15 +219,19 @@ struct Inner {
     cleanup: bool,
     /// The documents last announced.
     announced: Vec<Entry>,
+    /// What can be taken back, for each document that is under review.
+    undo: Stacks,
 }
 
 impl Inner {
-    /// The hashes the clean-up leaves alone: those a version points to, and those of copies written lately.
+    /// The hashes the clean-up leaves alone: those a version points to, those of copies written lately, and those
+    /// the steps that can be taken back need.
     fn in_use(&self) -> HashSet<u64> {
         self.roots
             .iter()
             .chain(self.fresh.keys())
             .copied()
+            .chain(self.undo.hashes())
             .collect()
     }
 }
@@ -399,6 +436,11 @@ impl Worker {
         let wrote = {
             let mut g = lock(&self.shared.inner);
             let saved = g.book.observe(moves, looked, docs) | g.book.age_deleted(now_ms());
+            // what could be taken back follows its document, or goes with it
+            for (from, to) in moves {
+                g.undo.moved(from, to);
+            }
+            g.cleanup |= !moves.is_empty();
             Shared::after_change(&mut g, saved)
         };
         self.copy_missing();
@@ -667,6 +709,7 @@ impl ReviewService {
                 // the copies of an earlier run may include some nothing points to
                 cleanup: true,
                 announced: Vec::new(),
+                undo: Stacks::default(),
             }),
             turn: Mutex::new(()),
             notify,
@@ -804,6 +847,8 @@ impl ReviewService {
         if self.tx.is_some() {
             let mut g = lock(&self.shared.inner);
             g.book.release(&resolved.rel);
+            // what could be taken back is let go with the review, and so are the copies it needed
+            g.cleanup |= g.undo.clear(&resolved.rel);
             let wrote = Shared::after_change(&mut g, false);
             drop(g);
             self.touch(wrote);
@@ -875,6 +920,18 @@ impl ReviewService {
             }
             bare(ViewStatus::Unchanged)
         };
+        // the file differs from the approved version in blank lines, a byte order mark, the final newline or line
+        // endings only: not a change to review, so the file as it is becomes the approved version
+        let approved_as_is = |hash: u64, bytes: &[u8]| {
+            let kept = self.keep_copy(bytes).is_ok_and(|kept| kept.is_some());
+            let settled = kept && self.settle(loaded, |book| book.accept(path, hash)).is_ok();
+            let reviewed = if settled {
+                Some(hash_to_hex(hash))
+            } else {
+                reviewed.clone()
+            };
+            ReviewView::bare(path, ViewStatus::Unchanged, loaded.hash_hex(), reviewed)
+        };
         let with_changes = |status, cmp: &Comparison<'_>| {
             let mut view = bare(status);
             view.changes = changes_view(cmp);
@@ -906,7 +963,7 @@ impl ReviewService {
                     (None, _) => {
                         let cmp = Comparison::new("", current);
                         if cmp.changes().is_empty() {
-                            unchanged()
+                            approved_as_is(*hash, bytes)
                         } else {
                             with_changes(ViewStatus::New, &cmp)
                         }
@@ -919,7 +976,7 @@ impl ReviewService {
                         };
                         let cmp = Comparison::new(approved, current);
                         if cmp.changes().is_empty() {
-                            unchanged()
+                            approved_as_is(*hash, bytes)
                         } else {
                             with_changes(ViewStatus::Changes, &cmp)
                         }
@@ -965,22 +1022,31 @@ impl ReviewService {
 
     // ---- keeping -------------------------------------------------------------------------------
 
-    /// Sets the baseline of the document with `change` of the book, if it still is what `loaded` found.
+    /// Sets the baseline of the document with `change` of the book, if it still is what `loaded` found. Answers with
+    /// where the document stood before and stands now.
     fn settle(
         &self,
         loaded: &Loaded,
         change: impl FnOnce(&mut Book) -> bool,
-    ) -> Result<(), ReviewError> {
+    ) -> Result<(Standing, Standing), ReviewError> {
         let mut g = lock(&self.shared.inner);
         if g.book.baseline(&loaded.rel) != loaded.baseline {
             return Err(ReviewError::Stale(loaded.rel.clone()));
         }
+        let before = g.book.standing(&loaded.rel);
         let saved = change(&mut g.book);
+        let after = g.book.standing(&loaded.rel);
         let wrote = Shared::after_change(&mut g, saved);
         drop(g);
         self.touch(wrote);
         self.announcer.announce();
-        Ok(())
+        Ok((before, after))
+    }
+
+    /// A keep is done: it can be taken back.
+    fn kept(&self, rel: &str, (before, after): (Standing, Standing)) {
+        let mut g = lock(&self.shared.inner);
+        g.undo.push(rel, Step::Kept { before, after });
     }
 
     /// Keeps change `index`: it becomes part of the approved version.
@@ -1002,7 +1068,8 @@ impl ReviewService {
             .keep_copy(kept.as_bytes())
             .map_err(|e| ReviewError::io(&loaded.rel, e))?
             .ok_or_else(|| EditError::TooLarge(loaded.rel.clone()))?;
-        self.settle(&loaded, |book| book.set_baseline(&loaded.rel, hash))?;
+        let standing = self.settle(&loaded, |book| book.set_baseline(&loaded.rel, hash))?;
+        self.kept(&loaded.rel, standing);
         self.view(&loaded.rel)
     }
 
@@ -1015,16 +1082,17 @@ impl ReviewService {
     }
 
     fn keep_all_of(&self, loaded: &Loaded) -> Result<ReviewView, ReviewError> {
-        match &loaded.disk {
+        let standing = match &loaded.disk {
             Disk::Gone => self.settle(loaded, |book| book.forget(&loaded.rel))?,
             Disk::Huge => return Err(EditError::TooLarge(loaded.rel.clone()).into()),
             Disk::File { hash, bytes } => {
                 // a document too large for a copy is approved all the same: it is only ever "changed" after
                 self.keep_copy(bytes)
                     .map_err(|e| ReviewError::io(&loaded.rel, e))?;
-                self.settle(loaded, |book| book.accept(&loaded.rel, *hash))?;
+                self.settle(loaded, |book| book.accept(&loaded.rel, *hash))?
             }
-        }
+        };
+        self.kept(&loaded.rel, standing);
         self.view(&loaded.rel)
     }
 
@@ -1039,7 +1107,7 @@ impl ReviewService {
             return self.restore_of(&loaded);
         }
         if loaded.baseline.is_none() {
-            return Ok(Reverted::NewDocument);
+            return Self::to_discard(&loaded, Some(index));
         }
         let current = Self::current_text(&loaded)?;
         let cmp = Comparison::new(Self::baseline_text(&loaded)?, current);
@@ -1053,7 +1121,7 @@ impl ReviewService {
     }
 
     /// Reverts all changes: the approved text is written over the file. For a deleted document, the document is
-    /// put back; for a new one, the caller deletes it.
+    /// put back; for a new one, the caller sends it to the recycle bin (see [`ReviewService::discard`]).
     pub fn revert_all(&self, path: &str, basis: &Basis) -> Result<Reverted, ReviewError> {
         let loaded = self.load(path)?;
         Self::check(&loaded, basis)?;
@@ -1061,11 +1129,55 @@ impl ReviewService {
             return self.restore_of(&loaded);
         }
         if loaded.baseline.is_none() {
-            return Ok(Reverted::NewDocument);
+            return Self::to_discard(&loaded, None);
         }
         Self::current_text(&loaded)?;
         let text = Self::baseline_text(&loaded)?.to_owned();
         self.write_file(&loaded, &text)
+    }
+
+    /// What there is to send away of a document that was never approved. Only a document the review shows as new
+    /// can be: one that is too large or not text, or has nothing in it, was never shown as something to revert.
+    /// `index` is the change asked for, when it is one.
+    fn to_discard(loaded: &Loaded, index: Option<usize>) -> Result<Reverted, ReviewError> {
+        let text = Self::current_text(loaded)?;
+        let changes = Comparison::new("", text).changes().len();
+        let shown = changes > 0 && index.is_none_or(|index| index < changes);
+        let Disk::File { hash, .. } = &loaded.disk else {
+            return Err(ReviewError::Stale(loaded.rel.clone()));
+        };
+        if !shown {
+            return Err(ReviewError::Stale(loaded.rel.clone()));
+        }
+        Ok(Reverted::NewDocument(NewDocument {
+            rel: loaded.rel.clone(),
+            hash: *hash,
+            text: text.to_owned(),
+        }))
+    }
+
+    /// Sends a document that was never approved away, with `remove` (the caller's: the recycle bin), after looking
+    /// at the file once more: it is removed only if it still is what the review showed, and what it held can be
+    /// brought back with [`ReviewService::undo`].
+    pub fn discard<E: From<ReviewError>>(
+        &self,
+        gone: NewDocument,
+        remove: impl FnOnce(&str) -> Result<(), E>,
+    ) -> Result<(), E> {
+        let resolved = self.vault.resolve(&gone.rel).map_err(ReviewError::from)?;
+        let now = match read_with_retry(&resolved.abs) {
+            Ok(bytes) => Some(hash_bytes(&bytes)),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => None,
+            Err(e) => return Err(ReviewError::io(&gone.rel, e).into()),
+        };
+        if now != Some(gone.hash) {
+            return Err(ReviewError::Stale(gone.rel).into());
+        }
+        remove(&gone.rel)?;
+        lock(&self.shared.inner)
+            .undo
+            .push(&gone.rel, Step::Discarded { text: gone.text });
+        Ok(())
     }
 
     /// Writes `text` over the file of `loaded`, unless the file changed since it was read.
@@ -1073,14 +1185,27 @@ impl ReviewService {
         let Some(old_hash) = loaded.hash_hex() else {
             return Err(ReviewError::Stale(loaded.rel.clone()));
         };
+        let before = Self::current_text(loaded)?;
         // the copy first: the version that is read next is this one
         self.keep_copy(text.as_bytes())
             .map_err(|e| ReviewError::io(&loaded.rel, e))?;
         match Editor::new(&self.vault, &self.own).save(&loaded.rel, text, &old_hash)? {
-            SaveOutcome::Saved { hash, .. } => Ok(Reverted::Wrote {
-                old_hash,
-                new_hash: hash,
-            }),
+            SaveOutcome::Saved { hash, .. } => {
+                if let Some(after_hash) = crate::unread::hash_from_hex(&hash) {
+                    lock(&self.shared.inner).undo.push(
+                        &loaded.rel,
+                        Step::Reverted {
+                            text: before.to_owned(),
+                            after_hash,
+                        },
+                    );
+                }
+                Ok(Reverted::Wrote {
+                    rel: loaded.rel.clone(),
+                    old_hash,
+                    new_hash: hash,
+                })
+            }
             SaveOutcome::Conflict { .. } => Err(ReviewError::Stale(loaded.rel.clone())),
         }
     }
@@ -1108,9 +1233,72 @@ impl ReviewService {
             std::fs::create_dir_all(folder).map_err(|e| ReviewError::io(&loaded.rel, e))?;
         }
         match Editor::new(&self.vault, &self.own).create(&loaded.rel, text) {
-            Ok(created) => Ok(Reverted::Restored { hash: created.hash }),
+            Ok(created) => Ok(Reverted::Restored {
+                rel: loaded.rel.clone(),
+                hash: created.hash,
+            }),
             Err(EditError::Exists(_)) => Err(ReviewError::Stale(loaded.rel.clone())),
             Err(e) => Err(e.into()),
+        }
+    }
+
+    // ---- undo ----------------------------------------------------------------------------------
+
+    /// Takes back the last keep or revert of the document that is still there to take back, newest first. Each is
+    /// done only if nothing else happened to what it touched meanwhile: a keep, if the document still stands where
+    /// that left it; a revert, if the file still holds what that left in it; the removal of a new document, if
+    /// nothing is at its place. Otherwise it fails with [`ReviewError::Stale`] and nothing is written. A step that
+    /// cannot be taken back is dropped, so that the ones before it can be. With no step left to take back, that is
+    /// the answer too.
+    pub fn undo(&self, path: &str) -> Result<Undone, ReviewError> {
+        self.enabled()?;
+        let resolved = self.vault.resolve(path)?;
+        if !is_markdown_path(Path::new(&resolved.rel)) {
+            return Err(EditError::NotMarkdown(resolved.rel).into());
+        }
+        let rel = resolved.rel;
+        let stale = || ReviewError::Stale(rel.clone());
+        let step = {
+            let mut g = lock(&self.shared.inner);
+            let step = g.undo.pop(&rel);
+            // its copies may be let go if nothing needs them any more
+            g.cleanup = true;
+            step.ok_or_else(stale)?
+        };
+        match step {
+            Step::Kept { before, after } => {
+                let mut g = lock(&self.shared.inner);
+                let saved = g
+                    .book
+                    .restore_standing(&rel, after, before)
+                    .ok_or_else(stale)?;
+                let wrote = Shared::after_change(&mut g, saved);
+                drop(g);
+                self.touch(wrote);
+                self.announcer.announce();
+                Ok(Undone::Kept)
+            }
+            Step::Reverted { text, after_hash } => {
+                // the copy first, as when it was reverted: the version that is read next is this one
+                self.keep_copy(text.as_bytes())
+                    .map_err(|e| ReviewError::io(&rel, e))?;
+                let expected = hash_to_hex(after_hash);
+                match Editor::new(&self.vault, &self.own).save(&rel, &text, &expected)? {
+                    SaveOutcome::Saved { hash, .. } => Ok(Undone::Wrote {
+                        rel: rel.clone(),
+                        old_hash: expected,
+                        new_hash: hash,
+                    }),
+                    SaveOutcome::Conflict { .. } => Err(stale()),
+                }
+            }
+            Step::Discarded { text } => {
+                match Editor::new(&self.vault, &self.own).create(&rel, &text) {
+                    Ok(_) => Ok(Undone::Recreated { rel: rel.clone() }),
+                    Err(EditError::Exists(_)) => Err(stale()),
+                    Err(e) => Err(e.into()),
+                }
+            }
         }
     }
 

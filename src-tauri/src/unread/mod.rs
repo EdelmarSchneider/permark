@@ -42,8 +42,8 @@ pub trait ReadObserver: Send + Sync {
     /// the [`ReadObserver::changed`] that follows, which says so.
     fn reading(&self, path: &str, hash: u64, bytes: &[u8]);
 
-    /// Something changed. `moves` are the documents that moved since the last call (`(from, to)`); `docs` is
-    /// every document now, sorted; `looked` says whether the disk has been looked at (before that, no document
+    /// Something changed. `moves` are the documents that moved since the last call (`(from, to)`; `to` is empty for a
+    /// document the app deleted, which the follower forgets); `docs` is every document now, sorted; `looked` says whether the disk has been looked at (before that, no document
     /// has a `current` hash). Called under the service's lock, so the calls arrive in order and must return
     /// quickly.
     fn changed(&self, moves: Vec<(String, String)>, looked: bool, docs: Vec<DocState>);
@@ -51,9 +51,9 @@ pub trait ReadObserver: Send + Sync {
 
 use crate::render::markdown::is_markdown_path;
 use crate::session::write_local_state;
-use crate::util::{hash_bytes, modified_ms, read_with_retry, Coalescer};
+use crate::util::{hash_bytes, modified_ms, now_ms, read_with_retry, Coalescer};
 use crate::vault::{key, NodeKind, Vault, VaultError, WalkItem};
-use crate::watch::{FsChange, PathFilter, Verdict};
+use crate::watch::{ChangeKind, FsChange, PathFilter, Verdict};
 
 /// Documents larger than this are not tracked (hashing them would stall the thread).
 const MAX_HASHED_BYTES: u64 = 32 * 1024 * 1024;
@@ -605,6 +605,31 @@ impl UnreadService {
             let wrote = self.shared.update(|tracker| tracker.renamed(from, to));
             self.touch(wrote);
         }
+    }
+
+    /// The app sent files and folders to the recycle bin: what was kept of the documents among them is forgotten,
+    /// and a follower is told they are gone for good (see [`Tracker::deleted`]), not that they went missing.
+    pub fn deleted(&self, paths: &[String]) {
+        if self.tx.is_some() && !paths.is_empty() {
+            let wrote = self.shared.update(|tracker| {
+                paths
+                    .iter()
+                    .fold(false, |wrote, path| tracker.deleted(path) | wrote)
+            });
+            self.touch(wrote);
+        }
+    }
+
+    /// The app put a document back where it had been (it undid a delete): the document is looked at, as the watcher
+    /// would, without waiting for it, which may not notice a file that went and came back within one of its quiet
+    /// periods. The document is there, and not read.
+    pub fn appeared(&self, path: &str) {
+        self.apply(&[FsChange {
+            kind: ChangeKind::Created,
+            path: path.to_owned(),
+            from: None,
+            at_ms: now_ms(),
+        }]);
     }
 
     /// The app rewrote the links in a document (or put them back): its hash was `old` and is `new`.

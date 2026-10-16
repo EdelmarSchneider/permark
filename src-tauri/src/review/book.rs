@@ -53,6 +53,21 @@ impl Version {
     }
 }
 
+/// Where a document stands with its approved version: the version it is compared with is the held one, else the
+/// approved one. Keeping and reverting move it, and undoing puts it back ([`Book::restore_standing`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Standing {
+    pub reviewed: Option<u64>,
+    pub held: Option<u64>,
+}
+
+impl Standing {
+    /// The hashes whose copies this standing needs.
+    pub fn hashes(&self) -> impl Iterator<Item = u64> {
+        [self.reviewed, self.held].into_iter().flatten()
+    }
+}
+
 /// A document that is gone is forgotten (and its copy let go) after this long.
 const DELETED_KEPT_FOR_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 
@@ -163,6 +178,45 @@ impl Book {
     /// that was never approved.
     pub fn baseline(&self, path: &str) -> Option<u64> {
         self.held(path).or_else(|| self.reviewed(path))
+    }
+
+    /// Where a document stands.
+    pub fn standing(&self, path: &str) -> Standing {
+        Standing {
+            reviewed: self.reviewed(path),
+            held: self.held(path),
+        }
+    }
+
+    /// Puts a document back from where it stands now to `to`, if it still stands at `from`: how undoing a keep is
+    /// done. `None` when it stands somewhere else. Otherwise whether `reviewed.json` changed.
+    pub fn restore_standing(&mut self, path: &str, from: Standing, to: Standing) -> Option<bool> {
+        if self.standing(path) != from {
+            return None;
+        }
+        let k = key(path);
+        let before = self.reviewed.get(&k).cloned();
+        match to.reviewed {
+            Some(hash) => {
+                let version = self
+                    .reviewed
+                    .entry(k.clone())
+                    .or_insert_with(|| Version::new(path, hash));
+                version.hash = hash;
+            }
+            None => {
+                self.reviewed.remove(&k);
+            }
+        }
+        match to.held {
+            Some(hash) => {
+                self.held.insert(k.clone(), hash);
+            }
+            None => {
+                self.held.remove(&k);
+            }
+        }
+        Some(self.reviewed.get(&k).map(|v| v.hash) != before.map(|v| v.hash))
     }
 
     /// The versions that are held, with the path of their document.

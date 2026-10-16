@@ -61,6 +61,7 @@
     "review_keep_all": ["path", "hash", "reviewed_hash"],
     "review_revert_all": ["path", "hash", "reviewed_hash"],
     "review_restore_deleted": ["path", "hash", "reviewed_hash"],
+    "review_undo": ["path"],
     "review_release": ["path"],
     "set_agent_connection": ["enabled"],
     "agent_status": [],

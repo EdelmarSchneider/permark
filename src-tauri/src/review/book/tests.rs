@@ -568,3 +568,66 @@ fn a_reading_of_a_document_that_the_project_does_not_have_is_forgotten() {
     book.observe(&[], true, &[]);
     assert!(book.opened.is_empty());
 }
+
+// ---- undoing a keep ----
+
+#[test]
+fn a_document_can_be_put_back_where_it_stood_if_it_still_stands_where_it_was_left() {
+    let mut book = seen(&[], &[doc("a.md", Some(2), Some(1))]);
+    let before = book.standing("a.md");
+    assert_eq!(
+        before,
+        Standing {
+            reviewed: Some(1),
+            held: None
+        }
+    );
+    // a change is kept: the approved version moves to 5
+    assert!(book.set_baseline("a.md", 5));
+    let after = book.standing("a.md");
+    assert_eq!(after.reviewed, Some(5));
+    // it stands at `after`, so it goes back
+    assert_eq!(book.restore_standing("a.md", after, before), Some(true));
+    assert_eq!(book.standing("a.md"), before);
+    // and now it no longer stands at `after`
+    assert_eq!(book.restore_standing("a.md", after, before), None);
+}
+
+#[test]
+fn a_held_version_is_put_back_too() {
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
+    book.opening("a.md", 2);
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
+    let before = book.standing("a.md");
+    assert_eq!((before.reviewed, before.held), (Some(2), Some(1)));
+    book.set_baseline("a.md", 2); // the last change is kept: nothing is left to review
+    assert_eq!(book.held("a.md"), None);
+    let after = book.standing("a.md");
+    assert_eq!(book.restore_standing("a.md", after, before), Some(false));
+    assert_eq!(book.standing("a.md"), before);
+    assert_eq!(book.entries(), [entry("a.md", Status::Changed)]);
+}
+
+#[test]
+fn a_forgotten_document_is_put_back_with_its_version() {
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    book.observe(&[], true, &[]);
+    let before = book.standing("a.md");
+    book.forget("a.md");
+    let after = book.standing("a.md");
+    assert_eq!(after, Standing::default());
+    assert_eq!(book.restore_standing("a.md", after, before), Some(true));
+    assert_eq!(book.reviewed("a.md"), Some(1));
+    assert_eq!(book.entries(), [entry("a.md", Status::Deleted)]);
+}
+
+#[test]
+fn a_standing_knows_which_copies_it_needs() {
+    let standing = Standing {
+        reviewed: Some(3),
+        held: Some(4),
+    };
+    assert_eq!(standing.hashes().collect::<Vec<_>>(), [3, 4]);
+    assert_eq!(Standing::default().hashes().count(), 0);
+}

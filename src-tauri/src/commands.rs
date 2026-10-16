@@ -828,6 +828,15 @@ pub async fn review_restore_deleted(
     blocking(move || ws.review_restore(&path, &basis)).await
 }
 
+/// Takes back the last keep or revert of a document that can still be taken back (the steps are kept until the review
+/// of the document is closed). Fails with kind `reviewStale`, and writes nothing, when the document is not what that step
+/// left, or when there is no step left. Answers with the review as it is now.
+#[tauri::command]
+pub async fn review_undo(state: State<'_, AppState>, path: String) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.review_undo(&path)).await
+}
+
 /// The review of a document is closed (the person left it): the version kept for it is let go.
 #[tauri::command]
 pub async fn review_release(state: State<'_, AppState>, path: String) -> Result<(), AppError> {

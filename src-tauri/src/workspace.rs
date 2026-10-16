@@ -24,7 +24,7 @@ use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::fileops::{
     BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers, Move,
-    MoveOutcome, MovePreview, OsRecycler, UndoOutcome,
+    MoveOutcome, MovePreview, OsRecycler, Recycler, UndoOutcome,
 };
 use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
@@ -41,7 +41,7 @@ use crate::refs::ImageRefs;
 use crate::render::{self, DocumentView, Registry};
 use crate::review::{
     Basis as ReviewBasis, Entry as ReviewEntry, GitBlobs, Paths as ReviewPaths, Reverted,
-    ReviewService, ReviewView,
+    ReviewService, ReviewView, Undone,
 };
 use crate::search::indexer::{IndexWorker, Indexer};
 use crate::search::{Bm25Index, SearchHit, SearchProvider};
@@ -594,6 +594,7 @@ impl Workspace {
             sink,
             start_watcher,
             WorkspaceKind::Project,
+            Arc::new(OsRecycler),
         )
     }
 
@@ -613,10 +614,12 @@ impl Workspace {
             sink,
             start_watcher,
             WorkspaceKind::Notes,
+            Arc::new(OsRecycler),
         )
     }
 
-    /// [`Workspace::open`] with the way the watcher is started as a parameter (tests make it fail).
+    /// [`Workspace::open`] with the way the watcher is started and the recycle bin as parameters (tests make the
+    /// watcher fail, and keep their files out of the system's bin).
     // It wires every part of an open folder together, one after the other; each part has its own helper already.
     #[allow(clippy::too_many_lines)]
     fn open_with(
@@ -626,6 +629,7 @@ impl Workspace {
         sink: &Arc<dyn EventSink>,
         watch: StartWatcher,
         kind: WorkspaceKind,
+        recycler: Arc<dyn Recycler>,
     ) -> Result<Self, AppError> {
         let vault = Vault::open(path)?;
         let notes_kind = kind == WorkspaceKind::Notes;
@@ -729,7 +733,7 @@ impl Workspace {
                 unread: Arc::clone(&unread),
                 comments: Arc::clone(&comments),
             }),
-            Arc::new(OsRecycler),
+            recycler,
         );
 
         let git_sink = Arc::clone(sink);
@@ -1097,7 +1101,11 @@ impl Workspace {
 
     /// Sends files and folders to the recycle bin.
     pub fn delete_entries(&self, paths: &[String]) -> Result<DeleteOutcome, AppError> {
-        Ok(self.file_ops()?.delete(paths)?)
+        let outcome = self.file_ops()?.delete(paths)?;
+        // The person deleted these: for the markers and the review they are gone for good, not documents that went
+        // missing and are to be reported as deleted.
+        self.unread.deleted(&outcome.deleted);
+        Ok(outcome)
     }
 
     pub fn new_folder(&self, path: &str) -> Result<CreatedFolder, AppError> {
@@ -1422,7 +1430,13 @@ impl Workspace {
 
     /// Keeps all the changes of a document, or accepts its deletion.
     pub fn review_keep_all(&self, path: &str, basis: &ReviewBasis) -> Result<ReviewView, AppError> {
-        Ok(self.review.keep_all(path, basis)?)
+        let view = self.review.keep_all(path, basis)?;
+        // Keeping everything is reading it, as saving it would be: the document counts as read. (Keeping one change
+        // leaves the rest to review, and the document as it is.)
+        if let Some(hash) = &view.hash {
+            self.unread.mark_written(path, hash);
+        }
+        Ok(view)
     }
 
     /// Reverts change `index`: the old text is written back into the file, unless it changed since the review was drawn.
@@ -1456,6 +1470,23 @@ impl Workspace {
         self.finish_revert(path, restored)
     }
 
+    /// Takes back the last keep or revert of a document that can still be taken back: nothing is written if the
+    /// document is not what it left. Answers with the review as it is after.
+    pub fn review_undo(&self, path: &str) -> Result<ReviewView, AppError> {
+        self.require_writable()?;
+        match self.review.undo(path)? {
+            Undone::Kept => {}
+            // the watcher may not notice a file that went and came back before its next quiet moment
+            Undone::Recreated { rel } => self.unread.appeared(&rel),
+            Undone::Wrote {
+                rel,
+                old_hash,
+                new_hash,
+            } => self.unread.rewritten(&rel, &old_hash, &new_hash),
+        }
+        Ok(self.review.view(path)?)
+    }
+
     /// The review of a document is closed: what was not reviewed counts as approved.
     pub fn review_release(&self, path: &str) -> Result<(), AppError> {
         Ok(self.review.release(path)?)
@@ -1465,13 +1496,18 @@ impl Workspace {
     /// that was read stays read; a new document goes to the recycle bin.
     fn finish_revert(&self, path: &str, reverted: Reverted) -> Result<ReviewView, AppError> {
         match reverted {
-            Reverted::Wrote { old_hash, new_hash } => {
-                self.unread.rewritten(path, &old_hash, &new_hash);
-            }
-            Reverted::Restored { hash } => self.unread.mark_written(path, &hash),
-            Reverted::NewDocument => {
-                self.file_ops()?.delete(&[path.to_owned()])?;
-            }
+            Reverted::Wrote {
+                rel,
+                old_hash,
+                new_hash,
+            } => self.unread.rewritten(&rel, &old_hash, &new_hash),
+            Reverted::Restored { rel, hash } => self.unread.mark_written(&rel, &hash),
+            // looked at once more just before it goes, and the review can bring it back
+            Reverted::NewDocument(gone) => self.review.discard(gone, |rel| {
+                let outcome = self.file_ops()?.delete(&[rel.to_owned()])?;
+                self.unread.deleted(&outcome.deleted);
+                Ok::<(), AppError>(())
+            })?,
         }
         Ok(self.review.view(path)?)
     }
@@ -3313,6 +3349,8 @@ exclude = [\"archive/**\"]
         ws.close();
     }
 
+    use crate::review::Status as ReviewStatus;
+
     const PLAN_V0: &str = "# Plan\n\nThe launch is planned for June and the team is ready.\n\nBudget stays the same.\n\n- one\n- two\n";
     const PLAN_V1: &str = "# Plan\n\nThe launch is planned for July and the team is ready.\n\nBudget stays the same.\n\n- one\n- two\n- three\n\nExtra note added by the agent.\n";
 
@@ -3417,6 +3455,204 @@ exclude = [\"archive/**\"]
             Some("reviewOff")
         );
         single.close();
+    }
+
+    /// A recycle bin that is a folder of the test's own, so that the system's is left alone.
+    struct Bin(PathBuf);
+
+    impl Recycler for Bin {
+        fn recycle(&self, paths: &[PathBuf]) -> Result<(), String> {
+            std::fs::create_dir_all(&self.0).map_err(|e| e.to_string())?;
+            for (n, path) in paths.iter().enumerate() {
+                let name = path.file_name().map_or_else(
+                    || "item".to_owned(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                let to = self.0.join(format!("{n}-{name}"));
+                std::fs::rename(path, to).map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        }
+    }
+
+    impl Fx {
+        /// A workspace whose deletes go to a folder of the test's own.
+        fn open_with_bin(&self) -> (Workspace, PathBuf) {
+            let bin = self.app.path().join("bin");
+            let sink = sink_of(&self.rec);
+            let ws = Workspace::open_with(
+                self.project.path(),
+                self.app.path(),
+                None,
+                &sink,
+                start_watcher,
+                WorkspaceKind::Project,
+                Arc::new(Bin(bin.clone())),
+            )
+            .expect("open");
+            (ws, bin)
+        }
+    }
+
+    #[test]
+    fn what_the_person_deletes_is_forgotten_not_reported_as_deleted() {
+        let fx = Fx::new();
+        write(fx.project.path(), "plan.md", PLAN_V0);
+        write(fx.project.path(), "docs/guide.md", "# Guide\n");
+        write(fx.project.path(), "keep.md", "# Keep\n");
+        let (ws, _bin) = fx.open_with_bin();
+        ws.unread.flush();
+        ws.review.flush();
+
+        ws.delete_entries(&["plan.md".to_owned(), "docs".to_owned()])
+            .expect("delete");
+        ws.review.flush();
+        assert!(
+            ws.review_list()
+                .iter()
+                .all(|e| e.status != ReviewStatus::Deleted),
+            "{:?}",
+            ws.review_list()
+        );
+        // the watcher has its say a moment later, and that changes nothing
+        write(fx.project.path(), "later.md", "# Later\n");
+        wait_until("later.md to be unread", || ws.unread() == ["later.md"]);
+        ws.review.flush();
+        assert_eq!(
+            ws.review_list(),
+            [ReviewEntry {
+                path: "later.md".to_owned(),
+                status: ReviewStatus::New
+            }]
+        );
+        assert_eq!(
+            ws.review_get("plan.md").expect("view").status,
+            crate::review::ViewStatus::Unchanged
+        );
+        // an agent that deletes a document is another matter: that is reported
+        std::fs::remove_file(fx.project.path().join("keep.md")).expect("remove");
+        wait_until("the review to list keep.md as deleted", || {
+            ws.review_list()
+                .iter()
+                .any(|e| e.path == "keep.md" && e.status == ReviewStatus::Deleted)
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn keeping_everything_counts_as_reading_the_document_and_keeping_one_change_does_not() {
+        let fx = Fx::new();
+        write(fx.project.path(), "plan.md", PLAN_V0);
+        let ws = fx.open();
+        ws.unread.flush();
+        ws.review.flush();
+        write(fx.project.path(), "plan.md", PLAN_V1);
+        wait_until("plan.md to be unread", || ws.unread() == ["plan.md"]);
+        wait_until("the review to list plan.md", || ws.review_list().len() == 1);
+
+        let view = ws.review_get("plan.md").expect("view");
+        assert_eq!(view.changes.len(), 2);
+        let view = ws
+            .review_keep("plan.md", &review_basis(&view), 0)
+            .expect("keep");
+        ws.unread.flush();
+        assert_eq!(ws.unread(), ["plan.md"], "the rest is still to review");
+        let view = ws
+            .review_keep_all("plan.md", &review_basis(&view))
+            .expect("keep all");
+        assert_eq!(view.status, crate::review::ViewStatus::Unchanged);
+        ws.unread.flush();
+        assert_eq!(ws.unread(), NOTHING, "it counts as read");
+        ws.close();
+    }
+
+    #[test]
+    fn a_new_document_reverted_goes_to_the_bin_and_comes_back_with_undo() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let (ws, bin) = fx.open_with_bin();
+        ws.unread.flush();
+        ws.review.flush();
+        let text = "# New\n\nWritten by an agent.\n";
+        write(fx.project.path(), "new.md", text);
+        wait_until("new.md to be listed", || {
+            ws.review_list()
+                .iter()
+                .any(|e| e.path == "new.md" && e.status == ReviewStatus::New)
+        });
+        let view = ws.review_get("new.md").expect("view");
+        assert_eq!(view.status, crate::review::ViewStatus::New);
+
+        let after = ws
+            .review_revert_all("new.md", &review_basis(&view))
+            .expect("revert all");
+        assert_eq!(after.status, crate::review::ViewStatus::Unchanged);
+        assert!(!fx.project.path().join("new.md").exists());
+        assert_eq!(std::fs::read_dir(&bin).expect("bin").count(), 1);
+        ws.unread.flush();
+        assert_eq!(ws.unread(), NOTHING, "gone for the markers at once");
+        ws.review.flush();
+        assert!(ws.review_list().is_empty(), "{:?}", ws.review_list());
+
+        // and the review can bring it back, as it was
+        ws.review_undo("new.md").expect("undo");
+        assert_eq!(
+            std::fs::read_to_string(fx.project.path().join("new.md")).expect("read"),
+            text
+        );
+        wait_until("new.md to be listed again", || {
+            ws.review_list()
+                .iter()
+                .any(|e| e.path == "new.md" && e.status == ReviewStatus::New)
+        });
+        ws.close();
+    }
+
+    #[test]
+    fn undoing_a_revert_keeps_a_read_document_read_and_writes_nothing_over_a_newer_file() {
+        let fx = Fx::new();
+        write(fx.project.path(), "plan.md", PLAN_V0);
+        let ws = fx.open();
+        ws.unread.flush();
+        ws.review.flush();
+        write(fx.project.path(), "plan.md", PLAN_V1);
+        wait_until("plan.md to be unread", || ws.unread() == ["plan.md"]);
+        ws.mark_read("plan.md").expect("read");
+        ws.unread.flush();
+        ws.review.flush();
+        let view = ws.review_get("plan.md").expect("view");
+        ws.review_revert("plan.md", &review_basis(&view), 1)
+            .expect("revert");
+        let view = ws.review_undo("plan.md").expect("undo");
+        assert_eq!(view.changes.len(), 2, "both changes are back");
+        assert_eq!(
+            std::fs::read_to_string(fx.project.path().join("plan.md")).expect("read"),
+            PLAN_V1
+        );
+        ws.unread.flush();
+        assert_eq!(
+            ws.unread(),
+            NOTHING,
+            "it is the app's own write: still read"
+        );
+
+        // a revert, then the agent writes again: undoing would overwrite its work
+        let view = ws.review_get("plan.md").expect("view");
+        ws.review_revert("plan.md", &review_basis(&view), 1)
+            .expect("revert");
+        write(
+            fx.project.path(),
+            "plan.md",
+            "# Plan\n\nThe agent was here again.\n",
+        );
+        let refused = ws.review_undo("plan.md").err();
+        assert_eq!(refused.map(|e| e.kind()), Some("reviewStale"));
+        assert_eq!(
+            std::fs::read_to_string(fx.project.path().join("plan.md")).expect("read"),
+            "# Plan\n\nThe agent was here again.\n"
+        );
+        let _ = view;
+        ws.close();
     }
 
     #[test]
@@ -3787,6 +4023,7 @@ exclude = [\"archive/**\"]
                 )
             },
             WorkspaceKind::Project,
+            Arc::new(OsRecycler),
         )
         .expect("the folder opens anyway");
         assert!(!ws.info().live_updates);

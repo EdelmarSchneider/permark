@@ -623,6 +623,7 @@ fn reverting_a_change_writes_the_old_text_back_and_leaves_the_approved_version_a
     assert_eq!(
         reverted,
         Reverted::Wrote {
+            rel: "a.md".to_owned(),
             old_hash: hex(V1),
             new_hash: hex(expected)
         }
@@ -706,6 +707,7 @@ fn reverting_all_writes_the_approved_text_exactly() {
     assert_eq!(
         reverted,
         Reverted::Wrote {
+            rel: "a.md".to_owned(),
             old_hash: hex(V1),
             new_hash: hex(V0)
         }
@@ -740,15 +742,20 @@ fn reverting_a_new_document_is_left_to_the_caller_and_touches_nothing() {
     let fx = Fx::new(&[("new.md", "# New\n")]);
     let service = fx.service();
     tell(&service, &[doc("new.md", Some("# New\n"), None)]);
+    let gone = NewDocument {
+        rel: "new.md".to_owned(),
+        hash: h("# New\n"),
+        text: "# New\n".to_owned(),
+    };
     let reverted = service
         .revert("new.md", &basis(Some("# New\n"), None), 0)
         .expect("revert");
-    assert_eq!(reverted, Reverted::NewDocument);
+    assert_eq!(reverted, Reverted::NewDocument(gone.clone()));
     assert_eq!(fx.read("new.md"), "# New\n");
     let reverted = service
         .revert_all("new.md", &basis(Some("# New\n"), None))
         .expect("revert");
-    assert_eq!(reverted, Reverted::NewDocument);
+    assert_eq!(reverted, Reverted::NewDocument(gone));
     service.stop();
 }
 
@@ -763,7 +770,13 @@ fn a_deleted_document_is_put_back_exactly_as_it_was_approved() {
     let restored = service
         .restore("docs/deep/a.md", &basis(None, Some(text)))
         .expect("restore");
-    assert_eq!(restored, Reverted::Restored { hash: hex(text) });
+    assert_eq!(
+        restored,
+        Reverted::Restored {
+            rel: "docs/deep/a.md".to_owned(),
+            hash: hex(text)
+        }
+    );
     assert_eq!(
         fs::read(fx.project.path().join("docs/deep/a.md")).expect("read"),
         text.as_bytes()
@@ -817,7 +830,9 @@ fn keeping_and_reverting_work_on_the_version_held_for_the_review() {
         "the held version moved"
     );
     // the revert of the rest is the app's own write: it stays read
-    let Reverted::Wrote { old_hash, new_hash } = service
+    let Reverted::Wrote {
+        old_hash, new_hash, ..
+    } = service
         .revert("a.md", &basis(Some(V1), Some(kept)), 0)
         .expect("revert")
     else {
@@ -994,7 +1009,9 @@ fn followed_from_the_unread_markers_a_review_lives_through_reading_and_reverting
     assert_eq!(view.changes.len(), 2);
 
     // reverting one change is the app's own doing: the document stays read
-    let Reverted::Wrote { old_hash, new_hash } = review
+    let Reverted::Wrote {
+        old_hash, new_hash, ..
+    } = review
         .revert("a.md", &basis(Some(V1), Some(V0)), 0)
         .expect("revert")
     else {
@@ -1263,4 +1280,424 @@ fn with_nothing_queued_behind_it_a_look_is_taken_as_it_is() {
     assert_eq!(gathered.moves.len(), 1);
     assert_eq!(gathered.docs, only);
     assert!(rest.is_none());
+}
+// ---- undo ----
+
+#[test]
+fn a_keep_is_taken_back_and_the_copies_it_needs_outlive_the_clean_up() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    let view = service
+        .keep("a.md", &basis(Some(V1), Some(V0)), 0)
+        .expect("keep");
+    assert_eq!(view.changes.len(), 1);
+    // the approved version moved on, and nothing but the step to take it back points to V0 now
+    service.age_copies();
+    service.flush();
+    assert!(
+        fx.copies().contains(&h(V0)),
+        "the copy of the version before the keep is spared"
+    );
+    assert_eq!(service.undo("a.md").expect("undo"), Undone::Kept);
+    let view = service.view("a.md").expect("view");
+    assert_eq!(view.reviewed_hash, Some(hex(V0)));
+    assert_eq!(view.status, ViewStatus::Changes);
+    assert_eq!(view.changes.len(), 2, "both changes are to review again");
+    assert_eq!(fx.read("a.md"), V1, "a keep never touches the file");
+    service.stop();
+}
+
+#[test]
+fn closing_the_review_lets_go_of_what_could_have_been_taken_back() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    service
+        .keep("a.md", &basis(Some(V1), Some(V0)), 0)
+        .expect("keep");
+    service.release("a.md").expect("release");
+    assert!(matches!(service.undo("a.md"), Err(ReviewError::Stale(_))));
+    service.age_copies();
+    service.flush();
+    assert!(
+        !fx.copies().contains(&h(V0)),
+        "and the copy that was spared goes"
+    );
+    service.stop();
+}
+
+#[test]
+fn a_revert_is_taken_back_by_writing_the_text_it_replaced_as_the_apps_own_write() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    let Reverted::Wrote { new_hash, .. } = service
+        .revert("a.md", &basis(Some(V1), Some(V0)), 1)
+        .expect("revert")
+    else {
+        panic!("written");
+    };
+    assert_ne!(fx.read("a.md"), V1);
+    assert_eq!(
+        service.undo("a.md").expect("undo"),
+        Undone::Wrote {
+            rel: "a.md".to_owned(),
+            old_hash: new_hash,
+            new_hash: hex(V1)
+        }
+    );
+    assert_eq!(fx.read("a.md"), V1);
+    let view = service.view("a.md").expect("view");
+    assert_eq!((view.changes.len(), view.hash), (2, Some(hex(V1))));
+    service.stop();
+}
+
+#[test]
+fn reverting_and_keeping_everything_are_taken_back_too() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    service
+        .revert_all("a.md", &basis(Some(V1), Some(V0)))
+        .expect("revert all");
+    assert_eq!(fx.read("a.md"), V0);
+    service.undo("a.md").expect("undo");
+    assert_eq!(fx.read("a.md"), V1);
+
+    let view = service
+        .keep_all("a.md", &basis(Some(V1), Some(V0)))
+        .expect("keep all");
+    assert_eq!(view.status, ViewStatus::Unchanged);
+    assert_eq!(service.undo("a.md").expect("undo"), Undone::Kept);
+    let view = service.view("a.md").expect("view");
+    assert_eq!((view.status, view.changes.len()), (ViewStatus::Changes, 2));
+    service.stop();
+}
+
+#[test]
+fn the_deletion_that_was_accepted_is_taken_back_and_the_document_is_listed_as_deleted_again() {
+    let fx = Fx::new(&[("a.md", V0)]);
+    let service = fx.service();
+    tell(&service, &[doc("a.md", Some(V0), Some(V0))]);
+    fx.remove("a.md");
+    tell(&service, &[]);
+    service
+        .keep_all("a.md", &basis(None, Some(V0)))
+        .expect("keep");
+    assert_eq!(service.entries(), Vec::<Entry>::new());
+    service.undo("a.md").expect("undo");
+    assert_eq!(service.entries(), [entry("a.md", Status::Deleted)]);
+    assert!(service.view("a.md").expect("view").restorable);
+    service.stop();
+}
+
+#[test]
+fn the_steps_come_off_last_first_whatever_they_are() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    service
+        .keep("a.md", &basis(Some(V1), Some(V0)), 0)
+        .expect("keep");
+    let kept = "# Plan\n\nThe launch is planned for July and the team is ready.\n\nBudget stays the same.\n\n- one\n- two\n";
+    service
+        .revert("a.md", &basis(Some(V1), Some(kept)), 0)
+        .expect("revert");
+    assert_eq!(fx.read("a.md"), kept);
+    assert!(matches!(
+        service.undo("a.md").expect("undo"),
+        Undone::Wrote { .. }
+    ));
+    assert_eq!(fx.read("a.md"), V1);
+    assert_eq!(service.undo("a.md").expect("undo"), Undone::Kept);
+    assert_eq!(
+        service.view("a.md").expect("view").reviewed_hash,
+        Some(hex(V0))
+    );
+    assert!(
+        matches!(service.undo("a.md"), Err(ReviewError::Stale(_))),
+        "nothing left"
+    );
+    service.stop();
+}
+
+#[test]
+fn a_revert_is_not_taken_back_over_a_file_that_changed_since() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    service
+        .revert("a.md", &basis(Some(V1), Some(V0)), 1)
+        .expect("revert");
+    let after_revert = fx.read("a.md");
+    // the agent writes again
+    let v2 = format!("{after_revert}\nA late addition.\n");
+    fx.write("a.md", &v2);
+    let result = service.undo("a.md");
+    assert!(matches!(result, Err(ReviewError::Stale(_))), "{result:?}");
+    assert_eq!(fx.read("a.md"), v2, "nothing was written");
+    // the step is gone: it could never be taken back now
+    assert!(matches!(service.undo("a.md"), Err(ReviewError::Stale(_))));
+    service.stop();
+}
+
+#[test]
+fn a_keep_is_not_taken_back_once_the_approved_version_moved_some_other_way() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    service
+        .keep("a.md", &basis(Some(V1), Some(V0)), 0)
+        .expect("keep");
+    // everything is marked read meanwhile: V1 is the approved version
+    tell(&service, &[doc("a.md", Some(V1), Some(V1))]);
+    let result = service.undo("a.md");
+    assert!(matches!(result, Err(ReviewError::Stale(_))), "{result:?}");
+    assert_eq!(
+        service.view("a.md").expect("view").reviewed_hash,
+        Some(hex(V1))
+    );
+    service.stop();
+}
+
+#[test]
+fn the_steps_of_a_document_that_moved_move_with_it() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    service
+        .keep("a.md", &basis(Some(V1), Some(V0)), 0)
+        .expect("keep");
+    fs::rename(
+        fx.project.path().join("a.md"),
+        fx.project.path().join("b.md"),
+    )
+    .expect("rename");
+    service.changed(
+        vec![("a.md".to_owned(), "b.md".to_owned())],
+        true,
+        vec![doc("b.md", Some(V1), Some(V0))],
+    );
+    service.flush();
+    assert!(service.undo("a.md").is_err());
+    assert_eq!(service.undo("b.md").expect("undo"), Undone::Kept);
+    service.stop();
+}
+
+#[test]
+fn a_review_that_is_off_or_a_path_that_is_no_document_cannot_be_undone() {
+    let fx = Fx::new(&[("a.md", V0), ("notes.txt", "t")]);
+    let off = ReviewService::off(fx.vault(), Arc::clone(&fx.own));
+    assert!(matches!(off.undo("a.md"), Err(ReviewError::Off)));
+    let service = fx.service();
+    assert!(matches!(
+        service.undo("../outside.md"),
+        Err(ReviewError::Vault(_))
+    ));
+    assert!(matches!(
+        service.undo("notes.txt"),
+        Err(ReviewError::Edit(EditError::NotMarkdown(_)))
+    ));
+    service.stop();
+}
+
+// ---- a new document sent away ----
+
+fn new_document(fx: &Fx, text: &str) -> (ReviewService, NewDocument) {
+    fx.write("new.md", text);
+    let service = fx.service();
+    tell(&service, &[doc("new.md", Some(text), None)]);
+    let Reverted::NewDocument(gone) = service
+        .revert_all("new.md", &basis(Some(text), None))
+        .expect("revert all")
+    else {
+        panic!("a new document");
+    };
+    (service, gone)
+}
+
+#[test]
+fn a_new_document_is_removed_only_if_it_still_is_what_the_review_saw_and_can_be_brought_back() {
+    let fx = Fx::new(&[]);
+    let (service, gone) = new_document(&fx, "# New\n\nText.\n");
+    let removed = std::cell::Cell::new(0);
+    let result = service.discard(gone, |rel| {
+        assert_eq!(rel, "new.md");
+        removed.set(removed.get() + 1);
+        fs::remove_file(fx.project.path().join(rel)).map_err(|e| ReviewError::io(rel, e))
+    });
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(removed.get(), 1);
+    assert!(!fx.project.path().join("new.md").exists());
+
+    // taking it back puts the same text where it was
+    assert_eq!(
+        service.undo("new.md").expect("undo"),
+        Undone::Recreated {
+            rel: "new.md".to_owned()
+        }
+    );
+    assert_eq!(fx.read("new.md"), "# New\n\nText.\n");
+    service.stop();
+}
+
+#[test]
+fn a_new_document_an_agent_wrote_to_after_the_review_was_drawn_is_not_removed() {
+    let fx = Fx::new(&[]);
+    let (service, gone) = new_document(&fx, "# New\n");
+    fx.write("new.md", "# New\n\nAnd a lot more, written a moment ago.\n");
+    let result: Result<(), ReviewError> = service.discard(gone, |_| panic!("not removed"));
+    assert!(matches!(result, Err(ReviewError::Stale(_))), "{result:?}");
+    assert!(fx.project.path().join("new.md").exists());
+    service.stop();
+}
+
+#[test]
+fn a_new_document_that_was_removed_is_not_brought_back_over_a_file_that_is_there_now() {
+    let fx = Fx::new(&[]);
+    let (service, gone) = new_document(&fx, "# New\n");
+    service
+        .discard(gone, |rel| {
+            fs::remove_file(fx.project.path().join(rel)).map_err(|e| ReviewError::io(rel, e))
+        })
+        .expect("discard");
+    fx.write("new.md", "# Somebody else's\n");
+    let result = service.undo("new.md");
+    assert!(matches!(result, Err(ReviewError::Stale(_))), "{result:?}");
+    assert_eq!(fx.read("new.md"), "# Somebody else's\n");
+    service.stop();
+}
+
+#[test]
+fn only_a_document_shown_as_new_can_be_sent_away() {
+    let fx = Fx::new(&[]);
+    let big = "x\n\n".repeat(MAX_COPY_BYTES / 3 + 10);
+    fx.write("big.md", &big);
+    let latin = [b'#', b' ', 0xE9, b'\n'];
+    fs::write(fx.project.path().join("latin.md"), latin).expect("write");
+    let service = fx.service();
+    tell(
+        &service,
+        &[
+            doc("big.md", Some(&big), None),
+            DocState {
+                path: "latin.md".to_owned(),
+                current: Some(hash_bytes(&latin)),
+                read: None,
+            },
+        ],
+    );
+    let too_large = service.revert_all("big.md", &basis(Some(&big), None));
+    assert!(
+        matches!(too_large, Err(ReviewError::Edit(EditError::TooLarge(_)))),
+        "{too_large:?}"
+    );
+    let not_text = Basis {
+        hash: Some(hash_to_hex(hash_bytes(&latin))),
+        reviewed: None,
+    };
+    assert!(matches!(
+        service.revert("latin.md", &not_text, 0),
+        Err(ReviewError::Edit(EditError::Encoding(_)))
+    ));
+    // and a change that is not there
+    fx.write("new.md", "# New\n");
+    tell(
+        &service,
+        &[
+            doc("new.md", Some("# New\n"), None),
+            doc("big.md", Some(&big), None),
+        ],
+    );
+    assert!(matches!(
+        service.revert("new.md", &basis(Some("# New\n"), None), 5),
+        Err(ReviewError::Stale(_))
+    ));
+    assert!(fx.project.path().join("big.md").exists());
+    service.stop();
+}
+
+// ---- a change that cannot be applied alone ----
+
+#[test]
+fn a_keep_or_revert_that_would_leave_other_blocks_than_the_review_showed_is_refused() {
+    // putting the dashes back at the top of the file would make the top of it front matter
+    let reviewed = "---\nTiny.\n\n\n[r]: https://example.com/b \"Title\"\n";
+    let current = "Tiny.\n\n\n---";
+    let fx = Fx::new(&[("a.md", reviewed)]);
+    let service = fx.service();
+    tell(&service, &[doc("a.md", Some(reviewed), Some(reviewed))]);
+    fx.write("a.md", current);
+    tell(&service, &[doc("a.md", Some(current), Some(reviewed))]);
+    let view = service.view("a.md").expect("view");
+    assert_eq!(view.changes.len(), 2);
+    let basis = basis(Some(current), Some(reviewed));
+    let result = service.revert("a.md", &basis, 0);
+    assert!(
+        matches!(result, Err(ReviewError::Conflict(_))),
+        "{result:?}"
+    );
+    assert_eq!(result.map_err(|e| e.kind()).err(), Some("reviewConflict"));
+    assert_eq!(fx.read("a.md"), current, "nothing was written");
+    let result = service.keep("a.md", &basis, 1);
+    assert!(
+        matches!(result, Err(ReviewError::Conflict(_))),
+        "{result:?}"
+    );
+    assert_eq!(
+        service.view("a.md").expect("view").reviewed_hash,
+        Some(hex(reviewed)),
+        "and nothing was kept"
+    );
+    // all at once still works
+    service.revert_all("a.md", &basis).expect("revert all");
+    assert_eq!(fx.read("a.md"), reviewed);
+    service.stop();
+}
+
+// ---- differences that are not changes ----
+
+#[test]
+fn a_file_that_only_differs_in_blank_lines_is_approved_as_it_is_when_it_is_looked_at() {
+    let fx = Fx::new(&[("a.md", V0)]);
+    let service = fx.service();
+    tell(&service, &[doc("a.md", Some(V0), Some(V0))]);
+    let spaced = V0.replace("\n\n", "\n\n\n").replace('\n', "\r\n");
+    fx.write("a.md", &spaced);
+    tell(&service, &[doc("a.md", Some(&spaced), Some(V0))]);
+    assert_eq!(service.entries(), [entry("a.md", Status::Changed)]);
+    let view = service.view("a.md").expect("view");
+    assert_eq!(view.status, ViewStatus::Unchanged);
+    assert_eq!(
+        view.reviewed_hash,
+        Some(hex(&spaced)),
+        "it is the approved version now"
+    );
+    assert_eq!(service.entries(), Vec::<Entry>::new());
+    assert_eq!(fx.last_heard(), Some(Vec::new()));
+    service.flush();
+    assert_eq!(fx.saved().expect("saved")["a.md"], hex(&spaced));
+    assert!(fx.copies().contains(&h(&spaced)));
+    service.stop();
+}
+
+#[test]
+fn a_new_document_with_nothing_in_it_is_approved_when_it_is_looked_at() {
+    let fx = Fx::new(&[("empty.md", "\n\n")]);
+    let service = fx.service();
+    tell(&service, &[doc("empty.md", Some("\n\n"), None)]);
+    assert_eq!(service.entries(), [entry("empty.md", Status::New)]);
+    let view = service.view("empty.md").expect("view");
+    assert_eq!(view.status, ViewStatus::Unchanged);
+    assert_eq!(view.reviewed_hash, Some(hex("\n\n")));
+    assert_eq!(service.entries(), Vec::<Entry>::new());
+    service.stop();
+}
+
+#[test]
+fn a_difference_in_blank_lines_alone_while_a_review_is_open_ends_the_hold_on_the_version() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    fx.read_by_person(&service, "a.md", &[doc("a.md", Some(V1), Some(V1))]);
+    // the person reverts everything: the text is the one before, but for a blank line or two
+    let blank = V0.replace("\n\n", "\n\n\n");
+    fx.write("a.md", &blank);
+    tell(&service, &[doc("a.md", Some(&blank), Some(V1))]);
+    let view = service.view("a.md").expect("view");
+    assert_eq!(view.status, ViewStatus::Unchanged);
+    assert_eq!(service.entries(), Vec::<Entry>::new());
+    service.stop();
 }
