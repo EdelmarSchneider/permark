@@ -183,7 +183,16 @@ impl Book {
     /// one before it is held. (It is the version that decides, not the order of the looks at the project, which a
     /// watcher can get between the reading and the look that says it.)
     pub fn opening(&mut self, path: &str, hash: u64) {
-        self.opened.insert(key(path), hash);
+        let k = key(path);
+        // reading what is read already moves nothing, so there is nothing to wait for
+        if self
+            .seen
+            .get(&k)
+            .is_some_and(|seen| seen.read == Some(hash))
+        {
+            return;
+        }
+        self.opened.insert(k, hash);
     }
 
     /// Takes in a look at the project: the documents that moved, and every document as it is now.
@@ -225,6 +234,8 @@ impl Book {
                 },
             );
         }
+        // a reading of a document the project does not have never comes to anything
+        self.opened.retain(|k, _| now.contains_key(k));
         self.seen = now;
         self.saved() != before
     }

@@ -161,9 +161,10 @@ struct Shared {
 impl Shared {
     /// Changes the tracker, tells the listener if the unread documents are different now, and returns
     /// whether `read.json` is behind. The listener and the observer are called under the lock, so what they
-    /// hear is in order.
+    /// hear is in order. The observer hears only of a change: a call that changed nothing costs it nothing.
     fn update(&self, change: impl FnOnce(&mut Tracker) -> bool) -> bool {
         let mut g = lock(&self.inner);
+        let revision = g.tracker.revision();
         let wrote = change(&mut g.tracker);
         g.dirty |= wrote;
         let now = g.tracker.unread();
@@ -171,7 +172,11 @@ impl Shared {
             (self.notify)(&now);
             g.announced = now;
         }
-        if let Some(observer) = &self.observer {
+        if let Some(observer) = self
+            .observer
+            .as_ref()
+            .filter(|_| g.tracker.revision() != revision)
+        {
             let moves = g.tracker.take_moves();
             observer.changed(moves, g.tracker.looked(), g.tracker.states());
         }

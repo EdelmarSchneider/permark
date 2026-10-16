@@ -1020,3 +1020,33 @@ fn moves_by_the_app_and_by_the_watcher_are_told_to_a_follower() {
     );
     service.stop();
 }
+
+#[test]
+fn a_follower_is_told_only_when_something_changed() {
+    let fx = Fx::new(&[("a.md", "one\n"), ("b.md", "two\n")]);
+    let (service, follower) = open_followed(&fx);
+    let before = follower.told().len();
+
+    // reading a document that is read already, marking everything read, a change that changes nothing
+    service.mark_read("a.md").expect("read");
+    service.mark_all_read();
+    service.apply(&[change(ChangeKind::Modified, "a.md")]);
+    service.flush();
+    let told = follower.told();
+    assert_eq!(
+        told[before..],
+        [Told::Reading(
+            "a.md".to_owned(),
+            hash_of("one\n"),
+            b"one\n".to_vec()
+        )],
+        "the reading is told, for its bytes; the documents have not changed"
+    );
+
+    // and when one does change, it is told
+    fx.write("a.md", "one, again\n");
+    service.apply(&[change(ChangeKind::Modified, "a.md")]);
+    service.flush();
+    assert_eq!(follower.told().len(), before + 2);
+    service.stop();
+}

@@ -228,13 +228,19 @@ impl Shared {
     }
 }
 
+/// What the unread markers said about the documents.
+struct Look {
+    /// The documents that moved, in order.
+    moves: Vec<(String, String)>,
+    /// The disk has been looked at.
+    looked: bool,
+    /// Every document now.
+    docs: Vec<DocState>,
+}
+
 enum Msg {
     /// The unread markers changed.
-    Changed {
-        moves: Vec<(String, String)>,
-        looked: bool,
-        docs: Vec<DocState>,
-    },
+    Changed(Look),
     /// The person is reading a document, which holds the version with this hash.
     Opening(String, u64),
     /// Something to write: `reviewed.json`, or a clean-up.
@@ -521,25 +527,47 @@ fn carry(
     }
 }
 
+/// `first` and the `Changed` messages queued right behind it, as one: every move in order, and the newest documents (each
+/// message has all of them, so the ones before say nothing the last does not). The first message of another kind is
+/// handed back, to be dealt with next, so that nothing is taken out of its order.
+fn gather(rx: &Receiver<Msg>, first: Look) -> (Look, Option<Msg>) {
+    let mut look = first;
+    loop {
+        match rx.try_recv() {
+            Ok(Msg::Changed(next)) => {
+                look.moves.extend(next.moves);
+                look.looked |= next.looked;
+                look.docs = next.docs;
+            }
+            Ok(other) => return (look, Some(other)),
+            Err(_) => return (look, None),
+        }
+    }
+}
+
 /// The thread: follows the unread markers, and writes `reviewed.json` and cleans the copies once things settle
 /// (and again after `timing.retry` while writing fails).
 fn run(rx: &Receiver<Msg>, worker: &Worker, timing: Timing) {
     let mut pending = Coalescer::new(timing.quiet, timing.max_wait);
     let mut retry_at: Option<Instant> = None;
+    let mut next: Option<Msg> = None;
     loop {
-        let wake = [pending.deadline(), retry_at].into_iter().flatten().min();
-        let msg = match wake {
-            Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
-            None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+        let msg = if let Some(queued) = next.take() {
+            Ok(queued)
+        } else {
+            let wake = [pending.deadline(), retry_at].into_iter().flatten().min();
+            match wake {
+                Some(at) => rx.recv_timeout(at.saturating_duration_since(Instant::now())),
+                None => rx.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            }
         };
         let now = Instant::now();
         match msg {
-            Ok(Msg::Changed {
-                moves,
-                looked,
-                docs,
-            }) => {
-                if worker.changed(&moves, looked, &docs) {
+            Ok(Msg::Changed(first)) => {
+                // a look at a big project takes a while, and more may have piled up meanwhile
+                let (look, queued) = gather(rx, first);
+                next = queued;
+                if worker.changed(&look.moves, look.looked, &look.docs) {
                     pending.touch(now);
                 }
             }
@@ -1138,11 +1166,11 @@ impl ReadObserver for ReviewService {
     }
 
     fn changed(&self, moves: Vec<(String, String)>, looked: bool, docs: Vec<DocState>) {
-        self.send(Msg::Changed {
+        self.send(Msg::Changed(Look {
             moves,
             looked,
             docs,
-        });
+        }));
     }
 }
 

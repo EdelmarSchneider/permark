@@ -1208,3 +1208,59 @@ fn versions_nobody_wants_any_more_are_not_remembered_as_lost() {
     assert!(lock(&service.shared.inner).missing.is_empty());
     service.stop();
 }
+
+// ---- a pile of looks at the project ----
+
+fn look(moves: &[(&str, &str)], looked: bool, docs: &[DocState]) -> Look {
+    Look {
+        moves: moves
+            .iter()
+            .map(|(from, to)| ((*from).to_owned(), (*to).to_owned()))
+            .collect(),
+        looked,
+        docs: docs.to_vec(),
+    }
+}
+
+#[test]
+fn looks_that_piled_up_are_taken_as_one_with_the_moves_in_order_and_the_newest_documents() {
+    let (tx, rx) = mpsc::channel();
+    let old = [doc("old.md", Some("1"), Some("1"))];
+    let newer = [doc("new.md", Some("2"), Some("2"))];
+    let newest = [doc("z.md", Some("3"), Some("3"))];
+    tx.send(Msg::Changed(look(&[("a.md", "b.md")], false, &old)))
+        .expect("send");
+    tx.send(Msg::Changed(look(&[("b.md", "c.md")], true, &newer)))
+        .expect("send");
+    tx.send(Msg::Changed(look(&[], false, &newest)))
+        .expect("send");
+    tx.send(Msg::Opening("c.md".to_owned(), 7)).expect("send");
+    tx.send(Msg::Changed(look(&[("x.md", "y.md")], false, &old)))
+        .expect("send");
+
+    let first = look(&[("start.md", "a.md")], false, &old);
+    let (gathered, rest) = gather(&rx, first);
+    assert_eq!(
+        gathered.moves,
+        [
+            ("start.md".to_owned(), "a.md".to_owned()),
+            ("a.md".to_owned(), "b.md".to_owned()),
+            ("b.md".to_owned(), "c.md".to_owned())
+        ]
+    );
+    assert!(gathered.looked, "the disk was looked at in one of them");
+    assert_eq!(gathered.docs, newest);
+    // what came after another kind of message is not taken ahead of it
+    assert!(matches!(rest, Some(Msg::Opening(path, 7)) if path == "c.md"));
+    assert!(matches!(rx.try_recv(), Ok(Msg::Changed(_))), "still queued");
+}
+
+#[test]
+fn with_nothing_queued_behind_it_a_look_is_taken_as_it_is() {
+    let (_tx, rx) = mpsc::channel();
+    let only = [doc("a.md", Some("1"), Some("1"))];
+    let (gathered, rest) = gather(&rx, look(&[("a.md", "b.md")], true, &only));
+    assert_eq!(gathered.moves.len(), 1);
+    assert_eq!(gathered.docs, only);
+    assert!(rest.is_none());
+}

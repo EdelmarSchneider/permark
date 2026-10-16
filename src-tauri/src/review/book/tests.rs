@@ -537,3 +537,34 @@ fn an_approved_document_that_is_there_is_never_forgotten_whatever_its_age() {
     assert!(!book.age_deleted(400 * DAY));
     assert_eq!(book.reviewed("a.md"), Some(1));
 }
+
+// ---- readings that never came to anything ----
+
+#[test]
+fn opening_a_document_that_is_read_already_leaves_nothing_waiting() {
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    book.opening("a.md", 1);
+    assert!(book.opened.is_empty(), "the read version cannot move to it");
+    // so an old reading cannot make a later one into a hold by mistake
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(1))]);
+    book.observe(&[], true, &[doc("a.md", Some(2), Some(2))]);
+    book.observe(&[], true, &[doc("a.md", Some(1), Some(1))]);
+    assert_eq!(book.held("a.md"), None);
+}
+
+#[test]
+fn a_reading_of_a_document_that_the_project_does_not_have_is_forgotten() {
+    // an ignored folder: its documents are never among the project's
+    let mut book = seen(&[], &[doc("a.md", Some(1), Some(1))]);
+    book.opening("ignored/b.md", 5);
+    book.opening("a.md", 9);
+    assert_eq!(book.opened.len(), 2);
+    book.observe(&[], true, &[doc("a.md", Some(1), Some(1))]);
+    assert_eq!(
+        book.opened.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["a.md"],
+        "a.md may still come to read 9"
+    );
+    book.observe(&[], true, &[]);
+    assert!(book.opened.is_empty());
+}
