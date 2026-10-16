@@ -323,7 +323,13 @@
         <!-- nothing is saved for this file (a linked worktree, or a meta.toml that cannot be read): the note above says why -->
         <span></span>
       {/if}
-      <button type="button" class="btn btn--sm btn--primary" onclick={close}>
+      <!-- the box keeps the focus while the button is pressed: its suggestions would close and move the button away from the click -->
+      <button
+        type="button"
+        class="btn btn--sm btn--primary"
+        onmousedown={(e) => e.preventDefault()}
+        onclick={close}
+      >
         {t("tags.done")}
       </button>
     </div>
