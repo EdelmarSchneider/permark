@@ -6,7 +6,6 @@
   import type { CommandId, FormatState } from "../editor/visual/format";
   import {
     BLOCK_TYPES,
-    CODE_LANGUAGES,
     LANGUAGE_WIDTH,
     TOOLBAR_ITEMS,
     blockLabel,
@@ -15,8 +14,10 @@
     visibleCount,
     type ToolbarItem,
   } from "../editor/visual/toolbarModel";
+  import { languageDisplayName } from "../code/languages";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
+  import LanguagePicker from "./LanguagePicker.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
   import type { Anchor } from "./Popover.svelte";
 
@@ -78,21 +79,6 @@
   );
 
   const tableEntries = $derived<MenuEntry[]>(tableMenuEntries(format, t, run));
-
-  const languageEntries = $derived<MenuEntry[]>([
-    {
-      id: "plain",
-      label: t("toolbar.plainText"),
-      checked: format.language === "",
-      onselect: () => setLanguage(""),
-    },
-    ...CODE_LANGUAGES.map((language): MenuEntry => ({
-      id: language,
-      label: language,
-      checked: format.language === language,
-      onselect: () => setLanguage(language),
-    })),
-  ]);
 
   // the table button is a menu of its own: folded away, its entries go into this one
   const moreEntries = $derived<MenuEntry[]>(moreMenuEntries(folded, format, off, t, activate, run));
@@ -157,7 +143,7 @@
       data-popover-trigger
       onclick={(e) => open("language", e)}
     >
-      <span>{format.language || t("toolbar.plainText")}</span>
+      <span>{format.language ? languageDisplayName(format.language) : t("toolbar.plainText")}</span>
       <Icon name="chevron-down" size="xs" />
     </button>
   {/if}
@@ -196,23 +182,29 @@
   {/if}
 </div>
 
-{#if menu}
+{#if menu?.kind === "language"}
+  <LanguagePicker
+    anchor={menu.anchor}
+    current={format.language}
+    onpick={(language) => {
+      menu = null;
+      setLanguage(language);
+    }}
+    onclose={() => (menu = null)}
+  />
+{:else if menu}
   <Menu
     label={menu.kind === "type"
       ? t("toolbar.blockType")
       : menu.kind === "table"
         ? t("toolbar.table")
-        : menu.kind === "language"
-          ? t("toolbar.language")
-          : t("toolbar.more")}
+        : t("toolbar.more")}
     anchor={menu.anchor}
     entries={menu.kind === "type"
       ? typeEntries
       : menu.kind === "table"
         ? tableEntries
-        : menu.kind === "language"
-          ? languageEntries
-          : moreEntries}
+        : moreEntries}
     onclose={() => (menu = null)}
   />
 {/if}

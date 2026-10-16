@@ -4,13 +4,30 @@
 
 import { markdown } from "@codemirror/lang-markdown";
 import { yamlFrontmatter } from "@codemirror/lang-yaml";
-import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { languages } from "@codemirror/language-data";
+import { LanguageDescription, ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension } from "@codemirror/state";
+import { fenceLanguage, isPlainName, resolveLanguage } from "../code/languages";
 import type { HeadingInfo } from "../outline";
 
-/** The language of the Source editor: Markdown, where a `---` block at the top is YAML front matter. */
+/**
+ * The grammar for the code inside a fence, from CodeMirror's own languages (each loads the first time a fence asks for it). The
+ * fence's first word is read the way the reading view reads it: `{python}`, `rust,ignore` and `js:app.js` name Python, Rust and JavaScript,
+ * and so do their aliases.
+ */
+export function codeLanguage(info: string): LanguageDescription | null {
+  const word = fenceLanguage(info);
+  if (word === "" || isPlainName(word)) return null;
+  const found = LanguageDescription.matchLanguageName(languages, word, false);
+  if (found) return found;
+  // a name only highlight.js knows by this alias ("golang", "ps1"): the language it means
+  const id = resolveLanguage(word)?.id;
+  return id ? LanguageDescription.matchLanguageName(languages, id, false) : null;
+}
+
+/** The language of the Source editor: Markdown, where a `---` block at the top is YAML front matter and a fence's code has its own highlighting. */
 export function sourceLanguage(): Extension {
-  return yamlFrontmatter({ content: markdown() });
+  return yamlFrontmatter({ content: markdown({ codeLanguages: codeLanguage }) });
 }
 
 /** A heading, and where its line starts in the text (the editor scrolls there). */

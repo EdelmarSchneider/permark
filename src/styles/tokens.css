@@ -125,7 +125,7 @@
   --shadow-pop: 0 10px 28px rgb(31 35 40 / 0.12), 0 1px 3px rgb(31 35 40 / 0.08);
   --backdrop: rgb(31 35 40 / 0.28);
   /* syntax */
-  --syn-comment: #6e7781;
+  --syn-comment: #67707a; /* 4.7:1 on the code block's surface (was 4.25) */
   --syn-keyword: #8250df;
   --syn-string: #0a3069;
   --syn-type: #953800;

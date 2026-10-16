@@ -202,6 +202,9 @@ export const es = {
   "doc.loading": "Cargando documento",
   "doc.frontmatter": "Front matter",
   "doc.copyCode": "Copiar código",
+  "doc.codeAuto": "auto: {name}",
+  "doc.codeAutoHint":
+    "Detectado a partir del código. Escribe el lenguaje después de las comillas invertidas para fijarlo.",
   "doc.anchorLabel": "Enlace a {name}",
   "doc.diagramRendering": "Dibujando diagrama...",
   "doc.diagramFailed": "No se pudo dibujar el diagrama",
@@ -877,6 +880,8 @@ export const es = {
   "toolbar.codeBlock": "Bloque de código",
   "toolbar.language": "Lenguaje del bloque de código",
   "toolbar.plainText": "Texto sin formato",
+  "toolbar.languageSearch": "Buscar lenguajes o escribir el tuyo",
+  "toolbar.languageUse": "Usar “{text}” tal como se escribió",
   "toolbar.image": "Imagen",
   "toolbar.rule": "Línea horizontal",
   "toolbar.more": "Más formato",

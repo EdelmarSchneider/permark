@@ -314,9 +314,10 @@ fn strip_heading_anchors(html: &str) -> String {
 fn class_token_allowed(token: &str) -> bool {
     if let Some(lang) = token.strip_prefix("language-") {
         return !lang.is_empty()
-            && lang
-                .chars()
-                .all(|c| c.is_alphanumeric() || matches!(c, '+' | '-' | '_' | '#' | '.'));
+            && lang.chars().all(|c| {
+                c.is_alphanumeric()
+                    || matches!(c, '+' | '-' | '_' | '#' | '.' | ',' | ':' | '{' | '}' | '=')
+            });
     }
     token.starts_with("markdown-alert")
         || matches!(
@@ -739,6 +740,28 @@ mod tests {
         );
         assert!(h.contains("class=\"language-rust\""), "{h}");
         assert!(!h.contains("evil"), "{h}");
+    }
+
+    #[test]
+    fn a_fence_language_keeps_the_punctuation_authors_write_after_it() {
+        // `rust,ignore`, `{python}`, `{.python}` and `js:app.js` are how docs name a language; the reader works out the language
+        // from the class, so these must reach it
+        for info in [
+            "rust,ignore",
+            "{python}",
+            "{.python}",
+            "js:app.js",
+            "c++",
+            "c#",
+        ] {
+            let h = html(&format!("```{info}\nx\n```\n"));
+            assert!(
+                h.contains(&format!("class=\"language-{info}\"")),
+                "{info}: {h}"
+            );
+        }
+        let h = sanitize("<code class=\"language-a<b\">x</code>");
+        assert!(!h.contains("language-a"), "{h}");
     }
 
     #[test]

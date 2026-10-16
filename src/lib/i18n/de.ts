@@ -203,6 +203,9 @@ export const de = {
   "doc.loading": "Dokument wird geladen",
   "doc.frontmatter": "Front Matter",
   "doc.copyCode": "Code kopieren",
+  "doc.codeAuto": "auto: {name}",
+  "doc.codeAutoHint":
+    "Aus dem Code erkannt. Nenne die Sprache nach den öffnenden Backticks, um sie festzulegen.",
   "doc.anchorLabel": "Link zu {name}",
   "doc.diagramRendering": "Diagramm wird gezeichnet ...",
   "doc.diagramFailed": "Diagramm konnte nicht gezeichnet werden",
@@ -881,6 +884,8 @@ export const de = {
   "toolbar.codeBlock": "Codeblock",
   "toolbar.language": "Sprache des Codeblocks",
   "toolbar.plainText": "Nur Text",
+  "toolbar.languageSearch": "Sprachen suchen oder eigene eingeben",
+  "toolbar.languageUse": "„{text}“ unverändert verwenden",
   "toolbar.image": "Bild",
   "toolbar.rule": "Horizontale Linie",
   "toolbar.more": "Weitere Formatierung",

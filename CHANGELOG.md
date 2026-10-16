@@ -6,6 +6,21 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Code blocks in every mode, for about 190 languages.** A fenced block (`` ```python ``) is now highlighted for every language highlight.js
+  ships, loaded one language at a time, so reading does not carry them all. Usual short names work (`js`, `ts`, `tsx`, `py`, `sh`, `zsh`, `ps1`,
+  `pwsh`, `yml`, `c#`, `c++`, `kt`, `rb`, `rs`, `golang`, `make`, `jsonc`, `json5`, `svelte`, `vue`...), in any case, and so do the forms docs tools
+  write after the backticks: `rust title="main.rs"`, `rust,ignore`, `{python}`, `{.python .numberLines}`, `js:app.js`.
+  - **Reading:** each block has its language in the corner, next to the copy button ("Python", "C++", "TOML"). A block that names no language, or one
+    that highlight.js does not have, is colored only when the code gives its language away (a `#!` line, JSON that parses, an XML or HTML prolog,
+    a diff, a clearly Python script) or when highlight.js's guess is strong and clearly ahead of the runner-up; it is then labelled "auto: Python",
+    with a tooltip that says it is a guess. Anything less certain stays plain (directory trees, terminal output, ASCII drawings, prose). `text` and
+    `txt` blocks are never colored or guessed at. A name highlight.js lacks (`terraform`) is shown as written, uncolored.
+  - **Visual:** code blocks are colored while you edit, with the same colors as in Reading, and carry the language in their corner. The language
+    button of the toolbar opens a picker that searches every language by name or alias; text that no language is named by is offered as it is, and
+    what you type goes into the fence exactly as typed. Changing the language rewrites only that block's opening fence line (a `~~~` fence or a
+    four-backtick fence stays as it was written).
+  - **Source:** the code inside a fence is highlighted with CodeMirror's own language support, loaded when a fence asks for it.
+
 - **"Open with TrailMark" on folders in the Microsoft Store version.** Right-click a folder, or the background of a folder, and choose
   **Open with TrailMark**; on Windows 11 it is in the main menu, not under *Show more options*. The Store package now carries a small
   Explorer component for it (the one thing a package cannot do with the registry), worded in your Windows display language
@@ -13,6 +28,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
   that the entry comes from the Store package.
 
 ### Changed
+- **Code block labels are easier to read.** The language label of a code block is muted instead of faint (it was below the contrast the design
+  asks for), and the light theme's comment color is a little darker, for AA contrast on the code block's background. The reading view's code
+  language also keeps the punctuation authors write after it (`rust,ignore`, `{python}`, `js:app.js`), which was dropped together with the language.
 - **A new note is a note at once.** `+`, `Ctrl+Shift+N` and **New note** now always make a new note, even when the one on screen is still empty,
   like the `+` of any editor. The note is a real (empty) file as soon as it exists, so it is in the list as "Untitled note", is still there after
   a restart, and nothing removes it for you: you delete empty notes yourself, with Delete and Undo like any other note. Several empty notes can

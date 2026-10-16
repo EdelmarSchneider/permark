@@ -230,24 +230,6 @@ export function blockLabel(block: BlockName): MessageKey {
   }
 }
 
-/** The languages of the code block menu (the Markdown fence's info string). */
-export const CODE_LANGUAGES = [
-  "bash",
-  "css",
-  "diff",
-  "html",
-  "javascript",
-  "json",
-  "markdown",
-  "python",
-  "rust",
-  "sql",
-  "toml",
-  "typescript",
-  "xml",
-  "yaml",
-] as const;
-
 /** What the slash menu offers, in order. */
 export type SlashItem = {
   id: CommandId | "image";
