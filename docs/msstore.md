@@ -59,7 +59,7 @@ What the command answers:
 | --- | --- |
 | `GetTitle` | "Open with TrailMark" in the first of the person's Windows display languages that the app has (English, Português, Español, Deutsch; English for any other). It is the display language of Windows, not the language chosen inside TrailMark, because the rest of the menu is in it too (the installer version's entry follows the app's language). The words are those of the installer version's entry (`entries::menu_label`), and a test keeps the two in step. |
 | `GetIcon` | `<package folder>\trailmark.exe,0`: the program's first icon, as the installer version's entry. |
-| `GetState` | Enabled. Hidden when more than 15 folders are selected (the same limit as the classic menu's). |
+| `GetState` | Enabled. Hidden when more than 15 folders are selected (the limit Windows puts on a registry verb that opens a window for each item, which is what the installer version's entry is). |
 | `GetToolTip`, `EnumSubCommands` | Not implemented: no tooltip, no sub-menu. |
 | `GetFlags`, `GetCanonicalName` | The default flags, and the class id as the name. |
 | `Invoke` | See below. |
