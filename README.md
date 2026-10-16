@@ -4,13 +4,13 @@
 
 # TrailMark
 
-**A fast, beautiful Markdown IDE that keeps up with your AI agents.**
+**Read what your AI writes. Write what it reads.**
+
+TrailMark is a free, open-source Markdown app for Windows, macOS and Linux, built for the reader. It opens any `.md` file as a
+clean page, keeps notes that save themselves, and turns a project folder into an IDE where you follow, review and steer what
+your AI agents write. It works with any AI tool, or with none.
 
 Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneider).
-
-Open a folder and read it like a wiki. Watch documents change live as agents write them, see exactly what changed,
-find any section in seconds, and edit with a visual editor that only rewrites the blocks you touch.
-It works with any AI tool, or with none.
 
 [Features](#features) · [Install](#install) · [Usage](#usage) · [Shortcuts](#keyboard-shortcuts) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
@@ -23,22 +23,54 @@ It works with any AI tool, or with none.
 
 ---
 
-## Why TrailMark?
+## Where to start
 
-AI coding agents write a lot of Markdown: specs, plans, research notes, reports. Reading that as raw text in a terminal or an
-editor is tiring. Browser extensions render one file at a time and don't show what changed. TrailMark closes the gap between
-**the documents your agents produce** and **you**, the human who has to read, check and steer them.
+### Build with AI agents?
 
-- **Read** beautifully rendered Markdown, with Mermaid, math, alerts, footnotes and frontmatter.
-- **Navigate** a whole folder like a local wiki: relative links, back and forward, quick open, an outline of every document.
-- **Follow** agents live: changed blocks glow, removed blocks leave a marker, and a live feed shows every file being touched.
-- **Review** what happened since your last visit, even if the agent already committed.
-- **Find** "character descriptions" or "retry policy" across hundreds of long docs, down to the exact section.
-- **Organize** files with tags and one-line descriptions, without touching the files themselves.
-- **Edit** in a visual or a source editor that rewrites only the blocks you changed, and never loses your work to an agent.
+Your agents write the plans, specs and reports. Your job is to read them, judge them and steer. TrailMark is the IDE for that
+job: open the project folder and keep it next to your terminal. It doesn't run your agent; it shows you what your agent writes.
 
-TrailMark only relies on your **filesystem and git**. It works the same with Claude Code, opencode, Cursor, Aider, Codex or
-Gemini CLI, and it's a great Markdown reader and editor if you don't use AI at all.
+- **Watch.** Changed passages glow as your agent writes, removed ones leave a marker, and a live feed lists every file it
+  touches, across git worktrees too. A reload keeps your place.
+- **Review.** Unread dots mark every document that changed since you last read it, like new mail. Git badges and a "since your
+  last visit" view still work after the agent has committed.
+- **Find.** One search for every file, section, tag and command, and code references like `src/main.rs:42` that open at the
+  line in the editor you choose.
+- **Steer.** Select a passage, press `C` and write a comment. With the optional [agent connection](#use-with-an-ai-agent) (MCP),
+  your agent reads your open comments, marks them done with a reply, and knows which document, section and words you mean when
+  you say "rewrite this".
+- **Edit next to it, safely.** Only the blocks you change are rewritten, and if your agent changes a file while you edit it, you
+  choose **Reload theirs** or **Keep mine**.
+
+More in [Follow your agents live](#-follow-your-agents-live) and [Use with an AI agent](#use-with-an-ai-agent).
+
+### Got a .md file?
+
+Your AI, a colleague or a download gives you a `.md` file. Open it with TrailMark and read it as a page, not a wall of symbols.
+
+- **It reads like a page.** Tables, checklists, highlighted code, Mermaid diagrams, math, alerts and footnotes, in light or dark,
+  with three reading widths and a focus mode.
+- **Links work.** Relative links and anchors open in the app, with back and forward and an outline of the headings.
+- **You can fix it.** Edit visually, with a toolbar, or in Source. Only the blocks you changed are saved, and the rest of the file
+  stays exactly as it was.
+- **Notes that save themselves.** Press `Ctrl+Shift+N` in TrailMark and type. No name to choose, no folder to pick, and closing
+  never asks. Pin the notes you keep, bring back an earlier version, and copy a drafted prompt to your AI as clean Markdown.
+- **Your files are safe.** A file you open is listed next to your notes and written only when you press `Ctrl+S`. TrailMark is
+  listed under **Open with** for Markdown files and never makes itself your default app: that choice stays yours.
+
+More in [Reading that feels like a book](#-reading-that-feels-like-a-book) and [Notes](#-notes).
+
+Either way, TrailMark only relies on your **filesystem and git**. It works the same with Claude Code, opencode, Cursor, Aider,
+Codex or Gemini CLI, or with none.
+
+## Why Markdown
+
+**Markdown was made for readers. So is TrailMark.** It was designed in 2004 so that plain text reads well as it is. Twenty years
+later, AI adopted it for the same reason: it is structured enough for a machine and clear enough for a person. TrailMark is the
+reader's tool for it.
+
+It is also an opinion: many documents that live in Word or PDF today would be better as Markdown. They would be smaller,
+comparable line by line in git, readable by any AI, and never locked inside one app.
 
 ## Features
 
