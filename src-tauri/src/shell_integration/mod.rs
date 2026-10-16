@@ -68,7 +68,7 @@ pub fn state() -> ShellState {
     ShellState::default()
 }
 
-/// Adds or removes the context-menu entries, worded in `locale` (`en`, `pt-BR`, `es`, `de`).
+/// Adds or removes the context-menu entries, worded in `locale` (`en`, `pt-BR`, `es`, `de`, `zh-CN`).
 #[cfg(windows)]
 pub fn set_context_menu(enabled: bool, locale: &str) -> Result<ShellState, ShellError> {
     refuse_in_store_build()?;
@@ -190,6 +190,7 @@ mod tests {
             (1046, crate::session::Language::PtBr),
             (3082, crate::session::Language::Es),
             (1031, crate::session::Language::De),
+            (2052, crate::session::Language::ZhCn),
         ] {
             for (name, text) in [
                 ("OpenWithMenuLabel", entries::menu_label(language)),
@@ -272,6 +273,7 @@ mod tests {
             crate::session::Language::PtBr,
             crate::session::Language::Es,
             crate::session::Language::De,
+            crate::session::Language::ZhCn,
         ] {
             let line = format!("= \"{}\";", entries::menu_label(language));
             assert!(STORE_LABELS.contains(&line), "{line}");

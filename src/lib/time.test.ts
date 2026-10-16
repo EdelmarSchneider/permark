@@ -66,6 +66,10 @@ describe("in another language", () => {
     language.preference = "de";
     expect(ago(NOW - 2 * HOUR, NOW)).toBe("vor 2 Stunden");
     expect(ago(NOW - 1 * MIN, NOW)).toBe("vor 1 Minute");
+    language.preference = "zh-CN";
+    expect(ago(NOW - 2 * HOUR, NOW)).toBe("2小时前");
+    expect(ago(NOW - 12 * SEC, NOW)).toBe("12秒钟前");
+    expect(savedLabel(NOW - 4 * MIN, NOW)).toBe("4 分钟前保存");
   });
 
   it("says 'just now' in the language", () => {
@@ -82,5 +86,7 @@ describe("in another language", () => {
     expect(baselineLabel(monday, NOW)).toMatch(/^Mo\.? 18:40$/);
     language.preference = "pt-BR";
     expect(baselineLabel(monday, NOW)).toMatch(/^seg\.? 18:40$/);
+    language.preference = "zh-CN";
+    expect(baselineLabel(monday, NOW)).toBe("周一 18:40");
   });
 });

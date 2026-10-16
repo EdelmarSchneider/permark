@@ -192,6 +192,7 @@ pub(crate) fn menu_label(language: Language) -> &'static str {
         Language::PtBr => "Abrir com o TrailMark",
         Language::Es => "Abrir con TrailMark",
         Language::De => "Mit TrailMark öffnen",
+        Language::ZhCn => "用 TrailMark 打开",
     }
 }
 
@@ -202,10 +203,11 @@ pub(crate) fn type_name(language: Language) -> &'static str {
         Language::PtBr => "Documento Markdown",
         Language::Es => "Documento de Markdown",
         Language::De => "Markdown-Dokument",
+        Language::ZhCn => "Markdown 文档",
     }
 }
 
-/// The language for a code the UI or the installer uses (`en`, `pt-BR`, `es`, `de`); English for anything else.
+/// The language for a code the UI or the installer uses (`en`, `pt-BR`, `es`, `de`, `zh-CN`); English for anything else.
 pub(crate) fn language_for(code: &str) -> Language {
     Language::from_installer_code(code).unwrap_or(Language::En)
 }
@@ -378,19 +380,22 @@ mod tests {
         assert_eq!(menu_label(Language::PtBr), "Abrir com o TrailMark");
         assert_eq!(menu_label(Language::Es), "Abrir con TrailMark");
         assert_eq!(menu_label(Language::De), "Mit TrailMark öffnen");
+        assert_eq!(menu_label(Language::ZhCn), "用 TrailMark 打开");
         // the registry cannot follow the system's language, so "System default" reads as English
         assert_eq!(menu_label(Language::System), menu_label(Language::En));
         assert_eq!(type_name(Language::En), "Markdown document");
         assert_eq!(type_name(Language::PtBr), "Documento Markdown");
         assert_eq!(type_name(Language::Es), "Documento de Markdown");
         assert_eq!(type_name(Language::De), "Markdown-Dokument");
+        assert_eq!(type_name(Language::ZhCn), "Markdown 文档");
     }
 
     #[test]
     fn language_codes_come_from_the_ui_and_unknown_ones_read_as_english() {
         assert_eq!(language_for("pt-BR"), Language::PtBr);
         assert_eq!(language_for("de"), Language::De);
-        for code in ["", "system", "fr", "pt-br", "1046"] {
+        assert_eq!(language_for("zh-CN"), Language::ZhCn);
+        for code in ["", "system", "fr", "pt-br", "zh", "zh-TW", "2052", "1046"] {
             assert_eq!(language_for(code), Language::En, "{code}");
         }
     }

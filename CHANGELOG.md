@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **简体中文 (Simplified Chinese).** The interface now comes in Simplified Chinese besides English, Português (Brasil), Español and Deutsch.
+  **Settings → Language** lists it, and *System default* picks it for any Chinese system language (Traditional Chinese systems read Simplified
+  Chinese for now). The Windows installer offers it, "Open with TrailMark" in the file manager is worded in it ("用 TrailMark 打开"), the Microsoft
+  Store package declares it, and the interface and documents use a Chinese font on every system.
+
 ### Fixed
 - **Search finds Chinese and Japanese words.** These languages are written without spaces, so a sentence used to count as one giant word and
   searching for a word inside it found nothing. Search now matches the characters and character pairs of Chinese, Japanese kanji, hiragana and
