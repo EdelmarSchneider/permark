@@ -5,6 +5,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-15
+
+Notes: open TrailMark, type, close. Notes save themselves, sticky notes stay for months, and Markdown files from anywhere open in one place.
+
 ### Added
 - **Notes.** A window of its own for quick notes, drafts and prompts: open it with `Ctrl+Shift+D` (or the sticky-note icon, or **Notes** on
   the welcome screen), press `Ctrl+Shift+N` from any TrailMark window to start a note, and type. Notes are plain Markdown files in

@@ -461,7 +461,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - Your agent can ask TrailMark "where is X described?" and point you to a section, and it knows what you have not read yet.
   Off by default, per project, and read-only: an agent can show you a document, never edit through it
 
-**v0.5: Notes**
+**v0.5: Notes** (released)
 - Open TrailMark, type, close: notes save themselves, with no name to choose and no folder to pick. Keep a sticky note for
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "TrailMark",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "identifier": "dev.trailmark.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -29,8 +29,8 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "category": "DeveloperTool",
-    "shortDescription": "A fast, beautiful Markdown IDE that keeps up with your AI agents.",
-    "longDescription": "TrailMark reads, navigates and follows Markdown documents as a local wiki over a folder. It renders GitHub-flavored Markdown with math and diagrams, follows files as AI agents (or anyone) change them, and shows what changed since you last looked.",
+    "shortDescription": "Read what your AI writes. Write what it reads. A free, open-source Markdown app.",
+    "longDescription": "TrailMark opens any Markdown file as a clean page you can edit, keeps notes that save themselves, and turns a project folder into an IDE where you follow, review and steer what your AI agents write. It works with any AI tool, or with none.",
     "copyright": "Copyright (c) 2026 Edelmar Schneider",
     "license": "MIT OR Apache-2.0",
     "licenseFile": "../LICENSE-MIT",
