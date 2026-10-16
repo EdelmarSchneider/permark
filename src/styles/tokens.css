@@ -71,7 +71,9 @@
   --font-reading:
     "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI",
     "PingFang SC", "Noto Sans CJK SC", sans-serif;
-  --font-code: "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  --font-code:
+    "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans CJK SC", monospace;
   --fs-ui: 13px;
   --fs-ui-sm: 12px;
   --fs-ui-xs: 11px;
