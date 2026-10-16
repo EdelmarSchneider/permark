@@ -67,8 +67,10 @@ describe("in another language", () => {
     expect(ago(NOW - 2 * HOUR, NOW)).toBe("vor 2 Stunden");
     expect(ago(NOW - 1 * MIN, NOW)).toBe("vor 1 Minute");
     language.preference = "zh-CN";
-    expect(ago(NOW - 2 * HOUR, NOW)).toBe("2小时前");
-    expect(ago(NOW - 12 * SEC, NOW)).toBe("12秒钟前");
+    expect(ago(NOW - 2 * HOUR, NOW)).toBe("2 小时前");
+    expect(ago(NOW - 12 * SEC, NOW)).toBe("12 秒钟前");
+    expect(ago(NOW - 17 * MIN, NOW)).toBe("17 分钟前");
+    expect(ago(NOW - 50 * HOUR, NOW)).toBe("2 天前");
     expect(savedLabel(NOW - 4 * MIN, NOW)).toBe("4 分钟前保存");
   });
 

@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { en } from "./en";
-import { formatNumber, keys, language, MESSAGES, pluralCategory, t, tn } from "./index";
+import {
+  formatNumber,
+  keys,
+  language,
+  MESSAGES,
+  pluralCategory,
+  t,
+  tn,
+  type PluralKey,
+} from "./index";
 import {
   LANGUAGE_NAMES,
   LANGUAGE_PREFERENCES,
@@ -82,6 +91,33 @@ describe("tn", () => {
     expect(tn("fileOps.files", 0)).toBe("0 个文件");
     expect(tn("fileOps.files", 1)).toBe("1 个文件");
     expect(tn("fileOps.files", 7)).toBe("7 个文件");
+  });
+
+  it("reads the '.one' string for a count of exactly 1, even where CLDR has no 'one' (Chinese)", () => {
+    language.preference = "zh-CN";
+    expect(tn("fileOps.deleteConfirm", 1, { name: "搜索测试.md" })).toBe("将 搜索测试.md 移到回收站？");
+    expect(tn("fileOps.deleteConfirm", 2)).toBe("将 2 项移到回收站？");
+    expect(tn("fileOps.deleteSelected", 1)).toBe("删除");
+    expect(tn("fileOps.deleteSelected", 3)).toBe("删除 3 项");
+    expect(tn("notes.deleted", 1, { name: "会议记录" })).toBe("已删除“会议记录”");
+    expect(tn("notes.deleted", 4)).toBe("已删除 4 篇笔记");
+    // 0 and 11 are not 1
+    expect(tn("fileOps.deleteSelected", 0)).toBe("删除 0 项");
+    expect(tn("fileOps.deleteSelected", 11)).toBe("删除 11 项");
+  });
+
+  it("gives a count of 1 the '.one' string in every language", () => {
+    const ones = Object.keys(en).filter((k) => k.endsWith(".one"));
+    for (const locale of LOCALES) {
+      language.preference = locale;
+      for (const full of ones) {
+        const key = full.slice(0, -4) as PluralKey;
+        const expected = MESSAGES[locale][full as keyof typeof en]
+          .replace("{n}", formatNumber(1))
+          .replace("{name}", "x");
+        expect(tn(key, 1, { name: "x" }), `${locale} ${full}`).toBe(expected);
+      }
+    }
   });
 
   it("writes zero as a plural in Brazilian Portuguese and by CLDR in the other languages", () => {
