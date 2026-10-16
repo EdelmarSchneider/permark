@@ -5,7 +5,7 @@
 
 mod bm25;
 pub(crate) mod chunk;
-mod fold;
+pub(crate) mod fold;
 pub mod indexer;
 
 use std::sync::RwLock;

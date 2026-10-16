@@ -33,6 +33,7 @@ mod notes_commands;
 mod open_request;
 mod refs;
 mod render;
+mod review;
 mod search;
 mod session;
 mod shell_integration;
