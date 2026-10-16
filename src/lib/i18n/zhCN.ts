@@ -24,6 +24,7 @@ export const zhCN = {
   "common.copied": "已复制",
   "common.copy": "复制",
   "common.copyPath": "复制路径",
+  "common.moreAbout": "更多信息：{name}",
   "common.dismiss": "忽略",
   "common.open": "打开",
   "copy.failed": "无法复制到剪贴板。",
@@ -624,6 +625,9 @@ export const zhCN = {
 
   // ---- settings
   "settings.title": "设置",
+  "settings.section.reading": "阅读",
+  "settings.section.editing": "编辑",
+  "settings.section.integration": "集成",
   "settings.language": "语言",
   "settings.languageSystem": "跟随系统",
   "settings.languageNotSaved": "无法保存语言设置供下次使用：{message}",

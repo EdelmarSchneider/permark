@@ -19,6 +19,7 @@ export const en = {
   "common.copied": "Copied",
   "common.copy": "Copy",
   "common.copyPath": "Copy path",
+  "common.moreAbout": "More about {name}",
   "common.dismiss": "Dismiss",
   "common.open": "Open",
   "copy.failed": "Couldn't copy to the clipboard.",
@@ -638,6 +639,9 @@ export const en = {
 
   // ---- settings
   "settings.title": "Settings",
+  "settings.section.reading": "Reading",
+  "settings.section.editing": "Editing",
+  "settings.section.integration": "Integration",
   "settings.language": "Language",
   "settings.languageSystem": "System default",
   "settings.languageNotSaved": "Couldn't keep the language for next time: {message}",

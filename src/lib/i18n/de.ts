@@ -22,6 +22,7 @@ export const de = {
   "common.copied": "Kopiert",
   "common.copy": "Kopieren",
   "common.copyPath": "Pfad kopieren",
+  "common.moreAbout": "Mehr zu {name}",
   "common.dismiss": "Ausblenden",
   "common.open": "Öffnen",
   "copy.failed": "Kopieren in die Zwischenablage nicht möglich.",
@@ -657,6 +658,9 @@ export const de = {
 
   // ---- settings
   "settings.title": "Einstellungen",
+  "settings.section.reading": "Lesen",
+  "settings.section.editing": "Bearbeiten",
+  "settings.section.integration": "Integration",
   "settings.language": "Sprache",
   "settings.languageSystem": "Systemstandard",
   "settings.languageNotSaved":
