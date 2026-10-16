@@ -16,6 +16,7 @@ use crate::media::OpenError;
 use crate::meta::MetaError;
 use crate::notes::NotesError;
 use crate::render::RenderError;
+use crate::review::ReviewError;
 use crate::session::SessionError;
 use crate::shell_integration::ShellError;
 use crate::vault::VaultError;
@@ -49,6 +50,8 @@ pub enum AppError {
     Notes(#[from] NotesError),
     #[error(transparent)]
     Open(#[from] OpenError),
+    #[error(transparent)]
+    Review(#[from] ReviewError),
     #[error("no folder is open")]
     NoVault,
     /// A newer request to open a folder arrived first, so this one was dropped.
@@ -82,6 +85,7 @@ impl AppError {
             Self::Comments(e) => e.kind(),
             Self::Notes(e) => e.kind(),
             Self::Open(OpenError::Blocked { .. }) => "blockedType",
+            Self::Review(e) => e.kind(),
             Self::NoVault => "noVault",
             Self::Superseded => "superseded",
             Self::Internal(_) => "internal",
@@ -188,6 +192,16 @@ fn edit_details(e: &EditError) -> Details {
     }
 }
 
+fn review_details(e: &ReviewError) -> Details {
+    match e {
+        ReviewError::Vault(e) => vault_details(e),
+        ReviewError::Edit(e) => edit_details(e),
+        ReviewError::Stale(subject) | ReviewError::NoBaseline(subject) => Details::subject(subject),
+        ReviewError::Off => Details::default(),
+        ReviewError::Io { path, source } => Details::io(path, source),
+    }
+}
+
 fn notes_details(e: &NotesError) -> Details {
     match e {
         NotesError::Edit(e) => edit_details(e),
@@ -233,6 +247,7 @@ impl AppError {
             },
             Self::Edit(e) => edit_details(e),
             Self::Notes(e) => notes_details(e),
+            Self::Review(e) => review_details(e),
             Self::Open(OpenError::Blocked { label }) => Details::subject(label),
             Self::FileOps(e) => file_op_details(e),
             Self::Shell(ShellError::Registry(source)) => Details::detail(&source.to_string()),
@@ -418,12 +433,36 @@ mod tests {
     }
 
     #[test]
+    fn a_review_that_is_out_of_date_names_the_document_for_the_ui_to_refresh() {
+        let e = AppError::from(ReviewError::Stale("docs/a.md".to_owned()));
+        assert_eq!(
+            json(&e),
+            serde_json::json!({
+                "kind": "reviewStale",
+                "message": "docs/a.md changed since the review was drawn",
+                "subject": "docs/a.md"
+            })
+        );
+        let e = AppError::from(ReviewError::NoBaseline("docs/a.md".to_owned()));
+        assert_eq!(e.kind(), "reviewNoBaseline");
+        assert_eq!(json(&e)["subject"], "docs/a.md");
+        assert_eq!(AppError::from(ReviewError::Off).kind(), "reviewOff");
+        // what the review shares with the editor keeps the editor's words
+        let e = AppError::from(ReviewError::Edit(crate::edit::EditError::TooLarge(
+            "big.md".to_owned(),
+        )));
+        assert_eq!(e.kind(), "tooLarge");
+        assert_eq!(json(&e)["subject"], "big.md");
+    }
+
+    #[test]
     fn kinds_without_blanks_serialize_without_extra_keys() {
         for e in [
             AppError::NoVault,
             AppError::Superseded,
             AppError::from(GitError::WorkerGone),
             AppError::from(crate::fileops::FileOpError::SimpleMode),
+            AppError::from(ReviewError::Off),
         ] {
             let value = json(&e);
             let keys: Vec<&String> = value.as_object().expect("object").keys().collect();

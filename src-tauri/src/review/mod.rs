@@ -30,9 +30,6 @@
 //! The write is announced as the app's own, so the watcher does not report it as news. The approved version
 //! does not move: the change just disappears from the difference.
 
-// Wired to the workspace at the end of the build.
-#![allow(dead_code, unused_imports)]
-
 pub mod book;
 pub mod committed;
 pub mod diff;

@@ -26,7 +26,6 @@ use std::ops::Range;
 use serde::Serialize;
 
 use crate::edit::blocks::{parse_blocks, BlockInfo, Eol};
-use crate::render::MAX_RENDER_BYTES;
 use crate::search::fold::tokenize;
 
 /// Above this many cells (old blocks x new blocks, between the first and the last block that differ) the
@@ -80,16 +79,6 @@ pub struct Change {
     pub new: Span,
     /// The old and new blocks side by side, in document order: edited blocks paired, the rest alone.
     pub rows: Vec<Row>,
-}
-
-/// Whether a text is too large for its blocks to be found (the reader and the editor refuse it too).
-pub fn too_large(text: &str) -> bool {
-    text.len() as u64 > MAX_RENDER_BYTES
-}
-
-/// The changes between the reviewed text and the current one, in document order.
-pub fn diff(reviewed: &str, current: &str) -> Vec<Change> {
-    Comparison::new(reviewed, current).changes
 }
 
 /// One text with its blocks.
@@ -195,6 +184,8 @@ pub struct Comparison<'a> {
 }
 
 impl<'a> Comparison<'a> {
+    /// The differences between the reviewed text and the current one, in document order. A text over what the
+    /// reader and the editor take ([`crate::render::MAX_RENDER_BYTES`]) has no blocks, so callers keep to less.
     pub fn new(reviewed: &'a str, current: &'a str) -> Self {
         let reviewed = Side::new(reviewed);
         let current = Side::new(current);

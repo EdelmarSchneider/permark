@@ -142,11 +142,6 @@ impl Book {
             .collect()
     }
 
-    /// What the document held at the last look at the project.
-    pub fn current(&self, path: &str) -> Option<u64> {
-        self.seen.get(&key(path)).and_then(|s| s.current)
-    }
-
     /// The person is reading the document: if the version that counts as read moves with the next look at
     /// the project, the one before it is held.
     pub fn opening(&mut self, path: &str) {

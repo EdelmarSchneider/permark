@@ -49,6 +49,9 @@ import type {
   NoteView,
   ParsedBlocks,
   RecentVault,
+  ReviewBasis,
+  ReviewEntry,
+  ReviewView,
   SaveOutcome,
   SearchHit,
   SessionState,
@@ -72,6 +75,8 @@ export type EventMap = {
   "image-refs-changed": null;
   /** The Markdown documents that are unread changed: the payload is all of them, sorted. */
   "unread-changed": string[];
+  /** The documents that differ from the version the person approved changed: the payload is all of them, sorted. */
+  "review-changed": ReviewEntry[];
   /** The system asked this window (which shows no project) to open a file or folder (macOS: Finder, the Dock icon). */
   "open-path": string;
   /** The system asked for a file of the project this window shows (macOS: Finder): its path in the project. */
@@ -201,6 +206,37 @@ export interface Api {
   markAllRead(): Promise<void>;
   /** Every document in a folder, and below it, counts as read. */
   markFolderRead(path: string): Promise<void>;
+  /** The documents that differ from the version the person approved, sorted (the `review-changed` event carries the same list). */
+  reviewList(): Promise<ReviewEntry[]>;
+  /**
+   * What changed in a document since the person approved it (the version they last read, or the one kept for a review that
+   * is open), block by block with each block rendered. Rejects with kind "reviewOff" where nothing is reviewed (the notes, a
+   * single file), "notMarkdown", "pathEscape".
+   */
+  reviewGet(path: string): Promise<ReviewView>;
+  /**
+   * Keeps change `index`: it becomes part of the approved version, and the file is not touched. `basis` is the `hash` and
+   * `reviewedHash` of the view the change was drawn from; rejects with kind "reviewStale" if the document is another by
+   * now (then ask `reviewGet` again). Resolves with the review as it is after.
+   */
+  reviewKeep(path: string, basis: ReviewBasis, index: number): Promise<ReviewView>;
+  /**
+   * Reverts change `index`: the old text is written back into the file, only if the file still has `basis.hash` (else
+   * rejects with kind "reviewStale", and nothing is overwritten). The write is the app's own: it is not news in the feed and
+   * the document stays read. Resolves with the review as it is after.
+   */
+  reviewRevert(path: string, basis: ReviewBasis, index: number): Promise<ReviewView>;
+  /** Keeps every change: the document as it is becomes the approved version. For a deleted document, accepts the deletion. */
+  reviewKeepAll(path: string, basis: ReviewBasis): Promise<ReviewView>;
+  /**
+   * Reverts every change: the approved text is written over the file (only if it still has `basis.hash`). For a deleted
+   * document it puts the document back; for a new one it sends the file to the recycle bin.
+   */
+  reviewRevertAll(path: string, basis: ReviewBasis): Promise<ReviewView>;
+  /** Puts a deleted document back, as it was approved. Rejects with kind "reviewNoBaseline" if its text was not kept. */
+  reviewRestoreDeleted(path: string, basis: ReviewBasis): Promise<ReviewView>;
+  /** The person left the document (or closed its review): the version kept for the review is let go. */
+  reviewRelease(path: string): Promise<void>;
   /**
    * Turns the agent connection of the open project on or off (the setting is saved with the session). A connection that
    * cannot start still resolves: the status says why.
@@ -385,6 +421,41 @@ export const tauriApi: Api = {
   markUnread: (path) => invoke<void>("mark_unread", { path }),
   markAllRead: () => invoke<void>("mark_all_read"),
   markFolderRead: (path) => invoke<void>("mark_folder_read", { path }),
+  reviewList: () => invoke<ReviewEntry[]>("review_list"),
+  reviewGet: (path) => invoke<ReviewView>("review_get", { path }),
+  reviewKeep: (path, basis, index) =>
+    invoke<ReviewView>("review_keep", {
+      path,
+      hash: basis.hash,
+      reviewedHash: basis.reviewedHash,
+      index,
+    }),
+  reviewRevert: (path, basis, index) =>
+    invoke<ReviewView>("review_revert", {
+      path,
+      hash: basis.hash,
+      reviewedHash: basis.reviewedHash,
+      index,
+    }),
+  reviewKeepAll: (path, basis) =>
+    invoke<ReviewView>("review_keep_all", {
+      path,
+      hash: basis.hash,
+      reviewedHash: basis.reviewedHash,
+    }),
+  reviewRevertAll: (path, basis) =>
+    invoke<ReviewView>("review_revert_all", {
+      path,
+      hash: basis.hash,
+      reviewedHash: basis.reviewedHash,
+    }),
+  reviewRestoreDeleted: (path, basis) =>
+    invoke<ReviewView>("review_restore_deleted", {
+      path,
+      hash: basis.hash,
+      reviewedHash: basis.reviewedHash,
+    }),
+  reviewRelease: (path) => invoke<void>("review_release", { path }),
   setAgentConnection: (enabled) => invoke<AgentStatus>("set_agent_connection", { enabled }),
   agentStatus: () => invoke<AgentStatus>("agent_status"),
   publishAgentContext: (context) => invoke<void>("publish_agent_context", { context }),
@@ -532,6 +603,14 @@ function createMockApi(): Api {
     markUnread: command("markUnread"),
     markAllRead: command("markAllRead"),
     markFolderRead: command("markFolderRead"),
+    reviewList: command("reviewList"),
+    reviewGet: command("reviewGet"),
+    reviewKeep: command("reviewKeep"),
+    reviewRevert: command("reviewRevert"),
+    reviewKeepAll: command("reviewKeepAll"),
+    reviewRevertAll: command("reviewRevertAll"),
+    reviewRestoreDeleted: command("reviewRestoreDeleted"),
+    reviewRelease: command("reviewRelease"),
     setAgentConnection: command("setAgentConnection"),
     agentStatus: command("agentStatus"),
     publishAgentContext: command("publishAgentContext"),

@@ -2,6 +2,11 @@ use super::*;
 
 const NO_CHANGES: [Change; 0] = [];
 
+/// The changes between two texts.
+fn diff(reviewed: &str, current: &str) -> Vec<Change> {
+    Comparison::new(reviewed, current).changes
+}
+
 /// A change as `(kind, old text, new text)`, the text being the blocks of that side from the first to the last.
 fn shape(reviewed: &str, current: &str) -> Vec<(ChangeKind, String, String)> {
     let cmp = Comparison::new(reviewed, current);
@@ -390,8 +395,6 @@ fn keeping_one_change_leaves_the_others_to_review() {
 #[test]
 fn a_text_too_large_to_parse_has_no_blocks_to_compare() {
     assert_eq!(parse_blocks(&"x\n\n".repeat(3_000_000)).blocks.len(), 0);
-    assert!(too_large(&"x".repeat(6 * 1024 * 1024)));
-    assert!(!too_large("small"));
 }
 
 /// A small generator of documents: the same seed gives the same text.

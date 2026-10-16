@@ -368,6 +368,58 @@ export type UndoOutcome = {
   couldNot: SkippedFile[];
 };
 
+// ---- review of changes (docs/design/review-changes.md) -------------------------------------------
+/** A range of bytes of a text (UTF-8 offsets, as the editor's blocks use). */
+export type ByteRange = { startByte: number; endByte: number };
+/** A range of block numbers: `start` is the first block, `end` the one after the last. */
+export type BlockRange = { start: number; end: number };
+/** One block of one version of a document, with the reading view's HTML for it (sanitized; empty when it could not be drawn). */
+export type ReviewBlock = {
+  /** Which block of its version this is. */
+  index: number;
+  text: string;
+  html: string;
+} & ByteRange;
+/** An old block, a new block, or both when the block was edited: shown side by side. */
+export type ReviewRow = { old: ReviewBlock | null; new: ReviewBlock | null };
+export type ReviewChangeKind = "added" | "removed" | "modified";
+/** A run of consecutive blocks that differ between the approved version and the file. */
+export type ReviewChange = {
+  kind: ReviewChangeKind;
+  /** In the approved text; for an addition, the empty place where the new blocks would go. */
+  old: ByteRange;
+  /** In the file. */
+  new: ByteRange;
+  oldBlocks: BlockRange;
+  newBlocks: BlockRange;
+  rows: ReviewRow[];
+};
+/**
+ * How a document stands against its approved version. "changes": `changes` lists the differences. "unchanged": nothing to
+ * review. "new": never approved, `changes` is one addition. "deleted": the file is gone, `changes` is one removal (and `restorable`
+ * says whether it can be put back). "noBaseline": it differs but the approved text is not kept. "tooLarge" and "notText": it
+ * cannot be compared.
+ */
+export type ReviewStatus =
+  "changes" | "unchanged" | "new" | "deleted" | "noBaseline" | "tooLarge" | "notText";
+/**
+ * The review of one document. `hash` (the file) and `reviewedHash` (the approved version) are what the changes were drawn from:
+ * hand both back with every keep and revert, which then fail with kind "reviewStale" if the document is not that any more.
+ */
+export type ReviewView = {
+  path: string;
+  status: ReviewStatus;
+  hash: string | null;
+  reviewedHash: string | null;
+  restorable: boolean;
+  changes: ReviewChange[];
+};
+/** What the UI hands back to say which review a keep or revert is for. */
+export type ReviewBasis = { hash: string | null; reviewedHash: string | null };
+export type ReviewEntryStatus = "changed" | "new" | "deleted";
+/** A document that differs from its approved version. */
+export type ReviewEntry = { path: string; status: ReviewEntryStatus };
+
 // ---- notes ----------------------------------------------------------------------------------------
 
 /** Where TrailMark opens when it is started with nothing to open. */

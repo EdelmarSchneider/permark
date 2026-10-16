@@ -15,7 +15,6 @@ const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
 const READ_FILE: &str = "read.json";
 const REVIEWED_FILE: &str = "reviewed.json";
-#[allow(dead_code)] // the review reads it once it is wired to the workspace
 const REVIEWED_DIR: &str = "reviewed";
 const COMMENTS_FILE: &str = "comments.json";
 const AGENT_FILE: &str = "agent.json";
@@ -142,13 +141,11 @@ impl StateStore {
 
     /// Where the review keeps which version of each document the person approved: `reviewed.json`, next to
     /// `read.json`, and in the `reviewed/` folder the text of those versions (see [`StateStore::reviewed_dir`]).
-    #[allow(dead_code)] // the review reads it once it is wired to the workspace
     pub fn reviewed_path(&self) -> PathBuf {
         self.dir.join(REVIEWED_FILE)
     }
 
     /// The folder of the copies of the approved versions, one file named for the hash of its text.
-    #[allow(dead_code)] // the review reads it once it is wired to the workspace
     pub fn reviewed_dir(&self) -> PathBuf {
         self.dir.join(REVIEWED_DIR)
     }
