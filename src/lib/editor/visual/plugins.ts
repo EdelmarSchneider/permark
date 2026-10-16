@@ -160,8 +160,10 @@ export function appPlugins(host: PluginHost) {
             host.files(files, "drop");
             return true;
           },
-          handleKeyDown(_view, event) {
+          handleKeyDown(view, event) {
             if (!["ArrowUp", "ArrowDown", "Enter"].includes(event.key)) return false;
+            // an input method that is composing text keeps its Enter and arrow keys
+            if (composing(event, view)) return false;
             if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
             return host.slashKey(event.key);
           },

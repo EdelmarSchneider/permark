@@ -208,6 +208,7 @@ export const es = {
   "doc.codeAutoHint":
     "Detectado a partir del código. Escribe el lenguaje después de las comillas invertidas para fijarlo.",
   "doc.anchorLabel": "Enlace a {name}",
+  "doc.footnoteBackref": "Volver a la referencia {ref}",
   "doc.diagramRendering": "Dibujando diagrama...",
   "doc.diagramFailed": "No se pudo dibujar el diagrama",
   "doc.imageZoomed": "Imagen ampliada",
@@ -746,6 +747,10 @@ export const es = {
   "time.minutes": "{n}min",
   "time.hours": "{n}h",
   "time.days": "{n}d",
+
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
 
   // ---- notes about a document
   "note.invalidUtf8": "UTF-8 no válido; los bytes ilegibles se reemplazaron",

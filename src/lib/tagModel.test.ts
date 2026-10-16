@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { language } from "./i18n";
 import {
   countTags,
   filterTags,
@@ -172,6 +173,10 @@ describe("selection", () => {
 });
 
 describe("countTags and knownTagsHint", () => {
+  afterEach(() => {
+    language.preference = "en";
+  });
+
   const entry = (path: string, tags: string[]): IndexEntry => ({
     path,
     tags,
@@ -189,9 +194,19 @@ describe("countTags and knownTagsHint", () => {
     expect(knownTagsHint(TAGS, 2)).toBe("spec, needs-review...");
     expect(knownTagsHint([])).toBe("");
   });
+
+  it("separates the names the way the language does", () => {
+    language.preference = "zh-CN";
+    expect(knownTagsHint(TAGS.slice(0, 3))).toBe("spec、needs-review、feed");
+    expect(knownTagsHint(TAGS, 2)).toBe("spec、needs-review...");
+  });
 });
 
 describe("treeTooltip", () => {
+  afterEach(() => {
+    language.preference = "en";
+  });
+
   // the line is worded by the caller (a translated string with the list in it)
   const line = (list: string): string => `Tags: ${list}`;
 

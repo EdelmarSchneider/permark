@@ -209,6 +209,7 @@ export const de = {
   "doc.codeAutoHint":
     "Aus dem Code erkannt. Nenne die Sprache nach den öffnenden Backticks, um sie festzulegen.",
   "doc.anchorLabel": "Link zu {name}",
+  "doc.footnoteBackref": "Zurück zur Referenz {ref}",
   "doc.diagramRendering": "Diagramm wird gezeichnet ...",
   "doc.diagramFailed": "Diagramm konnte nicht gezeichnet werden",
   "doc.imageZoomed": "Vergrößertes Bild",
@@ -750,6 +751,10 @@ export const de = {
   "time.minutes": "{n} min",
   "time.hours": "{n} h",
   "time.days": "{n} d",
+
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
 
   // ---- notes about a document
   "note.invalidUtf8": "Kein gültiges UTF-8; unlesbare Bytes wurden ersetzt",

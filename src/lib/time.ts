@@ -15,15 +15,20 @@ export function relativeTime(ms: number, now: number): string {
   return t("time.days", { n: Math.floor(diff / DAY) });
 }
 
-/** Longer age for sentences, worded by the language: "just now", "12 seconds ago", "há 4 minutos", "vor 2 Stunden". */
+/**
+ * Longer age for sentences, worded by the language: "just now", "12 seconds ago", "há 4 minutos", "vor 2 Stunden",
+ * "2 小时前". Chinese puts a space between a digit and the characters after it, as the rest of its table does.
+ */
 export function ago(ms: number, now: number): string {
   const diff = Math.max(0, now - ms);
   if (diff < 5 * SECOND) return t("time.justNow");
   const words = new Intl.RelativeTimeFormat(intlTag(), { numeric: "always" });
-  if (diff < MINUTE) return words.format(-Math.floor(diff / SECOND), "second");
-  if (diff < HOUR) return words.format(-Math.floor(diff / MINUTE), "minute");
-  if (diff < DAY) return words.format(-Math.floor(diff / HOUR), "hour");
-  return words.format(-Math.floor(diff / DAY), "day");
+  const age = (value: number, unit: Intl.RelativeTimeFormatUnit): string =>
+    words.format(-value, unit).replace(/(\d)(?=\p{Script=Han})/gu, "$1 ");
+  if (diff < MINUTE) return age(Math.floor(diff / SECOND), "second");
+  if (diff < HOUR) return age(Math.floor(diff / MINUTE), "minute");
+  if (diff < DAY) return age(Math.floor(diff / HOUR), "hour");
+  return age(Math.floor(diff / DAY), "day");
 }
 
 /** Header text for a document's modification time: "saved just now", "saved 12s ago". */
@@ -43,11 +48,25 @@ export function clock(ms: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * A date and a 24-hour time, put together the way the language writes them: "Oct 15, 14:32", "15. Okt., 14:32",
+ * "10月15日 14:32". The year comes too when asked. One formatter does both so the language chooses what goes between.
+ */
+export function dateTime(ms: number, withYear = false): string {
+  return new Intl.DateTimeFormat(intlTag(), {
+    ...(withYear ? { year: "numeric" } : {}),
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(ms);
+}
+
 /** "Mon 18:40" within the last week, "Oct 3, 18:40" before that. */
 export function baselineLabel(ms: number, now: number): string {
-  const d = new Date(ms);
   if (now - ms < 6 * DAY) {
-    return `${d.toLocaleDateString(intlTag(), { weekday: "short" })} ${clock(ms)}`;
+    return `${new Date(ms).toLocaleDateString(intlTag(), { weekday: "short" })} ${clock(ms)}`;
   }
-  return `${d.toLocaleDateString(intlTag(), { month: "short", day: "numeric" })}, ${clock(ms)}`;
+  return dateTime(ms);
 }

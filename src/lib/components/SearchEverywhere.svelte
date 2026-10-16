@@ -8,6 +8,7 @@
   import { gitStateLabel } from "../gitLabels";
   import { keys, t, tn, type MessageKey } from "../i18n";
   import { en } from "../i18n/en";
+  import { isComposingKey } from "../ime";
   import { basename, dirname, splitWorktree } from "../paths";
   import { registerOverlay, rememberFocus } from "../overlays";
   import { quickMatches, searchFolders, withAssets, type QuickMatches } from "../quickOpenModel";
@@ -420,6 +421,8 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    // a candidate picked with Enter or the arrows in an input method is not ours
+    if (isComposingKey(e)) return;
     // Up and Down in the tag suggestions, Enter or Tab to take one, Backspace to drop the last chip
     if (q.handleKey(e)) {
       e.preventDefault();

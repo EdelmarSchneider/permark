@@ -42,6 +42,11 @@ export function formatNumber(value: number): string {
   return value.toLocaleString(intlTag());
 }
 
+/** Items written as one list with the separator the interface's language uses: "a, b, c" or "a、b、c". */
+export function joinList(items: readonly string[]): string {
+  return items.join(t("list.separator"));
+}
+
 const pluralRules = new Map<string, Intl.PluralRules>();
 
 /**
@@ -67,12 +72,15 @@ export function t(key: MessageKey, params?: Params): string {
 /**
  * Looks up the form of a string that fits a count; `{n}` is filled with the count. A language needs a key for each
  * form it uses (`.one`, `.other`); a category it has no key for (`many` in Spanish and Portuguese, which only
- * applies to exact millions) reads as `.other`.
+ * applies to exact millions) reads as `.other`. A count of exactly 1 uses `.one` whenever the table has it, whatever
+ * CLDR says: Chinese has only `other`, but its `.one` strings can name the one item ("move report.md to the recycle bin?").
  */
 export function tn(key: PluralKey, count: number, params?: Params): string {
-  const category = pluralCategory(count);
   const table = MESSAGES[language.locale] as Partial<Record<string, string>>;
-  const template = table[`${key}.${category}`] ?? lookup(`${key}.other`);
+  const template =
+    (count === 1 ? table[`${key}.one`] : undefined) ??
+    table[`${key}.${pluralCategory(count)}`] ??
+    lookup(`${key}.other`);
   return fill(template, { n: formatNumber(count), ...params });
 }
 

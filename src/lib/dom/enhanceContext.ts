@@ -14,6 +14,7 @@ export function enhanceContextFor(path: string, theme: "light" | "dark"): Enhanc
       codeAuto: (name) => t("doc.codeAuto", { name }),
       codeAutoHint: t("doc.codeAutoHint"),
       anchorLabel: (name) => t("doc.anchorLabel", { name }),
+      footnoteBackref: (ref) => t("doc.footnoteBackref", { ref }),
       diagramPending: t("doc.diagramRendering"),
       diagramFailed: t("doc.diagramFailed"),
       alertTitles: {

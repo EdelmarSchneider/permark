@@ -3,6 +3,7 @@
   // line, Esc cancels. Clicking elsewhere closes it only while it is empty, so a comment that is being written is not lost.
   import { onMount } from "svelte";
   import { t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { registerOverlay, rememberFocus } from "../overlays";
   import { comments } from "../stores/comments.svelte";
 
@@ -47,7 +48,7 @@
   }
 
   async function onkeydown(e: KeyboardEvent): Promise<void> {
-    if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.isComposing) {
+    if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || isComposingKey(e)) {
       return;
     }
     e.preventDefault();
