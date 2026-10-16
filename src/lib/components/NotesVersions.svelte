@@ -2,10 +2,10 @@
   // "Show earlier versions": a small dialog that lists the versions of a note, newest first, shows the one selected and
   // restores it. The text the note has now is kept as a version first, so a restore can be undone.
   import { onMount } from "svelte";
-  import { formatNumber, intlTag, t } from "../i18n";
+  import { formatNumber, t } from "../i18n";
   import { registerOverlay, rememberFocus } from "../overlays";
   import { notes } from "../stores/notes.svelte";
-  import { clock as formatClock } from "../time";
+  import { dateTime } from "../time";
 
   let dialog: HTMLElement | undefined = $state();
   let restore: HTMLButtonElement | undefined = $state();
@@ -17,14 +17,7 @@
 
   /** "Oct 15, 14:32" in the language of the interface; the year too when it is not this one. */
   function when(ms: number): string {
-    const d = new Date(ms);
-    const sameYear = d.getFullYear() === new Date().getFullYear();
-    const day = d.toLocaleDateString(intlTag(), {
-      month: "short",
-      day: "numeric",
-      ...(sameYear ? {} : { year: "numeric" }),
-    });
-    return `${day}, ${formatClock(ms)}`;
+    return dateTime(ms, new Date(ms).getFullYear() !== new Date().getFullYear());
   }
 
   function size(bytes: number): string {

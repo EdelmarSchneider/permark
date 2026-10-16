@@ -745,6 +745,10 @@ export const ptBR = {
   "time.hours": "{n}h",
   "time.days": "{n}d",
 
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
+
   // ---- notes about a document
   "note.invalidUtf8": "UTF-8 inválido; os bytes ilegíveis foram substituídos",
   "note.utf16Le": "Convertido de UTF-16 LE",
