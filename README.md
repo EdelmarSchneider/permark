@@ -77,6 +77,10 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 ### 📖 Reading that feels like a book
 - GitHub-flavored Markdown: tables, task lists, footnotes, alerts (`> [!NOTE]`), description lists
 - **Mermaid** diagrams, **KaTeX** math, syntax-highlighted code with copy buttons
+- **Code blocks are highlighted for about 190 languages.** Name the language after the opening backticks, for example `` ```python ``, and
+  the block is colored and labelled in its corner. The usual short names work (`js`, `ts`, `py`, `sh`, `ps1`, `c#`, `c++`, `yml`, `rs`...),
+  and so do fences with attributes (`` ```rust title="main.rs" ``). A block with no language is colored only when its language is
+  unmistakable, and is then labelled *auto*; otherwise it stays plain. Visual and Source color the code too while you edit
 - Frontmatter shown as a clean metadata card
 - Light and dark themes, adjustable zoom, and a focus mode with both side panels collapsed
 - Three **reading widths**: Comfortable (a book-like column), Wide and Full. Wide tables, diagrams and images take the room
@@ -143,8 +147,8 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 ### ✏️ Edit without fear
 - One switch in the header, **Read | Visual | Source**, goes to any mode in one click and keeps your place and your unsaved work. **Visual** is a
-  WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks; **Source** is a Markdown editor with highlighting and
-  line numbers. `Ctrl+E` toggles Read and the editor you used last, `Ctrl+Alt+E` toggles Visual and Source. Both editors are loaded only
+  WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks (with a language picker that searches every language
+  and takes any text you type); **Source** is a Markdown editor with highlighting, also inside code fences, and line numbers. `Ctrl+E` toggles Read and the editor you used last, `Ctrl+Alt+E` toggles Visual and Source. Both editors are loaded only
   when you start editing
 - **Only the blocks you changed are rewritten.** Every other byte of the file stays as its author (or agent) wrote it, including line
   endings and a byte-order mark. A block you edited carries a bar in the margin until you save, and the status bar counts them
