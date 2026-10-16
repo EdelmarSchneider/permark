@@ -24,6 +24,8 @@ class UiStore {
   searchScope = $state<Scope>("all");
   settingsOpen = $state(false);
   initDialog = $state(false);
+  /** The "What do these letters mean?" popover of the git badges: where it is anchored, and which control opened it. */
+  gitLegend = $state.raw<{ anchor: Anchor; from: "status" | "explorer" } | null>(null);
   find = $state({
     open: false,
     query: "",

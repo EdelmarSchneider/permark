@@ -49,10 +49,15 @@
 {#if showInit}
   <div class="banner banner--info" role="status">
     <Icon name="lightbulb" />
-    <div>{t("initHint.text")}</div>
+    <div>{t("initHint.text")} <span class="banner__detail">{t("initHint.detail")}</span></div>
     <span class="spacer"></span>
     <div class="banner__actions">
-      <button type="button" class="btn btn--sm" onclick={() => (ui.initDialog = true)}>
+      <button
+        type="button"
+        class="btn btn--sm"
+        title={t("initHint.detail")}
+        onclick={() => (ui.initDialog = true)}
+      >
         {t("initHint.initialize")}
       </button>
       <button

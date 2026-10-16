@@ -19,6 +19,8 @@
 
   let tree: Tree | undefined = $state();
   let menuAnchor = $state<DOMRect | null>(null);
+  /** Where the menu was opened from: what an entry opens (the git legend) is placed there, after the menu has closed. */
+  let menuOrigin: DOMRect | null = null;
   let filterAnchor = $state<DOMRect | null>(null);
 
   const projectOpen = $derived(vault.stateLocation === "project");
@@ -57,6 +59,18 @@
       onselect: () => unread.toggleOnlyUnread(),
     },
     { type: "separator" },
+    ...(vault.git?.isRepo
+      ? [
+          {
+            id: "gitLegend",
+            label: t("git.legend.menu"),
+            icon: "info",
+            onselect: () => {
+              if (menuOrigin) ui.gitLegend = { anchor: menuOrigin, from: "explorer" };
+            },
+          } satisfies MenuEntry,
+        ]
+      : []),
     {
       id: "init",
       label: projectOpen ? t("explorer.stateInProject") : t("explorer.initialize"),
@@ -94,6 +108,7 @@
 
   function toggleMenu(e: MouseEvent): void {
     menuAnchor = menuAnchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (menuAnchor) menuOrigin = menuAnchor;
   }
 </script>
 

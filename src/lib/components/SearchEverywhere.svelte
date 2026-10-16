@@ -5,7 +5,7 @@
   import { availableCommands, matchCommands, type CommandContext } from "../commands";
   import { errorMessage } from "../errors";
   import { fileIconOf } from "../fileIcons";
-  import { gitStateLabel } from "../gitLabels";
+  import { gitBadgeTitle } from "../gitLabels";
   import { keys, t, tn, type MessageKey } from "../i18n";
   import { en } from "../i18n/en";
   import { isComposingKey } from "../ime";
@@ -638,8 +638,9 @@
                         >{relativeTime(row.ms, clock.now)}</span
                       >{/if}
                     {#if badge}
-                      <span class={["badge", badge.className]} title={gitStateLabel(badge.state)}
-                        >{badge.letter}</span
+                      <span
+                        class={["badge", badge.className]}
+                        title={gitBadgeTitle(badge, vault.git?.baseline.kind)}>{badge.letter}</span
                       >
                     {/if}
                   </div>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { gitStateLabel } from "../gitLabels";
+  import { gitBadgeTitle } from "../gitLabels";
   import { noteText } from "../errors";
   import { isMediaViewKind } from "../fileKinds";
   import { t } from "../i18n";
@@ -203,8 +203,9 @@
       {/if}
     </nav>
     {#if badge}
-      <span class={["badge", badge.className]} title={gitStateLabel(badge.state)}
-        >{badge.letter}</span
+      <span
+        class={["badge", badge.className]}
+        title={gitBadgeTitle(badge, vault.git?.baseline.kind)}>{badge.letter}</span
       >
     {/if}
     {#if edit.active}
