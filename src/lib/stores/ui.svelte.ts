@@ -26,6 +26,8 @@ class UiStore {
   initDialog = $state(false);
   /** The "What do these letters mean?" popover of the git badges: where it is anchored, and which control opened it. */
   gitLegend = $state.raw<{ anchor: Anchor; from: "status" | "explorer" } | null>(null);
+  /** The folder switcher (the menu on the project's name in the Explorer): null while closed, else where it is anchored. */
+  folderSwitcher = $state.raw<{ anchor: Anchor } | null>(null);
   find = $state({
     open: false,
     query: "",

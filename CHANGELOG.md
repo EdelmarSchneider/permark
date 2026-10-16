@@ -5,6 +5,14 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Switch folders without leaving the window.** The project's name at the top of the Explorer is now a menu (the little arrow beside it
+  says so). It lists your recent folders, with the open one ticked: pick one to show it in this window, or use **Open folder...** and
+  **Close folder**, which takes you back to the start screen. A small **x** beside a folder takes it off the list; only the list forgets
+  it, the folder and its files stay where they are. If you have unsaved edits, TrailMark asks to save them first, as it does for any
+  other move. The same menu opens from the command palette (**Switch folder...**, **Close folder**), and the project's name stays in
+  view while a long file tree scrolls.
+
 ## [0.5.4] - 2026-10-16
 
 TrailMark speaks Italian, the light theme comes in softer tones, and the Git letters explain themselves.

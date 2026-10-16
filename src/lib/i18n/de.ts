@@ -99,6 +99,13 @@ export const de = {
   "explorer.worktrees": "Worktrees",
   "explorer.worktreeCount.one": "{n} Worktree",
   "explorer.worktreeCount.other": "{n} Worktrees",
+  "switcher.label": "{name}: Ordner wechseln",
+  "switcher.hint": "Zu einem anderen Ordner wechseln, einen öffnen oder diesen schließen",
+  "switcher.menu": "Ordner",
+  "switcher.noOthers": "Noch keine weiteren zuletzt geöffneten Ordner.",
+  "switcher.remove": "{name} aus den zuletzt geöffneten Ordnern entfernen",
+  "switcher.removeHint":
+    "Nur die Liste vergisst ihn. Der Ordner und seine Dateien bleiben, wo sie sind.",
   "tree.files": "Dateien",
   "tree.worktrees": "Worktrees",
   "tree.containsChanges": "Enthält Änderungen",
@@ -330,6 +337,8 @@ export const de = {
   // ---- Befehle (der Bereich Befehle der Suche überall)
   "cmd.openFolder": "Ordner öffnen ...",
   "cmd.openFile": "Datei öffnen ...",
+  "cmd.switchFolder": "Ordner wechseln ...",
+  "cmd.closeFolder": "Ordner schließen",
   "cmd.quickOpen": "Zu Datei springen",
   "cmd.searchAll": "Alle Dokumente durchsuchen",
   "cmd.back": "Zurück",
