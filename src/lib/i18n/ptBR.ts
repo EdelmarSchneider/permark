@@ -207,6 +207,7 @@ export const ptBR = {
   "doc.codeAutoHint":
     "Detectada pelo código. Escreva a linguagem depois dos três acentos graves para defini-la.",
   "doc.anchorLabel": "Link para {name}",
+  "doc.footnoteBackref": "Voltar à referência {ref}",
   "doc.diagramRendering": "Desenhando diagrama...",
   "doc.diagramFailed": "Não foi possível desenhar o diagrama",
   "doc.imageZoomed": "Imagem ampliada",
@@ -744,6 +745,10 @@ export const ptBR = {
   "time.minutes": "{n}min",
   "time.hours": "{n}h",
   "time.days": "{n}d",
+
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
 
   // ---- notes about a document
   "note.invalidUtf8": "UTF-8 inválido; os bytes ilegíveis foram substituídos",

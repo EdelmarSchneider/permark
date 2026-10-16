@@ -1,6 +1,7 @@
 // Pure model of the tag UI: matching tag names while typing, the suggestions list of the tag editor,
 // filtering the Tags view, and which tags are selected there.
 
+import { joinList } from "./i18n";
 import { foldChars } from "./text";
 import { normalizeTag, normalizeTags } from "./tagText";
 import type { FileMeta, IndexEntry, TagCount } from "./types";
@@ -164,7 +165,7 @@ export function countTags(entries: Iterable<IndexEntry>): NamedCount[] {
 /** The line shown for a tag that no file has: "No tag 'x'. Tags: spec, feed, ..." */
 export function knownTagsHint(counts: readonly Pick<TagCount, "name">[], max = 6): string {
   const names = counts.slice(0, max).map((t) => t.name);
-  return counts.length > max ? `${names.join(", ")}...` : names.join(", ");
+  return counts.length > max ? `${joinList(names)}...` : joinList(names);
 }
 
 // ---- tooltips -----------------------------------------------------------------------------------
@@ -181,7 +182,7 @@ export function treeTooltip(
   if (!entry) return undefined;
   const lines = [path];
   if (entry.description !== "") lines.push(entry.description);
-  if (entry.tags.length > 0) lines.push(tagsLine(entry.tags.join(", ")));
+  if (entry.tags.length > 0) lines.push(tagsLine(joinList(entry.tags)));
   return lines.length > 1 ? lines.join("\n") : undefined;
 }
 

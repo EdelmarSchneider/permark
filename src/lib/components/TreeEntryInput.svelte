@@ -10,6 +10,7 @@
     renameSelection,
   } from "../fileOps";
   import { t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { basename, dirname } from "../paths";
   import { fileops } from "../stores/fileops.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -98,6 +99,7 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       void submit();

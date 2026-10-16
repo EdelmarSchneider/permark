@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { language } from "./i18n";
-import { ago, baselineLabel, clock, relativeTime, savedLabel } from "./time";
+import { ago, baselineLabel, clock, dateTime, relativeTime, savedLabel } from "./time";
 
 const NOW = new Date(2026, 9, 13, 12, 0, 0).getTime();
 const SEC = 1000;
@@ -66,6 +66,12 @@ describe("in another language", () => {
     language.preference = "de";
     expect(ago(NOW - 2 * HOUR, NOW)).toBe("vor 2 Stunden");
     expect(ago(NOW - 1 * MIN, NOW)).toBe("vor 1 Minute");
+    language.preference = "zh-CN";
+    expect(ago(NOW - 2 * HOUR, NOW)).toBe("2 小时前");
+    expect(ago(NOW - 12 * SEC, NOW)).toBe("12 秒钟前");
+    expect(ago(NOW - 17 * MIN, NOW)).toBe("17 分钟前");
+    expect(ago(NOW - 50 * HOUR, NOW)).toBe("2 天前");
+    expect(savedLabel(NOW - 4 * MIN, NOW)).toBe("4 分钟前保存");
   });
 
   it("says 'just now' in the language", () => {
@@ -82,5 +88,42 @@ describe("in another language", () => {
     expect(baselineLabel(monday, NOW)).toMatch(/^Mo\.? 18:40$/);
     language.preference = "pt-BR";
     expect(baselineLabel(monday, NOW)).toMatch(/^seg\.? 18:40$/);
+    language.preference = "zh-CN";
+    expect(baselineLabel(monday, NOW)).toBe("周一 18:40");
+  });
+
+  it("puts the date and the time together the way each language writes them", () => {
+    const old = new Date(2026, 9, 1, 8, 15).getTime();
+    language.preference = "pt-BR";
+    expect(baselineLabel(old, NOW)).toMatch(/^1 de out\.?, 08:15$/);
+    language.preference = "es";
+    expect(baselineLabel(old, NOW)).toMatch(/^1 oct\.?, 08:15$/);
+    language.preference = "de";
+    expect(baselineLabel(old, NOW)).toMatch(/^1\. Okt\.?, 08:15$/);
+    // Chinese writes no comma between the date and the time
+    language.preference = "zh-CN";
+    expect(baselineLabel(old, NOW)).toBe("10月1日 08:15");
+  });
+});
+
+describe("dateTime", () => {
+  afterEach(() => {
+    language.preference = "en";
+  });
+
+  const lastYear = new Date(2025, 11, 31, 0, 5).getTime();
+
+  it("is the date and the 24-hour time, without the year unless asked", () => {
+    const morning = new Date(2026, 9, 1, 8, 15).getTime();
+    expect(dateTime(morning)).toBe("Oct 1, 08:15");
+    expect(dateTime(lastYear)).toBe("Dec 31, 00:05");
+    expect(dateTime(lastYear, true)).toBe("Dec 31, 2025, 00:05");
+  });
+
+  it("follows the language, the year included", () => {
+    language.preference = "de";
+    expect(dateTime(lastYear, true)).toMatch(/^31\. Dez\.? 2025,? 00:05$/);
+    language.preference = "zh-CN";
+    expect(dateTime(lastYear, true)).toBe("2025年12月31日 00:05");
   });
 });

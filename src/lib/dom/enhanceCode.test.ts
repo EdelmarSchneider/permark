@@ -10,6 +10,7 @@ const context: EnhanceContext = {
     codeAuto: (name) => `auto: ${name}`,
     codeAutoHint: "Guessed from the code.",
     anchorLabel: (name) => name,
+    footnoteBackref: (ref) => ref,
     diagramPending: "...",
     diagramFailed: "failed",
     alertTitles: {},

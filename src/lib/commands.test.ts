@@ -12,6 +12,7 @@ import {
 import { de } from "./i18n/de";
 import { en } from "./i18n/en";
 import { ptBR } from "./i18n/ptBR";
+import { zhCN } from "./i18n/zhCN";
 import { matchShortcut, parseCombo, SHORTCUT_ACTIONS, type KeyInfo } from "./shortcuts";
 
 const labelsIn = (table: Record<string, string>): CommandLabels => ({
@@ -399,6 +400,14 @@ describe("matchCommands", () => {
         expect(match.alias, match.command.id).toBeNull();
         expect(match.positions.length, match.command.id).toBeGreaterThan(0);
       }
+    });
+
+    it("finds a command by Chinese characters, which have no spaces to start words at", () => {
+      const zh = labelsIn(zhCN);
+      expect(top("保存", zh)).toBe("save");
+      expect(top("大纲", zh)).toBe("toggleOutline");
+      // the English names keep working
+      expect(top("toggle outline", zh)).toBe("toggleOutline");
     });
 
     it("lists a command once, whichever language matched", () => {

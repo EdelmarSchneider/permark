@@ -15,6 +15,8 @@ export type EnhanceLabels = {
   /** What the guessed-language label says when it is hovered. */
   codeAutoHint: string;
   anchorLabel: (name: string) => string;
+  /** The label of a footnote's way back to its reference, the reference being "1" or "1-2" when the note is cited twice. */
+  footnoteBackref: (ref: string) => string;
   diagramPending: string;
   diagramFailed: string;
   alertTitles: Record<string, string>;
@@ -102,6 +104,7 @@ function enhanceInside(root: HTMLElement, ctx: EnhanceContext, tasks: Promise<vo
     .forEach((heading) => ensureAnchor(heading, ctx));
   if (root.matches("h1, h2, h3, h4, h5, h6")) ensureAnchor(root, ctx);
   decorateAlerts(root, ctx);
+  decorateFootnotes(root, ctx);
   decorateTaskLists(root);
   if (root.tagName === "P" && isImageOnly(root)) root.classList.add("tm-wide");
   root.querySelectorAll<HTMLElement>("[data-math-style]").forEach((el) => {
@@ -190,6 +193,16 @@ function decorateAlerts(root: HTMLElement, ctx: EnhanceContext): void {
     const text = ctx.labels.alertTitles[kind];
     if (text) title.textContent = text;
     title.insertAdjacentHTML("afterbegin", ALERT_ICONS[kind] ?? ALERT_ICONS.note);
+  }
+}
+
+/** The backend words the back-link of a footnote in English; the label is the interface's own. */
+function decorateFootnotes(root: HTMLElement, ctx: EnhanceContext): void {
+  for (const back of Array.from(root.querySelectorAll<HTMLElement>("a.footnote-backref"))) {
+    const ref =
+      back.getAttribute("data-footnote-backref-idx") ??
+      /(\S+)$/.exec(back.getAttribute("aria-label") ?? "")?.[1];
+    if (ref) back.setAttribute("aria-label", ctx.labels.footnoteBackref(ref));
   }
 }
 

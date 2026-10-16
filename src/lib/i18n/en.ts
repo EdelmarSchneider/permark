@@ -202,6 +202,7 @@ export const en = {
   "doc.codeAutoHint":
     "Guessed from the code. Name the language after the opening backticks to set it.",
   "doc.anchorLabel": "Link to {name}",
+  "doc.footnoteBackref": "Back to reference {ref}",
   "doc.diagramRendering": "Rendering diagram...",
   "doc.diagramFailed": "Diagram could not be rendered",
   "doc.imageZoomed": "Enlarged image",
@@ -778,6 +779,10 @@ export const en = {
   "time.minutes": "{n}m",
   "time.hours": "{n}h",
   "time.days": "{n}d",
+
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
 
   // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
   "mode.label": "Mode",

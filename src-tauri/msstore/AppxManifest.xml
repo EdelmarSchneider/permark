@@ -42,6 +42,7 @@
     <Resource Language="pt-BR" />
     <Resource Language="es" />
     <Resource Language="de" />
+    <Resource Language="zh-CN" />
   </Resources>
 
   <Applications>

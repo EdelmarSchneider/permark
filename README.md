@@ -267,7 +267,7 @@ there are no switches for it in Settings, and uninstalling the app removes it.
 Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list TrailMark under **Open With** for Markdown files.
 
 ### 🌍 Your language
-TrailMark speaks **English, Português (Brasil), Español and Deutsch**. It follows your system's language, and **Settings → Language**
+TrailMark speaks **English, Português (Brasil), Español, Deutsch and 简体中文**. It follows your system's language, and **Settings → Language**
 switches it at once, no restart. The Windows installer asks for a language too.
 
 ## Install
@@ -502,6 +502,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 - v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
   show up in Quick open
+- v0.5.3: the interface in 简体中文 (Simplified Chinese), and search that finds Chinese and Japanese words inside sentences
 
 **v0.6**
 - Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words it uses.

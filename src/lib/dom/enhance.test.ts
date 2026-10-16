@@ -12,6 +12,7 @@ function context(over: Partial<EnhanceContext> = {}): EnhanceContext {
     labels: {
       copyCode: "Copy",
       anchorLabel: (name) => name,
+      footnoteBackref: (ref) => `Back to ${ref}`,
       diagramPending: "...",
       diagramFailed: "failed",
       alertTitles: {},
@@ -119,5 +120,30 @@ describe("a player of the document", () => {
     await Promise.all(tasks);
     expect(asked).toEqual([]);
     expect(HTMLMediaElement.prototype.load).not.toHaveBeenCalled();
+  });
+});
+
+describe("the back-link of a footnote", () => {
+  const section =
+    '<section class="footnotes" data-footnotes><ol><li id="fn-1"><p>Note. ' +
+    '<a href="#fnref-1" class="footnote-backref" data-footnote-backref data-footnote-backref-idx="1" aria-label="Back to reference 1">↩</a> ' +
+    '<a href="#fnref-2-2" class="footnote-backref" data-footnote-backref data-footnote-backref-idx="2-2" aria-label="Back to reference 2-2">↩</a>' +
+    "</p></li></ol></section>";
+
+  it("is labeled in the interface's language, not the backend's", () => {
+    const host = fragment(section);
+    enhanceBlocks(Array.from(host.children) as HTMLElement[], context());
+    const labels = Array.from(host.querySelectorAll("a.footnote-backref")).map((a) =>
+      a.getAttribute("aria-label"),
+    );
+    expect(labels).toEqual(["Back to 1", "Back to 2-2"]);
+  });
+
+  it("reads the reference from the backend's label when the index attribute is missing", () => {
+    const host = fragment(
+      '<section class="footnotes"><ol><li><p><a class="footnote-backref" aria-label="Back to reference 3">↩</a></p></li></ol></section>',
+    );
+    enhanceBlocks(Array.from(host.children) as HTMLElement[], context());
+    expect(host.querySelector("a")?.getAttribute("aria-label")).toBe("Back to 3");
   });
 });

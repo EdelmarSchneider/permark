@@ -241,14 +241,15 @@ fn the_command_says_what_it_is_when_explorer_asks() {
     let none = None::<&IShellItemArray>;
     // SAFETY: plain calls on a live command.
     unsafe {
-        // the title is the text of one of the four languages the app has
+        // the title is the text of one of the five languages the app has
         let title = text_of(command.GetTitle(none).expect("a title"));
         assert!(
             [
                 "Open with TrailMark",
                 "Abrir com o TrailMark",
                 "Abrir con TrailMark",
-                "Mit TrailMark öffnen"
+                "Mit TrailMark öffnen",
+                "用 TrailMark 打开"
             ]
             .contains(&title.as_str()),
             "{title}"

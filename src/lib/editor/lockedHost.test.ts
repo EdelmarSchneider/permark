@@ -15,6 +15,7 @@ const context: EnhanceContext = {
     codeAuto: (name) => `auto: ${name}`,
     codeAutoHint: "guessed",
     anchorLabel: (name) => name,
+    footnoteBackref: (ref) => ref,
     diagramPending: "...",
     diagramFailed: "failed",
     alertTitles: {},

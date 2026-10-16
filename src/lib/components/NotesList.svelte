@@ -4,6 +4,7 @@
   import { onMount, tick } from "svelte";
   import { trackPointerDrag } from "../dom/treeDrag";
   import { keys, t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { GROUP_ORDER, drawnOrder, fullPlace, shortFolder, type GroupId } from "../notesModel";
   import { clock } from "../stores/clock.svelte";
   import { notes } from "../stores/notes.svelte";
@@ -52,6 +53,7 @@
   }
 
   function onrowkeydown(e: KeyboardEvent, note: NoteEntry): void {
+    if (isComposingKey(e)) return;
     if (e.target instanceof HTMLElement && e.target.closest("input")) return;
     if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       // Alt+Up and Alt+Down change the order of the pinned notes
@@ -99,6 +101,7 @@
   }
 
   function onfilterkeydown(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       rowElements()[0]?.focus();

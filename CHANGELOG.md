@@ -5,6 +5,30 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-16
+
+TrailMark speaks Simplified Chinese, and search finds words in Chinese and Japanese text.
+
+### Added
+- **简体中文 (Simplified Chinese).** The interface now comes in Simplified Chinese besides English, Português (Brasil), Español and Deutsch.
+  **Settings → Language** lists it, and *System default* picks it for any Chinese system language (Traditional Chinese systems read Simplified
+  Chinese for now). The Windows installer offers it, "Open with TrailMark" in the file manager is worded in it ("用 TrailMark 打开"), the Microsoft
+  Store package declares it, and the interface and documents use a Chinese font on every system.
+
+### Fixed
+- **Search finds Chinese and Japanese words.** These languages are written without spaces, so a sentence used to count as one giant word and
+  searching for a word inside it found nothing. Search now matches the characters and character pairs of Chinese, Japanese kanji, hiragana and
+  katakana text, in section results and in the agent bridge alike: "搜索" finds it inside a long sentence, a longer query ranks the section that
+  holds all of it first, and a single character works too. Mixed text such as `使用Rust编写` is split at the script change. Matches are
+  highlighted as one stretch in the result snippets.
+- **Asking to delete one file names it** again (in every language), and the toast after deleting a note shows its title.
+- **Dates, times and lists are written the way each language writes them**, with no stray comma between a date and a time.
+- **Tables stay readable in a narrow pane**: columns keep a sensible width and a wide table scrolls sideways, in Read and in Visual.
+- **Typing with an input method** (Chinese, Japanese, Korean): Enter and the arrow keys go to the input method while it is composing,
+  instead of creating a file or opening a search result.
+- The Notes word count counts each Chinese or Japanese character as a word; Chinese text in code blocks uses a Chinese font; a cut-short
+  breadcrumb shows its full name on hover; the footnote back-link is labelled in the interface's language.
+
 ## [0.5.2] - 2026-10-16
 
 Pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and Notes is simpler to start with.
