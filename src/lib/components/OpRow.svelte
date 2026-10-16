@@ -2,7 +2,8 @@
   // One row for something done in the Explorer (a move, a rename, a delete...): the summary, and what it touched.
   import type { OperationEntry } from "../feed";
   import { t } from "../i18n";
-  import { basename, folderLabel, isMarkdown } from "../paths";
+  import { canOpenInPane } from "../fileKinds";
+  import { basename, folderLabel } from "../paths";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { feed } from "../stores/feed.svelte";
@@ -24,7 +25,7 @@
   const expandable = $derived(entry.items.length > 0 || entry.notes.length > 0);
 
   function openItem(path: string): void {
-    if (isMarkdown(path) && entry.kind !== "deleted") void app.openDoc(path);
+    if (canOpenInPane(path) && entry.kind !== "deleted") void app.openDoc(path);
   }
 </script>
 

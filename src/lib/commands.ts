@@ -23,6 +23,7 @@ export type MenuAction =
   | "markUnread"
   | "showComments"
   | "revealInTree"
+  | "openDefaultApp"
   | "baselineLastVisit"
   | "baselineCommit"
   | "openContainingFolder"
@@ -159,6 +160,11 @@ export const COMMANDS: readonly Command[] = [
     id: "openExternal",
     label: "cmd.openExternal",
     shortcut: "Ctrl+Shift+E",
+    available: inProjectWithDoc,
+  },
+  {
+    id: "openDefaultApp",
+    label: "cmd.openDefaultApp",
     available: inProjectWithDoc,
   },
   {

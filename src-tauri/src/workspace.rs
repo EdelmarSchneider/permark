@@ -30,6 +30,7 @@ use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
 };
 use crate::links::{self, LinkTarget};
+use crate::media::{self, Window};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
 use crate::meta::{MetaService, Timing};
@@ -45,7 +46,7 @@ use crate::session::{
     WindowState,
 };
 use crate::unread::{Timing as UnreadTiming, UnreadService};
-use crate::util::{image_mime, modified_ms, now_ms, on_parser_stack, read_with_retry};
+use crate::util::{modified_ms, now_ms, on_parser_stack};
 use crate::vault::{NodeKind, Resolved, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
@@ -59,8 +60,6 @@ const DEFAULT_SEARCH_LIMIT: usize = 30;
 const MAX_SEARCH_LIMIT: usize = 200;
 /// At most this many uncommitted files are remembered (with their content) when a project is closed.
 const MAX_DIRTY_TRACKED: usize = 500;
-/// Images larger than this are not served to the document view.
-const MAX_ASSET_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Where the core reports what happens in the background.
 pub trait EventSink: Send + Sync + 'static {
@@ -222,35 +221,36 @@ pub struct ChangedFile {
     pub modified_ms: u64,
 }
 
-/// An image of the open folder, ready to be served to the document view.
+/// Which part of a file an [`Asset`] carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Part {
+    /// All of it.
+    Whole,
+    /// The bytes `start` to `end`, both included, because a player asked for them.
+    Range { start: u64, end: u64 },
+    /// The request starts after the end of the file: nothing is carried.
+    Unsatisfiable,
+}
+
+/// A picture, sound or video of the open folder (or a part of one), ready to be served to the document view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Asset {
     pub bytes: Vec<u8>,
     pub mime: &'static str,
+    /// The size of the whole file.
+    pub total: u64,
+    pub part: Part,
 }
 
-/// Extensions of the files that may be handed to the system's default application. Files that can
-/// run code when opened (programs, scripts, shortcuts, installers) are not documents and are left out;
-/// so are source files, because some systems run those on open too.
+/// Extensions of the files that "Open in external editor" hands to the system's default application when no editor
+/// command is set. Files that can run code when opened (programs, scripts, shortcuts, installers) are not documents and
+/// are left out; so are source files, because some systems run those on open too. Pictures, sound and video are
+/// allowed by their kind (see [`media::asset_kind`]).
 const EXTERNAL_EXTENSIONS: &[&str] = &[
     "md", "markdown", "mdown", "mkd", "mdx", "txt", "text", "log", "rst", "adoc", "org", "tex",
     "bib", "json", "jsonc", "yaml", "yml", "toml", "xml", "xsd", "csv", "tsv", "ini", "cfg",
-    "conf", "html", "htm", "css", "svg", "png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico",
-    "pdf",
+    "conf", "html", "htm", "css", "pdf",
 ];
-
-/// Whether a file without an extension is a program: on macOS and Linux one with an execute bit (a script such as
-/// `gradlew`, a binary) is run, in a terminal, when the system "opens" it. Windows decides by the extension alone.
-#[cfg(unix)]
-fn is_program_without_extension(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::metadata(path).is_ok_and(|meta| meta.permissions().mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-fn is_program_without_extension(_path: &Path) -> bool {
-    false
-}
 
 /// How long a closing window waits for the unread markers' file to be written (see [`Workspace::save_last_visit`]).
 const CLOSE_WAIT: Duration = Duration::from_millis(500);
@@ -865,6 +865,10 @@ impl Workspace {
             })?);
         }
         let resolved = self.vault.resolve(path)?;
+        // A picture, sound or video is not read: the view holds its size and time, and the UI draws the file itself.
+        if let Some(kind) = media::asset_kind(&resolved.rel) {
+            return Ok(render::asset_view(&resolved.abs, &resolved.rel, kind)?);
+        }
         // Parsing untrusted documents happens on a thread with a large stack (see `on_parser_stack`).
         Ok(on_parser_stack(|| {
             render::load_document(&self.registry, &resolved.abs, &resolved.rel)
@@ -1066,44 +1070,90 @@ impl Workspace {
         Ok(self.resolve_path(path)?.abs.display().to_string())
     }
 
-    /// An image for the document view. It is looked up like any other path of the folder, so nothing
-    /// outside it can be read, and only a folder that is open now can be served. In Simple mode only
-    /// the images next to the opened file are served, because that folder is often Downloads or the
-    /// home folder.
-    pub fn read_asset(&self, path: &str) -> Result<Asset, AppError> {
-        // the images of a loose file are the ones next to it, and no others
+    /// A picture, sound or video for the document view, or the part of a sound or video that `range` (the value of a
+    /// `Range` header) asks for. It is looked up like any other path of the folder, so nothing outside it can be read,
+    /// and only a folder that is open now can be served. In Simple mode only the files next to the opened file are
+    /// served, because that folder is often Downloads or the home folder.
+    pub fn read_asset(&self, path: &str, range: Option<&str>) -> Result<Asset, AppError> {
+        // the files of a loose file are the ones next to it, and no others
         if let Some(doc) = self.loose_doc(path)? {
             let Some(name) = doc.asset.as_deref() else {
                 return Err(VaultError::NotFound(path.to_owned()).into());
             };
-            return Self::read_image(&doc.vault, name);
+            return Self::read_media(&doc.vault, name, range);
         }
-        Self::read_image(&self.vault, path)
+        Self::read_media(&self.vault, path, range)
     }
 
-    /// An image of `vault`, looked up like any other path of it, so nothing outside it can be read. A vault of one file
-    /// (Simple mode, a loose file) serves the images next to the file only.
-    fn read_image(vault: &Vault, path: &str) -> Result<Asset, AppError> {
-        let mime =
-            image_mime(path).ok_or_else(|| VaultError::Invalid(format!("not an image: {path}")))?;
+    /// A picture, sound or video of `vault`, looked up like any other path of it, so nothing outside it can be read. A
+    /// vault of one file (Simple mode, a loose file) serves the files next to the file only.
+    ///
+    /// A picture is read whole (up to [`media::MAX_WHOLE`]). A sound or video is cut: only the part asked for is read, at
+    /// most [`media::MAX_CHUNK`] bytes, so a long film is never held in memory.
+    fn read_media(vault: &Vault, path: &str, range: Option<&str>) -> Result<Asset, AppError> {
+        let not_media = || VaultError::Invalid(format!("not a picture, sound or video: {path}"));
+        // the name asked for says a picture, a sound or a video (nothing else is looked up)...
+        media::asset_kind(path).ok_or_else(not_media)?;
         let resolved = vault.resolve(path)?;
         if vault.is_shallow() && resolved.rel.contains('/') {
             return Err(VaultError::Escapes(path.to_owned()).into());
         }
-        let meta =
-            std::fs::metadata(&resolved.abs).map_err(|e| VaultError::io(&resolved.abs, e))?;
-        if !meta.is_file() || meta.len() > MAX_ASSET_BYTES {
+        // ...and so does the name of the file it leads to: a link `a.png` that points at `.env` serves nothing
+        let (kind, mime) = media::served_as(path, &resolved.rel).ok_or_else(not_media)?;
+        let io_err = |e| VaultError::io(&resolved.abs, e);
+        let meta = std::fs::metadata(&resolved.abs).map_err(io_err)?;
+        if !meta.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
-        let bytes = read_with_retry(&resolved.abs).map_err(|e| VaultError::io(&resolved.abs, e))?;
-        Ok(Asset { bytes, mime })
+        let total = meta.len();
+        let window = if kind.is_streamed() {
+            match media::window(range, total, media::MAX_CHUNK) {
+                // no range asked for: a big file starts with its first part, a small one is sent whole
+                Window::Whole if total > media::MAX_WHOLE => {
+                    media::window(Some("bytes=0-"), total, media::MAX_CHUNK)
+                }
+                other => other,
+            }
+        } else if total > media::MAX_WHOLE {
+            return Err(VaultError::NotFound(path.to_owned()).into());
+        } else {
+            Window::Whole
+        };
+        let (bytes, part) = match window {
+            // at most what the file measured above, which is what the size limit was checked on
+            Window::Whole => (
+                media::read_whole(&resolved.abs, total).map_err(io_err)?,
+                Part::Whole,
+            ),
+            Window::Part { start, end } => {
+                let bytes = media::read_part(&resolved.abs, start, end).map_err(io_err)?;
+                // the file got shorter than the answer was planned for: say what is really carried
+                match u64::try_from(bytes.len()) {
+                    Ok(len) if len > 0 => (
+                        bytes,
+                        Part::Range {
+                            start,
+                            end: start + len - 1,
+                        },
+                    ),
+                    _ => (Vec::new(), Part::Unsatisfiable),
+                }
+            }
+            Window::Unsatisfiable => (Vec::new(), Part::Unsatisfiable),
+        };
+        Ok(Asset {
+            bytes,
+            mime,
+            total,
+            part,
+        })
     }
 
     /// The file to hand to the system's default application for "Open externally".
     ///
-    /// The path must stay inside the folder, name an existing file, and be a document or an image (or a plain file
-    /// without an extension): a program or script in the folder is never started from here, and neither is a file
-    /// without an extension that the system would run (see [`is_program_without_extension`]).
+    /// The path must stay inside the folder, name an existing file, and be a document, a picture, a sound or a video (or
+    /// a plain file without an extension): a program or script in the folder is never started from here, and neither is
+    /// a file without an extension that the system would run (see [`media::has_execute_bit`]).
     pub fn external_target(&self, path: &str) -> Result<PathBuf, AppError> {
         let resolved = self.resolve_path(path)?;
         if !resolved.abs.is_file() {
@@ -1111,15 +1161,28 @@ impl Workspace {
         }
         let allowed = resolved.abs.extension().map_or_else(
             // No extension: a plain file (`LICENSE`, `Makefile`) is a document, a program is not.
-            || !is_program_without_extension(&resolved.abs),
+            || !media::has_execute_bit(&resolved.abs),
             |e| {
                 let e = e.to_string_lossy().to_ascii_lowercase();
                 EXTERNAL_EXTENSIONS.contains(&e.as_str())
+                    || media::asset_kind(&resolved.rel).is_some()
             },
         );
         if !allowed {
             return Err(VaultError::Invalid(path.to_owned()).into());
         }
+        Ok(resolved.abs)
+    }
+
+    /// The file to hand to the system's default application for "Open with default app", which any file of the folder
+    /// can go to except a program, script, installer, shortcut or macro document: such a file is refused with its kind
+    /// named (see [`media::open_policy`]). The path must stay inside the folder and name an existing file.
+    pub fn default_app_target(&self, path: &str) -> Result<PathBuf, AppError> {
+        let resolved = self.resolve_path(path)?;
+        if !resolved.abs.is_file() {
+            return Err(VaultError::NotFound(path.to_owned()).into());
+        }
+        media::check_openable(&resolved.abs)?;
         Ok(resolved.abs)
     }
 
@@ -1570,9 +1633,10 @@ impl WorkspaceHost {
         std::mem::replace(&mut *slot, next)
     }
 
-    /// An image of the open folder (see [`Workspace::read_asset`]).
-    pub fn read_asset(&self, path: &str) -> Result<Asset, AppError> {
-        self.current()?.read_asset(path)
+    /// A picture, sound or video of the open folder, or the part of one a `Range` header asks for (see
+    /// [`Workspace::read_asset`]).
+    pub fn read_asset(&self, path: &str, range: Option<&str>) -> Result<Asset, AppError> {
+        self.current()?.read_asset(path, range)
     }
 
     /// Remembers "now" as the last visit without closing anything (window close).
@@ -2482,13 +2546,17 @@ deepword
 
         // the image next to it is served, nothing else of its folder is
         let image = ws
-            .read_asset(&format!("@file/{id}/pic.png"))
+            .read_asset(&format!("@file/{id}/pic.png"), None)
             .expect("image");
         assert_eq!(image.mime, "image/png");
-        assert!(ws.read_asset(&format!("@file/{id}/sub/pic.png")).is_err());
-        assert!(ws.read_asset(&format!("@file/{id}/../pic.png")).is_err());
+        assert!(ws
+            .read_asset(&format!("@file/{id}/sub/pic.png"), None)
+            .is_err());
+        assert!(ws
+            .read_asset(&format!("@file/{id}/../pic.png"), None)
+            .is_err());
         assert!(
-            ws.read_asset(&path).is_err(),
+            ws.read_asset(&path, None).is_err(),
             "the document is not an image"
         );
         assert!(ws.read_document(&format!("@file/{id}/pic.png")).is_err());
@@ -3499,9 +3567,13 @@ exclude = [\"archive/**\"]
         write(outside.path(), "secret.png", "SECRET");
         let ws = fx.open();
 
-        let a = ws.read_asset("img/a.png").expect("png");
+        let a = ws.read_asset("img/a.png", None).expect("png");
         assert_eq!((a.mime, a.bytes.as_slice()), ("image/png", &b"PNGDATA"[..]));
-        assert_eq!(ws.read_asset("photo.JPG").expect("jpg").mime, "image/jpeg");
+        assert_eq!((a.total, a.part), (7, Part::Whole));
+        assert_eq!(
+            ws.read_asset("photo.JPG", None).expect("jpg").mime,
+            "image/jpeg"
+        );
 
         let outside_name = outside.path().file_name().expect("name").to_string_lossy();
         let escape = format!("../{outside_name}/secret.png");
@@ -3513,26 +3585,310 @@ exclude = [\"archive/**\"]
             "/etc/hosts.png",
             "C:/Windows/x.png",
         ] {
-            assert!(ws.read_asset(bad).is_err(), "{bad} must not be served");
+            assert!(
+                ws.read_asset(bad, None).is_err(),
+                "{bad} must not be served"
+            );
         }
         assert_eq!(
-            ws.read_asset("notes.md").expect_err("not an image").kind(),
+            ws.read_asset("notes.md", None)
+                .expect_err("not an image")
+                .kind(),
             "invalidPath"
         );
         ws.close();
     }
 
     #[test]
-    fn simple_mode_serves_only_the_images_next_to_the_file() {
+    fn simple_mode_serves_only_the_files_next_to_the_file() {
         let fx = Fx::new();
         write(fx.project.path(), "notes/todo.md", "# Todo\n");
         write(fx.project.path(), "notes/a.png", "PNGDATA");
+        write(fx.project.path(), "notes/clip.mp4", "VIDEODATA");
         write(fx.project.path(), "notes/img/b.png", "PNGDATA");
+        write(fx.project.path(), "notes/media/c.mp4", "VIDEODATA");
         let ws = fx.open_path(&fx.project.path().join("notes").join("todo.md"));
-        assert!(ws.read_asset("a.png").is_ok());
+        assert!(ws.read_asset("a.png", None).is_ok());
+        assert!(ws.read_asset("clip.mp4", Some("bytes=0-4")).is_ok());
+        for nested in ["img/b.png", "media/c.mp4"] {
+            assert_eq!(
+                ws.read_asset(nested, None).expect_err("nested").kind(),
+                "pathEscape",
+                "{nested}"
+            );
+        }
+        ws.close();
+    }
+
+    /// A sound or video is served in parts, so that a long film is never held whole in memory.
+    #[test]
+    fn a_video_is_served_in_parts_and_only_from_the_folder() {
+        let fx = Fx::new();
+        let bytes: Vec<u8> = (0..=255_u8).cycle().take(6 * 1024 * 1024).collect();
+        std::fs::create_dir_all(fx.project.path().join("clips")).expect("mkdir");
+        std::fs::write(fx.project.path().join("clips/demo.mp4"), &bytes).expect("write");
+        std::fs::write(fx.project.path().join("tone.WAV"), b"0123456789").expect("write");
+        let outside = tempfile::tempdir().expect("tempdir");
+        write(outside.path(), "secret.mp4", "SECRET");
+        let ws = fx.open();
+
+        // the first part, as a player asks for it
+        let first = ws
+            .read_asset("clips/demo.mp4", Some("bytes=0-"))
+            .expect("part");
+        assert_eq!(first.mime, "video/mp4");
+        assert_eq!(first.total, 6 * 1024 * 1024);
+        let chunk = usize::try_from(media::MAX_CHUNK).expect("fits");
+        assert_eq!(first.bytes.len(), chunk);
         assert_eq!(
-            ws.read_asset("img/b.png").expect_err("nested").kind(),
-            "pathEscape"
+            first.part,
+            Part::Range {
+                start: 0,
+                end: media::MAX_CHUNK - 1
+            }
+        );
+        assert_eq!(first.bytes, bytes[..chunk]);
+
+        // a seek into the middle, and the end of the file
+        let middle = ws
+            .read_asset("clips/demo.mp4", Some("bytes=1000-1999"))
+            .expect("middle");
+        assert_eq!(middle.bytes, bytes[1000..2000]);
+        assert_eq!(
+            middle.part,
+            Part::Range {
+                start: 1000,
+                end: 1999
+            }
+        );
+        let tail = ws
+            .read_asset("clips/demo.mp4", Some("bytes=-100"))
+            .expect("tail");
+        assert_eq!(tail.bytes, bytes[bytes.len() - 100..]);
+
+        // past the end: nothing is carried, and the size is still said
+        let past = ws
+            .read_asset("clips/demo.mp4", Some("bytes=999999999-"))
+            .expect("past");
+        assert_eq!(
+            (past.part, past.bytes.len(), past.total),
+            (Part::Unsatisfiable, 0, 6 * 1024 * 1024)
+        );
+
+        // a small file asked for without a range comes whole; a sound is cut the same way
+        let whole = ws.read_asset("tone.WAV", None).expect("whole");
+        assert_eq!(
+            (whole.mime, whole.part, whole.bytes.as_slice()),
+            ("audio/wav", Part::Whole, &b"0123456789"[..])
+        );
+        let cut = ws.read_asset("tone.WAV", Some("bytes=2-4")).expect("cut");
+        assert_eq!(cut.bytes, b"234");
+
+        // nothing outside the folder, and nothing that is not a picture, sound or video
+        let outside_name = outside.path().file_name().expect("name").to_string_lossy();
+        let escape = format!("../{outside_name}/secret.mp4");
+        for bad in [
+            escape.as_str(),
+            "clips",
+            "missing.mp4",
+            "/etc/x.mp4",
+            "C:/x.mp4",
+        ] {
+            assert!(
+                ws.read_asset(bad, Some("bytes=0-")).is_err(),
+                "{bad} must not be served"
+            );
+        }
+        ws.close();
+    }
+
+    /// A big film asked for without a range starts with its first part; a big picture is not served at all.
+    #[test]
+    fn a_file_over_the_limit_is_cut_when_it_streams_and_refused_when_it_is_a_picture() {
+        let fx = Fx::new();
+        for name in ["film.mkv", "huge.png"] {
+            let file = std::fs::File::create(fx.project.path().join(name)).expect("create");
+            file.set_len(media::MAX_WHOLE + 1).expect("set_len");
+        }
+        let ws = fx.open();
+        let film = ws.read_asset("film.mkv", None).expect("film");
+        assert_eq!(film.total, media::MAX_WHOLE + 1);
+        assert_eq!(
+            film.part,
+            Part::Range {
+                start: 0,
+                end: media::MAX_CHUNK - 1
+            }
+        );
+        assert_eq!(
+            ws.read_asset("huge.png", None).expect_err("too big").kind(),
+            "notFound"
+        );
+        ws.close();
+    }
+
+    /// A link inside the folder (a symbolic link, or a junction on Windows) that leads out of it is not followed to a
+    /// file elsewhere, for a folder link and, where the system allows one without privileges, for a file link.
+    #[test]
+    fn a_link_that_leaves_the_folder_does_not_serve_the_file_it_points_at() {
+        let fx = Fx::new();
+        let outside = tempfile::tempdir().expect("tempdir");
+        write(outside.path(), "secret.mp4", "SECRET");
+        write(outside.path(), "secret.png", "SECRET");
+        crate::util::testing::dir_link(&fx.project.path().join("dir"), outside.path());
+        #[cfg(unix)]
+        let leaving = {
+            std::os::unix::fs::symlink(
+                outside.path().join("secret.mp4"),
+                fx.project.path().join("link.mp4"),
+            )
+            .expect("symlink");
+            ["dir/secret.png", "dir/secret.mp4", "link.mp4"]
+        };
+        #[cfg(not(unix))]
+        let leaving = ["dir/secret.png", "dir/secret.mp4"];
+        let ws = fx.open();
+        for bad in leaving {
+            assert_eq!(
+                ws.read_asset(bad, Some("bytes=0-"))
+                    .expect_err("outside")
+                    .kind(),
+                "pathEscape",
+                "{bad}"
+            );
+            assert_eq!(
+                ws.default_app_target(bad).expect_err("outside").kind(),
+                "pathEscape",
+                "{bad}"
+            );
+        }
+        ws.close();
+    }
+
+    /// What is served is judged by the name of the file a link leads to, not by the name of the link: `a.png` that points
+    /// at `.env` is not a picture. Where a file link cannot be made without privileges (Windows) the test has nothing to
+    /// make a link with and says so by passing without one.
+    #[test]
+    fn a_link_named_like_a_picture_that_leads_to_another_file_serves_nothing() {
+        let fx = Fx::new();
+        write(fx.project.path(), ".env", "TOKEN=secret");
+        write(fx.project.path(), "notes/key.txt", "SECRET");
+        write(fx.project.path(), "real.png", "PNGDATA");
+        write(fx.project.path(), "real.mp4", "VIDEODATA");
+        let link = |from: &str, to: &str| -> bool {
+            let (from, to) = (fx.project.path().join(from), fx.project.path().join(to));
+            #[cfg(unix)]
+            let made = std::os::unix::fs::symlink(&to, &from).is_ok();
+            #[cfg(windows)]
+            let made = std::os::windows::fs::symlink_file(&to, &from).is_ok();
+            made
+        };
+        let made = [
+            link("a.png", ".env"),
+            link("clip.mp4", "notes/key.txt"),
+            // a link between pictures is served as the picture it leads to
+            link("cover.jpg", "real.png"),
+            link("latest.mp4", "real.mp4"),
+        ];
+        let ws = fx.open();
+        let linked = made.iter().all(|made| *made);
+        // macOS and Linux always allow a symbolic link; Windows only with a privilege most accounts do not have
+        #[cfg(unix)]
+        assert!(linked, "a symbolic link could not be made");
+        if linked {
+            for bad in ["a.png", "clip.mp4"] {
+                assert_eq!(
+                    ws.read_asset(bad, Some("bytes=0-"))
+                        .expect_err("not a picture")
+                        .kind(),
+                    "invalidPath",
+                    "{bad}"
+                );
+            }
+            let cover = ws.read_asset("cover.jpg", None).expect("a picture");
+            assert_eq!(
+                (cover.mime, cover.bytes.as_slice()),
+                ("image/png", &b"PNGDATA"[..])
+            );
+            let latest = ws.read_asset("latest.mp4", None).expect("a video");
+            assert_eq!(latest.mime, "video/mp4");
+        }
+        // whatever the system allows, the real files are served as what they are
+        assert_eq!(
+            ws.read_asset("real.png", None).expect("png").mime,
+            "image/png"
+        );
+        assert!(ws.read_asset(".env", None).is_err());
+        ws.close();
+    }
+
+    #[test]
+    fn a_picture_sound_or_video_is_opened_as_such_and_never_read_as_text() {
+        let fx = Fx::new();
+        write(fx.project.path(), "logo.png", "\u{0}PNG not text");
+        write(fx.project.path(), "demo.mp4", "\u{0}video");
+        write(fx.project.path(), "song.flac", "\u{0}audio");
+        write(fx.project.path(), "data.bin", "\u{0}binary");
+        let ws = fx.open();
+        for (name, kind) in [
+            ("logo.png", render::DocKind::Image),
+            ("demo.mp4", render::DocKind::Video),
+            ("song.flac", render::DocKind::Audio),
+            ("data.bin", render::DocKind::Binary),
+        ] {
+            let view = ws.read_document(name).expect(name);
+            assert_eq!((view.kind, view.path.as_str()), (kind, name));
+            assert!(view.html.is_empty() && view.modified_ms > 0 && view.size_bytes > 0);
+        }
+        assert!(ws.read_document("missing.png").is_err());
+        assert!(ws.read_document("../outside.png").is_err());
+        ws.close();
+    }
+
+    /// "Open with default app" takes any file of the folder, programs and scripts excepted.
+    #[test]
+    fn the_default_app_is_asked_to_open_files_of_the_folder_but_never_a_program() {
+        let fx = Fx::new();
+        for name in [
+            "report.pdf",
+            "clip.mkv",
+            "model.stl",
+            "sheet.xlsx",
+            "a.md",
+            "setup.exe",
+            "run.bat",
+            "tool.ps1",
+            "app.jar",
+            "link.lnk",
+            "web.url",
+            "script.py",
+        ] {
+            write(fx.project.path(), name, "x");
+        }
+        std::fs::create_dir(fx.project.path().join("dir")).expect("mkdir");
+        let ws = fx.open();
+        for ok in ["report.pdf", "clip.mkv", "model.stl", "sheet.xlsx", "a.md"] {
+            assert!(ws.default_app_target(ok).expect(ok).is_file(), "{ok}");
+        }
+        for (bad, label) in [
+            ("setup.exe", ".exe"),
+            ("run.bat", ".bat"),
+            ("tool.ps1", ".ps1"),
+            ("app.jar", ".jar"),
+            ("link.lnk", ".lnk"),
+            ("web.url", ".url"),
+            ("script.py", ".py"),
+        ] {
+            let error = ws.default_app_target(bad).expect_err(bad);
+            assert_eq!(error.kind(), "blockedType", "{bad}");
+            assert_eq!(error.details().subject.as_deref(), Some(label), "{bad}");
+        }
+        for bad in ["dir", "missing.pdf", "../outside.pdf", "/etc/passwd"] {
+            assert!(ws.default_app_target(bad).is_err(), "{bad}");
+        }
+        assert_ne!(
+            ws.default_app_target("dir").expect_err("dir").kind(),
+            "blockedType"
         );
         ws.close();
     }
@@ -3743,14 +4099,14 @@ exclude = [\"archive/**\"]
         let fx = HostFx::new();
         let info = fx.open(fx.a.path()).expect("open A");
         assert_eq!(info.root, root_of(&fx.a));
-        assert!(fx.host.read_asset("only-in-a.png").is_ok());
+        assert!(fx.host.read_asset("only-in-a.png", None).is_ok());
 
         fx.open(fx.b.path()).expect("open B");
         assert_eq!(fx.current_root(), root_of(&fx.b));
         // The folder that was closed can no longer be read through the image protocol.
         assert_eq!(
             fx.host
-                .read_asset("only-in-a.png")
+                .read_asset("only-in-a.png", None)
                 .expect_err("closed")
                 .kind(),
             "notFound"

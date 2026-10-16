@@ -122,8 +122,13 @@ export interface Api {
   loadSession(): Promise<SessionState | null>;
   /** The absolute path of a file of the folder (for "Copy path"). */
   absolutePath(path: string): Promise<string>;
-  /** Opens a document or image of the folder with the system's default application. */
+  /** Opens a document, picture, sound or video of the folder with the system's default application. */
   openExternal(path: string): Promise<void>;
+  /**
+   * Opens any file of the folder with the system's default application. Rejects with kind "blockedType" (the subject is the
+   * kind of file, such as ".ps1") for a program, script, installer, shortcut or macro document: those are never opened.
+   */
+  openWithDefaultApp(path: string): Promise<void>;
   /**
    * Opens a file of the folder in the person's editor at a line and column (from 1): runs the editor command of the
    * settings, or the system's default application when there is none. Rejects with kind "editor" (and a `reason`:
@@ -137,7 +142,7 @@ export interface Api {
   /** Shows a file or folder of the open folder in the system's file manager. */
   revealInFolder(path: string): Promise<void>;
   search(query: string, limit?: number): Promise<SearchHit[]>;
-  /** The images some Markdown document of the folder links to, embeds or defines a reference for (folder paths). */
+  /** The images, sound and video some Markdown document of the folder links to, embeds or defines a reference for (folder paths). */
   referencedImages(): Promise<string[]>;
   /** Creates `.trailmark/` in the project. */
   initProjectFolder(): Promise<void>;
@@ -343,6 +348,7 @@ export const tauriApi: Api = {
   loadSession: () => invoke<SessionState | null>("load_session"),
   absolutePath: (path) => invoke<string>("absolute_path", { path }),
   openExternal: (path) => invoke<void>("open_external", { path }),
+  openWithDefaultApp: (path) => invoke<void>("open_with_default_app", { path }),
   openInEditor: (path, line, col) => invoke<void>("open_in_editor", { path, line, col }),
   editorCommand: () => invoke<string>("editor_command"),
   setEditorCommand: (command) => invoke<void>("set_editor_command", { command }),
@@ -494,6 +500,7 @@ function createMockApi(): Api {
     loadSession: command("loadSession"),
     absolutePath: command("absolutePath"),
     openExternal: command("openExternal"),
+    openWithDefaultApp: command("openWithDefaultApp"),
     openInEditor: command("openInEditor"),
     editorCommand: command("editorCommand"),
     setEditorCommand: command("setEditorCommand"),

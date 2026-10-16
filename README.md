@@ -105,6 +105,24 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   in **Settings → External editor**). Only names of files the project really has become links
 - One process per project: `trailmark ~/code/my-project`
 
+### 🖼️ Pictures, sound and video
+- **Images open in the pane.** PNG, JPEG, GIF (animated), WebP, AVIF, BMP, ICO and SVG. A picture is fitted to the window; click it, or use the
+  button, to see it at 100%, and `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom it the way they zoom text (`Ctrl+0` fits it again). A checkerboard
+  shows through transparency, in light and dark. The header gives the size in pixels and on disk. A picture that changes on disk
+  (an agent regenerating a screenshot) reloads by itself. An SVG is drawn as an image, never inline, so nothing in it can run.
+- **Audio and video play in the pane**, in the window's own player: MP3, WAV, OGG, Opus, FLAC, M4A, AAC and WebM audio; MP4, M4V, WebM,
+  OGV and MOV video. A long file is read in parts as it plays, so it starts at once, seeks freely and is never loaded whole. A format or
+  codec the window cannot play (MKV, AVI, WMV and the like) says so, and offers the program your system has for it.
+- **Documents can use them.** `<video>` and `<audio>` tags play in place, next to the document, and a link to a media file opens it in the
+  pane. Nothing starts by itself: `autoplay` is dropped, and a player only reads the length of its file until you press play.
+- **Open with default app** hands a file the pane cannot show to the program your system has for its type: a button in the pane, an item
+  in the Explorer's right-click menu, and a command (`Ctrl+Shift+P`). Programs and scripts (`.exe`, `.bat`, `.ps1`, `.sh`, `.app`,
+  `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; TrailMark says which kind of file it refused and offers
+  to show it in the file manager. Files outside the open folder are never served, and a link that leaves it is not followed.
+- **The Explorer filter has an Audio and video category.** *Docs and assets* shows them by the same rules as images: next to a document, in
+  a folder named like `assets`, `images`, `video`, `audio` or `clips`, or when a document links to them. Quick open and Search everywhere
+  find pictures, sound and video by name whatever the filter hides, and list **folders** too: pick one to reveal it in the Explorer.
+
 ### ⚡ Follow your agents live
 - Documents reload **without losing your scroll position**
 - **Changed blocks glow** and fade; **removed blocks leave a marker** you can expand
@@ -415,7 +433,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Copy reference (or selection with reference) | `Ctrl+Alt+C` |
 | Edit tags and description | `T` |
 | Leave a comment on the selected passage | `C` |
-| Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+| Zoom in / out / reset (on a picture: zoom it, or fit it to the window) | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 
 **Editing**
 

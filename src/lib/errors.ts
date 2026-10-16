@@ -120,6 +120,7 @@ const KIND_KEYS = {
   binaryFile: "error.binaryFile",
   moveInside: "error.moveInside",
   notesNewer: "error.notesNewer",
+  blockedType: "error.blockedType",
 } as const satisfies Record<string, MessageKey>;
 
 function field(error: Record<string, unknown>, name: string): string | undefined {

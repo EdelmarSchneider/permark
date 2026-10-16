@@ -12,7 +12,9 @@
   } from "../fileOps";
   import { gitStateLabel } from "../gitLabels";
   import { formatNumber, t, tn } from "../i18n";
-  import { dirname, isMarkdown } from "../paths";
+  import { categoryOf } from "../fileKinds";
+  import { fileIconOf } from "../fileIcons";
+  import { dirname } from "../paths";
   import { nearestScrollTop } from "../reveal";
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
@@ -313,6 +315,17 @@
               icon: "external",
               onselect: () => void app.openExternally(node.path),
             },
+            // a document goes to the external editor; any other file can also go to the system's application
+            ...(categoryOf(node.path) === "documents"
+              ? []
+              : ([
+                  {
+                    id: "defaultApp",
+                    label: t("menu.openDefaultApp"),
+                    icon: "external",
+                    onselect: () => void app.openWithDefaultApp(node.path),
+                  },
+                ] satisfies MenuEntry[])),
           ] satisfies MenuEntry[])
         : []),
     ];
@@ -442,7 +455,7 @@
       {#if row.node.kind === "worktree"}
         <Icon name="fork" size="sm" />
       {:else if !row.isDir}
-        <Icon name={isMarkdown(row.node.path) ? "file-text" : "file"} class="file-icon" />
+        <Icon name={fileIconOf(row.node.path)} class="file-icon" />
       {/if}
       {#if unreadIn > 0}<UnreadDot label={tn("unread.folderCount", unreadIn)} />{/if}
       {#if renaming && fileops.renaming}

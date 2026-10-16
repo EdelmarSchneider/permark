@@ -5,6 +5,8 @@ import {
   onMoreRow,
   quickMatches,
   searchFiles,
+  searchFolders,
+  withAssets,
   type QuickMatchesInput,
   type SearchFilesInput,
 } from "./quickOpenModel";
@@ -223,5 +225,78 @@ describe("quickMatches (what Quick open lists when the Explorer filter hides fil
     const m = quickMatches(query({ text: "live", hiddenFiles: [], allFiles: SHOWN }));
     expect(paths(m.found)).toEqual(["docs/live-feed.md"]);
     expect(m.moreHidden).toBe(0);
+  });
+});
+
+describe("withAssets", () => {
+  it("lists pictures, sound and video the filter hides, and keeps the rest hidden", () => {
+    const listed = withAssets(
+      ["README.md", "docs/a.md"],
+      [
+        "src/main.rs",
+        "src-tauri/icons/icon.png",
+        "build/demo.mp4",
+        "sounds/ping.WAV",
+        "Cargo.lock",
+      ],
+    );
+    expect(listed.files).toEqual([
+      "README.md",
+      "docs/a.md",
+      "src-tauri/icons/icon.png",
+      "build/demo.mp4",
+      "sounds/ping.WAV",
+    ]);
+    expect(listed.hidden).toEqual(["src/main.rs", "Cargo.lock"]);
+  });
+
+  it("keeps what is in a hidden folder hidden, pictures included", () => {
+    const listed = withAssets(
+      [],
+      [".github/social.png", "docs/.cache/clip.mp4", "assets/logo.png"],
+    );
+    expect(listed.files).toEqual(["assets/logo.png"]);
+    expect(listed.hidden).toEqual([".github/social.png", "docs/.cache/clip.mp4"]);
+  });
+
+  it("finds a hidden picture by its name without the +N hidden files row", () => {
+    const { files, hidden } = withAssets(
+      ["docs/plan.md", "README.md"],
+      ["tools/diagram.png", "tools/build.rs"],
+    );
+    const m = quickMatches({
+      ...input({ files, text: "diagram" }),
+      hiddenFiles: hidden,
+      allFiles: [...files, ...hidden],
+      reveal: false,
+    });
+    expect(paths(m.found)).toEqual(["tools/diagram.png"]);
+    expect(m.found[0].hidden).toBe(false);
+    expect(m.moreHidden).toBe(0);
+  });
+});
+
+describe("searchFolders", () => {
+  const FOLDERS = ["docs", "docs/design", "docs/design/assets", "src", "src/media", "@wt/feature"];
+
+  it("lists nothing until something is typed", () => {
+    expect(searchFolders("", FOLDERS, new Map(), 10)).toEqual([]);
+    expect(searchFolders("   ", FOLDERS, new Map(), 10)).toEqual([]);
+  });
+
+  it("finds the folders whose path has the words, with the matched characters", () => {
+    const found = searchFolders("design", FOLDERS, new Map(), 10);
+    expect(found.map((f) => f.path)).toEqual(["docs/design", "docs/design/assets"]);
+    expect(found[0].positions.length).toBeGreaterThan(0);
+    expect(searchFolders("feature", FOLDERS, new Map(), 10).map((f) => f.path)).toEqual([
+      "@wt/feature",
+    ]);
+    expect(searchFolders("zzz", FOLDERS, new Map(), 10)).toEqual([]);
+  });
+
+  it("puts the folder used lately first among equals, and stops at the limit", () => {
+    const recency = new Map([["docs/design/assets", 5]]);
+    expect(searchFolders("as", FOLDERS, recency, 10)[0].path).toBe("docs/design/assets");
+    expect(searchFolders("d", FOLDERS, new Map(), 2)).toHaveLength(2);
   });
 });

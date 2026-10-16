@@ -388,7 +388,7 @@ fn filter_attribute<'u>(element: &str, attr: &str, value: &'u str) -> Option<Cow
 
 static SANITIZER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
     let mut b = ammonia::Builder::default();
-    b.add_tags(["section", "input"])
+    b.add_tags(["section", "input", "video", "audio", "source"])
         .add_generic_attributes([
             "id",
             "class",
@@ -408,9 +408,25 @@ static SANITIZER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
         )
         .add_tag_attributes("details", ["open"])
         .add_tag_attributes("img", ["width", "height", "alt", "title", "src"])
+        // Players: where the file is and how it looks. Never `autoplay` (nothing starts by itself, least of all with
+        // sound) and no event handlers or styles; the file is fetched through the asset scheme, relative to the document.
+        .add_tag_attributes(
+            "video",
+            [
+                "src", "controls", "loop", "muted", "poster", "width", "height", "preload",
+            ],
+        )
+        .add_tag_attributes("audio", ["src", "controls", "loop", "muted", "preload"])
+        .add_tag_attributes("source", ["src", "type"])
         .add_url_schemes(["data"])
         // Any `<input>` in a document is inert: only the disabled task-list checkbox is meant to exist.
         .set_tag_attribute_value("input", "disabled", "")
+        // A player without controls cannot be played, and one that loads its whole file when the document opens would
+        // read every film of a long document at once: controls are always there, and only the length is read ahead.
+        .set_tag_attribute_value("video", "controls", "")
+        .set_tag_attribute_value("audio", "controls", "")
+        .set_tag_attribute_value("video", "preload", "metadata")
+        .set_tag_attribute_value("audio", "preload", "metadata")
         .attribute_filter(filter_attribute);
     b
 });
@@ -828,10 +844,87 @@ mod tests {
     fn allowlist_contains_the_documented_tags() {
         let tags = allowed_tags();
         for t in [
-            "details", "summary", "kbd", "sub", "sup", "input", "section", "table",
+            "details", "summary", "kbd", "sub", "sup", "input", "section", "table", "video",
+            "audio", "source",
         ] {
             assert!(tags.contains(t), "{t}");
         }
+    }
+
+    #[test]
+    fn players_keep_their_files_and_controls_and_nothing_that_starts_or_runs() {
+        let h = sanitize(
+            "<video src=\"clips/demo.mp4\" poster=\"clips/p.png\" width=\"320\" height=\"180\" loop muted controls autoplay onplay=\"x()\" onerror=\"x()\" style=\"x\"></video>",
+        );
+        for kept in [
+            "<video",
+            "src=\"clips/demo.mp4\"",
+            "poster=\"clips/p.png\"",
+            "width=\"320\"",
+            "height=\"180\"",
+            "loop",
+            "muted",
+            "controls",
+        ] {
+            assert!(h.contains(kept), "{kept} lost in {h}");
+        }
+        for gone in ["autoplay", "onplay", "onerror", "style"] {
+            assert!(!h.contains(gone), "{gone} survived in {h}");
+        }
+
+        let a = sanitize(
+            "<audio controls autoplay loop><source src=\"snd/a.ogg\" type=\"audio/ogg\"><source src=\"snd/a.mp3\" onerror=\"x()\"></audio>",
+        );
+        assert!(a.contains("<audio"), "{a}");
+        assert_eq!(a.matches("<source").count(), 2, "{a}");
+        assert!(
+            a.contains("src=\"snd/a.ogg\"") && a.contains("type=\"audio/ogg\""),
+            "{a}"
+        );
+        assert!(!a.contains("autoplay") && !a.contains("onerror"), "{a}");
+    }
+
+    #[test]
+    fn a_player_always_has_controls_and_reads_only_the_length_ahead() {
+        let h =
+            sanitize("<video src=\"a.mp4\" preload=\"auto\"></video><audio src=\"b.mp3\"></audio>");
+        assert_eq!(h.matches("controls").count(), 2, "{h}");
+        assert_eq!(h.matches("preload=\"metadata\"").count(), 2, "{h}");
+        assert!(!h.contains("preload=\"auto\""), "{h}");
+    }
+
+    #[test]
+    fn a_player_cannot_be_pointed_at_code_or_inline_data() {
+        for url in [
+            "javascript:alert(1)",
+            "JaVaScRiPt:alert(1)",
+            "da&#9;ta:video/mp4;base64,AAAA",
+            "data:text/html;base64,AAAA",
+            "data:video/mp4;base64,AAAA",
+            "blob:https://example.com/x",
+            "file:///C:/secret.mp4",
+            "vbscript:x",
+        ] {
+            let h = sanitize(&format!(
+                "<video src=\"{url}\" poster=\"{url}\"></video><audio src=\"{url}\"></audio><source src=\"{url}\">"
+            ));
+            assert!(!h.contains("src="), "{url} survived as src in {h}");
+            assert!(!h.contains("poster="), "{url} survived as poster in {h}");
+        }
+        // web files and relative paths are what a document may name
+        let ok = sanitize(
+            "<video src=\"https://example.com/a.mp4\"></video><audio src=\"../snd/a%20b.mp3\"></audio>",
+        );
+        assert!(ok.contains("src=\"https://example.com/a.mp4\""), "{ok}");
+        assert!(ok.contains("src=\"../snd/a%20b.mp3\""), "{ok}");
+    }
+
+    #[test]
+    fn a_player_in_markdown_survives_the_whole_render() {
+        let h = html("Before\n\n<video src=\"clips/demo.mp4\" controls></video>\n\nAfter [demo](clips/demo.mp4)\n");
+        assert!(h.contains("<video"), "{h}");
+        assert!(h.contains("src=\"clips/demo.mp4\""), "{h}");
+        assert!(h.contains("href=\"clips/demo.mp4\""), "{h}");
     }
 
     /// Nested emphasis (`_a _a ... a_ a_`) gives an AST as deep as the number of markers.

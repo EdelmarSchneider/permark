@@ -4,7 +4,7 @@
 
 import type { CommandAction, CommandMatch } from "./commands";
 import { basename, folderLabel, splitWorktree } from "./paths";
-import type { QuickMatches } from "./quickOpenModel";
+import type { FoundFolder, QuickMatches } from "./quickOpenModel";
 import { sanitizeSnippet } from "./searchModel";
 import { rankTags, type NamedCount } from "./tagModel";
 import { hasAllTags } from "./tagQuery";
@@ -72,6 +72,15 @@ export type FileRow = {
   hidden?: boolean;
 };
 
+/** A folder whose path has the words typed. Enter reveals it in the Explorer. */
+export type FolderRow = {
+  type: "folder";
+  key: string;
+  path: string;
+  /** Character positions of the match inside the full path. */
+  positions: number[];
+};
+
 export type SectionRow = {
   type: "section";
   key: string;
@@ -112,14 +121,14 @@ export type CommandRow = {
 /** The "+N hidden files match" row of the Files scope. */
 export type MoreRow = { type: "more"; key: "more"; count: number };
 
-export type Row = FileRow | SectionRow | TagRow | CommandRow | MoreRow;
+export type Row = FileRow | FolderRow | SectionRow | TagRow | CommandRow | MoreRow;
 
 /** How many recent files of each kind an empty box lists. */
 export const RECENT_LIMIT = 8;
 /** The most file or section rows a scope lists. */
 export const RESULT_LIMIT = 50;
 /** The most rows each group of the All scope lists; the rest is behind "Show all". */
-export const GROUP_LIMIT = { files: 5, sections: 5, tags: 3, commands: 3 } as const;
+export const GROUP_LIMIT = { files: 5, folders: 3, sections: 5, tags: 3, commands: 3 } as const;
 
 export type RecentInput = {
   /** Files that changed, newest first (documents only). */
@@ -184,6 +193,16 @@ export function fileRows(
     description: describe(f.path),
     ms: changedAt.get(f.path) ?? null,
     hidden: f.hidden || undefined,
+  }));
+}
+
+/** The rows for the folders a query found. */
+export function folderRows(found: readonly FoundFolder[]): FolderRow[] {
+  return found.map((f) => ({
+    type: "folder",
+    key: `folder:${f.path}`,
+    path: f.path,
+    positions: f.positions,
   }));
 }
 
@@ -297,7 +316,7 @@ export function commandRows(
 // ---- the view -----------------------------------------------------------------------------------------
 
 /** What a group is called: a scope, or one of the two lists of recent files. */
-export type GroupTitle = "changed" | "opened" | Exclude<Scope, "all">;
+export type GroupTitle = "changed" | "opened" | "folders" | Exclude<Scope, "all">;
 
 export type Group = {
   id: string;
@@ -324,6 +343,8 @@ export type ViewInput = {
   hasWords: boolean;
   /** Before anything is typed, the recent files; then the files the query found. */
   files: readonly FileRow[];
+  /** The folders that match the words typed (listed after the files). */
+  folders: readonly FolderRow[];
   /** Hidden files that match and are not listed: the number of the "+N hidden files match" row. */
   moreHidden: number;
   sections: readonly SectionRow[];
@@ -346,6 +367,19 @@ function single(kind: Exclude<Scope, "all">, rows: readonly Row[], results = row
   return [{ id: kind, title: null, rows: [...rows], total: results, showAll: null }];
 }
 
+/** The folders of the All scope; "Show all" goes to Files, where the folders follow the files. */
+function foldersPart(rows: readonly FolderRow[], limit: number): Group | null {
+  if (rows.length === 0) return null;
+  const shown = rows.slice(0, limit);
+  return {
+    id: "folders",
+    title: "folders",
+    rows: shown,
+    total: rows.length,
+    showAll: rows.length > shown.length ? "files" : null,
+  };
+}
+
 function part(kind: Exclude<Scope, "all">, rows: readonly Row[], limit: number): Group | null {
   if (rows.length === 0) return null;
   const shown = rows.slice(0, limit);
@@ -364,7 +398,7 @@ function part(kind: Exclude<Scope, "all">, rows: readonly Row[], limit: number):
  * files, as Quick open does, and with only `tag:` filters just the files that have them.
  */
 export function buildView(input: ViewInput): View {
-  const { scope, idle, hasWords, files, moreHidden, sections, tags, commands } = input;
+  const { scope, idle, hasWords, files, folders, moreHidden, sections, tags, commands } = input;
   let groups: Group[];
   switch (scope) {
     case "all": {
@@ -374,6 +408,7 @@ export function buildView(input: ViewInput): View {
       }
       groups = [
         part("files", files, GROUP_LIMIT.files),
+        foldersPart(folders, GROUP_LIMIT.folders),
         ...(hasWords
           ? [
               part("sections", sections, GROUP_LIMIT.sections),
@@ -391,7 +426,7 @@ export function buildView(input: ViewInput): View {
       }
       const more: MoreRow[] =
         moreHidden > 0 ? [{ type: "more", key: "more", count: moreHidden }] : [];
-      groups = single("files", [...files, ...more], files.length);
+      groups = single("files", [...files, ...folders, ...more], files.length + folders.length);
       break;
     }
     case "sections":

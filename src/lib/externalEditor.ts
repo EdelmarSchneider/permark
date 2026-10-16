@@ -55,9 +55,10 @@ export function sampleFile(root: string | null | undefined, relative: string): s
 }
 
 /**
- * Files the system's default application opens better than a code editor: images and PDF files. "Open in external
- * editor" hands those to it whatever command is set.
+ * Files the system's default application opens better than a code editor: pictures, sound, video and PDF files. "Open in
+ * external editor" hands those to it whatever command is set.
  */
 export function usesSystemApp(path: string): boolean {
-  return categoryOf(path) === "images" || extname(path) === "pdf";
+  const category = categoryOf(path);
+  return category === "images" || category === "media" || extname(path) === "pdf";
 }

@@ -20,7 +20,31 @@ and the project uses [Semantic Versioning](https://semver.org/).
     what you type goes into the fence exactly as typed. Changing the language rewrites only that block's opening fence line (a `~~~` fence or a
     four-backtick fence stays as it was written).
   - **Source:** the code inside a fence is highlighted with CodeMirror's own language support, loaded when a fence asks for it.
-
+- **Pictures open in the pane instead of "looks like a binary file".** PNG, JPEG, GIF (animated), WebP, AVIF, BMP, ICO and SVG, from the Explorer,
+  Quick open, search, a link or the feed. A picture is fitted to the window; a click or the button shows it at 100%, `Ctrl+=`, `Ctrl+-` and
+  `Ctrl+0` zoom it (and the status bar says how far), a checkerboard sits behind transparency in light and dark, and the header gives the size in
+  pixels and on disk. A picture that changes on disk reloads by itself. An SVG is drawn as an `<img>`, never inline, so nothing in it runs.
+- **Audio and video play in the pane.** MP3, WAV, OGG, Opus, FLAC, M4A, AAC and WebM audio, and MP4, M4V, WebM, OGV and MOV video, in the native
+  player, with the length (and the pixels of a video) in the header. Files are served in parts to the player's `Range` requests, at most 4 MiB
+  at a time, so a long file starts at once, seeks, and is never read whole. A format or codec the window cannot play says so, with **Open with
+  default app**.
+- **`<video>` and `<audio>` in documents, and links to media.** Players in a document play in place, with their files resolved next to the
+  document (also in the Visual editor's read-only blocks and in a loose file's folder). A link to an `.mp4`, `.wav` and so on opens in the pane.
+  `autoplay`, event handlers and inline data are dropped, a player always has controls and reads only the length of its file until you play it,
+  and `poster` files follow a move like any other link.
+- **Open with default app.** Any file of the project can go to the program the system has for it: a button on the pane of a file TrailMark cannot
+  show, an item in the Explorer's context menu (for every file but a Markdown document), an item in the header's menu, and a command. It is separate
+  from **Open in external editor**, which uses your editor command. Programs and scripts (`.exe`, `.msi`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.js`,
+  `.lnk`, `.url`, `.sh`, `.app`, `.pkg`, `.deb`, `.rpm`, `.appimage`, `.website`, `.rdp`, Access databases, macro documents and the older Office
+  formats that can hold macros (`.doc`, `.xls`, `.ppt`), every type of `%PATHEXT%` on Windows, anything with an execute permission on macOS and Linux
+  and the like) are refused with a message that names the kind of file; the check is on the real file, after links are followed, and a name that
+  ends in a dot or a space is no document on macOS and Linux.
+- **An Audio and video category in the Explorer filter.** *Docs and assets* includes it under the rules images have (next to a document, in a
+  folder such as `assets`, `images`, `media`, `audio`, `video`, `sounds`, `movies` or `clips`, or linked from a document), and the hint says so. The tree
+  has an icon each for images, sound and video.
+- **Quick open and Search everywhere list pictures and media by name**, even when the filter hides them (a hidden folder still hides its files),
+  **and folders**: the folders whose path has the words come after the files, with **Reveal in Explorer**. Picking one opens the folders above
+  it, scrolls to it, opens it and puts the keyboard focus in the Explorer.
 - **"Open with TrailMark" on folders in the Microsoft Store version.** Right-click a folder, or the background of a folder, and choose
   **Open with TrailMark**; on Windows 11 it is in the main menu, not under *Show more options*. The Store package now carries a small
   Explorer component for it (the one thing a package cannot do with the registry), worded in your Windows display language
@@ -31,6 +55,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Code block labels are easier to read.** The language label of a code block is muted instead of faint (it was below the contrast the design
   asks for), and the light theme's comment color is a little darker, for AA contrast on the code block's background. The reading view's code
   language also keeps the punctuation authors write after it (`rust,ignore`, `{python}`, `js:app.js`), which was dropped together with the language.
+- `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom the picture while a picture is on screen (and the zoom in the status bar is the picture's); for anything
+  else they still zoom the text.
+- **Open in external editor** on a sound or a video hands it to the system's application, as it already did for pictures and PDF files.
 - **A new note is a note at once.** `+`, `Ctrl+Shift+N` and **New note** now always make a new note, even when the one on screen is still empty,
   like the `+` of any editor. The note is a real (empty) file as soon as it exists, so it is in the list as "Untitled note", is still there after
   a restart, and nothing removes it for you: you delete empty notes yourself, with Delete and Undo like any other note. Several empty notes can

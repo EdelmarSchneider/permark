@@ -165,6 +165,25 @@
   border-radius: var(--radius-card);
   cursor: zoom-in;
 }
+/* players written in the document (<video>, <audio>): the file is the one next to the document, played in place */
+.md video,
+.md audio {
+  display: block;
+  max-width: 100%;
+}
+.md video {
+  height: auto;
+  background: var(--video-bg);
+  border-radius: var(--radius-card);
+}
+.md audio {
+  width: 100%;
+}
+.md video.is-broken,
+.md audio.is-broken {
+  outline: 1px dashed var(--border-strong);
+  outline-offset: 2px;
+}
 .md sub,
 .md sup {
   font-size: 0.75em;
