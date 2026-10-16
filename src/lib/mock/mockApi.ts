@@ -184,6 +184,9 @@ export const mockImpl: Api = {
     }
     console.info("[mock] open with the default app:", path);
   },
+  openInBrowser: async (path) => {
+    console.info("[mock] open in the browser:", path);
+  },
   openInEditor: async (path, line, col) => {
     const program = mockEditorCommand.trim().split(/\s+/)[0] ?? "";
     // a program that is not "installed" shows how the UI words the failure

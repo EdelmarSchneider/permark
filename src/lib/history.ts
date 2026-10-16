@@ -5,7 +5,13 @@ import type { Move } from "./types";
 
 export type HistoryEntry = { path: string; scrollTop: number };
 
+/** A document of the trail: `offset` steps from the open one (negative: back), the number to give [`NavHistory.go`]. */
+export type TrailStop = { offset: number; path: string; current: boolean };
+
 const MAX_ENTRIES = 100;
+
+/** How many documents the menu of the Back or Forward button lists. */
+export const TRAIL_MENU_LIMIT = 15;
 
 export class NavHistory {
   private entries: HistoryEntry[] = [];
@@ -54,16 +60,46 @@ export class NavHistory {
     for (const entry of this.entries) entry.path = mapPath(entry.path, moves);
   }
 
-  back(): HistoryEntry | null {
-    if (!this.canBack) return null;
-    this.index -= 1;
+  /**
+   * Moves `offset` steps along the history (negative: back), like a browser's `go(n)`. Every entry stays, so Back and
+   * Forward walk the same trail afterwards. Null, with nothing moved, for no step or a step past either end.
+   */
+  go(offset: number): HistoryEntry | null {
+    const target = this.index + offset;
+    if (!Number.isInteger(offset) || offset === 0) return null;
+    if (target < 0 || target >= this.entries.length) return null;
+    this.index = target;
     return this.current;
   }
 
+  back(): HistoryEntry | null {
+    return this.go(-1);
+  }
+
   forward(): HistoryEntry | null {
-    if (!this.canForward) return null;
-    this.index += 1;
-    return this.current;
+    return this.go(1);
+  }
+
+  /** The documents before (`back`) or after (`forward`) the open one, nearest first, at most `limit`. */
+  stops(direction: "back" | "forward", limit = TRAIL_MENU_LIMIT): TrailStop[] {
+    const step = direction === "back" ? -1 : 1;
+    const out: TrailStop[] = [];
+    for (let at = this.index + step; at >= 0 && at < this.entries.length; at += step) {
+      if (out.length >= limit) break;
+      out.push({ offset: at - this.index, path: this.entries[at].path, current: false });
+    }
+    return out;
+  }
+
+  /** The whole trail, newest first: what is ahead, then the open document (marked), then the way back. */
+  trail(): TrailStop[] {
+    return this.entries
+      .map((entry, at) => ({
+        offset: at - this.index,
+        path: entry.path,
+        current: at === this.index,
+      }))
+      .reverse();
   }
 
   /** Paths visited, most recent first, without duplicates. */

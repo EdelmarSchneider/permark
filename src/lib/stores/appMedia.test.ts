@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // and a folder found in Quick open is revealed in the Explorer. The backend and the system are replaced.
 const fake = vi.hoisted(() => ({
   openWithDefaultApp: vi.fn(),
+  openInBrowser: vi.fn(),
   revealInFolder: vi.fn(),
 }));
 vi.mock("../api", () => ({
@@ -99,6 +100,56 @@ describe("Open with default app", () => {
     if (current?.type !== "message") throw new Error("a message was expected");
     expect(current.text).toMatch(/Couldn't open the file/);
     expect(current.action).toBeUndefined();
+  });
+});
+
+describe("Open in browser", () => {
+  beforeEach(() => {
+    ui.treeCursor = null;
+  });
+
+  it("hands the page to the backend", async () => {
+    fake.openInBrowser.mockResolvedValue(undefined);
+    await app.openInBrowser("site/index.html");
+    expect(fake.openInBrowser).toHaveBeenCalledWith("site/index.html");
+    expect(toast.current).toBeNull();
+  });
+
+  it("acts on the open document when it is a web page", async () => {
+    fake.openInBrowser.mockResolvedValue(undefined);
+    docs.current = view("site/index.html", "text");
+    expect(app.browserPage).toBe("site/index.html");
+    await app.openInBrowser();
+    expect(fake.openInBrowser).toHaveBeenCalledWith("site/index.html");
+  });
+
+  it("acts on the file the Explorer is on when the open document is not a web page", async () => {
+    fake.openInBrowser.mockResolvedValue(undefined);
+    docs.current = view("notes/a.md", "markdown");
+    ui.treeCursor = { path: "site/old.htm", isDir: false };
+    expect(app.browserPage).toBe("site/old.htm");
+    await app.openInBrowser();
+    expect(fake.openInBrowser).toHaveBeenCalledWith("site/old.htm");
+  });
+
+  it("has no page to open for a document, a folder or nothing at all", async () => {
+    docs.current = view("notes/a.md", "markdown");
+    ui.treeCursor = { path: "site.html", isDir: true };
+    expect(app.browserPage).toBeNull();
+    await app.openInBrowser();
+    expect(fake.openInBrowser).not.toHaveBeenCalled();
+    ui.treeCursor = null;
+    docs.current = null;
+    expect(app.browserPage).toBeNull();
+  });
+
+  it("says when the page could not be opened", async () => {
+    fake.openInBrowser.mockRejectedValue({ kind: "notFound", subject: "gone.html" });
+    await app.openInBrowser("gone.html");
+    const current = toast.current;
+    if (current?.type !== "message") throw new Error("a message was expected");
+    expect(current.tone).toBe("warn");
+    expect(current.text).toMatch(/Couldn't open the file/);
   });
 });
 

@@ -417,6 +417,24 @@ pub async fn open_with_default_app(
     .await
 }
 
+/// Opens a web page (`.html`, `.htm`) of the folder in the system's browser: the page is handed to the application the
+/// system has for web pages. Nothing else goes this way, and the path is checked like the other ways to open a file.
+#[tauri::command]
+pub async fn open_in_browser(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || {
+        let target = ws.browser_target(&path)?;
+        app.opener()
+            .open_path(target.display().to_string(), None::<&str>)
+            .map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
+}
+
 /// Opens a file of the folder in the person's editor, at a line and column (both from 1): runs the editor command of
 /// the settings, or the system's default application when there is none (the line is then ignored).
 #[tauri::command]

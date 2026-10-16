@@ -208,6 +208,7 @@ pub fn run() {
             commands::absolute_path,
             commands::open_external,
             commands::open_with_default_app,
+            commands::open_in_browser,
             commands::open_in_editor,
             commands::editor_command,
             commands::set_editor_command,

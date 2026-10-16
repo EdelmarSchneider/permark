@@ -8,6 +8,7 @@ import {
   decodeFragment,
   folderLabel,
   isMarkdown,
+  isWebPage,
   resolveRelative,
   splitWorktree,
 } from "./paths";
@@ -26,6 +27,15 @@ describe("basic helpers", () => {
     expect(isMarkdown("a.MARKDOWN")).toBe(true);
     expect(isMarkdown("a.json")).toBe(false);
     expect(isMarkdown("README")).toBe(false);
+  });
+
+  it("recognizes web pages, whatever the case of the extension", () => {
+    expect(isWebPage("site/index.html")).toBe(true);
+    expect(isWebPage("old.HTM")).toBe(true);
+    expect(isWebPage("page.xhtml")).toBe(false);
+    expect(isWebPage("notes.md")).toBe(false);
+    expect(isWebPage("html")).toBe(false);
+    expect(isWebPage(".html")).toBe(false);
   });
 });
 

@@ -13,7 +13,7 @@ import { usesSystemApp } from "../externalEditor";
 import { followCandidate } from "../follow";
 import { t, tn } from "../i18n";
 import { hasOpenOverlay } from "../overlays";
-import { basename, isMarkdown } from "../paths";
+import { basename, isMarkdown, isWebPage } from "../paths";
 import { formatQuote, formatReference } from "../reference";
 import { toggleOutline as outlineToggled, type RightTab } from "../rightPanel";
 import type { CommandAction } from "../commands";
@@ -1049,6 +1049,23 @@ class AppStore {
     }
   }
 
+  /** The web page that "Open in browser" acts on from the command palette: the open document, else the file the Explorer is on. */
+  get browserPage(): string | null {
+    if (docs.path && isWebPage(docs.path)) return docs.path;
+    const cursor = ui.treeCursor;
+    return cursor && !cursor.isDir && isWebPage(cursor.path) ? cursor.path : null;
+  }
+
+  /** "Open in browser": a web page of the folder goes to the system's browser. A failure is a toast. */
+  async openInBrowser(path: string | null = this.browserPage): Promise<void> {
+    if (!path) return;
+    try {
+      await api.openInBrowser(path);
+    } catch (error) {
+      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
+    }
+  }
+
   /** Ctrl+= and Ctrl+-: the zoom of the picture on show, else of the text. */
   zoomBy(direction: 1 | -1): void {
     if (docs.current?.kind === "image") media.zoomBy(direction);
@@ -1187,6 +1204,14 @@ class AppStore {
         return void this.openExternally();
       case "openDefaultApp":
         if (ide) void this.openWithDefaultApp();
+        return;
+      case "openInBrowser":
+        return void this.openInBrowser();
+      case "trail":
+        // the header's buttons are where the menu opens, and the notes have none
+        if (this.screen === "project" && (docs.canBack || docs.canForward)) {
+          ui.trail = { view: "all", anchor: null };
+        }
         return;
       case "toggleLeft":
         if (ide) this.toggleLeft();

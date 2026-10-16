@@ -63,6 +63,11 @@ class UiStore {
   tagsFocusTick = $state(0);
   /** The tag editor popover; `anchor` is where it opens (null: next to the document header). */
   tagEditor = $state.raw<{ anchor: Anchor | null } | null>(null);
+  /**
+   * The menu of places the reader came from or can go to again, under the Back or Forward button: `view` says which side
+   * ("all" is the whole trail, opened from the command palette), `anchor` is the button (null: the header's buttons).
+   */
+  trail = $state.raw<{ view: "back" | "forward" | "all"; anchor: Anchor | null } | null>(null);
   /** The folder the name of a new file is being typed in (the input shows in the tree under it). */
   newFile = $state.raw<{ folder: string; n: number } | null>(null);
   /** The tree row the person last moved to or clicked: where Ctrl+N puts a new file. */
