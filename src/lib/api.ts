@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LanguagePreference } from "./i18n";
+import type { Tone } from "./tone";
 import type {
   AgentContext,
   AgentOpen,
@@ -99,6 +100,10 @@ export interface Api {
   appDistribution(): Promise<Distribution>;
   /** Keeps the language picked in Settings (an app-wide choice, not a project one). */
   setAppLanguage(language: LanguagePreference): Promise<void>;
+  /** The tone of the light theme the person picked (an app-wide choice): "white" until they pick one. */
+  appTone(): Promise<Tone>;
+  /** Keeps the tone of the light theme picked in Settings. */
+  setAppTone(tone: Tone): Promise<void>;
   /** What "Open with TrailMark" has registered with the file manager, read from the system each time. */
   shellIntegrationState(): Promise<ShellState>;
   /** Adds or removes the right-click menu entry; `locale` (`en`, `pt-BR`, `es`, `de`, `zh-CN`) is the language it is worded in. */
@@ -331,6 +336,8 @@ export const tauriApi: Api = {
   appLanguage: () => invoke<LanguagePreference>("app_language"),
   appDistribution: () => invoke<Distribution>("app_distribution"),
   setAppLanguage: (language) => invoke<void>("set_app_language", { language }),
+  appTone: () => invoke<Tone>("app_tone"),
+  setAppTone: (tone) => invoke<void>("set_app_tone", { tone }),
   shellIntegrationState: () => invoke<ShellState>("shell_integration_state"),
   setShellContextMenu: (enabled, locale) =>
     invoke<ShellState>("set_shell_context_menu", { enabled, locale }),
@@ -485,6 +492,8 @@ function createMockApi(): Api {
     appLanguage: command("appLanguage"),
     appDistribution: command("appDistribution"),
     setAppLanguage: command("setAppLanguage"),
+    appTone: command("appTone"),
+    setAppTone: command("setAppTone"),
     shellIntegrationState: command("shellIntegrationState"),
     setShellContextMenu: command("setShellContextMenu"),
     setShellFileAssociation: command("setShellFileAssociation"),

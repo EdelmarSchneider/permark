@@ -17,14 +17,19 @@ import "./styles/notes.css";
 import "./styles/media.css";
 import App from "./App.svelte";
 import { loadLanguage } from "./lib/stores/languageChoice.svelte";
+import { loadTone, showCachedTone } from "./lib/stores/toneChoice.svelte";
 
 // resolve the theme before the first paint so a dark system does not flash white
 document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches
   ? "dark"
   : "light";
 
+// the tone of the light theme the same way: the one shown last time is painted at once, and the stored choice (the
+// backend's) is confirmed below, so a soft tone does not start with a flash of plain white
+showCachedTone();
+
 // the language too: the first paint is already in the person's language
-await loadLanguage();
+await Promise.all([loadLanguage(), loadTone()]);
 
 const app = mount(App, {
   target: document.getElementById("app")!,

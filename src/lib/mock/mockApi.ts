@@ -2,6 +2,7 @@
 
 import type { Api } from "../api";
 import { parsePreference, type LanguagePreference } from "../i18n";
+import { normalizeTone } from "../tone";
 import type { SessionState, ShellState } from "../types";
 import {
   cleanUp,
@@ -67,6 +68,7 @@ const mockShell: ShellState = {
   isDefault: false,
 };
 const LANGUAGE_KEY = "trailmark.mock.language";
+const TONE_KEY = "trailmark.mock.tone";
 
 /** `?lang=de` picks the language for a run; otherwise the one chosen in Settings last time. */
 function mockLanguage(): LanguagePreference {
@@ -102,6 +104,25 @@ export const mockImpl: Api = {
     typeof location !== "undefined" && new URLSearchParams(location.search).has("store")
       ? "store"
       : "standard",
+  // `?tone=paper` picks the tone for a run; otherwise the one chosen in Settings last time
+  appTone: async () => {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(TONE_KEY);
+    } catch {
+      stored = null;
+    }
+    const asked =
+      typeof location === "undefined" ? null : new URLSearchParams(location.search).get("tone");
+    return normalizeTone(asked ?? stored);
+  },
+  setAppTone: async (tone) => {
+    try {
+      localStorage.setItem(TONE_KEY, tone);
+    } catch {
+      // the browser mock forgets it on reload
+    }
+  },
   setAppLanguage: async (language) => {
     try {
       localStorage.setItem(LANGUAGE_KEY, language);

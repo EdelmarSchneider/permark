@@ -54,6 +54,10 @@ export const de = {
   "theme.system": "System",
   "theme.light": "Hell",
   "theme.dark": "Dunkel",
+  "tone.white": "Weiß",
+  "tone.paper": "Papier",
+  "tone.sage": "Salbei",
+  "tone.gray": "Grau",
   "sidebar.label": "Seitenleiste",
   "panel.collapseLeft": "Seitenleiste einklappen",
   "panel.collapseLeftHint": "Seitenleiste einklappen (Strg+B)",
@@ -164,12 +168,28 @@ export const de = {
   "menu.outline": "Gliederung",
 
   // ---- git
-  "git.state.modified": "Geändert",
-  "git.state.added": "Hinzugefügt",
-  "git.state.untracked": "Nicht versioniert",
-  "git.state.deleted": "Gelöscht",
-  "git.state.renamed": "Umbenannt",
-  "git.state.conflicted": "Konflikt",
+  "git.since.visit": "seit dem letzten Besuch",
+  "git.since.commit": "seit dem letzten Git-Commit",
+  "git.explain.modified": "Geändert: Diese Datei wurde {since} geändert.",
+  "git.explain.added":
+    "Hinzugefügt: eine neue Datei, die Git schon für den nächsten Commit vormerkt.",
+  "git.explain.untracked": "Nicht versioniert: eine neue Datei, die Git noch nicht kennt.",
+  "git.explain.deleted": "Gelöscht: Diese Datei wurde {since} entfernt.",
+  "git.explain.renamed": "Umbenannt: Diese Datei wurde {since} umbenannt oder verschoben.",
+  "git.explain.conflicted":
+    "Konflikt: Git hat zwei Versionen dieser Datei gefunden, die nicht zusammenpassen. Den Agenten bitten, das zu lösen, oder im Editor beheben. TrailMark ändert nie etwas an Git.",
+  "git.tail":
+    "Es muss nichts committet werden: Der Buchstabe verschwindet, sobald die Änderung committet ist, von Hand oder durch den Agenten. TrailMark committet nie.",
+  "git.badgeTitle": "{letter} · {text} {tail}",
+  "git.legend.title": "Was bedeuten diese Buchstaben?",
+  "git.legend.menu": "Was bedeuten die Git-Buchstaben?",
+  "git.legend.visit":
+    "Verglichen wird mit dem letzten Besuch (siehe Statusleiste). Nach einem Commit verschwinden die Buchstaben beim nächsten Öffnen dieses Projekts.",
+  "git.legend.commit":
+    "Verglichen wird mit dem letzten Git-Commit (siehe Statusleiste). Die Buchstaben verschwinden, sobald ein Commit gemacht wird.",
+  "git.legend.folder": "Ein Punkt an einem Ordner: Darin hat sich etwas geändert.",
+  "git.legend.readOnly":
+    "TrailMark liest Git nur. Es erstellt nie Commits, merkt nichts für einen Commit vor und legt keine Repositories an.",
   "git.error.title": "Git kann dieses Repository nicht lesen.",
   "git.error.fallback":
     "Änderungsmarkierungen sind aus; „Seit dem letzten Besuch“ nutzt die Dateizeiten.",
@@ -516,11 +536,14 @@ export const de = {
   "initHint.initialize": "Initialisieren",
   "initHint.notNow": "Nicht jetzt",
   "initHint.never": "Nie für diesen Ordner",
+  "initHint.detail": "Legt einen Ordner .trailmark für Tags und Einstellungen an.",
   "init.title": "TrailMark in diesem Projekt initialisieren?",
   "init.intro": "TrailMark legt .trailmark/ in {name} an:",
   "init.config": "gemeinsame Einstellungen, können eingecheckt werden",
-  "init.cache": "Suchindex (von Git ignoriert)",
-  "init.local": "Sitzung und letzter Besuch (von Git ignoriert)",
+  "init.cache": "Dateien, die TrailMark neu erzeugen kann (nicht in Git)",
+  "init.local": "persönlicher Stand: letzter Besuch, Gelesenes, Kommentare (nicht in Git)",
+  "init.git":
+    "Das ändert nichts an Git: Es wird kein Repository angelegt und nichts committet. Git sieht lediglich den neuen Ordner .trailmark/.",
   "init.note":
     "Der aktuelle Stand wird dorthin verschoben. Zum Rückgängigmachen den Ordner löschen.",
   "init.confirm": "Initialisieren",
@@ -666,6 +689,8 @@ export const de = {
   "settings.languageNotSaved":
     "Sprache konnte nicht für das nächste Mal gespeichert werden: {message}",
   "settings.theme": "Design",
+  "settings.tone": "Farbton (Hell)",
+  "settings.toneNotSaved": "Farbton konnte nicht für das nächste Mal gespeichert werden: {message}",
   "settings.width": "Lesebreite",
   "settings.zoom": "Zoom",
   "settings.editMode": "Dateien zum Bearbeiten öffnen in",

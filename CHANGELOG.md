@@ -5,6 +5,19 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Soft light tones.** **Settings → Light tone** adds **Paper** (warm cream), **Sage** (soft green) and **Gray** (soft warm gray) beside the plain
+  **White** of the light theme, for readers who find pure white tiring. The tone applies whenever the theme is light (also when *System* picks
+  light), in every window (the welcome screen and Notes too), and is kept across projects; the dark theme ignores it. Text, links, code and git
+  colours are tuned for each tone so every pair keeps at least the contrast it has on white.
+- **The Git letters are explained.** Hover over a badge in the Explorer for what it means in plain words ("M · Modified: this file changed since
+  your last visit..."), or open **What do these letters mean?** from the info button in the status bar or from the Explorer menu: it lists M, A, U,
+  D, R and C, and says that TrailMark only reads Git and never commits, stages or creates repositories.
+
+### Changed
+- **The Initialize dialog and the hint to keep settings with the project say what they do**: no repository is created and nothing is committed,
+  and the lines for `cache/` and `local/` describe what they hold.
+
 ## [0.5.3] - 2026-10-16
 
 TrailMark speaks Simplified Chinese, and search finds words in Chinese and Japanese text.

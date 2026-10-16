@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { gitStateLabel } from "../gitLabels";
+  import { gitBadgeTitle } from "../gitLabels";
   import { t, tn } from "../i18n";
   import { isComposingKey } from "../ime";
   import { fileIconOf } from "../fileIcons";
@@ -363,8 +363,9 @@
                 <span class="tag-file__name">{basename(file.path)}</span>
                 <span class="tag-file__folder">{folder === "" ? t("feed.root") : folder}</span>
                 {#if badge}
-                  <span class={["badge", badge.className]} title={gitStateLabel(badge.state)}
-                    >{badge.letter}</span
+                  <span
+                    class={["badge", badge.className]}
+                    title={gitBadgeTitle(badge, vault.git?.baseline.kind)}>{badge.letter}</span
                   >
                 {/if}
               </div>

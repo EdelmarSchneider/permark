@@ -136,6 +136,10 @@
   color: var(--text);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
 }
+.segmented button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 /* Activity bar ------------------------------------------------------------------------ */
 .ab-btn {
@@ -320,6 +324,45 @@
 }
 .badge--R {
   color: var(--git-renamed-text);
+}
+/* "What do these letters mean?" */
+.git-legend__title {
+  margin: 0;
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+.git-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-ui-sm);
+  line-height: 1.4;
+  color: var(--text);
+}
+.git-legend li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.git-legend .badge {
+  margin-top: 1px;
+}
+.git-legend__dot {
+  margin: 5px 4px 0;
+}
+.git-legend__note {
+  margin: 0;
+  font-size: var(--fs-ui-sm);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.git-legend__note--promise {
+  color: var(--text);
+  font-weight: 500;
 }
 .rollup {
   width: 6px;
@@ -613,6 +656,9 @@
   width: 13px;
   height: 13px;
 }
+.sb-item--icon {
+  padding: 0 6px;
+}
 .sb-item.is-on {
   color: var(--accent);
   font-weight: 500;
@@ -748,6 +794,9 @@
 .banner--error {
   --tone: var(--git-deleted);
   --tone-text: var(--git-deleted-text);
+}
+.banner__detail {
+  color: var(--muted);
 }
 .banner__actions {
   display: flex;
@@ -1199,6 +1248,10 @@ kbd.hint-kbd {
 .dialog dd {
   margin: 0;
   color: var(--muted);
+}
+/* the sentence that tells a worried reader what the dialog does not do */
+.dialog p.dialog__reassure {
+  color: var(--text);
 }
 .dialog footer {
   display: flex;

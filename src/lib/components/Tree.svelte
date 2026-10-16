@@ -10,7 +10,7 @@
     targetsOf,
     topLevelOnly,
   } from "../fileOps";
-  import { gitStateLabel } from "../gitLabels";
+  import { gitBadgeTitle } from "../gitLabels";
   import { formatNumber, t, tn } from "../i18n";
   import { categoryOf } from "../fileKinds";
   import { fileIconOf } from "../fileIcons";
@@ -487,8 +487,9 @@
           title={t("tree.containsChanges")}
         ></span>
       {:else if badge && git}
-        <span class={["badge", badge.className]} title={gitStateLabel(badge.state)}
-          >{badge.letter}</span
+        <span
+          class={["badge", badge.className]}
+          title={gitBadgeTitle(badge, vault.git?.baseline.kind)}>{badge.letter}</span
         >
       {/if}
     </div>

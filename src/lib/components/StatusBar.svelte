@@ -78,6 +78,11 @@
     },
   ]);
 
+  function openLegend(e: MouseEvent): void {
+    const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    ui.gitLegend = ui.gitLegend?.from === "status" ? null : { anchor, from: "status" };
+  }
+
   function openMenu(kind: "baseline" | "state", e: MouseEvent): void {
     const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
     menu = menu?.kind === kind ? null : { kind, anchor };
@@ -133,6 +138,18 @@
       <span class="sb-item" title={t("status.changedHint")}>
         <span class="rollup" style="margin:0"></span>{changed}
       </span>
+      <button
+        type="button"
+        class="sb-item sb-item--icon"
+        title={t("git.legend.menu")}
+        aria-label={t("git.legend.menu")}
+        aria-haspopup="dialog"
+        aria-expanded={ui.gitLegend?.from === "status"}
+        data-popover-trigger
+        onclick={openLegend}
+      >
+        <Icon name="info" />
+      </button>
     {/if}
     {#if git?.isRepo || git?.gitError}
       <button

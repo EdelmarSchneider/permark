@@ -294,6 +294,10 @@
   font-size: 0.9em;
   color: var(--alert);
 }
+/* the Note title is text in the accent: its darker shade keeps 4.5:1 on the tinted background, on white and on every soft tone */
+.md .markdown-alert-note .markdown-alert-title {
+  color: var(--accent-text);
+}
 .markdown-alert-title svg {
   width: 14px;
   height: 14px;

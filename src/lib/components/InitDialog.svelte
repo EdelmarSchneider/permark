@@ -82,6 +82,7 @@
       <dt>local/</dt>
       <dd>{t("init.local")}</dd>
     </dl>
+    <p class="dialog__reassure">{t("init.git")}</p>
     <p style="margin:0">{t("init.note")}</p>
     {#if error}<p class="inline-error" role="alert">{error}</p>{/if}
     <footer>
