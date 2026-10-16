@@ -493,7 +493,9 @@ impl Worker {
     }
 
     /// Deletes the copies that no version points to. Under the lock, so that a copy being kept cannot be taken
-    /// away before the version that points to it is set.
+    /// away before the version that points to it is set. The versions `reviewed.json` has are kept too: another
+    /// instance of the program on the same project (a second build, say) writes there, and its copies are in the same
+    /// folder.
     fn clean_up(&self) {
         let mut g = lock(&self.shared.inner);
         if !g.cleanup {
@@ -502,7 +504,10 @@ impl Worker {
         g.cleanup = false;
         let now = Instant::now();
         g.fresh.retain(|_, at| now.duration_since(*at) < FRESH_FOR);
-        let used = g.in_use();
+        let mut used = g.in_use();
+        if let Some(saved) = std::fs::read(&g.path).ok().and_then(|bytes| decode(&bytes)) {
+            used.extend(saved.values().map(|doc| doc.hash));
+        }
         g.store.remove_unused(&used);
         g.have = g.store.hashes();
     }

@@ -92,6 +92,9 @@ struct Side<'a> {
     /// Where each line starts, numbered the way the reading view numbers them (`data-sourcepos`): a line break is
     /// `\n`, `\r\n` or a lone `\r`, and a byte order mark is not part of the first line.
     line_starts: Vec<usize>,
+    /// The link reference definitions of the text, one run after the other: what a block needs to draw its
+    /// reference-style links when it is drawn on its own.
+    definitions: String,
 }
 
 /// The runs of non-blank lines that no block covers: text the parser consumes without making a node of it, which
@@ -133,8 +136,14 @@ impl<'a> Side<'a> {
         let (lines, _) = split_lines(text, body_start);
         let mut blocks = parsed.blocks;
         // A text over the size the parser takes has no blocks, and is not one block made of everything.
+        let mut definitions = String::new();
         if text.len() as u64 <= MAX_RENDER_BYTES {
-            blocks.extend(uncovered_runs(text, &lines, &blocks));
+            let runs = uncovered_runs(text, &lines, &blocks);
+            for run in &runs {
+                definitions.push_str(&text[run.start_byte..run.end_byte]);
+                definitions.push('\n');
+            }
+            blocks.extend(runs);
             blocks.sort_by_key(|b| b.start_byte);
         }
         let keys = blocks
@@ -154,6 +163,7 @@ impl<'a> Side<'a> {
             keys,
             eol: parsed.eol,
             line_starts: lines.iter().map(|line| line.start).collect(),
+            definitions,
         }
     }
 
@@ -313,6 +323,16 @@ impl<'a> Comparison<'a> {
     /// The bytes of block `index` of the current text.
     pub fn new_span(&self, index: usize) -> Span {
         self.current.span(&(index..index + 1))
+    }
+
+    /// The link reference definitions of the reviewed text: what its blocks need to be drawn on their own.
+    pub fn old_definitions(&self) -> &str {
+        &self.reviewed.definitions
+    }
+
+    /// The link reference definitions of the current text (see [`Comparison::old_definitions`]).
+    pub fn new_definitions(&self) -> &str {
+        &self.current.definitions
     }
 
     /// The first and the last line of block `index` of the reviewed text, counted from 1 as the reading view counts

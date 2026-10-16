@@ -140,14 +140,31 @@ fn block_range(range: &std::ops::Range<usize>) -> BlockRange {
     }
 }
 
+/// `block` with the link reference definitions of its document after it: drawn on its own, a block would show its
+/// reference-style links (`[docs][d]`) as plain text. The definitions draw nothing themselves.
+fn with_definitions(block: &str, definitions: &str) -> String {
+    if definitions.is_empty() {
+        block.to_owned()
+    } else {
+        format!("{block}\n\n{definitions}")
+    }
+}
+
 /// The changes of a comparison with their blocks rendered.
 pub fn changes_view(cmp: &Comparison<'_>) -> Vec<ChangeView> {
     // every block that is shown, in the order the views are built, rendered in one go
+    let (old_definitions, new_definitions) = (cmp.old_definitions(), cmp.new_definitions());
     let mut texts: Vec<String> = Vec::new();
     for change in cmp.changes() {
         for row in &change.rows {
-            texts.extend(row.old.map(|i| cmp.old_block(i).to_owned()));
-            texts.extend(row.new.map(|i| cmp.new_block(i).to_owned()));
+            texts.extend(
+                row.old
+                    .map(|i| with_definitions(cmp.old_block(i), old_definitions)),
+            );
+            texts.extend(
+                row.new
+                    .map(|i| with_definitions(cmp.new_block(i), new_definitions)),
+            );
         }
     }
     let mut html = render_fragments(&texts).into_iter();
@@ -341,6 +358,33 @@ second
         );
         let new = changes_view(&cmp)[0].rows[0].new.clone().expect("new");
         assert_eq!((new.start_line, new.end_line), (3, 4));
+    }
+
+    #[test]
+    fn reference_style_links_are_links_in_the_view_with_the_definitions_of_their_own_version() {
+        let reviewed = "# T\n\nSee [the docs][d].\n\n[d]: https://good.example\n";
+        let current = "# T\n\nSee [the docs][d] now.\n\n[d]: https://other.example\n";
+        let cmp = Comparison::new(reviewed, current);
+        let changes = changes_view(&cmp);
+        let paragraph = &changes[0].rows[0];
+        let old = paragraph.old.as_ref().expect("old");
+        let new = paragraph.new.as_ref().expect("new");
+        assert!(
+            old.html.contains("href=\"https://good.example\""),
+            "{}",
+            old.html
+        );
+        assert!(
+            new.html.contains("href=\"https://other.example\""),
+            "{}",
+            new.html
+        );
+        assert!(!old.html.contains("[d]") && !new.html.contains("[d]"));
+        // and the text is the block's own, nothing added
+        assert_eq!(old.text, "See [the docs][d].");
+        // a definition on its own still draws nothing
+        let definition = changes[0].rows[1].new.as_ref().expect("definition");
+        assert_eq!(definition.html, "");
     }
 
     #[test]

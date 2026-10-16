@@ -1701,3 +1701,28 @@ fn a_difference_in_blank_lines_alone_while_a_review_is_open_ends_the_hold_on_the
     assert_eq!(service.entries(), Vec::<Entry>::new());
     service.stop();
 }
+// ---- another instance on the same project ----
+
+#[test]
+fn copies_a_version_in_the_saved_file_needs_are_not_taken_away_by_another_instance_cleaning_up() {
+    let fx = Fx::new(&[]);
+    let service = fx.service();
+    tell(&service, &[]);
+    // meanwhile another instance approved a text and saved it, with its copy; this one does not know about it
+    write_state(&fx, &[("other.md", "# Of the other instance\n", None)]);
+    CopyStore::new(fx.paths().copies)
+        .put(b"# Of the other instance\n")
+        .expect("copy");
+    service.age_copies();
+    service.flush();
+    assert!(
+        fx.copies().contains(&h("# Of the other instance\n")),
+        "kept, whoever's it is"
+    );
+    // a copy nobody has a version of still goes
+    service.keep_copy(b"# Nobody's\n").expect("copy");
+    service.age_copies();
+    service.flush();
+    assert!(!fx.copies().contains(&h("# Nobody's\n")));
+    service.stop();
+}
