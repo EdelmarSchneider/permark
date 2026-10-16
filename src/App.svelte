@@ -132,7 +132,7 @@
     e.preventDefault();
     if (key.kind === "pinned") void notes.openPinned(key.n);
     else if (key.kind === "step") void notes.step(key.direction);
-    else if (notes.current && !notes.unborn && !notes.readOnly) notes.renaming = true;
+    else if (notes.current && !notes.readOnly) notes.renaming = true;
     return true;
   }
 

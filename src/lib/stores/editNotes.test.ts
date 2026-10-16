@@ -294,18 +294,19 @@ describe("never asking", () => {
       if (path === PATH) throw denied;
       return saved("n1", path);
     });
-    fake.newNote.mockResolvedValue("2026-10-15 1500.md");
+    fake.newNote.mockResolvedValue({ path: "2026-10-15 1500.md", hash: "e0", modifiedMs: 100 });
     type(editor, "# Plan\nunsaved");
     expect(await edit.confirmLeave("close")).toBe(false);
     expect(fake.newNote).not.toHaveBeenCalled();
     expect(await edit.confirmLeave("close")).toBe(true);
-    expect(fake.saveNote).toHaveBeenLastCalledWith("2026-10-15 1500.md", "# Plan\nunsaved", "");
+    // a new note is an empty file: the text is saved over it, guarded by its hash
+    expect(fake.saveNote).toHaveBeenLastCalledWith("2026-10-15 1500.md", "# Plan\nunsaved", "e0");
   });
 
   it("closing is refused once more when not even a copy could be written, and the third try closes", async () => {
     const editor = await openNote();
     fake.saveNote.mockRejectedValue({ kind: "denied", message: "no", subject: PATH });
-    fake.newNote.mockResolvedValue("2026-10-15 1500.md");
+    fake.newNote.mockResolvedValue({ path: "2026-10-15 1500.md", hash: "e0", modifiedMs: 100 });
     type(editor, "# Plan\nunsaved");
     expect(await edit.confirmLeave("close")).toBe(false);
     expect(await edit.confirmLeave("close")).toBe(false);
@@ -399,22 +400,42 @@ describe("a note that changed somewhere else", () => {
 });
 
 describe("a new note", () => {
-  it("has no hash, makes its file with the first text, and may get another name", async () => {
-    const editor = await openNote("", "", "2026-10-15 1432.md");
+  it("is an empty file already: its first text is saved like any other, over the hash of the empty file", async () => {
+    const editor = await openNote("", "e0", "2026-10-15 1432.md");
+    const written = vi.fn();
+    edit.noteHooks.written = written;
+    fake.saveNote.mockResolvedValue(saved("n1", "2026-10-15 1432.md"));
+    type(editor, "  hello");
+    expect(await edit.flush()).toBe(true);
+    expect(fake.saveNote).toHaveBeenCalledWith("2026-10-15 1432.md", "  hello", "e0");
+    expect(written).toHaveBeenCalledWith({
+      path: "2026-10-15 1432.md",
+      created: false,
+      text: "  hello",
+    });
+    // from then on it is guarded by the hash it was saved with
+    fake.saveNote.mockResolvedValue(saved("n2", "2026-10-15 1432.md"));
+    type(editor, "  hello world");
+    await edit.flush();
+    expect(fake.saveNote).toHaveBeenLastCalledWith("2026-10-15 1432.md", "  hello world", "n1");
+  });
+
+  it("with only blank text typed in is saved as that text: nothing is skipped and the note can be left", async () => {
+    const editor = await openNote("", "e0", "2026-10-15 1432.md");
+    fake.saveNote.mockResolvedValue(saved("n1", "2026-10-15 1432.md"));
+    type(editor, "  \n");
+    expect(await edit.flush()).toBe(true);
+    expect(edit.dirty).toBe(false);
+    expect(fake.saveNote).toHaveBeenCalledTimes(1);
+    expect(fake.saveNote).toHaveBeenCalledWith("2026-10-15 1432.md", "  \n", "e0");
+  });
+
+  it("deleted by another program while it was open, comes back with its text, perhaps under another name", async () => {
+    const editor = await openNote("# Plan\n", "h1", "2026-10-15 1432.md");
     const renamed = vi.fn();
     const written = vi.fn();
     edit.noteHooks.renamed = renamed;
     edit.noteHooks.written = written;
-    // a blank text makes no file
-    fake.saveNote.mockResolvedValue({ result: "blank" } satisfies NoteSaved);
-    type(editor, "  ");
-    // it counts as saved (there is nothing to lose), so the note can be left, and the next text still makes the file
-    expect(await edit.flush()).toBe(true);
-    expect(edit.dirty).toBe(false);
-    expect(fake.saveNote).toHaveBeenCalledTimes(1);
-    expect(fake.saveNote).toHaveBeenCalledWith("2026-10-15 1432.md", "  ", "");
-    expect(written).not.toHaveBeenCalled();
-    // the first text that is not blank does; its name was taken meanwhile
     fake.saveNote.mockResolvedValue({
       result: "saved",
       path: "2026-10-15 1432-2.md",
@@ -422,20 +443,23 @@ describe("a new note", () => {
       modifiedMs: 300,
       created: true,
     } satisfies NoteSaved);
-    type(editor, "  hello");
+    type(editor, "# Plan\nmore");
     await edit.flush();
     expect(renamed).toHaveBeenCalledWith("2026-10-15 1432.md", "2026-10-15 1432-2.md");
     expect(written).toHaveBeenCalledWith({
       path: "2026-10-15 1432-2.md",
       created: true,
-      text: "  hello",
+      text: "# Plan\nmore",
     });
     expect(edit.path).toBe("2026-10-15 1432-2.md");
-    // from then on it is an ordinary note with a hash
     fake.saveNote.mockResolvedValue(saved("n2", "2026-10-15 1432-2.md"));
-    type(editor, "  hello world");
+    type(editor, "# Plan\nmore still");
     await edit.flush();
-    expect(fake.saveNote).toHaveBeenLastCalledWith("2026-10-15 1432-2.md", "  hello world", "n1");
+    expect(fake.saveNote).toHaveBeenLastCalledWith(
+      "2026-10-15 1432-2.md",
+      "# Plan\nmore still",
+      "n1",
+    );
   });
 });
 

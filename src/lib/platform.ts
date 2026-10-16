@@ -8,6 +8,7 @@ import { ask, message, open as openDialog, save as saveDialog } from "@tauri-app
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
+import { assetKindOf } from "./fileKinds";
 import { t } from "./i18n";
 import type { DownloadProgress } from "./updates";
 
@@ -65,15 +66,61 @@ export async function openExternalUrl(url: string): Promise<void> {
 const MOCK_IMAGE =
   "data:image/svg+xml;utf8," +
   encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 90"><rect width="520" height="90" rx="10" fill="#8b929a" fill-opacity=".18"/><text x="260" y="52" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#656d76">mock image</text></svg>',
+    '<svg xmlns="http://www.w3.org/2000/svg" width="520" height="90" viewBox="0 0 520 90"><rect width="520" height="90" rx="10" fill="#8b929a" fill-opacity=".18"/><text x="260" y="52" text-anchor="middle" font-family="sans-serif" font-size="15" fill="#656d76">mock image</text></svg>',
   );
 
-/** The URI scheme of the backend that serves the images of the open folder (`ASSET_SCHEME` in Rust). */
+/** The URI scheme of the backend that serves the pictures, sound and video of the open folder (`ASSET_SCHEME` in Rust). */
 const ASSET_SCHEME = "tmasset";
 
-/** URL the webview can load for an image of the open folder, given its vault path. */
-export function assetUrl(path: string): string {
-  return isMock ? MOCK_IMAGE : convertFileSrc(path, ASSET_SCHEME);
+/** A two-second tone, made on the spot for the browser mock (the mock has no files to play). */
+let mockTone: string | null = null;
+function mockToneUrl(): string {
+  if (mockTone !== null) return mockTone;
+  const rate = 8000;
+  const samples = rate * 2;
+  const bytes = new Uint8Array(44 + samples);
+  const view = new DataView(bytes.buffer);
+  const text = (at: number, value: string): void =>
+    [...value].forEach((ch, i) => view.setUint8(at + i, ch.charCodeAt(0)));
+  text(0, "RIFF");
+  view.setUint32(4, 36 + samples, true);
+  text(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate, true); // bytes per second: 8 bits
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  text(36, "data");
+  view.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) {
+    bytes[44 + i] = 128 + Math.round(40 * Math.sin((2 * Math.PI * 440 * i) / rate));
+  }
+  mockTone = URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
+  return mockTone;
+}
+
+/** What the browser mock serves in place of a file: a picture, a tone, and for a video nothing it can play. */
+function mockAssetUrl(path: string): string {
+  switch (assetKindOf(path)) {
+    case "audio":
+      return mockToneUrl();
+    case "video":
+      return "data:video/mp4;base64,AAAA";
+    default:
+      return MOCK_IMAGE;
+  }
+}
+
+/**
+ * URL the webview can load for a picture, sound or video of the open folder, given its vault path. `version` (the file's
+ * time) makes a file that changed on disk a new address, so the webview fetches it again.
+ */
+export function assetUrl(path: string, version?: number): string {
+  if (isMock) return mockAssetUrl(path);
+  const url = convertFileSrc(path, ASSET_SCHEME);
+  return version === undefined ? url : `${url}?v=${version}`;
 }
 
 export type DropHandlers = {

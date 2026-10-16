@@ -7,6 +7,7 @@ import {
   buildView,
   commandRows,
   fileRows,
+  folderRows,
   GROUP_LIMIT,
   moveActive,
   outlineRows,
@@ -19,6 +20,7 @@ import {
   tagRows,
   type CommandRow,
   type FileRow,
+  type FolderRow,
   type Row,
   type SectionRow,
   type TagRow,
@@ -415,6 +417,12 @@ const command = (id: CommandRow["id"]): CommandRow => ({
   alias: null,
   shortcut: null,
 });
+const folder = (path: string): FolderRow => ({
+  type: "folder",
+  key: `folder:${path}`,
+  path,
+  positions: [],
+});
 const many = <T>(n: number, make: (i: number) => T): T[] =>
   Array.from({ length: n }, (_, i) => make(i));
 
@@ -424,6 +432,7 @@ function view(over: Partial<ViewInput>) {
     idle: false,
     hasWords: true,
     files: [],
+    folders: [],
     moreHidden: 0,
     sections: [],
     tags: [],
@@ -452,7 +461,7 @@ describe("buildView: All", () => {
       tags: many(3, (i) => tag(`t${i}`)),
       commands: many(9, (i) => command(i % 2 ? "save" : "find")),
     });
-    expect(GROUP_LIMIT).toEqual({ files: 5, sections: 5, tags: 3, commands: 3 });
+    expect(GROUP_LIMIT).toEqual({ files: 5, folders: 3, sections: 5, tags: 3, commands: 3 });
     expect(v.groups.map((g) => g.rows.length)).toEqual([5, 5, 3, 3]);
     expect(v.groups.map((g) => g.total)).toEqual([7, 23, 3, 9]);
     expect(v.groups.map((g) => g.showAll)).toEqual(["files", "sections", null, "commands"]);
@@ -500,6 +509,31 @@ describe("buildView: All", () => {
     expect(v.groups.map((g) => g.title)).toEqual(["files"]);
   });
 
+  it("lists the folders after the files, at most three, and points the rest at Files", () => {
+    const v = view({
+      files: [file("a.md")],
+      folders: many(5, (i) => folder(`docs/f${i}`)),
+      sections: [section(1)],
+    });
+    expect(v.groups.map((g) => g.title)).toEqual(["files", "folders", "sections"]);
+    const folders = v.groups[1];
+    expect(folders.rows).toHaveLength(3);
+    expect(folders).toMatchObject({ total: 5, showAll: "files" });
+    expect(view({ folders: [folder("docs")] }).groups[0]).toMatchObject({
+      title: "folders",
+      total: 1,
+      showAll: null,
+    });
+    // a first row that is a file stays the best match: folders never lead
+    expect(view({ files: [file("a.md")], folders: [folder("docs")] }).rows[0].type).toBe("file");
+  });
+
+  it("lists no folders before something is typed", () => {
+    // an idle box lists the recent files; the model is not handed folders then, and would not show them
+    const v = view({ idle: true, hasWords: false, folders: [folder("docs")] });
+    expect(v.groups).toEqual([]);
+  });
+
   it("does not offer the hidden files in All", () => {
     const v = view({ files: [file("a.md")], moreHidden: 4 });
     expect(v.rows.some((r) => r.type === "more")).toBe(false);
@@ -513,6 +547,17 @@ describe("buildView: one scope", () => {
     expect(v.groups[0]).toMatchObject({ title: null, total: 2, showAll: null });
     expect(keysOf(v.rows)).toEqual(["file:a.md", "file:b.md", "more"]);
     expect(v.rows[2]).toEqual({ type: "more", key: "more", count: 3 });
+  });
+
+  it("Files: the folders follow the files, before the row of hidden matches", () => {
+    const v = view({
+      scope: "files",
+      files: [file("a.md")],
+      folders: [folder("docs"), folder("docs/design")],
+      moreHidden: 2,
+    });
+    expect(keysOf(v.rows)).toEqual(["file:a.md", "folder:docs", "folder:docs/design", "more"]);
+    expect(v.groups[0]).toMatchObject({ title: null, total: 3, showAll: null });
   });
 
   it("Files: no row of hidden matches when none are hidden", () => {
@@ -596,5 +641,14 @@ describe("moveActive", () => {
       walk.push(v.rows[active].key);
     }
     expect(walk).toEqual(["file:a.md", "file:b.md", "section:1", "file:a.md"]);
+  });
+});
+
+describe("folderRows", () => {
+  it("turns the folders a query found into rows that keep the matched characters", () => {
+    expect(folderRows([{ path: "docs/design", positions: [5, 6] }])).toEqual([
+      { type: "folder", key: "folder:docs/design", path: "docs/design", positions: [5, 6] },
+    ]);
+    expect(folderRows([])).toEqual([]);
   });
 });

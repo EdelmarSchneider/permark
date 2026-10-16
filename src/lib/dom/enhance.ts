@@ -1,14 +1,19 @@
-// Post-processing of the backend's HTML after it is injected: code blocks (copy button, highlight.js),
+// Post-processing of the backend's HTML after it is injected: code blocks (copy button, language label, highlighting),
 // tables, heading anchors, alerts, task lists, KaTeX, Mermaid and relative images.
 // Structural changes are synchronous and keep one element per top-level block, so the block diff
 // can address blocks by index; the heavy libraries load lazily and fill in afterwards.
 
+import type { CodeOutcome } from "../code/highlighter";
 import { resolveRelative } from "../paths";
 import { viewBoxWidth } from "./breakout";
 import { decorateCodeRefs, type CodeRefsContext } from "./codeRefsDom";
 
 export type EnhanceLabels = {
   copyCode: string;
+  /** The corner label of a block whose language was guessed ("auto: Python"). */
+  codeAuto: (name: string) => string;
+  /** What the guessed-language label says when it is hovered. */
+  codeAutoHint: string;
   anchorLabel: (name: string) => string;
   diagramPending: string;
   diagramFailed: string;
@@ -44,20 +49,27 @@ function copySourcepos(from: Element, to: Element): void {
   if (pos) to.setAttribute("data-sourcepos", pos);
 }
 
-// ---- before insertion: images -----------------------------------------------------------------
+// ---- before insertion: images, sound and video ---------------------------------------------------
 
 /**
- * Detaches relative image sources from a not-yet-inserted fragment, so the webview does not request
- * them from the app origin. They are resolved to asset URLs after insertion.
+ * Detaches relative image and player sources (`img`, `video`, `audio`, `source`, and the poster of a video) from a
+ * not-yet-inserted fragment, so the webview does not request them from the app origin. They are resolved to asset URLs
+ * after insertion.
  */
 export function stashRelativeImages(root: ParentNode, docPath: string): void {
-  for (const img of Array.from(root.querySelectorAll("img"))) {
-    const src = img.getAttribute("src");
+  for (const el of Array.from(root.querySelectorAll("img, video[src], audio[src], source[src]"))) {
+    const src = el.getAttribute("src");
     if (src === null) continue;
     const resolved = resolveRelative(docPath, src);
     if (resolved === null) continue;
-    img.setAttribute("data-tm-path", resolved);
-    img.removeAttribute("src");
+    el.setAttribute("data-tm-path", resolved);
+    el.removeAttribute("src");
+  }
+  for (const video of Array.from(root.querySelectorAll("video[poster]"))) {
+    const resolved = resolveRelative(docPath, video.getAttribute("poster") ?? "");
+    if (resolved === null) continue;
+    video.setAttribute("data-tm-poster", resolved);
+    video.removeAttribute("poster");
   }
 }
 
@@ -98,6 +110,7 @@ function enhanceInside(root: HTMLElement, ctx: EnhanceContext, tasks: Promise<vo
   root.querySelectorAll<HTMLImageElement>("img[data-tm-path]").forEach((img) => {
     tasks.push(loadImage(img, ctx));
   });
+  for (const player of playersOf(root)) tasks.push(loadPlayer(player, ctx));
   if (ctx.codeRefs) decorateCodeRefs(root, ctx.codeRefs);
 }
 
@@ -110,17 +123,20 @@ function wrapTable(table: HTMLElement): HTMLElement {
   return wrap;
 }
 
-function languageOf(code: Element | null): string | null {
-  const match = /(?:^|\s)language-([\w+#.-]+)/.exec(code?.getAttribute("class") ?? "");
-  return match ? match[1].toLowerCase() : null;
+/** What the fence's info string said, as the backend writes it into the class (`language-rust` for ```` ```rust title="x" ````), or null. */
+function infoOf(code: Element | null): string | null {
+  const token = (code?.getAttribute("class") ?? "")
+    .split(/\s+/)
+    .find((name) => name.startsWith("language-"));
+  return token === undefined ? null : token.slice("language-".length);
 }
 
 function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[]): HTMLElement {
   const code = pre.querySelector("code");
-  const lang = languageOf(code);
+  const info = infoOf(code);
   const source = (code ?? pre).textContent ?? "";
 
-  if (lang === "mermaid") {
+  if (info !== null && info.toLowerCase() === "mermaid") {
     const figure = document.createElement("figure");
     figure.className = "diagram is-pending";
     figure.dataset.source = source;
@@ -135,12 +151,6 @@ function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[])
   wrap.className = "code-block";
   copySourcepos(pre, wrap);
   pre.replaceWith(wrap);
-  if (lang) {
-    const label = document.createElement("span");
-    label.className = "code-block__lang";
-    label.textContent = lang;
-    wrap.appendChild(label);
-  }
   const copy = document.createElement("button");
   copy.type = "button";
   copy.className = "icon-btn icon-btn--sm code-block__copy";
@@ -149,7 +159,7 @@ function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[])
   copy.innerHTML = ICON_COPY;
   wrap.appendChild(copy);
   wrap.appendChild(pre);
-  if (code && lang) tasks.push(highlight(code, lang, source));
+  if (code) tasks.push(decorateCode(code, wrap, info ?? "", source, ctx));
   return wrap;
 }
 
@@ -225,13 +235,57 @@ function markDisplayMath(formula: HTMLElement): void {
 
 // ---- lazy libraries ---------------------------------------------------------------------------
 
-async function highlight(code: Element, lang: string, source: string): Promise<void> {
-  try {
-    const hljs = (await import("highlight.js/lib/common")).default;
-    if (!hljs.getLanguage(lang)) return;
-    const result = hljs.highlight(source, { language: lang, ignoreIllegals: true });
-    code.innerHTML = result.value;
+/** How the blocks seen lately turned out, so that a document drawn again (a live update) shows them at once, not after a flash of plain text. */
+const codeOutcomes = new Map<string, CodeOutcome>();
+const CODE_OUTCOMES_KEPT = 200;
+
+function showCode(
+  code: Element,
+  wrap: HTMLElement,
+  outcome: CodeOutcome,
+  source: string,
+  ctx: EnhanceContext,
+): void {
+  // the block was drawn again with other text meanwhile: this answer is not for it
+  if ((code.textContent ?? "") !== source) return;
+  wrap.querySelector(".code-block__lang")?.remove();
+  if (outcome.html !== null) {
+    code.innerHTML = outcome.html;
     code.classList.add("hljs");
+  }
+  const { label } = outcome;
+  if (label) {
+    const element = document.createElement("span");
+    element.className = "code-block__lang";
+    element.textContent = label.auto ? ctx.labels.codeAuto(label.name) : label.name;
+    if (label.auto) element.title = ctx.labels.codeAutoHint;
+    wrap.insertBefore(element, wrap.firstChild);
+  }
+}
+
+/**
+ * Highlights a fenced block and puts the name of its language in its corner: the grammar of the language it names, or the best guess
+ * for one that names none (see `highlightFence`). The libraries load lazily; the block is plain text until they have.
+ */
+async function decorateCode(
+  code: Element,
+  wrap: HTMLElement,
+  info: string,
+  source: string,
+  ctx: EnhanceContext,
+): Promise<void> {
+  const key = `${info}\u0000${source}`;
+  const known = codeOutcomes.get(key);
+  if (known) {
+    showCode(code, wrap, known, source, ctx);
+    return;
+  }
+  try {
+    const { highlightFence } = await import("../code/highlighter");
+    const outcome = await highlightFence(source, info);
+    if (codeOutcomes.size >= CODE_OUTCOMES_KEPT) codeOutcomes.clear();
+    codeOutcomes.set(key, outcome);
+    showCode(code, wrap, outcome, source, ctx);
   } catch {
     // keep the plain text
   }
@@ -270,6 +324,54 @@ async function loadImage(img: HTMLImageElement, ctx: EnhanceContext): Promise<vo
     img.src = await url;
   } catch {
     img.classList.add("is-broken");
+  }
+}
+
+/** The players in a block (or the block itself) that have files of the folder to load. */
+function playersOf(root: HTMLElement): HTMLMediaElement[] {
+  const wants = (el: HTMLMediaElement): boolean =>
+    el.hasAttribute("data-tm-path") ||
+    el.hasAttribute("data-tm-poster") ||
+    el.querySelector(":scope > source[data-tm-path]") !== null;
+  return [root, ...Array.from(root.querySelectorAll("video, audio"))].filter(
+    (el): el is HTMLMediaElement => el instanceof HTMLMediaElement && wants(el),
+  );
+}
+
+/** The URL of a file of the folder, asked for once however many players and pictures name it. */
+function assetUrlOf(path: string, ctx: EnhanceContext): Promise<string> {
+  let url = imageUrls.get(path);
+  if (!url) {
+    url = ctx.resolveImage(path);
+    imageUrls.set(path, url);
+    url.catch(() => imageUrls.delete(path));
+  }
+  return url;
+}
+
+/**
+ * Points a player of the document at its files: its own `src`, its poster, and the `source` elements inside it. A player
+ * whose sources were set after it was drawn has to load again to read them.
+ */
+async function loadPlayer(player: HTMLMediaElement, ctx: EnhanceContext): Promise<void> {
+  player.addEventListener("error", () => player.classList.add("is-broken"), {
+    once: true,
+    capture: true,
+  });
+  try {
+    const own = player.getAttribute("data-tm-path");
+    const poster = player.getAttribute("data-tm-poster");
+    const sources = Array.from(
+      player.querySelectorAll<HTMLSourceElement>(":scope > source[data-tm-path]"),
+    );
+    if (poster) player.setAttribute("poster", await assetUrlOf(poster, ctx));
+    if (own) player.setAttribute("src", await assetUrlOf(own, ctx));
+    for (const source of sources) {
+      source.setAttribute("src", await assetUrlOf(source.getAttribute("data-tm-path") ?? "", ctx));
+    }
+    if (own || sources.length > 0) player.load();
+  } catch {
+    player.classList.add("is-broken");
   }
 }
 

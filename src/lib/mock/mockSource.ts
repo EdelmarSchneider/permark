@@ -89,7 +89,7 @@ export async function parseBlocks(text: string): Promise<ParsedBlocks> {
 /** The reading view's HTML for pieces of Markdown (what Visual mode draws its locked blocks with). */
 export async function renderFragments(texts: string[]): Promise<string[]> {
   await wait(10);
-  return texts.map((text) => markdownToView(text).html);
+  return texts.map((text) => markdownToView(text, { fragment: true }).html);
 }
 
 export async function saveDocument(

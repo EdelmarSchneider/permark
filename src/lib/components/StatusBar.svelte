@@ -3,7 +3,9 @@
   import { agent } from "../stores/agent.svelte";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
+  import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
+  import { media } from "../stores/media.svelte";
   import { comments } from "../stores/comments.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -18,6 +20,8 @@
 
   let menu = $state<{ kind: "baseline" | "state"; anchor: DOMRect } | null>(null);
 
+  /** A picture is on show: the zoom is the picture's. */
+  const image = $derived(docs.current?.kind === "image");
   const git = $derived(vault.git);
   const head = $derived(git?.head);
   const shortOid = $derived(head?.oid ? head.oid.slice(0, 7) : null);
@@ -234,10 +238,10 @@
     <button
       type="button"
       class="sb-item"
-      title={t("status.zoomHint")}
-      onclick={() => session.setZoom(1)}
+      title={image ? t("status.imageZoomHint") : t("status.zoomHint")}
+      onclick={() => app.resetZoom()}
     >
-      {Math.round(session.zoom * 100)}%
+      {image ? media.label : `${Math.round(session.zoom * 100)}%`}
     </button>
     <button
       type="button"

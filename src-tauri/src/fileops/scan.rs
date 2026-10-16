@@ -853,7 +853,7 @@ fn parse_tag(text: &str, i: usize, hi: usize) -> Option<(usize, Vec<Dest>)> {
     }
 }
 
-/// `href` of an anchor or `link`, `src` of media tags.
+/// `href` of an anchor or `link`, `src` of media tags, `poster` of a video.
 fn is_link_attribute(tag: &str, attr: &str) -> bool {
     match attr {
         "href" => matches!(tag, "a" | "link"),
@@ -861,6 +861,7 @@ fn is_link_attribute(tag: &str, attr: &str) -> bool {
             tag,
             "img" | "source" | "video" | "audio" | "track" | "embed"
         ),
+        "poster" => tag == "video",
         _ => false,
     }
 }

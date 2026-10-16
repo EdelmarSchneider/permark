@@ -12,6 +12,8 @@ const context: EnhanceContext = {
   theme: "light",
   labels: {
     copyCode: "Copy",
+    codeAuto: (name) => `auto: ${name}`,
+    codeAutoHint: "guessed",
     anchorLabel: (name) => name,
     diagramPending: "...",
     diagramFailed: "failed",

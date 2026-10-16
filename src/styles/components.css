@@ -795,10 +795,15 @@
 }
 .notice__text {
   margin: 0;
+  max-width: 100%;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
+/* in a narrow pane (900 px wide with both side panels open) the buttons wrap onto a second row instead of running past it */
 .notice__actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
   margin-top: 12px;
 }
@@ -884,8 +889,8 @@
   align-items: center;
   gap: 2px;
 }
-/* two buttons are too wide to share the row with the message (it would be left a few words wide, and cut in a longer language):
-   they go on a row of their own under it, and the message has the whole width */
+/* a button is too wide to share the row with the message (it would be left a few characters wide, one per line in Spanish):
+   the buttons go on a row of their own under it, and the message has the whole width */
 .toast--stacked .toast__text {
   grid-column: 2 / 4;
   grid-row: 1;
@@ -1778,6 +1783,23 @@ mark {
 }
 .doc-header .actions {
   flex: none;
+}
+/* "Show right panel": the collapse button sat 4px from the window edge (the panel header's padding). Taking the same
+   inset puts this one under the pointer that just collapsed the panel, so the same spot toggles it back. */
+.doc-header .reopen-btn {
+  position: relative;
+  margin-right: calc(var(--sp-2) * -1);
+}
+/* the same dot as the activity bar's panel toggle, ringed in the colour of the page behind the header */
+.doc-header .reopen-btn .notify-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
 }
 @container (max-width: 640px) {
   .doc-header .doc-chip,

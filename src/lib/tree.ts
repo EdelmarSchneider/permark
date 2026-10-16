@@ -48,6 +48,16 @@ export function collectFiles(nodes: TreeNode[], out: string[] = []): string[] {
   return out;
 }
 
+/** Every folder in the tree (a worktree's root included), for Quick open: a folder can be revealed in the Explorer. */
+export function collectFolders(nodes: TreeNode[], out: string[] = []): string[] {
+  for (const node of nodes) {
+    if (!isDirNode(node)) continue;
+    out.push(node.path);
+    collectFolders(node.children ?? [], out);
+  }
+  return out;
+}
+
 export function findNode(nodes: TreeNode[], path: string): TreeNode | null {
   for (const node of nodes) {
     if (node.path === path) return node;

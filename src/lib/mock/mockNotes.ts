@@ -6,14 +6,14 @@
 // `?notes=locked` shows the notes of a second window (read-only).
 
 import { emitMock } from "../api";
-import { isBlank, noteTitle } from "../noteText";
+import { noteTitle } from "../noteText";
 import type {
   CreatedDoc,
-  DocumentView,
   LaunchMode,
   LooseStatus,
   MoveSuggestion,
   MoveUndone,
+  NoteCreated,
   NoteDeleted,
   NoteEntry,
   NoteList,
@@ -21,6 +21,7 @@ import type {
   NoteRestored,
   NoteSaved,
   NotesFolder,
+  NotesHandoff,
   NotesOpened,
   NotesOverview,
   NotesReadOnly,
@@ -31,13 +32,10 @@ import type {
   OpenedFile,
   PathClass,
   PendingEdits,
-  SourceDoc,
   StartIn,
   VaultInfo,
 } from "../types";
 import { mockFiles, mockNoteFiles, mockState, sourceMtime, sourceText } from "./fixtures";
-import { mockParseBlocks } from "./mockBlocks";
-import { markdownToView } from "./mockMarkdown";
 import { MockBackendError, mockHash } from "./mockSource";
 
 const MINUTE = 60 * 1000;
@@ -71,8 +69,8 @@ const notes = {
   views: new Map<string, NoteView>(),
   /** The modification time a note had when it was copied. */
   copied: new Map<string, number>(),
-  /** New notes that have a name and no file yet. */
-  reserved: new Set<string>(),
+  /** The page was the welcome screen and turned into the Notes window. */
+  became: false,
   versions: new Map<string, { id: string; writtenMs: number; text: string }[]>(),
   lastVersionAt: new Map<string, number>(),
   deleted: new Map<number, { name: string; text: string; mtime: number }[]>(),
@@ -232,11 +230,9 @@ function sortedEntries(): NoteEntry[] {
 }
 
 function folder(): NotesFolder {
-  return {
-    path: FOLDER,
-    status: notes.folderMissing || flag() === "missing" ? "missing" : "ready",
-    isDefault: true,
-  };
+  // only a folder the person chose can be missing: the default one is made when it is needed
+  const missing = notes.folderMissing || flag() === "missing";
+  return { path: FOLDER, status: missing ? "missing" : "ready", isDefault: !missing };
 }
 
 const pad = (n: number): string => String(n).padStart(2, "0");
@@ -246,7 +242,7 @@ function stamp(at = new Date()): string {
 }
 
 function freeName(stem: string, separator: string): string {
-  const taken = (name: string): boolean => existing().includes(name) || notes.reserved.has(name);
+  const taken = (name: string): boolean => existing().includes(name);
   for (let n = 1; n < 1000; n++) {
     const name = n === 1 ? `${stem}.md` : `${stem}${separator}${n}.md`;
     if (!taken(name)) return name;
@@ -273,7 +269,7 @@ function writable(): void {
 
 // ---- the commands --------------------------------------------------------------------------------------------
 
-export const launchMode = (): LaunchMode => ({ notes: flag() !== null });
+export const launchMode = (): LaunchMode => ({ notes: flag() !== null || notes.became });
 export const notesFolder = (): NotesFolder => folder();
 
 export function setNotesFolder(path: string): NotesFolder {
@@ -330,38 +326,15 @@ export function listNotes(): NoteList {
   return { notes: all, open: all.some((n) => n.path === notes.open) ? notes.open : null };
 }
 
-export function newNote(): string {
+/** A new note is an empty file at once: it is in the list as "Untitled note" and stays until it is deleted. */
+export function newNote(): NoteCreated {
   writable();
   const name = freeName(stamp(), "-");
-  notes.reserved.add(name);
-  return name;
-}
-
-export function forgetNewNote(path: string): void {
-  notes.reserved.delete(path);
-}
-
-/** The editor's view of a new note that has no file yet; null for any other path. */
-export function unbornView(path: string): DocumentView | null {
-  if (!notes.reserved.has(path) || existing().includes(path)) return null;
-  const view = markdownToView("");
-  return {
-    path,
-    kind: "markdown",
-    html: view.html,
-    blocks: view.blocks,
-    title: null,
-    frontmatter: null,
-    modifiedMs: Date.now(),
-    sizeBytes: 0,
-    encodingNote: null,
-  };
-}
-
-/** The editor's source of a new note that has no file yet; null for any other path. */
-export function unbornSource(path: string): SourceDoc | null {
-  if (!notes.reserved.has(path) || existing().includes(path)) return null;
-  return { path, text: "", hash: "", modifiedMs: Date.now(), ...mockParseBlocks("") };
+  const now = Date.now();
+  putNote(name, "", now);
+  notes.lastVersionAt.set(name, now);
+  emitMock("tree-changed", null);
+  return { path: name, hash: mockHash(""), modifiedMs: now };
 }
 
 function takeVersion(name: string, replaced: string, replacedAt: number, now: number): void {
@@ -381,16 +354,14 @@ export async function saveNote(
 ): Promise<NoteSaved> {
   writable();
   const now = Date.now();
-  const create = (wanted: string): NoteSaved => {
-    const name = existing().includes(wanted) ? freeName(wanted.replace(/\.md$/i, ""), "-") : wanted;
+  // the note was deleted by another program while it was open: the text comes back under its name
+  if (!existing().includes(path)) {
+    const name = freeName(path.replace(/\.md$/i, ""), "-");
     putNote(name, text, now);
-    notes.reserved.delete(path);
     notes.lastVersionAt.set(name, now);
     emitMock("tree-changed", null);
     return { result: "saved", path: name, hash: mockHash(text), modifiedMs: now, created: true };
-  };
-  if (expectedHash === "") return isBlank(text) ? { result: "blank" } : create(path);
-  if (!existing().includes(path)) return create(path);
+  }
   const current = textOf(path);
   if (mockHash(current) !== expectedHash) {
     const name = freeName(`${copyBase(text, path)} (conflict ${stamp()})`, " ");
@@ -538,16 +509,6 @@ export function restoreNoteVersion(path: string, id: string): NoteRestored {
   return { hash: mockHash(text), modifiedMs: now };
 }
 
-export function discardBlankNote(path: string): boolean {
-  writable();
-  if (notes.pins.includes(path) || !existing().includes(path) || !isBlank(textOf(path))) {
-    return false;
-  }
-  mockState.deleted.add(path);
-  mockNoteFiles.delete(path);
-  return true;
-}
-
 export function showNotes(
   newNoteWanted: boolean,
   open: string | null,
@@ -556,6 +517,22 @@ export function showNotes(
   console.info("[mock] show the Notes window:", { newNote: newNoteWanted, open, openFile });
   notes.request = { newNote: newNoteWanted, open, openFile };
   emitMock("notes-request", null);
+}
+
+/** The welcome screen asks for the Notes window: in the mock this page is the Notes window from then on. */
+export function becomeNotesWindow(
+  newNoteWanted: boolean,
+  open: string | null,
+  openFile: string | null = null,
+): NotesHandoff {
+  console.info("[mock] this window becomes the Notes window:", {
+    newNote: newNoteWanted,
+    open,
+    openFile,
+  });
+  notes.became = true;
+  notes.request = { newNote: newNoteWanted, open, openFile };
+  return "became";
 }
 
 // ---- sharing and moving ------------------------------------------------------------------------------------

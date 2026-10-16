@@ -330,6 +330,12 @@
         {/if}
       {/if}
     </div>
+  {:else if distribution.isStore}
+    <!-- The package declares these (its manifest and a small Explorer component), so there is nothing to switch. -->
+    <div class="field">
+      <span class="field__label">{t("settings.fileManager")}</span>
+      <span class="field__status">{t("settings.fileManagerStore")}</span>
+    </div>
   {/if}
   <NotesSettings />
   {#if !vault.isNotes}

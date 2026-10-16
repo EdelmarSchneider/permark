@@ -130,7 +130,7 @@ export const mockImpl: Api = {
   listTree: async () => mockTree(),
   readDocument: async (path) => {
     await wait(40);
-    const view = mockNotes.unbornView(path) ?? getDocument(path);
+    const view = getDocument(path);
     mockNotes.seenLoose(path);
     return view;
   },
@@ -149,6 +149,19 @@ export const mockImpl: Api = {
   absolutePath: async (path) => `${MOCK_ROOT}/${path}`,
   openExternal: async (path) => {
     console.info("[mock] open externally:", path);
+  },
+  // Never starts anything: it says what the real command would do. The programs and scripts it refuses are the ones
+  // the backend refuses (`media.rs`), so the message can be seen here.
+  openWithDefaultApp: async (path) => {
+    const ext = path.split(".").pop()?.toLowerCase() ?? "";
+    if (["exe", "bat", "cmd", "ps1", "sh", "msi", "js", "vbs", "lnk", "jar"].includes(ext)) {
+      throw {
+        kind: "blockedType",
+        subject: `.${ext}`,
+        message: `.${ext} files can run code (programs, scripts, installers, shortcuts, documents with macros) and are not opened from here`,
+      };
+    }
+    console.info("[mock] open with the default app:", path);
   },
   openInEditor: async (path, line, col) => {
     const program = mockEditorCommand.trim().split(/\s+/)[0] ?? "";
@@ -214,7 +227,7 @@ export const mockImpl: Api = {
   metaIndex: async () => metaIndex(),
   cleanUpMeta: async () => cleanUp(),
   documentSource: async (path) => {
-    const source = mockNotes.unbornSource(path) ?? (await documentSource(path));
+    const source = await documentSource(path);
     mockNotes.seenLoose(path);
     return source;
   },
@@ -259,7 +272,6 @@ export const mockImpl: Api = {
   },
   listNotes: async () => mockNotes.listNotes(),
   newNote: async () => mockNotes.newNote(),
-  forgetNewNote: async (path) => mockNotes.forgetNewNote(path),
   saveNote: async (path, text, expectedHash) => {
     await wait(80);
     return mockNotes.saveNote(path, text, expectedHash);
@@ -277,7 +289,6 @@ export const mockImpl: Api = {
   noteVersions: async (path) => mockNotes.noteVersions(path),
   noteVersionText: async (path, id) => mockNotes.noteVersionText(path, id),
   restoreNoteVersion: async (path, id) => mockNotes.restoreNoteVersion(path, id),
-  discardBlankNote: async (path) => mockNotes.discardBlankNote(path),
   openNotesFolder: async () => {
     console.info("[mock] open the notes folder");
   },
@@ -297,6 +308,8 @@ export const mockImpl: Api = {
   clearPending: async (path) => mockNotes.clearPending(path),
   keepEditsAsNote: async (path, text) => mockNotes.keepEditsAsNote(path, text),
   showNotes: async (newNote, open, openFile = null) => mockNotes.showNotes(newNote, open, openFile),
+  becomeNotesWindow: async (newNote, open, openFile = null) =>
+    mockNotes.becomeNotesWindow(newNote, open, openFile),
   takeNotesRequest: async () => mockNotes.takeNotesRequest(),
   on: async () => () => {},
 };

@@ -77,6 +77,10 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 ### 📖 Reading that feels like a book
 - GitHub-flavored Markdown: tables, task lists, footnotes, alerts (`> [!NOTE]`), description lists
 - **Mermaid** diagrams, **KaTeX** math, syntax-highlighted code with copy buttons
+- **Code blocks are highlighted for about 190 languages.** Name the language after the opening backticks, for example `` ```python ``, and
+  the block is colored and labelled in its corner. The usual short names work (`js`, `ts`, `py`, `sh`, `ps1`, `c#`, `c++`, `yml`, `rs`...),
+  and so do fences with attributes (`` ```rust title="main.rs" ``). A block with no language is colored only when its language is
+  unmistakable, and is then labelled *auto*; otherwise it stays plain. Visual and Source color the code too while you edit
 - Frontmatter shown as a clean metadata card
 - Light and dark themes, adjustable zoom, and a focus mode with both side panels collapsed
 - Three **reading widths**: Comfortable (a book-like column), Wide and Full. Wide tables, diagrams and images take the room
@@ -100,6 +104,24 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   Markdown in TrailMark, anything else in your editor (VS Code, Cursor, Zed, Sublime Text, JetBrains IDEs or a command of your own,
   in **Settings → External editor**). Only names of files the project really has become links
 - One process per project: `trailmark ~/code/my-project`
+
+### 🖼️ Pictures, sound and video
+- **Images open in the pane.** PNG, JPEG, GIF (animated), WebP, AVIF, BMP, ICO and SVG. A picture is fitted to the window; click it, or use the
+  button, to see it at 100%, and `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom it the way they zoom text (`Ctrl+0` fits it again). A checkerboard
+  shows through transparency, in light and dark. The header gives the size in pixels and on disk. A picture that changes on disk
+  (an agent regenerating a screenshot) reloads by itself. An SVG is drawn as an image, never inline, so nothing in it can run.
+- **Audio and video play in the pane**, in the window's own player: MP3, WAV, OGG, Opus, FLAC, M4A, AAC and WebM audio; MP4, M4V, WebM,
+  OGV and MOV video. A long file is read in parts as it plays, so it starts at once, seeks freely and is never loaded whole. A format or
+  codec the window cannot play (MKV, AVI, WMV and the like) says so, and offers the program your system has for it.
+- **Documents can use them.** `<video>` and `<audio>` tags play in place, next to the document, and a link to a media file opens it in the
+  pane. Nothing starts by itself: `autoplay` is dropped, and a player only reads the length of its file until you press play.
+- **Open with default app** hands a file the pane cannot show to the program your system has for its type: a button in the pane, an item
+  in the Explorer's right-click menu, and a command (`Ctrl+Shift+P`). Programs and scripts (`.exe`, `.bat`, `.ps1`, `.sh`, `.app`,
+  `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; TrailMark says which kind of file it refused and offers
+  to show it in the file manager. Files outside the open folder are never served, and a link that leaves it is not followed.
+- **The Explorer filter has an Audio and video category.** *Docs and assets* shows them by the same rules as images: next to a document, in
+  a folder named like `assets`, `images`, `video`, `audio` or `clips`, or when a document links to them. Quick open and Search everywhere
+  find pictures, sound and video by name whatever the filter hides, and list **folders** too: pick one to reveal it in the Explorer.
 
 ### ⚡ Follow your agents live
 - Documents reload **without losing your scroll position**
@@ -143,8 +165,8 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 ### ✏️ Edit without fear
 - One switch in the header, **Read | Visual | Source**, goes to any mode in one click and keeps your place and your unsaved work. **Visual** is a
-  WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks; **Source** is a Markdown editor with highlighting and
-  line numbers. `Ctrl+E` toggles Read and the editor you used last, `Ctrl+Alt+E` toggles Visual and Source. Both editors are loaded only
+  WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks (with a language picker that searches every language
+  and takes any text you type); **Source** is a Markdown editor with highlighting, also inside code fences, and line numbers. `Ctrl+E` toggles Read and the editor you used last, `Ctrl+Alt+E` toggles Visual and Source. Both editors are loaded only
   when you start editing
 - **Only the blocks you changed are rewritten.** Every other byte of the file stays as its author (or agent) wrote it, including line
   endings and a byte-order mark. A block you edited carries a bar in the margin until you save, and the status bar counts them
@@ -193,9 +215,12 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
 </picture>
 
 - **A notes window of its own** (`Ctrl+Shift+D`, or the sticky-note icon in the activity bar, or **Notes** on the welcome screen). `Ctrl+Shift+N`
-  starts a new note from any TrailMark window, in the Visual editor with the caret ready. A note is a plain Markdown file in
-  `Documents/TrailMark Notes` (change it in **Settings → Notes**); its name is the date and time (`2026-10-15 1432.md`), its title is its
-  first line, and a note you never typed in leaves no file behind
+  starts a new note from any TrailMark window, in the Visual editor with the caret ready. From the welcome screen the window itself turns
+  into the Notes window, in the same place and size, so there is never a second window to close. A note is a plain Markdown file in
+  `Documents/TrailMark Notes` (change it in **Settings → Notes**); TrailMark makes the default folder by itself the first time. A note's name
+  is the date and time (`2026-10-15 1432.md`) and its title is its first line, until then "Untitled note"
+- **A new note is there at once**, and `+` (or `Ctrl+Shift+N`) always makes another, even when the note on screen is still empty. Empty notes
+  stay in the list, also after a restart, until you delete them: nothing is removed for you
 - **Saved as you type**: 750 ms after you stop, and at least every 3 seconds. Switching notes, leaving the window or closing it saves too, and closing
   never asks. Each note remembers its mode and where you were. TrailMark writes nothing inside a note's text, and never overwrites a version
   it has not seen: if something else changed the file, your text is kept next to it as a "(conflict ...)" copy
@@ -221,6 +246,8 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
   [What an agent can do](#what-an-agent-can-do)); a small mark shows it in the list and in the header. Notes you did not share stay private
 - **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
   with any tool, and TrailMark picks the change up. Another TrailMark process can't write to the same notes at once (the second one opens read-only)
+- **A notes folder you chose that goes missing** (an unplugged drive, a renamed folder) is reported, with **Locate...** and **Create it**: TrailMark
+  never makes an empty one in its place by itself, which would split your notes in two
 - **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
 
 ### 🗂️ Zero footprint by default
@@ -232,6 +259,9 @@ TrailMark keeps its state in your user profile. If you want settings and tags to
 Windows 11). You can also list TrailMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
 **Settings → File manager**, which adds and removes them at once. TrailMark never sets itself as your default app; **Make default...** takes you to the
 Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
+The **Microsoft Store** version has the same entry on folders and on the background of a folder, and on Windows 11 it is in the main
+right-click menu, not under *Show more options*. The package provides it (and the **Open with** entry for Markdown files), so
+there are no switches for it in Settings, and uninstalling the app removes it.
 
 **macOS**: TrailMark is listed in Finder's **Open With** for Markdown files, without becoming the default, and a folder dropped on its
 Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list TrailMark under **Open With** for Markdown files.
@@ -403,7 +433,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Copy reference (or selection with reference) | `Ctrl+Alt+C` |
 | Edit tags and description | `T` |
 | Leave a comment on the selected passage | `C` |
-| Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+| Zoom in / out / reset (on a picture: zoom it, or fit it to the window) | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 
 **Editing**
 
@@ -470,6 +500,8 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 **v0.5: Notes** (released)
 - Open TrailMark, type, close: notes save themselves, with no name to choose and no folder to pick. Keep a sticky note for
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
+- v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
+  show up in Quick open
 
 **v0.6**
 - Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words it uses.

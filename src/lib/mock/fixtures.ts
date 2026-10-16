@@ -118,7 +118,18 @@ type MockDoc = {
   encodingNote?: string;
   /** Age of the file on disk at startup, in ms. */
   age: number;
+  /** Size on disk, for a file that is not text (a picture, a sound, a video). */
+  size?: number;
 };
+
+/** A picture, a sound or a video: the view holds no text, the UI draws the file itself. */
+const asset = (kind: "image" | "audio" | "video", size: number, age = 30 * MIN): MockDoc => ({
+  kind,
+  title: null,
+  blocks: () => [],
+  age,
+  size,
+});
 
 const doc = (
   title: string,
@@ -583,6 +594,12 @@ const docs: Record<string, MockDoc> = {
   ]),
   "assets/big-api.md": { kind: "tooLarge", title: null, blocks: () => [], age: 0 },
   "assets/report.pdf": { kind: "binary", title: null, blocks: () => [], age: 0 },
+  "assets/logo.png": asset("image", 18_944),
+  "assets/architecture.svg": asset("image", 4_210),
+  "assets/walkthrough.mp4": asset("video", 8_808_038),
+  "assets/theme.mp3": asset("audio", 3_145_728),
+  "assets/old-demo.avi": asset("video", 41_943_040),
+  "docs/images/pipeline.svg": asset("image", 2_048),
   "data/config.json": {
     kind: "json",
     title: null,
@@ -841,7 +858,7 @@ export function getDocument(path: string): DocumentView {
     title: entry.title,
     frontmatter: entry.frontmatter ?? null,
     modifiedMs: mockState.modified.get(path) ?? MOCK_NOW - entry.age,
-    sizeBytes: new TextEncoder().encode(html.join("\n")).length,
+    sizeBytes: entry.size ?? new TextEncoder().encode(html.join("\n")).length,
     encodingNote: entry.encodingNote ?? null,
   };
 }
@@ -999,7 +1016,14 @@ function baseTree(keep: (nodes: TreeNode[]) => TreeNode[]): TreeNode {
     path: "",
     kind: "dir",
     children: [
-      dir("assets", keep([file("assets/big-api.md"), file("assets/report.pdf")])),
+      dir("assets", [
+        ...keep([file("assets/big-api.md"), file("assets/report.pdf")]),
+        file("assets/architecture.svg"),
+        file("assets/logo.png"),
+        file("assets/old-demo.avi"),
+        file("assets/theme.mp3"),
+        file("assets/walkthrough.mp4"),
+      ]),
       dir("data", [file("data/config.json")]),
       dir("docs", [
         dir("docs/design", [

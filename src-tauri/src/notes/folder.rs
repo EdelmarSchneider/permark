@@ -7,8 +7,9 @@
 //! A debug build never defaults to the real folder: it uses `<app data>/notes`, and honours `TRAILMARK_TEST_NOTES_DIR`
 //! (like `TRAILMARK_TEST_DATA_DIR` for the app's data), so that development and tests cannot touch real notes.
 //!
-//! A folder that is configured but not there (a disconnected drive, a renamed folder) is reported as missing. It is never
-//! created quietly: the person chooses to locate it or to create it.
+//! The default folder is made quietly the first time it is needed: nobody is asked about a folder they never heard of. A folder
+//! the person chose that is not there (a disconnected drive, a renamed folder) is reported as missing instead, and is never made
+//! quietly: an empty folder made in its place would split the notes in two. The person chooses to locate it or to create it.
 
 use std::ffi::OsString;
 use std::io;
@@ -66,9 +67,22 @@ impl Places {
     /// else the default. A debug build also refuses a chosen folder that is the real default, which a development build
     /// sharing the person's settings would otherwise open.
     pub(crate) fn resolve(&self, chosen: Option<&str>, from_env: Option<OsString>) -> PathBuf {
+        self.resolve_origin(chosen, from_env).path
+    }
+
+    /// [`Places::resolve`], and whether the folder is the default one (the test variable counts as the default's place: it is
+    /// where a development build keeps its notes) or one the person chose.
+    pub(crate) fn resolve_origin(
+        &self,
+        chosen: Option<&str>,
+        from_env: Option<OsString>,
+    ) -> Resolved {
         if self.debug {
             if let Some(dir) = from_env.filter(|dir| !dir.is_empty()) {
-                return PathBuf::from(dir);
+                return Resolved {
+                    path: PathBuf::from(dir),
+                    is_default: true,
+                };
             }
         }
         let chosen = chosen
@@ -77,10 +91,23 @@ impl Places {
             .map(PathBuf::from)
             .filter(|dir| dir.is_absolute());
         match chosen {
-            Some(dir) if !(self.debug && same_place(&dir, &self.real_default())) => dir,
-            _ => self.default_folder(),
+            Some(dir) if !(self.debug && same_place(&dir, &self.real_default())) => Resolved {
+                path: dir,
+                is_default: false,
+            },
+            _ => Resolved {
+                path: self.default_folder(),
+                is_default: true,
+            },
         }
     }
+}
+
+/// The notes folder, and whether it is the default one or one the person chose.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Resolved {
+    pub path: PathBuf,
+    pub is_default: bool,
 }
 
 /// Whether two paths name the same place, ignoring case on Windows and a trailing separator.
@@ -105,12 +132,18 @@ pub(crate) fn configured(app_data: &Path, chosen: Option<&str>) -> PathBuf {
     Places::current(app_data).resolve(chosen, std::env::var_os(TEST_NOTES_DIR_VARIABLE))
 }
 
+/// The notes folder for the app whose data is in `app_data`, given what the person chose, and whether it is the default one.
+pub(crate) fn configured_origin(app_data: &Path, chosen: Option<&str>) -> Resolved {
+    Places::current(app_data).resolve_origin(chosen, std::env::var_os(TEST_NOTES_DIR_VARIABLE))
+}
+
 /// Whether the notes folder is there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum FolderStatus {
+    /// There, or the default folder, which is made when it is needed.
     Ready,
-    /// Not there: the person can locate it or create it.
+    /// A folder the person chose that is not there: they can locate it or create it. The default folder is never missing.
     Missing,
 }
 
@@ -124,11 +157,12 @@ pub struct NotesFolder {
     pub is_default: bool,
 }
 
-/// What is known about the notes folder `path`.
+/// What is known about the notes folder `path`. Nothing is made here. The default folder is reported as ready even before it
+/// exists, since [`ensure`] makes it when it is needed; only a folder the person chose can be missing.
 pub(crate) fn describe(path: &Path, is_default: bool) -> NotesFolder {
     NotesFolder {
         path: path.display().to_string(),
-        status: if path.is_dir() {
+        status: if is_default || path.is_dir() {
             FolderStatus::Ready
         } else {
             FolderStatus::Missing
@@ -140,6 +174,15 @@ pub(crate) fn describe(path: &Path, is_default: bool) -> NotesFolder {
 /// Makes the folder the person asked to have created ("Create it"). Parent folders are made too.
 pub(crate) fn create(path: &Path) -> io::Result<()> {
     std::fs::create_dir_all(path)
+}
+
+/// Gets the folder ready for the notes to be opened: the default folder is made when it is not there, silently. A folder the
+/// person chose is left alone, there or not: if it is gone the person is told ([`FolderStatus::Missing`]) and decides.
+pub(crate) fn ensure(path: &Path, is_default: bool) -> io::Result<()> {
+    if is_default && !path.is_dir() {
+        return create(path);
+    }
+    Ok(())
 }
 
 /// Whether `path` is the notes folder or inside it. The agent connection never serves it.
@@ -326,16 +369,76 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_that_is_not_there_is_reported_and_not_made() {
+    fn the_default_folder_is_made_when_it_is_needed_and_never_by_looking_at_it() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let missing = dir.path().join("TrailMark Notes");
-        let folder = describe(&missing, true);
-        assert_eq!(folder.status, FolderStatus::Missing);
+        let default = dir.path().join("Documents").join("TrailMark Notes");
+        // looking at it says it is ready, and makes nothing: the welcome screen only reads
+        let folder = describe(&default, true);
+        assert_eq!(folder.status, FolderStatus::Ready);
         assert!(folder.is_default);
-        assert!(!missing.exists(), "describing never creates it");
+        assert!(!default.exists(), "describing never creates it");
+        // opening the notes makes it, with the folders above it, and again is harmless
+        ensure(&default, true).expect("ensure");
+        assert!(default.is_dir());
+        ensure(&default, true).expect("ensure again");
+        assert_eq!(describe(&default, true).status, FolderStatus::Ready);
+    }
+
+    #[test]
+    fn a_folder_the_person_chose_that_is_gone_is_reported_and_never_made() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let gone = dir.path().join("Unplugged drive").join("Notes");
+        let folder = describe(&gone, false);
+        assert_eq!(folder.status, FolderStatus::Missing);
+        assert!(!folder.is_default);
+        // opening the notes does not make it: an empty folder there would split the notes in two
+        ensure(&gone, false).expect("ensure");
+        assert!(!gone.exists());
+        assert_eq!(describe(&gone, false).status, FolderStatus::Missing);
+        // the person can still ask for it ("Create it")
+        create(&gone).expect("create");
+        assert_eq!(describe(&gone, false).status, FolderStatus::Ready);
         assert_eq!(describe(dir.path(), false).status, FolderStatus::Ready);
-        create(&missing).expect("create");
-        assert_eq!(describe(&missing, true).status, FolderStatus::Ready);
+    }
+
+    #[test]
+    fn a_default_folder_that_cannot_be_made_is_an_error_not_a_missing_folder() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // a file where the folder should be
+        let blocked = dir.path().join("TrailMark Notes");
+        std::fs::write(&blocked, "not a folder").expect("write");
+        assert!(ensure(&blocked, true).is_err());
+        assert!(blocked.is_file(), "nothing was replaced");
+    }
+
+    #[test]
+    fn the_folder_is_the_default_unless_the_person_chose_it() {
+        let release = places(false, Some("/home/ana/Documents"));
+        let sync = abs("/sync/notes");
+        let chosen = release.resolve_origin(Some(&sync), None);
+        assert_eq!(chosen.path, Path::new(&sync));
+        assert!(!chosen.is_default);
+        for none_chosen in [None, Some(""), Some("   "), Some("notes")] {
+            let resolved = release.resolve_origin(none_chosen, None);
+            assert_eq!(resolved.path, release.default_folder(), "{none_chosen:?}");
+            assert!(resolved.is_default, "{none_chosen:?}");
+        }
+        // a person who picks the very folder that is the default made it their own choice: it is reported when it is gone
+        let same = release.default_folder().display().to_string();
+        assert!(!release.resolve_origin(Some(&same), None).is_default);
+
+        // a development build: its own folder, the test variable, and a refusal of the real folder, all of them the default's place
+        let debug = places(true, Some("/home/ana/Documents"));
+        assert!(debug.resolve_origin(None, None).is_default);
+        let var = Some(OsString::from(abs("/tmp/test-notes")));
+        let tested = debug.resolve_origin(Some(&sync), var);
+        assert_eq!(tested.path, Path::new(&abs("/tmp/test-notes")));
+        assert!(tested.is_default);
+        let real = abs("/home/ana/Documents/TrailMark Notes");
+        let refused = debug.resolve_origin(Some(&real), None);
+        assert_eq!(refused.path, debug.default_folder());
+        assert!(refused.is_default);
+        assert!(!debug.resolve_origin(Some(&sync), None).is_default);
     }
 
     #[test]

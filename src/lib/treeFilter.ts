@@ -17,7 +17,7 @@ export const FILTER_SHOWS = [
 
 const PRESET_CATEGORIES: Record<Exclude<FilterShow, "custom">, readonly FileCategory[]> = {
   documents: ["documents", "text"],
-  "docs-and-assets": ["documents", "text", "images", "data", "xml"],
+  "docs-and-assets": ["documents", "text", "images", "media", "data", "xml"],
   everything: FILE_CATEGORIES,
 };
 
@@ -229,7 +229,9 @@ export function isHiddenPath(path: string): boolean {
 /** The categories that count as documents: a folder that holds one is a place for reading. */
 const DOCUMENT_CATEGORIES: ReadonlySet<FileCategory> = new Set(["documents", "text"]);
 /** The companions of documents that "only assets next to documents" keeps out of code folders. */
-const ASSET_CATEGORIES: ReadonlySet<FileCategory> = new Set(["images", "data", "xml"]);
+const ASSET_CATEGORIES: ReadonlySet<FileCategory> = new Set(["images", "media", "data", "xml"]);
+/** The companions that are also shown in a folder made for them, or when a document links to them: pictures, sound and video. */
+const LINKABLE_CATEGORIES: ReadonlySet<FileCategory> = new Set(["images", "media"]);
 
 /** Every folder that directly holds a document (`""` is the project root, `@wt/<name>` a worktree root). */
 export function documentFolders(files: Iterable<string>): Set<string> {
@@ -251,7 +253,10 @@ function nearDocuments(path: string, folders: ReadonlySet<string>): boolean {
   return splitWorktree(own).rel.includes("/") && folders.has(dirname(own));
 }
 
-/** Folder names that hold images by convention: an image inside one of them is part of the documentation. */
+/**
+ * Folder names that hold pictures, sound or video by convention: a picture or media file inside one of them is part of
+ * the documentation.
+ */
 export const ASSET_FOLDERS: ReadonlySet<string> = new Set([
   "assets",
   "images",
@@ -262,6 +267,16 @@ export const ASSET_FOLDERS: ReadonlySet<string> = new Set([
   "figures",
   "diagrams",
   "pictures",
+  "audio",
+  "sounds",
+  "sound",
+  "music",
+  "recordings",
+  "video",
+  "videos",
+  "movies",
+  "clips",
+  "screencasts",
 ]);
 
 /** Whether a folder above the file (at any level, a worktree's name aside) is named like an asset folder. */
@@ -271,9 +286,10 @@ function inAssetFolder(path: string): boolean {
 }
 
 /**
- * `folders` comes from `documentFolders` over the files of the tree. `imageRefs` lists the images that some
- * document links to (paths as the tree has them, from the backend); only images use it. A hidden name in the
- * path (a dot folder) comes first: it hides a file whatever else would show it, a linked image included.
+ * `folders` comes from `documentFolders` over the files of the tree. `imageRefs` lists the images, sound and video that
+ * some document links to or embeds (paths as the tree has them, from the backend); only pictures and media use it. A
+ * hidden name in the path (a dot folder) comes first: it hides a file whatever else would show it, a linked picture
+ * included.
  */
 export function fileTest(
   filter: TreeFilter,
@@ -294,10 +310,11 @@ export function fileTest(
     const category = categoryOf(path);
     if (!categories.has(category)) return false;
     if (!near || !ASSET_CATEGORIES.has(category) || nearDocuments(path, folders)) return true;
-    // Data and XML are companions of documents only. An image is also shown when it sits in a folder
-    // made for images, or when a document links to it from anywhere.
+    // Data and XML are companions of documents only. A picture, a sound or a video is also shown when it sits in a
+    // folder made for them, or when a document links to it from anywhere.
     return (
-      category === "images" && (inAssetFolder(path) || (linked?.has(path.toLowerCase()) ?? false))
+      LINKABLE_CATEGORIES.has(category) &&
+      (inAssetFolder(path) || (linked?.has(path.toLowerCase()) ?? false))
     );
   };
   if (rules.length === 0) return byCategory;

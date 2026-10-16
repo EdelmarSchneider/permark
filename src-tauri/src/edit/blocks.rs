@@ -424,6 +424,27 @@ mod tests {
     }
 
     #[test]
+    fn a_reference_in_a_list_or_a_table_and_a_definition_of_several_paragraphs_are_blocks_of_their_own(
+    ) {
+        let text = "Intro.[^1] And more.[^2]\n\n- item one[^1]\n- item two\n\n| a | b |\n|---|---|\n| cell[^2] | x |\n\n[^1]: First paragraph.\n\n    Second paragraph\n    of the same note.\n\n[^2]: Short.\n\nEnd.\n";
+        assert_eq!(
+            parts(text),
+            [
+                (BlockKind::Paragraph, "Intro.[^1] And more.[^2]"),
+                (BlockKind::List, "- item one[^1]\n- item two"),
+                (BlockKind::Table, "| a | b |\n|---|---|\n| cell[^2] | x |"),
+                (
+                    BlockKind::FootnoteDef,
+                    "[^1]: First paragraph.\n\n    Second paragraph\n    of the same note."
+                ),
+                (BlockKind::FootnoteDef, "[^2]: Short."),
+                (BlockKind::Paragraph, "End."),
+            ]
+        );
+        assert_partition(text);
+    }
+
+    #[test]
     fn math_fences_and_inline_math_are_told_apart() {
         let text = "```math\nx\n```\n\nSome $x$ inline.\n\n$$a+b$$\n";
         let kinds: Vec<BlockKind> = parse_blocks(text).blocks.iter().map(|b| b.kind).collect();

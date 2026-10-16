@@ -61,6 +61,7 @@
   import Minus from "@lucide/svelte/icons/minus";
   import Monitor from "@lucide/svelte/icons/monitor";
   import Moon from "@lucide/svelte/icons/moon";
+  import Music from "@lucide/svelte/icons/music";
   import MoveHorizontal from "@lucide/svelte/icons/move-horizontal";
   import Pencil from "@lucide/svelte/icons/pencil";
   import PanelLeft from "@lucide/svelte/icons/panel-left";
@@ -78,7 +79,11 @@
   import Trash from "@lucide/svelte/icons/trash";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Undo2 from "@lucide/svelte/icons/undo-2";
+  import Video from "@lucide/svelte/icons/video";
   import X from "@lucide/svelte/icons/x";
+  import ZoomIn from "@lucide/svelte/icons/zoom-in";
+  import ZoomOut from "@lucide/svelte/icons/zoom-out";
+  import Scan from "@lucide/svelte/icons/scan";
 
   // The one icon set of the app (Lucide), registered by name so components stay tree-shakeable.
   export const icons = {
@@ -144,6 +149,7 @@
     minus: Minus,
     monitor: Monitor,
     moon: Moon,
+    music: Music,
     width: MoveHorizontal,
     pencil: Pencil,
     plus: Plus,
@@ -161,7 +167,11 @@
     trash: Trash,
     alert: TriangleAlert,
     undo: Undo2,
+    video: Video,
     x: X,
+    "zoom-in": ZoomIn,
+    "zoom-out": ZoomOut,
+    fit: Scan,
   } as const;
 
   export type IconName = keyof typeof icons;

@@ -22,6 +22,7 @@
     "load_session": [],
     "absolute_path": ["path"],
     "open_external": ["path"],
+    "open_with_default_app": ["path"],
     "open_in_editor": ["path", "line", "col"],
     "editor_command": [],
     "set_editor_command": ["command"],
@@ -71,7 +72,6 @@
     "open_notes": [],
     "list_notes": [],
     "new_note": [],
-    "forget_new_note": ["path"],
     "save_note": ["path", "text", "expected_hash"],
     "note_opened": ["path"],
     "close_note": [],
@@ -86,7 +86,6 @@
     "note_versions": ["path"],
     "note_version_text": ["path", "id"],
     "restore_note_version": ["path", "id"],
-    "discard_blank_note": ["path"],
     "open_notes_folder": [],
     "set_note_shared": ["path", "shared"],
     "move_suggestion": ["path"],
@@ -104,6 +103,7 @@
     "clear_pending": ["path"],
     "keep_edits_as_note": ["path", "text"],
     "show_notes": ["new_note", "open", "open_file"],
+    "become_notes_window": ["new_note", "open", "open_file"],
     "take_notes_request": []
   },
   "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "show-in-project", "agent-status", "agent-open", "comments-changed", "notes-request"]

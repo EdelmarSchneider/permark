@@ -49,6 +49,14 @@ const markdownStyle = HighlightStyle.define([
   { tag: tags.propertyName, color: "var(--syn-prop)" },
   { tag: [tags.string, tags.special(tags.string)], color: "var(--syn-string)" },
   { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--syn-type)" },
+  // the code inside fences, in the colours the reading view gives it (the language packages tag it with these)
+  { tag: [tags.typeName, tags.className, tags.namespace], color: "var(--syn-type)" },
+  { tag: tags.tagName, color: "var(--syn-keyword)" },
+  {
+    tag: [tags.attributeName, tags.function(tags.variableName), tags.function(tags.propertyName)],
+    color: "var(--syn-prop)",
+  },
+  { tag: [tags.attributeValue, tags.regexp, tags.escape], color: "var(--syn-string)" },
 ]);
 
 const theme = EditorView.theme({

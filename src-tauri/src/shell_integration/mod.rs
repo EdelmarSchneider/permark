@@ -121,8 +121,8 @@ pub fn refresh_labels(_locale: &str) -> Result<(), ShellError> {
 
 /// The Microsoft Store build writes no entries. Its package declares the file association in its manifest, and what a
 /// packaged program writes under `HKEY_CURRENT_USER` goes to a private copy of the registry that the shell never reads,
-/// so a switch in Settings would do nothing. The "Open with TrailMark" menu on folders has no counterpart in a package:
-/// it needs a shell extension, which this build does not have.
+/// so a switch in Settings would do nothing. The "Open with TrailMark" menu on folders comes from the package instead: its
+/// manifest declares a COM component (the DLL in `shell-ext/`), so there is nothing here to switch.
 #[cfg(windows)]
 fn refuse_in_store_build() -> Result<(), ShellError> {
     if distribution::current().is_store() {
@@ -260,6 +260,22 @@ mod tests {
         // the script's version, `$\"$OpenWithExe$\" $\"${ARGUMENT}$\"`, is the same shape
         assert!(HOOKS.contains(r#""$\"$OpenWithExe$\" $\"${ARGUMENT}$\"""#));
         assert!(HOOKS.contains(r#""$\"$OpenWithExe$\" $\"%1$\"""#));
+    }
+
+    /// The Store package has its own entry on folders (the DLL in `shell-ext/`, see `distribution`), worded in the display
+    /// language of Windows; these are the same words as the entries above.
+    #[test]
+    fn the_store_packages_menu_entry_has_the_words_of_the_registry_entry() {
+        const STORE_LABELS: &str = include_str!("../../shell-ext/src/labels.rs");
+        for language in [
+            crate::session::Language::En,
+            crate::session::Language::PtBr,
+            crate::session::Language::Es,
+            crate::session::Language::De,
+        ] {
+            let line = format!("= \"{}\";", entries::menu_label(language));
+            assert!(STORE_LABELS.contains(&line), "{line}");
+        }
     }
 
     /// Checked in the CI job that builds the store flavor. Neither call reaches the registry, so the test is safe to run

@@ -19,10 +19,20 @@ const read = (path: string): string => readFileSync(path, "utf8");
 /** The scheme the backend registers for the images of the open folder. */
 const rustScheme = /ASSET_SCHEME: &str = "([a-z]+)"/.exec(read("src-tauri/src/commands.rs"))?.[1];
 
-describe("image URLs", () => {
-  it("point at the backend's image scheme, with the vault path as one encoded segment", () => {
+describe("image, sound and video URLs", () => {
+  it("point at the backend's asset scheme, with the vault path as one encoded segment", () => {
     expect(rustScheme).toBeTruthy();
     expect(assetUrl("docs/img/a b.png")).toBe(`${rustScheme}://localhost/docs%2Fimg%2Fa%20b.png`);
+    expect(assetUrl("clips/demo.mp4")).toBe(`${rustScheme}://localhost/clips%2Fdemo.mp4`);
+  });
+
+  it("carry the version of the file in the query, which the backend ignores", () => {
+    expect(assetUrl("a.png", 1760000000000)).toBe(
+      `${rustScheme}://localhost/a.png?v=1760000000000`,
+    );
+    // the same file at another time is another address, so the webview fetches it again
+    expect(assetUrl("a.png", 1)).not.toBe(assetUrl("a.png", 2));
+    expect(assetUrl("a.png", 0)).toContain("?v=0");
   });
 });
 
@@ -52,6 +62,22 @@ describe("security configuration", () => {
     );
     expect(img).not.toContain("http:");
     expect(img).not.toContain("*");
+  });
+
+  it("lets the players load sound and video from the backend and from https, and nothing else", () => {
+    const media = directive("media-src");
+    expect(media).toEqual(
+      expect.arrayContaining([
+        "'self'",
+        `${rustScheme}:`,
+        `http://${rustScheme}.localhost`,
+        "https:",
+      ]),
+    );
+    for (const wide of ["http:", "*", "data:", "blob:", "file:"]) expect(media).not.toContain(wide);
+    // a document cannot embed a page or a plugin: only players
+    expect(directive("object-src")).toEqual(["'none'"]);
+    expect(directive("frame-src")).toEqual(["'none'"]);
   });
 
   it("does not use the asset protocol, whose scope can only grow", () => {

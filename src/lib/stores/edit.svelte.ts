@@ -743,7 +743,8 @@ class EditStore {
   /**
    * Saves the text of a note (autosave, a flush, Ctrl+S). The note is written unless it changed since the editor started from it:
    * then nothing of the other version is overwritten, the text the person has is kept as a copy of its own, and the editor shows
-   * the version on disk. A new note has no file until its text has something in it; its first save may give it another name.
+   * the version on disk. A new note is an empty file already, so its first text is saved like any other. A note that another
+   * program deleted while it was open is written again, and may then have another name.
    */
   private async saveNote(base: Base, path: string, text: string): Promise<boolean> {
     this.beginSave();
@@ -758,12 +759,6 @@ class EditStore {
         text = typed;
         outcome = await api.saveNote(path, text, base.hash);
         if (this.path !== path) return false;
-      }
-      if (outcome.result === "blank") {
-        // a blank new note has no file and needs none: what the editor holds is what it goes on from (the hash stays empty, so the
-        // first text with something in it still makes the file), and the note is not "unsaved", so it can be left
-        await this.adopt(text, base.hash, base.modifiedMs);
-        return true;
       }
       if (outcome.result === "conflict") {
         await this.reloadTheirs(true);
@@ -808,7 +803,8 @@ class EditStore {
   /** The text of the open note, written as a new note: what is left when the note itself cannot be written. */
   private async keepAsNewNote(): Promise<boolean> {
     try {
-      const outcome = await api.saveNote(await api.newNote(), this.currentText(), "");
+      const made = await api.newNote();
+      const outcome = await api.saveNote(made.path, this.currentText(), made.hash);
       return outcome.result === "saved";
     } catch {
       return false;

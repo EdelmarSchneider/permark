@@ -1,5 +1,6 @@
 # Rust / Tauri
 /src-tauri/target/
+/src-tauri/shell-ext/target/
 /src-tauri/gen/schemas/
 # Node
 node_modules/

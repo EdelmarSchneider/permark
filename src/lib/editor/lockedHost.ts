@@ -90,8 +90,9 @@ export function createLockedHost(deps: LockedHostDeps): LockedHostHandle {
         sourceView(body, atom.source);
         return;
       }
-      // a block that uses a reference is drawn together with the definitions it uses, so its links and footnotes are what the
-      // reading view shows (the definitions draw nothing of their own)
+      // a block that uses a reference is sent together with the definitions it uses, so that its links and footnote references
+      // resolve as they do in the reading view. The definitions draw nothing of their own: a link definition is not shown, and a
+      // footnote is a block of its own (the backend draws the reference as a marker and leaves the footnote out of the block)
       const markdown = atom.definitions ? `${atom.source}\n\n${atom.definitions}` : atom.source;
       const cached = cache.get(markdown);
       if (cached !== undefined) {

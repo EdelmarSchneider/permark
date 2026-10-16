@@ -67,7 +67,6 @@ describe("the title of the window, from the stores", () => {
     edit.path = null;
     notes.current = null;
     notes.entries = [];
-    notes.unborn = false;
   });
 
   it("is the name of the program on the welcome screen", () => {
@@ -137,11 +136,8 @@ describe("the title of the window, from the stores", () => {
       expect(title()).toBe("Shopping list - Notes - TrailMark");
     });
 
-    it("names a note with no text, and one with no file yet, as the header does", () => {
+    it("names a note with no text as the header does", () => {
       notes.current = "new.md";
-      notes.unborn = true;
-      expect(title()).toBe("Untitled note - Notes - TrailMark");
-      notes.unborn = false;
       notes.entries = [entry("new.md")];
       expect(title()).toBe("Untitled note - Notes - TrailMark");
     });

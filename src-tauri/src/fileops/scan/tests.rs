@@ -252,6 +252,17 @@ fn raw_html_attributes_are_found_and_the_rest_of_the_tag_is_skipped() {
 }
 
 #[test]
+fn the_files_of_a_video_or_sound_tag_are_destinations() {
+    let text = "<video src=\"clips/a.mp4\" poster=\"clips/a.png\" controls></video>\n\n\
+                <audio controls><source src=\"snd/b.ogg\" type=\"audio/ogg\"></audio>\n\n\
+                <img poster=\"not-a-poster.png\" src=\"img/c.png\">\n";
+    assert_eq!(
+        raws(text),
+        ["clips/a.mp4", "clips/a.png", "snd/b.ogg", "img/c.png"]
+    );
+}
+
+#[test]
 fn a_tag_swallows_a_markdown_link_that_sits_inside_an_attribute() {
     assert_eq!(
         raws("<span title=\"[a](x.md)\">t</span> [b](y.md)"),

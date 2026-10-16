@@ -1,7 +1,8 @@
 <script lang="ts">
   import { visibleBulkItems, type BulkEntry, type BulkItem } from "../feed";
   import { formatNumber, t, tn } from "../i18n";
-  import { basename, folderLabel, isMarkdown } from "../paths";
+  import { canOpenInPane } from "../fileKinds";
+  import { basename, folderLabel } from "../paths";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { feed } from "../stores/feed.svelte";
@@ -32,7 +33,7 @@
   const LETTER = { created: "A", modified: "M", removed: "D", renamed: "R" } as const;
 
   function openItem(item: BulkItem): void {
-    if (isMarkdown(item.path) && item.kind !== "removed") void app.openChanged(item.path);
+    if (canOpenInPane(item.path) && item.kind !== "removed") void app.openChanged(item.path);
   }
 </script>
 

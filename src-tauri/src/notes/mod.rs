@@ -37,7 +37,7 @@ pub(crate) use names::Moment;
 pub use pending::PendingEdits;
 pub(crate) use recover::process_is_running;
 pub use service::{
-    summary, LooseDoc, LooseStatus, MoveUndone, NoteDeleted, NoteList, NoteMoved, NoteSaved,
-    NoteVersion, NotesError, NotesService, NotesSummary, OpenReport, OpenedFile, ReadOnlyReason,
-    Restored,
+    summary, LooseDoc, LooseStatus, MoveUndone, NoteCreated, NoteDeleted, NoteList, NoteMoved,
+    NoteSaved, NoteVersion, NotesError, NotesService, NotesSummary, OpenReport, OpenedFile,
+    ReadOnlyReason, Restored,
 };

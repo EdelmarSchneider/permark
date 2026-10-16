@@ -35,6 +35,7 @@ import type {
   LinkTarget,
   Comment,
   NotesOverview,
+  NotesRequest,
   RecentVault,
   SearchHit,
   VaultInfo,
@@ -50,6 +51,7 @@ import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
 import { comments } from "./comments.svelte";
 import { notes } from "./notes.svelte";
+import { media } from "./media.svelte";
 import { outline } from "./outline.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
@@ -88,6 +90,10 @@ class AppStore {
   hiddenRecents = new SvelteSet<string>(readHiddenRecents());
 
   private unlisten: Unlisten[] = [];
+  /** The welcome screen and the project window take files dropped on the window; the Notes window listens on its own. */
+  private dropListener: Unlisten | null = null;
+  /** The welcome screen is turning into the Notes window (asked once; the answer is on its way). */
+  private becoming = false;
   private treeTimer: ReturnType<typeof setTimeout> | null = null;
   private sinceTimer: ReturnType<typeof setTimeout> | null = null;
   private followTimer: ReturnType<typeof setTimeout> | null = null;
@@ -120,17 +126,15 @@ class AppStore {
     window.addEventListener("blur", noteFocus);
     document.addEventListener("visibilitychange", noteFocus);
     noteFocus();
-    this.unlisten.push(
-      await watchFileDrop({
-        over: (count) => {
-          ui.drag = { count };
-        },
-        leave: () => {
-          ui.drag = null;
-        },
-        drop: (paths) => void this.handleDrop(paths),
-      }),
-    );
+    this.dropListener = await watchFileDrop({
+      over: (count) => {
+        ui.drag = { count };
+      },
+      leave: () => {
+        ui.drag = null;
+      },
+      drop: (paths) => void this.handleDrop(paths),
+    });
 
     let initial: string | null = null;
     try {
@@ -186,10 +190,58 @@ class AppStore {
       notes.focusList();
       return;
     }
+    // the welcome screen turns into the Notes window; a project window stays as it is and the Notes window comes forward
+    if (this.canBecomeNotes()) {
+      await this.becomeNotes({ newNote, open, openFile: null }, errorMessage);
+      return;
+    }
     try {
       await api.showNotes(newNote, open);
     } catch (error) {
       toast.message(errorMessage(error), "warn");
+    }
+  }
+
+  /**
+   * A window that shows only the welcome screen (no project open, none being opened) can turn into the Notes window. There is
+   * only ever one Notes window, so asking for it from here must not leave this window behind.
+   */
+  private canBecomeNotes(): boolean {
+    return this.screen === "welcome" && !this.opening;
+  }
+
+  /**
+   * The welcome screen asks for the Notes window with `request`. When none is running, this very window becomes it (the same
+   * native window, so its place and size stay; the screen changes from the welcome screen to the notes). When one runs in another
+   * program, that one is asked to come forward and this window closes. Resolves to whether the request was taken; when it was not,
+   * `describe` says why on the welcome screen, which stays.
+   */
+  private async becomeNotes(
+    request: NotesRequest,
+    describe: (error: unknown) => string,
+  ): Promise<boolean> {
+    if (this.becoming) return false;
+    this.becoming = true;
+    try {
+      const handoff = await api.becomeNotesWindow(request.newNote, request.open, request.openFile);
+      if (handoff === "forwarded") {
+        await closeThisWindow();
+        return true;
+      }
+      // Files dropped on the window are the Notes window's from here on (it listens by itself), and a window that was dragged over
+      // is no longer being dragged over.
+      this.dropListener?.();
+      this.dropListener = null;
+      ui.drag = null;
+      this.openError = null;
+      this.screen = "notes";
+      await notes.start();
+      return true;
+    } catch (error) {
+      this.openError = describe(error);
+      return false;
+    } finally {
+      this.becoming = false;
     }
   }
 
@@ -254,6 +306,12 @@ class AppStore {
    */
   private async openFile(path: string, inProject: string | null): Promise<boolean> {
     if (inProject !== null && this.screen === "project") return this.openDoc(inProject);
+    // from the welcome screen the window turns into the Notes window, with the file open in it
+    if (this.canBecomeNotes()) {
+      return this.becomeNotes({ newNote: false, open: null, openFile: path }, (error) =>
+        t("welcome.openFailed", { path, message: errorMessage(error) }),
+      );
+    }
     try {
       await api.showNotes(false, null, path);
       return true;
@@ -819,6 +877,17 @@ class AppStore {
     vault.revealPath(path);
   }
 
+  /**
+   * A folder found in Quick open or Search everywhere: the Explorer opens the folders above it, scrolls to it, opens it and
+   * takes the keyboard focus, so the arrow keys go on from there.
+   */
+  revealFolder(path: string): void {
+    if (vault.isSimple) return;
+    this.showExplorer();
+    vault.revealPath(path);
+    vault.expanded.add(path);
+  }
+
   openFind(prefill?: string): void {
     if (!docs.current) return;
     const selected = prefill ?? bridge.getSelection?.()?.text;
@@ -959,6 +1028,39 @@ class AppStore {
     await this.openInEditor(path, line ?? undefined, col ?? undefined);
   }
 
+  /**
+   * "Open with default app": the file goes to the program the system has for its type, whatever the file is. A program,
+   * script, installer or shortcut is refused by the backend; the message names its kind and offers to show the file in
+   * the file manager instead.
+   */
+  async openWithDefaultApp(path = docs.path): Promise<void> {
+    if (!path) return;
+    try {
+      await api.openWithDefaultApp(path);
+    } catch (error) {
+      if (errorKind(error) === "blockedType") {
+        toast.message(errorMessage(error), "warn", {
+          label: t("menu.showInFileManager"),
+          run: () => void this.revealInFolder(path),
+        });
+        return;
+      }
+      toast.message(t("doc.externalFailed", { message: errorMessage(error) }), "warn");
+    }
+  }
+
+  /** Ctrl+= and Ctrl+-: the zoom of the picture on show, else of the text. */
+  zoomBy(direction: 1 | -1): void {
+    if (docs.current?.kind === "image") media.zoomBy(direction);
+    else session.zoomBy(direction);
+  }
+
+  /** Ctrl+0: a picture goes back to fitting the pane, the text to its usual size. */
+  resetZoom(): void {
+    if (docs.current?.kind === "image") media.reset();
+    else session.setZoom(1);
+  }
+
   async revealInFolder(path: string): Promise<void> {
     try {
       await api.revealInFolder(path);
@@ -1083,6 +1185,9 @@ class AppStore {
         return void this.copyPath();
       case "openExternal":
         return void this.openExternally();
+      case "openDefaultApp":
+        if (ide) void this.openWithDefaultApp();
+        return;
       case "toggleLeft":
         if (ide) this.toggleLeft();
         return;
@@ -1090,11 +1195,11 @@ class AppStore {
         if (ide) this.toggleRight();
         return;
       case "zoomIn":
-        return session.zoomBy(1);
+        return this.zoomBy(1);
       case "zoomOut":
-        return session.zoomBy(-1);
+        return this.zoomBy(-1);
       case "zoomReset":
-        return session.setZoom(1);
+        return this.resetZoom();
       case "cycleWidth":
         return session.cycleWidth();
       case "toggleOutline":
@@ -1185,11 +1290,11 @@ class AppStore {
       case "toggleLeft":
         return this.toggleLeft();
       case "zoomIn":
-        return session.zoomBy(1);
+        return this.zoomBy(1);
       case "zoomOut":
-        return session.zoomBy(-1);
+        return this.zoomBy(-1);
       case "zoomReset":
-        return session.setZoom(1);
+        return this.resetZoom();
       case "cycleWidth":
         return session.cycleWidth();
       case "toggleOutline":

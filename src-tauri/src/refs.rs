@@ -1,9 +1,10 @@
-//! The images that the Markdown documents of the folder use, kept up to date one document at a time.
+//! The images, sound and video that the Markdown documents of the folder use, kept up to date one document at a time.
+//! (The types and functions say "image" for short; a sound or a video counts the same way.)
 //!
-//! The Explorer filter shows an image when a document links to it, wherever the image sits. Finding the
+//! The Explorer filter shows an image, a sound or a video when a document links to it, wherever it sits. Finding the
 //! links is the scanner's job (it knows every inline link, image, reference definition and `href` / `src`
 //! of a Markdown text, see [`crate::fileops::scan`]); this module resolves each destination against the
-//! document the way the reading view does, keeps the ones that name an image, and remembers them per
+//! document the way the reading view does, keeps the ones that name a picture, sound or video, and remembers them per
 //! document, so that saving a document reads that document only and the set the UI asks for is always
 //! current.
 
@@ -11,10 +12,10 @@ use std::collections::HashMap;
 
 use crate::fileops::scan::{find_destinations_here, split_suffix, unescape, Dest, Form};
 use crate::links::{join_relative, percent_decode, scheme_of};
-use crate::util::image_mime;
+use crate::media::asset_kind;
 use crate::vault::key;
 
-/// The vault path that `dest`, found in `text` (the document `doc`), points at, when it is an image.
+/// The vault path that `dest`, found in `text` (the document `doc`), points at, when it is a picture, sound or video.
 fn image_target(doc: &str, text: &str, dest: &Dest) -> Option<String> {
     let (path_raw, _) = split_suffix(dest.inner(text));
     let path = unescape(path_raw);
@@ -31,7 +32,7 @@ fn image_target(doc: &str, text: &str, dest: &Dest) -> Option<String> {
     }
     let decoded = percent_decode(path).replace('\\', "/");
     let target = join_relative(doc, &decoded)?;
-    image_mime(&target).map(|_| target)
+    asset_kind(&target).map(|_| target)
 }
 
 /// The images that the Markdown `text` of the document `doc` (a vault path, `@wt/<name>/...` in a
@@ -174,6 +175,21 @@ mod tests {
             ["img/sub/a.png"]
         );
         assert_eq!(used("a.md", "![x](%C3%A1rea/ima.png)"), ["área/ima.png"]);
+    }
+
+    #[test]
+    fn sound_and_video_count_whether_embedded_or_linked() {
+        let text = "[the demo](clips/demo.mp4)\n\n<video src=\"v/talk.webm\" poster=\"v/talk.png\" controls></video>\n\n<audio controls><source src=\"snd/a.ogg\"><source src=\"snd/a.mp3\"></audio>\n\n![x](https://example.com/x.mp4) [y](notes.md)\n";
+        assert_eq!(
+            used("docs/a.md", text),
+            [
+                "docs/clips/demo.mp4",
+                "docs/snd/a.mp3",
+                "docs/snd/a.ogg",
+                "docs/v/talk.png",
+                "docs/v/talk.webm"
+            ]
+        );
     }
 
     #[test]

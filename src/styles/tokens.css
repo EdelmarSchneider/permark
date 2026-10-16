@@ -124,8 +124,12 @@
   --zebra: #fafafb;
   --shadow-pop: 0 10px 28px rgb(31 35 40 / 0.12), 0 1px 3px rgb(31 35 40 / 0.08);
   --backdrop: rgb(31 35 40 / 0.28);
+  /* behind a picture with transparency (the image viewer), and behind a video */
+  --checker-a: #ffffff;
+  --checker-b: #e4e5e8;
+  --video-bg: #0b0c0e;
   /* syntax */
-  --syn-comment: #6e7781;
+  --syn-comment: #67707a; /* 4.7:1 on the code block's surface (was 4.25) */
   --syn-keyword: #8250df;
   --syn-string: #0a3069;
   --syn-type: #953800;
@@ -158,6 +162,9 @@
   --zebra: #1a1c1f;
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.35);
   --backdrop: rgb(0 0 0 / 0.45);
+  --checker-a: #23262b;
+  --checker-b: #2e3238;
+  --video-bg: #000000;
   --syn-comment: #8b949e;
   --syn-keyword: #d2a8ff;
   --syn-string: #a5d6ff;

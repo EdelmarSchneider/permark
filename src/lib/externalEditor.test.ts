@@ -95,8 +95,18 @@ describe("sampleFile", () => {
 });
 
 describe("usesSystemApp", () => {
-  it("sends images and PDF files to the system's application", () => {
-    for (const path of ["a.png", "img/b.JPG", "c.svg", "d.pdf", "e.PDF", "docs/f.webp"]) {
+  it("sends images, sound, video and PDF files to the system's application", () => {
+    for (const path of [
+      "a.png",
+      "img/b.JPG",
+      "c.svg",
+      "d.pdf",
+      "e.PDF",
+      "docs/f.webp",
+      "g.mp4",
+      "h.MP3",
+      "clips/i.mkv",
+    ]) {
       expect(usesSystemApp(path), path).toBe(true);
     }
   });

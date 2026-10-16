@@ -18,7 +18,7 @@ use serde::Serialize;
 pub use assets::{decode_image, AssetWritten};
 pub use blocks::{parse_blocks, ParsedBlocks};
 
-use crate::render::markdown::{is_markdown_path, render_markdown};
+use crate::render::markdown::{is_markdown_path, render_fragment};
 use crate::render::MAX_RENDER_BYTES;
 use crate::util::{
     hash_bytes, hash_hex, modified_ms, read_with_retry, write_atomic_guarded, Guarded,
@@ -359,8 +359,10 @@ impl<'a> Editor<'a> {
 }
 
 /// The reading view's HTML for some pieces of Markdown, one string for each piece, in the same order. Visual mode draws its locked
-/// blocks (raw HTML, math, diagrams, alerts...) with this. The same renderer and sanitizer as the reading view; a piece that does not
-/// fit in what is left of the size limit comes back empty (the UI then shows its source).
+/// blocks (raw HTML, math, diagrams, alerts...) with this. The same renderer and sanitizer as the reading view, except that a piece
+/// is one block of a document, not a document: the footnotes it refers to are not listed under it (they are blocks of their own, and
+/// the references are drawn as markers). A piece that does not fit in what is left of the size limit comes back empty (the UI then
+/// shows its source), and so does a footnote definition on its own.
 pub fn render_fragments(texts: &[String]) -> Vec<String> {
     let mut left = usize::try_from(MAX_RENDER_BYTES).unwrap_or(usize::MAX);
     texts
@@ -370,7 +372,7 @@ pub fn render_fragments(texts: &[String]) -> Vec<String> {
                 return String::new();
             }
             left -= text.len();
-            render_markdown(text).html
+            render_fragment(text).html
         })
         .collect()
 }
@@ -929,6 +931,20 @@ graph LR
         assert!(html[2].contains("language-mermaid"), "{}", html[2]);
         assert!(html[3].contains("data-math-style"), "{}", html[3]);
         assert_eq!(html[4], "");
+    }
+
+    #[test]
+    fn a_fragment_that_uses_a_footnote_does_not_carry_the_footnote() {
+        let html = render_fragments(&[
+            "The recipe serves 4.[^1]\n\n[^1]: Spices do not scale.".to_owned(),
+            "[^1]: Spices do not scale.".to_owned(),
+        ]);
+        assert!(html[0].contains("<sup"), "{}", html[0]);
+        assert!(html[0].contains("data-footnote-ref"), "{}", html[0]);
+        assert!(!html[0].contains("Spices"), "{}", html[0]);
+        assert!(!html[0].contains("footnotes"), "{}", html[0]);
+        // the definition block draws nothing here: the UI shows it as it is written
+        assert_eq!(html[1], "");
     }
 
     #[test]

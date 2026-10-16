@@ -65,12 +65,13 @@ describe("opening a file", () => {
     })) as unknown as typeof window.matchMedia;
   });
 
-  it("hands a file to the Notes window, and opens nothing in this one", async () => {
+  it("hands a file to the Notes window from a project window, and opens nothing in this one", async () => {
+    app.screen = "project";
     fake.classifyPath.mockResolvedValue({ kind: "file", inProject: null });
     expect(await app.openProject("C:/Users/ana/Downloads/proposal.md")).toBe(true);
     expect(fake.showNotes).toHaveBeenCalledWith(false, null, "C:/Users/ana/Downloads/proposal.md");
     expect(fake.openVault).not.toHaveBeenCalled();
-    expect(app.screen).toBe("welcome");
+    expect(app.screen).toBe("project");
   });
 
   it("shows a file of the open project in the project, not in the Notes window", async () => {
@@ -101,6 +102,8 @@ describe("opening a file", () => {
   it("closes a window that was started with a file once the Notes window has it", async () => {
     fake.initialPath.mockResolvedValue("C:/Users/ana/Downloads/proposal.md");
     fake.classifyPath.mockResolvedValue({ kind: "file", inProject: null });
+    // at start the window shows nothing yet: it is not the welcome screen, so it hands the file over and goes
+    app.screen = "boot";
     await app.boot();
     expect(fake.showNotes).toHaveBeenCalledWith(false, null, "C:/Users/ana/Downloads/proposal.md");
     expect(platform.closeThisWindow).toHaveBeenCalled();
