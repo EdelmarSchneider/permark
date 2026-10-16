@@ -183,7 +183,7 @@ export type SaveStatus = "none" | "unsaved" | "saving" | "saved" | "note";
 
 /** What `saveStatus` looks at. */
 export type SaveFacts = {
-  /** A note or a file is open (the new note that has no file yet and the file that is not found count as not). */
+  /** A note or a file is open (a file that is not found counts as not). */
   shown: boolean;
   /** The window can only read: nothing is ever written, so nothing is said about saving. */
   readOnly: boolean;

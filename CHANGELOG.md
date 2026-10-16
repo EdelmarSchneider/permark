@@ -5,7 +5,22 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **A new note is a note at once.** `+`, `Ctrl+Shift+N` and **New note** now always make a new note, even when the one on screen is still empty,
+  like the `+` of any editor. The note is a real (empty) file as soon as it exists, so it is in the list as "Untitled note", is still there after
+  a restart, and nothing removes it for you: you delete empty notes yourself, with Delete and Undo like any other note. Several empty notes can
+  exist at the same time. Pin, Rename, Share, Move to project and Delete work on a note with no text.
+- **Notes folder wording.** The message about a missing notes folder now says the folder *you chose* is not there, and why TrailMark does not
+  make an empty one in its place.
+
 ### Fixed
+- **No question about the default notes folder.** TrailMark makes `Documents/TrailMark Notes` (and the folders above it) by itself the first
+  time notes are needed, instead of asking whether to create it. A notes folder you chose in **Settings → Notes** that has gone missing (an
+  unplugged drive, a renamed folder) is still reported, with **Locate...** and **Create it**, and is never created quietly.
+- **One window, not two.** **New note** or **Notes** on the welcome screen, `Ctrl+Shift+N`, `Ctrl+Shift+D`, and a file opened from the welcome
+  screen used to leave the welcome window behind and open the Notes window on top of it. The welcome window now turns into the Notes window, in
+  the same place and size; when a Notes window is already open, it comes forward and the welcome window closes. A window with a project open
+  does not change.
 - **Visual mode: a block that refers to a footnote no longer carries the footnote.** A paragraph, list or table with a footnote reference was
   drawn with the footnote's text and a rule under it inside the same block, with a large empty gap. The reference is now a small marker
   (with the footnote's label), the footnote stays a block of its own where the file has it, and nothing is repeated. Saving is unchanged:

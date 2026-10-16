@@ -6,7 +6,7 @@
 // `?notes=locked` shows the notes of a second window (read-only).
 
 import { emitMock } from "../api";
-import { isBlank, noteTitle } from "../noteText";
+import { noteTitle } from "../noteText";
 import type {
   CreatedDoc,
   LaunchMode,
@@ -32,13 +32,10 @@ import type {
   OpenedFile,
   PathClass,
   PendingEdits,
-  SourceDoc,
   StartIn,
   VaultInfo,
 } from "../types";
 import { mockFiles, mockNoteFiles, mockState, sourceMtime, sourceText } from "./fixtures";
-import { mockParseBlocks } from "./mockBlocks";
-import { markdownToView } from "./mockMarkdown";
 import { MockBackendError, mockHash } from "./mockSource";
 
 const MINUTE = 60 * 1000;

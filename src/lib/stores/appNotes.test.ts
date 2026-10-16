@@ -107,7 +107,7 @@ describe("a window that shows only the welcome screen", () => {
     app.run("newNote");
     await vi.waitFor(() => expect(startNotes).toHaveBeenCalledTimes(1));
     expect(fake.becomeNotesWindow).toHaveBeenLastCalledWith(true, null, null);
-    // (the answer is taken before the next ask: the welcome screen is put back, as a new window would have it)
+    // let the first ask finish; then put the welcome screen back, as a window of its own would have it
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     app.screen = "welcome";
