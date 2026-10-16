@@ -23,6 +23,8 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
 
+use serde::Serialize;
+
 use crate::edit::blocks::{parse_blocks, BlockInfo, Eol};
 use crate::render::MAX_RENDER_BYTES;
 use crate::search::fold::tokenize;
@@ -44,7 +46,8 @@ pub struct Span {
     pub end: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ChangeKind {
     /// Blocks that were not in the reviewed version.
     Added,
@@ -232,6 +235,16 @@ impl<'a> Comparison<'a> {
     /// The text of block `index` of the current text.
     pub fn new_block(&self, index: usize) -> &'a str {
         self.current.block_text(index)
+    }
+
+    /// The bytes of block `index` of the reviewed text.
+    pub fn old_span(&self, index: usize) -> Span {
+        self.reviewed.span(&(index..index + 1))
+    }
+
+    /// The bytes of block `index` of the current text.
+    pub fn new_span(&self, index: usize) -> Span {
+        self.current.span(&(index..index + 1))
     }
 
     /// The reviewed text with change `index` accepted: its new blocks take the place of the old ones.
