@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeRightTab,
   reopenButtonShown,
+  reopenDotShown,
   stepTab,
   toggleOutline,
   type PanelView,
@@ -44,6 +45,21 @@ describe("reopenButtonShown (the corner button that brings a collapsed panel bac
   it("never shows in Simple mode, which has no panel to bring back", () => {
     expect(reopenButtonShown({ simple: true, open: false })).toBe(false);
     expect(reopenButtonShown({ simple: true, open: true })).toBe(false);
+  });
+});
+
+describe("reopenDotShown (new changes while the panel is collapsed)", () => {
+  it("shows the dot when something new arrived and the button is there", () => {
+    expect(reopenDotShown({ simple: false, open: false, notify: true })).toBe(true);
+  });
+
+  it("stays off when nothing new arrived", () => {
+    expect(reopenDotShown({ simple: false, open: false, notify: false })).toBe(false);
+  });
+
+  it("has no dot without the button: the panel is open, or this is Simple mode", () => {
+    expect(reopenDotShown({ simple: false, open: true, notify: true })).toBe(false);
+    expect(reopenDotShown({ simple: true, open: false, notify: true })).toBe(false);
   });
 });
 

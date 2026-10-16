@@ -21,7 +21,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
   make an empty one in its place.
 - **Bring the right panel back from the corner it left.** While the right panel is collapsed, a **Show right panel** button (`«`) sits in the
   top-right corner of the document header, where the collapse button (`»`) was, so the pointer that just collapsed the panel is already over
-  the button that brings it back, at the width it had. `Ctrl+Alt+B` works as before; Simple mode has no panel and shows nothing.
+  the button that brings it back, at the width it had. It carries the same dot as the activity bar's panel toggle when something new
+  arrived while the panel was collapsed. `Ctrl+Alt+B` works as before; Simple mode has no panel and shows nothing.
 
 ### Fixed
 - **No question about the default notes folder.** TrailMark makes `Documents/TrailMark Notes` (and the folders above it) by itself the first

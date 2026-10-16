@@ -1782,7 +1782,19 @@ mark {
 /* "Show right panel": the collapse button sat 4px from the window edge (the panel header's padding). Taking the same
    inset puts this one under the pointer that just collapsed the panel, so the same spot toggles it back. */
 .doc-header .reopen-btn {
+  position: relative;
   margin-right: calc(var(--sp-2) * -1);
+}
+/* the same dot as the activity bar's panel toggle, ringed in the colour of the page behind the header */
+.doc-header .reopen-btn .notify-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg);
 }
 @container (max-width: 640px) {
   .doc-header .doc-chip,
