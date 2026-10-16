@@ -24,7 +24,16 @@
     }
   }
 
-  // 2. Copy buttons on code blocks.
+  // 2. The loop video stays on its poster for people who ask the system for less motion.
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    document.querySelectorAll("video[autoplay]").forEach(function (video) {
+      video.removeAttribute("autoplay");
+      video.pause();
+      video.controls = true;
+    });
+  }
+
+  // 3. Copy buttons on code blocks.
   document.querySelectorAll("[data-copy]").forEach(function (btn) {
     if (!navigator.clipboard) {
       btn.hidden = true;
