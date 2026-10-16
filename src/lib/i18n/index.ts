@@ -42,6 +42,11 @@ export function formatNumber(value: number): string {
   return value.toLocaleString(intlTag());
 }
 
+/** Items written as one list with the separator the interface's language uses: "a, b, c" or "a、b、c". */
+export function joinList(items: readonly string[]): string {
+  return items.join(t("list.separator"));
+}
+
 const pluralRules = new Map<string, Intl.PluralRules>();
 
 /**

@@ -755,6 +755,10 @@ export const zhCN = {
   "time.hours": "{n} 小时",
   "time.days": "{n} 天",
 
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": "、",
+  "list.sentences": "；",
+
   // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
   "mode.label": "模式",
   "mode.read": "阅读",

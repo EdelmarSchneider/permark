@@ -747,6 +747,10 @@ export const es = {
   "time.hours": "{n}h",
   "time.days": "{n}d",
 
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
+
   // ---- notes about a document
   "note.invalidUtf8": "UTF-8 no válido; los bytes ilegibles se reemplazaron",
   "note.utf16Le": "Convertido desde UTF-16 LE",

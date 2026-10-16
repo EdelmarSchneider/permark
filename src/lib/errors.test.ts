@@ -275,6 +275,13 @@ describe("noteText", () => {
     expect(noteText("utf16Be")).toBe("Aus UTF-16 BE konvertiert");
   });
 
+  it("strings several notes together with the language's own semicolon", () => {
+    language.preference = "zh-CN";
+    expect(noteText("utf16Le,deepNesting")).toBe(
+      "已从 UTF-16 LE 转换；以纯文本显示：嵌套层级过深，无法渲染",
+    );
+  });
+
   it("shows a code it has no words for as it is", () => {
     expect(noteText("fromTheFuture")).toBe("fromTheFuture");
   });

@@ -751,6 +751,10 @@ export const de = {
   "time.hours": "{n} h",
   "time.days": "{n} d",
 
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
+
   // ---- notes about a document
   "note.invalidUtf8": "Kein gültiges UTF-8; unlesbare Bytes wurden ersetzt",
   "note.utf16Le": "Aus UTF-16 LE konvertiert",

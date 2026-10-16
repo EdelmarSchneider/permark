@@ -213,5 +213,5 @@ export function noteText(codes: string): string {
       const key = `note.${code}` as MessageKey;
       return key in MESSAGES.en ? t(key) : code;
     })
-    .join("; ");
+    .join(t("list.sentences"));
 }

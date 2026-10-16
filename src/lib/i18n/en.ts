@@ -779,6 +779,10 @@ export const en = {
   "time.hours": "{n}h",
   "time.days": "{n}d",
 
+  // ---- lists (between the items of a list, and between sentences strung into one line)
+  "list.separator": ", ",
+  "list.sentences": "; ",
+
   // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
   "mode.label": "Mode",
   "mode.read": "Read",
