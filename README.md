@@ -86,7 +86,9 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 ### 🧭 Navigate like a wiki
 - Open a **folder** for IDE mode (tree, search, live feed) or a **single file** for a distraction-free reader
-- Relative links, anchors and images resolve inside the app, with back and forward history
+- Relative links, anchors and images resolve inside the app, with back and forward history. **Right-click (or press and hold) Back or
+  Forward** to list the documents on that side and jump straight to one, like in a browser; **Go to a recent place...** in the command
+  palette (`Ctrl+Shift+P`) lists your whole trail
 - An **Outline** of the open document's headings (`Ctrl+Alt+O`): the section you're reading is marked, click a heading to jump,
   collapse sections you don't need. It keeps working while you edit, and a dot marks the sections an agent just changed
 - A **filter** for the Explorer (Documents, Docs and assets, Everything, or your own patterns) keeps a code repository's tree to the
@@ -116,6 +118,9 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   in the Explorer's right-click menu, and a command (`Ctrl+Shift+P`). Programs and scripts (`.exe`, `.bat`, `.ps1`, `.sh`, `.app`,
   `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; TrailMark says which kind of file it refused and offers
   to show it in the file manager. Files outside the open folder are never served, and a link that leaves it is not followed.
+- **Open in browser** for `.html` and `.htm` files: in the Explorer's right-click menu, in the **...** menu of the open page, and in the
+  command palette. The page opens in the application your system uses for web pages (your browser, on almost every computer); TrailMark
+  does not draw web pages itself.
 - **The Explorer filter has an Audio and video category.** *Docs and assets* shows them by the same rules as images: next to a document, in
   a folder named like `assets`, `images`, `video`, `audio` or `clips`, or when a document links to them. Quick open and Search everywhere
   find pictures, sound and video by name whatever the filter hides, and list **folders** too: pick one to reveal it in the Explorer.

@@ -6,7 +6,7 @@ import type { FindMode } from "../find";
 import { errorMessage } from "../errors";
 import { isInside, mapPath } from "../fileOps";
 import { t } from "../i18n";
-import { NavHistory } from "../history";
+import { NavHistory, type TrailStop } from "../history";
 import { shouldAutoReveal } from "../reveal";
 import type { DocumentView, FsBatch, FsChange, Move } from "../types";
 import { session } from "./session.svelte";
@@ -205,29 +205,40 @@ class DocStore {
   }
 
   async back(): Promise<void> {
-    if (this.guard?.(() => void this.back())) return;
+    await this.go(-1);
+  }
+
+  async forward(): Promise<void> {
+    await this.go(1);
+  }
+
+  /**
+   * Jumps `offset` steps along the history (negative: back), like a browser's `go(n)`: the document there opens, the
+   * entries in between stay, and Back and Forward go on from the new place. A document that cannot be opened leaves the
+   * history where it was.
+   */
+  async go(offset: number): Promise<void> {
+    if (offset === 0) return;
+    if (this.guard?.(() => void this.go(offset))) return;
     this.history.saveScroll(this.scrollTop);
-    const entry = this.history.back();
+    const entry = this.history.go(offset);
     if (!entry) return;
     this.syncNav();
     const ok = await this.open(entry.path, { history: "none", scrollTop: entry.scrollTop });
     if (!ok) {
-      this.history.forward();
+      this.history.go(-offset);
       this.syncNav();
     }
   }
 
-  async forward(): Promise<void> {
-    if (this.guard?.(() => void this.forward())) return;
-    this.history.saveScroll(this.scrollTop);
-    const entry = this.history.forward();
-    if (!entry) return;
-    this.syncNav();
-    const ok = await this.open(entry.path, { history: "none", scrollTop: entry.scrollTop });
-    if (!ok) {
-      this.history.back();
-      this.syncNav();
-    }
+  /** The documents before (`back`) or after (`forward`) the open one, nearest first: the menus of the two buttons. */
+  trailStops(direction: "back" | "forward"): TrailStop[] {
+    return this.history.stops(direction);
+  }
+
+  /** The whole trail, newest first, the open document marked: "Go to a recent place". */
+  trail(): TrailStop[] {
+    return this.history.trail();
   }
 
   // ---- file operations of the Explorer ------------------------------------------------------------

@@ -134,6 +134,8 @@ export interface Api {
    * kind of file, such as ".ps1") for a program, script, installer, shortcut or macro document: those are never opened.
    */
   openWithDefaultApp(path: string): Promise<void>;
+  /** Opens a web page (`.html`, `.htm`) of the folder in the system's browser. Any other file is refused. */
+  openInBrowser(path: string): Promise<void>;
   /**
    * Opens a file of the folder in the person's editor at a line and column (from 1): runs the editor command of the
    * settings, or the system's default application when there is none. Rejects with kind "editor" (and a `reason`:
@@ -356,6 +358,7 @@ export const tauriApi: Api = {
   absolutePath: (path) => invoke<string>("absolute_path", { path }),
   openExternal: (path) => invoke<void>("open_external", { path }),
   openWithDefaultApp: (path) => invoke<void>("open_with_default_app", { path }),
+  openInBrowser: (path) => invoke<void>("open_in_browser", { path }),
   openInEditor: (path, line, col) => invoke<void>("open_in_editor", { path, line, col }),
   editorCommand: () => invoke<string>("editor_command"),
   setEditorCommand: (command) => invoke<void>("set_editor_command", { command }),
@@ -510,6 +513,7 @@ function createMockApi(): Api {
     absolutePath: command("absolutePath"),
     openExternal: command("openExternal"),
     openWithDefaultApp: command("openWithDefaultApp"),
+    openInBrowser: command("openInBrowser"),
     openInEditor: command("openInEditor"),
     editorCommand: command("editorCommand"),
     setEditorCommand: command("setEditorCommand"),

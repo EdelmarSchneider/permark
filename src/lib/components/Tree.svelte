@@ -14,7 +14,7 @@
   import { formatNumber, t, tn } from "../i18n";
   import { categoryOf } from "../fileKinds";
   import { fileIconOf } from "../fileIcons";
-  import { dirname } from "../paths";
+  import { dirname, isWebPage } from "../paths";
   import { nearestScrollTop } from "../reveal";
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
@@ -309,6 +309,16 @@
               icon: "at",
               onselect: () => void app.copyReference(node.path),
             },
+            ...(isWebPage(node.path)
+              ? ([
+                  {
+                    id: "browser",
+                    label: t("menu.openInBrowser"),
+                    icon: "external",
+                    onselect: () => void app.openInBrowser(node.path),
+                  },
+                ] satisfies MenuEntry[])
+              : []),
             {
               id: "external",
               label: t("menu.openExternal"),
@@ -450,7 +460,9 @@
       {#if row.isDir}
         <Icon name="chevron-down" size="sm" class="twisty" />
       {:else}
-        <span class="twisty-space">{#if isUnread}<UnreadDot />{/if}</span>
+        <span class="twisty-space"
+          >{#if isUnread}<UnreadDot />{/if}</span
+        >
       {/if}
       {#if row.node.kind === "worktree"}
         <Icon name="fork" size="sm" />

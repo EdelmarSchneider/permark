@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { gitBadgeTitle } from "../gitLabels";
   import { noteText } from "../errors";
   import { isMediaViewKind } from "../fileKinds";
   import { t } from "../i18n";
+  import { LongPress } from "../longPress";
   import { mediaSummary } from "../mediaInfo";
-  import { basename, breadcrumbs } from "../paths";
+  import { basename, breadcrumbs, isWebPage } from "../paths";
   import { formatReference } from "../reference";
   import { reopenButtonShown, reopenDotShown } from "../rightPanel";
   import { app } from "../stores/app.svelte";
@@ -22,6 +24,7 @@
   import IconButton from "./IconButton.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
   import ModeSwitch from "./ModeSwitch.svelte";
+  import TrailMenu from "./TrailMenu.svelte";
 
   let menuAnchor = $state<DOMRect | null>(null);
 
@@ -48,14 +51,15 @@
   /** What the header says of a picture, sound or video: its pixels, how long it plays, its size on disk. */
   const mediaLine = $derived(
     view && isMediaViewKind(view.kind)
-      ? mediaSummary(view.kind, view.sizeBytes, media.path === view.path ? media.facts : {}).join(" · ")
+      ? mediaSummary(view.kind, view.sizeBytes, media.path === view.path ? media.facts : {}).join(
+          " · ",
+        )
       : "",
   );
   const isMedia = $derived(!!view && isMediaViewKind(view.kind));
   /** A file the app does not show as text: the system's application is what is left. */
   const opensByDefaultApp = $derived(
-    !!view &&
-      (view.kind === "binary" || view.kind === "tooLarge" || isMediaViewKind(view.kind)),
+    !!view && (view.kind === "binary" || view.kind === "tooLarge" || isMediaViewKind(view.kind)),
   );
   const referenceHint = $derived(
     path ? formatReference(session.refTemplate, path) : t("header.copyReference"),
@@ -133,6 +137,16 @@
       disabled: !view,
       onselect: () => void app.openExternally(),
     },
+    ...(isWebPage(path)
+      ? ([
+          {
+            id: "browser",
+            label: t("menu.openInBrowser"),
+            icon: "external",
+            onselect: () => void app.openInBrowser(path),
+          },
+        ] satisfies MenuEntry[])
+      : []),
     ...(opensByDefaultApp
       ? ([
           {
@@ -163,6 +177,44 @@
   function toggleMenu(e: MouseEvent): void {
     menuAnchor = menuAnchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect();
   }
+
+  // ---- the trail: a right-click or a long press on Back or Forward lists the places on that side ---------------------
+
+  type Side = "back" | "forward";
+
+  function openTrail(side: Side, button: HTMLElement): void {
+    if (docs.trailStops(side).length === 0) return;
+    ui.trail = { view: side, anchor: button.getBoundingClientRect() };
+  }
+
+  const presses: Record<Side, LongPress> = {
+    back: new LongPress((button) => openTrail("back", button)),
+    forward: new LongPress((button) => openTrail("forward", button)),
+  };
+
+  /** What a button of the pair listens to. The menu key and Shift+F10 reach `oncontextmenu` too. */
+  function trailHandlers(side: Side) {
+    const press = presses[side];
+    return {
+      onpointerdown: (e: PointerEvent) => press.down(e),
+      onpointerup: () => press.release(),
+      onpointerleave: () => press.cancel(),
+      onpointercancel: () => press.cancel(),
+      oncontextmenu: (e: MouseEvent) => {
+        e.preventDefault();
+        press.cancel();
+        openTrail(side, e.currentTarget as HTMLElement);
+      },
+      onclick: () => {
+        // the click that ends a long press is not a Back
+        if (press.swallowClick()) return;
+        void (side === "back" ? docs.back() : docs.forward());
+      },
+    };
+  }
+
+  // a menu left open must not be there when the header comes back
+  onDestroy(() => (ui.trail = null));
 </script>
 
 <header class={["doc-header", docs.scrolled && "is-scrolled", edit.active && "is-editing"]}>
@@ -172,14 +224,14 @@
       label={t("header.back")}
       hint={t("header.backHint")}
       disabled={!docs.canBack}
-      onclick={() => void docs.back()}
+      {...trailHandlers("back")}
     />
     <IconButton
       icon="arrow-right"
       label={t("header.forward")}
       hint={t("header.forwardHint")}
       disabled={!docs.canForward}
-      onclick={() => void docs.forward()}
+      {...trailHandlers("forward")}
     />
   </div>
 
@@ -313,6 +365,11 @@
       aria-label={t("doc.loading")}
     ></div>{/if}
 </header>
+
+{#if ui.trail}
+  <!-- asked again while open (the other button): a new menu, not the old one with new words -->
+  {#key ui.trail}<TrailMenu />{/key}
+{/if}
 
 {#if menuAnchor}
   <Menu

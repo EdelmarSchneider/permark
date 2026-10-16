@@ -252,6 +252,9 @@ const EXTERNAL_EXTENSIONS: &[&str] = &[
     "conf", "html", "htm", "css", "pdf",
 ];
 
+/// Extensions of the web pages that "Open in browser" hands to the system.
+const BROWSER_EXTENSIONS: &[&str] = &["html", "htm"];
+
 /// How long a closing window waits for the unread markers' file to be written (see [`Workspace::save_last_visit`]).
 const CLOSE_WAIT: Duration = Duration::from_millis(500);
 
@@ -1181,6 +1184,25 @@ impl Workspace {
         let resolved = self.resolve_path(path)?;
         if !resolved.abs.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
+        }
+        media::check_openable(&resolved.abs)?;
+        Ok(resolved.abs)
+    }
+
+    /// The web page to hand to the system for "Open in browser": an `.html` or `.htm` file of the folder. The path must
+    /// stay inside the folder and name an existing file, and the refusals of "Open with default app" apply too (see
+    /// [`media::open_policy`]). Nothing but a web page goes this way: the person asked for the browser by name.
+    pub fn browser_target(&self, path: &str) -> Result<PathBuf, AppError> {
+        let resolved = self.resolve_path(path)?;
+        if !resolved.abs.is_file() {
+            return Err(VaultError::NotFound(path.to_owned()).into());
+        }
+        let is_page = resolved.abs.extension().is_some_and(|e| {
+            let e = e.to_string_lossy().to_ascii_lowercase();
+            BROWSER_EXTENSIONS.contains(&e.as_str())
+        });
+        if !is_page {
+            return Err(VaultError::Invalid(path.to_owned()).into());
         }
         media::check_openable(&resolved.abs)?;
         Ok(resolved.abs)
@@ -3890,6 +3912,91 @@ exclude = [\"archive/**\"]
             ws.default_app_target("dir").expect_err("dir").kind(),
             "blockedType"
         );
+        ws.close();
+    }
+
+    /// "Open in browser" takes web pages of the folder, and nothing else: the check is the path's and the file's kind.
+    #[test]
+    fn the_browser_is_asked_to_open_web_pages_of_the_folder_and_nothing_else() {
+        let fx = Fx::new();
+        for name in [
+            "index.html",
+            "old.htm",
+            "UPPER.HTML",
+            "site/page.html",
+            "my page #1.html",
+            "a.md",
+            "page.xhtml",
+            "page.html.exe",
+            "app.hta",
+            "run.bat",
+            "noext",
+        ] {
+            write(fx.project.path(), name, "<p>x</p>");
+        }
+        std::fs::create_dir(fx.project.path().join("dir.html")).expect("mkdir");
+        let ws = fx.open();
+        for ok in [
+            "index.html",
+            "old.htm",
+            "UPPER.HTML",
+            "site/page.html",
+            "my page #1.html",
+        ] {
+            assert!(ws.browser_target(ok).expect(ok).is_file(), "{ok}");
+        }
+        // anything that is not a web page is refused as an invalid path, whatever else could open it
+        for bad in [
+            "a.md",
+            "page.xhtml",
+            "page.html.exe",
+            "app.hta",
+            "run.bat",
+            "noext",
+        ] {
+            let error = ws.browser_target(bad).expect_err(bad);
+            assert_eq!(error.kind(), "invalidPath", "{bad}");
+            assert_eq!(error.details().subject.as_deref(), Some(bad), "{bad}");
+        }
+        // outside the folder, not there, or a folder
+        for bad in [
+            "dir.html",
+            "missing.html",
+            "../outside.html",
+            "/etc/index.html",
+            "C:\\index.html",
+        ] {
+            assert!(ws.browser_target(bad).is_err(), "{bad} must not be opened");
+        }
+        assert_eq!(
+            ws.browser_target("../outside.html")
+                .expect_err("escape")
+                .kind(),
+            "pathEscape"
+        );
+        ws.close();
+    }
+
+    /// A page that is a link to a program is judged by what it leads to, like every other file handed to the system.
+    #[cfg(unix)]
+    #[test]
+    fn a_web_page_that_is_a_link_to_a_program_is_not_opened_in_the_browser() {
+        let fx = Fx::new();
+        write(fx.project.path(), "tool.sh", "#!/bin/sh\n");
+        write(fx.project.path(), "real.html", "<p>x</p>");
+        std::os::unix::fs::symlink(
+            fx.project.path().join("tool.sh"),
+            fx.project.path().join("page.html"),
+        )
+        .expect("symlink");
+        std::os::unix::fs::symlink(
+            fx.project.path().join("real.html"),
+            fx.project.path().join("alias.html"),
+        )
+        .expect("symlink");
+        let ws = fx.open();
+        assert!(ws.browser_target("page.html").is_err());
+        assert!(ws.browser_target("alias.html").is_ok());
         ws.close();
     }
 

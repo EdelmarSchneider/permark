@@ -5,6 +5,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Open web pages in your browser.** An `.html` or `.htm` file in your folder now has **Open in browser**: in its right-click menu in the
+  Explorer, in the **...** menu of the open page, and in the command palette. The page opens in the application your system uses for web
+  pages, which is your browser on almost every computer.
+- **See where you have been, and jump back to it.** Right-click (or press and hold) the **Back** or **Forward** button to list the documents
+  on that side, nearest first with the folder beside each name, and pick one to go straight there; Back and Forward carry on from that
+  place, like in a browser. **Go to a recent place...** in the command palette lists your whole trail. The menus work from the keyboard too
+  (the menu key or Shift+F10 on the focused button).
+
 ## [0.5.4] - 2026-10-16
 
 TrailMark speaks Italian, the light theme comes in softer tones, and the Git letters explain themselves.

@@ -24,6 +24,8 @@ export type MenuAction =
   | "showComments"
   | "revealInTree"
   | "openDefaultApp"
+  | "openInBrowser"
+  | "trail"
   | "baselineLastVisit"
   | "baselineCommit"
   | "openContainingFolder"
@@ -47,6 +49,8 @@ export type CommandContext = {
   editing: boolean;
   canBack: boolean;
   canForward: boolean;
+  /** The open document, or the file the Explorer is on, is a web page (`.html`, `.htm`). */
+  webPage: boolean;
   /** The open document has blocks marked as changed or removed. */
   hasChanges: boolean;
   /** The project's local state is kept in the project folder already. */
@@ -94,6 +98,12 @@ export const COMMANDS: readonly Command[] = [
   { id: "nextUnread", label: "cmd.nextUnread", shortcut: "Alt+U", available: inProject },
   { id: "back", label: "cmd.back", shortcut: "Alt+←", available: (ctx) => ctx.canBack },
   { id: "forward", label: "cmd.forward", shortcut: "Alt+→", available: (ctx) => ctx.canForward },
+  // the notes are not pages to go back to
+  {
+    id: "trail",
+    label: "cmd.trail",
+    available: (ctx) => notInNotes(ctx) && (ctx.canBack || ctx.canForward),
+  },
   { id: "newNote", label: "cmd.newNote", shortcut: "Ctrl+Shift+N" },
   { id: "showNotes", label: "cmd.showNotes", shortcut: "Ctrl+Shift+D" },
 
@@ -166,6 +176,11 @@ export const COMMANDS: readonly Command[] = [
     id: "openDefaultApp",
     label: "cmd.openDefaultApp",
     available: inProjectWithDoc,
+  },
+  {
+    id: "openInBrowser",
+    label: "cmd.openInBrowser",
+    available: (ctx) => ctx.webPage && !ctx.notes,
   },
   {
     id: "revealInTree",

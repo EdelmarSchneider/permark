@@ -54,6 +54,7 @@ const IDLE: CommandContext = {
   editing: false,
   canBack: false,
   canForward: false,
+  webPage: false,
   hasChanges: false,
   stateInProject: false,
   hasRepo: false,
@@ -194,6 +195,31 @@ describe("availableCommands", () => {
     expect(idsOf(availableCommands({ ...IDLE, canBack: true }))).toContain("back");
     expect(idsOf(availableCommands({ ...IDLE, canBack: true }))).not.toContain("forward");
     expect(idsOf(availableCommands({ ...IDLE, canForward: true }))).toContain("forward");
+  });
+
+  it('offers "Go to a recent place" when there is a trail to look at, in a folder or a single file', () => {
+    expect(idsOf(availableCommands(IDLE))).not.toContain("trail");
+    expect(idsOf(availableCommands({ ...IDLE, canBack: true }))).toContain("trail");
+    expect(idsOf(availableCommands({ ...IDLE, canForward: true }))).toContain("trail");
+    expect(idsOf(availableCommands({ ...IDLE, ide: false, canBack: true }))).toContain("trail");
+    // a note is not a page to go back to
+    expect(idsOf(availableCommands({ ...IDLE, notes: true, canBack: true }))).not.toContain(
+      "trail",
+    );
+  });
+
+  it('offers "Open in browser" for a web page only', () => {
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true }))).not.toContain("openInBrowser");
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, webPage: true }))).toContain(
+      "openInBrowser",
+    );
+    // a single file can be a web page too
+    expect(idsOf(availableCommands({ ...IDLE, ide: false, webPage: true }))).toContain(
+      "openInBrowser",
+    );
+    expect(idsOf(availableCommands({ ...IDLE, notes: true, webPage: true }))).not.toContain(
+      "openInBrowser",
+    );
   });
 
   it("offers the commands of the open document only when there is one", () => {

@@ -1022,7 +1022,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
-.popover--scroll > * {
+.popover--scroll > *,
+.popover--scroll .menu-item {
   flex: none;
 }
 .menu-item {
@@ -1063,6 +1064,16 @@
   text-overflow: ellipsis;
 }
 .menu-item__hint {
+  color: var(--faint);
+  font-size: var(--fs-ui-xs);
+}
+/* the folder of a file, beside its name: it gives way before the name does */
+.menu-item__detail {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--faint);
   font-size: var(--fs-ui-xs);
 }

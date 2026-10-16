@@ -43,6 +43,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   absolutePath: ["docs/a.md"],
   openExternal: ["docs/a.md"],
   openWithDefaultApp: ["assets/clip.mkv"],
+  openInBrowser: ["site/index.html"],
   openInEditor: ["src/main.rs", 42, 7],
   editorCommand: [],
   setEditorCommand: ["code -g {path}:{line}:{col}"],
