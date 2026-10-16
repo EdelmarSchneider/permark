@@ -207,6 +207,7 @@ export const ptBR = {
   "doc.codeAutoHint":
     "Detectada pelo código. Escreva a linguagem depois dos três acentos graves para defini-la.",
   "doc.anchorLabel": "Link para {name}",
+  "doc.footnoteBackref": "Voltar à referência {ref}",
   "doc.diagramRendering": "Desenhando diagrama...",
   "doc.diagramFailed": "Não foi possível desenhar o diagrama",
   "doc.imageZoomed": "Imagem ampliada",

@@ -4,6 +4,7 @@
   // typed. Enter picks the highlighted row, Up and Down move, Esc closes.
   import { onMount, untrack } from "svelte";
   import { t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { pickerRows, resolveLanguage, type PickerRow } from "../code/languages";
   import Icon from "./Icon.svelte";
   import Popover, { type Anchor } from "./Popover.svelte";
@@ -60,6 +61,7 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (rows.length === 0) return;

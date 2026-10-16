@@ -18,6 +18,7 @@ import {
   type Transaction,
 } from "@milkdown/kit/prose/state";
 import { isInTable, selectionCell, TableMap, type TableRect } from "@milkdown/kit/prose/tables";
+import { isComposingKey } from "../../ime";
 
 /** The caret at the end of the text of the cell that starts at `cellPos`. */
 function endOfCell(doc: PMNode, cellPos: number): Selection {
@@ -137,5 +138,5 @@ export function tableKeymap(ctx: Ctx): Record<string, Command> {
 
 /** Whether a key press belongs to an input method that is composing text (Enter then picks a candidate and is not ours). */
 export function composing(event: KeyboardEvent, view: { composing: boolean }): boolean {
-  return event.isComposing || event.keyCode === 229 || view.composing;
+  return isComposingKey(event) || view.composing;
 }

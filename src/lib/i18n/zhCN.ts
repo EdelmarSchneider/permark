@@ -1,7 +1,8 @@
 // 简体中文 (Simplified Chinese). Conventions: docs/design/i18n.md. Plain, concise wording as mainstream desktop software
 // uses it (打开, 保存, 设置, 文件夹); no pronoun where a label will do, "你" where a hint must address the person (never "您").
 // Chinese punctuation in sentences, ASCII in code, paths and keys; a space between Chinese and Latin letters or digits.
-// Chinese has no plural forms, so each `.one` / `.other` pair carries the same text. Git terms that developers say in
+// Chinese has no plural forms, so most `.one` / `.other` pairs carry the same text; `tn()` still reads `.one` for a count
+// of exactly 1, so a `.one` may name the item ("将 {name} 移到回收站？"). Git terms that developers say in
 // English (rebase, cherry-pick, revert, bisect, worktree) stay in English; merge, commit and branch are 合并, 提交, 分支.
 import type { Messages } from "./en";
 
@@ -199,6 +200,7 @@ export const zhCN = {
   "doc.codeAuto": "自动：{name}",
   "doc.codeAutoHint": "根据代码推测。在起始的反引号后写上语言名即可指定。",
   "doc.anchorLabel": "链接到 {name}",
+  "doc.footnoteBackref": "返回引用 {ref}",
   "doc.diagramRendering": "正在渲染图表...",
   "doc.diagramFailed": "无法渲染图表",
   "doc.imageZoomed": "放大的图片",
@@ -482,7 +484,7 @@ export const zhCN = {
   "since.loading": "正在查找更改...",
   "since.firstVisit": "首次访问：从现在开始跟踪更改。",
   "since.nothing": "自 {when} 以来没有任何更改。",
-  "since.byFileTimes": "按文件时间，自 {when}",
+  "since.byFileTimes": "按文件时间，自 {when} 起",
   "hint.keepSettings": "要把设置与项目放在一起吗？",
   "hint.initialize": "初始化 .trailmark/",
   "hint.dismiss": "忽略提示",
@@ -1046,8 +1048,8 @@ export const zhCN = {
   "notes.status.saved": "已保存",
   "notes.status.saving": "正在保存...",
   "notes.status.readOnly": "只读",
-  "notes.status.words.one": "{n} 个词",
-  "notes.status.words.other": "{n} 个词",
+  "notes.status.words.one": "{n} 字",
+  "notes.status.words.other": "{n} 字",
   "notes.copied.one": "已复制 {n} 个字符",
   "notes.copied.other": "已复制 {n} 个字符",
   "notes.placeholder": "开始输入...",

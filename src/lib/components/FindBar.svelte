@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { bridge } from "../bridge";
   import { t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { registerOverlay } from "../overlays";
   import { ui } from "../stores/ui.svelte";
   import IconButton from "./IconButton.svelte";
@@ -38,6 +39,7 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       if (timer !== null) {

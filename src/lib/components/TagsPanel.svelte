@@ -2,6 +2,7 @@
   import { tick, untrack } from "svelte";
   import { gitStateLabel } from "../gitLabels";
   import { t, tn } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { fileIconOf } from "../fileIcons";
   import { basename, folderLabel } from "../paths";
   import {
@@ -166,6 +167,7 @@
   }
 
   function onFilterKey(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       tagList?.focus();

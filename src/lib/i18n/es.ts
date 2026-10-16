@@ -208,6 +208,7 @@ export const es = {
   "doc.codeAutoHint":
     "Detectado a partir del código. Escribe el lenguaje después de las comillas invertidas para fijarlo.",
   "doc.anchorLabel": "Enlace a {name}",
+  "doc.footnoteBackref": "Volver a la referencia {ref}",
   "doc.diagramRendering": "Dibujando diagrama...",
   "doc.diagramFailed": "No se pudo dibujar el diagrama",
   "doc.imageZoomed": "Imagen ampliada",

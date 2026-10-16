@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import { t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { DescriptionDraft } from "../descriptionDraft";
   import { splitWorktree } from "../paths";
   import { suggest, type Suggestion } from "../tagModel";
@@ -166,6 +167,7 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       if (rows.length === 0) {
@@ -229,7 +231,7 @@
           scheduleDescription();
         }}
         onkeydown={(e) => {
-          if (e.key === "Enter") {
+          if (e.key === "Enter" && !isComposingKey(e)) {
             e.preventDefault();
             saveDescription();
             input?.focus();
