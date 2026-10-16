@@ -54,6 +54,7 @@ const IDLE: CommandContext = {
   editing: false,
   canBack: false,
   canForward: false,
+  webPage: false,
   hasChanges: false,
   stateInProject: false,
   hasRepo: false,
@@ -196,6 +197,31 @@ describe("availableCommands", () => {
     expect(idsOf(availableCommands({ ...IDLE, canForward: true }))).toContain("forward");
   });
 
+  it('offers "Go to a recent place" when there is a trail to look at, in a folder or a single file', () => {
+    expect(idsOf(availableCommands(IDLE))).not.toContain("trail");
+    expect(idsOf(availableCommands({ ...IDLE, canBack: true }))).toContain("trail");
+    expect(idsOf(availableCommands({ ...IDLE, canForward: true }))).toContain("trail");
+    expect(idsOf(availableCommands({ ...IDLE, ide: false, canBack: true }))).toContain("trail");
+    // a note is not a page to go back to
+    expect(idsOf(availableCommands({ ...IDLE, notes: true, canBack: true }))).not.toContain(
+      "trail",
+    );
+  });
+
+  it('offers "Open in browser" for a web page only', () => {
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true }))).not.toContain("openInBrowser");
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, webPage: true }))).toContain(
+      "openInBrowser",
+    );
+    // a single file can be a web page too
+    expect(idsOf(availableCommands({ ...IDLE, ide: false, webPage: true }))).toContain(
+      "openInBrowser",
+    );
+    expect(idsOf(availableCommands({ ...IDLE, notes: true, webPage: true }))).not.toContain(
+      "openInBrowser",
+    );
+  });
+
   it("offers the commands of the open document only when there is one", () => {
     const without = idsOf(availableCommands(IDLE));
     for (const id of [
@@ -294,6 +320,17 @@ describe("availableCommands", () => {
       ]),
     );
     expect(idsOf(availableCommands(IDLE))).not.toContain("openContainingFolder");
+  });
+
+  it("offers to switch and to close the folder in a project, and nowhere else", () => {
+    for (const id of ["switchFolder", "closeFolder"]) {
+      expect(idsOf(availableCommands(IDLE)), id).toContain(id);
+      // the Notes window's folder is its own workspace, and a single file has no folder to leave
+      expect(idsOf(availableCommands({ ...IDLE, notes: true })), id).not.toContain(id);
+      expect(idsOf(availableCommands({ ...IDLE, ide: false })), id).not.toContain(id);
+    }
+    expect(top("switch folder")).toBe("switchFolder");
+    expect(top("close folder")).toBe("closeFolder");
   });
 
   it("keeps the registry order", () => {

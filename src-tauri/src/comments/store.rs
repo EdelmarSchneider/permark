@@ -131,10 +131,18 @@ impl CommentStore {
         &self,
         change: impl FnOnce(&mut Vec<Comment>) -> Result<(T, bool), CommentError>,
     ) -> Result<T, CommentError> {
+        self.update_within(LOCK_WAIT, change)
+    }
+
+    /// [`CommentStore::update`], waiting up to `wait` for the lock instead of the usual [`LOCK_WAIT`].
+    fn update_within<T>(
+        &self,
+        wait: Duration,
+        change: impl FnOnce(&mut Vec<Comment>) -> Result<(T, bool), CommentError>,
+    ) -> Result<T, CommentError> {
         let path = lock(&self.path);
         // Other programs (the window, `trailmark mcp`) change the same file: nobody reads or writes it meanwhile.
-        let _locked =
-            acquire(&lock_path(&path), LOCK_WAIT).map_err(|error| io_error(&path, error))?;
+        let _locked = acquire(&lock_path(&path), wait).map_err(|error| io_error(&path, error))?;
         let mut comments = match read(&path).map_err(|error| io_error(&path, error))? {
             Read::Comments(comments) => comments,
             Read::Missing => Vec::new(),
@@ -406,10 +414,17 @@ mod tests {
     }
 
     /// The window and `trailmark mcp` are two programs: each change reads the file again under a lock they share.
+    ///
+    /// The writers here do nothing but change the file, back to back, so they queue up far more than two programs ever
+    /// do: each change ends in a flush to disk, and the lock is not handed out in turn, so one writer can wait out the
+    /// other three's whole run. On a slow disk (a shared CI runner) that is longer than the usual wait, which is set for
+    /// two programs that change the file now and then. The test waits as long as it takes, because what it checks is
+    /// that no change is lost, not how long the queue is.
     #[test]
     fn writers_in_different_programs_do_not_lose_each_others_changes() {
         const WRITERS: usize = 4;
         const COMMENTS_EACH: usize = 15;
+        const QUEUE_WAIT: Duration = Duration::from_secs(300);
         let (dir, _store) = store();
         let path = dir.path().join("local").join("comments.json");
         let handles: Vec<_> = (0..WRITERS)
@@ -419,7 +434,7 @@ mod tests {
                 std::thread::spawn(move || {
                     for n in 0..COMMENTS_EACH {
                         store
-                            .update(|comments| {
+                            .update_within(QUEUE_WAIT, |comments| {
                                 comments.push(comment(&format!("w{writer}n{n}")));
                                 Ok(((), true))
                             })

@@ -12,6 +12,8 @@ import {
   metaIndex,
   setDescription,
   setTags,
+  setTagStyle,
+  tagStyles,
 } from "./mockMeta";
 import {
   MOCK_ROOT,
@@ -95,6 +97,7 @@ export const mockImpl: Api = {
     mockState.vault = simple ? "simple" : "ide";
     return simple ? mockSimpleVault : mockIdeVault;
   },
+  closeVault: async () => {},
   initialPath: async () =>
     typeof location === "undefined" ? null : new URLSearchParams(location.search).get("open"),
   recentVaults: async () => mockRecents,
@@ -184,6 +187,9 @@ export const mockImpl: Api = {
     }
     console.info("[mock] open with the default app:", path);
   },
+  openInBrowser: async (path) => {
+    console.info("[mock] open in the browser:", path);
+  },
   openInEditor: async (path, line, col) => {
     const program = mockEditorCommand.trim().split(/\s+/)[0] ?? "";
     // a program that is not "installed" shows how the UI words the failure
@@ -246,6 +252,8 @@ export const mockImpl: Api = {
   listTags: async () => listTags(),
   filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
   metaIndex: async () => metaIndex(),
+  tagStyles: async () => tagStyles(),
+  setTagStyle: async (tag, color, icon) => setTagStyle(tag, color, icon),
   cleanUpMeta: async () => cleanUp(),
   documentSource: async (path) => {
     const source = await documentSource(path);

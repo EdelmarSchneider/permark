@@ -294,6 +294,7 @@
     editing: edit.active,
     canBack: docs.canBack,
     canForward: docs.canForward,
+    webPage: app.browserPage !== null,
     hasChanges: docs.marks.changed + docs.marks.removed > 0,
     stateInProject: vault.stateLocation === "project",
     hasRepo: !!vault.git?.isRepo && !vault.git.gitError,

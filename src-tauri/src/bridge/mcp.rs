@@ -37,9 +37,25 @@ pub(crate) enum McpError {
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
 struct SearchArgs {
-    /// What to look for: keywords or a short phrase, as you would type them into a search box.
-    query: String,
-    /// How many sections to return (1 to 25). Ten when left out.
+    /// What to look for: keywords or a short phrase, as you would type them into a search box. Leave it out when you
+    /// pass `tags`, to get the documents that have those tags instead of sections.
+    query: Option<String>,
+    /// How many sections to return (1 to 25). Ten when left out. With `tags` and no `query` it is how many documents
+    /// to list instead (up to 100, twenty when left out).
+    limit: Option<usize>,
+    /// Look only in the documents that have all of these tags, as `list_tags` names them (for example `["adr"]`).
+    /// Optional.
+    tags: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
+struct ListTagsArgs {
+    /// A tag, as `list_tags` names it without this argument. With it, the answer lists the documents that have that
+    /// tag (path, description and all of their tags) instead of the tags. Optional.
+    tag: Option<String>,
+    /// How many tags (or, with `tag`, documents) to list at most: 50 tags or 20 documents when left out, up to 200
+    /// tags or 100 documents. `more` in the answer says how many were left out.
     limit: Option<usize>,
 }
 
@@ -130,15 +146,45 @@ closed, from the project's files.",
     #[tool(
         description = "Find where something is described in the project's Markdown documents. Returns the best \
 matching sections ranked, each with its path, heading path, line and a short snippet (the same index as \
-TrailMark's Search everywhere). Use it to locate documentation before reading whole files, for example to find \
-the section that defines a term or a decision. Also works when TrailMark is closed, from the project's files.",
+TrailMark's Search everywhere), and the `tags` and `description` of its document when it has them. Use it to \
+locate documentation before reading whole files, for example to find the section that defines a term or a \
+decision. In a large project, narrow first: pass `tags` (see list_tags) to look only in the documents that have \
+all of them, then read just the few that fit. Leave `query` out when you pass `tags` to get those documents \
+(path, description, tags) instead of sections. Also works when TrailMark is closed, from the project's files.",
         annotations(read_only_hint = true)
     )]
     async fn search(
         &self,
-        Parameters(SearchArgs { query, limit }): Parameters<SearchArgs>,
+        Parameters(SearchArgs { query, limit, tags }): Parameters<SearchArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        Ok(result(self.core.search(&query, limit).await))
+        Ok(result(
+            self.core
+                .search(
+                    query.as_deref().unwrap_or_default(),
+                    limit,
+                    tags.as_deref().unwrap_or_default(),
+                )
+                .await,
+        ))
+    }
+
+    #[tool(
+        description = "The tags in use in the project's Markdown documents: each tag with how many documents have it \
+(`count`) and where it is written (`from`: `frontMatter` in the documents, `trailmark` added by the person in \
+TrailMark, or `both`), most used first (the first 50; `more` says how many were left out), plus `documents` (how \
+many Markdown documents there are) and `untagged` (how many have no tag), so you can tell whether tags are worth \
+using here. Pass `tag` to list the documents that have it instead: each with its path, its one-line `description` \
+(left out when it has none) and all of its tags (the first 20; `total` and `more` count the rest). `limit` asks for \
+more or fewer. Use it to find the right documents in two calls in a large project: call list_tags (or search with \
+`tags`) to narrow down, then read only the few documents that fit, instead of going through many search hits. \
+Also works when TrailMark is closed, from the project's files.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_tags(
+        &self,
+        Parameters(ListTagsArgs { tag, limit }): Parameters<ListTagsArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(result(self.core.list_tags(tag.as_deref(), limit).await))
     }
 
     #[tool(
@@ -237,9 +283,10 @@ it never changes a document.",
     router = self.tool_router,
     name = "trailmark",
     instructions = "TrailMark reads and follows the Markdown documents of a project. These tools let you see what \
-the person is looking at in TrailMark, what changed since they last read, where something is described, the \
-comments they left on passages (and mark one done), the notes they chose to share with agents, and show them a \
-place. They are available only while the person has turned on the agent connection for the project."
+the person is looking at in TrailMark, what changed since they last read, where something is described, which \
+tags the documents carry (to narrow a large project down before you read), the comments they left on passages \
+(and mark one done), the notes they chose to share with agents, and show them a place. They are available only \
+while the person has turned on the agent connection for the project."
 )]
 impl ServerHandler for AgentServer {
     // The client is ready: connect to the window now, so it shows that an agent is here before the first question.
@@ -296,6 +343,7 @@ pub(crate) fn run_cli(identifier: &str) -> i32 {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Write as _;
     use std::path::Path;
     use std::time::Duration;
 
@@ -311,7 +359,10 @@ mod tests {
     use crate::bridge::hub::testing::{comment, Fake};
     use crate::bridge::service::AgentBridge;
     use crate::bridge::socket::Endpoint;
+    use crate::bridge::tags::Doc;
     use crate::bridge::tools::Launcher;
+    use crate::meta::store::Entries;
+    use crate::search::SearchHit;
     use crate::session::StateStore;
     use crate::vault::Vault;
 
@@ -494,6 +545,7 @@ mod tests {
             "get_context",
             "list_unread",
             "search",
+            "list_tags",
             "list_comments",
             "list_notes",
             "read_note",
@@ -519,11 +571,12 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().expect("name"))
             .collect();
-        assert_eq!(names.len(), 8, "{names:?}");
+        assert_eq!(names.len(), 9, "{names:?}");
         for name in [
             "get_context",
             "list_unread",
             "search",
+            "list_tags",
             "list_comments",
             "resolve_comment",
             "open",
@@ -545,6 +598,15 @@ mod tests {
         assert!(description("get_context").contains("selected text"));
         assert!(description("list_unread").contains("what changed"));
         assert!(description("search").contains("locate documentation"));
+        // the two steps that narrow a large project down are taught by both tools that take part in them
+        for name in ["search", "list_tags"] {
+            assert!(description(name).contains("list_tags"), "{name}");
+            assert!(description(name).contains("`tags`"), "{name}");
+            assert!(description(name).contains("read"), "{name}");
+        }
+        assert!(description("list_tags").contains("two calls"));
+        assert!(description("list_tags").contains("`untagged`"));
+        assert!(description("search").contains("Leave `query` out"));
         assert!(description("open").contains("without taking focus"));
         assert!(description("list_comments").contains("go through"));
         assert!(description("list_comments").contains("passageChanged"));
@@ -563,10 +625,33 @@ mod tests {
             .iter()
             .find(|t| t["name"] == "search")
             .expect("search");
-        assert_eq!(search["inputSchema"]["required"], json!(["query"]));
-        assert!(search["inputSchema"]["properties"]["query"]["description"]
-            .as_str()
-            .is_some());
+        // the words are optional now: tags alone list the documents that have them
+        assert!(search["inputSchema"].get("required").is_none());
+        for argument in ["query", "limit", "tags"] {
+            assert!(
+                search["inputSchema"]["properties"][argument]["description"]
+                    .as_str()
+                    .is_some(),
+                "{argument}"
+            );
+        }
+        assert_eq!(
+            search["inputSchema"]["properties"]["tags"]["items"]["type"],
+            "string"
+        );
+        let list_tags = tools
+            .iter()
+            .find(|t| t["name"] == "list_tags")
+            .expect("list_tags");
+        assert!(list_tags["inputSchema"].get("required").is_none());
+        for argument in ["tag", "limit"] {
+            assert!(
+                list_tags["inputSchema"]["properties"][argument]["description"]
+                    .as_str()
+                    .is_some(),
+                "{argument}"
+            );
+        }
         let open = tools.iter().find(|t| t["name"] == "open").expect("open");
         assert_eq!(open["inputSchema"]["required"], json!(["path"]));
         let resolve = tools
@@ -590,6 +675,8 @@ mod tests {
             (3, "get_context", json!({})),
             (4, "list_unread", json!({})),
             (5, "search", json!({ "query": "plan" })),
+            (11, "list_tags", json!({})),
+            (12, "search", json!({ "tags": ["adr"] })),
             (6, "open", json!({ "path": "docs/plan.md" })),
             (7, "list_comments", json!({})),
             (8, "resolve_comment", json!({ "id": "c1", "reply": "Done" })),
@@ -749,6 +836,341 @@ mod tests {
         assert_eq!(reply["result"]["isError"], true, "{reply}");
         client.close().await.expect("the server ended cleanly");
         world.bridge.shutdown();
+    }
+
+    fn names(items: &[&str]) -> Vec<String> {
+        items.iter().map(|x| (*x).to_owned()).collect()
+    }
+
+    fn doc(path: &str, file: &[&str], app: &[&str], description: &str) -> Doc {
+        Doc {
+            path: path.to_owned(),
+            file_tags: names(file),
+            app_tags: names(app),
+            description: description.to_owned(),
+        }
+    }
+
+    /// The answer of a tool as the text an agent reads, which is also the structured answer written without spaces.
+    fn answer_text(reply: &Value) -> &str {
+        let text = reply["result"]["content"][0]["text"]
+            .as_str()
+            .expect("text content");
+        assert_eq!(
+            text,
+            reply["result"]["structuredContent"].to_string(),
+            "the text is the structured answer, compact"
+        );
+        text
+    }
+
+    /// A project whose window is open and knows four documents, two of them tagged `adr`, and two sections that say "retry".
+    fn world_with_tagged_documents() -> World {
+        let world = World::new();
+        world.connection(true);
+        world.bridge.set_enabled(true);
+        *world.fake.docs.lock().expect("lock") = vec![
+            doc("docs/loud.md", &[], &[], ""),
+            doc("docs/adr-1.md", &["adr"], &["api"], "Why retries back off."),
+            doc("docs/adr-2.md", &["adr"], &[], ""),
+            doc("docs/plan.md", &[], &["draft"], "The rollout plan."),
+        ];
+        *world.fake.corpus.lock().expect("lock") = vec![
+            SearchHit {
+                path: "docs/loud.md".to_owned(),
+                heading_path: vec!["Retry".to_owned()],
+                snippet: "retry retry retry".to_owned(),
+                start_line: 1,
+                score: 3.0,
+            },
+            SearchHit {
+                path: "docs/adr-1.md".to_owned(),
+                heading_path: vec!["Decision".to_owned()],
+                snippet: "a <mark>retry</mark> policy".to_owned(),
+                start_line: 7,
+                score: 2.0,
+            },
+        ];
+        world
+    }
+
+    #[tokio::test]
+    async fn tags_narrow_what_an_agent_searches_over_mcp() {
+        let world = world_with_tagged_documents();
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+
+        // call one: how are the documents tagged?
+        let reply = client.call(3, "list_tags", &json!({})).await;
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        let tags = &reply["result"]["structuredContent"];
+        assert_eq!(tags["status"], "ok");
+        assert_eq!(tags["source"], "window");
+        assert_eq!(
+            (&tags["documents"], &tags["untagged"]),
+            (&json!(4), &json!(1))
+        );
+        assert_eq!(
+            tags["tags"],
+            json!([
+                {"name": "adr", "count": 2, "from": "frontMatter"},
+                {"name": "api", "count": 1, "from": "trailmark"},
+                {"name": "draft", "count": 1, "from": "trailmark"},
+            ])
+        );
+        let reply = client
+            .call(4, "list_tags", &json!({ "tag": "ADR", "limit": 1 }))
+            .await;
+        let adr = &reply["result"]["structuredContent"];
+        assert_eq!((&adr["total"], &adr["more"]), (&json!(2), &json!(1)));
+        assert_eq!(
+            adr["docs"],
+            json!([{"path": "docs/adr-1.md", "description": "Why retries back off.", "tags": ["adr", "api"]}])
+        );
+
+        // call two: search where the tags point, and read the few documents it finds
+        let reply = client
+            .call(5, "search", &json!({ "query": "retry", "tags": ["adr"] }))
+            .await;
+        let found = &reply["result"]["structuredContent"];
+        assert_eq!(found["source"], "window");
+        let hits = found["hits"].as_array().expect("hits");
+        assert_eq!(
+            hits.len(),
+            1,
+            "the louder document has no such tag: {found}"
+        );
+        assert_eq!(hits[0]["path"], "docs/adr-1.md");
+        assert_eq!(hits[0]["tags"], json!(["adr", "api"]));
+        assert_eq!(hits[0]["description"], "Why retries back off.");
+        assert_eq!(hits[0]["snippet"], "a retry policy");
+        // without tags the same search finds both, and says what it knows of each
+        let reply = client.call(6, "search", &json!({ "query": "retry" })).await;
+        let both = reply["result"]["structuredContent"]["hits"]
+            .as_array()
+            .expect("hits")
+            .clone();
+        assert_eq!(both.len(), 2);
+        assert!(both[0].get("tags").is_none() && both[0].get("description").is_none());
+
+        // the window told its popover
+        let recent = world.bridge.status().recent;
+        assert!(recent.iter().any(|r| r.tool == "list_tags"));
+        client.close().await.expect("the server ended cleanly");
+        world.bridge.shutdown();
+    }
+
+    #[tokio::test]
+    async fn tags_alone_list_their_documents_and_nothing_to_go_by_is_said_over_mcp() {
+        let world = world_with_tagged_documents();
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+
+        // tags without words list the documents that have them
+        let reply = client.call(7, "search", &json!({ "tags": ["adr"] })).await;
+        let listed = &reply["result"]["structuredContent"];
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert_eq!(listed["total"], 2);
+        assert!(listed.get("hits").is_none());
+        assert_eq!(listed["docs"][1]["path"], "docs/adr-2.md");
+
+        // nothing to go by is an error that says what to give; a tag nobody has is an answer that says so
+        let reply = client.call(8, "search", &json!({})).await;
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        assert!(reply["result"]["structuredContent"]["message"]
+            .as_str()
+            .expect("a message")
+            .contains("tags"));
+        let reply = client
+            .call(9, "search", &json!({ "tags": ["nothing"] }))
+            .await;
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert_eq!(reply["result"]["structuredContent"]["total"], 0);
+        assert!(reply["result"]["structuredContent"]["message"]
+            .as_str()
+            .expect("a message")
+            .contains("list_tags"));
+        let reply = client
+            .call(10, "search", &json!({ "query": "retry", "tags": "adr" }))
+            .await;
+        assert_eq!(reply["result"]["isError"], true, "tags are a list: {reply}");
+
+        // the window told its popover, the way the search box takes tags
+        let recent = world.bridge.status().recent;
+        assert!(recent
+            .iter()
+            .any(|r| r.tool == "search" && r.subject.as_deref() == Some("tag:adr")));
+        client.close().await.expect("the server ended cleanly");
+        world.bridge.shutdown();
+    }
+
+    /// Tags written in two places, and the project's files only: no window, nothing written.
+    #[tokio::test]
+    async fn with_the_window_closed_the_tags_are_read_from_the_projects_files() {
+        let world = World::new();
+        world.connection(true);
+        std::fs::write(
+            world.root.join("docs/plan.md"),
+            "---\ntags: [plan, Draft]\n---\n# Plan\n\nIntro.\n\n## Rollout\n\nShip it.\n",
+        )
+        .expect("write");
+        std::fs::write(
+            world.root.join("README.md"),
+            "# Home\n\nShip the lighthouse.\n",
+        )
+        .expect("write");
+        let mut entries = Entries::default();
+        entries.set_tags("README.md", &names(&["draft", "Start Here"]));
+        entries.set_description("README.md", "Where to begin.");
+        // the project has no `.trailmark/` folder, so the app keeps what it adds in its own data
+        let meta = StateStore::open(world.app.path(), &world.root).meta_path();
+        std::fs::create_dir_all(meta.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&meta, entries.to_toml()).expect("write");
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+
+        let reply = client.call(3, "list_tags", &json!({})).await;
+        let tags = &reply["result"]["structuredContent"];
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert_eq!(tags["source"], "files");
+        assert_eq!(
+            (&tags["documents"], &tags["untagged"]),
+            (&json!(2), &json!(0))
+        );
+        assert_eq!(
+            tags["tags"],
+            json!([
+                {"name": "draft", "count": 2, "from": "both"},
+                {"name": "plan", "count": 1, "from": "frontMatter"},
+                {"name": "start-here", "count": 1, "from": "trailmark"},
+            ])
+        );
+
+        let reply = client
+            .call(4, "search", &json!({ "query": "ship", "tags": ["draft"] }))
+            .await;
+        let found = &reply["result"]["structuredContent"];
+        assert_eq!(found["source"], "files");
+        assert_eq!(found["hits"].as_array().expect("hits").len(), 2);
+        let readme = found["hits"]
+            .as_array()
+            .expect("hits")
+            .iter()
+            .find(|hit| hit["path"] == "README.md")
+            .expect("README.md");
+        assert_eq!(readme["description"], "Where to begin.");
+        assert_eq!(readme["tags"], json!(["draft", "start-here"]));
+        let reply = client
+            .call(
+                5,
+                "search",
+                &json!({ "query": "ship", "tags": ["plan", "start here"] }),
+            )
+            .await;
+        assert_eq!(reply["result"]["structuredContent"]["hits"], json!([]));
+
+        let reply = client
+            .call(6, "list_tags", &json!({ "tag": "Start Here" }))
+            .await;
+        assert_eq!(
+            reply["result"]["structuredContent"]["docs"],
+            json!([{"path": "README.md", "description": "Where to begin.", "tags": ["draft", "start-here"]}])
+        );
+        // looking changed nothing
+        assert!(!world.root.join(".trailmark").exists());
+        assert_eq!(
+            std::fs::read_to_string(&meta).expect("read"),
+            entries.to_toml()
+        );
+        client.close().await.expect("the server ended cleanly");
+    }
+
+    /// A project of a thousand documents with sixty tags and full descriptions: what one narrowing step costs an agent in
+    /// text. The ceiling is generous; it is here to catch an answer that grows without anyone meaning it to.
+    #[tokio::test]
+    async fn the_answers_to_a_large_project_stay_compact() {
+        const CEILING: usize = 10_000;
+        let world = World::new();
+        world.connection(true);
+        let tag = |n: usize| format!("topic-{:02}", n % 60);
+        let mut entries = Entries::default();
+        for n in 0..1_000_usize {
+            let path = format!(
+                "docs/architecture/decisions/area-{:02}/adr-{n:04}-use-event-sourcing-for-the-ledger-service.md",
+                n % 24
+            );
+            let file = world.root.join(&path);
+            std::fs::create_dir_all(file.parent().expect("parent")).expect("mkdir");
+            let mut body = String::new();
+            for section in 0..4 {
+                write!(
+                    body,
+                    "## Section {section}\n\nThe retry policy for the ledger service is described here, with the backoff \
+and the limits that were agreed after the incident review, and what to do when a retry still fails. {}\n\n",
+                    "More words about the decision and its consequences. ".repeat(3)
+                )
+                .expect("a string can be written to");
+            }
+            std::fs::write(
+                &file,
+                format!(
+                    "---\ntags: [{}, {}]\n---\n# Decision {n}\n\n{body}",
+                    tag(n),
+                    tag(n * 7 + 3)
+                ),
+            )
+            .expect("write");
+            entries.set_tags(&path, &[tag(n * 13 + 5)]);
+            entries.set_description(
+                &path,
+                &format!("Decision {n}: why the ledger service keeps its history as events, what that costs, what was rejected and who agreed"),
+            );
+        }
+        let meta = StateStore::open(world.app.path(), &world.root).meta_path();
+        std::fs::create_dir_all(meta.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&meta, entries.to_toml()).expect("write");
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+
+        for (id, tool, arguments) in [
+            (3, "list_tags", json!({})),
+            (4, "list_tags", json!({ "tag": "topic-07" })),
+            (5, "search", json!({ "query": "retry policy" })),
+            (
+                6,
+                "search",
+                json!({ "query": "retry policy", "tags": ["topic-07"] }),
+            ),
+            (7, "search", json!({ "tags": ["topic-07"] })),
+        ] {
+            let started = std::time::Instant::now();
+            let reply = client.call(id, tool, &arguments).await;
+            let took = started.elapsed();
+            assert_eq!(reply["result"]["isError"], false, "{tool}: {reply}");
+            let size = answer_text(&reply).chars().count();
+            eprintln!("{tool} {arguments}: {size} characters, {took:?}");
+            assert!(size <= CEILING, "{tool} {arguments} is {size} characters");
+        }
+        // the answers are the ones the sizes are about
+        let reply = client.call(8, "list_tags", &json!({})).await;
+        let tags = &reply["result"]["structuredContent"];
+        assert_eq!(
+            tags["documents"], 1_001,
+            "the thousand and the plan of the fixture"
+        );
+        assert_eq!(tags["tags"].as_array().expect("tags").len(), 50);
+        assert_eq!(tags["more"], 10);
+        let reply = client
+            .call(9, "search", &json!({ "query": "retry policy" }))
+            .await;
+        assert_eq!(
+            reply["result"]["structuredContent"]["hits"]
+                .as_array()
+                .expect("hits")
+                .len(),
+            10
+        );
+        client.close().await.expect("the server ended cleanly");
     }
 
     /// The notes of the person: three notes, two of them shared, in the folder the program keeps notes in (the data folder's).
@@ -946,15 +1368,25 @@ mod tests {
         let world = World::new();
         let mut client = Client::connect(world.core());
         client.handshake().await;
-        let reply = client.call(4, "search", &json!({ "limit": 3 })).await;
+        let reply = client.call(4, "read_note", &json!({ "limit": 3 })).await;
         assert_eq!(reply["result"]["isError"], true, "got {reply}");
         let text = reply["result"]["content"][0]["text"]
             .as_str()
             .expect("text");
         assert!(
-            text.contains("query"),
+            text.contains("note"),
             "the missing argument is named: {text}"
         );
+        // the tags are a list, and the limit a number
+        for arguments in [
+            json!({ "query": "x", "tags": "adr" }),
+            json!({ "query": "x", "limit": "three" }),
+        ] {
+            let reply = client.call(5, "search", &arguments).await;
+            assert_eq!(reply["result"]["isError"], true, "got {reply}");
+        }
+        let reply = client.call(6, "list_tags", &json!({ "tag": 5 })).await;
+        assert_eq!(reply["result"]["isError"], true, "got {reply}");
         client.close().await.expect("the server ended cleanly");
     }
 

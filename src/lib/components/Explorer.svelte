@@ -106,6 +106,10 @@
     filterAnchor = filterAnchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect();
   }
 
+  function toggleSwitcher(e: MouseEvent): void {
+    void app.openFolderSwitcher((e.currentTarget as HTMLElement).getBoundingClientRect());
+  }
+
   function toggleMenu(e: MouseEvent): void {
     menuAnchor = menuAnchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect();
     if (menuAnchor) menuOrigin = menuAnchor;
@@ -143,14 +147,37 @@
     onclick={() => app.toggleLeft()}
   />
 </div>
-<div class={["scroll", fileops.drag?.over === "" && "is-drop-root"]} style="flex:1" data-drop-root>
-  <button
-    class="section-header"
-    aria-expanded={!ui.collapsedSections.has("vault")}
-    onclick={() => ui.toggleSection("vault")}
-  >
-    <Icon name="chevron-down" size="sm" class="twisty" />{vault.info?.name}
-  </button>
+<div
+  class={["scroll", "scroll--rooted", fileops.drag?.over === "" && "is-drop-root"]}
+  style="flex:1"
+  data-drop-root
+>
+  <!-- the project's row: the arrow folds the files; the name opens the folder switcher (stays in view while the tree scrolls) -->
+  <div class="section-header section-header--root">
+    <button
+      type="button"
+      class="section-header__toggle"
+      aria-expanded={!ui.collapsedSections.has("vault")}
+      aria-label={vault.info?.name}
+      onclick={() => ui.toggleSection("vault")}
+    >
+      <Icon name="chevron-down" size="sm" class="twisty" />
+    </button>
+    <button
+      type="button"
+      class="folder-switch"
+      aria-haspopup="menu"
+      aria-expanded={ui.folderSwitcher !== null}
+      aria-label={t("switcher.label", { name: vault.info?.name ?? "" })}
+      title={t("switcher.hint")}
+      data-folder-switcher
+      data-popover-trigger
+      onclick={toggleSwitcher}
+    >
+      <span class="folder-switch__name">{vault.info?.name}</span>
+      <Icon name="chevron-down" size="xs" />
+    </button>
+  </div>
   {#if !ui.collapsedSections.has("vault")}
     {#if filter.roots.main.length > 0 || ui.newFile?.folder === ""}
       <Tree bind:this={tree} nodes={filter.roots.main} label={t("tree.files")} root />

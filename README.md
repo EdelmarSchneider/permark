@@ -86,7 +86,9 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 ### 🧭 Navigate like a wiki
 - Open a **folder** for IDE mode (tree, search, live feed) or a **single file** for a distraction-free reader
-- Relative links, anchors and images resolve inside the app, with back and forward history
+- Relative links, anchors and images resolve inside the app, with back and forward history. **Right-click (or press and hold) Back or
+  Forward** to list the documents on that side and jump straight to one, like in a browser; **Go to a recent place...** in the command
+  palette (`Ctrl+Shift+P`) lists your whole trail
 - An **Outline** of the open document's headings (`Ctrl+Alt+O`): the section you're reading is marked, click a heading to jump,
   collapse sections you don't need. It keeps working while you edit, and a dot marks the sections an agent just changed
 - A **filter** for the Explorer (Documents, Docs and assets, Everything, or your own patterns) keeps a code repository's tree to the
@@ -116,6 +118,9 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   in the Explorer's right-click menu, and a command (`Ctrl+Shift+P`). Programs and scripts (`.exe`, `.bat`, `.ps1`, `.sh`, `.app`,
   `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; TrailMark says which kind of file it refused and offers
   to show it in the file manager. Files outside the open folder are never served, and a link that leaves it is not followed.
+- **Open in browser** for `.html` and `.htm` files: in the Explorer's right-click menu, in the **...** menu of the open page, and in the
+  command palette. The page opens in the application your system uses for web pages (your browser, on almost every computer); TrailMark
+  does not draw web pages itself.
 - **The Explorer filter has an Audio and video category.** *Docs and assets* shows them by the same rules as images: next to a document, in
   a folder named like `assets`, `images`, `video`, `audio` or `clips`, or when a document links to them. Quick open and Search everywhere
   find pictures, sound and video by name whatever the filter hides, and list **folders** too: pick one to reveal it in the Explorer.
@@ -154,6 +159,9 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   can read it), or in the app's own storage before that. Renaming or moving a file keeps its tags
 - A **Tags view** (`Ctrl+Shift+T`) lists every tag with its number of files. Pick one, or `Ctrl+click` several to narrow the list
 - Descriptions and tags show up where you look for files: tree tooltips, quick open, search results
+- Give a tag a **color** and an **icon** (right-click it in the Tags view) to see at a glance what kind of document you are in front of
+- Your agent uses them too, to find the right documents in a large project without reading hundreds of search hits: it asks which tags
+  there are (`list_tags`), narrows a search to the documents that carry them, and reads only the few that fit
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-tags-dark.png">
@@ -348,7 +356,8 @@ is TrailMark running as you, and not another program that took the name.
 |---|---|
 | `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters) and whether there are unsaved edits |
 | `list_unread` | The documents that changed since you last read them, newest first |
-| `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere |
+| `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere. Each hit carries its document's tags and description, and `tags` narrows the search to the documents that have all of them |
+| `list_tags` | The tags in use, with how many documents have each and whether they come from the documents or from TrailMark, plus how many documents have no tag; or, for one tag, the documents that have it with their descriptions |
 | `list_comments` | Your [comments](#comments): the open ones, each with the quoted passage, its section and line, and your text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
@@ -360,7 +369,7 @@ TrailMark. It sees the project you opened and nothing else: no other project, no
 the agent sees only the notes you shared one by one (**Share with agents** in a note's menu, **Stop sharing** takes it back at once), through
 `list_notes` and `read_note`, in any project whose connection is on; it cannot list the notes folder, read a note you did not share, or change
 one, and a notes folder that lies inside a project is not part of that project's search. When TrailMark is
-closed, `list_unread`, `search`, `list_comments`, `resolve_comment`, `list_notes` and `read_note` still work from the files, `get_context` says that
+closed, `list_unread`, `search`, `list_tags`, `list_comments`, `resolve_comment`, `list_notes` and `read_note` still work from the files, `get_context` says that
 TrailMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
 
 ### Add what you are reading to every prompt
@@ -499,6 +508,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 - v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
   show up in Quick open
+- v0.5.5: tags with colors and icons, tags as your agent's index (`list_tags`, tag filter in `search`), a folder switcher, the navigation trail, and Open in browser for web pages
 - v0.5.4: the interface in Italiano (Italian), soft light tones (Paper, Sage, Gray), and the Git letters explained in plain words
 - v0.5.3: the interface in 简体中文 (Simplified Chinese), and search that finds Chinese and Japanese words inside sentences
 

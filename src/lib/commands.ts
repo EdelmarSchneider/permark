@@ -13,6 +13,8 @@ import { foldChars } from "./text";
 
 /** Actions that have no key: they live in a menu, the status bar or the settings. */
 export type MenuAction =
+  | "switchFolder"
+  | "closeFolder"
   | "initProject"
   | "checkUpdates"
   | "newFolder"
@@ -24,6 +26,8 @@ export type MenuAction =
   | "showComments"
   | "revealInTree"
   | "openDefaultApp"
+  | "openInBrowser"
+  | "trail"
   | "baselineLastVisit"
   | "baselineCommit"
   | "openContainingFolder"
@@ -47,6 +51,8 @@ export type CommandContext = {
   editing: boolean;
   canBack: boolean;
   canForward: boolean;
+  /** The open document, or the file the Explorer is on, is a web page (`.html`, `.htm`). */
+  webPage: boolean;
   /** The open document has blocks marked as changed or removed. */
   hasChanges: boolean;
   /** The project's local state is kept in the project folder already. */
@@ -89,11 +95,19 @@ export const COMMANDS: readonly Command[] = [
   { id: "openFolder", label: "cmd.openFolder", shortcut: "Ctrl+O", available: notInNotes },
   // a file opened in the Notes window is listed under Files (or is the note it is)
   { id: "openFile", label: "cmd.openFile", shortcut: "Ctrl+Shift+O" },
+  { id: "switchFolder", label: "cmd.switchFolder", available: inProject },
+  { id: "closeFolder", label: "cmd.closeFolder", available: inProject },
   { id: "quickOpen", label: "cmd.quickOpen", shortcut: "Ctrl+P", available: inFolder },
   { id: "searchAll", label: "cmd.searchAll", shortcut: "Ctrl+Shift+F", available: inFolder },
   { id: "nextUnread", label: "cmd.nextUnread", shortcut: "Alt+U", available: inProject },
   { id: "back", label: "cmd.back", shortcut: "Alt+←", available: (ctx) => ctx.canBack },
   { id: "forward", label: "cmd.forward", shortcut: "Alt+→", available: (ctx) => ctx.canForward },
+  // the notes are not pages to go back to
+  {
+    id: "trail",
+    label: "cmd.trail",
+    available: (ctx) => notInNotes(ctx) && (ctx.canBack || ctx.canForward),
+  },
   { id: "newNote", label: "cmd.newNote", shortcut: "Ctrl+Shift+N" },
   { id: "showNotes", label: "cmd.showNotes", shortcut: "Ctrl+Shift+D" },
 
@@ -166,6 +180,11 @@ export const COMMANDS: readonly Command[] = [
     id: "openDefaultApp",
     label: "cmd.openDefaultApp",
     available: inProjectWithDoc,
+  },
+  {
+    id: "openInBrowser",
+    label: "cmd.openInBrowser",
+    available: (ctx) => ctx.webPage && !ctx.notes,
   },
   {
     id: "revealInTree",

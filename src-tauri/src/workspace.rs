@@ -17,6 +17,7 @@ use crate::bridge::hub::{AgentEvents, AgentStatus, Backend};
 use crate::bridge::protocol::Opened;
 use crate::bridge::service::AgentBridge;
 use crate::bridge::socket::Endpoint;
+use crate::bridge::tags::{is_document, unreadable_meta, Doc, DocIndex};
 use crate::comments::{
     CommentBook, CommentError, CommentView, Listener as CommentsListener, NewComment,
 };
@@ -33,6 +34,7 @@ use crate::links::{self, LinkTarget};
 use crate::media::{self, Window};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
+use crate::meta::style::TagStyleView;
 use crate::meta::{MetaService, Timing};
 use crate::notes::{
     self, LooseDoc, NoteSaved, NotesError, NotesService, OpenReport, ReadOnlyReason,
@@ -252,6 +254,9 @@ const EXTERNAL_EXTENSIONS: &[&str] = &[
     "conf", "html", "htm", "css", "pdf",
 ];
 
+/// Extensions of the web pages that "Open in browser" hands to the system.
+const BROWSER_EXTENSIONS: &[&str] = &["html", "htm"];
+
 /// How long a closing window waits for the unread markers' file to be written (see [`Workspace::save_last_visit`]).
 const CLOSE_WAIT: Duration = Duration::from_millis(500);
 
@@ -321,11 +326,15 @@ impl Followers for AppFollower {
     }
 }
 
-/// What only the open folder can tell an agent: the live search index, the live unread markers and the comments.
+/// What only the open folder can tell an agent: the live search index, the live unread markers, the comments and the
+/// tags and descriptions.
 struct LiveBackend {
     index: Arc<RwLock<Bm25Index>>,
     unread: Arc<UnreadService>,
     comments: Arc<CommentBook>,
+    meta: Arc<MetaService>,
+    /// What the index leaves out (ignored folders, the private notes): the documents an agent hears of are the ones it can search.
+    filter: Arc<PathFilter>,
     /// The data folder of the program: where the person's choice of the notes folder is kept.
     app_data: PathBuf,
 }
@@ -339,8 +348,34 @@ impl Backend for LiveBackend {
         self.unread.unread()
     }
 
-    fn search(&self, query: &str, limit: usize) -> Vec<SearchHit> {
-        self.index.search(query, limit)
+    fn search(&self, query: &str, limit: usize, allow: &dyn Fn(&str) -> bool) -> Vec<SearchHit> {
+        self.index
+            .read()
+            .map(|index| index.search_in(query, limit, allow))
+            .unwrap_or_default()
+    }
+
+    fn docs(&self) -> DocIndex {
+        let docs = self
+            .meta
+            .catalog()
+            .rows()
+            .iter()
+            .filter(|row| is_document(&self.filter, &row.path))
+            .map(|row| Doc {
+                path: row.path.clone(),
+                file_tags: row.file_tags.clone(),
+                app_tags: row.app_tags.clone(),
+                description: row.description.clone(),
+            })
+            .collect();
+        // the app's tags are read-only while meta.toml cannot be read, and the lists are then shorter than they should be
+        let warning = self
+            .meta
+            .status()
+            .problem
+            .map(|problem| unreadable_meta(&problem));
+        DocIndex::new(docs, warning)
     }
 
     fn comments(&self) -> Vec<CommentView> {
@@ -370,9 +405,7 @@ impl AgentEvents for AgentSink {
 fn agent_bridge(
     vault: &Arc<Vault>,
     store: &StateStore,
-    index: &Arc<RwLock<Bm25Index>>,
-    unread: &Arc<UnreadService>,
-    comments: &Arc<CommentBook>,
+    backend: LiveBackend,
     sink: &Arc<dyn EventSink>,
     app_data: &Path,
 ) -> (AgentBridge, bool) {
@@ -380,12 +413,7 @@ fn agent_bridge(
         Arc::clone(vault),
         Endpoint::for_project(vault.root()),
         store.agent_path(),
-        Arc::new(LiveBackend {
-            index: Arc::clone(index),
-            unread: Arc::clone(unread),
-            comments: Arc::clone(comments),
-            app_data: app_data.to_path_buf(),
-        }),
+        Arc::new(backend),
         Arc::new(AgentSink(Arc::clone(sink))),
     );
     // the notes folder is private even where it lies inside the project: no tool of the connection reaches it
@@ -731,9 +759,14 @@ impl Workspace {
         let (agent, agent_wanted) = agent_bridge(
             &vault,
             &store,
-            &index,
-            &unread,
-            &comments,
+            LiveBackend {
+                index: Arc::clone(&index),
+                unread: Arc::clone(&unread),
+                comments: Arc::clone(&comments),
+                meta: Arc::clone(&meta),
+                filter: Arc::clone(&filter),
+                app_data: app_data_dir.to_path_buf(),
+            },
             sink,
             app_data_dir,
         );
@@ -1186,6 +1219,25 @@ impl Workspace {
         Ok(resolved.abs)
     }
 
+    /// The web page to hand to the system for "Open in browser": an `.html` or `.htm` file of the folder. The path must
+    /// stay inside the folder and name an existing file, and the refusals of "Open with default app" apply too (see
+    /// [`media::open_policy`]). Nothing but a web page goes this way: the person asked for the browser by name.
+    pub fn browser_target(&self, path: &str) -> Result<PathBuf, AppError> {
+        let resolved = self.resolve_path(path)?;
+        if !resolved.abs.is_file() {
+            return Err(VaultError::NotFound(path.to_owned()).into());
+        }
+        let is_page = resolved.abs.extension().is_some_and(|e| {
+            let e = e.to_string_lossy().to_ascii_lowercase();
+            BROWSER_EXTENSIONS.contains(&e.as_str())
+        });
+        if !is_page {
+            return Err(VaultError::Invalid(path.to_owned()).into());
+        }
+        media::check_openable(&resolved.abs)?;
+        Ok(resolved.abs)
+    }
+
     /// The file to hand to the person's editor command. It must stay inside the folder and name an existing file; any
     /// kind of file will do, because it is only ever an argument to the program the person chose (the program
     /// itself comes from their settings, never from the folder).
@@ -1308,6 +1360,21 @@ impl Workspace {
 
     pub fn meta_index(&self) -> Vec<IndexEntry> {
         self.meta.index()
+    }
+
+    /// The color and icon of every tag that has a look.
+    pub fn tag_styles(&self) -> BTreeMap<String, TagStyleView> {
+        self.meta.tag_styles()
+    }
+
+    /// Gives a tag a color and an icon; answers with every tag's look.
+    pub fn set_tag_style(
+        &self,
+        tag: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> Result<BTreeMap<String, TagStyleView>, AppError> {
+        Ok(self.meta.set_tag_style(tag, color, icon)?)
     }
 
     /// Removes the tags and descriptions kept for files that no longer exist. Returns how many.
@@ -1625,6 +1692,21 @@ impl WorkspaceHost {
         // After the previous folder let go: the same folder opened again takes over the agent connection's socket.
         workspace.activate();
         Ok(info)
+    }
+
+    /// Closes the open folder and leaves none open: the window goes back to the welcome screen. The folder's last visit
+    /// is saved and everything it ran stops, the agent connection included. Closing when nothing is open does nothing.
+    ///
+    /// Like opening, it waits for its turn behind a folder that is still being opened, and it counts as the newest
+    /// request, so an open that was asked for earlier and had not started is dropped rather than carried out afterwards.
+    pub fn close(&self) -> Result<(), AppError> {
+        let _turn = self
+            .gate
+            .lock()
+            .map_err(|_| AppError::Internal("application state is unavailable".to_owned()))?;
+        self.newest.fetch_add(1, Ordering::SeqCst);
+        self.shutdown();
+        Ok(())
     }
 
     /// Installs a workspace and returns the previous one.
@@ -3893,6 +3975,91 @@ exclude = [\"archive/**\"]
         ws.close();
     }
 
+    /// "Open in browser" takes web pages of the folder, and nothing else: the check is the path's and the file's kind.
+    #[test]
+    fn the_browser_is_asked_to_open_web_pages_of_the_folder_and_nothing_else() {
+        let fx = Fx::new();
+        for name in [
+            "index.html",
+            "old.htm",
+            "UPPER.HTML",
+            "site/page.html",
+            "my page #1.html",
+            "a.md",
+            "page.xhtml",
+            "page.html.exe",
+            "app.hta",
+            "run.bat",
+            "noext",
+        ] {
+            write(fx.project.path(), name, "<p>x</p>");
+        }
+        std::fs::create_dir(fx.project.path().join("dir.html")).expect("mkdir");
+        let ws = fx.open();
+        for ok in [
+            "index.html",
+            "old.htm",
+            "UPPER.HTML",
+            "site/page.html",
+            "my page #1.html",
+        ] {
+            assert!(ws.browser_target(ok).expect(ok).is_file(), "{ok}");
+        }
+        // anything that is not a web page is refused as an invalid path, whatever else could open it
+        for bad in [
+            "a.md",
+            "page.xhtml",
+            "page.html.exe",
+            "app.hta",
+            "run.bat",
+            "noext",
+        ] {
+            let error = ws.browser_target(bad).expect_err(bad);
+            assert_eq!(error.kind(), "invalidPath", "{bad}");
+            assert_eq!(error.details().subject.as_deref(), Some(bad), "{bad}");
+        }
+        // outside the folder, not there, or a folder
+        for bad in [
+            "dir.html",
+            "missing.html",
+            "../outside.html",
+            "/etc/index.html",
+            "C:\\index.html",
+        ] {
+            assert!(ws.browser_target(bad).is_err(), "{bad} must not be opened");
+        }
+        assert_eq!(
+            ws.browser_target("../outside.html")
+                .expect_err("escape")
+                .kind(),
+            "pathEscape"
+        );
+        ws.close();
+    }
+
+    /// A page that is a link to a program is judged by what it leads to, like every other file handed to the system.
+    #[cfg(unix)]
+    #[test]
+    fn a_web_page_that_is_a_link_to_a_program_is_not_opened_in_the_browser() {
+        let fx = Fx::new();
+        write(fx.project.path(), "tool.sh", "#!/bin/sh\n");
+        write(fx.project.path(), "real.html", "<p>x</p>");
+        std::os::unix::fs::symlink(
+            fx.project.path().join("tool.sh"),
+            fx.project.path().join("page.html"),
+        )
+        .expect("symlink");
+        std::os::unix::fs::symlink(
+            fx.project.path().join("real.html"),
+            fx.project.path().join("alias.html"),
+        )
+        .expect("symlink");
+        let ws = fx.open();
+        assert!(ws.browser_target("page.html").is_err());
+        assert!(ws.browser_target("alias.html").is_ok());
+        ws.close();
+    }
+
     #[test]
     fn external_and_reveal_targets_are_checked_like_every_other_path() {
         let fx = Fx::new();
@@ -4116,6 +4283,57 @@ exclude = [\"archive/**\"]
         write_until_reported(&fx.rec, fx.b.path(), "late-b.md", "B reports its change");
         assert!(!fs_paths(&fx.rec).contains(&"late-a.md".to_owned()));
         fx.host.shutdown();
+    }
+
+    #[test]
+    fn closing_the_folder_leaves_none_open_and_stops_its_events() {
+        let fx = HostFx::new();
+        fx.open(fx.a.path()).expect("open A");
+        assert!(fx.host.read_asset("only-in-a.png", None).is_ok());
+
+        fx.host.close().expect("close");
+
+        // Nothing is open: commands find no folder and the image protocol serves nothing.
+        assert!(matches!(fx.host.current(), Err(AppError::NoVault)));
+        assert_eq!(
+            fx.host
+                .read_asset("only-in-a.png", None)
+                .expect_err("closed")
+                .kind(),
+            "noVault"
+        );
+        // The folder that was closed reports nothing any more.
+        write(fx.a.path(), "late-a.md", "x");
+        thread::sleep(Duration::from_millis(700));
+        assert!(!fs_paths(&fx.rec).contains(&"late-a.md".to_owned()));
+    }
+
+    #[test]
+    fn a_window_with_no_folder_can_close_again_and_open_one_after_closing() {
+        let fx = HostFx::new();
+        fx.host.close().expect("closing nothing is fine");
+        fx.open(fx.a.path()).expect("open A");
+        fx.host.close().expect("close A");
+        fx.host.close().expect("closing twice is fine");
+        fx.open(fx.b.path()).expect("open B after closing");
+        assert_eq!(fx.current_root(), root_of(&fx.b));
+        write_until_reported(&fx.rec, fx.b.path(), "later.md", "B reports its change");
+        fx.host.shutdown();
+    }
+
+    #[test]
+    fn closing_the_folder_overtakes_an_open_request_that_was_waiting() {
+        let fx = HostFx::new();
+        let waiting = fx.host.request();
+        fx.host.close().expect("close");
+        let err = fx
+            .host
+            .open(waiting, &sink_of(&fx.rec), |sink| {
+                Workspace::open(fx.a.path(), fx.app.path(), None, sink)
+            })
+            .expect_err("superseded by the close");
+        assert_eq!(err.kind(), "superseded");
+        assert!(matches!(fx.host.current(), Err(AppError::NoVault)));
     }
 
     #[test]

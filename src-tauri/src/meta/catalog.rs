@@ -114,6 +114,11 @@ impl Catalog {
         Self { rows }
     }
 
+    /// Every file with what is known about its tags, sorted by path.
+    pub fn rows(&self) -> &[Row] {
+        &self.rows
+    }
+
     /// A copy in which the rows of the given files are replaced. Files that are not listed are left
     /// out: a new file needs a full scan.
     pub fn patched(&self, updates: Vec<Row>) -> Self {

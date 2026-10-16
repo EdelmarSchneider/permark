@@ -185,6 +185,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
+            commands::close_vault,
             commands::initial_path,
             commands::recent_vaults,
             commands::app_language,
@@ -208,6 +209,7 @@ pub fn run() {
             commands::absolute_path,
             commands::open_external,
             commands::open_with_default_app,
+            commands::open_in_browser,
             commands::open_in_editor,
             commands::editor_command,
             commands::set_editor_command,
@@ -222,6 +224,8 @@ pub fn run() {
             commands::list_tags,
             commands::files_with_tags,
             commands::meta_index,
+            commands::tag_styles,
+            commands::set_tag_style,
             commands::clean_up_meta,
             commands::document_source,
             commands::parse_blocks,

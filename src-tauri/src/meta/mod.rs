@@ -5,12 +5,13 @@
 //! once the project has a `.trailmark/` folder, a file in AppData before that). The pieces:
 //! [`normalize`] (how tags and descriptions are cleaned), [`filetags`] (front matter), [`store`] (the
 //! app's entries and the `meta.toml` format), [`catalog`] (counting and finding across the project),
-//! and [`service`] (one project's live metadata: delayed writes, the watcher, the answers for the UI).
+//! [`style`] (the optional color and icon of a tag, kept in the same file), and [`service`] (one project's live metadata: delayed writes, the watcher, the answers for the UI).
 
 pub mod catalog;
 pub mod filetags;
 pub mod normalize;
 pub mod service;
 pub mod store;
+pub mod style;
 
 pub use service::{MetaError, MetaService, Timing};

@@ -1,7 +1,33 @@
 /* =====================================================================================
-   Tags and descriptions (docs/design/v0.2.md section 1). Chips are neutral: no per-tag colors,
-   so the accent keeps its meaning.
+   Tags and descriptions (docs/design/v0.2.md section 1). Chips are neutral until a tag is given a color
+   or an icon (docs/design/tag-styles.md): the colors are the --tag-* palette, so the accent keeps its meaning.
    ===================================================================================== */
+
+/* The palette: an element with data-tag-color reads its color as --tag-fg ------------------ */
+[data-tag-color="gray"] {
+  --tag-fg: var(--tag-gray);
+}
+[data-tag-color="red"] {
+  --tag-fg: var(--tag-red);
+}
+[data-tag-color="orange"] {
+  --tag-fg: var(--tag-orange);
+}
+[data-tag-color="yellow"] {
+  --tag-fg: var(--tag-yellow);
+}
+[data-tag-color="green"] {
+  --tag-fg: var(--tag-green);
+}
+[data-tag-color="teal"] {
+  --tag-fg: var(--tag-teal);
+}
+[data-tag-color="blue"] {
+  --tag-fg: var(--tag-blue);
+}
+[data-tag-color="purple"] {
+  --tag-fg: var(--tag-purple);
+}
 
 /* Chip --------------------------------------------------------------------------------- */
 .tag-chip {
@@ -47,6 +73,19 @@ button.tag-chip__body:hover .tag-chip__name {
 .tag-chip--unknown {
   border-style: dashed;
   color: var(--muted);
+}
+/* a tag with a color: its name and icon in the color, on a tint of it (opaque, so the contrast does not depend on what is behind) */
+.tag-chip--colored {
+  border-color: color-mix(in srgb, var(--tag-fg) 32%, var(--bg));
+  background: color-mix(in srgb, var(--tag-fg) var(--tag-tint), var(--bg));
+  color: var(--tag-fg);
+}
+.tag-chip--colored .icon,
+.tag-chip--colored .tag-chip__remove {
+  color: inherit;
+}
+.tag-chip--colored .tag-chip__remove:hover {
+  background: color-mix(in srgb, var(--tag-fg) 18%, transparent);
 }
 .tag-chip__remove {
   display: inline-grid;
@@ -379,4 +418,125 @@ button.tag-chip__body:hover .tag-chip__name {
   border-top: 1px solid var(--border);
   color: var(--muted);
   font-size: var(--fs-ui-sm);
+}
+
+/* The mark of a tag in a list (Tags view, suggestions): its icon in its color, or a dot ---------- */
+.tag-mark-slot {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  flex: none;
+}
+.tag-mark {
+  display: inline-grid;
+  place-items: center;
+  color: var(--tag-fg, var(--muted));
+}
+.tag-mark__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* The popover that gives a tag a color and an icon -------------------------------------------- */
+.tag-style {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tag-style__preview {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+}
+.tag-style__label {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: var(--fs-ui-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.tag-style__colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px;
+}
+.tag-swatch {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--tag-fg) 55%, var(--bg));
+  border-radius: 50%;
+  background: var(--tag-fg);
+  color: var(--bg);
+  cursor: pointer;
+}
+.tag-swatch:hover:not(:disabled) {
+  box-shadow: 0 0 0 2px var(--hover);
+}
+.tag-swatch:disabled,
+.tag-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.tag-swatch--none {
+  border-color: var(--border-strong);
+  background:
+    linear-gradient(
+      to top right,
+      transparent calc(50% - 1px),
+      var(--muted) calc(50% - 1px),
+      var(--muted) calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ),
+    var(--bg);
+}
+.tag-swatch[aria-checked="true"] {
+  box-shadow:
+    0 0 0 2px var(--bg),
+    0 0 0 4px var(--accent);
+}
+.tag-style__icons {
+  display: grid;
+  grid-template-columns: repeat(7, 28px);
+  gap: 4px;
+  color: var(--tag-fg, var(--text));
+}
+.tag-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.tag-icon-btn:hover {
+  background: var(--hover);
+}
+.tag-icon-btn[aria-checked="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+/* "None" is not an icon: a struck-through circle in the muted color, whatever the tag's color */
+.tag-none-glyph {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--muted);
+  border-radius: 50%;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.75px),
+    var(--muted) calc(50% - 0.75px),
+    var(--muted) calc(50% + 0.75px),
+    transparent calc(50% + 0.75px)
+  );
 }

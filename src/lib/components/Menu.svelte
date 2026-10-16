@@ -9,6 +9,8 @@
         icon?: IconName;
         /** Right-aligned secondary text: a shortcut or a time. */
         hint?: string;
+        /** Right-aligned secondary text that is not a key combination (the folder of a file): shown as it is. */
+        detail?: string;
         checked?: boolean;
         disabled?: boolean;
         /** The tooltip: for an entry that is off, why. */
@@ -34,10 +36,20 @@
     anchor: Anchor;
     side?: "bottom" | "top" | "right";
     align?: "start" | "end";
+    /** A long list scrolls instead of running off the screen. */
+    scroll?: boolean;
     label: string;
     onclose: () => void;
   };
-  let { entries, anchor, side = "bottom", align = "start", label, onclose }: Props = $props();
+  let {
+    entries,
+    anchor,
+    side = "bottom",
+    align = "start",
+    scroll = false,
+    label,
+    onclose,
+  }: Props = $props();
 
   let list: HTMLElement | undefined = $state();
 
@@ -71,7 +83,7 @@
   }
 </script>
 
-<Popover {anchor} {side} {align} {label} {onclose} variant="menu">
+<Popover {anchor} {side} {align} {scroll} {label} {onclose} variant="menu">
   <div bind:this={list} role="presentation" {onkeydown} style="display:contents">
     {#each entries as entry, i (i)}
       {#if entry.type === "separator"}
@@ -99,6 +111,7 @@
             <Icon name={entry.icon} size="sm" />
           {/if}
           <span class="menu-item__label">{entry.label}</span>
+          {#if entry.detail}<span class="menu-item__detail">{entry.detail}</span>{/if}
           {#if entry.hint}<span class="menu-item__hint">{keys(entry.hint)}</span>{/if}
         </button>
       {/if}

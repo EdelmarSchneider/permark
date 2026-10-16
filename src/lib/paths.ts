@@ -27,6 +27,13 @@ export function isMarkdown(path: string): boolean {
   return DOC_EXTENSIONS.has(extname(path));
 }
 
+const WEB_PAGE_EXTENSIONS = new Set(["html", "htm"]);
+
+/** Web pages: the files "Open in browser" is offered for. The backend takes the same two extensions. */
+export function isWebPage(path: string): boolean {
+  return WEB_PAGE_EXTENSIONS.has(extname(path));
+}
+
 /** "@wt/feature-ui/docs/a.md" -> { worktree: "feature-ui", rel: "docs/a.md" }. */
 export function splitWorktree(path: string): { worktree: string | null; rel: string } {
   if (!path.startsWith(WT_PREFIX)) return { worktree: null, rel: path };

@@ -20,6 +20,7 @@ const camel = (snake: string): string => snake.replace(/_(\w)/g, (_, c: string) 
 /** One call per `Api` method; the type makes a new method fail to compile until it is listed here. */
 const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   openVault: ["/project"],
+  closeVault: [],
   initialPath: [],
   recentVaults: [],
   appLanguage: [],
@@ -43,6 +44,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   absolutePath: ["docs/a.md"],
   openExternal: ["docs/a.md"],
   openWithDefaultApp: ["assets/clip.mkv"],
+  openInBrowser: ["site/index.html"],
   openInEditor: ["src/main.rs", 42, 7],
   editorCommand: [],
   setEditorCommand: ["code -g {path}:{line}:{col}"],
@@ -57,6 +59,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   listTags: [],
   filesWithTags: [["spec"], false],
   metaIndex: [],
+  tagStyles: [],
+  setTagStyle: ["spec", "blue", "star"],
   cleanUpMeta: [],
   documentSource: ["docs/a.md"],
   parseBlocks: ["# Title"],

@@ -20,7 +20,9 @@ use serde::Serialize;
 
 use super::catalog::{combine_tags, Catalog, IndexEntry, Row, TagCount, TagRef, TaggedFile};
 use super::filetags;
+use super::normalize::normalize_tag;
 use super::store::{Entries, Entry, Problem, HEADER_LEN};
+use super::style::{TagStyle, TagStyleView};
 use crate::util::{hash_bytes, modified_ms, write_atomic};
 use crate::vault::{key, NodeKind, Vault, VaultError, WORKTREE_PREFIX};
 use crate::watch::{ChangeKind, FsChange};
@@ -168,6 +170,9 @@ struct Inner {
     /// What the dirty paths held when `meta.toml` became unreadable (`None`: no entry). They are laid
     /// back on top once it can be read again.
     parked: BTreeMap<String, Option<Entry>>,
+    /// Tags whose look was changed here and not written yet, and what they held (as `parked` does).
+    dirty_styles: BTreeSet<String>,
+    parked_styles: BTreeMap<String, Option<TagStyle>>,
     /// An AppData file from before the project had a `.trailmark/` folder, still to be merged in.
     legacy: Option<PathBuf>,
     /// Its content is merged into `entries`: delete it once that is written.
@@ -234,6 +239,8 @@ impl Inner {
             disk_hash: None,
             dirty: BTreeSet::new(),
             parked: BTreeMap::new(),
+            dirty_styles: BTreeSet::new(),
+            parked_styles: BTreeMap::new(),
             legacy: legacy.filter(|p| p.is_file()),
             retire: false,
         };
@@ -258,6 +265,11 @@ impl Inner {
                 .entry(path.clone())
                 .or_insert_with(|| mine.get(path).cloned());
         }
+        for tag in &self.dirty_styles {
+            self.parked_styles
+                .entry(tag.clone())
+                .or_insert_with(|| mine.style(tag).cloned());
+        }
         let (entries, problem, hash) = parse_bytes(bytes);
         self.entries = entries;
         self.problem = problem;
@@ -272,6 +284,9 @@ impl Inner {
                     self.entries.remove(&path);
                 }
             }
+        }
+        for (tag, style) in std::mem::take(&mut self.parked_styles) {
+            self.entries.put_style(&tag, style);
         }
         self.absorb_legacy();
     }
@@ -301,6 +316,12 @@ impl Inner {
         for (path, entry) in self.entries.iter() {
             if before.get(path) != Some(entry) {
                 self.dirty.insert(path.to_owned());
+                added = true;
+            }
+        }
+        for (tag, style) in self.entries.styles() {
+            if before.style(tag) != Some(style) {
+                self.dirty_styles.insert(tag.to_owned());
                 added = true;
             }
         }
@@ -334,7 +355,7 @@ struct Flushed {
 /// Writes `meta.toml` if anything changed here.
 fn flush(shared: &Mutex<Inner>) -> Flushed {
     let mut g = lock(shared);
-    if g.dirty.is_empty() || g.problem.is_some() {
+    if (g.dirty.is_empty() && g.dirty_styles.is_empty()) || g.problem.is_some() {
         // while the file cannot be read the changes wait (parked) until it can
         return Flushed::default();
     }
@@ -368,6 +389,7 @@ fn flush(shared: &Mutex<Inner>) -> Flushed {
             g.disk_hash = Some(hash_bytes(text.as_bytes()));
             g.write_error = None;
             g.dirty.clear();
+            g.dirty_styles.clear();
             if g.retire {
                 if let Some(legacy) = g.legacy.take() {
                     let _ = std::fs::remove_file(legacy);
@@ -512,7 +534,7 @@ impl MetaService {
             problem: g.problem.clone(),
             write_error: g.write_error.clone(),
             pending_changes: if g.problem.is_some() {
-                g.dirty.len()
+                g.dirty.len() + g.dirty_styles.len()
             } else {
                 0
             },
@@ -592,6 +614,45 @@ impl MetaService {
         let rel = self.own_path(path)?;
         self.change(&rel, |entries| entries.set_description(&rel, description))?;
         self.file_meta(&rel)
+    }
+
+    /// The tags that have a look, by name: what this version knows of each.
+    pub fn tag_styles(&self) -> BTreeMap<String, TagStyleView> {
+        lock(&self.inner)
+            .entries
+            .styles()
+            .filter_map(|(tag, style)| style.view().map(|view| (tag.to_owned(), view)))
+            .collect()
+    }
+
+    /// Gives a tag a color and an icon (`None` for none; a name outside the palette or the set means
+    /// none). Answers with every tag's look. The tag does not have to be on any file.
+    pub fn set_tag_style(
+        &self,
+        tag: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> Result<BTreeMap<String, TagStyleView>, MetaError> {
+        let Some(tag) = normalize_tag(tag) else {
+            return Ok(self.tag_styles());
+        };
+        let changed = {
+            let mut g = lock(&self.inner);
+            g.check_writable()?;
+            let before = g.entries.style(&tag).cloned();
+            g.entries.set_style(&tag, color, icon);
+            let changed = g.entries.style(&tag) != before.as_ref();
+            if changed {
+                g.dirty_styles.insert(tag);
+            }
+            changed
+        };
+        if changed {
+            // the answers computed from the files do not depend on a look: only the writer and the UI are told
+            let _ = self.tx.send(Msg::Touch);
+            (self.notify)();
+        }
+        Ok(self.tag_styles())
     }
 
     fn change(&self, rel: &str, apply: impl FnOnce(&mut Entries)) -> Result<(), MetaError> {
@@ -880,7 +941,7 @@ impl MetaService {
                 g.watched = watched;
                 return Ok(());
             }
-            if g.problem.is_none() && !g.dirty.is_empty() {
+            if g.problem.is_none() && !(g.dirty.is_empty() && g.dirty_styles.is_empty()) {
                 // the latest changes are not safe in the old place yet: stay there
                 let why = g
                     .write_error

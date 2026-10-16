@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LanguagePreference } from "./i18n";
+import { readStyles, type TagColor, type TagIcon, type TagStyles } from "./tagStyle";
 import type { Tone } from "./tone";
 import type {
   AgentContext,
@@ -91,6 +92,8 @@ export type Unlisten = () => void;
 
 export interface Api {
   openVault(path: string): Promise<VaultInfo>;
+  /** Closes the open folder: the window has no project afterwards (the welcome screen). Nothing on disk is touched. */
+  closeVault(): Promise<void>;
   /** The path the app starts with: the one the system opened it with, else the CLI argument, if any. */
   initialPath(): Promise<string | null>;
   recentVaults(): Promise<RecentVault[]>;
@@ -134,6 +137,8 @@ export interface Api {
    * kind of file, such as ".ps1") for a program, script, installer, shortcut or macro document: those are never opened.
    */
   openWithDefaultApp(path: string): Promise<void>;
+  /** Opens a web page (`.html`, `.htm`) of the folder in the system's browser. Any other file is refused. */
+  openInBrowser(path: string): Promise<void>;
   /**
    * Opens a file of the folder in the person's editor at a line and column (from 1): runs the editor command of the
    * settings, or the system's default application when there is none. Rejects with kind "editor" (and a `reason`:
@@ -163,6 +168,10 @@ export interface Api {
   filesWithTags(tags: string[], untagged: boolean): Promise<TaggedFile[]>;
   /** The tags and description of every file that has some. */
   metaIndex(): Promise<IndexEntry[]>;
+  /** The color and icon of every tag that has a look, by tag name. */
+  tagStyles(): Promise<TagStyles>;
+  /** Gives a tag a color and an icon (`null` for none). Resolves to every tag's look. */
+  setTagStyle(tag: string, color: TagColor | null, icon: TagIcon | null): Promise<TagStyles>;
   /** Removes the entries kept for files that no longer exist. Resolves to how many. */
   cleanUpMeta(): Promise<number>;
   /** A Markdown file as the editor needs it: the exact text, its hash and its blocks. Rejects for files that can't be edited. */
@@ -331,6 +340,7 @@ export interface Api {
 
 export const tauriApi: Api = {
   openVault: (path) => invoke<VaultInfo>("open_vault", { path }),
+  closeVault: () => invoke<void>("close_vault"),
   initialPath: () => invoke<string | null>("initial_path"),
   recentVaults: () => invoke<RecentVault[]>("recent_vaults"),
   appLanguage: () => invoke<LanguagePreference>("app_language"),
@@ -356,6 +366,7 @@ export const tauriApi: Api = {
   absolutePath: (path) => invoke<string>("absolute_path", { path }),
   openExternal: (path) => invoke<void>("open_external", { path }),
   openWithDefaultApp: (path) => invoke<void>("open_with_default_app", { path }),
+  openInBrowser: (path) => invoke<void>("open_in_browser", { path }),
   openInEditor: (path, line, col) => invoke<void>("open_in_editor", { path, line, col }),
   editorCommand: () => invoke<string>("editor_command"),
   setEditorCommand: (command) => invoke<void>("set_editor_command", { command }),
@@ -371,6 +382,9 @@ export const tauriApi: Api = {
   listTags: () => invoke<TagOverview>("list_tags"),
   filesWithTags: (tags, untagged) => invoke<TaggedFile[]>("files_with_tags", { tags, untagged }),
   metaIndex: () => invoke<IndexEntry[]>("meta_index"),
+  tagStyles: async () => readStyles(await invoke<unknown>("tag_styles")),
+  setTagStyle: async (tag, color, icon) =>
+    readStyles(await invoke<unknown>("set_tag_style", { tag, color, icon })),
   cleanUpMeta: () => invoke<number>("clean_up_meta"),
   documentSource: (path) => invoke<SourceDoc>("document_source", { path }),
   parseBlocks: (text) => invoke<ParsedBlocks>("parse_blocks", { text }),
@@ -487,6 +501,7 @@ function createMockApi(): Api {
       load().then((impl) => (impl[name] as (...a: unknown[]) => unknown)(...args))) as Api[K];
   return {
     openVault: command("openVault"),
+    closeVault: command("closeVault"),
     initialPath: command("initialPath"),
     recentVaults: command("recentVaults"),
     appLanguage: command("appLanguage"),
@@ -510,6 +525,7 @@ function createMockApi(): Api {
     absolutePath: command("absolutePath"),
     openExternal: command("openExternal"),
     openWithDefaultApp: command("openWithDefaultApp"),
+    openInBrowser: command("openInBrowser"),
     openInEditor: command("openInEditor"),
     editorCommand: command("editorCommand"),
     setEditorCommand: command("setEditorCommand"),
@@ -524,6 +540,8 @@ function createMockApi(): Api {
     listTags: command("listTags"),
     filesWithTags: command("filesWithTags"),
     metaIndex: command("metaIndex"),
+    tagStyles: command("tagStyles"),
+    setTagStyle: command("setTagStyle"),
     cleanUpMeta: command("cleanUpMeta"),
     documentSource: command("documentSource"),
     parseBlocks: command("parseBlocks"),

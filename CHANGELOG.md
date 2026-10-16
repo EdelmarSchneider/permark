@@ -5,6 +5,38 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-16
+
+Tags get colors and icons and help your agent find the right documents; switch folders, retrace your steps, and open web pages in the browser.
+
+### Added
+- **Your agent can find the right documents by their tags.** A new `list_tags` tool shows which tags your documents carry, how many documents
+  have each, where each tag comes from (the documents or TrailMark) and how many documents have no tag at all; give it a tag to see the
+  documents that have it, each with its description. `search` takes an optional list of tags to look only in the documents that have all of
+  them, and every hit now names its document's tags and description; with tags and no words it lists those documents instead. In a project
+  of a thousand documents an agent can narrow down in a call or two and read only the few that fit. Answers stay short (long lists show the
+  first ones and say how many more there are, and `limit` asks for more), and everything works when TrailMark is closed, from the project's
+  files.
+- **Give a tag a color and an icon.** Right-click a tag in the Tags view (or press the menu key or Shift+F10 on it) and choose **Color and
+  icon...**: pick one of eight colors and one of twelve icons, with a live preview, and the tag looks that way everywhere it shows, so you can
+  tell at a glance what kind of document you are looking at: in the strip above a document, in the tag editor and its suggestions, in the
+  search boxes and in the Tags view. The colors are tuned to stay readable in the dark theme and in every light tone. A tag with neither looks
+  as before. The choice is kept per project, in `.trailmark/meta.toml` with the rest of your tags (`[tag_styles.<tag>]`), so it travels with the
+  project.
+- **Open web pages in your browser.** An `.html` or `.htm` file in your folder now has **Open in browser**: in its right-click menu in the
+  Explorer, in the **...** menu of the open page, and in the command palette. The page opens in the application your system uses for web
+  pages, which is your browser on almost every computer.
+- **See where you have been, and jump back to it.** Right-click (or press and hold) the **Back** or **Forward** button to list the documents
+  on that side, nearest first with the folder beside each name, and pick one to go straight there; Back and Forward carry on from that
+  place, like in a browser. **Go to a recent place...** in the command palette lists your whole trail. The menus work from the keyboard too
+  (the menu key or Shift+F10 on the focused button).
+- **Switch folders without leaving the window.** The project's name at the top of the Explorer is now a menu (the little arrow beside it
+  says so). It lists your recent folders, with the open one ticked: pick one to show it in this window, or use **Open folder...** and
+  **Close folder**, which takes you back to the start screen. A small **x** beside a folder takes it off the list; only the list forgets
+  it, the folder and its files stay where they are. If you have unsaved edits, TrailMark asks to save them first, as it does for any
+  other move. The same menu opens from the command palette (**Switch folder...**, **Close folder**), and the project's name stays in
+  view while a long file tree scrolls.
+
 ## [0.5.4] - 2026-10-16
 
 TrailMark speaks Italian, the light theme comes in softer tones, and the Git letters explain themselves.

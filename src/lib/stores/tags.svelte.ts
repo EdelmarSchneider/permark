@@ -13,6 +13,15 @@ import {
   type NamedCount,
   type TagSelection,
 } from "../tagModel";
+import {
+  hasLook,
+  NO_STYLES,
+  withStyle,
+  type TagColor,
+  type TagIcon,
+  type TagStyle,
+  type TagStyles,
+} from "../tagStyle";
 import type { FileMeta, IndexEntry, TaggedFile, TagOverview } from "../types";
 import { toast } from "./toast.svelte";
 import { ui } from "./ui.svelte";
@@ -29,6 +38,8 @@ class TagsStore {
   known = $derived<ReadonlySet<string>>(new Set(this.counts.map((c) => c.name)));
   /** The Tags view's numbers and the state of `meta.toml`. */
   overview = $state.raw<TagOverview | null>(null);
+  /** The color and icon of the tags that have a look (every chip and list of tags reads it). */
+  styles = $state.raw<TagStyles>(NO_STYLES);
   /** The open document's tags; check `meta.path` before using it. */
   meta = $state.raw<FileMeta | null>(null);
   selection = $state.raw<TagSelection>(NO_SELECTION);
@@ -36,7 +47,7 @@ class TagsStore {
   files = $state.raw<TaggedFile[]>([]);
   filter = $state("");
 
-  private tokens = { index: 0, overview: 0, files: 0, meta: 0 };
+  private tokens = { index: 0, overview: 0, files: 0, meta: 0, styles: 0 };
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   reset(): void {
@@ -44,6 +55,7 @@ class TagsStore {
     this.timer = null;
     for (const key of Object.keys(this.tokens) as (keyof typeof this.tokens)[]) this.tokens[key]++;
     this.index = new Map();
+    this.styles = NO_STYLES;
     this.overview = null;
     this.meta = null;
     this.selection = NO_SELECTION;
@@ -61,6 +73,21 @@ class TagsStore {
     } catch {
       // keep what is shown; the next change refreshes it
     }
+  }
+
+  async refreshStyles(): Promise<void> {
+    const token = ++this.tokens.styles;
+    try {
+      const styles = await api.tagStyles();
+      if (token === this.tokens.styles) this.styles = styles;
+    } catch {
+      // keep what is shown; the next change refreshes it
+    }
+  }
+
+  /** How a tag looks, or nothing when it has no color and no icon. */
+  styleOf(name: string): TagStyle | undefined {
+    return this.styles.get(name);
   }
 
   async refreshOverview(): Promise<void> {
@@ -113,6 +140,7 @@ class TagsStore {
   /** Something changed that the tag lists may show: refreshes what is on screen. */
   refreshAll(): void {
     void this.refreshIndex();
+    void this.refreshStyles();
     void this.refreshMeta();
     if (ui.sidebarView === "tags" || ui.tagEditor !== null) void this.refreshOverview();
     if (ui.sidebarView === "tags") void this.refreshFiles();
@@ -158,6 +186,23 @@ class TagsStore {
     } catch (error) {
       toast.message(t("tags.saveFailed", { message: errorMessage(error) }), "warn");
       await this.preload(path);
+      return false;
+    }
+  }
+
+  /** Gives a tag a color and an icon (`null` for none). Resolves to false when the change was refused. */
+  async setStyle(tag: string, color: TagColor | null, icon: TagIcon | null): Promise<boolean> {
+    // shown at once, so a preview and a second pick made before the answer arrives build on this one
+    const token = ++this.tokens.styles;
+    const next: TagStyle = { color, icon };
+    this.styles = withStyle(this.styles, tag, hasLook(next) ? next : null);
+    try {
+      const styles = await api.setTagStyle(tag, color, icon);
+      if (token === this.tokens.styles) this.styles = styles;
+      return true;
+    } catch (error) {
+      toast.message(t("tags.saveFailed", { message: errorMessage(error) }), "warn");
+      await this.refreshStyles();
       return false;
     }
   }
