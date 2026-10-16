@@ -1,5 +1,10 @@
 <script lang="ts" module>
   import Bold from "@lucide/svelte/icons/bold";
+  import Bookmark from "@lucide/svelte/icons/bookmark";
+  import Calendar from "@lucide/svelte/icons/calendar";
+  import Flag from "@lucide/svelte/icons/flag";
+  import Star from "@lucide/svelte/icons/star";
+  import User from "@lucide/svelte/icons/user";
   import Bot from "@lucide/svelte/icons/bot";
   import BookOpen from "@lucide/svelte/icons/book-open";
   import Code from "@lucide/svelte/icons/code";
@@ -88,6 +93,11 @@
   // The one icon set of the app (Lucide), registered by name so components stay tree-shakeable.
   export const icons = {
     bold: Bold,
+    bookmark: Bookmark,
+    calendar: Calendar,
+    flag: Flag,
+    star: Star,
+    user: User,
     bot: Bot,
     "book-open": BookOpen,
     code: Code,

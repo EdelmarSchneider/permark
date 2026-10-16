@@ -1,7 +1,10 @@
 <script lang="ts">
   import { t, tn } from "../i18n";
   import type { Suggestion } from "../tagModel";
+  import { tags } from "../stores/tags.svelte";
+  import { hasLook } from "../tagStyle";
   import { highlightSegments } from "../text";
+  import TagMark from "./TagMark.svelte";
 
   type Props = {
     id: string;
@@ -12,6 +15,11 @@
     onhover?: (index: number) => void;
   };
   let { id, rows, active, label = t("tags.suggestions"), onpick, onhover }: Props = $props();
+
+  // once any suggested tag has a look, every row keeps a slot for its mark so the names stay lined up
+  const anyStyled = $derived(
+    rows.some((row) => row.type === "tag" && hasLook(tags.styleOf(row.match.tag.name))),
+  );
 </script>
 
 <div {id} class="tag-suggest" role="listbox" aria-label={label}>
@@ -29,6 +37,12 @@
       onclick={() => onpick(row)}
     >
       {#if row.type === "tag"}
+        {#if anyStyled}
+          {@const look = tags.styleOf(row.match.tag.name)}
+          <span class="tag-mark-slot"
+            >{#if look}<TagMark style={look} />{/if}</span
+          >
+        {/if}
         <span class="tag-suggest__name">
           {#each highlightSegments(row.match.tag.name, row.match.positions) as seg, s (s)}{#if seg.match}<b
                 >{seg.text}</b

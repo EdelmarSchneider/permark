@@ -2,7 +2,8 @@
 // documents' front matter. A small port of the Rust catalog, enough to drive the UI in a browser.
 
 import { emitMock } from "../api";
-import { normalizeDescription, normalizeTags } from "../tagText";
+import { hasLook, withStyle, type TagColor, type TagIcon, type TagStyles } from "../tagStyle";
+import { normalizeDescription, normalizeTag, normalizeTags } from "../tagText";
 import type {
   FileMeta,
   IndexEntry,
@@ -36,6 +37,12 @@ const entries = new Map<string, Entry>([
   ["plan.md", { tags: [], description: "The work in three tasks, and where we are." }],
   // the file is gone: it shows up as a missing-file entry
   ["docs/old/retired.md", { tags: ["spec"], description: "Replaced by the live feed spec." }],
+]);
+
+/** The looks of tags, by name: a couple are set so the mock shows chips in color. */
+let styles: TagStyles = new Map([
+  ["spec", { color: "blue", icon: "book-open" }],
+  ["needs-review", { color: "orange", icon: "flag" }],
 ]);
 
 /** What the mock controls toggle: an unreadable meta.toml (a merge conflict). */
@@ -182,4 +189,18 @@ export function cleanUp(): number {
   for (const path of missing) entries.delete(path);
   if (missing.length > 0) notify();
   return missing.length;
+}
+
+export function tagStyles(): TagStyles {
+  return styles;
+}
+
+export function setTagStyle(tag: string, color: TagColor | null, icon: TagIcon | null): TagStyles {
+  guard("");
+  const name = normalizeTag(tag);
+  if (name === null) return styles;
+  const next = { color, icon };
+  styles = withStyle(styles, name, hasLook(next) ? next : null);
+  notify();
+  return styles;
 }

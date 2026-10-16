@@ -125,6 +125,18 @@
   --git-added-text: #1a7f37;
   --git-deleted-text: #cf222e;
   --git-renamed-text: #8250df;
+  /* tag colors (the palette a tag can wear, see tagStyle.ts): the text and icon color of a tagged chip, which sits on a
+     tint of itself (--tag-tint of it over the page). Dark enough for 4.5:1 on the tint and on every surface of every
+     light tone; tagStyle.test.ts holds them to it. Opt-in per tag, so the accent keeps its meaning elsewhere. */
+  --tag-tint: 12%;
+  --tag-gray: #515962;
+  --tag-red: #a81f26;
+  --tag-orange: #9a4108;
+  --tag-yellow: #7d5700;
+  --tag-green: #146229;
+  --tag-teal: #0a6560;
+  --tag-blue: #1a58b8;
+  --tag-purple: #6b3fc4;
   /* find / search marks: neutral, so the accent keeps meaning "live change" */
   --mark: #fff0a3;
   --mark-strong: #ffd33d;
@@ -250,6 +262,14 @@
   --git-added-text: #3fb950;
   --git-deleted-text: #f85149;
   --git-renamed-text: #a371f7;
+  --tag-gray: #a9b1bb;
+  --tag-red: #ff8a85;
+  --tag-orange: #ffa35c;
+  --tag-yellow: #e6b84a;
+  --tag-green: #5fd47a;
+  --tag-teal: #4fd1c5;
+  --tag-blue: #79b4ff;
+  --tag-purple: #c29bff;
   --mark: rgb(242 204 96 / 0.26);
   --mark-strong: rgb(242 204 96 / 0.55);
   --zebra: #1a1c1f;

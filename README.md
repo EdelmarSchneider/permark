@@ -159,6 +159,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   can read it), or in the app's own storage before that. Renaming or moving a file keeps its tags
 - A **Tags view** (`Ctrl+Shift+T`) lists every tag with its number of files. Pick one, or `Ctrl+click` several to narrow the list
 - Descriptions and tags show up where you look for files: tree tooltips, quick open, search results
+- Give a tag a **color** and an **icon** (right-click it in the Tags view) to see at a glance what kind of document you are in front of
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-tags-dark.png">

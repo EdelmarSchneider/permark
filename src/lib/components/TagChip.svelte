@@ -1,5 +1,6 @@
 <script lang="ts">
   import { t } from "../i18n";
+  import { tags } from "../stores/tags.svelte";
   import Icon from "./Icon.svelte";
 
   type Props = {
@@ -29,14 +30,29 @@
   }: Props = $props();
 
   const hint = $derived(file ? t("tags.fromFileHint") : title);
+  // the tag's own color and icon, when it has them (a tag with neither looks as it always did)
+  const look = $derived(tags.styleOf(name));
 </script>
 
 {#snippet content()}
-  {#if file}<Icon name="file-text" size="xs" />{/if}
+  {#if look?.icon}
+    <Icon name={look.icon} size="xs" />
+  {:else if file}
+    <Icon name="file-text" size="xs" />
+  {/if}
   <span class="tag-chip__name">{name}</span>
 {/snippet}
 
-<span class={["tag-chip", file && "tag-chip--file", unknown && "tag-chip--unknown"]} title={hint}>
+<span
+  class={[
+    "tag-chip",
+    file && "tag-chip--file",
+    unknown && "tag-chip--unknown",
+    look?.color && "tag-chip--colored",
+  ]}
+  data-tag-color={look?.color ?? undefined}
+  title={hint}
+>
   {#if onclick}
     <button type="button" class="tag-chip__body" {onclick}>{@render content()}</button>
   {:else}

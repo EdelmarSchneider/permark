@@ -59,6 +59,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   listTags: [],
   filesWithTags: [["spec"], false],
   metaIndex: [],
+  tagStyles: [],
+  setTagStyle: ["spec", "blue", "star"],
   cleanUpMeta: [],
   documentSource: ["docs/a.md"],
   parseBlocks: ["# Title"],
