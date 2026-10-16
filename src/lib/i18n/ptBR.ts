@@ -765,7 +765,7 @@ export const ptBR = {
   "error.binary": "{subject} é um arquivo binário e não pode ser editado.",
   "error.tooLarge": "{subject} é grande demais.",
   "error.blockedType":
-    "O TrailMark não abre programas nem scripts ({subject}), porque eles poderiam ser executados. Mostre o arquivo no gerenciador de arquivos se quiser executá-lo você mesmo.",
+    "O TrailMark não abre programas, scripts nem documentos que podem executar código ({subject}). Mostre o arquivo no gerenciador de arquivos se quiser abri-lo você mesmo.",
   "error.notMarkdown": "{subject} não é um arquivo Markdown.",
   "error.encoding": "{subject} não é texto UTF-8 e não pode ser editado aqui.",
   "error.exists": "{subject} já existe.",

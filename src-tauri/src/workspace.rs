@@ -46,7 +46,7 @@ use crate::session::{
     WindowState,
 };
 use crate::unread::{Timing as UnreadTiming, UnreadService};
-use crate::util::{modified_ms, now_ms, on_parser_stack, read_with_retry};
+use crate::util::{modified_ms, now_ms, on_parser_stack};
 use crate::vault::{NodeKind, Resolved, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
@@ -1091,13 +1091,15 @@ impl Workspace {
     /// A picture is read whole (up to [`media::MAX_WHOLE`]). A sound or video is cut: only the part asked for is read, at
     /// most [`media::MAX_CHUNK`] bytes, so a long film is never held in memory.
     fn read_media(vault: &Vault, path: &str, range: Option<&str>) -> Result<Asset, AppError> {
-        let (kind, mime) = media::asset_kind(path)
-            .zip(media::asset_mime(path))
-            .ok_or_else(|| VaultError::Invalid(format!("not a picture, sound or video: {path}")))?;
+        let not_media = || VaultError::Invalid(format!("not a picture, sound or video: {path}"));
+        // the name asked for says a picture, a sound or a video (nothing else is looked up)...
+        media::asset_kind(path).ok_or_else(not_media)?;
         let resolved = vault.resolve(path)?;
         if vault.is_shallow() && resolved.rel.contains('/') {
             return Err(VaultError::Escapes(path.to_owned()).into());
         }
+        // ...and so does the name of the file it leads to: a link `a.png` that points at `.env` serves nothing
+        let (kind, mime) = media::served_as(path, &resolved.rel).ok_or_else(not_media)?;
         let io_err = |e| VaultError::io(&resolved.abs, e);
         let meta = std::fs::metadata(&resolved.abs).map_err(io_err)?;
         if !meta.is_file() {
@@ -1118,7 +1120,11 @@ impl Workspace {
             Window::Whole
         };
         let (bytes, part) = match window {
-            Window::Whole => (read_with_retry(&resolved.abs).map_err(io_err)?, Part::Whole),
+            // at most what the file measured above, which is what the size limit was checked on
+            Window::Whole => (
+                media::read_whole(&resolved.abs, total).map_err(io_err)?,
+                Part::Whole,
+            ),
             Window::Part { start, end } => {
                 let bytes = media::read_part(&resolved.abs, start, end).map_err(io_err)?;
                 // the file got shorter than the answer was planned for: say what is really carried
@@ -3756,6 +3762,63 @@ exclude = [\"archive/**\"]
                 "{bad}"
             );
         }
+        ws.close();
+    }
+
+    /// What is served is judged by the name of the file a link leads to, not by the name of the link: `a.png` that points
+    /// at `.env` is not a picture. Where a file link cannot be made without privileges (Windows) the test has nothing to
+    /// make a link with and says so by passing without one.
+    #[test]
+    fn a_link_named_like_a_picture_that_leads_to_another_file_serves_nothing() {
+        let fx = Fx::new();
+        write(fx.project.path(), ".env", "TOKEN=secret");
+        write(fx.project.path(), "notes/key.txt", "SECRET");
+        write(fx.project.path(), "real.png", "PNGDATA");
+        write(fx.project.path(), "real.mp4", "VIDEODATA");
+        let link = |from: &str, to: &str| -> bool {
+            let (from, to) = (fx.project.path().join(from), fx.project.path().join(to));
+            #[cfg(unix)]
+            let made = std::os::unix::fs::symlink(&to, &from).is_ok();
+            #[cfg(windows)]
+            let made = std::os::windows::fs::symlink_file(&to, &from).is_ok();
+            made
+        };
+        let made = [
+            link("a.png", ".env"),
+            link("clip.mp4", "notes/key.txt"),
+            // a link between pictures is served as the picture it leads to
+            link("cover.jpg", "real.png"),
+            link("latest.mp4", "real.mp4"),
+        ];
+        let ws = fx.open();
+        let linked = made.iter().all(|made| *made);
+        // macOS and Linux always allow a symbolic link; Windows only with a privilege most accounts do not have
+        #[cfg(unix)]
+        assert!(linked, "a symbolic link could not be made");
+        if linked {
+            for bad in ["a.png", "clip.mp4"] {
+                assert_eq!(
+                    ws.read_asset(bad, Some("bytes=0-"))
+                        .expect_err("not a picture")
+                        .kind(),
+                    "invalidPath",
+                    "{bad}"
+                );
+            }
+            let cover = ws.read_asset("cover.jpg", None).expect("a picture");
+            assert_eq!(
+                (cover.mime, cover.bytes.as_slice()),
+                ("image/png", &b"PNGDATA"[..])
+            );
+            let latest = ws.read_asset("latest.mp4", None).expect("a video");
+            assert_eq!(latest.mime, "video/mp4");
+        }
+        // whatever the system allows, the real files are served as what they are
+        assert_eq!(
+            ws.read_asset("real.png", None).expect("png").mime,
+            "image/png"
+        );
+        assert!(ws.read_asset(".env", None).is_err());
         ws.close();
     }
 

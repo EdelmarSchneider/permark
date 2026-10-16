@@ -78,14 +78,14 @@ describe("Open with default app", () => {
     fake.openWithDefaultApp.mockRejectedValue({
       kind: "blockedType",
       subject: ".ps1",
-      message: ".ps1 files are programs or scripts and are not opened from here",
+      message: ".ps1 files can run code and are not opened from here",
     });
     await app.openWithDefaultApp("tools/run.ps1");
     expect(toast.current).toMatchObject({ type: "message", tone: "warn" });
     const current = toast.current;
     if (current?.type !== "message") throw new Error("a message was expected");
     expect(current.text).toContain(".ps1");
-    expect(current.text).toMatch(/programs or scripts/);
+    expect(current.text).toMatch(/programs, scripts or documents that can run code/);
     expect(current.action?.label).toBe("Show in file manager");
     fake.revealInFolder.mockResolvedValue(undefined);
     current.action?.run();

@@ -411,7 +411,7 @@ mod tests {
             json(&e),
             serde_json::json!({
                 "kind": "blockedType",
-                "message": ".ps1 files are programs or scripts and are not opened from here",
+                "message": ".ps1 files can run code (programs, scripts, installers, shortcuts, documents with macros) and are not opened from here",
                 "subject": ".ps1"
             })
         );

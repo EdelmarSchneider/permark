@@ -772,7 +772,7 @@ export const de = {
   "error.binary": "{subject} ist eine Binärdatei und kann nicht bearbeitet werden.",
   "error.tooLarge": "{subject} ist zu groß.",
   "error.blockedType":
-    "TrailMark öffnet keine Programme oder Skripte ({subject}), weil sie ausgeführt werden könnten. Die Datei im Dateimanager anzeigen, um sie selbst auszuführen.",
+    "TrailMark öffnet keine Programme, Skripte oder Dokumente, die Code ausführen können ({subject}). Die Datei im Dateimanager anzeigen, um sie selbst zu öffnen.",
   "error.notMarkdown": "{subject} ist keine Markdown-Datei.",
   "error.encoding": "{subject} ist kein UTF-8-Text und kann hier nicht bearbeitet werden.",
   "error.exists": "{subject} existiert bereits.",

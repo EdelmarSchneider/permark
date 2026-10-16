@@ -158,7 +158,7 @@ export const mockImpl: Api = {
       throw {
         kind: "blockedType",
         subject: `.${ext}`,
-        message: `.${ext} files are programs or scripts and are not opened from here`,
+        message: `.${ext} files can run code (programs, scripts, installers, shortcuts, documents with macros) and are not opened from here`,
       };
     }
     console.info("[mock] open with the default app:", path);

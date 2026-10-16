@@ -113,7 +113,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   pane. Nothing starts by itself: `autoplay` is dropped, and a player only reads the length of its file until you press play.
 - **Open with default app** hands a file the pane cannot show to the program your system has for its type: a button in the pane, an item
   in the Explorer's right-click menu, and a command (`Ctrl+Shift+P`). Programs and scripts (`.exe`, `.bat`, `.ps1`, `.sh`, `.app`,
-  `.lnk`, installers, macro documents and the like) are never opened from a click; TrailMark says which kind of file it refused and offers
+  `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; TrailMark says which kind of file it refused and offers
   to show it in the file manager. Files outside the open folder are never served, and a link that leaves it is not followed.
 - **The Explorer filter has an Audio and video category.** *Docs and assets* shows them by the same rules as images: next to a document, in
   a folder named like `assets`, `images`, `video`, `audio` or `clips`, or when a document links to them. Quick open and Search everywhere

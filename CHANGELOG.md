@@ -21,8 +21,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Open with default app.** Any file of the project can go to the program the system has for it: a button on the pane of a file TrailMark cannot
   show, an item in the Explorer's context menu (for every file but a Markdown document), an item in the header's menu, and a command. It is separate
   from **Open in external editor**, which uses your editor command. Programs and scripts (`.exe`, `.msi`, `.bat`, `.cmd`, `.ps1`, `.vbs`, `.js`,
-  `.lnk`, `.url`, `.sh`, `.app`, `.pkg`, `.deb`, `.rpm`, `.appimage`, macro documents, anything with an execute permission on macOS and Linux and
-  the like) are refused with a message that names the kind of file; the check is on the real file, after links are followed.
+  `.lnk`, `.url`, `.sh`, `.app`, `.pkg`, `.deb`, `.rpm`, `.appimage`, `.website`, `.rdp`, Access databases, macro documents and the older Office
+  formats that can hold macros (`.doc`, `.xls`, `.ppt`), every type of `%PATHEXT%` on Windows, anything with an execute permission on macOS and Linux
+  and the like) are refused with a message that names the kind of file; the check is on the real file, after links are followed, and a name that
+  ends in a dot or a space is no document on macOS and Linux.
 - **An Audio and video category in the Explorer filter.** *Docs and assets* includes it under the rules images have (next to a document, in a
   folder such as `assets`, `images`, `media`, `audio`, `video`, `sounds`, `movies` or `clips`, or linked from a document), and the hint says so. The tree
   has an icon each for images, sound and video.

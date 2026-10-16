@@ -744,7 +744,7 @@ export const en = {
   "error.binary": "{subject} is a binary file, so it can't be edited.",
   "error.tooLarge": "{subject} is too large.",
   "error.blockedType":
-    "TrailMark doesn't open programs or scripts ({subject}), because they could run. Show the file in the file manager if you want to run it yourself.",
+    "TrailMark doesn't open programs, scripts or documents that can run code ({subject}). Show the file in the file manager if you want to open it yourself.",
   "error.notMarkdown": "{subject} isn't a Markdown file.",
   "error.encoding": "{subject} isn't UTF-8 text, so it can't be edited here.",
   "error.exists": "{subject} already exists.",
