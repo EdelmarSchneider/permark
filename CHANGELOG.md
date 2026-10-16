@@ -21,6 +21,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
   make an empty one in its place.
 
 ### Fixed
+- **Live changes: an edited block is no longer also shown as removed.** When a save changed a table (an edited cell and a new row) and the
+  paragraph after it (a reworded sentence), both blocks glowed, but a "2 blocks removed" marker also appeared below them for their old
+  versions, although nothing had been removed. An edited block is now matched with its old version and only glows. A block that moved glows
+  where it landed, with no marker. The marker stays for blocks that were really deleted, so a deletion next to a change shows exactly one.
+  A block rewritten beyond recognition is still shown as removed and added.
 - **No question about the default notes folder.** TrailMark makes `Documents/TrailMark Notes` (and the folders above it) by itself the first
   time notes are needed, instead of asking whether to create it. A notes folder you chose in **Settings → Notes** that has gone missing (an
   unplugged drive, a renamed folder) is still reported, with **Locate...** and **Create it**, and is never created quietly.
