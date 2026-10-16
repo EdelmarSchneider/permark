@@ -2,13 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   FIT,
   ZOOM_STEPS,
+  centreOf,
   drawnSize,
   fitScale,
   percentLabel,
   scaleOf,
+  scrollToCentre,
   stepZoom,
   toggleActualSize,
   type ImageZoom,
+  type Viewport,
 } from "./imageZoom";
 
 describe("fitScale", () => {
@@ -107,5 +110,67 @@ describe("percentLabel and drawnSize", () => {
   it("draws whole pixels, at least one", () => {
     expect(drawnSize({ width: 801, height: 451 }, 0.5)).toEqual({ width: 401, height: 226 });
     expect(drawnSize({ width: 3, height: 3 }, 0.05)).toEqual({ width: 1, height: 1 });
+  });
+});
+
+describe("keeping the middle of the picture in the middle", () => {
+  // a 3000 x 2000 picture at 100% in a 1000 x 600 pane, scrolled to (900, 400)
+  const before: Viewport = {
+    scrollLeft: 900,
+    scrollTop: 400,
+    clientWidth: 1000,
+    clientHeight: 600,
+    scrollWidth: 3000,
+    scrollHeight: 2000,
+  };
+
+  it("finds the place in the picture that is in the middle of the pane", () => {
+    const centre = centreOf(before);
+    expect(centre.x).toBeCloseTo(0.4667, 4);
+    expect(centre.y).toBeCloseTo(0.35, 4);
+  });
+
+  it("puts the same place back in the middle after a zoom step in", () => {
+    // 125%: the content is 1.25 times larger
+    const after = { ...before, scrollWidth: 3750, scrollHeight: 2500 };
+    const { left, top } = scrollToCentre(centreOf(before), after);
+    expect(left).toBeCloseTo(1250, 6);
+    expect(top).toBeCloseTo(575, 6);
+    // the middle of the pane is at the same fraction of the picture as before
+    const settled = centreOf({ ...after, scrollLeft: left, scrollTop: top });
+    expect(settled.x).toBeCloseTo(centreOf(before).x, 6);
+    expect(settled.y).toBeCloseTo(centreOf(before).y, 6);
+  });
+
+  it("puts the same place back in the middle after a step out", () => {
+    // 75%
+    const after = { ...before, scrollWidth: 2250, scrollHeight: 1500 };
+    const { left, top } = scrollToCentre(centreOf(before), after);
+    expect(left).toBeCloseTo(550, 6);
+    expect(top).toBeCloseTo(225, 6);
+  });
+
+  it("stays within the content, like the browser's own scrolling", () => {
+    // coming back to a picture that fits: nothing to scroll
+    const fits = { ...before, scrollWidth: 1000, scrollHeight: 600 };
+    expect(scrollToCentre(centreOf(before), fits)).toEqual({ left: 0, top: 0 });
+    // a middle at the far edge cannot scroll past the end
+    const corner = scrollToCentre({ x: 1, y: 1 }, before);
+    expect(corner).toEqual({ left: 2000, top: 1400 });
+    const origin = scrollToCentre({ x: 0, y: 0 }, before);
+    expect(origin).toEqual({ left: 0, top: 0 });
+  });
+
+  it("copes with a pane that has no size yet", () => {
+    const empty: Viewport = {
+      scrollLeft: 0,
+      scrollTop: 0,
+      clientWidth: 0,
+      clientHeight: 0,
+      scrollWidth: 0,
+      scrollHeight: 0,
+    };
+    expect(centreOf(empty)).toEqual({ x: 0, y: 0 });
+    expect(scrollToCentre(centreOf(empty), empty)).toEqual({ left: 0, top: 0 });
   });
 });

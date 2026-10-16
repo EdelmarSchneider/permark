@@ -14,6 +14,9 @@ import {
 } from "../imageZoom";
 import type { MediaFacts } from "../mediaInfo";
 
+/** What the view provides: it makes a change of the zoom and keeps the middle of the picture in the middle of the pane. */
+export type ZoomAnchor = (change: () => void) => void;
+
 class MediaStore {
   /** The file on show. */
   path = $state<string | null>(null);
@@ -22,6 +25,8 @@ class MediaStore {
   box = $state.raw<Size>({ width: 0, height: 0 });
   /** What the webview learned of the file on show. */
   facts = $state.raw<MediaFacts>({});
+
+  private anchor: ZoomAnchor | null = null;
 
   /** The picture's own pixels, once known. */
   natural = $derived<Size | null>(
@@ -65,19 +70,30 @@ class MediaStore {
     if (box.width !== this.box.width || box.height !== this.box.height) this.box = box;
   }
 
-  /** Ctrl+= and Ctrl+-. */
+  /** The view of the picture on screen lends the store its way to keep the middle in place; null when it goes away. */
+  useAnchor(anchor: ZoomAnchor | null): void {
+    this.anchor = anchor;
+  }
+
+  /** Ctrl+= and Ctrl+- (and the buttons, and Ctrl+wheel). */
   zoomBy(direction: 1 | -1): void {
-    this.zoom = stepZoom(this.zoom, direction, this.fit);
+    this.change(() => (this.zoom = stepZoom(this.zoom, direction, this.fit)));
   }
 
   /** Ctrl+0: back to fitting the pane. */
   reset(): void {
-    this.zoom = FIT;
+    this.change(() => (this.zoom = FIT));
   }
 
   /** The click on the picture and the button: fit, and 100%. */
   toggleActual(): void {
-    this.zoom = toggleActualSize(this.zoom, this.fit);
+    this.change(() => (this.zoom = toggleActualSize(this.zoom, this.fit)));
+  }
+
+  /** Every change of the zoom goes through here, so the keys, the buttons and the wheel all keep the middle in the middle. */
+  private change(apply: () => void): void {
+    if (this.anchor) this.anchor(apply);
+    else apply();
   }
 }
 

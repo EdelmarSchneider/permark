@@ -71,3 +71,37 @@ export function drawnSize(natural: Size, scale: number): Size {
     height: Math.max(1, Math.round(natural.height * scale)),
   };
 }
+
+/** What the scrolling pane measures: the same numbers as the properties of a DOM element of those names. */
+export type Viewport = {
+  scrollLeft: number;
+  scrollTop: number;
+  clientWidth: number;
+  clientHeight: number;
+  scrollWidth: number;
+  scrollHeight: number;
+};
+
+/** A place in the picture, as fractions (0 to 1) of its width and height. */
+export type Point = { x: number; y: number };
+
+/** Where the middle of the pane sits in the scrolled content. */
+export function centreOf(view: Viewport): Point {
+  return {
+    x: (view.scrollLeft + view.clientWidth / 2) / Math.max(1, view.scrollWidth),
+    y: (view.scrollTop + view.clientHeight / 2) / Math.max(1, view.scrollHeight),
+  };
+}
+
+/**
+ * The scroll position that puts `centre` back in the middle of the pane once the content has another size (`view` is
+ * measured after the change). The browser clamps a scroll position the same way: never before the start or past the end.
+ */
+export function scrollToCentre(centre: Point, view: Viewport): { left: number; top: number } {
+  const place = (at: number, content: number, pane: number): number =>
+    Math.min(Math.max(0, at * content - pane / 2), Math.max(0, content - pane));
+  return {
+    left: place(centre.x, view.scrollWidth, view.clientWidth),
+    top: place(centre.y, view.scrollHeight, view.clientHeight),
+  };
+}
