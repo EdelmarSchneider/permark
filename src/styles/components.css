@@ -52,6 +52,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--bg);
+  color: var(--text);
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
@@ -77,7 +78,7 @@
   border-color: transparent;
 }
 .btn--accent-text {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .btn--primary {
   background: var(--accent);
@@ -97,7 +98,7 @@
   border: 0;
   background: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   font-size: inherit;
 }
@@ -935,12 +936,14 @@
 [data-theme="dark"] .popover {
   background: var(--surface-2);
 }
-.popover .btn {
+/* Bars and menus (the selection toolbar, a missing-link note) show flat buttons; a panel keeps the normal
+   .btn look, so its secondary buttons stay bordered and its primary one stays filled. */
+.popover:not(.popover--panel) .btn {
   border: 0;
   background: transparent;
   height: 28px;
 }
-.popover .btn:hover {
+.popover:not(.popover--panel) .btn:hover {
   background: var(--hover);
 }
 .popover .divider {

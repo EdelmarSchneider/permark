@@ -110,6 +110,7 @@
   --faint: #8b929a;
   --accent: #4f6bed;
   --accent-fg: #ffffff;
+  --accent-text: #4259e0; /* accent as small text: 4.9:1 even on surface-2 (the accent itself is 3.9:1 there) */
   --accent-soft: rgb(79 107 237 / 0.1);
   --accent-muted: rgb(79 107 237 / 0.45);
   --live: rgb(79 107 237 / 0.18); /* live-change glow, design-system spec */
@@ -154,6 +155,7 @@
   --faint: #6f7680;
   --accent: #7b93ff;
   --accent-fg: #0f1117;
+  --accent-text: var(--accent);
   --accent-soft: rgb(123 147 255 / 0.13);
   --accent-muted: rgb(123 147 255 / 0.5);
   --live: rgb(123 147 255 / 0.18);
