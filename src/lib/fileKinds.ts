@@ -1,6 +1,8 @@
 // One table from file extension to category. The Explorer filter and Quick open use it to decide what is
 // shown; a new format is one more extension here.
 
+import { isMarkdown } from "./paths";
+
 export const FILE_CATEGORIES = [
   "documents",
   "images",
@@ -101,6 +103,11 @@ const KIND_BY_EXTENSION: ReadonlyMap<string, AssetKind> = new Map([
 export function assetKindOf(path: string): AssetKind | null {
   const extension = extensionOf(path);
   return extension === null ? null : (KIND_BY_EXTENSION.get(extension) ?? null);
+}
+
+/** Whether the pane can show the file: a Markdown document, or a picture, a sound or a video. The rows of the feed use it. */
+export function canOpenInPane(path: string): boolean {
+  return isMarkdown(path) || assetKindOf(path) !== null;
 }
 
 /** Whether a document view is a picture, a sound or a video: drawn from the file itself, with no text to read. */

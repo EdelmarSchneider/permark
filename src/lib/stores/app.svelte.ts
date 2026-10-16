@@ -877,10 +877,14 @@ class AppStore {
     vault.revealPath(path);
   }
 
-  /** A folder found in Quick open or Search everywhere: the Explorer opens the folders above it, selects it and opens it. */
+  /**
+   * A folder found in Quick open or Search everywhere: the Explorer opens the folders above it, scrolls to it, opens it and
+   * takes the keyboard focus, so the arrow keys go on from there.
+   */
   revealFolder(path: string): void {
     if (vault.isSimple) return;
-    this.revealInTree(path);
+    this.showExplorer();
+    vault.revealPath(path);
     vault.expanded.add(path);
   }
 

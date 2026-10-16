@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   FILE_CATEGORIES,
   assetKindOf,
+  canOpenInPane,
   categoryOf,
   extensionOf,
   isFileCategory,
@@ -110,6 +111,15 @@ describe("what a picture, sound or video is", () => {
     expect(extensionOf(".gitignore")).toBeNull();
     expect(extensionOf("v1.2/readme")).toBeNull();
     expect(extensionOf("end.")).toBeNull();
+  });
+
+  it("opens in the pane what the pane can show: documents, pictures, sound and video", () => {
+    for (const path of ["a.md", "docs/b.markdown", "x.png", "y.mp4", "z.flac", "old.avi"]) {
+      expect(canOpenInPane(path), path).toBe(true);
+    }
+    for (const path of ["a.rs", "b.json", "c.pdf", "d.exe", "Makefile"]) {
+      expect(canOpenInPane(path), path).toBe(false);
+    }
   });
 
   it("tells the kinds of document view that are drawn from the file", () => {

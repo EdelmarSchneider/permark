@@ -2,7 +2,8 @@
   import { tick, untrack } from "svelte";
   import { gitStateLabel } from "../gitLabels";
   import { t, tn } from "../i18n";
-  import { basename, folderLabel, isMarkdown } from "../paths";
+  import { fileIconOf } from "../fileIcons";
+  import { basename, folderLabel } from "../paths";
   import {
     filterTags,
     isEmptySelection,
@@ -355,7 +356,7 @@
               }}
             >
               <div class="tag-file__line">
-                <Icon name={isMarkdown(file.path) ? "file-text" : "file"} size="sm" />
+                <Icon name={fileIconOf(file.path)} size="sm" />
                 {#if unread.isUnread(file.path)}<UnreadDot />{/if}
                 <span class="tag-file__name">{basename(file.path)}</span>
                 <span class="tag-file__folder">{folder === "" ? t("feed.root") : folder}</span>

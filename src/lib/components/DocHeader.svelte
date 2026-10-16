@@ -42,6 +42,7 @@
       ? mediaSummary(view.kind, view.sizeBytes, media.path === view.path ? media.facts : {}).join(" · ")
       : "",
   );
+  const isMedia = $derived(!!view && isMediaViewKind(view.kind));
   /** A file the app does not show as text: the system's application is what is left. */
   const opensByDefaultApp = $derived(
     !!view &&
@@ -236,7 +237,8 @@
         <span>{ui.flashed === "reference" ? t("common.copied") : t("header.copyReference")}</span>
       </button>
     {/if}
-    {#if view || edit.active}<ModeSwitch />{/if}
+    <!-- a picture, a sound or a video has nothing to edit: the switch would only be greyed out -->
+    {#if (view || edit.active) && !isMedia}<ModeSwitch />{/if}
     {#if edit.active}
       <button
         type="button"
