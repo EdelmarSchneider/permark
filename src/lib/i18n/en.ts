@@ -194,6 +194,9 @@ export const en = {
   "doc.loading": "Loading document",
   "doc.frontmatter": "Front matter",
   "doc.copyCode": "Copy code",
+  "doc.codeAuto": "auto: {name}",
+  "doc.codeAutoHint":
+    "Guessed from the code. Name the language after the opening backticks to set it.",
   "doc.anchorLabel": "Link to {name}",
   "doc.diagramRendering": "Rendering diagram...",
   "doc.diagramFailed": "Diagram could not be rendered",
@@ -854,6 +857,8 @@ export const en = {
   "toolbar.codeBlock": "Code block",
   "toolbar.language": "Language of the code block",
   "toolbar.plainText": "Plain text",
+  "toolbar.languageSearch": "Search languages, or type your own",
+  "toolbar.languageUse": "Use “{text}” as typed",
   "toolbar.image": "Image",
   "toolbar.rule": "Horizontal rule",
   "toolbar.more": "More formatting",

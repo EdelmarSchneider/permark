@@ -30,6 +30,7 @@ import { liftListItem } from "@milkdown/kit/prose/schema-list";
 import { NodeSelection, type EditorState } from "@milkdown/kit/prose/state";
 import { deleteColumn, deleteRow, deleteTable } from "@milkdown/kit/prose/tables";
 import type { $Command } from "@milkdown/kit/utils";
+import { sanitizeInfo } from "../../code/languages";
 import { LOCKED, type Core } from "./core";
 import {
   NO_FORMAT,
@@ -253,13 +254,18 @@ export function runCommand(core: Core, id: CommandId): boolean {
   return done;
 }
 
-/** Sets the language of the code block the caret is in. */
+/**
+ * Sets the language of the code block the caret is in: the text goes into the fence's info string exactly as given (a name highlight.js
+ * has no grammar for is fine; only line breaks and backticks, which an info string cannot hold, are left out).
+ */
 export function setCodeLanguage(core: Core, language: string): boolean {
   const { view } = core;
   const { $from } = view.state.selection;
   for (let depth = $from.depth; depth > 0; depth--) {
     if ($from.node(depth).type.name !== "code_block") continue;
-    view.dispatch(view.state.tr.setNodeAttribute($from.before(depth), "language", language));
+    view.dispatch(
+      view.state.tr.setNodeAttribute($from.before(depth), "language", sanitizeInfo(language)),
+    );
     view.focus();
     return true;
   }

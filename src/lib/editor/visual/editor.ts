@@ -16,6 +16,7 @@ import { SELECTION_READ_LIMIT, type SelectedText } from "../../agentContext";
 import type { HeadingInfo } from "../../outline";
 import { currentHeading } from "../../outline";
 import { joinBlockMap, type BlockMap } from "../blockModel";
+import { codeHighlight } from "./codeHighlight";
 import { showsAtTop, watchViewport } from "../viewport";
 import {
   analyze,
@@ -134,6 +135,7 @@ export class VisualEditor {
       locked: options.locked,
       label: options.label,
       firstPlugins: appPlugins(host),
+      plugins: [codeHighlight],
       config: (ctx) => {
         // the key remaps of docs/design/v0.2.md section 11: Ctrl+E always toggles editing, so inline code moves to Ctrl+`
         ctx.update(inlineCodeKeymap.key, (keys) => ({

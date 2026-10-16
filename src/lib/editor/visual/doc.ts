@@ -281,6 +281,33 @@ function keepListsApart(
 const isListNode = (node: PMNode): boolean =>
   node.type.name === "bullet_list" || node.type.name === "ordered_list";
 
+/** The opening fence of a code block as written (its indent, its fence and the spacing before the info string), and the info string's first word. */
+const OPENING_FENCE = /^( {0,3}(?:`{3,}|~{3,})[ \t]*)(\S*)/;
+
+/**
+ * A fenced code block whose only difference from the block it was made from is its language is saved as that block's own text with the
+ * info string of its opening fence replaced: the fence characters (`~~~`, four backticks), the indent, the code and the closing
+ * fence stay as they were written, so a change of language changes one line of the file. Null for any other block.
+ */
+function withFenceLanguage(built: Built, origin: number | null, node: PMNode): string | null {
+  if (origin === null || node.type.name !== "code_block") return null;
+  const original = built.originals[origin];
+  const block = built.map.blocks[origin];
+  if (!original || original.type !== node.type || block?.kind !== "code") return null;
+  if (!node.content.eq(original.content)) return null;
+  const language = String(node.attrs.language ?? "");
+  if (language === String(original.attrs.language ?? "")) return null;
+  if (
+    !Object.keys(node.attrs).every((k) => k === "language" || node.attrs[k] === original.attrs[k])
+  )
+    return null;
+  const fence = OPENING_FENCE.exec(block.text);
+  if (!fence) return null;
+  // no info string left: no spacing either
+  const opening = language === "" ? fence[1].replace(/[ \t]+$/, "") : fence[1];
+  return opening + language + block.text.slice(fence[0].length);
+}
+
 /** The blocks to save, in order: untouched ones by their index, the others with the text the editor writes for them. */
 export function slotsOf(core: Core, built: Built, analysis: Analysis): Slot[] {
   const slots: Slot[] = [];
@@ -315,7 +342,7 @@ export function slotsOf(core: Core, built: Built, analysis: Analysis): Slot[] {
     } else if (info.node.type.name === LOCKED) {
       push({ origin: null, text: info.node.attrs.source as string }, null, false);
     } else {
-      const text = writeNode(core, info.node);
+      const text = withFenceLanguage(built, origin, info.node) ?? writeNode(core, info.node);
       const retyped = origin !== null && info.node.type !== built.originals[origin]?.type;
       push({ origin, text, retyped }, isListNode(info.node) ? listMarker(text) : null, true);
     }

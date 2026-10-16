@@ -199,6 +199,9 @@ export const ptBR = {
   "doc.loading": "Carregando documento",
   "doc.frontmatter": "Front matter",
   "doc.copyCode": "Copiar código",
+  "doc.codeAuto": "auto: {name}",
+  "doc.codeAutoHint":
+    "Detectada pelo código. Escreva a linguagem depois dos três acentos graves para defini-la.",
   "doc.anchorLabel": "Link para {name}",
   "doc.diagramRendering": "Desenhando diagrama...",
   "doc.diagramFailed": "Não foi possível desenhar o diagrama",
@@ -872,6 +875,8 @@ export const ptBR = {
   "toolbar.codeBlock": "Bloco de código",
   "toolbar.language": "Linguagem do bloco de código",
   "toolbar.plainText": "Texto simples",
+  "toolbar.languageSearch": "Buscar linguagens ou digitar a sua",
+  "toolbar.languageUse": "Usar “{text}” como digitado",
   "toolbar.image": "Imagem",
   "toolbar.rule": "Linha horizontal",
   "toolbar.more": "Mais formatação",

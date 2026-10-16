@@ -349,13 +349,23 @@
   border: 0;
   background: none;
 }
+/* the language in the corner, left of the copy button; muted (not faint) so it keeps AA contrast on the block's surface */
 .code-block__lang {
   position: absolute;
-  top: 8px;
+  top: 3px;
   right: 42px;
-  font: 11px var(--font-code);
-  color: var(--faint);
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--surface);
+  font: 11px/1.3 var(--font-code);
+  color: var(--muted);
   pointer-events: none;
+  user-select: none;
+}
+/* a guessed language explains itself when hovered */
+.code-block__lang[title] {
+  pointer-events: auto;
+  cursor: help;
 }
 .code-block__copy {
   position: absolute;
@@ -378,7 +388,8 @@
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-/* highlight.js tokens mapped onto the syntax tokens */
+/* highlight.js tokens mapped onto the syntax tokens. A stretch of code takes the colour of the innermost scope around it that is
+   listed here (Visual mode draws the same classes as decorations; src/lib/code/tokens.ts lists them, and a test keeps the two equal). */
 .hljs-comment,
 .hljs-quote {
   color: var(--syn-comment);
@@ -387,21 +398,19 @@
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-literal,
-.hljs-meta .hljs-keyword,
 .hljs-doctag,
 .hljs-section {
   color: var(--syn-keyword);
 }
 .hljs-string,
 .hljs-regexp,
-.hljs-addition,
-.hljs-meta .hljs-string {
+.hljs-addition {
   color: var(--syn-string);
 }
 .hljs-type,
 .hljs-built_in,
-.hljs-title.class_,
-.hljs-class .hljs-title {
+.hljs-meta,
+.hljs-title.class_ {
   color: var(--syn-type);
 }
 .hljs-attr,

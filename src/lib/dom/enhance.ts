@@ -1,14 +1,19 @@
-// Post-processing of the backend's HTML after it is injected: code blocks (copy button, highlight.js),
+// Post-processing of the backend's HTML after it is injected: code blocks (copy button, language label, highlighting),
 // tables, heading anchors, alerts, task lists, KaTeX, Mermaid and relative images.
 // Structural changes are synchronous and keep one element per top-level block, so the block diff
 // can address blocks by index; the heavy libraries load lazily and fill in afterwards.
 
+import type { CodeOutcome } from "../code/highlighter";
 import { resolveRelative } from "../paths";
 import { viewBoxWidth } from "./breakout";
 import { decorateCodeRefs, type CodeRefsContext } from "./codeRefsDom";
 
 export type EnhanceLabels = {
   copyCode: string;
+  /** The corner label of a block whose language was guessed ("auto: Python"). */
+  codeAuto: (name: string) => string;
+  /** What the guessed-language label says when it is hovered. */
+  codeAutoHint: string;
   anchorLabel: (name: string) => string;
   diagramPending: string;
   diagramFailed: string;
@@ -110,17 +115,20 @@ function wrapTable(table: HTMLElement): HTMLElement {
   return wrap;
 }
 
-function languageOf(code: Element | null): string | null {
-  const match = /(?:^|\s)language-([\w+#.-]+)/.exec(code?.getAttribute("class") ?? "");
-  return match ? match[1].toLowerCase() : null;
+/** What the fence's info string said, as the backend writes it into the class (`language-rust` for ```` ```rust title="x" ````), or null. */
+function infoOf(code: Element | null): string | null {
+  const token = (code?.getAttribute("class") ?? "")
+    .split(/\s+/)
+    .find((name) => name.startsWith("language-"));
+  return token === undefined ? null : token.slice("language-".length);
 }
 
 function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[]): HTMLElement {
   const code = pre.querySelector("code");
-  const lang = languageOf(code);
+  const info = infoOf(code);
   const source = (code ?? pre).textContent ?? "";
 
-  if (lang === "mermaid") {
+  if (info !== null && info.toLowerCase() === "mermaid") {
     const figure = document.createElement("figure");
     figure.className = "diagram is-pending";
     figure.dataset.source = source;
@@ -135,12 +143,6 @@ function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[])
   wrap.className = "code-block";
   copySourcepos(pre, wrap);
   pre.replaceWith(wrap);
-  if (lang) {
-    const label = document.createElement("span");
-    label.className = "code-block__lang";
-    label.textContent = lang;
-    wrap.appendChild(label);
-  }
   const copy = document.createElement("button");
   copy.type = "button";
   copy.className = "icon-btn icon-btn--sm code-block__copy";
@@ -149,7 +151,7 @@ function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[])
   copy.innerHTML = ICON_COPY;
   wrap.appendChild(copy);
   wrap.appendChild(pre);
-  if (code && lang) tasks.push(highlight(code, lang, source));
+  if (code) tasks.push(decorateCode(code, wrap, info ?? "", source, ctx));
   return wrap;
 }
 
@@ -225,13 +227,57 @@ function markDisplayMath(formula: HTMLElement): void {
 
 // ---- lazy libraries ---------------------------------------------------------------------------
 
-async function highlight(code: Element, lang: string, source: string): Promise<void> {
-  try {
-    const hljs = (await import("highlight.js/lib/common")).default;
-    if (!hljs.getLanguage(lang)) return;
-    const result = hljs.highlight(source, { language: lang, ignoreIllegals: true });
-    code.innerHTML = result.value;
+/** How the blocks seen lately turned out, so that a document drawn again (a live update) shows them at once, not after a flash of plain text. */
+const codeOutcomes = new Map<string, CodeOutcome>();
+const CODE_OUTCOMES_KEPT = 200;
+
+function showCode(
+  code: Element,
+  wrap: HTMLElement,
+  outcome: CodeOutcome,
+  source: string,
+  ctx: EnhanceContext,
+): void {
+  // the block was drawn again with other text meanwhile: this answer is not for it
+  if ((code.textContent ?? "") !== source) return;
+  wrap.querySelector(".code-block__lang")?.remove();
+  if (outcome.html !== null) {
+    code.innerHTML = outcome.html;
     code.classList.add("hljs");
+  }
+  const { label } = outcome;
+  if (label) {
+    const element = document.createElement("span");
+    element.className = "code-block__lang";
+    element.textContent = label.auto ? ctx.labels.codeAuto(label.name) : label.name;
+    if (label.auto) element.title = ctx.labels.codeAutoHint;
+    wrap.insertBefore(element, wrap.firstChild);
+  }
+}
+
+/**
+ * Highlights a fenced block and puts the name of its language in its corner: the grammar of the language it names, or the best guess
+ * for one that names none (see `highlightFence`). The libraries load lazily; the block is plain text until they have.
+ */
+async function decorateCode(
+  code: Element,
+  wrap: HTMLElement,
+  info: string,
+  source: string,
+  ctx: EnhanceContext,
+): Promise<void> {
+  const key = `${info}\u0000${source}`;
+  const known = codeOutcomes.get(key);
+  if (known) {
+    showCode(code, wrap, known, source, ctx);
+    return;
+  }
+  try {
+    const { highlightFence } = await import("../code/highlighter");
+    const outcome = await highlightFence(source, info);
+    if (codeOutcomes.size >= CODE_OUTCOMES_KEPT) codeOutcomes.clear();
+    codeOutcomes.set(key, outcome);
+    showCode(code, wrap, outcome, source, ctx);
   } catch {
     // keep the plain text
   }
