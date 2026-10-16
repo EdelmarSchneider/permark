@@ -63,6 +63,10 @@ pub struct BlockView {
     pub index: usize,
     #[serde(flatten)]
     pub range: ByteRange,
+    /// The first and the last line of the block in its version, counted from 1 as the reading view counts them (the
+    /// `data-sourcepos` of the rendered blocks).
+    pub start_line: usize,
+    pub end_line: usize,
     /// The block's Markdown.
     pub text: String,
     /// The block as the reading view draws it (sanitized). Empty when it could not be rendered; the UI then
@@ -88,6 +92,9 @@ pub struct ChangeView {
     pub new: ByteRange,
     pub old_blocks: BlockRange,
     pub new_blocks: BlockRange,
+    /// Where the change is in the file, as a line: the first line of its new blocks; for a removal, the line of the
+    /// block it sits in front of; `None` when it is at the end of the file.
+    pub new_line: Option<usize>,
     pub rows: Vec<RowView>,
 }
 
@@ -144,11 +151,17 @@ pub fn changes_view(cmp: &Comparison<'_>) -> Vec<ChangeView> {
         }
     }
     let mut html = render_fragments(&texts).into_iter();
-    let mut block = |index: usize, text: &str, range: Span| BlockView {
+    let mut block = |index: usize, text: &str, range: Span, lines: (usize, usize)| BlockView {
         index,
         range: range.into(),
+        start_line: lines.0,
+        end_line: lines.1,
         text: text.to_owned(),
-        html: html.next().unwrap_or_default(),
+        // a block that draws nothing (a link reference definition) has no HTML: the view shows its text
+        html: html
+            .next()
+            .filter(|html| !html.trim().is_empty())
+            .unwrap_or_default(),
     };
     cmp.changes()
         .iter()
@@ -159,14 +172,18 @@ pub fn changes_view(cmp: &Comparison<'_>) -> Vec<ChangeView> {
 fn one_change(
     cmp: &Comparison<'_>,
     change: &Change,
-    block: &mut impl FnMut(usize, &str, Span) -> BlockView,
+    block: &mut impl FnMut(usize, &str, Span, (usize, usize)) -> BlockView,
 ) -> ChangeView {
     let rows = change
         .rows
         .iter()
         .map(|row| RowView {
-            old: row.old.map(|i| block(i, cmp.old_block(i), cmp.old_span(i))),
-            new: row.new.map(|i| block(i, cmp.new_block(i), cmp.new_span(i))),
+            old: row
+                .old
+                .map(|i| block(i, cmp.old_block(i), cmp.old_span(i), cmp.old_lines(i))),
+            new: row
+                .new
+                .map(|i| block(i, cmp.new_block(i), cmp.new_span(i), cmp.new_lines(i))),
         })
         .collect();
     ChangeView {
@@ -175,6 +192,7 @@ fn one_change(
         new: change.new.into(),
         old_blocks: block_range(&change.old_blocks),
         new_blocks: block_range(&change.new_blocks),
+        new_line: cmp.new_line(change),
         rows,
     }
 }
@@ -272,5 +290,71 @@ mod tests {
         assert_eq!(change["rows"][0]["new"]["index"], 1);
         assert_eq!(change["rows"][0]["new"]["startByte"], 3);
         assert_eq!(change["rows"][0]["new"]["text"], "b");
+        assert_eq!(change["rows"][0]["new"]["startLine"], 3);
+        assert_eq!(change["rows"][0]["new"]["endLine"], 3);
+        assert_eq!(change["newLine"], 3);
+    }
+
+    #[test]
+    fn every_block_says_which_lines_it_is_on_and_a_removal_says_where_it_was_taken_out() {
+        let reviewed = "# T
+
+first
+second
+
+gone
+
+keep
+";
+        let current = "# T
+
+first
+second
+
+keep
+";
+        let cmp = Comparison::new(reviewed, current);
+        let changes = changes_view(&cmp);
+        let old = changes[0].rows[0].old.as_ref().expect("old");
+        assert_eq!((old.start_line, old.end_line), (6, 6));
+        assert_eq!(
+            changes[0].new_line,
+            Some(6),
+            "in front of keep, which is on line 6 now"
+        );
+        let cmp = Comparison::new(
+            "a
+
+b
+", "a
+",
+        );
+        assert_eq!(changes_view(&cmp)[0].new_line, None);
+        let cmp = Comparison::new(
+            "x
+",
+            "x
+
+first
+second
+",
+        );
+        let new = changes_view(&cmp)[0].rows[0].new.clone().expect("new");
+        assert_eq!((new.start_line, new.end_line), (3, 4));
+    }
+
+    #[test]
+    fn a_block_that_draws_nothing_has_no_html_and_the_view_shows_its_text() {
+        let cmp = Comparison::new(
+            "a
+",
+            "a
+
+[d]: https://x.example
+",
+        );
+        let block = changes_view(&cmp)[0].rows[0].new.clone().expect("new");
+        assert_eq!(block.text, "[d]: https://x.example");
+        assert_eq!(block.html, "");
     }
 }

@@ -86,6 +86,10 @@ pub enum ReviewError {
     /// There is no approved text to compare the document with, or to put back.
     #[error("there is no approved version of {0} to compare with")]
     NoBaseline(String),
+    /// The change cannot be kept or reverted on its own: the document would end up with other blocks than the review
+    /// showed (a line of dashes that turns into front matter, say). Keeping or reverting all of it still works.
+    #[error("that change cannot be kept or reverted on its own in {0}")]
+    Conflict(String),
     /// The reviews are off in this window: a single file or the notes are open.
     #[error("changes are not reviewed here")]
     Off,
@@ -101,6 +105,7 @@ impl ReviewError {
             Self::Edit(e) => e.kind(),
             Self::Stale(_) => "reviewStale",
             Self::NoBaseline(_) => "reviewNoBaseline",
+            Self::Conflict(_) => "reviewConflict",
             Self::Off => "reviewOff",
             Self::Io { source, .. } if source.kind() == io::ErrorKind::PermissionDenied => "denied",
             Self::Io { .. } => "io",
@@ -868,7 +873,9 @@ impl ReviewService {
         if index >= cmp.changes().len() {
             return Err(ReviewError::Stale(loaded.rel));
         }
-        let kept = cmp.kept(index);
+        let kept = cmp
+            .kept(index)
+            .map_err(|_| ReviewError::Conflict(loaded.rel.clone()))?;
         let hash = self
             .keep_copy(kept.as_bytes())
             .map_err(|e| ReviewError::io(&loaded.rel, e))?
@@ -917,7 +924,9 @@ impl ReviewService {
         if index >= cmp.changes().len() {
             return Err(ReviewError::Stale(loaded.rel));
         }
-        let text = cmp.reverted(index);
+        let text = cmp
+            .reverted(index)
+            .map_err(|_| ReviewError::Conflict(loaded.rel.clone()))?;
         self.write_file(&loaded, &text)
     }
 

@@ -24,39 +24,40 @@ fn shape(reviewed: &str, current: &str) -> Vec<(ChangeKind, String, String)> {
 
 /// The blocks of a text as the diff compares them (line endings made alike).
 fn block_texts(text: &str) -> Vec<String> {
-    parse_blocks(text)
-        .blocks
+    Side::new(text)
+        .keys
         .iter()
-        .map(|b| text[b.start_byte..b.end_byte].replace("\r\n", "\n"))
+        .map(ToString::to_string)
         .collect()
 }
 
-/// Reverts one change after another (the first each time, the diff taken again) until nothing is left.
-fn revert_everything(reviewed: &str, current: &str) -> String {
+/// Reverts one change after another (the first each time, the diff taken again) until nothing is left. `Err` when a
+/// change cannot be reverted on its own (the person is then offered Revert all).
+fn revert_everything(reviewed: &str, current: &str) -> Result<String, CannotSplice> {
     let mut now = current.to_owned();
     for _ in 0..200 {
         let next = {
             let cmp = Comparison::new(reviewed, &now);
             if cmp.changes().is_empty() {
-                return now;
+                return Ok(now);
             }
-            cmp.reverted(0)
+            cmp.reverted(0)?
         };
         now = next;
     }
     panic!("reverting does not end: {now:?}");
 }
 
-/// Keeps one change after another until nothing is left.
-fn keep_everything(reviewed: &str, current: &str) -> String {
+/// Keeps one change after another until nothing is left (see [`revert_everything`]).
+fn keep_everything(reviewed: &str, current: &str) -> Result<String, CannotSplice> {
     let mut now = reviewed.to_owned();
     for _ in 0..200 {
         let next = {
             let cmp = Comparison::new(&now, current);
             if cmp.changes().is_empty() {
-                return now;
+                return Ok(now);
             }
-            cmp.kept(0)
+            cmp.kept(0)?
         };
         now = next;
     }
@@ -237,9 +238,9 @@ fn a_moved_block_is_a_removal_where_it_was_and_an_addition_where_it_went() {
     assert_eq!(changes.len(), 2);
     assert_eq!(changes[0].kind, ChangeKind::Removed);
     assert_eq!(changes[1].kind, ChangeKind::Added);
-    assert_eq!(keep_everything(reviewed, current), current);
+    assert_eq!(keep_everything(reviewed, current).expect("kept"), current);
     assert_eq!(
-        block_texts(&revert_everything(reviewed, current)),
+        block_texts(&revert_everything(reviewed, current).expect("reverted")),
         block_texts(reviewed)
     );
 }
@@ -288,8 +289,12 @@ fn a_rewrite_of_the_whole_file_is_one_change_that_gives_back_both_versions_exact
     let cmp = Comparison::new(reviewed, current);
     assert_eq!(cmp.changes().len(), 1);
     assert_eq!(cmp.changes()[0].kind, ChangeKind::Modified);
-    assert_eq!(cmp.reverted(0), reviewed, "the whole file, as it was");
-    assert_eq!(cmp.kept(0), current, "and as it is");
+    assert_eq!(
+        cmp.reverted(0).expect("reverted"),
+        reviewed,
+        "the whole file, as it was"
+    );
+    assert_eq!(cmp.kept(0).expect("kept"), current, "and as it is");
 }
 
 #[test]
@@ -314,8 +319,8 @@ fn reverting_an_added_block_leaves_the_text_around_it_as_it_was() {
     let reviewed = "# A\n\nfirst\n\nlast\n";
     let current = "# A\n\nfirst\n\nbrand new\n\nlast\n";
     let cmp = Comparison::new(reviewed, current);
-    assert_eq!(cmp.reverted(0), reviewed);
-    assert_eq!(cmp.kept(0), current);
+    assert_eq!(cmp.reverted(0).expect("reverted"), reviewed);
+    assert_eq!(cmp.kept(0).expect("kept"), current);
 }
 
 #[test]
@@ -323,8 +328,8 @@ fn reverting_a_removed_block_puts_it_back_with_its_separator() {
     let reviewed = "# A\n\nfirst\n\ngone\n\nlast\n";
     let current = "# A\n\nfirst\n\nlast\n";
     let cmp = Comparison::new(reviewed, current);
-    assert_eq!(cmp.reverted(0), reviewed);
-    assert_eq!(cmp.kept(0), current);
+    assert_eq!(cmp.reverted(0).expect("reverted"), reviewed);
+    assert_eq!(cmp.kept(0).expect("kept"), current);
 }
 
 #[test]
@@ -334,14 +339,14 @@ fn an_addition_at_the_start_or_at_the_end_keeps_the_final_newline_in_place() {
     let at_end = "middle\n\nlast\n";
     for current in [at_start, at_end] {
         let cmp = Comparison::new(reviewed, current);
-        assert_eq!(cmp.reverted(0), reviewed, "{current:?}");
-        assert_eq!(cmp.kept(0), current, "{current:?}");
+        assert_eq!(cmp.reverted(0).expect("reverted"), reviewed, "{current:?}");
+        assert_eq!(cmp.kept(0).expect("kept"), current, "{current:?}");
     }
     // and the same for removals
     for reviewed in [at_start, at_end] {
         let cmp = Comparison::new(reviewed, "middle\n");
-        assert_eq!(cmp.reverted(0), reviewed, "{reviewed:?}");
-        assert_eq!(cmp.kept(0), "middle\n", "{reviewed:?}");
+        assert_eq!(cmp.reverted(0).expect("reverted"), reviewed, "{reviewed:?}");
+        assert_eq!(cmp.kept(0).expect("kept"), "middle\n", "{reviewed:?}");
     }
 }
 
@@ -351,12 +356,12 @@ fn a_reverted_edit_swaps_only_the_blocks() {
     let current = "# A\n\nThe quick brown fox leaps over.\n\nend\n";
     let cmp = Comparison::new(reviewed, current);
     assert_eq!(
-        cmp.reverted(0),
+        cmp.reverted(0).expect("reverted"),
         "# A\n\nThe quick brown fox jumps.\n\nend\n",
         "the file's own blank lines stay"
     );
     assert_eq!(
-        cmp.kept(0),
+        cmp.kept(0).expect("kept"),
         "# A\n\n\nThe quick brown fox leaps over.\n\n\nend\n"
     );
 }
@@ -372,17 +377,20 @@ fn taking_out_a_block_that_follows_a_paragraph_straight_on_does_not_glue_the_par
     );
     let cmp = Comparison::new(with_list, without);
     assert_eq!(cmp.changes().len(), 1);
-    assert_eq!(cmp.kept(0), without, "accepting the removal");
+    assert_eq!(cmp.kept(0).expect("kept"), without, "accepting the removal");
     assert_eq!(
-        cmp.reverted(0),
+        cmp.reverted(0).expect("reverted"),
         with_list,
         "and putting the list back, exactly"
     );
     // and the other way round
     let cmp = Comparison::new(without, with_list);
-    assert_eq!(cmp.reverted(0), without);
-    assert_eq!(cmp.kept(0), with_list);
-    assert_eq!(block_texts(&cmp.reverted(0)), ["para one", "para two"]);
+    assert_eq!(cmp.reverted(0).expect("reverted"), without);
+    assert_eq!(cmp.kept(0).expect("kept"), with_list);
+    assert_eq!(
+        block_texts(&cmp.reverted(0).expect("reverted")),
+        ["para one", "para two"]
+    );
 }
 
 #[test]
@@ -392,17 +400,20 @@ fn an_edited_block_that_follows_a_paragraph_straight_on_stays_a_block_of_its_own
     let cmp = Comparison::new(list, plain);
     assert_eq!(cmp.changes().len(), 1);
     assert_eq!(
-        block_texts(&cmp.kept(0)),
+        block_texts(&cmp.kept(0).expect("kept")),
         ["para one", "Plain words here", "end"]
     );
-    assert_eq!(cmp.kept(0), plain);
+    assert_eq!(cmp.kept(0).expect("kept"), plain);
     // the file being changed has a blank line there, and keeps it
-    assert_eq!(cmp.reverted(0), "para one\n\n- list item\n\nend\n");
+    assert_eq!(
+        cmp.reverted(0).expect("reverted"),
+        "para one\n\n- list item\n\nend\n"
+    );
     // a heading may follow a paragraph straight on, and a list may take its place
     let heading = "para one\n# Heading now\n\nend\n";
     let cmp = Comparison::new(heading, list);
-    assert_eq!(cmp.kept(0), list);
-    assert_eq!(cmp.reverted(0), heading);
+    assert_eq!(cmp.kept(0).expect("kept"), list);
+    assert_eq!(cmp.reverted(0).expect("reverted"), heading);
 }
 
 #[test]
@@ -412,7 +423,7 @@ fn a_reverted_block_takes_the_line_endings_of_the_file_it_goes_into() {
     let cmp = Comparison::new(reviewed, current);
     assert_eq!(cmp.changes().len(), 1);
     assert_eq!(
-        cmp.reverted(0),
+        cmp.reverted(0).expect("reverted"),
         "# A\r\n\r\nfirst\r\nsecond\r\n\r\nlast\r\n"
     );
 }
@@ -422,18 +433,88 @@ fn keeping_one_change_leaves_the_others_to_review() {
     let reviewed = "# T\n\nalpha one\n\nstable\n\nbeta two\n\n# End\n";
     let current = "# T\n\nalpha ONE and more\n\nstable\n\nbeta TWO also\n\n# End\n";
     let cmp = Comparison::new(reviewed, current);
-    let after_keep = cmp.kept(0);
+    let after_keep = cmp.kept(0).expect("kept");
     assert_eq!(
         after_keep,
         "# T\n\nalpha ONE and more\n\nstable\n\nbeta two\n\n# End\n"
     );
     let again = diff(&after_keep, current);
     assert_eq!(again.len(), 1, "the other edit is still to review");
-    let after_revert = cmp.reverted(1);
+    let after_revert = cmp.reverted(1).expect("reverted");
     assert_eq!(
         after_revert,
         "# T\n\nalpha ONE and more\n\nstable\n\nbeta two\n\n# End\n"
     );
+}
+
+// ---- text between blocks ----
+
+#[test]
+fn a_link_reference_definition_is_a_block_of_its_own() {
+    // comrak makes no node of it, so the editor's blocks leave it in the separator
+    let text = "See [docs][d].\n\n[d]: https://good.example\n\n# End\n";
+    assert_eq!(parse_blocks(text).blocks.len(), 2);
+    let side = Side::new(text);
+    assert_eq!(side.blocks.len(), 3);
+    assert_eq!(side.block_text(1), "[d]: https://good.example");
+    assert_eq!(side.blocks[1].kind, BlockKind::Other);
+}
+
+#[test]
+fn a_run_of_definitions_is_one_block_and_blank_lines_split_runs() {
+    let text = "[a]: https://a.example\n[b]: https://b.example\n\n[c]: https://c.example\n";
+    let side = Side::new(text);
+    assert_eq!(
+        (0..side.blocks.len())
+            .map(|i| side.block_text(i))
+            .collect::<Vec<_>>(),
+        [
+            "[a]: https://a.example\n[b]: https://b.example",
+            "[c]: https://c.example"
+        ]
+    );
+}
+
+#[test]
+fn changing_where_a_link_points_is_a_change_to_review() {
+    let reviewed = "See [docs][d].\n\n[d]: https://good.example\n";
+    let current = "See [docs][d].\n\n[d]: https://evil.example\n";
+    assert_eq!(
+        shape(reviewed, current),
+        [(
+            ChangeKind::Modified,
+            "[d]: https://good.example".to_owned(),
+            "[d]: https://evil.example".to_owned()
+        )]
+    );
+    let cmp = Comparison::new(reviewed, current);
+    assert_eq!(cmp.reverted(0).expect("reverted"), reviewed);
+    assert_eq!(cmp.kept(0).expect("kept"), current);
+}
+
+#[test]
+fn a_definition_that_is_added_or_removed_is_shown_not_moved_along_unseen() {
+    let reviewed = "# T\n\nPara.\n";
+    let current = "# T\n\nNew para.\n\n[d]: https://x.example\n\nPara.\n";
+    let cmp = Comparison::new(reviewed, current);
+    // the new paragraph and the definition are shown together as what was added
+    assert_eq!(cmp.changes().len(), 1);
+    assert_eq!(cmp.changes()[0].kind, ChangeKind::Added);
+    assert_eq!(cmp.changes()[0].new_blocks, 1..3);
+    assert_eq!(cmp.reverted(0).expect("reverted"), reviewed);
+    // and only the definition, when that is all there is
+    let only = "# T\n\nPara.\n\n[d]: https://x.example\n";
+    let cmp = Comparison::new(reviewed, only);
+    assert_eq!(
+        shape(reviewed, only),
+        [(
+            ChangeKind::Added,
+            String::new(),
+            "[d]: https://x.example".to_owned()
+        )]
+    );
+    assert_eq!(cmp.reverted(0).expect("reverted"), reviewed);
+    assert_eq!(cmp.kept(0).expect("kept"), only);
 }
 
 #[test]
@@ -453,7 +534,7 @@ impl Rng {
     }
 }
 
-const PIECES: [&str; 12] = [
+const PIECES: [&str; 14] = [
     "# Heading one",
     "## Heading two",
     "A paragraph with some ordinary words in it.",
@@ -466,6 +547,8 @@ const PIECES: [&str; 12] = [
     "---",
     "Closing remarks about the whole thing.",
     "Tiny.",
+    "[r]: https://example.com/a",
+    "[r]: https://example.com/b \"Title\"",
 ];
 
 /// A document of 0 to 8 blocks drawn from `PIECES`, some of them changed a little.
@@ -497,21 +580,90 @@ fn random_doc(rng: &mut Rng, eol: &str) -> String {
 #[test]
 fn reverting_everything_gives_back_the_reviewed_blocks_and_keeping_everything_the_current_ones() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let mut refused = 0;
     for round in 0..400 {
         let eol = if round % 5 == 0 { "\r\n" } else { "\n" };
         let reviewed = random_doc(&mut rng, eol);
         let current = random_doc(&mut rng, if round % 7 == 0 { "\r\n" } else { "\n" });
-        assert_eq!(
-            block_texts(&revert_everything(&reviewed, &current)),
-            block_texts(&reviewed),
-            "revert, round {round}: {reviewed:?} -> {current:?}"
-        );
-        assert_eq!(
-            block_texts(&keep_everything(&reviewed, &current)),
-            block_texts(&current),
-            "keep, round {round}: {reviewed:?} -> {current:?}"
-        );
+        // a change that cannot be applied on its own is refused (the person is offered the whole at once)
+        match revert_everything(&reviewed, &current) {
+            Ok(text) => assert_eq!(
+                block_texts(&text),
+                block_texts(&reviewed),
+                "revert, round {round}: {reviewed:?} -> {current:?}"
+            ),
+            Err(CannotSplice) => refused += 1,
+        }
+        match keep_everything(&reviewed, &current) {
+            Ok(text) => assert_eq!(
+                block_texts(&text),
+                block_texts(&current),
+                "keep, round {round}: {reviewed:?} -> {current:?}"
+            ),
+            Err(CannotSplice) => refused += 1,
+        }
     }
+    assert!(refused <= 12, "{refused} of 800 are refused");
+}
+
+/// The blocks a document must have once change `index` is swapped: `from`'s blocks, with the blocks of `to`
+/// where the change is. The same for keeping and reverting, seen from the side that is being changed.
+fn blocks_after(
+    from: &[String],
+    replace: &Range<usize>,
+    to: &[String],
+    with: &Range<usize>,
+) -> Vec<String> {
+    let mut wanted = from[..replace.start].to_vec();
+    wanted.extend_from_slice(&to[with.clone()]);
+    wanted.extend_from_slice(&from[replace.end..]);
+    wanted
+}
+
+#[test]
+fn every_single_keep_and_revert_gives_exactly_the_blocks_the_review_showed() {
+    let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+    let (mut total, mut refused) = (0_u32, 0_u32);
+    for round in 0..3000 {
+        let eol = if round % 5 == 0 { "\r\n" } else { "\n" };
+        let reviewed = random_doc(&mut rng, eol);
+        let current = random_doc(&mut rng, if round % 7 == 0 { "\r\n" } else { "\n" });
+        let (old_blocks, new_blocks) = (block_texts(&reviewed), block_texts(&current));
+        let cmp = Comparison::new(&reviewed, &current);
+        for (i, change) in cmp.changes().iter().enumerate() {
+            total += 2;
+            match cmp.reverted(i) {
+                Ok(text) => assert_eq!(
+                    block_texts(&text),
+                    blocks_after(
+                        &new_blocks,
+                        &change.new_blocks,
+                        &old_blocks,
+                        &change.old_blocks
+                    ),
+                    "revert {i}, round {round}: {reviewed:?} -> {current:?}"
+                ),
+                Err(CannotSplice) => refused += 1,
+            }
+            match cmp.kept(i) {
+                Ok(text) => assert_eq!(
+                    block_texts(&text),
+                    blocks_after(
+                        &old_blocks,
+                        &change.old_blocks,
+                        &new_blocks,
+                        &change.new_blocks
+                    ),
+                    "keep {i}, round {round}: {reviewed:?} -> {current:?}"
+                ),
+                Err(CannotSplice) => refused += 1,
+            }
+        }
+    }
+    assert!(total > 5000, "{total} splices tried");
+    // what cannot be applied alone is refused, and that is rare: a line of dashes that turns the top of the file
+    // into front matter is the kind of thing that does it
+    assert!(refused * 200 <= total, "{refused} of {total} are refused");
 }
 
 #[test]
@@ -540,4 +692,138 @@ fn a_change_is_always_made_of_whole_blocks_inside_the_text() {
             seen_new = c.new_blocks.end + 1;
         }
     }
+}
+
+// ---- a splice must give the blocks the review showed ----
+
+#[test]
+fn a_change_that_would_turn_the_top_of_the_file_into_front_matter_cannot_be_applied_alone() {
+    // Putting the dash line back at the top, with another dash line further down, is front matter.
+    let reviewed = "---\nTiny.\n\n\n[r]: https://example.com/b \"Title\"\n";
+    let current = "Tiny.\n\n\n---";
+    let cmp = Comparison::new(reviewed, current);
+    assert_eq!(cmp.changes().len(), 2);
+    assert_eq!(cmp.reverted(0), Err(CannotSplice));
+    assert_eq!(cmp.kept(1), Err(CannotSplice));
+    // the other halves are fine, and so is everything at once
+    assert_eq!(
+        cmp.reverted(1).expect("reverted"),
+        "Tiny.\n\n\n[r]: https://example.com/b \"Title\""
+    );
+    assert_eq!(
+        cmp.kept(0).expect("kept"),
+        "Tiny.\n\n\n[r]: https://example.com/b \"Title\"\n"
+    );
+}
+
+#[test]
+fn blocks_that_would_run_together_are_kept_apart_by_a_blank_line() {
+    // As the reviewed text has them, the definition and the table are tight against each other; put back after
+    // other text, that glues them (the definition then shows up as a paragraph).
+    let reviewed = "[r]: https://example.com/b \"Title\"\n| a | b |\n|---|---|\n| 1 | 2 |\n";
+    let current = "1. first\n2. second\n\n\nClosing remarks about the whole thing.\n\n\n[r]: https://example.com/b \"Title\"\n";
+    let cmp = Comparison::new(reviewed, current);
+    assert_eq!(cmp.changes().len(), 2);
+    let text = cmp.reverted(1).expect("reverted");
+    assert_eq!(
+        text,
+        "1. first\n2. second\n\n\nClosing remarks about the whole thing.\n\n\n[r]: https://example.com/b \"Title\"\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+    );
+    assert_eq!(
+        block_texts(&text),
+        [
+            "1. first\n2. second",
+            "Closing remarks about the whole thing.",
+            "[r]: https://example.com/b \"Title\"",
+            "| a | b |\n|---|---|\n| 1 | 2 |"
+        ]
+    );
+}
+
+#[test]
+fn a_blank_line_between_swapped_blocks_takes_the_line_ending_of_the_file() {
+    let source = Side::new(
+        "para one
+- list item
+
+para two
+",
+    );
+    let target = Side::new(
+        "para one
+
+para two
+",
+    );
+    assert_eq!(
+        splice_spaced(&target, &(1..1), &source, &(1..2)),
+        "para one
+
+- list item
+
+para two
+"
+    );
+    // and nothing is added where nothing goes in, or where there is no neighbour
+    assert_eq!(
+        splice_spaced(&source, &(1..2), &target, &(1..1)),
+        "para one
+
+para two
+"
+    );
+    assert_eq!(
+        splice_spaced(&source, &(2..3), &target, &(2..2)),
+        "para one
+- list item
+"
+    );
+}
+
+// ---- lines ----
+
+#[test]
+fn blocks_know_their_lines_as_the_reading_view_numbers_them() {
+    let text = "---\ntitle: x\n---\n\n# T\n\nfirst\nsecond\n\n[d]: https://x.example\n\n- a\n- b\n";
+    let cmp = Comparison::new("", text);
+    let lines: Vec<(usize, usize)> = (0..5).map(|i| cmp.new_lines(i)).collect();
+    assert_eq!(lines, [(1, 3), (5, 5), (7, 8), (10, 10), (12, 13)]);
+}
+
+#[test]
+fn lines_count_every_kind_of_line_break_and_skip_a_byte_order_mark() {
+    let crlf = "\u{FEFF}# T\r\n\r\nbody\r\nmore\r\n";
+    let cmp = Comparison::new("", crlf);
+    assert_eq!((cmp.new_lines(0), cmp.new_lines(1)), ((1, 1), (3, 4)));
+    let cr = "# T\r\rbody\rmore";
+    let cmp = Comparison::new("", cr);
+    assert_eq!((cmp.new_lines(0), cmp.new_lines(1)), ((1, 1), (3, 4)));
+    // no break at the end of the last line
+    let cmp = Comparison::new(crlf, "");
+    assert_eq!(cmp.old_lines(1), (3, 4));
+}
+
+#[test]
+fn a_change_is_placed_at_the_line_of_its_new_blocks_or_the_block_it_sits_in_front_of() {
+    let reviewed = "# T\n\ngone\n\nkeep\n\nold tail\n";
+    let current = "# T\n\nkeep\n\nnew tail\n\nmore\n";
+    let cmp = Comparison::new(reviewed, current);
+    let at: Vec<(ChangeKind, Option<usize>)> = cmp
+        .changes()
+        .iter()
+        .map(|c| (c.kind, cmp.new_line(c)))
+        .collect();
+    assert_eq!(
+        at,
+        [
+            (ChangeKind::Removed, Some(3)),
+            (ChangeKind::Modified, Some(5))
+        ]
+    );
+    let cmp = Comparison::new("a\n\nb\n", "a\n");
+    assert_eq!(
+        cmp.new_line(&cmp.changes()[0]),
+        None,
+        "a removal at the end"
+    );
 }

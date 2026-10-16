@@ -25,7 +25,8 @@ use std::ops::Range;
 
 use serde::Serialize;
 
-use crate::edit::blocks::{parse_blocks, BlockInfo, Eol};
+use crate::edit::blocks::{parse_blocks, split_lines, BlockInfo, BlockKind, Eol, Line, BOM};
+use crate::render::MAX_RENDER_BYTES;
 use crate::search::fold::tokenize;
 
 /// Above this many cells (old blocks x new blocks, between the first and the last block that differ) the
@@ -85,16 +86,74 @@ pub struct Change {
 struct Side<'a> {
     text: &'a str,
     blocks: Vec<BlockInfo>,
+    /// What two blocks are compared by: their text with the same line ending everywhere.
+    keys: Vec<Cow<'a, str>>,
     eol: Eol,
+    /// Where each line starts, numbered the way the reading view numbers them (`data-sourcepos`): a line break is
+    /// `\n`, `\r\n` or a lone `\r`, and a byte order mark is not part of the first line.
+    line_starts: Vec<usize>,
+}
+
+/// The runs of non-blank lines that no block covers: text the parser consumes without making a node of it, which
+/// is link reference definitions (`[d]: https://...`). Each run is a block of kind `Other`.
+fn uncovered_runs(text: &str, lines: &[Line], blocks: &[BlockInfo]) -> Vec<BlockInfo> {
+    let run = |(start_byte, end_byte)| BlockInfo {
+        start_byte,
+        end_byte,
+        kind: BlockKind::Other,
+    };
+    let mut runs = Vec::new();
+    let mut open: Option<(usize, usize)> = None;
+    let mut next = 0;
+    for line in lines {
+        while next < blocks.len() && blocks[next].end_byte < line.start {
+            next += 1;
+        }
+        let covered = blocks
+            .get(next)
+            .is_some_and(|b| b.start_byte <= line.start && line.end <= b.end_byte);
+        if covered || text[line.start..line.end].trim().is_empty() {
+            runs.extend(open.take().map(run));
+        } else {
+            open = Some((open.map_or(line.start, |(start, _)| start), line.end));
+        }
+    }
+    runs.extend(open.map(run));
+    runs
 }
 
 impl<'a> Side<'a> {
     fn new(text: &'a str) -> Self {
         let parsed = parse_blocks(text);
+        let body_start = if text.starts_with(BOM) {
+            BOM.len_utf8()
+        } else {
+            0
+        };
+        let (lines, _) = split_lines(text, body_start);
+        let mut blocks = parsed.blocks;
+        // A text over the size the parser takes has no blocks, and is not one block made of everything.
+        if text.len() as u64 <= MAX_RENDER_BYTES {
+            blocks.extend(uncovered_runs(text, &lines, &blocks));
+            blocks.sort_by_key(|b| b.start_byte);
+        }
+        let keys = blocks
+            .iter()
+            .map(|block| {
+                let block_text = &text[block.start_byte..block.end_byte];
+                if block_text.contains('\r') {
+                    Cow::Owned(block_text.replace("\r\n", "\n").replace('\r', "\n"))
+                } else {
+                    Cow::Borrowed(block_text)
+                }
+            })
+            .collect();
         Self {
             text,
-            blocks: parsed.blocks,
+            blocks,
+            keys,
             eol: parsed.eol,
+            line_starts: lines.iter().map(|line| line.start).collect(),
         }
     }
 
@@ -103,18 +162,16 @@ impl<'a> Side<'a> {
         &self.text[block.start_byte..block.end_byte]
     }
 
-    /// What two blocks are compared by: their text with the same line ending everywhere.
-    fn keys(&self) -> Vec<Cow<'a, str>> {
-        (0..self.blocks.len())
-            .map(|i| {
-                let text = self.block_text(i);
-                if text.contains('\r') {
-                    Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
-                } else {
-                    Cow::Borrowed(text)
-                }
-            })
-            .collect()
+    /// The first and the last line of block `index`, counted from 1.
+    fn lines_of(&self, index: usize) -> (usize, usize) {
+        let block = &self.blocks[index];
+        let line_at = |byte: usize| self.line_starts.partition_point(|&start| start <= byte);
+        (line_at(block.start_byte), line_at(block.end_byte))
+    }
+
+    /// The blocks `range` as they are compared: kind and text.
+    fn shape(&self, range: Range<usize>) -> impl Iterator<Item = (BlockKind, &str)> {
+        range.map(|i| (self.blocks[i].kind, self.keys[i].as_ref()))
     }
 
     /// The bytes of blocks `range` (non-empty), from the start of the first to the end of the last.
@@ -211,9 +268,7 @@ impl<'a> Comparison<'a> {
     pub fn new(reviewed: &'a str, current: &'a str) -> Self {
         let reviewed = Side::new(reviewed);
         let current = Side::new(current);
-        let old_keys = reviewed.keys();
-        let new_keys = current.keys();
-        let matches = lcs_pairs(&old_keys, &new_keys);
+        let matches = lcs_pairs(&reviewed.keys, &current.keys);
 
         let mut changes = Vec::new();
         let (mut old_from, mut new_from) = (0, 0);
@@ -260,10 +315,33 @@ impl<'a> Comparison<'a> {
         self.current.span(&(index..index + 1))
     }
 
+    /// The first and the last line of block `index` of the reviewed text, counted from 1 as the reading view counts
+    /// them (`data-sourcepos`).
+    pub fn old_lines(&self, index: usize) -> (usize, usize) {
+        self.reviewed.lines_of(index)
+    }
+
+    /// The first and the last line of block `index` of the current text (see [`Comparison::old_lines`]).
+    pub fn new_lines(&self, index: usize) -> (usize, usize) {
+        self.current.lines_of(index)
+    }
+
+    /// The line of the current text where `change` is: the first line of its new blocks; for a removal, the line of
+    /// the block it sits in front of; `None` when it is at the end.
+    pub fn new_line(&self, change: &Change) -> Option<usize> {
+        (change.new_blocks.start < self.current.blocks.len())
+            .then(|| self.current.lines_of(change.new_blocks.start).0)
+    }
+
     /// The reviewed text with change `index` accepted: its new blocks take the place of the old ones.
-    pub fn kept(&self, index: usize) -> String {
+    ///
+    /// The result has the blocks of the reviewed text with that change swapped for the new ones, and no other: when a
+    /// splice would join or split blocks (a table that takes in the paragraph next to it, a line of dashes that turns
+    /// the top of the file into front matter), it is tried again with blank lines around the swapped blocks, and when
+    /// that does not help either, the change cannot be applied on its own ([`CannotSplice`]).
+    pub fn kept(&self, index: usize) -> Result<String, CannotSplice> {
         let change = &self.changes[index];
-        splice(
+        splice_checked(
             &self.reviewed,
             &change.old_blocks,
             &self.current,
@@ -271,10 +349,11 @@ impl<'a> Comparison<'a> {
         )
     }
 
-    /// The current text with change `index` undone: its old blocks take the place of the new ones.
-    pub fn reverted(&self, index: usize) -> String {
+    /// The current text with change `index` undone: its old blocks take the place of the new ones. The result is
+    /// checked as in [`Comparison::kept`].
+    pub fn reverted(&self, index: usize) -> Result<String, CannotSplice> {
         let change = &self.changes[index];
-        splice(
+        splice_checked(
             &self.current,
             &change.new_blocks,
             &self.reviewed,
@@ -282,6 +361,11 @@ impl<'a> Comparison<'a> {
         )
     }
 }
+
+/// A change cannot be kept or reverted on its own: whatever the splice does, the document ends up with other blocks
+/// than the ones the review showed. Keeping or reverting everything is still possible.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CannotSplice;
 
 fn make_change(
     reviewed: &Side<'_>,
@@ -346,6 +430,97 @@ fn has_blank_line(gap: &str) -> bool {
     breaks.matches('\n').count() >= 2
 }
 
+/// Whether a swap covers every block of both texts, which makes the result `source` itself.
+fn swaps_everything(
+    target: &Side<'_>,
+    replace: &Range<usize>,
+    source: &Side<'_>,
+    with: &Range<usize>,
+) -> bool {
+    let whole =
+        |range: &Range<usize>, side: &Side<'_>| range.start == 0 && range.end == side.blocks.len();
+    whole(replace, target) && whole(with, source)
+}
+
+/// [`splice`], and the result is parsed again: it must have exactly the blocks of `target` with `replace` swapped for
+/// `with`, which is what the review showed. If not, the swap is made again with a blank line between the swapped
+/// blocks and their neighbours ([`splice_spaced`]); if that fails too, there is no result.
+fn splice_checked(
+    target: &Side<'_>,
+    replace: &Range<usize>,
+    source: &Side<'_>,
+    with: &Range<usize>,
+) -> Result<String, CannotSplice> {
+    if swaps_everything(target, replace, source, with) || (replace.is_empty() && with.is_empty()) {
+        return Ok(splice(target, replace, source, with));
+    }
+    let wanted: Vec<(BlockKind, &str)> = target
+        .shape(0..replace.start)
+        .chain(source.shape(with.clone()))
+        .chain(target.shape(replace.end..target.blocks.len()))
+        .collect();
+    [splice, splice_spaced]
+        .into_iter()
+        .map(|attempt| attempt(target, replace, source, with))
+        .find(|result| {
+            let made = Side::new(result);
+            made.shape(0..made.blocks.len()).eq(wanted.iter().copied())
+        })
+        .ok_or(CannotSplice)
+}
+
+/// [`splice`] with a blank line between the swapped blocks and the blocks next to them, and the text before the first
+/// block and after the last as `target` has it. The separators between the blocks that go in are those of `source`.
+fn splice_spaced(
+    target: &Side<'_>,
+    replace: &Range<usize>,
+    source: &Side<'_>,
+    with: &Range<usize>,
+) -> String {
+    let blank = if target.eol == Eol::Crlf {
+        "\r\n\r\n"
+    } else {
+        "\n\n"
+    };
+    let first = target
+        .blocks
+        .first()
+        .map_or(target.text.len(), |b| b.start_byte);
+    // what is kept in front: up to the end of the block before, or the text before the first block
+    let (head, has_before) = match replace.start.checked_sub(1) {
+        Some(before) => (&target.text[..target.blocks[before].end_byte], true),
+        None => (&target.text[..first], false),
+    };
+    // and behind: from the start of the block after, or the text after the last block
+    let (tail, has_after) = match target.blocks.get(replace.end) {
+        Some(after) => (&target.text[after.start_byte..], true),
+        None => (
+            target
+                .blocks
+                .last()
+                .map_or("", |last| &target.text[last.end_byte..]),
+            false,
+        ),
+    };
+    let middle = if with.is_empty() {
+        Cow::Borrowed("")
+    } else {
+        let span = source.span(with);
+        target.like_mine(&source.text[span.start..span.end])
+    };
+    let mut out = String::with_capacity(head.len() + middle.len() + tail.len() + 2 * blank.len());
+    out.push_str(head);
+    if has_before && (!middle.is_empty() || has_after) {
+        out.push_str(blank);
+    }
+    out.push_str(&middle);
+    if has_after && !middle.is_empty() {
+        out.push_str(blank);
+    }
+    out.push_str(tail);
+    out
+}
+
 /// The text of `target` with its blocks `replace` swapped for the blocks `with` of `source`.
 ///
 /// Blocks that are edited in place are swapped for each other, and the separators around them stay as `target`
@@ -361,9 +536,7 @@ fn splice(
     source: &Side<'_>,
     with: &Range<usize>,
 ) -> String {
-    let whole =
-        |range: &Range<usize>, side: &Side<'_>| range.start == 0 && range.end == side.blocks.len();
-    if (whole(replace, target) && whole(with, source)) || (replace.is_empty() && with.is_empty()) {
+    if swaps_everything(target, replace, source, with) || (replace.is_empty() && with.is_empty()) {
         return if replace.is_empty() && with.is_empty() {
             target.text.to_owned()
         } else {

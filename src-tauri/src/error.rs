@@ -196,7 +196,9 @@ fn review_details(e: &ReviewError) -> Details {
     match e {
         ReviewError::Vault(e) => vault_details(e),
         ReviewError::Edit(e) => edit_details(e),
-        ReviewError::Stale(subject) | ReviewError::NoBaseline(subject) => Details::subject(subject),
+        ReviewError::Stale(subject)
+        | ReviewError::NoBaseline(subject)
+        | ReviewError::Conflict(subject) => Details::subject(subject),
         ReviewError::Off => Details::default(),
         ReviewError::Io { path, source } => Details::io(path, source),
     }
