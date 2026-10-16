@@ -53,6 +53,10 @@ export const es = {
   "theme.system": "Sistema",
   "theme.light": "Claro",
   "theme.dark": "Oscuro",
+  "tone.white": "Blanco",
+  "tone.paper": "Papel",
+  "tone.sage": "Salvia",
+  "tone.gray": "Gris",
   "sidebar.label": "Barra lateral",
   "panel.collapseLeft": "Contraer barra lateral",
   "panel.collapseLeftHint": "Contraer barra lateral (Ctrl+B)",
@@ -680,6 +684,8 @@ export const es = {
     "{name} no se puede abrir con la aplicación predeterminada del sistema. Elige un editor en Configuración.",
   "error.editorNotFound":
     "No se pudo ejecutar '{subject}': no se encontró. Define el comando del editor en Configuración.",
+  "settings.tone": "Tono claro",
+  "settings.toneNotSaved": "No se pudo guardar el tono para la próxima vez: {message}",
   "error.editorBadArguments":
     "No se pudo ejecutar '{subject}': no admite esta ruta de archivo como argumento. Define el comando del editor en Configuración.",
   "error.editorSpawn":

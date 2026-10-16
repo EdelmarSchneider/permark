@@ -25,6 +25,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   appLanguage: [],
   appDistribution: [],
   setAppLanguage: ["de"],
+  appTone: [],
+  setAppTone: ["paper"],
   shellIntegrationState: [],
   setShellContextMenu: [true, "de"],
   setShellFileAssociation: [false, "pt-BR"],

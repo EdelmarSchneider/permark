@@ -26,6 +26,7 @@
   import { comments } from "../stores/comments.svelte";
   import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
+  import { tone } from "../stores/toneChoice.svelte";
   import { toast } from "../stores/toast.svelte";
   import { ui } from "../stores/ui.svelte";
   import { unread } from "../stores/unread.svelte";
@@ -423,9 +424,10 @@
     });
   });
 
-  let lastTheme = untrack(() => session.resolvedTheme);
+  // the diagrams are drawn in the colours of the theme, and of the tone of the light theme
+  let lastTheme = untrack(() => `${session.resolvedTheme}:${tone.current}`);
   $effect(() => {
-    const theme = session.resolvedTheme;
+    const theme = `${session.resolvedTheme}:${tone.current}`;
     untrack(() => {
       if (theme === lastTheme) return;
       lastTheme = theme;

@@ -17,6 +17,7 @@
   import { edit } from "../stores/edit.svelte";
   import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
+  import { tone } from "../stores/toneChoice.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import LinkPopover from "./LinkPopover.svelte";
   import Notice from "./Notice.svelte";
@@ -191,6 +192,7 @@
   });
   $effect(() => {
     void session.resolvedTheme;
+    void tone.current;
     untrack(() => locked?.retheme());
   });
 

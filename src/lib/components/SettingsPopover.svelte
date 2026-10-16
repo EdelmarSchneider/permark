@@ -18,12 +18,14 @@
   } from "../i18n";
   import { copyText } from "../platform";
   import { READING_WIDTHS } from "../readingWidth";
+  import { TONES } from "../tone";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { agent } from "../stores/agent.svelte";
   import { distribution } from "../stores/distribution.svelte";
   import { docs } from "../stores/docs.svelte";
   import { editorCommand } from "../stores/editorCommand.svelte";
   import { chooseLanguage } from "../stores/languageChoice.svelte";
+  import { chooseTone, tone } from "../stores/toneChoice.svelte";
   import { session } from "../stores/session.svelte";
   import { shell } from "../stores/shell.svelte";
   import { toast } from "../stores/toast.svelte";
@@ -165,6 +167,22 @@
             onclick={() => session.setTheme(theme)}
           >
             {t(`theme.${theme}`)}
+          </button>
+        {/each}
+      </div>
+    </div>
+    <div class="field">
+      <span class="field__label">{t("settings.tone")}</span>
+      <!-- the tone paints the light theme only: while the theme is dark the choice waits, dimmed -->
+      <div class="segmented" role="group" aria-label={t("settings.tone")}>
+        {#each TONES as choice (choice)}
+          <button
+            type="button"
+            aria-pressed={tone.current === choice}
+            disabled={session.resolvedTheme === "dark"}
+            onclick={() => void chooseTone(choice)}
+          >
+            {t(`tone.${choice}`)}
           </button>
         {/each}
       </div>

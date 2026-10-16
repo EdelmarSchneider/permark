@@ -53,6 +53,10 @@ export const ptBR = {
   "theme.system": "Sistema",
   "theme.light": "Claro",
   "theme.dark": "Escuro",
+  "tone.white": "Branco",
+  "tone.paper": "Papel",
+  "tone.sage": "Sálvia",
+  "tone.gray": "Cinza",
   "sidebar.label": "Barra lateral",
   "panel.collapseLeft": "Recolher barra lateral",
   "panel.collapseLeftHint": "Recolher barra lateral (Ctrl+B)",
@@ -679,6 +683,8 @@ export const ptBR = {
     "{name} não pode ser aberto com o app padrão do sistema. Escolha um editor em Configurações.",
   "error.editorNotFound":
     "Não foi possível executar '{subject}': não encontrado. Defina o comando do editor em Configurações.",
+  "settings.tone": "Tom claro",
+  "settings.toneNotSaved": "Não foi possível guardar o tom para a próxima vez: {message}",
   "error.editorBadArguments":
     "Não foi possível executar '{subject}': ele não aceita este caminho de arquivo como argumento. Defina o comando do editor em Configurações.",
   "error.editorSpawn":

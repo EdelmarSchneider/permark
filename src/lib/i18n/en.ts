@@ -51,6 +51,10 @@ export const en = {
   "theme.system": "System",
   "theme.light": "Light",
   "theme.dark": "Dark",
+  "tone.white": "White",
+  "tone.paper": "Paper",
+  "tone.sage": "Sage",
+  "tone.gray": "Gray",
   "sidebar.label": "Sidebar",
   "panel.collapseLeft": "Collapse sidebar",
   "panel.collapseLeftHint": "Collapse sidebar (Ctrl+B)",
@@ -664,6 +668,8 @@ export const en = {
     "{name} can't be opened with the system's default app. Choose an editor in Settings.",
   "error.editorNotFound":
     "Couldn't run '{subject}': not found. Set the editor command in Settings.",
+  "settings.tone": "Light tone",
+  "settings.toneNotSaved": "Couldn't keep the tone for next time: {message}",
   "error.editorBadArguments":
     "Couldn't run '{subject}': it can't take this file path as an argument. Set the editor command in Settings.",
   "error.editorSpawn": "Couldn't run '{subject}': {detail}. Set the editor command in Settings.",

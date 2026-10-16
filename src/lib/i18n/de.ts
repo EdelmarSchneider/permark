@@ -54,6 +54,10 @@ export const de = {
   "theme.system": "System",
   "theme.light": "Hell",
   "theme.dark": "Dunkel",
+  "tone.white": "Weiß",
+  "tone.paper": "Papier",
+  "tone.sage": "Salbei",
+  "tone.gray": "Grau",
   "sidebar.label": "Seitenleiste",
   "panel.collapseLeft": "Seitenleiste einklappen",
   "panel.collapseLeftHint": "Seitenleiste einklappen (Strg+B)",
@@ -685,6 +689,8 @@ export const de = {
   "error.editorNotFound":
     "„{subject}“ konnte nicht ausgeführt werden: nicht gefunden. In den Einstellungen den Editor-Befehl festlegen.",
   "error.editorBadArguments":
+  "settings.tone": "Farbton (Hell)",
+  "settings.toneNotSaved": "Farbton konnte nicht für das nächste Mal gespeichert werden: {message}",
     "„{subject}“ konnte nicht ausgeführt werden: Der Dateipfad lässt sich nicht als Argument übergeben. In den Einstellungen den Editor-Befehl festlegen.",
   "error.editorSpawn":
     "„{subject}“ konnte nicht ausgeführt werden: {detail}. In den Einstellungen den Editor-Befehl festlegen.",
