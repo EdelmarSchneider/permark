@@ -19,10 +19,15 @@
   import { ui } from "../stores/ui.svelte";
   import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
+  import { hasLook } from "../tagStyle";
   import { badgeFor } from "../tree";
   import type { TagCount } from "../types";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
+  import Menu, { type MenuEntry } from "./Menu.svelte";
+  import type { Anchor } from "./Popover.svelte";
+  import TagMark from "./TagMark.svelte";
+  import TagStylePopover from "./TagStylePopover.svelte";
   import UnreadDot from "./UnreadDot.svelte";
 
   type Row = { kind: "tag"; tag: TagCount } | { kind: "untagged"; count: number };
@@ -37,6 +42,9 @@
   // the lists keep the focus and point at a row (aria-activedescendant): the row shows the focus ring
   let tagsFocused = $state(false);
   let filesFocused = $state(false);
+  // the menu of a tag row, and the popover that gives the tag a color and an icon
+  let tagMenu = $state.raw<{ tag: string; anchor: Anchor } | null>(null);
+  let styling = $state.raw<{ tag: string; anchor: Anchor } | null>(null);
 
   const overview = $derived(tags.overview);
   const problem = $derived(overview?.status.problem ?? null);
@@ -48,6 +56,8 @@
       ? [{ kind: "untagged", count: overview.untagged } satisfies Row]
       : []),
   ]);
+  // once any listed tag has a look, every row keeps a slot for its mark so the names stay lined up
+  const anyStyled = $derived(shown.some((tag) => hasLook(tags.styleOf(tag.name))));
   const hasTags = $derived((overview?.tags.length ?? 0) > 0);
   const noMatch = $derived(hasTags && shown.length === 0 && tags.filter.trim() !== "");
   const files = $derived(tags.files);
@@ -100,7 +110,43 @@
       ?.scrollIntoView({ block: "nearest" });
   }
 
+  /** Opens the menu of a tag row, at the pointer or (from the keyboard) beside the row. */
+  function openTagMenu(tag: string, at: Anchor | { x: number; y: number }): void {
+    tagMenu = {
+      tag,
+      anchor: "x" in at ? { left: at.x, right: at.x, top: at.y, bottom: at.y } : at,
+    };
+  }
+
+  /** Where a tag's row is on screen (null when it is not listed). */
+  function rowAnchor(tag: string): Anchor | null {
+    const i = rows.findIndex((r) => r.kind === "tag" && r.tag.name === tag);
+    return tagList?.querySelector<HTMLElement>(`[data-i="${i}"]`)?.getBoundingClientRect() ?? null;
+  }
+
+  /** The menu closes before an entry runs, so the tag and the place are taken as they are now. */
+  function tagMenuEntries(tag: string, anchor: Anchor): MenuEntry[] {
+    return [
+      {
+        id: "style",
+        label: t("tags.style.menu"),
+        onselect: () => (styling = { tag, anchor: rowAnchor(tag) ?? anchor }),
+      },
+    ];
+  }
+
+  function openTagMenuAtFocus(): void {
+    const row = rows[tagFocus];
+    const anchor = row?.kind === "tag" ? rowAnchor(row.tag.name) : null;
+    if (row?.kind === "tag" && anchor) openTagMenu(row.tag.name, anchor);
+  }
+
   function onTagsKey(e: KeyboardEvent): void {
+    if ((e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      openTagMenuAtFocus();
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const last = rows.length - 1;
     switch (e.key) {
@@ -266,6 +312,7 @@
       onfocus={() => (tagsFocused = true)}
       onblur={() => (tagsFocused = false)}
       onkeydown={onTagsKey}
+      oncontextmenu={(e) => e.preventDefault()}
     >
       {#each rows as row, i (rowKey(row))}
         <!-- the list handles the keys; rows are picked with the pointer or with Enter and Space on the list -->
@@ -287,10 +334,22 @@
             chooseRow(row, e.ctrlKey || e.metaKey);
             tagList?.focus();
           }}
+          oncontextmenu={(e) => {
+            if (row.kind !== "tag") return;
+            e.preventDefault();
+            tagFocus = i;
+            openTagMenu(row.tag.name, { x: e.clientX, y: e.clientY });
+          }}
         >
           <span class="tag-row__check" aria-hidden="true">
             {#if isSelected(row)}<Icon name="check" size="sm" />{/if}
           </span>
+          {#if anyStyled}
+            {@const look = row.kind === "tag" ? tags.styleOf(row.tag.name) : undefined}
+            <span class="tag-mark-slot"
+              >{#if look}<TagMark style={look} />{/if}</span
+            >
+          {/if}
           {#if row.kind === "untagged"}
             <span class="tag-row__name tag-row__name--muted">{t("tags.untagged")}</span>
             <span class="count-pill">{row.count}</span>
@@ -394,4 +453,23 @@
       </button>
     </div>
   {/if}
+{/if}
+
+{#if tagMenu}
+  {@const at = tagMenu}
+  <Menu
+    label={t("tags.style.menuLabel")}
+    anchor={at.anchor}
+    entries={tagMenuEntries(at.tag, at.anchor)}
+    onclose={() => (tagMenu = null)}
+  />
+{/if}
+
+{#if styling}
+  <TagStylePopover
+    tag={styling.tag}
+    anchor={styling.anchor}
+    readOnly={problem !== null}
+    onclose={() => (styling = null)}
+  />
 {/if}

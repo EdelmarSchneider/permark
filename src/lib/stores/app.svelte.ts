@@ -423,6 +423,7 @@ class AppStore {
       void vault.refreshSince();
       if (info.mode === "ide") {
         void tags.refreshIndex();
+        void tags.refreshStyles();
         void vault.refreshImageRefs();
         void unread.refresh();
         void comments.refresh();

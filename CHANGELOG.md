@@ -13,6 +13,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
   of a thousand documents an agent can narrow down in a call or two and read only the few that fit. Answers stay short (long lists show the
   first ones and say how many more there are, and `limit` asks for more), and everything works when TrailMark is closed, from the project's
   files.
+- **Give a tag a color and an icon.** Right-click a tag in the Tags view (or press the menu key or Shift+F10 on it) and choose **Color and
+  icon...**: pick one of eight colors and one of twelve icons, with a live preview, and the tag looks that way everywhere it shows, so you can
+  tell at a glance what kind of document you are looking at: in the strip above a document, in the tag editor and its suggestions, in the
+  search boxes and in the Tags view. The colors are tuned to stay readable in the dark theme and in every light tone. A tag with neither looks
+  as before. The choice is kept per project, in `.trailmark/meta.toml` with the rest of your tags (`[tag_styles.<tag>]`), so it travels with the
+  project.
 - **Open web pages in your browser.** An `.html` or `.htm` file in your folder now has **Open in browser**: in its right-click menu in the
   Explorer, in the **...** menu of the open page, and in the command palette. The page opens in the application your system uses for web
   pages, which is your browser on almost every computer.

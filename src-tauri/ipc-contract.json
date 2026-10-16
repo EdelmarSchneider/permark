@@ -41,6 +41,8 @@
     "list_tags": [],
     "files_with_tags": ["tags", "untagged"],
     "meta_index": [],
+    "tag_styles": [],
+    "set_tag_style": ["tag", "color", "icon"],
     "clean_up_meta": [],
     "document_source": ["path"],
     "parse_blocks": ["text"],

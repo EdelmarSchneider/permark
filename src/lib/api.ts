@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { LanguagePreference } from "./i18n";
+import { readStyles, type TagColor, type TagIcon, type TagStyles } from "./tagStyle";
 import type { Tone } from "./tone";
 import type {
   AgentContext,
@@ -167,6 +168,10 @@ export interface Api {
   filesWithTags(tags: string[], untagged: boolean): Promise<TaggedFile[]>;
   /** The tags and description of every file that has some. */
   metaIndex(): Promise<IndexEntry[]>;
+  /** The color and icon of every tag that has a look, by tag name. */
+  tagStyles(): Promise<TagStyles>;
+  /** Gives a tag a color and an icon (`null` for none). Resolves to every tag's look. */
+  setTagStyle(tag: string, color: TagColor | null, icon: TagIcon | null): Promise<TagStyles>;
   /** Removes the entries kept for files that no longer exist. Resolves to how many. */
   cleanUpMeta(): Promise<number>;
   /** A Markdown file as the editor needs it: the exact text, its hash and its blocks. Rejects for files that can't be edited. */
@@ -377,6 +382,9 @@ export const tauriApi: Api = {
   listTags: () => invoke<TagOverview>("list_tags"),
   filesWithTags: (tags, untagged) => invoke<TaggedFile[]>("files_with_tags", { tags, untagged }),
   metaIndex: () => invoke<IndexEntry[]>("meta_index"),
+  tagStyles: async () => readStyles(await invoke<unknown>("tag_styles")),
+  setTagStyle: async (tag, color, icon) =>
+    readStyles(await invoke<unknown>("set_tag_style", { tag, color, icon })),
   cleanUpMeta: () => invoke<number>("clean_up_meta"),
   documentSource: (path) => invoke<SourceDoc>("document_source", { path }),
   parseBlocks: (text) => invoke<ParsedBlocks>("parse_blocks", { text }),
@@ -532,6 +540,8 @@ function createMockApi(): Api {
     listTags: command("listTags"),
     filesWithTags: command("filesWithTags"),
     metaIndex: command("metaIndex"),
+    tagStyles: command("tagStyles"),
+    setTagStyle: command("setTagStyle"),
     cleanUpMeta: command("cleanUpMeta"),
     documentSource: command("documentSource"),
     parseBlocks: command("parseBlocks"),

@@ -12,6 +12,8 @@ import {
   metaIndex,
   setDescription,
   setTags,
+  setTagStyle,
+  tagStyles,
 } from "./mockMeta";
 import {
   MOCK_ROOT,
@@ -250,6 +252,8 @@ export const mockImpl: Api = {
   listTags: async () => listTags(),
   filesWithTags: async (tags, untagged) => filesWithTags(tags, untagged),
   metaIndex: async () => metaIndex(),
+  tagStyles: async () => tagStyles(),
+  setTagStyle: async (tag, color, icon) => setTagStyle(tag, color, icon),
   cleanUpMeta: async () => cleanUp(),
   documentSource: async (path) => {
     const source = await documentSource(path);

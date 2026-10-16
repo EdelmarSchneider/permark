@@ -34,6 +34,7 @@ use crate::links::{self, LinkTarget};
 use crate::media::{self, Window};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
+use crate::meta::style::TagStyleView;
 use crate::meta::{MetaService, Timing};
 use crate::notes::{
     self, LooseDoc, NoteSaved, NotesError, NotesService, OpenReport, ReadOnlyReason,
@@ -1359,6 +1360,21 @@ impl Workspace {
 
     pub fn meta_index(&self) -> Vec<IndexEntry> {
         self.meta.index()
+    }
+
+    /// The color and icon of every tag that has a look.
+    pub fn tag_styles(&self) -> BTreeMap<String, TagStyleView> {
+        self.meta.tag_styles()
+    }
+
+    /// Gives a tag a color and an icon; answers with every tag's look.
+    pub fn set_tag_style(
+        &self,
+        tag: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> Result<BTreeMap<String, TagStyleView>, AppError> {
+        Ok(self.meta.set_tag_style(tag, color, icon)?)
     }
 
     /// Removes the tags and descriptions kept for files that no longer exist. Returns how many.
