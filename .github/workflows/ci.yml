@@ -55,7 +55,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/shell-ext
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -93,7 +95,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/shell-ext
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -115,8 +119,13 @@ jobs:
       - name: Tests, store flavor
         run: cargo test --manifest-path src-tauri/Cargo.toml --features store --lib
 
-      # MakeAppx checks the manifest against the package schema and that every file it names is there. A stand-in
-      # program is packed (the real build takes a release build); this package is not kept.
+      # The package also carries the DLL of the folder menu entry (src-tauri/shell-ext, a crate of its own). The gate above
+      # tests it; this builds it the way the package does, in release.
+      - name: Build the shell extension
+        run: cargo build --release --manifest-path src-tauri/shell-ext/Cargo.toml
+
+      # MakeAppx checks the manifest against the package schema and that every file it names is there, the DLL included. A
+      # stand-in program is packed (the real build takes a release build); this package is not kept.
       - name: Pack the manifest with a stand-in program
         shell: pwsh
         run: ./scripts/build-msix.ps1 -ExePath "$env:SystemRoot\System32\whoami.exe" -OutDir "$env:RUNNER_TEMP\msix-check"

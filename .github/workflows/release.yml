@@ -188,7 +188,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: |
+            src-tauri
+            src-tauri/shell-ext
 
       - name: Set up Node
         uses: actions/setup-node@v4
