@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { gitStateLabel } from "../gitLabels";
+  import { gitBadgeTitle } from "../gitLabels";
   import { t } from "../i18n";
   import { groupSince, isDubiousOwnership, safeDirectoryCommand } from "../since";
   import { app } from "../stores/app.svelte";
@@ -105,7 +105,7 @@
             {#if unread.isUnread(file.path)}<UnreadDot />{/if}
             <span class="tree-name">{file.name}</span>
             {#if badge}
-              <span class={["badge", badge.className]} title={gitStateLabel(badge.state)}
+              <span class={["badge", badge.className]} title={gitBadgeTitle(badge, "lastVisit")}
                 >{badge.letter}</span
               >
             {/if}
@@ -119,7 +119,12 @@
         <Icon name="lightbulb" size="sm" class="" />
         <span>
           {t("hint.keepSettings")}
-          <button type="button" class="link-btn" onclick={() => (ui.initDialog = true)}>
+          <button
+            type="button"
+            class="link-btn"
+            title={t("initHint.detail")}
+            onclick={() => (ui.initDialog = true)}
+          >
             {t("hint.initialize")}
           </button>
         </span>

@@ -32,7 +32,7 @@ use crate::render::DocumentView;
 use crate::search::SearchHit;
 use crate::session::{
     effective_language, installer_language, AppSettingsStore, Language, RecentStore, RecentVault,
-    SessionState, StateLocation,
+    SessionState, StateLocation, Tone,
 };
 use crate::shell_integration::{self, ShellError, ShellState};
 use crate::vault::{TreeNode, TreeOptions};
@@ -248,6 +248,21 @@ pub async fn set_app_language(app: AppHandle, language: Language) -> Result<(), 
     blocking(move || Ok(AppSettingsStore::new(&dir).set_language(language)?)).await
 }
 
+/// The tone of the light theme the person picked (white until they pick one). It is app-wide, so every window, the
+/// welcome screen and the Notes window included, starts in it.
+#[tauri::command]
+pub async fn app_tone(app: AppHandle) -> Result<Tone, AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || Ok(AppSettingsStore::new(&dir).load().tone.unwrap_or_default())).await
+}
+
+/// Keeps the tone of the light theme picked in Settings.
+#[tauri::command]
+pub async fn set_app_tone(app: AppHandle, tone: Tone) -> Result<(), AppError> {
+    let dir = app_data_dir(&app)?;
+    blocking(move || Ok(AppSettingsStore::new(&dir).set_tone(tone)?)).await
+}
+
 /// What "Open with TrailMark" has registered with the file manager, read from the system each time.
 #[tauri::command]
 pub async fn shell_integration_state() -> Result<ShellState, AppError> {
@@ -255,7 +270,7 @@ pub async fn shell_integration_state() -> Result<ShellState, AppError> {
 }
 
 /// Adds or removes "Open with TrailMark" in the right-click menu. `locale` is the language of the interface
-/// (`en`, `pt-BR`, `es`, `de`, `zh-CN`): the entry is worded in it.
+/// (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`): the entry is worded in it.
 #[tauri::command]
 pub async fn set_shell_context_menu(enabled: bool, locale: String) -> Result<ShellState, AppError> {
     blocking(move || Ok(shell_integration::set_context_menu(enabled, &locale)?)).await

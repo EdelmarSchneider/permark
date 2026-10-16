@@ -1,4 +1,4 @@
-//! App-wide settings: the ones that belong to the person, not to a project (today, the interface language).
+//! App-wide settings: the ones that belong to the person, not to a project (the interface language, the light tone, ...).
 //!
 //! They live in AppData as `settings.json`. Parsing is forgiving: a value this build does not understand
 //! (written by a newer version) reads as "not chosen" and the keys it does not know are kept on the next
@@ -33,11 +33,13 @@ pub enum Language {
     De,
     #[serde(rename = "zh-CN")]
     ZhCn,
+    #[serde(rename = "it")]
+    It,
 }
 
 impl Language {
-    /// The language an installer wrote down (`en`, `pt-BR`, `es`, `de`, `zh-CN`). "system" is not an installer
-    /// choice, and a code from a newer installer reads as nothing.
+    /// The language an installer wrote down (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`). "system" is not an
+    /// installer choice, and a code from a newer installer reads as nothing.
     pub fn from_installer_code(code: &str) -> Option<Self> {
         match code.trim() {
             "en" => Some(Self::En),
@@ -45,6 +47,7 @@ impl Language {
             "es" => Some(Self::Es),
             "de" => Some(Self::De),
             "zh-CN" => Some(Self::ZhCn),
+            "it" => Some(Self::It),
             _ => None,
         }
     }
@@ -60,6 +63,18 @@ pub enum StartIn {
     /// The Notes window.
     #[serde(rename = "notes")]
     Notes,
+}
+
+/// How light the light theme is: plain white, or a softer paper, sage or gray for tired eyes. The UI draws it (a
+/// `data-tone` on the page); the app only keeps the choice. It has no effect while the theme is dark.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Tone {
+    #[default]
+    White,
+    Paper,
+    Sage,
+    Gray,
 }
 
 /// Reads an `Option<T>`, or `None` when the stored value is not one this build understands.
@@ -113,6 +128,12 @@ pub struct AppSettings {
         skip_serializing_if = "Option::is_none"
     )]
     pub start_in: Option<StartIn>,
+    /// The tone of the light theme. `None` until the person picks one: plain white.
+    #[serde(
+        deserialize_with = "lenient_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub tone: Option<Tone>,
     /// Keys written by other versions, kept as they were.
     #[serde(flatten)]
     extra: BTreeMap<String, serde_json::Value>,
@@ -168,6 +189,13 @@ impl AppSettingsStore {
     pub fn set_start_in(&self, start_in: StartIn) -> Result<(), SessionError> {
         let mut settings = self.load();
         settings.start_in = Some(start_in);
+        self.save(&settings)
+    }
+
+    /// Records the tone of the light theme, keeping every other setting.
+    pub fn set_tone(&self, tone: Tone) -> Result<(), SessionError> {
+        let mut settings = self.load();
+        settings.tone = Some(tone);
         self.save(&settings)
     }
 
@@ -231,6 +259,7 @@ mod tests {
             (Language::Es, "es"),
             (Language::De, "de"),
             (Language::ZhCn, "zh-CN"),
+            (Language::It, "it"),
         ] {
             let (_d, s) = store();
             s.set_language(language).expect("save");
@@ -354,6 +383,72 @@ mod tests {
     }
 
     #[test]
+    fn the_tone_is_white_until_the_person_picks_and_every_tone_round_trips() {
+        let (_d, s) = store();
+        assert_eq!(
+            s.load().tone,
+            None,
+            "settings saved before the tone existed"
+        );
+        assert_eq!(Tone::default(), Tone::White);
+        s.set_language(Language::De).expect("save");
+        for (tone, name) in [
+            (Tone::White, "white"),
+            (Tone::Paper, "paper"),
+            (Tone::Sage, "sage"),
+            (Tone::Gray, "gray"),
+        ] {
+            s.set_tone(tone).expect("save");
+            assert_eq!(s.load().tone, Some(tone));
+            assert_eq!(s.load().language, Some(Language::De), "{name}");
+            let json: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&s.file).expect("read")).expect("json");
+            assert_eq!(json["tone"], name);
+        }
+    }
+
+    #[test]
+    fn settings_saved_before_the_tone_existed_still_load_and_keep_their_other_keys() {
+        let (_d, s) = store();
+        std::fs::write(&s.file, "{\"language\": \"de\", \"startIn\": \"notes\"}").expect("write");
+        let settings = s.load();
+        assert_eq!(settings.tone, None, "no tone chosen: plain white");
+        assert_eq!(settings.language, Some(Language::De));
+        assert_eq!(settings.start_in, Some(StartIn::Notes));
+        s.set_tone(Tone::Paper).expect("save");
+        let settings = s.load();
+        assert_eq!(settings.tone, Some(Tone::Paper));
+        assert_eq!(settings.language, Some(Language::De));
+        assert_eq!(settings.start_in, Some(StartIn::Notes));
+    }
+
+    #[test]
+    fn a_tone_this_build_does_not_understand_reads_as_not_chosen_and_nothing_else_is_lost() {
+        for value in [
+            "\"sepia\"",
+            "\"Paper\"",
+            "7",
+            "true",
+            "[\"sage\"]",
+            "{}",
+            "null",
+        ] {
+            let (_d, s) = store();
+            std::fs::write(
+                &s.file,
+                format!("{{\"tone\": {value}, \"language\": \"es\"}}"),
+            )
+            .expect("write");
+            let settings = s.load();
+            assert_eq!(settings.tone, None, "{value}");
+            assert_eq!(settings.language, Some(Language::Es), "{value}");
+            s.set_tone(Tone::Gray).expect("save");
+            assert_eq!(s.load().tone, Some(Tone::Gray));
+            assert_eq!(s.load().language, Some(Language::Es), "{value}");
+        }
+    }
+
+    #[test]
     fn the_persons_pick_beats_the_installer_which_beats_the_system() {
         use Language::{De, En, PtBr, System};
         assert_eq!(effective_language(None, None), System);
@@ -370,15 +465,17 @@ mod tests {
         assert_eq!(Language::from_installer_code("es"), Some(Language::Es));
         assert_eq!(Language::from_installer_code(" de\r\n"), Some(Language::De));
         assert_eq!(Language::from_installer_code("zh-CN"), Some(Language::ZhCn));
+        assert_eq!(Language::from_installer_code("it"), Some(Language::It));
         for code in [
-            "", "system", "fr", "pt", "pt-br", "zh", "zh-cn", "zh-TW", "2052", "1046",
+            "", "system", "fr", "pt", "pt-br", "zh", "zh-cn", "zh-TW", "2052", "1046", "IT",
+            "it-IT", "ita", "1040",
         ] {
             assert_eq!(Language::from_installer_code(code), None, "{code}");
         }
     }
 
     /// The installer hook (`installer/hooks.nsh`) writes the codes this module reads: every code it can write is
-    /// one the app understands, for each of the five languages, and the config turns the language dialog on.
+    /// one the app understands, for each of the six languages, and the config turns the language dialog on.
     #[test]
     fn the_installer_writes_exactly_the_codes_the_app_reads() {
         const HOOKS: &str = include_str!("../../installer/hooks.nsh");
@@ -390,7 +487,7 @@ mod tests {
             .filter_map(|rest| rest.strip_suffix('"'))
             .filter(|code| !code.is_empty())
             .collect();
-        assert_eq!(written, ["pt-BR", "es", "de", "zh-CN", "en"]);
+        assert_eq!(written, ["pt-BR", "es", "de", "zh-CN", "it", "en"]);
         for code in &written {
             assert!(Language::from_installer_code(code).is_some(), "{code}");
         }
@@ -409,7 +506,7 @@ mod tests {
             .iter()
             .filter_map(|v| v.as_str())
             .collect();
-        // English first: it is the fallback when the system's language is not one of the five
+        // English first: it is the fallback when the system's language is not one of the six
         assert_eq!(
             languages,
             [
@@ -417,7 +514,8 @@ mod tests {
                 "PortugueseBR",
                 "SpanishInternational",
                 "German",
-                "SimpChinese"
+                "SimpChinese",
+                "Italian"
             ]
         );
     }

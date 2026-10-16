@@ -420,10 +420,8 @@
   align-items: center;
   gap: 6px;
 }
-.field__hint {
+.link-form .field__hint {
   min-height: 1.3em;
-  font-size: var(--fs-ui-xs);
-  color: var(--muted);
 }
 .field__hint--warn {
   color: var(--git-deleted-text);

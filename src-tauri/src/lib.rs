@@ -190,6 +190,8 @@ pub fn run() {
             commands::app_language,
             commands::app_distribution,
             commands::set_app_language,
+            commands::app_tone,
+            commands::set_app_tone,
             commands::shell_integration_state,
             commands::set_shell_context_menu,
             commands::set_shell_file_association,

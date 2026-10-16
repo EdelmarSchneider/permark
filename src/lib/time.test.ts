@@ -72,6 +72,11 @@ describe("in another language", () => {
     expect(ago(NOW - 17 * MIN, NOW)).toBe("17 分钟前");
     expect(ago(NOW - 50 * HOUR, NOW)).toBe("2 天前");
     expect(savedLabel(NOW - 4 * MIN, NOW)).toBe("4 分钟前保存");
+    language.preference = "it";
+    expect(ago(NOW - 2 * HOUR, NOW)).toBe("2 ore fa");
+    expect(ago(NOW - 1 * MIN, NOW)).toBe("1 minuto fa");
+    expect(ago(NOW - 12 * SEC, NOW)).toBe("12 secondi fa");
+    expect(savedLabel(NOW - 4 * MIN, NOW)).toBe("salvato 4 min fa");
   });
 
   it("says 'just now' in the language", () => {
@@ -79,6 +84,10 @@ describe("in another language", () => {
     expect(ago(NOW - SEC, NOW)).toBe("eben");
     expect(savedLabel(NOW - SEC, NOW)).toBe("eben geändert");
     expect(savedLabel(NOW - 12 * SEC, NOW)).toBe("vor 12 s geändert");
+    language.preference = "it";
+    expect(ago(NOW - SEC, NOW)).toBe("proprio ora");
+    expect(savedLabel(NOW - SEC, NOW)).toBe("salvato proprio ora");
+    expect(savedLabel(NOW - 12 * SEC, NOW)).toBe("salvato 12 s fa");
   });
 
   it("keeps the 24-hour clock and names the day in the language", () => {
@@ -90,6 +99,8 @@ describe("in another language", () => {
     expect(baselineLabel(monday, NOW)).toMatch(/^seg\.? 18:40$/);
     language.preference = "zh-CN";
     expect(baselineLabel(monday, NOW)).toBe("周一 18:40");
+    language.preference = "it";
+    expect(baselineLabel(monday, NOW)).toBe("lun 18:40");
   });
 
   it("puts the date and the time together the way each language writes them", () => {
@@ -103,6 +114,8 @@ describe("in another language", () => {
     // Chinese writes no comma between the date and the time
     language.preference = "zh-CN";
     expect(baselineLabel(old, NOW)).toBe("10月1日 08:15");
+    language.preference = "it";
+    expect(baselineLabel(old, NOW)).toBe("1 ott, 08:15");
   });
 });
 
@@ -125,5 +138,7 @@ describe("dateTime", () => {
     expect(dateTime(lastYear, true)).toMatch(/^31\. Dez\.? 2025,? 00:05$/);
     language.preference = "zh-CN";
     expect(dateTime(lastYear, true)).toBe("2025年12月31日 00:05");
+    language.preference = "it";
+    expect(dateTime(lastYear, true)).toBe("31 dic 2025, 00:05");
   });
 });

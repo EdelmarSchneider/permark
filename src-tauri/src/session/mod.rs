@@ -18,7 +18,7 @@ use serde::de::IgnoredAny;
 use serde::{Deserialize, Deserializer, Serialize};
 
 pub use app_settings::{
-    effective_language, installer_language, AppSettingsStore, Language, StartIn,
+    effective_language, installer_language, AppSettingsStore, Language, StartIn, Tone,
 };
 pub use config::{Config, TreeConfig, TreeShow};
 pub(crate) use private::{open_lock_file, remove_local_state, write_local_state};

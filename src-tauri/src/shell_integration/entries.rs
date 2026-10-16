@@ -193,6 +193,7 @@ pub(crate) fn menu_label(language: Language) -> &'static str {
         Language::Es => "Abrir con TrailMark",
         Language::De => "Mit TrailMark öffnen",
         Language::ZhCn => "用 TrailMark 打开",
+        Language::It => "Apri con TrailMark",
     }
 }
 
@@ -200,14 +201,15 @@ pub(crate) fn menu_label(language: Language) -> &'static str {
 pub(crate) fn type_name(language: Language) -> &'static str {
     match language {
         Language::En | Language::System => "Markdown document",
-        Language::PtBr => "Documento Markdown",
+        Language::PtBr | Language::It => "Documento Markdown",
         Language::Es => "Documento de Markdown",
         Language::De => "Markdown-Dokument",
         Language::ZhCn => "Markdown 文档",
     }
 }
 
-/// The language for a code the UI or the installer uses (`en`, `pt-BR`, `es`, `de`, `zh-CN`); English for anything else.
+/// The language for a code the UI or the installer uses (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`); English for
+/// anything else.
 pub(crate) fn language_for(code: &str) -> Language {
     Language::from_installer_code(code).unwrap_or(Language::En)
 }
@@ -381,6 +383,7 @@ mod tests {
         assert_eq!(menu_label(Language::Es), "Abrir con TrailMark");
         assert_eq!(menu_label(Language::De), "Mit TrailMark öffnen");
         assert_eq!(menu_label(Language::ZhCn), "用 TrailMark 打开");
+        assert_eq!(menu_label(Language::It), "Apri con TrailMark");
         // the registry cannot follow the system's language, so "System default" reads as English
         assert_eq!(menu_label(Language::System), menu_label(Language::En));
         assert_eq!(type_name(Language::En), "Markdown document");
@@ -388,6 +391,7 @@ mod tests {
         assert_eq!(type_name(Language::Es), "Documento de Markdown");
         assert_eq!(type_name(Language::De), "Markdown-Dokument");
         assert_eq!(type_name(Language::ZhCn), "Markdown 文档");
+        assert_eq!(type_name(Language::It), "Documento Markdown");
     }
 
     #[test]
@@ -395,7 +399,10 @@ mod tests {
         assert_eq!(language_for("pt-BR"), Language::PtBr);
         assert_eq!(language_for("de"), Language::De);
         assert_eq!(language_for("zh-CN"), Language::ZhCn);
-        for code in ["", "system", "fr", "pt-br", "zh", "zh-TW", "2052", "1046"] {
+        assert_eq!(language_for("it"), Language::It);
+        for code in [
+            "", "system", "fr", "pt-br", "zh", "zh-TW", "2052", "1046", "it-IT", "1040",
+        ] {
             assert_eq!(language_for(code), Language::En, "{code}");
         }
     }

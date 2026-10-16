@@ -52,6 +52,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--bg);
+  color: var(--text);
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
@@ -77,7 +78,7 @@
   border-color: transparent;
 }
 .btn--accent-text {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .btn--primary {
   background: var(--accent);
@@ -97,7 +98,7 @@
   border: 0;
   background: none;
   padding: 0;
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   font-size: inherit;
 }
@@ -134,6 +135,10 @@
   background: var(--bg);
   color: var(--text);
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+.segmented button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* Activity bar ------------------------------------------------------------------------ */
@@ -319,6 +324,45 @@
 }
 .badge--R {
   color: var(--git-renamed-text);
+}
+/* "What do these letters mean?" */
+.git-legend__title {
+  margin: 0;
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+.git-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-ui-sm);
+  line-height: 1.4;
+  color: var(--text);
+}
+.git-legend li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.git-legend .badge {
+  margin-top: 1px;
+}
+.git-legend__dot {
+  margin: 5px 4px 0;
+}
+.git-legend__note {
+  margin: 0;
+  font-size: var(--fs-ui-sm);
+  line-height: 1.45;
+  color: var(--muted);
+}
+.git-legend__note--promise {
+  color: var(--text);
+  font-weight: 500;
 }
 .rollup {
   width: 6px;
@@ -612,6 +656,9 @@
   width: 13px;
   height: 13px;
 }
+.sb-item--icon {
+  padding: 0 6px;
+}
 .sb-item.is-on {
   color: var(--accent);
   font-weight: 500;
@@ -747,6 +794,9 @@
 .banner--error {
   --tone: var(--git-deleted);
   --tone-text: var(--git-deleted-text);
+}
+.banner__detail {
+  color: var(--muted);
 }
 .banner__actions {
   display: flex;
@@ -935,12 +985,14 @@
 [data-theme="dark"] .popover {
   background: var(--surface-2);
 }
-.popover .btn {
+/* Bars and menus (the selection toolbar, a missing-link note) show flat buttons; a panel keeps the normal
+   .btn look, so its secondary buttons stay bordered and its primary one stays filled. */
+.popover:not(.popover--panel) .btn {
   border: 0;
   background: transparent;
   height: 28px;
 }
-.popover .btn:hover {
+.popover:not(.popover--panel) .btn:hover {
   background: var(--hover);
 }
 .popover .divider {
@@ -1070,9 +1122,15 @@ select.select-input {
   cursor: pointer;
   text-overflow: ellipsis;
 }
+/* One hint style for the panels: quiet and small. A preview is the same line in the code font. */
+.field__hint,
 .field__preview {
-  font: 11.5px/1.4 var(--font-code);
+  font-size: var(--fs-ui-xs);
+  line-height: 1.45;
   color: var(--muted);
+}
+.field__preview {
+  font-family: var(--font-code);
   word-break: break-all;
 }
 .field__status {
@@ -1085,6 +1143,56 @@ select.select-input {
 }
 .field__status--error {
   color: var(--git-deleted-text);
+}
+/* Settings: the sections, and the explanations kept behind an (i) button */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-section + .settings-section {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.settings-section__title {
+  margin: 0;
+  font-size: var(--fs-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+.settings-section .field__hint:empty {
+  display: none;
+}
+.info-btn {
+  flex: none;
+  margin: -3px 0;
+}
+.info-btn[aria-expanded="true"] {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.info-hint {
+  flex: 0 0 100%;
+}
+/* a label (or a button) and its (i) button side by side, the explanation below them */
+.field__row--info {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 2px 4px;
+}
+/* a checkbox with its (i) button at the end of the line, the explanation under the checkbox's text */
+.check-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 2px 6px;
+}
+.check-row > .filter__check {
+  flex: 1;
+  min-width: 0;
+}
+.check-row > .info-hint {
+  padding-left: 21px;
 }
 kbd.hint-kbd {
   font: 500 10.5px var(--font-ui);
@@ -1140,6 +1248,10 @@ kbd.hint-kbd {
 .dialog dd {
   margin: 0;
   color: var(--muted);
+}
+/* the sentence that tells a worried reader what the dialog does not do */
+.dialog p.dialog__reassure {
+  color: var(--text);
 }
 .dialog footer {
   display: flex;

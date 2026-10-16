@@ -14,10 +14,7 @@ Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneide
 
 [Features](#features) · [Install](#install) · [Usage](#usage) · [Shortcuts](#keyboard-shortcuts) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-dark.png">
-  <img src="docs/assets/screenshot-light.png" alt="TrailMark in IDE mode: a design doc with a live-change glow, a removed-block marker and the live changes feed">
-</picture>
+<img src="docs/assets/loop.gif" width="880" alt="An agent rewrites a paragraph of a spec and the passage glows in TrailMark, a removed paragraph leaves a marker; the reader selects the paragraph, presses C and comments 'too long, cut to two sentences'; the agent reads the comment over the agent connection, rewrites the passage, which glows again, and marks the comment done with a reply">
 
 </div>
 
@@ -82,7 +79,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   and so do fences with attributes (`` ```rust title="main.rs" ``). A block with no language is colored only when its language is
   unmistakable, and is then labelled *auto*; otherwise it stays plain. Visual and Source color the code too while you edit
 - Frontmatter shown as a clean metadata card
-- Light and dark themes, adjustable zoom, and a focus mode with both side panels collapsed
+- Light and dark themes (with a softer paper, sage or gray tone for the light one), adjustable zoom, and a focus mode with both side panels collapsed
 - Three **reading widths**: Comfortable (a book-like column), Wide and Full. Wide tables, diagrams and images take the room
   they need while the text stays at a comfortable measure
 - JSON, XML and plain text through an extensible renderer registry
@@ -195,7 +192,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 - Tags follow the files, and the live feed shows the whole operation as one row
 
 ### 🌿 Git-aware
-- Badges for modified, added and untracked files, with folder roll-up
+- Badges for modified, added and untracked files, with folder roll-up and a legend that says what each letter means
 - Baseline **"since your last visit"** (default) or **"since HEAD"**: useful when agents commit every few minutes
 - Banner for rebase or merge in progress; clear messages when git can't read a repo
 
@@ -267,7 +264,7 @@ there are no switches for it in Settings, and uninstalling the app removes it.
 Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list TrailMark under **Open With** for Markdown files.
 
 ### 🌍 Your language
-TrailMark speaks **English, Português (Brasil), Español, Deutsch and 简体中文**. It follows your system's language, and **Settings → Language**
+TrailMark speaks **English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano**. It follows your system's language, and **Settings → Language**
 switches it at once, no restart. The Windows installer asks for a language too.
 
 ## Install
@@ -502,6 +499,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 - v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
   show up in Quick open
+- v0.5.4: the interface in Italiano (Italian), soft light tones (Paper, Sage, Gray), and the Git letters explained in plain words
 - v0.5.3: the interface in 简体中文 (Simplified Chinese), and search that finds Chinese and Japanese words inside sentences
 
 **v0.6**

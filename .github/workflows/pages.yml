@@ -25,12 +25,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Screenshots live in docs/assets (used by the README). Copy them into the site
+      # Screenshots and the loop video live in docs/assets (used by the README). Copy them into the site
       # unless a site-specific copy is already committed under site/assets.
       - name: Sync screenshots into site/assets
         run: |
           mkdir -p site/assets
-          for f in docs/assets/screenshot-*.png; do
+          for f in docs/assets/screenshot-*.png docs/assets/loop.* docs/assets/loop-poster.png; do
             [ -e "$f" ] || continue
             cp -n "$f" site/assets/
           done

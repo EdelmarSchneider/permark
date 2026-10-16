@@ -397,9 +397,15 @@ let mermaidQueue: Promise<unknown> = Promise.resolve();
 let mermaidCounter = 0;
 const diagramCache = new Map<string, string>();
 
+/** What the diagram palette depends on: the theme, and the tone of the light theme (both repaint the tokens it reads). */
+function paletteKey(theme: "light" | "dark"): string {
+  return `${theme}:${document.documentElement.dataset.tone ?? ""}`;
+}
+
 async function loadMermaid(theme: "light" | "dark"): Promise<Mermaid> {
   if (!mermaidModule) mermaidModule = (await import("mermaid")).default;
-  if (mermaidTheme !== theme) {
+  const palette = paletteKey(theme);
+  if (mermaidTheme !== palette) {
     // the diagram palette comes from the design tokens (solid colors only; Mermaid cannot parse rgb alpha)
     const css = getComputedStyle(document.documentElement);
     const token = (name: string): string => css.getPropertyValue(name).trim();
@@ -424,7 +430,7 @@ async function loadMermaid(theme: "light" | "dark"): Promise<Mermaid> {
         noteTextColor: token("--text"),
       },
     });
-    mermaidTheme = theme;
+    mermaidTheme = palette;
   }
   return mermaidModule;
 }
@@ -432,7 +438,7 @@ async function loadMermaid(theme: "light" | "dark"): Promise<Mermaid> {
 /** Renders (or re-renders, after a theme change) the diagram held in `figure.dataset.source`. */
 export function renderDiagram(figure: HTMLElement, ctx: EnhanceContext): Promise<void> {
   const source = figure.dataset.source ?? "";
-  const key = `${ctx.theme}\u0000${source}`;
+  const key = `${paletteKey(ctx.theme)}\u0000${source}`;
   const cached = diagramCache.get(key);
   if (cached !== undefined) {
     showDiagram(figure, cached);

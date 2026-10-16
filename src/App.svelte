@@ -3,6 +3,7 @@
   import AgentPublisher from "./lib/components/AgentPublisher.svelte";
   import ImageZoom from "./lib/components/ImageZoom.svelte";
   import DropOverlay from "./lib/components/DropOverlay.svelte";
+  import GitLegend from "./lib/components/GitLegend.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
   import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
   import CommentField from "./lib/components/CommentField.svelte";
@@ -166,6 +167,7 @@
   {#if ui.searchBox}<SearchEverywhere />{/if}
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
+  <GitLegend />
   {#if fileops.prompt}<LinkUpdateDialog prompt={fileops.prompt} />{/if}
   {#if ui.tagEditor}<TagEditor />{/if}
   {#if ui.outlinePopover}<OutlinePopover />{/if}

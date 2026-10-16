@@ -407,9 +407,12 @@ kbd {
   border: 1px solid var(--border);
   box-shadow: var(--shot-shadow);
 }
-.shot__frame img {
+.shot__frame img,
+.shot__frame video {
   border-radius: 11px;
   width: 100%;
+  height: auto;
+  display: block;
   border: 1px solid var(--border);
 }
 
