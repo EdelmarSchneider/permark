@@ -670,6 +670,8 @@ export const en = {
   "settings.updates": "Updates",
   "settings.updatesStore": "Updates come from the Microsoft Store.",
   "settings.fileManager": "File manager",
+  "settings.fileManagerStore":
+    'The Microsoft Store version puts "Open with TrailMark" in the right-click menu of folders and in the "Open with" list of Markdown files. They come with the app, so there is nothing to switch here.',
   "settings.shellMenu": 'Add "Open with TrailMark" to the right-click menu',
   "settings.shellMenuHint": 'On Windows 11 it is under "Show more options".',
   "settings.shellAssoc": "Associate .md files with TrailMark",

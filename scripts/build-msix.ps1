@@ -6,9 +6,10 @@
   The Store flavor is the same program built with the cargo feature `store` and the overlay `src-tauri/tauri.msstore.conf.json`
   (no self-update; the agent setup lines name the `trailmark` alias). This script:
 
-    1. builds it (with -Build; otherwise it packs the program that is already built),
-    2. lays out a package folder: trailmark.exe, the logos (src-tauri/msstore/Assets) and AppxManifest.xml, which it writes
-       from the template src-tauri/msstore/AppxManifest.xml with the version filled in,
+    1. builds it, and the shell extension next to it (with -Build; otherwise it packs what is already built),
+    2. lays out a package folder: trailmark.exe, trailmark_shell.dll (the right-click menu of folders, src-tauri/shell-ext),
+       the logos (src-tauri/msstore/Assets) and AppxManifest.xml, which it writes from the template
+       src-tauri/msstore/AppxManifest.xml with the version filled in,
     3. runs MakeAppx.exe from the Windows SDK, which checks the manifest against the package schema and packs the folder.
 
   The package is not signed: the Store signs what is uploaded to it, and an unsigned package cannot be installed by hand.
@@ -21,11 +22,15 @@
   from before the packaging existed needs the packaging files copied in first; docs/msstore.md says how).
 
 .PARAMETER Build
-  Build the Store flavor first: `npx tauri build --no-bundle --features store --config <overlay>`. Needs the
-  frontend dependencies (npm ci), Rust and the usual Tauri prerequisites.
+  Build first: the Store flavor, `npx tauri build --no-bundle --features store --config <overlay>` (needs the frontend
+  dependencies, npm ci, Rust and the usual Tauri prerequisites), and the shell extension,
+  `cargo build --release --manifest-path src-tauri/shell-ext/Cargo.toml`.
 
 .PARAMETER ExePath
   The built program. Default: src-tauri\target\release\trailmark.exe.
+
+.PARAMETER DllPath
+  The built shell extension. Default: src-tauri\shell-ext\target\release\trailmark_shell.dll.
 
 .PARAMETER OutDir
   Where the package folder and the .msix go. Default: src-tauri\target\msix.
@@ -36,8 +41,17 @@
 .PARAMETER MakeAppx
   The path of MakeAppx.exe. Default: the newest x64 one in the Windows SDK (C:\Program Files (x86)\Windows Kits\10\bin).
 
+.PARAMETER Sideload
+  Writes a package for trying on a computer without the Store (it is never what is uploaded): it has an identity of its own
+  (EdelmarSchneider.TrailMarkSideload, publisher CN=TrailMark Sideload, the alias trailmark-sideload), so it installs beside
+  the Store version and can be removed without touching it, and a test certificate whose subject is that publisher can sign
+  it. The file is named TrailMark_<version>_x64_sideload.msix. docs/msstore.md has the steps.
+
 .EXAMPLE
   .\scripts\build-msix.ps1 -Build
+
+.EXAMPLE
+  .\scripts\build-msix.ps1 -Build -Sideload -Version 0.5.1
 
 .OUTPUTS
   The path of the .msix.
@@ -46,9 +60,11 @@
 param(
   [switch]$Build,
   [string]$ExePath,
+  [string]$DllPath,
   [string]$OutDir,
   [string]$Version,
-  [string]$MakeAppx
+  [string]$MakeAppx,
+  [switch]$Sideload
 )
 
 Set-StrictMode -Version Latest
@@ -60,6 +76,7 @@ $Template = Join-Path $Tauri 'msstore\AppxManifest.xml'
 $Assets = Join-Path $Tauri 'msstore\Assets'
 $Overlay = 'src-tauri/tauri.msstore.conf.json'
 if (-not $ExePath) { $ExePath = Join-Path $Tauri 'target\release\trailmark.exe' }
+if (-not $DllPath) { $DllPath = Join-Path $Tauri 'shell-ext\target\release\trailmark_shell.dll' }
 if (-not $OutDir) { $OutDir = Join-Path $Tauri 'target\msix' }
 
 function Find-MakeAppx {
@@ -95,6 +112,12 @@ if ($Build) {
     # npx rather than `npm run tauri --`: Windows PowerShell 5.1 swallows the `--` and npm then rejects the flags.
     & npx tauri build --no-bundle --features store --config $Overlay
     if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit code $LASTEXITCODE)." }
+
+    # The DLL that File Explorer's helper process loads for the folder menu entry. It is a crate of its own (its release
+    # build unwinds on a panic, where the program's aborts), so it is built on its own.
+    Write-Host 'Building the shell extension ...'
+    & cargo build --release --manifest-path (Join-Path $Tauri 'shell-ext\Cargo.toml')
+    if ($LASTEXITCODE -ne 0) { throw "cargo build of the shell extension failed (exit code $LASTEXITCODE)." }
   }
   finally {
     Pop-Location
@@ -102,6 +125,9 @@ if ($Build) {
 }
 if (-not (Test-Path $ExePath)) {
   throw "The program is not built: $ExePath was not found. Run this script with -Build, or build the Store flavor first."
+}
+if (-not (Test-Path $DllPath)) {
+  throw "The shell extension is not built: $DllPath was not found. Run this script with -Build, or run cargo build --release in src-tauri\shell-ext first."
 }
 
 # ---- The package folder ---------------------------------------------------------------------------------------------
@@ -112,8 +138,10 @@ if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage 'Assets') | Out-Null
 
 # The only file the program needs at run time. The interface is inside it, and the web view is the system's WebView2
-# runtime (Windows 11, and Windows 10 kept up to date), so nothing else goes in the package.
+# runtime (Windows 11, and Windows 10 kept up to date), so nothing else goes in the package but the DLL of the folder menu.
 Copy-Item $ExePath (Join-Path $Stage 'trailmark.exe')
+# Beside the program: the DLL finds the program from its own path, and the manifest names it by this name.
+Copy-Item $DllPath (Join-Path $Stage 'trailmark_shell.dll')
 Copy-Item (Join-Path $Assets '*.png') (Join-Path $Stage 'Assets')
 
 $manifest = Get-Content $Template -Raw -Encoding UTF8
@@ -121,6 +149,22 @@ foreach ($token in '@VERSION@', '@DESCRIPTION@') {
   if (-not $manifest.Contains($token)) { throw "The manifest template has no $token." }
 }
 $manifest = $manifest.Replace('@VERSION@', $PackageVersion).Replace('@DESCRIPTION@', [System.Security.SecurityElement]::Escape($Description))
+
+# A package to try on a computer without the Store: its own name, publisher and alias, so it lives beside the Store version.
+# (The folder menu's class id is the same, so only one of the two should be installed once the Store version has the menu.)
+$Suffix = ''
+if ($Sideload) {
+  $Suffix = '_sideload'
+  foreach ($change in @(
+      @('Name="EdelmarSchneider.TrailMark"', 'Name="EdelmarSchneider.TrailMarkSideload"'),
+      @('Publisher="CN=C8BB0009-0553-4E03-8EDF-1FC57AB0CCF7"', 'Publisher="CN=TrailMark Sideload"'),
+      @('<DisplayName>TrailMark</DisplayName>', '<DisplayName>TrailMark (sideload)</DisplayName>'),
+      @('DisplayName="TrailMark"', 'DisplayName="TrailMark (sideload)"'),
+      @('Alias="trailmark.exe"', 'Alias="trailmark-sideload.exe"'))) {
+    if (-not $manifest.Contains($change[0])) { throw "The manifest has no $($change[0]), which -Sideload changes." }
+    $manifest = $manifest.Replace($change[0], $change[1])
+  }
+}
 $manifestPath = Join-Path $Stage 'AppxManifest.xml'
 [System.IO.File]::WriteAllText($manifestPath, $manifest, (New-Object System.Text.UTF8Encoding($false)))
 
@@ -129,13 +173,14 @@ $manifestPath = Join-Path $Stage 'AppxManifest.xml'
 $null = [xml]$manifest
 $referenced = @([regex]::Matches($manifest, 'Assets\\[^"<]+') | ForEach-Object { $_.Value })
 $referenced += [regex]::Matches($manifest, 'Executable="([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
+$referenced += [regex]::Matches($manifest, '\sPath="([^"]+)"') | ForEach-Object { $_.Groups[1].Value }
 if ($referenced.Count -eq 0) { throw 'The manifest names no files; the check for them is out of date.' }
 foreach ($file in $referenced | Sort-Object -Unique) {
   if (-not (Test-Path (Join-Path $Stage $file))) { throw "The manifest names $file, which is not in the package folder." }
 }
 
 # ---- Pack -----------------------------------------------------------------------------------------------------------
-$Package = Join-Path $OutDir "TrailMark_${PackageVersion}_x64.msix"
+$Package = Join-Path $OutDir "TrailMark_${PackageVersion}_x64$Suffix.msix"
 if (Test-Path $Package) { Remove-Item $Package -Force }
 Write-Host "Packing $Package with $MakeAppx"
 & $MakeAppx pack /d $Stage /p $Package /o /v

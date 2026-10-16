@@ -5,6 +5,13 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **"Open with TrailMark" on folders in the Microsoft Store version.** Right-click a folder, or the background of a folder, and choose
+  **Open with TrailMark**; on Windows 11 it is in the main menu, not under *Show more options*. The Store package now carries a small
+  Explorer component for it (the one thing a package cannot do with the registry), worded in your Windows display language
+  (English, Português, Español or Deutsch). Select several folders and each opens in its own window. **Settings → File manager** says
+  that the entry comes from the Store package.
+
 ### Fixed
 - **Visual mode: a block that refers to a footnote no longer carries the footnote.** A paragraph, list or table with a footnote reference was
   drawn with the footnote's text and a rule under it inside the same block, with a large empty gap. The reference is now a small marker
