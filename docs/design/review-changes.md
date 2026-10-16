@@ -99,3 +99,83 @@ Word-level highlighting inside a changed paragraph (a later refinement), reviewi
 2. UI: review bar and layer in Read view (level 1), keyboard, undo, i18n in all languages.
 3. Review mode per project (level 2): markers, *Since last visit*, *Next to review*, deleted/new documents.
 4. Source line-diff toggle; then the bridge additions.
+
+## Implementation notes: the Rust core (`feature/review-changes`, build step 1)
+
+Everything lives in `src-tauri/src/review/`, with no UI. The review follows the unread markers through a small observer
+(`unread::ReadObserver`), so unread keeps working as before when it is not there.
+
+### Modules
+
+| Module | What it does |
+| --- | --- |
+| `diff` | `Comparison::new(reviewed, current)`: the changes, and `kept(i)` / `reverted(i)`, the two splices. Pure. |
+| `book` | Per document: the reviewed version (a hash), the version held for an open review, which documents differ. Pure. |
+| `store` | The copies: `reviewed/<xxh3 hex>` next to `read.json`, written atomically, checked by hash when read, cleaned up. |
+| `committed` | The text of a version from the last commit of the repository (the first run after an update). |
+| `view` | The serializable review (`ReviewView`): changes with their blocks rendered by the reading view's renderer. |
+| `mod` | `ReviewService`: a thread that follows the unread markers and keeps the files; the commands' logic. |
+
+### The reviewed version and its copy
+
+* `reviewed.json` (path to xxh3 hash, the same form as `read.json`) is a map of its own. At level 1 it follows the read hash:
+  whenever the unread markers move a document's read version, the reviewed version becomes it. A saved `reviewed.json`
+  stands over `read.json` the first time a document is seen in a session (a change the person kept survives a restart).
+  Level 2 (reading does not approve) is that follow switched off in `Book::observe`.
+* A copy of the text is taken, in order of preference: when the person reads (the unread service hands over the bytes it
+  just read), when the person saves (`wrote`), from the file if it still has that hash, from the last commit if its blob
+  has that hash. A version with no copy only reports "changed" (`noBaseline`) until the document is read again.
+  Documents over 2 MB are never copied (`tooLarge`; Keep all still works and clears them).
+* Copies nothing points to are deleted a moment after the versions change; a copy written in the last two minutes is
+  kept whatever points to it (so a keep that is being made cannot lose its copy).
+* The folder is private like the rest of the local state (inside `.trailmark/local/`, covered by its `.gitignore`, never
+  written behind a link).
+
+### The version held for an open review
+
+Opening a changed document reads it, which approves what it holds now. So when the **person reads** a document and its
+read version moves, the version before it is *held*: it stays the baseline, with the changes to review, until
+`review_release(path)` (the UI closes the document or its review), the document is back at that version, or the app
+closes. One version is held per document, in memory only, and a later reading does not replace it. Reading that is not
+the person opening a document (mark all read, a folder marked read) and the person's own saves hold nothing. A save
+while a version is held does not release it: the person's edit then shows among the changes.
+
+### Keep and Revert
+
+* Both are computed again from the texts, never from byte offsets sent by the UI: a call carries `path`, the `hash` of the
+  file and the `reviewedHash` it was drawn from, and the index of the change. If either hash no longer matches, the call
+  fails with kind `reviewStale` and nothing is written; the UI asks `review_get` again.
+* **Keep** splices the new blocks into the baseline text, stores the result as a new copy and moves the baseline. The file
+  is not touched. **Keep all** makes the file's text the reviewed version (for a deleted document: forgets it).
+* **Revert** splices the old blocks into the file through the editor's guarded save (written only if the file still has
+  the hash; announced as the app's own write). The reviewed version stays as it was, so the change just leaves the
+  difference. The caller then tells the unread markers (`rewritten`): a document that was read stays read.
+  **Revert all** writes the reviewed text, byte for byte.
+* A deleted document: Restore writes the kept text back (the folders it was in are made again); Keep accepts the deletion.
+  A new document: Keep approves it; Revert sends it to the system's recycle bin.
+* Splices replace only the blocks and the separator that joins them to their neighbours, so the blank lines of the rest
+  of the file stay. A removed block never leaves its neighbours glued into one paragraph, and the inserted text takes the
+  line ending of the file it goes into.
+
+### Diff rules
+
+Blocks are those of the editor. Two blocks are the same when their text is the same, line endings aside. Blank lines, a
+byte order mark and the final newline are separators and never a change. A longest common subsequence finds the blocks
+that stayed; everything between two of them is one change; inside it an edited block is paired with its old version
+when they share 40% of their words (CJK counted by character). A moved block is a removal and an addition.
+
+### Commands and events
+
+| Command | Arguments | Answer |
+| --- | --- | --- |
+| `review_list` | | `ReviewEntry[]`: documents that differ (`changed`, `new`, `deleted`) |
+| `review_get` | `path` | `ReviewView` |
+| `review_keep`, `review_revert` | `path`, `hash`, `reviewedHash`, `index` | `ReviewView` after |
+| `review_keep_all`, `review_revert_all`, `review_restore_deleted` | `path`, `hash`, `reviewedHash` | `ReviewView` after |
+| `review_release` | `path` | nothing |
+
+Event `review-changed`: the whole `ReviewEntry[]`, sorted, each time it changes. It is cheap (hash comparisons): a
+document whose only difference is blank lines is listed until it is read, and `review_get` then says `unchanged`.
+
+Errors (`kind`): `reviewStale`, `reviewNoBaseline`, `reviewOff` (the notes, a single file), plus the editor's `notMarkdown`,
+`tooLarge`, `encoding`, `denied` and the vault's path errors.

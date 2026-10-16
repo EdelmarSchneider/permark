@@ -362,6 +362,50 @@ fn a_reverted_edit_swaps_only_the_blocks() {
 }
 
 #[test]
+fn taking_out_a_block_that_follows_a_paragraph_straight_on_does_not_glue_the_paragraphs() {
+    let with_list = "para one\n- list item\n\npara two\n";
+    let without = "para one\n\npara two\n";
+    // the list is a block of its own, tight against the paragraph
+    assert_eq!(
+        block_texts(with_list),
+        ["para one", "- list item", "para two"]
+    );
+    let cmp = Comparison::new(with_list, without);
+    assert_eq!(cmp.changes().len(), 1);
+    assert_eq!(cmp.kept(0), without, "accepting the removal");
+    assert_eq!(
+        cmp.reverted(0),
+        with_list,
+        "and putting the list back, exactly"
+    );
+    // and the other way round
+    let cmp = Comparison::new(without, with_list);
+    assert_eq!(cmp.reverted(0), without);
+    assert_eq!(cmp.kept(0), with_list);
+    assert_eq!(block_texts(&cmp.reverted(0)), ["para one", "para two"]);
+}
+
+#[test]
+fn an_edited_block_that_follows_a_paragraph_straight_on_stays_a_block_of_its_own() {
+    let list = "para one\n- list item\n\nend\n";
+    let plain = "para one\n\nPlain words here\n\nend\n";
+    let cmp = Comparison::new(list, plain);
+    assert_eq!(cmp.changes().len(), 1);
+    assert_eq!(
+        block_texts(&cmp.kept(0)),
+        ["para one", "Plain words here", "end"]
+    );
+    assert_eq!(cmp.kept(0), plain);
+    // the file being changed has a blank line there, and keeps it
+    assert_eq!(cmp.reverted(0), "para one\n\n- list item\n\nend\n");
+    // a heading may follow a paragraph straight on, and a list may take its place
+    let heading = "para one\n# Heading now\n\nend\n";
+    let cmp = Comparison::new(heading, list);
+    assert_eq!(cmp.kept(0), list);
+    assert_eq!(cmp.reverted(0), heading);
+}
+
+#[test]
 fn a_reverted_block_takes_the_line_endings_of_the_file_it_goes_into() {
     let reviewed = "# A\n\nfirst\nsecond\n\nlast\n";
     let current = "# A\r\n\r\nlast\r\n";
@@ -435,8 +479,15 @@ fn random_doc(rng: &mut Rng, eol: &str) -> String {
         }
         blocks.push(piece);
     }
-    let gap = ["\n\n", "\n\n\n", "\n \n"][rng.next(3)];
-    let mut text = blocks.join(gap);
+    // mostly blank lines, sometimes the next block straight on (which makes it part of the one before, or not,
+    // depending on what the two are)
+    let mut text = String::new();
+    for (i, block) in blocks.iter().enumerate() {
+        if i > 0 {
+            text.push_str(["\n\n", "\n\n", "\n\n\n", "\n \n", "\n"][rng.next(5)]);
+        }
+        text.push_str(block);
+    }
     if rng.next(2) == 0 {
         text.push('\n');
     }

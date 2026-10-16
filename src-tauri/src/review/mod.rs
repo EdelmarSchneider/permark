@@ -411,6 +411,12 @@ impl Worker {
     fn relocate(&self, paths: Paths) {
         let mut g = lock(&self.shared.inner);
         let old = g.store.clone();
+        if old.dir() == paths.copies {
+            // the same place: only the state file may be somewhere else
+            g.path = paths.state;
+            g.dirty = true;
+            return;
+        }
         let new = CopyStore::new(paths.copies);
         for hash in g.roots.clone() {
             if let Some(bytes) = old.get(hash) {

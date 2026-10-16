@@ -927,6 +927,17 @@ fn when_the_project_gets_a_folder_for_its_state_the_copies_follow() {
     service.stop();
 }
 
+#[test]
+fn moving_the_files_to_where_they_already_are_deletes_nothing() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    service.relocate(fx.paths());
+    service.flush();
+    assert!(fx.copies().contains(&h(V0)));
+    assert!(fx.saved().is_some());
+    service.stop();
+}
+
 // ---- with the unread markers ----
 
 #[test]

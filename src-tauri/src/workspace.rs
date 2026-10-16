@@ -3540,6 +3540,74 @@ exclude = [\"archive/**\"]
     }
 
     #[test]
+    fn a_review_follows_its_document_through_a_move_in_the_explorer_and_the_links_the_app_rewrites_are_approved(
+    ) {
+        let fx = Fx::new();
+        write(
+            fx.project.path(),
+            "README.md",
+            "# Home\n\nSee [guide](docs/guide.md).\n",
+        );
+        write(
+            fx.project.path(),
+            "docs/guide.md",
+            "# Guide\n\nThe guide explains how to install the program on a computer.\n",
+        );
+        let ws = fx.open();
+        ws.unread.flush();
+        fx.indexed();
+        ws.review.flush();
+
+        // an agent edits the guide, and the person opens it: the changes are held for the review
+        write(
+            fx.project.path(),
+            "docs/guide.md",
+            "# Guide\n\nThe guide explains how to install the program on a laptop.\n",
+        );
+        wait_until("the guide to be unread", || {
+            ws.unread() == ["docs/guide.md"]
+        });
+        ws.mark_read("docs/guide.md").expect("read");
+        ws.unread.flush();
+        ws.review.flush();
+        assert_eq!(
+            ws.review_get("docs/guide.md").expect("view").status,
+            crate::review::ViewStatus::Changes
+        );
+
+        let folder = [Move {
+            from: "docs".to_owned(),
+            to: "manual".to_owned(),
+        }];
+        let preview = ws.preview_move(&folder, true, &[]).expect("preview");
+        ws.apply_move(preview.plan_id, true, &[]).expect("apply");
+        ws.unread.flush();
+        ws.review.flush();
+
+        let view = ws.review_get("manual/guide.md").expect("view");
+        assert_eq!(
+            view.status,
+            crate::review::ViewStatus::Changes,
+            "still there"
+        );
+        assert_eq!(view.changes.len(), 1);
+        assert_eq!(
+            ws.review_list(),
+            [ReviewEntry {
+                path: "manual/guide.md".to_owned(),
+                status: crate::review::Status::Changed
+            }],
+            "the old place is not left behind as a deleted document"
+        );
+        // the README's link was rewritten by the app: that is not a change to review
+        assert_eq!(
+            ws.review_get("README.md").expect("view").status,
+            crate::review::ViewStatus::Unchanged
+        );
+        ws.close();
+    }
+
+    #[test]
     fn the_read_state_is_written_into_the_project_when_it_is_initialized() {
         let fx = Fx::new();
         write(fx.project.path(), "a.md", "# A\n");

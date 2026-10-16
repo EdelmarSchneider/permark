@@ -149,12 +149,34 @@ impl<'a> Side<'a> {
         &self.text[self.blocks[index - 1].end_byte..self.blocks[index].start_byte]
     }
 
-    /// The separator written when the other text has none to offer: a blank line.
-    fn default_gap(&self) -> &'static str {
-        if self.eol == Eol::Crlf {
-            "\r\n\r\n"
+    /// The bytes that belong to blocks `range` and the separators that join them to their neighbours: from the end of
+    /// the block before to the start of the block after. Where there is no block before (or after), it starts at the
+    /// first block (ends at the last), and for no blocks at all it is the empty place where they would be.
+    fn region(&self, range: &Range<usize>) -> Span {
+        let before = range.start.checked_sub(1).map(|i| self.blocks[i].end_byte);
+        let after = self.blocks.get(range.end).map(|b| b.start_byte);
+        let (first, last) = if range.is_empty() {
+            (None, None)
         } else {
-            "\n\n"
+            (
+                Some(self.blocks[range.start].start_byte),
+                Some(self.blocks[range.end - 1].end_byte),
+            )
+        };
+        match (before, after) {
+            (Some(start), Some(end)) => Span { start, end },
+            (None, Some(end)) => Span {
+                start: first.unwrap_or(end),
+                end,
+            },
+            (Some(start), None) => Span {
+                start,
+                end: last.unwrap_or(start),
+            },
+            (None, None) => Span {
+                start: first.unwrap_or(0),
+                end: last.unwrap_or(0),
+            },
         }
     }
 
@@ -318,12 +340,21 @@ fn make_change(
     }
 }
 
+/// Whether a separator holds a blank line, which keeps the blocks on both sides of it apart whatever they are.
+fn has_blank_line(gap: &str) -> bool {
+    let breaks = gap.replace("\r\n", "\n").replace('\r', "\n");
+    breaks.matches('\n').count() >= 2
+}
+
 /// The text of `target` with its blocks `replace` swapped for the blocks `with` of `source`.
 ///
-/// The blocks go with the separators inside them. What is outside stays as `target` has it, except that
-/// taking blocks out takes one separator with them (the one after, or before the last block) and putting blocks
-/// in brings one (the one that followed them in `source`, or preceded them at the end), so the blank lines
-/// around stay as they were. When the swap covers all the blocks of both texts, the result is `source` itself.
+/// Blocks that are edited in place are swapped for each other, and the separators around them stay as `target`
+/// has them. Blocks that go or come in are swapped together with the separators between their neighbours, taken
+/// from `source`: the text from the block before to the block after, so that what was a blank line stays one, and
+/// two blocks that were tight against each other are not left glued into a paragraph. The same is done for edited
+/// blocks when a separator next to them is not a blank line (a list that follows a paragraph straight on).
+/// The rest of `target`, byte for byte, is left as it is. When the swap covers all the blocks of both texts, the
+/// result is `source` itself.
 fn splice(
     target: &Side<'_>,
     replace: &Range<usize>,
@@ -332,66 +363,29 @@ fn splice(
 ) -> String {
     let whole =
         |range: &Range<usize>, side: &Side<'_>| range.start == 0 && range.end == side.blocks.len();
-    if whole(replace, target) && whole(with, source) {
-        return source.text.to_owned();
+    if (whole(replace, target) && whole(with, source)) || (replace.is_empty() && with.is_empty()) {
+        return if replace.is_empty() && with.is_empty() {
+            target.text.to_owned()
+        } else {
+            source.text.to_owned()
+        };
     }
-    let text = target.text;
-    let blocks = &target.blocks;
-    let (cut, put): (Range<usize>, String) = match (replace.is_empty(), with.is_empty()) {
-        (true, true) => return text.to_owned(),
-        // both have blocks: the blocks change, the separators around them stay
-        (false, false) => {
-            let place = target.span(replace);
-            let new = source.span(with);
-            (
-                place.start..place.end,
-                target
-                    .like_mine(&source.text[new.start..new.end])
-                    .into_owned(),
-            )
-        }
-        // blocks go
-        (false, true) => {
-            let first = blocks[replace.start].start_byte;
-            if let Some(next) = blocks.get(replace.end) {
-                (first..next.start_byte, String::new())
-            } else if let Some(before) = replace.start.checked_sub(1) {
-                (
-                    blocks[before].end_byte..blocks[replace.end - 1].end_byte,
-                    String::new(),
-                )
-            } else {
-                return source.text.to_owned();
-            }
-        }
-        // blocks come in
-        (true, false) => {
-            let new = source.span(with);
-            let fragment = target.like_mine(&source.text[new.start..new.end]);
-            if let Some(next) = blocks.get(replace.start) {
-                let gap = if with.end < source.blocks.len() {
-                    target.like_mine(source.gap_before(with.end)).into_owned()
-                } else {
-                    target.default_gap().to_owned()
-                };
-                (next.start_byte..next.start_byte, format!("{fragment}{gap}"))
-            } else if let Some(before) = replace.start.checked_sub(1) {
-                let gap = if with.start > 0 {
-                    target.like_mine(source.gap_before(with.start)).into_owned()
-                } else {
-                    target.default_gap().to_owned()
-                };
-                let at = blocks[before].end_byte;
-                (at..at, format!("{gap}{fragment}"))
-            } else {
-                return source.text.to_owned();
-            }
-        }
+    let tight = |side: &Side<'_>, range: &Range<usize>| {
+        (range.start > 0 && !has_blank_line(side.gap_before(range.start)))
+            || (range.end < side.blocks.len() && !has_blank_line(side.gap_before(range.end)))
     };
-    let mut out = String::with_capacity(text.len() + put.len());
-    out.push_str(&text[..cut.start]);
+    let edited_in_place = !replace.is_empty() && !with.is_empty();
+    let blocks_only = edited_in_place && !tight(target, replace);
+    let (cut, put) = if blocks_only {
+        (target.span(replace), source.span(with))
+    } else {
+        (target.region(replace), source.region(with))
+    };
+    let put = target.like_mine(&source.text[put.start..put.end]);
+    let mut out = String::with_capacity(target.text.len() + put.len());
+    out.push_str(&target.text[..cut.start]);
     out.push_str(&put);
-    out.push_str(&text[cut.end..]);
+    out.push_str(&target.text[cut.end..]);
     out
 }
 

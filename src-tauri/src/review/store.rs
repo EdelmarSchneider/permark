@@ -42,7 +42,6 @@ impl CopyStore {
         Self { dir }
     }
 
-    #[cfg(test)]
     pub fn dir(&self) -> &Path {
         &self.dir
     }
