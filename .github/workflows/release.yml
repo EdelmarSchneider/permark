@@ -134,8 +134,9 @@ jobs:
           tagName: ${{ env.TAG }}
           releaseName: "TrailMark ${{ env.TAG }}"
           releaseBody: |
-            **TrailMark** is a fast, beautiful Markdown IDE that keeps up with your AI agents. It works with any
-            tool, or none: it only relies on your files and git.
+            **TrailMark** is a free, open-source Markdown app: read what your AI writes, write what it reads. It opens any `.md`
+            file as a clean page, keeps notes that save themselves, and turns a project folder into an IDE for following your
+            agents. It works with any AI tool, or none: it only relies on your files and git.
 
             ${{ env.RELEASE_NOTES }}
 

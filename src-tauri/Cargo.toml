@@ -1,7 +1,7 @@
 [package]
 name = "trailmark"
-version = "0.4.0"
-description = "A fast, beautiful Markdown IDE that keeps up with your AI agents."
+version = "0.5.0"
+description = "Read what your AI writes. Write what it reads. A free, open-source Markdown app."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/trailmark"
 authors = ["Edelmar Schneider"]

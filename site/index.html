@@ -108,12 +108,11 @@
       <!-- Two overlapping frames. The project view sits in front; hovering or focusing a door brings its frame forward. -->
       <div class="container container--wide">
         <div class="shot duo">
-          <!-- Screenshot slot "page": a non-technical document read as a page. Swap src and alt for assets/screenshot-page.png (and its dark version). -->
           <div class="duo__frame duo__frame--page shot__frame">
             <picture>
-              <source srcset="assets/screenshot-editor-dark.png" media="(prefers-color-scheme: dark)">
-              <img data-slot="screenshot-page.png" src="assets/screenshot-editor.png" width="1440" height="900" decoding="async"
-                   alt="A document shown as a clean page: a table of prices, a paragraph, and a diagram, with the headings of the document listed in a panel on the right.">
+              <source srcset="assets/screenshot-page-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="assets/screenshot-page.png" width="1440" height="900" decoding="async"
+                   alt="A family trip plan, Lisbon in four days, read as a clean page: a tip, an itinerary table and a checklist, with the folder's files on the left and the document outline on the right.">
             </picture>
           </div>
           <div class="duo__frame duo__frame--ide shot__frame">
@@ -165,12 +164,11 @@
 
       <div class="container container--wide">
         <figure class="shot">
-          <!-- Screenshot slot "notes": the Notes window. Swap src and alt for assets/screenshot-notes.png (and its dark version). -->
           <div class="shot__frame">
             <picture>
-              <source srcset="assets/screenshot-tags-dark.png" media="(prefers-color-scheme: dark)">
-              <img data-slot="screenshot-notes.png" src="assets/screenshot-tags.png" width="1440" height="900" loading="lazy" decoding="async"
-                   alt="The Tags view: every tag with its number of files on the left, and an open document with its description and tag chips beside it.">
+              <source srcset="assets/screenshot-notes-dark.png" media="(prefers-color-scheme: dark)">
+              <img src="assets/screenshot-notes.png" width="1440" height="900" loading="lazy" decoding="async"
+                   alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in the Visual editor.">
             </picture>
           </div>
         </figure>
@@ -599,7 +597,8 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
             </ul>
           </li>
           <li class="milestone">
-            <span class="milestone__tag milestone__tag--later">v0.5</span>
+            <span class="milestone__tag">v0.5</span>
+            <span class="milestone__state">Released</span>
             <ul>
               <li><strong>Notes:</strong> open, type, close. Notes save themselves, sticky notes stay for months, and loose Markdown files from anywhere open in one place</li>
             </ul>

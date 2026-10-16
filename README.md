@@ -186,6 +186,12 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 ### 📝 Notes
 Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-notes-dark.png">
+  <img src="docs/assets/screenshot-notes.png" alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in the Visual editor">
+</picture>
+
 - **A notes window of its own** (`Ctrl+Shift+D`, or the sticky-note icon in the activity bar, or **Notes** on the welcome screen). `Ctrl+Shift+N`
   starts a new note from any TrailMark window, in the Visual editor with the caret ready. A note is a plain Markdown file in
   `Documents/TrailMark Notes` (change it in **Settings → Notes**); its name is the date and time (`2026-10-15 1432.md`), its title is its
@@ -461,7 +467,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - Your agent can ask TrailMark "where is X described?" and point you to a section, and it knows what you have not read yet.
   Off by default, per project, and read-only: an agent can show you a document, never edit through it
 
-**v0.5: Notes**
+**v0.5: Notes** (released)
 - Open TrailMark, type, close: notes save themselves, with no name to choose and no folder to pick. Keep a sticky note for
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 
