@@ -12,10 +12,11 @@ use std::time::Duration;
 use serde_json::{json, Map, Value};
 
 use crate::comments::{CommentFilter, FileProblem};
+use crate::notes::share;
 
 use super::link::{Link, LinkError};
 use super::project::{connection_is_on, find_project, Project};
-use super::protocol::{Request, DEFAULT_SEARCH_HITS, MAX_SEARCH_HITS};
+use super::protocol::{NoteList, Request, DEFAULT_SEARCH_HITS, MAX_SEARCH_HITS};
 use super::socket::Endpoint;
 
 /// Shown to the agent (and through it to the person) when the connection is off. One place to change the words.
@@ -125,6 +126,23 @@ fn with_readable_times(mut list: Map<String, Value>) -> Map<String, Value> {
         }
     }
     list
+}
+
+/// Adds a readable `modified` time beside each `modifiedMs` of a list of notes, and beside the `modifiedMs` of a single note.
+fn with_readable_note_times(mut value: Map<String, Value>) -> Map<String, Value> {
+    fn stamp(note: &mut Value) {
+        let ms = note.get("modifiedMs").and_then(Value::as_u64);
+        if let (Some(ms), Some(note)) = (ms, note.as_object_mut()) {
+            note.insert("modified".to_owned(), json!(iso8601_utc(ms)));
+        }
+    }
+    if let Some(Value::Array(notes)) = value.get_mut("notes") {
+        notes.iter_mut().for_each(stamp);
+    }
+    if let Some(ms) = value.get("modifiedMs").and_then(Value::as_u64) {
+        value.insert("modified".to_owned(), json!(iso8601_utc(ms)));
+    }
+    value
 }
 
 /// Adds a readable `created` time beside each `createdMs` of a comment list, and beside the `createdMs` of a single comment.
@@ -396,6 +414,74 @@ impl Core {
         Answer::ok(with_readable_comment_times(list))
     }
 
+    /// Runs work on the notes folder off the async thread: where the person keeps their notes, which no project holds.
+    async fn offline_notes<T, F>(&self, work: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(PathBuf) -> T + Send + 'static,
+    {
+        let app_data = self
+            .app_data
+            .clone()
+            .ok_or("the data folder of TrailMark cannot be found")?;
+        tokio::task::spawn_blocking(move || work(share::notes_root(&app_data)))
+            .await
+            .map_err(|error| error.to_string())
+    }
+
+    /// The notes the person shared with agents. Notes are the person's own, not a project's: an agent of any project whose
+    /// connection is on may ask, and sees only the notes that were shared. It works from the files when TrailMark is closed.
+    pub async fn list_notes(&self) -> Answer {
+        if !self.is_on() {
+            return Answer::off(self.known);
+        }
+        let (mut list, source) = match self.ask(Request::ListNotes).await {
+            Ok(list) => (object(list), "window"),
+            Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+            Err(_) => match self
+                .offline_notes(|root| {
+                    serde_json::to_value(NoteList::new(share::list_shared(&root)))
+                })
+                .await
+            {
+                Ok(Ok(list)) => (object(list), "files"),
+                Ok(Err(error)) => return Answer::failed(error.to_string()),
+                Err(error) => return Answer::failed(error),
+            },
+        };
+        list.insert("source".to_owned(), json!(source));
+        Answer::ok(with_readable_note_times(list))
+    }
+
+    /// The text of one shared note, by the name `list_notes` gave. A note that is not shared is said not to be there, whether it
+    /// exists or not.
+    pub async fn read_note(&self, note: &str) -> Answer {
+        if !self.is_on() {
+            return Answer::off(self.known);
+        }
+        let note = note.trim().to_owned();
+        if note.is_empty() {
+            return Answer::failed("the note name is empty");
+        }
+        let (mut read, source) = match self.ask(Request::ReadNote { note: note.clone() }).await {
+            Ok(read) => (object(read), "window"),
+            Err(LinkError::Remote(error)) => return Answer::failed(error.message),
+            Err(_) => match self
+                .offline_notes(move |root| share::read_shared(&root, &note))
+                .await
+            {
+                Ok(Ok(text)) => match serde_json::to_value(text) {
+                    Ok(text) => (object(text), "files"),
+                    Err(error) => return Answer::failed(error.to_string()),
+                },
+                Ok(Err(error)) => return Answer::failed(error.to_string()),
+                Err(error) => return Answer::failed(error),
+            },
+        };
+        read.insert("source".to_owned(), json!(source));
+        Answer::ok(with_readable_note_times(read))
+    }
+
     /// Marks a comment done, with an optional short reply the person sees under it. The only change an agent
     /// can make; it works from the project's files when TrailMark is closed.
     pub async fn resolve_comment(&self, id: &str, reply: Option<&str>) -> Answer {
@@ -637,6 +723,12 @@ pub(crate) fn program_path() -> Option<PathBuf> {
 }
 
 /// Starts TrailMark on a project and lets it go its own way.
+///
+/// In the Microsoft Store build the program is a file inside the package's folder (under `WindowsApps`), which only
+/// the package's own processes may start. That holds here: `trailmark mcp` and `trailmark context` are started through
+/// the package's alias, so they are packaged processes, and a process started by a packaged process is part of the same
+/// package. Starting the program from a process outside the package by that path would be refused, which is why the
+/// agent setup names the alias instead (see `distribution::agent_program`).
 pub(crate) fn launch_app(project: &Path) -> io::Result<()> {
     use std::process::{Command, Stdio};
 

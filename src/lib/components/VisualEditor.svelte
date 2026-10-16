@@ -26,6 +26,8 @@
   let host: HTMLElement | undefined = $state();
   let ready = $state(false);
   let failed = $state(false);
+  /** A note with nothing in it yet shows "Start typing..." (only the Notes window asks for it). */
+  let empty = $state(false);
   let format = $state.raw<FormatState>(NO_FORMAT);
   let slash = $state.raw<SlashState | null>(null);
   let slashApi = $state<SlashApi | undefined>();
@@ -46,6 +48,16 @@
     if (!fileInput) return;
     fileInput.value = "";
     fileInput.click();
+  }
+
+  /** Whether the document is one empty paragraph. */
+  function noteEmptiness(): void {
+    if (!edit.autosave || !editor) return;
+    const doc = editor.core.view.state.doc;
+    empty =
+      doc.childCount === 1 &&
+      doc.child(0).type.name === "paragraph" &&
+      doc.child(0).content.size === 0;
   }
 
   function openLink(): void {
@@ -128,6 +140,7 @@
               format = editor.format();
               edit.noteVisual();
               sync?.changed();
+              noteEmptiness();
             },
             files: (files, source) => void edit.addFiles(files, source),
             editInSource: (block) => void edit.switchTo("source", { block }),
@@ -150,6 +163,7 @@
           sync.start();
         }
         ready = true;
+        noteEmptiness();
         created.focus();
         edit.noteVisual();
       })
@@ -197,7 +211,11 @@
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
   <div bind:this={scroller} class="visual__scroll" onclick={onScrollerClick}>
     <div class="visual__column">
-      <div bind:this={host} class="visual__host"></div>
+      <div
+        bind:this={host}
+        class={["visual__host", empty && "is-empty"]}
+        style:--placeholder={JSON.stringify(t("notes.placeholder"))}
+      ></div>
     </div>
   </div>
   {#if failed}

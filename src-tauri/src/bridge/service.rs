@@ -5,9 +5,11 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use crate::distribution::{self, agent_program};
 use crate::session::remove_local_state;
 use crate::vault::Vault;
 
+use super::answers;
 use super::context::AgentContext;
 use super::file::{ContextFile, WRITE_INTERVAL};
 use super::hub::{AgentEvents, AgentStatus, Backend, FailureKind, Hub, StartFailure};
@@ -84,12 +86,18 @@ impl AgentBridge {
         Self {
             hub: Arc::new(
                 Hub::new(vault, backend, events)
-                    .with_program(program_path().map(|path| path.display().to_string())),
+                    .with_program(agent_program(distribution::current(), program_path())),
             ),
             endpoint: endpoint.map_err(|error| socket_failure(&error)),
             agent_path: Mutex::new(agent_path),
             running: Mutex::new(None),
         }
+    }
+
+    /// Says which folder of the project is the person's private notes: nothing in it is shown to an agent (see
+    /// [`answers::PrivateTree`]).
+    pub(crate) fn hide(&self, private: answers::PrivateTree) {
+        self.hub.set_private(private);
     }
 
     /// Turns the connection on or off. A connection that cannot start (the socket cannot be made) stays "on" as

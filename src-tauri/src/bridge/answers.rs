@@ -5,11 +5,15 @@
 //! Paths are the project's, relative with `/` separators. A linked worktree lives outside the project folder, so
 //! nothing from one is ever listed, found or opened here.
 
+use std::path::{Path, PathBuf};
+
+use crate::notes;
 use crate::render::{decode_text, MAX_RENDER_BYTES};
 use crate::search::chunk::chunk_markdown;
 use crate::search::SearchHit;
-use crate::util::modified_ms;
-use crate::vault::{Vault, WORKTREE_PREFIX};
+use crate::session::AppSettingsStore;
+use crate::util::{canonicalize_lenient, modified_ms};
+use crate::vault::{strip_root, Vault, WORKTREE_PREFIX};
 
 use crate::comments::{CommentFilter, CommentView};
 
@@ -117,11 +121,68 @@ pub(crate) fn locate_heading(markdown: &str, wanted: &str) -> Option<u32> {
         .map(|section| section.start_line)
 }
 
+/// The folder of the person's notes when it lies inside a project. The notes are private: nothing an agent connected to the
+/// project asks for may reach them, and what is asked about them is answered as if they were not there (a path that does not
+/// exist, a comment that is not found, a document that is not open).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct PrivateTree {
+    folder: Option<PathBuf>,
+}
+
+impl PrivateTree {
+    /// The notes folder of the app whose data is in `app_data`, for the project in `root` (nothing is private when the folder is
+    /// not inside it).
+    pub(crate) fn of(app_data: &Path, root: &Path) -> Self {
+        let chosen = AppSettingsStore::new(app_data).load().notes_folder;
+        Self {
+            folder: notes::folder::inside(app_data, chosen.as_deref(), root),
+        }
+    }
+
+    /// A tree that is the folder `folder` (as the system spells it).
+    #[cfg(test)]
+    pub(crate) fn at(folder: PathBuf) -> Self {
+        Self {
+            folder: Some(folder),
+        }
+    }
+
+    /// Whether the file at `abs` is in the private folder.
+    pub(crate) fn covers(&self, abs: &Path) -> bool {
+        let Some(folder) = &self.folder else {
+            return false;
+        };
+        let canonical = canonicalize_lenient(abs).unwrap_or_else(|| abs.to_path_buf());
+        strip_root(&canonical, folder).is_some()
+    }
+
+    /// Whether the document `rel` of the project (a path of the vault) is in the private folder.
+    pub(crate) fn covers_path(&self, vault: &Vault, rel: &str) -> bool {
+        self.folder.is_some()
+            && vault
+                .resolve(rel)
+                .is_ok_and(|resolved| self.covers(&resolved.abs))
+    }
+}
+
 /// Checks what an agent asked to be shown and works out the line: the path must be a document of the project, and
 /// a heading wins over a line (a heading survives edits). A heading the document does not have is reported, and
 /// the document still opens.
+#[cfg(test)]
 pub(crate) fn prepare_open(
     vault: &Vault,
+    path: &str,
+    line: Option<u32>,
+    heading: Option<&str>,
+) -> Result<Opened, ProtocolError> {
+    prepare_open_hiding(vault, &PrivateTree::default(), path, line, heading)
+}
+
+/// [`prepare_open`] for a project whose notes folder is private: a path in it is refused exactly as a path that does not exist
+/// is, before anything of the file is read.
+pub(crate) fn prepare_open_hiding(
+    vault: &Vault,
+    private: &PrivateTree,
     path: &str,
     line: Option<u32>,
     heading: Option<&str>,
@@ -136,7 +197,7 @@ pub(crate) fn prepare_open(
         return Err(not_found());
     }
     let resolved = vault.resolve(path).map_err(|_| not_found())?;
-    if resolved.root != 0 || !resolved.abs.is_file() {
+    if resolved.root != 0 || !resolved.abs.is_file() || private.covers(&resolved.abs) {
         return Err(not_found());
     }
     let wanted = heading.map(str::trim).filter(|h| !h.is_empty());

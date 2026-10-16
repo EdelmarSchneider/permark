@@ -7,9 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use crate::comments::{CommentBook, CommentError, CommentFilter, CommentView, FileProblem};
 use crate::git::{self, Discovery};
+use crate::notes;
 use crate::search::indexer::Indexer;
 use crate::search::{Bm25Index, SearchProvider};
-use crate::session::StateStore;
+use crate::session::{AppSettingsStore, StateStore};
 use crate::unread;
 use crate::vault::{Vault, VaultError};
 use crate::watch::{PathFilter, SigStore};
@@ -23,17 +24,43 @@ pub(crate) const TEST_DATA_DIR_VARIABLE: &str = "TRAILMARK_TEST_DATA_DIR";
 
 /// Where TrailMark keeps its data for the current user: the folder the window itself uses (`app_data_dir`), which
 /// is named after the app's identifier. `None` when the system has no such folder.
+///
+/// The whole program asks for it here (the windows through `commands::app_data_dir`): a folder found two ways would split the
+/// settings, the notes' socket and the saved state of the same app in two.
 pub(crate) fn app_data_dir(identifier: &str) -> Option<PathBuf> {
-    #[cfg(debug_assertions)]
-    if let Some(dir) = std::env::var_os(TEST_DATA_DIR_VARIABLE).filter(|dir| !dir.is_empty()) {
-        return Some(PathBuf::from(dir));
+    data_dir_from(
+        identifier,
+        std::env::var_os(TEST_DATA_DIR_VARIABLE),
+        dirs::data_dir(),
+        cfg!(debug_assertions),
+    )
+}
+
+/// [`app_data_dir`] with what it reads from the system given: the test variable (honoured in a debug build only), and the
+/// system's data folder.
+fn data_dir_from(
+    identifier: &str,
+    test_dir: Option<std::ffi::OsString>,
+    system: Option<PathBuf>,
+    debug: bool,
+) -> Option<PathBuf> {
+    if debug {
+        if let Some(dir) = test_dir.filter(|dir| !dir.is_empty()) {
+            return Some(PathBuf::from(dir));
+        }
     }
-    dirs::data_dir().map(|dir| dir.join(identifier))
+    system.map(|dir| dir.join(identifier))
 }
 
 /// The nearest folder at or above `start` that TrailMark knows: one with a `.trailmark/` folder, or one the app
 /// kept state for. `None` when `start` is not inside any such folder.
+///
+/// The notes folder is never found, nor anything inside it: it has a `.trailmark/` folder like a project, but the notes
+/// are private and no agent is shown them (the person shares a note on purpose, one at a time).
 pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf> {
+    if in_notes_tree(app_data_dir, start) {
+        return None;
+    }
     let start =
         dunce::canonicalize(start).unwrap_or_else(|_| dunce::simplified(start).to_path_buf());
     start
@@ -45,7 +72,13 @@ pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf>
 /// Whether the person turned the agent connection on for the project in `root`. Only the app's own data says so: a
 /// project's files (`.trailmark/` can be committed to a repository) have no say in who is shown the person's reading.
 pub(crate) fn connection_is_on(app_data_dir: &Path, root: &Path) -> bool {
-    StateStore::open(app_data_dir, root).agent_connection()
+    !in_notes_tree(app_data_dir, root) && StateStore::open(app_data_dir, root).agent_connection()
+}
+
+/// Whether `path` is the person's notes folder or inside it (see [`notes::folder`]).
+fn in_notes_tree(app_data_dir: &Path, path: &Path) -> bool {
+    let chosen = AppSettingsStore::new(app_data_dir).load().notes_folder;
+    notes::folder::contains(app_data_dir, chosen.as_deref(), path)
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -67,6 +100,8 @@ pub(crate) struct Project {
     read_path: PathBuf,
     comments: CommentBook,
     searcher: Mutex<Option<Searcher>>,
+    /// The notes folder, when it lies inside the project: never shown, opened or commented on.
+    private: answers::PrivateTree,
 }
 
 impl Project {
@@ -85,10 +120,21 @@ impl Project {
             Discovery::Repo(context) => context.info_exclude(),
             Discovery::NoRepo | Discovery::Error(_) => None,
         };
+        // the notes are private: a notes folder inside the project is not part of what is searched or listed
+        let mut ignore = config.ignore.clone();
+        ignore.extend(notes::folder::ignore_inside(
+            app_data_dir,
+            AppSettingsStore::new(app_data_dir)
+                .load()
+                .notes_folder
+                .as_deref(),
+            vault.root(),
+        ));
         let filter = Arc::new(PathFilter::new(
             &[(vault.root().to_path_buf(), info_exclude)],
-            &config.ignore,
+            &ignore,
         ));
+        let private = answers::PrivateTree::of(app_data_dir, vault.root());
         let comments = CommentBook::new(Arc::clone(&vault), store.comments_path());
         Ok(Self {
             vault,
@@ -96,6 +142,7 @@ impl Project {
             read_path: store.read_path(),
             comments,
             searcher: Mutex::new(None),
+            private,
         })
     }
 
@@ -125,9 +172,18 @@ impl Project {
         answers::plain_hits(searcher.index.search(query, limit))
     }
 
-    /// The comments of the kind asked for. Read-only: the places that moved are not written down here.
+    /// The comments of the kind asked for. Read-only: the places that moved are not written down here. A comment on a note of a
+    /// private notes folder that lies inside the project is not listed.
     pub(crate) fn comments(&self, which: CommentFilter) -> CommentList {
-        answers::comment_list(self.comments.list(false), which)
+        answers::comment_list(self.visible_comments(), which)
+    }
+
+    fn visible_comments(&self) -> Vec<CommentView> {
+        self.comments
+            .list(false)
+            .into_iter()
+            .filter(|comment| !self.private.covers_path(&self.vault, &comment.path))
+            .collect()
     }
 
     /// What is wrong with the comments file, when that is why there are no comments to list.
@@ -141,17 +197,25 @@ impl Project {
         id: &str,
         reply: Option<&str>,
     ) -> Result<CommentView, CommentError> {
+        // a comment on a private note is a comment that is not there
+        if !self
+            .visible_comments()
+            .iter()
+            .any(|comment| comment.id == id)
+        {
+            return Err(CommentError::NotFound(id.to_owned()));
+        }
         self.comments.resolve(id, reply)
     }
 
-    /// Checks a place an agent wants shown (see [`answers::prepare_open`]).
+    /// Checks a place an agent wants shown (see [`answers::prepare_open_hiding`]).
     pub(crate) fn check_open(
         &self,
         path: &str,
         line: Option<u32>,
         heading: Option<&str>,
     ) -> Result<Opened, ProtocolError> {
-        answers::prepare_open(&self.vault, path, line, heading)
+        answers::prepare_open_hiding(&self.vault, &self.private, path, line, heading)
     }
 }
 
@@ -195,11 +259,40 @@ mod tests {
         StateStore::open(fx.app.path(), &root(fx))
     }
 
+    fn store_for(fx: &Fx, folder: &Path) -> StateStore {
+        StateStore::open(fx.app.path(), folder)
+    }
+
     #[test]
     fn the_data_folder_is_named_after_the_app() {
         let dir = app_data_dir("dev.example.app").expect("a data folder");
         assert!(dir.ends_with("dev.example.app"));
         assert!(dir.is_absolute());
+    }
+
+    #[test]
+    fn the_test_variable_moves_the_data_folder_in_a_debug_build_only() {
+        let test = Some(std::ffi::OsString::from("/tmp/test-data"));
+        let system = Some(PathBuf::from("/home/ana/.local/share"));
+        assert_eq!(
+            data_dir_from("dev.example.app", test.clone(), system.clone(), true),
+            Some(PathBuf::from("/tmp/test-data"))
+        );
+        assert_eq!(
+            data_dir_from("dev.example.app", test, system.clone(), false),
+            Some(PathBuf::from("/home/ana/.local/share/dev.example.app"))
+        );
+        // an empty variable is no variable, and a system without a data folder has none
+        assert_eq!(
+            data_dir_from(
+                "dev.example.app",
+                Some(std::ffi::OsString::new()),
+                system,
+                true
+            ),
+            Some(PathBuf::from("/home/ana/.local/share/dev.example.app"))
+        );
+        assert_eq!(data_dir_from("dev.example.app", None, None, true), None);
     }
 
     #[test]
@@ -291,6 +384,42 @@ mod tests {
         assert!(connection_is_on(fx.app.path(), &root(&fx)));
     }
 
+    /// The notes folder has a `.trailmark/` folder like a project, and is private: it is not found, whatever is inside it.
+    #[test]
+    fn the_notes_folder_is_never_a_project() {
+        let fx = fx();
+        let notes = root(&fx).join("TrailMark Notes");
+        fs::create_dir_all(notes.join(".trailmark")).expect("mkdir");
+        fs::create_dir_all(notes.join("sub")).expect("mkdir");
+        // before it is the notes folder, it looks like any folder with a `.trailmark/`
+        assert_eq!(find_project(fx.app.path(), &notes), Some(notes.clone()));
+
+        AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        for inside in [
+            notes.clone(),
+            notes.join("sub"),
+            notes.join("not-yet").join("x.md"),
+        ] {
+            assert_eq!(find_project(fx.app.path(), &inside), None, "{inside:?}");
+        }
+        // the connection answers off for it, even if a switch was somehow stored
+        store_for(&fx, &notes)
+            .set_agent_connection(true)
+            .expect("on");
+        assert!(!connection_is_on(fx.app.path(), &notes));
+        // the project around it, outside the notes, is found as before
+        assert_eq!(find_project(fx.app.path(), fx.project.path()), None);
+        store(&fx)
+            .save_session(&SessionState::default())
+            .expect("save");
+        assert_eq!(
+            find_project(fx.app.path(), &root(&fx).join("docs")),
+            Some(root(&fx))
+        );
+    }
+
     #[test]
     fn search_builds_the_index_from_the_files_and_follows_edits() {
         let fx = fx();
@@ -327,6 +456,46 @@ mod tests {
             .map(|h| h.path)
             .collect();
         assert_eq!(paths, ["docs/plan.md"]);
+    }
+
+    /// A project can hold the notes folder (a notes folder chosen inside it): the notes are private, and nothing the
+    /// project's agent can ask for (the search, the unread documents) shows a word of them.
+    #[test]
+    fn the_notes_folder_inside_a_project_is_not_searched_nor_listed_as_unread() {
+        let fx = fx();
+        write(
+            &fx,
+            "notes/secret.md",
+            "# Secret\n\nThe beacon passphrase is pelican.\n",
+        );
+        write(&fx, "notes/.trailmark/state.json", "{}");
+        let notes = root(&fx).join("notes");
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        // before the folder is the notes folder it is a folder of the project like any other
+        let before = project.search("pelican", 10);
+        assert_eq!(before.len(), 1, "the control: the note is found");
+        drop(project);
+
+        AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+        assert_eq!(project.search("pelican", 10), Vec::<Hit>::new());
+        // the rest of the project is still searched
+        assert_eq!(project.search("beacon", 10).len(), 1);
+        // and an edit to a note does not bring it in later
+        write(&fx, "notes/more.md", "# More\n\nA second pelican.\n");
+        assert_eq!(project.search("pelican", 10), Vec::<Hit>::new());
+        let hash = format!("{:016x}", crate::util::hash_bytes(b"old"));
+        let read = store(&fx).read_path();
+        fs::create_dir_all(read.parent().expect("parent")).expect("mkdir");
+        fs::write(&read, format!("{{\"README.md\": \"{hash}\"}}")).expect("write");
+        let unread = project.unread();
+        assert!(
+            unread.unread.iter().all(|d| !d.path.starts_with("notes/")),
+            "{:?}",
+            unread.unread.iter().map(|d| &d.path).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -377,6 +546,65 @@ mod tests {
         assert_eq!(project.comments(CommentFilter::Open).total, 0);
         assert_eq!(project.comments(CommentFilter::Done).total, 1);
         assert!(project.resolve_comment("nope", None).is_err());
+    }
+
+    /// The program an agent starts when the window is closed answers about the private notes folder as the window does: as if the
+    /// notes were not there.
+    #[test]
+    fn the_notes_folder_inside_a_project_is_not_shown_nor_commented_on_to_an_agent() {
+        use crate::comments::{CommentFilter, NewComment};
+        let fx = fx();
+        write(
+            &fx,
+            "notes/secret.md",
+            "# Secret\n\n## Hidden heading\n\nthe pelican\n",
+        );
+        let notes = root(&fx).join("notes");
+        AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
+
+        let missing = project
+            .check_open("notes/zzz.md", Some(2), Some("Hidden heading"))
+            .expect_err("missing");
+        for path in ["notes/secret.md", "NOTES\\secret.md", "./notes/secret.md"] {
+            let refused = project
+                .check_open(path, Some(2), Some("Hidden heading"))
+                .expect_err(path);
+            assert_eq!(refused.kind, missing.kind, "{path}");
+            assert_eq!(
+                refused.message.replace(path, "<path>"),
+                missing.message.replace("notes/zzz.md", "<path>"),
+                "{path}"
+            );
+        }
+        assert!(project.check_open("docs/plan.md", None, None).is_ok());
+
+        // a comment the person wrote on a note is not listed, and cannot be resolved by an agent that learned its id
+        let book = CommentBook::new(
+            Arc::new(Vault::open(&root(&fx)).expect("vault")),
+            store(&fx).comments_path(),
+        );
+        let on_note = book
+            .add(NewComment {
+                path: "notes/secret.md".to_owned(),
+                quote: "the pelican".to_owned(),
+                text: "private".to_owned(),
+                heading_path: Vec::new(),
+                line: 0,
+                end_line: 0,
+            })
+            .expect("a comment");
+        assert_eq!(project.comments(CommentFilter::All).total, 0);
+        assert!(project.resolve_comment(&on_note.id, None).is_err());
+        assert!(
+            !book
+                .list(false)
+                .iter()
+                .any(|comment| comment.id == on_note.id && comment.done),
+            "it was not resolved"
+        );
     }
 
     #[test]

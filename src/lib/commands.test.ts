@@ -47,7 +47,9 @@ function eventFor(combo: string): KeyInfo {
 
 const IDLE: CommandContext = {
   ide: true,
+  notes: false,
   hasDoc: false,
+  movableNote: false,
   editing: false,
   canBack: false,
   canForward: false,
@@ -56,6 +58,7 @@ const IDLE: CommandContext = {
   hasRepo: false,
   hasUnread: false,
   agentOn: false,
+  storeBuild: false,
 };
 const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
 
@@ -88,6 +91,84 @@ describe("the registry", () => {
     for (const command of COMMANDS) {
       expect(command.shortcut !== undefined, command.id).toBe(shortcutIds.has(command.id));
     }
+  });
+});
+
+describe("the notes", () => {
+  const NOTES: CommandContext = {
+    ...IDLE,
+    notes: true,
+    hasDoc: true,
+    hasRepo: true,
+    hasUnread: true,
+  };
+
+  it("have commands in every window: a new note, the Notes window, and the whole document as text", () => {
+    for (const ctx of [IDLE, { ...IDLE, ide: false }, NOTES]) {
+      const ids = idsOf(availableCommands({ ...ctx, hasDoc: true }));
+      expect(ids).toEqual(expect.arrayContaining(["newNote", "showNotes", "copyDocument"]));
+    }
+    expect(idsOf(availableCommands(IDLE))).not.toContain("copyDocument");
+  });
+
+  it("can be moved into a project only from the Notes window, with a note that has a file open", () => {
+    const has = (ctx: CommandContext): boolean =>
+      idsOf(availableCommands(ctx)).includes("moveToProject");
+    expect(has({ ...NOTES, movableNote: true })).toBe(true);
+    // a new note, a loose file or a window that only reads has none to move
+    expect(has(NOTES)).toBe(false);
+    // and a project has no notes
+    expect(has({ ...IDLE, hasDoc: true, movableNote: true })).toBe(false);
+    expect(matchShortcut(eventFor("Ctrl+Shift+S"))).toBe("moveToProject");
+    expect(matchShortcut(eventFor("Ctrl+S"))).toBe("save");
+  });
+
+  it("leave out of the Notes window what belongs to a project", () => {
+    const ids = idsOf(availableCommands(NOTES));
+    for (const projectOnly of [
+      "explorer",
+      "tagsView",
+      "toggleRight",
+      "showComments",
+      "toggleFollow",
+      "nextUnread",
+      "markUnread",
+      "markAllRead",
+      "baselineCommit",
+      "baselineLastVisit",
+      "agentOn",
+      "initProject",
+      "newFile",
+      "openFolder",
+      "copyReference",
+      "copyPath",
+      "openExternal",
+      "editTags",
+      "addComment",
+    ]) {
+      expect(ids, projectOnly).not.toContain(projectOnly);
+    }
+    // what a note shares with a document stays: searching the notes, editing, the list, the zoom; and a file can be opened
+    expect(ids).toEqual(
+      expect.arrayContaining([
+        "quickOpen",
+        "searchAll",
+        "toggleLeft",
+        "toggleEdit",
+        "zoomIn",
+        "openFile",
+      ]),
+    );
+    // and a project window still has them all
+    expect(idsOf(availableCommands({ ...IDLE, hasDoc: true, hasRepo: true }))).toEqual(
+      expect.arrayContaining([
+        "explorer",
+        "toggleRight",
+        "openFolder",
+        "copyReference",
+        "copyPath",
+      ]),
+    );
   });
 });
 
@@ -157,6 +238,20 @@ describe("availableCommands", () => {
     expect(idsOf(availableCommands({ ...IDLE, stateInProject: true }))).not.toContain(
       "initProject",
     );
+  });
+
+  it('offers "Check for updates" everywhere except the Microsoft Store build, which the Store updates', () => {
+    expect(idsOf(availableCommands(IDLE))).toContain("checkUpdates");
+    expect(idsOf(availableCommands({ ...IDLE, ide: false }))).toContain("checkUpdates");
+    const store = { ...IDLE, storeBuild: true };
+    expect(idsOf(availableCommands(store))).not.toContain("checkUpdates");
+    expect(idsOf(availableCommands({ ...store, ide: false, hasDoc: true }))).not.toContain(
+      "checkUpdates",
+    );
+    // the rest of the list is the same
+    const others = (ctx: CommandContext): string[] =>
+      idsOf(availableCommands(ctx)).filter((id) => id !== "checkUpdates");
+    expect(others(store)).toEqual(others(IDLE));
   });
 
   it("offers the agent connection's switch for the state it is in, and its setup in a folder", () => {

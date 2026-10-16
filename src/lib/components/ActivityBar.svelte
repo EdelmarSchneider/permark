@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from "../i18n";
+  import { keys, t } from "../i18n";
   import { app } from "../stores/app.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -42,6 +42,13 @@
   >
     {#if ui.rightNotify && !session.right.open}<span class="notify-dot"></span>{/if}
   </IconButton>
+  <IconButton
+    class="ab-btn"
+    icon="sticky-note"
+    label={t("activity.notes")}
+    hint={t("mode.withKeys", { hint: t("activity.notesHint"), keys: keys("Ctrl+Shift+D") })}
+    onclick={() => void app.showNotes()}
+  />
   <span class="spacer"></span>
   <IconButton
     class="ab-btn"

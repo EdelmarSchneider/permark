@@ -20,6 +20,7 @@
   import { READING_WIDTHS } from "../readingWidth";
   import { DEFAULT_REF_TEMPLATE, formatReference } from "../reference";
   import { agent } from "../stores/agent.svelte";
+  import { distribution } from "../stores/distribution.svelte";
   import { docs } from "../stores/docs.svelte";
   import { editorCommand } from "../stores/editorCommand.svelte";
   import { chooseLanguage } from "../stores/languageChoice.svelte";
@@ -32,6 +33,7 @@
   import type { ShellState } from "../types";
   import { describeUpdate, isBusy } from "../updates";
   import IconButton from "./IconButton.svelte";
+  import NotesSettings from "./NotesSettings.svelte";
   import Popover, { type Anchor } from "./Popover.svelte";
 
   const SAMPLE = "docs/specs/live-feed.md";
@@ -173,20 +175,22 @@
       {/each}
     </div>
   </div>
-  <div class="field">
-    <span class="field__label">{t("settings.linkUpdate")}</span>
-    <div class="segmented" role="group" aria-label={t("settings.linkUpdate")}>
-      {#each LINK_UPDATES as choice (choice)}
-        <button
-          type="button"
-          aria-pressed={session.linkUpdate === choice}
-          onclick={() => session.setLinkUpdate(choice)}
-        >
-          {t(`settings.linkUpdate.${choice}`)}
-        </button>
-      {/each}
+  {#if !vault.isNotes}
+    <div class="field">
+      <span class="field__label">{t("settings.linkUpdate")}</span>
+      <div class="segmented" role="group" aria-label={t("settings.linkUpdate")}>
+        {#each LINK_UPDATES as choice (choice)}
+          <button
+            type="button"
+            aria-pressed={session.linkUpdate === choice}
+            onclick={() => session.setLinkUpdate(choice)}
+          >
+            {t(`settings.linkUpdate.${choice}`)}
+          </button>
+        {/each}
+      </div>
     </div>
-  </div>
+  {/if}
   <div class="field">
     <span class="field__label">{t("settings.editMode")}</span>
     <div class="segmented" role="group" aria-label={t("settings.editMode")}>
@@ -327,73 +331,84 @@
       {/if}
     </div>
   {/if}
-  <div class="field">
-    <span class="field__label">{t("settings.agent")}</span>
-    <label class="filter__check">
-      <input
-        type="checkbox"
-        checked={agent.enabled}
-        disabled={agent.busy || vault.isSimple}
-        aria-describedby="agent-hint"
-        onchange={async (e) => {
-          const box = e.currentTarget;
-          await agent.setEnabled(box.checked);
-          // when the change did not go through the box goes back to what is true
-          box.checked = agent.enabled;
-        }}
-      />
-      <span class="filter__text">
-        <span>{t("settings.agentSwitch")}</span>
-        <span id="agent-hint" class="filter__hint"
-          >{vault.isSimple ? t("settings.agentUnavailable") : t("settings.agentHint")}</span
-        >
-      </span>
-    </label>
-    {#if agent.enabled}
-      <div class="agent-setup">
-        <span class="field__label">{t("settings.agentSetup")}</span>
-        {#each setupLines as line (line.id)}
-          <div class="agent-setup__head">
-            <span>{line.label}</span>
-            <button type="button" class="btn btn--sm" onclick={() => void copySetup(line)}>
-              {copiedLine === line.id ? t("common.copied") : t("common.copy")}
-            </button>
-          </div>
-          <textarea
-            class="agent-code"
-            readonly
-            wrap="off"
-            spellcheck="false"
-            rows={line.text.split("\n").length}
-            aria-label={line.label}
-            value={line.text}></textarea>
-        {/each}
-        <span class="field__status">{t("settings.agentSetupHint")}</span>
-      </div>
-    {/if}
-  </div>
-  <div class="field">
-    <span class="field__label">{t("settings.updates")}</span>
-    <div class="field__row">
-      {#if update.phase === "available"}
-        <button
-          type="button"
-          class="btn btn--sm btn--primary"
-          onclick={() => void updates.install()}
-        >
-          {t("update.restart")}
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="btn btn--sm"
-          disabled={isBusy(update)}
-          onclick={() => void updates.check(true)}
-        >
-          {update.phase === "checking" ? t("update.checking") : t("update.check")}
-        </button>
+  <NotesSettings />
+  {#if !vault.isNotes}
+    <div class="field">
+      <span class="field__label">{t("settings.agent")}</span>
+      <label class="filter__check">
+        <input
+          type="checkbox"
+          checked={agent.enabled}
+          disabled={agent.busy || vault.isSimple}
+          aria-describedby="agent-hint"
+          onchange={async (e) => {
+            const box = e.currentTarget;
+            await agent.setEnabled(box.checked);
+            // when the change did not go through the box goes back to what is true
+            box.checked = agent.enabled;
+          }}
+        />
+        <span class="filter__text">
+          <span>{t("settings.agentSwitch")}</span>
+          <span id="agent-hint" class="filter__hint"
+            >{vault.isSimple ? t("settings.agentUnavailable") : t("settings.agentHint")}</span
+          >
+        </span>
+      </label>
+      {#if agent.enabled}
+        <div class="agent-setup">
+          <span class="field__label">{t("settings.agentSetup")}</span>
+          {#each setupLines as line (line.id)}
+            <div class="agent-setup__head">
+              <span>{line.label}</span>
+              <button type="button" class="btn btn--sm" onclick={() => void copySetup(line)}>
+                {copiedLine === line.id ? t("common.copied") : t("common.copy")}
+              </button>
+            </div>
+            <textarea
+              class="agent-code"
+              readonly
+              wrap="off"
+              spellcheck="false"
+              rows={line.text.split("\n").length}
+              aria-label={line.label}
+              value={line.text}></textarea>
+          {/each}
+          <span class="field__status"
+            >{distribution.isStore
+              ? t("settings.agentSetupHintStore")
+              : t("settings.agentSetupHint")}</span
+          >
+        </div>
       {/if}
     </div>
-    <span class="field__status" role="status">{status}</span>
+  {/if}
+  <div class="field">
+    <span class="field__label">{t("settings.updates")}</span>
+    {#if distribution.isStore}
+      <span class="field__status">{t("settings.updatesStore")}</span>
+    {:else}
+      <div class="field__row">
+        {#if update.phase === "available"}
+          <button
+            type="button"
+            class="btn btn--sm btn--primary"
+            onclick={() => void updates.install()}
+          >
+            {t("update.restart")}
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="btn btn--sm"
+            disabled={isBusy(update)}
+            onclick={() => void updates.check(true)}
+          >
+            {update.phase === "checking" ? t("update.checking") : t("update.check")}
+          </button>
+        {/if}
+      </div>
+      <span class="field__status" role="status">{status}</span>
+    {/if}
   </div>
 </Popover>

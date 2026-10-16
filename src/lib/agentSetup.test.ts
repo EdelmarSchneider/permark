@@ -77,3 +77,17 @@ describe("hookJson", () => {
     expect(command).toBe(`"${WINDOWS}" context`);
   });
 });
+
+// The Microsoft Store build tells the window that its program is the alias its package puts on the PATH (the path inside
+// the package is not meant to be run), so the lines come out as the documented ones, with nothing quoted.
+describe("the lines of the Microsoft Store build", () => {
+  it("name the alias", () => {
+    const alias = "trailmark";
+    expect(claudeCodeCommand(alias)).toBe("claude mcp add trailmark -- trailmark mcp");
+    expect(JSON.parse(mcpJson(alias))).toEqual({
+      mcpServers: { trailmark: { command: "trailmark", args: ["mcp"] } },
+    });
+    const hook = JSON.parse(hookJson(alias)).hooks.UserPromptSubmit[0].hooks[0].command;
+    expect(hook).toBe("trailmark context");
+  });
+});

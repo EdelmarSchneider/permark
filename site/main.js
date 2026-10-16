@@ -1,8 +1,9 @@
 // TrailMark landing page: progressive enhancements only. The page works fully without JS.
 (function () {
-  // 1. OS-aware label on the hero download button (link still points to the latest release).
+  // 1. OS-aware hero button: the Microsoft Store on Windows, the latest release elsewhere.
   var label = document.getElementById("download-label");
-  if (label) {
+  var button = document.getElementById("download-btn");
+  if (label && button) {
     var ua =
       (navigator.userAgentData && navigator.userAgentData.platform) ||
       navigator.platform ||
@@ -15,7 +16,12 @@
         : /linux|x11/i.test(ua) && !/android/i.test(navigator.userAgent)
           ? "Linux"
           : "";
-    if (os) label.textContent = "Download for " + os;
+    if (os === "Windows") {
+      label.textContent = "Get it from the Microsoft Store";
+      button.setAttribute("href", "https://apps.microsoft.com/detail/9NVV5GVZMGGX");
+    } else if (os) {
+      label.textContent = "Download for " + os;
+    }
   }
 
   // 2. Copy buttons on code blocks.

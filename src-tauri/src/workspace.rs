@@ -20,7 +20,7 @@ use crate::bridge::socket::Endpoint;
 use crate::comments::{
     CommentBook, CommentError, CommentView, Listener as CommentsListener, NewComment,
 };
-use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
+use crate::edit::{self, AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::fileops::{
     BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers, Move,
@@ -33,6 +33,9 @@ use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
 use crate::meta::{MetaService, Timing};
+use crate::notes::{
+    self, LooseDoc, NoteSaved, NotesError, NotesService, OpenReport, ReadOnlyReason,
+};
 use crate::refs::ImageRefs;
 use crate::render::{self, DocumentView, Registry};
 use crate::search::indexer::{IndexWorker, Indexer};
@@ -43,7 +46,7 @@ use crate::session::{
 };
 use crate::unread::{Timing as UnreadTiming, UnreadService};
 use crate::util::{image_mime, modified_ms, now_ms, on_parser_stack, read_with_retry};
-use crate::vault::{NodeKind, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
+use crate::vault::{NodeKind, Resolved, TreeNode, TreeOptions, Vault, VaultError, VaultMode};
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
 use crate::watch::{
@@ -168,12 +171,24 @@ impl EventSink for GuardedSink {
     }
 }
 
+/// What an open folder is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WorkspaceKind {
+    /// A project: a folder (or a file) the person reads and follows, with git, unread markers and the agent connection.
+    Project,
+    /// The notes folder: a vault root with no git, no unread worker, no last visit, no entry among the recent folders
+    /// and never an agent connection.
+    Notes,
+}
+
 /// Matches the UI's `VaultInfo`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VaultInfo {
     pub root: String,
     pub name: String,
+    pub kind: WorkspaceKind,
     pub mode: VaultMode,
     pub initial_file: Option<String>,
     pub worktrees: Vec<WorktreeInfo>,
@@ -240,7 +255,16 @@ fn is_program_without_extension(_path: &Path) -> bool {
 /// How long a closing window waits for the unread markers' file to be written (see [`Workspace::save_last_visit`]).
 const CLOSE_WAIT: Duration = Duration::from_millis(500);
 
+/// The notes folder opened as a workspace, and what opening it found.
+pub struct NotesPart {
+    service: NotesService,
+    opened: OpenReport,
+}
+
 pub struct Workspace {
+    kind: WorkspaceKind,
+    /// The notes, for the workspace of the notes folder.
+    notes: Option<NotesPart>,
     vault: Arc<Vault>,
     registry: Registry,
     store: Mutex<StateStore>,
@@ -302,9 +326,15 @@ struct LiveBackend {
     index: Arc<RwLock<Bm25Index>>,
     unread: Arc<UnreadService>,
     comments: Arc<CommentBook>,
+    /// The data folder of the program: where the person's choice of the notes folder is kept.
+    app_data: PathBuf,
 }
 
 impl Backend for LiveBackend {
+    fn notes_folder(&self) -> Option<PathBuf> {
+        Some(notes::share::notes_root(&self.app_data))
+    }
+
     fn unread(&self) -> Vec<String> {
         self.unread.unread()
     }
@@ -344,6 +374,7 @@ fn agent_bridge(
     unread: &Arc<UnreadService>,
     comments: &Arc<CommentBook>,
     sink: &Arc<dyn EventSink>,
+    app_data: &Path,
 ) -> (AgentBridge, bool) {
     let bridge = AgentBridge::new(
         Arc::clone(vault),
@@ -353,9 +384,15 @@ fn agent_bridge(
             index: Arc::clone(index),
             unread: Arc::clone(unread),
             comments: Arc::clone(comments),
+            app_data: app_data.to_path_buf(),
         }),
         Arc::new(AgentSink(Arc::clone(sink))),
     );
+    // the notes folder is private even where it lies inside the project: no tool of the connection reaches it
+    bridge.hide(crate::bridge::answers::PrivateTree::of(
+        app_data,
+        vault.root(),
+    ));
     let wanted = !vault.is_shallow() && store.agent_connection();
     (bridge, wanted)
 }
@@ -508,7 +545,33 @@ impl Workspace {
         home: Option<&Path>,
         sink: &Arc<dyn EventSink>,
     ) -> Result<Self, AppError> {
-        Self::open_with(path, app_data_dir, home, sink, start_watcher)
+        Self::open_with(
+            path,
+            app_data_dir,
+            home,
+            sink,
+            start_watcher,
+            WorkspaceKind::Project,
+        )
+    }
+
+    /// Opens the notes folder: a vault root with no git, no unread markers, no last visit, no entry among the recent
+    /// folders, and never an agent connection (see [`WorkspaceKind::Notes`]). The folder must be there: nothing is
+    /// created here.
+    pub fn open_notes(
+        folder: &Path,
+        app_data_dir: &Path,
+        home: Option<&Path>,
+        sink: &Arc<dyn EventSink>,
+    ) -> Result<Self, AppError> {
+        Self::open_with(
+            folder,
+            app_data_dir,
+            home,
+            sink,
+            start_watcher,
+            WorkspaceKind::Notes,
+        )
     }
 
     /// [`Workspace::open`] with the way the watcher is started as a parameter (tests make it fail).
@@ -520,14 +583,38 @@ impl Workspace {
         home: Option<&Path>,
         sink: &Arc<dyn EventSink>,
         watch: StartWatcher,
+        kind: WorkspaceKind,
     ) -> Result<Self, AppError> {
         let vault = Vault::open(path)?;
-        let store = StateStore::open(app_data_dir, vault.root());
-        let config = store.config();
-        let last_visit = store.load_last_visit();
+        let notes_kind = kind == WorkspaceKind::Notes;
+        if notes_kind && vault.is_shallow() {
+            return Err(VaultError::Invalid(format!("not a folder: {}", path.display())).into());
+        }
+        // The notes folder keeps this computer's settings in the app's own data; a project may keep them in its folder.
+        let store = if notes_kind {
+            StateStore::open_in_app_data(app_data_dir, vault.root())
+        } else {
+            StateStore::open(app_data_dir, vault.root())
+        };
+        // A `config.toml` is a project's: the notes folder has none (it may be synced to other computers).
+        let config = if notes_kind {
+            crate::session::Config::default()
+        } else {
+            store.config()
+        };
+        let last_visit = if notes_kind {
+            None
+        } else {
+            store.load_last_visit()
+        };
 
-        // Git first: linked worktrees become extra roots of the vault.
-        let discovery = git::discover(vault.root(), home);
+        // Git first: linked worktrees become extra roots of the vault. The notes folder is not a repository, whatever
+        // folder it happens to be inside.
+        let discovery = if notes_kind {
+            Discovery::NoRepo
+        } else {
+            git::discover(vault.root(), home)
+        };
         let git_ctx = match &discovery {
             Discovery::Repo(ctx) => Some(ctx.clone()),
             _ => None,
@@ -544,7 +631,20 @@ impl Workspace {
             .into_iter()
             .map(|r| (r.to_path_buf(), info_exclude.clone()))
             .collect();
-        let filter = Arc::new(PathFilter::new(&roots, &config.ignore));
+        // The notes are private: a notes folder inside the project is not part of what is indexed, searched or listed as unread
+        // (the agent connection answers from those).
+        let mut ignore = config.ignore.clone();
+        if !notes_kind {
+            ignore.extend(crate::notes::folder::ignore_inside(
+                app_data_dir,
+                crate::session::AppSettingsStore::new(app_data_dir)
+                    .load()
+                    .notes_folder
+                    .as_deref(),
+                vault.root(),
+            ));
+        }
+        let filter = Arc::new(PathFilter::new(&roots, &ignore));
         let sigs = Arc::new(SigStore::new());
         let index = Arc::new(RwLock::new(Bm25Index::new()));
 
@@ -558,7 +658,11 @@ impl Workspace {
             Arc::new(move || meta_sink.meta_changed()),
         ));
 
-        let unread = start_unread(&vault, &filter, store.read_path(), sink);
+        let unread = if notes_kind {
+            Arc::new(UnreadService::off(Arc::clone(&vault)))
+        } else {
+            start_unread(&vault, &filter, store.read_path(), sink)
+        };
         let comments_sink = Arc::clone(sink);
         let comments_heard: CommentsListener = Arc::new(move || comments_sink.comments_changed());
         let comments = Arc::new(
@@ -613,16 +717,41 @@ impl Workspace {
         // its first computation and the watcher start.
         git.trigger();
 
-        // A failure to remember the folder must not stop it from opening.
-        let _ = RecentStore::new(app_data_dir).touch(
-            &vault.root().display().to_string(),
-            &vault.name(),
-            now_ms(),
-        );
+        // A failure to remember the folder must not stop it from opening. The notes are not a recent folder.
+        if !notes_kind {
+            let _ = RecentStore::new(app_data_dir).touch(
+                &vault.root().display().to_string(),
+                &vault.name(),
+                now_ms(),
+            );
+        }
 
         // Started by `activate`, once this folder has replaced the previous one (which must let go of the socket first).
-        let (agent, agent_wanted) = agent_bridge(&vault, &store, &index, &unread, &comments, sink);
+        // The notes never connect to an agent: they are private.
+        let (agent, agent_wanted) = agent_bridge(
+            &vault,
+            &store,
+            &index,
+            &unread,
+            &comments,
+            sink,
+            app_data_dir,
+        );
+        let agent_wanted = agent_wanted && !notes_kind;
+        let notes = notes_kind.then(|| {
+            let (service, opened) = NotesService::open(
+                Arc::clone(&vault),
+                Arc::clone(&own_writes),
+                Arc::new(OsRecycler),
+                home.map(Path::to_path_buf),
+                now_ms(),
+                &notes::process_is_running,
+            );
+            NotesPart { service, opened }
+        });
         Ok(Self {
+            kind,
+            notes,
             vault,
             registry: Registry::with_defaults(),
             store: Mutex::new(store),
@@ -676,6 +805,7 @@ impl Workspace {
         VaultInfo {
             root: self.vault.root().display().to_string(),
             name: self.vault.name(),
+            kind: self.kind,
             mode: self.vault.mode(),
             initial_file: self.vault.initial_file().map(str::to_owned),
             worktrees: self
@@ -697,8 +827,54 @@ impl Workspace {
         self.vault.tree_with(opts)
     }
 
+    /// Whether `path` is the path of a loose file of this window's notes.
+    fn is_loose(&self, path: &str) -> bool {
+        self.notes.is_some() && notes::is_loose_path(path)
+    }
+
+    /// The scope of a loose file, for a UI path of one (`@file/<id>/<name>`) in the Notes window; `None` for any other path.
+    /// A loose file is reached through its id only: the file, and the images next to it.
+    fn loose_doc(&self, path: &str) -> Result<Option<LooseDoc>, AppError> {
+        match &self.notes {
+            Some(part) if notes::is_loose_path(path) => Ok(Some(part.service.loose_doc(path)?)),
+            _ => Ok(None),
+        }
+    }
+
+    /// [`Vault::resolve`] for the paths of the folder, and for the paths of a loose file the file's own place.
+    fn resolve_path(&self, path: &str) -> Result<Resolved, AppError> {
+        if let Some(doc) = self.loose_doc(path)? {
+            let target = doc.asset.as_deref().unwrap_or(&doc.name);
+            let mut resolved = doc.vault.resolve(target)?;
+            resolved.rel = notes::loose_ui_path(&doc.id, target);
+            return Ok(resolved);
+        }
+        Ok(self.vault.resolve(path)?)
+    }
+
     pub fn read_document(&self, path: &str) -> Result<DocumentView, AppError> {
+        if let Some(doc) = self.loose_doc(path)? {
+            if doc.asset.is_some() {
+                return Err(VaultError::NotFound(path.to_owned()).into());
+            }
+            let resolved = doc.vault.resolve(&doc.name)?;
+            // looked at first: a change after this point is a change to the version that is shown
+            self.notes()?.mark_seen(&doc.id);
+            return Ok(on_parser_stack(|| {
+                render::load_document(&self.registry, &resolved.abs, &doc.ui_path)
+            })?);
+        }
         let resolved = self.vault.resolve(path)?;
+        // a new note has a name and no file yet: it reads as empty
+        if self.is_unborn_note(path) {
+            return Ok(render::render_bytes(
+                &self.registry,
+                &resolved.abs,
+                &resolved.rel,
+                b"",
+                now_ms(),
+            ));
+        }
         // Parsing untrusted documents happens on a thread with a large stack (see `on_parser_stack`).
         Ok(on_parser_stack(|| {
             render::load_document(&self.registry, &resolved.abs, &resolved.rel)
@@ -713,6 +889,30 @@ impl Workspace {
 
     /// A Markdown file as the editor needs it: the exact text, its hash and its blocks.
     pub fn document_source(&self, path: &str) -> Result<SourceDoc, AppError> {
+        if let Some(doc) = self.loose_doc(path)? {
+            if doc.asset.is_some() {
+                return Err(VaultError::NotFound(path.to_owned()).into());
+            }
+            self.notes()?.mark_seen(&doc.id);
+            // a loose file's editor takes plain text too, and nothing it does is the notes watcher's business
+            let own = OwnWrites::new();
+            let mut source = Editor::new(&doc.vault, &own)
+                .with_text_files()
+                .source(&doc.name)?;
+            source.path = doc.ui_path;
+            return Ok(source);
+        }
+        if self.is_unborn_note(path) {
+            let resolved = self.vault.resolve(path)?;
+            // no hash: the first save of the text makes the file
+            return Ok(SourceDoc {
+                path: resolved.rel,
+                text: String::new(),
+                hash: String::new(),
+                parsed: edit::parse_blocks(""),
+                modified_ms: now_ms(),
+            });
+        }
         Ok(self.editor().source(path)?)
     }
 
@@ -723,6 +923,11 @@ impl Workspace {
         text: &str,
         expected_hash: &str,
     ) -> Result<SaveOutcome, AppError> {
+        // a loose file is written only here, when the person asks, and nothing of it is news or unread
+        if self.is_loose(path) {
+            return Ok(self.notes()?.save_file(path, text, expected_hash)?);
+        }
+        self.require_writable()?;
         let outcome = self.editor().save(path, text, expected_hash)?;
         // What the person wrote is read by definition.
         if let SaveOutcome::Saved { hash, .. } = &outcome {
@@ -733,6 +938,11 @@ impl Workspace {
 
     /// Creates a new Markdown file (never overwrites).
     pub fn create_document(&self, path: &str, text: &str) -> Result<CreatedDoc, AppError> {
+        // the only file a loose file's path can create is the file itself, again, where it was
+        if self.is_loose(path) {
+            return Ok(self.notes()?.recreate_file(path, text)?);
+        }
+        self.require_writable()?;
         let created = self.editor().create(path, text)?;
         self.unread.mark_written(&created.path, &created.hash);
         Ok(created)
@@ -745,7 +955,79 @@ impl Workspace {
         name_hint: &str,
         data: &[u8],
     ) -> Result<AssetWritten, AppError> {
+        self.require_writable()?;
+        // a loose file takes no images: its folder is not ours to add to (the vault of one file says so)
+        if let Some(doc) = self.loose_doc(doc_path)? {
+            let own = OwnWrites::new();
+            return Ok(Editor::new(&doc.vault, &own).write_asset(&doc.name, name_hint, data)?);
+        }
         Ok(self.editor().write_asset(doc_path, name_hint, data)?)
+    }
+
+    // ---- notes ----------------------------------------------------------------------------------
+
+    /// The notes of this window; an error for a window that shows a project.
+    pub fn notes(&self) -> Result<&NotesService, AppError> {
+        self.notes
+            .as_ref()
+            .map(|part| &part.service)
+            .ok_or_else(|| NotesError::NotOpen.into())
+    }
+
+    /// What opening the notes found: whether they can only be read, and the notes made from a crash's leftovers.
+    pub fn notes_opened(&self) -> Option<&OpenReport> {
+        self.notes.as_ref().map(|part| &part.opened)
+    }
+
+    /// Where a file of the disk is in this project, when this window shows a folder and the file is inside it: its path in the
+    /// project. A file anywhere else (and every file in the Notes window) is not in a project.
+    pub fn locate_in_project(&self, path: &Path) -> Option<String> {
+        if self.notes.is_some() || self.vault.is_shallow() {
+            return None;
+        }
+        let canonical = dunce::canonicalize(path).ok()?;
+        if !canonical.is_file() {
+            return None;
+        }
+        self.vault.locate(&canonical).map(|located| located.rel)
+    }
+
+    /// Whether this workspace is the notes, and in the folder `folder`.
+    pub fn shows_notes_of(&self, folder: &Path) -> bool {
+        self.notes.is_some()
+            && dunce::canonicalize(folder).is_ok_and(|folder| folder == self.vault.root())
+    }
+
+    /// Saves a note over the file it came from (see [`NotesService::save`]).
+    pub fn save_note(
+        &self,
+        path: &str,
+        text: &str,
+        expected_hash: &str,
+    ) -> Result<NoteSaved, AppError> {
+        Ok(self
+            .notes()?
+            .save(path, text, expected_hash, now_ms(), notes::Moment::now())?)
+    }
+
+    /// Whether `path` is a new note that has a name and no file yet.
+    fn is_unborn_note(&self, path: &str) -> bool {
+        self.notes
+            .as_ref()
+            .is_some_and(|part| part.service.is_unborn(path))
+    }
+
+    /// Writing is refused in the notes of a second TrailMark window (see [`NotesService::open`]).
+    fn require_writable(&self) -> Result<(), AppError> {
+        match &self.notes {
+            Some(part) => Ok(part.service.writable()?),
+            None => Ok(()),
+        }
+    }
+
+    /// Why the notes can only be read in this window, if they can.
+    pub fn notes_read_only(&self) -> Option<ReadOnlyReason> {
+        self.notes.as_ref().and_then(|part| part.opened.read_only)
     }
 
     // ---- file operations ------------------------------------------------------------------------
@@ -755,6 +1037,7 @@ impl Workspace {
         if self.vault.is_shallow() {
             return Err(FileOpError::SimpleMode.into());
         }
+        self.require_writable()?;
         Ok(&self.fileops)
     }
 
@@ -797,11 +1080,18 @@ impl Workspace {
     }
 
     pub fn resolve_link(&self, from: &str, href: &str) -> LinkTarget {
+        if let Ok(Some(doc)) = self.loose_doc(from) {
+            // a loose file is read by itself: what it links to in its folder is not part of any project
+            return match links::resolve(&doc.vault, &doc.name, href) {
+                LinkTarget::Internal { path, .. } => LinkTarget::Missing { path },
+                other => other,
+            };
+        }
         links::resolve(&self.vault, from, href)
     }
 
     pub fn absolute_path(&self, path: &str) -> Result<String, AppError> {
-        Ok(self.vault.resolve(path)?.abs.display().to_string())
+        Ok(self.resolve_path(path)?.abs.display().to_string())
     }
 
     /// An image for the document view. It is looked up like any other path of the folder, so nothing
@@ -809,10 +1099,23 @@ impl Workspace {
     /// the images next to the opened file are served, because that folder is often Downloads or the
     /// home folder.
     pub fn read_asset(&self, path: &str) -> Result<Asset, AppError> {
+        // the images of a loose file are the ones next to it, and no others
+        if let Some(doc) = self.loose_doc(path)? {
+            let Some(name) = doc.asset.as_deref() else {
+                return Err(VaultError::NotFound(path.to_owned()).into());
+            };
+            return Self::read_image(&doc.vault, name);
+        }
+        Self::read_image(&self.vault, path)
+    }
+
+    /// An image of `vault`, looked up like any other path of it, so nothing outside it can be read. A vault of one file
+    /// (Simple mode, a loose file) serves the images next to the file only.
+    fn read_image(vault: &Vault, path: &str) -> Result<Asset, AppError> {
         let mime =
             image_mime(path).ok_or_else(|| VaultError::Invalid(format!("not an image: {path}")))?;
-        let resolved = self.vault.resolve(path)?;
-        if self.vault.is_shallow() && resolved.rel.contains('/') {
+        let resolved = vault.resolve(path)?;
+        if vault.is_shallow() && resolved.rel.contains('/') {
             return Err(VaultError::Escapes(path.to_owned()).into());
         }
         let meta =
@@ -830,7 +1133,7 @@ impl Workspace {
     /// without an extension): a program or script in the folder is never started from here, and neither is a file
     /// without an extension that the system would run (see [`is_program_without_extension`]).
     pub fn external_target(&self, path: &str) -> Result<PathBuf, AppError> {
-        let resolved = self.vault.resolve(path)?;
+        let resolved = self.resolve_path(path)?;
         if !resolved.abs.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
@@ -852,7 +1155,7 @@ impl Workspace {
     /// kind of file will do, because it is only ever an argument to the program the person chose (the program
     /// itself comes from their settings, never from the folder).
     pub fn editor_target(&self, path: &str) -> Result<PathBuf, AppError> {
-        let resolved = self.vault.resolve(path)?;
+        let resolved = self.resolve_path(path)?;
         if !resolved.abs.is_file() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
@@ -861,7 +1164,7 @@ impl Workspace {
 
     /// The folder (or file) to show in the system's file manager for "Reveal in folder".
     pub fn reveal_target(&self, path: &str) -> Result<PathBuf, AppError> {
-        let resolved = self.vault.resolve(path)?;
+        let resolved = self.resolve_path(path)?;
         if !resolved.abs.exists() {
             return Err(VaultError::NotFound(path.to_owned()).into());
         }
@@ -1030,7 +1333,7 @@ impl Workspace {
     /// window read it there, and nothing in the project can change it); if that fails nothing changes. A single file
     /// (Simple mode) is no project, so it never connects.
     pub fn set_agent_connection(&self, enabled: bool) -> Result<AgentStatus, AppError> {
-        if self.vault.is_shallow() {
+        if self.vault.is_shallow() || self.kind == WorkspaceKind::Notes {
             return Ok(self.agent.status());
         }
         self.lock_store()?.set_agent_connection(enabled)?;
@@ -1043,7 +1346,7 @@ impl Workspace {
 
     /// What the window shows now, for an agent that asks.
     pub fn publish_agent_context(&self, context: AgentContext) {
-        if !self.vault.is_shallow() {
+        if !self.vault.is_shallow() && self.kind == WorkspaceKind::Project {
             self.agent.publish(context);
         }
     }
@@ -1169,6 +1472,10 @@ impl Workspace {
 
     /// Remembers "now", the current HEAD and the uncommitted files as the last visit.
     fn record_visit(&self) {
+        // the notes are not visited: there is nothing to come back to and compare with
+        if self.kind == WorkspaceKind::Notes {
+            return;
+        }
         let oid = self.git_ctx.as_ref().and_then(git::read_head_oid);
         let visit = LastVisit {
             time_ms: now_ms(),
@@ -2041,6 +2348,377 @@ deepword
         assert!(!remembered(fx.app.path()));
     }
 
+    impl Fx {
+        fn open_notes(&self) -> Workspace {
+            let sink: Arc<dyn EventSink> = self.rec.clone();
+            Workspace::open_notes(self.project.path(), self.app.path(), None, &sink)
+                .expect("open notes")
+        }
+    }
+
+    /// The notes folder is a vault root and nothing else: no git (not even in a repository), no unread markers, no
+    /// last visit, no recent folder, never an agent connection and no `agent.json`.
+    #[test]
+    fn the_notes_are_a_workspace_with_no_git_no_unread_no_visits_no_recents_and_no_agent() {
+        let fx = Fx::new();
+        let repo = init_repo(fx.project.path());
+        write(fx.project.path(), "a.md", "# A\n");
+        write(fx.project.path(), "b.md", "# B\n");
+        commit_all(&repo, "init");
+        let ws = fx.open_notes();
+        assert_eq!(ws.info().kind, WorkspaceKind::Notes);
+        assert_eq!(ws.info().mode, VaultMode::Ide);
+        assert!(
+            !ws.git_snapshot().is_repo,
+            "the folder is inside a repository, the notes are not"
+        );
+        assert_eq!(ws.notes().expect("notes").list().notes.len(), 2);
+
+        // somebody else changes a note: nothing is unread (the markers have no worker, so nothing can ever be)
+        write(
+            fx.project.path(),
+            "a.md",
+            "# A, changed by another program\n",
+        );
+        write(fx.project.path(), "c.md", "# C\n");
+        assert_eq!(ws.unread(), Vec::<String>::new());
+        ws.mark_unread("a.md").expect("answers");
+        assert_eq!(ws.unread(), Vec::<String>::new());
+
+        // no agent
+        let status = ws.set_agent_connection(true).expect("answers");
+        assert!(!status.enabled);
+        ws.publish_agent_context(AgentContext::default());
+        ws.activate();
+        ws.close();
+        assert!(!remembered(fx.app.path()));
+        assert!(!fx.project.path().join(".trailmark").join("local").exists());
+        assert!(!fx
+            .project
+            .path()
+            .join(".trailmark")
+            .join("local")
+            .join("agent.json")
+            .exists());
+
+        // no recent folder, no last visit; the settings of the window are the computer's, not the notes'
+        assert_eq!(RecentStore::new(fx.app.path()).load_existing(), Vec::new());
+        let again = fx.open_notes();
+        assert_eq!(again.since_last_visit().expect("since").since_ms, None);
+        assert!(!fx
+            .project
+            .path()
+            .join(".trailmark")
+            .join("last_visit.json")
+            .exists());
+        let store = StateStore::open_in_app_data(fx.app.path(), fx.project.path());
+        assert!(store.load_last_visit().is_none());
+        assert_eq!(store.location(), StateLocation::AppData);
+        assert!(store.agent_path().is_none());
+        again.close();
+    }
+
+    /// A notes folder chosen inside a project is the person's private notes: the search the agent connection answers from
+    /// (the index of the open project) holds none of their text.
+    #[test]
+    fn a_notes_folder_inside_the_project_is_not_in_its_index() {
+        let fx = Fx::new();
+        write(fx.project.path(), "README.md", "# Home\n\nlighthouseword\n");
+        write(
+            fx.project.path(),
+            "my-notes/idea.md",
+            "# Idea\n\nlighthouseword and a pelicanword\n",
+        );
+        let notes = dunce::canonicalize(fx.project.path())
+            .expect("canonical")
+            .join("my-notes");
+        crate::session::AppSettingsStore::new(fx.app.path())
+            .set_notes_folder(&notes.display().to_string())
+            .expect("choose the notes folder");
+        let ws = fx.open();
+        fx.indexed();
+        let hits = ws.search("lighthouseword", None);
+        assert_eq!(
+            hits.iter().map(|h| h.path.as_str()).collect::<Vec<_>>(),
+            ["README.md"]
+        );
+        assert_eq!(ws.search("pelicanword", None).len(), 0);
+        ws.close();
+    }
+
+    #[test]
+    fn a_notes_workspace_needs_a_folder_and_a_project_has_no_notes() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let sink: Arc<dyn EventSink> = fx.rec.clone();
+        let file = fx.project.path().join("a.md");
+        assert!(Workspace::open_notes(&file, fx.app.path(), None, &sink).is_err());
+        assert!(
+            Workspace::open_notes(&fx.project.path().join("nope"), fx.app.path(), None, &sink)
+                .is_err()
+        );
+        let project = fx.open();
+        assert_eq!(project.info().kind, WorkspaceKind::Project);
+        assert_eq!(
+            project.notes().err().map(|e| e.kind()),
+            Some("notesNotOpen")
+        );
+        assert_eq!(project.notes_read_only(), None);
+    }
+
+    /// A folder that is not the notes folder, with a file someone sent and the image it shows.
+    fn sent_files() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            dir.path(),
+            "proposal.md",
+            "# Proposal\n\n![the plan](pic.png)\n\n[next](other.md) and [web](https://example.com)\n",
+        );
+        write(dir.path(), "pic.png", "not really a picture");
+        write(dir.path(), "other.md", "# Other\n");
+        write(dir.path(), "todo.txt", "buy milk\n");
+        dir
+    }
+
+    fn open_loose(ws: &Workspace, file: &Path) -> String {
+        ws.notes()
+            .expect("notes")
+            .open_file(file, now_ms())
+            .expect("open the file")
+            .path
+    }
+
+    /// A loose file is read, edited, saved and served through its own paths, and nothing of the notes folder is involved.
+    #[test]
+    fn a_loose_file_is_read_edited_and_saved_through_paths_of_its_own() {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let path = open_loose(&ws, &sent.path().join("proposal.md"));
+        let id = path
+            .strip_prefix("@file/")
+            .and_then(|rest| rest.split('/').next())
+            .expect("an id")
+            .to_owned();
+
+        let view = ws.read_document(&path).expect("read");
+        assert_eq!(view.path, path);
+        assert!(view.html.contains("Proposal") && view.html.contains("pic.png"));
+        let source = ws.document_source(&path).expect("source");
+        assert_eq!(source.path, path);
+        assert!(source.text.starts_with("# Proposal"));
+
+        // the image next to it is served, nothing else of its folder is
+        let image = ws
+            .read_asset(&format!("@file/{id}/pic.png"))
+            .expect("image");
+        assert_eq!(image.mime, "image/png");
+        assert!(ws.read_asset(&format!("@file/{id}/sub/pic.png")).is_err());
+        assert!(ws.read_asset(&format!("@file/{id}/../pic.png")).is_err());
+        assert!(
+            ws.read_asset(&path).is_err(),
+            "the document is not an image"
+        );
+        assert!(ws.read_document(&format!("@file/{id}/pic.png")).is_err());
+        assert!(ws.read_document("@file/ffffffff/proposal.md").is_err());
+
+        // saving writes the file only when asked, and nothing else
+        let outcome = ws
+            .save_document(&path, "# Proposal\nedited\n", &source.hash)
+            .expect("save");
+        assert!(matches!(outcome, SaveOutcome::Saved { .. }));
+        assert_eq!(
+            std::fs::read_to_string(sent.path().join("proposal.md")).expect("read"),
+            "# Proposal\nedited\n"
+        );
+        let in_notes: Vec<String> = std::fs::read_dir(fx.project.path())
+            .expect("ls")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .filter(|name| name != ".trailmark")
+            .collect();
+        assert_eq!(in_notes, Vec::<String>::new(), "no file made in the notes");
+        // a save based on a version that is not the file's any more writes nothing
+        let stale = ws
+            .save_document(&path, "# Mine\n", &source.hash)
+            .expect("save");
+        assert!(matches!(stale, SaveOutcome::Conflict { .. }));
+
+        // images cannot be added next to a file that is not ours
+        assert!(ws.write_asset(&path, "x.png", &[1, 2, 3]).is_err());
+        assert!(!sent.path().join("assets").exists());
+
+        // what its links lead to
+        assert!(matches!(
+            ws.resolve_link(&path, "other.md"),
+            LinkTarget::Missing { .. }
+        ));
+        assert!(matches!(
+            ws.resolve_link(&path, "https://example.com"),
+            LinkTarget::External { .. }
+        ));
+        assert!(matches!(
+            ws.resolve_link(&path, "#top"),
+            LinkTarget::Anchor { .. }
+        ));
+
+        // the places the system is handed
+        let file = dunce::canonicalize(sent.path().join("proposal.md")).expect("canonical");
+        assert_eq!(
+            ws.absolute_path(&path).expect("abs"),
+            file.display().to_string()
+        );
+        assert_eq!(ws.external_target(&path).expect("external"), file);
+        assert_eq!(ws.reveal_target(&path).expect("reveal"), file);
+        assert_eq!(ws.editor_target(&path).expect("editor"), file);
+        ws.close();
+    }
+
+    #[test]
+    fn a_text_file_opens_for_editing_in_the_notes_and_stays_read_only_in_a_project() {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let path = open_loose(&ws, &sent.path().join("todo.txt"));
+        let source = ws.document_source(&path).expect("a text file is edited");
+        assert_eq!(source.text, "buy milk\n");
+        ws.save_document(&path, "buy milk\nand eggs\n", &source.hash)
+            .expect("saved");
+        assert_eq!(
+            std::fs::read_to_string(sent.path().join("todo.txt")).expect("read"),
+            "buy milk\nand eggs\n"
+        );
+        ws.close();
+
+        let project = Fx::new();
+        write(project.project.path(), "todo.txt", "buy milk\n");
+        let ws = project.open();
+        assert_eq!(
+            ws.document_source("todo.txt").err().map(|e| e.kind()),
+            Some("notMarkdown")
+        );
+        ws.close();
+    }
+
+    #[test]
+    fn a_loose_file_that_is_gone_is_written_again_by_the_create_that_a_project_uses_for_new_files()
+    {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let file = sent.path().join("proposal.md");
+        let path = open_loose(&ws, &file);
+        std::fs::remove_file(&file).expect("remove");
+        let created = ws
+            .create_document(&path, "# Back again\n")
+            .expect("written again");
+        assert_eq!(created.path, path);
+        assert_eq!(
+            std::fs::read_to_string(&file).expect("read"),
+            "# Back again\n"
+        );
+        assert!(ws.create_document(&path, "# Over it\n").is_err());
+        ws.close();
+    }
+
+    #[test]
+    fn a_file_is_in_the_project_only_when_the_open_folder_holds_it() {
+        let fx = Fx::new();
+        write(fx.project.path(), "docs/a.md", "# A\n");
+        let ws = fx.open();
+        let inside = fx.project.path().join("docs").join("a.md");
+        assert_eq!(ws.locate_in_project(&inside).as_deref(), Some("docs/a.md"));
+        assert_eq!(ws.locate_in_project(&fx.project.path().join("docs")), None);
+        let sent = sent_files();
+        assert_eq!(ws.locate_in_project(&sent.path().join("proposal.md")), None);
+        assert_eq!(
+            ws.locate_in_project(&fx.project.path().join("gone.md")),
+            None
+        );
+        ws.close();
+        // the Notes window has no project
+        let notes_window = Fx::new();
+        let notes = notes_window.open_notes();
+        write(notes_window.project.path(), "n.md", "# N\n");
+        assert_eq!(
+            notes.locate_in_project(&notes_window.project.path().join("n.md")),
+            None
+        );
+        notes.close();
+    }
+
+    #[test]
+    fn a_new_note_reads_as_empty_and_gets_its_file_with_the_first_text() {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let name = ws
+            .notes()
+            .expect("notes")
+            .reserve_new(notes::Moment::now())
+            .expect("name");
+        // the editor opens it like any document
+        let view = ws.read_document(&name).expect("an empty document");
+        assert_eq!(
+            (view.kind, view.html.trim()),
+            (crate::render::DocKind::Markdown, "")
+        );
+        let source = ws.document_source(&name).expect("an empty source");
+        assert_eq!((source.text.as_str(), source.hash.as_str()), ("", ""));
+        assert!(!fx.project.path().join(&name).exists(), "no file yet");
+
+        assert_eq!(
+            ws.save_note(&name, "  ", "").expect("blank"),
+            NoteSaved::Blank
+        );
+        let NoteSaved::Saved { hash, path, .. } =
+            ws.save_note(&name, "# First", "").expect("saved")
+        else {
+            panic!("saved");
+        };
+        assert_eq!(path, name);
+        assert_eq!(ws.document_source(&name).expect("source").hash, hash);
+        assert_eq!(
+            std::fs::read_to_string(fx.project.path().join(&name)).expect("read"),
+            "# First"
+        );
+    }
+
+    #[test]
+    fn the_notes_of_a_second_window_are_read_only() {
+        let fx = Fx::new();
+        write(fx.project.path(), "a.md", "# A\n");
+        let first = fx.open_notes();
+        assert_eq!(first.notes_read_only(), None);
+        let second = fx.open_notes();
+        assert_eq!(second.notes_read_only(), Some(ReadOnlyReason::Locked));
+        let hash = second.document_source("a.md").expect("source").hash;
+        for refused in [
+            second
+                .save_document("a.md", "# Changed", &hash)
+                .err()
+                .map(|e| e.kind()),
+            second.create_document("b.md", "x").err().map(|e| e.kind()),
+            second
+                .save_note("a.md", "# Changed", &hash)
+                .err()
+                .map(|e| e.kind()),
+            second
+                .delete_entries(&["a.md".to_owned()])
+                .err()
+                .map(|e| e.kind()),
+        ] {
+            assert_eq!(refused, Some("notesLocked"));
+        }
+        assert_eq!(
+            std::fs::read_to_string(fx.project.path().join("a.md")).expect("read"),
+            "# A\n"
+        );
+        // it still reads
+        assert_eq!(
+            second.read_document("a.md").expect("read").title.as_deref(),
+            Some("A")
+        );
+    }
+
     fn new_comment(path: &str, quote: &str, text: &str) -> NewComment {
         NewComment {
             path: path.to_owned(),
@@ -2677,9 +3355,19 @@ exclude = [\"archive/**\"]
         let fx = Fx::new();
         write(fx.project.path(), "a.md", "# A\n\nearlyword\n");
         let sink = sink_of(&fx.rec);
-        let ws = Workspace::open_with(fx.project.path(), fx.app.path(), None, &sink, |_, _, _| {
-            Err(crate::watch::WatchError::Notify("no change notification here".to_owned()).into())
-        })
+        let ws = Workspace::open_with(
+            fx.project.path(),
+            fx.app.path(),
+            None,
+            &sink,
+            |_, _, _| {
+                Err(
+                    crate::watch::WatchError::Notify("no change notification here".to_owned())
+                        .into(),
+                )
+            },
+            WorkspaceKind::Project,
+        )
         .expect("the folder opens anyway");
         assert!(!ws.info().live_updates);
         assert_eq!(

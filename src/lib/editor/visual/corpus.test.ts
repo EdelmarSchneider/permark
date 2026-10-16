@@ -212,7 +212,9 @@ for (const splitter of splitters.filter((s) => s.docs.length > 0)) {
                 );
                 if (definitions.length > 0) {
                   expect(
-                    definitions.filter((d) => !meaningOf(editor.core, saved).definitions.includes(d)),
+                    definitions.filter(
+                      (d) => !meaningOf(editor.core, saved).definitions.includes(d),
+                    ),
                     `the definitions lost by ${where}`,
                   ).toEqual([]);
                 }
@@ -226,9 +228,11 @@ for (const splitter of splitters.filter((s) => s.docs.length > 0)) {
       it("loses no text between the blocks when blocks are deleted, inserted or moved", () => {
         const report = editor.load({ map });
         const texts = map.blocks.map((b) => b.text);
+        // A list that ends up next to a list of its marker is written with another marker (or the two would be one list in the
+        // file, while the view shows two), so the markers are not part of what must not be lost.
         const check = (kept: string[], label: string): void => {
-          expect(contentLines(withoutBom(editor.text())).sort(), label).toEqual(
-            expectedLines(map, kept),
+          expect(contentLines(withoutListMarkers(withoutBom(editor.text()))).sort(), label).toEqual(
+            expectedLines(map, kept).map(withoutListMarkers).sort(),
           );
         };
         for (const i of spread(map.blocks.length, MAX_STRUCTURAL_EDITS)) {

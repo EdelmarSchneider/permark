@@ -104,7 +104,7 @@ export function originOf(node: PMNode): number | null {
   return typeof value === "number" ? value : null;
 }
 
-function isEmptyParagraph(node: PMNode): boolean {
+export function isEmptyParagraph(node: PMNode): boolean {
   return node.type.name === "paragraph" && node.content.size === 0;
 }
 
@@ -132,8 +132,11 @@ export type Analysis = {
   touched: number;
 };
 
-/** Reads the document against the blocks it was made from. */
-export function analyze(built: Built, doc: PMNode): Analysis {
+/**
+ * Reads the document against the blocks it was made from. `saved` is the set of nodes a save could not give a block of the saved
+ * text (see `VisualEditor.rebase`): they are what the file holds, so they carry no unsaved-block bar until they are edited.
+ */
+export function analyze(built: Built, doc: PMNode, saved: WeakSet<PMNode> | null = null): Analysis {
   const { originals, unsaved: wasUnsaved, map } = built;
   const children: PMNode[] = [];
   doc.forEach((child) => children.push(child));
@@ -162,11 +165,12 @@ export function analyze(built: Built, doc: PMNode): Analysis {
     const untouched = !skip && origin !== null && node.eq(originals[origin]);
     const fromSource = origin !== null && wasUnsaved[origin];
     // an atom is never rewritten, so only the Source edits it came with (or being a copy) make it unsaved
-    const unsaved = skip
-      ? false
-      : node.type.name === LOCKED
-        ? origin === null || fromSource
-        : !untouched || fromSource;
+    const unsaved =
+      skip || saved?.has(node)
+        ? false
+        : node.type.name === LOCKED
+          ? origin === null || fromSource
+          : !untouched || fromSource;
     return { node, skip, origin, untouched, unsaved };
   });
   const written = nodes.filter((n) => !n.skip);
@@ -182,8 +186,9 @@ export function analyze(built: Built, doc: PMNode): Analysis {
 const written = new WeakMap<PMNode, string>();
 
 /**
- * The Markdown the editor writes for one top-level node. A space at the very start or end of a paragraph or heading (what is left
- * after splitting a sentence in the middle) is not written as `&#x20;`: Markdown drops it anyway.
+ * The Markdown the editor writes for one top-level node. A space at the very start or end of a paragraph or heading that the
+ * serializer would escape as `&#x20;` is left out (what is left after splitting a sentence in the middle). A plain space at the
+ * end is written as it is: it is in the file, and taking it out later is a change.
  */
 export function writeNode(core: Core, node: PMNode): string {
   let text = written.get(node);
@@ -216,16 +221,40 @@ function withMarker(text: string, to: ListMarker): string {
     : text.replace(/^[-*+] /gm, to.mark + " ");
 }
 
+/** The text of a list as it was written, with the marker of its top-level items changed: the lines inside the items are left as they are. */
+function withOriginalMarker(text: string, to: ListMarker): string {
+  const lead = /^ {0,3}/.exec(text)?.[0] ?? "";
+  return to.ordered
+    ? text.replace(new RegExp(`^(${lead})(\\d{1,9})[.)](?=[ \\t])`, "gm"), `$1$2${to.mark}`)
+    : text.replace(new RegExp(`^(${lead})[-*+](?=[ \\t])`, "gm"), `$1${to.mark}`);
+}
+
 /**
  * Two lists of the same kind side by side are one list in Markdown, unless their markers differ. The editor writes the lists it
  * rewrites with its own marker (`-` and `1.`), so a list that was kept apart from its neighbour by its marker alone, or
  * one made from a paragraph next to a list, would join the list beside it. A list the editor writes takes another marker
- * when its neighbours use the one it would have. The lists that are kept as they were keep their own.
+ * when its neighbours use the one it would have. The lists that are kept as they were keep their own, except one that now sits
+ * right after a list of its marker (what was between them is gone): its items take another marker (and nothing else of it
+ * changes, `original` gives its text as it was), so that the two stay two lists in the file, as they are in the view, and the
+ * file and the view agree after the save.
  */
-function keepListsApart(slots: Slot[], markers: (ListMarker | null)[], rewritten: boolean[]): void {
+function keepListsApart(
+  slots: Slot[],
+  markers: (ListMarker | null)[],
+  rewritten: boolean[],
+  original: (slot: number) => string | null,
+): void {
   for (let i = 0; i < slots.length; i++) {
     const here = markers[i];
-    if (!here || !rewritten[i]) continue;
+    if (!here) continue;
+    const before = markers[i - 1];
+    // a list kept as it was gives way only to the list before it (the one after it gives way to this one in its turn)
+    if (
+      !rewritten[i] &&
+      !(before && before.ordered === here.ordered && before.mark === here.mark)
+    ) {
+      continue;
+    }
     const taken = new Set<string>();
     for (const k of [i - 1, i + 1]) {
       const other = markers[k];
@@ -236,7 +265,15 @@ function keepListsApart(slots: Slot[], markers: (ListMarker | null)[], rewritten
     if (!taken.has(here.mark)) continue;
     const mark = (here.ordered ? NUMBER_MARKS : BULLET_MARKS).find((m) => !taken.has(m));
     if (mark === undefined) continue;
-    slots[i].text = withMarker(slots[i].text as string, { ordered: here.ordered, mark });
+    const to = { ordered: here.ordered, mark };
+    if (rewritten[i]) {
+      slots[i].text = withMarker(slots[i].text as string, to);
+    } else {
+      const text = original(i);
+      if (text === null) continue;
+      slots[i] = { origin: slots[i].origin, text: withOriginalMarker(text, to), retyped: false };
+      rewritten[i] = true;
+    }
     markers[i] = { ordered: here.ordered, mark };
   }
 }
@@ -283,7 +320,10 @@ export function slotsOf(core: Core, built: Built, analysis: Analysis): Slot[] {
       push({ origin, text, retyped }, isListNode(info.node) ? listMarker(text) : null, true);
     }
   }
-  keepListsApart(slots, markers, rewritten);
+  keepListsApart(slots, markers, rewritten, (i) => {
+    const origin = slots[i].origin;
+    return origin === null ? null : (built.map.blocks[origin]?.text ?? null);
+  });
   return slots;
 }
 

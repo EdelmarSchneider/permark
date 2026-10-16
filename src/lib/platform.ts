@@ -4,7 +4,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { ask, message, open as openDialog } from "@tauri-apps/plugin-dialog";
+import { ask, message, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check } from "@tauri-apps/plugin-updater";
@@ -16,12 +16,13 @@ export const isMock = import.meta.env.VITE_MOCK === "1";
 const MOCK_FOLDER = "C:/Users/demo/trailmark-docs";
 const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
 
-export async function pickFolder(): Promise<string | null> {
+/** Asks for a folder; `title` is the dialog's (the default asks to open a folder). */
+export async function pickFolder(title?: string): Promise<string | null> {
   if (isMock) return MOCK_FOLDER;
   const picked = await openDialog({
     directory: true,
     multiple: false,
-    title: t("dialog.openFolder"),
+    title: title ?? t("dialog.openFolder"),
   });
   return typeof picked === "string" ? picked : null;
 }
@@ -38,6 +39,17 @@ export async function pickFile(): Promise<string | null> {
         extensions: ["md", "markdown", "mdx", "txt", "json", "xml"],
       },
     ],
+  });
+  return typeof picked === "string" ? picked : null;
+}
+
+/** Asks where to write a Markdown file, starting from `defaultPath` (a folder and a file name). Null when the person cancels. */
+export async function pickSavePath(defaultPath: string): Promise<string | null> {
+  if (isMock) return defaultPath;
+  const picked = await saveDialog({
+    defaultPath,
+    title: t("dialog.moveNote"),
+    filters: [{ name: t("dialog.filter.markdown"), extensions: ["md"] }],
   });
   return typeof picked === "string" ? picked : null;
 }
@@ -137,7 +149,7 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** Sets the title of the window (the browser mock sets the page title). */
+/** Sets the title of the window (the browser mock sets the page title). `windowTitle()` says what it should be. */
 export async function setWindowTitle(title: string): Promise<void> {
   if (isMock) {
     document.title = title;
@@ -146,7 +158,20 @@ export async function setWindowTitle(title: string): Promise<void> {
   try {
     await getCurrentWindow().setTitle(title);
   } catch {
-    // the title is only a hint of unsaved work; the editor says it too
+    // the title only helps tell windows apart; nothing depends on it
+  }
+}
+
+/**
+ * Closes this window (and with it the program, when it was the only one) without the questions closing asks: the caller has
+ * nothing of its own to lose. The browser mock does nothing.
+ */
+export async function closeThisWindow(): Promise<void> {
+  if (isMock) return;
+  try {
+    await getCurrentWindow().destroy();
+  } catch {
+    // the window stays: the welcome screen is what it shows
   }
 }
 

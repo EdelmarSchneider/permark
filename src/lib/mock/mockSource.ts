@@ -64,7 +64,9 @@ export async function documentSource(path: string): Promise<SourceDoc> {
     throw new MockBackendError("tooLarge", `${path} is too large to edit`, {
       subject: path,
     });
-  if (kind !== "markdown")
+  // the Notes window edits the plain text files it lists too
+  const loosePlainText = kind === "text" && path.startsWith("@file/");
+  if (kind !== "markdown" && !loosePlainText)
     throw new MockBackendError("notMarkdown", `${path} is not a Markdown file`, { subject: path });
   if (mockEncodingNote(path)) {
     throw new MockBackendError("encoding", `${path} is not UTF-8 text`, { subject: path });

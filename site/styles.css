@@ -34,6 +34,7 @@
   --r-card: 10px;
   --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
@@ -68,6 +69,7 @@
 }
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 72px; /* the sticky nav is 60px */
   -webkit-text-size-adjust: 100%;
 }
 body {
@@ -345,12 +347,14 @@ kbd {
   margin-bottom: var(--sp-3);
 }
 .hero__title {
-  font-size: clamp(34px, 6vw, 64px);
+  font-size: clamp(32px, 6vw, 64px);
   font-weight: 800;
   letter-spacing: -0.035em;
   line-height: 1.04;
-  max-width: 15ch;
   text-wrap: balance;
+}
+.hero__line {
+  display: block;
 }
 .grad {
   background: linear-gradient(100deg, var(--grad-a) 10%, var(--grad-b) 90%);
@@ -409,6 +413,81 @@ kbd {
   border: 1px solid var(--border);
 }
 
+/* The fork: two equal doors, each linking to its section. The whole card is the link. */
+.doors {
+  list-style: none;
+  margin: var(--sp-7) 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-5);
+  text-align: left;
+}
+.door {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.door__title {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--sp-2);
+}
+.door__link {
+  margin-top: var(--sp-4);
+  font-weight: 600;
+  text-decoration: none;
+}
+.door__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-card);
+}
+.door:hover .door__link {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+.door__link:focus-visible {
+  outline: none;
+}
+.door:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Two overlapping frames: the project view in front, a page of one document behind it. */
+.duo {
+  aspect-ratio: 25 / 16;
+  margin-top: var(--sp-7);
+}
+.duo__frame {
+  position: absolute;
+  width: 84%;
+  transition: transform 260ms var(--ease);
+}
+.duo__frame--page {
+  left: 0;
+  bottom: 0;
+  z-index: 1;
+}
+.duo__frame--ide {
+  right: 0;
+  top: 0;
+  z-index: 2;
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* Hovering or focusing a door brings its frame forward. Without motion, the project view stays in front. */
+  .hero:has(.door--a:is(:hover, :focus-within)) .duo__frame--page {
+    z-index: 3;
+    transform: translateY(-12px);
+  }
+  .hero:has(.door--b:is(:hover, :focus-within)) .duo__frame--ide {
+    transform: translateY(-12px);
+  }
+}
+
 /* ---------- Sections ---------- */
 .section {
   padding: 112px 0;
@@ -439,26 +518,48 @@ kbd {
   margin-left: auto;
   margin-right: auto;
 }
+.lead strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .subhead {
   font-size: 22px;
   margin: var(--sp-8) 0 var(--sp-5);
 }
 
-/* Why */
-.why {
+/* Notes: a subsection of the documents section */
+.notes {
+  margin-top: var(--sp-8);
+}
+.notes__inner {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-8);
+}
+.section__head--sub {
+  margin-bottom: var(--sp-6);
+}
+.h-sub {
+  font-size: clamp(24px, 3vw, 32px);
+  text-wrap: balance;
+}
+
+/* The director's loop: Brief, Watch, Review, Steer */
+.loop {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--sp-6);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-5);
 }
-.why__item {
-  position: relative;
-  padding-top: var(--sp-5);
-  border-top: 1px solid var(--border);
+.loop__item {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
+  box-shadow: var(--shadow);
 }
-.why__num {
+.loop__num {
   display: inline-grid;
   place-items: center;
   width: 30px;
@@ -469,13 +570,44 @@ kbd {
   background: var(--accent-soft);
   margin-bottom: var(--sp-4);
 }
-.why__item h3 {
-  font-size: 19px;
-  margin-bottom: var(--sp-2);
+.loop__item h3 {
+  font-size: 21px;
+  margin-bottom: var(--sp-3);
 }
-.why__item p {
+.loop__item ul {
+  margin: 0;
+  padding-left: 1.1em;
+  display: grid;
+  gap: var(--sp-3);
   color: var(--muted);
-  font-size: 16px;
+  font-size: 15.5px;
+}
+.loop__item li::marker {
+  color: var(--accent);
+}
+
+/* Why Markdown: a quiet page, in serif type */
+.page {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: var(--sp-7);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow);
+  font-family: var(--serif);
+}
+.page .eyebrow {
+  font-family: var(--font);
+}
+.section .page h2 {
+  font-family: var(--serif);
+  letter-spacing: -0.01em;
+}
+.page p:not(.eyebrow) {
+  margin-top: var(--sp-5);
+  font-size: 19.5px;
+  line-height: 1.75;
 }
 
 /* Features */
@@ -1024,6 +1156,36 @@ kbd {
   color: var(--muted);
 }
 
+/* ---------- Plain text pages (privacy policy) ---------- */
+.legal {
+  padding: var(--sp-8) 0 112px;
+}
+.legal__body {
+  max-width: 44rem;
+}
+.legal h1 {
+  font-size: clamp(32px, 4.4vw, 46px);
+  text-wrap: balance;
+}
+.legal h2 {
+  font-size: 22px;
+  margin: var(--sp-7) 0 0;
+}
+.legal p,
+.legal ul {
+  margin: var(--sp-3) 0 0;
+}
+.legal ul {
+  padding-left: 1.25em;
+}
+.legal li + li {
+  margin-top: var(--sp-3);
+}
+.legal__updated {
+  font-size: 14.5px;
+  color: var(--muted);
+}
+
 /* ---------- CTA + footer ---------- */
 .cta {
   padding: 112px 0;
@@ -1078,6 +1240,9 @@ kbd {
     grid-template-columns: 1fr;
     gap: var(--sp-7);
   }
+  .loop {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
   .roadmap {
     grid-template-columns: 1fr;
   }
@@ -1093,9 +1258,20 @@ kbd {
   .cta {
     padding: 72px 0;
   }
-  .why {
+  .legal {
+    padding: var(--sp-7) 0 72px;
+  }
+  .doors {
     grid-template-columns: 1fr;
-    gap: var(--sp-5);
+  }
+  .notes {
+    margin-top: var(--sp-7);
+  }
+  .notes__inner {
+    padding-top: var(--sp-7);
+  }
+  .page {
+    padding: var(--sp-6) var(--sp-5);
   }
   .install {
     grid-template-columns: 1fr;
@@ -1114,7 +1290,8 @@ kbd {
   .container {
     padding: 0 var(--sp-4);
   }
-  .features {
+  .features,
+  .loop {
     grid-template-columns: 1fr;
   }
   .hero {
@@ -1124,7 +1301,24 @@ kbd {
     flex-direction: column;
     align-items: stretch;
     width: 100%;
-    max-width: 320px;
+    max-width: 360px;
+  }
+  .hero__cta .btn {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
+  }
+  .page {
+    padding: var(--sp-5) var(--sp-4);
+  }
+  .page p:not(.eyebrow) {
+    font-size: 18px;
+  }
+  .duo {
+    aspect-ratio: 100 / 68;
+  }
+  .duo__frame {
+    width: 76%;
   }
   .demo {
     grid-template-columns: 1fr;
@@ -1135,6 +1329,11 @@ kbd {
   }
   .panel {
     padding: var(--sp-5) var(--sp-4);
+  }
+  .panel .btn {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
   }
   .keys th,
   .keys td {

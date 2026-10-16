@@ -61,6 +61,13 @@ struct ResolveCommentArgs {
 
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
 #[schemars(crate = "rmcp::schemars")]
+struct ReadNoteArgs {
+    /// The note's name, exactly as `list_notes` gives it in `note` (for example `2026-10-15 1432.md`).
+    note: String,
+}
+
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema)]
+#[schemars(crate = "rmcp::schemars")]
 struct OpenArgs {
     /// The document, relative to the project folder, with `/` separators (for example `docs/plan.md`).
     path: String,
@@ -178,6 +185,32 @@ when TrailMark is closed, on the project's files.",
     }
 
     #[tool(
+        description = "The notes the person chose to share with agents in TrailMark (its Notes window keeps their \
+quick notes, drafts and prompts, and nothing in it is visible to you unless they shared that note). Each has `note` \
+(its name, which read_note takes), `title` (its first line), when it was last changed and its size, newest first. \
+Call this when the person points at their notes (\"my note about the deploy\", \"the prompt I wrote\", \"what I \
+jotted down\"). A note that is not shared is not listed and cannot be read; you cannot list the notes folder. Also \
+works when TrailMark is closed.",
+        annotations(read_only_hint = true)
+    )]
+    async fn list_notes(&self) -> Result<CallToolResult, ErrorData> {
+        Ok(result(self.core.list_notes().await))
+    }
+
+    #[tool(
+        description = "Read one of the notes the person shared with agents, by the `note` name that list_notes gives. \
+Returns its title and its whole text. It only reads: it cannot change a note, and a note that is not shared is said \
+not to exist. Also works when TrailMark is closed.",
+        annotations(read_only_hint = true)
+    )]
+    async fn read_note(
+        &self,
+        Parameters(ReadNoteArgs { note }): Parameters<ReadNoteArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        Ok(result(self.core.read_note(&note).await))
+    }
+
+    #[tool(
         description = "Show the person a place in TrailMark: a document, optionally at a line or a heading. \
 TrailMark opens it in its window without taking focus from your terminal, highlights the section and shows a \
 notice with a way back; the person looks when ready. Use it after you wrote or found something they should see \
@@ -205,8 +238,8 @@ it never changes a document.",
     name = "trailmark",
     instructions = "TrailMark reads and follows the Markdown documents of a project. These tools let you see what \
 the person is looking at in TrailMark, what changed since they last read, where something is described, the \
-comments they left on passages (and mark one done), and show them a place. They are available only while the person \
-has turned on the agent connection for the project."
+comments they left on passages (and mark one done), the notes they chose to share with agents, and show them a \
+place. They are available only while the person has turned on the agent connection for the project."
 )]
 impl ServerHandler for AgentServer {
     // The client is ready: connect to the window now, so it shows that an agent is here before the first question.
@@ -457,7 +490,14 @@ mod tests {
                 .map(|t| t["annotations"].clone())
                 .expect("a tool")
         };
-        for name in ["get_context", "list_unread", "search", "list_comments"] {
+        for name in [
+            "get_context",
+            "list_unread",
+            "search",
+            "list_comments",
+            "list_notes",
+            "read_note",
+        ] {
             assert_eq!(annotations(name)["readOnlyHint"], json!(true), "{name}");
         }
         // Showing a place and marking a comment done are changes, but they destroy nothing.
@@ -479,7 +519,7 @@ mod tests {
             .iter()
             .map(|t| t["name"].as_str().expect("name"))
             .collect();
-        assert_eq!(names.len(), 6, "{names:?}");
+        assert_eq!(names.len(), 8, "{names:?}");
         for name in [
             "get_context",
             "list_unread",
@@ -487,6 +527,8 @@ mod tests {
             "list_comments",
             "resolve_comment",
             "open",
+            "list_notes",
+            "read_note",
         ] {
             assert!(names.contains(&name), "{name} is missing from {names:?}");
         }
@@ -507,6 +549,15 @@ mod tests {
         assert!(description("list_comments").contains("go through"));
         assert!(description("list_comments").contains("passageChanged"));
         assert!(description("resolve_comment").contains("only change an agent can make"));
+        // the notes are private, and the tools say so to the agent
+        assert!(description("list_notes").contains("chose to share"));
+        assert!(description("list_notes").contains("not shared is not listed"));
+        assert!(description("read_note").contains("cannot change a note"));
+        let read_note = tools
+            .iter()
+            .find(|t| t["name"] == "read_note")
+            .expect("read_note");
+        assert_eq!(read_note["inputSchema"]["required"], json!(["note"]));
         // Arguments are described to the agent.
         let search = tools
             .iter()
@@ -542,6 +593,8 @@ mod tests {
             (6, "open", json!({ "path": "docs/plan.md" })),
             (7, "list_comments", json!({})),
             (8, "resolve_comment", json!({ "id": "c1", "reply": "Done" })),
+            (9, "list_notes", json!({})),
+            (10, "read_note", json!({ "note": "a.md" })),
         ] {
             let reply = client.call(id, tool, &arguments).await;
             let answer = &reply["result"];
@@ -696,6 +749,171 @@ mod tests {
         assert_eq!(reply["result"]["isError"], true, "{reply}");
         client.close().await.expect("the server ended cleanly");
         world.bridge.shutdown();
+    }
+
+    /// The notes of the person: three notes, two of them shared, in the folder the program keeps notes in (the data folder's).
+    fn notes_of(world: &World) -> std::path::PathBuf {
+        let notes = world.app.path().join("notes");
+        std::fs::create_dir_all(notes.join(".trailmark")).expect("mkdir");
+        std::fs::write(
+            notes.join("shared one.md"),
+            "# Server IPs\n\napi 10.0.0.4\n",
+        )
+        .expect("write");
+        std::fs::write(notes.join("shared two.md"), "Weekly checklist\n").expect("write");
+        std::fs::write(notes.join("private.md"), "# My private note\n").expect("write");
+        std::fs::write(
+            notes.join(".trailmark").join("notes.json"),
+            r#"{"shared": ["shared one.md", "shared two.md"]}"#,
+        )
+        .expect("notes.json");
+        notes
+    }
+
+    #[tokio::test]
+    async fn the_shared_notes_are_listed_and_read_over_mcp_and_nothing_else_of_the_notes() {
+        let world = World::new();
+        world.connection(true);
+        world.bridge.set_enabled(true);
+        *world.fake.notes.lock().expect("lock") = Some(notes_of(&world));
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+
+        let reply = client.call(3, "list_notes", &json!({})).await;
+        let list = &reply["result"]["structuredContent"];
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert_eq!(
+            (list["status"].as_str(), list["source"].as_str()),
+            (Some("ok"), Some("window"))
+        );
+        assert_eq!(list["total"], 2);
+        let names: Vec<&str> = list["notes"]
+            .as_array()
+            .expect("notes")
+            .iter()
+            .map(|n| n["note"].as_str().expect("name"))
+            .collect();
+        assert!(names.contains(&"shared one.md") && names.contains(&"shared two.md"));
+        assert!(
+            !names.contains(&"private.md"),
+            "a note that is not shared is not listed"
+        );
+        let one = list["notes"]
+            .as_array()
+            .expect("notes")
+            .iter()
+            .find(|n| n["note"] == "shared one.md")
+            .expect("one");
+        assert_eq!(one["title"], "Server IPs");
+        assert!(one["modified"]
+            .as_str()
+            .is_some_and(|time| time.ends_with('Z')));
+        assert!(one["sizeBytes"].as_u64().is_some());
+
+        let reply = client
+            .call(4, "read_note", &json!({ "note": "shared one.md" }))
+            .await;
+        let read = &reply["result"]["structuredContent"];
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        assert_eq!(read["text"], "# Server IPs\n\napi 10.0.0.4\n");
+        assert_eq!(read["title"], "Server IPs");
+        assert_eq!(read["source"], "window");
+
+        // a note that is not shared is not there, whether it exists or not, and a name that is not a note's is no better
+        for note in [
+            "private.md",
+            "nothing.md",
+            "../private.md",
+            "private.md/../shared one.md",
+            ".trailmark/notes.json",
+        ] {
+            let reply = client.call(5, "read_note", &json!({ "note": note })).await;
+            assert_eq!(reply["result"]["isError"], true, "{note}: {reply}");
+            let message = reply["result"]["structuredContent"]["message"]
+                .as_str()
+                .expect("a message");
+            assert!(message.contains("no shared note"), "{note}: {message}");
+            assert!(
+                !message.contains("private"),
+                "{note}: nothing is said of what exists"
+            );
+        }
+        let reply = client.call(6, "read_note", &json!({ "note": "  " })).await;
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+
+        // the window told its popover: the note by its title, and the listing
+        let recent = world.bridge.status().recent;
+        assert!(recent.iter().any(|r| r.tool == "list_notes"));
+        let read = recent
+            .iter()
+            .find(|r| r.tool == "read_note" && r.subject.as_deref() == Some("Server IPs"));
+        assert!(read.is_some(), "{recent:?}");
+        client.close().await.expect("the server ended cleanly");
+        world.bridge.shutdown();
+    }
+
+    #[tokio::test]
+    async fn the_shared_notes_are_read_from_their_files_when_the_window_is_closed() {
+        let world = World::new();
+        world.connection(true);
+        notes_of(&world);
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+        let reply = client.call(3, "list_notes", &json!({})).await;
+        let list = &reply["result"]["structuredContent"];
+        assert_eq!(list["source"], "files", "{reply}");
+        assert_eq!(list["total"], 2);
+        let reply = client
+            .call(4, "read_note", &json!({ "note": "shared two.md" }))
+            .await;
+        assert_eq!(
+            reply["result"]["structuredContent"]["text"],
+            "Weekly checklist\n"
+        );
+        assert_eq!(reply["result"]["structuredContent"]["source"], "files");
+        let reply = client
+            .call(5, "read_note", &json!({ "note": "private.md" }))
+            .await;
+        assert_eq!(reply["result"]["isError"], true);
+        client.close().await.expect("the server ended cleanly");
+    }
+
+    #[tokio::test]
+    async fn stopping_to_share_takes_a_note_away_from_the_agent_at_once() {
+        let world = World::new();
+        world.connection(true);
+        let notes = notes_of(&world);
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+        let reply = client
+            .call(3, "read_note", &json!({ "note": "shared two.md" }))
+            .await;
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+        std::fs::write(
+            notes.join(".trailmark").join("notes.json"),
+            r#"{"shared": ["shared one.md"]}"#,
+        )
+        .expect("stop sharing");
+        let reply = client
+            .call(4, "read_note", &json!({ "note": "shared two.md" }))
+            .await;
+        assert_eq!(reply["result"]["isError"], true, "{reply}");
+        let reply = client.call(5, "list_notes", &json!({})).await;
+        assert_eq!(reply["result"]["structuredContent"]["total"], 1);
+        client.close().await.expect("the server ended cleanly");
+    }
+
+    #[tokio::test]
+    async fn the_window_the_agent_does_not_serve_shares_nothing_when_the_connection_is_off() {
+        let world = World::new();
+        world.connection(false);
+        notes_of(&world);
+        let mut client = Client::connect(world.core());
+        client.handshake().await;
+        let reply = client.call(3, "list_notes", &json!({})).await;
+        assert_eq!(reply["result"]["structuredContent"]["status"], "off");
+        assert!(reply["result"]["structuredContent"].get("notes").is_none());
+        client.close().await.expect("the server ended cleanly");
     }
 
     #[tokio::test]

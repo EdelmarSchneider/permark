@@ -11,6 +11,7 @@ import {
   type UpdateEvent,
   type UpdateState,
 } from "../updates";
+import { distribution } from "./distribution.svelte";
 import { edit } from "./edit.svelte";
 import { toast } from "./toast.svelte";
 
@@ -22,17 +23,25 @@ class UpdatesStore {
 
   private found: AvailableUpdate | null = null;
 
-  /** Checks once, shortly after launch. Release builds only, so `tauri dev` and the browser mock stay quiet. */
-  scheduleStartupCheck(): void {
+  /**
+   * Checks once, shortly after launch. Release builds only, so `tauri dev` and the browser mock stay quiet. The
+   * Microsoft Store build never checks: the Store updates that app.
+   */
+  async scheduleStartupCheck(): Promise<void> {
     if (!import.meta.env.PROD || isMock) return;
+    await distribution.load();
+    if (distribution.isStore) return;
     setTimeout(() => void this.check(false), STARTUP_CHECK_DELAY_MS);
   }
 
   /**
    * Asks the update server. An automatic check ignores errors and "no update"; a manual one reports both.
-   * When an update is known already, a manual check just shows the offer again.
+   * When an update is known already, a manual check just shows the offer again. The Microsoft Store build asks nothing
+   * (its backend has no updater), whoever calls.
    */
   async check(manual: boolean): Promise<void> {
+    await distribution.load();
+    if (distribution.isStore) return;
     if (this.state.phase === "available") {
       if (manual) toast.update();
       return;

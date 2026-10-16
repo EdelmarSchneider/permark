@@ -9,6 +9,8 @@ import type { RightTab } from "./rightPanel";
 export type VaultInfo = {
   root: string;
   name: string;
+  /** What the folder is for: a project, or the notes folder of the Notes window. */
+  kind: "project" | "notes";
   mode: "ide" | "simple";
   initialFile: string | null;
   /** `branch` is the checked-out branch, `null` when detached or unreadable. */
@@ -39,6 +41,11 @@ export type TreeFilter = {
 /** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
 export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
+/**
+ * Which build of the app this is: the one the project publishes ("standard"), or the one in the Microsoft Store
+ * ("store"), which the Store updates, so it has no "Check for updates".
+ */
+export type Distribution = "standard" | "store";
 /** What "Open with TrailMark" has registered with the file manager, as the system has it right now. */
 export type ShellState = {
   /** False where TrailMark cannot register anything (every platform but Windows, for now). */
@@ -360,3 +367,109 @@ export type UndoOutcome = {
   foldersRemoved: number;
   couldNot: SkippedFile[];
 };
+
+// ---- notes ----------------------------------------------------------------------------------------
+
+/** Where TrailMark opens when it is started with nothing to open. */
+export type StartIn = "welcome" | "notes";
+/** The notes folder: where it is, and whether it is there. */
+export type NotesFolder = {
+  path: string;
+  /** "missing": the person can locate it or create it; it is never made quietly. */
+  status: "ready" | "missing";
+  /** The default folder, not one the person chose. */
+  isDefault: boolean;
+};
+/** The editor a note was left in, as the notes remember it. */
+export type NoteMode = "read" | "visual" | "source";
+/** Where a note was left: the editor, the caret (a character offset) and the scroll position. */
+export type NoteView = {
+  mode: NoteMode | null;
+  caret: number | null;
+  scroll: number | null;
+};
+/**
+ * A row of the list: a note (a file of the notes folder) or a loose file (one opened here that is somewhere else). A note's
+ * `path` is its file name in the notes folder; a loose file's is its path for the window, `@file/<id>/<name>`, which holds an
+ * id and never a place of the disk.
+ */
+export type NoteEntry = {
+  kind: "note" | "file";
+  path: string;
+  /** The first line without its Markdown marks; empty for a note with no text. A loose file shows its name. */
+  title: string;
+  snippet: string;
+  modifiedMs: number;
+  sizeBytes: number;
+  pinned: boolean;
+  /** The note was copied and not edited since. */
+  copied: boolean;
+  view: NoteView | null;
+  /** A loose file: the folder it is in, as shown in the list (`~\Downloads`). */
+  folder: string | null;
+  /** A loose file that is not where it was. */
+  missing: boolean;
+  /** A loose file with text that was typed and not saved. */
+  unsaved: boolean;
+  /** A note the person shared with agents (see `list_notes` and `read_note` of the agent connection). */
+  shared: boolean;
+};
+/** What the Save dialog starts with when a note is moved into a project. */
+export type MoveSuggestion = {
+  /** Where the dialog opens, with the file name made from the note's title. */
+  defaultPath: string;
+  /** The project it opens in: the one opened last, when it is still there. */
+  folder: string | null;
+};
+/** A note that was moved into a project: where its copy is, the row it became, and how to ask for the note back. */
+export type NoteMoved = { destination: string; file: string; undoId: number | null };
+/** What Undo of a move did: the note that is back, and whether the copy in the project was taken away (not when it was changed). */
+export type MoveUndone = { note: string; removed: boolean };
+/** What opening a file made of it: a note when it is one of the notes folder, else a loose file. `path` is what to open. */
+export type OpenedFile = { kind: "note" | "file"; path: string };
+/** How a loose file looks on disk compared with what was last read: the same, changed since, or gone. */
+export type LooseState = "same" | "changed" | "missing";
+export type LooseStatus = {
+  path: string;
+  state: LooseState;
+  /** How the file looks now (its size and time), to tell one change from the next. */
+  stamp: string;
+  /** The path the file had before it was found again under another name in its folder. */
+  was: string | null;
+};
+/** The text typed into a loose file and not saved, with the hash of the version of the file it was typed over. */
+export type PendingEdits = { path: string; baseHash: string; text: string; savedMs: number };
+/** What a path of the disk is, and where it is in the project the window shows. */
+export type PathClass = { kind: "folder" | "file" | "missing"; inProject: string | null };
+/** The notes, the pinned ones first in the person's order, then the rest by last change. */
+export type NoteList = { notes: NoteEntry[]; open: string | null };
+/** What the welcome screen shows of the notes. */
+export type NotesSummary = { pinned: NoteEntry[]; latest: NoteEntry[] };
+export type NotesOverview = { folder: NotesFolder; summary: NotesSummary };
+/** Why the notes can only be read in this window. */
+export type NotesReadOnly = "locked" | "unwritable";
+/** What opening the notes found. */
+export type NotesOpened = {
+  info: VaultInfo;
+  readOnly: NotesReadOnly | null;
+  /** Notes made from text that a crash left in temporary files. */
+  recovered: string[];
+};
+/**
+ * The result of saving a note. "saved": `path` is the file's name, which differs from the one asked for only when a new
+ * note's name was taken meanwhile. "blank": a new note whose text is still blank, so no file was made. "conflict": the note
+ * changed since it was opened; nothing of the other version was overwritten, and the text being saved is in the note `copy`.
+ */
+export type NoteSaved =
+  | { result: "saved"; path: string; hash: string; modifiedMs: number; created: boolean }
+  | { result: "blank" }
+  | { result: "conflict"; copy: string };
+/** An earlier version of a note. */
+export type NoteVersion = { id: string; writtenMs: number; sizeBytes: number };
+/** Notes sent to the recycle bin; `undoId` asks for them back (null when they are too big to keep for it). */
+export type NoteDeleted = { deleted: string[]; undoId: number | null };
+export type NoteRestored = { hash: string; modifiedMs: number };
+/** What another window or launch asked the Notes window for: a new note, a note, or a file of the disk. */
+export type NotesRequest = { newNote: boolean; open: string | null; openFile: string | null };
+/** What the program is. */
+export type LaunchMode = { notes: boolean };

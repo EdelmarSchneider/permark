@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import Bold from "@lucide/svelte/icons/bold";
+  import Bot from "@lucide/svelte/icons/bot";
   import BookOpen from "@lucide/svelte/icons/book-open";
   import Code from "@lucide/svelte/icons/code";
   import Heading from "@lucide/svelte/icons/heading";
@@ -47,6 +48,7 @@
   import FolderCog from "@lucide/svelte/icons/folder-cog";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
+  import FolderSearch from "@lucide/svelte/icons/folder-search";
   import Funnel from "@lucide/svelte/icons/funnel";
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import GitFork from "@lucide/svelte/icons/git-fork";
@@ -55,6 +57,7 @@
   import Layers from "@lucide/svelte/icons/layers";
   import Lightbulb from "@lucide/svelte/icons/lightbulb";
   import ListTree from "@lucide/svelte/icons/list-tree";
+  import Lock from "@lucide/svelte/icons/lock";
   import Minus from "@lucide/svelte/icons/minus";
   import Monitor from "@lucide/svelte/icons/monitor";
   import Moon from "@lucide/svelte/icons/moon";
@@ -62,12 +65,16 @@
   import Pencil from "@lucide/svelte/icons/pencil";
   import PanelLeft from "@lucide/svelte/icons/panel-left";
   import PanelRight from "@lucide/svelte/icons/panel-right";
+  import Pin from "@lucide/svelte/icons/pin";
+  import PinOff from "@lucide/svelte/icons/pin-off";
   import Plus from "@lucide/svelte/icons/plus";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Save from "@lucide/svelte/icons/save";
   import Search from "@lucide/svelte/icons/search";
   import Settings from "@lucide/svelte/icons/settings";
+  import StickyNote from "@lucide/svelte/icons/sticky-note";
   import Sun from "@lucide/svelte/icons/sun";
+  import RotateCcw from "@lucide/svelte/icons/rotate-ccw";
   import Trash from "@lucide/svelte/icons/trash";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Undo2 from "@lucide/svelte/icons/undo-2";
@@ -76,6 +83,7 @@
   // The one icon set of the app (Lucide), registered by name so components stay tree-shakeable.
   export const icons = {
     bold: Bold,
+    bot: Bot,
     "book-open": BookOpen,
     code: Code,
     heading: Heading,
@@ -123,6 +131,7 @@
     "folder-cog": FolderCog,
     "folder-open": FolderOpen,
     "folder-plus": FolderPlus,
+    "folder-search": FolderSearch,
     filter: Funnel,
     branch: GitBranch,
     fork: GitFork,
@@ -131,6 +140,7 @@
     layers: Layers,
     lightbulb: Lightbulb,
     outline: ListTree,
+    lock: Lock,
     minus: Minus,
     monitor: Monitor,
     moon: Moon,
@@ -139,10 +149,14 @@
     plus: Plus,
     "panel-left": PanelLeft,
     "panel-right": PanelRight,
+    pin: Pin,
+    "pin-off": PinOff,
     refresh: RefreshCw,
+    restore: RotateCcw,
     save: Save,
     search: Search,
     settings: Settings,
+    "sticky-note": StickyNote,
     sun: Sun,
     trash: Trash,
     alert: TriangleAlert,

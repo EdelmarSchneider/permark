@@ -37,8 +37,12 @@ export type CommandAction = ShortcutAction | MenuAction;
 export type CommandContext = {
   /** A folder is open (IDE mode); false in Simple mode, where a single file is open. */
   ide: boolean;
+  /** This is the Notes window: its folder is the notes, and the project commands (git, unread, comments, agents) do not apply. */
+  notes: boolean;
   /** A document is open in the reading view or the editor. */
   hasDoc: boolean;
+  /** The Notes window has a note open that can be moved into a project or shared (see `notes.movable`). */
+  movableNote: boolean;
   editing: boolean;
   canBack: boolean;
   canForward: boolean;
@@ -52,6 +56,8 @@ export type CommandContext = {
   hasUnread: boolean;
   /** The agent connection is on for this project. */
   agentOn: boolean;
+  /** This is the Microsoft Store build, which the Store updates (it has no "Check for updates"). */
+  storeBuild: boolean;
 };
 
 export type Command = {
@@ -65,7 +71,12 @@ export type Command = {
 };
 
 const inFolder = (ctx: CommandContext): boolean => ctx.ide;
+/** A project is open: not the Notes window, which has no git, unread markers, comments or agent connection. */
+const inProject = (ctx: CommandContext): boolean => ctx.ide && !ctx.notes;
 const withDoc = (ctx: CommandContext): boolean => ctx.hasDoc;
+const notInNotes = (ctx: CommandContext): boolean => !ctx.notes;
+/** A document of a project: its path, its reference and the system application mean nothing for a note. */
+const inProjectWithDoc = (ctx: CommandContext): boolean => inProject(ctx) && ctx.hasDoc;
 const reading = (ctx: CommandContext): boolean => ctx.hasDoc && !ctx.editing;
 const canEdit = (ctx: CommandContext): boolean => ctx.hasDoc || ctx.editing;
 
@@ -74,28 +85,31 @@ const canEdit = (ctx: CommandContext): boolean => ctx.hasDoc || ctx.editing;
  * document, then the project.
  */
 export const COMMANDS: readonly Command[] = [
-  { id: "openFolder", label: "cmd.openFolder", shortcut: "Ctrl+O" },
+  { id: "openFolder", label: "cmd.openFolder", shortcut: "Ctrl+O", available: notInNotes },
+  // a file opened in the Notes window is listed under Files (or is the note it is)
   { id: "openFile", label: "cmd.openFile", shortcut: "Ctrl+Shift+O" },
   { id: "quickOpen", label: "cmd.quickOpen", shortcut: "Ctrl+P", available: inFolder },
   { id: "searchAll", label: "cmd.searchAll", shortcut: "Ctrl+Shift+F", available: inFolder },
-  { id: "nextUnread", label: "cmd.nextUnread", shortcut: "Alt+U", available: inFolder },
+  { id: "nextUnread", label: "cmd.nextUnread", shortcut: "Alt+U", available: inProject },
   { id: "back", label: "cmd.back", shortcut: "Alt+←", available: (ctx) => ctx.canBack },
   { id: "forward", label: "cmd.forward", shortcut: "Alt+→", available: (ctx) => ctx.canForward },
+  { id: "newNote", label: "cmd.newNote", shortcut: "Ctrl+Shift+N" },
+  { id: "showNotes", label: "cmd.showNotes", shortcut: "Ctrl+Shift+D" },
 
-  { id: "explorer", label: "cmd.explorer", shortcut: "Ctrl+Shift+X", available: inFolder },
-  { id: "tagsView", label: "cmd.tagsView", shortcut: "Ctrl+Shift+T", available: inFolder },
+  { id: "explorer", label: "cmd.explorer", shortcut: "Ctrl+Shift+X", available: inProject },
+  { id: "tagsView", label: "cmd.tagsView", shortcut: "Ctrl+Shift+T", available: inProject },
   { id: "toggleLeft", label: "cmd.toggleLeft", shortcut: "Ctrl+B", available: inFolder },
-  { id: "toggleRight", label: "cmd.toggleRight", shortcut: "Ctrl+Alt+B", available: inFolder },
+  { id: "toggleRight", label: "cmd.toggleRight", shortcut: "Ctrl+Alt+B", available: inProject },
   { id: "toggleOutline", label: "cmd.toggleOutline", shortcut: "Ctrl+Alt+O" },
-  { id: "showComments", label: "cmd.showComments", available: inFolder },
-  { id: "toggleFollow", label: "cmd.toggleFollow", shortcut: "Ctrl+Shift+L", available: inFolder },
+  { id: "showComments", label: "cmd.showComments", available: inProject },
+  { id: "toggleFollow", label: "cmd.toggleFollow", shortcut: "Ctrl+Shift+L", available: inProject },
   { id: "zoomIn", label: "cmd.zoomIn", shortcut: "Ctrl+=" },
   { id: "zoomOut", label: "cmd.zoomOut", shortcut: "Ctrl+-" },
   { id: "zoomReset", label: "cmd.zoomReset", shortcut: "Ctrl+0" },
   { id: "cycleWidth", label: "cmd.cycleWidth", shortcut: "Ctrl+Alt+W" },
   { id: "settings", label: "cmd.settings", shortcut: "Ctrl+," },
 
-  { id: "newFile", label: "cmd.newFile", shortcut: "Ctrl+N", available: inFolder },
+  { id: "newFile", label: "cmd.newFile", shortcut: "Ctrl+N", available: inProject },
   { id: "edit", label: "cmd.edit", shortcut: "E", available: reading },
   { id: "toggleEdit", label: "cmd.toggleEdit", shortcut: "Ctrl+E", available: canEdit },
   { id: "toggleEditMode", label: "cmd.toggleEditMode", shortcut: "Ctrl+Alt+E", available: canEdit },
@@ -104,13 +118,13 @@ export const COMMANDS: readonly Command[] = [
     id: "editTags",
     label: "cmd.editTags",
     shortcut: "T",
-    available: (ctx) => ctx.ide && reading(ctx),
+    available: (ctx) => inProject(ctx) && reading(ctx),
   },
   {
     id: "addComment",
     label: "cmd.addComment",
     shortcut: "C",
-    available: (ctx) => ctx.ide && reading(ctx),
+    available: (ctx) => inProject(ctx) && reading(ctx),
   },
 
   { id: "find", label: "cmd.find", shortcut: "Ctrl+F", available: reading },
@@ -126,37 +140,67 @@ export const COMMANDS: readonly Command[] = [
     shortcut: "Shift+F7",
     available: (ctx) => reading(ctx) && ctx.hasChanges,
   },
-  { id: "copyReference", label: "cmd.copyReference", shortcut: "Ctrl+Alt+C", available: withDoc },
-  { id: "copyPath", label: "cmd.copyPath", shortcut: "Shift+Alt+C", available: withDoc },
-  { id: "openExternal", label: "cmd.openExternal", shortcut: "Ctrl+Shift+E", available: withDoc },
-  { id: "revealInTree", label: "cmd.revealInTree", available: (ctx) => ctx.ide && ctx.hasDoc },
-  { id: "markUnread", label: "cmd.markUnread", available: (ctx) => ctx.ide && ctx.hasDoc },
+  {
+    id: "copyReference",
+    label: "cmd.copyReference",
+    shortcut: "Ctrl+Alt+C",
+    available: inProjectWithDoc,
+  },
+  { id: "copyDocument", label: "cmd.copyDocument", shortcut: "Ctrl+Shift+C", available: withDoc },
+  // a note of the Notes window that has a file (not a new one, a loose file, or a window that can only read)
+  {
+    id: "moveToProject",
+    label: "cmd.moveToProject",
+    shortcut: "Ctrl+Shift+S",
+    available: (ctx) => ctx.notes && ctx.movableNote,
+  },
+  { id: "copyPath", label: "cmd.copyPath", shortcut: "Shift+Alt+C", available: inProjectWithDoc },
+  {
+    id: "openExternal",
+    label: "cmd.openExternal",
+    shortcut: "Ctrl+Shift+E",
+    available: inProjectWithDoc,
+  },
+  {
+    id: "revealInTree",
+    label: "cmd.revealInTree",
+    available: (ctx) => inProject(ctx) && ctx.hasDoc,
+  },
+  { id: "markUnread", label: "cmd.markUnread", available: (ctx) => inProject(ctx) && ctx.hasDoc },
 
-  { id: "newFolder", label: "cmd.newFolder", available: inFolder },
-  { id: "collapseAll", label: "cmd.collapseAll", available: inFolder },
-  { id: "markAllRead", label: "cmd.markAllRead", available: (ctx) => ctx.ide && ctx.hasUnread },
+  { id: "newFolder", label: "cmd.newFolder", available: inProject },
+  { id: "collapseAll", label: "cmd.collapseAll", available: inProject },
+  {
+    id: "markAllRead",
+    label: "cmd.markAllRead",
+    available: (ctx) => inProject(ctx) && ctx.hasUnread,
+  },
   {
     id: "markFolderRead",
     label: "cmd.markFolderRead",
-    available: (ctx) => ctx.ide && ctx.hasUnread,
+    available: (ctx) => inProject(ctx) && ctx.hasUnread,
   },
-  { id: "showOnlyUnread", label: "cmd.showOnlyUnread", available: inFolder },
+  { id: "showOnlyUnread", label: "cmd.showOnlyUnread", available: inProject },
   {
     id: "baselineLastVisit",
     label: "cmd.baselineLastVisit",
-    available: (ctx) => ctx.ide && ctx.hasRepo,
+    available: (ctx) => inProject(ctx) && ctx.hasRepo,
   },
-  { id: "baselineCommit", label: "cmd.baselineCommit", available: (ctx) => ctx.ide && ctx.hasRepo },
+  {
+    id: "baselineCommit",
+    label: "cmd.baselineCommit",
+    available: (ctx) => inProject(ctx) && ctx.hasRepo,
+  },
   {
     id: "initProject",
     label: "cmd.initProject",
-    available: (ctx) => ctx.ide && !ctx.stateInProject,
+    available: (ctx) => inProject(ctx) && !ctx.stateInProject,
   },
-  { id: "agentOn", label: "cmd.agentOn", available: (ctx) => ctx.ide && !ctx.agentOn },
-  { id: "agentOff", label: "cmd.agentOff", available: (ctx) => ctx.ide && ctx.agentOn },
-  { id: "agentCopySetup", label: "cmd.agentCopySetup", available: inFolder },
+  { id: "agentOn", label: "cmd.agentOn", available: (ctx) => inProject(ctx) && !ctx.agentOn },
+  { id: "agentOff", label: "cmd.agentOff", available: (ctx) => inProject(ctx) && ctx.agentOn },
+  { id: "agentCopySetup", label: "cmd.agentCopySetup", available: inProject },
   { id: "openContainingFolder", label: "cmd.openContainingFolder", available: (ctx) => !ctx.ide },
-  { id: "checkUpdates", label: "cmd.checkUpdates" },
+  { id: "checkUpdates", label: "cmd.checkUpdates", available: (ctx) => !ctx.storeBuild },
 ];
 
 /**
