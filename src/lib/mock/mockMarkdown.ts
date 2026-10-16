@@ -231,8 +231,12 @@ export type MockView = {
   frontmatter: [string, string][] | null;
 };
 
-/** The reading view of some Markdown text, as the backend would render it (roughly). */
-export function markdownToView(text: string): MockView {
+/**
+ * The reading view of some Markdown text, as the backend would render it (roughly). With `fragment` the text is one block of a
+ * document drawn on its own (what Visual mode's locked blocks are): the footnote definitions it carries along are not drawn, as
+ * in the backend, because a footnote is a block of its own.
+ */
+export function markdownToView(text: string, options: { fragment?: boolean } = {}): MockView {
   const map = buildBlockMap(text, mockParseBlocks(text));
   const html: string[] = [];
   const blocks: string[] = [];
@@ -247,6 +251,7 @@ export function markdownToView(text: string): MockView {
         .map((m) => [m[1], m[2]] as [string, string]);
       continue;
     }
+    if (options.fragment && block.kind === "footnoteDef") continue;
     const element = blockHtml(block.kind, block.text);
     if (element === "") continue;
     if (title === null && block.kind === "heading")

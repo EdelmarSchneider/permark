@@ -61,6 +61,10 @@ export const HOSTILE: Record<string, string> = {
     "- item\n\n  [foo]: https://example.com\n\nSee [x][foo] here.\n",
   "footnote defined inside a blockquote":
     "> Quote.\n>\n> [^n]: The note.\n\nSee the note[^n] here.\n",
+  "footnote references in a paragraph, a list item and a table cell, a definition of several paragraphs":
+    "The recipe serves 4. We are twelve, so every amount triples.[^1] A named one[^note] too, and the first again[^1].\n\n- an item with a note[^note]\n- another item\n\n| Item | Note |\n| --- | --- |\n| Spices | taste first[^1] |\n\nLast paragraph, no notes.\n\n[^1]: Spices do not scale in a straight line.\n\n    Taste before adding more.\n\n[^note]: A named note,\n    continued here.\n",
+  "footnote definitions between the blocks, one before its reference":
+    "Intro.\n\n[^early]: Defined before it is used.\n\nUsed here[^early] and here[^late].\n\n[^late]: Defined after.\n\nOutro.\n",
   // blocks that only stay apart because of what they are: one newline, no blank line
   "a paragraph, one newline, a heading": "Intro text\n# Heading\n\nAfter.\n",
   "a paragraph, one newline, a fence": "Para text\n```\ncode\n```\n\nAfter.\n",

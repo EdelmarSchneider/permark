@@ -80,6 +80,18 @@ describe("the mock Markdown converters", () => {
     expect(view.html).toContain('<input type="checkbox" checked="" disabled="" />');
   });
 
+  it("draw a block on its own with its footnote reference and without the footnote it brought along", () => {
+    const text = "The recipe serves 4.[^1]\n\n[^1]: Spices do not scale.\n";
+    const document = markdownToView(text).html;
+    expect(document).toContain("Spices do not scale.");
+    const fragment = markdownToView(text, { fragment: true }).html;
+    expect(fragment).toContain('class="footnote-ref"');
+    expect(fragment).toContain("The recipe serves 4.");
+    expect(fragment).not.toContain("Spices");
+    // a definition on its own draws nothing: the editor shows its source
+    expect(markdownToView("[^1]: Spices do not scale.", { fragment: true }).html).toBe("");
+  });
+
   it("round-trip a mock document through its text", () => {
     const html = ['<h1><a href="#t" class="anchor" id="t"></a>T</h1>', "<p>Plain text.</p>"];
     const view = markdownToView(htmlToMarkdown(html));
