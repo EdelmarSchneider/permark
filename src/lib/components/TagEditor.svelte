@@ -10,6 +10,7 @@
     MAX_DESCRIPTION_CHARS,
     normalizeTag,
     normalizeTags,
+    pendingTags,
     splitTagInput,
   } from "../tagText";
   import { docs } from "../stores/docs.svelte";
@@ -107,7 +108,11 @@
     });
   });
 
+  /** Closing the editor (Done, Escape, a click outside) keeps what is still typed in the box as tags. */
   function close(): void {
+    const names = pendingTags(typed);
+    typed = "";
+    if (names.length > 0) add(names);
     ui.tagEditor = null;
   }
 
@@ -267,6 +272,7 @@
           aria-expanded={rows.length > 0}
           aria-controls="tag-editor-suggestions"
           aria-activedescendant={rows.length > 0 ? `tag-editor-suggestions-${active}` : undefined}
+          aria-describedby={typed.trim() !== "" ? "tag-editor-hint" : undefined}
           aria-autocomplete="list"
           placeholder={t("tags.inputPlaceholder")}
           disabled={!writable}
@@ -281,6 +287,9 @@
           {onkeydown}
         />
       </div>
+      {#if typed.trim() !== ""}
+        <div class="field__hint" id="tag-editor-hint">{t("tags.enterHint")}</div>
+      {/if}
       {#if rows.length > 0}
         <TagSuggestions
           id="tag-editor-suggestions"

@@ -565,6 +565,7 @@ export const es = {
   "tags.tags": "Etiquetas",
   "tags.inputLabel": "Agregar una etiqueta",
   "tags.inputPlaceholder": "Agregar una etiqueta",
+  "tags.enterHint": "Pulsa Intro para agregar la etiqueta",
   "tags.suggestions": "Sugerencias de etiquetas",
   "tags.createTag": 'Crear la etiqueta "{name}"',
   "tags.removeTag": "Quitar la etiqueta {name}",

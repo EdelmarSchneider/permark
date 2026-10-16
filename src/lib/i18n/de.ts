@@ -569,6 +569,7 @@ export const de = {
   "tags.tags": "Tags",
   "tags.inputLabel": "Tag hinzufügen",
   "tags.inputPlaceholder": "Tag hinzufügen",
+  "tags.enterHint": "Mit Enter den Tag hinzufügen",
   "tags.suggestions": "Tag-Vorschläge",
   "tags.createTag": "Tag „{name}“ anlegen",
   "tags.removeTag": "Tag {name} entfernen",

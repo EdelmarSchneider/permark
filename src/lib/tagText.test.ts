@@ -6,6 +6,7 @@ import {
   normalizeDescription,
   normalizeTag,
   normalizeTags,
+  pendingTags,
   splitTagInput,
 } from "./tagText";
 
@@ -62,5 +63,21 @@ describe("splitTagInput", () => {
     expect(splitTagInput("spec,")).toEqual({ done: ["spec"], rest: "" });
     expect(splitTagInput("spec")).toEqual({ done: [], rest: "spec" });
     expect(splitTagInput(",, ,")).toEqual({ done: [], rest: "" });
+  });
+});
+
+describe("pendingTags", () => {
+  it("turns what is still typed into tags", () => {
+    expect(pendingTags("Needs Review")).toEqual(["needs-review"]);
+    expect(pendingTags("  spec  ")).toEqual(["spec"]);
+  });
+
+  it("keeps every tag of a pasted list", () => {
+    expect(pendingTags("a, b ,A")).toEqual(["a", "b"]);
+  });
+
+  it("gives nothing for an empty or blank box", () => {
+    expect(pendingTags("")).toEqual([]);
+    expect(pendingTags("  ,  ")).toEqual([]);
   });
 });

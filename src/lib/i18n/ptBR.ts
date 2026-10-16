@@ -565,6 +565,7 @@ export const ptBR = {
   "tags.tags": "Tags",
   "tags.inputLabel": "Adicionar uma tag",
   "tags.inputPlaceholder": "Adicionar uma tag",
+  "tags.enterHint": "Pressione Enter para adicionar a tag",
   "tags.suggestions": "Sugestões de tags",
   "tags.createTag": 'Criar a tag "{name}"',
   "tags.removeTag": "Remover a tag {name}",

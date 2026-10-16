@@ -555,6 +555,7 @@ export const en = {
   "tags.tags": "Tags",
   "tags.inputLabel": "Add a tag",
   "tags.inputPlaceholder": "Add a tag",
+  "tags.enterHint": "Press Enter to add the tag",
   "tags.suggestions": "Tag suggestions",
   "tags.createTag": 'Create tag "{name}"',
   "tags.removeTag": "Remove tag {name}",

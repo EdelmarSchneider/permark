@@ -544,6 +544,7 @@ export const zhCN = {
   "tags.tags": "标签",
   "tags.inputLabel": "添加标签",
   "tags.inputPlaceholder": "添加标签",
+  "tags.enterHint": "按 Enter 添加标签",
   "tags.suggestions": "标签建议",
   "tags.createTag": "创建标签“{name}”",
   "tags.removeTag": "移除标签 {name}",
