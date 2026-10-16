@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Visual mode: a block that refers to a footnote no longer carries the footnote.** A paragraph, list or table with a footnote reference was
+  drawn with the footnote's text and a rule under it inside the same block, with a large empty gap. The reference is now a small marker
+  (with the footnote's label), the footnote stays a block of its own where the file has it, and nothing is repeated. Saving is unchanged:
+  these blocks keep their exact text, and so do the footnote definitions.
+
 ## [0.5.0] - 2026-10-15
 
 Notes: open TrailMark, type, close. Notes save themselves, sticky notes stay for months, and Markdown files from anywhere open in one place.

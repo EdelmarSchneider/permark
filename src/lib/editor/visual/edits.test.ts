@@ -125,6 +125,93 @@ describe("a link reference definition inside a block", () => {
   });
 });
 
+// ---- footnotes: the blocks that refer to one, and the blocks that define one ----------------------------------
+
+describe("footnotes", () => {
+  const several =
+    "footnote references in a paragraph, a list item and a table cell, a definition of several paragraphs";
+  const between = "footnote definitions between the blocks, one before its reference";
+  const NOTE_1 = "[^1]: Spices do not scale in a straight line.\n\n    Taste before adding more.";
+  const NOTE_NAMED = "[^note]: A named note,\n    continued here.";
+
+  const blocks = (): { name: string; definitions: string | undefined }[] => {
+    const out: { name: string; definitions: string | undefined }[] = [];
+    editor.core.view.state.doc.forEach((node) =>
+      out.push({ name: node.type.name, definitions: node.attrs.definitions as string | undefined }),
+    );
+    return out;
+  };
+
+  it("keeps a block that refers to a footnote, and the definition, as they are", () => {
+    const { text, reasons } = open(several);
+    // a paragraph, a list and a table that refer to a footnote, then a plain paragraph, then the two definitions
+    expect([...reasons]).toEqual([
+      [0, "reference"],
+      [1, "reference"],
+      [2, "reference"],
+      [4, "kind"],
+      [5, "kind"],
+    ]);
+    expect(editor.text()).toBe(text);
+  });
+
+  it("draws each block that refers to footnotes with the definitions it uses, and no other", () => {
+    open(several);
+    const [paragraph, list, table, plain, one, named] = blocks();
+    // in the order the block uses them (the renderer shows a marker, and none of the text)
+    expect(paragraph.definitions).toBe(`${NOTE_1}\n\n${NOTE_NAMED}`);
+    expect(list.definitions).toBe(NOTE_NAMED);
+    expect(table.definitions).toBe(NOTE_1);
+    expect(plain.name).toBe("paragraph");
+    // a definition is a block of its own, drawn from its own source
+    expect([one.name, one.definitions]).toEqual(["tm_locked", ""]);
+    expect([named.name, named.definitions]).toEqual(["tm_locked", ""]);
+  });
+
+  it("finds the definitions wherever the file has them", () => {
+    const { text } = open(between);
+    expect(blocks().map((b) => b.name)).toEqual([
+      "paragraph",
+      "tm_locked",
+      "tm_locked",
+      "tm_locked",
+      "paragraph",
+    ]);
+    expect(blocks()[2].definitions).toBe(
+      "[^early]: Defined before it is used.\n\n[^late]: Defined after.",
+    );
+    expect(editor.text()).toBe(text);
+  });
+
+  it("writes every footnote block with its own bytes when a paragraph next to them is edited", () => {
+    const { text } = open(several);
+    typeAtEnd(3, "X");
+    expect(editor.text()).toBe(text.replace("no notes.", "no notes.X"));
+    const second = open(between).text;
+    typeAtEnd(0, "X");
+    typeAtEnd(4, "Y");
+    expect(editor.text()).toBe(second.replace("Intro.", "Intro.X").replace("Outro.", "Outro.Y"));
+  });
+
+  it("keeps the definitions through an edit anywhere", () => {
+    for (const name of [several, between]) {
+      const { text } = open(name);
+      const before = definitionsOf(text);
+      expect(before.length).toBeGreaterThan(0);
+      const count = editor.core.view.state.doc.childCount;
+      for (let block = 0; block < count; block++) {
+        editor.restart();
+        if (endOfText(editor.core.view.state.doc, block) === null) continue;
+        if (editor.core.view.state.doc.child(block).type.name === "tm_locked") continue;
+        typeAtEnd(block, "X");
+        expect(definitionsOf(editor.text()), `${name}: edit at the end of block ${block}`).toEqual(
+          before,
+        );
+      }
+    }
+  });
+});
+
 // ---- S1: a block that changed kind ----------------------------------------------------------------------------
 
 describe("a block that changes kind and sat one newline from its neighbour", () => {

@@ -13,6 +13,7 @@ use comrak::nodes::{AstNode, NodeValue};
 use comrak::{format_html, parse_document, Arena, Options};
 
 use super::{blocks, frontmatter, plain, DocKind, RenderCtx, Rendered, Renderer};
+use crate::util::escape_html;
 
 /// A line that starts with more container markers (`>` quotes, list bullets) than this is not parsed:
 /// comrak's parse time grows quadratically with quote nesting, so the check has to come first.
@@ -66,8 +67,29 @@ impl Renderer for MarkdownRenderer {
     }
 }
 
+/// What the HTML is for.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scope {
+    /// A whole document: the footnotes are listed at the end of it.
+    Document,
+    /// One block of a document, drawn on its own (Visual mode's locked blocks): a footnote definition is a block of its own,
+    /// drawn where the file has it, so the block carries no list of footnotes.
+    Fragment,
+}
+
 /// Renders Markdown to sanitized HTML, with the title and front matter found along the way.
 pub(crate) fn render_markdown(src: &str) -> Rendered {
+    render(src, Scope::Document)
+}
+
+/// Renders one block of a document, for drawing it on its own. A block that uses a footnote is sent together with the definition
+/// (without it the reference would be plain text); what comes back is the block with its footnote references as small markers, and
+/// nothing of the footnotes themselves.
+pub(crate) fn render_fragment(src: &str) -> Rendered {
+    render(src, Scope::Fragment)
+}
+
+fn render(src: &str, scope: Scope) -> Rendered {
     if too_many_container_markers(src) {
         return plain_fallback(src);
     }
@@ -76,6 +98,9 @@ pub(crate) fn render_markdown(src: &str) -> Rendered {
     let root = parse_document(&arena, src, &opts);
     if is_deeper_than(root, MAX_TREE_DEPTH) {
         return plain_fallback(src);
+    }
+    if scope == Scope::Fragment {
+        footnote_markers_only(root);
     }
 
     let mut front: Option<Vec<(String, String)>> = None;
@@ -115,6 +140,37 @@ pub(crate) fn render_markdown(src: &str) -> Rendered {
         frontmatter: front,
         note: None,
     }
+}
+
+/// Leaves a parsed block with its footnote references and without its footnotes. comrak moves the definitions it finds to the end
+/// of the tree, and draws them there as a list under a rule; that list belongs to the whole document, not to the block that
+/// happens to refer to a footnote. The references become markers that show the label of their footnote: comrak's own number counts
+/// the footnotes of this block alone, so it would say 1 for the second footnote of a document.
+fn footnote_markers_only<'a>(root: &'a AstNode<'a>) {
+    let definitions: Vec<_> = root
+        .children()
+        .filter(|node| matches!(node.data.borrow().value, NodeValue::FootnoteDefinition(_)))
+        .collect();
+    for node in definitions {
+        node.detach();
+    }
+    for node in root.descendants() {
+        let mut data = node.data.borrow_mut();
+        let marker = match &data.value {
+            NodeValue::FootnoteReference(reference) => footnote_marker(&reference.name),
+            _ => continue,
+        };
+        data.value = NodeValue::HtmlInline(marker);
+    }
+}
+
+/// The small marker for a reference to the footnote `label`: the same element the reading view has, without the `id` that a
+/// link back from the footnote would need (there is no footnote in the block to link from).
+fn footnote_marker(label: &str) -> String {
+    let label = escape_html(label);
+    format!(
+        "<sup class=\"footnote-ref\"><a href=\"#fn-{label}\" data-footnote-ref>{label}</a></sup>"
+    )
 }
 
 /// The document as escaped text, for sources too deeply nested to render safely.
@@ -417,6 +473,134 @@ mod tests {
         assert!(h.contains("markdown-alert-warning"), "{h}");
         assert!(h.contains("<dl"), "{h}");
         assert!(h.contains("<dt"), "{h}");
+    }
+
+    /// What the Visual editor sends for a block that uses footnotes: the block, a blank line and the definitions it uses.
+    fn fragment(block: &str, definitions: &str) -> String {
+        super::render_fragment(&format!("{block}\n\n{definitions}")).html
+    }
+
+    /// What a block drawn on its own must not carry: the list of footnotes that the whole-document renderer puts at the end.
+    fn assert_no_footnote_list(h: &str) {
+        for leftover in [
+            "class=\"footnotes\"",
+            "data-footnotes",
+            "<ol",
+            "footnote-backref",
+            "\u{21a9}",
+            "Spices",
+        ] {
+            assert!(!h.contains(leftover), "{leftover} in {h}");
+        }
+    }
+
+    #[test]
+    fn a_block_drawn_on_its_own_shows_its_footnote_reference_but_not_the_footnote() {
+        let definition = "[^1]: Spices do not scale in a straight line. Taste before adding more.";
+        let h = fragment(
+            "The recipe serves 4. We are twelve, so every amount triples.[^1]",
+            definition,
+        );
+        assert!(h.contains("every amount triples."), "{h}");
+        assert!(h.contains("<sup"), "{h}");
+        assert!(h.contains("class=\"footnote-ref\""), "{h}");
+        assert!(h.contains("data-footnote-ref"), "{h}");
+        assert!(h.contains(">1</a>"), "{h}");
+        assert_no_footnote_list(&h);
+        // the same text as a whole document does list the footnote, which is what Read shows
+        let whole = html(&format!(
+            "The recipe serves 4.[^1]\n\n{definition}\n\n## Next\n"
+        ));
+        assert!(whole.contains("class=\"footnotes\""), "{whole}");
+        assert!(whole.contains("Spices do not scale"), "{whole}");
+    }
+
+    #[test]
+    fn footnote_markers_carry_the_label_of_their_footnote_not_a_count_of_this_block() {
+        // the second footnote of a document, used in a block of its own: counted in the block it would be 1
+        let h = fragment("Only the second note[^2] here.", "[^2]: Two.");
+        assert!(h.contains(">2</a>"), "{h}");
+        assert!(!h.contains(">1</a>"), "{h}");
+        // the label as the definition wrote it
+        let named = fragment("A named one[^Note].", "[^Note]: The note.");
+        assert!(named.contains(">Note</a>"), "{named}");
+        assert!(!named.contains("class=\"footnotes\""), "{named}");
+    }
+
+    #[test]
+    fn several_references_in_one_block_are_all_markers() {
+        let h = fragment(
+            "First[^a], second[^b] and the first again[^a].",
+            "[^a]: Alpha.\n\n[^b]: Spices beta.",
+        );
+        assert_eq!(h.matches("data-footnote-ref").count(), 3, "{h}");
+        assert_eq!(h.matches(">a</a>").count(), 2, "{h}");
+        assert_eq!(h.matches(">b</a>").count(), 1, "{h}");
+        assert!(!h.contains("Alpha") && !h.contains("beta"), "{h}");
+        assert_no_footnote_list(&h);
+    }
+
+    #[test]
+    fn a_reference_inside_a_list_item_or_a_table_cell_is_a_marker_too() {
+        let list = fragment(
+            "- one[^1]\n- two\n  - nested[^1]",
+            "[^1]: Spices do not scale.",
+        );
+        assert!(list.contains("<ul"), "{list}");
+        assert_eq!(list.matches("data-footnote-ref").count(), 2, "{list}");
+        assert!(
+            !list.contains("Spices") && !list.contains("footnotes"),
+            "{list}"
+        );
+
+        let table = fragment(
+            "| a | b |\n|---|---|\n| cell[^1] | plain |",
+            "[^1]: Spices do not scale.",
+        );
+        assert!(table.contains("<table"), "{table}");
+        assert_eq!(table.matches("data-footnote-ref").count(), 1, "{table}");
+        assert_no_footnote_list(&table);
+    }
+
+    #[test]
+    fn a_footnote_definition_on_its_own_draws_nothing() {
+        // the editor shows such a block as it is written, so it must not be drawn as a list of footnotes
+        assert_eq!(
+            super::render_fragment("[^1]: Spices do not scale.").html,
+            ""
+        );
+        let several =
+            "[^1]: First paragraph.\n\n    Second paragraph of the same note.\n\n    - and a list\n";
+        assert_eq!(super::render_fragment(several).html, "");
+    }
+
+    #[test]
+    fn a_definition_with_several_paragraphs_never_leaks_into_the_block_that_uses_it() {
+        let h = fragment(
+            "Text[^1] more text.",
+            "[^1]: First paragraph.\n\n    Second paragraph of the same note.",
+        );
+        assert!(h.contains("more text."), "{h}");
+        assert!(
+            !h.contains("First paragraph") && !h.contains("Second paragraph"),
+            "{h}"
+        );
+        assert!(!h.contains("class=\"footnotes\""), "{h}");
+    }
+
+    #[test]
+    fn a_reference_without_a_definition_stays_text_in_a_fragment() {
+        let h = super::render_fragment("Nothing defines this[^9].").html;
+        assert!(h.contains("[^9]"), "{h}");
+        assert!(!h.contains("footnote-ref"), "{h}");
+    }
+
+    #[test]
+    fn a_footnote_label_cannot_break_out_of_its_marker() {
+        let h = fragment("Odd[^a<b>\"c]", "[^a<b>\"c]: x");
+        assert!(h.contains("data-footnote-ref"), "it is a marker: {h}");
+        assert!(h.contains(">a&lt;b&gt;\"c</a>"), "{h}");
+        assert!(!h.contains("<b>"), "{h}");
     }
 
     #[test]
