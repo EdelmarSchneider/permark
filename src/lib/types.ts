@@ -74,6 +74,11 @@ export type DocumentView = {
   frontmatter: [string, string][] | null;
   modifiedMs: number;
   sizeBytes: number;
+  /**
+   * The hash of the file's bytes as they were read (16 hex digits): the same hash a review of changes (`ReviewView.hash`) and
+   * the editor speak of. Null for a picture, sound or video and for a file too large to be read.
+   */
+  hash: string | null;
   /** Codes for what to tell the reader next to the title (an odd encoding, a rendering fallback), several joined with a comma; `noteText` words them. */
   encodingNote: string | null;
 };
@@ -377,7 +382,15 @@ export type BlockRange = { start: number; end: number };
 export type ReviewBlock = {
   /** Which block of its version this is. */
   index: number;
+  /**
+   * The first and the last line of the block in its version, counted from 1 the way the rendered blocks of the reading view
+   * are (the `data-sourcepos` of the top-level elements): every kind of line break counts once, and a byte order mark is not
+   * part of the first line.
+   */
+  startLine: number;
+  endLine: number;
   text: string;
+  /** Empty when the block draws nothing (a link reference definition) or could not be drawn: show `text`. */
   html: string;
 } & ByteRange;
 /** An old block, a new block, or both when the block was edited: shown side by side. */
@@ -392,6 +405,11 @@ export type ReviewChange = {
   new: ByteRange;
   oldBlocks: BlockRange;
   newBlocks: BlockRange;
+  /**
+   * Where the change is in the file, as a line (1-based, as `ReviewBlock.startLine`): the first line of its new blocks; for a
+   * removal, the line of the block it sits in front of; null when it is at the end of the file.
+   */
+  newLine: number | null;
   rows: ReviewRow[];
 };
 /**

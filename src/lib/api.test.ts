@@ -79,6 +79,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   reviewKeepAll: ["docs/a.md", { hash: "00000000000000a1", reviewedHash: null }],
   reviewRevertAll: ["docs/a.md", { hash: "00000000000000a1", reviewedHash: "00000000000000b2" }],
   reviewRestoreDeleted: ["docs/a.md", { hash: null, reviewedHash: "00000000000000b2" }],
+  reviewUndo: ["docs/a.md"],
   reviewRelease: ["docs/a.md"],
   setAgentConnection: [true],
   agentStatus: [],

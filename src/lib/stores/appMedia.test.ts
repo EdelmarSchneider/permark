@@ -49,6 +49,7 @@ const view = (path: string, kind: DocumentView["kind"]): DocumentView => ({
   frontmatter: null,
   modifiedMs: 1,
   sizeBytes: 100,
+  hash: null,
   encodingNote: null,
 });
 

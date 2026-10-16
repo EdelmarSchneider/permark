@@ -811,6 +811,7 @@ function writtenView(path: string, text: string, mtime: number): DocumentView {
       frontmatter: null,
       modifiedMs: mtime,
       sizeBytes: new TextEncoder().encode(text).length,
+      hash: null,
       encodingNote: null,
     };
   }
@@ -824,6 +825,7 @@ function writtenView(path: string, text: string, mtime: number): DocumentView {
     frontmatter: view.frontmatter,
     modifiedMs: mtime,
     sizeBytes: new TextEncoder().encode(text).length,
+    hash: null,
     encodingNote: null,
   };
 }
@@ -859,6 +861,7 @@ export function getDocument(path: string): DocumentView {
     frontmatter: entry.frontmatter ?? null,
     modifiedMs: mockState.modified.get(path) ?? MOCK_NOW - entry.age,
     sizeBytes: entry.size ?? new TextEncoder().encode(html.join("\n")).length,
+    hash: null,
     encodingNote: entry.encodingNote ?? null,
   };
 }

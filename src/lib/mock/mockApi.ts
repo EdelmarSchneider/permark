@@ -259,6 +259,7 @@ export const mockImpl: Api = {
   reviewKeepAll: async (path) => reviewGet(path),
   reviewRevertAll: async (path) => reviewGet(path),
   reviewRestoreDeleted: async (path) => reviewGet(path),
+  reviewUndo: async (path) => reviewGet(path),
   reviewRelease: async () => {},
   setAgentConnection: async (enabled) => setAgentConnection(enabled),
   agentStatus: async () => agentStatus(),

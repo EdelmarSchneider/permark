@@ -235,7 +235,16 @@ export interface Api {
   reviewRevertAll(path: string, basis: ReviewBasis): Promise<ReviewView>;
   /** Puts a deleted document back, as it was approved. Rejects with kind "reviewNoBaseline" if its text was not kept. */
   reviewRestoreDeleted(path: string, basis: ReviewBasis): Promise<ReviewView>;
-  /** The person left the document (or closed its review): the version kept for the review is let go. */
+  /**
+   * Takes back the last keep or revert of the document that can still be taken back (newest first; a keep, a revert, keeping or
+   * reverting all, and the removal of a new document). Each is done only if nothing else happened to what it touched: a keep, if
+   * the approved version is where it left it; a revert, if the file still has the hash it left; the removal of a new document,
+   * if nothing is at its place. Otherwise rejects with kind "reviewStale" and writes nothing; a step that fails is dropped, so
+   * that the one before it can be taken back, and with no step left that is the answer too. The steps are kept until
+   * `reviewRelease`. Resolves with the review as it is after.
+   */
+  reviewUndo(path: string): Promise<ReviewView>;
+  /** The person left the document (or closed its review): the version kept for the review is let go, and so are its undo steps. */
   reviewRelease(path: string): Promise<void>;
   /**
    * Turns the agent connection of the open project on or off (the setting is saved with the session). A connection that
@@ -455,6 +464,7 @@ export const tauriApi: Api = {
       hash: basis.hash,
       reviewedHash: basis.reviewedHash,
     }),
+  reviewUndo: (path) => invoke<ReviewView>("review_undo", { path }),
   reviewRelease: (path) => invoke<void>("review_release", { path }),
   setAgentConnection: (enabled) => invoke<AgentStatus>("set_agent_connection", { enabled }),
   agentStatus: () => invoke<AgentStatus>("agent_status"),
@@ -610,6 +620,7 @@ function createMockApi(): Api {
     reviewKeepAll: command("reviewKeepAll"),
     reviewRevertAll: command("reviewRevertAll"),
     reviewRestoreDeleted: command("reviewRestoreDeleted"),
+    reviewUndo: command("reviewUndo"),
     reviewRelease: command("reviewRelease"),
     setAgentConnection: command("setAgentConnection"),
     agentStatus: command("agentStatus"),

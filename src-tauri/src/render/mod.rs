@@ -15,7 +15,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use crate::media::AssetKind;
-use crate::util::{modified_ms, read_with_retry};
+use crate::util::{hash_hex, modified_ms, read_with_retry};
 pub(crate) use decode::normalize_newlines;
 use decode::{decode, Decoded};
 pub(crate) use frontmatter::RawValue;
@@ -87,6 +87,10 @@ pub struct DocumentView {
     pub frontmatter: Option<Vec<(String, String)>>,
     pub modified_ms: u64,
     pub size_bytes: u64,
+    /// The hash of the file's bytes as it was read (16 hex digits): the same hash the review of changes and the editor
+    /// speak of, so that a UI can tell whether what it shows is the version a review was drawn from. `None` for a
+    /// picture, sound or video and for a file too large to be read.
+    pub hash: Option<String>,
     /// Codes for what the reader should know (see `decode`; `deepNesting` from the Markdown renderer), several
     /// joined with a comma. The UI words them.
     pub encoding_note: Option<String>,
@@ -166,7 +170,13 @@ impl Default for Registry {
     }
 }
 
-fn empty_view(path: &str, kind: DocKind, modified_ms: u64, size_bytes: u64) -> DocumentView {
+fn empty_view(
+    path: &str,
+    kind: DocKind,
+    modified_ms: u64,
+    size_bytes: u64,
+    hash: Option<String>,
+) -> DocumentView {
     DocumentView {
         path: path.to_owned(),
         kind,
@@ -176,6 +186,7 @@ fn empty_view(path: &str, kind: DocKind, modified_ms: u64, size_bytes: u64) -> D
         frontmatter: None,
         modified_ms,
         size_bytes,
+        hash,
         encoding_note: None,
     }
 }
@@ -190,7 +201,13 @@ pub fn render_bytes(
 ) -> DocumentView {
     let size = bytes.len() as u64;
     match decode(bytes) {
-        Decoded::Binary => empty_view(rel, DocKind::Binary, modified_ms, size),
+        Decoded::Binary => empty_view(
+            rel,
+            DocKind::Binary,
+            modified_ms,
+            size,
+            Some(hash_hex(bytes)),
+        ),
         Decoded::Text { text, note } => {
             let r = registry.render(abs, &text);
             // Both notes end up in the one chip next to the title.
@@ -207,6 +224,7 @@ pub fn render_bytes(
                 frontmatter: r.frontmatter,
                 modified_ms,
                 size_bytes: size,
+                hash: Some(hash_hex(bytes)),
                 encoding_note: note,
             }
         }
@@ -227,7 +245,13 @@ pub fn asset_view(abs: &Path, rel: &str, kind: AssetKind) -> Result<DocumentView
             "not a file",
         )));
     }
-    Ok(empty_view(rel, kind.into(), modified_ms(&meta), meta.len()))
+    Ok(empty_view(
+        rel,
+        kind.into(),
+        modified_ms(&meta),
+        meta.len(),
+        None,
+    ))
 }
 
 /// Reads and renders a file from disk (retrying transient sharing violations).
@@ -243,7 +267,7 @@ pub fn load_document(
     let meta = std::fs::metadata(abs).map_err(io_err)?;
     let mtime = modified_ms(&meta);
     if meta.len() > MAX_RENDER_BYTES {
-        return Ok(empty_view(rel, DocKind::TooLarge, mtime, meta.len()));
+        return Ok(empty_view(rel, DocKind::TooLarge, mtime, meta.len(), None));
     }
     let bytes = read_with_retry(abs).map_err(io_err)?;
     Ok(render_bytes(registry, abs, rel, &bytes, mtime))
@@ -271,6 +295,35 @@ mod tests {
         assert!(v.modified_ms > 0);
         assert_eq!(v.size_bytes, 20);
         assert_eq!(v.path, "a.md");
+    }
+
+    #[test]
+    fn a_view_carries_the_hash_of_the_file_it_was_made_from() {
+        let text = b"# Title\r\n\r\nOne.\r\n";
+        let v = view_of("a.md", text);
+        let hash = crate::util::hash_hex(text);
+        assert_eq!(v.hash.as_deref(), Some(hash.as_str()));
+        // the bytes of the file, not of the text the reader was given: a byte order mark counts
+        let bom = b"\xEF\xBB\xBF# Title\n";
+        let with_bom = view_of("a.md", bom);
+        assert_eq!(
+            with_bom.hash.as_deref(),
+            Some(crate::util::hash_hex(bom).as_str())
+        );
+        assert_ne!(v.hash, view_of("a.md", b"# Title\r\n\r\nTwo.\r\n").hash);
+        let binary = view_of("img.png", b"\x89PNG\0\0");
+        assert!(binary.hash.is_some());
+        let json = serde_json::to_value(&v).expect("json");
+        assert_eq!(json["hash"], hash);
+    }
+
+    #[test]
+    fn a_picture_or_a_file_too_large_to_read_has_no_hash() {
+        let d = tempfile::tempdir().expect("tempdir");
+        let p = d.path().join("a.png");
+        fs::write(&p, b"x").expect("write");
+        let asset = crate::media::asset_kind("a.png").expect("a media name");
+        assert_eq!(asset_view(&p, "a.png", asset).expect("view").hash, None);
     }
 
     #[test]
