@@ -17,6 +17,7 @@ use crate::bridge::hub::{AgentEvents, AgentStatus, Backend};
 use crate::bridge::protocol::Opened;
 use crate::bridge::service::AgentBridge;
 use crate::bridge::socket::Endpoint;
+use crate::bridge::tags::{is_document, unreadable_meta, Doc, DocIndex};
 use crate::comments::{
     CommentBook, CommentError, CommentView, Listener as CommentsListener, NewComment,
 };
@@ -324,11 +325,15 @@ impl Followers for AppFollower {
     }
 }
 
-/// What only the open folder can tell an agent: the live search index, the live unread markers and the comments.
+/// What only the open folder can tell an agent: the live search index, the live unread markers, the comments and the
+/// tags and descriptions.
 struct LiveBackend {
     index: Arc<RwLock<Bm25Index>>,
     unread: Arc<UnreadService>,
     comments: Arc<CommentBook>,
+    meta: Arc<MetaService>,
+    /// What the index leaves out (ignored folders, the private notes): the documents an agent hears of are the ones it can search.
+    filter: Arc<PathFilter>,
     /// The data folder of the program: where the person's choice of the notes folder is kept.
     app_data: PathBuf,
 }
@@ -342,8 +347,34 @@ impl Backend for LiveBackend {
         self.unread.unread()
     }
 
-    fn search(&self, query: &str, limit: usize) -> Vec<SearchHit> {
-        self.index.search(query, limit)
+    fn search(&self, query: &str, limit: usize, allow: &dyn Fn(&str) -> bool) -> Vec<SearchHit> {
+        self.index
+            .read()
+            .map(|index| index.search_in(query, limit, allow))
+            .unwrap_or_default()
+    }
+
+    fn docs(&self) -> DocIndex {
+        let docs = self
+            .meta
+            .catalog()
+            .rows()
+            .iter()
+            .filter(|row| is_document(&self.filter, &row.path))
+            .map(|row| Doc {
+                path: row.path.clone(),
+                file_tags: row.file_tags.clone(),
+                app_tags: row.app_tags.clone(),
+                description: row.description.clone(),
+            })
+            .collect();
+        // the app's tags are read-only while meta.toml cannot be read, and the lists are then shorter than they should be
+        let warning = self
+            .meta
+            .status()
+            .problem
+            .map(|problem| unreadable_meta(&problem));
+        DocIndex::new(docs, warning)
     }
 
     fn comments(&self) -> Vec<CommentView> {
@@ -373,9 +404,7 @@ impl AgentEvents for AgentSink {
 fn agent_bridge(
     vault: &Arc<Vault>,
     store: &StateStore,
-    index: &Arc<RwLock<Bm25Index>>,
-    unread: &Arc<UnreadService>,
-    comments: &Arc<CommentBook>,
+    backend: LiveBackend,
     sink: &Arc<dyn EventSink>,
     app_data: &Path,
 ) -> (AgentBridge, bool) {
@@ -383,12 +412,7 @@ fn agent_bridge(
         Arc::clone(vault),
         Endpoint::for_project(vault.root()),
         store.agent_path(),
-        Arc::new(LiveBackend {
-            index: Arc::clone(index),
-            unread: Arc::clone(unread),
-            comments: Arc::clone(comments),
-            app_data: app_data.to_path_buf(),
-        }),
+        Arc::new(backend),
         Arc::new(AgentSink(Arc::clone(sink))),
     );
     // the notes folder is private even where it lies inside the project: no tool of the connection reaches it
@@ -734,9 +758,14 @@ impl Workspace {
         let (agent, agent_wanted) = agent_bridge(
             &vault,
             &store,
-            &index,
-            &unread,
-            &comments,
+            LiveBackend {
+                index: Arc::clone(&index),
+                unread: Arc::clone(&unread),
+                comments: Arc::clone(&comments),
+                meta: Arc::clone(&meta),
+                filter: Arc::clone(&filter),
+                app_data: app_data_dir.to_path_buf(),
+            },
             sink,
             app_data_dir,
         );

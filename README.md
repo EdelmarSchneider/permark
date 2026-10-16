@@ -159,6 +159,8 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   can read it), or in the app's own storage before that. Renaming or moving a file keeps its tags
 - A **Tags view** (`Ctrl+Shift+T`) lists every tag with its number of files. Pick one, or `Ctrl+click` several to narrow the list
 - Descriptions and tags show up where you look for files: tree tooltips, quick open, search results
+- Your agent uses them too, to find the right documents in a large project without reading hundreds of search hits: it asks which tags
+  there are (`list_tags`), narrows a search to the documents that carry them, and reads only the few that fit
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-tags-dark.png">
@@ -353,7 +355,8 @@ is TrailMark running as you, and not another program that took the name.
 |---|---|
 | `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters) and whether there are unsaved edits |
 | `list_unread` | The documents that changed since you last read them, newest first |
-| `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere |
+| `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere. Each hit carries its document's tags and description, and `tags` narrows the search to the documents that have all of them |
+| `list_tags` | The tags in use, with how many documents have each and whether they come from the documents or from TrailMark, plus how many documents have no tag; or, for one tag, the documents that have it with their descriptions |
 | `list_comments` | Your [comments](#comments): the open ones, each with the quoted passage, its section and line, and your text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
@@ -365,7 +368,7 @@ TrailMark. It sees the project you opened and nothing else: no other project, no
 the agent sees only the notes you shared one by one (**Share with agents** in a note's menu, **Stop sharing** takes it back at once), through
 `list_notes` and `read_note`, in any project whose connection is on; it cannot list the notes folder, read a note you did not share, or change
 one, and a notes folder that lies inside a project is not part of that project's search. When TrailMark is
-closed, `list_unread`, `search`, `list_comments`, `resolve_comment`, `list_notes` and `read_note` still work from the files, `get_context` says that
+closed, `list_unread`, `search`, `list_tags`, `list_comments`, `resolve_comment`, `list_notes` and `read_note` still work from the files, `get_context` says that
 TrailMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
 
 ### Add what you are reading to every prompt

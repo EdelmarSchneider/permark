@@ -166,6 +166,7 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
             "get_context",
             "list_comments",
             "list_notes",
+            "list_tags",
             "list_unread",
             "open",
             "read_note",
@@ -322,12 +323,59 @@ fn the_notes_the_person_shared_are_read_from_their_files_and_no_other_note_is() 
     assert!(session.finish().success());
 }
 
+#[test]
+fn the_tags_of_the_projects_files_narrow_a_search_without_a_window() {
+    let project = project(Some(true));
+    // one document tagged in its front matter, one in TrailMark's `meta.toml` (the project keeps it in `.trailmark/`)
+    std::fs::write(
+        project.project.path().join("README.md"),
+        "---\ntags: [start]\n---\n# Home\n\nShip the lighthouse.\n",
+    )
+    .expect("a tagged document");
+    std::fs::write(
+        project.project.path().join(".trailmark/meta.toml"),
+        "[files.\"docs/plan.md\"]\ntags = [\"rollout\"]\ndescription = \"How the beacon ships.\"\n",
+    )
+    .expect("the tags added in TrailMark");
+    let mut session = Session::start(&project);
+
+    let (tags, is_error) = session.call("list_tags", &json!({}));
+    assert!(!is_error, "{tags}");
+    assert_eq!(tags["source"], "files");
+    assert_eq!(
+        (&tags["documents"], &tags["untagged"]),
+        (&json!(2), &json!(0))
+    );
+    assert_eq!(
+        tags["tags"],
+        json!([
+            {"name": "rollout", "count": 1, "from": "trailmark"},
+            {"name": "start", "count": 1, "from": "frontMatter"},
+        ])
+    );
+
+    let (found, is_error) =
+        session.call("search", &json!({ "query": "beacon", "tags": ["rollout"] }));
+    assert!(!is_error, "{found}");
+    assert_eq!(found["hits"][0]["path"], "docs/plan.md");
+    assert_eq!(found["hits"][0]["tags"], json!(["rollout"]));
+    assert_eq!(found["hits"][0]["description"], "How the beacon ships.");
+    let (none, _) = session.call("search", &json!({ "query": "beacon", "tags": ["start"] }));
+    assert_eq!(none["hits"], json!([]));
+
+    let (listed, is_error) = session.call("list_tags", &json!({ "tag": "start" }));
+    assert!(!is_error, "{listed}");
+    assert_eq!(listed["docs"][0]["path"], "README.md");
+    assert!(session.finish().success());
+}
+
 /// Every tool, with arguments that would do something if the connection were on.
-fn every_tool() -> [(&'static str, Value); 8] {
+fn every_tool() -> [(&'static str, Value); 9] {
     [
         ("get_context", json!({})),
         ("list_unread", json!({})),
         ("search", json!({ "query": "beacon" })),
+        ("list_tags", json!({})),
         ("open", json!({ "path": "docs/plan.md" })),
         ("list_comments", json!({})),
         ("resolve_comment", json!({ "id": "c00000001" })),

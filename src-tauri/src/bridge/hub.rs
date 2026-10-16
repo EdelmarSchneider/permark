@@ -22,8 +22,9 @@ use super::answers::{self, PrivateTree};
 use super::context::{AgentContext, Published, ViewMode};
 use super::protocol::{
     Call, ErrorKind, Hits, NoteList, Opened, ProtocolError, Reply, Request, UnreadList,
-    DEFAULT_SEARCH_HITS, MAX_SEARCH_HITS,
+    DEFAULT_SEARCH_HITS, EMPTY_QUERY, MAX_SEARCH_HITS,
 };
+use super::tags::{names_a_tag, DocIndex};
 
 /// How many requests the popover can list. One constant to change.
 pub const RECENT_REQUESTS: usize = 8;
@@ -32,8 +33,10 @@ pub const RECENT_REQUESTS: usize = 8;
 pub trait Backend: Send + Sync + 'static {
     /// The documents that are unread now.
     fn unread(&self) -> Vec<String>;
-    /// The best sections for a query.
-    fn search(&self, query: &str, limit: usize) -> Vec<SearchHit>;
+    /// The best sections for a query, among the documents `allow` lets through (it is given a document's path).
+    fn search(&self, query: &str, limit: usize, allow: &dyn Fn(&str) -> bool) -> Vec<SearchHit>;
+    /// The Markdown documents with their tags and descriptions, as the open project keeps them now.
+    fn docs(&self) -> DocIndex;
     /// Every comment, with its passage found again in the document as it is now.
     fn comments(&self) -> Vec<CommentView>;
     /// Marks a comment done by an agent.
@@ -294,26 +297,35 @@ impl Hub {
                 let docs = answers::unread_docs(&self.vault, &unread);
                 Reply::success(id, json(&UnreadList::new(docs)))
             }
-            Request::Search { query, limit } => {
+            Request::Search { query, limit, tags } => {
                 let query = query.trim();
-                if query.is_empty() {
+                if query.is_empty() && !names_a_tag(&tags) {
                     return Reply::failure(
                         id,
-                        ProtocolError::new(ErrorKind::BadRequest, "the query is empty"),
+                        ProtocolError::new(ErrorKind::BadRequest, EMPTY_QUERY),
                     );
+                }
+                let docs = self.visible_docs();
+                // no words: the documents that have the tags
+                if query.is_empty() {
+                    return Reply::success(id, json(&docs.tagged(&tags, limit)));
                 }
                 let limit = limit
                     .unwrap_or(DEFAULT_SEARCH_HITS)
                     .clamp(1, MAX_SEARCH_HITS);
                 let found: Vec<SearchHit> = self
                     .backend
-                    .search(query, limit)
+                    .search(query, limit, &*docs.allowing(&tags))
                     .into_iter()
                     .filter(|hit| !self.is_private(&hit.path))
                     .collect();
-                let hits = answers::plain_hits(found);
+                let hits = docs.describe(answers::plain_hits(found));
                 Reply::success(id, json(&Hits { hits }))
             }
+            Request::ListTags { tag, limit } => Reply::success(
+                id,
+                json(&self.visible_docs().list_tags(tag.as_deref(), limit)),
+            ),
             Request::ListComments { which } => {
                 let list =
                     answers::comment_list(self.visible_comments(), which.unwrap_or_default());
@@ -410,6 +422,13 @@ impl Hub {
         }
     }
 
+    /// The documents of the project that are not private notes, with their tags and descriptions.
+    fn visible_docs(&self) -> DocIndex {
+        let mut docs = self.backend.docs();
+        docs.retain(|doc| !self.is_private(&doc.path));
+        docs
+    }
+
     /// The comments of the project that are not on a private note.
     fn visible_comments(&self) -> Vec<CommentView> {
         self.backend
@@ -437,6 +456,7 @@ pub(crate) mod testing {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
+    use crate::bridge::tags::Doc;
 
     /// A project's answers from lists, and a record of what the interface was told.
     #[derive(Default)]
@@ -451,6 +471,8 @@ pub(crate) mod testing {
         pub unread_asked: AtomicUsize,
         /// Where the notes are (none until a test makes a folder of notes).
         pub notes: Mutex<Option<PathBuf>>,
+        /// The documents with their tags.
+        pub docs: Mutex<Vec<Doc>>,
     }
 
     impl Backend for Fake {
@@ -463,13 +485,22 @@ pub(crate) mod testing {
             lock(&self.unread).clone()
         }
 
-        fn search(&self, query: &str, limit: usize) -> Vec<SearchHit> {
+        fn search(
+            &self,
+            query: &str,
+            limit: usize,
+            allow: &dyn Fn(&str) -> bool,
+        ) -> Vec<SearchHit> {
             lock(&self.corpus)
                 .iter()
-                .filter(|hit| hit.snippet.contains(query))
+                .filter(|hit| hit.snippet.contains(query) && allow(&hit.path))
                 .take(limit)
                 .cloned()
                 .collect()
+        }
+
+        fn docs(&self) -> DocIndex {
+            DocIndex::new(lock(&self.docs).clone(), None)
         }
 
         fn comments(&self) -> Vec<CommentView> {
@@ -538,6 +569,7 @@ mod tests {
     use super::testing::{comment, hub};
     use super::*;
     use crate::bridge::context::ViewMode;
+    use crate::bridge::tags::Doc;
     use crate::comments::CommentFilter;
 
     fn project() -> (tempfile::TempDir, Arc<Vault>) {
@@ -641,6 +673,7 @@ mod tests {
                 Request::Search {
                     query: "  Ship ".to_owned(),
                     limit: Some(1_000),
+                    tags: Vec::new(),
                 },
             ))
             .into_result()
@@ -656,10 +689,220 @@ mod tests {
             Request::Search {
                 query: "   ".to_owned(),
                 limit: None,
+                tags: s(&[" "]),
             },
         ));
         assert!(!empty.ok);
         assert_eq!(empty.error.expect("error").kind, ErrorKind::BadRequest);
+    }
+
+    fn s(items: &[&str]) -> Vec<String> {
+        items.iter().map(|x| (*x).to_owned()).collect()
+    }
+
+    fn doc(path: &str, file: &[&str], app: &[&str], description: &str) -> Doc {
+        Doc {
+            path: path.to_owned(),
+            file_tags: s(file),
+            app_tags: s(app),
+            description: description.to_owned(),
+        }
+    }
+
+    fn search(query: &str, tags: &[&str]) -> Request {
+        Request::Search {
+            query: query.to_owned(),
+            limit: None,
+            tags: s(tags),
+        }
+    }
+
+    /// Three documents that all mention "retry", two of them tagged.
+    fn tagged_project() -> (tempfile::TempDir, Arc<Hub>, Arc<testing::Fake>) {
+        let (dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        *lock(&fake.corpus) = vec![
+            hit("docs/loud.md", "retry retry retry"),
+            hit("docs/adr-1.md", "we agreed on a retry policy"),
+            hit("docs/adr-2.md", "retry with backoff"),
+        ];
+        *lock(&fake.docs) = vec![
+            doc("docs/loud.md", &[], &[], ""),
+            doc("docs/adr-1.md", &["adr"], &["api"], "Retry policy."),
+            doc("docs/adr-2.md", &["adr"], &[], ""),
+        ];
+        (dir, hub, fake)
+    }
+
+    #[test]
+    fn a_search_names_the_tags_and_description_of_the_document_each_hit_is_in() {
+        let (_dir, hub, _fake) = tagged_project();
+        let result = hub
+            .handle(call(1, search("retry", &[])))
+            .into_result()
+            .expect("a result");
+        let hits = result["hits"].as_array().expect("hits");
+        assert_eq!(hits.len(), 3);
+        let of = |path: &str| {
+            hits.iter()
+                .find(|h| h["path"] == path)
+                .expect("a hit")
+                .clone()
+        };
+        assert_eq!(of("docs/adr-1.md")["tags"], json!(["adr", "api"]));
+        assert_eq!(of("docs/adr-1.md")["description"], "Retry policy.");
+        assert_eq!(of("docs/adr-2.md")["tags"], json!(["adr"]));
+        // what a document does not have is not said
+        assert!(of("docs/adr-2.md").get("description").is_none());
+        assert!(of("docs/loud.md").get("tags").is_none());
+        assert!(of("docs/loud.md").get("description").is_none());
+    }
+
+    #[test]
+    fn a_search_with_tags_looks_only_in_the_documents_that_have_all_of_them() {
+        let (_dir, hub, _fake) = tagged_project();
+        let paths = |tags: &[&str]| -> Vec<String> {
+            hub.handle(call(2, search("retry", tags)))
+                .into_result()
+                .expect("a result")["hits"]
+                .as_array()
+                .expect("hits")
+                .iter()
+                .map(|h| h["path"].as_str().expect("path").to_owned())
+                .collect()
+        };
+        assert_eq!(paths(&["adr"]), ["docs/adr-1.md", "docs/adr-2.md"]);
+        assert_eq!(paths(&["ADR", "api"]), ["docs/adr-1.md"]);
+        assert_eq!(paths(&["adr", "nope"]), Vec::<String>::new());
+        // a tag that says nothing narrows nothing
+        assert_eq!(paths(&["  "]).len(), 3);
+    }
+
+    #[test]
+    fn tags_without_words_list_the_documents_that_have_them() {
+        let (_dir, hub, _fake) = tagged_project();
+        let result = hub
+            .handle(call(3, search("  ", &["adr"])))
+            .into_result()
+            .expect("a result");
+        assert!(result.get("hits").is_none(), "{result}");
+        assert_eq!(result["total"], 2);
+        assert_eq!(
+            result["docs"][0],
+            json!({"path": "docs/adr-1.md", "description": "Retry policy.", "tags": ["adr", "api"]})
+        );
+        assert_eq!(result["docs"][1]["path"], "docs/adr-2.md");
+        // the popover tells it the way the search box takes tags
+        let status = hub.status();
+        assert_eq!(status.recent[0].tool, "search");
+        assert_eq!(status.recent[0].subject.as_deref(), Some("tag:adr"));
+    }
+
+    #[test]
+    fn a_search_with_neither_words_nor_tags_is_refused_and_says_what_to_give() {
+        let (_dir, hub, _fake) = tagged_project();
+        let refused = hub.handle(call(4, search("", &[])));
+        assert!(!refused.ok);
+        let error = refused.error.expect("error");
+        assert_eq!(error.kind, ErrorKind::BadRequest);
+        assert!(error.message.contains("tags"), "{}", error.message);
+    }
+
+    #[test]
+    fn list_tags_answers_the_distribution_then_the_documents_of_a_tag() {
+        let (_dir, hub, _fake) = tagged_project();
+        let overview = hub
+            .handle(call(
+                5,
+                Request::ListTags {
+                    tag: None,
+                    limit: None,
+                },
+            ))
+            .into_result()
+            .expect("a result");
+        assert_eq!(overview["documents"], 3);
+        assert_eq!(overview["untagged"], 1);
+        assert_eq!(
+            overview["tags"],
+            json!([
+                {"name": "adr", "count": 2, "from": "frontMatter"},
+                {"name": "api", "count": 1, "from": "trailmark"},
+            ])
+        );
+        let adr = hub
+            .handle(call(
+                6,
+                Request::ListTags {
+                    tag: Some("ADR".to_owned()),
+                    limit: None,
+                },
+            ))
+            .into_result()
+            .expect("a result");
+        assert_eq!(adr["total"], 2);
+        assert_eq!(adr["docs"][1]["path"], "docs/adr-2.md");
+        let status = hub.status();
+        assert_eq!(status.recent[0].tool, "list_tags");
+        assert_eq!(status.recent[0].subject.as_deref(), Some("ADR"));
+        assert_eq!(status.recent[1].subject, None);
+    }
+
+    #[test]
+    fn the_private_notes_folder_is_not_in_the_tags_nor_in_the_filtered_search() {
+        let (dir, vault) = project();
+        std::fs::create_dir_all(dir.path().join("notes")).expect("mkdir");
+        std::fs::write(dir.path().join("notes/secret.md"), "# Secret\n").expect("write");
+        let (hub, fake) = hub(vault);
+        hub.set_private(PrivateTree::at(
+            dunce::canonicalize(dir.path().join("notes")).expect("canonical"),
+        ));
+        *lock(&fake.corpus) = vec![
+            hit("notes/secret.md", "retry in secret"),
+            hit("docs/plan.md", "retry in the plan"),
+        ];
+        *lock(&fake.docs) = vec![
+            doc("notes/secret.md", &["adr"], &["pelican"], "Secret."),
+            doc("docs/plan.md", &["adr"], &[], ""),
+        ];
+        let overview = hub
+            .handle(call(
+                7,
+                Request::ListTags {
+                    tag: None,
+                    limit: None,
+                },
+            ))
+            .into_result()
+            .expect("a result");
+        assert_eq!(overview["documents"], 1);
+        assert_eq!(
+            overview["tags"],
+            json!([{"name": "adr", "count": 1, "from": "frontMatter"}])
+        );
+        let pelican = hub
+            .handle(call(
+                8,
+                Request::ListTags {
+                    tag: Some("pelican".to_owned()),
+                    limit: None,
+                },
+            ))
+            .into_result()
+            .expect("a result");
+        assert_eq!(pelican["total"], 0);
+        let listed = hub
+            .handle(call(9, search("", &["adr"])))
+            .into_result()
+            .expect("a result");
+        assert_eq!(listed["total"], 1);
+        assert_eq!(listed["docs"][0]["path"], "docs/plan.md");
+        let found = hub
+            .handle(call(10, search("retry", &["adr"])))
+            .into_result()
+            .expect("a result");
+        assert_eq!(found["hits"].as_array().expect("hits").len(), 1);
+        assert_eq!(found["hits"][0]["path"], "docs/plan.md");
     }
 
     #[test]
@@ -1013,13 +1256,7 @@ mod tests {
             hit("docs/plan.md", "the pelican"),
         ];
         let found = hub
-            .handle(call(
-                12,
-                Request::Search {
-                    query: "pelican".to_owned(),
-                    limit: None,
-                },
-            ))
+            .handle(call(12, search("pelican", &[])))
             .into_result()
             .expect("a result");
         assert_eq!(found["hits"].as_array().expect("hits").len(), 1);
@@ -1038,6 +1275,7 @@ mod tests {
             Request::Search {
                 query: "plan".to_owned(),
                 limit: None,
+                tags: Vec::new(),
             },
         ));
         let status = hub.status();

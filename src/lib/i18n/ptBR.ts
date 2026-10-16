@@ -1131,6 +1131,7 @@ export const ptBR = {
   "dialog.filter.markdown": "Markdown",
   "agent.request.list_notes": "Listou suas notas compartilhadas",
   "agent.request.read_note": "Leu a nota {subject}",
+  "agent.request.list_tags": "Consultou suas tags",
   "cmd.moveToProject": "Mover a nota para um projeto...",
   "error.notesNewer":
     "Estas notas foram usadas por último por um TrailMark mais novo, então uma nota não pode ser compartilhada por este. Parar de compartilhar continua funcionando.",

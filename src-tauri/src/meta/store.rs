@@ -12,6 +12,7 @@
 //! system: the file may have been written on one that tells them apart.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -104,6 +105,26 @@ impl Entries {
             }
         }
         Ok(entries)
+    }
+
+    /// Reads the `meta.toml` at `path` and changes nothing, for a program that only looks (the service that owns the
+    /// file also writes it, merges older files into it and watches it). A file that is not there is an empty store.
+    pub fn read_file(path: &Path) -> Result<Self, Problem> {
+        let bytes = match crate::util::read_with_retry(path) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Self::default()),
+            Err(e) => {
+                return Err(Problem {
+                    message: e.to_string(),
+                    line: None,
+                })
+            }
+        };
+        let text = std::str::from_utf8(&bytes).map_err(|_| Problem {
+            message: "the file is not valid UTF-8".to_owned(),
+            line: None,
+        })?;
+        Self::parse(text.trim_start_matches('\u{feff}'))
     }
 
     /// The text of the `meta.toml`: sorted by path, so the file diffs cleanly.
@@ -270,6 +291,28 @@ description = \"How the feed groups events.\"
         e.set_description("docs/a b.md", "A \"quoted\" description, with ünïcode.");
         e.set_description("only-description.md", "Just text");
         assert_eq!(Entries::parse(&e.to_toml()), Ok(e));
+    }
+
+    #[test]
+    fn a_file_is_read_without_being_touched() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("meta.toml");
+        assert_eq!(Entries::read_file(&path), Ok(Entries::default()));
+        let mut e = Entries::default();
+        e.set_tags("a.md", &tags(&["x"]));
+        e.set_description("a.md", "About a.");
+        // a byte order mark in front (some editors add one) is not part of the file
+        let text = format!("\u{feff}{}", e.to_toml());
+        std::fs::write(&path, &text).expect("write");
+        assert_eq!(Entries::read_file(&path), Ok(e));
+        assert_eq!(std::fs::read_to_string(&path).expect("read"), text);
+
+        std::fs::write(&path, "[files.\"a.md\"]\ntags = 5\n").expect("write");
+        assert_eq!(Entries::read_file(&path).expect_err("type").line, Some(2));
+        std::fs::write(&path, [0xff, 0xfe, 0x00]).expect("write");
+        assert!(Entries::read_file(&path).is_err(), "not UTF-8");
+        // a folder is no file
+        assert!(Entries::read_file(dir.path()).is_err());
     }
 
     #[test]

@@ -2,21 +2,26 @@
 //! in, with its setting read from the app's own data, and its unread documents and search index worked out from the
 //! files. Nothing here needs the window, and nothing here changes the project.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use crate::comments::{CommentBook, CommentError, CommentFilter, CommentView, FileProblem};
 use crate::git::{self, Discovery};
+use crate::meta::filetags;
+use crate::meta::store::Entries;
 use crate::notes;
 use crate::search::indexer::Indexer;
-use crate::search::{Bm25Index, SearchProvider};
+use crate::search::Bm25Index;
 use crate::session::{AppSettingsStore, StateStore};
 use crate::unread;
-use crate::vault::{Vault, VaultError};
+use crate::util::modified_ms;
+use crate::vault::{NodeKind, Vault, VaultError};
 use crate::watch::{PathFilter, SigStore};
 
 use super::answers;
 use super::protocol::{CommentList, Hit, Opened, ProtocolError, UnreadList};
+use super::tags::{is_document, unreadable_meta, Doc, DocIndex};
 
 /// The environment variable that points a debug build at another data folder, so that the tests which run the real
 /// program never touch the person's own. Release builds ignore it.
@@ -93,11 +98,25 @@ struct Searcher {
     indexer: Indexer,
 }
 
+/// The tags a document's front matter had, as they were when its size and time were last seen.
+struct Seen {
+    len: u64,
+    mtime_ms: u64,
+    tags: Vec<String>,
+}
+
 /// A project read from its files.
 pub(crate) struct Project {
     vault: Arc<Vault>,
     filter: Arc<PathFilter>,
     read_path: PathBuf,
+    /// Where the tags and descriptions added in TrailMark are: `.trailmark/meta.toml`, or a file in the app's data
+    /// before the project has a `.trailmark/` folder.
+    meta_path: PathBuf,
+    /// The file in the app's data that the tags lived in before the project had a `.trailmark/` folder, when it is
+    /// still there (the window merges it into `meta_path` the next time it opens the project).
+    older_meta_path: Option<PathBuf>,
+    front_matter: Mutex<HashMap<String, Seen>>,
     comments: CommentBook,
     searcher: Mutex<Option<Searcher>>,
     /// The notes folder, when it lies inside the project: never shown, opened or commented on.
@@ -140,6 +159,9 @@ impl Project {
             vault,
             filter,
             read_path: store.read_path(),
+            meta_path: store.meta_path(),
+            older_meta_path: store.legacy_meta_path(),
+            front_matter: Mutex::new(HashMap::new()),
             comments,
             searcher: Mutex::new(None),
             private,
@@ -152,9 +174,60 @@ impl Project {
         UnreadList::new(answers::unread_docs(&self.vault, &paths))
     }
 
-    /// The best sections for `query`. The index is built from the files on the first call and brought up to date
-    /// on the later ones (only files whose size or time changed are read again).
-    pub(crate) fn search(&self, query: &str, limit: usize) -> Vec<Hit> {
+    /// The Markdown documents with their tags and descriptions, worked out from the files: the tags in each document's
+    /// front matter and the ones added in TrailMark (read from `meta.toml`, which is never written here). Front matter
+    /// is read again only for the documents whose size or time changed since the last call.
+    pub(crate) fn docs(&self) -> DocIndex {
+        let (entries, problem) = self.app_entries();
+        let mut seen = self
+            .front_matter
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let docs = self
+            .vault
+            .walk()
+            .into_iter()
+            .filter(|item| {
+                item.kind == NodeKind::File
+                    && is_document(&self.filter, &item.rel)
+                    && !self.private.covers_path(&self.vault, &item.rel)
+            })
+            .map(|item| {
+                let entry = entries.get(&item.rel);
+                Doc {
+                    file_tags: front_matter_tags(&mut seen, &item.rel, &item.abs),
+                    app_tags: entry.map(|e| e.tags.clone()).unwrap_or_default(),
+                    description: entry.map(|e| e.description.clone()).unwrap_or_default(),
+                    path: item.rel,
+                }
+            })
+            .collect();
+        DocIndex::new(docs, problem.map(|problem| unreadable_meta(&problem)))
+    }
+
+    /// The tags and descriptions added in TrailMark, or why they cannot be read (then there are none, as in the window).
+    fn app_entries(&self) -> (Entries, Option<crate::meta::store::Problem>) {
+        let mut entries = match Entries::read_file(&self.meta_path) {
+            Ok(entries) => entries,
+            Err(problem) => return (Entries::default(), Some(problem)),
+        };
+        // what was added before the project had a `.trailmark/` folder already counts: the window only has not moved it yet
+        if let Some(older) = self
+            .older_meta_path
+            .as_deref()
+            .and_then(|path| Entries::read_file(path).ok())
+        {
+            entries.merge(older);
+        }
+        (entries, None)
+    }
+
+    /// The best sections for `query`, in the documents that have all of `tags` (any document when there are none),
+    /// each with its document's tags and description. The index is built from the files on the first call and brought
+    /// up to date on the later ones (only files whose size or time changed are read again).
+    pub(crate) fn search(&self, query: &str, limit: usize, tags: &[String]) -> Vec<Hit> {
+        let docs = self.docs();
+        let allow = docs.allowing(tags);
         let mut searcher = self.searcher.lock().unwrap_or_else(PoisonError::into_inner);
         let never = std::sync::atomic::AtomicBool::new(false);
         let searcher = searcher.get_or_insert_with(|| {
@@ -169,7 +242,12 @@ impl Project {
             Searcher { index, indexer }
         });
         searcher.indexer.rescan(&never);
-        answers::plain_hits(searcher.index.search(query, limit))
+        let found = searcher
+            .index
+            .read()
+            .map(|index| index.search_in(query, limit, &*allow))
+            .unwrap_or_default();
+        docs.describe(answers::plain_hits(found))
     }
 
     /// The comments of the kind asked for. Read-only: the places that moved are not written down here. A comment on a note of a
@@ -217,6 +295,30 @@ impl Project {
     ) -> Result<Opened, ProtocolError> {
         answers::prepare_open_hiding(&self.vault, &self.private, path, line, heading)
     }
+}
+
+/// The tags in the front matter of the document `rel` (at `abs`), read again only when its size or time changed.
+fn front_matter_tags(seen: &mut HashMap<String, Seen>, rel: &str, abs: &Path) -> Vec<String> {
+    let Ok(meta) = std::fs::metadata(abs) else {
+        return Vec::new();
+    };
+    let (len, mtime_ms) = (meta.len(), modified_ms(&meta));
+    if let Some(known) = seen
+        .get(rel)
+        .filter(|known| known.len == len && known.mtime_ms == mtime_ms)
+    {
+        return known.tags.clone();
+    }
+    let tags = filetags::read(abs);
+    seen.insert(
+        rel.to_owned(),
+        Seen {
+            len,
+            mtime_ms,
+            tags: tags.clone(),
+        },
+    );
+    tags
 }
 
 #[cfg(test)]
@@ -424,22 +526,25 @@ mod tests {
     fn search_builds_the_index_from_the_files_and_follows_edits() {
         let fx = fx();
         let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
-        let hits = project.search("beacon", 10);
+        let hits = project.search("beacon", 10, &[]);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].path, "docs/plan.md");
         assert_eq!(hits[0].heading_path, ["Plan", "Rollout"]);
         assert_eq!(hits[0].line, 5);
         assert!(hits[0].snippet.contains("beacon"));
         assert!(!hits[0].snippet.contains("<mark>"), "plain text");
-        assert_eq!(project.search("nonexistentword", 10), Vec::<Hit>::new());
+        assert_eq!(
+            project.search("nonexistentword", 10, &[]),
+            Vec::<Hit>::new()
+        );
 
         // A document written after the first search is found by the next one.
         write(&fx, "docs/new.md", "# New\n\nA second beacon.\n");
-        let hits = project.search("beacon", 10);
+        let hits = project.search("beacon", 10, &[]);
         assert_eq!(hits.len(), 2);
         // And one that was deleted is gone.
         fs::remove_file(fx.project.path().join("docs/plan.md")).expect("rm");
-        let hits = project.search("beacon", 10);
+        let hits = project.search("beacon", 10, &[]);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].path, "docs/new.md");
     }
@@ -451,7 +556,7 @@ mod tests {
         write(&fx, "secret/keys.md", "# Keys\n\nthe beacon passphrase\n");
         let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
         let paths: Vec<_> = project
-            .search("beacon", 10)
+            .search("beacon", 10, &[])
             .into_iter()
             .map(|h| h.path)
             .collect();
@@ -472,7 +577,7 @@ mod tests {
         let notes = root(&fx).join("notes");
         let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
         // before the folder is the notes folder it is a folder of the project like any other
-        let before = project.search("pelican", 10);
+        let before = project.search("pelican", 10, &[]);
         assert_eq!(before.len(), 1, "the control: the note is found");
         drop(project);
 
@@ -480,12 +585,12 @@ mod tests {
             .set_notes_folder(&notes.display().to_string())
             .expect("choose the notes folder");
         let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
-        assert_eq!(project.search("pelican", 10), Vec::<Hit>::new());
+        assert_eq!(project.search("pelican", 10, &[]), Vec::<Hit>::new());
         // the rest of the project is still searched
-        assert_eq!(project.search("beacon", 10).len(), 1);
+        assert_eq!(project.search("beacon", 10, &[]).len(), 1);
         // and an edit to a note does not bring it in later
         write(&fx, "notes/more.md", "# More\n\nA second pelican.\n");
-        assert_eq!(project.search("pelican", 10), Vec::<Hit>::new());
+        assert_eq!(project.search("pelican", 10, &[]), Vec::<Hit>::new());
         let hash = format!("{:016x}", crate::util::hash_bytes(b"old"));
         let read = store(&fx).read_path();
         fs::create_dir_all(read.parent().expect("parent")).expect("mkdir");

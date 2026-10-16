@@ -1142,6 +1142,7 @@ export const itIT = {
   "dialog.filter.markdown": "Markdown",
   "agent.request.list_notes": "Ha elencato le tue note condivise",
   "agent.request.read_note": "Ha letto la nota {subject}",
+  "agent.request.list_tags": "Ha consultato i tuoi tag",
   "cmd.moveToProject": "Sposta la nota in un progetto...",
   "error.moveInside":
     "Una nota non può essere spostata nella cartella delle note. Scegli una posizione in un progetto.",

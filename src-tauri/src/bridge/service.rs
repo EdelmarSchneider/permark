@@ -347,6 +347,7 @@ mod tests {
             .call(Request::Search {
                 query: "Ship".to_owned(),
                 limit: None,
+                tags: Vec::new(),
             })
             .await
             .expect("hits");

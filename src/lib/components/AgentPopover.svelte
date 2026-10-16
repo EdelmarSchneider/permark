@@ -16,6 +16,7 @@
     get_context: "agent.request.get_context",
     list_unread: "agent.request.list_unread",
     search: "agent.request.search",
+    list_tags: "agent.request.list_tags",
     list_comments: "agent.request.list_comments",
     resolve_comment: "agent.request.resolve_comment",
     open: "agent.request.open",
