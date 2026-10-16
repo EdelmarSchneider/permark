@@ -3,6 +3,7 @@
   import { tick } from "svelte";
   import { bridge } from "../bridge";
   import { keys, t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
   import { fullPlace } from "../notesModel";
@@ -52,6 +53,7 @@
   }
 
   function onnamekeydown(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       void commit();

@@ -12,6 +12,7 @@
     withExtension,
   } from "../editor/newFile";
   import { t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { app } from "../stores/app.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
@@ -64,6 +65,7 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       void submit();

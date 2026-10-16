@@ -1,6 +1,7 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { formatNumber, t, tn } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { crumbOf, sanitizeSnippet } from "../searchModel";
   import { knownTagsHint } from "../tagModel";
   import { app } from "../stores/app.svelte";
@@ -74,6 +75,7 @@
   }
 
   function onQueryKey(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     const chips = box.chips;
     if (box.handleKey(e)) {
       e.preventDefault();
@@ -106,6 +108,7 @@
   }
 
   function onListKey(e: KeyboardEvent): void {
+    if (isComposingKey(e)) return;
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();

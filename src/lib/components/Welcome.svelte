@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { keys, t } from "../i18n";
+  import { isComposingKey } from "../ime";
   import { app } from "../stores/app.svelte";
   import { clock } from "../stores/clock.svelte";
   import { relativeTime } from "../time";
@@ -26,7 +27,7 @@
   }
 
   function onkeydown(e: KeyboardEvent): void {
-    if (recents.length === 0) return;
+    if (isComposingKey(e) || recents.length === 0) return;
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       active = (active + (e.key === "ArrowDown" ? 1 : -1) + recents.length) % recents.length;
