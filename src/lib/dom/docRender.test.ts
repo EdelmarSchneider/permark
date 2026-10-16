@@ -21,6 +21,8 @@ const enhance: EnhanceContext = {
     diagramPending: "Drawing",
     diagramFailed: "Failed",
     alertTitles: {},
+    codeAuto: (name) => `auto: ${name}`,
+    codeAutoHint: "Guessed language",
   },
   resolveImage: async (path) => path,
 };
