@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { drawnSize } from "../imageZoom";
+  import { centreOf, drawnSize, scrollToCentre } from "../imageZoom";
   import { t } from "../i18n";
   import { basename } from "../paths";
   import { assetUrl } from "../platform";
@@ -48,26 +48,33 @@
     media.noteFacts(view.path, { width: img.naturalWidth, height: img.naturalHeight });
   }
 
-  /** Keeps the middle of the picture in the middle of the pane when its size changes. */
-  async function zoomed(change: () => void): Promise<void> {
+  /**
+   * Makes a change of the zoom and keeps the middle of the picture in the middle of the pane. The store runs every change
+   * through this, so the keys, the buttons and the wheel all do the same.
+   */
+  async function keepCentre(change: () => void): Promise<void> {
     const pane = stage;
     if (!pane) return change();
-    const centre = {
-      x: (pane.scrollLeft + pane.clientWidth / 2) / Math.max(1, pane.scrollWidth),
-      y: (pane.scrollTop + pane.clientHeight / 2) / Math.max(1, pane.scrollHeight),
-    };
+    const centre = centreOf(pane);
     change();
     await tick();
-    pane.scrollLeft = centre.x * pane.scrollWidth - pane.clientWidth / 2;
-    pane.scrollTop = centre.y * pane.scrollHeight - pane.clientHeight / 2;
+    const { left, top } = scrollToCentre(centre, pane);
+    pane.scrollLeft = left;
+    pane.scrollTop = top;
   }
+
+  // the store asks for it while a picture is on show
+  $effect(() => {
+    media.useAnchor((change) => void keepCentre(change));
+    return () => media.useAnchor(null);
+  });
 
   function onwheel(e: WheelEvent): void {
     if (!e.ctrlKey) return;
     // the same zoom as in a document, here on the picture; the document view must not zoom its text as well
     e.preventDefault();
     e.stopPropagation();
-    void zoomed(() => media.zoomBy(e.deltaY < 0 ? 1 : -1));
+    media.zoomBy(e.deltaY < 0 ? 1 : -1);
   }
 
   // The room the picture is fitted into follows the pane.
@@ -122,14 +129,14 @@
         label={t("media.zoomOut")}
         hint={t("media.zoomOutHint")}
         disabled={!natural}
-        onclick={() => void zoomed(() => media.zoomBy(-1))}
+        onclick={() => media.zoomBy(-1)}
       />
       <button
         type="button"
         class="btn btn--ghost btn--sm media-bar__scale"
         title={media.isFit ? t("media.actualSize") : t("media.fit")}
         disabled={!natural}
-        onclick={() => void zoomed(() => media.toggleActual())}
+        onclick={() => media.toggleActual()}
       >
         {media.label}
       </button>
@@ -139,7 +146,7 @@
         label={t("media.zoomIn")}
         hint={t("media.zoomInHint")}
         disabled={!natural}
-        onclick={() => void zoomed(() => media.zoomBy(1))}
+        onclick={() => media.zoomBy(1)}
       />
       <IconButton
         small
@@ -148,7 +155,7 @@
         hint={t("media.fitHint")}
         pressed={media.isFit}
         disabled={!natural || media.isFit}
-        onclick={() => void zoomed(() => media.reset())}
+        onclick={() => media.reset()}
       />
       <span class="media-bar__info" role="status">{summary}</span>
     </div>
@@ -178,7 +185,7 @@
           style:height={drawn ? `${drawn.height}px` : undefined}
           onload={decoded}
           onerror={() => (failed = true)}
-          onclick={() => void zoomed(() => media.toggleActual())}
+          onclick={() => media.toggleActual()}
         />
       </div>
     </div>

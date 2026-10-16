@@ -7,6 +7,7 @@
   import { updates } from "../stores/updates.svelte";
   import { describeUpdate, updatePercent } from "../updates";
   import { relativeTime } from "../time";
+  import { isStacked } from "../toastLayout";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
 
@@ -27,7 +28,7 @@
     class={[
       "toast",
       current.type === "message" && current.tone === "warn" && "toast--warn",
-      current.type === "message" && current.second && "toast--stacked",
+      isStacked(current) && "toast--stacked",
       toast.leaving && "is-leaving",
     ]}
     role={current.type === "message" && current.tone === "warn" ? "alert" : "status"}
