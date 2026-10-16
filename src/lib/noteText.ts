@@ -43,10 +43,17 @@ function cleanLine(raw: string): string {
     .trim();
 }
 
-/** How many words a note has: runs of characters between blanks that have a letter or a digit (not `-`, `#` or `---`). */
+/** Han, Hiragana and Katakana (with the long-vowel mark): scripts written without blanks between words. */
+const UNSPACED = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー]/gu;
+
+/**
+ * How many words a note has: runs of characters between blanks that have a letter or a digit (not `-`, `#` or `---`).
+ * Han, Hiragana and Katakana are written without blanks, so each of those characters counts as one word, as word
+ * processors do; a text that mixes both adds the two counts.
+ */
 export function countWords(text: string): number {
-  let count = 0;
-  for (const run of text.split(/\s+/)) {
+  let count = text.match(UNSPACED)?.length ?? 0;
+  for (const run of text.replace(UNSPACED, " ").split(/\s+/)) {
     if (/[\p{L}\p{N}]/u.test(run)) count += 1;
   }
   return count;
