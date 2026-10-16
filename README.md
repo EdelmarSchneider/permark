@@ -79,7 +79,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   and so do fences with attributes (`` ```rust title="main.rs" ``). A block with no language is colored only when its language is
   unmistakable, and is then labelled *auto*; otherwise it stays plain. Visual and Source color the code too while you edit
 - Frontmatter shown as a clean metadata card
-- Light and dark themes, adjustable zoom, and a focus mode with both side panels collapsed
+- Light and dark themes (with a softer paper, sage or gray tone for the light one), adjustable zoom, and a focus mode with both side panels collapsed
 - Three **reading widths**: Comfortable (a book-like column), Wide and Full. Wide tables, diagrams and images take the room
   they need while the text stays at a comfortable measure
 - JSON, XML and plain text through an extensible renderer registry
@@ -192,7 +192,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 - Tags follow the files, and the live feed shows the whole operation as one row
 
 ### 🌿 Git-aware
-- Badges for modified, added and untracked files, with folder roll-up
+- Badges for modified, added and untracked files, with folder roll-up and a legend that says what each letter means
 - Baseline **"since your last visit"** (default) or **"since HEAD"**: useful when agents commit every few minutes
 - Banner for rebase or merge in progress; clear messages when git can't read a repo
 
