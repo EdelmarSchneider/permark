@@ -18,7 +18,6 @@
   let problem = $state<string | null>(null);
 
   const path = $derived(notes.current);
-  const fresh = $derived(notes.unborn);
   const entry = $derived(notes.currentEntry);
   const title = $derived(entry && entry.title !== "" ? entry.title : t("notes.untitled"));
   const stem = $derived((path ?? "").replace(/\.(md|markdown)$/i, ""));
@@ -116,7 +115,7 @@
             id: "pin",
             label: pinned ? t("notes.unpin") : t("notes.pin"),
             icon: pinned ? "pin-off" : "pin",
-            disabled: !path || fresh || readOnly,
+            disabled: !path || readOnly,
             onselect: () => path && void notes.togglePin(path),
           },
           {
@@ -124,7 +123,7 @@
             label: t("notes.rename"),
             icon: "pencil",
             hint: "F2",
-            disabled: !path || fresh || readOnly,
+            disabled: !path || readOnly,
             onselect: () => (notes.renaming = true),
           },
           { type: "separator" },
@@ -148,7 +147,7 @@
             id: "versions",
             label: t("notes.versionsMenu"),
             icon: "restore",
-            disabled: !path || fresh,
+            disabled: !path,
             onselect: () => void notes.showVersions(),
           },
           { type: "separator" },
@@ -156,7 +155,7 @@
             id: "delete",
             label: t("notes.delete"),
             icon: "trash",
-            disabled: !path || fresh || readOnly,
+            disabled: !path || readOnly,
             onselect: () => path && void notes.deleteNotes([path]),
           },
           { type: "separator" },
@@ -183,7 +182,7 @@
   ]}
 >
   {#if path}
-    {#if notes.renaming && !fresh}
+    {#if notes.renaming}
       <div class="notes-rename">
         <input
           bind:this={nameInput}
@@ -204,11 +203,7 @@
     {:else}
       <div
         class="notes-header__title"
-        title={fresh
-          ? t("notes.untitled")
-          : isFile
-            ? fullPlace(entry?.folder ?? null, title)
-            : path}
+        title={isFile ? fullPlace(entry?.folder ?? null, title) : path}
       >
         <span class="notes-header__text">{title}</span>
         {#if pinned}<Icon name="pin" size="xs" class="notes-header__pin" />{/if}

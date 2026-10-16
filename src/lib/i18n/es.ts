@@ -1105,9 +1105,9 @@ export const es = {
     "Estas notas están abiertas en otra ventana de TrailMark, así que aquí solo puedes leerlas.",
   "notes.readOnly.unwritable":
     "TrailMark no puede escribir en la carpeta de notas, así que solo puedes leer las notas.",
-  "notes.folderMissing": "No se encontró la carpeta de notas: {path}",
+  "notes.folderMissing": "La carpeta de notas que elegiste no está: {path}",
   "notes.folderMissingHint":
-    "Puede estar en una unidad que no está conectada, o se le cambió el nombre. TrailMark no crea una carpeta vacía por su cuenta.",
+    "Puede estar en una unidad que no está conectada, o se le cambió el nombre o se movió. TrailMark no crea por su cuenta una carpeta vacía en su lugar, porque tus notas quedarían divididas en dos.",
   "notes.locate": "Localizar...",
   "notes.createFolder": "Crearla",
   "notes.failed": "No se pudieron abrir las notas: {message}",
@@ -1118,7 +1118,7 @@ export const es = {
   "welcome.notes": "Notas",
   "welcome.newNote": "Nueva nota",
   "welcome.noNotes": "Todavía no hay notas.",
-  "welcome.notesMissing": "No se encontró la carpeta de notas: {path}",
+  "welcome.notesMissing": "La carpeta de notas que elegiste no está: {path}",
   "settings.notes": "Carpeta de notas",
   "settings.notesFolderChange": "Cambiar...",
   "settings.notesFolderHint":

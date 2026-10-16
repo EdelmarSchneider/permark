@@ -375,7 +375,10 @@ export type StartIn = "welcome" | "notes";
 /** The notes folder: where it is, and whether it is there. */
 export type NotesFolder = {
   path: string;
-  /** "missing": the person can locate it or create it; it is never made quietly. */
+  /**
+   * "missing": a folder the person chose that is not there (an unplugged drive, a renamed folder). They can locate it or create it;
+   * it is never made quietly. The default folder is never missing: opening the notes makes it, without asking.
+   */
   status: "ready" | "missing";
   /** The default folder, not one the person chose. */
   isDefault: boolean;
@@ -455,14 +458,15 @@ export type NotesOpened = {
   /** Notes made from text that a crash left in temporary files. */
   recovered: string[];
 };
+/** A new note: an empty file, already in the list. `hash` is the hash of that file, which the first save of its text is guarded with. */
+export type NoteCreated = { path: string; hash: string; modifiedMs: number };
 /**
- * The result of saving a note. "saved": `path` is the file's name, which differs from the one asked for only when a new
- * note's name was taken meanwhile. "blank": a new note whose text is still blank, so no file was made. "conflict": the note
- * changed since it was opened; nothing of the other version was overwritten, and the text being saved is in the note `copy`.
+ * The result of saving a note. "saved": `path` is the file's name, which differs from the one asked for only when the note had
+ * been deleted by another program and its name was taken since (`created` is then true). "conflict": the note changed since it
+ * was opened; nothing of the other version was overwritten, and the text being saved is in the note `copy`.
  */
 export type NoteSaved =
   | { result: "saved"; path: string; hash: string; modifiedMs: number; created: boolean }
-  | { result: "blank" }
   | { result: "conflict"; copy: string };
 /** An earlier version of a note. */
 export type NoteVersion = { id: string; writtenMs: number; sizeBytes: number };
@@ -473,3 +477,9 @@ export type NoteRestored = { hash: string; modifiedMs: number };
 export type NotesRequest = { newNote: boolean; open: string | null; openFile: string | null };
 /** What the program is. */
 export type LaunchMode = { notes: boolean };
+/**
+ * What became of a window that showed only the welcome screen when it asked for the Notes window. "became": this window is the
+ * Notes window now (same window, same place). "forwarded": a Notes window already runs in another program and was asked to come
+ * forward, so this window is to close.
+ */
+export type NotesHandoff = "became" | "forwarded";

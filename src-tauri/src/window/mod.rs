@@ -14,7 +14,7 @@
 mod place;
 mod track;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -77,6 +77,22 @@ impl Remembered {
     }
 }
 
+/// Whether this program is the Notes window now.
+fn is_notes_window(app: &AppHandle) -> bool {
+    app.try_state::<NotesLaunch>()
+        .is_some_and(|launch| launch.is_notes_window())
+}
+
+/// The folder a window's size and position are kept in: the Notes window's own, or the app-wide one of every other window (the
+/// welcome screen, a project that was never open before, a single file).
+fn place_dir(app_data: &Path, notes_window: bool) -> PathBuf {
+    if notes_window {
+        app_data.join(NOTES_WINDOW_DIR)
+    } else {
+        app_data.to_path_buf()
+    }
+}
+
 /// What follows the window while the app runs.
 struct Keeper {
     remembered: Arc<Remembered>,
@@ -93,28 +109,25 @@ pub fn setup(app: &App) {
     };
     if let Ok(app_data) = commands::app_data_dir(app.handle()) {
         // The Notes window has a place of its own: it is not the project window's, and not another project's.
-        let notes_window = app
-            .try_state::<NotesLaunch>()
-            .is_some_and(|launch| launch.is_notes_window());
-        let place_dir = if notes_window {
-            app_data.join(NOTES_WINDOW_DIR)
-        } else {
-            app_data.clone()
-        };
+        let notes_window = is_notes_window(app.handle());
         let opening = commands::command_line_path();
         let saved = if notes_window {
-            WindowState::load(&place_dir)
+            WindowState::load(&place_dir(&app_data, true))
         } else {
             saved_for_launch(&app_data, opening.as_deref().map(Path::new))
         };
         let placed = saved.and_then(|saved| restore(&window, &saved, min_size(app)));
 
         let host = app.state::<AppState>().inner().clone();
+        let role = app.handle().clone();
         let remembered = Arc::new(Remembered {
             tracker: Mutex::new(Tracker::new(placed)),
             write: Box::new(move |state| {
+                // A window that showed the welcome screen can turn into the Notes window while it runs (it keeps its place), and
+                // from then on its place is the Notes window's: it is asked each time, not once.
+                let notes_window = is_notes_window(&role);
                 // Best effort: a window that cannot be remembered is not worth an error.
-                let _ = state.save(&place_dir);
+                let _ = state.save(&place_dir(&app_data, notes_window));
                 if !notes_window {
                     host.save_window(state);
                 }
@@ -262,4 +275,19 @@ fn restore(window: &WebviewWindow, saved: &WindowState, min: (f64, f64)) -> Opti
         scale: normal.scale,
         maximized: at.maximized,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Notes window keeps its size and position apart from every other window's. A window that showed the welcome screen and
+    /// turned into the Notes window is remembered there from then on, and the app-wide place stays the welcome screen's.
+    #[test]
+    fn the_notes_window_keeps_its_place_apart_from_every_other_window() {
+        let data = Path::new("/data/dev.example.app");
+        assert_eq!(place_dir(data, false), data);
+        assert_eq!(place_dir(data, true), data.join(NOTES_WINDOW_DIR));
+        assert_ne!(place_dir(data, true), place_dir(data, false));
+    }
 }

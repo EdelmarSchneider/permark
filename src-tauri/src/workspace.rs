@@ -20,7 +20,7 @@ use crate::bridge::socket::Endpoint;
 use crate::comments::{
     CommentBook, CommentError, CommentView, Listener as CommentsListener, NewComment,
 };
-use crate::edit::{self, AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
+use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::fileops::{
     BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers, Move,
@@ -865,16 +865,6 @@ impl Workspace {
             })?);
         }
         let resolved = self.vault.resolve(path)?;
-        // a new note has a name and no file yet: it reads as empty
-        if self.is_unborn_note(path) {
-            return Ok(render::render_bytes(
-                &self.registry,
-                &resolved.abs,
-                &resolved.rel,
-                b"",
-                now_ms(),
-            ));
-        }
         // Parsing untrusted documents happens on a thread with a large stack (see `on_parser_stack`).
         Ok(on_parser_stack(|| {
             render::load_document(&self.registry, &resolved.abs, &resolved.rel)
@@ -901,17 +891,6 @@ impl Workspace {
                 .source(&doc.name)?;
             source.path = doc.ui_path;
             return Ok(source);
-        }
-        if self.is_unborn_note(path) {
-            let resolved = self.vault.resolve(path)?;
-            // no hash: the first save of the text makes the file
-            return Ok(SourceDoc {
-                path: resolved.rel,
-                text: String::new(),
-                hash: String::new(),
-                parsed: edit::parse_blocks(""),
-                modified_ms: now_ms(),
-            });
         }
         Ok(self.editor().source(path)?)
     }
@@ -1008,13 +987,6 @@ impl Workspace {
         Ok(self
             .notes()?
             .save(path, text, expected_hash, now_ms(), notes::Moment::now())?)
-    }
-
-    /// Whether `path` is a new note that has a name and no file yet.
-    fn is_unborn_note(&self, path: &str) -> bool {
-        self.notes
-            .as_ref()
-            .is_some_and(|part| part.service.is_unborn(path))
     }
 
     /// Writing is refused in the notes of a second TrailMark window (see [`NotesService::open`]).
@@ -2647,14 +2619,29 @@ deepword
     }
 
     #[test]
-    fn a_new_note_reads_as_empty_and_gets_its_file_with_the_first_text() {
+    fn a_new_note_is_an_empty_file_at_once_and_its_first_text_is_saved_over_it() {
         let fx = Fx::new();
         let ws = fx.open_notes();
-        let name = ws
+        let created = ws
             .notes()
             .expect("notes")
-            .reserve_new(notes::Moment::now())
-            .expect("name");
+            .create_new(notes::Moment::now(), now_ms())
+            .expect("a new note");
+        let name = created.path;
+        // the file is there, empty, and in the list as a note with no title
+        assert_eq!(
+            std::fs::read(fx.project.path().join(&name)).expect("read"),
+            b""
+        );
+        let listed = ws.notes().expect("notes").list();
+        assert_eq!(
+            listed
+                .notes
+                .iter()
+                .map(|n| (n.path.as_str(), n.title.as_str()))
+                .collect::<Vec<_>>(),
+            [(name.as_str(), "")]
+        );
         // the editor opens it like any document
         let view = ws.read_document(&name).expect("an empty document");
         assert_eq!(
@@ -2662,15 +2649,20 @@ deepword
             (crate::render::DocKind::Markdown, "")
         );
         let source = ws.document_source(&name).expect("an empty source");
-        assert_eq!((source.text.as_str(), source.hash.as_str()), ("", ""));
-        assert!(!fx.project.path().join(&name).exists(), "no file yet");
-
         assert_eq!(
-            ws.save_note(&name, "  ", "").expect("blank"),
-            NoteSaved::Blank
+            (source.text.as_str(), source.hash.as_str()),
+            ("", created.hash.as_str())
         );
+
+        // blank text is saved as it is: nothing is skipped and nothing is removed
+        let NoteSaved::Saved { hash, .. } = ws
+            .save_note(&name, "  ", &created.hash)
+            .expect("blank text")
+        else {
+            panic!("saved");
+        };
         let NoteSaved::Saved { hash, path, .. } =
-            ws.save_note(&name, "# First", "").expect("saved")
+            ws.save_note(&name, "# First", &hash).expect("saved")
         else {
             panic!("saved");
         };

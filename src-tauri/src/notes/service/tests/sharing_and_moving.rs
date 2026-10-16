@@ -390,9 +390,10 @@ fn the_note_stays_and_the_copy_goes_when_the_note_cannot_be_recycled() {
         T0,
         &|_| true,
     );
-    let name = service.reserve_new(MOMENT).expect("reserve");
+    let created = service.create_new(MOMENT, T0).expect("create");
+    let name = created.path;
     service
-        .save(&name, "# One\n", "", T0, MOMENT)
+        .save(&name, "# One\n", &created.hash, T0, MOMENT)
         .expect("save");
     let project = project();
     let error = service
@@ -536,10 +537,7 @@ fn undo_leaves_a_copy_that_was_changed_since_and_keeps_it_listed() {
 fn a_name_for_the_save_dialog_is_made_from_the_title_and_is_free_in_the_folder() {
     let f = fx();
     let titled = f.new_note("# Ask the agent: add tests?\n\nbody\n");
-    let blank_title = f.service.reserve_new(MOMENT).expect("reserve");
-    f.service
-        .save(&blank_title, "---\n\n", "", T0, MOMENT)
-        .expect("save");
+    let blank_title = f.new_note("---\n\n");
     let project = project();
     assert_eq!(
         f.service
@@ -578,4 +576,35 @@ fn a_second_window_cannot_move() {
         .expect_err("locked");
     assert_eq!(error.kind(), "notesLocked");
     assert!(!project.path().join("one.md").exists());
+}
+
+#[test]
+fn an_empty_note_can_be_shared_and_moved_like_any_other() {
+    let f = fx();
+    let note = f.new_note("");
+    f.service.set_shared(&note, true).expect("share");
+    assert!(entry(&f, &note).shared);
+    assert_eq!(shared_names(&f), std::slice::from_ref(&note));
+    let shared = read_shared(f.service.root(), &note).expect("an empty note reads as empty");
+    assert_eq!((shared.text.as_str(), shared.title.as_str()), ("", ""));
+
+    // it is moved as it is: an empty file, named after its own file because it has no title
+    let project = project();
+    let name = f.service.suggest_name(&note, None).expect("name");
+    assert_eq!(name, "2026-10-05 0907.md");
+    let target = project.path().join(&name);
+    let moved = f.service.move_to(&note, &target, T0).expect("move");
+    assert_eq!(fs::read(&target).expect("read"), b"");
+    assert!(!f.path(&note).exists());
+    assert_eq!(
+        shared_names(&f),
+        Vec::<String>::new(),
+        "sharing went with it"
+    );
+    let undone = f
+        .service
+        .undo_move(moved.undo_id.expect("undo"))
+        .expect("undo");
+    assert!(undone.removed);
+    assert_eq!(f.read(&undone.note), "");
 }

@@ -1077,9 +1077,9 @@ export const en = {
     "These notes are open in another TrailMark window, so you can only read them here.",
   "notes.readOnly.unwritable":
     "TrailMark can't write to the notes folder, so you can only read the notes.",
-  "notes.folderMissing": "Notes folder not found: {path}",
+  "notes.folderMissing": "The notes folder you chose isn't there: {path}",
   "notes.folderMissingHint":
-    "It may be on a drive that is not connected, or it was renamed. TrailMark does not create an empty folder by itself.",
+    "It may be on a drive that isn't connected, or it was renamed or moved. TrailMark won't create an empty folder in its place by itself, because your notes would end up split in two.",
   "notes.locate": "Locate...",
   "notes.createFolder": "Create it",
   "notes.failed": "Couldn't open the notes: {message}",
@@ -1090,7 +1090,7 @@ export const en = {
   "welcome.notes": "Notes",
   "welcome.newNote": "New note",
   "welcome.noNotes": "No notes yet.",
-  "welcome.notesMissing": "Notes folder not found: {path}",
+  "welcome.notesMissing": "The notes folder you chose isn't there: {path}",
   "settings.notes": "Notes folder",
   "settings.notesFolderChange": "Change...",
   "settings.notesFolderHint":

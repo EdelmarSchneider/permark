@@ -29,6 +29,7 @@ import {
 } from "../platform";
 import type {
   LooseStatus,
+  NoteCreated,
   NoteEntry,
   NoteMode,
   NoteVersion,
@@ -93,10 +94,8 @@ class NotesStore {
   /** The notes can only be read here: another TrailMark window has them open (or the folder cannot be written). */
   readOnly = $state<NotesReadOnly | null>(null);
   entries = $state.raw<NoteEntry[]>([]);
-  /** The note on screen. A new note has a name here before it has a file. */
+  /** The note on screen. */
   current = $state<string | null>(null);
-  /** The note on screen is new and has no file yet: it gets one with its first text. */
-  unborn = $state(false);
   filter = $state("");
   /** The notes whose text the search found for the filter (besides the ones whose title or snippet match). */
   found = $state.raw<ReadonlySet<string> | null>(null);
@@ -118,8 +117,6 @@ class NotesStore {
   /** Reload a loose file that changed on disk by itself when nothing was typed into it (Settings, Notes). Off by default. */
   autoReload = $state(readAutoReload());
 
-  /** The note was blank when it was opened: if it still is when it is left, it was never written in. */
-  private openedBlank = false;
   /** The versions of loose files whose change the person chose to ignore ("Keep mine" while reading): path to stamp. */
   private ignored = new Map<string, string>();
   private looseTimer: ReturnType<typeof setInterval> | null = null;
@@ -134,14 +131,8 @@ class NotesStore {
 
   // ---- what the window shows -----------------------------------------------------------------------
 
-  /** The notes as the list draws them: the filter applied, and a new note that has no file yet at the top. */
-  shown = $derived.by<NoteEntry[]>(() => {
-    const all =
-      this.unborn && this.current
-        ? [this.virtualEntry(this.current), ...this.entries]
-        : this.entries;
-    return filterNotes(all, this.filter, this.found);
-  });
+  /** The notes as the list draws them: the filter applied. */
+  shown = $derived.by<NoteEntry[]>(() => filterNotes(this.entries, this.filter, this.found));
 
   /** The current note's entry (null for one that is not in the list yet, or none). */
   currentEntry = $derived(
@@ -163,24 +154,6 @@ class NotesStore {
     return arrange(this.shown, now, this.frozen);
   }
 
-  private virtualEntry(path: string): NoteEntry {
-    return {
-      kind: "note",
-      path,
-      title: "",
-      snippet: "",
-      modifiedMs: this.frozen?.modifiedMs ?? Date.now(),
-      sizeBytes: 0,
-      pinned: false,
-      copied: false,
-      view: null,
-      folder: null,
-      missing: false,
-      unsaved: false,
-      shared: false,
-    };
-  }
-
   /** Forgets the list and the note on screen (the notes folder is about to be opened again). */
   reset(): void {
     if (this.refreshTimer !== null) clearTimeout(this.refreshTimer);
@@ -193,7 +166,6 @@ class NotesStore {
     this.readOnly = null;
     this.entries = [];
     this.current = null;
-    this.unborn = false;
     this.filter = "";
     this.found = null;
     this.frozen = null;
@@ -204,7 +176,6 @@ class NotesStore {
     this.looseNotice = null;
     this.missingKept = null;
     this.ignored.clear();
-    this.openedBlank = false;
     this.switching = false;
   }
 
@@ -407,8 +378,8 @@ class NotesStore {
   // ---- opening and leaving ------------------------------------------------------------------------
 
   /**
-   * Gets the open note ready to be left: its text is saved (a note that cannot be saved is not left), where it was left is
-   * remembered, a new note that was never written is forgotten and a blank note that was never written in is removed.
+   * Gets the open note ready to be left: its text is saved (a note that cannot be saved is not left) and where it was left is
+   * remembered. Nothing is removed: a note with no text in it stays in the list until the person deletes it.
    * Resolves to whether the note was left.
    */
   private async leave(): Promise<boolean> {
@@ -416,20 +387,8 @@ class NotesStore {
     if (!path) return true;
     if (!(await edit.flush())) return false;
     this.rememberView();
-    if (this.unborn) {
-      if (edit.active) edit.abandon();
-      void api.forgetNewNote(path).catch(() => {});
-    } else {
-      const blank = this.openedBlank && edit.active && isBlank(edit.exactText());
-      if (edit.active) await edit.leave({ refresh: false });
-      if (blank) {
-        // only a note that was blank when it was opened and still is: the person never wrote in it
-        const removed = await api.discardBlankNote(path).catch(() => false);
-        if (removed) await this.refresh();
-      }
-    }
+    if (edit.active) await edit.leave({ refresh: false });
     this.current = null;
-    this.unborn = false;
     this.frozen = null;
     this.looseNotice = null;
     this.missingKept = null;
@@ -441,7 +400,7 @@ class NotesStore {
   /** Remembers where the open note was left: the editor, the caret and the top of the view (source lines from 0). */
   private rememberView(): void {
     const path = this.current;
-    if (!path || this.unborn) return;
+    if (!path) return;
     const view = this.viewNow();
     if (view) void api.setNoteView(path, view).catch(() => {});
   }
@@ -477,15 +436,13 @@ class NotesStore {
     }
   }
 
-  /** Shows a note in the editor it was left in. A new note (`fresh`) has no file yet and starts in Visual with the caret ready. */
+  /** Shows a note in the editor it was left in. A note that was just made (`fresh`) starts in Visual with the caret ready. */
   private async show(path: string, fresh: boolean): Promise<boolean> {
     const entry = this.entries.find((n) => n.path === path) ?? null;
     if (entry?.kind === "file") return this.showFile(path, entry);
     const view = entry?.view ?? null;
     const mode: NoteMode = fresh ? NEW_NOTE_MODE : (view?.mode ?? "visual");
     this.current = path;
-    this.unborn = fresh;
-    this.openedBlank = fresh || entry?.title === "";
     this.frozen = { path, modifiedMs: entry?.modifiedMs ?? Date.now() };
     const opened = await docs.open(path, {
       locate:
@@ -495,11 +452,10 @@ class NotesStore {
     });
     if (!opened) {
       this.current = null;
-      this.unborn = false;
       this.frozen = null;
       return false;
     }
-    if (!fresh) void api.noteOpened(path).catch(() => {});
+    void api.noteOpened(path).catch(() => {});
     this.words = 0;
     this.savedAtMs = entry?.modifiedMs ?? null;
     if (mode !== "read" && !this.readOnly) {
@@ -518,8 +474,6 @@ class NotesStore {
   private async showFile(path: string, entry: NoteEntry): Promise<boolean> {
     const view = entry.view;
     this.current = path;
-    this.unborn = false;
-    this.openedBlank = false;
     this.frozen = null;
     this.looseNotice = null;
     this.missingKept = null;
@@ -578,24 +532,23 @@ class NotesStore {
       return;
     }
     if (this.switching) return;
-    // a new note on top of a new note that has nothing in it: it is already what was asked for
-    if (this.unborn && this.current && edit.active && isBlank(edit.exactText())) {
-      bridge.editor?.focus();
-      return;
-    }
+    // Always a new note, even when the one on screen has nothing in it: like the "+" of any editor, it does what it says. The new
+    // note is a file at once, so it is in the list and stays there until the person deletes it.
     this.switching = true;
     try {
       if (!(await this.leave())) return;
-      let path: string;
+      let made: NoteCreated;
       try {
-        path = await api.newNote();
+        made = await api.newNote();
       } catch (error) {
         toast.message(errorMessage(error), "warn");
         return;
       }
       this.filter = "";
       this.found = null;
-      await this.show(path, true);
+      // its row is in the list before it is shown, at the top of Today, so that it is the selected one
+      await this.refresh();
+      await this.show(made.path, true);
     } finally {
       this.switching = false;
     }
@@ -629,8 +582,7 @@ class NotesStore {
     this.words = countWords(note.text);
     this.savedAtMs = Date.now();
     if (note.created) {
-      this.unborn = false;
-      this.openedBlank = false;
+      // the file was made again (the note had been deleted by another program while it was open)
       void api.noteOpened(note.path).catch(() => {});
       void this.refresh();
       void vault.refreshTree();
@@ -646,7 +598,7 @@ class NotesStore {
     this.folderChanged(false);
   }
 
-  /** A new note's name was taken by the time it was saved: it has another name now. */
+  /** The note had been deleted by another program and its name was taken by the time it was saved: it has another name now. */
   private renamedByTheSave(from: string, to: string): void {
     if (this.current === from) this.current = to;
     if (this.frozen?.path === from) this.frozen = { ...this.frozen, path: to };
@@ -666,7 +618,6 @@ class NotesStore {
     const next = this.nextAfter([path]);
     edit.abandon();
     this.current = null;
-    this.unborn = false;
     this.frozen = null;
     await this.refresh();
     toast.message(t("notes.gone"), "info");
@@ -1110,7 +1061,6 @@ class NotesStore {
     if (wasOpen) {
       edit.abandon();
       this.current = null;
-      this.unborn = false;
       this.frozen = null;
     }
     // the name is read now: the list will not have the note any more
@@ -1181,7 +1131,6 @@ class NotesStore {
     if (wasOpen) {
       edit.abandon();
       this.current = null;
-      this.unborn = false;
       this.frozen = null;
     }
     let outcome;
@@ -1213,14 +1162,13 @@ class NotesStore {
   // ---- sharing and moving -------------------------------------------------------------------------
 
   /**
-   * The open note is one that can be moved into a project or shared with agents: a note of the folder that has a file, in a
-   * window that can write. A new note with no file yet, a loose file and a note that is not there are not.
+   * The open note is one that can be moved into a project or shared with agents: a note of the folder, in a window that can
+   * write. A note with no text in it is one; a loose file and a note that is not there are not.
    */
   get movable(): boolean {
     const entry = this.currentEntry;
     return (
       this.current !== null &&
-      !this.unborn &&
       this.readOnly === null &&
       entry?.kind === "note" &&
       !isLoosePath(this.current)
@@ -1231,7 +1179,7 @@ class NotesStore {
   async toggleShare(path = this.current): Promise<void> {
     if (!path || this.guardWrite()) return;
     const entry = this.entries.find((n) => n.path === path && n.kind === "note");
-    if (!entry || (path === this.current && this.unborn)) return;
+    if (!entry) return;
     const shared = !entry.shared;
     try {
       await api.setNoteShared(path, shared);
@@ -1252,7 +1200,7 @@ class NotesStore {
   async moveToProject(path = this.current): Promise<void> {
     if (!path || this.guardWrite()) return;
     const entry = this.entries.find((n) => n.path === path && n.kind === "note");
-    if (!entry || (path === this.current && this.unborn)) return;
+    if (!entry) return;
     // what was typed is saved first: the copy is the note as it is now
     if (path === this.current && !(await edit.flush())) {
       toast.message(t("notes.move.notSaved"), "warn");
@@ -1275,7 +1223,6 @@ class NotesStore {
     if (wasOpen) {
       edit.abandon();
       this.current = null;
-      this.unborn = false;
       this.frozen = null;
     }
     let moved;
@@ -1338,7 +1285,7 @@ class NotesStore {
 
   /** "Show earlier versions": a dialog that lists them and restores one. */
   async showVersions(path = this.current): Promise<void> {
-    if (!path || this.unborn) return;
+    if (!path) return;
     // the text the note has now is one of its versions: it is saved before the list is read
     if (path === this.current && !(await edit.flush())) {
       toast.message(t("notes.versions.notSaved"), "warn");

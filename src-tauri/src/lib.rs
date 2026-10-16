@@ -170,11 +170,7 @@ pub fn run() {
             window::setup(app);
             if let Some(listening) = notes_listener {
                 // Other windows and launches ask this one to come forward over the socket.
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(notes::serve(
-                    listening,
-                    std::sync::Arc::new(move |request| notes_commands::deliver(&handle, request)),
-                ));
+                notes_commands::serve_requests(app.handle(), listening);
             }
             Ok(())
         })
@@ -256,7 +252,6 @@ pub fn run() {
             notes_commands::open_notes,
             notes_commands::list_notes,
             notes_commands::new_note,
-            notes_commands::forget_new_note,
             notes_commands::save_note,
             notes_commands::note_opened,
             notes_commands::close_note,
@@ -271,7 +266,6 @@ pub fn run() {
             notes_commands::note_versions,
             notes_commands::note_version_text,
             notes_commands::restore_note_version,
-            notes_commands::discard_blank_note,
             notes_commands::open_notes_folder,
             notes_commands::set_note_shared,
             notes_commands::move_suggestion,
@@ -289,6 +283,7 @@ pub fn run() {
             notes_commands::clear_pending,
             notes_commands::keep_edits_as_note,
             notes_commands::show_notes,
+            notes_commands::become_notes_window,
             notes_commands::take_notes_request,
         ])
         .build(context)

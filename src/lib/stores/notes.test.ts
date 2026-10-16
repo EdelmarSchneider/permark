@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
-// The Notes window's store: starting, the new note that has no file yet, leaving a note, copying, deleting with Undo,
-// and what is asked and what is not. The backend is replaced; nothing waits for time.
+// The Notes window's store: starting, a new note (an empty file, in the list at once), leaving a note, copying, deleting with
+// Undo, and what is asked and what is not. The backend is replaced; nothing waits for time.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EditorApi } from "../bridge";
 import type {
   DocumentView,
   LooseStatus,
+  NoteCreated,
   NoteEntry,
   NoteList,
   NoteSaved,
@@ -28,8 +29,6 @@ const fake = vi.hoisted(() => ({
   listTree: vi.fn(),
   takeNotesRequest: vi.fn(),
   newNote: vi.fn(),
-  forgetNewNote: vi.fn(),
-  discardBlankNote: vi.fn(),
   noteOpened: vi.fn(),
   setNoteView: vi.fn(),
   saveNote: vi.fn(),
@@ -194,10 +193,16 @@ function backend(): void {
     request = null;
     return taken;
   });
-  fake.newNote.mockImplementation(async () => `new-${++counter}.md`);
-  fake.forgetNewNote.mockResolvedValue(undefined);
-  fake.discardBlankNote.mockResolvedValue(false);
-  fake.noteOpened.mockResolvedValue(undefined);
+  // a new note is an empty file at once, in the list; the window comes back to the note that was opened last
+  fake.newNote.mockImplementation(async (): Promise<NoteCreated> => {
+    const path = `new-${++counter}.md`;
+    disk.set(path, { text: "", hash: `e-${path}` });
+    list = [entry(path, { title: "", view: null, modifiedMs: NOW + 1000 }), ...list];
+    return { path, hash: `e-${path}`, modifiedMs: NOW + 1000 };
+  });
+  fake.noteOpened.mockImplementation(async (path: string) => {
+    openName = path;
+  });
   fake.setNoteView.mockResolvedValue(undefined);
   fake.readDocument.mockImplementation(async (path: string) => view(path));
   fake.documentSource.mockImplementation(async (path: string) => {
@@ -312,7 +317,6 @@ describe("starting", () => {
     await start();
     expect(notes.phase).toBe("ready");
     expect(notes.current).toBe("b.md");
-    expect(notes.unborn).toBe(false);
     expect(edit.active).toBe(true);
     expect(edit.path).toBe("b.md");
     expect(vault.isNotes).toBe(true);
@@ -346,10 +350,9 @@ describe("starting", () => {
     await start();
     expect(fake.newNote).toHaveBeenCalledTimes(1);
     expect(notes.current).toBe("new-1.md");
-    expect(notes.unborn).toBe(true);
     expect(edit.active).toBe(true);
     expect(edit.mode).toBe("visual");
-    // it has no file: its source is empty and has no hash
+    // it is a file already, empty: the editor starts from that file, and nothing is saved until something is typed
     expect(fake.documentSource).toHaveBeenCalledWith("new-1.md");
     expect(fake.saveNote).not.toHaveBeenCalled();
   });
@@ -366,11 +369,12 @@ describe("starting", () => {
     docs.reset();
     request = { newNote: true, open: null, openFile: null };
     await start();
-    expect(notes.unborn).toBe(true);
+    expect(fake.newNote).toHaveBeenCalledTimes(1);
+    expect(notes.current).toBe("new-1.md");
   });
 
-  it("asks nothing and makes nothing when the notes folder is not there", async () => {
-    fake.notesFolder.mockResolvedValue({ path: "D:/Notes", status: "missing", isDefault: true });
+  it("asks nothing and makes nothing when the notes folder the person chose is not there", async () => {
+    fake.notesFolder.mockResolvedValue({ path: "D:/Notes", status: "missing", isDefault: false });
     await start();
     expect(notes.phase).toBe("missing");
     expect(fake.openNotes).not.toHaveBeenCalled();
@@ -379,7 +383,7 @@ describe("starting", () => {
   });
 
   it("opens the folder the person located, and makes the one that was missing only when asked", async () => {
-    fake.notesFolder.mockResolvedValue({ path: "D:/Notes", status: "missing", isDefault: true });
+    fake.notesFolder.mockResolvedValue({ path: "D:/Notes", status: "missing", isDefault: false });
     await start();
     fake.setNotesFolder.mockResolvedValue({ path: "E:/Mine", status: "ready", isDefault: false });
     await notes.locate("E:/Mine");
@@ -388,12 +392,12 @@ describe("starting", () => {
     expect(fake.createNotesFolder).not.toHaveBeenCalled();
 
     notes.reset();
-    fake.notesFolder.mockResolvedValue({ path: "D:/Notes", status: "missing", isDefault: true });
+    fake.notesFolder.mockResolvedValue({ path: "D:/Notes", status: "missing", isDefault: false });
     await start();
     fake.createNotesFolder.mockResolvedValue({
       path: "D:/Notes",
       status: "ready",
-      isDefault: true,
+      isDefault: false,
     });
     await notes.createFolder();
     expect(fake.createNotesFolder).toHaveBeenCalledTimes(1);
@@ -422,7 +426,7 @@ describe("starting", () => {
 });
 
 describe("leaving a note", () => {
-  it("forgets a new note that was never written, and removes a blank note nobody wrote in", async () => {
+  it("keeps a new note nobody typed in when it is left: it stays in the list until the person deletes it", async () => {
     addNote("a.md", "# A\n");
     openName = "a.md";
     await start();
@@ -431,32 +435,32 @@ describe("leaving a note", () => {
     const fresh = notes.current ?? "";
     expect(fresh).toBe("new-1.md");
     await notes.openNote("a.md");
-    expect(fake.forgetNewNote).toHaveBeenCalledWith(fresh);
-    expect(fake.discardBlankNote).not.toHaveBeenCalled();
-    expect(fake.saveNote).not.toHaveBeenCalled();
     expect(notes.current).toBe("a.md");
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
+    expect(fake.saveNote).not.toHaveBeenCalled();
+    expect(notes.entries.map((n) => n.path)).toContain(fresh);
+    expect(disk.has(fresh)).toBe(true);
   });
 
-  it("removes a note that was blank when it was opened and still is", async () => {
+  it("keeps a note that was blank when it was opened and still is", async () => {
     addNote("blank.md", "  \n", { title: "" });
     addNote("a.md", "# A\n");
     openName = "blank.md";
-    fake.discardBlankNote.mockResolvedValue(true);
     await start();
     expect(notes.current).toBe("blank.md");
     await notes.openNote("a.md");
-    expect(fake.discardBlankNote).toHaveBeenCalledWith("blank.md");
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
+    expect(notes.entries.map((n) => n.path)).toContain("blank.md");
   });
 
-  it("keeps a note the person emptied: it was written in", async () => {
+  it("keeps a note the person emptied, and saves what was cleared first", async () => {
     addNote("a.md", "# A\n");
     addNote("b.md", "# B\n");
     openName = "a.md";
     await start();
     type("");
     await notes.openNote("b.md");
-    expect(fake.discardBlankNote).not.toHaveBeenCalled();
-    // and what was cleared was saved first
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
     expect(fake.saveNote).toHaveBeenCalledWith("a.md", "", "h-a.md");
   });
 
@@ -505,48 +509,79 @@ describe("leaving a note", () => {
 });
 
 describe("a new note", () => {
-  it("is shown at the top with no title until it is written, and gets its file with the first text", async () => {
+  it("is a real entry in the list at once, at the top, with no title until it has text", async () => {
     addNote("a.md", "# A\n");
     openName = "a.md";
     await start();
     await notes.newNote();
-    expect(notes.shown[0]).toMatchObject({ path: "new-1.md", title: "" });
-    fake.saveNote.mockResolvedValue({
-      result: "saved",
-      path: "new-1.md",
-      hash: "n1",
-      modifiedMs: NOW,
-      created: true,
-    } satisfies NoteSaved);
-    list = [entry("new-1.md", { title: "Hello" }), ...list];
-    type("Hello");
-    await edit.flush();
-    expect(fake.saveNote).toHaveBeenCalledWith("new-1.md", "Hello", "");
-    expect(notes.unborn).toBe(false);
+    expect(notes.shown[0]).toMatchObject({ path: "new-1.md", title: "", kind: "note" });
+    expect(notes.currentEntry).toMatchObject({ path: "new-1.md", title: "" });
+    expect(notes.order(NOW)[0]).toBe("new-1.md");
+    // it is the note to come back to, and it starts in Visual with the caret ready
     expect(fake.noteOpened).toHaveBeenLastCalledWith("new-1.md");
-    await vi.advanceTimersByTimeAsync(1000);
-    expect(notes.entries.some((n) => n.path === "new-1.md")).toBe(true);
+    expect(edit.mode).toBe("visual");
   });
 
-  it("with only blank text typed in can be left for another note", async () => {
+  it("gets its first text saved over the empty file, like any other note", async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    await notes.newNote();
+    list = list.map((n) => (n.path === "new-1.md" ? { ...n, title: "Hello" } : n));
+    type("Hello");
+    await edit.flush();
+    expect(fake.saveNote).toHaveBeenCalledWith("new-1.md", "Hello", "e-new-1.md");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(notes.entries.find((n) => n.path === "new-1.md")?.title).toBe("Hello");
+  });
+
+  it("with only blank text typed in can be left for another note, and stays", async () => {
     addNote("a.md", "# A\n");
     openName = "a.md";
     await start();
     await notes.newNote();
     const fresh = notes.current ?? "";
-    fake.saveNote.mockResolvedValue({ result: "blank" } satisfies NoteSaved);
     type("  \n");
     await notes.openNote("a.md");
-    expect(fake.saveNote).toHaveBeenCalledWith(fresh, "  \n", "");
+    expect(fake.saveNote).toHaveBeenCalledWith(fresh, "  \n", `e-${fresh}`);
     expect(notes.current).toBe("a.md");
-    expect(fake.forgetNewNote).toHaveBeenCalledWith(fresh);
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
+    expect(notes.entries.map((n) => n.path)).toContain(fresh);
   });
 
-  it("does not make a second new note on top of one that is still empty", async () => {
+  it("is made every time it is asked for, even when the note on screen has nothing in it", async () => {
     await start();
     expect(fake.newNote).toHaveBeenCalledTimes(1);
+    expect(notes.current).toBe("new-1.md");
+    // "+" or Ctrl+Shift+N on an empty note: another note, like the "+" of any editor
     await notes.newNote();
-    expect(fake.newNote).toHaveBeenCalledTimes(1);
+    expect(fake.newNote).toHaveBeenCalledTimes(2);
+    expect(notes.current).toBe("new-2.md");
+    await notes.newNote();
+    expect(notes.current).toBe("new-3.md");
+    // several empty notes coexist, and none was removed
+    expect(notes.entries.map((n) => n.path)).toEqual(["new-3.md", "new-2.md", "new-1.md"]);
+    expect(fake.deleteNotes).not.toHaveBeenCalled();
+    expect(fake.saveNote).not.toHaveBeenCalled();
+  });
+
+  it("is the note the window comes back to after a restart, with no new one made", async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    await notes.newNote();
+    expect(notes.current).toBe("new-1.md");
+    // the window is closed with nothing typed, and started again
+    await notes.openNote("a.md");
+    await notes.openNote("new-1.md");
+    notes.reset();
+    edit.reset();
+    docs.reset();
+    fake.newNote.mockClear();
+    await start();
+    expect(notes.current).toBe("new-1.md");
+    expect(fake.newNote).not.toHaveBeenCalled();
+    expect(notes.entries.map((n) => n.path)).toContain("new-1.md");
   });
 
   it("is refused in a window that can only read", async () => {
@@ -554,6 +589,72 @@ describe("a new note", () => {
     await start();
     await notes.newNote();
     expect(fake.newNote).not.toHaveBeenCalled();
+  });
+
+  it("can be pinned, renamed, shared, moved and deleted like any other note", async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    await notes.newNote();
+    const fresh = notes.current ?? "";
+    expect(notes.movable).toBe(true);
+
+    await notes.togglePin(fresh);
+    expect(fake.setNotePinned).toHaveBeenCalledWith(fresh, true);
+
+    fake.renameNote.mockImplementation(async (path: string, name: string) => {
+      const to = `${name}.md`;
+      list = list.map((n) => (n.path === path ? { ...n, path: to } : n));
+      return to;
+    });
+    expect(await notes.rename(fresh, "Shopping")).toBeNull();
+    expect(fake.renameNote).toHaveBeenCalledWith(fresh, "Shopping");
+    expect(notes.current).toBe("Shopping.md");
+
+    await notes.toggleShare();
+    expect(fake.setNoteShared).toHaveBeenCalledWith("Shopping.md", true);
+
+    platform.pickSavePath.mockResolvedValue("C:/work/plan/shopping.md");
+    fake.moveSuggestion.mockResolvedValue({ defaultPath: "C:/work/plan/x.md", folder: null });
+    fake.moveNoteToProject.mockResolvedValue({
+      destination: "C:/work/plan/shopping.md",
+      file: "@file/0a1b2c3d/shopping.md",
+      undoId: 1,
+    });
+    await notes.moveToProject();
+    expect(fake.moveNoteToProject).toHaveBeenCalledWith("Shopping.md", "C:/work/plan/shopping.md");
+  });
+
+  it("is deleted with Undo, and says nothing to copy while it is empty", async () => {
+    addNote("a.md", "# A\n");
+    openName = "a.md";
+    await start();
+    await notes.newNote();
+    const fresh = notes.current ?? "";
+    // the editor of the new note is on screen, with nothing in it
+    bridge.editor = fakeEditor("");
+    await notes.copyNote();
+    expect(platform.copyText).not.toHaveBeenCalled();
+    expect(fake.markNoteCopied).not.toHaveBeenCalled();
+    expect(toast.current).toMatchObject({ text: "There is nothing to copy yet." });
+
+    fake.deleteNotes.mockImplementation(async (paths: string[]) => {
+      list = list.filter((n) => !paths.includes(n.path));
+      return { deleted: paths, undoId: 7 };
+    });
+    await notes.deleteNotes([fresh]);
+    expect(fake.deleteNotes).toHaveBeenCalledWith([fresh]);
+    expect(notes.entries.map((n) => n.path)).not.toContain(fresh);
+    // the next note in the list is open, and Undo puts the empty note back
+    expect(notes.current).toBe("a.md");
+    fake.undoDeleteNotes.mockImplementation(async () => {
+      list = [entry(fresh, { title: "" }), ...list];
+      return [fresh];
+    });
+    toast.runAction("first");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fake.undoDeleteNotes).toHaveBeenCalledWith(7);
+    expect(notes.current).toBe(fresh);
   });
 });
 
@@ -897,14 +998,15 @@ describe("sharing a note with agents", () => {
     expect(toast.current).toMatchObject({ text: "“b” is not shared any more." });
   });
 
-  it("works on the open note when none is given, and not on a new note, a file or a window that only reads", async () => {
+  it("works on the open note when none is given (a new note with no text too), and not in a window that only reads", async () => {
     await start();
     await notes.toggleShare();
     expect(fake.setNoteShared).toHaveBeenCalledWith("a.md", true);
     fake.setNoteShared.mockClear();
     await notes.newNote();
     await notes.toggleShare();
-    expect(fake.setNoteShared).not.toHaveBeenCalled();
+    expect(fake.setNoteShared).toHaveBeenCalledWith("new-1.md", true);
+    fake.setNoteShared.mockClear();
     fake.openNotes.mockResolvedValue(opened("locked"));
     notes.reset();
     await start();
@@ -1075,12 +1177,12 @@ describe("moving a note into a project", () => {
     });
   });
 
-  it("does nothing for a new note, a loose file, or a window that can only read", async () => {
+  it("does nothing for a loose file, or a window that can only read", async () => {
     await start();
+    // a note with no text can be moved (the dialog opens); only a file of the disk and a read-only window cannot
     await notes.newNote();
-    await notes.moveToProject();
-    expect(platform.pickSavePath).not.toHaveBeenCalled();
-    expect(notes.movable).toBe(false);
+    expect(notes.movable).toBe(true);
+    await notes.openNote("a.md");
     addFile("@file/0a1b2c3d/x.md", "# X\n");
     await notes.refresh();
     expect(notes.entries.some((n) => n.path === "@file/0a1b2c3d/x.md")).toBe(true);

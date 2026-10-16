@@ -1117,9 +1117,9 @@ export const de = {
     "Diese Notizen sind in einem anderen TrailMark-Fenster geöffnet, daher kannst du sie hier nur lesen.",
   "notes.readOnly.unwritable":
     "TrailMark kann nicht in den Notizenordner schreiben, daher kannst du die Notizen nur lesen.",
-  "notes.folderMissing": "Notizenordner nicht gefunden: {path}",
+  "notes.folderMissing": "Der Notizenordner, den du gewählt hast, ist nicht da: {path}",
   "notes.folderMissingHint":
-    "Er liegt vielleicht auf einem Laufwerk, das nicht verbunden ist, oder wurde umbenannt. TrailMark legt nicht von selbst einen leeren Ordner an.",
+    "Er liegt vielleicht auf einem Laufwerk, das nicht verbunden ist, oder wurde umbenannt oder verschoben. TrailMark legt nicht von selbst einen leeren Ordner an seiner Stelle an, weil deine Notizen sonst auf zwei Orte verteilt wären.",
   "notes.locate": "Suchen...",
   "notes.createFolder": "Anlegen",
   "notes.failed": "Die Notizen konnten nicht geöffnet werden: {message}",
@@ -1130,7 +1130,7 @@ export const de = {
   "welcome.notes": "Notizen",
   "welcome.newNote": "Neue Notiz",
   "welcome.noNotes": "Noch keine Notizen.",
-  "welcome.notesMissing": "Notizenordner nicht gefunden: {path}",
+  "welcome.notesMissing": "Der Notizenordner, den du gewählt hast, ist nicht da: {path}",
   "settings.notes": "Notizenordner",
   "settings.notesFolderChange": "Ändern...",
   "settings.notesFolderHint":

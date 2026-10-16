@@ -4,7 +4,8 @@
 //! Markdown file in the folder; its identity is its file name. The service never asks the person for a name and never
 //! asks "save changes?": it keeps the text safe instead.
 //!
-//! - **A new note has no file** until its first character that is not blank is saved (see [`NotesService::reserve_new`]).
+//! - **A new note is a file at once**, empty, so it is in the list, survives a restart and is never removed by itself (see
+//!   [`NotesService::create_new`]). Several empty notes can exist; the person deletes them.
 //! - **A save** is the guarded atomic write of the editor. A note that changed on disk meanwhile (another computer
 //!   through a synced folder, another editor) is not overwritten: the text the person has is kept as a note of its own,
 //!   "{title} (conflict {time})".
@@ -32,8 +33,8 @@ use super::names::{
 };
 use super::pending::PendingStore;
 use super::recover::{parse_temp_name, recoverable_text, recovered_name};
-use super::text::{head_of, is_blank, snippet_of, title_of};
-use crate::edit::{EditError, Editor, SaveOutcome};
+use super::text::{head_of, snippet_of, title_of};
+use crate::edit::{CreatedDoc, EditError, Editor, SaveOutcome};
 use crate::fileops::Recycler;
 use crate::render::MAX_RENDER_BYTES;
 use crate::util::{hash_bytes, hash_hex, modified_ms, read_with_retry};
@@ -203,20 +204,29 @@ pub struct NotesSummary {
     rename_all_fields = "camelCase"
 )]
 pub enum NoteSaved {
-    /// The text is in the note's file. `path` is the file's name, which differs from the one asked for only when a
-    /// new note's name was taken meanwhile.
+    /// The text is in the note's file. `path` is the file's name, which differs from the one asked for only when the note
+    /// was deleted behind the editor's back and its name was taken meanwhile.
     Saved {
         path: String,
         hash: String,
         modified_ms: u64,
-        /// The file did not exist before.
+        /// The file did not exist before (the note was deleted by another program while it was open).
         created: bool,
     },
-    /// A new note whose text is still blank: no file was made.
-    Blank,
     /// The note was changed by someone else since it was opened. Nothing of theirs was overwritten: the text that was
     /// being saved is in the note `copy`.
     Conflict { copy: String },
+}
+
+/// A new note, made empty. Matches the UI's `NoteCreated`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteCreated {
+    /// The file's name.
+    pub path: String,
+    /// The hash of the (empty) file, which the first save of its text is guarded with.
+    pub hash: String,
+    pub modified_ms: u64,
 }
 
 /// An earlier version of a note. Matches the UI's `NoteVersion`.
@@ -272,8 +282,6 @@ struct DeletedBatch {
 struct State {
     data: NotesData,
     cadence: Cadence,
-    /// New notes that have a name and no file yet: name to the base it was made from.
-    reserved: BTreeMap<String, String>,
     undo: Vec<DeletedBatch>,
     next_undo: u64,
     /// How each loose file looked when it was last read here: a file that looks different now changed on disk.
@@ -464,7 +472,6 @@ impl NotesService {
             state: Mutex::new(State {
                 data: NotesData::default(),
                 cadence: Cadence::default(),
-                reserved: BTreeMap::new(),
                 undo: Vec::new(),
                 next_undo: 1,
                 seen: BTreeMap::new(),
@@ -581,35 +588,24 @@ impl NotesService {
 
     // ---- new notes -----------------------------------------------------------------------------------
 
-    /// Gives a new note its name, made from `moment`. No file is made: that happens when the first text that is not blank
-    /// is saved. The name is not given twice while the note has no file.
-    pub fn reserve_new(&self, moment: Moment) -> Result<String, NotesError> {
+    /// Makes a new note: an empty file named after `moment` (`2026-10-15 1432.md`, then `-2`, `-3` when that name is taken). It
+    /// is a note like any other from this moment: it is in the list as "Untitled note", it is there after a restart, and nothing
+    /// removes it but the person. Several empty notes can exist at once.
+    pub fn create_new(&self, moment: Moment, now_ms: u64) -> Result<NoteCreated, NotesError> {
         self.require_writable()?;
         let stem = note_stem(moment);
-        let mut state = lock(&self.state);
-        let name = first_free(&stem, "-", |name| {
-            self.root().join(name).exists() || state.reserved.contains_key(name)
-        });
-        state.reserved.insert(name.clone(), stem);
-        Ok(name)
-    }
-
-    /// Whether `path` names a new note that has no file yet.
-    pub fn is_unborn(&self, path: &str) -> bool {
-        self.vault.resolve(path).is_ok_and(|resolved| {
-            lock(&self.state).reserved.contains_key(&resolved.rel) && !resolved.abs.exists()
+        let wanted = first_free(&stem, "-", |name| self.root().join(name).exists());
+        let created = self.create_file(wanted, &stem, "", now_ms)?;
+        Ok(NoteCreated {
+            path: created.path,
+            hash: created.hash,
+            modified_ms: created.modified_ms,
         })
-    }
-
-    /// A new note that was left without being written is forgotten.
-    pub fn release_new(&self, path: &str) {
-        lock(&self.state).reserved.remove(path);
     }
 
     // ---- saving --------------------------------------------------------------------------------------
 
-    /// Saves the text of a note. `expected_hash` is the hash of the file the editor started from; empty for a new note
-    /// that has no file yet.
+    /// Saves the text of a note. `expected_hash` is the hash of the file the editor started from.
     pub fn save(
         &self,
         path: &str,
@@ -634,12 +630,6 @@ impl NotesService {
     ) -> Result<NoteSaved, NotesError> {
         self.require_writable()?;
         let (name, abs) = self.resolve_note(path)?;
-        if expected_hash.is_empty() {
-            if is_blank(text) {
-                return Ok(NoteSaved::Blank);
-            }
-            return self.create_note(&name, text, now_ms);
-        }
         let on_disk = match read_with_retry(&abs) {
             Ok(bytes) => bytes,
             // taken away behind the editor's back: the text comes back under its own name
@@ -666,38 +656,43 @@ impl NotesService {
         }
     }
 
-    /// Makes the file of a note, under `name` or the next free name when it is taken.
+    /// Makes the file of a note that was deleted behind the editor's back, with the text the editor has: under its own name, or
+    /// the next free one when it was taken meanwhile.
     fn create_note(&self, name: &str, text: &str, now_ms: u64) -> Result<NoteSaved, NotesError> {
-        let stem = lock(&self.state)
-            .reserved
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| name.trim_end_matches(&format!(".{EXTENSION}")).to_owned());
-        let mut wanted = name.to_owned();
+        let stem = name.trim_end_matches(&format!(".{EXTENSION}"));
+        let created = self.create_file(name.to_owned(), stem, text, now_ms)?;
+        Ok(NoteSaved::Saved {
+            path: created.path,
+            hash: created.hash,
+            modified_ms: created.modified_ms,
+            created: true,
+        })
+    }
+
+    /// Makes a note's file under `wanted`, or under the next free name of `stem` when `wanted` is taken (never over a file).
+    fn create_file(
+        &self,
+        mut wanted: String,
+        stem: &str,
+        text: &str,
+        now_ms: u64,
+    ) -> Result<CreatedDoc, NotesError> {
         for _ in 0..MAX_TRIES {
             match self.editor().create(&wanted, text) {
                 Ok(created) => {
-                    let mut state = lock(&self.state);
-                    state.reserved.remove(name);
-                    state.cadence.taken(&created.path, now_ms);
+                    lock(&self.state).cadence.taken(&created.path, now_ms);
                     // a new note is not shared, whatever name it took
-                    drop(state);
                     self.forget_sharing(&created.path);
-                    return Ok(NoteSaved::Saved {
-                        path: created.path,
-                        hash: created.hash,
-                        modified_ms: created.modified_ms,
-                        created: true,
-                    });
+                    return Ok(created);
                 }
                 Err(EditError::Exists(_)) => {
                     wanted =
-                        first_free(&stem, "-", |candidate| self.root().join(candidate).exists());
+                        first_free(stem, "-", |candidate| self.root().join(candidate).exists());
                 }
                 Err(e) => return Err(e.into()),
             }
         }
-        Err(NotesError::Exists(name.to_owned()))
+        Err(NotesError::Exists(wanted))
     }
 
     /// A file was just made under `name`: it is a new note, not the one that was shared under that name (a name outlives its
@@ -752,6 +747,10 @@ impl NotesService {
                 return;
             }
             state.cadence.taken(name, now_ms);
+        }
+        // a note nobody has written in has nothing worth keeping (the first save of a new note replaces an empty file)
+        if bytes.is_empty() {
+            return;
         }
         let written = std::fs::metadata(abs).map_or(now_ms, |meta| modified_ms(&meta));
         let _ = self.history.snapshot(name, bytes, written);
@@ -1018,33 +1017,6 @@ impl NotesService {
             self.own.retract(name, hash);
             NotesError::io(name, e)
         })
-    }
-
-    /// Removes a note that was never written in: blank, not pinned. Returns whether it was removed. The person's own text
-    /// is never touched: a note with anything but blank characters stays. A note that was written in and then emptied cannot be
-    /// told from one that never was (its earlier texts are versions only some of the time), so the file goes to the Recycle Bin,
-    /// not out of the world.
-    pub fn discard_blank(&self, path: &str) -> Result<bool, NotesError> {
-        self.require_writable()?;
-        let (name, abs) = self.resolve_note(path)?;
-        if lock(&self.state).data.is_pinned(&name) {
-            return Ok(false);
-        }
-        let Ok(bytes) = std::fs::read(&abs) else {
-            return Ok(false);
-        };
-        let blank = String::from_utf8(bytes).is_ok_and(|text| is_blank(&text));
-        if !blank {
-            return Ok(false);
-        }
-        self.own.expect_removals(std::slice::from_ref(&name));
-        match self.recycler.recycle(std::slice::from_ref(&abs)) {
-            Ok(()) => Ok(true),
-            Err(message) => {
-                self.own.retract_removals(std::slice::from_ref(&name));
-                Err(NotesError::io(&name, io::Error::other(message)))
-            }
-        }
     }
 
     // ---- what is remembered ---------------------------------------------------------------------------

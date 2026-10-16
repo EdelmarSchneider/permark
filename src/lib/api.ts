@@ -31,6 +31,7 @@ import type {
   LooseStatus,
   MoveSuggestion,
   MoveUndone,
+  NoteCreated,
   NoteDeleted,
   NoteList,
   NoteMoved,
@@ -40,6 +41,7 @@ import type {
   NoteRestored,
   NoteSaved,
   NotesFolder,
+  NotesHandoff,
   NotesOpened,
   NotesOverview,
   NotesRequest,
@@ -232,13 +234,11 @@ export interface Api {
   openNotes(): Promise<NotesOpened>;
   /** The notes, the pinned ones first. */
   listNotes(): Promise<NoteList>;
-  /** The name of a new note. No file is made until its text has something in it. */
-  newNote(): Promise<string>;
-  /** A new note that was left without being written is forgotten. */
-  forgetNewNote(path: string): Promise<void>;
+  /** Makes a new note: an empty file, in the list at once, that stays until the person deletes it. */
+  newNote(): Promise<NoteCreated>;
   /**
-   * Saves a note's text. `expectedHash` is the hash the editor started from, or "" for a new note (its file is made by the
-   * first text that is not blank). A note that changed meanwhile is not overwritten: the text is kept as a copy.
+   * Saves a note's text. `expectedHash` is the hash the editor started from. A note that changed meanwhile is not overwritten:
+   * the text is kept as a copy.
    */
   saveNote(path: string, text: string, expectedHash: string): Promise<NoteSaved>;
   /** The note was opened: it is the one to come back to, and its next save keeps an earlier version. */
@@ -265,8 +265,6 @@ export interface Api {
   noteVersionText(path: string, id: string): Promise<string>;
   /** Puts an earlier version back; the text the note has now becomes a version first. */
   restoreNoteVersion(path: string, id: string): Promise<NoteRestored>;
-  /** Removes a note that was never written in (blank, not pinned). Resolves to whether it was removed. */
-  discardBlankNote(path: string): Promise<boolean>;
   /** Shows the notes folder in the system's file manager. */
   openNotesFolder(): Promise<void>;
   /** Shares a note with agents, or stops sharing it. */
@@ -300,6 +298,16 @@ export interface Api {
   keepEditsAsNote(path: string, text: string): Promise<string>;
   /** Brings the Notes window forward, with a new note ready, a note shown or a file of the disk opened. Starts it when it is not running. */
   showNotes(newNote: boolean, open: string | null, openFile?: string | null): Promise<void>;
+  /**
+   * A window that shows only the welcome screen asks for the Notes window. When none is running this window becomes it
+   * ("became": same window, same place; the UI shows the notes in it). When one runs in another program it is asked to come
+   * forward with the request ("forwarded"), and this window is to close. Rejects for a window that has a project open.
+   */
+  becomeNotesWindow(
+    newNote: boolean,
+    open: string | null,
+    openFile?: string | null,
+  ): Promise<NotesHandoff>;
   /** What was asked of the Notes window while it was not looking, once; null when nothing. */
   takeNotesRequest(): Promise<NotesRequest | null>;
 
@@ -388,8 +396,7 @@ export const tauriApi: Api = {
   notesOverview: () => invoke<NotesOverview>("notes_overview"),
   openNotes: () => invoke<NotesOpened>("open_notes"),
   listNotes: () => invoke<NoteList>("list_notes"),
-  newNote: () => invoke<string>("new_note"),
-  forgetNewNote: (path) => invoke<void>("forget_new_note", { path }),
+  newNote: () => invoke<NoteCreated>("new_note"),
   saveNote: (path, text, expectedHash) =>
     invoke<NoteSaved>("save_note", { path, text, expectedHash }),
   noteOpened: (path) => invoke<void>("note_opened", { path }),
@@ -405,7 +412,6 @@ export const tauriApi: Api = {
   noteVersions: (path) => invoke<NoteVersion[]>("note_versions", { path }),
   noteVersionText: (path, id) => invoke<string>("note_version_text", { path, id }),
   restoreNoteVersion: (path, id) => invoke<NoteRestored>("restore_note_version", { path, id }),
-  discardBlankNote: (path) => invoke<boolean>("discard_blank_note", { path }),
   openNotesFolder: () => invoke<void>("open_notes_folder"),
   setNoteShared: (path, shared) => invoke<void>("set_note_shared", { path, shared }),
   moveSuggestion: (path) => invoke<MoveSuggestion>("move_suggestion", { path }),
@@ -425,6 +431,8 @@ export const tauriApi: Api = {
   keepEditsAsNote: (path, text) => invoke<string>("keep_edits_as_note", { path, text }),
   showNotes: (newNote, open, openFile = null) =>
     invoke<void>("show_notes", { newNote, open, openFile }),
+  becomeNotesWindow: (newNote, open, openFile = null) =>
+    invoke<NotesHandoff>("become_notes_window", { newNote, open, openFile }),
   takeNotesRequest: () => invoke<NotesRequest | null>("take_notes_request"),
   on: (event, handler) => listen(event, (e) => handler(e.payload as never)),
 };
@@ -535,7 +543,6 @@ function createMockApi(): Api {
     openNotes: command("openNotes"),
     listNotes: command("listNotes"),
     newNote: command("newNote"),
-    forgetNewNote: command("forgetNewNote"),
     saveNote: command("saveNote"),
     noteOpened: command("noteOpened"),
     closeNote: command("closeNote"),
@@ -550,7 +557,6 @@ function createMockApi(): Api {
     noteVersions: command("noteVersions"),
     noteVersionText: command("noteVersionText"),
     restoreNoteVersion: command("restoreNoteVersion"),
-    discardBlankNote: command("discardBlankNote"),
     openNotesFolder: command("openNotesFolder"),
     setNoteShared: command("setNoteShared"),
     moveSuggestion: command("moveSuggestion"),
@@ -568,6 +574,7 @@ function createMockApi(): Api {
     clearPending: command("clearPending"),
     keepEditsAsNote: command("keepEditsAsNote"),
     showNotes: command("showNotes"),
+    becomeNotesWindow: command("becomeNotesWindow"),
     takeNotesRequest: command("takeNotesRequest"),
     on: async (event, handler) => addMockListener(event, handler),
   };

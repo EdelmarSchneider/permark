@@ -130,7 +130,7 @@ export const mockImpl: Api = {
   listTree: async () => mockTree(),
   readDocument: async (path) => {
     await wait(40);
-    const view = mockNotes.unbornView(path) ?? getDocument(path);
+    const view = getDocument(path);
     mockNotes.seenLoose(path);
     return view;
   },
@@ -214,7 +214,7 @@ export const mockImpl: Api = {
   metaIndex: async () => metaIndex(),
   cleanUpMeta: async () => cleanUp(),
   documentSource: async (path) => {
-    const source = mockNotes.unbornSource(path) ?? (await documentSource(path));
+    const source = await documentSource(path);
     mockNotes.seenLoose(path);
     return source;
   },
@@ -259,7 +259,6 @@ export const mockImpl: Api = {
   },
   listNotes: async () => mockNotes.listNotes(),
   newNote: async () => mockNotes.newNote(),
-  forgetNewNote: async (path) => mockNotes.forgetNewNote(path),
   saveNote: async (path, text, expectedHash) => {
     await wait(80);
     return mockNotes.saveNote(path, text, expectedHash);
@@ -277,7 +276,6 @@ export const mockImpl: Api = {
   noteVersions: async (path) => mockNotes.noteVersions(path),
   noteVersionText: async (path, id) => mockNotes.noteVersionText(path, id),
   restoreNoteVersion: async (path, id) => mockNotes.restoreNoteVersion(path, id),
-  discardBlankNote: async (path) => mockNotes.discardBlankNote(path),
   openNotesFolder: async () => {
     console.info("[mock] open the notes folder");
   },
@@ -297,6 +295,8 @@ export const mockImpl: Api = {
   clearPending: async (path) => mockNotes.clearPending(path),
   keepEditsAsNote: async (path, text) => mockNotes.keepEditsAsNote(path, text),
   showNotes: async (newNote, open, openFile = null) => mockNotes.showNotes(newNote, open, openFile),
+  becomeNotesWindow: async (newNote, open, openFile = null) =>
+    mockNotes.becomeNotesWindow(newNote, open, openFile),
   takeNotesRequest: async () => mockNotes.takeNotesRequest(),
   on: async () => () => {},
 };
