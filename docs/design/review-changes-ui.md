@@ -179,20 +179,20 @@ No default shortcut. Running `reviewKeepAll`/`reviewRevertAll` does not open the
 
 ## 9. Undo
 
-The core has no undo today. The cheapest correct option is **a small core addition plus an Undo toast**:
+The core keeps the steps (**built**, see `review-changes.md`, *Undo*): a per-document, in-memory stack of Keep, Revert, Keep
+all and Revert all (and of the removal of a new document), cleared by `review_release`. `reviewUndo(path)` takes back the last
+step that can still be taken back and resolves with the `ReviewView` after: a Keep moves the approved version back if it still
+is where the Keep left it; a Revert writes the text it replaced through the guarded save if the file still has the hash it left;
+the removal of a new document makes the file again if nothing is at its place. Otherwise it rejects `reviewStale` and writes
+nothing. A step that fails is dropped, so that Ctrl+Z can go on down the stack; with no step left, `reviewStale` is the answer
+too (so the UI should not call it when it knows its own stack is empty). The copy cleanup spares the copies the stack needs.
 
-- Core: a per-document, in-memory undo stack, cleared by `review_release`. Each Keep/Revert/Keep all/Revert all pushes
-  `{ reviewedBefore, reviewedAfter, fileBefore (text, only for reverts), fileAfterHash }`. New command
-  `review_undo(path) -> ReviewView`: for a Keep, moves the baseline back if it is still `reviewedAfter`; for a Revert,
-  writes `fileBefore` through the guarded save if the file still has `fileAfterHash`; otherwise rejects `reviewStale`.
-  The copy cleanup spares copies the stack points to.
 - UI: every action shows a toast with **Undo** (`review.kept`, `review.reverted`, `review.keptAll`, `review.revertedAll`);
   the toast's Undo and Ctrl+Z call `reviewUndo`. Ctrl+Z repeats down the stack. No redo.
 - An undo that fails with `reviewStale`: warn toast `review.undoStale`.
-
-If the core addition is not taken, the fallback is: Revert gets an Undo toast that re-saves the pre-revert text through
-the editor's guarded save (the UI reads it with `readSource` just before reverting), and Keep has no undo. Ctrl+Z is then
-not bound. This is clearly worse; prefer the core stack.
+- Revert all on a **new** document sends the file to the recycle bin; the toast's Undo makes it again (the recycle bin has
+  no in-app undo). After an undo of that, the document is `new` again, not approved.
+- Keep all counts as reading the document (the unread dot goes); a single Keep does not.
 
 ## 10. Screen readers
 
@@ -205,12 +205,13 @@ not bound. This is clearly worse; prefer the core stack.
 
 ## 11. Data, lifecycle and level 2 hooks
 
-**Needed from the core (small):**
+**Provided by the core (built):**
 1. Line anchors: `startLine`/`endLine` (1-based, as `data-sourcepos`) on each `ReviewBlock`, and on each change a
-   `newLine` (the first line of the new range; for a removal, the line it sits before; `null` at the end).
-2. `hash` on `DocumentView`, so the layer decorates only when `docs.current.hash === review.hash`; otherwise it keeps the
-   old decorations hidden and refetches once.
-3. `review_undo` (section 9).
+   `newLine` (the first line of the new range; for a removal, the line it sits before; `null` at the end). A block whose
+   `html` is empty (a link reference definition draws nothing) is shown as its `text`.
+2. `hash` on `DocumentView` (`string | null`), so the layer decorates only when `docs.current.hash === review.hash`;
+   otherwise it keeps the old decorations hidden and refetches once.
+3. `reviewUndo` (section 9).
 
 **Store** (`stores/review.svelte.ts`): `view: ReviewView | null`, `open: boolean`, `current: number`,
 `dismissedHash: string | null`, `busy: boolean`, `entries: ReviewEntry[]` (from `review-changed`, subscribed now; level 1
@@ -227,6 +228,10 @@ reads it only to skip `reviewGet` for documents not listed).
 - `reviewNoBaseline`: "The approved version of {subject} wasn't kept, so it can't be shown or restored."
 - `reviewOff`: "Changes aren't reviewed here (notes and single files)." (Commands are unavailable there, so this only
   shows on a race.)
+- `reviewConflict` (new): a single Keep or Revert that cannot be applied on its own, because the file would end up with other
+  blocks than the ones shown (a line of dashes that turns the top into front matter, say). Nothing was written. Word it as
+  "That change can't be kept or reverted on its own in {subject}. Use Keep all or Revert all." (toast, `role="alert"`), and
+  keep the review as it is.
 
 **Level 2 hooks** (build them as parameters now, use them later):
 - `ReviewBar` takes `mode: "quiet" | "gate"`. In `gate` the offer bar is not dismissible, shows for `new` and `deleted`
@@ -314,6 +319,7 @@ is off, so they never overlap. Transitions 150 ms; no animation under reduced mo
 "error.reviewStale": "{subject} changed while you were reviewing. The review is up to date; nothing was written.",
 "error.reviewNoBaseline": "The approved version of {subject} wasn't kept, so it can't be shown or restored.",
 "error.reviewOff": "Changes aren't reviewed here (notes and single files).",
+"error.reviewConflict": "That change can't be kept or reverted on its own in {subject}. Use Keep all or Revert all.",
 ```
 
 `review.sr.kept`, `review.sr.reverted`, `review.sr.opened` and `review.sr.updated` need `.one`/`.other` forms in the
