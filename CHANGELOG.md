@@ -5,6 +5,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-10-16
+
+Tags get colors and icons and help your agent find the right documents; switch folders, retrace your steps, and open web pages in the browser.
+
 ### Added
 - **Your agent can find the right documents by their tags.** A new `list_tags` tool shows which tags your documents carry, how many documents
   have each, where each tag comes from (the documents or TrailMark) and how many documents have no tag at all; give it a tag to see the

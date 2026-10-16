@@ -508,6 +508,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 - v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
   show up in Quick open
+- v0.5.5: tags with colors and icons, tags as your agent's index (`list_tags`, tag filter in `search`), a folder switcher, the navigation trail, and Open in browser for web pages
 - v0.5.4: the interface in Italiano (Italian), soft light tones (Paper, Sage, Gray), and the Git letters explained in plain words
 - v0.5.3: the interface in 简体中文 (Simplified Chinese), and search that finds Chinese and Japanese words inside sentences
 
