@@ -14,10 +14,7 @@ Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneide
 
 [Features](#features) · [Install](#install) · [Usage](#usage) · [Shortcuts](#keyboard-shortcuts) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-dark.png">
-  <img src="docs/assets/screenshot-light.png" alt="TrailMark in IDE mode: a design doc with a live-change glow, a removed-block marker and the live changes feed">
-</picture>
+<img src="docs/assets/loop.gif" width="880" alt="An agent rewrites a paragraph of a spec and the passage glows in TrailMark, a removed paragraph leaves a marker; the reader selects the paragraph, presses C and comments 'too long, cut to two sentences'; the agent reads the comment over the agent connection, rewrites the passage, which glows again, and marks the comment done with a reply">
 
 </div>
 
