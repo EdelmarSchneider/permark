@@ -9,7 +9,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use crate::session::{remove_local_state, write_local_state};
+use crate::session::{
+    prepare_local_folder, remove_local_state, write_local_cache, write_prepared_cache,
+};
 use crate::util::{hash_bytes, read_with_retry};
 
 /// The largest document that is copied.
@@ -61,9 +63,25 @@ impl CopyStore {
             .collect()
     }
 
+    /// Makes the folder ready for a series of [`CopyStore::put_prepared`]: made when missing, never behind a link, and
+    /// private (see [`prepare_local_folder`]).
+    pub fn prepare(&self) -> io::Result<()> {
+        prepare_local_folder(&self.dir)
+    }
+
     /// Keeps `bytes` and returns their hash, or `None` when they are too large to keep. Bytes that are kept
-    /// already are not written again.
+    /// already are not written again. A copy is a cache that is checked by its hash when it is read, so it is not
+    /// flushed to the disk.
     pub fn put(&self, bytes: &[u8]) -> io::Result<Option<u64>> {
+        self.keep(bytes, false)
+    }
+
+    /// [`CopyStore::put`] in a folder that [`CopyStore::prepare`] made ready, for a series of copies.
+    pub fn put_prepared(&self, bytes: &[u8]) -> io::Result<Option<u64>> {
+        self.keep(bytes, true)
+    }
+
+    fn keep(&self, bytes: &[u8], prepared: bool) -> io::Result<Option<u64>> {
         if bytes.len() > MAX_COPY_BYTES {
             return Ok(None);
         }
@@ -73,7 +91,11 @@ impl CopyStore {
         let kept =
             std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() == bytes.len() as u64);
         if !kept {
-            write_local_state(&path, bytes)?;
+            if prepared {
+                write_prepared_cache(&path, bytes)?;
+            } else {
+                write_local_cache(&path, bytes)?;
+            }
         }
         Ok(Some(hash))
     }
@@ -237,6 +259,25 @@ mod tests {
         assert!(dir.join("0123456789ABCDEF").exists());
         assert!(fresh.exists(), "that write may be under way");
         assert!(!old.exists());
+    }
+
+    #[test]
+    fn a_series_of_copies_makes_the_folder_ready_once() {
+        let project = tempfile::tempdir().expect("tempdir");
+        let store = CopyStore::new(project.path().join(".trailmark/local/reviewed"));
+        store.prepare().expect("prepare");
+        assert!(project.path().join(".trailmark/local/.gitignore").is_file());
+        let a = store.put_prepared(b"a").expect("put").expect("kept");
+        let b = store.put_prepared(b"b").expect("put").expect("kept");
+        assert_eq!(store.hashes(), HashSet::from([a, b]));
+        assert_eq!(store.get(a), Some(b"a".to_vec()));
+        // and no leftovers of the writes
+        let leftovers = fs::read_dir(store.dir())
+            .expect("ls")
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".part"))
+            .count();
+        assert_eq!(leftovers, 0);
     }
 
     #[test]

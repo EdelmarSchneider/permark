@@ -174,6 +174,8 @@ struct Inner {
     have: HashSet<u64>,
     /// Versions whose text could not be found: not looked for again until the document holds that version.
     missing: HashSet<(String, u64)>,
+    /// Versions larger than a copy may be: not looked for again.
+    huge: HashSet<u64>,
     /// Copies written lately, which the clean-up leaves alone while a version may not point to them yet.
     fresh: HashMap<u64, Instant>,
     /// The hashes that were in use at the last clean-up check.
@@ -184,6 +186,17 @@ struct Inner {
     cleanup: bool,
     /// The documents last announced.
     announced: Vec<Entry>,
+}
+
+impl Inner {
+    /// The hashes the clean-up leaves alone: those a version points to, and those of copies written lately.
+    fn in_use(&self) -> HashSet<u64> {
+        self.roots
+            .iter()
+            .chain(self.fresh.keys())
+            .copied()
+            .collect()
+    }
 }
 
 struct Shared {
@@ -279,53 +292,84 @@ impl Announcer {
     }
 }
 
+/// Where the text of a version was found.
+enum Fetched {
+    Bytes(Vec<u8>),
+    /// The version is larger than a copy may be.
+    TooLarge,
+    NotFound,
+}
+
 impl Worker {
     /// The text of a version, from the disk if the file still has it, else from the last commit.
-    fn fetch(&self, want: &Want) -> Option<Vec<u8>> {
+    fn fetch(&self, want: &Want) -> Fetched {
         if want.current == Some(want.hash) {
             if let Ok(resolved) = self.vault.resolve(&want.path) {
-                let small = std::fs::metadata(&resolved.abs)
-                    .is_ok_and(|m| m.is_file() && m.len() <= MAX_COPY_BYTES as u64);
-                if small {
-                    if let Ok(bytes) = read_with_retry(&resolved.abs) {
-                        if hash_bytes(&bytes) == want.hash {
-                            return Some(bytes);
+                if let Ok(meta) = std::fs::metadata(&resolved.abs) {
+                    if meta.is_file() && meta.len() > MAX_COPY_BYTES as u64 {
+                        return Fetched::TooLarge;
+                    }
+                    if meta.is_file() {
+                        if let Ok(bytes) = read_with_retry(&resolved.abs) {
+                            if hash_bytes(&bytes) == want.hash {
+                                return Fetched::Bytes(bytes);
+                            }
                         }
                     }
                 }
             }
         }
-        let bytes = self.committed.as_ref()?.blob(&want.path)?;
-        (hash_bytes(&bytes) == want.hash).then_some(bytes)
+        match self.committed.as_ref().and_then(|c| c.blob(&want.path)) {
+            Some(bytes) if hash_bytes(&bytes) == want.hash => Fetched::Bytes(bytes),
+            _ => Fetched::NotFound,
+        }
     }
 
     /// Keeps a copy of every version that has none, if its text can be found.
     fn copy_missing(&self) {
         let (wants, store) = {
-            let g = lock(&self.shared.inner);
-            let wants: Vec<Want> = g
-                .book
-                .wanted()
+            let mut g = lock(&self.shared.inner);
+            let wanted = g.book.wanted();
+            // what is not wanted any more is not remembered as lost or as too large
+            let live: HashSet<(String, u64)> =
+                wanted.iter().map(|w| (key(&w.path), w.hash)).collect();
+            g.missing.retain(|m| live.contains(m));
+            let hashes: HashSet<u64> = wanted.iter().map(|w| w.hash).collect();
+            g.huge.retain(|hash| hashes.contains(hash));
+            let wants: Vec<Want> = wanted
                 .into_iter()
                 .filter(|w| {
                     !g.have.contains(&w.hash)
+                        && !g.huge.contains(&w.hash)
                         && (w.current == Some(w.hash)
                             || !g.missing.contains(&(key(&w.path), w.hash)))
                 })
                 .collect();
             (wants, g.store.clone())
         };
+        // a series of copies: the folder is made ready once. If it cannot be, nothing can be written now, and the
+        // next look tries again.
+        if wants.is_empty() || store.prepare().is_err() {
+            return;
+        }
         for want in wants {
             if self.stop.load(Ordering::Relaxed) {
                 return;
             }
             let missing = (key(&want.path), want.hash);
-            let Some(bytes) = self.fetch(&want) else {
-                lock(&self.shared.inner).missing.insert(missing);
-                continue;
+            let bytes = match self.fetch(&want) {
+                Fetched::Bytes(bytes) => bytes,
+                Fetched::TooLarge => {
+                    lock(&self.shared.inner).huge.insert(want.hash);
+                    continue;
+                }
+                Fetched::NotFound => {
+                    lock(&self.shared.inner).missing.insert(missing);
+                    continue;
+                }
             };
             self.shared.reserve(want.hash);
-            let kept = store.put(&bytes);
+            let kept = store.put_prepared(&bytes);
             let mut g = lock(&self.shared.inner);
             match kept {
                 Ok(Some(_)) => {
@@ -334,7 +378,7 @@ impl Worker {
                 // too large for a copy: not one to expect
                 Ok(None) => {
                     g.have.remove(&want.hash);
-                    g.missing.insert(missing);
+                    g.huge.insert(want.hash);
                 }
                 // the folder cannot be written now: tried again with the next look
                 Err(_) => {
@@ -410,33 +454,70 @@ impl Worker {
         g.cleanup = false;
         let now = Instant::now();
         g.fresh.retain(|_, at| now.duration_since(*at) < FRESH_FOR);
-        let used: HashSet<u64> = g.roots.iter().chain(g.fresh.keys()).copied().collect();
+        let used = g.in_use();
         g.store.remove_unused(&used);
         g.have = g.store.hashes();
     }
 
-    /// Moves the files to another place: the copies in use go along.
+    /// Moves the files to another place: the copies in use go along. The copies are carried over without the lock (it
+    /// takes a while on a big project, and the commands must not wait for it); what was added meanwhile is carried
+    /// over under it. A copy is deleted from the old place only when it is in the new one.
     fn relocate(&self, paths: Paths) {
-        let mut g = lock(&self.shared.inner);
-        let old = g.store.clone();
+        let (old, needed) = {
+            let g = lock(&self.shared.inner);
+            (g.store.clone(), g.in_use())
+        };
         if old.dir() == paths.copies {
             // the same place: only the state file may be somewhere else
+            let mut g = lock(&self.shared.inner);
             g.path = paths.state;
             g.dirty = true;
             return;
         }
         let new = CopyStore::new(paths.copies);
-        for hash in g.roots.clone() {
-            if let Some(bytes) = old.get(hash) {
-                let _ = new.put(&bytes);
+        let mut present = new.hashes();
+        if new.prepare().is_ok() {
+            carry(&old, &new, &needed, &mut present, &self.stop);
+        }
+        if self.stop.load(Ordering::Relaxed) {
+            return;
+        }
+        let needed = {
+            let mut g = lock(&self.shared.inner);
+            let added: HashSet<u64> = g.in_use().difference(&needed).copied().collect();
+            carry(&old, &new, &added, &mut present, &self.stop);
+            g.have.clone_from(&present);
+            g.store = new;
+            g.path = paths.state;
+            g.dirty = true;
+            needed.union(&added).copied().collect::<HashSet<u64>>()
+        };
+        // what is still wanted and could not be carried over stays where it is
+        let stays: HashSet<u64> = needed.difference(&present).copied().collect();
+        old.remove_unused(&stays);
+    }
+}
+
+/// Carries the copies `hashes` from `old` to `new`, adding the ones that arrived to `present`.
+fn carry(
+    old: &CopyStore,
+    new: &CopyStore,
+    hashes: &HashSet<u64>,
+    present: &mut HashSet<u64>,
+    stop: &AtomicBool,
+) {
+    for &hash in hashes {
+        if stop.load(Ordering::Relaxed) {
+            return;
+        }
+        if present.contains(&hash) {
+            continue;
+        }
+        if let Some(bytes) = old.get(hash) {
+            if matches!(new.put_prepared(&bytes), Ok(Some(_))) {
+                present.insert(hash);
             }
         }
-        // what was kept at the old place is not wanted twice
-        old.remove_unused(&HashSet::new());
-        g.have = new.hashes();
-        g.store = new;
-        g.path = paths.state;
-        g.dirty = true;
     }
 }
 
@@ -552,6 +633,7 @@ impl ReviewService {
                 store,
                 path: paths.state,
                 missing: HashSet::new(),
+                huge: HashSet::new(),
                 fresh: HashMap::new(),
                 dirty: false,
                 // the copies of an earlier run may include some nothing points to
@@ -654,12 +736,21 @@ impl ReviewService {
         }
         let hash = hash_bytes(bytes);
         self.shared.reserve(hash);
-        let store = lock(&self.shared.inner).store.clone();
-        let kept = store.put(bytes);
-        if !matches!(kept, Ok(Some(_))) {
-            lock(&self.shared.inner).have.remove(&hash);
+        loop {
+            let store = lock(&self.shared.inner).store.clone();
+            let kept = store.put(bytes);
+            let mut g = lock(&self.shared.inner);
+            if g.store.dir() != store.dir() {
+                // the files moved while this was written: it is kept again at the new place
+                continue;
+            }
+            if matches!(kept, Ok(Some(_))) {
+                g.have.insert(hash);
+            } else {
+                g.have.remove(&hash);
+            }
+            return kept;
         }
-        kept
     }
 
     /// The person saved a document: `bytes` is what it holds now, which counts as read and approved. A copy of it is

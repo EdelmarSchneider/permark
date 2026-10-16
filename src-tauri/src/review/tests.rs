@@ -1103,3 +1103,108 @@ fn entries_that_are_not_paths_of_the_project_are_not_listed_as_deleted() {
     assert_eq!(service.entries(), [entry("fine.md", Status::Deleted)]);
     service.stop();
 }
+
+#[test]
+fn a_copy_just_made_but_not_pointed_to_yet_follows_the_others_and_nothing_is_left_behind() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    // a Keep that is under way: its copy exists, no version points to it yet
+    service.keep_copy(b"# In flight\n").expect("copy");
+    let elsewhere = tempfile::tempdir().expect("tempdir");
+    let new_paths = Paths {
+        state: elsewhere.path().join(".trailmark/local/reviewed.json"),
+        copies: elsewhere.path().join(".trailmark/local/reviewed"),
+    };
+    service.relocate(new_paths.clone());
+    service.flush();
+    assert_eq!(
+        CopyStore::new(new_paths.copies).hashes(),
+        HashSet::from([h(V0), h("# In flight\n")])
+    );
+    assert_eq!(
+        fx.copies(),
+        HashSet::new(),
+        "the old place keeps nothing, the copies nothing pointed to included"
+    );
+    service.stop();
+}
+
+#[test]
+fn copies_that_could_not_be_moved_are_not_deleted_from_where_they_were() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    assert!(fx.copies().contains(&h(V0)));
+    // the new place cannot be made: a file is where its folder would be
+    let blocker = tempfile::tempdir().expect("tempdir");
+    fs::write(blocker.path().join("local"), "a file").expect("file");
+    service.relocate(Paths {
+        state: blocker.path().join("local/reviewed.json"),
+        copies: blocker.path().join("local/reviewed"),
+    });
+    service.flush();
+    assert!(
+        fx.copies().contains(&h(V0)),
+        "the baseline is still where it was"
+    );
+    service.stop();
+}
+
+#[test]
+fn moving_the_files_does_not_hold_up_what_the_commands_do() {
+    let fx = Fx::new(&[]);
+    let service = fx.agent_changed_a();
+    // many copies to carry over
+    for i in 0..300 {
+        service
+            .keep_copy(format!("# copy {i}\n").as_bytes())
+            .expect("copy");
+    }
+    let elsewhere = tempfile::tempdir().expect("tempdir");
+    service.relocate(Paths {
+        state: elsewhere.path().join("local/reviewed.json"),
+        copies: elsewhere.path().join("local/reviewed"),
+    });
+    // while the thread carries them, the lock is free: a view is answered at once and correctly
+    let started = Instant::now();
+    let view = service.view("a.md").expect("view");
+    assert_eq!(view.status, ViewStatus::Changes);
+    assert!(started.elapsed() < Duration::from_secs(5));
+    service.flush();
+    service.stop();
+}
+
+// ---- what is remembered as lost ----
+
+#[test]
+fn a_version_too_large_for_a_copy_is_remembered_as_such() {
+    let big = "x\n\n".repeat(MAX_COPY_BYTES / 3 + 10);
+    let fx = Fx::new(&[("big.md", &big)]);
+    let service = fx.service();
+    tell(&service, &[doc("big.md", Some(&big), Some(&big))]);
+    assert!(lock(&service.shared.inner).huge.contains(&h(&big)));
+    assert_eq!(fx.copies(), HashSet::new());
+    tell(&service, &[doc("big.md", Some(&big), Some(&big))]);
+    assert!(lock(&service.shared.inner).huge.contains(&h(&big)));
+    // and when it is another version by now, the memory of it goes
+    let small = "# Small now\n";
+    fx.write("big.md", small);
+    tell(&service, &[doc("big.md", Some(small), Some(small))]);
+    assert!(lock(&service.shared.inner).huge.is_empty());
+    service.stop();
+}
+
+#[test]
+fn versions_nobody_wants_any_more_are_not_remembered_as_lost() {
+    let fx = Fx::new(&[("a.md", V1)]);
+    let commits = Commits(HashMap::from([(
+        "a.md".to_owned(),
+        b"# Some other version\n".to_vec(),
+    )]));
+    let service = fx.service_with(Some(Arc::new(commits)));
+    tell(&service, &[doc("a.md", Some(V1), Some(V0))]);
+    assert_eq!(lock(&service.shared.inner).missing.len(), 1);
+    // everything is marked read: V1 is the approved version, and V0 is not wanted any more
+    tell(&service, &[doc("a.md", Some(V1), Some(V1))]);
+    assert!(lock(&service.shared.inner).missing.is_empty());
+    service.stop();
+}

@@ -10,7 +10,7 @@
 use std::io::{self, Write};
 use std::path::Path;
 
-use crate::util::write_atomic;
+use crate::util::{write_atomic, write_atomic_unsynced};
 
 const TRAILMARK_DIR: &str = ".trailmark";
 /// What a state folder holds in its own `.gitignore`: everything, itself included.
@@ -121,6 +121,27 @@ pub(crate) fn write_local_state(path: &Path, bytes: &[u8]) -> io::Result<()> {
     write_atomic(path, bytes)
 }
 
+/// Makes the folder of a series of [`write_prepared_cache`] ready, once: in a project's `.trailmark/` folder it is made
+/// when missing, never behind a link, and ignoring itself (see [`write_local_state`]).
+pub(crate) fn prepare_local_folder(dir: &Path) -> io::Result<()> {
+    prepare(dir)
+}
+
+/// Writes a file of the local state that can be made again (a copy checked by its hash when it is read): as
+/// [`write_local_state`], without flushing it to the disk (see [`write_atomic_unsynced`]).
+pub(crate) fn write_local_cache(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if let Some(dir) = path.parent() {
+        prepare(dir)?;
+    }
+    write_atomic_unsynced(path, bytes)
+}
+
+/// [`write_local_cache`] in a folder that [`prepare_local_folder`] made ready: for the second file on, there is nothing
+/// left to check.
+pub(crate) fn write_prepared_cache(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    write_atomic_unsynced(path, bytes)
+}
+
 /// Opens the file that stands for a lock on another file of the local state (made when missing), for a program that
 /// keeps `File::lock` on it while it reads, changes and writes that file. The lock file itself holds nothing. It is
 /// made with the same care as the files it protects, and a link in its place is not written through.
@@ -205,6 +226,35 @@ mod tests {
             fs::read_to_string(project.path().join(".trailmark/local/.gitignore")).expect("read"),
             "mine\n"
         );
+    }
+
+    #[test]
+    fn a_cache_file_is_written_like_a_state_file_in_a_private_folder_and_a_batch_prepares_it_once()
+    {
+        let project = project();
+        let local = project.path().join(".trailmark/local");
+        write_local_cache(&local.join("reviewed/one"), b"1").expect("write");
+        let ignore = fs::read_to_string(local.join(".gitignore")).expect("ignores itself");
+        assert!(ignore.lines().any(|line| line == "*"));
+
+        let folder = local.join("batch");
+        prepare_local_folder(&folder).expect("prepare");
+        write_prepared_cache(&folder.join("two"), b"2").expect("write");
+        write_prepared_cache(&folder.join("three"), b"3").expect("write");
+        assert_eq!(fs::read(folder.join("three")).expect("read"), b"3");
+    }
+
+    #[test]
+    fn a_cache_file_is_not_written_behind_a_link_either() {
+        let project = project();
+        let outside = tempfile::tempdir().expect("outside");
+        let local = project.path().join(".trailmark/local");
+        fs::create_dir_all(&local).expect("mkdir");
+        dir_link(&local.join("reviewed"), outside.path());
+        assert!(write_local_cache(&local.join("reviewed/abc"), b"copy").is_err());
+        assert!(prepare_local_folder(&local.join("reviewed")).is_err());
+        assert!(!outside.path().join("abc").exists());
+        remove_link(&local.join("reviewed"));
     }
 
     #[test]
