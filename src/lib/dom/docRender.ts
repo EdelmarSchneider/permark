@@ -2,7 +2,7 @@
 // render: changed/added blocks get `.tm-changed`, removed runs get a `.tm-removed` marker, and the scroll
 // position stays anchored to a block that exists in both versions.
 
-import { diffBlocks, pickAnchor, type BlockDiff, type RemovedRun } from "../diff";
+import { diffBlocks, htmlText, pickAnchor, type BlockDiff, type RemovedRun } from "../diff";
 import { hashString } from "../text";
 import type { DocumentView } from "../types";
 import { enhanceBlocks, renderDiagram, stashRelativeImages, type EnhanceContext } from "./enhance";
@@ -98,8 +98,14 @@ export class DocRenderer {
 
     const prev = this.snapshots.get(view.path) ?? null;
     const wantsDiff = (opts.mode === "update" && !opts.quiet) || opts.diffAgainstLast === true;
+    // An edited block is told from a removed one by its text; `pristine` is the HTML before the blocks are enhanced.
     const diff: BlockDiff | null =
-      wantsDiff && prev !== null && prev.source === source ? diffBlocks(prev.keys, keys) : null;
+      wantsDiff && prev !== null && prev.source === source
+        ? diffBlocks(prev.keys, keys, {
+            old: (i) => htmlText(prev.pristine[i] ?? ""),
+            new: (i) => htmlText(pristine[i] ?? ""),
+          })
+        : null;
     const anchoring = diff !== null && opts.mode === "update";
     const candidates = anchoring ? this.visibleCandidates() : [];
     const scrollTop = this.scroller.scrollTop;
