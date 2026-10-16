@@ -1150,7 +1150,7 @@ export const ptBR = {
   "notes.file.changed": "Este arquivo foi alterado no disco.",
   "notes.file.changedKept": "O que você digitou é mantido até você escolher.",
   "notes.file.reload": "Recarregar",
-  "notes.file.keepMine": "Manter o meu",
+  "notes.file.keepMine": "Manter a minha",
   "notes.file.gone": "“{name}” não está mais lá.",
   "notes.file.goneKept": "O que você digitou foi mantido.",
   "notes.file.saveAsNote": "Salvar como nota",

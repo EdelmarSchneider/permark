@@ -1157,7 +1157,7 @@ export const es = {
   "notes.file.changed": "Este archivo cambió en el disco.",
   "notes.file.changedKept": "Lo que escribiste se conserva hasta que elijas.",
   "notes.file.reload": "Recargar",
-  "notes.file.keepMine": "Conservar el mío",
+  "notes.file.keepMine": "Conservar la mía",
   "notes.file.gone": "«{name}» ya no está.",
   "notes.file.goneKept": "Lo que escribiste se conserva.",
   "notes.file.saveAsNote": "Guardar como nota",
