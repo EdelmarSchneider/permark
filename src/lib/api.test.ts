@@ -106,7 +106,6 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   openNotes: [],
   listNotes: [],
   newNote: [],
-  forgetNewNote: ["2026-10-15 1432.md"],
   saveNote: ["2026-10-15 1432.md", "# Hello", ""],
   noteOpened: ["2026-10-15 1432.md"],
   closeNote: [],
@@ -121,7 +120,6 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   noteVersions: ["a.md"],
   noteVersionText: ["a.md", "20261015-143200-123"],
   restoreNoteVersion: ["a.md", "20261015-143200-123"],
-  discardBlankNote: ["a.md"],
   openNotesFolder: [],
   setNoteShared: ["2026-10-15 1432.md", true],
   moveSuggestion: ["2026-10-15 1432.md"],
@@ -139,6 +137,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   clearPending: ["@file/0a1b2c3d/proposal.md"],
   keepEditsAsNote: ["@file/0a1b2c3d/proposal.md", "# My words"],
   showNotes: [true, null, "C:/Users/ana/Downloads/proposal.md"],
+  becomeNotesWindow: [true, null, "C:/Users/ana/Downloads/proposal.md"],
   takeNotesRequest: [],
 };
 

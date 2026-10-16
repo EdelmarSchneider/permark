@@ -16,7 +16,7 @@
   // what is said about saving (see `saveStatus`); a loose file shows "Saved" for a moment after it is written
   const saved = $derived(
     saveStatus({
-      shown: !!notes.current && !notes.unborn && !notes.currentMissing,
+      shown: !!notes.current && !notes.currentMissing,
       readOnly: notes.readOnly !== null,
       isFile: notes.isFile,
       dirty: edit.dirty,
@@ -56,7 +56,7 @@
     {#if saveState !== ""}
       <span class="sb-item" role="status" aria-live="polite">{saveState}</span>
     {/if}
-    {#if notes.current && !notes.unborn && !notes.currentMissing}
+    {#if notes.current && !notes.currentMissing}
       <span class="sb-item">{tn("notes.status.words", notes.words)}</span>
     {/if}
     {#if edit.active && edit.mode === "source"}

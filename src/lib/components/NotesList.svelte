@@ -26,7 +26,7 @@
 
   const arranged = $derived(notes.arrangement(clock.now));
   const paths = $derived(drawnOrder(arranged).map((n) => n.path));
-  const empty = $derived(notes.entries.length === 0 && !notes.unborn);
+  const empty = $derived(notes.entries.length === 0);
   const nothingMatches = $derived(!empty && paths.length === 0);
 
   function groupLabel(id: GroupId): string {
@@ -392,7 +392,6 @@
 
 {#snippet row(note: NoteEntry, pinned: boolean)}
   {@const current = note.path === notes.current}
-  {@const fresh = current && notes.unborn}
   {@const file = note.kind === "file"}
   <div
     class={[
@@ -411,11 +410,11 @@
       data-note={note.path}
       data-pin={pinned ? "" : undefined}
       aria-current={current ? "true" : undefined}
-      title={fresh ? t("notes.untitled") : file ? fullPlace(note.folder, note.title) : note.path}
+      title={file ? fullPlace(note.folder, note.title) : note.path}
       onclick={() => onrowclick(note)}
       onkeydown={(e) => onrowkeydown(e, note)}
       onpointerdown={pinned ? (e) => onpinpointerdown(e, note) : undefined}
-      oncontextmenu={fresh ? undefined : (e) => oncontextmenu(e, note)}
+      oncontextmenu={(e) => oncontextmenu(e, note)}
     >
       <span class="note-row__head">
         <span class={["note-row__title", note.title === "" && "is-untitled"]}>{title(note)}</span>
@@ -435,7 +434,7 @@
             <Icon name="check" size="xs" /><span class="sr-only">{t("notes.copiedMark")}</span>
           </span>
         {/if}
-        {#if !fresh && !file}
+        {#if !file}
           <span class="note-row__time">{relativeTime(note.modifiedMs, clock.now)}</span>
         {/if}
       </span>

@@ -1101,9 +1101,9 @@ export const ptBR = {
     "Estas notas estão abertas em outra janela do TrailMark, então aqui você só pode lê-las.",
   "notes.readOnly.unwritable":
     "O TrailMark não consegue gravar na pasta das notas, então você só pode ler as notas.",
-  "notes.folderMissing": "Pasta das notas não encontrada: {path}",
+  "notes.folderMissing": "A pasta das notas que você escolheu não está lá: {path}",
   "notes.folderMissingHint":
-    "Ela pode estar em uma unidade que não está conectada, ou foi renomeada. O TrailMark não cria uma pasta vazia por conta própria.",
+    "Ela pode estar em uma unidade que não está conectada, ou foi renomeada ou movida. O TrailMark não cria uma pasta vazia no lugar dela por conta própria, porque suas notas ficariam divididas em duas.",
   "notes.locate": "Localizar...",
   "notes.createFolder": "Criar a pasta",
   "notes.failed": "Não foi possível abrir as notas: {message}",
@@ -1114,7 +1114,7 @@ export const ptBR = {
   "welcome.notes": "Notas",
   "welcome.newNote": "Nova nota",
   "welcome.noNotes": "Nenhuma nota ainda.",
-  "welcome.notesMissing": "Pasta das notas não encontrada: {path}",
+  "welcome.notesMissing": "A pasta das notas que você escolheu não está lá: {path}",
   "settings.notes": "Pasta das notas",
   "settings.notesFolderChange": "Alterar...",
   "settings.notesFolderHint":

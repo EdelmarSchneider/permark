@@ -193,9 +193,12 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
 </picture>
 
 - **A notes window of its own** (`Ctrl+Shift+D`, or the sticky-note icon in the activity bar, or **Notes** on the welcome screen). `Ctrl+Shift+N`
-  starts a new note from any TrailMark window, in the Visual editor with the caret ready. A note is a plain Markdown file in
-  `Documents/TrailMark Notes` (change it in **Settings → Notes**); its name is the date and time (`2026-10-15 1432.md`), its title is its
-  first line, and a note you never typed in leaves no file behind
+  starts a new note from any TrailMark window, in the Visual editor with the caret ready. From the welcome screen the window itself turns
+  into the Notes window, in the same place and size, so there is never a second window to close. A note is a plain Markdown file in
+  `Documents/TrailMark Notes` (change it in **Settings → Notes**); TrailMark makes the default folder by itself the first time. A note's name
+  is the date and time (`2026-10-15 1432.md`) and its title is its first line, until then "Untitled note"
+- **A new note is there at once**, and `+` (or `Ctrl+Shift+N`) always makes another, even when the note on screen is still empty. Empty notes
+  stay in the list, also after a restart, until you delete them: nothing is removed for you
 - **Saved as you type**: 750 ms after you stop, and at least every 3 seconds. Switching notes, leaving the window or closing it saves too, and closing
   never asks. Each note remembers its mode and where you were. TrailMark writes nothing inside a note's text, and never overwrites a version
   it has not seen: if something else changed the file, your text is kept next to it as a "(conflict ...)" copy
@@ -221,6 +224,8 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
   [What an agent can do](#what-an-agent-can-do)); a small mark shows it in the list and in the header. Notes you did not share stay private
 - **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
   with any tool, and TrailMark picks the change up. Another TrailMark process can't write to the same notes at once (the second one opens read-only)
+- **A notes folder you chose that goes missing** (an unplugged drive, a renamed folder) is reported, with **Locate...** and **Create it**: TrailMark
+  never makes an empty one in its place by itself, which would split your notes in two
 - **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
 
 ### 🗂️ Zero footprint by default

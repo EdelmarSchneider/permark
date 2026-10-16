@@ -103,12 +103,15 @@ impl Fx {
             .expect("save")
     }
 
-    /// Makes a note the way the window does: a new name, then a first save.
+    /// Makes a note the way the window does: an empty file first, then the text saved over it (nothing when `text` is empty).
     fn new_note(&self, text: &str) -> String {
-        let name = self.service.reserve_new(MOMENT).expect("reserve");
-        match self.save(&name, text, "", T0) {
+        let created = self.service.create_new(MOMENT, T0).expect("create");
+        if text.is_empty() {
+            return created.path;
+        }
+        match self.save(&created.path, text, &created.hash, T0) {
             NoteSaved::Saved { path, .. } => path,
-            other => panic!("not saved: {other:?}"),
+            other @ NoteSaved::Conflict { .. } => panic!("not saved: {other:?}"),
         }
     }
 
@@ -135,76 +138,171 @@ impl Fx {
 // ---- names and new notes ---------------------------------------------------------------------------------
 
 #[test]
-fn a_new_note_gets_a_name_but_no_file_until_it_has_text() {
+fn a_new_note_is_an_empty_file_at_once_named_after_the_moment() {
     let f = fx();
-    let name = f.service.reserve_new(MOMENT).expect("reserve");
-    assert_eq!(name, "2026-10-05 0907.md");
-    assert!(f.service.is_unborn(&name));
-    assert_eq!(f.files(), Vec::<String>::new(), "no file yet");
+    let created = f.service.create_new(MOMENT, T0).expect("create");
+    assert_eq!(created.path, "2026-10-05 0907.md");
+    assert_eq!(
+        f.files(),
+        ["2026-10-05 0907.md"],
+        "the file is there already"
+    );
+    assert_eq!(f.read(&created.path), "");
+    assert_eq!(created.hash, f.hash(&created.path));
 
-    // blank characters make no file
-    for blank in ["", "   ", "\n\n\t \n", "\u{feff}"] {
-        assert_eq!(f.save(&name, blank, "", T0), NoteSaved::Blank);
-    }
-    assert_eq!(f.files(), Vec::<String>::new());
+    // it is in the list as a note with no title, which the window shows as "Untitled note"
+    let list = f.service.list();
+    assert_eq!(list.notes.len(), 1);
+    let row = &list.notes[0];
+    assert_eq!(
+        (row.path.as_str(), row.title.as_str(), row.snippet.as_str()),
+        ("2026-10-05 0907.md", "", "")
+    );
+    assert_eq!(row.size_bytes, 0);
 
-    // the first character that is not blank does
+    // writing in it is an ordinary save over the empty file, guarded by its hash: not a creation
     let NoteSaved::Saved {
         path,
         hash,
-        created,
+        created: made,
         ..
-    } = f.save(&name, "\n  # Hello", "", T0)
+    } = f.save(&created.path, "\n  # Hello", &created.hash, T0 + 3000)
     else {
         panic!("saved");
     };
-    assert_eq!((path.as_str(), created), (name.as_str(), true));
-    assert_eq!(f.read(&name), "\n  # Hello");
-    assert_eq!(hash, f.hash(&name));
-    assert!(!f.service.is_unborn(&name), "it has a file now");
-    // and from then on it is an ordinary note
-    let NoteSaved::Saved { created, .. } = f.save(&name, "# Hello, again", &hash, T0 + 3000) else {
-        panic!("saved");
-    };
-    assert!(!created);
+    assert_eq!((path.as_str(), made), ("2026-10-05 0907.md", false));
+    assert_eq!(f.read(&path), "\n  # Hello");
+    assert_eq!(hash, f.hash(&path));
+    assert_eq!(f.service.list().notes[0].title, "Hello");
 }
 
 #[test]
-fn two_notes_in_the_same_minute_do_not_share_a_name() {
+fn text_that_is_only_blank_is_saved_as_it_is_and_the_note_stays() {
     let f = fx();
-    let first = f.service.reserve_new(MOMENT).expect("reserve");
-    let second = f.service.reserve_new(MOMENT).expect("reserve");
-    assert_eq!(
-        (first.as_str(), second.as_str()),
-        ("2026-10-05 0907.md", "2026-10-05 0907-2.md")
+    let created = f.service.create_new(MOMENT, T0).expect("create");
+    let mut hash = created.hash;
+    for blank in ["   ", "\n\n\t \n", "\u{feff}", ""] {
+        let NoteSaved::Saved { hash: next, .. } = f.save(&created.path, blank, &hash, T0 + MIN)
+        else {
+            panic!("saved");
+        };
+        hash = next;
+        assert_eq!(f.read(&created.path), blank);
+        assert_eq!(f.files(), [created.path.as_str()], "{blank:?}");
+    }
+    assert_eq!(f.bin.calls.load(Ordering::SeqCst), 0, "nothing was removed");
+}
+
+#[test]
+fn several_empty_notes_can_exist_and_none_of_them_is_removed_by_itself() {
+    let f = fx();
+    let (first, second, third) = (
+        f.service.create_new(MOMENT, T0).expect("create"),
+        f.service.create_new(MOMENT, T0).expect("create"),
+        f.service.create_new(MOMENT, T0).expect("create"),
     );
-    assert!(matches!(
-        f.save(&second, "second", "", T0),
-        NoteSaved::Saved { .. }
-    ));
-    // the first is still reserved, so a third does not take its name
     assert_eq!(
-        f.service.reserve_new(MOMENT).expect("reserve"),
+        (
+            first.path.as_str(),
+            second.path.as_str(),
+            third.path.as_str()
+        ),
+        (
+            "2026-10-05 0907.md",
+            "2026-10-05 0907-2.md",
+            "2026-10-05 0907-3.md"
+        )
+    );
+    // opening one, leaving it, listing and saving a note beside them removes none: only the person deletes
+    f.service.opened(&first.path);
+    f.service.opened(&second.path);
+    let text = f.new_note("# Words");
+    assert_eq!(f.paths().len(), 4);
+    f.service.closed();
+    assert_eq!(f.bin.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(f.files().len(), 4);
+    // a name that was deleted is free again
+    f.service
+        .delete(std::slice::from_ref(&first.path))
+        .expect("delete");
+    assert_eq!(
+        f.service.create_new(MOMENT, T0).expect("create").path,
+        first.path
+    );
+    assert!(f.paths().contains(&text));
+}
+
+#[test]
+fn an_empty_note_is_still_there_after_a_restart() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let bin = Arc::new(FakeBin::default());
+    let (service, _) = open_in(dir.path(), &bin, &|_| true);
+    let created = service.create_new(MOMENT, T0).expect("create");
+    service.opened(&created.path);
+    // the window is closed without a character typed
+    drop(service);
+    let (again, report) = open_in(dir.path(), &bin, &|_| true);
+    assert_eq!(report.read_only, None);
+    let list = again.list();
+    assert_eq!(
+        list.notes
+            .iter()
+            .map(|n| n.path.as_str())
+            .collect::<Vec<_>>(),
+        [created.path.as_str()]
+    );
+    assert_eq!(
+        list.open.as_deref(),
+        Some(created.path.as_str()),
+        "and it is the note the window comes back to"
+    );
+    assert_eq!(bin.calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn the_first_text_of_a_new_note_keeps_no_version_of_nothing() {
+    let f = fx();
+    let created = f.service.create_new(MOMENT, T0).expect("create");
+    f.service.opened(&created.path);
+    let NoteSaved::Saved { hash, .. } = f.save(&created.path, "first", &created.hash, T0 + MIN)
+    else {
+        panic!("saved");
+    };
+    assert_eq!(f.service.versions(&created.path).expect("versions"), []);
+    // the next change is the first one that has text to keep
+    f.save(&created.path, "second", &hash, T0 + 30 * MIN);
+    let versions = f.service.versions(&created.path).expect("versions");
+    assert_eq!(versions.len(), 1);
+    assert_eq!(
+        f.service
+            .version_text(&created.path, &versions[0].id)
+            .expect("text"),
+        "first"
+    );
+}
+
+#[test]
+fn a_name_taken_between_the_check_and_the_write_gives_the_next_free_one() {
+    let f = fx();
+    // another program made a note with that name meanwhile: nothing of theirs is touched
+    f.write("2026-10-05 0907.md", "theirs");
+    let made = f
+        .service
+        .create_file(
+            "2026-10-05 0907.md".to_owned(),
+            "2026-10-05 0907",
+            "mine",
+            T0,
+        )
+        .expect("created");
+    assert_eq!(made.path, "2026-10-05 0907-2.md");
+    assert_eq!(f.read("2026-10-05 0907.md"), "theirs");
+    assert_eq!(f.read(&made.path), "mine");
+    // and a new note takes the next free name to begin with
+    assert_eq!(
+        f.service.create_new(MOMENT, T0).expect("create").path,
         "2026-10-05 0907-3.md"
     );
-    // a note that is forgotten gives its name back
-    f.service.release_new(&first);
-    assert_eq!(f.service.reserve_new(MOMENT).expect("reserve"), first);
-}
-
-#[test]
-fn a_name_taken_between_the_reservation_and_the_save_gives_the_next_free_one() {
-    let f = fx();
-    let name = f.service.reserve_new(MOMENT).expect("reserve");
-    // another program made a note with that name meanwhile
-    f.write(&name, "theirs");
-    let NoteSaved::Saved { path, created, .. } = f.save(&name, "mine", "", T0) else {
-        panic!("saved");
-    };
-    assert_eq!(path, "2026-10-05 0907-2.md");
-    assert!(created);
-    assert_eq!(f.read(&name), "theirs", "nothing of theirs was touched");
-    assert_eq!(f.read(&path), "mine");
 }
 
 #[test]
@@ -521,7 +619,7 @@ fn a_second_program_with_the_folder_open_leaves_this_one_read_only() {
         Err(NotesError::Locked)
     ));
     assert!(matches!(
-        second.reserve_new(MOMENT),
+        second.create_new(MOMENT, T0),
         Err(NotesError::Locked)
     ));
     assert!(matches!(
@@ -906,38 +1004,55 @@ fn a_rename_never_overwrites_and_refuses_names_the_systems_refuse() {
 }
 
 #[test]
-fn a_note_that_was_never_written_in_is_removed_unless_it_is_pinned_or_has_text() {
+fn pin_rename_delete_and_undo_work_on_an_empty_note() {
     let f = fx();
-    f.write("blank.md", "  \n\t\n");
-    f.write("text.md", "# Words");
-    f.write("pinned.md", "   ");
-    f.service.set_pinned("pinned.md", true).expect("pin");
-    assert!(f.service.discard_blank("blank.md").expect("discard"));
-    assert!(!f.path("blank.md").exists());
-    // a note that was written in and then emptied is not told apart from one that never was, so what is removed goes to the
-    // Recycle Bin, where it can be had back
-    assert_eq!(
-        *lock(&f.bin.given),
-        [f.path("blank.md")],
-        "the file goes to the bin"
+    let note = f.new_note("");
+    let other = f.new_note("");
+    f.service.set_pinned(&note, true).expect("pin");
+    assert!(f
+        .service
+        .list()
+        .notes
+        .iter()
+        .any(|n| n.path == note && n.pinned));
+
+    let renamed = f.service.rename(&note, "Shopping").expect("rename");
+    assert_eq!(renamed, "Shopping.md");
+    assert_eq!(f.read(&renamed), "");
+    assert!(
+        f.service
+            .list()
+            .notes
+            .iter()
+            .any(|n| n.path == renamed && n.pinned),
+        "the pin follows the new name"
     );
-    assert!(!f.service.discard_blank("text.md").expect("discard"));
-    assert!(!f.service.discard_blank("pinned.md").expect("discard"));
-    assert!(!f.service.discard_blank("gone.md").expect("discard"));
-    assert_eq!(f.files(), ["pinned.md", "text.md"]);
+
+    // deleting goes to the bin with its (empty) bytes kept, and Undo puts the empty note back
+    let deleted = f.service.delete(&[renamed.clone(), other]).expect("delete");
+    assert_eq!(deleted.deleted.len(), 2);
+    assert_eq!(f.files(), Vec::<String>::new());
+    let back = f
+        .service
+        .undo_delete(deleted.undo_id.expect("undo"))
+        .expect("undo");
+    assert_eq!(back.len(), 2);
+    assert!(back.contains(&renamed));
+    assert_eq!(f.read(&renamed), "");
 }
 
 #[test]
 fn a_note_that_is_too_big_is_refused_with_its_name() {
     let f = fx();
-    let name = f.service.reserve_new(MOMENT).expect("reserve");
+    let created = f.service.create_new(MOMENT, T0).expect("create");
     let huge = "x".repeat(usize::try_from(MAX_RENDER_BYTES).expect("fits") + 1);
     let error = f
         .service
-        .save(&name, &huge, "", T0, MOMENT)
+        .save(&created.path, &huge, &created.hash, T0, MOMENT)
         .expect_err("too big");
     assert_eq!(error.kind(), "tooLarge");
-    assert_eq!(f.files(), Vec::<String>::new());
+    assert_eq!(f.files(), [created.path.as_str()]);
+    assert_eq!(f.read(&created.path), "", "the note is as it was");
 }
 
 mod loose_files;

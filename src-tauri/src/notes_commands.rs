@@ -3,27 +3,32 @@
 //! validate arguments and move blocking work off the async runtime. Their names are listed in `ipc-contract.json`.
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::bridge::socket::Endpoint;
+use crate::bridge::socket::{Endpoint, Listening};
 use crate::commands::{app_data_dir, blocking, AppState, TauriSink};
 use crate::error::AppError;
 use crate::notes::{
-    self, folder, FolderStatus, Moment, NoteDeleted, NoteList, NoteSaved, NoteVersion, NoteView,
-    NotesFolder, NotesRequest, NotesSummary, ReadOnlyReason, Restored,
+    self, folder, FolderStatus, Moment, NoteCreated, NoteDeleted, NoteList, NoteSaved, NoteVersion,
+    NoteView, NotesFolder, NotesRequest, NotesSummary, ReadOnlyReason, Restored,
 };
 use crate::session::{AppSettingsStore, RecentStore, StartIn};
 use crate::util::canonicalize_lenient;
 use crate::vault::{strip_root, VaultError};
 use crate::workspace::{EventSink, VaultInfo, Workspace};
 
-/// What the program was started as, and the requests to the Notes window that it has not shown yet. Managed state.
+/// What the program is (the Notes window, or a window for a project or the welcome screen), and the requests to the Notes window
+/// that it has not shown yet. Managed state.
+///
+/// A window that shows only the welcome screen can turn into the Notes window while it runs (see [`become_notes_window`]), so
+/// what the program is can change once, from a project window to the Notes window.
 pub struct NotesLaunch {
-    is_notes_window: bool,
+    is_notes_window: AtomicBool,
     pending: Mutex<Option<NotesRequest>>,
 }
 
@@ -31,14 +36,21 @@ impl NotesLaunch {
     /// `first` is what the window was started to show (the file a launch carried); nothing when it is the default.
     pub fn new(is_notes_window: bool, first: NotesRequest) -> Self {
         Self {
-            is_notes_window,
+            is_notes_window: AtomicBool::new(is_notes_window),
             pending: Mutex::new((first != NotesRequest::default()).then_some(first)),
         }
     }
 
     /// Whether this program is the Notes window.
     pub fn is_notes_window(&self) -> bool {
-        self.is_notes_window
+        self.is_notes_window.load(Ordering::SeqCst)
+    }
+
+    /// This program, which was started as a window for the welcome screen, is the Notes window from now on, and `request` is what
+    /// it is to show first. Its window keeps its place, so from now on that place is remembered as the Notes window's.
+    pub fn become_notes_window(&self, request: NotesRequest) {
+        self.is_notes_window.store(true, Ordering::SeqCst);
+        self.push(request);
     }
 
     /// A request came in. Requests that pile up before the window picks them up are one: a new note wanted by any of them
@@ -73,6 +85,16 @@ pub fn deliver(app: &AppHandle, request: NotesRequest) {
     let _ = app.emit("notes-request", ());
 }
 
+/// Answers the requests that other windows and launches send to the Notes window over `listening`, for as long as the program
+/// lives.
+pub fn serve_requests(app: &AppHandle, listening: Listening) {
+    let handle = app.clone();
+    tauri::async_runtime::spawn(notes::serve(
+        listening,
+        Arc::new(move |request| deliver(&handle, request)),
+    ));
+}
+
 /// What the program is. Matches the UI's `LaunchMode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -103,13 +125,19 @@ fn chosen_folder(app_data: &std::path::Path) -> Option<String> {
     AppSettingsStore::new(app_data).load().notes_folder
 }
 
+/// Where the notes are, and whether that is the default folder or one the person chose.
+fn folder_origin(app_data: &std::path::Path) -> folder::Resolved {
+    folder::configured_origin(app_data, chosen_folder(app_data).as_deref())
+}
+
 /// Where the notes are.
 fn folder_path(app_data: &std::path::Path) -> PathBuf {
-    folder::configured(app_data, chosen_folder(app_data).as_deref())
+    folder_origin(app_data).path
 }
 
 fn folder_info(app_data: &std::path::Path) -> NotesFolder {
-    folder::describe(&folder_path(app_data), chosen_folder(app_data).is_none())
+    let origin = folder_origin(app_data);
+    folder::describe(&origin.path, origin.is_default)
 }
 
 /// The place of the notes of the open Notes window, as the commands that need a workspace see it.
@@ -127,7 +155,7 @@ pub fn launch_mode(app: AppHandle, launch: State<'_, NotesLaunch>) -> LaunchMode
     // Finder opened something while the program started as the Notes window: a file is shown here, a folder gets a window of
     // its own
     #[cfg(target_os = "macos")]
-    if launch.is_notes_window {
+    if launch.is_notes_window() {
         if let Some(path) = app
             .state::<crate::open_request::OpenInbox>()
             .take_launch_path()
@@ -143,7 +171,7 @@ pub fn launch_mode(app: AppHandle, launch: State<'_, NotesLaunch>) -> LaunchMode
         }
     }
     LaunchMode {
-        notes: launch.is_notes_window,
+        notes: launch.is_notes_window(),
     }
 }
 
@@ -170,7 +198,8 @@ pub async fn set_notes_folder(app: AppHandle, path: String) -> Result<NotesFolde
     .await
 }
 
-/// Makes the notes folder that is not there ("Create it"). Nothing else makes it.
+/// Makes the notes folder that the person chose and that is not there ("Create it"). The default folder is not made here:
+/// opening the notes makes it (see [`open_notes`]).
 #[tauri::command]
 pub async fn create_notes_folder(app: AppHandle) -> Result<NotesFolder, AppError> {
     let dir = app_data_dir(&app)?;
@@ -208,17 +237,18 @@ pub async fn set_notes_start_in(app: AppHandle, start_in: StartIn) -> Result<(),
 pub async fn notes_overview(app: AppHandle) -> Result<NotesOverview, AppError> {
     let dir = app_data_dir(&app)?;
     blocking(move || {
-        let path = folder_path(&dir);
+        let origin = folder_origin(&dir);
         Ok(NotesOverview {
-            folder: folder::describe(&path, chosen_folder(&dir).is_none()),
-            summary: notes::summary(&path),
+            folder: folder::describe(&origin.path, origin.is_default),
+            summary: notes::summary(&origin.path),
         })
     })
     .await
 }
 
-/// Opens the notes folder as this window's workspace (the Notes window only). The folder must be there. Asking again for
-/// the folder that is open answers with it, so the lock it holds is never taken twice.
+/// Opens the notes folder as this window's workspace (the Notes window only). The default folder is made now if it is not
+/// there, without asking; a folder the person chose must be there (a missing one is theirs to locate or create). Asking again
+/// for the folder that is open answers with it, so the lock it holds is never taken twice.
 #[tauri::command]
 pub async fn open_notes(
     app: AppHandle,
@@ -230,14 +260,15 @@ pub async fn open_notes(
     let request = host.request();
     let sink: Arc<dyn EventSink> = Arc::new(TauriSink::new(app));
     blocking(move || {
-        let path = folder_path(&app_data);
+        let origin = folder_origin(&app_data);
+        let path = origin.path;
         if let Ok(ws) = host.current() {
             if ws.shows_notes_of(&path) {
                 return Ok(opened(&ws));
             }
         }
-        let status = folder::describe(&path, false).status;
-        if status == FolderStatus::Missing {
+        folder::ensure(&path, origin.is_default).map_err(|source| VaultError::io(&path, source))?;
+        if folder::describe(&path, false).status == FolderStatus::Missing {
             return Err(VaultError::NotFound(path.display().to_string()).into());
         }
         host.open(request, &sink, |sink| {
@@ -267,26 +298,19 @@ pub async fn list_notes(state: State<'_, AppState>) -> Result<NoteList, AppError
     blocking(move || Ok(ws.notes()?.list())).await
 }
 
-/// The name of a new note. No file is made until its text has something in it.
+/// Makes a new note: an empty file, in the list at once, that stays until the person deletes it.
 #[tauri::command]
-pub async fn new_note(state: State<'_, AppState>) -> Result<String, AppError> {
-    let ws = notes_of(&state)?;
-    blocking(move || Ok(ws.notes()?.reserve_new(Moment::now())?)).await
-}
-
-/// A new note that was left without being written is forgotten.
-#[tauri::command]
-pub async fn forget_new_note(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+pub async fn new_note(state: State<'_, AppState>) -> Result<NoteCreated, AppError> {
     let ws = notes_of(&state)?;
     blocking(move || {
-        ws.notes()?.release_new(&path);
-        Ok(())
+        Ok(ws
+            .notes()?
+            .create_new(Moment::now(), crate::util::now_ms())?)
     })
     .await
 }
 
-/// Saves the text of a note, unless the note changed since `expected_hash` (then the text is kept as a copy). An empty
-/// `expected_hash` is a new note, whose file is made by the first text that is not blank.
+/// Saves the text of a note, unless the note changed since `expected_hash` (then the text is kept as a copy).
 #[tauri::command]
 pub async fn save_note(
     state: State<'_, AppState>,
@@ -435,22 +459,14 @@ pub async fn restore_note_version(
     .await
 }
 
-/// Removes a note that was never written in (blank, and not pinned). Resolves to whether it was removed.
-#[tauri::command]
-pub async fn discard_blank_note(
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<bool, AppError> {
-    let ws = notes_of(&state)?;
-    blocking(move || Ok(ws.notes()?.discard_blank(&path)?)).await
-}
-
-/// Shows the notes folder in the system's file manager.
+/// Shows the notes folder in the system's file manager (the default folder is made first when it is not there yet).
 #[tauri::command]
 pub async fn open_notes_folder(app: AppHandle) -> Result<(), AppError> {
     let dir = app_data_dir(&app)?;
     blocking(move || {
-        let path = folder_path(&dir);
+        let origin = folder_origin(&dir);
+        let path = origin.path;
+        folder::ensure(&path, origin.is_default).map_err(|source| VaultError::io(&path, source))?;
         if !path.is_dir() {
             return Err(VaultError::NotFound(path.display().to_string()).into());
         }
@@ -779,6 +795,67 @@ pub async fn show_notes(
         .map_err(|e| AppError::Internal(e.to_string()))
 }
 
+/// What became of a window that showed only the welcome screen when it asked for the Notes window. Matches the UI's `NotesHandoff`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Handoff {
+    /// This window is the Notes window now: it keeps its place and its size, and the UI shows the notes in it.
+    Became,
+    /// A Notes window was running in another program and has been asked to come forward with the request: this window has
+    /// nothing left to do and is to close.
+    Forwarded,
+}
+
+/// A window that shows only the welcome screen asks for the Notes window (New note, Notes, `Ctrl+Shift+N`, `Ctrl+Shift+D`, a file
+/// opened from the welcome screen). There is only ever one Notes window, reached through a local socket, so:
+///
+/// - when none is running, **this window becomes it**: this program takes the socket, and from now on is the Notes window (its
+///   place is remembered as the Notes window's, and `launch_mode` says so), so that nothing is left behind and nothing moves;
+/// - when one is running in another program, it is asked to come forward with the request and this window is to close.
+///
+/// A window that has a project open is refused: it stays as it is and uses [`show_notes`].
+#[tauri::command]
+pub async fn become_notes_window(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    launch: State<'_, NotesLaunch>,
+    new_note: bool,
+    open: Option<String>,
+    open_file: Option<String>,
+) -> Result<Handoff, AppError> {
+    let request = NotesRequest {
+        new_note,
+        open,
+        open_file,
+    };
+    if launch.is_notes_window() {
+        // it became the Notes window a moment ago (the same ask twice): the request is for the window it is now
+        deliver(&app, request);
+        return Ok(Handoff::Became);
+    }
+    if state.current().is_ok() {
+        return Err(AppError::Internal(
+            "this window shows a project, so it cannot become the Notes window".to_owned(),
+        ));
+    }
+    let dir = app_data_dir(&app)?;
+    let endpoint = Endpoint::for_notes(&dir).map_err(|e| AppError::Internal(e.to_string()))?;
+    match notes::claim(&endpoint, &request).await {
+        notes::Claim::Forwarded => Ok(Handoff::Forwarded),
+        notes::Claim::Listening(listening) => {
+            launch.become_notes_window(request);
+            serve_requests(&app, listening);
+            Ok(Handoff::Became)
+        }
+        // no socket to be reached by: it runs as the Notes window anyway, as a program started for it would, and other windows
+        // that ask will start another one
+        notes::Claim::Unavailable => {
+            launch.become_notes_window(request);
+            Ok(Handoff::Became)
+        }
+    }
+}
+
 /// The request that came in while the window was not looking, once.
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri hands injected state over by value
@@ -806,6 +883,46 @@ fn start_notes_window() -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn asking_for(new_note: bool, open: Option<&str>) -> NotesRequest {
+        NotesRequest {
+            new_note,
+            open: open.map(str::to_owned),
+            open_file: None,
+        }
+    }
+
+    /// A window that showed the welcome screen turns into the Notes window once, with the request that made it: the program says
+    /// so from then on (the window's place is kept as the Notes window's, a reloaded page boots as the Notes window), and the
+    /// request waits for the UI to take it.
+    #[test]
+    fn a_welcome_window_becomes_the_notes_window_and_keeps_what_it_was_asked() {
+        let launch = NotesLaunch::new(false, NotesRequest::default());
+        assert!(!launch.is_notes_window());
+        assert_eq!(launch.take(), None);
+
+        launch.become_notes_window(asking_for(true, None));
+        assert!(launch.is_notes_window());
+        assert_eq!(launch.take(), Some(asking_for(true, None)));
+        assert_eq!(launch.take(), None, "a request is taken once");
+
+        // a program started as the Notes window says so from the start
+        assert!(NotesLaunch::new(true, NotesRequest::default()).is_notes_window());
+    }
+
+    /// Requests that pile up before the window looks are one: a new note wanted by any of them is wanted, and the note to show is
+    /// the last one asked for.
+    #[test]
+    fn requests_that_pile_up_before_the_window_looks_are_one() {
+        let launch = NotesLaunch::new(false, NotesRequest::default());
+        launch.become_notes_window(asking_for(true, None));
+        launch.push(asking_for(false, Some("a.md")));
+        launch.push(asking_for(false, Some("b.md")));
+        assert_eq!(launch.take(), Some(asking_for(true, Some("b.md"))));
+        // asking only to be shown leaves nothing to do
+        launch.push(NotesRequest::default());
+        assert_eq!(launch.take(), Some(NotesRequest::default()));
+    }
 
     /// The file to show first is read once, at start, and taken out of the environment: no program this one starts later (another
     /// window, the Notes window, an editor, an agent's launch) is told to show it too.
