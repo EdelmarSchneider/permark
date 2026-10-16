@@ -4,9 +4,15 @@
 //! [files."docs/specs/live-feed.md"]
 //! tags = ["spec", "needs-review"]
 //! description = "How the live feed groups watcher events."
+//!
+//! [tag_styles.spec]
+//! color = "blue"
+//! icon = "book-open"
 //! ```
 //!
-//! Files are keyed by their path relative to the project, `/`-separated. Keys and tables the app does
+//! Files are keyed by their path relative to the project, `/`-separated. A tag's look (an optional color
+//! and icon, see [`super::style`]) is kept per project under its name, whichever files have the tag; the
+//! style of a tag that no file has any more is harmless and stays. Keys and tables the app does
 //! not know (a newer version may add some, in the file or at the top level) are kept when the file is
 //! written again. Two paths that differ only in case are two entries, even on a case-insensitive
 //! system: the file may have been written on one that tells them apart.
@@ -15,7 +21,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::normalize::{normalize_description, normalize_tags};
+use super::normalize::{normalize_description, normalize_tag, normalize_tags};
+use super::style::TagStyle;
 use crate::vault::key;
 
 /// Written at the top of every `meta.toml`. A file this app wrote is never shorter than this.
@@ -58,6 +65,8 @@ impl Entry {
 struct Disk {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     files: BTreeMap<String, Entry>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    tag_styles: BTreeMap<String, TagStyle>,
     /// Top-level keys and tables written by other versions or tools.
     #[serde(flatten)]
     extra: BTreeMap<String, toml::Value>,
@@ -76,6 +85,8 @@ pub struct Problem {
 pub struct Entries {
     /// (folded path, path as written) to the entry.
     map: BTreeMap<(String, String), Entry>,
+    /// The look of tags, by (normalized) tag name.
+    styles: BTreeMap<String, TagStyle>,
     /// Top-level keys and tables the app does not know.
     extra: BTreeMap<String, toml::Value>,
 }
@@ -95,8 +106,14 @@ impl Entries {
         })?;
         let mut entries = Self {
             map: BTreeMap::new(),
+            styles: BTreeMap::new(),
             extra: disk.extra,
         };
+        for (tag, style) in disk.tag_styles {
+            if let Some(tag) = normalize_tag(&tag).filter(|_| !style.is_blank()) {
+                entries.styles.entry(tag).or_insert(style);
+            }
+        }
         for (path, entry) in disk.files {
             let entry = entry.normalized();
             if !path.is_empty() && !entry.is_blank() {
@@ -113,11 +130,12 @@ impl Entries {
             .iter()
             .map(|((_, path), entry)| (path.clone(), entry.clone()))
             .collect();
-        let body = if files.is_empty() && self.extra.is_empty() {
+        let body = if files.is_empty() && self.styles.is_empty() && self.extra.is_empty() {
             String::new()
         } else {
             let disk = Disk {
                 files,
+                tag_styles: self.styles.clone(),
                 extra: self.extra.clone(),
             };
             toml::to_string(&disk).unwrap_or_default()
@@ -144,9 +162,9 @@ impl Entries {
         self.locate(path).and_then(|s| self.map.get(&s))
     }
 
-    /// Nothing is kept: no entry and no unknown key.
+    /// Nothing is kept: no entry, no tag style and no unknown key.
     pub fn is_empty(&self) -> bool {
-        self.map.is_empty() && self.extra.is_empty()
+        self.map.is_empty() && self.styles.is_empty() && self.extra.is_empty()
     }
 
     /// Every path with its entry, in folded-path order.
@@ -166,6 +184,43 @@ impl Entries {
             self.map.remove(&at);
         } else {
             self.map.insert(at, entry);
+        }
+    }
+
+    /// The look kept for a tag (the name is normalized first).
+    pub fn style(&self, tag: &str) -> Option<&TagStyle> {
+        normalize_tag(tag).and_then(|tag| self.styles.get(&tag))
+    }
+
+    /// Every styled tag with its style, by name.
+    pub fn styles(&self) -> impl Iterator<Item = (&str, &TagStyle)> {
+        self.styles.iter().map(|(tag, style)| (tag.as_str(), style))
+    }
+
+    /// Gives a tag a color and an icon, `None` for none. A name that is not in the palette or the set
+    /// means none, and a tag left with neither loses its style.
+    pub fn set_style(&mut self, tag: &str, color: Option<&str>, icon: Option<&str>) {
+        let Some(tag) = normalize_tag(tag) else {
+            return;
+        };
+        let style = self
+            .styles
+            .get(&tag)
+            .cloned()
+            .unwrap_or_default()
+            .with(color, icon);
+        self.put_style(&tag, Some(style));
+    }
+
+    /// Replaces the style of a tag (`None`, or a blank one, removes it).
+    pub(super) fn put_style(&mut self, tag: &str, style: Option<TagStyle>) {
+        match style.filter(|s| !s.is_blank()) {
+            Some(style) => {
+                self.styles.insert(tag.to_owned(), style);
+            }
+            None => {
+                self.styles.remove(tag);
+            }
         }
     }
 
@@ -203,10 +258,13 @@ impl Entries {
     }
 
     /// Adds everything from `other`: tags are united, and `other`'s description is used only where this
-    /// side has none. Unknown top-level keys of `other` are added where this side has none.
+    /// side has none. Tag styles and unknown top-level keys of `other` are added where this side has none.
     pub fn merge(&mut self, other: Entries) {
         for ((_, path), entry) in other.map {
             self.merge_entry(&path, entry);
+        }
+        for (tag, style) in other.styles {
+            self.styles.entry(tag).or_insert(style);
         }
         for (k, v) in other.extra {
             self.extra.entry(k).or_insert(v);
@@ -458,6 +516,135 @@ by = \"ana\"
         );
         assert!(e.remove("Notes.md"));
         assert!(e.get("notes.md").is_some());
+    }
+
+    #[test]
+    fn a_file_without_tag_styles_reads_with_none() {
+        let e = Entries::parse("[files.\"a.md\"]\ntags = [\"x\"]\n").expect("parse");
+        assert_eq!(e.styles().count(), 0);
+        assert!(e.style("x").is_none());
+        assert!(!e.to_toml().contains("tag_styles"));
+    }
+
+    #[test]
+    fn tag_styles_are_written_in_the_documented_format_and_round_trip() {
+        let mut e = Entries::default();
+        e.set_tags("a.md", &tags(&["spec"]));
+        e.set_style("spec", Some("blue"), Some("book-open"));
+        e.set_style("Area/API", Some("teal"), None);
+        e.set_style("idea", None, Some("lightbulb"));
+        let text = e.to_toml();
+        assert!(
+            text.contains("[tag_styles.spec]\ncolor = \"blue\"\nicon = \"book-open\"\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("[tag_styles.\"area/api\"]\ncolor = \"teal\"\n"),
+            "{text}"
+        );
+        assert!(
+            text.contains("[tag_styles.idea]\nicon = \"lightbulb\"\n"),
+            "{text}"
+        );
+        assert_eq!(Entries::parse(&text), Ok(e));
+    }
+
+    #[test]
+    fn a_tag_left_with_neither_color_nor_icon_loses_its_style() {
+        let mut e = Entries::default();
+        e.set_style("spec", Some("red"), Some("flag"));
+        e.set_style("spec", None, Some("flag"));
+        assert_eq!(
+            e.style("spec").and_then(TagStyle::view).map(|v| v.color),
+            Some(None)
+        );
+        e.set_style("spec", None, None);
+        assert!(e.is_empty(), "no style, nothing else: the store is empty");
+        // names outside the palette and the set mean none
+        e.set_style("spec", Some("chartreuse"), Some("rocket"));
+        assert!(e.is_empty());
+        e.set_style("   ", Some("red"), None);
+        assert!(e.is_empty(), "a blank tag name is nobody's");
+    }
+
+    #[test]
+    fn style_keys_are_read_as_tag_names_and_blank_styles_are_dropped() {
+        let e = Entries::parse(
+            "[tag_styles.\"Needs Review\"]\ncolor = \"Orange\"\n[tag_styles.empty]\n[tag_styles.\"  \"]\ncolor = \"red\"\n",
+        )
+        .expect("parse");
+        assert_eq!(e.styles().count(), 1);
+        let view = e
+            .style("needs-review")
+            .and_then(TagStyle::view)
+            .expect("view");
+        assert_eq!(view.color, Some("orange"));
+        assert_eq!(e.style("Needs Review"), e.style("needs-review"));
+    }
+
+    #[test]
+    fn unknown_colors_icons_and_keys_of_a_style_survive_a_rewrite_but_are_not_shown() {
+        let source = "[tag_styles.spec]\ncolor = \"chartreuse\"\nicon = \"star\"\nweight = 3\n";
+        let mut e = Entries::parse(source).expect("parse");
+        let view = e.style("spec").and_then(TagStyle::view).expect("view");
+        assert_eq!((view.color, view.icon), (None, Some("star")));
+        // an ordinary edit elsewhere writes the whole style back
+        e.set_tags("a.md", &tags(&["x"]));
+        let text = e.to_toml();
+        assert!(
+            text.contains("chartreuse") && text.contains("weight = 3"),
+            "{text}"
+        );
+        // choosing a look for that tag replaces its colour and icon, and leaves the other keys alone
+        e.set_style("spec", Some("green"), None);
+        let text = e.to_toml();
+        assert!(
+            text.contains("color = \"green\"") && text.contains("weight = 3"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("chartreuse") && !text.contains("star"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_style_for_a_tag_no_file_has_is_harmless() {
+        let mut e = Entries::default();
+        e.set_style("ghost", Some("purple"), None);
+        e.set_tags("a.md", &tags(&["x"]));
+        e.set_tags("a.md", &[]);
+        assert!(!e.is_empty(), "the style still counts as content");
+        e.remove("a.md");
+        assert!(e.style("ghost").is_some());
+        assert_eq!(Entries::parse(&e.to_toml()), Ok(e));
+    }
+
+    #[test]
+    fn wrong_types_in_a_style_are_reported_like_any_other_bad_edit() {
+        let problem =
+            Entries::parse("[tag_styles.spec]\ncolor = 5\n").expect_err("a number is no color");
+        assert_eq!(problem.line, Some(2));
+        assert!(Entries::parse("tag_styles = 3").is_err());
+    }
+
+    #[test]
+    fn merging_brings_styles_along_without_overriding_the_receivers() {
+        let mut base = Entries::default();
+        base.set_style("spec", Some("blue"), None);
+        let mut other = Entries::default();
+        other.set_style("spec", Some("red"), Some("flag"));
+        other.set_style("idea", Some("yellow"), None);
+        base.merge(other);
+        assert_eq!(
+            base.style("spec").and_then(TagStyle::view).map(|v| v.color),
+            Some(Some("blue"))
+        );
+        assert_eq!(
+            base.style("spec").and_then(TagStyle::view).map(|v| v.icon),
+            Some(None)
+        );
+        assert!(base.style("idea").is_some());
     }
 
     #[test]

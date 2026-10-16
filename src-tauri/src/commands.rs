@@ -2,6 +2,7 @@
 //! and call the Tauri-free core in [`crate::workspace`]. Command names are the `snake_case` forms of the
 //! methods in `src/lib/api.ts`; argument names match what `api.ts` sends.
 
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -25,6 +26,7 @@ use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
 use crate::meta::catalog::{IndexEntry, TaggedFile};
 use crate::meta::service::{FileMeta, TagOverview};
+use crate::meta::style::TagStyleView;
 use crate::open_request::OpenInbox;
 #[cfg(target_os = "macos")]
 use crate::open_request::{self, Action};
@@ -598,6 +600,27 @@ pub async fn files_with_tags(
 pub async fn meta_index(state: State<'_, AppState>) -> Result<Vec<IndexEntry>, AppError> {
     let ws = state.current()?;
     blocking(move || Ok(ws.meta_index())).await
+}
+
+/// The color and icon of every tag that has a look, by tag name.
+#[tauri::command]
+pub async fn tag_styles(
+    state: State<'_, AppState>,
+) -> Result<BTreeMap<String, TagStyleView>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.tag_styles())).await
+}
+
+/// Gives a tag a color and an icon (`None` for none). Resolves to every tag's look.
+#[tauri::command]
+pub async fn set_tag_style(
+    state: State<'_, AppState>,
+    tag: String,
+    color: Option<String>,
+    icon: Option<String>,
+) -> Result<BTreeMap<String, TagStyleView>, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_tag_style(&tag, color.as_deref(), icon.as_deref())).await
 }
 
 /// Removes the entries kept for files that no longer exist. Resolves to how many.

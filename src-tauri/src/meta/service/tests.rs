@@ -1095,3 +1095,5 @@ fn a_file_that_is_not_utf8_is_a_problem_and_is_not_rewritten() {
     svc.stop();
     assert_eq!(fs::read(fx.project_meta()).expect("read"), bad);
 }
+
+mod styles;

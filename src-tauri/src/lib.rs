@@ -224,6 +224,8 @@ pub fn run() {
             commands::list_tags,
             commands::files_with_tags,
             commands::meta_index,
+            commands::tag_styles,
+            commands::set_tag_style,
             commands::clean_up_meta,
             commands::document_source,
             commands::parse_blocks,
