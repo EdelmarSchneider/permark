@@ -49,6 +49,9 @@ parts:
       - curl
       - ca-certificates
       - dpkg
+    stage-packages:
+      - libwebkit2gtk-4.1-0
+      - libgtk-3-0
     override-build: |
       set -eu
       VER=$(grep -oE '"version": *"[^"]+"' "$CRAFT_PART_SRC/package.json" | head -n 1 | cut -d'"' -f4)
@@ -57,7 +60,7 @@ parts:
         DEB_URL=$(curl -fsSL https://api.github.com/repos/EdelmarSchneider/trailmark/releases/latest | grep -oE 'https://[^"]+_amd64\.deb' | head -n 1)
         VER=$(echo "$DEB_URL" | sed -E 's#.*/TrailMark_([^_]+)_amd64\.deb#\1#')
       fi
-      craftctl set version "$VER"
+      craftctl set version="$VER"
       curl -fsSL "$DEB_URL" -o /tmp/trailmark.deb
       dpkg-deb -x /tmp/trailmark.deb "$CRAFT_PART_INSTALL"
       rm -f /tmp/trailmark.deb
