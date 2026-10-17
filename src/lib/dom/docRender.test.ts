@@ -50,6 +50,7 @@ function view(blocks: string[]): DocumentView {
     frontmatter: null,
     modifiedMs: 0,
     sizeBytes: 0,
+    hash: null,
     encodingNote: null,
   };
 }

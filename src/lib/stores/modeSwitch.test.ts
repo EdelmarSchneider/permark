@@ -57,6 +57,7 @@ const view = (kind: DocumentView["kind"] = "markdown", path = PATH): DocumentVie
   frontmatter: null,
   modifiedMs: 1,
   sizeBytes: 1,
+  hash: null,
   encodingNote: null,
 });
 const source = (text: string): SourceDoc => ({

@@ -58,6 +58,7 @@ const view = (path: string): DocumentView => ({
   frontmatter: null,
   modifiedMs: 1,
   sizeBytes: 1,
+  hash: null,
   encodingNote: null,
 });
 const source = (text: string, hash: string): SourceDoc => ({

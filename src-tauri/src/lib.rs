@@ -7,7 +7,8 @@
 //! opens a file in the person's editor).
 //! [`media`] knows the pictures, sound and video of a folder, serves them in parts and decides which files the system may open.
 //! [`refs`] knows which images and media the documents use (for the Explorer filter); [`unread`] knows which documents
-//! changed since they were last read; [`comments`] keeps the comments a person leaves on passages.
+//! changed since they were last read; [`review`] shows what changed in them since the person approved them, and keeps or
+//! reverts each part; [`comments`] keeps the comments a person leaves on passages.
 //! [`shell_integration`] adds "Open with PerMark" to the file manager (Windows); [`open_request`] receives what the
 //! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
@@ -34,6 +35,7 @@ mod notes_commands;
 mod open_request;
 mod refs;
 mod render;
+mod review;
 mod search;
 mod session;
 mod shell_integration;
@@ -249,6 +251,15 @@ pub fn run() {
             commands::mark_unread,
             commands::mark_all_read,
             commands::mark_folder_read,
+            commands::review_list,
+            commands::review_get,
+            commands::review_keep,
+            commands::review_revert,
+            commands::review_keep_all,
+            commands::review_revert_all,
+            commands::review_restore_deleted,
+            commands::review_undo,
+            commands::review_release,
             commands::set_agent_connection,
             commands::agent_status,
             commands::publish_agent_context,

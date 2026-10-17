@@ -31,6 +31,7 @@ use crate::open_request::OpenInbox;
 #[cfg(target_os = "macos")]
 use crate::open_request::{self, Action};
 use crate::render::DocumentView;
+use crate::review::{Basis as ReviewBasis, Entry as ReviewEntry, ReviewView};
 use crate::search::SearchHit;
 use crate::session::{
     effective_language, installer_language, AppSettingsStore, Language, RecentStore, RecentVault,
@@ -83,6 +84,10 @@ impl EventSink for TauriSink {
 
     fn unread_changed(&self, unread: &[String]) {
         let _ = self.0.emit("unread-changed", unread);
+    }
+
+    fn review_changed(&self, entries: &[ReviewEntry]) {
+        let _ = self.0.emit("review-changed", entries);
     }
 
     fn agent_status(&self, status: &AgentStatus) {
@@ -783,6 +788,123 @@ pub async fn mark_all_read(state: State<'_, AppState>) -> Result<(), AppError> {
 pub async fn mark_folder_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
     let ws = state.current()?;
     blocking(move || ws.mark_folder_read(&path)).await
+}
+
+/// The documents that differ from the version the person approved, sorted (the `review-changed` event carries the same
+/// list). Empty until the folder has been looked at.
+#[tauri::command]
+pub async fn review_list(state: State<'_, AppState>) -> Result<Vec<ReviewEntry>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.review_list())).await
+}
+
+/// The changes of a document since the person approved it, each with its blocks rendered. Hand `hash` and
+/// `reviewedHash` of the answer back with every keep and revert.
+#[tauri::command]
+pub async fn review_get(state: State<'_, AppState>, path: String) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.review_get(&path)).await
+}
+
+/// Keeps change `index` of a document: it becomes part of the version the person approved. Fails with kind
+/// `reviewStale` when the document is not what `hash` and `reviewed_hash` say. Answers with the review as it is now.
+#[tauri::command]
+pub async fn review_keep(
+    state: State<'_, AppState>,
+    path: String,
+    hash: Option<String>,
+    reviewed_hash: Option<String>,
+    index: usize,
+) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    let basis = ReviewBasis {
+        hash,
+        reviewed: reviewed_hash,
+    };
+    blocking(move || ws.review_keep(&path, &basis, index)).await
+}
+
+/// Reverts change `index` of a document: the old text is written back into the file, only if the file still has
+/// `hash` (else `reviewStale`). Answers with the review as it is now.
+#[tauri::command]
+pub async fn review_revert(
+    state: State<'_, AppState>,
+    path: String,
+    hash: Option<String>,
+    reviewed_hash: Option<String>,
+    index: usize,
+) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    let basis = ReviewBasis {
+        hash,
+        reviewed: reviewed_hash,
+    };
+    blocking(move || ws.review_revert(&path, &basis, index)).await
+}
+
+/// Keeps all the changes of a document (the document, as it is, is the approved version), or accepts its deletion.
+#[tauri::command]
+pub async fn review_keep_all(
+    state: State<'_, AppState>,
+    path: String,
+    hash: Option<String>,
+    reviewed_hash: Option<String>,
+) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    let basis = ReviewBasis {
+        hash,
+        reviewed: reviewed_hash,
+    };
+    blocking(move || ws.review_keep_all(&path, &basis)).await
+}
+
+/// Reverts all the changes of a document: the approved text is written back, only if the file still has `hash`. A
+/// deleted document is put back, and a new one is sent to the recycle bin.
+#[tauri::command]
+pub async fn review_revert_all(
+    state: State<'_, AppState>,
+    path: String,
+    hash: Option<String>,
+    reviewed_hash: Option<String>,
+) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    let basis = ReviewBasis {
+        hash,
+        reviewed: reviewed_hash,
+    };
+    blocking(move || ws.review_revert_all(&path, &basis)).await
+}
+
+/// Puts a deleted document back, as it was approved.
+#[tauri::command]
+pub async fn review_restore_deleted(
+    state: State<'_, AppState>,
+    path: String,
+    hash: Option<String>,
+    reviewed_hash: Option<String>,
+) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    let basis = ReviewBasis {
+        hash,
+        reviewed: reviewed_hash,
+    };
+    blocking(move || ws.review_restore(&path, &basis)).await
+}
+
+/// Takes back the last keep or revert of a document that can still be taken back (the steps are kept until the review
+/// of the document is closed). Fails with kind `reviewStale`, and writes nothing, when the document is not what that step
+/// left, or when there is no step left. Answers with the review as it is now.
+#[tauri::command]
+pub async fn review_undo(state: State<'_, AppState>, path: String) -> Result<ReviewView, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.review_undo(&path)).await
+}
+
+/// The review of a document is closed (the person left it): the version kept for it is let go.
+#[tauri::command]
+pub async fn review_release(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.review_release(&path)).await
 }
 
 /// Writes a comment on a passage of a document (the person selected it in the reading view).
