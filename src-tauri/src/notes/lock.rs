@@ -1,12 +1,10 @@
-//! The lock on the notes folder. The Notes window of one TrailMark holds it while it is open; another TrailMark that
+//! The lock on the notes folder. The Notes window of one PerMark holds it while it is open; another PerMark that
 //! opens the same folder (another install, a development build) finds it taken and shows the notes read-only, so two
 //! programs never write the same notes at the same time. The operating system releases it when the program ends,
 //! however it ends.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::Path;
-
-use super::data::STATE_DIR;
 
 const FILE_NAME: &str = "notes.lock";
 
@@ -29,7 +27,7 @@ pub(crate) enum Access {
 
 /// Takes the lock of the notes folder `root`.
 pub(crate) fn acquire(root: &Path) -> Access {
-    let dir = root.join(STATE_DIR);
+    let dir = crate::session::state_dir(root);
     if std::fs::create_dir_all(&dir).is_err() {
         return Access::Unwritable;
     }

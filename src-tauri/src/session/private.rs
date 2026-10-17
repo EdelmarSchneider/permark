@@ -1,8 +1,8 @@
-//! The private state folders of a project, `.trailmark/local/` and `.trailmark/cache/`: what makes it safe to write
+//! The private state folders of a project, `.permark/local/` and `.permark/cache/`: what makes it safe to write
 //! there.
 //!
-//! A repository decides what is in its `.trailmark/` folder, links included. A link in place of `.trailmark/` or
-//! `local/` would send what TrailMark writes there (the session, the comments, the agent's context) and the file
+//! A repository decides what is in its `.permark/` folder, links included. A link in place of `.permark/` or
+//! `local/` would send what PerMark writes there (the session, the comments, the agent's context) and the file
 //! it deletes to wherever the link points, so a folder that is a link (a symbolic link, or a junction on Windows) is
 //! never used. And the project's own `.gitignore` may or may not say that these folders are private, so each of them
 //! ignores itself: a `.gitignore` with `*` inside keeps its contents out of the repository whatever the parent says.
@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::util::write_atomic;
 
-const TRAILMARK_DIR: &str = ".trailmark";
+const PERMARK_DIR: &str = ".permark";
 /// What a state folder holds in its own `.gitignore`: everything, itself included.
 const SELF_IGNORE: &str = "*\n";
 
@@ -38,34 +38,37 @@ pub(super) fn is_real_folder(path: &Path) -> bool {
     matches!(entry(path), Entry::Folder)
 }
 
-/// Whether a project can keep its state in `trailmark` (its `.trailmark` path): a real folder, whose `local/` is a
+/// Whether a project can keep its state in `permark` (its `.permark` path): a real folder, whose `local/` is a
 /// real folder or not made yet.
-pub(super) fn usable_in(trailmark: &Path) -> bool {
-    is_real_folder(trailmark) && !matches!(entry(&trailmark.join("local")), Entry::Other)
+pub(super) fn usable_in(permark: &Path) -> bool {
+    is_real_folder(permark) && !matches!(entry(&permark.join("local")), Entry::Other)
 }
 
 fn refused(path: &Path) -> io::Error {
     io::Error::new(
         io::ErrorKind::PermissionDenied,
         format!(
-            "{} is a link or not a folder, and TrailMark keeps no files behind one",
+            "{} is a link or not a folder, and PerMark keeps no files behind one",
             path.display()
         ),
     )
 }
 
-/// The `.trailmark` folder `dir` is in, when `dir` is one of its folders.
-fn trailmark_of(dir: &Path) -> Option<&Path> {
-    dir.parent()
-        .filter(|parent| parent.file_name().is_some_and(|name| name == TRAILMARK_DIR))
+/// The `.permark` folder `dir` is in, when `dir` is one of its folders.
+fn permark_of(dir: &Path) -> Option<&Path> {
+    dir.parent().filter(|parent| {
+        parent
+            .file_name()
+            .is_some_and(|name| name == PERMARK_DIR || name == super::legacy::LEGACY_STATE_DIR)
+    })
 }
 
-/// Fails when `dir`, a state folder of a project, or the `.trailmark` folder above it is a link.
+/// Fails when `dir`, a state folder of a project, or the `.permark` folder above it is a link.
 fn check_not_linked(dir: &Path) -> io::Result<()> {
-    let Some(trailmark) = trailmark_of(dir) else {
+    let Some(permark) = permark_of(dir) else {
         return Ok(());
     };
-    [trailmark, dir]
+    [permark, dir]
         .into_iter()
         .find(|folder| matches!(entry(folder), Entry::Other))
         .map_or(Ok(()), |folder| Err(refused(folder)))
@@ -87,7 +90,7 @@ pub(super) fn create_if_missing(path: &Path, content: &str) -> io::Result<()> {
 /// Makes a state folder of a project ready: made when it is missing, never behind a link, and ignoring itself. Any
 /// other folder is left to the caller.
 pub(super) fn prepare(dir: &Path) -> io::Result<()> {
-    if trailmark_of(dir).is_none() {
+    if permark_of(dir).is_none() {
         return Ok(());
     }
     check_not_linked(dir)?;
@@ -97,7 +100,7 @@ pub(super) fn prepare(dir: &Path) -> io::Result<()> {
     create_if_missing(&dir.join(".gitignore"), SELF_IGNORE)
 }
 
-/// Writes a file of the local state (atomically, see [`write_atomic`]). In a project's `.trailmark/` folder it first
+/// Writes a file of the local state (atomically, see [`write_atomic`]). In a project's `.permark/` folder it first
 /// makes sure the folder is not a link and ignores itself; anywhere else (the app's own data folder) it is just
 /// [`write_atomic`].
 pub(crate) fn write_local_state(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -151,44 +154,44 @@ mod tests {
     fn a_real_folder_is_usable_and_a_link_is_not() {
         let project = project();
         let outside = tempfile::tempdir().expect("outside");
-        let trailmark = project.path().join(".trailmark");
-        assert!(!usable_in(&trailmark), "missing");
-        fs::create_dir(&trailmark).expect("mkdir");
-        assert!(usable_in(&trailmark), "a real folder without a local one");
-        fs::create_dir(trailmark.join("local")).expect("mkdir");
-        assert!(usable_in(&trailmark), "a real local folder");
-        fs::remove_dir(trailmark.join("local")).expect("rmdir");
-        dir_link(&trailmark.join("local"), outside.path());
-        assert!(!usable_in(&trailmark), "local is a link");
-        remove_link(&trailmark.join("local"));
-        fs::remove_dir(&trailmark).expect("rmdir");
-        dir_link(&trailmark, outside.path());
-        assert!(!usable_in(&trailmark), ".trailmark is a link");
-        remove_link(&trailmark);
+        let permark = project.path().join(".permark");
+        assert!(!usable_in(&permark), "missing");
+        fs::create_dir(&permark).expect("mkdir");
+        assert!(usable_in(&permark), "a real folder without a local one");
+        fs::create_dir(permark.join("local")).expect("mkdir");
+        assert!(usable_in(&permark), "a real local folder");
+        fs::remove_dir(permark.join("local")).expect("rmdir");
+        dir_link(&permark.join("local"), outside.path());
+        assert!(!usable_in(&permark), "local is a link");
+        remove_link(&permark.join("local"));
+        fs::remove_dir(&permark).expect("rmdir");
+        dir_link(&permark, outside.path());
+        assert!(!usable_in(&permark), ".permark is a link");
+        remove_link(&permark);
     }
 
     #[test]
     fn a_file_in_place_of_the_folder_is_not_usable() {
         let project = project();
-        let trailmark = project.path().join(".trailmark");
-        fs::write(&trailmark, "x").expect("write");
-        assert!(!usable_in(&trailmark));
+        let permark = project.path().join(".permark");
+        fs::write(&permark, "x").expect("write");
+        assert!(!usable_in(&permark));
     }
 
     #[test]
     fn the_state_folder_ignores_itself() {
         let project = project();
-        let file = project.path().join(".trailmark/local/comments.json");
+        let file = project.path().join(".permark/local/comments.json");
         write_local_state(&file, b"{}").expect("write");
         assert_eq!(fs::read(&file).expect("read"), b"{}");
-        let ignore = fs::read_to_string(project.path().join(".trailmark/local/.gitignore"))
+        let ignore = fs::read_to_string(project.path().join(".permark/local/.gitignore"))
             .expect("a .gitignore");
         assert!(ignore.lines().any(|line| line == "*"), "{ignore:?}");
         // writing again leaves it as it is, and a .gitignore somebody wrote is kept
-        fs::write(project.path().join(".trailmark/local/.gitignore"), "mine\n").expect("write");
+        fs::write(project.path().join(".permark/local/.gitignore"), "mine\n").expect("write");
         write_local_state(&file, b"[]").expect("write again");
         assert_eq!(
-            fs::read_to_string(project.path().join(".trailmark/local/.gitignore")).expect("read"),
+            fs::read_to_string(project.path().join(".permark/local/.gitignore")).expect("read"),
             "mine\n"
         );
     }
@@ -206,32 +209,32 @@ mod tests {
         let project = project();
         let outside = tempfile::tempdir().expect("outside");
         fs::write(outside.path().join("agent.json"), "precious").expect("write");
-        let trailmark = project.path().join(".trailmark");
-        fs::create_dir(&trailmark).expect("mkdir");
-        dir_link(&trailmark.join("local"), outside.path());
-        let file = trailmark.join("local/agent.json");
+        let permark = project.path().join(".permark");
+        fs::create_dir(&permark).expect("mkdir");
+        dir_link(&permark.join("local"), outside.path());
+        let file = permark.join("local/agent.json");
         assert!(write_local_state(&file, b"{}").is_err());
         assert!(remove_local_state(&file).is_err());
-        assert!(prepare(&trailmark.join("local")).is_err());
+        assert!(prepare(&permark.join("local")).is_err());
         assert_eq!(
             fs::read_to_string(outside.path().join("agent.json")).expect("read"),
             "precious"
         );
         assert!(!outside.path().join(".gitignore").exists());
-        remove_link(&trailmark.join("local"));
+        remove_link(&permark.join("local"));
 
-        // the same when .trailmark itself is the link
-        fs::remove_dir(&trailmark).expect("rmdir");
-        dir_link(&trailmark, outside.path());
-        assert!(write_local_state(&trailmark.join("local/comments.json"), b"{}").is_err());
+        // the same when .permark itself is the link
+        fs::remove_dir(&permark).expect("rmdir");
+        dir_link(&permark, outside.path());
+        assert!(write_local_state(&permark.join("local/comments.json"), b"{}").is_err());
         assert!(!outside.path().join("local").exists());
-        remove_link(&trailmark);
+        remove_link(&permark);
     }
 
     #[test]
     fn a_file_is_deleted_only_when_it_is_there() {
         let project = project();
-        let file = project.path().join(".trailmark/local/agent.json");
+        let file = project.path().join(".permark/local/agent.json");
         assert!(remove_local_state(&file).is_err(), "nothing to delete");
         write_local_state(&file, b"{}").expect("write");
         remove_local_state(&file).expect("deleted");
@@ -245,7 +248,7 @@ mod tests {
         let outside = tempfile::tempdir().expect("outside");
         let target = outside.path().join("target.txt");
         fs::write(&target, "precious").expect("write");
-        let local = project.path().join(".trailmark/local");
+        let local = project.path().join(".permark/local");
         fs::create_dir_all(&local).expect("mkdir");
         std::os::unix::fs::symlink(&target, local.join("comments.json")).expect("symlink");
         write_local_state(&local.join("comments.json"), b"{}").expect("write");
@@ -262,7 +265,7 @@ mod tests {
         let project = project();
         let outside = tempfile::tempdir().expect("outside");
         let created = outside.path().join("created.txt");
-        let tm = project.path().join(".trailmark");
+        let tm = project.path().join(".permark");
         fs::create_dir(&tm).expect("mkdir");
         std::os::unix::fs::symlink(&created, tm.join(".gitignore")).expect("symlink");
         create_if_missing(&tm.join(".gitignore"), "cache/\n").expect("left alone");

@@ -8,7 +8,7 @@ export type Tone = (typeof TONES)[number];
 export const DEFAULT_TONE: Tone = "white";
 
 /** Where the last tone is remembered by the page, so the next start paints it before the backend has answered. */
-export const TONE_CACHE_KEY = "trailmark.tone";
+export const TONE_CACHE_KEY = "permark.tone";
 
 /** A stored value as a tone: anything this build does not know reads as the default. */
 export function normalizeTone(value: unknown): Tone {

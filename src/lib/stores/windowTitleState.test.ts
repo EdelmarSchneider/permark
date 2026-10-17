@@ -70,53 +70,53 @@ describe("the title of the window, from the stores", () => {
   });
 
   it("is the name of the program on the welcome screen", () => {
-    expect(title()).toBe("TrailMark");
+    expect(title()).toBe("PerMark");
   });
 
   describe("in a project", () => {
     beforeEach(() => {
       app.screen = "project";
-      vault.info = info("ide", "trailmark-docs");
+      vault.info = info("ide", "permark-docs");
     });
 
     it("names the project while no document is open", () => {
-      expect(title()).toBe("trailmark-docs - TrailMark");
+      expect(title()).toBe("permark-docs - PerMark");
     });
 
     it("follows the document, by its file name", () => {
       docs.current = view("docs/design/v0.5.md");
-      expect(title()).toBe("v0.5.md - trailmark-docs - TrailMark");
+      expect(title()).toBe("v0.5.md - permark-docs - PerMark");
       docs.current = view("@wt/feature-ui/README.md");
-      expect(title()).toBe("README.md - trailmark-docs - TrailMark");
+      expect(title()).toBe("README.md - permark-docs - PerMark");
     });
 
     it("follows a rename of the open file", () => {
       docs.current = view("plan.md");
-      expect(title()).toBe("plan.md - trailmark-docs - TrailMark");
+      expect(title()).toBe("plan.md - permark-docs - PerMark");
       docs.current = view("docs/roadmap.md");
-      expect(title()).toBe("roadmap.md - trailmark-docs - TrailMark");
+      expect(title()).toBe("roadmap.md - permark-docs - PerMark");
     });
 
     it("marks unsaved edits, and drops the mark once they are saved", () => {
       docs.current = view("plan.md");
       edit.dirty = true;
-      expect(title()).toBe("* plan.md - trailmark-docs - TrailMark");
+      expect(title()).toBe("* plan.md - permark-docs - PerMark");
       edit.dirty = false;
-      expect(title()).toBe("plan.md - trailmark-docs - TrailMark");
+      expect(title()).toBe("plan.md - permark-docs - PerMark");
     });
 
     it("goes back to the welcome title when the project is closed", () => {
       docs.current = view("plan.md");
       app.screen = "welcome";
-      expect(title()).toBe("TrailMark");
+      expect(title()).toBe("PerMark");
     });
 
     it("does not name the folder of a single file", () => {
       vault.info = info("simple", "Downloads");
       docs.current = view("proposal.md");
-      expect(title()).toBe("proposal.md - TrailMark");
+      expect(title()).toBe("proposal.md - PerMark");
       edit.dirty = true;
-      expect(title()).toBe("* proposal.md - TrailMark");
+      expect(title()).toBe("* proposal.md - PerMark");
     });
   });
 
@@ -127,19 +127,19 @@ describe("the title of the window, from the stores", () => {
     });
 
     it("says Notes while no note is open", () => {
-      expect(title()).toBe("Notes - TrailMark");
+      expect(title()).toBe("Notes - PerMark");
     });
 
     it("names the note by its title", () => {
       notes.current = "shopping.md";
       notes.entries = [entry("shopping.md", { title: "Shopping list" })];
-      expect(title()).toBe("Shopping list - Notes - TrailMark");
+      expect(title()).toBe("Shopping list - Notes - PerMark");
     });
 
     it("names a note with no text as the header does", () => {
       notes.current = "new.md";
       notes.entries = [entry("new.md")];
-      expect(title()).toBe("Untitled note - Notes - TrailMark");
+      expect(title()).toBe("Untitled note - Notes - PerMark");
     });
 
     it("has no unsaved mark for a note, which is saved as it is typed", () => {
@@ -147,14 +147,14 @@ describe("the title of the window, from the stores", () => {
       notes.entries = [entry("shopping.md", { title: "Shopping list" })];
       edit.path = "shopping.md";
       edit.dirty = true;
-      expect(title()).toBe("Shopping list - Notes - TrailMark");
+      expect(title()).toBe("Shopping list - Notes - PerMark");
     });
 
     it("names a loose file by its file name", () => {
       notes.current = "@file/3/todo.txt";
-      expect(title()).toBe("todo.txt - Notes - TrailMark");
+      expect(title()).toBe("todo.txt - Notes - PerMark");
       notes.entries = [entry("@file/3/todo.txt", { kind: "file", title: "todo.txt" })];
-      expect(title()).toBe("todo.txt - Notes - TrailMark");
+      expect(title()).toBe("todo.txt - Notes - PerMark");
     });
 
     it("marks a loose file with unsaved edits, typed now or kept from before", () => {
@@ -162,13 +162,13 @@ describe("the title of the window, from the stores", () => {
       notes.entries = [entry("@file/3/todo.txt", { kind: "file", title: "todo.txt" })];
       edit.path = "@file/3/todo.txt";
       edit.dirty = true;
-      expect(title()).toBe("* todo.txt - Notes - TrailMark");
+      expect(title()).toBe("* todo.txt - Notes - PerMark");
       edit.dirty = false;
-      expect(title()).toBe("todo.txt - Notes - TrailMark");
+      expect(title()).toBe("todo.txt - Notes - PerMark");
       notes.entries = [
         entry("@file/3/todo.txt", { kind: "file", title: "todo.txt", unsaved: true }),
       ];
-      expect(title()).toBe("* todo.txt - Notes - TrailMark");
+      expect(title()).toBe("* todo.txt - Notes - PerMark");
     });
   });
 });

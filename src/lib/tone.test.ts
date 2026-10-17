@@ -45,7 +45,7 @@ describe("the remembered tone", () => {
 
   it("ignores a value it does not know", () => {
     const storage = memory();
-    storage.setItem("trailmark.tone", "purple");
+    storage.setItem("permark.tone", "purple");
     expect(cachedTone(storage)).toBe("white");
   });
 

@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" width="96" height="96" alt="TrailMark logo">
+<img src="docs/assets/logo.svg" width="96" height="96" alt="PerMark logo">
 
-# TrailMark
+# PerMark
 
 **Read what your AI writes. Write what it reads.**
 
-TrailMark is a free, open-source Markdown app for Windows, macOS and Linux, built for the reader. It opens any `.md` file as a
+PerMark is a free, open-source Markdown app for Windows, macOS and Linux, built for the reader. It opens any `.md` file as a
 clean page, keeps notes that save themselves, and turns a project folder into an IDE where you follow, review and steer what
 your AI agents write. It works with any AI tool, or with none.
 
@@ -14,9 +14,15 @@ Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneide
 
 [Features](#features) · [Install](#install) · [Usage](#usage) · [Shortcuts](#keyboard-shortcuts) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
-<img src="docs/assets/loop.gif" width="880" alt="An agent rewrites a paragraph of a spec and the passage glows in TrailMark, a removed paragraph leaves a marker; the reader selects the paragraph, presses C and comments 'too long, cut to two sentences'; the agent reads the comment over the agent connection, rewrites the passage, which glows again, and marks the comment done with a reply">
+<img src="docs/assets/loop.gif" width="880" alt="An agent rewrites a paragraph of a spec and the passage glows in PerMark, a removed paragraph leaves a marker; the reader selects the paragraph, presses C and comments 'too long, cut to two sentences'; the agent reads the comment over the agent connection, rewrites the passage, which glows again, and marks the comment done with a reply">
 
 </div>
+
+> [!NOTE]
+> **TrailMark is now PerMark.** Same app, same logo, a name of its own. If you already have TrailMark, the next update brings the
+> new name and keeps everything: your `.trailmark/` project folders become `.permark/` the first time you open them, and your
+> settings, recent folders and notes carry over. The command is now `permark` (`permark mcp`, `permark context`); if an AI agent
+> is set up with the old `trailmark` command, run the setup lines from **Settings → Agent connection** again.
 
 ---
 
@@ -24,7 +30,7 @@ Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneide
 
 ### Build with AI agents?
 
-Your agents write the plans, specs and reports. Your job is to read them, judge them and steer. TrailMark is the IDE for that
+Your agents write the plans, specs and reports. Your job is to read them, judge them and steer. PerMark is the IDE for that
 job: open the project folder and keep it next to your terminal. It doesn't run your agent; it shows you what your agent writes.
 
 - **Watch.** Changed passages glow as your agent writes, removed ones leave a marker, and a live feed lists every file it
@@ -43,27 +49,27 @@ More in [Follow your agents live](#-follow-your-agents-live) and [Use with an AI
 
 ### Got a .md file?
 
-Your AI, a colleague or a download gives you a `.md` file. Open it with TrailMark and read it as a page, not a wall of symbols.
+Your AI, a colleague or a download gives you a `.md` file. Open it with PerMark and read it as a page, not a wall of symbols.
 
 - **It reads like a page.** Tables, checklists, highlighted code, Mermaid diagrams, math, alerts and footnotes, in light or dark,
   with three reading widths and a focus mode.
 - **Links work.** Relative links and anchors open in the app, with back and forward and an outline of the headings.
 - **You can fix it.** Edit visually, with a toolbar, or in Source. Only the blocks you changed are saved, and the rest of the file
   stays exactly as it was.
-- **Notes that save themselves.** Press `Ctrl+Shift+N` in TrailMark and type. No name to choose, no folder to pick, and closing
+- **Notes that save themselves.** Press `Ctrl+Shift+N` in PerMark and type. No name to choose, no folder to pick, and closing
   never asks. Pin the notes you keep, bring back an earlier version, and copy a drafted prompt to your AI as clean Markdown.
-- **Your files are safe.** A file you open is listed next to your notes and written only when you press `Ctrl+S`. TrailMark is
+- **Your files are safe.** A file you open is listed next to your notes and written only when you press `Ctrl+S`. PerMark is
   listed under **Open with** for Markdown files and never makes itself your default app: that choice stays yours.
 
 More in [Reading that feels like a book](#-reading-that-feels-like-a-book) and [Notes](#-notes).
 
-Either way, TrailMark only relies on your **filesystem and git**. It works the same with Claude Code, opencode, Cursor, Aider,
+Either way, PerMark only relies on your **filesystem and git**. It works the same with Claude Code, opencode, Cursor, Aider,
 Codex or Gemini CLI, or with none.
 
 ## Why Markdown
 
-**Markdown was made for readers. So is TrailMark.** It was designed in 2004 so that plain text reads well as it is. Twenty years
-later, AI adopted it for the same reason: it is structured enough for a machine and clear enough for a person. TrailMark is the
+**Markdown was made for readers. So is PerMark.** It was designed in 2004 so that plain text reads well as it is. Twenty years
+later, AI adopted it for the same reason: it is structured enough for a machine and clear enough for a person. PerMark is the
 reader's tool for it.
 
 It is also an opinion: many documents that live in Word or PDF today would be better as Markdown. They would be smaller,
@@ -100,9 +106,9 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 - The Explorer **follows the file you open**, however you got there: quick open, a link, search, the feed, back and forward
 - Quick open (`Ctrl+P`), find in page (`Ctrl+F`), session restore and recent projects
 - **Code references are links.** `src/main.rs:42`, `lib.rs#L10-L20` or `` `docs/plan.md` `` in a document opens the file at the line:
-  Markdown in TrailMark, anything else in your editor (VS Code, Cursor, Zed, Sublime Text, JetBrains IDEs or a command of your own,
+  Markdown in PerMark, anything else in your editor (VS Code, Cursor, Zed, Sublime Text, JetBrains IDEs or a command of your own,
   in **Settings → External editor**). Only names of files the project really has become links
-- One process per project: `trailmark ~/code/my-project`
+- One process per project: `permark ~/code/my-project`
 
 ### 🖼️ Pictures, sound and video
 - **Images open in the pane.** PNG, JPEG, GIF (animated), WebP, AVIF, BMP, ICO and SVG. A picture is fitted to the window; click it, or use the
@@ -116,10 +122,10 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   pane. Nothing starts by itself: `autoplay` is dropped, and a player only reads the length of its file until you press play.
 - **Open with default app** hands a file the pane cannot show to the program your system has for its type: a button in the pane, an item
   in the Explorer's right-click menu, and a command (`Ctrl+Shift+P`). Programs and scripts (`.exe`, `.bat`, `.ps1`, `.sh`, `.app`,
-  `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; TrailMark says which kind of file it refused and offers
+  `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; PerMark says which kind of file it refused and offers
   to show it in the file manager. Files outside the open folder are never served, and a link that leaves it is not followed.
 - **Open in browser** for `.html` and `.htm` files: in the Explorer's right-click menu, in the **...** menu of the open page, and in the
-  command palette. The page opens in the application your system uses for web pages (your browser, on almost every computer); TrailMark
+  command palette. The page opens in the application your system uses for web pages (your browser, on almost every computer); PerMark
   does not draw web pages itself.
 - **The Explorer filter has an Audio and video category.** *Docs and assets* shows them by the same rules as images: next to a document, in
   a folder named like `assets`, `images`, `video`, `audio` or `clips`, or when a document links to them. Quick open and Search everywhere
@@ -155,7 +161,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 ### 🏷️ Tags and descriptions
 - Give any file a **one-line description** and **tags** ("needs-review", "character sheets"). Tags in a document's frontmatter
   are read automatically; the ones you add in the app **never touch your files**
-- Added tags live in `.trailmark/meta.toml` once the project is initialized (plain text you can commit, so teammates and agents
+- Added tags live in `.permark/meta.toml` once the project is initialized (plain text you can commit, so teammates and agents
   can read it), or in the app's own storage before that. Renaming or moving a file keeps its tags
 - A **Tags view** (`Ctrl+Shift+T`) lists every tag with its number of files. Pick one, or `Ctrl+click` several to narrow the list
 - Descriptions and tags show up where you look for files: tree tooltips, quick open, search results
@@ -212,7 +218,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   (see [Use with an AI agent](#use-with-an-ai-agent))
 
 ### 📝 Notes
-Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick.
+Open PerMark, type, close: nothing to name, nothing to save, no folder to pick.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-notes-dark.png">
@@ -220,14 +226,14 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
 </picture>
 
 - **A notes window of its own** (`Ctrl+Shift+D`, or the sticky-note icon in the activity bar, or **Notes** on the welcome screen). `Ctrl+Shift+N`
-  starts a new note from any TrailMark window, in the Visual editor with the caret ready. From the welcome screen the window itself turns
+  starts a new note from any PerMark window, in the Visual editor with the caret ready. From the welcome screen the window itself turns
   into the Notes window, in the same place and size, so there is never a second window to close. A note is a plain Markdown file in
-  `Documents/TrailMark Notes` (change it in **Settings → Notes**); TrailMark makes the default folder by itself the first time. A note's name
+  `Documents/PerMark Notes` (change it in **Settings → Notes**); PerMark makes the default folder by itself the first time. A note's name
   is the date and time (`2026-10-15 1432.md`) and its title is its first line, until then "Untitled note"
 - **A new note is there at once**, and `+` (or `Ctrl+Shift+N`) always makes another, even when the note on screen is still empty. Empty notes
   stay in the list, also after a restart, until you delete them: nothing is removed for you
 - **Saved as you type**: 750 ms after you stop, and at least every 3 seconds. Switching notes, leaving the window or closing it saves too, and closing
-  never asks. Each note remembers its mode and where you were. TrailMark writes nothing inside a note's text, and never overwrites a version
+  never asks. Each note remembers its mode and where you were. PerMark writes nothing inside a note's text, and never overwrites a version
   it has not seen: if something else changed the file, your text is kept next to it as a "(conflict ...)" copy
 - **Pinned notes first, then Today, Yesterday, This week, This month and Older.** A note moves up when you leave it, not while you type.
   Pin a note and put it where you want it (drag, or `Alt+↑` / `Alt+↓`); `Ctrl+1` … `9` jump to the pinned ones. The filter box and
@@ -237,7 +243,7 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
   `Ctrl+Shift+C` copies the whole open document
 - **Deleting is gentle**: the note goes to the system trash, the toast has **Undo**, and a pinned note asks first. **Show earlier versions** restores
   an earlier text of the note (one is kept at the first save after you open a note and about every 10 minutes after, for 30 days)
-- **Files from anywhere** join the list under **Files**: open a Markdown or text file with "Open with TrailMark", with `Ctrl+Shift+O`, or by
+- **Files from anywhere** join the list under **Files**: open a Markdown or text file with "Open with PerMark", with `Ctrl+Shift+O`, or by
   dropping it on the Notes window (a file inside the project you have open still opens in that project). A file is never written on its own: it
   opens in Read, `E` edits it, and `Ctrl+S` saves it. What you type before you save is kept apart from the file and comes back after a
   restart, with an "unsaved" mark; closing the window asks nothing. If the file changes on disk while it is open, what you see stays until you
@@ -250,35 +256,35 @@ Open TrailMark, type, close: nothing to name, nothing to save, no folder to pick
 - **Share with agents** marks a note that an AI agent connected to any of your projects may read (see
   [What an agent can do](#what-an-agent-can-do)); a small mark shows it in the list and in the header. Notes you did not share stay private
 - **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
-  with any tool, and TrailMark picks the change up. Another TrailMark process can't write to the same notes at once (the second one opens read-only)
-- **A notes folder you chose that goes missing** (an unplugged drive, a renamed folder) is reported, with **Locate...** and **Create it**: TrailMark
+  with any tool, and PerMark picks the change up. Another PerMark process can't write to the same notes at once (the second one opens read-only)
+- **A notes folder you chose that goes missing** (an unplugged drive, a renamed folder) is reported, with **Locate...** and **Create it**: PerMark
   never makes an empty one in its place by itself, which would split your notes in two
 - **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
 
 ### 🗂️ Zero footprint by default
-TrailMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
-**Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
+PerMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
+**Initialize PerMark in this project** to create a `.permark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
 
-### 🖱️ Open with TrailMark
-**Windows**: right-click a folder, the background of a folder or a Markdown file and choose **Open with TrailMark** (under *Show more options* on
-Windows 11). You can also list TrailMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
-**Settings → File manager**, which adds and removes them at once. TrailMark never sets itself as your default app; **Make default...** takes you to the
+### 🖱️ Open with PerMark
+**Windows**: right-click a folder, the background of a folder or a Markdown file and choose **Open with PerMark** (under *Show more options* on
+Windows 11). You can also list PerMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
+**Settings → File manager**, which adds and removes them at once. PerMark never sets itself as your default app; **Make default...** takes you to the
 Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
 The **Microsoft Store** version has the same entry on folders and on the background of a folder, and on Windows 11 it is in the main
 right-click menu, not under *Show more options*. The package provides it (and the **Open with** entry for Markdown files), so
 there are no switches for it in Settings, and uninstalling the app removes it.
 
-**macOS**: TrailMark is listed in Finder's **Open With** for Markdown files, without becoming the default, and a folder dropped on its
-Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list TrailMark under **Open With** for Markdown files.
+**macOS**: PerMark is listed in Finder's **Open With** for Markdown files, without becoming the default, and a folder dropped on its
+Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list PerMark under **Open With** for Markdown files.
 
 ### 🌍 Your language
-TrailMark speaks **English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano**. It follows your system's language, and **Settings → Language**
+PerMark speaks **English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano**. It follows your system's language, and **Settings → Language**
 switches it at once, no restart. The Windows installer asks for a language too.
 
 ## Install
 
 > Prebuilt installers for Windows, macOS and Linux are published on the [Releases](../../releases) page.
-> TrailMark updates itself: when a new version is out, you'll be offered a one-click restart to update.
+> PerMark updates itself: when a new version is out, you'll be offered a one-click restart to update.
 >
 > On Windows you can also get it from the [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps it up to date.
 
@@ -286,8 +292,8 @@ switches it at once, no restart. The Windows installer asks for a language too.
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)):
 
 ```bash
-git clone https://github.com/EdelmarSchneider/trailmark.git
-cd trailmark
+git clone https://github.com/EdelmarSchneider/permark.git
+cd permark
 npm install
 npm run tauri build
 ```
@@ -295,24 +301,24 @@ npm run tauri build
 ## Usage
 
 ```bash
-trailmark                  # welcome screen with recent projects
-trailmark .                # open the current folder in IDE mode
-trailmark docs/plan.md     # open a single file in simple mode
+permark                  # welcome screen with recent projects
+permark .                # open the current folder in IDE mode
+permark docs/plan.md     # open a single file in simple mode
 ```
 
 You can also drag and drop a folder or a `.md` file onto the window.
 
 ## Use with an AI agent
 
-TrailMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this
+PerMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this
 paragraph" or "go through my comments" and the agent knows which document, which section and which words you mean. It talks to
-TrailMark through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so it works with any tool that supports MCP
+PerMark through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so it works with any tool that supports MCP
 (Claude Code, Cursor, opencode, Codex, Gemini CLI, Claude Desktop and others), and without one of them nothing changes.
 
-**It is off by default, per project, and local.** TrailMark shares nothing until you turn it on in **Settings → Agent connection** (or
+**It is off by default, per project, and local.** PerMark shares nothing until you turn it on in **Settings → Agent connection** (or
 **Agent connection: turn on** in the command palette), and it only talks to programs on your computer: it has no server and sends
 nothing over the network. The agent you connect is another matter. It may send what it reads (your selection, your comments, search
-results) to its AI service, as it would anything else you show it. The switch is yours alone: it is kept in TrailMark's own data
+results) to its AI service, as it would anything else you show it. The switch is yours alone: it is kept in PerMark's own data
 folder, so nothing inside a project, such as a cloned repository, can turn it on. While it is on, the status bar shows **Agent**, with
 a dot that fills while an agent is connected. Click it to see what is shared and what was asked lately, and to turn it off in one click.
 
@@ -323,13 +329,13 @@ a dot that fills while an agent is connected. Click it to see what is shared and
 
 ### Connect an agent
 
-Turn the connection on, then add TrailMark to your agent as an MCP server. **Settings → Agent connection** shows the lines below with
+Turn the connection on, then add PerMark to your agent as an MCP server. **Settings → Agent connection** shows the lines below with
 the right path filled in, and a Copy button for each.
 
 - **Claude Code**
 
   ```bash
-  claude mcp add trailmark -- "<path to TrailMark>" mcp
+  claude mcp add permark -- "<path to PerMark>" mcp
   ```
 
 - **Any other MCP client** (Cursor, Claude Desktop, ...): add this to its MCP servers configuration.
@@ -337,18 +343,18 @@ the right path filled in, and a Copy button for each.
   ```json
   {
     "mcpServers": {
-      "trailmark": { "command": "<path to TrailMark>", "args": ["mcp"] }
+      "permark": { "command": "<path to PerMark>", "args": ["mcp"] }
     }
   }
   ```
 
-`<path to TrailMark>` is the full path of the program, which Settings shows for the copy you are running: the program the
-installer put on your machine, the one inside `TrailMark.app` on macOS, or the AppImage file. **Use the full path:** on Windows and
-macOS `trailmark` is not on your `PATH` after an install, so the bare name only works where you put it there yourself. (The Microsoft
-Store version on Windows is the exception: it puts `trailmark` on your `PATH`, so there Settings shows the short lines, such as
-`claude mcp add trailmark -- trailmark mcp`.) Quote the path when it has spaces. The agent runs in your project's folder, and TrailMark finds the project from it, so one
-configuration serves every project you have opened in TrailMark. Before it sends anything, `trailmark mcp` checks that what answers
-is TrailMark running as you, and not another program that took the name.
+`<path to PerMark>` is the full path of the program, which Settings shows for the copy you are running: the program the
+installer put on your machine, the one inside `PerMark.app` on macOS, or the AppImage file. **Use the full path:** on Windows and
+macOS `permark` is not on your `PATH` after an install, so the bare name only works where you put it there yourself. (The Microsoft
+Store version on Windows is the exception: it puts `permark` on your `PATH`, so there Settings shows the short lines, such as
+`claude mcp add permark -- permark mcp`.) Quote the path when it has spaces. The agent runs in your project's folder, and PerMark finds the project from it, so one
+configuration serves every project you have opened in PerMark. Before it sends anything, `permark mcp` checks that what answers
+is PerMark running as you, and not another program that took the name.
 
 ### What an agent can do
 
@@ -357,7 +363,7 @@ is TrailMark running as you, and not another program that took the name.
 | `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters) and whether there are unsaved edits |
 | `list_unread` | The documents that changed since you last read them, newest first |
 | `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere. Each hit carries its document's tags and description, and `tags` narrows the search to the documents that have all of them |
-| `list_tags` | The tags in use, with how many documents have each and whether they come from the documents or from TrailMark, plus how many documents have no tag; or, for one tag, the documents that have it with their descriptions |
+| `list_tags` | The tags in use, with how many documents have each and whether they come from the documents or from PerMark, plus how many documents have no tag; or, for one tag, the documents that have it with their descriptions |
 | `list_comments` | Your [comments](#comments): the open ones, each with the quoted passage, its section and line, and your text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
@@ -365,16 +371,16 @@ is TrailMark running as you, and not another program that took the name.
 | `read_note` | The text of one shared note, by the name `list_notes` gave |
 
 The agent only reads, shows you a place, and checks off comments you wrote. It cannot create comments and it cannot edit a document through
-TrailMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. Your notes are private:
+PerMark. It sees the project you opened and nothing else: no other project, no file outside the project folder. Your notes are private:
 the agent sees only the notes you shared one by one (**Share with agents** in a note's menu, **Stop sharing** takes it back at once), through
 `list_notes` and `read_note`, in any project whose connection is on; it cannot list the notes folder, read a note you did not share, or change
-one, and a notes folder that lies inside a project is not part of that project's search. When TrailMark is
+one, and a notes folder that lies inside a project is not part of that project's search. When PerMark is
 closed, `list_unread`, `search`, `list_tags`, `list_comments`, `resolve_comment`, `list_notes` and `read_note` still work from the files, `get_context` says that
-TrailMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
+PerMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
 
 ### Add what you are reading to every prompt
 
-`trailmark context` prints where you are as one short line and exits, for tools that can run a command before each prompt:
+`permark context` prints where you are as one short line and exits, for tools that can run a command before each prompt:
 
 ```text
 Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday'.
@@ -386,15 +392,15 @@ In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your us
 {
   "hooks": {
     "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "\"<path to TrailMark>\" context" }] }
+      { "hooks": [{ "type": "command", "command": "\"<path to PerMark>\" context" }] }
     ]
   }
 }
 ```
 
-Other tools can do the same from their own hooks. When there is nothing to say (the connection is off, or TrailMark is not open), the
-command prints nothing, so a hook never adds noise to a prompt. A project that keeps its settings in `.trailmark/` also has
-`.trailmark/local/agent.json` while the connection is on: the same answer as a file, for a script or a tool without MCP. **It holds
+Other tools can do the same from their own hooks. When there is nothing to say (the connection is off, or PerMark is not open), the
+command prints nothing, so a hook never adds noise to a prompt. A project that keeps its settings in `.permark/` also has
+`.permark/local/agent.json` while the connection is on: the same answer as a file, for a script or a tool without MCP. **It holds
 the open document, the section on screen and your selected text, and any program running as you can read it, as can a folder-sync tool
 that watches the project.** It stays out of git (`local/` ignores itself) and is deleted when the connection is turned off.
 
@@ -407,7 +413,7 @@ it reads them with `list_comments`, and when it marks one done its reply appears
 
 Comments follow their passage when the document changes: they are found again by their words, then by their section, then by their
 line. A comment whose passage was rewritten stays in the list marked **Passage changed**. Comments are yours, kept next to the other local
-state (`.trailmark/local/comments.json` once you initialize TrailMark in the project, otherwise in your user profile), never committed (the folder ignores itself),
+state (`.permark/local/comments.json` once you initialize PerMark in the project, otherwise in your user profile), never committed (the folder ignores itself),
 and they work without the agent connection.
 
 <picture>
@@ -459,7 +465,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 
 | Action | Shortcut |
 |---|---|
-| New note (from any TrailMark window) | `Ctrl+Shift+N` |
+| New note (from any PerMark window) | `Ctrl+Shift+N` |
 | Show the Notes window | `Ctrl+Shift+D` |
 | Copy the note's text (in a project: the open document) | `Ctrl+Shift+C` |
 | Open a pinned note | `Ctrl+1` … `9` |
@@ -488,23 +494,23 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 - File operations (rename, move, delete) that update links and can be undone
 
 **v0.2.1: your language** (released)
-- Português (Brasil), Español and Deutsch, "Open with TrailMark" in the Windows file manager, one Read | Visual | Source switch,
+- Português (Brasil), Español and Deutsch, "Open with PerMark" in the Windows file manager, one Read | Visual | Source switch,
   a window that remembers its place, and an Explorer for workspaces of several repositories
 
 **v0.3** (released)
 - Search everywhere (`Ctrl+T`): files, sections, tags and commands in one box
 - Unread markers ("changed since I last read it") and clickable code references (`src/main.rs:42`)
-- "Open with TrailMark" in the macOS and Linux file managers (Windows has it already)
+- "Open with PerMark" in the macOS and Linux file managers (Windows has it already)
 
 **v0.4: your agent sees what you see** (released)
 - An optional, local connection (MCP, plus a plain file for tools without it) that lets any coding agent know which document and
   section you are reading and what you selected, so "rewrite this paragraph" just works
 - Comments: leave them on passages while you read, and your agent picks up the open ones
-- Your agent can ask TrailMark "where is X described?" and point you to a section, and it knows what you have not read yet.
+- Your agent can ask PerMark "where is X described?" and point you to a section, and it knows what you have not read yet.
   Off by default, per project, and read-only: an agent can show you a document, never edit through it
 
 **v0.5: Notes** (released)
-- Open TrailMark, type, close: notes save themselves, with no name to choose and no folder to pick. Keep a sticky note for
+- Open PerMark, type, close: notes save themselves, with no name to choose and no folder to pick. Keep a sticky note for
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 - v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
   show up in Quick open
@@ -519,11 +525,11 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 **Later**, no promises
 - Spec-driven workflows
 - A rendered diff against the last commit or your last read, rich JSON and XML views, backlinks, and installer extras
-  (`trailmark` on the `PATH`)
+  (`permark` on the `PATH`)
 
 ## Tech
 
-TrailMark is a [Tauri 2](https://v2.tauri.app) app. The core is written in **Rust**: rendering (comrak + ammonia), file watching
+PerMark is a [Tauri 2](https://v2.tauri.app) app. The core is written in **Rust**: rendering (comrak + ammonia), file watching
 (notify), git (libgit2), the search index and the block-preserving saves. The UI is **Svelte 5** + TypeScript running in the system
 webview, with **CodeMirror 6** (Source editor) and **Milkdown** (Visual editor). That keeps the installer small and memory use
 low compared to Electron apps.
@@ -543,4 +549,4 @@ Design notes are in [`docs/design/`](docs/design/). See [CONTRIBUTING.md](CONTRI
 
 Copyright (c) 2026 Edelmar Schneider. Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
 
-"TrailMark" and its logo are trademarks of Edelmar Schneider: forks are welcome under a different name. See [TRADEMARKS.md](TRADEMARKS.md).
+"PerMark" and its logo are trademarks of Edelmar Schneider: forks are welcome under a different name. See [TRADEMARKS.md](TRADEMARKS.md).

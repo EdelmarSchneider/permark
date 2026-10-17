@@ -54,7 +54,7 @@ class AgentStore {
     return this.status.enabled && !vault.isSimple;
   }
 
-  /** An agent is connected: a `trailmark mcp` that is running, or a hook that is asking now. */
+  /** An agent is connected: a `permark mcp` that is running, or a hook that is asking now. */
   get connected(): boolean {
     return this.status.listening && this.status.connections > 0;
   }

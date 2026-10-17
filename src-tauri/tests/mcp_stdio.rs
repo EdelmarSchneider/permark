@@ -1,4 +1,4 @@
-//! `trailmark mcp` as an agent starts it: the real program with piped standard streams, no window, and
+//! `permark mcp` as an agent starts it: the real program with piped standard streams, no window, and
 //! newline-delimited JSON-RPC on standard input and output. It must find the project from the folder it runs in,
 //! answer, keep standard output free of anything else, and exit by itself when its input closes.
 //!
@@ -23,20 +23,20 @@ struct Session {
 }
 
 impl Session {
-    /// Starts `trailmark mcp` in the project, with the data folder of the fixture (never the person's own).
+    /// Starts `permark mcp` in the project, with the data folder of the fixture (never the person's own).
     fn start(fixture: &Fixture) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_trailmark"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_permark"))
             .arg("mcp")
             .current_dir(fixture.project.path())
             .env(
-                trailmark_lib::test_support::DATA_DIR_VARIABLE,
+                permark_lib::test_support::DATA_DIR_VARIABLE,
                 fixture.data.path(),
             )
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("start trailmark mcp");
+            .expect("start permark mcp");
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
         let (sender, lines) = channel();
@@ -61,7 +61,7 @@ impl Session {
                 "clientInfo": { "name": "stdio-test", "version": "0.0.0" }
             }),
         );
-        assert_eq!(init["result"]["serverInfo"]["name"], "trailmark");
+        assert_eq!(init["result"]["serverInfo"]["name"], "permark");
         session.send(&json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }));
         session
     }
@@ -128,7 +128,7 @@ struct Fixture {
     data: tempfile::TempDir,
 }
 
-/// A project with a document and a `.trailmark/` folder (which makes TrailMark know it and keeps its settings with
+/// A project with a document and a `.permark/` folder (which makes PerMark know it and keeps its settings with
 /// it), and a data folder of its own in which the agent connection is turned on or off, as the app does.
 fn project(connection: Option<bool>) -> Fixture {
     let project = tempfile::tempdir().expect("project folder");
@@ -139,9 +139,9 @@ fn project(connection: Option<bool>) -> Fixture {
         "# Plan\n\nIntro.\n\n## Rollout\n\nShip the beacon on Friday.\n",
     )
     .expect("a document");
-    std::fs::create_dir_all(project.path().join(".trailmark/local")).expect("state folder");
+    std::fs::create_dir_all(project.path().join(".permark/local")).expect("state folder");
     if let Some(on) = connection {
-        trailmark_lib::test_support::set_agent_connection(data.path(), project.path(), on)
+        permark_lib::test_support::set_agent_connection(data.path(), project.path(), on)
             .expect("remember the switch");
     }
     Fixture { project, data }
@@ -182,7 +182,7 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
     assert!(context["message"]
         .as_str()
         .expect("a message")
-        .starts_with("TrailMark is not open on this project."));
+        .starts_with("PerMark is not open on this project."));
 
     let (found, is_error) = session.call("search", &json!({ "query": "beacon" }));
     assert!(!is_error, "{found}");
@@ -213,10 +213,7 @@ fn the_program_serves_the_tools_for_a_project_without_a_window_and_exits_when_it
 #[test]
 fn comments_are_listed_and_resolved_in_the_projects_files_without_a_window() {
     let project = project(Some(true));
-    let comments = project
-        .project
-        .path()
-        .join(".trailmark/local/comments.json");
+    let comments = project.project.path().join(".permark/local/comments.json");
     std::fs::write(
         &comments,
         json!({ "version": 1, "comments": [{
@@ -276,7 +273,7 @@ fn comments_are_listed_and_resolved_in_the_projects_files_without_a_window() {
 /// The person's notes in the data folder of the fixture (where a debug build keeps them): two notes, one of them shared.
 fn notes(fixture: &Fixture) {
     let notes = fixture.data.path().join("notes");
-    std::fs::create_dir_all(notes.join(".trailmark")).expect("notes folder");
+    std::fs::create_dir_all(notes.join(".permark")).expect("notes folder");
     std::fs::write(
         notes.join("deploy.md"),
         "# The deploy checklist\n\nbackups first\n",
@@ -284,7 +281,7 @@ fn notes(fixture: &Fixture) {
     .expect("a shared note");
     std::fs::write(notes.join("diary.md"), "# My diary\n\nprivate\n").expect("a private note");
     std::fs::write(
-        notes.join(".trailmark/notes.json"),
+        notes.join(".permark/notes.json"),
         json!({ "shared": ["deploy.md"] }).to_string(),
     )
     .expect("notes.json");
@@ -326,17 +323,17 @@ fn the_notes_the_person_shared_are_read_from_their_files_and_no_other_note_is() 
 #[test]
 fn the_tags_of_the_projects_files_narrow_a_search_without_a_window() {
     let project = project(Some(true));
-    // one document tagged in its front matter, one in TrailMark's `meta.toml` (the project keeps it in `.trailmark/`)
+    // one document tagged in its front matter, one in PerMark's `meta.toml` (the project keeps it in `.permark/`)
     std::fs::write(
         project.project.path().join("README.md"),
         "---\ntags: [start]\n---\n# Home\n\nShip the lighthouse.\n",
     )
     .expect("a tagged document");
     std::fs::write(
-        project.project.path().join(".trailmark/meta.toml"),
+        project.project.path().join(".permark/meta.toml"),
         "[files.\"docs/plan.md\"]\ntags = [\"rollout\"]\ndescription = \"How the beacon ships.\"\n",
     )
-    .expect("the tags added in TrailMark");
+    .expect("the tags added in PerMark");
     let mut session = Session::start(&project);
 
     let (tags, is_error) = session.call("list_tags", &json!({}));
@@ -349,7 +346,7 @@ fn the_tags_of_the_projects_files_narrow_a_search_without_a_window() {
     assert_eq!(
         tags["tags"],
         json!([
-            {"name": "rollout", "count": 1, "from": "trailmark"},
+            {"name": "rollout", "count": 1, "from": "permark"},
             {"name": "start", "count": 1, "from": "frontMatter"},
         ])
     );
@@ -400,11 +397,11 @@ fn with_the_connection_off_every_tool_says_how_to_turn_it_on() {
     }
 }
 
-/// A repository can carry any `.trailmark/` folder, so what is in it cannot be what turns the connection on.
+/// A repository can carry any `.permark/` folder, so what is in it cannot be what turns the connection on.
 #[test]
 fn a_project_folder_that_says_the_connection_is_on_is_still_off() {
     let project = project(None);
-    let local = project.project.path().join(".trailmark/local");
+    let local = project.project.path().join(".permark/local");
     std::fs::write(
         local.join("session.json"),
         json!({ "agentConnection": true }).to_string(),

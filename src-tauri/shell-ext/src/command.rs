@@ -1,4 +1,4 @@
-//! The "Open with TrailMark" command: what File Explorer asks of it, and what it answers.
+//! The "Open with PerMark" command: what File Explorer asks of it, and what it answers.
 //!
 //! Explorer makes one of these when it builds the right-click menu of a folder (or of the background of one), asks it for
 //! its title, icon and state, and calls `Invoke` when the person picks it. Everything before `Invoke` runs while the menu is
@@ -25,20 +25,20 @@ use windows::Win32::UI::Shell::{
 use crate::guard::guarded;
 use crate::launch;
 use crate::module::{self, InUse};
-use crate::{labels, shell, CLSID_OPEN_WITH_TRAILMARK};
+use crate::{labels, shell, CLSID_OPEN_WITH_PERMARK};
 
 // `Agile = false`: the default makes the object agile (callable from any apartment, through the free-threaded marshaler),
 // which is not what it is. It lives in the surrogate's single-threaded apartment, and the `RefCell` and the site it keeps
 // (an Explorer object, bound to that apartment) rely on that.
 #[implement(IExplorerCommand, IObjectWithSite, Agile = false)]
-pub(crate) struct OpenWithTrailMark {
+pub(crate) struct OpenWithPerMark {
     /// Explorer's site: how the command finds the folder when it was used on the background of one. Explorer calls the
     /// command on one thread (the COM class is declared `STA`), so a `RefCell` is enough.
     site: RefCell<Option<IUnknown>>,
     _in_use: InUse,
 }
 
-impl OpenWithTrailMark {
+impl OpenWithPerMark {
     pub(crate) fn new() -> Self {
         Self {
             site: RefCell::new(None),
@@ -73,7 +73,7 @@ fn title() -> &'static str {
     TITLE.get_or_init(|| labels::for_languages(&shell::display_languages()))
 }
 
-impl IExplorerCommand_Impl for OpenWithTrailMark_Impl {
+impl IExplorerCommand_Impl for OpenWithPerMark_Impl {
     fn GetTitle(&self, _items: Ref<IShellItemArray>) -> Result<PWSTR> {
         guarded(|| shell::alloc_string(title()))
     }
@@ -89,7 +89,7 @@ impl IExplorerCommand_Impl for OpenWithTrailMark_Impl {
 
     /// A name of its own, so that Explorer does not take it for another command.
     fn GetCanonicalName(&self) -> Result<GUID> {
-        Ok(CLSID_OPEN_WITH_TRAILMARK)
+        Ok(CLSID_OPEN_WITH_PERMARK)
     }
 
     /// Shown for folders (what the package registers it for). Hidden for a selection of more folders than it opens.
@@ -122,7 +122,7 @@ impl IExplorerCommand_Impl for OpenWithTrailMark_Impl {
     }
 }
 
-impl IObjectWithSite_Impl for OpenWithTrailMark_Impl {
+impl IObjectWithSite_Impl for OpenWithPerMark_Impl {
     fn SetSite(&self, site: Ref<IUnknown>) -> Result<()> {
         guarded(|| {
             *self

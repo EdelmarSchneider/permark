@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Settings -> Notes: where the notes are, a button to open the folder, and where TrailMark opens when it is started with nothing
+  // Settings -> Notes: where the notes are, a button to open the folder, and where PerMark opens when it is started with nothing
   // to open. Shown in every window; they are app-wide, not part of a project.
   import { onMount } from "svelte";
   import { api } from "../api";

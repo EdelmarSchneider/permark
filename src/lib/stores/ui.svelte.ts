@@ -6,7 +6,7 @@ import type { Anchor } from "../components/Popover.svelte";
 import type { RightTab } from "../rightPanel";
 import type { Scope } from "../searchEverywhereModel";
 
-const HINT_KEY = "trailmark.hint.initProject";
+const HINT_KEY = "permark.hint.initProject";
 
 function readHintDismissed(): boolean {
   try {

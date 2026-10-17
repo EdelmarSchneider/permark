@@ -164,7 +164,7 @@ describe("how a fenced block is drawn", () => {
   });
 
   it("guesses a block with no language from what its text gives away", async () => {
-    const outcome = await highlightFence('{\n  "name": "trailmark",\n  "private": true\n}', "");
+    const outcome = await highlightFence('{\n  "name": "permark",\n  "private": true\n}', "");
     expect(outcome.html).toContain("hljs-attr");
     expect(outcome.label).toEqual({ name: "JSON", auto: true });
     const shell = await highlightFence("#!/bin/sh\nset -e\necho hello world\n", "");
@@ -196,7 +196,7 @@ describe("how a fenced block is drawn", () => {
 
   it("calls a guessed TOML file what it is", async () => {
     const outcome = await highlightFence(
-      '[package]\nname = "trailmark"\nversion = "0.5.0"\n\n[dependencies]\nserde = "1"\n',
+      '[package]\nname = "permark"\nversion = "0.5.0"\n\n[dependencies]\nserde = "1"\n',
       "",
     );
     expect(outcome.label).toEqual({ name: "INI, TOML", auto: true });

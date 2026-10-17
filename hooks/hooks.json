@@ -1,5 +1,5 @@
 {
-  "description": "Injects the currently viewed document, section, and selected text from TrailMark before each prompt when available.",
+  "description": "Injects the currently viewed document, section, and selected text from PerMark before each prompt when available.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "trailmark context"
+            "command": "permark context"
           }
         ]
       }

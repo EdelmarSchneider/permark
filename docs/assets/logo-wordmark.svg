@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 256" width="860" height="256">
-  <title>TrailMark</title>
+  <title>PerMark</title>
   <style>
     text { font: 700 132px "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; letter-spacing: -3px; fill: #1b1520; }
     @media (prefers-color-scheme: dark) { text { fill: #f4f2f5; } }
@@ -12,5 +12,5 @@
   <circle cx="156" cy="97" r="11" fill="#1b1520"/>
   <circle cx="160" cy="93" r="3.4" fill="#fff"/>
   <rect x="96" y="128" width="64" height="20" rx="10" fill="#ffe066"/>
-  <text x="248" y="176">TrailMark</text>
+  <text x="248" y="176">PerMark</text>
 </svg>

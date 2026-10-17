@@ -1,4 +1,4 @@
-//! Earlier versions of the notes, in `.trailmark/history/<note>/<time>.md` in the notes folder.
+//! Earlier versions of the notes, in `.permark/history/<note>/<time>.md` in the notes folder.
 //!
 //! A version is a copy of what a note held before a save replaced it. One is taken at the first save after the note is
 //! opened, then at most every ten minutes while it is edited, and one is taken before a restore, so a restore can be
@@ -13,7 +13,6 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveDateTime};
 
-use super::data::STATE_DIR;
 use crate::util::write_atomic;
 
 /// At most one version this often while a note is edited.
@@ -105,7 +104,7 @@ pub(crate) struct History {
 impl History {
     pub(crate) fn new(notes_root: &Path) -> Self {
         Self {
-            dir: notes_root.join(STATE_DIR).join(DIR),
+            dir: crate::session::state_dir(notes_root).join(DIR),
         }
     }
 
@@ -301,7 +300,7 @@ mod tests {
         assert_eq!(history.versions("b.md"), Vec::<Version>::new());
         assert!(!dir
             .path()
-            .join(".trailmark")
+            .join(".permark")
             .join("history")
             .join("b.md")
             .exists());

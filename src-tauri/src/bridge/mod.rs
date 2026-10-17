@@ -2,7 +2,7 @@
 //! open project and do in it. Plain Rust with no Tauri dependency, so it runs without a window.
 //!
 //! ```text
-//!  agent (any MCP client) --stdio--> trailmark mcp --local socket--> TrailMark window of that project
+//!  agent (any MCP client) --stdio--> permark mcp --local socket--> PerMark window of that project
 //!                                         |
 //!                                         +-- reads the project's files when the window is closed
 //! ```
@@ -12,7 +12,7 @@
 //! - The window's side: [`hub`] keeps the state and answers, [`server`] listens, [`file`] keeps `agent.json`, and
 //!   [`service`] ties them to the switch in the settings.
 //! - The agent's side: [`link`] connects, [`tools`] is what each tool does, [`mcp`] speaks MCP, and [`cli`] runs
-//!   `trailmark mcp` and `trailmark context`. [`project`] reads a project from its files, [`answers`] and [`tags`]
+//!   `permark mcp` and `permark context`. [`project`] reads a project from its files, [`answers`] and [`tags`]
 //!   build the answers both sides share.
 
 use std::ffi::OsString;
@@ -37,9 +37,9 @@ pub(crate) mod tools;
 /// The commands the program runs without a window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Subcommand {
-    /// `trailmark mcp`: serve MCP over standard input and output.
+    /// `permark mcp`: serve MCP over standard input and output.
     Mcp,
-    /// `trailmark context`: print what the person is looking at and exit.
+    /// `permark context`: print what the person is looking at and exit.
     Context,
 }
 
@@ -63,29 +63,26 @@ mod tests {
 
     #[test]
     fn a_command_is_the_first_argument() {
+        assert_eq!(subcommand(args(&["permark", "mcp"])), Some(Subcommand::Mcp));
         assert_eq!(
-            subcommand(args(&["trailmark", "mcp"])),
+            subcommand(args(&["permark", "mcp", "--extra"])),
             Some(Subcommand::Mcp)
         );
         assert_eq!(
-            subcommand(args(&["trailmark", "mcp", "--extra"])),
-            Some(Subcommand::Mcp)
-        );
-        assert_eq!(
-            subcommand(args(&["trailmark", "context"])),
+            subcommand(args(&["permark", "context"])),
             Some(Subcommand::Context)
         );
     }
 
     #[test]
     fn other_invocations_open_the_window() {
-        assert_eq!(subcommand(args(&["trailmark"])), None);
+        assert_eq!(subcommand(args(&["permark"])), None);
         assert_eq!(subcommand(args(&[])), None);
-        assert_eq!(subcommand(args(&["trailmark", "notes.md"])), None);
-        assert_eq!(subcommand(args(&["trailmark", "notes.md", "mcp"])), None);
+        assert_eq!(subcommand(args(&["permark", "notes.md"])), None);
+        assert_eq!(subcommand(args(&["permark", "notes.md", "mcp"])), None);
         assert_eq!(subcommand(args(&["mcp"])), None);
         // Only the exact word: a folder is opened by its path.
-        assert_eq!(subcommand(args(&["trailmark", "./context"])), None);
-        assert_eq!(subcommand(args(&["trailmark", "MCP"])), None);
+        assert_eq!(subcommand(args(&["permark", "./context"])), None);
+        assert_eq!(subcommand(args(&["permark", "MCP"])), None);
     }
 }

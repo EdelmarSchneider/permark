@@ -69,8 +69,8 @@ const mockShell: ShellState = {
   association: false,
   isDefault: false,
 };
-const LANGUAGE_KEY = "trailmark.mock.language";
-const TONE_KEY = "trailmark.mock.tone";
+const LANGUAGE_KEY = "permark.mock.language";
+const TONE_KEY = "permark.mock.tone";
 
 /** `?lang=de` picks the language for a run; otherwise the one chosen in Settings last time. */
 function mockLanguage(): LanguagePreference {

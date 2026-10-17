@@ -85,7 +85,7 @@ export function setRepoState(state: "clean" | "rebase" | "merge"): void {
 
 export function setGitError(on: boolean): void {
   mockGit.gitError = on
-    ? "detected dubious ownership in repository at 'C:/Users/demo/trailmark-docs'"
+    ? "detected dubious ownership in repository at 'C:/Users/demo/permark-docs'"
     : null;
   mockGit.generation += 1;
   emitMock("git-status-changed", mockSnapshot());

@@ -242,7 +242,7 @@ mod tests {
             "a.md~",
             "4913",
             "x.tmp",
-            ".trailmark/local/s.json",
+            ".permark/local/s.json",
         ] {
             a.push(ev(&f, rel, Hint::Modify), &f.vault, &f.filter, t0);
         }

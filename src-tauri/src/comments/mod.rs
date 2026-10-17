@@ -1,6 +1,6 @@
 //! Comments: a person reading a document can leave a comment on a passage ("this contradicts section 2",
 //! "simplify") and later ask an agent to go through them. Comments belong to the person, not to the document: they
-//! are kept in `comments.json` next to the other local state (`.trailmark/local/` in an initialized project, the app's
+//! are kept in `comments.json` next to the other local state (`.permark/local/` in an initialized project, the app's
 //! data folder otherwise), never in the project's files.
 //!
 //! ```json
@@ -16,7 +16,7 @@
 //! - [`CommentBook`] ties them to a project: it adds, lists, completes and deletes comments, follows renames, and tells
 //!   whoever listens when something changed.
 //!
-//! The window uses [`CommentBook`] directly, and `trailmark mcp` uses the same one over the same file when the window
+//! The window uses [`CommentBook`] directly, and `permark mcp` uses the same one over the same file when the window
 //! is closed, so a comment reads and resolves the same way either way.
 
 pub(crate) mod anchor;
@@ -100,7 +100,7 @@ pub enum PassageState {
     Anchored,
     /// The document has no such text any more: `line` is the best guess (its section, else where it was).
     PassageChanged,
-    /// The document is gone (deleted, or moved by something other than TrailMark).
+    /// The document is gone (deleted, or moved by something other than PerMark).
     DocumentGone,
 }
 

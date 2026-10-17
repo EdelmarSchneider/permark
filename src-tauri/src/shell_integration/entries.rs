@@ -1,4 +1,4 @@
-//! What "Open with TrailMark" writes into the Windows registry, described as plain data.
+//! What "Open with PerMark" writes into the Windows registry, described as plain data.
 //!
 //! Nothing here touches the registry, so the layout, the quoting of the command lines and the wording of the
 //! labels are tested on every platform. [`super::registry`] turns these descriptions into registry keys, and the
@@ -7,9 +7,9 @@
 //! Everything lives under `HKEY_CURRENT_USER\Software\Classes`, so no administrator rights are needed. Two groups
 //! of entries are independent of each other:
 //!
-//! * the **context menu**: an "Open with TrailMark" verb on folders, on the background of a folder and on
+//! * the **context menu**: an "Open with PerMark" verb on folders, on the background of a folder and on
 //!   Markdown files;
-//! * the **file association**: a `ProgID` that opens a Markdown file in TrailMark, listed in the "Open with" menu
+//! * the **file association**: a `ProgID` that opens a Markdown file in PerMark, listed in the "Open with" menu
 //!   of `.md` and `.markdown` files. The user's default app is never touched.
 
 // The registry that uses most of this only exists on Windows; the tests run everywhere.
@@ -20,20 +20,20 @@ use std::path::Path;
 use crate::session::Language;
 
 /// The name of the verb (the key under `shell`) the context-menu entries use.
-pub(crate) const VERB: &str = "TrailMark";
+pub(crate) const VERB: &str = "PerMark";
 
-/// The `ProgID` of a Markdown document that TrailMark opens.
-pub(crate) const PROG_ID: &str = "TrailMark.Markdown";
+/// The `ProgID` of a Markdown document that PerMark opens.
+pub(crate) const PROG_ID: &str = "PerMark.Markdown";
 
 /// The extensions the file entry and the association cover.
 pub(crate) const EXTENSIONS: [&str; 2] = [".md", ".markdown"];
 
-/// The values, under `HKCU\Software\TrailMark`, that remember what the person chose (1 = on, 0 = off; missing =
+/// The values, under `HKCU\Software\PerMark`, that remember what the person chose (1 = on, 0 = off; missing =
 /// never chosen). The installer reads them so an update respects the choice, and writes them when it asks.
 pub(crate) const MENU_CHOICE: &str = "OpenWithMenu";
 pub(crate) const ASSOCIATION_CHOICE: &str = "FileAssociation";
 
-/// A place in the file manager the "Open with TrailMark" verb is added to.
+/// A place in the file manager the "Open with PerMark" verb is added to.
 pub(crate) struct MenuTarget {
     /// The class key, under `Software\Classes`, that holds the `shell` verbs.
     pub class: &'static str,
@@ -99,7 +99,7 @@ fn key(path: impl Into<String>, values: Vec<Value>) -> Key {
 }
 
 /// `exe` followed by the placeholder, both quoted so a path with spaces stays one argument each:
-/// `"C:\Program Files\TrailMark\trailmark.exe" "%1"`.
+/// `"C:\Program Files\PerMark\permark.exe" "%1"`.
 pub(crate) fn command_line(exe: &Path, placeholder: &str) -> String {
     format!("\"{}\" \"{placeholder}\"", exe.display())
 }
@@ -129,7 +129,7 @@ pub(crate) fn menu_keys(exe: &Path, label: &str) -> Vec<Key> {
         .collect()
 }
 
-/// The keys of the `ProgID` that opens a Markdown file in TrailMark.
+/// The keys of the `ProgID` that opens a Markdown file in PerMark.
 pub(crate) fn association_keys(exe: &Path, type_name: &str) -> Vec<Key> {
     vec![
         key(PROG_ID, vec![text("", type_name)]),
@@ -139,7 +139,7 @@ pub(crate) fn association_keys(exe: &Path, type_name: &str) -> Vec<Key> {
         ),
         key(
             format!(r"{PROG_ID}\shell\open"),
-            vec![text("FriendlyAppName", "TrailMark")],
+            vec![text("FriendlyAppName", "PerMark")],
         ),
         key(
             format!(r"{PROG_ID}\shell\open\command"),
@@ -153,7 +153,7 @@ pub(crate) fn open_with_key(extension: &str) -> String {
     format!(r"{extension}\OpenWithProgids")
 }
 
-/// An extension's own `shell` key (the place for verbs of that extension). Nothing of TrailMark's is written there, but a
+/// An extension's own `shell` key (the place for verbs of that extension). Nothing of PerMark's is written there, but a
 /// leftover empty one is as meaningless as the keys above the entries, and would keep the extension's key from going.
 pub(crate) fn extension_shell_key(extension: &str) -> String {
     format!(r"{extension}\shell")
@@ -188,16 +188,16 @@ pub(crate) fn open_with_keys() -> Vec<Key> {
 /// registry cannot follow the system by itself).
 pub(crate) fn menu_label(language: Language) -> &'static str {
     match language {
-        Language::En | Language::System => "Open with TrailMark",
-        Language::PtBr => "Abrir com o TrailMark",
-        Language::Es => "Abrir con TrailMark",
-        Language::De => "Mit TrailMark öffnen",
-        Language::ZhCn => "用 TrailMark 打开",
-        Language::It => "Apri con TrailMark",
+        Language::En | Language::System => "Open with PerMark",
+        Language::PtBr => "Abrir com o PerMark",
+        Language::Es => "Abrir con PerMark",
+        Language::De => "Mit PerMark öffnen",
+        Language::ZhCn => "用 PerMark 打开",
+        Language::It => "Apri con PerMark",
     }
 }
 
-/// What Explorer calls a Markdown file when TrailMark is the app that opens it (the "Type" column).
+/// What Explorer calls a Markdown file when PerMark is the app that opens it (the "Type" column).
 pub(crate) fn type_name(language: Language) -> &'static str {
     match language {
         Language::En | Language::System => "Markdown document",
@@ -220,7 +220,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn exe() -> PathBuf {
-        PathBuf::from(r"C:\Program Files\Trail Mark\trailmark.exe")
+        PathBuf::from(r"C:\Program Files\Per Mark\permark.exe")
     }
 
     fn text_of(keys: &[Key], path: &str, name: &str) -> String {
@@ -238,36 +238,36 @@ mod tests {
     fn the_command_is_the_program_and_one_argument_each_in_quotes() {
         assert_eq!(
             command_line(&exe(), "%1"),
-            r#""C:\Program Files\Trail Mark\trailmark.exe" "%1""#
+            r#""C:\Program Files\Per Mark\permark.exe" "%1""#
         );
         assert_eq!(
             command_line(
-                Path::new(r"C:\Users\Zoë\AppData\Local\TrailMark\trailmark.exe"),
+                Path::new(r"C:\Users\Zoë\AppData\Local\PerMark\permark.exe"),
                 "%V"
             ),
-            r#""C:\Users\Zoë\AppData\Local\TrailMark\trailmark.exe" "%V""#
+            r#""C:\Users\Zoë\AppData\Local\PerMark\permark.exe" "%V""#
         );
         assert_eq!(
             icon_value(&exe()),
-            r#""C:\Program Files\Trail Mark\trailmark.exe",0"#
+            r#""C:\Program Files\Per Mark\permark.exe",0"#
         );
     }
 
     #[test]
     fn the_menu_covers_folders_their_background_and_markdown_files() {
-        let keys = menu_keys(&exe(), "Open with TrailMark");
+        let keys = menu_keys(&exe(), "Open with PerMark");
         let paths: Vec<&str> = keys.iter().map(|k| k.path.as_str()).collect();
         assert_eq!(
             paths,
             [
-                r"Directory\shell\TrailMark",
-                r"Directory\shell\TrailMark\command",
-                r"Directory\Background\shell\TrailMark",
-                r"Directory\Background\shell\TrailMark\command",
-                r"SystemFileAssociations\.md\shell\TrailMark",
-                r"SystemFileAssociations\.md\shell\TrailMark\command",
-                r"SystemFileAssociations\.markdown\shell\TrailMark",
-                r"SystemFileAssociations\.markdown\shell\TrailMark\command",
+                r"Directory\shell\PerMark",
+                r"Directory\shell\PerMark\command",
+                r"Directory\Background\shell\PerMark",
+                r"Directory\Background\shell\PerMark\command",
+                r"SystemFileAssociations\.md\shell\PerMark",
+                r"SystemFileAssociations\.md\shell\PerMark\command",
+                r"SystemFileAssociations\.markdown\shell\PerMark",
+                r"SystemFileAssociations\.markdown\shell\PerMark\command",
             ]
         );
     }
@@ -275,13 +275,13 @@ mod tests {
     #[test]
     fn a_folder_passes_its_path_and_the_background_passes_the_folder_it_is_in() {
         let keys = menu_keys(&exe(), "x");
-        let program = r#""C:\Program Files\Trail Mark\trailmark.exe""#;
+        let program = r#""C:\Program Files\Per Mark\permark.exe""#;
         for (path, placeholder) in [
-            (r"Directory\shell\TrailMark\command", "%1"),
-            (r"Directory\Background\shell\TrailMark\command", "%V"),
-            (r"SystemFileAssociations\.md\shell\TrailMark\command", "%1"),
+            (r"Directory\shell\PerMark\command", "%1"),
+            (r"Directory\Background\shell\PerMark\command", "%V"),
+            (r"SystemFileAssociations\.md\shell\PerMark\command", "%1"),
             (
-                r"SystemFileAssociations\.markdown\shell\TrailMark\command",
+                r"SystemFileAssociations\.markdown\shell\PerMark\command",
                 "%1",
             ),
         ] {
@@ -295,13 +295,13 @@ mod tests {
 
     #[test]
     fn each_verb_has_the_label_and_the_icon_of_the_program() {
-        let keys = menu_keys(&exe(), "Mit TrailMark öffnen");
+        let keys = menu_keys(&exe(), "Mit PerMark öffnen");
         for target in &MENU_TARGETS {
             let verb = target.key();
-            assert_eq!(text_of(&keys, &verb, ""), "Mit TrailMark öffnen");
+            assert_eq!(text_of(&keys, &verb, ""), "Mit PerMark öffnen");
             assert_eq!(
                 text_of(&keys, &verb, "Icon"),
-                r#""C:\Program Files\Trail Mark\trailmark.exe",0"#
+                r#""C:\Program Files\Per Mark\permark.exe",0"#
             );
         }
     }
@@ -309,17 +309,14 @@ mod tests {
     #[test]
     fn the_association_is_a_prog_id_that_opens_the_file_it_is_given() {
         let keys = association_keys(&exe(), "Markdown document");
+        assert_eq!(text_of(&keys, "PerMark.Markdown", ""), "Markdown document");
         assert_eq!(
-            text_of(&keys, "TrailMark.Markdown", ""),
-            "Markdown document"
+            text_of(&keys, r"PerMark.Markdown\DefaultIcon", ""),
+            r#""C:\Program Files\Per Mark\permark.exe",0"#
         );
         assert_eq!(
-            text_of(&keys, r"TrailMark.Markdown\DefaultIcon", ""),
-            r#""C:\Program Files\Trail Mark\trailmark.exe",0"#
-        );
-        assert_eq!(
-            text_of(&keys, r"TrailMark.Markdown\shell\open\command", ""),
-            r#""C:\Program Files\Trail Mark\trailmark.exe" "%1""#
+            text_of(&keys, r"PerMark.Markdown\shell\open\command", ""),
+            r#""C:\Program Files\Per Mark\permark.exe" "%1""#
         );
     }
 
@@ -332,11 +329,11 @@ mod tests {
             [r".md\OpenWithProgids", r".markdown\OpenWithProgids"]
         );
         for k in &keys {
-            // one value named after the ProgID, with no data; nothing that would make TrailMark the default
+            // one value named after the ProgID, with no data; nothing that would make PerMark the default
             assert_eq!(
                 k.values,
                 [Value {
-                    name: "TrailMark.Markdown".to_owned(),
+                    name: "PerMark.Markdown".to_owned(),
                     data: String::new()
                 }]
             );
@@ -351,18 +348,18 @@ mod tests {
     #[test]
     fn the_keys_above_an_entry_are_tidied_up_but_never_the_first_level_ones_of_windows() {
         assert_eq!(
-            tidy_parents(r"Directory\Background\shell\TrailMark"),
+            tidy_parents(r"Directory\Background\shell\PerMark"),
             [r"Directory\Background\shell", r"Directory\Background"]
         );
         assert_eq!(
-            tidy_parents(r"SystemFileAssociations\.md\shell\TrailMark"),
+            tidy_parents(r"SystemFileAssociations\.md\shell\PerMark"),
             [
                 r"SystemFileAssociations\.md\shell",
                 r"SystemFileAssociations\.md"
             ]
         );
         assert_eq!(
-            tidy_parents(r"Directory\shell\TrailMark"),
+            tidy_parents(r"Directory\shell\PerMark"),
             [r"Directory\shell"]
         );
         // the key of an extension may go (the "Open with" list can have created it), another first-level key may not
@@ -378,12 +375,12 @@ mod tests {
 
     #[test]
     fn the_labels_are_the_ones_each_language_uses() {
-        assert_eq!(menu_label(Language::En), "Open with TrailMark");
-        assert_eq!(menu_label(Language::PtBr), "Abrir com o TrailMark");
-        assert_eq!(menu_label(Language::Es), "Abrir con TrailMark");
-        assert_eq!(menu_label(Language::De), "Mit TrailMark öffnen");
-        assert_eq!(menu_label(Language::ZhCn), "用 TrailMark 打开");
-        assert_eq!(menu_label(Language::It), "Apri con TrailMark");
+        assert_eq!(menu_label(Language::En), "Open with PerMark");
+        assert_eq!(menu_label(Language::PtBr), "Abrir com o PerMark");
+        assert_eq!(menu_label(Language::Es), "Abrir con PerMark");
+        assert_eq!(menu_label(Language::De), "Mit PerMark öffnen");
+        assert_eq!(menu_label(Language::ZhCn), "用 PerMark 打开");
+        assert_eq!(menu_label(Language::It), "Apri con PerMark");
         // the registry cannot follow the system's language, so "System default" reads as English
         assert_eq!(menu_label(Language::System), menu_label(Language::En));
         assert_eq!(type_name(Language::En), "Markdown document");

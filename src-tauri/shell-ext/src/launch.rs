@@ -1,4 +1,4 @@
-//! Starting TrailMark for the folders the menu was used on.
+//! Starting PerMark for the folders the menu was used on.
 //!
 //! The same as the entry of the installer version: the program, with the folder's path as its one argument. The program
 //! opens that folder as a project, and a project that is open already is its own window, so each folder gets its own
@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
 /// The program, by the name the package gives it (`Executable` in `AppxManifest.xml`).
-pub(crate) const PROGRAM: &str = "trailmark.exe";
+pub(crate) const PROGRAM: &str = "permark.exe";
 
 /// The most folders that one use of the menu opens. Explorer's own classic menu stops showing a command that runs once for
 /// each item at 15 items, and a handful of windows from one click is already a lot.
@@ -99,15 +99,15 @@ mod tests {
     fn the_program_is_beside_the_dll_wherever_the_package_is() {
         assert_eq!(
             package_program(Path::new(
-                r"C:\Program Files\WindowsApps\EdelmarSchneider.TrailMark_0.5.1.0_x64__abc\trailmark_shell.dll"
+                r"C:\Program Files\WindowsApps\EdelmarSchneider.PerMark_0.5.1.0_x64__abc\permark_shell.dll"
             )),
             Some(PathBuf::from(
-                r"C:\Program Files\WindowsApps\EdelmarSchneider.TrailMark_0.5.1.0_x64__abc\trailmark.exe"
+                r"C:\Program Files\WindowsApps\EdelmarSchneider.PerMark_0.5.1.0_x64__abc\permark.exe"
             ))
         );
         assert_eq!(
-            package_program(Path::new(r"D:\Layout\Zoë\trailmark_shell.dll")),
-            Some(PathBuf::from(r"D:\Layout\Zoë\trailmark.exe"))
+            package_program(Path::new(r"D:\Layout\Zoë\permark_shell.dll")),
+            Some(PathBuf::from(r"D:\Layout\Zoë\permark.exe"))
         );
         // a DLL with no folder above it (not a path Windows gives) has no program beside it
         assert_eq!(package_program(Path::new("")), None);
@@ -123,7 +123,7 @@ mod tests {
             r"\\server\share\docs",
             r"C:\Trailing space \",
         ] {
-            let command = command(Path::new(r"C:\Pkg\trailmark.exe"), Path::new(folder));
+            let command = command(Path::new(r"C:\Pkg\permark.exe"), Path::new(folder));
             let args: Vec<&OsStr> = command.get_args().collect();
             assert_eq!(args, [OsStr::new(folder)], "{folder}");
         }
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn the_program_starts_in_its_own_folder_and_not_in_the_one_it_opens() {
-        let program = Path::new(r"C:\Pkg\trailmark.exe");
+        let program = Path::new(r"C:\Pkg\permark.exe");
         let command = command(program, Path::new(r"C:\Projects\notes"));
         assert_eq!(command.get_program(), program.as_os_str());
         assert_eq!(command.get_current_dir(), Some(Path::new(r"C:\Pkg")));
@@ -172,18 +172,18 @@ mod tests {
 
     #[test]
     fn there_is_nothing_to_start_without_a_folder_or_a_program() {
-        let error = open(Path::new(r"C:\Pkg\trailmark.exe"), &[]).expect_err("no folder");
+        let error = open(Path::new(r"C:\Pkg\permark.exe"), &[]).expect_err("no folder");
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
 
         // a folder that exists, with no program in it
-        let missing = std::env::temp_dir().join("trailmark-shell-test-no-such-program.exe");
+        let missing = std::env::temp_dir().join("permark-shell-test-no-such-program.exe");
         let error = open(&missing, &paths(&[r"C:\Projects"])).expect_err("no program");
         assert_eq!(error.kind(), io::ErrorKind::NotFound);
     }
 
     #[test]
     fn a_program_that_exists_is_started_once_for_each_folder() {
-        // A program that exits at once and shows nothing stands in for TrailMark: `where.exe` with an argument it takes as
+        // A program that exits at once and shows nothing stands in for PerMark: `where.exe` with an argument it takes as
         // a file name to look for.
         let system = std::env::var_os("SystemRoot")
             .map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);

@@ -1,11 +1,11 @@
 //! Where the notes live.
 //!
-//! The folder is `Documents/TrailMark Notes` (or `~/TrailMark Notes` when the system has no Documents folder). It is not in
+//! The folder is `Documents/PerMark Notes` (or `~/PerMark Notes` when the system has no Documents folder). It is not in
 //! the app's data folder: that one is removed when the app is uninstalled with its data, and by the Store's uninstall,
-//! which would take months of notes with it. The person can point TrailMark at another folder (a synced one, say).
+//! which would take months of notes with it. The person can point PerMark at another folder (a synced one, say).
 //!
-//! A debug build never defaults to the real folder: it uses `<app data>/notes`, and honours `TRAILMARK_TEST_NOTES_DIR`
-//! (like `TRAILMARK_TEST_DATA_DIR` for the app's data), so that development and tests cannot touch real notes.
+//! A debug build never defaults to the real folder: it uses `<app data>/notes`, and honours `PERMARK_TEST_NOTES_DIR`
+//! (like `PERMARK_TEST_DATA_DIR` for the app's data), so that development and tests cannot touch real notes.
 //!
 //! The default folder is made quietly the first time it is needed: nobody is asked about a folder they never heard of. A folder
 //! the person chose that is not there (a disconnected drive, a renamed folder) is reported as missing instead, and is never made
@@ -20,9 +20,11 @@ use serde::Serialize;
 use crate::util::canonicalize_lenient;
 
 /// The name of the default folder.
-pub(crate) const FOLDER_NAME: &str = "TrailMark Notes";
+pub(crate) const FOLDER_NAME: &str = "PerMark Notes";
+/// The name the default folder had before the app was renamed.
+const LEGACY_FOLDER_NAME: &str = "TrailMark Notes";
 /// The environment variable that points a debug build at another notes folder. Release builds ignore it.
-pub(crate) const TEST_NOTES_DIR_VARIABLE: &str = "TRAILMARK_TEST_NOTES_DIR";
+pub(crate) const TEST_NOTES_DIR_VARIABLE: &str = "PERMARK_TEST_NOTES_DIR";
 
 /// What is known about the places notes can go on this system.
 #[derive(Debug, Clone)]
@@ -30,7 +32,7 @@ pub(crate) struct Places {
     /// The system's Documents folder, when it has one.
     pub documents: Option<PathBuf>,
     pub home: Option<PathBuf>,
-    /// TrailMark's own data folder.
+    /// PerMark's own data folder.
     pub app_data: PathBuf,
     /// Whether this is a debug build.
     pub debug: bool,
@@ -55,7 +57,7 @@ impl Places {
         self.real_default()
     }
 
-    /// `Documents/TrailMark Notes`, or `~/TrailMark Notes` without a Documents folder.
+    /// `Documents/PerMark Notes`, or `~/PerMark Notes` without a Documents folder.
     fn real_default(&self) -> PathBuf {
         self.documents
             .as_ref()
@@ -96,9 +98,35 @@ impl Places {
                 is_default: false,
             },
             _ => Resolved {
-                path: self.default_folder(),
+                path: if self.debug {
+                    self.default_folder()
+                } else {
+                    adopt_legacy(&self.real_default())
+                },
                 is_default: true,
             },
+        }
+    }
+}
+
+/// The default folder `new`, after renaming the folder it had before the app was renamed (`TrailMark Notes` next to it) when
+/// that is there and `new` is not. When the rename cannot be done the old folder is used, so no note is out of reach.
+fn adopt_legacy(new: &Path) -> PathBuf {
+    let Some(legacy) = new.parent().map(|parent| parent.join(LEGACY_FOLDER_NAME)) else {
+        return new.to_path_buf();
+    };
+    if new.file_name().is_none_or(|name| name != FOLDER_NAME) || new.exists() || !legacy.is_dir() {
+        return new.to_path_buf();
+    }
+    match std::fs::rename(&legacy, new) {
+        Ok(()) => new.to_path_buf(),
+        Err(error) => {
+            eprintln!(
+                "cannot rename {} to {}: {error}; the old folder is used",
+                legacy.display(),
+                new.display()
+            );
+            legacy
         }
     }
 }
@@ -332,7 +360,7 @@ mod tests {
     fn a_debug_build_does_not_open_the_real_folder_even_when_the_settings_name_it() {
         let debug = places(true, Some("/home/ana/Documents"));
         let own = debug.default_folder();
-        let real = abs("/home/ana/Documents/TrailMark Notes");
+        let real = abs("/home/ana/Documents/PerMark Notes");
         assert_eq!(debug.resolve(Some(&real), None), own);
         assert_eq!(debug.resolve(Some(&format!("{real}/")), None), own);
         // a folder the person picked on purpose is theirs
@@ -371,7 +399,7 @@ mod tests {
     #[test]
     fn the_default_folder_is_made_when_it_is_needed_and_never_by_looking_at_it() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let default = dir.path().join("Documents").join("TrailMark Notes");
+        let default = dir.path().join("Documents").join("PerMark Notes");
         // looking at it says it is ready, and makes nothing: the welcome screen only reads
         let folder = describe(&default, true);
         assert_eq!(folder.status, FolderStatus::Ready);
@@ -405,7 +433,7 @@ mod tests {
     fn a_default_folder_that_cannot_be_made_is_an_error_not_a_missing_folder() {
         let dir = tempfile::tempdir().expect("tempdir");
         // a file where the folder should be
-        let blocked = dir.path().join("TrailMark Notes");
+        let blocked = dir.path().join("PerMark Notes");
         std::fs::write(&blocked, "not a folder").expect("write");
         assert!(ensure(&blocked, true).is_err());
         assert!(blocked.is_file(), "nothing was replaced");
@@ -434,7 +462,7 @@ mod tests {
         let tested = debug.resolve_origin(Some(&sync), var);
         assert_eq!(tested.path, Path::new(&abs("/tmp/test-notes")));
         assert!(tested.is_default);
-        let real = abs("/home/ana/Documents/TrailMark Notes");
+        let real = abs("/home/ana/Documents/PerMark Notes");
         let refused = debug.resolve_origin(Some(&real), None);
         assert_eq!(refused.path, debug.default_folder());
         assert!(refused.is_default);
@@ -460,5 +488,47 @@ mod tests {
             Some(&chosen),
             &dir.path().join("other")
         ));
+    }
+
+    #[test]
+    fn the_default_folder_of_the_old_name_is_renamed_when_the_new_one_is_not_there() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let (old, new) = (
+            dir.path().join(LEGACY_FOLDER_NAME),
+            dir.path().join(FOLDER_NAME),
+        );
+        std::fs::create_dir(&old).expect("mkdir");
+        std::fs::write(old.join("note.md"), "x").expect("write");
+
+        assert_eq!(adopt_legacy(&new), new);
+        assert!(new.join("note.md").is_file());
+        assert!(!old.exists());
+    }
+
+    #[test]
+    fn the_new_default_folder_wins_and_the_old_one_stays() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let (old, new) = (
+            dir.path().join(LEGACY_FOLDER_NAME),
+            dir.path().join(FOLDER_NAME),
+        );
+        std::fs::create_dir(&old).expect("mkdir");
+        std::fs::create_dir(&new).expect("mkdir");
+
+        assert_eq!(adopt_legacy(&new), new);
+        assert!(old.is_dir());
+    }
+
+    #[test]
+    fn nothing_is_renamed_when_there_is_no_old_folder_or_the_folder_is_not_the_default() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let new = dir.path().join(FOLDER_NAME);
+        assert_eq!(adopt_legacy(&new), new);
+        assert!(!new.exists());
+
+        std::fs::create_dir(dir.path().join(LEGACY_FOLDER_NAME)).expect("mkdir");
+        let other = dir.path().join("Elsewhere");
+        assert_eq!(adopt_legacy(&other), other);
+        assert!(dir.path().join(LEGACY_FOLDER_NAME).is_dir());
     }
 }

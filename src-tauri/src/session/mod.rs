@@ -1,11 +1,12 @@
 //! Per-project state (session, last visit, window geometry), project settings, and the recent-folders list.
 //!
 //! State lives in AppData by default (`projects/<xxh3 of the canonical root>/`), so a project folder
-//! stays untouched. When the project has a `.trailmark/` folder, state lives in `.trailmark/local/`
-//! instead and settings are read from `.trailmark/config.toml`.
+//! stays untouched. When the project has a `.permark/` folder, state lives in `.permark/local/`
+//! instead and settings are read from `.permark/config.toml`.
 
 mod app_settings;
 mod config;
+mod legacy;
 mod private;
 mod recent;
 mod store;
@@ -21,6 +22,7 @@ pub use app_settings::{
     effective_language, installer_language, AppSettingsStore, Language, StartIn, Tone,
 };
 pub use config::{Config, TreeConfig, TreeShow};
+pub(crate) use legacy::state_dir;
 pub(crate) use private::{open_lock_file, remove_local_state, write_local_state};
 pub use recent::{RecentStore, RecentVault};
 pub(crate) use store::project_key;

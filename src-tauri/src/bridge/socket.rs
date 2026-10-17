@@ -1,9 +1,9 @@
 //! The local socket of a project: where it is, how only its owner reaches it, and how both sides use it.
 //!
-//! The window of a project listens while the agent connection is on; `trailmark mcp` and `trailmark context`
+//! The window of a project listens while the agent connection is on; `permark mcp` and `permark context`
 //! connect. The name is derived from the project's folder and the user, so both sides find it without a registry:
 //!
-//! - **Windows**: a named pipe, `\\.\pipe\trailmark-<id>`. Its access list lets only the pipe's owner in, and the
+//! - **Windows**: a named pipe, `\\.\pipe\permark-<id>`. Its access list lets only the pipe's owner in, and the
 //!   first instance is exclusive, so another program cannot take the name first.
 //! - **Linux and macOS**: a Unix socket `<id>.sock` in a private folder (mode 0700) that is the user's runtime
 //!   folder (`$XDG_RUNTIME_DIR`) or a per-user folder in the temporary folder. Nobody else can reach the socket
@@ -101,7 +101,7 @@ fn default_folder(user: &str) -> PathBuf {
         our_uid(),
         Path::new("/run/user"),
     ) {
-        return runtime.join("trailmark");
+        return runtime.join("permark");
     }
     temp_folder(&std::env::temp_dir(), user, cfg!(target_os = "macos"))
 }
@@ -128,9 +128,9 @@ fn runtime_folder(
 #[cfg(unix)]
 fn temp_folder(temp: &Path, user: &str, per_user_temp: bool) -> PathBuf {
     if per_user_temp && temp != Path::new("/tmp") {
-        temp.join("trailmark")
+        temp.join("permark")
     } else {
-        temp.join(format!("trailmark-{user}"))
+        temp.join(format!("permark-{user}"))
     }
 }
 
@@ -197,7 +197,7 @@ impl Endpoint {
         #[cfg(windows)]
         {
             Ok(Self {
-                pipe: format!("trailmark-{id}"),
+                pipe: format!("permark-{id}"),
                 folder: folder.to_path_buf(),
             })
         }
@@ -337,7 +337,7 @@ impl Endpoint {
     /// program that is not.
     ///
     /// The names are guessable and the socket can be taken while the window is closed, so a client does not assume
-    /// that whoever answers is TrailMark. On Linux and macOS the folder of the socket must be a folder of the user's
+    /// that whoever answers is PerMark. On Linux and macOS the folder of the socket must be a folder of the user's
     /// that nobody else can enter, and the program that listens must run as the user. On Windows the pipe is opened so
     /// that the server cannot act as the client, and the program that serves it must run as the user.
     pub(crate) async fn connect(&self) -> Result<Stream, ConnectError> {
@@ -389,7 +389,7 @@ pub(crate) enum ConnectError {
     /// The connection could not be made (nothing listens, or the system refused).
     #[error(transparent)]
     Io(#[from] io::Error),
-    /// Something listens, but it is not shown to be this user's TrailMark, so nothing is sent to it.
+    /// Something listens, but it is not shown to be this user's PerMark, so nothing is sent to it.
     #[error("{0}")]
     Untrusted(String),
 }
@@ -522,7 +522,7 @@ pub(crate) enum ListenError {
     #[error("cannot listen on {place}: {source}")]
     Io { place: String, source: io::Error },
     /// Another window of this user already listens for the project. Only made where sockets are files.
-    #[error("another TrailMark window is already serving this project ({0})")]
+    #[error("another PerMark window is already serving this project ({0})")]
     #[cfg_attr(windows, allow(dead_code))]
     InUse(String),
 }
@@ -594,8 +594,8 @@ mod tests {
         let dir = folder();
         let described = endpoint(&dir, "/work/notes").describe();
         if cfg!(windows) {
-            assert!(described.starts_with(r"\\.\pipe\trailmark-"), "{described}");
-            assert_eq!(described.len(), r"\\.\pipe\trailmark-".len() + 16);
+            assert!(described.starts_with(r"\\.\pipe\permark-"), "{described}");
+            assert_eq!(described.len(), r"\\.\pipe\permark-".len() + 16);
         } else {
             assert_eq!(
                 Path::new(&described).extension().and_then(|e| e.to_str()),
@@ -704,23 +704,23 @@ mod tests {
                 &long_user,
                 true,
             );
-            assert!(mac.ends_with("T/trailmark"), "{mac:?}");
+            assert!(mac.ends_with("T/permark"), "{mac:?}");
             let socket = Endpoint::in_folder(&mac, Path::new("/work/notes"), &long_user)
                 .expect("a long user name still fits");
             assert!(socket.describe().len() <= MAX_SOCKET_PATH);
             // a shared /tmp keeps the users apart, on macOS too
             assert_eq!(
                 temp_folder(Path::new("/tmp"), "ada", true),
-                Path::new("/tmp/trailmark-ada")
+                Path::new("/tmp/permark-ada")
             );
             assert_eq!(
                 temp_folder(Path::new("/tmp"), "ada", false),
-                Path::new("/tmp/trailmark-ada")
+                Path::new("/tmp/permark-ada")
             );
             // Linux without a runtime folder: the temporary folder is shared
             assert_eq!(
                 temp_folder(Path::new("/var/tmp"), "ada", false),
-                Path::new("/var/tmp/trailmark-ada")
+                Path::new("/var/tmp/permark-ada")
             );
         }
 
@@ -757,7 +757,7 @@ mod tests {
             assert!(!peer_is_us(None, 1000), "unknown is not trusted");
         }
 
-        /// `/tmp/trailmark-<user>` is a name anybody can make first: a folder somebody else made, or one that is not
+        /// `/tmp/permark-<user>` is a name anybody can make first: a folder somebody else made, or one that is not
         /// closed, holds a socket that nothing is sent to.
         #[tokio::test]
         async fn a_folder_that_is_not_closed_to_others_is_not_trusted() {
@@ -825,7 +825,7 @@ mod tests {
         const BAD_IMPERSONATION_LEVEL: i32 = 1346;
 
         fn pipe_name(name: &str) -> String {
-            format!(r"\\.\pipe\trailmark-test-{}-{name}", std::process::id())
+            format!(r"\\.\pipe\permark-test-{}-{name}", std::process::id())
         }
 
         /// A server that does what a squatter with the right privilege does: reads the client's first byte, acts as

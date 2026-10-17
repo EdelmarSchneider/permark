@@ -1,9 +1,9 @@
-//! The commands the program runs without a window: `trailmark mcp` (see [`mcp`](super::mcp)) and
-//! `trailmark context`, which prints what the person is looking at as one short paragraph and exits.
+//! The commands the program runs without a window: `permark mcp` (see [`mcp`](super::mcp)) and
+//! `permark context`, which prints what the person is looking at as one short paragraph and exits.
 //!
-//! `trailmark context` is made for a hook: a tool that runs it before each prompt gets a line such as
+//! `permark context` is made for a hook: a tool that runs it before each prompt gets a line such as
 //! `Viewing docs/plan.md › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday'.` and nothing
-//! else. When there is nothing to say (the connection is off, TrailMark is closed) standard output stays empty
+//! else. When there is nothing to say (the connection is off, PerMark is closed) standard output stays empty
 //! and the reason goes to standard error, so a hook adds no noise to a prompt.
 
 use std::io::Write;
@@ -27,12 +27,12 @@ pub(crate) fn context_line(answer: &Answer) -> Result<String, String> {
     if answer.value["status"] != "ok" {
         let reason = answer.value["message"]
             .as_str()
-            .unwrap_or("TrailMark has nothing to share for this folder.");
+            .unwrap_or("PerMark has nothing to share for this folder.");
         return Err(reason.to_owned());
     }
     serde_json::from_value::<Published>(answer.value.clone())
         .map(|published| published.context.summary())
-        .map_err(|error| format!("TrailMark answered with something unexpected: {error}"))
+        .map_err(|error| format!("PerMark answered with something unexpected: {error}"))
 }
 
 fn run_context(identifier: &str) -> i32 {
@@ -53,7 +53,7 @@ fn run_context(identifier: &str) -> i32 {
             let _ = writeln!(std::io::stdout(), "{line}");
         }
         Err(reason) => {
-            let _ = writeln!(std::io::stderr(), "trailmark context: {reason}");
+            let _ = writeln!(std::io::stderr(), "permark context: {reason}");
         }
     }
     0
@@ -99,7 +99,7 @@ mod tests {
         .expect("a line");
         assert_eq!(
             line,
-            "TrailMark is open on this project, with no document open."
+            "PerMark is open on this project, with no document open."
         );
     }
 
@@ -108,11 +108,11 @@ mod tests {
         let off = context_line(&answer(json!({ "status": "off", "message": "it is off" })));
         assert_eq!(off, Err("it is off".to_owned()));
         let closed = context_line(&answer(
-            json!({ "status": "notOpen", "message": "TrailMark is not open on this project." }),
+            json!({ "status": "notOpen", "message": "PerMark is not open on this project." }),
         ));
         assert_eq!(
             closed,
-            Err("TrailMark is not open on this project.".to_owned())
+            Err("PerMark is not open on this project.".to_owned())
         );
         let failed = context_line(&Answer {
             value: json!({ "status": "error", "message": "boom" }),

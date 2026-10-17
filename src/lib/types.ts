@@ -18,7 +18,7 @@ export type VaultInfo = {
   /** False when the file system cannot report changes (some network or virtual drives): the folder
    *  works, but is only refreshed when the window gets focus. */
   liveUpdates: boolean;
-  /** The project's default for the Explorer filter (`[tree]` in `.trailmark/config.toml`), if it sets one. */
+  /** The project's default for the Explorer filter (`[tree]` in `.permark/config.toml`), if it sets one. */
   treeDefault: TreeDefault | null;
 };
 /** The presets of the Explorer filter (`show` in `[tree]` of `config.toml` uses the same names). */
@@ -38,7 +38,7 @@ export type TreeFilter = {
   /** Also list hidden files and folders (names that start with a dot). Applies to every preset. */
   showHidden: boolean;
 };
-/** The project's default for the Explorer filter, from `[tree]` in `.trailmark/config.toml`. */
+/** The project's default for the Explorer filter, from `[tree]` in `.permark/config.toml`. */
 export type TreeDefault = { show: FilterShow | null; include: string[]; exclude: string[] };
 export type RecentVault = { root: string; name: string; lastOpenedMs: number };
 /**
@@ -46,15 +46,15 @@ export type RecentVault = { root: string; name: string; lastOpenedMs: number };
  * ("store"), which the Store updates, so it has no "Check for updates".
  */
 export type Distribution = "standard" | "store";
-/** What "Open with TrailMark" has registered with the file manager, as the system has it right now. */
+/** What "Open with PerMark" has registered with the file manager, as the system has it right now. */
 export type ShellState = {
-  /** False where TrailMark cannot register anything (every platform but Windows, for now). */
+  /** False where PerMark cannot register anything (every platform but Windows, for now). */
   supported: boolean;
-  /** TrailMark is in the right-click menu of folders and Markdown files. */
+  /** PerMark is in the right-click menu of folders and Markdown files. */
   contextMenu: boolean;
-  /** TrailMark is in the "Open with" list of Markdown files. */
+  /** PerMark is in the "Open with" list of Markdown files. */
   association: boolean;
-  /** Windows' own choice for `.md` files is TrailMark. */
+  /** Windows' own choice for `.md` files is PerMark. */
   isDefault: boolean;
 };
 export type TreeNode = {
@@ -192,7 +192,7 @@ export type AgentStatus = {
   enabled: boolean;
   /** The window is listening (not when the socket could not be opened; `error` says why). */
   listening: boolean;
-  /** Programs connected now (an agent's `trailmark mcp`, a hook's `trailmark context`). */
+  /** Programs connected now (an agent's `permark mcp`, a hook's `permark context`). */
   connections: number;
   /** The latest requests, newest first. */
   recent: AgentRequest[];
@@ -370,7 +370,7 @@ export type UndoOutcome = {
 
 // ---- notes ----------------------------------------------------------------------------------------
 
-/** Where TrailMark opens when it is started with nothing to open. */
+/** Where PerMark opens when it is started with nothing to open. */
 export type StartIn = "welcome" | "notes";
 /** The notes folder: where it is, and whether it is there. */
 export type NotesFolder = {

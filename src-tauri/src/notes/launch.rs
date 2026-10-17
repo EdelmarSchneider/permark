@@ -1,7 +1,7 @@
 //! One Notes window, however many launchers.
 //!
-//! The Notes window is a program of its own (`trailmark --notes`) and there is only ever one for each app data folder. It
-//! listens on a local socket that only the same user can reach (see [`Endpoint`]). Any other TrailMark window, and any
+//! The Notes window is a program of its own (`permark --notes`) and there is only ever one for each app data folder. It
+//! listens on a local socket that only the same user can reach (see [`Endpoint`]). Any other PerMark window, and any
 //! launch of the program that finds the window already there, asks it over that socket to come forward, with a new note
 //! ready if they want one; when nobody listens, the one that asked starts the window and asks it once it is up. Two
 //! programs that ask at the same moment start one window between them.
@@ -392,7 +392,7 @@ mod tests {
             .display()
             .to_string();
         let args = |rest: &[&str]| -> Vec<std::ffi::OsString> {
-            std::iter::once("trailmark")
+            std::iter::once("permark")
                 .chain(rest.iter().copied())
                 .map(Into::into)
                 .collect()
@@ -443,8 +443,8 @@ mod tests {
     #[test]
     fn the_notes_window_has_a_socket_of_its_own_for_each_data_folder() {
         let (one, other) = (
-            Path::new("/data/dev.trailmark.app"),
-            Path::new("/data/dev.trailmark.e2e"),
+            Path::new("/data/dev.permark.app"),
+            Path::new("/data/dev.permark.e2e"),
         );
         let a = Endpoint::for_notes(one).expect("endpoint");
         assert_eq!(a, Endpoint::for_notes(one).expect("endpoint"));

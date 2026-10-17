@@ -4,7 +4,7 @@
 //!
 //! A loose file is a scope of its own: the window refers to it by an opaque id, never by a path of the disk. Its UI path is
 //! `@file/<id>/<file name>`; the file itself and the images next to it can be reached through that path and nothing else.
-//! TrailMark never writes a loose file on its own: the text being typed is kept in `.trailmark/pending/` (see
+//! PerMark never writes a loose file on its own: the text being typed is kept in `.permark/pending/` (see
 //! [`pending`](super::pending)) until the person saves it.
 //!
 //! This module is the plain data and the rules that need no folder of notes: the entry that is kept in `notes.json`, the

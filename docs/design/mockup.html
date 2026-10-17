@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TrailMark · IDE mode mockup</title>
+<title>PerMark · IDE mode mockup</title>
 <!-- Optional web fonts for the mockup only. The app bundles Inter and JetBrains Mono locally. -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -591,10 +591,10 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
     <section id="view-explorer" style="display:flex;flex-direction:column;min-height:0;flex:1">
       <div class="panel-header">
         <span class="panel-title">Explorer</span><span class="spacer"></span>
-        <button class="icon-btn icon-btn--sm" id="btnProjectMenu" aria-label="Explorer menu" title="Collapse all · Reveal open doc · Initialize TrailMark in this project…"><svg class="icon icon--sm"><use href="#i-more"/></svg></button>
+        <button class="icon-btn icon-btn--sm" id="btnProjectMenu" aria-label="Explorer menu" title="Collapse all · Reveal open doc · Initialize PerMark in this project…"><svg class="icon icon--sm"><use href="#i-more"/></svg></button>
       </div>
       <div class="scroll" style="flex:1">
-        <button class="section-header" aria-expanded="true"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg>trailmark-docs</button>
+        <button class="section-header" aria-expanded="true"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg>permark-docs</button>
         <div class="tree" role="tree" aria-label="Files">
           <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="true" style="--depth:0"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">docs</span><span class="rollup" title="Contains changes"></span></div>
           <div class="tree-row tree-row--dir" role="treeitem" aria-expanded="true" style="--depth:1"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><span class="tree-name">specs</span><span class="rollup" title="Contains changes"></span></div>
@@ -616,7 +616,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
         <button class="section-header" aria-expanded="true"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg>Worktrees<span class="section-header__aside">2</span></button>
         <div class="tree" role="tree" aria-label="Worktrees">
           <div class="tree-row" role="treeitem" aria-expanded="false" style="--depth:0" title="@wt/feature-ui · .worktrees/feature-ui"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><svg class="icon icon--sm" style="color:var(--muted)"><use href="#i-fork"/></svg><span class="tree-name">feature-ui</span><span class="branch-chip">feature/ui</span></div>
-          <div class="tree-row" role="treeitem" aria-expanded="false" style="--depth:0" title="@wt/fix-links · ../trailmark-fix-links"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><svg class="icon icon--sm" style="color:var(--muted)"><use href="#i-fork"/></svg><span class="tree-name">fix-links</span><span class="branch-chip">fix/links</span></div>
+          <div class="tree-row" role="treeitem" aria-expanded="false" style="--depth:0" title="@wt/fix-links · ../permark-fix-links"><svg class="icon icon--sm twisty"><use href="#i-chev-down"/></svg><svg class="icon icon--sm" style="color:var(--muted)"><use href="#i-fork"/></svg><span class="tree-name">fix-links</span><span class="branch-chip">fix/links</span></div>
         </div>
       </div>
     </section>
@@ -859,9 +859,9 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
         <div class="since-folder">(root)</div>
         <div class="tree-row since-row"><svg class="icon file-icon"><use href="#i-file"/></svg><span class="tree-name">plan.md</span><span class="badge badge--M">M</span></div>
 
-        <div class="hint" id="trailmarkHint">
+        <div class="hint" id="permarkHint">
           <svg class="icon icon--sm" style="margin-top:1px;flex:none"><use href="#i-lightbulb"/></svg>
-          <span>Keep settings with the project? <button class="link-btn" data-open-init>Initialize .trailmark/</button></span>
+          <span>Keep settings with the project? <button class="link-btn" data-open-init>Initialize .permark/</button></span>
           <button class="icon-btn icon-btn--sm" id="btnHintClose" aria-label="Dismiss hint" title="Don't show again"><svg class="icon icon--xs"><use href="#i-x"/></svg></button>
         </div>
       </section>
@@ -875,7 +875,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
     <button class="sb-item" title="Compare against: your last visit (Mon 18:40, a1b2c3d) or the last commit">Since: last visit<svg class="icon chev"><use href="#i-chev-down"/></svg></button>
     <span class="sb-chip" id="rebaseChip" hidden>REBASING</span>
     <span class="spacer"></span>
-    <button class="sb-item" data-open-init id="stateItem" title="Project state is stored on this computer only. Click to keep it in the project (.trailmark/)."><svg class="icon"><use href="#i-folder-cog"/></svg><span id="stateLabel">State: Local</span></button>
+    <button class="sb-item" data-open-init id="stateItem" title="Project state is stored on this computer only. Click to keep it in the project (.permark/)."><svg class="icon"><use href="#i-folder-cog"/></svg><span id="stateLabel">State: Local</span></button>
     <button class="sb-item" id="btnFollow" aria-pressed="false" title="Follow: open the latest changed doc (Ctrl+Shift+L)"><svg class="icon"><use href="#i-eye"/></svg><span>Follow</span></button>
     <button class="sb-item" title="Zoom (Ctrl+0 to reset)">100%</button>
     <button class="sb-item" id="btnWidth" title="Reading width (Ctrl+Alt+W)"><svg class="icon"><use href="#i-width"/></svg><span>Normal width</span></button>
@@ -889,11 +889,11 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   <button class="btn" id="btnCopyPlain"><svg class="icon icon--sm"><use href="#i-copy"/></svg><span>Copy</span></button>
 </div>
 
-<!-- Initialize .trailmark dialog -->
+<!-- Initialize .permark dialog -->
 <div class="backdrop" id="initDialog" hidden>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="initTitle">
-    <h2 id="initTitle">Initialize TrailMark in this project?</h2>
-    <p>TrailMark will create <code style="font-family:var(--font-code)">.trailmark/</code> in <strong>trailmark-docs</strong>:</p>
+    <h2 id="initTitle">Initialize PerMark in this project?</h2>
+    <p>PerMark will create <code style="font-family:var(--font-code)">.permark/</code> in <strong>permark-docs</strong>:</p>
     <dl>
       <dt>config.toml</dt><dd>shared settings, safe to commit</dd>
       <dt>cache/</dt><dd>search index (gitignored)</dd>
@@ -995,7 +995,7 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   };
   $$('.chip-toggle').forEach(c => c.onclick = () => c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true')));
   $('#btnToastClose').onclick = () => $('#toast').hidden = true;
-  $('#btnHintClose').onclick = () => $('#trailmarkHint').hidden = true;
+  $('#btnHintClose').onclick = () => $('#permarkHint').hidden = true;
 
   /* copy feedback */
   const copy = async (text, btn) => {
@@ -1039,18 +1039,18 @@ mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1
   };
   $('#btnCopyPlain').onclick = e => lastSelection && copy(lastSelection.text, e.currentTarget);
 
-  /* .trailmark init dialog */
+  /* .permark init dialog */
   $$('[data-open-init]').forEach(b => b.onclick = () => {
-    if ($('#stateLabel').textContent.includes('.trailmark')) return;
+    if ($('#stateLabel').textContent.includes('.permark')) return;
     $('#initDialog').hidden = false; $('#btnInitOk').focus();
   });
   $('#btnInitCancel').onclick = () => $('#initDialog').hidden = true;
   $('#initDialog').onclick = e => { if (e.target.id === 'initDialog') e.target.hidden = true; };
   $('#btnInitOk').onclick = () => {
     $('#initDialog').hidden = true;
-    $('#stateLabel').textContent = 'State: .trailmark';
-    $('#stateItem').title = 'Project state is stored in .trailmark/ inside the project.';
-    $('#trailmarkHint').hidden = true;
+    $('#stateLabel').textContent = 'State: .permark';
+    $('#stateItem').title = 'Project state is stored in .permark/ inside the project.';
+    $('#permarkHint').hidden = true;
   };
 
   /* search results: keyboard navigation and group collapse */

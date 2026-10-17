@@ -1,12 +1,12 @@
 {
-  "name": "trailmark",
+  "name": "permark",
   "version": "0.5.5",
   "description": "Read what your AI writes. Write what it reads. A free, open-source Markdown app.",
   "license": "MIT OR Apache-2.0",
   "author": "Edelmar Schneider",
   "repository": {
     "type": "git",
-    "url": "https://github.com/EdelmarSchneider/trailmark"
+    "url": "https://github.com/EdelmarSchneider/permark"
   },
   "private": true,
   "type": "module",

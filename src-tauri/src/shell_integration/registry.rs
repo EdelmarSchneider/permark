@@ -1,4 +1,4 @@
-//! Adds, removes and reads the "Open with TrailMark" entries in the Windows registry (current user only).
+//! Adds, removes and reads the "Open with PerMark" entries in the Windows registry (current user only).
 //!
 //! [`Registry`] works on three roots so a test can point it at a throwaway subtree instead of the real
 //! `Software\Classes`: where the entries live, where the app keeps the person's choices (read by the installer,
@@ -18,7 +18,7 @@ use crate::session::Language;
 
 const CLASSES: &str = r"Software\Classes";
 /// The app's own key; the installer keeps the language here too.
-const APP_KEY: &str = r"Software\TrailMark";
+const APP_KEY: &str = r"Software\PerMark";
 const FILE_EXTS: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts";
 
 pub(crate) struct Registry {
@@ -75,7 +75,7 @@ impl Registry {
         Ok(())
     }
 
-    /// Deletes a key and everything under it. Only ever called with keys that belong to TrailMark.
+    /// Deletes a key and everything under it. Only ever called with keys that belong to PerMark.
     fn delete_tree(&self, key: &str) -> io::Result<()> {
         missing_is_fine(hkcu().delete_subkey_all(self.class_path(key)))
     }
@@ -259,7 +259,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    /// A throwaway registry under `HKCU\Software\TrailMarkTest<pid>_<n>`, deleted when it goes out of scope (even
+    /// A throwaway registry under `HKCU\Software\PerMarkTest<pid>_<n>`, deleted when it goes out of scope (even
     /// if the test fails). The real `Software\Classes` is never touched.
     struct Scratch {
         root: String,
@@ -270,7 +270,7 @@ mod tests {
         fn new() -> Self {
             static NEXT: AtomicU32 = AtomicU32::new(0);
             let root = format!(
-                r"Software\TrailMarkTest{}_{}",
+                r"Software\PerMarkTest{}_{}",
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             );
@@ -300,16 +300,16 @@ mod tests {
 
     impl Drop for Scratch {
         fn drop(&mut self) {
-            assert!(self.root.starts_with(r"Software\TrailMarkTest"));
+            assert!(self.root.starts_with(r"Software\PerMarkTest"));
             let _ = hkcu().delete_subkey_all(&self.root);
         }
     }
 
     fn exe() -> PathBuf {
-        PathBuf::from(r"C:\Program Files\Trail Mark\trailmark.exe")
+        PathBuf::from(r"C:\Program Files\Per Mark\permark.exe")
     }
 
-    const PROGRAM: &str = r#""C:\Program Files\Trail Mark\trailmark.exe""#;
+    const PROGRAM: &str = r#""C:\Program Files\Per Mark\permark.exe""#;
 
     #[test]
     fn an_empty_registry_has_nothing_enabled() {
@@ -338,10 +338,10 @@ mod tests {
             (r"SystemFileAssociations\.md", "%1"),
             (r"SystemFileAssociations\.markdown", "%1"),
         ] {
-            let verb = format!(r"{class}\shell\TrailMark");
+            let verb = format!(r"{class}\shell\PerMark");
             assert_eq!(
                 s.default_of(&verb).as_deref(),
-                Some("Mit TrailMark öffnen"),
+                Some("Mit PerMark öffnen"),
                 "{verb}"
             );
             let icon = s
@@ -357,7 +357,7 @@ mod tests {
         assert_eq!(s.app_choice(MENU_CHOICE), Some(1));
         // the association is a separate choice
         assert!(!s.registry.state().association);
-        assert!(s.class("TrailMark.Markdown").is_none());
+        assert!(s.class("PerMark.Markdown").is_none());
     }
 
     #[test]
@@ -386,7 +386,7 @@ mod tests {
             r"SystemFileAssociations\.md",
             r"SystemFileAssociations\.markdown",
         ] {
-            assert!(s.class(&format!(r"{class}\shell\TrailMark")).is_none());
+            assert!(s.class(&format!(r"{class}\shell\PerMark")).is_none());
         }
         assert!(s.class(r"Directory\shell\Other\command").is_some());
         assert!(s
@@ -456,7 +456,7 @@ mod tests {
         assert_eq!(s.default_of(r"Directory\shell").as_deref(), Some("none"));
         assert!(s.class(r"SystemFileAssociations\.md").is_some());
         assert!(s.class(r"SystemFileAssociations\.md\shell").is_none());
-        // what only TrailMark had made is gone
+        // what only PerMark had made is gone
         assert!(s.class(r"SystemFileAssociations\.markdown").is_none());
     }
 
@@ -465,7 +465,7 @@ mod tests {
         let s = Scratch::new();
         make(&s, r"Directory\Background\shell", None);
         make(&s, r"SystemFileAssociations\.md\shell", None);
-        // empty, but not in a place TrailMark writes to
+        // empty, but not in a place PerMark writes to
         make(&s, r"Directory\shellex", None);
         s.registry
             .set_context_menu(false, &exe(), Language::En)
@@ -519,24 +519,24 @@ mod tests {
         assert!(!state.context_menu);
         assert!(
             !state.is_default,
-            "TrailMark is offered, never made the default"
+            "PerMark is offered, never made the default"
         );
         assert_eq!(
-            s.default_of("TrailMark.Markdown").as_deref(),
+            s.default_of("PerMark.Markdown").as_deref(),
             Some("Documento Markdown")
         );
         assert_eq!(
-            s.default_of(r"TrailMark.Markdown\DefaultIcon"),
+            s.default_of(r"PerMark.Markdown\DefaultIcon"),
             Some(format!("{PROGRAM},0"))
         );
         assert_eq!(
-            s.default_of(r"TrailMark.Markdown\shell\open\command"),
+            s.default_of(r"PerMark.Markdown\shell\open\command"),
             Some(format!("{PROGRAM} \"%1\""))
         );
         for ext in [".md", ".markdown"] {
             let listed = s.class(&format!(r"{ext}\OpenWithProgids")).expect("list");
             // a value named after the ProgID, with no data
-            let value = listed.get_value::<String, _>("TrailMark.Markdown");
+            let value = listed.get_value::<String, _>("PerMark.Markdown");
             assert_eq!(value.ok().as_deref(), Some(""), "{ext}");
         }
         // the other program is untouched
@@ -569,13 +569,13 @@ mod tests {
             .expect("disable");
 
         assert!(!s.registry.state().association);
-        assert!(s.class("TrailMark.Markdown").is_none());
+        assert!(s.class("PerMark.Markdown").is_none());
         assert!(!s
             .registry
-            .has_value(r".md\OpenWithProgids", "TrailMark.Markdown"));
+            .has_value(r".md\OpenWithProgids", "PerMark.Markdown"));
         assert!(!s
             .registry
-            .has_value(r".markdown\OpenWithProgids", "TrailMark.Markdown"));
+            .has_value(r".markdown\OpenWithProgids", "PerMark.Markdown"));
         assert_eq!(s.default_of(".md").as_deref(), Some("md_auto_file"));
         assert!(s.registry.has_value(r".md\OpenWithProgids", "Other.md"));
         assert_eq!(s.app_choice(ASSOCIATION_CHOICE), Some(0));
@@ -595,7 +595,7 @@ mod tests {
         for ext in [".md", ".markdown"] {
             assert!(s.class(ext).is_none(), "{ext}");
         }
-        assert!(s.class("TrailMark.Markdown").is_none());
+        assert!(s.class("PerMark.Markdown").is_none());
         assert_eq!(s.app_choice(ASSOCIATION_CHOICE), Some(0));
     }
 
@@ -622,8 +622,8 @@ mod tests {
         assert!(s.registry.has_value(r".md\OpenWithProgids", "Other.md"));
         assert!(!s
             .registry
-            .has_value(r".md\OpenWithProgids", "TrailMark.Markdown"));
-        // the list TrailMark had made is gone from `.markdown`, and what else is there is untouched
+            .has_value(r".md\OpenWithProgids", "PerMark.Markdown"));
+        // the list PerMark had made is gone from `.markdown`, and what else is there is untouched
         assert!(s.class(".markdown").is_some());
         assert!(s.class(r".markdown\OpenWithProgids").is_none());
         assert!(s.class(r".markdown\shell\Other\command").is_some());
@@ -650,7 +650,7 @@ mod tests {
         hkcu()
             .create_subkey(
                 s.registry
-                    .class_path(r"Directory\Background\shell\TrailMark\command"),
+                    .class_path(r"Directory\Background\shell\PerMark\command"),
             )
             .expect("background only");
         assert!(s.registry.state().context_menu);
@@ -663,9 +663,7 @@ mod tests {
         let (progids, _) = hkcu()
             .create_subkey(s.registry.class_path(r".markdown\OpenWithProgids"))
             .expect("progids");
-        progids
-            .set_value("TrailMark.Markdown", &"")
-            .expect("listed");
+        progids.set_value("PerMark.Markdown", &"").expect("listed");
         assert!(s.registry.state().association);
         s.registry
             .set_association(false, &exe(), Language::En)
@@ -685,7 +683,7 @@ mod tests {
         assert!(!s.registry.state().is_default);
         choice("md_auto_file");
         assert!(!s.registry.state().is_default);
-        choice("TrailMark.Markdown");
+        choice("PerMark.Markdown");
         assert!(s.registry.state().is_default);
     }
 
@@ -704,7 +702,7 @@ mod tests {
         };
         latest("Applications\\other.exe");
         assert!(!s.registry.state().is_default);
-        latest("TrailMark.Markdown");
+        latest("PerMark.Markdown");
         assert!(s.registry.state().is_default);
     }
 
@@ -715,7 +713,7 @@ mod tests {
             .refresh_labels(Language::De)
             .expect("nothing to do");
         assert!(s.class("Directory").is_none());
-        assert!(s.class("TrailMark.Markdown").is_none());
+        assert!(s.class("PerMark.Markdown").is_none());
 
         s.registry
             .set_context_menu(true, &exe(), Language::En)
@@ -725,7 +723,7 @@ mod tests {
             let verb = target.key();
             assert_eq!(
                 s.default_of(&verb).as_deref(),
-                Some("Abrir con TrailMark"),
+                Some("Abrir con PerMark"),
                 "{verb}"
             );
             assert_eq!(
@@ -736,14 +734,14 @@ mod tests {
         }
         // the association was not on, so it is still not
         assert!(!s.registry.state().association);
-        assert!(s.class("TrailMark.Markdown").is_none());
+        assert!(s.class("PerMark.Markdown").is_none());
 
         s.registry
             .set_association(true, &exe(), Language::En)
             .expect("enable");
         s.registry.refresh_labels(Language::PtBr).expect("relabel");
         assert_eq!(
-            s.default_of("TrailMark.Markdown").as_deref(),
+            s.default_of("PerMark.Markdown").as_deref(),
             Some("Documento Markdown")
         );
     }

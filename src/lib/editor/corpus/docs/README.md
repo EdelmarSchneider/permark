@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" width="96" height="96" alt="TrailMark logo">
+<img src="docs/assets/logo.svg" width="96" height="96" alt="PerMark logo">
 
-# TrailMark
+# PerMark
 
 **A fast, beautiful Markdown IDE that keeps up with your AI agents.**
 
@@ -15,17 +15,17 @@ and find any section in seconds. It works with any AI tool, or with none.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-dark.png">
-  <img src="docs/assets/screenshot-light.png" alt="TrailMark in IDE mode: a design doc with a live-change glow, a removed-block marker and the live changes feed">
+  <img src="docs/assets/screenshot-light.png" alt="PerMark in IDE mode: a design doc with a live-change glow, a removed-block marker and the live changes feed">
 </picture>
 
 </div>
 
 ---
 
-## Why TrailMark?
+## Why PerMark?
 
 AI coding agents write a lot of Markdown: specs, plans, research notes, reports. Reading that as raw text in a terminal or an
-editor is tiring. Browser extensions render one file at a time and don't show what changed. TrailMark closes the gap between
+editor is tiring. Browser extensions render one file at a time and don't show what changed. PerMark closes the gap between
 **the documents your agents produce** and **you**, the human who has to read, check and steer them.
 
 - **Read** beautifully rendered Markdown, with Mermaid, math, alerts, footnotes and frontmatter.
@@ -34,7 +34,7 @@ editor is tiring. Browser extensions render one file at a time and don't show wh
 - **Review** what happened since your last visit, even if the agent already committed.
 - **Find** "character descriptions" or "retry policy" across hundreds of long docs, down to the exact section.
 
-TrailMark only relies on your **filesystem and git**. It works the same with Claude Code, opencode, Cursor, Aider, Codex or
+PerMark only relies on your **filesystem and git**. It works the same with Claude Code, opencode, Cursor, Aider, Codex or
 Gemini CLI, and it's a great Markdown reader if you don't use AI at all.
 
 ## Features
@@ -50,7 +50,7 @@ Gemini CLI, and it's a great Markdown reader if you don't use AI at all.
 - Open a **folder** for IDE mode (tree, search, live feed) or a **single file** for a distraction-free reader
 - Relative links, anchors and images resolve inside the app, with back and forward history
 - Quick open (`Ctrl+P`), find in page (`Ctrl+F`), session restore and recent projects
-- One process per project: `trailmark ~/code/my-project`
+- One process per project: `permark ~/code/my-project`
 
 ### ⚡ Follow your agents live
 - Documents reload **without losing your scroll position**
@@ -77,20 +77,20 @@ Gemini CLI, and it's a great Markdown reader if you don't use AI at all.
 - Configurable reference template
 
 ### 🗂️ Zero footprint by default
-TrailMark keeps its state in your user profile. If you want settings to travel with the project, run
-**Initialize TrailMark in this project** to create a `.trailmark/` folder (shared `config.toml`; caches are gitignored automatically).
+PerMark keeps its state in your user profile. If you want settings to travel with the project, run
+**Initialize PerMark in this project** to create a `.permark/` folder (shared `config.toml`; caches are gitignored automatically).
 
 ## Install
 
 > Prebuilt installers for Windows, macOS and Linux are published on the [Releases](../../releases) page.
-> TrailMark updates itself: when a new version is out, you'll be offered a one-click restart to update.
+> PerMark updates itself: when a new version is out, you'll be offered a one-click restart to update.
 
 **Build from source** (requires [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 20+ and the
 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)):
 
 ```bash
-git clone https://github.com/EdelmarSchneider/trailmark.git
-cd trailmark
+git clone https://github.com/EdelmarSchneider/permark.git
+cd permark
 npm install
 npm run tauri build
 ```
@@ -98,9 +98,9 @@ npm run tauri build
 ## Usage
 
 ```bash
-trailmark                  # welcome screen with recent projects
-trailmark .                # open the current folder in IDE mode
-trailmark docs/plan.md     # open a single file in simple mode
+permark                  # welcome screen with recent projects
+permark .                # open the current folder in IDE mode
+permark docs/plan.md     # open a single file in simple mode
 ```
 
 You can also drag and drop a folder or a `.md` file onto the window.
@@ -126,19 +126,19 @@ You can also drag and drop a folder or a `.md` file onto the window.
 - WYSIWYG editing (tables, images, formatting) with conflict-safe saving that never silently reformats agent-written files
 - Outline panel, "unread since last read" markers, commit timeline, rendered diff against the baseline
 - Rich JSON and XML views, clickable code references (`src/main.rs:42`)
-- Installers with `trailmark` on `PATH` and `.md` file association
+- Installers with `permark` on `PATH` and `.md` file association
 
 **v0.3**
 - Semantic and hybrid search with a local multilingual embedding model (optional download)
 
 **Later**
 - Review comments that turn into a prompt or a `REVIEW.md` for your agent
-- An MCP server so any agent can ask TrailMark "where is X described?"
+- An MCP server so any agent can ask PerMark "where is X described?"
 - Image management, templates, backlinks and `[[wikilinks]]`, export to PDF and HTML
 
 ## Tech
 
-TrailMark is a [Tauri 2](https://v2.tauri.app) app. The core is written in **Rust**: rendering (comrak + ammonia), file watching
+PerMark is a [Tauri 2](https://v2.tauri.app) app. The core is written in **Rust**: rendering (comrak + ammonia), file watching
 (notify), git (libgit2) and the search index. The UI is **Svelte 5** + TypeScript running in the system webview. That keeps the
 installer small and memory use low compared to Electron apps.
 
@@ -157,4 +157,4 @@ Design and planning docs are in [`docs/`](docs/). See [CONTRIBUTING.md](CONTRIBU
 
 Copyright (c) 2026 Edelmar Schneider. Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
 
-"TrailMark" and its logo are trademarks of Edelmar Schneider: forks are welcome under a different name. See [TRADEMARKS.md](TRADEMARKS.md).
+"PerMark" and its logo are trademarks of Edelmar Schneider: forks are welcome under a different name. See [TRADEMARKS.md](TRADEMARKS.md).

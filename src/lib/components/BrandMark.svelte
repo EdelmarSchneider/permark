@@ -1,4 +1,4 @@
-<!-- The TrailMark mascot: a bookmark that keeps your place, eyes that follow changes, and a highlighted line
+<!-- The PerMark mascot: a bookmark that keeps your place, eyes that follow changes, and a highlighted line
      for a mouth. Same drawing as docs/assets/logo.svg. Decorative: the app name is always next to it. -->
 <script lang="ts">
   let { size = 64 }: { size?: number } = $props();

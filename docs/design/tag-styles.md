@@ -46,13 +46,13 @@ popover opens beside the row. It holds, from top to bottom:
 - Every pick is saved at once and shows on the preview, in the list and on every chip. Escape, or a click outside, closes it.
 - Each group is a radio group: one tab stop, the arrow keys (and Home and End) move and choose, Space and Enter choose. Every choice
   has a name for screen readers and a tooltip. The popover opens with the current color focused.
-- While `.trailmark/meta.toml` cannot be read (a merge conflict), the choices are disabled and a note says why, like the rest of
+- While `.permark/meta.toml` cannot be read (a merge conflict), the choices are disabled and a note says why, like the rest of
   the app's tags.
 - Any tag can be styled, including one that only exists in files' front matter.
 
 ## 4. Where it is kept
 
-In the same file as the project's other tag data (`.trailmark/meta.toml` once the project has a `.trailmark/` folder, a file in
+In the same file as the project's other tag data (`.permark/meta.toml` once the project has a `.permark/` folder, a file in
 the app's data folder before that), as one small table per styled tag:
 
 ```toml

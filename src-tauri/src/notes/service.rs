@@ -56,7 +56,7 @@ pub enum NotesError {
     Vault(#[from] VaultError),
     #[error("cannot access {path}: {source}")]
     Io { path: String, source: io::Error },
-    #[error("these notes are open in another TrailMark window, so they can only be read here")]
+    #[error("these notes are open in another PerMark window, so they can only be read here")]
     Locked,
     #[error("the notes folder cannot be written")]
     Unwritable,
@@ -80,7 +80,7 @@ pub enum NotesError {
     BinaryFile(String),
     #[error("a note cannot be moved into the notes folder")]
     MoveInside,
-    #[error("the notes were last used by a newer TrailMark, so what is shared cannot be changed from this one")]
+    #[error("the notes were last used by a newer PerMark, so what is shared cannot be changed from this one")]
     NotesNewer,
 }
 
@@ -124,7 +124,7 @@ impl NotesError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ReadOnlyReason {
-    /// Another TrailMark window has them open.
+    /// Another PerMark window has them open.
     Locked,
     /// The folder does not let this program write.
     Unwritable,

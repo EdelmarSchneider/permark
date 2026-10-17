@@ -105,7 +105,7 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   deleteComment: ["c1a2b3c4d"],
   launchMode: [],
   notesFolder: [],
-  setNotesFolder: ["C:/Users/ana/Documents/TrailMark Notes"],
+  setNotesFolder: ["C:/Users/ana/Documents/PerMark Notes"],
   createNotesFolder: [],
   notesStartIn: [],
   setNotesStartIn: ["notes"],

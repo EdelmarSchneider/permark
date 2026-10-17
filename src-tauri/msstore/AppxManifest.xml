@@ -2,7 +2,7 @@
 <!--
   The manifest of the Microsoft Store package. scripts/build-msix.ps1 fills in the two tokens, @VERSION@ (the package
   version: the app's version and a fourth part, always 0, which the Store reserves) and @DESCRIPTION@ (the short
-  description in tauri.conf.json), puts trailmark.exe and trailmark_shell.dll (src-tauri/shell-ext) in the package folder
+  description in tauri.conf.json), puts permark.exe and permark_shell.dll (src-tauri/shell-ext) in the package folder
   and packs the result with MakeAppx. The package is not signed here; the Store signs it.
 
   The identity (Name, Publisher, PublisherDisplayName) is what Partner Center reserved for the app and must match it
@@ -26,7 +26,7 @@
     ProcessorArchitecture="x64" />
 
   <Properties>
-    <DisplayName>TrailMark</DisplayName>
+    <DisplayName>PerMark</DisplayName>
     <PublisherDisplayName>Edelmar Schneider</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
@@ -47,9 +47,9 @@
   </Resources>
 
   <Applications>
-    <Application Id="TrailMark" Executable="trailmark.exe" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="PerMark" Executable="permark.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="TrailMark"
+        DisplayName="PerMark"
         Description="@DESCRIPTION@"
         BackgroundColor="#1F2024"
         Square150x150Logo="Assets\Square150x150Logo.png"
@@ -61,24 +61,24 @@
 
       <Extensions>
         <!--
-          The app execution alias: puts `trailmark` on the PATH (as %LOCALAPPDATA%\Microsoft\WindowsApps\trailmark.exe).
-          An AI agent starts `trailmark mcp` through it, and a hook runs `trailmark context`. The program's own path is
+          The app execution alias: puts `permark` on the PATH (as %LOCALAPPDATA%\Microsoft\WindowsApps\permark.exe).
+          An AI agent starts `permark mcp` through it, and a hook runs `permark context`. The program's own path is
           inside the package folder, changes with every version and is not meant to be run directly, so the setup lines
           the Store build shows name this alias (src-tauri/src/distribution.rs keeps the two in step, with a test).
         -->
-        <uap3:Extension Category="windows.appExecutionAlias" Executable="trailmark.exe" EntryPoint="Windows.FullTrustApplication">
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="permark.exe" EntryPoint="Windows.FullTrustApplication">
           <uap3:AppExecutionAlias>
-            <desktop:ExecutionAlias Alias="trailmark.exe" />
+            <desktop:ExecutionAlias Alias="permark.exe" />
           </uap3:AppExecutionAlias>
         </uap3:Extension>
 
         <!--
-          Markdown files open with TrailMark ("Open with", and the default app once the person picks it in Windows
+          Markdown files open with PerMark ("Open with", and the default app once the person picks it in Windows
           Settings). The file's path is the first argument, as with the Windows installer's entries, and the app opens
-          it the way it opens `trailmark <path>`.
+          it the way it opens `permark <path>`.
         -->
         <uap3:Extension Category="windows.fileTypeAssociation">
-          <uap3:FileTypeAssociation Name="trailmarkmarkdown" Parameters="&quot;%1&quot;">
+          <uap3:FileTypeAssociation Name="permarkmarkdown" Parameters="&quot;%1&quot;">
             <uap:DisplayName>Markdown document</uap:DisplayName>
             <uap:SupportedFileTypes>
               <uap:FileType>.md</uap:FileType>
@@ -88,22 +88,22 @@
         </uap3:Extension>
 
         <!--
-          "Open with TrailMark" in the right-click menu of a folder and of the background of a folder. The registry cannot do
+          "Open with PerMark" in the right-click menu of a folder and of the background of a folder. The registry cannot do
           it for a package, so it is a COM class that implements IExplorerCommand: src-tauri/shell-ext, the DLL
-          trailmark_shell.dll at the root of the package, next to trailmark.exe, which it finds from its own path. Two
+          permark_shell.dll at the root of the package, next to permark.exe, which it finds from its own path. Two
           extensions: the first declares the class, the second says where it is on the menu.
 
           The class is declared a surrogate server, so Windows loads the DLL into its own helper process (dllhost.exe)
           and not into File Explorer: a fault in the DLL cannot take Explorer down. ThreadingModel STA is what Explorer's
           calls need (it calls the command on one thread).
 
-          The class id below is TrailMark's, generated once; it must not change, and the test in src-tauri/shell-ext
+          The class id below is PerMark's, generated once; it must not change, and the test in src-tauri/shell-ext
           (src/lib.rs) checks that it is the one the DLL answers to. docs/msstore.md has the rest.
         -->
         <com:Extension Category="windows.comServer">
           <com:ComServer>
-            <com:SurrogateServer DisplayName="TrailMark shell extension">
-              <com:Class Id="D5FFB935-7A42-4E3D-90E1-0180A7999B94" Path="trailmark_shell.dll" ThreadingModel="STA" />
+            <com:SurrogateServer DisplayName="PerMark shell extension">
+              <com:Class Id="D5FFB935-7A42-4E3D-90E1-0180A7999B94" Path="permark_shell.dll" ThreadingModel="STA" />
             </com:SurrogateServer>
           </com:ComServer>
         </com:Extension>
@@ -111,10 +111,10 @@
         <desktop4:Extension Category="windows.fileExplorerContextMenus">
           <desktop4:FileExplorerContextMenus>
             <desktop5:ItemType Type="Directory">
-              <desktop5:Verb Id="OpenWithTrailMark" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
+              <desktop5:Verb Id="OpenWithPerMark" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
             </desktop5:ItemType>
             <desktop5:ItemType Type="Directory\Background">
-              <desktop5:Verb Id="OpenWithTrailMarkHere" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
+              <desktop5:Verb Id="OpenWithPerMarkHere" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
             </desktop5:ItemType>
           </desktop4:FileExplorerContextMenus>
         </desktop4:Extension>

@@ -151,7 +151,7 @@ fn stopping_to_share_reaches_agents_even_when_notes_json_is_from_a_newer_version
         dir, service, bin, ..
     } = f;
     drop(service);
-    // a newer version of TrailMark wrote the file since, with more in it than this one knows
+    // a newer version of PerMark wrote the file since, with more in it than this one knows
     let file = NotesData::path(dir.path());
     fs::write(
         &file,

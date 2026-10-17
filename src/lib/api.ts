@@ -107,18 +107,18 @@ export interface Api {
   appTone(): Promise<Tone>;
   /** Keeps the tone of the light theme picked in Settings. */
   setAppTone(tone: Tone): Promise<void>;
-  /** What "Open with TrailMark" has registered with the file manager, read from the system each time. */
+  /** What "Open with PerMark" has registered with the file manager, read from the system each time. */
   shellIntegrationState(): Promise<ShellState>;
   /** Adds or removes the right-click menu entry; `locale` (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`) is the language it is worded in. */
   setShellContextMenu(enabled: boolean, locale: string): Promise<ShellState>;
-  /** Adds or removes TrailMark in the "Open with" list of Markdown files. */
+  /** Adds or removes PerMark in the "Open with" list of Markdown files. */
   setShellFileAssociation(enabled: boolean, locale: string): Promise<ShellState>;
   /** Rewords the entries that exist after the interface language changed. */
   refreshShellLabels(locale: string): Promise<void>;
   /** Opens the page of Windows Settings where the default app of a file type is chosen. */
   openDefaultApps(): Promise<void>;
   /** Main root plus worktrees as top-level roots. */
-  /** The folder's tree. `showIgnored` also lists what version control ignores; `showHidden` lists `.trailmark/`. */
+  /** The folder's tree. `showIgnored` also lists what version control ignores; `showHidden` lists `.permark/`. */
   listTree(showIgnored: boolean, showHidden: boolean): Promise<TreeNode>;
   readDocument(path: string): Promise<DocumentView>;
   resolveLink(from: string, href: string): Promise<LinkTarget>;
@@ -154,7 +154,7 @@ export interface Api {
   search(query: string, limit?: number): Promise<SearchHit[]>;
   /** The images, sound and video some Markdown document of the folder links to, embeds or defines a reference for (folder paths). */
   referencedImages(): Promise<string[]>;
-  /** Creates `.trailmark/` in the project. */
+  /** Creates `.permark/` in the project. */
   initProjectFolder(): Promise<void>;
   stateLocation(): Promise<"appData" | "project">;
   /** The tags (front matter and app) and the description of a file. */
@@ -244,7 +244,7 @@ export interface Api {
   setNotesFolder(path: string): Promise<NotesFolder>;
   /** Makes the notes folder that is not there ("Create it"); nothing else makes it. */
   createNotesFolder(): Promise<NotesFolder>;
-  /** Where TrailMark opens when it is started with nothing to open. */
+  /** Where PerMark opens when it is started with nothing to open. */
   notesStartIn(): Promise<StartIn>;
   setNotesStartIn(startIn: StartIn): Promise<void>;
   /** The notes folder and what the welcome screen shows of it. Any window can ask; the folder is only read. */
@@ -294,7 +294,7 @@ export interface Api {
   moveNoteToProject(path: string, destination: string): Promise<NoteMoved>;
   /** Undoes a move: the note is back, and the copy goes unless it was changed since. */
   undoMoveNote(undoId: number): Promise<MoveUndone>;
-  /** Starts TrailMark on the project that holds a file, showing it. */
+  /** Starts PerMark on the project that holds a file, showing it. */
   openInProject(path: string): Promise<void>;
   /** The file this program was started to show once its project is open; asked once. */
   launchShow(): Promise<string | null>;

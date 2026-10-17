@@ -1,8 +1,8 @@
 //! Tags and descriptions for files.
 //!
 //! Two sources feed the same chips: tags written in a file's front matter (read-only for the app) and
-//! tags added in the app, which are kept outside the files in a `meta.toml` (`.trailmark/meta.toml`
-//! once the project has a `.trailmark/` folder, a file in AppData before that). The pieces:
+//! tags added in the app, which are kept outside the files in a `meta.toml` (`.permark/meta.toml`
+//! once the project has a `.permark/` folder, a file in AppData before that). The pieces:
 //! [`normalize`] (how tags and descriptions are cleaned), [`filetags`] (front matter), [`store`] (the
 //! app's entries and the `meta.toml` format), [`catalog`] (counting and finding across the project),
 //! [`style`] (the optional color and icon of a tag, kept in the same file), and [`service`] (one project's live metadata: delayed writes, the watcher, the answers for the UI).

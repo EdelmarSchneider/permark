@@ -446,7 +446,7 @@ fn roots_and_the_git_folder_are_protected() {
         ("", "x"),
         (".git", "git2"),
         ("a.md", ".git/a.md"),
-        ("a.md", ".trailmark"),
+        ("a.md", ".permark"),
     ] {
         assert_eq!(
             kind(fx.svc.preview_move(&moves(&[(from, to)]), true, &[])),

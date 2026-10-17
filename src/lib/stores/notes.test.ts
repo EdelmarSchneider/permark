@@ -411,7 +411,7 @@ describe("starting", () => {
     await start();
     expect(notes.readOnly).toBe("locked");
     expect(edit.active).toBe(false);
-    expect(edit.blocked).toMatch(/another TrailMark window/);
+    expect(edit.blocked).toMatch(/another PerMark window/);
     expect(toast.current).toMatchObject({ type: "message" });
     // nothing is created in a window that cannot write
     expect(fake.newNote).not.toHaveBeenCalled();

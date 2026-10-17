@@ -466,7 +466,7 @@ fn a_listener_hears_every_change_and_no_read() {
 
 #[test]
 fn another_comment_book_on_the_same_file_sees_the_same_comments() {
-    // `trailmark mcp` reads and resolves the comments of a project whose window is closed
+    // `permark mcp` reads and resolves the comments of a project whose window is closed
     let fx = fx();
     let comment = fx.comment("docs/plan.md", "Intro paragraph", "one");
     let vault = Arc::new(Vault::open(fx.project.path()).expect("vault"));

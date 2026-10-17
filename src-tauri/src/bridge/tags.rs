@@ -1,7 +1,7 @@
 //! The tags and descriptions an agent narrows a large project down with: which tags the documents carry and how many
 //! documents have each, the documents that have some tags, and the tags and description to show beside a search hit.
 //!
-//! Plain data in, answers out. The window builds the [`DocIndex`] from the metadata it keeps live; `trailmark mcp`
+//! Plain data in, answers out. The window builds the [`DocIndex`] from the metadata it keeps live; `permark mcp`
 //! builds it from the project's files when the window is closed (see `Project::docs`), so an agent reads the same
 //! shapes either way.
 
@@ -48,10 +48,10 @@ pub(crate) fn is_document(filter: &PathFilter, rel: &str) -> bool {
         && filter.classify(0, rel, false) == Verdict::Emit
 }
 
-/// What an agent is told beside a list when the tags added in TrailMark could not be read (see `Entries::read_file`).
+/// What an agent is told beside a list when the tags added in PerMark could not be read (see `Entries::read_file`).
 pub(crate) fn unreadable_meta(problem: &Problem) -> String {
     format!(
-        "{problem}. Only the tags written in the documents' own front matter are listed; the tags added in TrailMark are not."
+        "{problem}. Only the tags written in the documents' own front matter are listed; the tags added in PerMark are not."
     )
 }
 
@@ -66,7 +66,7 @@ pub(crate) struct Doc {
     pub path: String,
     /// Written in the document's front matter.
     pub file_tags: Vec<String>,
-    /// Added in TrailMark (kept in `meta.toml`).
+    /// Added in PerMark (kept in `meta.toml`).
     pub app_tags: Vec<String>,
     pub description: String,
 }
@@ -98,8 +98,8 @@ impl Doc {
 pub(crate) enum TagOrigin {
     /// In the documents' own front matter.
     FrontMatter,
-    /// Added in TrailMark.
-    Trailmark,
+    /// Added in PerMark.
+    Permark,
     /// Both: on some documents (or the same ones) in each place.
     Both,
 }
@@ -189,7 +189,7 @@ impl DocIndex {
 
     /// The tags in use, with how many documents have each: the `limit` most used (see [`tags_limit`]).
     pub fn overview(&self, limit: Option<usize>) -> TagOverview {
-        // (documents, in a front matter, added in TrailMark)
+        // (documents, in a front matter, added in PerMark)
         let mut counts: BTreeMap<&str, (usize, bool, bool)> = BTreeMap::new();
         for doc in &self.docs {
             for tag in doc.tags() {
@@ -207,7 +207,7 @@ impl DocIndex {
                 from: match (file, app) {
                     (true, true) => TagOrigin::Both,
                     (true, false) => TagOrigin::FrontMatter,
-                    (false, _) => TagOrigin::Trailmark,
+                    (false, _) => TagOrigin::Permark,
                 },
             })
             .collect();
@@ -223,7 +223,7 @@ impl DocIndex {
         }
     }
 
-    /// The documents that have all of `raw` (tags are compared the way TrailMark writes them: `Needs Review` is
+    /// The documents that have all of `raw` (tags are compared the way PerMark writes them: `Needs Review` is
     /// `needs-review`), the first `limit` of them (see [`docs_limit`]). No tag selects nothing.
     pub fn tagged(&self, raw: &[String], limit: Option<usize>) -> TaggedDocs {
         let wanted = normalize_tags(raw);
@@ -369,8 +369,8 @@ mod tests {
             got,
             [
                 ("feed", 3, TagOrigin::Both),
-                ("spec", 2, TagOrigin::Trailmark),
-                ("needs-review", 1, TagOrigin::Trailmark),
+                ("spec", 2, TagOrigin::Permark),
+                ("needs-review", 1, TagOrigin::Permark),
                 ("watcher", 1, TagOrigin::FrontMatter),
             ]
         );

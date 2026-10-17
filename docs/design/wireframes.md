@@ -1,4 +1,4 @@
-# TrailMark MVP: wireframes, flows, keyboard, components
+# PerMark MVP: wireframes, flows, keyboard, components
 
 Scope: the **MVP** only. Visual reference: `mockup.html` (IDE mode, light/dark).
 Tokens and type come from the design system. Lucide icons only.
@@ -12,13 +12,13 @@ Legend: `[@]` copy reference, `[E]` open in external editor (**the slot "Edit" t
 ```
 +------------------------------------------------------------------------------+
 |                                                                              |
-|                                  TrailMark                                   |
+|                                  PerMark                                   |
 |                 Read, navigate and follow your Markdown docs.                |
 |                                                                              |
 |        [ Open folder...          Ctrl+O ]   [ Open file...    Ctrl+Shift+O ] |
 |                                                                              |
 |        RECENT FOLDERS                                                        |
-|      > trailmark-docs     F:\AIProjects\Markdown              2 hours ago    |
+|      > permark-docs     F:\AIProjects\Markdown              2 hours ago    |
 |        big-repo           F:\work\big-repo                      yesterday    |
 |        notes              D:\old\notes  (not found)                 [Remove]    |
 |                                                                              |
@@ -37,7 +37,7 @@ Legend: `[@]` copy reference, `[E]` open in external editor (**the slot "Edit" t
 ```
 +---+------------------------+--------------------------------------------------+--------------------------+
 |[F]| EXPLORER           [:] | <- ->  docs / specs / live-feed.md  M  [@][E][:] | LIVE CHANGES    o active |
-|   | v trailmark-docs       |--------------------------------------------------| [x] Docs only            |
+|   | v permark-docs       |--------------------------------------------------| [x] Docs only            |
 |[S]|   v docs             o |    +----------------------------------------+    |--------------------------|
 |   |     v specs          o |    | status: draft   updated: 2026-10-13    |    | M live-feed.md      12s  |
 |[L]|      [live-feed.md]  M |    | tags: feed, watcher                    |    |   docs/specs  3 saves    |
@@ -95,17 +95,17 @@ The status bar keeps a small "REBASING" chip after dismissal.
 **On file change**: open doc changed on disk → re-render, scroll anchored to the first visible block, LCS diff marks
 blocks (§7). Another doc changed → feed row + toast (§8). Tree badges update from `git-status-changed` without flicker.
 
-### Project state: Local (default) or `.trailmark/` (opt-in)
+### Project state: Local (default) or `.permark/` (opt-in)
 By default nothing is written to the project. The Explorer `[:]` menu (Collapse all, Reveal open doc, **Initialize
-TrailMark in this project...**) and the status bar item `State: Local` (click opens a menu with the same command) start it.
-A one-time hint sits at the foot of Since last visit: "Keep settings with the project? Initialize .trailmark/ [x]";
-it never returns once dismissed or used (stored globally). After init the item reads `State: .trailmark`.
+PerMark in this project...**) and the status bar item `State: Local` (click opens a menu with the same command) start it.
+A one-time hint sits at the foot of Since last visit: "Keep settings with the project? Initialize .permark/ [x]";
+it never returns once dismissed or used (stored globally). After init the item reads `State: .permark`.
 
 ```
 +------------------------------------------------------------+
-| Initialize TrailMark in this project?                      |
+| Initialize PerMark in this project?                      |
 |                                                            |
-| TrailMark will create .trailmark/ in trailmark-docs:       |
+| PerMark will create .permark/ in permark-docs:       |
 |   config.toml   shared settings, safe to commit            |
 |   cache/        search index (gitignored)                  |
 |   local/        your session and last visit (gitignored)   |
@@ -115,7 +115,7 @@ it never returns once dismissed or used (stored globally). After init the item r
 |                                     [Cancel]  [Initialize] |
 +------------------------------------------------------------+
 ```
-Modal, focus on Initialize, Esc cancels. Also writes `.trailmark/.gitignore` (`cache/`, `local/`). On failure (read-only
+Modal, focus on Initialize, Esc cancels. Also writes `.permark/.gitignore` (`cache/`, `local/`). On failure (read-only
 folder): inline error in the dialog, state stays Local. No undo command in the MVP; deleting the folder falls back to Local.
 
 ## 3. Simple mode (a single file was opened)
@@ -372,7 +372,7 @@ Since last visit header reads "By file times, since Mon 18:40".
 ## 12. Flows
 
 **Open project**
-1. Launch (or `trailmark <path>`); a folder argument skips Welcome.
+1. Launch (or `permark <path>`); a folder argument skips Welcome.
 2. Welcome: pick a recent (Enter) or Open folder (Ctrl+O), or drop a folder.
 3. Tree, git snapshot and Since last visit load in parallel; the last doc and scroll are restored from the session.
 
@@ -382,7 +382,7 @@ Since last visit header reads "By file times, since Mon 18:40".
 3. Optionally switch the status bar to "Since: last commit" to see only uncommitted work.
 
 **Follow an agent live**
-1. Start the agent in a terminal; keep TrailMark next to it.
+1. Start the agent in a terminal; keep PerMark next to it.
 2. Toggle Follow (Ctrl+Shift+L or the status bar).
 3. Each save of a doc opens it and scrolls to the changed block; glow fades, gutter bars remain.
 4. Read freely: selecting text or opening find pauses jumps; the toast still reports changes.
@@ -450,7 +450,7 @@ Tree: arrows, Enter, Home/End, type-ahead. Feed and lists: Up/Down, Enter. Every
 | Popover / Menu | baseline menu, more menu, settings, selection popover, missing-link popover; item hover/checked/disabled | overlays |
 | Overlay input + list | quick open, find bar; empty, results, active row, no results | overlays |
 | SearchHit (+ file group) | group collapsed/expanded with count; hit hover, active (keyboard), focus; snippet marks; panel states empty/indexing/no results/error; disabled Semantic toggle | sidebar Search view |
-| Dialog | confirm (Initialize .trailmark), inline error, busy | modal |
+| Dialog | confirm (Initialize .permark), inline error, busy | modal |
 
 Frontmatter card and alerts are pure CSS in `markdown.css`, not components.
 
@@ -459,9 +459,9 @@ Frontmatter card and alerts are pure CSS in `markdown.css`, not components.
 - **Section search moved into the MVP** (was v0.2 in `plan.md`; it also adds `search`/`index-progress` to the contract).
   It is the largest UI addition here (~20 min UI on top of the Rust index). Simpler variant if time runs out: flat hit
   list (no file grouping), open at the heading without the find-bar pre-fill.
-- **`.trailmark/` reverses decision N11** ("state never in the repo") for users who opt in. Kept safe by: opt-in only,
+- **`.permark/` reverses decision N11** ("state never in the repo") for users who opt in. Kept safe by: opt-in only,
   `cache/` and `local/` gitignored. Agents may read `config.toml`; keep it small and documented.
-- **No command palette** in the MVP, so "Initialize TrailMark" lives in the Explorer menu and the `State:` status item;
+- **No command palette** in the MVP, so "Initialize PerMark" lives in the Explorer menu and the `State:` status item;
   it joins Ctrl+K in v0.2.
 
 - **No tabs** in the MVP (design system layout says "tabs + doc"): one doc plus history. Tabs: v0.2.
