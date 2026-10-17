@@ -477,6 +477,10 @@ export const de = {
   "comments.reopen": "Als offen markieren",
   "comments.jump": "Zur Stelle gehen",
   "comments.delete": "Kommentar löschen",
+  "comments.send": "An Agenten senden",
+  "comments.sendAll": "Alle senden ({n})",
+  "comments.sent":
+    "Die Kommentare für den Agenten wurden kopiert und können in seinen Chat eingefügt werden.",
   "comments.line": "Zeile {line}",
   "comments.reply": "Antwort",
   "comments.state.passageChanged": "Stelle geändert",

@@ -474,6 +474,10 @@ export const itIT = {
   "comments.reopen": "Segna come non completato",
   "comments.jump": "Vai al passaggio",
   "comments.delete": "Elimina commento",
+  "comments.send": "Invia all'agente",
+  "comments.sendAll": "Invia tutti ({n})",
+  "comments.sent":
+    "I tuoi commenti per il tuo agente sono stati copiati: incollali nella sua chat.",
   "comments.line": "riga {line}",
   "comments.reply": "Risposta",
   "comments.state.passageChanged": "Passaggio modificato",

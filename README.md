@@ -217,7 +217,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   ready to paste into any AI chat or CLI
 - Configurable reference template
 - **Comments**: select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
-  (see [Use with an AI agent](#use-with-an-ai-agent))
+  (see [Use with an AI agent](#use-with-an-ai-agent)), and **Send to agent** copies them as a prompt, ready to paste into any agent chat
 
 ### 📝 Notes
 Open PerMark, type, close: nothing to name, nothing to save, no folder to pick.

@@ -4,10 +4,12 @@
 
 import { api } from "../api";
 import { bridge } from "../bridge";
+import { agentCommentPrompt, agentCommentsPrompt } from "../agentPrompt";
 import { highlight, type CommentTarget } from "../dom/commentDom";
 import { errorMessage } from "../errors";
 import { t } from "../i18n";
 import { doneComments, openByDocument, openCount } from "../comments";
+import { copyText } from "../platform";
 import { batchTouches } from "../unread";
 import type { FsBatch, Comment } from "../types";
 import { docs } from "./docs.svelte";
@@ -204,6 +206,27 @@ export class CommentsStore {
   /** Asks the Comments tab to show a comment (it scrolls to it and marks it for a moment). */
   show(id: string): void {
     this.focus = { id, n: ++this.focusCount };
+  }
+
+  // ---- send to agent ------------------------------------------------------------------------------
+
+  /** One comment as a prompt, on the clipboard, ready to paste into an agent's chat. */
+  async sendToAgent(id: string): Promise<void> {
+    const comment = this.all.find((candidate) => candidate.id === id && !candidate.done);
+    if (!comment) return;
+    await this.copyForAgent(agentCommentPrompt(comment));
+  }
+
+  /** The same for every open comment, grouped by document. */
+  async sendAllToAgent(): Promise<void> {
+    if (this.count === 0) return;
+    await this.copyForAgent(agentCommentsPrompt(this.groups));
+  }
+
+  /** Copies the prompt and says what to do with it; a clipboard that refuses gets the message every copy gets. */
+  private async copyForAgent(text: string): Promise<void> {
+    if (await copyText(text)) toast.message(t("comments.sent"), "info");
+    else toast.message(t("copy.failed"), "warn");
   }
 }
 

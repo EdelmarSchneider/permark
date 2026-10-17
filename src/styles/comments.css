@@ -97,6 +97,29 @@
   flex-direction: column;
   min-height: 0;
 }
+/* Send all: every open comment as a prompt, on the clipboard for an agent's chat. */
+.comments-send {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-1) var(--sp-2) 0;
+}
+.comments-send__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--fs-ui-xs);
+  cursor: pointer;
+}
+.comments-send__button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
 .comments-scroll {
   flex: 1;
   padding: var(--sp-2) var(--sp-2) var(--sp-5);
@@ -201,7 +224,7 @@
 .comment-row {
   position: relative;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto;
   gap: 2px 8px;
   align-items: start;
   padding: 6px 8px;
@@ -257,12 +280,15 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
-.comment-delete {
+.comment-delete,
+.comment-send {
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
 .comment-row:hover .comment-delete,
-.comment-row:focus-within .comment-delete {
+.comment-row:focus-within .comment-delete,
+.comment-row:hover .comment-send,
+.comment-row:focus-within .comment-send {
   opacity: 1;
 }
 .comment-lost,

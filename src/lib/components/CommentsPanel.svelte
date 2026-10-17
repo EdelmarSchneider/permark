@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Comments tab of the right panel (docs/design/v0.4.md section 3): the open comments of the project grouped by document,
-  // the ones that are done folded away. A click on a comment goes to its passage.
+  // the ones that are done folded away, and a way to send them all to an agent as a prompt. A click on a comment goes to
+  // its passage.
   import { tick } from "svelte";
   import { t, tn } from "../i18n";
   import { documentTitle } from "../comments";
@@ -42,6 +43,18 @@
       <p>{t("comments.empty.text")}</p>
     </div>
   {:else}
+    {#if comments.count > 0}
+      <div class="comments-send">
+        <button
+          type="button"
+          class="comments-send__button"
+          onclick={() => void comments.sendAllToAgent()}
+        >
+          <Icon name="external" size="sm" />
+          {t("comments.sendAll", { n: comments.count })}
+        </button>
+      </div>
+    {/if}
     <div
       bind:this={list}
       class="scroll comments-scroll"
