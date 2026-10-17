@@ -1,0 +1,40 @@
+name: Snap
+
+# Builds the snap from snap/snapcraft.yaml and publishes it to the Snap Store (the Ubuntu App Center).
+# The snap packages the release's .deb, so it runs after a release is published; it can also be run by hand.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Snap Store channel to release to"
+        required: true
+        default: edge
+        type: choice
+        options: [edge, stable]
+
+permissions:
+  contents: read
+
+jobs:
+  snap:
+    name: Build and publish the snap
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build the snap
+        id: build
+        uses: snapcore/action-build@v1
+
+      - name: Publish to the Snap Store
+        uses: snapcore/action-publish@v1
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        with:
+          snap: ${{ steps.build.outputs.snap }}
+          release: ${{ github.event_name == 'release' && 'stable' || inputs.channel }}
