@@ -5,6 +5,7 @@
   import { codeRefsContextFor } from "../dom/codeRefsContext";
   import { DomFind } from "../dom/domFind";
   import { DocRenderer, type RenderLabels, type RenderResult } from "../dom/docRender";
+  import { clearReview, decorateReview } from "../reviewLayer";
   import { anchorTarget, findById, selectionIn, selectionLines } from "../dom/domUtil";
   import { commentTargetIn } from "../dom/commentDom";
   import { readBlocks, readHeadingLines } from "../dom/outlineDom";
@@ -15,6 +16,7 @@
   import { isMediaViewKind } from "../fileKinds";
   import { frontmatterValue } from "../frontmatter";
   import { t, tn } from "../i18n";
+  import type { ReviewChange } from "../types";
   import { barFor, type BlockBox } from "../commentBars";
   import { barComments } from "../comments";
   import { buildOutline, currentHeading } from "../outline";
@@ -23,7 +25,9 @@
   import { blockForLine, parseSourcepos } from "../sourcepos";
   import { app } from "../stores/app.svelte";
   import { docs, type LocateRequest, type RenderRequest } from "../stores/docs.svelte";
+  import { edit } from "../stores/edit.svelte";
   import { comments } from "../stores/comments.svelte";
+  import { review } from "../stores/review.svelte";
   import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
   import { tone } from "../stores/toneChoice.svelte";
@@ -63,6 +67,9 @@
   type CommentBar = { id: string; top: number; height: number; text: string };
   let commentBars = $state.raw<CommentBar[]>([]);
   let barFrame = 0;
+  /** Bumped after each render so the review layer is drawn on the new blocks. */
+  let paintGen = $state(0);
+  let seenScroll = 0;
 
   const view = $derived(docs.current);
   /** A picture, a sound or a video: drawn from the file itself by the media view, with no text to render. */
@@ -176,7 +183,100 @@
     };
     rerun(req.mode === "update");
     void result.settled.then(() => rerun(true));
+    review.noteDocument(view.path, {
+      ask: view.kind === "markdown" && !vault.isSimple && !vault.isNotes && !edit.active,
+      fresh: req.mode === "fresh",
+    });
+    paintGen++;
   }
+
+  function reviewLabels() {
+    return {
+      kind: (change: ReviewChange, index: number, total: number) =>
+        t(
+          change.kind === "added"
+            ? "review.kind.added"
+            : change.kind === "removed"
+              ? "review.kind.removed"
+              : "review.kind.modified",
+          { i: index + 1, n: total },
+        ),
+      group: (change: ReviewChange, index: number, total: number) =>
+        t("review.change", {
+          i: index + 1,
+          n: total,
+          kind: t(
+            change.kind === "added"
+              ? "review.kindWord.added"
+              : change.kind === "removed"
+                ? "review.kindWord.removed"
+                : "review.kindWord.modified",
+          ),
+        }),
+      removed: (count: number, preview: string) => tn("review.removedRun", count, { preview }),
+      show: t("doc.show"),
+      hide: t("doc.hide"),
+      keep: (index: number, total: number) => t("review.keep", { i: index + 1, n: total }),
+      revert: (index: number, total: number) => t("review.revert", { i: index + 1, n: total }),
+      keepHint: t("review.keepHint"),
+      revertHint: t("review.revertHint"),
+    };
+  }
+
+  function paintReview(): void {
+    if (!body) return;
+    const current = docs.current;
+    const shown = review.view;
+    if (
+      !review.open ||
+      !shown ||
+      !current ||
+      shown.path !== current.path ||
+      shown.hash !== current.hash
+    ) {
+      clearReview(body);
+      return;
+    }
+    decorateReview(body, shown, {
+      current: review.current,
+      expanded: review.expanded,
+      labels: reviewLabels(),
+      onCurrent: (index) => review.go(index),
+      onKeep: (index) => void review.keep(index),
+      onRevert: (index) => void review.revert(index),
+      onToggle: (startByte, open) => review.toggleRemoved(startByte, open),
+    });
+  }
+
+  function scrollReview(): void {
+    const el = body?.querySelector<HTMLElement>(".rv-change.is-current");
+    if (!el || !scroller) return;
+    el.focus();
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const top =
+      el.getBoundingClientRect().top -
+      scroller.getBoundingClientRect().top +
+      scroller.scrollTop -
+      scroller.clientHeight * 0.2;
+    scroller.scrollTo({ top: Math.max(0, top), behavior: reduce ? "instant" : "smooth" });
+  }
+
+  $effect(() => {
+    paintGen;
+    review.open;
+    review.current;
+    review.view;
+    review.expanded;
+    const nonce = review.scrollNonce;
+    if (edit.active && review.open) review.closeLayer();
+    untrack(() => {
+      paintReview();
+      if (review.open && nonce !== seenScroll) {
+        seenScroll = nonce;
+        scrollReview();
+      }
+    });
+  });
 
   // ---- positioning -------------------------------------------------------------------------------
 

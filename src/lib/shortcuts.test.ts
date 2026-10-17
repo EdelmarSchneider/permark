@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isMacPlatform,
   matchNotesShortcut,
+  matchReviewKey,
   matchShortcut,
   parseCombo,
   shortcutLabel,
@@ -109,6 +110,29 @@ describe("matchShortcut", () => {
     expect(matchShortcut(press("E", { shiftKey: true }))).toBeNull();
     expect(matchShortcut(press("e", { altKey: true }))).toBeNull();
     expect(matchShortcut(press("x"))).toBeNull();
+  });
+});
+
+describe("matchReviewKey", () => {
+  it("moves, keeps and reverts only from the plain keys", () => {
+    expect(matchReviewKey(press("n"))).toBe("next");
+    expect(matchReviewKey(press("p"))).toBe("prev");
+    expect(matchReviewKey(press("k"))).toBe("keep");
+    expect(matchReviewKey(press("r"))).toBe("revert");
+    expect(matchReviewKey(press("K", { shiftKey: true }))).toBe("keepAll");
+    expect(matchReviewKey(press("R", { shiftKey: true }))).toBe("revertAll");
+    expect(matchReviewKey(press("Escape"))).toBe("close");
+    expect(matchReviewKey(press("F7"))).toBe("next");
+    expect(matchReviewKey(press("F7", { shiftKey: true }))).toBe("prev");
+    expect(matchReviewKey(ctrl("z"))).toBe("undo");
+  });
+
+  it("leaves the letter keys alone when Ctrl or Alt is held", () => {
+    for (const key of ["n", "p", "k", "r"]) {
+      expect(matchReviewKey(ctrl(key))).toBeNull();
+      expect(matchReviewKey(press(key, { altKey: true }))).toBeNull();
+    }
+    expect(matchReviewKey(press("Escape", { altKey: true }))).toBeNull();
   });
 });
 

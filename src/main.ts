@@ -16,6 +16,7 @@ import "./styles/visual.css";
 import "./styles/unread.css";
 import "./styles/agent.css";
 import "./styles/comments.css";
+import "./styles/review.css";
 import "./styles/notes.css";
 import "./styles/media.css";
 import App from "./App.svelte";

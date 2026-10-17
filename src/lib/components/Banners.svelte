@@ -3,6 +3,7 @@
   import { showInitHint } from "../initHint";
   import { app } from "../stores/app.svelte";
   import { docs } from "../stores/docs.svelte";
+  import { review } from "../stores/review.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { vault } from "../stores/vault.svelte";
@@ -90,6 +91,11 @@
         {@const target = deleted.movedTo}
         <button type="button" class="btn btn--sm" onclick={() => void app.openDoc(target)}>
           {t("common.open")}
+        </button>
+      {/if}
+      {#if review.view?.status === "deleted" && review.view.restorable && review.view.path === docs.path}
+        <button type="button" class="btn btn--sm" onclick={() => void review.restoreDeleted()}>
+          {t("review.restore")}
         </button>
       {/if}
       <button type="button" class="btn btn--ghost btn--sm" onclick={() => void docs.closeDeleted()}>

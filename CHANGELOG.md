@@ -6,6 +6,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Review what changed since you last read a document.** A quiet bar names how many blocks changed. Review shows each one in the reading view, and Keep or Revert accepts it or writes the old text back. Your own edits are already approved, and a change is not written if the file moved on while you were looking.
 - **Send comments to your agent.** In the Comments tab, **Send to agent** on a comment, or **Send all** at the top, copies a prompt with the document, the section, the lines, the quoted passage and your words. Paste it into any agent chat. The prompt asks the agent to mark each comment done with a short reply. `get_context`, `permark context` and the state file say how many comments are open, so an agent that reads where you are knows to look.
 
 ## [0.5.6] - 2026-10-17

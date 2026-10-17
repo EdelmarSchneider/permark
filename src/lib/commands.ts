@@ -33,7 +33,10 @@ export type MenuAction =
   | "openContainingFolder"
   | "agentOn"
   | "agentOff"
-  | "agentCopySetup";
+  | "agentCopySetup"
+  | "reviewChanges"
+  | "reviewKeepAll"
+  | "reviewRevertAll";
 
 /** What `app.run` can do. */
 export type CommandAction = ShortcutAction | MenuAction;
@@ -65,6 +68,8 @@ export type CommandContext = {
   agentOn: boolean;
   /** This is the Microsoft Store build, which the Store updates (it has no "Check for updates"). */
   storeBuild: boolean;
+  /** How the open document stands against the version that was approved, when a review has been read. */
+  reviewStatus: "changes" | "tooLarge" | "noBaseline" | null;
 };
 
 export type Command = {
@@ -117,6 +122,24 @@ export const COMMANDS: readonly Command[] = [
   { id: "toggleRight", label: "cmd.toggleRight", shortcut: "Ctrl+Alt+B", available: inProject },
   { id: "toggleOutline", label: "cmd.toggleOutline", shortcut: "Ctrl+Alt+O" },
   { id: "showComments", label: "cmd.showComments", available: inProject },
+  {
+    id: "reviewChanges",
+    label: "cmd.reviewChanges",
+    available: (ctx) => inProjectWithDoc(ctx) && !ctx.editing && ctx.reviewStatus === "changes",
+  },
+  {
+    id: "reviewKeepAll",
+    label: "cmd.reviewKeepAll",
+    available: (ctx) =>
+      inProjectWithDoc(ctx) &&
+      !ctx.editing &&
+      (ctx.reviewStatus === "changes" || ctx.reviewStatus === "tooLarge"),
+  },
+  {
+    id: "reviewRevertAll",
+    label: "cmd.reviewRevertAll",
+    available: (ctx) => inProjectWithDoc(ctx) && !ctx.editing && ctx.reviewStatus === "changes",
+  },
   { id: "toggleFollow", label: "cmd.toggleFollow", shortcut: "Ctrl+Shift+L", available: inProject },
   { id: "zoomIn", label: "cmd.zoomIn", shortcut: "Ctrl+=" },
   { id: "zoomOut", label: "cmd.zoomOut", shortcut: "Ctrl+-" },

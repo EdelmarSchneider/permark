@@ -48,6 +48,7 @@
   import { feed } from "../stores/feed.svelte";
   import { filter } from "../stores/filter.svelte";
   import { notes } from "../stores/notes.svelte";
+  import { review } from "../stores/review.svelte";
   import { outline } from "../stores/outline.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -301,6 +302,13 @@
     hasUnread: unread.count > 0,
     agentOn: agent.enabled,
     storeBuild: distribution.isStore,
+    reviewStatus:
+      review.view?.path === docs.path &&
+      (review.view.status === "changes" ||
+        review.view.status === "tooLarge" ||
+        review.view.status === "noBaseline")
+        ? review.view.status
+        : null,
   });
 
   const commandList = $derived(

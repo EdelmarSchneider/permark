@@ -1,0 +1,124 @@
+/* Review changes: a quiet bar and the layer over the reading view. */
+
+.banner--quiet {
+  --tone: transparent;
+  background: var(--surface);
+  color: var(--muted);
+  border-color: var(--border);
+  min-height: 32px;
+  font-size: 12px;
+}
+.banner--quiet > .icon {
+  color: var(--muted);
+}
+.review-bar__go {
+  color: var(--accent-text);
+}
+.review-bar__nav,
+.review-bar__pos {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.review-bar__pos {
+  min-width: 3.2em;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.rv-change {
+  position: relative;
+  margin: 0.6em 0;
+  border-radius: 6px;
+  outline: 1px solid transparent;
+  transition: outline-color 150ms ease-out;
+}
+.rv-change.is-current {
+  outline-color: var(--accent-muted);
+}
+.rv-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.rv-label__actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+}
+.rv-change:not(.is-current) .rv-label__actions {
+  opacity: 0;
+}
+.rv-change:not(.is-current):hover .rv-label__actions,
+.rv-change:not(.is-current):focus-within .rv-label__actions {
+  opacity: 1;
+}
+.rv-keep,
+.rv-revert,
+.rv-removed__bar {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.rv-keep:hover,
+.rv-revert:hover,
+.rv-removed__bar:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.rv-old,
+.rv-new {
+  display: block;
+  text-decoration: none;
+  position: relative;
+}
+.rv-old {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--git-deleted-text) 60%, transparent);
+  background: var(--review-del-bg);
+}
+.rv-old::before,
+.rv-new::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -22px;
+  width: 3px;
+}
+.rv-old::before {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--git-deleted) 0 4px,
+    transparent 4px 7px
+  );
+}
+.rv-new {
+  background: var(--review-add-bg);
+}
+.rv-new::before {
+  background: var(--git-added);
+}
+.rv-old a,
+.rv-old .code-ref {
+  pointer-events: none;
+}
+.rv-old img {
+  opacity: 0.5;
+}
+.rv-removed__content[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-change {
+    transition: none;
+  }
+}
