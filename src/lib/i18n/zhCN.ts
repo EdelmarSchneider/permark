@@ -33,7 +33,7 @@ export const zhCN = {
   "dialog.openFile": "打开文件",
 
   // ---- welcome
-  "welcome.tagline": "阅读、浏览并跟进你的 Markdown 文档。",
+  "welcome.tagline": "阅读、浏览并跟随你的 Markdown 文档。",
   "welcome.openFolder": "打开文件夹...",
   "welcome.openFile": "打开文件...",
   "welcome.recent": "最近的文件夹",
@@ -137,7 +137,7 @@ export const zhCN = {
   "filter.invalidGlob": "无效的模式：{pattern}",
   "filter.assetsNearDocs": "仅显示文档旁的资源",
   "filter.assetsNearDocsHint":
-    "图片、音频、视频、数据和 XML 仅在位于文档旁（同一文件夹或上一级文件夹）时显示。当文档链接到图片、音频和视频，或它们位于 assets、images、video 等文件夹中时，也会显示。",
+    "图片、音频、视频、数据和 XML 只在文档旁（同一文件夹或上一级文件夹）显示。当文档链接到图片、音频和视频，或它们位于 assets、images、video 等文件夹中时，也会显示。",
   "filter.hideEmptyFolders": "隐藏没有可见文件的文件夹",
   "filter.showHidden": "显示隐藏的文件和文件夹",
   "filter.showHiddenHint": "以点开头的名称，如 .github。",
@@ -183,7 +183,7 @@ export const zhCN = {
   "git.explain.conflicted":
     "冲突：Git 发现此文件有两个互相矛盾的版本。可以让智能体来解决，或在编辑器中修改。PerMark 绝不会改动你的 Git。",
   "git.tail":
-    "你不需要提交任何内容：改动被提交后（由你或智能体提交），这个字母就会消失。PerMark 从不提交。",
+    "你不需要提交任何内容：改动一提交（无论由你还是智能体提交），这个字母就会消失。PerMark 从不提交。",
   "git.badgeTitle": "{letter} · {text}{tail}",
   "git.legend.title": "这些字母是什么意思？",
   "git.legend.menu": "Git 字母是什么意思？",
@@ -191,7 +191,7 @@ export const zhCN = {
   "git.legend.commit": "与上次 Git 提交相比（见状态栏）。一旦提交，字母就会消失。",
   "git.legend.folder": "文件夹上的圆点：里面有内容发生了更改。",
   "git.legend.readOnly":
-    "PerMark 只读取 Git。它不会提交，也不会改动 Git 里的任何内容或创建仓库。",
+    "PerMark 只读取 Git。它从不提交、暂存或创建仓库。",
   "git.error.title": "Git 无法读取此仓库。",
   "git.error.fallback": "更改标记已关闭；“自上次访问”改用文件时间。",
   "repo.banner.clean": "",
@@ -450,7 +450,7 @@ export const zhCN = {
   "comments.done.other": "{n} 条已完成",
   "comments.count.one": "{n} 条批注",
   "comments.count.other": "{n} 条批注",
-  "comments.statusHint": "未完成的批注。点击查看。",
+  "comments.statusHint": "还有未完成的批注。点击查看。",
   "comments.list": "批注",
   "comments.groupLabel": "{path} 中的批注",
   "comments.markDone": "标记为已完成",
@@ -474,7 +474,7 @@ export const zhCN = {
   "error.emptyComment": "批注需要选中一段文字，并填写内容。",
   "error.tooManyComments": "此项目的批注数量已达上限。",
   "error.commentNotFound": "该批注已不存在。",
-  "error.commentSingleFile": "批注属于项目文件夹，不适用于单个文件。",
+  "error.commentSingleFile": "批注保存在项目文件夹中，不适用于单个文件。",
 
   // ---- live changes
   "live.label": "实时更改",
@@ -672,7 +672,7 @@ export const zhCN = {
   "status.baselineMenu": "对比基准",
   "status.stateLocal": "状态：本地",
   "status.stateProject": "状态：.permark",
-  "status.stateLocalHint": "项目状态仅保存在这台电脑上。点击可将其保存在项目中 (.permark/)。",
+  "status.stateLocalHint": "项目状态仅保存在这台电脑上。点击可把它保存到项目中 (.permark/)。",
   "status.stateProjectHint": "项目状态保存在项目内的 .permark/ 中。",
   "status.stateMenu": "项目状态",
   "status.follow": "跟随",
