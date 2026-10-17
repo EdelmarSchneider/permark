@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-10-17
+
 TrailMark is now PerMark. Same app, same logo, a name of its own.
 
 ### Changed
