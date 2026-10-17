@@ -9,6 +9,7 @@
   import { anchorTarget, findById, selectionIn, selectionLines } from "../dom/domUtil";
   import { commentTargetIn } from "../dom/commentDom";
   import { readBlocks, readHeadingLines } from "../dom/outlineDom";
+  import { enhanceBlocks } from "../dom/enhance";
   import { enhanceContextFor } from "../dom/enhanceContext";
   import type { EnhanceContext } from "../dom/enhance";
   import { ICON_CHECK, ICON_COPY } from "../dom/enhance";
@@ -245,6 +246,9 @@
       onKeep: (index) => void review.keep(index),
       onRevert: (index) => void review.revert(index),
       onToggle: (startByte, open) => review.toggleRemoved(startByte, open),
+      enhance: (root) => {
+        enhanceBlocks([root], enhanceContext(current.path));
+      },
     });
   }
 
