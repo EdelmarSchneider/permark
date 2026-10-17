@@ -1,0 +1,12 @@
+{
+  "name": "trailmark",
+  "version": "0.5.5",
+  "description": "Read what your AI writes. Write what it reads. Connects Gemini CLI to the TrailMark desktop Markdown IDE via MCP for live reading context, tag/section search, shared notes, and inline comment resolution.",
+  "contextFileName": "skills/trailmark/SKILL.md",
+  "mcpServers": {
+    "trailmark": {
+      "command": "trailmark",
+      "args": ["mcp"]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "trailmark",
+  "description": "Read what your AI writes. Write what it reads. Connect Claude Code to TrailMark's desktop Markdown IDE via MCP, automatic reading-context hooks, and document review skills.",
+  "version": "0.5.5",
+  "author": {
+    "name": "Edelmar Schneider",
+    "url": "https://github.com/EdelmarSchneider"
+  },
+  "homepage": "https://edelmarschneider.github.io/trailmark/",
+  "repository": "https://github.com/EdelmarSchneider/trailmark",
+  "license": "MIT OR Apache-2.0",
+  "keywords": [
+    "markdown",
+    "mcp",
+    "ide",
+    "spec-driven-development",
+    "code-review",
+    "documentation",
+    "notes"
+  ]
+}
