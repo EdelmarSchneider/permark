@@ -33,7 +33,7 @@ describe("agentCommentPrompt", () => {
     expect(text).toContain("line 40");
     expect(text).toContain("> ship it on Friday");
     expect(text).toContain("simplify this");
-    expect(text).toContain("mark it done with `resolve_comment`");
+    expect(text).toContain("mark it done with `resolve_comment` and a short reply");
   });
 
   it("names the document and the line alone when the passage has no section", () => {
@@ -69,7 +69,7 @@ describe("agentCommentsPrompt", () => {
 
   it("asks the agent to mark each comment done when it has addressed it", () => {
     expect(agentCommentsPrompt(openByDocument([comment()]))).toContain(
-      "When you have addressed a comment, mark it done with `resolve_comment`.",
+      "When you have addressed a comment, mark it done with `resolve_comment` and a short reply.",
     );
   });
 

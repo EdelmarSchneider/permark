@@ -25,7 +25,7 @@ export function agentCommentPrompt(comment: Comment): string {
     "",
     comment.text,
     "",
-    "When you have addressed it, mark it done with `resolve_comment`.",
+    "When you have addressed it, mark it done with `resolve_comment` and a short reply.",
   ].join("\n");
 }
 
@@ -57,6 +57,6 @@ export function agentCommentsPrompt(groups: readonly CommentGroup[]): string {
     "Please go through these comments on the documents:",
     "",
     sections.join("\n"),
-    "When you have addressed a comment, mark it done with `resolve_comment`.",
+    "When you have addressed a comment, mark it done with `resolve_comment` and a short reply.",
   ].join("\n");
 }

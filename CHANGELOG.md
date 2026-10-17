@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Send comments to your agent.** In the Comments tab, **Send to agent** on a comment, or **Send all** at the top, copies a prompt with the document, the section, the lines, the quoted passage and your words. Paste it into any agent chat. The prompt asks the agent to mark each comment done with a short reply. `get_context`, `permark context` and the state file say how many comments are open, so an agent that reads where you are knows to look.
+
 ## [0.5.6] - 2026-10-17
 
 TrailMark is now PerMark. Same app, same logo, a name of its own.

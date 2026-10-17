@@ -385,8 +385,10 @@ PerMark is not open, and `open` starts it. With the connection off, every tool s
 `permark context` prints where you are as one short line and exits, for tools that can run a command before each prompt:
 
 ```text
-Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday'.
+Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday', 2 comments open.
 ```
+
+When no comment is open, the line stops at the period and says nothing about comments.
 
 In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your user settings) adds it to every prompt:
 
@@ -410,7 +412,8 @@ that watches the project.** It stays out of git (`local/` ignores itself) and is
 
 Select a passage while you read and press `C` (or choose **Comment** in the selection toolbar), type a comment and press `Enter`. A thin
 bar marks the passage in the margin, and the **Comments** tab of the right panel lists the open comments by document, with the ones you
-finished folded away. A click on a comment goes to its passage. Check a comment off yourself, or ask your agent to "go through my comments":
+finished folded away. A click on a comment goes to its passage. Check a comment off yourself, or press **Send to agent** on a comment
+(or **Send all** at the top of the tab) and paste the copied prompt into any agent chat. You can also ask your agent to "go through my comments":
 it reads them with `list_comments`, and when it marks one done its reply appears under the comment.
 
 Comments follow their passage when the document changes: they are found again by their words, then by their section, then by their
