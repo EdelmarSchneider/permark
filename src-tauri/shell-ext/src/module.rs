@@ -48,7 +48,7 @@ pub(crate) fn can_unload() -> bool {
     IN_USE.load(Ordering::SeqCst) == 0
 }
 
-/// The path of this DLL, as Windows loaded it. In the package that is `trailmark_shell.dll` in the package's folder.
+/// The path of this DLL, as Windows loaded it. In the package that is `permark_shell.dll` in the package's folder.
 pub(crate) fn path() -> Option<PathBuf> {
     // Any address inside this DLL names it.
     let inside: fn() -> Option<PathBuf> = path;

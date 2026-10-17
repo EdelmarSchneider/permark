@@ -54,7 +54,7 @@ fn roots_and_protected_names_are_recognised() {
     assert!(!is_root_path("docs"));
     assert!(is_protected(".git"));
     assert!(is_protected("sub/.GIT/config"));
-    assert!(is_protected(".trailmark/meta.toml"));
+    assert!(is_protected(".permark/meta.toml"));
     assert!(!is_protected("docs/.gitignore"));
 }
 
@@ -424,7 +424,7 @@ fn the_files_of_a_folder_are_listed_with_their_vault_paths() {
 #[ignore = "puts a file in the real recycle bin"]
 fn os_recycle_bin_takes_a_file() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let file = dir.path().join("trailmark-recycle-test.md");
+    let file = dir.path().join("permark-recycle-test.md");
     fs::write(&file, "test").expect("write");
     OsRecycler
         .recycle(std::slice::from_ref(&file))

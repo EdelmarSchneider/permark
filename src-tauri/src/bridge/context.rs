@@ -2,7 +2,7 @@
 //! selection, and whether there are unsaved edits.
 //!
 //! The window publishes this (debounced); the program keeps the latest and answers `get_context` from it, and writes
-//! it to `.trailmark/local/agent.json` for tools that do not speak MCP. Everything here is plain data with no
+//! it to `.permark/local/agent.json` for tools that do not speak MCP. Everything here is plain data with no
 //! window: [`AgentContext::sanitize`] is the one place that decides what leaves the program, so a document outside
 //! the project or an oversized selection never reaches an agent, whatever the window sent.
 
@@ -179,7 +179,7 @@ impl AgentContext {
     #[must_use]
     pub fn summary(&self) -> String {
         let Some(document) = &self.document else {
-            return "TrailMark is open on this project, with no document open.".to_owned();
+            return "PerMark is open on this project, with no document open.".to_owned();
         };
         let verb = match self.mode {
             Some(ViewMode::Visual) => "Editing (visual)",
@@ -474,7 +474,7 @@ mod tests {
         assert_eq!(bare.summary(), "Editing (visual) README.md.");
         assert_eq!(
             AgentContext::default().summary(),
-            "TrailMark is open on this project, with no document open."
+            "PerMark is open on this project, with no document open."
         );
     }
 

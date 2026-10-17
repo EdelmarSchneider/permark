@@ -7,8 +7,8 @@ import { docExists } from "./fixtures";
 
 const RECENT = 8;
 
-/** Where the mock "installed" TrailMark: a path with spaces, so the setup lines show their quoting. */
-const PROGRAM = "C:\\Program Files\\TrailMark\\trailmark.exe";
+/** Where the mock "installed" PerMark: a path with spaces, so the setup lines show their quoting. */
+const PROGRAM = "C:\\Program Files\\PerMark\\permark.exe";
 
 function emptyStatus(): AgentStatus {
   return {

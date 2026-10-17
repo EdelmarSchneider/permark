@@ -98,9 +98,9 @@ describe("errorMessage", () => {
       subject: "3",
       detail: "expected `=`",
     };
-    expect(errorMessage(error)).toBe("Can't read .trailmark/meta.toml (line 3): expected `=`");
+    expect(errorMessage(error)).toBe("Can't read .permark/meta.toml (line 3): expected `=`");
     expect(errorMessage({ ...error, subject: undefined })).toBe(
-      "Can't read .trailmark/meta.toml: expected `=`",
+      "Can't read .permark/meta.toml: expected `=`",
     );
   });
 
@@ -190,7 +190,7 @@ describe("errorMessage", () => {
   it("words why the agent connection could not start in every language, and keeps the system's text for the rest", () => {
     const failure = (kind: AgentFailureKind): AgentFailure => ({
       kind,
-      message: `cannot listen on \\\\.\\pipe\\trailmark-1: Access is denied. (os error 5) [${kind}]`,
+      message: `cannot listen on \\\\.\\pipe\\permark-1: Access is denied. (os error 5) [${kind}]`,
     });
     for (const locale of LOCALES) {
       language.preference = locale;

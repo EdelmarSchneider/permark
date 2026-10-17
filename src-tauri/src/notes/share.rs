@@ -5,7 +5,7 @@
 //! then an agent of any project whose connection is on can list the shared notes and read one. It cannot list the folder, read
 //! a note that is not shared, or change a note.
 //!
-//! This is plain Rust over the folder, without the notes service: the program an agent starts (`trailmark mcp`) reads the
+//! This is plain Rust over the folder, without the notes service: the program an agent starts (`permark mcp`) reads the
 //! shared notes from their files when no window answers, as it does for the project's documents.
 
 use std::path::{Path, PathBuf};
@@ -227,7 +227,7 @@ mod tests {
             "SHARED.md",
             "shared.md:stream",
             "notes.json",
-            ".trailmark/notes.json",
+            ".permark/notes.json",
         ] {
             assert_eq!(
                 read_shared(dir.path(), bad),

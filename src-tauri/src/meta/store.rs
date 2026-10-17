@@ -28,8 +28,8 @@ use crate::vault::key;
 
 /// Written at the top of every `meta.toml`. A file this app wrote is never shorter than this.
 const HEADER: &str = "\
-# TrailMark metadata: tags and descriptions added in the app.
-# Safe to commit and share. TrailMark rewrites this file when you edit tags.
+# PerMark metadata: tags and descriptions added in the app.
+# Safe to commit and share. PerMark rewrites this file when you edit tags.
 
 ";
 
@@ -329,8 +329,8 @@ mod tests {
         assert_eq!(
             e.to_toml(),
             "\
-# TrailMark metadata: tags and descriptions added in the app.
-# Safe to commit and share. TrailMark rewrites this file when you edit tags.
+# PerMark metadata: tags and descriptions added in the app.
+# Safe to commit and share. PerMark rewrites this file when you edit tags.
 
 [files.\"a.md\"]
 tags = [\"x\"]

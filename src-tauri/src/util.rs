@@ -377,7 +377,7 @@ pub(crate) fn on_parser_stack<T: Send>(work: impl FnOnce() -> T + Send) -> T {
     let mut result: Option<T> = None;
     thread::scope(|scope| {
         let (task, result) = (&mut task, &mut result);
-        let spawned = parser_thread("trailmark-render").spawn_scoped(scope, move || {
+        let spawned = parser_thread("permark-render").spawn_scoped(scope, move || {
             *result = task.take().map(|work| work());
         });
         if let Ok(handle) = spawned {

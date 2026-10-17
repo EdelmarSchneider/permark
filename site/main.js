@@ -1,4 +1,4 @@
-// TrailMark landing page: progressive enhancements only. The page works fully without JS.
+// PerMark landing page: progressive enhancements only. The page works fully without JS.
 (function () {
   // 1. OS-aware hero button: the Microsoft Store on Windows, the latest release elsewhere.
   var label = document.getElementById("download-label");

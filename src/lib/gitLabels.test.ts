@@ -44,7 +44,7 @@ describe("gitBadgeTitle", () => {
     const title = gitBadgeTitle(badgeFor("modified")!);
     expect(title).toBe(
       "M · Modified: this file changed since your last visit. You don't have to commit anything: " +
-        "the letter goes away once the change is committed, by you or your agent. TrailMark never commits.",
+        "the letter goes away once the change is committed, by you or your agent. PerMark never commits.",
     );
   });
 

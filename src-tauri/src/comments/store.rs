@@ -1,8 +1,8 @@
 //! `comments.json`: reading and writing the comments of a project.
 //!
 //! Every change reads the file again, changes it and writes it back (atomically), under a lock, so two parts of
-//! this program never overwrite each other and a change made by `trailmark mcp` while the window was closed is
-//! not lost. The lock is a `comments.lock` file next to the comments, because the window and `trailmark mcp` are two
+//! this program never overwrite each other and a change made by `permark mcp` while the window was closed is
+//! not lost. The lock is a `comments.lock` file next to the comments, because the window and `permark mcp` are two
 //! programs. A file that is not valid comments is set aside, not overwritten: the comments in it are the person's. A file
 //! that merely cannot be read right now is left alone, and the change fails.
 
@@ -141,7 +141,7 @@ impl CommentStore {
         change: impl FnOnce(&mut Vec<Comment>) -> Result<(T, bool), CommentError>,
     ) -> Result<T, CommentError> {
         let path = lock(&self.path);
-        // Other programs (the window, `trailmark mcp`) change the same file: nobody reads or writes it meanwhile.
+        // Other programs (the window, `permark mcp`) change the same file: nobody reads or writes it meanwhile.
         let _locked = acquire(&lock_path(&path), wait).map_err(|error| io_error(&path, error))?;
         let mut comments = match read(&path).map_err(|error| io_error(&path, error))? {
             Read::Comments(comments) => comments,
@@ -288,7 +288,7 @@ mod tests {
                 Ok(((), true))
             })
             .expect("update");
-        // `trailmark mcp` resolved the comment while the window was closed
+        // `permark mcp` resolved the comment while the window was closed
         let other = CommentStore::new(dir.path().join("local").join("comments.json"));
         other
             .update(|comments| {
@@ -413,7 +413,7 @@ mod tests {
         assert!(store.load().is_empty(), "nothing to show meanwhile");
     }
 
-    /// The window and `trailmark mcp` are two programs: each change reads the file again under a lock they share.
+    /// The window and `permark mcp` are two programs: each change reads the file again under a lock they share.
     ///
     /// The writers here do nothing but change the file, back to back, so they queue up far more than two programs ever
     /// do: each change ends in a flush to disk, and the lock is not handed out in turn, so one writer can wait out the
@@ -487,10 +487,10 @@ mod tests {
 
         let dir = tempfile::tempdir().expect("tempdir");
         let outside = tempfile::tempdir().expect("outside");
-        let trailmark = dir.path().join(".trailmark");
-        std::fs::create_dir(&trailmark).expect("mkdir");
-        dir_link(&trailmark.join("local"), outside.path());
-        let store = CommentStore::new(trailmark.join("local").join("comments.json"));
+        let permark = dir.path().join(".permark");
+        std::fs::create_dir(&permark).expect("mkdir");
+        dir_link(&permark.join("local"), outside.path());
+        let store = CommentStore::new(permark.join("local").join("comments.json"));
         let result = store.update(|comments| {
             comments.push(comment("c1"));
             Ok(((), true))
@@ -500,7 +500,7 @@ mod tests {
             .expect("ls")
             .next()
             .is_none());
-        remove_link(&trailmark.join("local"));
+        remove_link(&permark.join("local"));
     }
 
     #[test]

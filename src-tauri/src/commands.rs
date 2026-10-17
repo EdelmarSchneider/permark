@@ -152,7 +152,7 @@ pub fn initial_path(inbox: State<'_, OpenInbox>) -> Option<String> {
     inbox.take_launch_path().or_else(command_line_path)
 }
 
-/// The path given on the command line (`trailmark <path>`), if it exists. Relative paths resolve
+/// The path given on the command line (`permark <path>`), if it exists. Relative paths resolve
 /// against the current directory.
 pub fn command_line_path() -> Option<String> {
     let arg = std::env::args_os().nth(1)?;
@@ -199,7 +199,7 @@ pub fn opened(app: &AppHandle, urls: &[tauri::Url]) {
     }
 }
 
-/// A drive root passed from the file manager's "Open with TrailMark" entry is `"C:\"` on the command line, and
+/// A drive root passed from the file manager's "Open with PerMark" entry is `"C:\"` on the command line, and
 /// the quote after the backslash reads as an escaped quote: the program receives `C:"`. Gives the root back.
 fn unquote_drive_root(arg: OsString) -> OsString {
     let text = arg.to_string_lossy();
@@ -272,20 +272,20 @@ pub async fn set_app_tone(app: AppHandle, tone: Tone) -> Result<(), AppError> {
     blocking(move || Ok(AppSettingsStore::new(&dir).set_tone(tone)?)).await
 }
 
-/// What "Open with TrailMark" has registered with the file manager, read from the system each time.
+/// What "Open with PerMark" has registered with the file manager, read from the system each time.
 #[tauri::command]
 pub async fn shell_integration_state() -> Result<ShellState, AppError> {
     blocking(|| Ok(shell_integration::state())).await
 }
 
-/// Adds or removes "Open with TrailMark" in the right-click menu. `locale` is the language of the interface
+/// Adds or removes "Open with PerMark" in the right-click menu. `locale` is the language of the interface
 /// (`en`, `pt-BR`, `es`, `de`, `zh-CN`, `it`): the entry is worded in it.
 #[tauri::command]
 pub async fn set_shell_context_menu(enabled: bool, locale: String) -> Result<ShellState, AppError> {
     blocking(move || Ok(shell_integration::set_context_menu(enabled, &locale)?)).await
 }
 
-/// Adds or removes TrailMark in the "Open with" list of Markdown files.
+/// Adds or removes PerMark in the "Open with" list of Markdown files.
 #[tauri::command]
 pub async fn set_shell_file_association(
     enabled: bool,
@@ -1065,7 +1065,7 @@ mod tests {
         assert_eq!(emitted_events(), events, "events emitted to the webview");
     }
 
-    /// The data folder has one answer. Asking Tauri for it directly ignores `TRAILMARK_TEST_DATA_DIR` in a debug build, which
+    /// The data folder has one answer. Asking Tauri for it directly ignores `PERMARK_TEST_DATA_DIR` in a debug build, which
     /// the code that decides whether this program is the Notes window honours: the two then disagreed about where the notes'
     /// settings and the socket live, and a project window could not start a note.
     #[test]
@@ -1136,7 +1136,7 @@ mod tests {
         assert_eq!(initial_path_from(os("relative"), None), None);
     }
 
-    /// "Open with TrailMark" on a drive passes `"C:\"`, which arrives as `C:"` (see `unquote_drive_root`).
+    /// "Open with PerMark" on a drive passes `"C:\"`, which arrives as `C:"` (see `unquote_drive_root`).
     #[test]
     fn a_drive_root_from_the_file_manager_loses_its_stray_quote() {
         assert_eq!(unquote_drive_root(os("C:\"")), os("C:\\"));

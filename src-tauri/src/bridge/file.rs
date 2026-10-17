@@ -1,4 +1,4 @@
-//! `.trailmark/local/agent.json`: the `get_context` answer as a file, for a shell script or a tool that does not
+//! `.permark/local/agent.json`: the `get_context` answer as a file, for a shell script or a tool that does not
 //! speak MCP. It exists only while the agent connection is on, is rewritten at most every 300 ms, and is deleted
 //! when the connection is turned off or the project is closed.
 
@@ -54,7 +54,7 @@ impl Throttle {
 
 enum Msg {
     Publish(Published),
-    /// The file lives elsewhere now (the project got a `.trailmark/` folder).
+    /// The file lives elsewhere now (the project got a `.permark/` folder).
     Relocate(PathBuf),
     /// Write what is pending now, and say so (a test waits for the file this way).
     #[cfg(test)]
@@ -76,7 +76,7 @@ impl ContextFile {
     pub fn start(path: PathBuf, interval: Duration, initial: Published) -> Self {
         let (tx, rx) = mpsc::channel();
         let handle = thread::Builder::new()
-            .name("trailmark-agent-file".to_owned())
+            .name("permark-agent-file".to_owned())
             .spawn(move || run(&rx, path, interval, initial))
             .ok();
         Self { tx, handle }
@@ -274,7 +274,7 @@ mod tests {
         assert_eq!(read(&second), Some(published("a.md", 1)));
     }
 
-    /// A repository can commit `.trailmark/local` as a link to some other folder.
+    /// A repository can commit `.permark/local` as a link to some other folder.
     #[test]
     fn nothing_is_written_or_deleted_behind_a_link() {
         use crate::util::testing::{dir_link, remove_link};
@@ -283,14 +283,14 @@ mod tests {
         let outside = tempfile::tempdir().expect("outside");
         let theirs = outside.path().join("agent.json");
         std::fs::write(&theirs, "not ours").expect("write");
-        let trailmark = dir.path().join(".trailmark");
-        std::fs::create_dir(&trailmark).expect("mkdir");
-        dir_link(&trailmark.join("local"), outside.path());
-        let path = trailmark.join("local").join("agent.json");
+        let permark = dir.path().join(".permark");
+        std::fs::create_dir(&permark).expect("mkdir");
+        dir_link(&permark.join("local"), outside.path());
+        let path = permark.join("local").join("agent.json");
 
         let mut file = ContextFile::start(path.clone(), FOREVER, published("a.md", 1));
         file.flush();
-        file.relocate(trailmark.join("local").join("other.json"));
+        file.relocate(permark.join("local").join("other.json"));
         file.flush();
         file.stop();
         assert_eq!(
@@ -299,7 +299,7 @@ mod tests {
             "neither overwritten nor deleted"
         );
         assert!(!outside.path().join("other.json").exists());
-        remove_link(&trailmark.join("local"));
+        remove_link(&permark.join("local"));
     }
 
     #[test]

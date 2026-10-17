@@ -117,7 +117,7 @@ describe("security configuration", () => {
     expect(full.bundle.createUpdaterArtifacts).toBe(true);
     expect(full.plugins?.updater?.pubkey).toMatch(/^[A-Za-z0-9+/=]{40,}$/);
     expect(full.plugins?.updater?.endpoints).toEqual([
-      "https://github.com/EdelmarSchneider/trailmark/releases/latest/download/latest.json",
+      "https://github.com/EdelmarSchneider/permark/releases/latest/download/latest.json",
     ]);
   });
 });

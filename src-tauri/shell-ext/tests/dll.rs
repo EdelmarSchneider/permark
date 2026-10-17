@@ -54,7 +54,7 @@ fn built_dll() -> PathBuf {
             .parent()
             .and_then(Path::parent)
             .expect("target/<profile>/deps");
-        let dll = profile.join("trailmark_shell.dll");
+        let dll = profile.join("permark_shell.dll");
         assert!(dll.exists(), "{} was not built", dll.display());
         dll
     })
@@ -70,22 +70,20 @@ struct Loaded {
 }
 
 impl Loaded {
-    /// `with_program`: a stand-in for `trailmark.exe` beside the DLL, as in the package. It is `where.exe`, which starts,
+    /// `with_program`: a stand-in for `permark.exe` beside the DLL, as in the package. It is `where.exe`, which starts,
     /// finds nothing to look for and ends, without a window.
     fn new(name: &str, with_program: bool) -> Self {
-        let folder = std::env::temp_dir().join(format!(
-            "trailmark-shell-test-{}-{name}",
-            std::process::id()
-        ));
+        let folder =
+            std::env::temp_dir().join(format!("permark-shell-test-{}-{name}", std::process::id()));
         let _ = fs::remove_dir_all(&folder);
         fs::create_dir_all(&folder).expect("a folder for the copy");
-        let dll = folder.join("trailmark_shell.dll");
+        let dll = folder.join("permark_shell.dll");
         fs::copy(built_dll(), &dll).expect("copy the DLL");
         if with_program {
             let system = std::env::var_os("SystemRoot").expect("SystemRoot");
             fs::copy(
                 Path::new(&system).join("System32").join("where.exe"),
-                folder.join("trailmark.exe"),
+                folder.join("permark.exe"),
             )
             .expect("copy the stand-in program");
         }
@@ -245,12 +243,12 @@ fn the_command_says_what_it_is_when_explorer_asks() {
         let title = text_of(command.GetTitle(none).expect("a title"));
         assert!(
             [
-                "Open with TrailMark",
-                "Abrir com o TrailMark",
-                "Abrir con TrailMark",
-                "Mit TrailMark öffnen",
-                "用 TrailMark 打开",
-                "Apri con TrailMark"
+                "Open with PerMark",
+                "Abrir com o PerMark",
+                "Abrir con PerMark",
+                "Mit PerMark öffnen",
+                "用 PerMark 打开",
+                "Apri con PerMark"
             ]
             .contains(&title.as_str()),
             "{title}"
@@ -259,7 +257,7 @@ fn the_command_says_what_it_is_when_explorer_asks() {
         let icon = text_of(command.GetIcon(none).expect("an icon"));
         assert_eq!(
             icon,
-            format!("{},0", loaded.folder.join("trailmark.exe").display())
+            format!("{},0", loaded.folder.join("permark.exe").display())
         );
         // shown and enabled (ECS_ENABLED is 0), also for the background of a folder, which has no selection
         assert_eq!(command.GetState(none, false).expect("a state"), 0);

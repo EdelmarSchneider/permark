@@ -1,4 +1,4 @@
-//! The other side of the local socket: how `trailmark mcp` and `trailmark context` ask the window of a project.
+//! The other side of the local socket: how `permark mcp` and `permark context` ask the window of a project.
 //!
 //! One connection is kept open for as long as the program lives, so the window can tell that an agent is connected.
 //! A connection that went stale (the window was closed and opened again, or the connection was turned off and on)
@@ -27,16 +27,16 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Debug, thiserror::Error)]
 pub enum LinkError {
     /// Nothing listens: the window is closed, or the connection is off.
-    #[error("TrailMark is not open on this project")]
+    #[error("PerMark is not open on this project")]
     NotRunning,
     /// The window answered with an error.
     #[error("{}", .0.message)]
     Remote(ProtocolError),
-    #[error("the connection to TrailMark failed: {0}")]
+    #[error("the connection to PerMark failed: {0}")]
     Io(#[from] io::Error),
-    #[error("TrailMark did not answer in time")]
+    #[error("PerMark did not answer in time")]
     TimedOut,
-    /// Something listens where TrailMark would, but it is not shown to be this user's TrailMark: nothing was sent to it.
+    /// Something listens where PerMark would, but it is not shown to be this user's PerMark: nothing was sent to it.
     #[error("not trusted, so nothing was sent: {0}")]
     Untrusted(String),
 }

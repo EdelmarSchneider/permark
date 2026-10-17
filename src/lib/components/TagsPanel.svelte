@@ -32,7 +32,7 @@
 
   type Row = { kind: "tag"; tag: TagCount } | { kind: "untagged"; count: number };
 
-  const META_FILE = ".trailmark/meta.toml";
+  const META_FILE = ".permark/meta.toml";
 
   let filterInput: HTMLInputElement | undefined = $state();
   let tagList: HTMLElement | undefined = $state();

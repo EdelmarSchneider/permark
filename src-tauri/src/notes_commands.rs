@@ -211,7 +211,7 @@ pub async fn create_notes_folder(app: AppHandle) -> Result<NotesFolder, AppError
     .await
 }
 
-/// Where TrailMark opens when it is started with nothing to open.
+/// Where PerMark opens when it is started with nothing to open.
 #[tauri::command]
 pub async fn notes_start_in(app: AppHandle) -> Result<StartIn, AppError> {
     let dir = app_data_dir(&app)?;
@@ -224,7 +224,7 @@ pub async fn notes_start_in(app: AppHandle) -> Result<StartIn, AppError> {
     .await
 }
 
-/// Keeps where TrailMark opens when it is started with nothing to open.
+/// Keeps where PerMark opens when it is started with nothing to open.
 #[tauri::command]
 pub async fn set_notes_start_in(app: AppHandle, start_in: StartIn) -> Result<(), AppError> {
     let dir = app_data_dir(&app)?;
@@ -557,9 +557,9 @@ pub async fn undo_move_note(
 }
 
 /// The environment variable that tells a program just started on a project which of its files to show first.
-const SHOW_VARIABLE: &str = "TRAILMARK_SHOW";
+const SHOW_VARIABLE: &str = "PERMARK_SHOW";
 
-/// "Open in project": starts TrailMark on the project that holds `path` (the project opened lately that contains it, else its
+/// "Open in project": starts PerMark on the project that holds `path` (the project opened lately that contains it, else its
 /// folder), showing that file. A project that is open in a window already is opened once more, as a second launch does.
 #[tauri::command]
 pub async fn open_in_project(app: AppHandle, path: String) -> Result<(), AppError> {
@@ -595,7 +595,7 @@ fn project_holding(file: &std::path::Path, roots: &[PathBuf]) -> Option<PathBuf>
         .cloned()
 }
 
-/// Starts another TrailMark on a project, with the file to show first, and lets it go its own way.
+/// Starts another PerMark on a project, with the file to show first, and lets it go its own way.
 fn start_project_window(folder: &std::path::Path, file: &std::path::Path) -> std::io::Result<()> {
     use std::process::{Command, Stdio};
 
@@ -863,7 +863,7 @@ pub fn take_notes_request(launch: State<'_, NotesLaunch>) -> Option<NotesRequest
     launch.take()
 }
 
-/// Starts another TrailMark as the Notes window, and lets it go its own way.
+/// Starts another PerMark as the Notes window, and lets it go its own way.
 fn start_notes_window() -> std::io::Result<()> {
     use std::process::{Command, Stdio};
 

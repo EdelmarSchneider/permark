@@ -1,13 +1,13 @@
 <#
 .SYNOPSIS
-  Packs TrailMark for the Microsoft Store: builds the Store flavor and writes an unsigned TrailMark_<version>_x64.msix.
+  Packs PerMark for the Microsoft Store: builds the Store flavor and writes an unsigned PerMark_<version>_x64.msix.
 
 .DESCRIPTION
   The Store flavor is the same program built with the cargo feature `store` and the overlay `src-tauri/tauri.msstore.conf.json`
-  (no self-update; the agent setup lines name the `trailmark` alias). This script:
+  (no self-update; the agent setup lines name the `permark` alias). This script:
 
     1. builds it, and the shell extension next to it (with -Build; otherwise it packs what is already built),
-    2. lays out a package folder: trailmark.exe, trailmark_shell.dll (the right-click menu of folders, src-tauri/shell-ext),
+    2. lays out a package folder: permark.exe, permark_shell.dll (the right-click menu of folders, src-tauri/shell-ext),
        the logos (src-tauri/msstore/Assets) and AppxManifest.xml, which it writes from the template
        src-tauri/msstore/AppxManifest.xml with the version filled in,
     3. runs MakeAppx.exe from the Windows SDK, which checks the manifest against the package schema and packs the folder.
@@ -27,10 +27,10 @@
   `cargo build --release --manifest-path src-tauri/shell-ext/Cargo.toml`.
 
 .PARAMETER ExePath
-  The built program. Default: src-tauri\target\release\trailmark.exe.
+  The built program. Default: src-tauri\target\release\permark.exe.
 
 .PARAMETER DllPath
-  The built shell extension. Default: src-tauri\shell-ext\target\release\trailmark_shell.dll.
+  The built shell extension. Default: src-tauri\shell-ext\target\release\permark_shell.dll.
 
 .PARAMETER OutDir
   Where the package folder and the .msix go. Default: src-tauri\target\msix.
@@ -43,9 +43,9 @@
 
 .PARAMETER Sideload
   Writes a package for trying on a computer without the Store (it is never what is uploaded): it has an identity of its own
-  (EdelmarSchneider.TrailMarkSideload, publisher CN=TrailMark Sideload, the alias trailmark-sideload), so it installs beside
+  (EdelmarSchneider.PerMarkSideload, publisher CN=PerMark Sideload, the alias permark-sideload), so it installs beside
   the Store version and can be removed without touching it, and a test certificate whose subject is that publisher can sign
-  it. The file is named TrailMark_<version>_x64_sideload.msix. docs/msstore.md has the steps.
+  it. The file is named PerMark_<version>_x64_sideload.msix. docs/msstore.md has the steps.
 
 .EXAMPLE
   .\scripts\build-msix.ps1 -Build
@@ -75,8 +75,8 @@ $Tauri = Join-Path $Root 'src-tauri'
 $Template = Join-Path $Tauri 'msstore\AppxManifest.xml'
 $Assets = Join-Path $Tauri 'msstore\Assets'
 $Overlay = 'src-tauri/tauri.msstore.conf.json'
-if (-not $ExePath) { $ExePath = Join-Path $Tauri 'target\release\trailmark.exe' }
-if (-not $DllPath) { $DllPath = Join-Path $Tauri 'shell-ext\target\release\trailmark_shell.dll' }
+if (-not $ExePath) { $ExePath = Join-Path $Tauri 'target\release\permark.exe' }
+if (-not $DllPath) { $DllPath = Join-Path $Tauri 'shell-ext\target\release\permark_shell.dll' }
 if (-not $OutDir) { $OutDir = Join-Path $Tauri 'target\msix' }
 
 function Find-MakeAppx {
@@ -106,7 +106,7 @@ if (-not $MakeAppx -or -not (Test-Path $MakeAppx)) {
 
 # ---- Build ----------------------------------------------------------------------------------------------------------
 if ($Build) {
-  Write-Host "Building the Store flavor of TrailMark $Version ..."
+  Write-Host "Building the Store flavor of PerMark $Version ..."
   Push-Location $Root
   try {
     # npx rather than `npm run tauri --`: Windows PowerShell 5.1 swallows the `--` and npm then rejects the flags.
@@ -139,9 +139,9 @@ New-Item -ItemType Directory -Force -Path (Join-Path $Stage 'Assets') | Out-Null
 
 # The only file the program needs at run time. The interface is inside it, and the web view is the system's WebView2
 # runtime (Windows 11, and Windows 10 kept up to date), so nothing else goes in the package but the DLL of the folder menu.
-Copy-Item $ExePath (Join-Path $Stage 'trailmark.exe')
+Copy-Item $ExePath (Join-Path $Stage 'permark.exe')
 # Beside the program: the DLL finds the program from its own path, and the manifest names it by this name.
-Copy-Item $DllPath (Join-Path $Stage 'trailmark_shell.dll')
+Copy-Item $DllPath (Join-Path $Stage 'permark_shell.dll')
 Copy-Item (Join-Path $Assets '*.png') (Join-Path $Stage 'Assets')
 
 $manifest = Get-Content $Template -Raw -Encoding UTF8
@@ -156,11 +156,11 @@ $Suffix = ''
 if ($Sideload) {
   $Suffix = '_sideload'
   foreach ($change in @(
-      @('Name="EdelmarSchneider.TrailMark"', 'Name="EdelmarSchneider.TrailMarkSideload"'),
-      @('Publisher="CN=C8BB0009-0553-4E03-8EDF-1FC57AB0CCF7"', 'Publisher="CN=TrailMark Sideload"'),
-      @('<DisplayName>TrailMark</DisplayName>', '<DisplayName>TrailMark (sideload)</DisplayName>'),
-      @('DisplayName="TrailMark"', 'DisplayName="TrailMark (sideload)"'),
-      @('Alias="trailmark.exe"', 'Alias="trailmark-sideload.exe"'))) {
+      @('Name="EdelmarSchneider.TrailMark"', 'Name="EdelmarSchneider.PerMarkSideload"'),
+      @('Publisher="CN=C8BB0009-0553-4E03-8EDF-1FC57AB0CCF7"', 'Publisher="CN=PerMark Sideload"'),
+      @('<DisplayName>PerMark</DisplayName>', '<DisplayName>PerMark (sideload)</DisplayName>'),
+      @('DisplayName="PerMark"', 'DisplayName="PerMark (sideload)"'),
+      @('Alias="permark.exe"', 'Alias="permark-sideload.exe"'))) {
     if (-not $manifest.Contains($change[0])) { throw "The manifest has no $($change[0]), which -Sideload changes." }
     $manifest = $manifest.Replace($change[0], $change[1])
   }
@@ -180,7 +180,7 @@ foreach ($file in $referenced | Sort-Object -Unique) {
 }
 
 # ---- Pack -----------------------------------------------------------------------------------------------------------
-$Package = Join-Path $OutDir "TrailMark_${PackageVersion}_x64$Suffix.msix"
+$Package = Join-Path $OutDir "PerMark_${PackageVersion}_x64$Suffix.msix"
 if (Test-Path $Package) { Remove-Item $Package -Force }
 Write-Host "Packing $Package with $MakeAppx"
 & $MakeAppx pack /d $Stage /p $Package /o /v

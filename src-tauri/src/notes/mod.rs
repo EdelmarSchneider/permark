@@ -1,8 +1,8 @@
-//! Notes: a place for writing that does not belong to a project yet. Open TrailMark, type, close: nothing is lost.
+//! Notes: a place for writing that does not belong to a project yet. Open PerMark, type, close: nothing is lost.
 //!
 //! A note is an ordinary Markdown file in a folder the person can see (see [`folder`]). There is no name to choose and
 //! no "save changes?": the text is written as it is typed, earlier versions are kept, and a deleted note goes to the
-//! system's recycle bin. TrailMark's own data sits next to the notes in `.trailmark/`, can be deleted at any time and is
+//! system's recycle bin. PerMark's own data sits next to the notes in `.permark/`, can be deleted at any time and is
 //! rebuilt from the files; nothing is ever added inside a note.
 //!
 //! The modules are plain Rust with no window in them:

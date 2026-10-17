@@ -2932,6 +2932,43 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "permark"
+version = "0.5.5"
+dependencies = [
+ "ammonia",
+ "base64 0.23.1",
+ "chrono",
+ "comrak",
+ "dirs",
+ "dunce",
+ "encoding_rs",
+ "git2",
+ "ignore",
+ "interprocess",
+ "notify",
+ "rmcp",
+ "rustix",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-updater",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "toml 1.1.8+spec-1.1.0",
+ "trash",
+ "unicode-normalization",
+ "widestring",
+ "windows-sys 0.61.2",
+ "winreg",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "phf"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4860,43 +4897,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
-]
-
-[[package]]
-name = "trailmark"
-version = "0.5.5"
-dependencies = [
- "ammonia",
- "base64 0.23.1",
- "chrono",
- "comrak",
- "dirs",
- "dunce",
- "encoding_rs",
- "git2",
- "ignore",
- "interprocess",
- "notify",
- "rmcp",
- "rustix",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-updater",
- "tempfile",
- "thiserror 2.0.21",
- "tokio",
- "toml 1.1.8+spec-1.1.0",
- "trash",
- "unicode-normalization",
- "widestring",
- "windows-sys 0.61.2",
- "winreg",
- "xxhash-rust",
 ]
 
 [[package]]

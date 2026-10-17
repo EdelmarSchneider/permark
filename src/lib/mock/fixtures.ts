@@ -15,7 +15,7 @@ import type {
 } from "../types";
 import { htmlToMarkdown, markdownToView } from "./mockMarkdown";
 
-export const MOCK_ROOT = "C:/Users/demo/trailmark-docs";
+export const MOCK_ROOT = "C:/Users/demo/permark-docs";
 export const MOCK_NOW = Date.now();
 const SEC = 1000;
 const MIN = 60 * SEC;
@@ -240,7 +240,7 @@ type FsBatch = {
     ),
     alert("tip", "Use <kbd>F7</kbd> to jump between the blocks that just changed."),
     alert("warning", "Large checkouts can touch thousands of files; they are grouped on purpose."),
-    alert("caution", "Do not edit <code>.trailmark/cache</code> by hand."),
+    alert("caution", "Do not edit <code>.permark/cache</code> by hand."),
     alert(
       "important",
       "The feed is keyed by path: renames move the entry, they do not duplicate it.",
@@ -516,7 +516,7 @@ const docs: Record<string, MockDoc> = {
     [
       h(1, "Storage"),
       p(
-        "State lives in AppData by default and in <code>.trailmark/</code> when the project opts in.",
+        "State lives in AppData by default and in <code>.permark/</code> when the project opts in.",
       ),
       ul([
         "Local: nothing is written to the project",
@@ -580,8 +580,8 @@ const docs: Record<string, MockDoc> = {
     ],
     90 * SEC,
   ),
-  "README.md": doc("TrailMark docs", [
-    h(1, "TrailMark docs"),
+  "README.md": doc("PerMark docs", [
+    h(1, "PerMark docs"),
     p(
       'Specs live in <a href="docs/specs/live-feed.md">docs/specs</a>, research in <a href="docs/research/index.md">docs/research</a>. Open the <a href="plan.md">plan</a> for the current state.',
     ),
@@ -606,7 +606,7 @@ const docs: Record<string, MockDoc> = {
     age: 5 * 60 * MIN,
     blocks: () => [
       raw(
-        `<pre><code class="language-json">${esc('{\n  "name": "trailmark-docs",\n  "version": "0.1.0",\n  "ignore": ["**/*.tmp", "build/"]\n}')}\n</code></pre>`,
+        `<pre><code class="language-json">${esc('{\n  "name": "permark-docs",\n  "version": "0.1.0",\n  "ignore": ["**/*.tmp", "build/"]\n}')}\n</code></pre>`,
         6,
       ),
     ],
@@ -913,15 +913,15 @@ const file = (path: string): TreeNode => ({
 export const mockWorktrees = [
   {
     name: "feature-ui",
-    path: "C:/Users/demo/trailmark-docs/.worktrees/feature-ui",
+    path: "C:/Users/demo/permark-docs/.worktrees/feature-ui",
     branch: "feature/ui",
   },
-  { name: "fix-links", path: "C:/Users/demo/trailmark-fix-links", branch: "fix/links" },
+  { name: "fix-links", path: "C:/Users/demo/permark-fix-links", branch: "fix/links" },
 ];
 
 export const mockIdeVault: VaultInfo = {
   root: MOCK_ROOT,
-  name: "trailmark-docs",
+  name: "permark-docs",
   kind: "project",
   mode: "ide",
   initialFile: null,
@@ -944,7 +944,7 @@ export const mockSimpleVault: VaultInfo = {
 export function mockTree(): TreeNode {
   if (mockState.vault === "notes") {
     return {
-      name: "TrailMark Notes",
+      name: "PerMark Notes",
       path: "",
       kind: "dir",
       children: [...mockNoteFiles].filter((path) => !mockState.deleted.has(path)).map(file),
@@ -1012,7 +1012,7 @@ function insertFile(tree: TreeNode, path: string): void {
 
 function baseTree(keep: (nodes: TreeNode[]) => TreeNode[]): TreeNode {
   return {
-    name: "trailmark-docs",
+    name: "permark-docs",
     path: "",
     kind: "dir",
     children: [
@@ -1254,7 +1254,7 @@ export function searchDocs(query: string, limit: number): SearchHit[] {
 }
 
 export const mockRecents = [
-  { root: MOCK_ROOT, name: "trailmark-docs", lastOpenedMs: MOCK_NOW - 5 * MIN },
+  { root: MOCK_ROOT, name: "permark-docs", lastOpenedMs: MOCK_NOW - 5 * MIN },
   { root: "F:/work/big-repo", name: "big-repo", lastOpenedMs: MOCK_NOW - 26 * 60 * MIN },
   { root: "D:/old/notes", name: "notes", lastOpenedMs: MOCK_NOW - 9 * 24 * 60 * MIN },
 ];

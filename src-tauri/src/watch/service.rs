@@ -248,7 +248,7 @@ impl WatchService {
             }
         }
         let handle = thread::Builder::new()
-            .name("trailmark-watch".to_owned())
+            .name("permark-watch".to_owned())
             .spawn(move || run(&rx, &vault, &filter, &sigs, &probe, cfg, sink))
             .map_err(|e| WatchError::Spawn(e.to_string()))?;
         Ok(Self {

@@ -1,9 +1,9 @@
-name: trailmark
+name: permark
 base: core24
-adopt-info: trailmark
+adopt-info: permark
 summary: Read what your AI writes. Write what it reads. Markdown IDE for AI docs.
 description: |
-  TrailMark is the desktop IDE for the post-AI engineer—where humans and AI agents plan, mature ideas, formalize specs, and steer development using Markdown as their shared language.
+  PerMark is the desktop IDE for the post-AI engineer—where humans and AI agents plan, mature ideas, formalize specs, and steer development using Markdown as their shared language.
 
   Got a .md file?
   - Open any standalone .md file as a clean, well-typeset page—Mermaid diagrams, LaTeX math, tables, and ~190 syntax-highlighted languages.
@@ -13,14 +13,14 @@ description: |
   Build with AI agents?
   - Open a project folder as a live workspace that watches what your AI agents write across branches and git worktrees.
   - See what changed since you last read (Unread view) with block-level diffs (Added, Rewritten, Removed).
-  - Leave inline comments on any passage and let your agent read and resolve them via TrailMark's built-in MCP server (trailmark mcp) or CLI hook (trailmark context).
+  - Leave inline comments on any passage and let your agent read and resolve them via PerMark's built-in MCP server (permark mcp) or CLI hook (permark context).
   - Works with any AI tool (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Cline, Aider, Hermes Agent, OpenClaw...) or none.
 license: MIT OR Apache-2.0
 icon: src-tauri/icons/128x128@2x.png
-website: https://edelmarschneider.github.io/trailmark/
-source-code: https://github.com/EdelmarSchneider/trailmark
-issues: https://github.com/EdelmarSchneider/trailmark/issues
-contact: https://github.com/EdelmarSchneider/trailmark/discussions
+website: https://edelmarschneider.github.io/permark/
+source-code: https://github.com/EdelmarSchneider/permark
+issues: https://github.com/EdelmarSchneider/permark/issues
+contact: https://github.com/EdelmarSchneider/permark/discussions
 grade: stable
 confinement: strict
 compression: lzo
@@ -29,9 +29,9 @@ platforms:
   amd64:
 
 apps:
-  trailmark:
-    command: usr/bin/trailmark
-    desktop: usr/share/applications/TrailMark.desktop
+  permark:
+    command: usr/bin/permark
+    desktop: usr/share/applications/PerMark.desktop
     extensions: [gnome]
     plugs:
       - home
@@ -42,7 +42,7 @@ apps:
       WEBKIT_DISABLE_COMPOSITING_MODE: "1"
 
 parts:
-  trailmark:
+  permark:
     plugin: nil
     source: .
     build-packages:
@@ -55,13 +55,13 @@ parts:
     override-build: |
       set -eu
       VER=$(grep -oE '"version": *"[^"]+"' "$CRAFT_PART_SRC/package.json" | head -n 1 | cut -d'"' -f4)
-      DEB_URL="https://github.com/EdelmarSchneider/trailmark/releases/download/v${VER}/TrailMark_${VER}_amd64.deb"
+      DEB_URL="https://github.com/EdelmarSchneider/permark/releases/download/v${VER}/PerMark_${VER}_amd64.deb"
       if ! curl -fsSLI "$DEB_URL" >/dev/null 2>&1; then
-        DEB_URL=$(curl -fsSL https://api.github.com/repos/EdelmarSchneider/trailmark/releases/latest | grep -oE 'https://[^"]+_amd64\.deb' | head -n 1)
-        VER=$(echo "$DEB_URL" | sed -E 's#.*/TrailMark_([^_]+)_amd64\.deb#\1#')
+        DEB_URL=$(curl -fsSL https://api.github.com/repos/EdelmarSchneider/permark/releases/latest | grep -oE 'https://[^"]+_amd64\.deb' | head -n 1)
+        VER=$(echo "$DEB_URL" | sed -E 's#.*/PerMark_([^_]+)_amd64\.deb#\1#')
       fi
       craftctl set version="$VER"
-      curl -fsSL "$DEB_URL" -o /tmp/trailmark.deb
-      dpkg-deb -x /tmp/trailmark.deb "$CRAFT_PART_INSTALL"
-      rm -f /tmp/trailmark.deb
-      sed -i 's|^Icon=.*|Icon=${SNAP}/meta/gui/icon.png|' "$CRAFT_PART_INSTALL/usr/share/applications/TrailMark.desktop"
+      curl -fsSL "$DEB_URL" -o /tmp/permark.deb
+      dpkg-deb -x /tmp/permark.deb "$CRAFT_PART_INSTALL"
+      rm -f /tmp/permark.deb
+      sed -i 's|^Icon=.*|Icon=${SNAP}/meta/gui/icon.png|' "$CRAFT_PART_INSTALL/usr/share/applications/PerMark.desktop"

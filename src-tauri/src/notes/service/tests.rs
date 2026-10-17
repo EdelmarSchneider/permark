@@ -128,7 +128,7 @@ impl Fx {
         let mut names: Vec<String> = fs::read_dir(self.service.root())
             .expect("ls")
             .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
-            .filter(|name| name != ".trailmark")
+            .filter(|name| name != ".permark")
             .collect();
         names.sort();
         names

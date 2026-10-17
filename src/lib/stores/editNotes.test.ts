@@ -465,11 +465,11 @@ describe("a new note", () => {
 
 describe("reading only", () => {
   it("a note that can only be read says why and does not open an editor", async () => {
-    edit.readOnlyReason = "These notes are open in another TrailMark window.";
+    edit.readOnlyReason = "These notes are open in another PerMark window.";
     docs.current = view(PATH);
     expect(await edit.enter()).toBe(false);
     expect(edit.active).toBe(false);
-    expect(edit.blocked).toBe("These notes are open in another TrailMark window.");
+    expect(edit.blocked).toBe("These notes are open in another PerMark window.");
     expect(fake.documentSource).not.toHaveBeenCalled();
   });
 });

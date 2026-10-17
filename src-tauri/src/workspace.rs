@@ -196,7 +196,7 @@ pub struct VaultInfo {
     /// Whether changes in the folder are followed live. False when the file system cannot report
     /// them (some network and virtual drives): everything else keeps working, refreshed on focus.
     pub live_updates: bool,
-    /// The project's default for the Explorer filter (`[tree]` in `.trailmark/config.toml`), if it sets one.
+    /// The project's default for the Explorer filter (`[tree]` in `.permark/config.toml`), if it sets one.
     pub tree_default: Option<TreeConfig>,
 }
 
@@ -1026,7 +1026,7 @@ impl Workspace {
             .save(path, text, expected_hash, now_ms(), notes::Moment::now())?)
     }
 
-    /// Writing is refused in the notes of a second TrailMark window (see [`NotesService::open`]).
+    /// Writing is refused in the notes of a second PerMark window (see [`NotesService::open`]).
     fn require_writable(&self) -> Result<(), AppError> {
         match &self.notes {
             Some(part) => Ok(part.service.writable()?),
@@ -1298,7 +1298,7 @@ impl Workspace {
         Ok(())
     }
 
-    /// The saved session. A `ref_template` set in `.trailmark/config.toml` overrides the saved one,
+    /// The saved session. A `ref_template` set in `.permark/config.toml` overrides the saved one,
     /// so a shared project setting wins over what a teammate's UI remembered.
     pub fn load_session(&self) -> Result<Option<SessionState>, AppError> {
         let mut session = self.lock_store()?.load_session();
@@ -1323,7 +1323,7 @@ impl Workspace {
         let was_in_project = store.location() == StateLocation::Project;
         store.init_project_folder()?;
         if !was_in_project {
-            // The tags and descriptions added so far move into `.trailmark/meta.toml`.
+            // The tags and descriptions added so far move into `.permark/meta.toml`.
             self.meta.migrate_to(store.meta_path(), true)?;
             self.unread.relocate(store.read_path());
             self.comments.relocate(store.comments_path());
@@ -2375,11 +2375,11 @@ deepword
 
         ws.init_project_folder().expect("init");
         assert_eq!(ws.state_location().expect("loc"), StateLocation::Project);
-        assert!(fx.project.path().join(".trailmark/config.toml").is_file());
-        assert!(fx.project.path().join(".trailmark/.gitignore").is_file());
+        assert!(fx.project.path().join(".permark/config.toml").is_file());
+        assert!(fx.project.path().join(".permark/.gitignore").is_file());
         assert_eq!(ws.load_session().expect("load"), Some(session));
 
-        // Our own writes under .trailmark/local do not show up as changes.
+        // Our own writes under .permark/local do not show up as changes.
         ws.save_session(&SessionState::default()).expect("save");
         thread::sleep(Duration::from_millis(600));
         let leaked = fx
@@ -2394,7 +2394,7 @@ deepword
         ws.close();
     }
 
-    /// The folder's own files are not the person's choice: a repository can carry a `.trailmark/` folder with any
+    /// The folder's own files are not the person's choice: a repository can carry a `.permark/` folder with any
     /// content, and opening it must not share the person's reading with an agent.
     #[test]
     fn a_project_that_says_the_agent_connection_is_on_does_not_turn_it_on() {
@@ -2402,12 +2402,12 @@ deepword
         write(fx.project.path(), "a.md", "# A\n");
         write(
             fx.project.path(),
-            ".trailmark/local/session.json",
+            ".permark/local/session.json",
             r#"{"agentConnection": true}"#,
         );
         write(
             fx.project.path(),
-            ".trailmark/local/agent-connection.json",
+            ".permark/local/agent-connection.json",
             r#"{"enabled": true}"#,
         );
         let ws = fx.open();
@@ -2416,10 +2416,7 @@ deepword
         let status = ws.agent_status();
         assert!(!status.enabled && !status.listening, "{status:?}");
         assert!(
-            !fx.project
-                .path()
-                .join(".trailmark/local/agent.json")
-                .exists(),
+            !fx.project.path().join(".permark/local/agent.json").exists(),
             "no context is written"
         );
         ws.close();
@@ -2438,7 +2435,7 @@ deepword
         // opened again, it is on without anything in the project saying so
         let ws = fx.open();
         assert!(ws.agent_wanted, "remembered in the app's data");
-        assert!(!fx.project.path().join(".trailmark").exists());
+        assert!(!fx.project.path().join(".permark").exists());
         assert!(!ws.set_agent_connection(false).expect("off").enabled);
         ws.close();
         let ws = fx.open();
@@ -2510,11 +2507,11 @@ deepword
         ws.activate();
         ws.close();
         assert!(!remembered(fx.app.path()));
-        assert!(!fx.project.path().join(".trailmark").join("local").exists());
+        assert!(!fx.project.path().join(".permark").join("local").exists());
         assert!(!fx
             .project
             .path()
-            .join(".trailmark")
+            .join(".permark")
             .join("local")
             .join("agent.json")
             .exists());
@@ -2526,7 +2523,7 @@ deepword
         assert!(!fx
             .project
             .path()
-            .join(".trailmark")
+            .join(".permark")
             .join("last_visit.json")
             .exists());
         let store = StateStore::open_in_app_data(fx.app.path(), fx.project.path());
@@ -2656,7 +2653,7 @@ deepword
         let in_notes: Vec<String> = std::fs::read_dir(fx.project.path())
             .expect("ls")
             .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
-            .filter(|name| name != ".trailmark")
+            .filter(|name| name != ".permark")
             .collect();
         assert_eq!(in_notes, Vec::<String>::new(), "no file made in the notes");
         // a save based on a version that is not the file's any more writes nothing
@@ -2916,7 +2913,7 @@ The zebra crosses.
 
         // Initialize moves the comments into the project's local folder, and the next ones go there
         ws.init_project_folder().expect("init");
-        let local = fx.project.path().join(".trailmark/local/comments.json");
+        let local = fx.project.path().join(".permark/local/comments.json");
         assert!(local.is_file(), "carried over");
         ws.set_comment_done(&comment.id, true).expect("done");
         assert!(std::fs::read_to_string(&local)
@@ -2970,7 +2967,7 @@ words
         assert!(fx
             .project
             .path()
-            .join(".trailmark/local/window.json")
+            .join(".permark/local/window.json")
             .is_file());
 
         // a single file shares the app-wide window instead: nothing is kept for its folder
@@ -3000,7 +2997,7 @@ words
         wait_until("the first write", || appdata_meta.exists());
 
         ws.init_project_folder().expect("init");
-        let meta_file = fx.project.path().join(".trailmark/meta.toml");
+        let meta_file = fx.project.path().join(".permark/meta.toml");
         let text = std::fs::read_to_string(&meta_file).expect("meta.toml");
         assert!(
             text.contains("\"before\"") && text.contains("first"),
@@ -3045,7 +3042,7 @@ words
     }
 
     #[test]
-    fn a_project_that_gets_a_trailmark_folder_from_elsewhere_keeps_the_tags_added_before() {
+    fn a_project_that_gets_a_permark_folder_from_elsewhere_keeps_the_tags_added_before() {
         let fx = Fx::new();
         write(
             fx.project.path(),
@@ -3060,10 +3057,10 @@ words
         ws.close();
         assert!(appdata_meta.exists());
 
-        // a teammate commits .trailmark/, and it arrives with a pull
-        std::fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+        // a teammate commits .permark/, and it arrives with a pull
+        std::fs::create_dir_all(fx.project.path().join(".permark")).expect("mkdir");
         std::fs::write(
-            fx.project.path().join(".trailmark/meta.toml"),
+            fx.project.path().join(".permark/meta.toml"),
             "[files.\"a.md\"]
 tags = [\"team\"]
 ",
@@ -3075,7 +3072,7 @@ tags = [\"team\"]
         let mut names: Vec<&str> = meta.tags.iter().map(|t| t.name.as_str()).collect();
         names.sort_unstable();
         assert_eq!(names, ["early", "team"]);
-        let text = std::fs::read_to_string(fx.project.path().join(".trailmark/meta.toml"))
+        let text = std::fs::read_to_string(fx.project.path().join(".permark/meta.toml"))
             .expect("meta.toml");
         assert!(
             text.contains("\"early\"") && text.contains("\"team\""),
@@ -3116,7 +3113,7 @@ tags = [\"team\"]
         let fx = Fx::new();
         write(
             fx.project.path(),
-            ".trailmark/config.toml",
+            ".permark/config.toml",
             "ref_template = \"see {path}\"\n",
         );
         let ws = fx.open();
@@ -3138,7 +3135,7 @@ tags = [\"team\"]
 
         write(
             fx.project.path(),
-            ".trailmark/config.toml",
+            ".permark/config.toml",
             "[tree]
 show = \"documents\"
 exclude = [\"archive/**\"]
@@ -3343,7 +3340,7 @@ exclude = [\"archive/**\"]
         assert!(before.is_file());
         ws.mark_unread("a.md").expect("mark");
         ws.unread.flush();
-        let local = fx.project.path().join(".trailmark/local/read.json");
+        let local = fx.project.path().join(".permark/local/read.json");
         let saved: BTreeMap<String, String> =
             serde_json::from_slice(&std::fs::read(&local).expect("read.json in the project"))
                 .expect("json");

@@ -1,3 +1,5 @@
+// first: the choices remembered under the old name come over before any store reads them
+import "./lib/legacyStorageBoot";
 import { mount } from "svelte";
 import "./styles/tokens.css";
 import "./styles/layout.css";

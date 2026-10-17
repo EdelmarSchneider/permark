@@ -47,7 +47,7 @@ impl BridgeServer {
         let (ready, started) = mpsc::channel::<Result<oneshot::Sender<()>, StartError>>();
         let endpoint = endpoint.clone();
         let thread = thread::Builder::new()
-            .name("trailmark-agent".to_owned())
+            .name("permark-agent".to_owned())
             .spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -157,7 +157,7 @@ async fn answer(hub: &Arc<Hub>, call: Call) -> Reply {
         .unwrap_or_else(|_| {
             Reply::failure(
                 id,
-                ProtocolError::new(ErrorKind::Unavailable, "TrailMark could not answer"),
+                ProtocolError::new(ErrorKind::Unavailable, "PerMark could not answer"),
             )
         })
 }

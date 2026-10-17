@@ -84,6 +84,8 @@ fn to_vault_path(ctx: &GitContext, repo_path: &str) -> Option<String> {
         p.strip_prefix(&ctx.vault_prefix)?.strip_prefix('/')?
     };
     if rel.is_empty()
+        || rel.starts_with(".permark/cache/")
+        || rel.starts_with(".permark/local/")
         || rel.starts_with(".trailmark/cache/")
         || rel.starts_with(".trailmark/local/")
     {
@@ -637,19 +639,19 @@ mod tests {
     }
 
     #[test]
-    fn trailmark_private_folders_are_not_listed() {
+    fn permark_private_folders_are_not_listed() {
         let d = tempfile::tempdir().expect("tempdir");
         let repo = init_repo(d.path());
         write(d.path(), "a.md", "x\n");
         commit_all(&repo, "init");
-        write(d.path(), ".trailmark/local/session.json", "{}");
-        write(d.path(), ".trailmark/cache/index.bin", "x");
-        write(d.path(), ".trailmark/config.toml", "x");
+        write(d.path(), ".permark/local/session.json", "{}");
+        write(d.path(), ".permark/cache/index.bin", "x");
+        write(d.path(), ".permark/config.toml", "x");
         let c = compute_head(&repo, &ctx_for(d.path()));
         assert_eq!(
             states(&c),
             [(
-                ".trailmark/config.toml".to_owned(),
+                ".permark/config.toml".to_owned(),
                 GitState::Untracked,
                 false
             )]

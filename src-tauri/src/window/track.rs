@@ -128,7 +128,7 @@ impl Debounce {
         if start {
             let shared = Arc::clone(&self.shared);
             let spawned = thread::Builder::new()
-                .name("trailmark-window-state".to_owned())
+                .name("permark-window-state".to_owned())
                 .spawn(move || Self::wait_and_run(&shared));
             if spawned.is_err() {
                 // No thread to wait on: act now rather than never.

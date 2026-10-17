@@ -2,7 +2,7 @@
 //! for the project an agent works in. It asks the window when there is one, falls back to the project's files for
 //! what does not need the window, and says plainly when the connection is off.
 //!
-//! The MCP server (`mcp`) only translates; so does `trailmark context`.
+//! The MCP server (`mcp`) only translates; so does `permark context`.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -21,33 +21,33 @@ use super::socket::Endpoint;
 use super::tags::names_a_tag;
 
 /// Shown to the agent (and through it to the person) when the connection is off. One place to change the words.
-const OFF_MESSAGE: &str = "The agent connection is off for this project, so TrailMark shares nothing. The person \
-can turn it on in TrailMark: Settings > Agent connection (or the command palette: \"Agent connection: turn on\").";
-/// The project is not one TrailMark has been used on.
+const OFF_MESSAGE: &str = "The agent connection is off for this project, so PerMark shares nothing. The person \
+can turn it on in PerMark: Settings > Agent connection (or the command palette: \"Agent connection: turn on\").";
+/// The project is not one PerMark has been used on.
 const UNKNOWN_MESSAGE: &str =
-    "TrailMark has not been used on this folder. The person can open the project in \
-TrailMark and turn on Settings > Agent connection.";
-const NOT_OPEN_MESSAGE: &str = "TrailMark is not open on this project.";
+    "PerMark has not been used on this folder. The person can open the project in \
+PerMark and turn on Settings > Agent connection.";
+const NOT_OPEN_MESSAGE: &str = "PerMark is not open on this project.";
 const RESOLVED_MESSAGE: &str =
-    "Marked done. The person sees it checked off in TrailMark, with your reply under the comment.";
+    "Marked done. The person sees it checked off in PerMark, with your reply under the comment.";
 const SHOWN_MESSAGE: &str =
-    "Shown in TrailMark. It does not take focus; the person sees a notice with a way back \
+    "Shown in PerMark. It does not take focus; the person sees a notice with a way back \
 and looks when ready.";
 
 /// What `open` says when the person is editing: nothing moved on their screen.
 const EDITING_MESSAGE: &str =
-    "The person is editing, so TrailMark did not move them to it. It showed a notice with a button \
+    "The person is editing, so PerMark did not move them to it. It showed a notice with a button \
 to the place instead, and they look when they are done or ready.";
 
-/// How long `open` waits for TrailMark to start and listen.
+/// How long `open` waits for PerMark to start and listen.
 pub const LAUNCH_WAIT: Duration = Duration::from_secs(25);
 /// How often it looks while waiting.
 const LAUNCH_POLL: Duration = Duration::from_millis(200);
-/// After TrailMark was started and did not come up listening, it is not started again for this long. The window may
+/// After PerMark was started and did not come up listening, it is not started again for this long. The window may
 /// be slow to start, or open and unable to listen: either way, another copy would not help.
 const LAUNCH_PAUSE: Duration = Duration::from_secs(120);
 
-/// Starts TrailMark on a project.
+/// Starts PerMark on a project.
 pub type Launcher = Arc<dyn Fn(&Path) -> io::Result<()> + Send + Sync>;
 
 /// An answer to a tool call: a JSON object with a `status` (`ok`, `off`, `notOpen`, `starting`, or `error`).
@@ -179,7 +179,7 @@ impl Offline {
         let app_data = self
             .app_data
             .as_deref()
-            .ok_or("the data folder of TrailMark cannot be found")?;
+            .ok_or("the data folder of PerMark cannot be found")?;
         let project = Arc::new(
             Project::open(&self.root, app_data, dirs::home_dir().as_deref())
                 .map_err(|error| error.to_string())?,
@@ -193,22 +193,22 @@ impl Offline {
 pub struct Core {
     root: PathBuf,
     app_data: Option<PathBuf>,
-    /// The folder is inside a project TrailMark has been used on.
+    /// The folder is inside a project PerMark has been used on.
     known: bool,
     link: Result<Link, String>,
     offline: Arc<Offline>,
     launcher: Launcher,
     launch_wait: Duration,
     launch_pause: Duration,
-    /// Held while TrailMark is being started and waited for, so that calls made meanwhile wait for that start instead
+    /// Held while PerMark is being started and waited for, so that calls made meanwhile wait for that start instead
     /// of making their own.
     launching: tokio::sync::Mutex<()>,
-    /// When TrailMark was last started without coming up listening (cleared once it answers).
+    /// When PerMark was last started without coming up listening (cleared once it answers).
     failed_launch: Mutex<Option<tokio::time::Instant>>,
 }
 
 impl Core {
-    /// Finds the project from the folder the agent runs in (the nearest folder above it that TrailMark knows).
+    /// Finds the project from the folder the agent runs in (the nearest folder above it that PerMark knows).
     /// `identifier` is the app's, which names its data folder.
     pub(crate) fn discover(identifier: &str, working_folder: &Path, launcher: Launcher) -> Self {
         let app_data = super::project::app_data_dir(identifier);
@@ -309,7 +309,7 @@ impl Core {
             Ok(link) => link,
             // No place to look: that is not the same as a window that is closed.
             Err(why) => {
-                return Answer::failed(format!("the connection to TrailMark cannot be used: {why}"))
+                return Answer::failed(format!("the connection to PerMark cannot be used: {why}"))
             }
         };
         match self.ask(Request::GetContext).await {
@@ -467,14 +467,14 @@ impl Core {
         let app_data = self
             .app_data
             .clone()
-            .ok_or("the data folder of TrailMark cannot be found")?;
+            .ok_or("the data folder of PerMark cannot be found")?;
         tokio::task::spawn_blocking(move || work(share::notes_root(&app_data)))
             .await
             .map_err(|error| error.to_string())
     }
 
     /// The notes the person shared with agents. Notes are the person's own, not a project's: an agent of any project whose
-    /// connection is on may ask, and sees only the notes that were shared. It works from the files when TrailMark is closed.
+    /// connection is on may ask, and sees only the notes that were shared. It works from the files when PerMark is closed.
     pub async fn list_notes(&self) -> Answer {
         if !self.is_on() {
             return Answer::off(self.known);
@@ -527,7 +527,7 @@ impl Core {
     }
 
     /// Marks a comment done, with an optional short reply the person sees under it. The only change an agent
-    /// can make; it works from the project's files when TrailMark is closed.
+    /// can make; it works from the project's files when PerMark is closed.
     pub async fn resolve_comment(&self, id: &str, reply: Option<&str>) -> Answer {
         if !self.is_on() {
             return Answer::off(self.known);
@@ -566,7 +566,7 @@ impl Core {
         Answer::ok(with_readable_comment_times(fields))
     }
 
-    /// Shows the person a place. Starts TrailMark when it is closed.
+    /// Shows the person a place. Starts PerMark when it is closed.
     pub async fn open(&self, path: &str, line: Option<u32>, heading: Option<&str>) -> Answer {
         if !self.is_on() {
             return Answer::off(self.known);
@@ -595,7 +595,7 @@ impl Core {
             .take();
     }
 
-    /// Whether TrailMark was started a short while ago and has not come up since.
+    /// Whether PerMark was started a short while ago and has not come up since.
     fn launch_failed_recently(&self) -> bool {
         self.failed_launch
             .lock()
@@ -604,10 +604,10 @@ impl Core {
     }
 
     /// The window is closed: check the place first (nothing is started for a path that is not a document), start
-    /// TrailMark on the project, and hand the place over once it listens.
+    /// PerMark on the project, and hand the place over once it listens.
     ///
-    /// One start at a time, also across programs (two `trailmark mcp` at once take turns on a lock file): calls made
-    /// while TrailMark is starting wait for that start and use its window, and after a start that did not come up
+    /// One start at a time, also across programs (two `permark mcp` at once take turns on a lock file): calls made
+    /// while PerMark is starting wait for that start and use its window, and after a start that did not come up
     /// listening none is made again for a while (see [`LAUNCH_PAUSE`]).
     async fn start_and_open(&self, request: Request) -> Answer {
         let Request::Open {
@@ -630,7 +630,7 @@ impl Core {
             Ok(Ok(_)) => {}
         }
         let _launching = self.launching.lock().await;
-        // Another call may have started TrailMark while this one waited for its turn.
+        // Another call may have started PerMark while this one waited for its turn.
         match self.ask(request.clone()).await {
             Ok(opened) => {
                 self.window_answered();
@@ -642,11 +642,11 @@ impl Core {
         if self.launch_failed_recently() {
             return Answer::notice(
                 "starting",
-                "TrailMark was started on this project a moment ago, but its agent connection is not up yet. \
-Try again in a few seconds. If it stays like this, look at the agent connection in TrailMark's status bar.",
+                "PerMark was started on this project a moment ago, but its agent connection is not up yet. \
+Try again in a few seconds. If it stays like this, look at the agent connection in PerMark's status bar.",
             );
         }
-        // The calls of this program are one at a time by now; another program (a second agent, a second `trailmark
+        // The calls of this program are one at a time by now; another program (a second agent, a second `permark
         // mcp`) may be starting the window at this moment. It holds the turn until the window listens, and this one
         // then waits for that window instead of starting another.
         let turn = match self.link.as_ref().map(Link::try_launch_lock) {
@@ -667,7 +667,7 @@ Try again in a few seconds. If it stays like this, look at the agent connection 
             }
         }
         if let Err(error) = (self.launcher)(&self.root) {
-            return Answer::failed(format!("TrailMark could not be started: {error}"));
+            return Answer::failed(format!("PerMark could not be started: {error}"));
         }
         *self
             .failed_launch
@@ -692,7 +692,7 @@ Try again in a few seconds. If it stays like this, look at the agent connection 
                 Err(_) if tokio::time::Instant::now() >= deadline => {
                     return Answer::notice(
                         "starting",
-                        "TrailMark was started but is not ready yet. Try again in a few seconds.",
+                        "PerMark was started but is not ready yet. Try again in a few seconds.",
                     )
                 }
                 Err(_) => tokio::time::sleep(LAUNCH_POLL).await,
@@ -705,7 +705,7 @@ Try again in a few seconds. If it stays like this, look at the agent connection 
 fn comments_warning(problem: FileProblem) -> &'static str {
     match problem {
         FileProblem::Damaged => {
-            "The comments file could not be read, so no comments are listed. TrailMark keeps it as it is and \
+            "The comments file could not be read, so no comments are listed. PerMark keeps it as it is and \
 sets it aside, as comments.unreadable-<time>.json next to it, when the person next leaves a comment."
         }
         FileProblem::SetAside => {
@@ -766,10 +766,10 @@ pub(crate) fn program_path() -> Option<PathBuf> {
     program_from(std::env::var_os("APPIMAGE"), std::env::current_exe())
 }
 
-/// Starts TrailMark on a project and lets it go its own way.
+/// Starts PerMark on a project and lets it go its own way.
 ///
 /// In the Microsoft Store build the program is a file inside the package's folder (under `WindowsApps`), which only
-/// the package's own processes may start. That holds here: `trailmark mcp` and `trailmark context` are started through
+/// the package's own processes may start. That holds here: `permark mcp` and `permark context` are started through
 /// the package's alias, so they are packaged processes, and a process started by a packaged process is part of the same
 /// package. Starting the program from a process outside the package by that path would be refused, which is why the
 /// agent setup names the alias instead (see `distribution::agent_program`).
@@ -893,7 +893,7 @@ mod tests {
 
     /// A launcher that must not be used.
     fn no_launch() -> Launcher {
-        Arc::new(|_| panic!("TrailMark must not be started"))
+        Arc::new(|_| panic!("PerMark must not be started"))
     }
 
     fn status(answer: &Answer) -> &str {
@@ -923,7 +923,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_folder_trailmark_has_not_been_used_on_is_off_too() {
+    async fn a_folder_permark_has_not_been_used_on_is_off_too() {
         let fx = fx();
         let sockets = fx.sockets.path().to_path_buf();
         let core = Core::new(
@@ -941,12 +941,12 @@ mod tests {
             .contains("not been used"));
     }
 
-    /// A folder that was never opened in TrailMark, with a `.trailmark/` folder that says the connection is on (a
+    /// A folder that was never opened in PerMark, with a `.permark/` folder that says the connection is on (a
     /// repository can carry one): nothing is shared, and the answer is the same as for any project that is off.
     #[tokio::test]
     async fn what_a_project_folder_says_about_the_connection_does_not_count() {
         let fx = fx();
-        let local = fx.root.join(".trailmark").join("local");
+        let local = fx.root.join(".permark").join("local");
         std::fs::create_dir_all(&local).expect("mkdir");
         std::fs::write(local.join("session.json"), r#"{"agentConnection": true}"#).expect("write");
         std::fs::write(local.join("agent-connection.json"), r#"{"enabled": true}"#).expect("write");
@@ -987,7 +987,7 @@ mod tests {
         assert_eq!(status(&answer), "notOpen");
         let message = answer.value["message"].as_str().expect("a message");
         assert!(
-            message.starts_with("TrailMark is not open on this project."),
+            message.starts_with("PerMark is not open on this project."),
             "{message}"
         );
         // it says where it looked, to tell a closed window from a program that looks somewhere else
@@ -1076,7 +1076,7 @@ mod tests {
         items.iter().map(|x| (*x).to_owned()).collect()
     }
 
-    /// README.md is tagged in its front matter; docs/plan.md in TrailMark, with a description.
+    /// README.md is tagged in its front matter; docs/plan.md in PerMark, with a description.
     fn tag_the_project(fx: &Fx, meta: &Path) -> Vec<u8> {
         std::fs::write(
             fx.root.join("README.md"),
@@ -1095,7 +1095,7 @@ mod tests {
     async fn with_the_window_closed_the_tags_come_from_the_documents_and_the_apps_meta_file() {
         let fx = fx();
         fx.set_connection(true);
-        // the project has no `.trailmark/` folder, so the app keeps its tags in its own data
+        // the project has no `.permark/` folder, so the app keeps its tags in its own data
         let meta = StateStore::open(fx.app.path(), &fx.root).meta_path();
         assert!(meta.starts_with(fx.app.path()));
         let before = tag_the_project(&fx, &meta);
@@ -1113,7 +1113,7 @@ mod tests {
             json!([
                 {"name": "adr", "count": 2, "from": "both"},
                 {"name": "home", "count": 1, "from": "frontMatter"},
-                {"name": "rollout-plan", "count": 1, "from": "trailmark"},
+                {"name": "rollout-plan", "count": 1, "from": "permark"},
             ])
         );
         assert!(tags.value.get("warning").is_none());
@@ -1178,18 +1178,18 @@ mod tests {
 
         // looking changed nothing
         assert_eq!(std::fs::read(&meta).expect("read"), before);
-        assert!(!fx.root.join(".trailmark").exists());
+        assert!(!fx.root.join(".permark").exists());
     }
 
     #[tokio::test]
-    async fn the_tags_of_a_project_with_a_trailmark_folder_are_read_from_it_and_from_the_older_file(
-    ) {
+    async fn the_tags_of_a_project_with_a_permark_folder_are_read_from_it_and_from_the_older_file()
+    {
         let fx = fx();
         fx.set_connection(true);
-        std::fs::create_dir_all(fx.root.join(".trailmark")).expect("mkdir");
+        std::fs::create_dir_all(fx.root.join(".permark")).expect("mkdir");
         let store = StateStore::open(fx.app.path(), &fx.root);
         let meta = store.meta_path();
-        assert_eq!(meta, fx.root.join(".trailmark").join("meta.toml"));
+        assert_eq!(meta, fx.root.join(".permark").join("meta.toml"));
         tag_the_project(&fx, &meta);
         // tags added before the folder existed: the window merges them into the project's file when it next opens it
         let older = store.legacy_meta_path().expect("an older file");
@@ -1583,16 +1583,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn open_starts_trailmark_when_it_is_closed_and_hands_the_place_over() {
+    async fn open_starts_permark_when_it_is_closed_and_hands_the_place_over() {
         let fx = fx();
         fx.set_connection(true);
         let started = Arc::new(AtomicUsize::new(0));
-        // "Starting TrailMark" brings the window up: its connection listens.
+        // "Starting PerMark" brings the window up: its connection listens.
         let launcher: Launcher = {
             let (bridge, started) = (Arc::clone(&fx.bridge), Arc::clone(&started));
             let root = fx.root.clone();
             Arc::new(move |project| {
-                assert_eq!(project, root, "TrailMark is started on the project");
+                assert_eq!(project, root, "PerMark is started on the project");
                 started.fetch_add(1, Ordering::SeqCst);
                 bridge.set_enabled(true);
                 Ok(())
@@ -1629,7 +1629,7 @@ mod tests {
         assert!(reading.value["message"]
             .as_str()
             .expect("message")
-            .starts_with("Shown in TrailMark"));
+            .starts_with("Shown in PerMark"));
 
         for mode in [ViewMode::Visual, ViewMode::Source] {
             publish(mode);
@@ -1661,7 +1661,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn trailmark_that_never_comes_up_is_reported_not_waited_for_forever() {
+    async fn permark_that_never_comes_up_is_reported_not_waited_for_forever() {
         let fx = fx();
         fx.set_connection(true);
         let launcher: Launcher = Arc::new(|_| Ok(()));
@@ -1692,7 +1692,7 @@ mod tests {
 
     /// An agent can call tools in parallel (two at once, or two agents in one project).
     #[tokio::test]
-    async fn parallel_opens_with_the_window_closed_start_trailmark_once() {
+    async fn parallel_opens_with_the_window_closed_start_permark_once() {
         let fx = fx();
         fx.set_connection(true);
         let (launcher, started) = counting_launcher(&fx, true);
@@ -1709,10 +1709,10 @@ mod tests {
         fx.bridge.shutdown();
     }
 
-    /// Two agents, or two `trailmark mcp` programs, ask at the same moment while the window is closed: each has its own
+    /// Two agents, or two `permark mcp` programs, ask at the same moment while the window is closed: each has its own
     /// `Core`, so only the turn on the file keeps them from starting two windows.
     #[tokio::test]
-    async fn parallel_opens_from_separate_programs_start_trailmark_once() {
+    async fn parallel_opens_from_separate_programs_start_permark_once() {
         let fx = fx();
         fx.set_connection(true);
         let (launcher, started) = counting_launcher(&fx, true);
@@ -1798,7 +1798,7 @@ mod tests {
         fx.bridge.shutdown();
     }
 
-    /// A TrailMark that was started and does not listen (it failed to, or is slow) is not started again by every call.
+    /// A PerMark that was started and does not listen (it failed to, or is slow) is not started again by every call.
     #[tokio::test]
     async fn a_window_that_never_listens_is_not_started_again_by_every_call() {
         let fx = fx();
@@ -1820,7 +1820,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn trailmark_is_started_again_once_the_pause_is_over() {
+    async fn permark_is_started_again_once_the_pause_is_over() {
         let fx = fx();
         fx.set_connection(true);
         let (launcher, started) = counting_launcher(&fx, false);
@@ -1853,7 +1853,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_failure_to_start_trailmark_is_an_error_with_the_reason() {
+    async fn a_failure_to_start_permark_is_an_error_with_the_reason() {
         let fx = fx();
         fx.set_connection(true);
         let launcher: Launcher = Arc::new(|_| Err(io::Error::other("no such program")));
@@ -1882,16 +1882,16 @@ mod tests {
 
     #[test]
     fn the_program_is_the_running_file_except_in_an_appimage() {
-        let running = || Ok(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"));
+        let running = || Ok(PathBuf::from("/tmp/.mount_abc/usr/bin/permark"));
         assert_eq!(
             program_from(None, running()),
-            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"))
+            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/permark"))
         );
         // The AppImage runtime names the file that was started; its mount is gone after the run.
         let appimage = if cfg!(windows) {
-            "C:\\Apps\\TrailMark.AppImage"
+            "C:\\Apps\\PerMark.AppImage"
         } else {
-            "/home/ada/Apps/TrailMark.AppImage"
+            "/home/ada/Apps/PerMark.AppImage"
         };
         assert_eq!(
             program_from(Some(appimage.into()), running()),
@@ -1899,12 +1899,12 @@ mod tests {
         );
         // Something that is not a path to a file is not trusted over the running program.
         assert_eq!(
-            program_from(Some("TrailMark.AppImage".into()), running()),
-            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"))
+            program_from(Some("PerMark.AppImage".into()), running()),
+            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/permark"))
         );
         assert_eq!(
             program_from(Some("".into()), running()),
-            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/trailmark"))
+            Some(PathBuf::from("/tmp/.mount_abc/usr/bin/permark"))
         );
         assert_eq!(program_from(None, Err(io::Error::other("unknown"))), None);
     }

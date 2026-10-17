@@ -1,4 +1,4 @@
-//! `.trailmark/config.toml`: project settings that are safe to commit and share.
+//! `.permark/config.toml`: project settings that are safe to commit and share.
 
 use serde::{Deserialize, Serialize};
 
@@ -6,9 +6,9 @@ use crate::git::BaselineKind;
 
 pub const DEFAULT_REF_TEMPLATE: &str = "@{path}";
 
-/// Written by "Initialize TrailMark in this project"; every key is optional.
+/// Written by "Initialize PerMark in this project"; every key is optional.
 pub const DEFAULT_CONFIG_TOML: &str = "\
-# TrailMark project settings. Shared with your team: safe to commit.
+# PerMark project settings. Shared with your team: safe to commit.
 # Everything here is optional; the commented values are the defaults.
 
 # How \"Copy reference\" writes a path. {path} is the file path relative to the project folder.

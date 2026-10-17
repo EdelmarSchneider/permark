@@ -146,7 +146,7 @@ pub fn setup(app: &App) {
 }
 
 /// Brings the window to the front, for a path that was opened from outside the app (macOS) and for a request to the Notes
-/// window from another TrailMark window.
+/// window from another PerMark window.
 pub fn raise(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN) {
         let _ = window.unminimize();

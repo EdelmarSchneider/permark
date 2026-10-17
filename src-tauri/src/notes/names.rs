@@ -1,5 +1,5 @@
 //! The names of note files. A new note is named after the moment it was made (`2026-10-15 1432.md`), with `-2`, `-3` when
-//! that name is taken; the copies TrailMark makes to keep text safe are named after the note they come from. No name
+//! that name is taken; the copies PerMark makes to keep text safe are named after the note they come from. No name
 //! depends on the language of the interface, and none holds a character a file system refuses.
 
 use std::path::Path;

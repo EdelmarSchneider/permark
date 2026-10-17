@@ -1,5 +1,5 @@
 //! The answers an agent gets, built from the project's files. The same functions serve the window (which has the
-//! live index and the live unread markers) and `trailmark mcp` when the window is closed (which reads the disk), so
+//! live index and the live unread markers) and `permark mcp` when the window is closed (which reads the disk), so
 //! an agent sees the same shapes either way.
 //!
 //! Paths are the project's, relative with `/` separators. A linked worktree lives outside the project folder, so

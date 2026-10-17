@@ -1,4 +1,4 @@
-//! "Open with TrailMark" in the right-click menu of folders, for the Microsoft Store version of TrailMark.
+//! "Open with PerMark" in the right-click menu of folders, for the Microsoft Store version of PerMark.
 //!
 //! A packaged program cannot add a command to the Explorer menu through the registry (what it writes there goes to a
 //! private copy that Explorer never reads). Windows has a way for packages: the package's manifest names a COM class that
@@ -7,7 +7,7 @@
 //! process (`dllhost.exe`) and not into Explorer: what goes wrong in here cannot take Explorer down. `docs/msstore.md` has
 //! the whole picture.
 //!
-//! The DLL sits in the package's folder next to `trailmark.exe`, and finds the program from its own path. It does not
+//! The DLL sits in the package's folder next to `permark.exe`, and finds the program from its own path. It does not
 //! touch the registry and has nothing to register: Windows reads the manifest.
 //!
 //! Plain Rust where it can be ([`labels`], [`launch`]); the rest is the COM and shell glue, which is unsafe code in a few
@@ -37,7 +37,7 @@ use crate::guard::guarded_code;
 
 /// The class id of the command. It is in `AppxManifest.xml` too (a test below checks that the two agree), and it is not to
 /// change: it is how Windows knows the command from one version of the package to the next.
-pub const CLSID_OPEN_WITH_TRAILMARK: GUID =
+pub const CLSID_OPEN_WITH_PERMARK: GUID =
     GUID::from_u128(0xD5FF_B935_7A42_4E3D_90E1_0180_A799_9B94);
 
 /// Where COM gets the factory of a class from this DLL.
@@ -60,7 +60,7 @@ pub unsafe extern "system" fn DllGetClassObject(
             *object = std::ptr::null_mut();
             (&*class, interface)
         };
-        if *class != CLSID_OPEN_WITH_TRAILMARK {
+        if *class != CLSID_OPEN_WITH_PERMARK {
             return CLASS_E_CLASSNOTAVAILABLE;
         }
         let factory: IClassFactory = Factory::new().into();
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn the_class_id_is_the_one_in_the_manifest() {
         const MANIFEST: &str = include_str!("../../msstore/AppxManifest.xml");
-        let id = format!("{CLSID_OPEN_WITH_TRAILMARK:?}").to_uppercase();
+        let id = format!("{CLSID_OPEN_WITH_PERMARK:?}").to_uppercase();
         assert_eq!(id, "D5FFB935-7A42-4E3D-90E1-0180A7999B94");
         assert!(
             MANIFEST.matches(&id).count() >= 2,

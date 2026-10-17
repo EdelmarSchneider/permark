@@ -42,7 +42,7 @@ const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
 const VERSION_GAP_MS = 10 * MINUTE;
 
-const FOLDER = "C:/Users/demo/Documents/TrailMark Notes";
+const FOLDER = "C:/Users/demo/Documents/PerMark Notes";
 
 const flag = (): string | null =>
   typeof location === "undefined" ? null : new URLSearchParams(location.search).get("notes");
@@ -262,7 +262,7 @@ function writable(): void {
   if (flag() === "locked") {
     throw new MockBackendError(
       "notesLocked",
-      "these notes are open in another TrailMark window, so they can only be read here",
+      "these notes are open in another PerMark window, so they can only be read here",
     );
   }
 }
@@ -310,7 +310,7 @@ export function openNotes(): NotesOpened {
   const readOnly: NotesReadOnly | null = flag() === "locked" ? "locked" : null;
   const info: VaultInfo = {
     root: FOLDER,
-    name: "TrailMark Notes",
+    name: "PerMark Notes",
     kind: "notes",
     mode: "ide",
     initialFile: null,
@@ -549,7 +549,7 @@ export function moveSuggestion(path: string): MoveSuggestion {
       .replace(/[\\/:*?"<>|]/g, "")
       .trim() || "note"
   }.md`;
-  const folder = "C:/Users/demo/work/trailmark";
+  const folder = "C:/Users/demo/work/permark";
   return { defaultPath: `${folder}/${name}`, folder };
 }
 

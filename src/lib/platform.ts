@@ -14,7 +14,7 @@ import type { DownloadProgress } from "./updates";
 
 export const isMock = import.meta.env.VITE_MOCK === "1";
 
-const MOCK_FOLDER = "C:/Users/demo/trailmark-docs";
+const MOCK_FOLDER = "C:/Users/demo/permark-docs";
 const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
 
 /** Asks for a folder; `title` is the dialog's (the default asks to open a folder). */

@@ -1,4 +1,4 @@
-//! The messages between `trailmark mcp` (or `trailmark context`) and the window of a project, over the local
+//! The messages between `permark mcp` (or `permark context`) and the window of a project, over the local
 //! socket: one JSON object per line.
 //!
 //! ```text
@@ -233,7 +233,7 @@ pub struct Hit {
     pub heading_path: Vec<String>,
     pub line: u32,
     pub snippet: String,
-    /// The tags of the document the section is in, written in it or added in TrailMark, alphabetical. Left out when it has none.
+    /// The tags of the document the section is in, written in it or added in PerMark, alphabetical. Left out when it has none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
     /// The one-line description of that document. Left out when it has none.

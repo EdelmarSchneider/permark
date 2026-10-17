@@ -1,10 +1,10 @@
 [package]
-name = "trailmark-shell"
+name = "permark-shell"
 # Not released on its own: it ships inside the Microsoft Store package, whose version is the app's.
 version = "0.0.0"
-description = "The right-click \"Open with TrailMark\" entry of the Microsoft Store package: a COM component for File Explorer."
+description = "The right-click \"Open with PerMark\" entry of the Microsoft Store package: a COM component for File Explorer."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/EdelmarSchneider/trailmark"
+repository = "https://github.com/EdelmarSchneider/permark"
 authors = ["Edelmar Schneider"]
 edition = "2021"
 publish = false
@@ -16,7 +16,7 @@ publish = false
 
 [lib]
 # `cdylib` is the DLL File Explorer's COM surrogate loads; `rlib` lets the tests use the code directly.
-name = "trailmark_shell"
+name = "permark_shell"
 crate-type = ["cdylib", "rlib"]
 
 [build-dependencies]

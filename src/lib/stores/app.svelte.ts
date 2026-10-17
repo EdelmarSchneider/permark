@@ -64,7 +64,7 @@ import { unread } from "./unread.svelte";
 import { updates } from "./updates.svelte";
 import { vault } from "./vault.svelte";
 
-const HIDDEN_RECENTS_KEY = "trailmark.recents.hidden";
+const HIDDEN_RECENTS_KEY = "permark.recents.hidden";
 const FOLLOW_CHIP_MS = 5000;
 const TREE_REFRESH_MS = 250;
 const SINCE_REFRESH_MS = 1200;
@@ -439,7 +439,7 @@ class AppStore {
         });
       }
       void agent.onProjectOpened();
-      // a place an agent asked for while TrailMark was starting
+      // a place an agent asked for while PerMark was starting
       void this.openFromAgent();
       return true;
     } catch (error) {

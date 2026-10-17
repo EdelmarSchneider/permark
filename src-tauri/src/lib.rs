@@ -1,4 +1,4 @@
-//! TrailMark: read, navigate and follow Markdown documents written by AI agents.
+//! PerMark: read, navigate and follow Markdown documents written by AI agents.
 //!
 //! The core modules are plain Rust with no Tauri dependency: [`vault`] (roots and path safety),
 //! [`render`] (documents to HTML), [`links`], [`search`], [`watch`] (filesystem events), [`git`] and
@@ -8,11 +8,11 @@
 //! [`media`] knows the pictures, sound and video of a folder, serves them in parts and decides which files the system may open.
 //! [`refs`] knows which images and media the documents use (for the Explorer filter); [`unread`] knows which documents
 //! changed since they were last read; [`comments`] keeps the comments a person leaves on passages.
-//! [`shell_integration`] adds "Open with TrailMark" to the file manager (Windows); [`open_request`] receives what the
+//! [`shell_integration`] adds "Open with PerMark" to the file manager (Windows); [`open_request`] receives what the
 //! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
 //! rest together for one open folder, and [`commands`] exposes it to the UI.
-//! [`bridge`] is the agent connection: `trailmark mcp` runs without a window and speaks the Model Context Protocol.
+//! [`bridge`] is the agent connection: `permark mcp` runs without a window and speaks the Model Context Protocol.
 //! [`distribution`] tells the build the project publishes from the one in the Microsoft Store, which updates differently.
 
 mod bridge;
@@ -24,6 +24,7 @@ mod error;
 mod external_editor;
 mod fileops;
 mod git;
+mod legacy_data;
 mod links;
 mod media;
 mod meta;
@@ -121,7 +122,7 @@ fn claim_notes_window(identifier: &str) -> NotesRole {
     }
 }
 
-/// Builds and runs the Tauri application. Started as `trailmark mcp` or `trailmark context`, it instead runs that command
+/// Builds and runs the Tauri application. Started as `permark mcp` or `permark context`, it instead runs that command
 /// without a window (see [`bridge`]): `mcp` serves MCP over standard input and output until the input closes, `context`
 /// prints what the person is looking at and exits.
 ///
@@ -133,6 +134,11 @@ fn claim_notes_window(identifier: &str) -> NotesRole {
 #[allow(clippy::too_many_lines)]
 pub fn run() {
     let context = tauri::generate_context!();
+    // The folders of the identifier the app had before are copied to the new ones before anything reads or makes them
+    // (a debug build keeps its data apart and never touches the person's).
+    if !cfg!(debug_assertions) {
+        legacy_data::carry_over_system(&context.config().identifier);
+    }
     if let Some(command) = bridge::subcommand(std::env::args_os()) {
         // The app's identifier names its data folder, where the project's saved settings are.
         std::process::exit(bridge::cli::run(command, &context.config().identifier));

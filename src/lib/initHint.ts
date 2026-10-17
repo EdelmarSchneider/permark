@@ -1,12 +1,12 @@
-// When to offer "Keep tags and TrailMark settings with this project?": a quiet banner for a folder that is a
-// repository and has no `.trailmark/` yet (docs/design/v0.2.md section 13). Pure logic; the banner is Banners.svelte.
+// When to offer "Keep tags and PerMark settings with this project?": a quiet banner for a folder that is a
+// repository and has no `.permark/` yet (docs/design/v0.2.md section 13). Pure logic; the banner is Banners.svelte.
 
 export type InitHintInput = {
   /** Simple mode (one file's folder) is not a project to keep settings with. */
   simple: boolean;
   /** The folder is a git repository. */
   isRepo: boolean;
-  /** Where the project's state lives: "project" once `.trailmark/` exists. */
+  /** Where the project's state lives: "project" once `.permark/` exists. */
   stateLocation: "appData" | "project";
   /** "Never for this folder" was chosen (kept per project, in the app's own storage). */
   never: boolean;
