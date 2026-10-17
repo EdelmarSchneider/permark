@@ -1,4 +1,5 @@
 name: permark
+title: PerMark
 base: core24
 adopt-info: permark
 summary: Read what your AI writes. Write what it reads. Markdown IDE for AI docs.
