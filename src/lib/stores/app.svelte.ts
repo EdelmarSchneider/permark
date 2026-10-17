@@ -52,6 +52,7 @@ import { feed } from "./feed.svelte";
 import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
 import { comments } from "./comments.svelte";
+import { review } from "./review.svelte";
 import { notes } from "./notes.svelte";
 import { media } from "./media.svelte";
 import { outline } from "./outline.svelte";
@@ -388,6 +389,7 @@ class AppStore {
     this.openError = null;
     try {
       await session.flush();
+      await review.releaseAll();
       let info: VaultInfo;
       try {
         info = await api.openVault(path);
@@ -464,6 +466,7 @@ class AppStore {
     tags.reset();
     toast.clear();
     comments.reset();
+    review.clear();
     unread.reset();
     vault.reset();
     ui.followChip = null;
@@ -525,6 +528,7 @@ class AppStore {
     this.opening = true;
     try {
       await session.flush();
+      await review.releaseAll();
       try {
         await api.closeVault();
       } catch (error) {
@@ -575,6 +579,7 @@ class AppStore {
       await api.on("unread-changed", (paths) => {
         if (this.screen === "project" && !vault.isSimple) unread.onChanged(paths);
       }),
+      await api.on("review-changed", (entries) => review.setEntries(entries)),
       await api.on("comments-changed", () => {
         if (this.screen === "project" && !vault.isSimple) comments.onChanged();
       }),
@@ -1256,6 +1261,15 @@ class AppStore {
         return;
       case "showComments":
         if (ide) this.showComments();
+        return;
+      case "reviewChanges":
+        if (ide && !edit.active) review.start();
+        return;
+      case "reviewKeepAll":
+        if (ide && !edit.active) void review.keepAll();
+        return;
+      case "reviewRevertAll":
+        if (ide && !edit.active) void review.revertAll();
         return;
       case "edit":
         if (docs.current && !edit.active) void edit.enter();

@@ -61,6 +61,7 @@ const IDLE: CommandContext = {
   hasUnread: false,
   agentOn: false,
   storeBuild: false,
+  reviewStatus: null,
 };
 const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
 

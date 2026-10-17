@@ -23,7 +23,10 @@ pub use app_settings::{
 };
 pub use config::{Config, TreeConfig, TreeShow};
 pub(crate) use legacy::state_dir;
-pub(crate) use private::{open_lock_file, remove_local_state, write_local_state};
+pub(crate) use private::{
+    open_lock_file, prepare_local_folder, remove_local_state, write_local_cache, write_local_state,
+    write_prepared_cache,
+};
 pub use recent::{RecentStore, RecentVault};
 pub(crate) use store::project_key;
 pub use store::{FileStamp, LastVisit, StateLocation, StateStore};

@@ -74,6 +74,11 @@ export type DocumentView = {
   frontmatter: [string, string][] | null;
   modifiedMs: number;
   sizeBytes: number;
+  /**
+   * The hash of the file's bytes as they were read (16 hex digits): the same hash a review of changes (`ReviewView.hash`) and
+   * the editor speak of. Null for a picture, sound or video and for a file too large to be read.
+   */
+  hash: string | null;
   /** Codes for what to tell the reader next to the title (an odd encoding, a rendering fallback), several joined with a comma; `noteText` words them. */
   encodingNote: string | null;
 };
@@ -367,6 +372,71 @@ export type UndoOutcome = {
   foldersRemoved: number;
   couldNot: SkippedFile[];
 };
+
+// ---- review of changes (docs/design/review-changes.md) -------------------------------------------
+/** A range of bytes of a text (UTF-8 offsets, as the editor's blocks use). */
+export type ByteRange = { startByte: number; endByte: number };
+/** A range of block numbers: `start` is the first block, `end` the one after the last. */
+export type BlockRange = { start: number; end: number };
+/** One block of one version of a document, with the reading view's HTML for it (sanitized; empty when it could not be drawn). */
+export type ReviewBlock = {
+  /** Which block of its version this is. */
+  index: number;
+  /**
+   * The first and the last line of the block in its version, counted from 1 the way the rendered blocks of the reading view
+   * are (the `data-sourcepos` of the top-level elements): every kind of line break counts once, and a byte order mark is not
+   * part of the first line.
+   */
+  startLine: number;
+  endLine: number;
+  text: string;
+  /** Empty when the block draws nothing (a link reference definition) or could not be drawn: show `text`. */
+  html: string;
+} & ByteRange;
+/** An old block, a new block, or both when the block was edited: shown side by side. */
+export type ReviewRow = { old: ReviewBlock | null; new: ReviewBlock | null };
+export type ReviewChangeKind = "added" | "removed" | "modified";
+/** A run of consecutive blocks that differ between the approved version and the file. */
+export type ReviewChange = {
+  kind: ReviewChangeKind;
+  /** In the approved text; for an addition, the empty place where the new blocks would go. */
+  old: ByteRange;
+  /** In the file. */
+  new: ByteRange;
+  oldBlocks: BlockRange;
+  newBlocks: BlockRange;
+  /**
+   * Where the change is in the file, as a line (1-based, as `ReviewBlock.startLine`): the first line of its new blocks; for a
+   * removal, the line of the block it sits in front of; null when it is at the end of the file.
+   */
+  newLine: number | null;
+  rows: ReviewRow[];
+};
+/**
+ * How a document stands against its approved version. "changes": `changes` lists the differences. "unchanged": nothing to
+ * review. "new": never approved, `changes` is one addition. "deleted": the file is gone, `changes` is one removal (and `restorable`
+ * says whether it can be put back). "noBaseline": it differs but the approved text is not kept. "tooLarge" and "notText": it
+ * cannot be compared.
+ */
+export type ReviewStatus =
+  "changes" | "unchanged" | "new" | "deleted" | "noBaseline" | "tooLarge" | "notText";
+/**
+ * The review of one document. `hash` (the file) and `reviewedHash` (the approved version) are what the changes were drawn from:
+ * hand both back with every keep and revert, which then fail with kind "reviewStale" if the document is not that any more.
+ */
+export type ReviewView = {
+  path: string;
+  status: ReviewStatus;
+  hash: string | null;
+  reviewedHash: string | null;
+  restorable: boolean;
+  changes: ReviewChange[];
+};
+/** What the UI hands back to say which review a keep or revert is for. */
+export type ReviewBasis = { hash: string | null; reviewedHash: string | null };
+export type ReviewEntryStatus = "changed" | "new" | "deleted";
+/** A document that differs from its approved version. */
+export type ReviewEntry = { path: string; status: ReviewEntryStatus };
 
 // ---- notes ----------------------------------------------------------------------------------------
 

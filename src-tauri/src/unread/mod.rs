@@ -30,16 +30,30 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+pub use state::DocState;
 use state::{is_tracked, Tracker};
 
 /// Called with the unread documents each time they change.
 pub type Notify = Arc<dyn Fn(&[String]) + Send + Sync>;
 
+/// Follows the read state: what the review of changes needs to keep the text of the version that was read.
+pub trait ReadObserver: Send + Sync {
+    /// The person is reading the document, which holds `bytes` (their hash is `hash`). It counts as read from
+    /// the [`ReadObserver::changed`] that follows, which says so.
+    fn reading(&self, path: &str, hash: u64, bytes: &[u8]);
+
+    /// Something changed. `moves` are the documents that moved since the last call (`(from, to)`; `to` is empty for a
+    /// document the app deleted, which the follower forgets); `docs` is every document now, sorted; `looked` says whether the disk has been looked at (before that, no document
+    /// has a `current` hash). Called under the service's lock, so the calls arrive in order and must return
+    /// quickly.
+    fn changed(&self, moves: Vec<(String, String)>, looked: bool, docs: Vec<DocState>);
+}
+
 use crate::render::markdown::is_markdown_path;
 use crate::session::write_local_state;
-use crate::util::{hash_bytes, modified_ms, read_with_retry, Coalescer};
+use crate::util::{hash_bytes, modified_ms, now_ms, read_with_retry, Coalescer};
 use crate::vault::{key, NodeKind, Vault, VaultError, WalkItem};
-use crate::watch::{FsChange, PathFilter, Verdict};
+use crate::watch::{ChangeKind, FsChange, PathFilter, Verdict};
 
 /// Documents larger than this are not tracked (hashing them would stall the thread).
 const MAX_HASHED_BYTES: u64 = 32 * 1024 * 1024;
@@ -66,11 +80,11 @@ impl Default for Timing {
 }
 
 /// A hash as `read.json` spells it: 16 lowercase hex digits.
-fn hash_to_hex(hash: u64) -> String {
+pub(crate) fn hash_to_hex(hash: u64) -> String {
     format!("{hash:016x}")
 }
 
-fn hash_from_hex(text: &str) -> Option<u64> {
+pub(crate) fn hash_from_hex(text: &str) -> Option<u64> {
     if text.len() == 16 && text.bytes().all(|b| b.is_ascii_hexdigit()) {
         u64::from_str_radix(text, 16).ok()
     } else {
@@ -80,7 +94,7 @@ fn hash_from_hex(text: &str) -> Option<u64> {
 
 /// The content of `read.json`; `None` when it is not a JSON object (the project then has no read state).
 /// An entry that is not a path with a hash is dropped, which leaves that document unread.
-fn decode(bytes: &[u8]) -> Option<BTreeMap<String, u64>> {
+pub(crate) fn decode(bytes: &[u8]) -> Option<BTreeMap<String, u64>> {
     let map: BTreeMap<String, serde_json::Value> = serde_json::from_slice(bytes).ok()?;
     Some(
         map.into_iter()
@@ -89,7 +103,7 @@ fn decode(bytes: &[u8]) -> Option<BTreeMap<String, u64>> {
     )
 }
 
-fn encode(read: &BTreeMap<String, u64>) -> Option<Vec<u8>> {
+pub(crate) fn encode(read: &BTreeMap<String, u64>) -> Option<Vec<u8>> {
     let map: BTreeMap<&str, String> = read
         .iter()
         .map(|(path, hash)| (path.as_str(), hash_to_hex(*hash)))
@@ -99,8 +113,8 @@ fn encode(read: &BTreeMap<String, u64>) -> Option<Vec<u8>> {
 
 /// What a path is on disk right now.
 enum Disk {
-    /// A document that can be hashed, with its hash.
-    Doc(u64),
+    /// A document that can be hashed, with its hash and its bytes.
+    Doc { hash: u64, bytes: Vec<u8> },
     /// Nothing is there.
     Gone,
     /// A folder, a file too large to hash, or something that cannot be read now.
@@ -111,7 +125,10 @@ fn look(abs: &Path) -> Disk {
     match std::fs::metadata(abs) {
         Ok(meta) if meta.is_file() && meta.len() <= MAX_HASHED_BYTES => {
             match read_with_retry(abs) {
-                Ok(bytes) => Disk::Doc(hash_bytes(&bytes)),
+                Ok(bytes) => Disk::Doc {
+                    hash: hash_bytes(&bytes),
+                    bytes,
+                },
                 Err(e) if e.kind() == io::ErrorKind::NotFound => Disk::Gone,
                 Err(_) => Disk::Other,
             }
@@ -138,19 +155,30 @@ struct Inner {
 struct Shared {
     inner: Mutex<Inner>,
     notify: Notify,
+    observer: Option<Arc<dyn ReadObserver>>,
 }
 
 impl Shared {
     /// Changes the tracker, tells the listener if the unread documents are different now, and returns
-    /// whether `read.json` is behind. The listener is called under the lock, so what it hears is in order.
+    /// whether `read.json` is behind. The listener and the observer are called under the lock, so what they
+    /// hear is in order. The observer hears only of a change: a call that changed nothing costs it nothing.
     fn update(&self, change: impl FnOnce(&mut Tracker) -> bool) -> bool {
         let mut g = lock(&self.inner);
+        let revision = g.tracker.revision();
         let wrote = change(&mut g.tracker);
         g.dirty |= wrote;
         let now = g.tracker.unread();
         if now != g.announced {
             (self.notify)(&now);
             g.announced = now;
+        }
+        if let Some(observer) = self
+            .observer
+            .as_ref()
+            .filter(|_| g.tracker.revision() != revision)
+        {
+            let moves = g.tracker.take_moves();
+            observer.changed(moves, g.tracker.looked(), g.tracker.states());
         }
         wrote
     }
@@ -310,11 +338,11 @@ impl Worker {
                 continue;
             };
             match look(&resolved.abs) {
-                Disk::Doc(hash) if is_tracked(&resolved.rel) => {
+                Disk::Doc { hash, .. } if is_tracked(&resolved.rel) => {
                     steps.push(Step::Changed(resolved.rel, hash));
                 }
                 Disk::Gone => steps.push(Step::Removed(resolved.rel)),
-                Disk::Doc(_) | Disk::Other => {}
+                Disk::Doc { .. } | Disk::Other => {}
             }
         }
         self.shared.update(|tracker| {
@@ -407,6 +435,7 @@ impl UnreadService {
                     dirty: false,
                 }),
                 notify: Arc::new(|_: &[String]| {}),
+                observer: None,
             }),
             tx: None,
             stop: Arc::new(AtomicBool::new(false)),
@@ -416,13 +445,15 @@ impl UnreadService {
 
     /// Loads `read_path` (a missing or unreadable file means the project has no read state yet) and starts
     /// the thread, which looks at every document first. `notify` is called with the unread documents each time
-    /// they change. A vault that is a single file has no markers.
+    /// they change. A vault that is a single file has no markers. `observer` follows the read state (see
+    /// [`ReadObserver`]).
     pub fn open(
         vault: Arc<Vault>,
         filter: Arc<PathFilter>,
         read_path: PathBuf,
         timing: Timing,
         notify: Notify,
+        observer: Option<Arc<dyn ReadObserver>>,
     ) -> Self {
         let saved = std::fs::read(&read_path).ok().and_then(|b| decode(&b));
         let shared = Arc::new(Shared {
@@ -433,6 +464,7 @@ impl UnreadService {
                 dirty: false,
             }),
             notify,
+            observer,
         });
         let stop = Arc::new(AtomicBool::new(false));
         if vault.is_shallow() {
@@ -491,7 +523,10 @@ impl UnreadService {
         if self.tx.is_none() || !is_tracked(&resolved.rel) {
             return Ok(());
         }
-        if let Disk::Doc(hash) = look(&resolved.abs) {
+        if let Disk::Doc { hash, bytes } = look(&resolved.abs) {
+            if let Some(observer) = &self.shared.observer {
+                observer.reading(&resolved.rel, hash, &bytes);
+            }
             let wrote = self
                 .shared
                 .update(|tracker| tracker.mark_read(&resolved.rel, hash));
@@ -570,6 +605,31 @@ impl UnreadService {
             let wrote = self.shared.update(|tracker| tracker.renamed(from, to));
             self.touch(wrote);
         }
+    }
+
+    /// The app sent files and folders to the recycle bin: what was kept of the documents among them is forgotten,
+    /// and a follower is told they are gone for good (see [`Tracker::deleted`]), not that they went missing.
+    pub fn deleted(&self, paths: &[String]) {
+        if self.tx.is_some() && !paths.is_empty() {
+            let wrote = self.shared.update(|tracker| {
+                paths
+                    .iter()
+                    .fold(false, |wrote, path| tracker.deleted(path) | wrote)
+            });
+            self.touch(wrote);
+        }
+    }
+
+    /// The app put a document back where it had been (it undid a delete): the document is looked at, as the watcher
+    /// would, without waiting for it, which may not notice a file that went and came back within one of its quiet
+    /// periods. The document is there, and not read.
+    pub fn appeared(&self, path: &str) {
+        self.apply(&[FsChange {
+            kind: ChangeKind::Created,
+            path: path.to_owned(),
+            from: None,
+            at_ms: now_ms(),
+        }]);
     }
 
     /// The app rewrote the links in a document (or put them back): its hash was `old` and is `new`.

@@ -418,7 +418,8 @@ Since last visit header reads "By file times, since Mon 18:40".
 | Explorer view | Ctrl+Shift+X | Focuses the tree |
 | Find in page | Ctrl+F, Enter, Shift+Enter, Esc | |
 | Back / forward | Alt+Left / Alt+Right, mouse 4/5 | |
-| Next / previous changed block | F7 / Shift+F7 | Includes removed markers |
+| Next / previous changed block | F7 / Shift+F7 | Includes removed markers. While reviewing changes, F7 / Shift+F7 move between those changes instead |
+| Review (while reviewing) | N / P, K / R, Shift+K / Shift+R, Ctrl+Z, Esc | Next and previous change, keep or revert the current one, keep or revert all, undo, close the review |
 | Next unread document | Alt+U | The live feed first, newest first, then the tree (v0.3 section 2) |
 | Toggle Follow | Ctrl+Shift+L | |
 | Copy reference (or selection with reference) | Ctrl+Alt+C | Context-aware |

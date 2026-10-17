@@ -33,6 +33,7 @@ import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./
 import { agentStatus, publishAgentContext, setAgentConnection, takeAgentOpen } from "./mockAgent";
 import { addComment, deleteComment, listComments, setCommentDone } from "./mockComments";
 import * as mockNotes from "./mockNotes";
+import { reviewGet, reviewList } from "./mockReview";
 import { listUnread, markAllRead, markFolderRead, markRead, markUnread } from "./mockUnread";
 import {
   createDocument,
@@ -280,6 +281,15 @@ export const mockImpl: Api = {
   markUnread: async (path) => markUnread(path),
   markAllRead: async () => markAllRead(),
   markFolderRead: async (path) => markFolderRead(path),
+  reviewList: async () => reviewList(),
+  reviewGet: async (path) => reviewGet(path),
+  reviewKeep: async (path) => reviewGet(path),
+  reviewRevert: async (path) => reviewGet(path),
+  reviewKeepAll: async (path) => reviewGet(path),
+  reviewRevertAll: async (path) => reviewGet(path),
+  reviewRestoreDeleted: async (path) => reviewGet(path),
+  reviewUndo: async (path) => reviewGet(path),
+  reviewRelease: async () => {},
   setAgentConnection: async (enabled) => setAgentConnection(enabled),
   agentStatus: async () => agentStatus(),
   publishAgentContext: async (context) => publishAgentContext(context),

@@ -3,6 +3,7 @@
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import Banners from "./Banners.svelte";
+  import ReviewBar from "./ReviewBar.svelte";
   import DocHeader from "./DocHeader.svelte";
   import DocView from "./DocView.svelte";
   import EditBars from "./EditBars.svelte";
@@ -15,6 +16,7 @@
 <main class="main" data-width={session.width}>
   <DocHeader />
   <Banners />
+  <ReviewBar />
   {#if edit.active}<EditBars />{/if}
   <DocView />
   {#if edit.active}

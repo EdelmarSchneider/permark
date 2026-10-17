@@ -143,6 +143,26 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     write_atomic_guarded(path, bytes, || Ok(None::<()>)).map(|_| ())
 }
 
+/// Writes a file that can be made again, such as a copy that is checked by its hash when it is read: through a temp file
+/// that is renamed over the target, so a reader never sees half a file, but without flushing the file or the rename to
+/// the disk. A power cut can lose it or leave it empty, which the check finds out; in return it costs a fraction of
+/// [`write_atomic`], which matters when there are thousands of them.
+pub(crate) fn write_atomic_unsynced(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    std::fs::create_dir_all(dir)?;
+    let tmp = temp_path(path);
+    let result = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .and_then(|mut file| file.write_all(bytes))
+        .and_then(|()| retry_io(&RENAME_RETRY_DELAYS, || std::fs::rename(&tmp, path)));
+    if result.is_err() {
+        discard(&tmp);
+    }
+    result
+}
+
 /// [`write_atomic`] with a last look at the target. `guard` runs after the temp file is written and
 /// flushed (which can take many milliseconds), immediately before each attempt to rename it into place:
 /// `Ok(None)` lets the rename go ahead, `Ok(Some(why))` throws the temp file away and leaves the target
@@ -595,6 +615,21 @@ mod tests {
         assert_eq!(extended(&verbatim), verbatim);
         let relative = Path::new("docs").join(&long_name);
         assert_eq!(extended(&relative), relative);
+    }
+
+    #[test]
+    fn write_atomic_unsynced_writes_whole_files_over_old_ones_and_leaves_no_temp_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join("sub").join("copy");
+        write_atomic_unsynced(&p, b"one").expect("first write");
+        write_atomic_unsynced(&p, b"two, longer").expect("second write");
+        assert_eq!(std::fs::read(&p).expect("read"), b"two, longer");
+        assert_eq!(names_in(&dir.path().join("sub")), ["copy"]);
+        // a directory in the way: it fails, and the temp file is cleaned up
+        let blocked = dir.path().join("sub").join("blocked");
+        std::fs::create_dir(&blocked).expect("mkdir");
+        assert!(write_atomic_unsynced(&blocked, b"data").is_err());
+        assert_eq!(names_in(&dir.path().join("sub")), ["blocked", "copy"]);
     }
 
     #[test]
