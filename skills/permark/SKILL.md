@@ -13,7 +13,7 @@ PerMark is a local-first desktop Markdown IDE where developers read, plan, forma
 
 | Tool | Purpose | When to Call |
 |---|---|---|
-| `get_context` | Returns the open document path, mode (`reading` / `editing`), visible section (heading path + lines), and highlighted text selection. | Whenever the person says *"this"*, *"here"*, *"this section"*, *"the selected text"*, or refers to what is on their screen without naming a file. |
+| `get_context` | Returns the open document path, mode (`reading` / `editing`), visible section (heading path + lines), highlighted text selection, whether there are unsaved edits, and how many of the person's comments are open. | Whenever the person says *"this"*, *"here"*, *"this section"*, *"the selected text"*, or refers to what is on their screen without naming a file. When `openComments` is not 0, call `list_comments` to see what they want changed. |
 | `list_unread` | Lists Markdown documents that changed on disk since the person last read them in PerMark, newest first. | When the person asks *"what changed?"*, *"what haven't I read yet?"*, or wants to catch up after agent edits. |
 | `list_tags` | Lists all tags in use across the project's Markdown documents (`frontMatter`, `permark`, or `both`), or lists the documents carrying a specific `tag`. | In larger repositories, call `list_tags` first to narrow down relevant specs, ADRs, or plans before reading full files. |
 | `search` | Ranked BM25 section search across the project's Markdown files, optionally filtered by `tags`. | To locate the exact section defining a requirement, architecture decision, or term without grepping raw files. |

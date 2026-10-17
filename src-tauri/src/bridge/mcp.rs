@@ -122,7 +122,8 @@ impl AgentServer {
     #[tool(
         description = "What the person is looking at in PerMark right now: the open document (path relative to \
 the project), whether they are reading or editing it, the section on screen (heading path and line range), the \
-text they selected (with its section and lines) and whether it has unsaved edits. Call this when the person \
+text they selected (with its section and lines), whether it has unsaved edits, and how many of their comments \
+are open for you to take (when that is not 0, call list_comments to see them). Call this when the person \
 says \"this\", \"here\", \"the selected text\", \"this section\", \"what I'm reading\" or otherwise points at \
 something on their screen without naming it. Needs PerMark open on the project with its agent connection on; \
 otherwise it says so.",

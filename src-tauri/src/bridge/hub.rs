@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde::Serialize;
 
-use crate::comments::{CommentError, CommentView};
+use crate::comments::{CommentError, CommentFilter, CommentView};
 use crate::notes::share::{self, ShareError};
 use crate::search::SearchHit;
 use crate::util::now_ms;
@@ -144,6 +144,7 @@ impl Hub {
             latest: Mutex::new(Published {
                 context: AgentContext::default(),
                 updated_at_ms: now_ms(),
+                open_comments: 0,
             }),
             pending_open: Mutex::new(None),
             state: Mutex::new(State::default()),
@@ -184,6 +185,8 @@ impl Hub {
         let published = Published {
             context,
             updated_at_ms: now_ms(),
+            // counted here too, so the state file says it without being asked; `get_context` counts again when it answers
+            open_comments: self.open_comments(),
         };
         *lock(&self.latest) = published.clone();
         published
@@ -192,6 +195,21 @@ impl Hub {
     /// What the window showed last.
     pub fn context(&self) -> Published {
         lock(&self.latest).clone()
+    }
+
+    /// What the window showed last, with the open comments counted now: the answer of `get_context`, and what
+    /// the state file begins with.
+    pub fn context_with_comments(&self) -> Published {
+        let mut published = self.context();
+        published.open_comments = self.open_comments();
+        published
+    }
+
+    /// How many comments are open, counted the way `list_comments` counts them: through the same backend,
+    /// without the private notes, only the ones not done.
+    fn open_comments(&self) -> u32 {
+        u32::try_from(answers::comment_list(self.visible_comments(), CommentFilter::Open).total)
+            .unwrap_or(u32::MAX)
     }
 
     /// The window last said the person is in an editor (Visual or Source) rather than reading.
@@ -286,7 +304,7 @@ impl Hub {
             self.note(&request, None);
         }
         match request {
-            Request::GetContext => Reply::success(id, json(&self.context())),
+            Request::GetContext => Reply::success(id, json(&self.context_with_comments())),
             Request::ListUnread => {
                 let unread: Vec<String> = self
                     .backend
@@ -607,6 +625,7 @@ mod tests {
         let result = reply.into_result().expect("a result");
         assert_eq!(result["document"], serde_json::Value::Null);
         assert_eq!(result["unsaved"], false);
+        assert_eq!(result["openComments"], 0);
         assert!(result["updatedAtMs"].as_u64().is_some());
     }
 
@@ -633,6 +652,43 @@ mod tests {
             ..AgentContext::default()
         });
         assert_eq!(hub.context().context, AgentContext::default());
+    }
+
+    #[test]
+    fn get_context_counts_the_open_comments_fresh_each_time_it_answers() {
+        let (_dir, vault) = project();
+        let (hub, fake) = hub(vault);
+        let mut done = comment("c3", "docs/plan.md", 7);
+        done.done = true;
+        *lock(&fake.comments) = vec![
+            comment("c1", "docs/plan.md", 1),
+            comment("c2", "docs/plan.md", 7),
+            done,
+        ];
+        hub.publish(AgentContext {
+            document: Some("docs/plan.md".to_owned()),
+            ..AgentContext::default()
+        });
+        // the publish counts too, for the state file
+        assert_eq!(hub.context().open_comments, 2);
+        let result = hub
+            .handle(call(2, Request::GetContext))
+            .into_result()
+            .expect("a result");
+        assert_eq!(result["openComments"], 2, "only the ones not done");
+        // a comment resolved after the publish is no longer counted: the answer counts now, not then
+        hub.handle(call(
+            3,
+            Request::ResolveComment {
+                comment: "c1".to_owned(),
+                reply: None,
+            },
+        ));
+        let result = hub
+            .handle(call(4, Request::GetContext))
+            .into_result()
+            .expect("a result");
+        assert_eq!(result["openComments"], 1);
     }
 
     #[test]

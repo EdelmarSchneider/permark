@@ -217,7 +217,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   ready to paste into any AI chat or CLI
 - Configurable reference template
 - **Comments**: select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
-  (see [Use with an AI agent](#use-with-an-ai-agent))
+  (see [Use with an AI agent](#use-with-an-ai-agent)), and **Send to agent** copies them as a prompt, ready to paste into any agent chat
 
 ### 📝 Notes
 Open PerMark, type, close: nothing to name, nothing to save, no folder to pick.
@@ -362,7 +362,7 @@ is PerMark running as you, and not another program that took the name.
 
 | Tool | What it answers or does |
 |---|---|
-| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters) and whether there are unsaved edits |
+| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters), whether there are unsaved edits, and how many of your comments are open (call `list_comments` when it is not 0) |
 | `list_unread` | The documents that changed since you last read them, newest first |
 | `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere. Each hit carries its document's tags and description, and `tags` narrows the search to the documents that have all of them |
 | `list_tags` | The tags in use, with how many documents have each and whether they come from the documents or from PerMark, plus how many documents have no tag; or, for one tag, the documents that have it with their descriptions |
@@ -385,8 +385,10 @@ PerMark is not open, and `open` starts it. With the connection off, every tool s
 `permark context` prints where you are as one short line and exits, for tools that can run a command before each prompt:
 
 ```text
-Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday'.
+Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday', 2 comments open.
 ```
+
+When no comment is open, the line stops at the period and says nothing about comments.
 
 In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your user settings) adds it to every prompt:
 
@@ -410,7 +412,8 @@ that watches the project.** It stays out of git (`local/` ignores itself) and is
 
 Select a passage while you read and press `C` (or choose **Comment** in the selection toolbar), type a comment and press `Enter`. A thin
 bar marks the passage in the margin, and the **Comments** tab of the right panel lists the open comments by document, with the ones you
-finished folded away. A click on a comment goes to its passage. Check a comment off yourself, or ask your agent to "go through my comments":
+finished folded away. A click on a comment goes to its passage. Check a comment off yourself, or press **Send to agent** on a comment
+(or **Send all** at the top of the tab) and paste the copied prompt into any agent chat. You can also ask your agent to "go through my comments":
 it reads them with `list_comments`, and when it marks one done its reply appears under the comment.
 
 Comments follow their passage when the document changes: they are found again by their words, then by their section, then by their
