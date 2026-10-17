@@ -1,11 +1,14 @@
 name: Snap
 
 # Builds the snap from snap/snapcraft.yaml and publishes it to the Snap Store (the Ubuntu App Center).
-# The snap packages the release's .deb, so it runs after a release is published; it can also be run by hand.
+# The snap packages the release's .deb, so it starts only when the Release workflow has finished (the .deb is
+# attached by then); it can also be run by hand.
+# Releases go to `edge` until the snap has been tried on a desktop; then change SNAP_RELEASE_CHANNEL to `stable`.
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
   workflow_dispatch:
     inputs:
       channel:
@@ -18,14 +21,20 @@ on:
 permissions:
   contents: read
 
+env:
+  SNAP_RELEASE_CHANNEL: edge
+
 jobs:
   snap:
     name: Build and publish the snap
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
 
       - name: Build the snap
         id: build
@@ -37,4 +46,4 @@ jobs:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
           snap: ${{ steps.build.outputs.snap }}
-          release: ${{ github.event_name == 'release' && 'stable' || inputs.channel }}
+          release: ${{ github.event_name == 'workflow_run' && env.SNAP_RELEASE_CHANNEL || inputs.channel }}
