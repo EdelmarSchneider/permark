@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "trailmark": {
+      "command": "trailmark",
+      "args": ["mcp"]
+    }
+  }
+}
