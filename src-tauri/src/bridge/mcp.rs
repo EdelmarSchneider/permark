@@ -1408,4 +1408,19 @@ and the limits that were agreed after the incident review, and what to do when a
             "got {outcome:?}"
         );
     }
+
+    #[test]
+    fn skill_manifest_documents_all_mcp_tools() {
+        let skill_md = include_str!("../../../skills/trailmark/SKILL.md");
+        let list = AgentServer::tool_router().list_all();
+        assert_ne!(list.len(), 0);
+        for tool in list {
+            let name = tool.name.as_ref();
+            let token = format!("`{name}`");
+            assert!(
+                skill_md.contains(&token),
+                "MCP tool {token} is missing from skills/trailmark/SKILL.md"
+            );
+        }
+    }
 }
