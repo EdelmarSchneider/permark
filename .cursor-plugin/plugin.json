@@ -1,0 +1,23 @@
+{
+  "name": "TrailMark",
+  "description": "Read what your AI writes. Write what it reads. The desktop Markdown IDE and local MCP server for planning, reviewing specs, tracking live agent changes, and resolving inline comments.",
+  "version": "0.5.5",
+  "logo": "docs/assets/logo.png",
+  "homepage": "https://edelmarschneider.github.io/trailmark/",
+  "license": "MIT OR Apache-2.0",
+  "keywords": [
+    "markdown",
+    "mcp",
+    "ide",
+    "ai-agents",
+    "spec-driven-development",
+    "code-review",
+    "documentation",
+    "notes"
+  ],
+  "author": {
+    "name": "Edelmar Schneider",
+    "url": "https://github.com/EdelmarSchneider",
+    "avatar": "https://avatars.githubusercontent.com/u/4505305?v=4"
+  }
+}
