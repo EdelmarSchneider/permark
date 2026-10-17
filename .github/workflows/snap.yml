@@ -3,7 +3,7 @@ name: Snap
 # Builds the snap from snap/snapcraft.yaml and publishes it to the Snap Store (the Ubuntu App Center).
 # The snap packages the release's .deb, so it starts only when the Release workflow has finished (the .deb is
 # attached by then); it can also be run by hand.
-# Releases go to `edge` until the snap has been tried on a desktop; then change SNAP_RELEASE_CHANNEL to `stable`.
+# Releases go to `stable` (the snap was tried on a desktop); set SNAP_RELEASE_CHANNEL to `edge` to hold them back.
 
 on:
   workflow_run:
@@ -22,7 +22,7 @@ permissions:
   contents: read
 
 env:
-  SNAP_RELEASE_CHANNEL: edge
+  SNAP_RELEASE_CHANNEL: stable
 
 jobs:
   snap:
