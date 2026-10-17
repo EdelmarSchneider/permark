@@ -31,7 +31,7 @@ pub(crate) fn context_line(answer: &Answer) -> Result<String, String> {
         return Err(reason.to_owned());
     }
     serde_json::from_value::<Published>(answer.value.clone())
-        .map(|published| published.context.summary())
+        .map(|published| published.summary_with_comments())
         .map_err(|error| format!("PerMark answered with something unexpected: {error}"))
 }
 
@@ -89,6 +89,42 @@ mod tests {
             "Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it'."
         );
         assert!(!line.contains('\n'));
+    }
+
+    #[test]
+    fn the_line_says_how_many_comments_are_open() {
+        let line_with = |open: u64| {
+            answer(json!({
+                "status": "ok",
+                "document": "docs/plan.md",
+                "unsaved": false,
+                "updatedAtMs": 1,
+                "openComments": open
+            }))
+        };
+        assert_eq!(
+            context_line(&line_with(1)).expect("a line"),
+            "Viewing docs/plan.md, 1 comment open."
+        );
+        assert_eq!(
+            context_line(&line_with(3)).expect("a line"),
+            "Viewing docs/plan.md, 3 comments open."
+        );
+        // None open: the line says nothing of comments, and an older window that says nothing at all is read too.
+        assert_eq!(
+            context_line(&line_with(0)).expect("a line"),
+            "Viewing docs/plan.md."
+        );
+        assert_eq!(
+            context_line(&answer(json!({
+                "status": "ok",
+                "document": "docs/plan.md",
+                "unsaved": false,
+                "updatedAtMs": 1
+            })))
+            .expect("a line"),
+            "Viewing docs/plan.md."
+        );
     }
 
     #[test]

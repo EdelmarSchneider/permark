@@ -362,7 +362,7 @@ is PerMark running as you, and not another program that took the name.
 
 | Tool | What it answers or does |
 |---|---|
-| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters) and whether there are unsaved edits |
+| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 4,000 characters), whether there are unsaved edits, and how many of your comments are open (call `list_comments` when it is not 0) |
 | `list_unread` | The documents that changed since you last read them, newest first |
 | `search` | "Where is X described?": ranked sections with path, headings, line and a snippet, from the same index as Search everywhere. Each hit carries its document's tags and description, and `tags` narrows the search to the documents that have all of them |
 | `list_tags` | The tags in use, with how many documents have each and whether they come from the documents or from PerMark, plus how many documents have no tag; or, for one tag, the documents that have it with their descriptions |

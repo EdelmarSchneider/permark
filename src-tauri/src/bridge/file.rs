@@ -186,6 +186,7 @@ mod tests {
                 ..AgentContext::default()
             },
             updated_at_ms: at,
+            open_comments: 0,
         }
     }
 
