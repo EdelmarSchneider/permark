@@ -61,7 +61,7 @@ const DISK_CHECK_DELAY_MS = 250;
 const NOTE_MS = 3000;
 /** A save of a note that takes longer than this says "Saving..." (a quick one just says "Saved"). */
 const SLOW_SAVE_MS = 1000;
-const HINT_KEY = "trailmark.hint.firstSave";
+const HINT_KEY = "permark.hint.firstSave";
 
 type Base = {
   text: string;
@@ -119,7 +119,7 @@ class EditStore {
   prompt = $state.raw<UnsavedPrompt | null>(null);
   /** A short message in the header ("Saved, 2 blocks changed") that goes away by itself. */
   note = $state<string | null>(null);
-  /** The one-time "TrailMark rewrites only the blocks you changed" bar. */
+  /** The one-time "PerMark rewrites only the blocks you changed" bar. */
   hint = $state(false);
   caret = $state({ line: 1, column: 1 });
   /** When the file was last written, as far as the editor knows. */

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { showInitHint, type InitHintInput } from "./initHint";
 import { defaultSession, normalizeSession } from "./session";
 
-// A repository opened in the IDE, with no `.trailmark/` yet, where nothing was answered: the case the hint is for.
+// A repository opened in the IDE, with no `.permark/` yet, where nothing was answered: the case the hint is for.
 const ASKING: InitHintInput = {
   simple: false,
   isRepo: true,
@@ -13,7 +13,7 @@ const ASKING: InitHintInput = {
 };
 
 describe("showInitHint", () => {
-  it("is shown for a repository without .trailmark/", () => {
+  it("is shown for a repository without .permark/", () => {
     expect(showInitHint(ASKING)).toBe(true);
   });
 
@@ -21,7 +21,7 @@ describe("showInitHint", () => {
     expect(showInitHint({ ...ASKING, isRepo: false })).toBe(false);
   });
 
-  it("is not shown once the project has .trailmark/", () => {
+  it("is not shown once the project has .permark/", () => {
     expect(showInitHint({ ...ASKING, stateLocation: "project" })).toBe(false);
   });
 

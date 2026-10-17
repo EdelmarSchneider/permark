@@ -177,7 +177,7 @@ pub struct PathFilter {
 
 impl PathFilter {
     /// `roots` are `(root path, optional .git/info/exclude)` in vault root order; `extra_ignore` are the
-    /// user's globs from `.trailmark/config.toml`, applied relative to each root.
+    /// user's globs from `.permark/config.toml`, applied relative to each root.
     pub fn new(roots: &[(PathBuf, Option<PathBuf>)], extra_ignore: &[String]) -> Self {
         let roots = roots
             .iter()
@@ -233,7 +233,8 @@ impl PathFilter {
             return Verdict::Ignore;
         }
         if comps.len() >= 2
-            && comps[0].eq_ignore_ascii_case(".trailmark")
+            && (comps[0].eq_ignore_ascii_case(".permark")
+                || comps[0].eq_ignore_ascii_case(".trailmark"))
             && (comps[1].eq_ignore_ascii_case("cache") || comps[1].eq_ignore_ascii_case("local"))
         {
             return Verdict::Ignore;
@@ -322,23 +323,20 @@ mod tests {
     }
 
     #[test]
-    fn build_folders_and_trailmark_state_are_ignored() {
+    fn build_folders_and_permark_state_are_ignored() {
         let d = tempfile::tempdir().expect("tempdir");
         let f = filter(d.path(), &[]);
         assert_eq!(f.classify(0, "node_modules/x/y.md", false), Verdict::Ignore);
         assert_eq!(f.classify(0, "app/target/debug/x", false), Verdict::Ignore);
         assert_eq!(
-            f.classify(0, ".trailmark/cache/index.bin", false),
+            f.classify(0, ".permark/cache/index.bin", false),
             Verdict::Ignore
         );
         assert_eq!(
-            f.classify(0, ".trailmark/local/session.json", false),
+            f.classify(0, ".permark/local/session.json", false),
             Verdict::Ignore
         );
-        assert_eq!(
-            f.classify(0, ".trailmark/config.toml", false),
-            Verdict::Emit
-        );
+        assert_eq!(f.classify(0, ".permark/config.toml", false), Verdict::Emit);
         assert_eq!(f.classify(0, "docs/a.md", false), Verdict::Emit);
     }
 

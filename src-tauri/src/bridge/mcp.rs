@@ -1,4 +1,4 @@
-//! `trailmark mcp`: TrailMark as a Model Context Protocol server over standard input and output.
+//! `permark mcp`: PerMark as a Model Context Protocol server over standard input and output.
 //!
 //! An agent starts the program with the `mcp` argument and talks to it in newline-delimited JSON-RPC; no window opens.
 //! The tools only translate: what they do is in [`Core`](super::tools::Core). The server is generic over the
@@ -94,7 +94,7 @@ struct OpenArgs {
     heading: Option<String>,
 }
 
-/// What an agent can ask TrailMark. The project is the folder the agent works in.
+/// What an agent can ask PerMark. The project is the folder the agent works in.
 #[derive(Clone)]
 struct AgentServer {
     core: Arc<Core>,
@@ -120,11 +120,11 @@ impl AgentServer {
     }
 
     #[tool(
-        description = "What the person is looking at in TrailMark right now: the open document (path relative to \
+        description = "What the person is looking at in PerMark right now: the open document (path relative to \
 the project), whether they are reading or editing it, the section on screen (heading path and line range), the \
 text they selected (with its section and lines) and whether it has unsaved edits. Call this when the person \
 says \"this\", \"here\", \"the selected text\", \"this section\", \"what I'm reading\" or otherwise points at \
-something on their screen without naming it. Needs TrailMark open on the project with its agent connection on; \
+something on their screen without naming it. Needs PerMark open on the project with its agent connection on; \
 otherwise it says so.",
         annotations(read_only_hint = true)
     )]
@@ -133,9 +133,9 @@ otherwise it says so.",
     }
 
     #[tool(
-        description = "The Markdown documents that changed since the person last read them in TrailMark, newest \
+        description = "The Markdown documents that changed since the person last read them in PerMark, newest \
 change first, with the time of the change. Call this when the person asks what changed, what they have not read \
-yet, or to catch up (for example after you or another agent edited documents). Also works when TrailMark is \
+yet, or to catch up (for example after you or another agent edited documents). Also works when PerMark is \
 closed, from the project's files.",
         annotations(read_only_hint = true)
     )]
@@ -146,11 +146,11 @@ closed, from the project's files.",
     #[tool(
         description = "Find where something is described in the project's Markdown documents. Returns the best \
 matching sections ranked, each with its path, heading path, line and a short snippet (the same index as \
-TrailMark's Search everywhere), and the `tags` and `description` of its document when it has them. Use it to \
+PerMark's Search everywhere), and the `tags` and `description` of its document when it has them. Use it to \
 locate documentation before reading whole files, for example to find the section that defines a term or a \
 decision. In a large project, narrow first: pass `tags` (see list_tags) to look only in the documents that have \
 all of them, then read just the few that fit. Leave `query` out when you pass `tags` to get those documents \
-(path, description, tags) instead of sections. Also works when TrailMark is closed, from the project's files.",
+(path, description, tags) instead of sections. Also works when PerMark is closed, from the project's files.",
         annotations(read_only_hint = true)
     )]
     async fn search(
@@ -170,14 +170,14 @@ all of them, then read just the few that fit. Leave `query` out when you pass `t
 
     #[tool(
         description = "The tags in use in the project's Markdown documents: each tag with how many documents have it \
-(`count`) and where it is written (`from`: `frontMatter` in the documents, `trailmark` added by the person in \
-TrailMark, or `both`), most used first (the first 50; `more` says how many were left out), plus `documents` (how \
+(`count`) and where it is written (`from`: `frontMatter` in the documents, `permark` added by the person in \
+PerMark, or `both`), most used first (the first 50; `more` says how many were left out), plus `documents` (how \
 many Markdown documents there are) and `untagged` (how many have no tag), so you can tell whether tags are worth \
 using here. Pass `tag` to list the documents that have it instead: each with its path, its one-line `description` \
 (left out when it has none) and all of its tags (the first 20; `total` and `more` count the rest). `limit` asks for \
 more or fewer. Use it to find the right documents in two calls in a large project: call list_tags (or search with \
 `tags`) to narrow down, then read only the few documents that fit, instead of going through many search hits. \
-Also works when TrailMark is closed, from the project's files.",
+Also works when PerMark is closed, from the project's files.",
         annotations(read_only_hint = true)
     )]
     async fn list_tags(
@@ -188,13 +188,13 @@ Also works when TrailMark is closed, from the project's files.",
     }
 
     #[tool(
-        description = "The comments the person left in TrailMark on passages of the project's Markdown \
+        description = "The comments the person left in PerMark on passages of the project's Markdown \
 documents (\"this contradicts section 2\", \"simplify\"). Each has an id, the document path, the quoted \
 passage, its heading path and line, the comment text, when it was made, and `state`: `anchored` when the quote is \
 still in the document (the line is where it is now), `passageChanged` when the passage was rewritten (the line \
 is the best guess) or `documentGone`. Open comments by default; pass `which` = `done` or `all` for others. Call \
 this when the person asks you to go through, address or apply their comments on the documents. A `warning` \
-says when the comments file could not be read, which is why the list is empty. Also works when TrailMark is \
+says when the comments file could not be read, which is why the list is empty. Also works when PerMark is \
 closed, from the project's files.",
         annotations(read_only_hint = true)
     )]
@@ -216,9 +216,9 @@ closed, from the project's files.",
 
     #[tool(
         description = "Mark one comment done after you addressed it, with an optional short `reply` saying \
-what you did (\"Rewritten in 3f2a1c\"), which TrailMark shows under the comment. Use the `id` from list_comments. This \
-is the only change an agent can make through TrailMark: it cannot write comments or edit documents. Also works \
-when TrailMark is closed, on the project's files.",
+what you did (\"Rewritten in 3f2a1c\"), which PerMark shows under the comment. Use the `id` from list_comments. This \
+is the only change an agent can make through PerMark: it cannot write comments or edit documents. Also works \
+when PerMark is closed, on the project's files.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn resolve_comment(
@@ -231,12 +231,12 @@ when TrailMark is closed, on the project's files.",
     }
 
     #[tool(
-        description = "The notes the person chose to share with agents in TrailMark (its Notes window keeps their \
+        description = "The notes the person chose to share with agents in PerMark (its Notes window keeps their \
 quick notes, drafts and prompts, and nothing in it is visible to you unless they shared that note). Each has `note` \
 (its name, which read_note takes), `title` (its first line), when it was last changed and its size, newest first. \
 Call this when the person points at their notes (\"my note about the deploy\", \"the prompt I wrote\", \"what I \
 jotted down\"). A note that is not shared is not listed and cannot be read; you cannot list the notes folder. Also \
-works when TrailMark is closed.",
+works when PerMark is closed.",
         annotations(read_only_hint = true)
     )]
     async fn list_notes(&self) -> Result<CallToolResult, ErrorData> {
@@ -246,7 +246,7 @@ works when TrailMark is closed.",
     #[tool(
         description = "Read one of the notes the person shared with agents, by the `note` name that list_notes gives. \
 Returns its title and its whole text. It only reads: it cannot change a note, and a note that is not shared is said \
-not to exist. Also works when TrailMark is closed.",
+not to exist. Also works when PerMark is closed.",
         annotations(read_only_hint = true)
     )]
     async fn read_note(
@@ -257,10 +257,10 @@ not to exist. Also works when TrailMark is closed.",
     }
 
     #[tool(
-        description = "Show the person a place in TrailMark: a document, optionally at a line or a heading. \
-TrailMark opens it in its window without taking focus from your terminal, highlights the section and shows a \
+        description = "Show the person a place in PerMark: a document, optionally at a line or a heading. \
+PerMark opens it in its window without taking focus from your terminal, highlights the section and shows a \
 notice with a way back; the person looks when ready. Use it after you wrote or found something they should see \
-(\"see the new section in docs/plan.md\"). It starts TrailMark on the project if it is closed. It only shows; \
+(\"see the new section in docs/plan.md\"). It starts PerMark on the project if it is closed. It only shows; \
 it never changes a document.",
         annotations(read_only_hint = false, destructive_hint = false)
     )]
@@ -281,9 +281,9 @@ it never changes a document.",
 #[allow(clippy::unused_async_trait_impl)] // The tool macro writes async handlers that do not wait.
 #[tool_handler(
     router = self.tool_router,
-    name = "trailmark",
-    instructions = "TrailMark reads and follows the Markdown documents of a project. These tools let you see what \
-the person is looking at in TrailMark, what changed since they last read, where something is described, which \
+    name = "permark",
+    instructions = "PerMark reads and follows the Markdown documents of a project. These tools let you see what \
+the person is looking at in PerMark, what changed since they last read, where something is described, which \
 tags the documents carry (to narrow a large project down before you read), the comments they left on passages \
 (and mark one done), the notes they chose to share with agents, and show them a place. They are available only \
 while the person has turned on the agent connection for the project."
@@ -321,7 +321,7 @@ pub(crate) fn run_stdio(core: Core) -> Result<(), McpError> {
     outcome
 }
 
-/// The `trailmark mcp` command: serves the project of the working folder and returns the exit code. `identifier` is
+/// The `permark mcp` command: serves the project of the working folder and returns the exit code. `identifier` is
 /// the app's, which names its data folder. Standard output carries only protocol messages, so a failure is
 /// reported on standard error.
 pub(crate) fn run_cli(identifier: &str) -> i32 {
@@ -335,7 +335,7 @@ pub(crate) fn run_cli(identifier: &str) -> i32 {
         Ok(()) => 0,
         Err(error) => {
             // The streams may not exist (a program without a console); there is nothing else to do then.
-            let _ = writeln!(std::io::stderr(), "trailmark mcp: {error}");
+            let _ = writeln!(std::io::stderr(), "permark mcp: {error}");
             1
         }
     }
@@ -416,7 +416,7 @@ mod tests {
 
         fn core(&self) -> Arc<Core> {
             let sockets = self.sockets.path().to_path_buf();
-            let launcher: Launcher = Arc::new(|_| panic!("TrailMark must not be started"));
+            let launcher: Launcher = Arc::new(|_| panic!("PerMark must not be started"));
             Arc::new(Core::new(
                 self.root.clone(),
                 Some(self.app.path().to_path_buf()),
@@ -515,12 +515,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn handshake_announces_trailmark_and_its_tools() {
+    async fn handshake_announces_permark_and_its_tools() {
         let world = World::new();
         let mut client = Client::connect(world.core());
         let reply = client.handshake().await;
         let result = &reply["result"];
-        assert_eq!(result["serverInfo"]["name"], "trailmark");
+        assert_eq!(result["serverInfo"]["name"], "permark");
         assert_eq!(result["serverInfo"]["version"], env!("CARGO_PKG_VERSION"));
         assert!(result["capabilities"]["tools"].is_object());
         client.close().await.expect("the server ended cleanly");
@@ -727,7 +727,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn with_the_window_closed_get_context_says_trailmark_is_not_open() {
+    async fn with_the_window_closed_get_context_says_permark_is_not_open() {
         let world = World::new();
         world.connection(true);
         let mut client = Client::connect(world.core());
@@ -738,7 +738,7 @@ mod tests {
         assert!(answer["message"]
             .as_str()
             .expect("a message")
-            .starts_with("TrailMark is not open on this project."));
+            .starts_with("PerMark is not open on this project."));
         client.close().await.expect("the server ended cleanly");
     }
 
@@ -914,8 +914,8 @@ mod tests {
             tags["tags"],
             json!([
                 {"name": "adr", "count": 2, "from": "frontMatter"},
-                {"name": "api", "count": 1, "from": "trailmark"},
-                {"name": "draft", "count": 1, "from": "trailmark"},
+                {"name": "api", "count": 1, "from": "permark"},
+                {"name": "draft", "count": 1, "from": "permark"},
             ])
         );
         let reply = client
@@ -1022,7 +1022,7 @@ mod tests {
         let mut entries = Entries::default();
         entries.set_tags("README.md", &names(&["draft", "Start Here"]));
         entries.set_description("README.md", "Where to begin.");
-        // the project has no `.trailmark/` folder, so the app keeps what it adds in its own data
+        // the project has no `.permark/` folder, so the app keeps what it adds in its own data
         let meta = StateStore::open(world.app.path(), &world.root).meta_path();
         std::fs::create_dir_all(meta.parent().expect("parent")).expect("mkdir");
         std::fs::write(&meta, entries.to_toml()).expect("write");
@@ -1042,7 +1042,7 @@ mod tests {
             json!([
                 {"name": "draft", "count": 2, "from": "both"},
                 {"name": "plan", "count": 1, "from": "frontMatter"},
-                {"name": "start-here", "count": 1, "from": "trailmark"},
+                {"name": "start-here", "count": 1, "from": "permark"},
             ])
         );
 
@@ -1077,7 +1077,7 @@ mod tests {
             json!([{"path": "README.md", "description": "Where to begin.", "tags": ["draft", "start-here"]}])
         );
         // looking changed nothing
-        assert!(!world.root.join(".trailmark").exists());
+        assert!(!world.root.join(".permark").exists());
         assert_eq!(
             std::fs::read_to_string(&meta).expect("read"),
             entries.to_toml()
@@ -1176,7 +1176,7 @@ and the limits that were agreed after the incident review, and what to do when a
     /// The notes of the person: three notes, two of them shared, in the folder the program keeps notes in (the data folder's).
     fn notes_of(world: &World) -> std::path::PathBuf {
         let notes = world.app.path().join("notes");
-        std::fs::create_dir_all(notes.join(".trailmark")).expect("mkdir");
+        std::fs::create_dir_all(notes.join(".permark")).expect("mkdir");
         std::fs::write(
             notes.join("shared one.md"),
             "# Server IPs\n\napi 10.0.0.4\n",
@@ -1185,7 +1185,7 @@ and the limits that were agreed after the incident review, and what to do when a
         std::fs::write(notes.join("shared two.md"), "Weekly checklist\n").expect("write");
         std::fs::write(notes.join("private.md"), "# My private note\n").expect("write");
         std::fs::write(
-            notes.join(".trailmark").join("notes.json"),
+            notes.join(".permark").join("notes.json"),
             r#"{"shared": ["shared one.md", "shared two.md"]}"#,
         )
         .expect("notes.json");
@@ -1247,7 +1247,7 @@ and the limits that were agreed after the incident review, and what to do when a
             "nothing.md",
             "../private.md",
             "private.md/../shared one.md",
-            ".trailmark/notes.json",
+            ".permark/notes.json",
         ] {
             let reply = client.call(5, "read_note", &json!({ "note": note })).await;
             assert_eq!(reply["result"]["isError"], true, "{note}: {reply}");
@@ -1312,7 +1312,7 @@ and the limits that were agreed after the incident review, and what to do when a
             .await;
         assert_eq!(reply["result"]["isError"], false, "{reply}");
         std::fs::write(
-            notes.join(".trailmark").join("notes.json"),
+            notes.join(".permark").join("notes.json"),
             r#"{"shared": ["shared one.md"]}"#,
         )
         .expect("stop sharing");
@@ -1411,7 +1411,7 @@ and the limits that were agreed after the incident review, and what to do when a
 
     #[test]
     fn skill_manifest_documents_all_mcp_tools() {
-        let skill_md = include_str!("../../../skills/trailmark/SKILL.md");
+        let skill_md = include_str!("../../../skills/permark/SKILL.md");
         let list = AgentServer::tool_router().list_all();
         assert_ne!(list.len(), 0);
         for tool in list {
@@ -1419,7 +1419,7 @@ and the limits that were agreed after the incident review, and what to do when a
             let token = format!("`{name}`");
             assert!(
                 skill_md.contains(&token),
-                "MCP tool {token} is missing from skills/trailmark/SKILL.md"
+                "MCP tool {token} is missing from skills/permark/SKILL.md"
             );
         }
     }

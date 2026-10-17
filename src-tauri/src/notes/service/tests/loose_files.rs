@@ -333,7 +333,7 @@ fn a_damaged_list_loses_the_files_but_not_the_text_typed_into_them() {
     } = f;
     drop(service);
     fs::write(
-        dir.path().join(".trailmark").join("notes.json"),
+        dir.path().join(".permark").join("notes.json"),
         "{{{ damaged",
     )
     .expect("damage");

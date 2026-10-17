@@ -2,7 +2,7 @@
 //! the program asking.
 //!
 //! Anybody can create a pipe with a name that is free, and the names are machine-wide, so a program that connects to
-//! `\\.\pipe\trailmark-<id>` has to find out who made it before it trusts what it hears. The pipe's server process id
+//! `\\.\pipe\permark-<id>` has to find out who made it before it trusts what it hears. The pipe's server process id
 //! comes from the connection (`GetNamedPipeServerProcessId`); this module reads the user in that process's token and
 //! compares it with the user in ours.
 //!

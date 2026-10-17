@@ -27,7 +27,7 @@ struct Running {
 pub struct AgentBridge {
     hub: Arc<Hub>,
     endpoint: Result<Endpoint, StartFailure>,
-    /// Where `agent.json` goes: only a project that keeps its state in `.trailmark/` has one.
+    /// Where `agent.json` goes: only a project that keeps its state in `.permark/` has one.
     agent_path: Mutex<Option<PathBuf>>,
     running: Mutex<Option<Running>>,
 }
@@ -161,7 +161,7 @@ impl AgentBridge {
         self.hub.status()
     }
 
-    /// The project's state moved (it got a `.trailmark/` folder): the state file follows, or starts.
+    /// The project's state moved (it got a `.permark/` folder): the state file follows, or starts.
     pub fn relocate_file(&self, path: Option<PathBuf>) {
         lock(&self.agent_path).clone_from(&path);
         let mut running = lock(&self.running);
@@ -497,7 +497,7 @@ mod tests {
             FailureKind::PathTooLong
         );
         let folder = SocketError::Folder {
-            path: "/run/user/1000/trailmark".to_owned(),
+            path: "/run/user/1000/permark".to_owned(),
             source: io::Error::from(io::ErrorKind::PermissionDenied),
         };
         assert_eq!(socket_failure(&folder).kind, FailureKind::FolderNotPrivate);
@@ -604,13 +604,13 @@ mod tests {
         let state = tempfile::tempdir().expect("state");
         let outside = tempfile::tempdir().expect("outside");
         std::fs::write(outside.path().join("agent.json"), "not ours").expect("write");
-        let trailmark = state.path().join(".trailmark");
-        std::fs::create_dir(&trailmark).expect("mkdir");
-        dir_link(&trailmark.join("local"), outside.path());
-        let fx = fx("linked", Some(trailmark.join("local").join("agent.json")));
+        let permark = state.path().join(".permark");
+        std::fs::create_dir(&permark).expect("mkdir");
+        dir_link(&permark.join("local"), outside.path());
+        let fx = fx("linked", Some(permark.join("local").join("agent.json")));
         fx.bridge.remove_stale_file();
         assert!(outside.path().join("agent.json").is_file());
-        remove_link(&trailmark.join("local"));
+        remove_link(&permark.join("local"));
     }
 
     #[test]
@@ -619,6 +619,6 @@ mod tests {
         fx.bridge.set_enabled(true);
         fx.bridge.publish(AgentContext::default());
         fx.bridge.set_enabled(false);
-        assert!(!fx.project.path().join(".trailmark").exists());
+        assert!(!fx.project.path().join(".permark").exists());
     }
 }

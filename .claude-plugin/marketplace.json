@@ -1,25 +1,25 @@
 {
-  "name": "trailmark-marketplace",
+  "name": "permark-marketplace",
   "owner": {
     "name": "Edelmar Schneider",
     "url": "https://github.com/EdelmarSchneider"
   },
   "metadata": {
-    "description": "Official Claude Code plugin for TrailMark — the desktop Markdown IDE for planning, reviewing, and steering AI-written specs and docs.",
-    "version": "0.5.5"
+    "description": "Official Claude Code plugin for PerMark — the desktop Markdown IDE for planning, reviewing, and steering AI-written specs and docs.",
+    "version": "0.5.6"
   },
   "plugins": [
     {
-      "name": "trailmark",
+      "name": "permark",
       "source": "./",
-      "description": "Read what your AI writes. Write what it reads. Connects Claude Code to TrailMark via MCP tools (get_context, search, list_tags, list_comments, resolve_comment, list_notes, read_note, list_unread, open) and automatic prompt context hooks.",
-      "version": "0.5.5",
+      "description": "Read what your AI writes. Write what it reads. Connects Claude Code to PerMark via MCP tools (get_context, search, list_tags, list_comments, resolve_comment, list_notes, read_note, list_unread, open) and automatic prompt context hooks.",
+      "version": "0.5.6",
       "author": {
         "name": "Edelmar Schneider",
         "url": "https://github.com/EdelmarSchneider"
       },
-      "homepage": "https://edelmarschneider.github.io/trailmark/",
-      "repository": "https://github.com/EdelmarSchneider/trailmark",
+      "homepage": "https://edelmarschneider.github.io/permark/",
+      "repository": "https://github.com/EdelmarSchneider/permark",
       "license": "MIT OR Apache-2.0",
       "keywords": [
         "markdown",

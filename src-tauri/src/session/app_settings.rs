@@ -53,7 +53,7 @@ impl Language {
     }
 }
 
-/// Where TrailMark opens when it is started with no folder or file to open.
+/// Where PerMark opens when it is started with no folder or file to open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum StartIn {
     /// The welcome screen, with the recent folders and the latest notes.
@@ -121,7 +121,7 @@ pub struct AppSettings {
         skip_serializing_if = "Option::is_none"
     )]
     pub notes_folder: Option<String>,
-    /// Where TrailMark opens when it is started with nothing to open. `None`: the welcome screen.
+    /// Where PerMark opens when it is started with nothing to open. `None`: the welcome screen.
     #[serde(
         rename = "startIn",
         deserialize_with = "lenient_option",
@@ -185,7 +185,7 @@ impl AppSettingsStore {
         self.save(&settings)
     }
 
-    /// Records where TrailMark opens when it has nothing to open, keeping every other setting.
+    /// Records where PerMark opens when it has nothing to open, keeping every other setting.
     pub fn set_start_in(&self, start_in: StartIn) -> Result<(), SessionError> {
         let mut settings = self.load();
         settings.start_in = Some(start_in);
@@ -206,14 +206,14 @@ impl AppSettingsStore {
     }
 }
 
-/// What the Windows installer recorded in `HKCU\Software\TrailMark\Language`; nothing elsewhere.
+/// What the Windows installer recorded in `HKCU\Software\PerMark\Language`; nothing elsewhere.
 pub fn installer_language() -> Option<Language> {
     installer_language_code().and_then(|code| Language::from_installer_code(&code))
 }
 
 #[cfg(windows)]
 fn installer_language_code() -> Option<String> {
-    language_value_under("Software\\TrailMark")
+    language_value_under("Software\\PerMark")
 }
 
 /// The `Language` value of a key under `HKEY_CURRENT_USER`, when there is one.
@@ -491,10 +491,10 @@ mod tests {
         for code in &written {
             assert!(Language::from_installer_code(code).is_some(), "{code}");
         }
-        // the registry location the app reads (the define is `Software\TrailMark`; the tests of the installer script
+        // the registry location the app reads (the define is `Software\PerMark`; the tests of the installer script
         // point it elsewhere to try the script out)
-        assert!(HOOKS.contains(r#"!define TRAILMARK_APP_KEY "Software\TrailMark""#));
-        assert!(HOOKS.contains(r#"WriteRegStr HKCU "${TRAILMARK_APP_KEY}" "Language" "$R8""#));
+        assert!(HOOKS.contains(r#"!define PERMARK_APP_KEY "Software\PerMark""#));
+        assert!(HOOKS.contains(r#"WriteRegStr HKCU "${PERMARK_APP_KEY}" "Language" "$R8""#));
 
         let config: serde_json::Value = serde_json::from_str(CONFIG).expect("tauri.conf.json");
         let nsis = &config["bundle"]["windows"]["nsis"];
@@ -526,7 +526,7 @@ mod tests {
     fn the_language_value_is_read_from_the_registry() {
         use winreg::enums::HKEY_CURRENT_USER;
         use winreg::RegKey;
-        let subkey = format!("Software\\TrailMarkTest{}", std::process::id());
+        let subkey = format!("Software\\PerMarkTest{}", std::process::id());
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
         assert_eq!(language_value_under(&subkey), None, "no key, no value");
         let (key, _) = hkcu.create_subkey(&subkey).expect("create the key");

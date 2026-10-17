@@ -1,9 +1,9 @@
 [package]
-name = "trailmark"
-version = "0.5.5"
+name = "permark"
+version = "0.5.6"
 description = "Read what your AI writes. Write what it reads. A free, open-source Markdown app."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/EdelmarSchneider/trailmark"
+repository = "https://github.com/EdelmarSchneider/permark"
 authors = ["Edelmar Schneider"]
 edition = "2021"
 
@@ -11,12 +11,12 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "trailmark_lib"
+name = "permark_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [features]
 # The build that goes to the Microsoft Store (see `distribution`): no self-update, and the agent setup lines name the
-# `trailmark` alias the package puts on the PATH. Built with `tauri.msstore.conf.json`, by `scripts/build-msix.ps1`.
+# `permark` alias the package puts on the PATH. Built with `tauri.msstore.conf.json`, by `scripts/build-msix.ps1`.
 store = []
 
 [build-dependencies]
@@ -50,7 +50,7 @@ dirs = "7.0.0"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 
 # The Windows installer records the language it ran in; the app reads it once, on a first start. The same registry holds
-# the file manager entries ("Open with TrailMark"), and the shell is told when they change.
+# the file manager entries ("Open with PerMark"), and the shell is told when they change.
 [target.'cfg(windows)'.dependencies]
 # The shell is told when the file manager entries change. The agent connection asks Windows who runs the program on
 # the other end of its pipe (`bridge::identity`), and opens the pipe so that the server cannot act as the client.

@@ -1,7 +1,7 @@
 //! Unread markers: which Markdown documents changed since the person last read them.
 //!
 //! What a document held when it was last read is kept, per project, in `read.json` next to the other
-//! local state (`.trailmark/local/` in an initialized project, the app's data folder otherwise). The file
+//! local state (`.permark/local/` in an initialized project, the app's data folder otherwise). The file
 //! is a JSON object from the document's path in the project to the xxh3 hash of its bytes at that time:
 //!
 //! ```json
@@ -453,7 +453,7 @@ impl UnreadService {
             stamps: HashMap::new(),
         };
         let handle = thread::Builder::new()
-            .name("trailmark-unread".to_owned())
+            .name("permark-unread".to_owned())
             .spawn(move || run(&rx, worker, timing))
             .ok();
         let _ = tx.send(Msg::Scan);
@@ -586,7 +586,7 @@ impl UnreadService {
         }
     }
 
-    /// The project's state moved to another place (it got a `.trailmark/` folder): write it there.
+    /// The project's state moved to another place (it got a `.permark/` folder): write it there.
     pub fn relocate(&self, read_path: PathBuf) {
         self.send(Msg::Relocate(read_path));
     }

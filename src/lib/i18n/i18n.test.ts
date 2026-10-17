@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe("t", () => {
   it("returns the English string for a key", () => {
-    expect(t("app.name")).toBe("TrailMark");
+    expect(t("app.name")).toBe("PerMark");
   });
 
   it("fills placeholders", () => {
@@ -233,10 +233,10 @@ describe("what the agent connection says about privacy", () => {
   it("does not claim that everything stays on the computer, and says where the context is also written, in every language", () => {
     for (const locale of LOCALES) {
       language.preference = locale;
-      // the old promise was about the whole outcome; the agent's own service is outside TrailMark
+      // the old promise was about the whole outcome; the agent's own service is outside PerMark
       expect(en["settings.agentHint"], locale).not.toContain("Everything stays");
       for (const key of ["settings.agentHint", "agent.shares.file"] as const) {
-        expect(t(key), `${locale} ${key}`).toContain(".trailmark/local/agent.json");
+        expect(t(key), `${locale} ${key}`).toContain(".permark/local/agent.json");
       }
       // a sentence of its own that says an agent may pass what it reads on
       expect(t("agent.shares.leaves").length, locale).toBeGreaterThan(40);
@@ -364,7 +364,7 @@ describe.each(OTHER)("the %s table", (locale) => {
   });
 
   it("keeps the product name and leaves no long sentence in English", () => {
-    expect(table["app.name"]).toBe("TrailMark");
+    expect(table["app.name"]).toBe("PerMark");
     // identical to English is fine for names, versions and extensions; a long sentence left in English is a gap
     expect(KEYS.filter((k) => english[k].length > 40 && table[k] === english[k])).toEqual([]);
   });

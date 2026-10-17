@@ -1,4 +1,4 @@
-//! A project as `trailmark mcp` sees it when it is not talking to the window: found from the folder an agent works
+//! A project as `permark mcp` sees it when it is not talking to the window: found from the folder an agent works
 //! in, with its setting read from the app's own data, and its unread documents and search index worked out from the
 //! files. Nothing here needs the window, and nothing here changes the project.
 
@@ -25,9 +25,9 @@ use super::tags::{is_document, unreadable_meta, Doc, DocIndex};
 
 /// The environment variable that points a debug build at another data folder, so that the tests which run the real
 /// program never touch the person's own. Release builds ignore it.
-pub(crate) const TEST_DATA_DIR_VARIABLE: &str = "TRAILMARK_TEST_DATA_DIR";
+pub(crate) const TEST_DATA_DIR_VARIABLE: &str = "PERMARK_TEST_DATA_DIR";
 
-/// Where TrailMark keeps its data for the current user: the folder the window itself uses (`app_data_dir`), which
+/// Where PerMark keeps its data for the current user: the folder the window itself uses (`app_data_dir`), which
 /// is named after the app's identifier. `None` when the system has no such folder.
 ///
 /// The whole program asks for it here (the windows through `commands::app_data_dir`): a folder found two ways would split the
@@ -57,10 +57,10 @@ fn data_dir_from(
     system.map(|dir| dir.join(identifier))
 }
 
-/// The nearest folder at or above `start` that TrailMark knows: one with a `.trailmark/` folder, or one the app
+/// The nearest folder at or above `start` that PerMark knows: one with a `.permark/` folder, or one the app
 /// kept state for. `None` when `start` is not inside any such folder.
 ///
-/// The notes folder is never found, nor anything inside it: it has a `.trailmark/` folder like a project, but the notes
+/// The notes folder is never found, nor anything inside it: it has a `.permark/` folder like a project, but the notes
 /// are private and no agent is shown them (the person shares a note on purpose, one at a time).
 pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf> {
     if in_notes_tree(app_data_dir, start) {
@@ -75,7 +75,7 @@ pub(crate) fn find_project(app_data_dir: &Path, start: &Path) -> Option<PathBuf>
 }
 
 /// Whether the person turned the agent connection on for the project in `root`. Only the app's own data says so: a
-/// project's files (`.trailmark/` can be committed to a repository) have no say in who is shown the person's reading.
+/// project's files (`.permark/` can be committed to a repository) have no say in who is shown the person's reading.
 pub(crate) fn connection_is_on(app_data_dir: &Path, root: &Path) -> bool {
     !in_notes_tree(app_data_dir, root) && StateStore::open(app_data_dir, root).agent_connection()
 }
@@ -110,10 +110,10 @@ pub(crate) struct Project {
     vault: Arc<Vault>,
     filter: Arc<PathFilter>,
     read_path: PathBuf,
-    /// Where the tags and descriptions added in TrailMark are: `.trailmark/meta.toml`, or a file in the app's data
-    /// before the project has a `.trailmark/` folder.
+    /// Where the tags and descriptions added in PerMark are: `.permark/meta.toml`, or a file in the app's data
+    /// before the project has a `.permark/` folder.
     meta_path: PathBuf,
-    /// The file in the app's data that the tags lived in before the project had a `.trailmark/` folder, when it is
+    /// The file in the app's data that the tags lived in before the project had a `.permark/` folder, when it is
     /// still there (the window merges it into `meta_path` the next time it opens the project).
     older_meta_path: Option<PathBuf>,
     front_matter: Mutex<HashMap<String, Seen>>,
@@ -175,7 +175,7 @@ impl Project {
     }
 
     /// The Markdown documents with their tags and descriptions, worked out from the files: the tags in each document's
-    /// front matter and the ones added in TrailMark (read from `meta.toml`, which is never written here). Front matter
+    /// front matter and the ones added in PerMark (read from `meta.toml`, which is never written here). Front matter
     /// is read again only for the documents whose size or time changed since the last call.
     pub(crate) fn docs(&self) -> DocIndex {
         let (entries, problem) = self.app_entries();
@@ -205,13 +205,13 @@ impl Project {
         DocIndex::new(docs, problem.map(|problem| unreadable_meta(&problem)))
     }
 
-    /// The tags and descriptions added in TrailMark, or why they cannot be read (then there are none, as in the window).
+    /// The tags and descriptions added in PerMark, or why they cannot be read (then there are none, as in the window).
     fn app_entries(&self) -> (Entries, Option<crate::meta::store::Problem>) {
         let mut entries = match Entries::read_file(&self.meta_path) {
             Ok(entries) => entries,
             Err(problem) => return (Entries::default(), Some(problem)),
         };
-        // what was added before the project had a `.trailmark/` folder already counts: the window only has not moved it yet
+        // what was added before the project had a `.permark/` folder already counts: the window only has not moved it yet
         if let Some(older) = self
             .older_meta_path
             .as_deref()
@@ -402,7 +402,7 @@ mod tests {
         let fx = fx();
         let nested = fx.project.path().join("docs").join("deep").join("er");
         fs::create_dir_all(&nested).expect("mkdir");
-        // TrailMark has never seen this folder.
+        // PerMark has never seen this folder.
         assert_eq!(find_project(fx.app.path(), &nested), None);
         // Once the app kept state for it, any folder inside finds it.
         store(&fx)
@@ -422,15 +422,15 @@ mod tests {
             .save_session(&SessionState::default())
             .expect("save");
         let inner = fx.project.path().join("docs");
-        fs::create_dir(inner.join(".trailmark")).expect("mkdir");
+        fs::create_dir(inner.join(".permark")).expect("mkdir");
         let found = find_project(fx.app.path(), &inner);
         assert_eq!(found, Some(dunce::canonicalize(&inner).expect("canonical")));
     }
 
     #[test]
-    fn a_folder_with_a_trailmark_folder_is_a_project() {
+    fn a_folder_with_a_permark_folder_is_a_project() {
         let fx = fx();
-        fs::create_dir(fx.project.path().join(".trailmark")).expect("mkdir");
+        fs::create_dir(fx.project.path().join(".permark")).expect("mkdir");
         assert_eq!(
             find_project(fx.app.path(), fx.project.path()),
             Some(root(&fx))
@@ -447,7 +447,7 @@ mod tests {
         assert!(!connection_is_on(fx.app.path(), &root(&fx)));
         store(&fx).set_agent_connection(true).expect("on");
         assert!(connection_is_on(fx.app.path(), &root(&fx)));
-        // It stays with the person when the project starts keeping its other settings in `.trailmark/`.
+        // It stays with the person when the project starts keeping its other settings in `.permark/`.
         let mut moved = store(&fx);
         moved.init_project_folder().expect("init");
         assert!(connection_is_on(fx.app.path(), &root(&fx)));
@@ -455,28 +455,28 @@ mod tests {
         assert!(!connection_is_on(fx.app.path(), &root(&fx)));
     }
 
-    /// A repository decides what is in its `.trailmark/` folder (it can be committed); it must not decide who sees
+    /// A repository decides what is in its `.permark/` folder (it can be committed); it must not decide who sees
     /// the person's reading.
     #[test]
     fn a_project_cannot_turn_the_connection_on_for_itself() {
         let fx = fx();
         write(
             &fx,
-            ".trailmark/local/session.json",
+            ".permark/local/session.json",
             r#"{"agentConnection": true}"#,
         );
         write(
             &fx,
-            ".trailmark/local/agent-connection.json",
+            ".permark/local/agent-connection.json",
             r#"{"enabled": true}"#,
         );
         write(
             &fx,
-            ".trailmark/agent-connection.json",
+            ".permark/agent-connection.json",
             r#"{"enabled": true}"#,
         );
         assert!(!connection_is_on(fx.app.path(), &root(&fx)));
-        // the folder is known (it has a `.trailmark/`), and still answers off
+        // the folder is known (it has a `.permark/`), and still answers off
         assert_eq!(
             find_project(fx.app.path(), fx.project.path()),
             Some(root(&fx))
@@ -486,14 +486,14 @@ mod tests {
         assert!(connection_is_on(fx.app.path(), &root(&fx)));
     }
 
-    /// The notes folder has a `.trailmark/` folder like a project, and is private: it is not found, whatever is inside it.
+    /// The notes folder has a `.permark/` folder like a project, and is private: it is not found, whatever is inside it.
     #[test]
     fn the_notes_folder_is_never_a_project() {
         let fx = fx();
-        let notes = root(&fx).join("TrailMark Notes");
-        fs::create_dir_all(notes.join(".trailmark")).expect("mkdir");
+        let notes = root(&fx).join("PerMark Notes");
+        fs::create_dir_all(notes.join(".permark")).expect("mkdir");
         fs::create_dir_all(notes.join("sub")).expect("mkdir");
-        // before it is the notes folder, it looks like any folder with a `.trailmark/`
+        // before it is the notes folder, it looks like any folder with a `.permark/`
         assert_eq!(find_project(fx.app.path(), &notes), Some(notes.clone()));
 
         AppSettingsStore::new(fx.app.path())
@@ -573,7 +573,7 @@ mod tests {
             "notes/secret.md",
             "# Secret\n\nThe beacon passphrase is pelican.\n",
         );
-        write(&fx, "notes/.trailmark/state.json", "{}");
+        write(&fx, "notes/.permark/state.json", "{}");
         let notes = root(&fx).join("notes");
         let project = Project::open(&root(&fx), fx.app.path(), None).expect("open");
         // before the folder is the notes folder it is a folder of the project like any other

@@ -35,7 +35,7 @@ impl Fx {
     }
 
     fn project_meta(&self) -> PathBuf {
-        self.project.path().join(".trailmark/meta.toml")
+        self.project.path().join(".permark/meta.toml")
     }
 
     fn service_at(&self, path: PathBuf, watched: bool, timing: Timing) -> MetaService {
@@ -256,7 +256,7 @@ fn an_unreadable_file_makes_app_tags_read_only_but_file_tags_still_work() {
     let fx = Fx::new();
     fx.write("a.md", "---\ntags: [feed]\n---\n");
     let broken = "[files.\"a.md\"]\ntags = [\"x\"]\n<<<<<<< HEAD\ntags = [\"y\"]\n=======\n";
-    fx.write(".trailmark/meta.toml", broken);
+    fx.write(".permark/meta.toml", broken);
     let svc = fx.project_service();
 
     let status = svc.status();
@@ -282,7 +282,7 @@ fn an_unreadable_file_makes_app_tags_read_only_but_file_tags_still_work() {
     );
 
     // Fixing the file brings the app's tags back.
-    fx.write(".trailmark/meta.toml", "[files.\"a.md\"]\ntags = [\"x\"]\n");
+    fx.write(".permark/meta.toml", "[files.\"a.md\"]\ntags = [\"x\"]\n");
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
     assert!(svc.status().problem.is_none());
     let meta = svc.file_meta("a.md").expect("meta");
@@ -304,7 +304,7 @@ fn our_own_writes_are_echoes_and_other_edits_are_read_in() {
 
     // Someone else (an agent, a teammate's pull) edits the file.
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"a.md\"]\ntags = [\"theirs\"]\n[files.\"b.md\"]\ndescription = \"new\"\n",
     );
     let before = fx.notified.load(Ordering::SeqCst);
@@ -345,7 +345,7 @@ fn the_watcher_hides_our_own_writes_but_not_other_edits() {
     let svc = fx.lazy_service(fx.project_meta(), true);
     svc.set_tags("a.md", &s(&["x"])).expect("tags");
     svc.stop(); // writes now
-    let own = [change(".trailmark/meta.toml")];
+    let own = [change(".permark/meta.toml")];
     assert!(svc.on_fs_changes(&own), "an echo of our write");
     assert!(
         !svc.on_fs_changes(&[change("a.md")]),
@@ -353,13 +353,13 @@ fn the_watcher_hides_our_own_writes_but_not_other_edits() {
     );
 
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"a.md\"]\ntags = [\"edited\"]\n",
     );
     assert!(!svc.on_fs_changes(&own), "an edit by someone else is news");
     assert_eq!(svc.file_meta("a.md").expect("a").tags[0].name, "edited");
 
-    let mut changes = vec![change("a.md"), change(".trailmark/meta.toml")];
+    let mut changes = vec![change("a.md"), change(".permark/meta.toml")];
     MetaService::without_meta_file(&mut changes);
     assert_eq!(changes, [change("a.md")]);
 }
@@ -370,14 +370,14 @@ fn an_edit_that_lands_before_our_delayed_write_is_kept_and_ours_is_added_on_top(
     fx.write("a.md", "# A\n");
     fx.write("b.md", "# B\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"b.md\"]\ntags = [\"before\"]\n",
     );
     let svc = fx.lazy_service(fx.project_meta(), true);
     svc.set_tags("a.md", &s(&["mine"])).expect("tags");
     // The agent's edit arrives within our delay, and the watcher has not reported it yet.
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"b.md\"]\ntags = [\"agent\"]\n[files.\"c.md\"]\ntags = [\"also\"]\n",
     );
     svc.stop();
@@ -394,7 +394,7 @@ fn a_file_that_becomes_unreadable_before_our_write_is_left_untouched() {
     fx.write("a.md", "# A\n");
     let svc = fx.lazy_service(fx.project_meta(), true);
     svc.set_tags("a.md", &s(&["mine"])).expect("tags");
-    fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n");
+    fx.write(".permark/meta.toml", "<<<<<<< HEAD\n");
     svc.stop();
     assert_eq!(
         fs::read_to_string(fx.project_meta()).expect("read"),
@@ -615,7 +615,7 @@ fn initializing_merges_with_a_meta_toml_a_teammate_committed() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"a.md\"]\ntags = [\"team\"]\ndescription = \"theirs\"\n",
     );
     let svc = fx.service();
@@ -635,14 +635,14 @@ fn initializing_merges_with_a_meta_toml_a_teammate_committed() {
 fn initializing_leaves_a_team_file_byte_for_byte_and_never_creates_an_empty_one() {
     let fx = Fx::new();
     let team = "# hand formatted\n[files.\"a.md\"]\ntags=[\"team\"]\n";
-    fx.write(".trailmark/meta.toml", team);
+    fx.write(".permark/meta.toml", team);
     let svc = fx.service();
     svc.migrate_to(fx.project_meta(), true).expect("migrate");
     svc.stop();
     assert_eq!(fs::read_to_string(fx.project_meta()).expect("read"), team);
 
     let fx = Fx::new();
-    fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+    fs::create_dir_all(fx.project.path().join(".permark")).expect("mkdir");
     let svc = fx.service();
     svc.migrate_to(fx.project_meta(), true).expect("migrate");
     svc.stop();
@@ -653,7 +653,7 @@ fn initializing_leaves_a_team_file_byte_for_byte_and_never_creates_an_empty_one(
 fn initializing_does_not_overwrite_a_meta_toml_it_cannot_read_and_keeps_the_appdata_tags() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
-    fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n");
+    fx.write(".permark/meta.toml", "<<<<<<< HEAD\n");
     let svc = fx.service();
     svc.set_tags("a.md", &s(&["mine"])).expect("tags");
     let err = svc
@@ -676,7 +676,7 @@ fn initializing_does_not_overwrite_a_meta_toml_it_cannot_read_and_keeps_the_appd
 
     // The conflict is resolved by hand: the merge happens, and the AppData file is retired.
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"b.md\"]\ntags = [\"team\"]\n",
     );
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
@@ -692,11 +692,11 @@ fn initializing_does_not_overwrite_a_meta_toml_it_cannot_read_and_keeps_the_appd
 }
 
 #[test]
-fn a_project_that_already_has_a_trailmark_folder_takes_the_appdata_tags_in_when_it_opens() {
+fn a_project_that_already_has_a_permark_folder_takes_the_appdata_tags_in_when_it_opens() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     fx.write("b.md", "# B\n");
-    // tags added before the project had a .trailmark/ folder, in AppData
+    // tags added before the project had a .permark/ folder, in AppData
     let before = fx.service();
     before.set_tags("a.md", &s(&["mine"])).expect("tags");
     before
@@ -704,9 +704,9 @@ fn a_project_that_already_has_a_trailmark_folder_takes_the_appdata_tags_in_when_
         .expect("description");
     before.stop();
     assert!(fx.app_meta().exists());
-    // a teammate committed .trailmark/meta.toml in the meantime
+    // a teammate committed .permark/meta.toml in the meantime
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"a.md\"]\ntags = [\"team\"]\ndescription = \"theirs\"\n[files.\"b.md\"]\ntags = [\"b\"]\n",
     );
 
@@ -733,7 +733,7 @@ fn opening_with_appdata_tags_and_no_project_file_creates_it() {
     let before = fx.service();
     before.set_tags("a.md", &s(&["mine"])).expect("tags");
     before.stop();
-    fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+    fs::create_dir_all(fx.project.path().join(".permark")).expect("mkdir");
 
     let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
     assert!(fs::read_to_string(fx.project_meta())
@@ -751,7 +751,7 @@ fn an_unreadable_project_file_keeps_the_appdata_copy_for_later() {
     let before = fx.service();
     before.set_tags("a.md", &s(&["mine"])).expect("tags");
     before.stop();
-    fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n");
+    fx.write(".permark/meta.toml", "<<<<<<< HEAD\n");
 
     let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
     assert!(svc.status().problem.is_some());
@@ -765,7 +765,7 @@ fn an_unreadable_project_file_keeps_the_appdata_copy_for_later() {
     assert!(fx.app_meta().exists());
 
     // On the next open the file is fine: the merge happens then.
-    fx.write(".trailmark/meta.toml", "");
+    fx.write(".permark/meta.toml", "");
     fs::remove_file(fx.project_meta()).expect("remove");
     let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
     assert!(!fx.app_meta().exists());
@@ -779,7 +779,7 @@ fn an_appdata_copy_that_cannot_be_read_is_left_where_it_is() {
     fx.write("a.md", "# A\n");
     fs::write(fx.app_meta(), "<<<<<<< HEAD\n").expect("write");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"a.md\"]\ntags = [\"team\"]\n",
     );
     let team = fs::read_to_string(fx.project_meta()).expect("read");
@@ -798,7 +798,7 @@ fn nothing_is_rewritten_when_the_appdata_copy_adds_nothing() {
     before.set_tags("a.md", &s(&["same"])).expect("tags");
     before.stop();
     let team = "# hand formatted\n[files.\"a.md\"]\ntags=[\"same\"]\n";
-    fx.write(".trailmark/meta.toml", team);
+    fx.write(".permark/meta.toml", team);
     let svc = fx.service_with(fx.project_meta(), true, Some(fx.app_meta()), QUICK);
     assert_eq!(fs::read_to_string(fx.project_meta()).expect("read"), team);
     assert!(
@@ -814,7 +814,7 @@ fn a_file_that_is_cut_off_while_someone_writes_it_is_not_taken_for_empty() {
     fx.write("b.md", "# B\n");
     fx.write("c.md", "# C\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"b.md\"]\ntags = [\"keep\"]\n",
     );
     let svc = fx.project_service();
@@ -854,7 +854,7 @@ fn our_own_write_does_not_wipe_the_others_when_it_meets_a_half_written_file() {
         e.set_tags("b.md", &s(&["keep"]));
         e.to_toml()
     };
-    fx.write(".trailmark/meta.toml", &original);
+    fx.write(".permark/meta.toml", &original);
     let svc = fx.lazy_service(fx.project_meta(), true);
     svc.set_tags("a.md", &s(&["mine"])).expect("tags");
 
@@ -1003,17 +1003,14 @@ fn changes_made_before_the_file_became_unreadable_are_kept_and_applied_once_it_i
     for name in ["a.md", "b.md", "c.md"] {
         fx.write(name, "# F\n");
     }
-    fx.write(
-        ".trailmark/meta.toml",
-        "[files.\"b.md\"]\ntags = [\"old\"]\n",
-    );
+    fx.write(".permark/meta.toml", "[files.\"b.md\"]\ntags = [\"old\"]\n");
     let svc = fx.lazy_service(fx.project_meta(), true);
     svc.set_tags("a.md", &s(&["mine"])).expect("tags");
     svc.set_description("c.md", "mine too")
         .expect("description");
 
     // a git operation leaves conflict markers before our delayed write
-    fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n[files.\"b.md\"]\n");
+    fx.write(".permark/meta.toml", "<<<<<<< HEAD\n[files.\"b.md\"]\n");
     let marked = fs::read_to_string(fx.project_meta()).expect("read");
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
     let status = svc.status();
@@ -1026,7 +1023,7 @@ fn changes_made_before_the_file_became_unreadable_are_kept_and_applied_once_it_i
 
     // someone fixes the file: the waiting changes are laid on top of it and written
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"b.md\"]\ntags = [\"fixed\"]\n",
     );
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
@@ -1048,7 +1045,7 @@ fn entries_that_differ_only_in_case_are_both_kept_when_the_file_is_rewritten() {
     let fx = Fx::new();
     fx.write("other.md", "# O\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"Notes.md\"]\ntags = [\"upper\"]\n[files.\"notes.md\"]\ntags = [\"lower\"]\n",
     );
     let svc = fx.project_service();
@@ -1065,7 +1062,7 @@ fn unknown_top_level_keys_survive_the_apps_own_edits() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "version = 2\n[tags.spec]\ncolor = \"red\"\n[files.\"a.md\"]\ntags = [\"x\"]\n",
     );
     let svc = fx.project_service();
@@ -1086,7 +1083,7 @@ fn a_file_that_is_not_utf8_is_a_problem_and_is_not_rewritten() {
     fx.write("a.md", "# A\n");
     let mut bad = b"[files.\"a.md\"]\ndescription = \"caf".to_vec();
     bad.extend([0xE9, b'"', b'\n']);
-    fs::create_dir_all(fx.project.path().join(".trailmark")).expect("mkdir");
+    fs::create_dir_all(fx.project.path().join(".permark")).expect("mkdir");
     fs::write(fx.project_meta(), &bad).expect("write");
     let svc = fx.project_service();
     let problem = svc.status().problem.expect("a problem");

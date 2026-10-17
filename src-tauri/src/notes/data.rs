@@ -1,4 +1,4 @@
-//! `notes.json`, in the notes folder's `.trailmark/` folder: what TrailMark remembers about the notes besides their text.
+//! `notes.json`, in the notes folder's `.permark/` folder: what PerMark remembers about the notes besides their text.
 //! The order of the pinned notes, the note that was open, where the caret and the scroll were, the editor each note
 //! was in, which notes were copied, and a cache of titles. Everything in it can be rebuilt from the files: a missing or
 //! damaged file only means the notes come back in the order of their last change, unpinned, with the caret at the start.
@@ -14,8 +14,6 @@ use serde_json::Value;
 use super::loose::{self, LooseFile};
 use crate::util::write_atomic;
 
-/// The folder next to the notes where TrailMark keeps its own data. The notes' watcher and index ignore it.
-pub(crate) const STATE_DIR: &str = ".trailmark";
 pub(crate) const FILE_NAME: &str = "notes.json";
 /// Where a `notes.json` that cannot be read is kept before it is replaced.
 const BACKUP_NAME: &str = "notes.json.bak";
@@ -82,7 +80,7 @@ pub(crate) struct NotesData {
     pub loose: Vec<LooseFile>,
     /// The notes the person shared with agents, by file name. Only these can be listed and read through an agent connection.
     pub shared: Vec<String>,
-    /// The file was written by a newer version of TrailMark. It is read for what this version understands and never written
+    /// The file was written by a newer version of PerMark. It is read for what this version understands and never written
     /// over, so going back to an older version does not strip what the newer one keeps in it.
     #[serde(skip)]
     pub(crate) newer: bool,
@@ -203,7 +201,7 @@ impl NotesData {
 
     /// Where the file is, for the notes folder `root`.
     pub(crate) fn path(root: &Path) -> PathBuf {
-        root.join(STATE_DIR).join(FILE_NAME)
+        crate::session::state_dir(root).join(FILE_NAME)
     }
 
     /// The data kept in the notes folder `root`, read and nothing else (the defaults when there is none or it cannot be read).
@@ -384,7 +382,7 @@ mod tests {
         data.save(dir.path()).expect("save");
         data.version = VERSION;
         assert_eq!(NotesData::load(dir.path()), data);
-        assert!(dir.path().join(".trailmark").join("notes.json").is_file());
+        assert!(dir.path().join(".permark").join("notes.json").is_file());
     }
 
     #[test]

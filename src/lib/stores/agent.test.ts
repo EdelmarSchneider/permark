@@ -22,7 +22,7 @@ const OFF: AgentStatus = {
   connections: 0,
   recent: [],
   error: null,
-  program: "/usr/bin/trailmark",
+  program: "/usr/bin/permark",
 };
 const ON: AgentStatus = { ...OFF, enabled: true, listening: true };
 
@@ -240,6 +240,6 @@ describe("the status", () => {
     await agent.onProjectOpened();
     expect(agent.enabled).toBe(true);
     expect(agent.connected).toBe(true);
-    expect(agent.status.program).toBe("/usr/bin/trailmark");
+    expect(agent.status.program).toBe("/usr/bin/permark");
   });
 });

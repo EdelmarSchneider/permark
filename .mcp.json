@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "trailmark": {
-      "command": "trailmark",
+    "permark": {
+      "command": "permark",
       "args": ["mcp"]
     }
   }

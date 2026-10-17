@@ -20,7 +20,7 @@ use crate::vault::{key, strip_root, Vault, VaultError, WORKTREE_PREFIX};
 use crate::watch::OwnWrites;
 
 /// Folders the app keeps for itself or that make a folder a repository: never renamed, moved or deleted from the Explorer.
-const PROTECTED: [&str; 2] = [".git", ".trailmark"];
+const PROTECTED: [&str; 3] = [".git", ".permark", ".trailmark"];
 
 const RENAME_RETRY: [Duration; 3] = [
     Duration::from_millis(50),

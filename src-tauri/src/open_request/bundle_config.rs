@@ -9,7 +9,7 @@ use tauri::utils::config::{BundleTypeRole, FileAssociation, HandlerRank, LinuxCo
 const MAIN: &str = include_str!("../../tauri.conf.json");
 const MACOS: &str = include_str!("../../tauri.macos.conf.json");
 const LINUX: &str = include_str!("../../tauri.linux.conf.json");
-const DESKTOP_TEMPLATE: &str = include_str!("../../installer/trailmark.desktop");
+const DESKTOP_TEMPLATE: &str = include_str!("../../installer/permark.desktop");
 
 fn bundle(json: &str) -> Value {
     let config: Value = serde_json::from_str(json).expect("valid json");
@@ -27,7 +27,7 @@ fn exts(association: &FileAssociation) -> Vec<String> {
 }
 
 #[test]
-fn macos_lists_trailmark_for_markdown_files_without_taking_over_the_default() {
+fn macos_lists_permark_for_markdown_files_without_taking_over_the_default() {
     let all = associations(MACOS);
     let markdown = all
         .iter()
@@ -81,7 +81,7 @@ fn windows_keeps_its_own_registration_and_declares_no_associations() {
     assert!(bundle(MAIN).get("fileAssociations").is_none());
 }
 
-/// The default entry is `Exec=trailmark` with no field code, which tells the file manager not to pass the file.
+/// The default entry is `Exec=permark` with no field code, which tells the file manager not to pass the file.
 #[test]
 fn the_desktop_entry_of_the_deb_and_rpm_passes_the_file_to_the_program() {
     let linux: LinuxConfig =

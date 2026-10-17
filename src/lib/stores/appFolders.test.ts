@@ -269,7 +269,7 @@ describe("removing a recent folder", () => {
     expect(app.visibleRecents.map((r) => r.root)).toEqual([ALPHA.root]);
     // the list is the backend's: nothing was asked of the disk
     expect(fake.openVault).not.toHaveBeenCalled();
-    expect(JSON.parse(localStorage.getItem("trailmark.recents.hidden") ?? "[]")).toEqual([
+    expect(JSON.parse(localStorage.getItem("permark.recents.hidden") ?? "[]")).toEqual([
       BETA.root,
     ]);
   });
@@ -280,7 +280,7 @@ describe("removing a recent folder", () => {
     fake.openVault.mockResolvedValue(BETA);
     await app.openProject(BETA.root);
     expect(app.hiddenRecents.has(BETA.root)).toBe(false);
-    expect(JSON.parse(localStorage.getItem("trailmark.recents.hidden") ?? "[]")).toEqual([]);
+    expect(JSON.parse(localStorage.getItem("permark.recents.hidden") ?? "[]")).toEqual([]);
   });
 
   it("leaves the other removed folders removed when one is opened again", async () => {

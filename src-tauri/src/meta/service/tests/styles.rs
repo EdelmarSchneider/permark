@@ -98,7 +98,7 @@ fn looks_that_nothing_uses_any_more_do_no_harm() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[files.\"a.md\"]\ntags = [\"x\"]\n\n[tag_styles.gone]\ncolor = \"green\"\n\n[tag_styles.x]\nicon = \"star\"\n",
     );
     let svc = fx.project_service();
@@ -119,7 +119,7 @@ fn a_file_with_unknown_looks_is_read_and_keeps_them_when_rewritten() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[tag_styles.spec]\ncolor = \"chartreuse\"\nicon = \"star\"\n",
     );
     let svc = fx.project_service();
@@ -138,16 +138,13 @@ fn a_file_with_unknown_looks_is_read_and_keeps_them_when_rewritten() {
 fn an_unreadable_file_makes_looks_read_only_and_changes_wait_for_the_fix() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
-    fx.write(
-        ".trailmark/meta.toml",
-        "[tag_styles.old]\ncolor = \"red\"\n",
-    );
+    fx.write(".permark/meta.toml", "[tag_styles.old]\ncolor = \"red\"\n");
     let svc = fx.lazy_service(fx.project_meta(), true);
     svc.set_tag_style("mine", Some("teal"), None)
         .expect("style");
 
     // a git operation leaves conflict markers before our delayed write
-    fx.write(".trailmark/meta.toml", "<<<<<<< HEAD\n[tag_styles.old]\n");
+    fx.write(".permark/meta.toml", "<<<<<<< HEAD\n[tag_styles.old]\n");
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
     let status = svc.status();
     assert!(status.problem.is_some());
@@ -157,10 +154,7 @@ fn an_unreadable_file_makes_looks_read_only_and_changes_wait_for_the_fix() {
         .expect_err("read-only");
     assert_eq!(err.kind(), "metaUnreadable");
 
-    fx.write(
-        ".trailmark/meta.toml",
-        "[tag_styles.old]\ncolor = \"red\"\n",
-    );
+    fx.write(".permark/meta.toml", "[tag_styles.old]\ncolor = \"red\"\n");
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
     assert_eq!(svc.status().pending_changes, 0);
     assert_eq!(
@@ -189,7 +183,7 @@ fn another_edit_of_the_file_changes_the_looks_shown() {
     assert_eq!(svc.on_disk_event(), DiskEvent::Echo);
 
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[tag_styles.spec]\ncolor = \"purple\"\nicon = \"code\"\n",
     );
     assert_eq!(svc.on_disk_event(), DiskEvent::Reloaded);
@@ -202,7 +196,7 @@ fn initializing_the_project_moves_the_looks_along_and_keeps_the_teams() {
     let fx = Fx::new();
     fx.write("a.md", "# A\n");
     fx.write(
-        ".trailmark/meta.toml",
+        ".permark/meta.toml",
         "[tag_styles.shared]\ncolor = \"green\"\n[tag_styles.spec]\ncolor = \"blue\"\n",
     );
     let svc = fx.service();

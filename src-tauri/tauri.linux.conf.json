@@ -9,8 +9,8 @@
       }
     ],
     "linux": {
-      "deb": { "desktopTemplate": "installer/trailmark.desktop" },
-      "rpm": { "desktopTemplate": "installer/trailmark.desktop" }
+      "deb": { "desktopTemplate": "installer/permark.desktop" },
+      "rpm": { "desktopTemplate": "installer/permark.desktop" }
     }
   }
 }

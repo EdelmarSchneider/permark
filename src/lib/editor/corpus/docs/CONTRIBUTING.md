@@ -1,6 +1,6 @@
-# Contributing to TrailMark
+# Contributing to PerMark
 
-Thanks for your interest. TrailMark is created and maintained by Edelmar Schneider, who sets its direction and has
+Thanks for your interest. PerMark is created and maintained by Edelmar Schneider, who sets its direction and has
 the final say on what gets merged. Issues, ideas and pull requests are welcome.
 
 ## Before you start
@@ -47,5 +47,5 @@ which appends `Signed-off-by: Your Name <you@example.com>`.
 
 ## Licensing of contributions
 Unless you state otherwise, any contribution you submit is licensed under both [MIT](LICENSE-MIT) and
-[Apache-2.0](LICENSE-APACHE), the same as the project, without additional terms. The TrailMark name and logo are covered
+[Apache-2.0](LICENSE-APACHE), the same as the project, without additional terms. The PerMark name and logo are covered
 by [TRADEMARKS.md](TRADEMARKS.md).

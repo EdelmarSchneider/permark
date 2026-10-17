@@ -1,4 +1,4 @@
-//! `StateStore`: where a project's session and last-visit data live, and `.trailmark/` initialization.
+//! `StateStore`: where a project's session and last-visit data live, and `.permark/` initialization.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::config::{Config, DEFAULT_CONFIG_TOML};
+use super::legacy;
 use super::private;
 use super::window::{self, WindowState};
 use super::{SessionError, SessionState};
@@ -19,9 +20,9 @@ const AGENT_FILE: &str = "agent.json";
 const META_FILE: &str = "meta.toml";
 /// The agent connection's switch, in the project's folder in AppData (see [`StateStore::agent_connection`]).
 const CONNECTION_FILE: &str = "agent-connection.json";
-const TRAILMARK_DIR: &str = ".trailmark";
+const PERMARK_DIR: &str = ".permark";
 const PROJECT_GITIGNORE: &str = "\
-# TrailMark private state: not shared.
+# PerMark private state: not shared.
 cache/
 local/
 ";
@@ -62,13 +63,13 @@ struct ConnectionSwitch {
 
 #[derive(Debug)]
 pub struct StateStore {
-    /// Canonical project root.
-    root: PathBuf,
     location: StateLocation,
     /// Directory holding `session.json` and `last_visit.json`.
     dir: PathBuf,
-    /// This project's folder in AppData, which holds the state of a project that has no `.trailmark/`.
+    /// This project's folder in AppData, which holds the state of a project that has no `.permark/`.
     appdata_dir: PathBuf,
+    /// The project's state folder: `.permark/`, or the older `.trailmark/` when it could not be renamed.
+    state_dir: PathBuf,
 }
 
 /// Stable, case-insensitive-on-Windows key for a project folder.
@@ -84,38 +85,38 @@ pub(crate) fn project_key(root: &Path) -> String {
 }
 
 impl StateStore {
-    /// Uses `.trailmark/local/` when the project has a `.trailmark/` folder, AppData otherwise. A `.trailmark/` or
-    /// `.trailmark/local/` that is a link (a repository can carry one) is not used: the state stays in AppData, so
+    /// Uses `.permark/local/` when the project has a `.permark/` folder, AppData otherwise. A `.permark/` or
+    /// `.permark/local/` that is a link (a repository can carry one) is not used: the state stays in AppData, so
     /// nothing is written or deleted wherever the link points.
     pub fn open(app_data_dir: &Path, root: &Path) -> Self {
         // Canonical when possible, so every spelling of a folder (8.3 short names, `..`, case on Windows) maps to
         // one key. The workspace already passes the vault's canonical root, for which this changes nothing.
         let root =
             dunce::canonicalize(root).unwrap_or_else(|_| dunce::simplified(root).to_path_buf());
-        let trailmark = root.join(TRAILMARK_DIR);
+        let permark = legacy::state_dir(&root);
         let outside = app_data_dir.join("projects").join(project_key(&root));
-        let (location, dir) = if private::usable_in(&trailmark) {
-            (StateLocation::Project, trailmark.join("local"))
+        let (location, dir) = if private::usable_in(&permark) {
+            (StateLocation::Project, permark.join("local"))
         } else {
             (StateLocation::AppData, outside.clone())
         };
         Self {
-            root,
             location,
             dir,
             appdata_dir: outside,
+            state_dir: permark,
         }
     }
 
     /// The state of a folder that is never a project (the notes folder): always in the app's own data, whatever the folder
-    /// holds. Its `.trailmark/` is TrailMark's data about the notes, shared with whoever syncs the folder, and the
+    /// holds. Its `.permark/` is PerMark's data about the notes, shared with whoever syncs the folder, and the
     /// window's settings (theme, zoom, panel sizes) belong to this computer.
     pub fn open_in_app_data(app_data_dir: &Path, root: &Path) -> Self {
         let root =
             dunce::canonicalize(root).unwrap_or_else(|_| dunce::simplified(root).to_path_buf());
         let outside = app_data_dir.join("projects").join(project_key(&root));
         Self {
-            root,
+            state_dir: root.join(PERMARK_DIR),
             location: StateLocation::AppData,
             dir: outside.clone(),
             appdata_dir: outside,
@@ -143,28 +144,28 @@ impl StateStore {
     }
 
     /// Where the agent connection keeps what the person is looking at: `agent.json` with the rest of the local
-    /// state, but only in a project that keeps its state in `.trailmark/` (nothing is written into AppData for
+    /// state, but only in a project that keeps its state in `.permark/` (nothing is written into AppData for
     /// other programs to find).
     pub fn agent_path(&self) -> Option<PathBuf> {
         (self.location == StateLocation::Project).then(|| self.dir.join(AGENT_FILE))
     }
 
-    /// Whether TrailMark has been used on this folder: it has a `.trailmark/` folder, or the app kept state for it.
+    /// Whether PerMark has been used on this folder: it has a `.permark/` folder, or the app kept state for it.
     /// This is how a program started somewhere inside a project finds the project.
     pub fn is_known(&self) -> bool {
         self.location == StateLocation::Project || self.dir.is_dir()
     }
 
-    /// Where the tags and descriptions added in the app are kept: `.trailmark/meta.toml` (shared with
-    /// the project) once the project has a `.trailmark/` folder, a file next to the AppData state before.
+    /// Where the tags and descriptions added in the app are kept: `.permark/meta.toml` (shared with
+    /// the project) once the project has a `.permark/` folder, a file next to the AppData state before.
     pub fn meta_path(&self) -> PathBuf {
         match self.location {
-            StateLocation::Project => self.root.join(TRAILMARK_DIR).join(META_FILE),
+            StateLocation::Project => self.state_dir.join(META_FILE),
             StateLocation::AppData => self.appdata_dir.join(META_FILE),
         }
     }
 
-    /// The AppData `meta.toml` of a project that has a `.trailmark/` folder now: tags added before the
+    /// The AppData `meta.toml` of a project that has a `.permark/` folder now: tags added before the
     /// folder existed may still be in it, and have to be merged into the project's file.
     pub fn legacy_meta_path(&self) -> Option<PathBuf> {
         (self.location == StateLocation::Project).then(|| self.appdata_dir.join(META_FILE))
@@ -173,8 +174,8 @@ impl StateStore {
     /// Whether the person turned the agent connection on for this project.
     ///
     /// The switch lives only in the app's own data folder, never in the project: a project's files are content that
-    /// somebody else may have written (a cloned repository can carry a `.trailmark/` folder), and what they say must
-    /// not be able to share the person's reading with an agent. Nothing in `.trailmark/` is read for it.
+    /// somebody else may have written (a cloned repository can carry a `.permark/` folder), and what they say must
+    /// not be able to share the person's reading with an agent. Nothing in `.permark/` is read for it.
     pub fn agent_connection(&self) -> bool {
         std::fs::read(self.appdata_dir.join(CONNECTION_FILE))
             .ok()
@@ -194,13 +195,13 @@ impl StateStore {
         write_atomic(&path, &bytes).map_err(|e| SessionError::io(&path, e))
     }
 
-    /// Project settings from `.trailmark/config.toml`; defaults when missing or invalid.
+    /// Project settings from `.permark/config.toml`; defaults when missing or invalid.
     pub fn config(&self) -> Config {
-        let trailmark = self.root.join(TRAILMARK_DIR);
-        if !private::is_real_folder(&trailmark) {
+        let permark = self.state_dir.clone();
+        if !private::is_real_folder(&permark) {
             return Config::default();
         }
-        std::fs::read_to_string(trailmark.join("config.toml"))
+        std::fs::read_to_string(permark.join("config.toml"))
             .ok()
             .and_then(|t| Config::parse(&t).ok())
             .unwrap_or_default()
@@ -244,11 +245,11 @@ impl StateStore {
         state.save(&self.dir)
     }
 
-    /// Creates `.trailmark/{config.toml, .gitignore, cache/, local/}` (existing files are kept; `cache/` and `local/`
-    /// ignore themselves), carries the AppData state over, and switches to project storage. A `.trailmark/` or one
+    /// Creates `.permark/{config.toml, .gitignore, cache/, local/}` (existing files are kept; `cache/` and `local/`
+    /// ignore themselves), carries the AppData state over, and switches to project storage. A `.permark/` or one
     /// of its folders that is a link is refused.
     pub fn init_project_folder(&mut self) -> Result<(), SessionError> {
-        let tm = self.root.join(TRAILMARK_DIR);
+        let tm = self.state_dir.clone();
         let io = |p: &Path| {
             let p = p.to_path_buf();
             move |e| SessionError::io(&p, e)
@@ -351,7 +352,7 @@ mod tests {
         assert!(s.meta_path().starts_with(f.app.path()));
         s.init_project_folder().expect("init");
         let root = dunce::canonicalize(f.project.path()).expect("canonical");
-        let project_file = root.join(".trailmark").join("meta.toml");
+        let project_file = root.join(".permark").join("meta.toml");
         assert_eq!(s.meta_path(), project_file);
         // The shared file is not in the gitignored local/ folder.
         assert!(!s.meta_path().starts_with(s.dir()));
@@ -359,7 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn the_appdata_meta_file_is_only_a_legacy_once_the_project_has_a_trailmark_folder() {
+    fn the_appdata_meta_file_is_only_a_legacy_once_the_project_has_a_permark_folder() {
         let f = fx();
         let s = f.store();
         assert_eq!(
@@ -367,7 +368,7 @@ mod tests {
             None,
             "in AppData it is the file itself"
         );
-        fs::create_dir(f.project.path().join(".trailmark")).expect("mkdir");
+        fs::create_dir(f.project.path().join(".permark")).expect("mkdir");
         let s = f.store();
         let legacy = s.legacy_meta_path().expect("a legacy path");
         assert!(legacy.starts_with(f.app.path().join("projects")));
@@ -450,17 +451,17 @@ mod tests {
     }
 
     #[test]
-    fn existing_trailmark_folder_switches_state_to_the_project() {
+    fn existing_permark_folder_switches_state_to_the_project() {
         let f = fx();
-        fs::create_dir(f.project.path().join(".trailmark")).expect("mkdir");
+        fs::create_dir(f.project.path().join(".permark")).expect("mkdir");
         let s = f.store();
         assert_eq!(s.location(), StateLocation::Project);
-        assert!(s.dir().ends_with(Path::new(".trailmark").join("local")));
+        assert!(s.dir().ends_with(Path::new(".permark").join("local")));
         s.save_session(&SessionState::default()).expect("save");
         assert!(f
             .project
             .path()
-            .join(".trailmark/local/session.json")
+            .join(".permark/local/session.json")
             .is_file());
         assert!(!f.app.path().join("projects").exists());
     }
@@ -488,12 +489,12 @@ mod tests {
     }
 
     #[test]
-    fn a_trailmark_folder_that_is_a_link_is_not_used() {
+    fn a_permark_folder_that_is_a_link_is_not_used() {
         use crate::util::testing::{dir_link, remove_link};
 
         let f = fx();
         let outside = outside();
-        let link = f.project.path().join(".trailmark");
+        let link = f.project.path().join(".permark");
         dir_link(&link, outside.path());
         let mut s = f.store();
         assert_eq!(s.location(), StateLocation::AppData);
@@ -520,9 +521,9 @@ mod tests {
 
         let f = fx();
         let outside = outside();
-        let trailmark = f.project.path().join(".trailmark");
-        fs::create_dir(&trailmark).expect("mkdir");
-        let link = trailmark.join("local");
+        let permark = f.project.path().join(".permark");
+        fs::create_dir(&permark).expect("mkdir");
+        let link = permark.join("local");
         dir_link(&link, outside.path());
         let mut s = f.store();
         assert_eq!(
@@ -551,13 +552,13 @@ mod tests {
         use crate::util::testing::{dir_link, remove_link};
 
         let f = fx();
-        fs::create_dir(f.project.path().join(".trailmark")).expect("mkdir");
+        fs::create_dir(f.project.path().join(".permark")).expect("mkdir");
         let s = f.store();
         assert_eq!(s.location(), StateLocation::Project);
         s.save_session(&SessionState::default()).expect("save");
         // a branch that was checked out brings a link in place of the folder
         let outside = outside();
-        let local = f.project.path().join(".trailmark/local");
+        let local = f.project.path().join(".permark/local");
         fs::remove_dir_all(&local).expect("rm");
         dir_link(&local, outside.path());
         assert!(s.save_session(&SessionState::default()).is_err());
@@ -571,7 +572,7 @@ mod tests {
         let f = fx();
         let mut s = f.store();
         s.init_project_folder().expect("init");
-        let tm = f.project.path().join(".trailmark");
+        let tm = f.project.path().join(".permark");
         for folder in ["local", "cache"] {
             let ignore = fs::read_to_string(tm.join(folder).join(".gitignore")).expect(folder);
             assert!(
@@ -581,12 +582,12 @@ mod tests {
         }
     }
 
-    /// A project can commit `.trailmark/` without a `.gitignore` (or with one that says nothing about `local/`).
+    /// A project can commit `.permark/` without a `.gitignore` (or with one that says nothing about `local/`).
     #[test]
     fn the_local_state_stays_out_of_git_whatever_the_projects_gitignore_says() {
         let f = fx();
         let repo = git2::Repository::init(f.project.path()).expect("git init");
-        let tm = f.project.path().join(".trailmark");
+        let tm = f.project.path().join(".permark");
         fs::create_dir(&tm).expect("mkdir");
         fs::write(tm.join("config.toml"), "").expect("write");
         fs::write(tm.join(".gitignore"), "# nothing about local\n").expect("write");
@@ -595,12 +596,12 @@ mod tests {
         fs::write(s.comments_path(), "{}").expect("write");
         assert!(s.dir().join(".gitignore").is_file());
         for file in ["session.json", "comments.json"] {
-            let path = Path::new(".trailmark/local").join(file);
+            let path = Path::new(".permark/local").join(file);
             assert!(repo.status_should_ignore(&path).expect("status"), "{file}");
         }
         // the shared part is not hidden
         assert!(!repo
-            .status_should_ignore(Path::new(".trailmark/config.toml"))
+            .status_should_ignore(Path::new(".permark/config.toml"))
             .expect("status"));
         // a folder that ignores itself is kept as the project wrote it when it already has a .gitignore
         fs::write(s.dir().join(".gitignore"), "mine\n").expect("write");
@@ -616,7 +617,7 @@ mod tests {
         let f = fx();
         let mut s = f.store();
         s.init_project_folder().expect("init");
-        let tm = f.project.path().join(".trailmark");
+        let tm = f.project.path().join(".permark");
         assert!(tm.join("config.toml").is_file());
         assert!(tm.join("cache").is_dir());
         assert!(tm.join("local").is_dir());
@@ -632,7 +633,7 @@ mod tests {
         let f = fx();
         let mut s = f.store();
         s.init_project_folder().expect("init");
-        let cfg = f.project.path().join(".trailmark/config.toml");
+        let cfg = f.project.path().join(".permark/config.toml");
         fs::write(&cfg, "baseline = \"head\"\nignore = [\"x/\"]\n").expect("write");
         s.init_project_folder().expect("init again");
         assert_eq!(
@@ -675,13 +676,13 @@ mod tests {
         fs::create_dir_all(s.dir()).expect("mkdir");
         fs::write(s.read_path(), r#"{"a.md": "00000000000000ab"}"#).expect("write");
         s.init_project_folder().expect("init");
-        let local = Path::new(".trailmark").join("local").join("read.json");
+        let local = Path::new(".permark").join("local").join("read.json");
         assert!(s.read_path().ends_with(&local));
         assert_eq!(
             fs::read_to_string(s.read_path()).expect("carried over"),
             r#"{"a.md": "00000000000000ab"}"#
         );
-        // never in the part of .trailmark that is shared
+        // never in the part of .permark that is shared
         assert_eq!(f.store().read_path(), s.read_path());
     }
 
@@ -694,13 +695,13 @@ mod tests {
         fs::create_dir_all(s.dir()).expect("mkdir");
         fs::write(s.comments_path(), r#"{"version": 1, "comments": []}"#).expect("write");
         s.init_project_folder().expect("init");
-        let local = Path::new(".trailmark").join("local").join("comments.json");
+        let local = Path::new(".permark").join("local").join("comments.json");
         assert!(s.comments_path().ends_with(&local));
         assert_eq!(
             fs::read_to_string(s.comments_path()).expect("carried over"),
             r#"{"version": 1, "comments": []}"#
         );
-        // in the part of .trailmark that is not shared
+        // in the part of .permark that is not shared
         assert_eq!(f.store().comments_path(), s.comments_path());
     }
 
@@ -710,20 +711,20 @@ mod tests {
         let mut s = f.store();
         assert_eq!(s.agent_path(), None, "nothing is written into AppData");
         s.init_project_folder().expect("init");
-        let local = Path::new(".trailmark").join("local").join("agent.json");
+        let local = Path::new(".permark").join("local").join("agent.json");
         assert!(s.agent_path().expect("a path").ends_with(&local));
         assert_eq!(f.store().agent_path(), s.agent_path());
     }
 
     #[test]
-    fn a_folder_is_known_once_the_app_kept_state_for_it_or_it_has_a_trailmark_folder() {
+    fn a_folder_is_known_once_the_app_kept_state_for_it_or_it_has_a_permark_folder() {
         let f = fx();
         assert!(!f.store().is_known(), "never opened");
         let s = f.store();
         s.save_session(&SessionState::default()).expect("save");
         assert!(f.store().is_known(), "the app kept state for it");
         let other = tempfile::tempdir().expect("tempdir");
-        fs::create_dir(other.path().join(".trailmark")).expect("mkdir");
+        fs::create_dir(other.path().join(".permark")).expect("mkdir");
         assert!(StateStore::open(f.app.path(), other.path()).is_known());
     }
 
@@ -753,7 +754,7 @@ mod tests {
         s.init_project_folder().expect("init");
         assert_eq!(s.load_window(), Some(window));
         assert_eq!(f.store().load_window(), Some(window));
-        let tm = f.project.path().join(".trailmark");
+        let tm = f.project.path().join(".permark");
         assert!(tm.join("local").join("window.json").is_file());
         assert!(!tm.join("window.json").exists());
         let moved = WindowState { x: 5, ..window };
@@ -767,9 +768,9 @@ mod tests {
     #[test]
     fn invalid_config_falls_back_to_defaults() {
         let f = fx();
-        fs::create_dir(f.project.path().join(".trailmark")).expect("mkdir");
+        fs::create_dir(f.project.path().join(".permark")).expect("mkdir");
         fs::write(
-            f.project.path().join(".trailmark/config.toml"),
+            f.project.path().join(".permark/config.toml"),
             "baseline = [",
         )
         .expect("write");

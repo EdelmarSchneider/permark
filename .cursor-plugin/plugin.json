@@ -1,9 +1,9 @@
 {
-  "name": "TrailMark",
+  "name": "PerMark",
   "description": "Read what your AI writes. Write what it reads. The desktop Markdown IDE and local MCP server for planning, reviewing specs, tracking live agent changes, and resolving inline comments.",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "logo": "docs/assets/logo.png",
-  "homepage": "https://edelmarschneider.github.io/trailmark/",
+  "homepage": "https://edelmarschneider.github.io/permark/",
   "license": "MIT OR Apache-2.0",
   "keywords": [
     "markdown",

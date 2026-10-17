@@ -51,7 +51,7 @@ const REFRESH_DELAY_MS = 250;
 /** The loose files are looked at this often while the window is in front, and at once when it gets the focus. */
 const LOOSE_WATCH_MS = 2000;
 /** The setting that reloads a loose file that changed on disk when nothing was typed into it (off unless the person turns it on). */
-const AUTO_RELOAD_KEY = "trailmark.notes.autoReload";
+const AUTO_RELOAD_KEY = "permark.notes.autoReload";
 
 function readAutoReload(): boolean {
   try {
@@ -91,7 +91,7 @@ class NotesStore {
   phase = $state<"boot" | "missing" | "ready" | "failed">("boot");
   failure = $state<string | null>(null);
   folder = $state.raw<NotesFolder | null>(null);
-  /** The notes can only be read here: another TrailMark window has them open (or the folder cannot be written). */
+  /** The notes can only be read here: another PerMark window has them open (or the folder cannot be written). */
   readOnly = $state<NotesReadOnly | null>(null);
   entries = $state.raw<NoteEntry[]>([]);
   /** The note on screen. */
@@ -1255,7 +1255,7 @@ class NotesStore {
     if (wasOpen) await this.openNeighbourOrNew(next);
   }
 
-  /** Starts TrailMark on the project that holds a file, showing it. */
+  /** Starts PerMark on the project that holds a file, showing it. */
   private async openInProject(file: string): Promise<void> {
     try {
       await api.openInProject(file);

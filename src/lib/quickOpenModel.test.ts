@@ -160,7 +160,7 @@ describe("countMatches (the hidden files that match)", () => {
 
 describe("quickMatches (what Quick open lists when the Explorer filter hides files)", () => {
   const SHOWN = ["docs/plan.md", "docs/live-feed.md", "README.md"];
-  const HIDDEN = [".trailmark/notes.md", "docs/archive/live-notes.md"];
+  const HIDDEN = [".permark/notes.md", "docs/archive/live-notes.md"];
   const query = (over: Partial<QuickMatchesInput>): QuickMatchesInput => ({
     ...input({ files: SHOWN }),
     hiddenFiles: HIDDEN,
@@ -182,7 +182,7 @@ describe("quickMatches (what Quick open lists when the Explorer filter hides fil
 
   it("lists the hidden matches at once when nothing visible matches, so one Enter opens the first", () => {
     const m = quickMatches(query({ text: "notes" }));
-    expect(paths(m.found)).toEqual([".trailmark/notes.md", "docs/archive/live-notes.md"]);
+    expect(paths(m.found)).toEqual([".permark/notes.md", "docs/archive/live-notes.md"]);
     expect(m.found.every((f) => f.hidden)).toBe(true);
     expect(m.moreHidden).toBe(0);
     // the selected row (the first) is a file, not the row that only reveals
@@ -191,9 +191,9 @@ describe("quickMatches (what Quick open lists when the Explorer filter hides fil
 
   it("does the same for a dot-path found by a tag, and for a description match", () => {
     const tagged = quickMatches(
-      query({ tags: ["wip"], tagsOf: (p) => (p === ".trailmark/notes.md" ? ["wip"] : []) }),
+      query({ tags: ["wip"], tagsOf: (p) => (p === ".permark/notes.md" ? ["wip"] : []) }),
     );
-    expect(paths(tagged.found)).toEqual([".trailmark/notes.md"]);
+    expect(paths(tagged.found)).toEqual([".permark/notes.md"]);
     expect(tagged.found[0].hidden).toBe(true);
     expect(tagged.moreHidden).toBe(0);
 

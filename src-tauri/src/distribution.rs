@@ -5,12 +5,12 @@
 //!
 //! * **It does not update itself.** The Store updates the apps it installs, and a package cannot replace its own files.
 //!   The updater plugin is not registered, and the interface leaves out "Check for updates".
-//! * **An agent starts it by its alias.** The package puts `trailmark` on the `PATH` (an app execution alias). The
+//! * **An agent starts it by its alias.** The package puts `permark` on the `PATH` (an app execution alias). The
 //!   program's own path is inside the package's folder, which changes with every version and is not meant to be run
 //!   directly, so the setup lines an agent is given name the alias instead (see [`agent_program`]).
 //! * **It writes no file manager entries.** The package declares its file association in its manifest, and what a
 //!   packaged program writes to the registry goes to a private copy the shell never reads (see [`shell_integration`]).
-//!   The folder "Open with TrailMark" menu is the package's too: its manifest names a COM component, the DLL built from
+//!   The folder "Open with PerMark" menu is the package's too: its manifest names a COM component, the DLL built from
 //!   `shell-ext/` and packed beside the program, which Windows loads when the menu is drawn. The program has nothing to
 //!   do with it, and Settings says so.
 //!
@@ -46,7 +46,7 @@ pub const fn current() -> Distribution {
 }
 
 /// The name of the program's app execution alias: what the package puts on the `PATH` (`AppxManifest.xml`).
-const STORE_ALIAS: &str = "trailmark";
+const STORE_ALIAS: &str = "permark";
 
 /// The program an agent should start (`<program> mcp`), as the setup lines name it: the alias in the Store build, where
 /// the program's own path is not meant to be run, and the path of the running program (`running`) anywhere else.
@@ -84,16 +84,16 @@ mod tests {
     #[test]
     fn the_store_build_names_its_alias_whatever_its_own_path_is() {
         let packaged = PathBuf::from(
-            r"C:\Program Files\WindowsApps\EdelmarSchneider.TrailMark_0.4.0.0_x64__abc123\trailmark.exe",
+            r"C:\Program Files\WindowsApps\EdelmarSchneider.PerMark_0.4.0.0_x64__abc123\permark.exe",
         );
         assert_eq!(
             agent_program(Distribution::Store, Some(packaged)).as_deref(),
-            Some("trailmark")
+            Some("permark")
         );
         // Even when the program cannot tell where it is.
         assert_eq!(
             agent_program(Distribution::Store, None).as_deref(),
-            Some("trailmark")
+            Some("permark")
         );
     }
 
@@ -105,7 +105,7 @@ mod tests {
         assert_eq!(program, format!("{STORE_ALIAS}.exe"));
         assert!(MANIFEST.contains(&format!(r#"Alias="{program}""#)));
         assert!(MANIFEST.contains(&format!(r#"Executable="{program}""#)));
-        // a file association hands the file's path over as the first argument, as `trailmark <path>` takes it
+        // a file association hands the file's path over as the first argument, as `permark <path>` takes it
         assert!(MANIFEST.contains(r#"Parameters="&quot;%1&quot;""#));
         // the tokens the packaging script fills in
         assert!(MANIFEST.contains(r#"Version="@VERSION@""#));
@@ -122,11 +122,11 @@ mod tests {
         const SCRIPT: &str = include_str!("../../scripts/build-msix.ps1");
 
         // the crate builds a DLL of the name the manifest and the script use
-        let library = r#"name = "trailmark_shell""#;
+        let library = r#"name = "permark_shell""#;
         assert!(SHELL_CRATE.contains(library));
         assert!(SHELL_CRATE.contains(r#"crate-type = ["cdylib""#));
-        assert!(MANIFEST.contains(r#"Path="trailmark_shell.dll""#));
-        assert!(SCRIPT.contains("'trailmark_shell.dll'"));
+        assert!(MANIFEST.contains(r#"Path="permark_shell.dll""#));
+        assert!(SCRIPT.contains("'permark_shell.dll'"));
 
         // one class id: declared as a COM class, and registered for folders and for the background of a folder
         let id = "D5FFB935-7A42-4E3D-90E1-0180A7999B94";
@@ -140,7 +140,7 @@ mod tests {
         // the same id as the one the DLL answers to (its own test checks the number, this the text)
         assert!(SHELL_SOURCE.contains("0xD5FF_B935_7A42_4E3D_90E1_0180_A799_9B94"));
         // the program the DLL starts is the one the manifest declares
-        assert!(MANIFEST.contains(r#"Executable="trailmark.exe""#));
+        assert!(MANIFEST.contains(r#"Executable="permark.exe""#));
     }
 
     /// The Store build is configured without the updater: the overlay the packaging script builds with removes its
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn the_standard_build_names_its_own_path() {
-        let path = PathBuf::from("/opt/trailmark/trailmark");
+        let path = PathBuf::from("/opt/permark/permark");
         assert_eq!(
             agent_program(Distribution::Standard, Some(path.clone())),
             Some(path.display().to_string())

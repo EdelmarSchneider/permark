@@ -1,4 +1,4 @@
-//! Files and folders the system asks TrailMark to open, other than through the command line.
+//! Files and folders the system asks PerMark to open, other than through the command line.
 //!
 //! On macOS, Finder does not start the program with the path as an argument: a double-click, "Open With" or a drop
 //! on the Dock icon reaches the app as an event (`RunEvent::Opened`), both when the app is starting and when it is
@@ -8,13 +8,13 @@
 //!   the command line argument goes, see [`OpenInbox::take_launch_path`]);
 //! - while it runs, a path opens in this window when no project is open; when a project is open, a path inside it
 //!   is shown in this window (a second process on the same project would write the same state files), and any other
-//!   path gets a new TrailMark process (one process per project, as everywhere else in the app).
+//!   path gets a new PerMark process (one process per project, as everywhere else in the app).
 //!
 //! The decision and the conversion from URLs are plain functions with no window system in them, so they are
 //! tested on every platform. Only the glue that receives the event and starts the process is macOS-only.
 //!
 //! The other half of "Open with" on macOS and Linux is declared in `tauri.macos.conf.json`,
-//! `tauri.linux.conf.json` and `installer/trailmark.desktop`; the tests in `bundle_config` check those files.
+//! `tauri.linux.conf.json` and `installer/permark.desktop`; the tests in `bundle_config` check those files.
 
 #[cfg(test)]
 mod bundle_config;
@@ -36,7 +36,7 @@ pub(crate) enum Action {
     /// It is the open project or inside it: bring the window forward and, for a file, show it. Holds the file's path
     /// in the project (`/`-separated), or `None` for the project itself and for a folder in it.
     ShowInProject(Option<String>),
-    /// Start another TrailMark for it.
+    /// Start another PerMark for it.
     NewProcess(String),
 }
 
@@ -132,7 +132,7 @@ pub(crate) fn paths_from_urls(urls: &[Url]) -> Vec<String> {
         .collect()
 }
 
-/// Starts another TrailMark for `path` (a folder, or a file for Simple mode) and lets it go its own way.
+/// Starts another PerMark for `path` (a folder, or a file for Simple mode) and lets it go its own way.
 #[cfg(target_os = "macos")]
 pub(crate) fn spawn_instance(path: &str) -> std::io::Result<()> {
     use std::process::{Command, Stdio};
@@ -388,7 +388,7 @@ mod tests {
         std::fs::write(&kept, "x").expect("write");
         let urls = [
             "https://example.com/a.md".parse().expect("url"),
-            "trailmark://open/a.md".parse().expect("url"),
+            "permark://open/a.md".parse().expect("url"),
             "file://other-machine.invalid/share/a.md"
                 .parse()
                 .expect("url"),

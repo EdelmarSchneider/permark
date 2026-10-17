@@ -132,9 +132,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ env.TAG }}
-          releaseName: "TrailMark ${{ env.TAG }}"
+          releaseName: "PerMark ${{ env.TAG }}"
           releaseBody: |
-            **TrailMark** is a free, open-source Markdown app: read what your AI writes, write what it reads. It opens any `.md`
+            **PerMark** is a free, open-source Markdown app: read what your AI writes, write what it reads. It opens any `.md`
             file as a clean page, keeps notes that save themselves, and turns a project folder into an IDE for following your
             agents. It works with any AI tool, or none: it only relies on your files and git.
 
@@ -147,7 +147,7 @@ jobs:
             | macOS | the universal `.dmg` (Apple silicon and Intel) |
             | Linux | the `.AppImage`, `.deb` or `.rpm` |
 
-            TrailMark updates itself: when a new version is out, it offers a one-click "Restart to update".
+            PerMark updates itself: when a new version is out, it offers a one-click "Restart to update".
 
             ### The app is not code-signed yet
             The installers are unsigned, so your system warns you the first time. They are built by GitHub Actions
@@ -155,11 +155,11 @@ jobs:
 
             **Windows (SmartScreen).** If you see "Windows protected your PC", click **More info**, then **Run anyway**.
 
-            **macOS (Gatekeeper).** If macOS says it can't verify TrailMark, open **System Settings, Privacy & Security**,
+            **macOS (Gatekeeper).** If macOS says it can't verify PerMark, open **System Settings, Privacy & Security**,
             scroll to the Security section and click **Open Anyway**. On older macOS versions you can right-click the
-            app and choose **Open** instead. From a terminal: `xattr -dr com.apple.quarantine /Applications/TrailMark.app`.
+            app and choose **Open** instead. From a terminal: `xattr -dr com.apple.quarantine /Applications/PerMark.app`.
 
-            **Linux.** Make the AppImage executable (`chmod +x TrailMark_*.AppImage`) and run it, or install the `.deb` / `.rpm`.
+            **Linux.** Make the AppImage executable (`chmod +x PerMark_*.AppImage`) and run it, or install the `.deb` / `.rpm`.
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
@@ -219,7 +219,7 @@ jobs:
       - name: Keep the package
         uses: actions/upload-artifact@v4
         with:
-          name: TrailMark-msix-${{ steps.pack.outputs.version }}
+          name: PerMark-msix-${{ steps.pack.outputs.version }}
           path: ${{ steps.pack.outputs.msix }}
           if-no-files-found: error
 

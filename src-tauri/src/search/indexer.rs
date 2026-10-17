@@ -323,7 +323,7 @@ impl IndexWorker {
         let (tx, rx) = mpsc::channel::<Msg>();
         let cancel = Arc::new(AtomicBool::new(false));
         let stop = Arc::clone(&cancel);
-        let handle = parser_thread("trailmark-index")
+        let handle = parser_thread("permark-index")
             .spawn(move || {
                 indexer.build(&stop, &mut progress);
                 run(&mut indexer, &rx, &stop);

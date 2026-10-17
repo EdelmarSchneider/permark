@@ -25,7 +25,9 @@ use super::{strip_root, Vault, WORKTREE_PREFIX};
 /// Git's own folder; never listed. A `.git` *file* (a linked worktree or a submodule) is skipped the same way.
 const GIT_DIR: &str = ".git";
 /// Our own folder. Only its committed files are listed, and only on request ([`TreeOptions::show_state_dir`]).
-const STATE_DIR: &str = ".trailmark";
+const STATE_DIR: &str = ".permark";
+/// The name it had before; a project not opened since the rename may still have it.
+const LEGACY_STATE_DIR: &str = ".trailmark";
 /// Its machine-local folders are never listed.
 const STATE_PRIVATE: [&str; 2] = ["cache", "local"];
 /// Dependency folders are left out of the regular walk (they are listed unopened, when ignored ones are shown).
@@ -40,7 +42,7 @@ pub const IGNORED_FOLDER_CAP: usize = 2_000;
 pub struct TreeOptions {
     /// Also list what git ignores (large ignored folders are listed unopened).
     pub show_ignored: bool,
-    /// List `.trailmark/` (its `cache` and `local` folders stay out).
+    /// List `.permark/` (its `cache` and `local` folders stay out).
     pub show_state_dir: bool,
 }
 
@@ -98,13 +100,15 @@ fn left_out(name: &str, parent: Option<&str>, state_dir: bool, deps: bool) -> bo
     if is(GIT_DIR) {
         return true;
     }
-    if is(STATE_DIR) {
+    if is(STATE_DIR) || is(LEGACY_STATE_DIR) {
         return !state_dir;
     }
     if is(DEPENDENCY_DIR) {
         return deps;
     }
-    parent.is_some_and(|p| p.eq_ignore_ascii_case(STATE_DIR)) && STATE_PRIVATE.iter().any(|x| is(x))
+    parent.is_some_and(|p| {
+        p.eq_ignore_ascii_case(STATE_DIR) || p.eq_ignore_ascii_case(LEGACY_STATE_DIR)
+    }) && STATE_PRIVATE.iter().any(|x| is(x))
 }
 
 fn kind_of(ft: FileType) -> NodeKind {
@@ -529,11 +533,11 @@ mod tests {
     }
 
     #[test]
-    fn tree_hides_git_trailmark_and_node_modules_but_shows_other_dotfolders() {
+    fn tree_hides_git_permark_and_node_modules_but_shows_other_dotfolders() {
         let d = tempfile::tempdir().expect("tempdir");
         for f in [
             ".git/HEAD",
-            ".trailmark/config.toml",
+            ".permark/config.toml",
             "node_modules/x/y.js",
             ".claude/plan.md",
             "a.md",
@@ -1063,10 +1067,10 @@ mod tests {
     fn the_state_folder_lists_its_committed_files_only_on_request() {
         let d = tempfile::tempdir().expect("tempdir");
         for f in [
-            ".trailmark/config.toml",
-            ".trailmark/meta.toml",
-            ".trailmark/cache/index.bin",
-            ".trailmark/local/session.json",
+            ".permark/config.toml",
+            ".permark/meta.toml",
+            ".permark/cache/index.bin",
+            ".permark/local/session.json",
             "a.md",
         ] {
             write(d.path(), f);
@@ -1079,9 +1083,9 @@ mod tests {
         assert_eq!(
             rels(&v, with_state),
             [
-                ".trailmark",
-                ".trailmark/config.toml",
-                ".trailmark/meta.toml",
+                ".permark",
+                ".permark/config.toml",
+                ".permark/meta.toml",
                 "a.md"
             ]
         );

@@ -1,14 +1,14 @@
-//! "Open with TrailMark" in the file manager.
+//! "Open with PerMark" in the file manager.
 //!
 //! On Windows two optional groups of registry entries, both under the current user (no administrator rights):
 //!
 //! * a **context menu** entry on folders, on the background of a folder and on Markdown files;
-//! * a **file association**: TrailMark is offered in the "Open with" list of `.md` and `.markdown` files. Windows
+//! * a **file association**: PerMark is offered in the "Open with" list of `.md` and `.markdown` files. Windows
 //!   protects the default app of a file type from programs, so becoming the default is the person's step in
 //!   Windows Settings ([`DEFAULT_APPS_URI`] opens it).
 //!
 //! The Windows installer writes the same entries (`installer/hooks.nsh`) and both remember the person's choices
-//! under `HKCU\Software\TrailMark`, so an update neither re-adds what was removed nor removes what was kept.
+//! under `HKCU\Software\PerMark`, so an update neither re-adds what was removed nor removes what was kept.
 //! On macOS and Linux nothing is registered yet ([`ShellState::supported`] is false).
 
 mod entries;
@@ -44,13 +44,13 @@ pub enum ShellError {
 // Four independent facts that go to the UI as they are; a state machine would only hide them.
 #[allow(clippy::struct_excessive_bools)]
 pub struct ShellState {
-    /// False where TrailMark cannot register anything (every platform but Windows, for now).
+    /// False where PerMark cannot register anything (every platform but Windows, for now).
     pub supported: bool,
-    /// At least one "Open with TrailMark" entry of the context menu is there.
+    /// At least one "Open with PerMark" entry of the context menu is there.
     pub context_menu: bool,
-    /// TrailMark is registered as a program that opens Markdown files, so it is in their "Open with" list.
+    /// PerMark is registered as a program that opens Markdown files, so it is in their "Open with" list.
     pub association: bool,
-    /// Windows' own choice for `.md` files is TrailMark.
+    /// Windows' own choice for `.md` files is PerMark.
     pub is_default: bool,
 }
 
@@ -80,7 +80,7 @@ pub fn set_context_menu(enabled: bool, locale: &str) -> Result<ShellState, Shell
     Ok(registry.state())
 }
 
-/// Adds or removes TrailMark from the "Open with" list of Markdown files, worded in `locale`.
+/// Adds or removes PerMark from the "Open with" list of Markdown files, worded in `locale`.
 #[cfg(windows)]
 pub fn set_association(enabled: bool, locale: &str) -> Result<ShellState, ShellError> {
     refuse_in_store_build()?;
@@ -121,7 +121,7 @@ pub fn refresh_labels(_locale: &str) -> Result<(), ShellError> {
 
 /// The Microsoft Store build writes no entries. Its package declares the file association in its manifest, and what a
 /// packaged program writes under `HKEY_CURRENT_USER` goes to a private copy of the registry that the shell never reads,
-/// so a switch in Settings would do nothing. The "Open with TrailMark" menu on folders comes from the package instead: its
+/// so a switch in Settings would do nothing. The "Open with PerMark" menu on folders comes from the package instead: its
 /// manifest declares a COM component (the DLL in `shell-ext/`), so there is nothing here to switch.
 #[cfg(windows)]
 fn refuse_in_store_build() -> Result<(), ShellError> {
@@ -150,8 +150,8 @@ mod tests {
         const HOOKS: &str = include_str!("../../installer/hooks.nsh");
 
         // where the entries go
-        assert!(HOOKS.contains(r#"!define TRAILMARK_CLASSES_KEY "Software\Classes""#));
-        assert!(HOOKS.contains(r#"!define TRAILMARK_APP_KEY "Software\TrailMark""#));
+        assert!(HOOKS.contains(r#"!define PERMARK_CLASSES_KEY "Software\Classes""#));
+        assert!(HOOKS.contains(r#"!define PERMARK_APP_KEY "Software\PerMark""#));
         // every key of the menu, with the placeholder its command passes
         for target in &entries::MENU_TARGETS {
             let line = format!(
@@ -182,7 +182,7 @@ mod tests {
             );
         }
         // the one value that is not the default value of a key
-        assert!(HOOKS.contains(r#"\shell\open" "FriendlyAppName" "TrailMark""#));
+        assert!(HOOKS.contains(r#"\shell\open" "FriendlyAppName" "PerMark""#));
         assert!(HOOKS.contains(r#""Icon" "$\"$OpenWithExe$\",0""#));
         // the text, in each language: the NSIS language id is the Windows LCID
         for (lcid, language) in [
@@ -283,7 +283,7 @@ mod tests {
     }
 
     /// Checked in the CI job that builds the store flavor. Neither call reaches the registry, so the test is safe to run
-    /// on a machine that has TrailMark installed.
+    /// on a machine that has PerMark installed.
     #[cfg(all(windows, feature = "store"))]
     #[test]
     fn the_store_build_registers_nothing_and_shows_no_section() {

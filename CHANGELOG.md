@@ -1,9 +1,19 @@
 # Changelog
 
-All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+All notable changes to PerMark (formerly TrailMark) are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.5.6] - 2026-10-17
+
+TrailMark is now PerMark. Same app, same logo, a name of its own.
+
+### Changed
+- **New name: PerMark.** The app, its command (`permark`, `permark mcp`, `permark context`), its MCP server and the project folder
+  (`.permark/`) take the new name. Nothing is lost on the way: an existing `.trailmark/` folder becomes `.permark/` the first time
+  PerMark opens the project, and your settings, recent folders and notes carry over. If an agent is set up with the old
+  `trailmark` command, run the setup lines from **Settings → Agent connection** again.
 
 ## [0.5.5] - 2026-10-16
 

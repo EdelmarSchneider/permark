@@ -96,7 +96,7 @@ pub struct AgentStatus {
     pub enabled: bool,
     /// The program is listening (it is not when the socket could not be opened; `error` says why).
     pub listening: bool,
-    /// How many programs are connected now (an agent's `trailmark mcp`, a hook's `trailmark context`).
+    /// How many programs are connected now (an agent's `permark mcp`, a hook's `permark context`).
     pub connections: usize,
     /// The latest requests, newest first.
     pub recent: Vec<RequestRecord>,
@@ -827,7 +827,7 @@ mod tests {
             overview["tags"],
             json!([
                 {"name": "adr", "count": 2, "from": "frontMatter"},
-                {"name": "api", "count": 1, "from": "trailmark"},
+                {"name": "api", "count": 1, "from": "permark"},
             ])
         );
         let adr = hub
@@ -974,7 +974,7 @@ mod tests {
     /// A folder of notes: `shared one.md` is shared, `private.md` is not.
     fn notes() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(dir.path().join(".trailmark")).expect("mkdir");
+        std::fs::create_dir_all(dir.path().join(".permark")).expect("mkdir");
         std::fs::write(
             dir.path().join("shared one.md"),
             "# Server IPs\napi 10.0.0.4\n",
@@ -982,7 +982,7 @@ mod tests {
         .expect("write");
         std::fs::write(dir.path().join("private.md"), "# Private\n").expect("write");
         std::fs::write(
-            dir.path().join(".trailmark").join("notes.json"),
+            dir.path().join(".permark").join("notes.json"),
             r#"{"shared": ["shared one.md"]}"#,
         )
         .expect("notes.json");
@@ -1030,7 +1030,7 @@ mod tests {
             "private.md",
             "nothing.md",
             "../private.md",
-            ".trailmark/notes.json",
+            ".permark/notes.json",
         ] {
             let reply = hub.handle(call(
                 1,
@@ -1050,7 +1050,7 @@ mod tests {
         // the popover still says what was asked
         assert_eq!(
             hub.status().recent[0].subject.as_deref(),
-            Some(".trailmark/notes.json")
+            Some(".permark/notes.json")
         );
     }
 

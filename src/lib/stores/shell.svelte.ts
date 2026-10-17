@@ -1,4 +1,4 @@
-// "Open with TrailMark" in the file manager: whether the right-click entry and the file association are registered, as the
+// "Open with PerMark" in the file manager: whether the right-click entry and the file association are registered, as the
 // system has them right now (the person, the installer or another program may have changed them), and the switches in Settings.
 
 import { api } from "../api";

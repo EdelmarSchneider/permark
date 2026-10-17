@@ -1,5 +1,5 @@
 // The lines a person copies to connect an agent (docs/design/v0.4.md section 4). The program is named by the path it runs
-// from, which always works; `trailmark` alone only works where it is on the PATH, so it is the fallback when the path
+// from, which always works; `permark` alone only works where it is on the PATH, so it is the fallback when the path
 // is not known, and the Settings text says it can replace the path.
 
 /** A Windows path: a drive letter (`C:\`, `C:/`) or a server share (`\\server\share`). */
@@ -14,32 +14,32 @@ const SAFE_UNIX_WORD = /^[\w./:@%+=,-]+$/;
  * in a folder name (an AppImage in an odd place), and single quotes keep every character as it is.
  */
 export function programWord(program: string | null): string {
-  if (program === null || program === "") return "trailmark";
+  if (program === null || program === "") return "permark";
   if (WINDOWS_PATH.test(program)) {
     return /[\s"\\]/.test(program) ? `"${program.replaceAll('"', '\\"')}"` : program;
   }
   return SAFE_UNIX_WORD.test(program) ? program : `'${program.replaceAll("'", "'\\''")}'`;
 }
 
-/** Claude Code: adds TrailMark as an MCP server. */
+/** Claude Code: adds PerMark as an MCP server. */
 export function claudeCodeCommand(program: string | null): string {
-  return `claude mcp add trailmark -- ${programWord(program)} mcp`;
+  return `claude mcp add permark -- ${programWord(program)} mcp`;
 }
 
 /** Any MCP client that reads a `mcpServers` object (Cursor, Claude Desktop, and others). */
 export function mcpJson(program: string | null): string {
-  const command = JSON.stringify(program || "trailmark");
+  const command = JSON.stringify(program || "permark");
   return [
     "{",
     '  "mcpServers": {',
-    `    "trailmark": { "command": ${command}, "args": ["mcp"] }`,
+    `    "permark": { "command": ${command}, "args": ["mcp"] }`,
     "  }",
     "}",
   ].join("\n");
 }
 
 /**
- * A Claude Code hook that adds what the person is looking at to every prompt: the output of `trailmark context` is
+ * A Claude Code hook that adds what the person is looking at to every prompt: the output of `permark context` is
  * put in front of the model. Other tools can run the same command from their own hooks.
  */
 export function hookJson(program: string | null): string {

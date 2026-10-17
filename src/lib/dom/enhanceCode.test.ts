@@ -72,7 +72,7 @@ describe("a fenced block in the reading view", () => {
 
   it("shows a guessed language as a guess, and says so when hovered", async () => {
     const block = await drawn(
-      fence(null, "{\n  &quot;name&quot;: &quot;trailmark&quot;,\n  &quot;private&quot;: true\n}"),
+      fence(null, "{\n  &quot;name&quot;: &quot;permark&quot;,\n  &quot;private&quot;: true\n}"),
     );
     expect(label(block)?.textContent).toBe("auto: JSON");
     expect(label(block)?.title).toBe("Guessed from the code.");

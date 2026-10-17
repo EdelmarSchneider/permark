@@ -4,12 +4,12 @@
 //! there keeps the two in step. The menu follows the display language of Windows, because that is what the rest of the
 //! menu is in; the registry entry follows the language picked in the app.
 
-pub(crate) const ENGLISH: &str = "Open with TrailMark";
-pub(crate) const PORTUGUESE: &str = "Abrir com o TrailMark";
-pub(crate) const SPANISH: &str = "Abrir con TrailMark";
-pub(crate) const GERMAN: &str = "Mit TrailMark öffnen";
-pub(crate) const CHINESE: &str = "用 TrailMark 打开";
-pub(crate) const ITALIAN: &str = "Apri con TrailMark";
+pub(crate) const ENGLISH: &str = "Open with PerMark";
+pub(crate) const PORTUGUESE: &str = "Abrir com o PerMark";
+pub(crate) const SPANISH: &str = "Abrir con PerMark";
+pub(crate) const GERMAN: &str = "Mit PerMark öffnen";
+pub(crate) const CHINESE: &str = "用 PerMark 打开";
+pub(crate) const ITALIAN: &str = "Apri con PerMark";
 
 /// The text for the first of `preferred` (Windows' display languages, best first, as tags such as `pt-BR`) that the app
 /// is translated into. English when none is.
@@ -41,12 +41,12 @@ mod tests {
 
     #[test]
     fn each_language_the_app_has_gets_its_own_text() {
-        assert_eq!(for_languages(&["en-US"]), "Open with TrailMark");
-        assert_eq!(for_languages(&["pt-BR"]), "Abrir com o TrailMark");
-        assert_eq!(for_languages(&["es-ES"]), "Abrir con TrailMark");
-        assert_eq!(for_languages(&["de-DE"]), "Mit TrailMark öffnen");
-        assert_eq!(for_languages(&["zh-CN"]), "用 TrailMark 打开");
-        assert_eq!(for_languages(&["it-IT"]), "Apri con TrailMark");
+        assert_eq!(for_languages(&["en-US"]), "Open with PerMark");
+        assert_eq!(for_languages(&["pt-BR"]), "Abrir com o PerMark");
+        assert_eq!(for_languages(&["es-ES"]), "Abrir con PerMark");
+        assert_eq!(for_languages(&["de-DE"]), "Mit PerMark öffnen");
+        assert_eq!(for_languages(&["zh-CN"]), "用 PerMark 打开");
+        assert_eq!(for_languages(&["it-IT"]), "Apri con PerMark");
     }
 
     #[test]

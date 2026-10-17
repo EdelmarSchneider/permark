@@ -2,10 +2,10 @@
 //! `meta.toml` a moment after the last change), the tags found in front matter, and the answers the
 //! UI asks for.
 //!
-//! Where the file lives follows the state store: `.trailmark/meta.toml` once the project has a
-//! `.trailmark/` folder, a file in AppData before that. Metadata that an older AppData file still
+//! Where the file lives follows the state store: `.permark/meta.toml` once the project has a
+//! `.permark/` folder, a file in AppData before that. Metadata that an older AppData file still
 //! holds is merged into the project's file and the AppData copy is retired. The watcher sees
-//! `.trailmark/meta.toml`: its own writes are recognised by their content and hidden, an edit made by
+//! `.permark/meta.toml`: its own writes are recognised by their content and hidden, an edit made by
 //! anyone else is read in.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -27,8 +27,8 @@ use crate::util::{hash_bytes, modified_ms, write_atomic};
 use crate::vault::{key, NodeKind, Vault, VaultError, WORKTREE_PREFIX};
 use crate::watch::{ChangeKind, FsChange};
 
-/// `meta.toml` inside a project that has a `.trailmark/` folder, as a vault path.
-pub const PROJECT_META_PATH: &str = ".trailmark/meta.toml";
+/// `meta.toml` inside a project that has a `.permark/` folder, as a vault path.
+pub const PROJECT_META_PATH: &str = ".permark/meta.toml";
 
 /// Batches that only edit this many files or fewer update the cached answers in place; larger ones
 /// (and anything that adds, removes or moves files) scan again.
@@ -173,7 +173,7 @@ struct Inner {
     /// Tags whose look was changed here and not written yet, and what they held (as `parked` does).
     dirty_styles: BTreeSet<String>,
     parked_styles: BTreeMap<String, Option<TagStyle>>,
-    /// An AppData file from before the project had a `.trailmark/` folder, still to be merged in.
+    /// An AppData file from before the project had a `.permark/` folder, still to be merged in.
     legacy: Option<PathBuf>,
     /// Its content is merged into `entries`: delete it once that is written.
     retire: bool,
@@ -291,7 +291,7 @@ impl Inner {
         self.absorb_legacy();
     }
 
-    /// Merges the AppData file of the time before `.trailmark/` existed into the project's entries
+    /// Merges the AppData file of the time before `.permark/` existed into the project's entries
     /// (the project's description wins). The AppData file is deleted once the merge is written; one
     /// that cannot be read is left where it is, and tried again at the next reload.
     fn absorb_legacy(&mut self) {
@@ -494,7 +494,7 @@ pub struct MetaService {
 impl MetaService {
     /// Loads `path` (a missing file is an empty store) and starts the writer thread. `watched` says
     /// the file is inside the project, where the watcher reports changes to it. `legacy` is the
-    /// AppData file the metadata lived in before the project got a `.trailmark/` folder: what it holds
+    /// AppData file the metadata lived in before the project got a `.permark/` folder: what it holds
     /// is merged into `path` and the file is deleted. `notify` is called whenever the metadata changes.
     pub fn open(
         vault: Arc<Vault>,
@@ -511,7 +511,7 @@ impl MetaService {
         let handle = {
             let (inner, notify) = (Arc::clone(&inner), Arc::clone(&notify));
             thread::Builder::new()
-                .name("trailmark-meta".to_owned())
+                .name("permark-meta".to_owned())
                 .spawn(move || writer(&rx, &inner, notify.as_ref(), timing))
                 .ok()
         };
@@ -927,7 +927,7 @@ impl MetaService {
         changes.retain(|c| !Self::is_meta_file(&c.path));
     }
 
-    /// The project got a `.trailmark/` folder: the metadata moves from AppData to `new_path`. What a
+    /// The project got a `.permark/` folder: the metadata moves from AppData to `new_path`. What a
     /// teammate may already have committed there is kept, what was added here is merged in, and the
     /// AppData file is deleted once the merge is written. If the project's file cannot be read the
     /// service still switches to it, read-only, and the AppData file stays until the merge can be done.

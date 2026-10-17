@@ -43,7 +43,7 @@ pub enum Discovery {
     Error(String),
 }
 
-/// One-time libgit2 setup. Owner validation is turned off: TrailMark only reads repositories, and
+/// One-time libgit2 setup. Owner validation is turned off: PerMark only reads repositories, and
 /// libgit2's check makes repositories on non-system drives (the `F:` case) look like "not a repo".
 ///
 /// Without that check, a `.git` created by another local user in a shared place would be trusted, so
@@ -55,7 +55,7 @@ pub(crate) fn init_libgit2() {
 }
 
 // SAFETY: `set_verify_owner_validation` is `unsafe` only because it flips a process-wide libgit2
-// option. It is called once (guarded by `Once`) before TrailMark opens any repository, and the
+// option. It is called once (guarded by `Once`) before PerMark opens any repository, and the
 // option is never changed again.
 #[allow(unsafe_code)]
 fn disable_owner_validation() {

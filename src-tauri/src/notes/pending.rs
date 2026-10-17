@@ -1,6 +1,6 @@
-//! `.trailmark/pending/`: the text typed into a loose file that was not saved yet.
+//! `.permark/pending/`: the text typed into a loose file that was not saved yet.
 //!
-//! TrailMark never writes a loose file on its own, so the person's edits are kept here instead, next to the version they
+//! PerMark never writes a loose file on its own, so the person's edits are kept here instead, next to the version they
 //! started from. A restart finds them again and the file opens with its edits and the "unsaved" mark; closing the window
 //! asks nothing. One file for each loose file, named after its id, written whole and atomically.
 
@@ -10,7 +10,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::data::STATE_DIR;
 use crate::util::write_atomic;
 
 const DIR_NAME: &str = "pending";
@@ -36,7 +35,7 @@ pub(crate) struct PendingStore {
 impl PendingStore {
     pub(crate) fn new(notes_root: &Path) -> Self {
         Self {
-            dir: notes_root.join(STATE_DIR).join(DIR_NAME),
+            dir: crate::session::state_dir(notes_root).join(DIR_NAME),
         }
     }
 

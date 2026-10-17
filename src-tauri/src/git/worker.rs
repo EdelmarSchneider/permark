@@ -79,7 +79,7 @@ impl GitHandle {
         let kind_fallback = settings.baseline;
         let worker_tx = tx.clone();
         let thread = thread::Builder::new()
-            .name("trailmark-git".to_owned())
+            .name("permark-git".to_owned())
             .spawn(move || {
                 let mut w = Worker::new(settings, worker_tx, sink);
                 w.attach(discovery);

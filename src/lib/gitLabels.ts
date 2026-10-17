@@ -1,4 +1,4 @@
-// What the letters of the git badges say, in plain words. TrailMark only reads Git: these texts tell a person who never
+// What the letters of the git badges say, in plain words. PerMark only reads Git: these texts tell a person who never
 // opens a terminal what a letter means, what (if anything) they have to do, and that the program never commits.
 
 import { t } from "./i18n";

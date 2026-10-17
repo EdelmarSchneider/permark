@@ -1,13 +1,13 @@
 # Changelog
 
-All notable changes to TrailMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+All notable changes to PerMark are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
 ### Editing (Source mode)
 - **Edit** a Markdown document (`E`, Ctrl+E or the Edit button) in a source editor with Markdown highlighting, line numbers and soft wrap at the reading
-  width; **Ctrl+S** saves, **Done**, Ctrl+E or Esc goes back to reading. TrailMark writes the text as you typed it and keeps the file's BOM and line
+  width; **Ctrl+S** saves, **Done**, Ctrl+E or Esc goes back to reading. PerMark writes the text as you typed it and keeps the file's BOM and line
   endings: lines you did not touch keep their own bytes, also in a file that mixes CRLF, LF and a lone CR, and a save without an edit writes the very same
   file. Saving keeps the file's permissions. The editor is loaded only when you start editing. Ctrl+B, Ctrl+I, Ctrl+K, Ctrl+` and Ctrl+Shift+X wrap the selection in Markdown.
 - Unsaved work is never lost quietly: an `Unsaved` mark in the header, a dot on the file in the tree and a `*` in the window title; leaving the document
@@ -56,12 +56,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The tree footer says how many files are hidden ("Showing 52 of 1,204 files") and offers **Show all** for the moment. A hidden file
   you open by link, search, Ctrl+P or the feed stays in the tree, dimmed, while it is open.
 - Quick open follows the same filter and ends with "+N hidden files match", which lists them.
-- Your choice is remembered per project. A project can set the default for everyone in `.trailmark/config.toml`
+- Your choice is remembered per project. A project can set the default for everyone in `.permark/config.toml`
   (`[tree] show = "docs-and-assets"`, `include = [...]`, `exclude = [...]`); your own choice wins.
 
 ### Tags and descriptions
 - Tag any file and give it a one-line description. Tags written in a document's frontmatter (`tags:`) are read automatically and
-  shown with a file glyph; tags added in the app are kept outside your files, in `.trailmark/meta.toml` once the project is
+  shown with a file glyph; tags added in the app are kept outside your files, in `.permark/meta.toml` once the project is
   initialized (committable, so teammates and agents can read it) or in the app's own storage before that.
 - A strip at the top of the document shows the description and the tags; `T` (or the menu) edits them, with autocomplete.
 - A Tags view (`Ctrl+Shift+T`) lists every tag with its number of files; pick one, or Ctrl+click several, to list the files.
@@ -88,7 +88,7 @@ The first public release.
 - Live reload that keeps your scroll position; changed blocks glow, and removed blocks leave an expandable marker. `F7` jumps between changes.
 - A live changes feed with one entry per file, grouped bursts, git operations collapsed into one entry, a "Docs only" filter, and a toast.
 - Follow mode opens the document being written (rate-limited).
-- "Since last visit" shows what changed while TrailMark was closed, even after commits.
+- "Since last visit" shows what changed while PerMark was closed, even after commits.
 - Linked git worktrees are discovered and watched.
 
 ### Search
@@ -102,5 +102,5 @@ The first public release.
 - Open in your default app, and show in the file manager.
 
 ### Project
-- Optional `.trailmark/` project folder for shared settings; zero footprint by default.
+- Optional `.permark/` project folder for shared settings; zero footprint by default.
 - In-app updates through GitHub Releases, with signed update packages.

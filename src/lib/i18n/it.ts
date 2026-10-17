@@ -6,15 +6,15 @@
 import type { Messages } from "./en";
 
 export const itIT = {
-  "app.name": "TrailMark",
+  "app.name": "PerMark",
   "app.loading": "Caricamento",
 
   // ---- window title
-  "window.title.project": "{document} - {project} - TrailMark",
-  "window.title.projectOnly": "{project} - TrailMark",
-  "window.title.file": "{document} - TrailMark",
-  "window.title.notes": "{document} - Note - TrailMark",
-  "window.title.notesOnly": "Note - TrailMark",
+  "window.title.project": "{document} - {project} - PerMark",
+  "window.title.projectOnly": "{project} - PerMark",
+  "window.title.file": "{document} - PerMark",
+  "window.title.notes": "{document} - Note - PerMark",
+  "window.title.notesOnly": "Note - PerMark",
   "window.title.unsaved": "* {title}",
 
   // ---- common
@@ -89,12 +89,12 @@ export const itIT = {
   // ---- explorer and tree
   "explorer.title": "Esplora risorse",
   "explorer.menu": "Menu di Esplora risorse",
-  "explorer.menuHint": "Comprimi tutto, mostra il documento aperto, inizializza TrailMark",
+  "explorer.menuHint": "Comprimi tutto, mostra il documento aperto, inizializza PerMark",
   "explorer.collapseAll": "Comprimi tutto",
   "explorer.revealOpen": "Mostra il documento aperto",
   "explorer.autoReveal": "Seleziona sempre il file aperto",
-  "explorer.initialize": "Inizializza TrailMark in questo progetto...",
-  "explorer.stateInProject": "Le impostazioni sono salvate in .trailmark/",
+  "explorer.initialize": "Inizializza PerMark in questo progetto...",
+  "explorer.stateInProject": "Le impostazioni sono salvate in .permark/",
   "explorer.empty":
     "Ancora nessun file Markdown qui. I nuovi file compaiono non appena vengono scritti.",
   "explorer.worktrees": "Worktree",
@@ -184,9 +184,9 @@ export const itIT = {
   "git.explain.deleted": "Eliminato: questo file è stato rimosso {since}.",
   "git.explain.renamed": "Rinominato: questo file è stato rinominato o spostato {since}.",
   "git.explain.conflicted":
-    "Conflitto: Git ha trovato due versioni di questo file che non coincidono. Chiedi al tuo agente di risolverlo, o correggilo nel tuo editor. TrailMark non modifica mai il tuo Git.",
+    "Conflitto: Git ha trovato due versioni di questo file che non coincidono. Chiedi al tuo agente di risolverlo, o correggilo nel tuo editor. PerMark non modifica mai il tuo Git.",
   "git.tail":
-    "Non devi fare commit di nulla: la lettera sparisce quando la modifica viene inclusa in un commit, da te o dal tuo agente. TrailMark non fa mai commit.",
+    "Non devi fare commit di nulla: la lettera sparisce quando la modifica viene inclusa in un commit, da te o dal tuo agente. PerMark non fa mai commit.",
   "git.badgeTitle": "{letter} · {text} {tail}",
   "git.legend.title": "Cosa significano queste lettere?",
   "git.legend.menu": "Cosa significano le lettere di Git?",
@@ -196,7 +196,7 @@ export const itIT = {
     "Confronto con l'ultimo commit Git (vedi la barra di stato). Le lettere spariscono appena viene fatto un commit.",
   "git.legend.folder": "Un punto su una cartella: qualcosa al suo interno è cambiato.",
   "git.legend.readOnly":
-    "TrailMark legge soltanto Git. Non fa mai commit, non prepara file per il commit e non crea repository.",
+    "PerMark legge soltanto Git. Non fa mai commit, non prepara file per il commit e non crea repository.",
   "git.error.title": "Git non riesce a leggere questo repository.",
   "git.error.fallback":
     "Gli indicatori di modifica sono disattivati; “Dall'ultima visita” usa le date dei file.",
@@ -378,7 +378,7 @@ export const itIT = {
   "cmd.collapseAll": "Comprimi tutte le cartelle",
   "cmd.baselineLastVisit": "Mostra le modifiche dall'ultima visita",
   "cmd.baselineCommit": "Mostra le modifiche dall'ultimo commit",
-  "cmd.initProject": "Inizializza TrailMark in questo progetto...",
+  "cmd.initProject": "Inizializza PerMark in questo progetto...",
   "cmd.openContainingFolder": "Apri cartella contenitore",
   "cmd.checkUpdates": "Controlla aggiornamenti",
   "cmd.nextUnread": "Vai al documento non letto successivo",
@@ -420,9 +420,9 @@ export const itIT = {
   "agent.shares.search": "I risultati di ricerca nei documenti di questo progetto",
   "agent.shares.show": "Un agente può anche mostrarti un punto. Non modifica mai un documento.",
   "agent.shares.leaves":
-    "TrailMark comunica solo con i programmi su questo computer. Un agente può inviare ciò che legge al proprio servizio di IA.",
+    "PerMark comunica solo con i programmi su questo computer. Un agente può inviare ciò che legge al proprio servizio di IA.",
   "agent.shares.file":
-    "Mentre è attiva, il documento aperto, la sezione e la selezione vengono scritti anche in .trailmark/local/agent.json (per gli script), se il progetto conserva le impostazioni in .trailmark/.",
+    "Mentre è attiva, il documento aperto, la sezione e la selezione vengono scritti anche in .permark/local/agent.json (per gli script), se il progetto conserva le impostazioni in .permark/.",
   "agent.recent": "Ultime richieste",
   "agent.recent.none": "Ancora nessuna richiesta.",
   "agent.request.get_context": "Ha letto cosa stai guardando",
@@ -481,7 +481,7 @@ export const itIT = {
     "Questo testo non è più nel documento. Il commento rimanda al punto più vicino.",
   "comments.state.documentGone": "Documento mancante",
   "comments.state.documentGoneHint":
-    "Il documento è stato eliminato o spostato al di fuori di TrailMark.",
+    "Il documento è stato eliminato o spostato al di fuori di PerMark.",
   "comments.jump.gone": "{path} non è più nel progetto.",
   "agent.shares.comments":
     "I tuoi commenti. Un agente può segnare un commento come completato, e nient'altro.",
@@ -534,7 +534,7 @@ export const itIT = {
   "toast.kind.removed": "è stato rimosso",
   "toast.kind.renamed": "è stato rinominato",
 
-  // ---- since last visit and the .trailmark hint
+  // ---- since last visit and the .permark hint
   "since.title": "Dall'ultima visita",
   "since.baseline": "Riferimento: {oid}",
   "since.loading": "Ricerca delle modifiche...",
@@ -542,24 +542,24 @@ export const itIT = {
   "since.nothing": "Nessuna modifica da {when}.",
   "since.byFileTimes": "In base alle date dei file, da {when}",
   "hint.keepSettings": "Conservare le impostazioni con il progetto?",
-  "hint.initialize": "Inizializza .trailmark/",
+  "hint.initialize": "Inizializza .permark/",
   "hint.dismiss": "Ignora suggerimento",
   "hint.dismissHint": "Non mostrare più",
-  "initHint.text": "Conservare i tag e le impostazioni di TrailMark con questo progetto?",
-  "initHint.detail": "Crea una cartella .trailmark per tag e impostazioni.",
+  "initHint.text": "Conservare i tag e le impostazioni di PerMark con questo progetto?",
+  "initHint.detail": "Crea una cartella .permark per tag e impostazioni.",
   "initHint.initialize": "Inizializza",
   "initHint.notNow": "Non ora",
   "initHint.never": "Mai per questa cartella",
-  "init.title": "Inizializzare TrailMark in questo progetto?",
-  "init.intro": "TrailMark creerà .trailmark/ in {name}:",
+  "init.title": "Inizializzare PerMark in questo progetto?",
+  "init.intro": "PerMark creerà .permark/ in {name}:",
   "init.config": "impostazioni condivise, si possono includere nei commit",
-  "init.cache": "file che TrailMark può ricreare (esclusi da Git)",
+  "init.cache": "file che PerMark può ricreare (esclusi da Git)",
   "init.local": "il tuo stato personale: ultima visita, cosa hai letto, commenti (esclusi da Git)",
   "init.git":
-    "Questo non modifica il tuo Git: non viene creato nessun repository e non viene fatto nessun commit. Git vedrà solo la nuova cartella .trailmark/.",
+    "Questo non modifica il tuo Git: non viene creato nessun repository e non viene fatto nessun commit. Git vedrà solo la nuova cartella .permark/.",
   "init.note": "Il tuo stato attuale viene spostato lì. Elimina la cartella per annullare.",
   "init.confirm": "Inizializza",
-  "init.failed": "Impossibile creare .trailmark/: {message}",
+  "init.failed": "Impossibile creare .permark/: {message}",
 
   // ---- search
   "search.title": "Cerca",
@@ -610,10 +610,10 @@ export const itIT = {
   "tags.suggestions": "Tag suggeriti",
   "tags.createTag": "Crea il tag “{name}”",
   "tags.removeTag": "Rimuovi il tag {name}",
-  "tags.savedApp": "Salvato in TrailMark, non nel file.",
-  "tags.savedProject": "Salvato in .trailmark/meta.toml (condiviso con il progetto).",
+  "tags.savedApp": "Salvato in PerMark, non nel file.",
+  "tags.savedProject": "Salvato in .permark/meta.toml (condiviso con il progetto).",
   "tags.done": "Fine",
-  "tags.initialize": "Inizializza .trailmark",
+  "tags.initialize": "Inizializza .permark",
   "tags.empty": "Ancora nessun tag.",
   "tags.emptyHint":
     "Premi T su un documento per aggiungere un tag, o aggiungi `tags:` al suo front matter.",
@@ -638,11 +638,11 @@ export const itIT = {
   "tags.cleanUp": "Pulisci",
   "tags.cleanUpHint": "Rimuovi i tag e le descrizioni conservati per file che non esistono più",
   "tags.metaUnreadable":
-    "Impossibile leggere .trailmark/meta.toml{where}. I tag dell'app sono di sola lettura finché non viene corretto.",
+    "Impossibile leggere .permark/meta.toml{where}. I tag dell'app sono di sola lettura finché non viene corretto.",
   "tags.metaUnreadableLine": " (riga {line})",
   "tags.openMetaFile": "Apri file",
   "tags.readOnly":
-    "I tag dell'app sono di sola lettura finché .trailmark/meta.toml non viene corretto.",
+    "I tag dell'app sono di sola lettura finché .permark/meta.toml non viene corretto.",
   "tags.worktreeReadOnly":
     "Tag e descrizioni non vengono conservati per i file dei worktree collegati.",
   "tags.writeError": "Impossibile salvare: {message}",
@@ -694,7 +694,7 @@ export const itIT = {
     "Questa cartella non è in un repository Git. Gli indicatori di modifica sono disattivati.",
   "status.liveOff": "Aggiornamenti in tempo reale disattivati",
   "status.liveOffHint":
-    "Questa posizione non segnala le modifiche, quindi TrailMark non può seguirle in tempo reale. Torna alla finestra per aggiornare.",
+    "Questa posizione non segnala le modifiche, quindi PerMark non può seguirle in tempo reale. Torna alla finestra per aggiornare.",
   "status.gitUnavailable": "Git non disponibile",
   "status.sinceVisit": "Da: ultima visita",
   "status.sinceCommit": "Da: ultimo commit",
@@ -702,11 +702,11 @@ export const itIT = {
   "status.baselineHint": "Confronta con la tua ultima visita o con l'ultimo commit",
   "status.baselineMenu": "Confronta con",
   "status.stateLocal": "Stato: locale",
-  "status.stateProject": "Stato: .trailmark",
+  "status.stateProject": "Stato: .permark",
   "status.stateLocalHint":
-    "Lo stato del progetto è salvato solo su questo computer. Fai clic per conservarlo nel progetto (.trailmark/).",
+    "Lo stato del progetto è salvato solo su questo computer. Fai clic per conservarlo nel progetto (.permark/).",
   "status.stateProjectHint":
-    "Lo stato del progetto è salvato in .trailmark/ all'interno del progetto.",
+    "Lo stato del progetto è salvato in .permark/ all'interno del progetto.",
   "status.stateMenu": "Stato del progetto",
   "status.follow": "Segui",
   "status.following": "Segui: attivo",
@@ -778,13 +778,13 @@ export const itIT = {
   "settings.agent": "Connessione agenti",
   "settings.agentSwitch": "Consenti agli agenti IA di vedere cosa sto guardando",
   "settings.agentHint":
-    "Disattivata per impostazione predefinita, e solo per questo progetto. Un agente può leggere ciò che è sullo schermo e mostrarti un punto. Non modifica mai un documento. TrailMark comunica solo con i programmi su questo computer, ma un agente può inviare ciò che legge al proprio servizio di IA. Mentre è attiva, ciò che stai guardando viene scritto anche in .trailmark/local/agent.json, se il progetto conserva le impostazioni in .trailmark.",
+    "Disattivata per impostazione predefinita, e solo per questo progetto. Un agente può leggere ciò che è sullo schermo e mostrarti un punto. Non modifica mai un documento. PerMark comunica solo con i programmi su questo computer, ma un agente può inviare ciò che legge al proprio servizio di IA. Mentre è attiva, ciò che stai guardando viene scritto anche in .permark/local/agent.json, se il progetto conserva le impostazioni in .permark.",
   "settings.agentUnavailable": "Non disponibile per un singolo file.",
   "settings.agentSetup": "Connetti un agente",
   "settings.agentSetupHint":
-    "Incolla una di queste righe dove si configura l'agente. Se trailmark è nel tuo PATH, il nome può sostituire il percorso del programma.",
+    "Incolla una di queste righe dove si configura l'agente. Se permark è nel tuo PATH, il nome può sostituire il percorso del programma.",
   "settings.agentSetupHintStore":
-    "Incolla una di queste righe dove si configura l'agente. La versione Microsoft Store aggiunge trailmark al tuo PATH, quindi queste righe usano quel nome.",
+    "Incolla una di queste righe dove si configura l'agente. La versione Microsoft Store aggiunge permark al tuo PATH, quindi queste righe usano quel nome.",
   "settings.agentClaude": "Claude Code",
   "settings.agentJson": "Altri client MCP (JSON)",
   "settings.agentHook": "Aggiungi ciò che stai guardando a ogni prompt (hook di Claude Code)",
@@ -792,15 +792,15 @@ export const itIT = {
   "settings.updatesStore": "Gli aggiornamenti arrivano dal Microsoft Store.",
   "settings.fileManager": "Gestore file",
   "settings.fileManagerStore":
-    "La versione Microsoft Store aggiunge “Apri con TrailMark” al menu contestuale delle cartelle e all'elenco “Apri con” dei file Markdown. Fanno parte dell'app, quindi qui non c'è niente da attivare.",
-  "settings.shellMenu": "Aggiungi “Apri con TrailMark” al menu contestuale",
+    "La versione Microsoft Store aggiunge “Apri con PerMark” al menu contestuale delle cartelle e all'elenco “Apri con” dei file Markdown. Fanno parte dell'app, quindi qui non c'è niente da attivare.",
+  "settings.shellMenu": "Aggiungi “Apri con PerMark” al menu contestuale",
   "settings.shellMenuHint": "In Windows 11 si trova in “Mostra altre opzioni”.",
-  "settings.shellAssoc": "Associa i file .md a TrailMark",
-  "settings.shellAssocHint": "Aggiunge TrailMark all'elenco “Apri con” dei file Markdown.",
+  "settings.shellAssoc": "Associa i file .md a PerMark",
+  "settings.shellAssocHint": "Aggiunge PerMark all'elenco “Apri con” dei file Markdown.",
   "settings.shellDefault": "Imposta come predefinita...",
   "settings.shellDefaultHint":
     "Solo Windows può impostare l'app predefinita: scegli .md nell'elenco che si apre.",
-  "settings.shellIsDefault": "TrailMark è l'app predefinita per i file .md.",
+  "settings.shellIsDefault": "PerMark è l'app predefinita per i file .md.",
 
   // ---- updates
   "update.check": "Controlla aggiornamenti...",
@@ -829,7 +829,7 @@ export const itIT = {
   // ---- errors from the backend, worded by kind (see errorMessage)
   "error.noVault": "Nessuna cartella aperta.",
   "error.superseded": "Nel frattempo è stata aperta un'altra cartella.",
-  "error.internal": "Si è verificato un errore in TrailMark: {detail}",
+  "error.internal": "Si è verificato un errore in PerMark: {detail}",
   "error.pathEscape": "{subject} è fuori dalla cartella aperta.",
   "error.invalidPath": "{subject} non è un percorso valido.",
   "error.notFound": "Non trovato: {subject}",
@@ -838,12 +838,12 @@ export const itIT = {
   "error.watch": "Impossibile monitorare le modifiche nella cartella: {detail}",
   "error.git": "Git ha segnalato un problema: {detail}",
   "error.gitUnavailable": "Git non è disponibile al momento.",
-  "error.session": "Impossibile leggere o salvare lo stato memorizzato di TrailMark: {detail}",
-  "error.metaUnreadable": "Impossibile leggere .trailmark/meta.toml{where}: {detail}",
+  "error.session": "Impossibile leggere o salvare lo stato memorizzato di PerMark: {detail}",
+  "error.metaUnreadable": "Impossibile leggere .permark/meta.toml{where}: {detail}",
   "error.binary": "{subject} è un file binario, quindi non può essere modificato.",
   "error.tooLarge": "{subject} è troppo grande.",
   "error.blockedType":
-    "TrailMark non apre programmi, script o documenti che possono eseguire codice ({subject}). Mostra il file nel gestore file se vuoi aprirlo tu.",
+    "PerMark non apre programmi, script o documenti che possono eseguire codice ({subject}). Mostra il file nel gestore file se vuoi aprirlo tu.",
   "error.notMarkdown": "{subject} non è un file Markdown.",
   "error.encoding": "{subject} non è testo UTF-8, quindi non può essere modificato qui.",
   "error.exists": "{subject} esiste già.",
@@ -898,7 +898,7 @@ export const itIT = {
   "edit.savedBlocks.one": "Salvato, {n} blocco modificato",
   "edit.savedBlocks.other": "Salvato, {n} blocchi modificati",
   "edit.reloaded": "Ricaricato dal disco alle {time}",
-  "edit.firstSaveHint": "TrailMark riscrive solo i blocchi che hai modificato.",
+  "edit.firstSaveHint": "PerMark riscrive solo i blocchi che hai modificato.",
   "edit.gotIt": "Ho capito",
   "edit.unsavedPrompt": "Modifiche non salvate in {name}.",
   "edit.discard": "Scarta",
@@ -1175,7 +1175,7 @@ export const itIT = {
   "error.moveInside":
     "Una nota non può essere spostata nella cartella delle note. Scegli una posizione in un progetto.",
   "error.notesNewer":
-    "Queste note sono state usate l'ultima volta da una versione più recente di TrailMark, quindi da questa non è possibile condividere una nota. Interrompere la condivisione funziona ancora.",
+    "Queste note sono state usate l'ultima volta da una versione più recente di PerMark, quindi da questa non è possibile condividere una nota. Interrompere la condivisione funziona ancora.",
   "notes.deleteNote": "Elimina nota",
   "notes.copy": "Copia",
   "notes.copyHint": "Copia il testo della nota, esattamente com'è nel file",
@@ -1222,12 +1222,12 @@ export const itIT = {
   "notes.versions.restoreHint":
     "Il testo attuale della nota viene prima conservato come versione, così puoi annullare il ripristino.",
   "notes.readOnly.locked":
-    "Queste note sono aperte in un'altra finestra di TrailMark, quindi qui puoi solo leggerle.",
+    "Queste note sono aperte in un'altra finestra di PerMark, quindi qui puoi solo leggerle.",
   "notes.readOnly.unwritable":
-    "TrailMark non può scrivere nella cartella delle note, quindi puoi solo leggere le note.",
+    "PerMark non può scrivere nella cartella delle note, quindi puoi solo leggere le note.",
   "notes.folderMissing": "La cartella delle note che hai scelto non c'è: {path}",
   "notes.folderMissingHint":
-    "Potrebbe trovarsi su un'unità non collegata, oppure è stata rinominata o spostata. TrailMark non crea da solo una cartella vuota al suo posto, perché le tue note finirebbero divise in due.",
+    "Potrebbe trovarsi su un'unità non collegata, oppure è stata rinominata o spostata. PerMark non crea da solo una cartella vuota al suo posto, perché le tue note finirebbero divise in due.",
   "notes.locate": "Individua...",
   "notes.createFolder": "Creala",
   "notes.failed": "Impossibile aprire le note: {message}",
@@ -1246,7 +1246,7 @@ export const itIT = {
   "settings.startIn": "All'avvio",
   "settings.startIn.welcome": "Schermata di benvenuto",
   "settings.startIn.notes": "Note",
-  "settings.startInHint": "Dove si apre TrailMark quando lo avvii senza una cartella o un file.",
+  "settings.startInHint": "Dove si apre PerMark quando lo avvii senza una cartella o un file.",
   "activity.notes": "Note",
   "activity.notesHint": "Mostra le note",
   "cmd.newNote": "Nuova nota",
@@ -1254,8 +1254,8 @@ export const itIT = {
   "cmd.copyDocument": "Copia l'intero documento come testo",
   "menu.copyDocument": "Copia il testo del documento",
   "error.notesLocked":
-    "Queste note sono aperte in un'altra finestra di TrailMark, quindi qui possono solo essere lette.",
-  "error.notesUnwritable": "TrailMark non può scrivere nella cartella delle note.",
+    "Queste note sono aperte in un'altra finestra di PerMark, quindi qui possono solo essere lette.",
+  "error.notesUnwritable": "PerMark non può scrivere nella cartella delle note.",
   "error.notANote": "{subject} non è una nota.",
   "error.unknownUndo": "Quell'eliminazione non può più essere annullata.",
   "error.noSuchVersion": "Quella versione precedente non esiste più.",
