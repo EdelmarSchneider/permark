@@ -186,10 +186,17 @@ impl Registry {
             for key in entries::menu_keys(exe, entries::menu_label(language)) {
                 self.write(&key)?;
             }
+            for key in entries::new_markdown_keys(exe, entries::new_markdown_label(language)) {
+                self.write(&key)?;
+            }
         } else {
             for target in &MENU_TARGETS {
                 self.delete_tree(&target.key())?;
                 self.tidy_up(&target.key());
+            }
+            for target in &entries::NEW_MARKDOWN_TARGETS {
+                self.delete_tree(&target.new_markdown_key())?;
+                self.tidy_up(&target.new_markdown_key());
             }
         }
         self.record(MENU_CHOICE, enabled)?;
@@ -232,6 +239,12 @@ impl Registry {
         let mut touched = false;
         for target in &MENU_TARGETS {
             touched |= self.relabel(&target.key(), entries::menu_label(language))?;
+        }
+        for target in &entries::NEW_MARKDOWN_TARGETS {
+            touched |= self.relabel(
+                &target.new_markdown_key(),
+                entries::new_markdown_label(language),
+            )?;
         }
         touched |= self.relabel(PROG_ID, entries::type_name(language))?;
         if touched {

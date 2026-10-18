@@ -7,7 +7,7 @@ import { mcpJson } from "../agentSetup";
 import { bridge } from "../bridge";
 import { refLabel } from "../codeRefs";
 import { isTextSelected } from "../dom/domUtil";
-import { blankTemplate, newFilePath, targetFolder } from "../editor/newFile";
+import { blankTemplate, newFilePath, targetFolder, type NewFileKind } from "../editor/newFile";
 import { errorKind, errorMessage } from "../errors";
 import { usesSystemApp } from "../externalEditor";
 import { followCandidate } from "../follow";
@@ -908,15 +908,19 @@ class AppStore {
 
   // ---- new file -------------------------------------------------------------------------------------
 
-  /** Ctrl+N and "New file...": the name is typed in the tree, under the selected folder or the open document's. */
-  startNewFile(folder?: string): void {
-    if (vault.isSimple) {
+  /**
+   * Ctrl+N and "New file": the name is typed in the tree, under the selected folder, the open document's, or the one
+   * `folder` names (the project root when that is `""`). `kind` is the extension the name starts with.
+   */
+  startNewFile(folder?: string, kind: NewFileKind = "markdown"): void {
+    if (this.screen === "welcome" || this.screen === "notes" || vault.isSimple) {
       toast.message(t("newFile.simpleMode"), "info");
       return;
     }
     // The new file replaces the open document, so unsaved edits are asked about before anything is made: Save or Discard goes
     // on to the name, Keep editing creates nothing.
-    if (edit.active && edit.dirty && edit.holdNavigation(() => this.startNewFile(folder))) return;
+    if (edit.active && edit.dirty && edit.holdNavigation(() => this.startNewFile(folder, kind)))
+      return;
     const target = folder ?? targetFolder(ui.treeCursor, docs.path);
     ui.sidebarView = "explorer";
     if (!session.left.open) session.setPanel("left", { open: true });
@@ -925,7 +929,7 @@ class AppStore {
     ui.collapsedSections.delete(plan.section);
     for (const dir of plan.expand) vault.expanded.add(dir);
     if (target !== "") vault.expanded.add(target);
-    ui.newFile = { folder: target, n: (ui.newFile?.n ?? 0) + 1 };
+    ui.newFile = { folder: target, kind, n: (ui.newFile?.n ?? 0) + 1 };
   }
 
   /**
@@ -1364,6 +1368,8 @@ class AppStore {
         return;
       case "newFile":
         return this.startNewFile();
+      case "newTextFile":
+        return this.startNewFile(undefined, "text");
       case "find":
         // the editor has no find yet, and the reading view it would search is hidden
         if (!edit.active) this.openFind();

@@ -104,6 +104,7 @@
           <com:ComServer>
             <com:SurrogateServer DisplayName="PerMark shell extension">
               <com:Class Id="D5FFB935-7A42-4E3D-90E1-0180A7999B94" Path="permark_shell.dll" ThreadingModel="STA" />
+              <com:Class Id="C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09" Path="permark_shell.dll" ThreadingModel="STA" />
             </com:SurrogateServer>
           </com:ComServer>
         </com:Extension>
@@ -112,9 +113,11 @@
           <desktop4:FileExplorerContextMenus>
             <desktop5:ItemType Type="Directory">
               <desktop5:Verb Id="OpenWithPerMark" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
+              <desktop5:Verb Id="NewMarkdownWithPerMark" Clsid="C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09" />
             </desktop5:ItemType>
             <desktop5:ItemType Type="Directory\Background">
               <desktop5:Verb Id="OpenWithPerMarkHere" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
+              <desktop5:Verb Id="NewMarkdownWithPerMarkHere" Clsid="C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09" />
             </desktop5:ItemType>
           </desktop4:FileExplorerContextMenus>
         </desktop4:Extension>

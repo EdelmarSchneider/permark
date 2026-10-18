@@ -40,6 +40,9 @@ use crate::guard::guarded_code;
 pub const CLSID_OPEN_WITH_PERMARK: GUID =
     GUID::from_u128(0xD5FF_B935_7A42_4E3D_90E1_0180_A799_9B94);
 
+/// The class id of "New Markdown file with PerMark". It is in `AppxManifest.xml` too, and it is not to change.
+pub const CLSID_NEW_MARKDOWN: GUID = GUID::from_u128(0xC3B7_E2A1_9D54_4C18_B6F0_2E8A_71D4_5C09);
+
 /// Where COM gets the factory of a class from this DLL.
 ///
 /// # Safety
@@ -60,10 +63,10 @@ pub unsafe extern "system" fn DllGetClassObject(
             *object = std::ptr::null_mut();
             (&*class, interface)
         };
-        if *class != CLSID_OPEN_WITH_PERMARK {
+        let Some(action) = command::MenuAction::from_class(class) else {
             return CLASS_E_CLASSNOTAVAILABLE;
-        }
-        let factory: IClassFactory = Factory::new().into();
+        };
+        let factory: IClassFactory = Factory::new(action).into();
         // SAFETY: `interface` and `object` are valid (checked above); `query` writes an interface the caller then owns.
         unsafe { factory.query(interface, object) }
     })
@@ -87,6 +90,12 @@ mod tests {
         assert!(
             MANIFEST.matches(&id).count() >= 2,
             "the manifest declares the class and registers the command for it"
+        );
+        let new_id = format!("{CLSID_NEW_MARKDOWN:?}").to_uppercase();
+        assert_eq!(new_id, "C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09");
+        assert!(
+            MANIFEST.matches(&new_id).count() >= 2,
+            "the manifest declares the new-file class and registers it"
         );
     }
 

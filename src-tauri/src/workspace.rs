@@ -988,7 +988,8 @@ impl Workspace {
     // ---- editing --------------------------------------------------------------------------------
 
     fn editor(&self) -> Editor<'_> {
-        Editor::new(&self.vault, &self.own_writes)
+        // Plain text (`.txt`) is a file the project can make and edit, the same as Markdown.
+        Editor::new(&self.vault, &self.own_writes).with_text_files()
     }
 
     /// A Markdown file as the editor needs it: the exact text, its hash and its blocks.
@@ -3034,7 +3035,7 @@ deepword
     }
 
     #[test]
-    fn a_text_file_opens_for_editing_in_the_notes_and_stays_read_only_in_a_project() {
+    fn a_text_file_opens_for_editing_in_the_notes_and_in_a_project() {
         let fx = Fx::new();
         let ws = fx.open_notes();
         let sent = sent_files();
@@ -3051,12 +3052,18 @@ deepword
 
         let project = Fx::new();
         write(project.project.path(), "todo.txt", "buy milk\n");
-        let ws = project.open();
-        assert_eq!(
-            ws.document_source("todo.txt").err().map(|e| e.kind()),
-            Some("notMarkdown")
-        );
-        ws.close();
+        let opened = project.open();
+        let project_source = opened
+            .document_source("todo.txt")
+            .expect("a project edits a text file");
+        assert_eq!(project_source.text, "buy milk\n");
+        opened
+            .save_document("todo.txt", "buy milk\nand eggs\n", &project_source.hash)
+            .expect("saved");
+        let created = opened.create_document("fresh.txt", "").expect("create");
+        assert_eq!(created.path, "fresh.txt");
+        assert!(opened.create_document("fresh.json", "{}").is_err());
+        opened.close();
     }
 
     #[test]

@@ -275,11 +275,17 @@
             { type: "separator" },
           ] satisfies MenuEntry[])),
       {
-        id: "new",
-        label: t("newFile.newFile"),
+        id: "newMarkdown",
+        label: t("cmd.newFile"),
         icon: "file-plus",
         hint: "Ctrl+N",
-        onselect: () => app.startNewFile(folder),
+        onselect: () => app.startNewFile(folder, "markdown"),
+      },
+      {
+        id: "newText",
+        label: t("cmd.newTextFile"),
+        icon: "file-plus",
+        onselect: () => app.startNewFile(folder, "text"),
       },
       {
         id: "newFolder",
@@ -449,7 +455,7 @@
   {onkeydown}
 >
   {#if root && ui.newFile?.folder === ""}
-    {#key ui.newFile.n}<TreeNameInput folder="" depth={0} />{/key}
+    {#key ui.newFile.n}<TreeNameInput folder="" depth={0} kind={ui.newFile.kind} />{/key}
   {/if}
   {#if root && fileops.newFolder?.folder === ""}
     {#key fileops.newFolder.n}<TreeEntryInput variant="folder" folder="" depth={0} />{/key}
@@ -570,7 +576,9 @@
       {/if}
     </div>
     {#if row.isDir && row.expanded && ui.newFile?.folder === row.node.path}
-      {#key ui.newFile.n}<TreeNameInput folder={row.node.path} depth={row.depth + 1} />{/key}
+      {#key ui.newFile.n}
+        <TreeNameInput folder={row.node.path} depth={row.depth + 1} kind={ui.newFile.kind} />
+      {/key}
     {/if}
     {#if row.isDir && row.expanded && fileops.newFolder?.folder === row.node.path}
       {#key fileops.newFolder.n}

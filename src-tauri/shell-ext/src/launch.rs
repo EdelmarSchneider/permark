@@ -37,6 +37,24 @@ pub(crate) fn folders_to_open(selected: Vec<PathBuf>) -> Vec<PathBuf> {
         .collect()
 }
 
+/// The argument that asks the program to make a Markdown file in the folder and open that folder.
+pub(crate) const NEW_MARKDOWN_FLAG: &str = "--new-markdown";
+
+/// The command that makes a new Markdown file in `folder` and opens it. The flag and the folder are the two arguments.
+pub(crate) fn command_new_markdown(program: &Path, folder: &Path) -> Command {
+    let mut command = Command::new(program);
+    command
+        .arg(NEW_MARKDOWN_FLAG)
+        .arg(folder)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    if let Some(home) = program.parent() {
+        command.current_dir(home);
+    }
+    command
+}
+
 /// The command that opens `folder` in `program`. The folder's path is the one argument, as the entry of the installer
 /// version passes `"%1"`; Rust puts the quotes around it that a path with spaces needs.
 ///
@@ -57,11 +75,20 @@ pub(crate) fn command(program: &Path, folder: &Path) -> Command {
 }
 
 /// Starts `program` once for each of `folders`, and returns what started and the first error of what did not.
-fn start(program: &Path, folders: &[PathBuf]) -> (Vec<Child>, Option<io::Error>) {
+fn start(
+    program: &Path,
+    folders: &[PathBuf],
+    new_markdown: bool,
+) -> (Vec<Child>, Option<io::Error>) {
     let mut started = Vec::new();
     let mut first_error = None;
     for folder in folders {
-        match command(program, folder).spawn() {
+        let spawned = if new_markdown {
+            command_new_markdown(program, folder).spawn()
+        } else {
+            command(program, folder).spawn()
+        };
+        match spawned {
             Ok(child) => started.push(child),
             Err(error) => {
                 first_error.get_or_insert(error);
@@ -71,18 +98,28 @@ fn start(program: &Path, folders: &[PathBuf]) -> (Vec<Child>, Option<io::Error>)
     (started, first_error)
 }
 
+/// Starts `program` once for each of `folders`, making a Markdown file in each. Same result as [`open`].
+pub(crate) fn new_markdown(program: &Path, folders: &[PathBuf]) -> io::Result<()> {
+    conclude(start(program, folders, true))
+}
+
 /// Starts `program` once for each of `folders`. Fine when it started for at least one; the first error when it did not
 /// start at all. It does not wait for the program.
 pub(crate) fn open(program: &Path, folders: &[PathBuf]) -> io::Result<()> {
-    // The programs run on their own: the handles of the ones that started are closed when `started` goes, nothing waits.
-    let (started, first_error) = start(program, folders);
-    match (started.is_empty(), first_error) {
-        (true, Some(error)) => Err(error),
-        (true, None) => Err(io::Error::new(
+    conclude(start(program, folders, false))
+}
+
+/// The programs run on their own: the handles of the ones that started are closed here, and nothing waits.
+fn conclude((started, first_error): (Vec<Child>, Option<io::Error>)) -> io::Result<()> {
+    let started_any = !started.is_empty();
+    drop(started);
+    match (started_any, first_error) {
+        (false, Some(error)) => Err(error),
+        (false, None) => Err(io::Error::new(
             io::ErrorKind::NotFound,
             "there is no folder to open",
         )),
-        (false, _) => Ok(()),
+        (true, _) => Ok(()),
     }
 }
 
@@ -127,6 +164,23 @@ mod tests {
             let args: Vec<&OsStr> = command.get_args().collect();
             assert_eq!(args, [OsStr::new(folder)], "{folder}");
         }
+    }
+
+    #[test]
+    fn a_new_markdown_file_passes_the_flag_and_then_the_folder() {
+        let command = command_new_markdown(
+            Path::new(r"C:\Pkg\permark.exe"),
+            Path::new(r"C:\My Projects\notes"),
+        );
+        let args: Vec<&OsStr> = command.get_args().collect();
+        assert_eq!(
+            args,
+            [
+                OsStr::new("--new-markdown"),
+                OsStr::new(r"C:\My Projects\notes")
+            ]
+        );
+        assert_eq!(command.get_current_dir(), Some(Path::new(r"C:\Pkg")));
     }
 
     #[test]
@@ -192,7 +246,7 @@ mod tests {
             return;
         }
         let folders = paths(&[r"C:\one", r"C:\two"]);
-        let (started, error) = start(&stand_in, &folders);
+        let (started, error) = start(&stand_in, &folders, false);
         // wait for them, so that no process of the test outlives it
         let ended: Vec<_> = started
             .into_iter()

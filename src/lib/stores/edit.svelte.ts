@@ -21,6 +21,7 @@ import {
 import { fromBuffer, toBuffer, type TextFormat } from "../editor/bufferText";
 import type { VisualInput } from "../editor/visual/editor";
 import { EDIT_BLOCK_TEXT, editBlock, editBlockFromKind } from "../editor/editability";
+import { isPlainTextName } from "../looseFile";
 import {
   CONFIRM_ABOVE_BYTES,
   MAX_IMAGE_BYTES,
@@ -160,8 +161,11 @@ class EditStore {
     /** A save of a loose file found it is not the version the person started from (`diskHash`; null when it is gone). */
     looseConflict?: (path: string, diskHash: string | null) => void;
   } = {};
-  /** Whether a path is a plain text file the window edits (in Source only); the Notes window says which are. */
-  textFiles: (path: string) => boolean = () => false;
+  /**
+   * Whether a path is a plain text file the window edits (in Source only). A project edits `.txt`. The Notes window
+   * narrows that to the loose files it lists.
+   */
+  textFiles: (path: string) => boolean = isPlainTextName;
 
   active = $derived(this.path !== null);
 

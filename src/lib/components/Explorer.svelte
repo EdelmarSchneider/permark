@@ -19,12 +19,26 @@
 
   let tree: Tree | undefined = $state();
   let menuAnchor = $state<DOMRect | null>(null);
+  let rootMenu = $state<{ x: number; y: number } | null>(null);
   /** Where the menu was opened from: what an entry opens (the git legend) is placed there, after the menu has closed. */
   let menuOrigin: DOMRect | null = null;
   let filterAnchor = $state<DOMRect | null>(null);
 
   const projectOpen = $derived(vault.stateLocation === "project");
   const entries = $derived<MenuEntry[]>([
+    {
+      id: "newMarkdown",
+      label: t("cmd.newFile"),
+      icon: "file-plus",
+      onselect: () => app.startNewFile(targetFolder(ui.treeCursor, docs.path), "markdown"),
+    },
+    {
+      id: "newText",
+      label: t("cmd.newTextFile"),
+      icon: "file-plus",
+      onselect: () => app.startNewFile(targetFolder(ui.treeCursor, docs.path), "text"),
+    },
+    { type: "separator" },
     {
       id: "newFolder",
       label: t("fileOps.newFolder"),
@@ -106,6 +120,33 @@
     filterAnchor = filterAnchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect();
   }
 
+  const rootEntries = $derived<MenuEntry[]>([
+    {
+      id: "newMarkdown",
+      label: t("cmd.newFile"),
+      icon: "file-plus",
+      onselect: () => app.startNewFile("", "markdown"),
+    },
+    {
+      id: "newText",
+      label: t("cmd.newTextFile"),
+      icon: "file-plus",
+      onselect: () => app.startNewFile("", "text"),
+    },
+    { type: "separator" },
+    {
+      id: "newFolder",
+      label: t("fileOps.newFolder"),
+      icon: "folder-plus",
+      onselect: () => fileops.startNewFolder(""),
+    },
+  ]);
+
+  function onRootMenu(e: MouseEvent): void {
+    e.preventDefault();
+    rootMenu = { x: e.clientX, y: e.clientY };
+  }
+
   function toggleMenu(e: MouseEvent): void {
     menuAnchor = menuAnchor ? null : (e.currentTarget as HTMLElement).getBoundingClientRect();
     if (menuAnchor) menuOrigin = menuAnchor;
@@ -149,7 +190,7 @@
   data-drop-root
 >
   <!-- the project's row stays in view while the tree scrolls; the arrow only folds the files -->
-  <div class="section-header section-header--root">
+  <div class="section-header section-header--root" oncontextmenu={onRootMenu}>
     <button
       type="button"
       class="section-header__toggle"
@@ -250,5 +291,14 @@
     align="end"
     {entries}
     onclose={() => (menuAnchor = null)}
+  />
+{/if}
+{#if rootMenu}
+  {@const at = rootMenu}
+  <Menu
+    label={t("menu.fileActions")}
+    anchor={{ left: at.x, right: at.x, top: at.y, bottom: at.y }}
+    entries={rootEntries}
+    onclose={() => (rootMenu = null)}
   />
 {/if}

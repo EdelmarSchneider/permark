@@ -19,6 +19,7 @@ export type MenuAction =
   | "initProject"
   | "checkUpdates"
   | "newFolder"
+  | "newTextFile"
   | "collapseAll"
   | "markAllRead"
   | "showOnlyUnread"
@@ -156,6 +157,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "settings", label: "cmd.settings", shortcut: "Ctrl+," },
 
   { id: "newFile", label: "cmd.newFile", shortcut: "Ctrl+N", available: inProject },
+  { id: "newTextFile", label: "cmd.newTextFile", available: inProject },
   { id: "edit", label: "cmd.edit", shortcut: "E", available: reading },
   { id: "toggleEdit", label: "cmd.toggleEdit", shortcut: "Ctrl+E", available: canEdit },
   { id: "toggleEditMode", label: "cmd.toggleEditMode", shortcut: "Ctrl+Alt+E", available: canEdit },

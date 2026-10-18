@@ -6,7 +6,11 @@ import { basename, dirname, splitWorktree } from "../paths";
 
 export const DEFAULT_NEW_NAME = "untitled.md";
 
+/** The two kinds a new file can be. Markdown is the one Ctrl+N makes. */
+export type NewFileKind = "markdown" | "text";
+
 const MARKDOWN = /\.(md|markdown|mdown|mkd|mdx)$/i;
+const PLAIN_TEXT = /\.(txt|text)$/i;
 const FORBIDDEN = /[\\/:*?"<>|\u0000-\u001f]/;
 const RESERVED = new Set([
   "con",
@@ -17,13 +21,14 @@ const RESERVED = new Set([
   ...Array.from({ length: 9 }, (_, i) => `lpt${i + 1}`),
 ]);
 
-/** `.md` is added when the name has no extension ("notes" becomes "notes.md"). */
-export function withExtension(typed: string): string {
+/** The extension of `kind` is added when the name has none ("notes" becomes "notes.md" or "notes.txt"). */
+export function withExtension(typed: string, kind: NewFileKind = "markdown"): string {
   const name = typed.trim();
   if (name === "") return name;
   const dot = name.lastIndexOf(".");
   const hasExtension = dot > 0 && dot < name.length - 1;
-  return hasExtension ? name : `${name.replace(/\.+$/, "")}.md`;
+  const ext = kind === "text" ? ".txt" : ".md";
+  return hasExtension ? name : `${name.replace(/\.+$/, "")}${ext}`;
 }
 
 export type NameProblem =
@@ -47,7 +52,7 @@ export function nameProblem(name: string, siblings: readonly string[]): NameProb
   if (name.trim() === "") return "empty";
   if (FORBIDDEN.test(name)) return "invalidChars";
   if (/[. ]$/.test(name) || name.startsWith(" ")) return "invalidEnd";
-  if (!MARKDOWN.test(name) || name.startsWith(".")) return "notMarkdown";
+  if ((!MARKDOWN.test(name) && !PLAIN_TEXT.test(name)) || name.startsWith(".")) return "notMarkdown";
   // spaces before the extension do not help: Windows reads `con .md` as the device too
   if (RESERVED.has(name.split(".")[0].trimEnd().toLowerCase())) return "reserved";
   if (new TextEncoder().encode(name).length > 255) return "tooLong";
@@ -62,12 +67,14 @@ export function stemRange(name: string): [number, number] {
   return [0, dot > 0 ? dot : name.length];
 }
 
-/** The first of `untitled.md`, `untitled-2.md`... that is not taken in the folder. */
-export function freshName(siblings: readonly string[]): string {
+/** The first of `untitled.md`, `untitled-2.md`... (or `.txt`) that is not taken in the folder. */
+export function freshName(siblings: readonly string[], kind: NewFileKind = "markdown"): string {
+  const ext = kind === "text" ? ".txt" : ".md";
   const taken = new Set(siblings.map((s) => s.toLowerCase()));
-  if (!taken.has(DEFAULT_NEW_NAME)) return DEFAULT_NEW_NAME;
+  const first = `untitled${ext}`;
+  if (!taken.has(first)) return first;
   for (let n = 2; ; n++) {
-    const name = `untitled-${n}.md`;
+    const name = `untitled-${n}${ext}`;
     if (!taken.has(name)) return name;
   }
 }
@@ -78,8 +85,9 @@ export function titleOf(name: string): string {
   return stem.replace(/[-_]+/g, " ").trim() || stem;
 }
 
-/** The blank template: a title and a final newline. */
+/** The blank template: a title and a final newline for Markdown, and nothing for a text file. */
 export function blankTemplate(name: string): string {
+  if (PLAIN_TEXT.test(name)) return "";
   return `# ${titleOf(name)}\n`;
 }
 

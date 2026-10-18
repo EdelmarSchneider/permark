@@ -269,10 +269,11 @@ PerMark keeps its state in your user profile. If you want settings and tags to t
 
 ### 🖱️ Open with PerMark
 **Windows**: right-click a folder, the background of a folder or a Markdown file and choose **Open with PerMark** (under *Show more options* on
-Windows 11). You can also list PerMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
+Windows 11). The same menu offers **New Markdown file with PerMark**, which makes `untitled.md` in that folder and opens it.
+You can also list PerMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
 **Settings → File manager**, which adds and removes them at once. PerMark never sets itself as your default app; **Make default...** takes you to the
 Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
-The **Microsoft Store** version has the same entry on folders and on the background of a folder, and on Windows 11 it is in the main
+The **Microsoft Store** version has the same entries on folders and on the background of a folder, and on Windows 11 they are in the main
 right-click menu, not under *Show more options*. The package provides it (and the **Open with** entry for Markdown files), so
 there are no switches for it in Settings, and uninstalling the app removes it.
 

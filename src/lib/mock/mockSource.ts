@@ -64,9 +64,9 @@ export async function documentSource(path: string): Promise<SourceDoc> {
     throw new MockBackendError("tooLarge", `${path} is too large to edit`, {
       subject: path,
     });
-  // the Notes window edits the plain text files it lists too
-  const loosePlainText = kind === "text" && path.startsWith("@file/");
-  if (kind !== "markdown" && !loosePlainText)
+  // a project edits a plain text file, and so does a loose file of the Notes window
+  const plainText = kind === "text" && /\.(txt|text)$/i.test(path);
+  if (kind !== "markdown" && !plainText)
     throw new MockBackendError("notMarkdown", `${path} is not a Markdown file`, { subject: path });
   if (mockEncodingNote(path)) {
     throw new MockBackendError("encoding", `${path} is not UTF-8 text`, { subject: path });
@@ -121,7 +121,7 @@ const FORBIDDEN_NAME = /[\\/:*?"<>|\u0000-\u001f]/;
 export async function createDocument(path: string, text: string): Promise<CreatedDoc> {
   await wait(60);
   const name = basename(path);
-  if (!/\.(md|markdown|mdown|mkd|mdx)$/i.test(name) || name.startsWith(".")) {
+  if (!/\.(md|markdown|mdown|mkd|mdx|txt|text)$/i.test(name) || name.startsWith(".")) {
     throw new MockBackendError("notMarkdown", `${path} is not a Markdown file`, { subject: path });
   }
   if (FORBIDDEN_NAME.test(name) || /[. ]$/.test(name)) {

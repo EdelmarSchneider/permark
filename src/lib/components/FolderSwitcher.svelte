@@ -160,6 +160,33 @@
       data-item
       onclick={() => {
         close();
+        app.startNewFile(undefined, "markdown");
+      }}
+    >
+      <Icon name="file-plus" size="sm" />
+      <span class="menu-item__label">{t("cmd.newFile")}</span>
+      <span class="menu-item__hint">{keys("Ctrl+N")}</span>
+    </button>
+    <button
+      type="button"
+      class="menu-item"
+      role="menuitem"
+      data-item
+      onclick={() => {
+        close();
+        app.startNewFile(undefined, "text");
+      }}
+    >
+      <Icon name="file-plus" size="sm" />
+      <span class="menu-item__label">{t("cmd.newTextFile")}</span>
+    </button>
+    <button
+      type="button"
+      class="menu-item"
+      role="menuitem"
+      data-item
+      onclick={() => {
+        close();
         void app.chooseFolder();
       }}
     >
