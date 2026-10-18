@@ -520,6 +520,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 - v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
   show up in Quick open
+- v0.5.8: PlantUML diagrams, a new Markdown or text file from a folder, a note's path, heading shortcuts that work with AltGr, and wide blocks that stay in the pane
 - v0.5.7: review what changed since you last read (Keep or Revert), send comments to your agent, silence a folder, repair broken links, complete as you type, a Mermaid preview while you edit, and a Projects menu
 - v0.5.6: TrailMark is now PerMark: a new name, the same app, and nothing lost on the way
 - v0.5.5: tags with colors and icons, tags as your agent's index (`list_tags`, tag filter in `search`), a folder switcher, the navigation trail, and Open in browser for web pages
