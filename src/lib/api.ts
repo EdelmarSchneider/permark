@@ -163,6 +163,13 @@ export interface Api {
   referencedImages(): Promise<string[]>;
   /** Creates `.permark/` in the project. */
   initProjectFolder(): Promise<void>;
+  /**
+   * Creates `.permark/` in `path` when that folder is not already a project. Resolves to whether it was created;
+   * `false` means a project was already there and nothing was written.
+   */
+  seedProject(path: string): Promise<boolean>;
+  /** Opens `path` in another PerMark window. This window stays as it is. */
+  openProjectWindow(path: string): Promise<void>;
   stateLocation(): Promise<"appData" | "project">;
   /** The tags (front matter and app) and the description of a file. */
   fileMeta(path: string): Promise<FileMeta>;
@@ -436,7 +443,9 @@ export const tauriApi: Api = {
   revealInFolder: (path) => invoke<void>("reveal_in_folder", { path }),
   search: (query, limit) => invoke<SearchHit[]>("search", { query, limit }),
   referencedImages: () => invoke<string[]>("referenced_images"),
-  initProjectFolder: () => invoke<void>("init_project_folder"),
+    initProjectFolder: () => invoke<void>("init_project_folder"),
+    seedProject: (path) => invoke<boolean>("seed_project", { path }),
+    openProjectWindow: (path) => invoke<void>("open_project_window", { path }),
   stateLocation: () => invoke<"appData" | "project">("state_location"),
   fileMeta: (path) => invoke<FileMeta>("file_meta", { path }),
   setFileTags: (path, tags) => invoke<FileMeta>("set_file_tags", { path, tags }),
@@ -635,6 +644,8 @@ function createMockApi(): Api {
     search: command("search"),
     referencedImages: command("referencedImages"),
     initProjectFolder: command("initProjectFolder"),
+    seedProject: command("seedProject"),
+    openProjectWindow: command("openProjectWindow"),
     stateLocation: command("stateLocation"),
     fileMeta: command("fileMeta"),
     setFileTags: command("setFileTags"),

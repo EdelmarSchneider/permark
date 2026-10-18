@@ -6,6 +6,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Projects.** A Projects button at the top of the activity bar lists recent folders and offers New project, Open folder and Close folder. New project adds a `.permark` folder to the folder you pick. Opening a folder, a recent folder, a new project, or a folder from the Explorer's menu asks whether it opens in this window or in a new one.
 - **Broken links.** A Broken links panel lists every link in the project whose file does not exist. When one file with that name exists somewhere else, Repair points the link at it. When several do, you pick which one.
 - **See a Mermaid diagram while you edit its text.** In Source, with the caret in a Mermaid block, the drawing sits beside the text and updates as you type. A text Mermaid cannot draw yet keeps the last drawing of that block and says so. Dragging nodes is not part of this.
 - **Review what changed since you last read a document.** A quiet bar names how many blocks changed. Review shows each one in the reading view, and Keep or Revert accepts it or writes the old text back. Your own edits are already approved, and a change is not written if the file moved on while you were looking.

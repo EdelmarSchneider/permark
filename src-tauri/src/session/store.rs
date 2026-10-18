@@ -301,6 +301,25 @@ impl StateStore {
     }
 }
 
+/// Seeds `root` with a `.permark/` folder when it has none. `Ok(false)` means a project was already there
+/// (`.permark/`, or the older `.trailmark/`), so nothing was written.
+pub fn seed_new_project(app_data_dir: &Path, root: &Path) -> Result<bool, SessionError> {
+    if !root.is_dir() {
+        return Err(SessionError::io(
+            root,
+            std::io::Error::new(std::io::ErrorKind::NotFound, "not a folder"),
+        ));
+    }
+    if std::fs::symlink_metadata(root.join(PERMARK_DIR)).is_ok()
+        || private::is_real_folder(&root.join(legacy::LEGACY_STATE_DIR))
+    {
+        return Ok(false);
+    }
+    let mut store = StateStore::open(app_data_dir, root);
+    store.init_project_folder()?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -478,6 +497,24 @@ mod tests {
             .join(".permark/local/session.json")
             .is_file());
         assert!(!f.app.path().join("projects").exists());
+    }
+
+    #[test]
+    fn seeding_a_folder_makes_a_permark_dir_and_refuses_one_that_already_is_a_project() {
+        let f = fx();
+        fs::write(f.project.path().join("notes.md"), "hello").expect("write");
+
+        assert!(seed_new_project(f.app.path(), f.project.path()).expect("seed"));
+        assert!(f.project.path().join(".permark/config.toml").is_file());
+        assert!(f.project.path().join(".permark/.gitignore").is_file());
+        assert!(f.project.path().join("notes.md").is_file());
+        assert!(!seed_new_project(f.app.path(), f.project.path()).expect("again"));
+
+        let legacy = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(legacy.path().join(".trailmark")).expect("mkdir");
+        assert!(!seed_new_project(f.app.path(), legacy.path()).expect("legacy"));
+        assert!(legacy.path().join(".trailmark").is_dir());
+        assert!(!legacy.path().join(".permark").exists());
     }
 
     /// A folder `outside` the project that a link can point to, with a marker file in it.

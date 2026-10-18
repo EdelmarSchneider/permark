@@ -29,6 +29,12 @@ export const itIT = {
   "copy.failed": "Impossibile copiare negli Appunti.",
   "dialog.filter.docs": "Documenti",
   "dialog.openFolder": "Apri cartella",
+  "dialog.newProject": "Nuovo progetto",
+  "dialog.windowTitle": "Dove si apre questa cartella?",
+  "dialog.windowBody":
+    "Questa finestra sostituisce la cartella aperta. Una finestra nuova lascia questa com'è.",
+  "dialog.windowHere": "Questa finestra",
+  "dialog.windowNew": "Finestra nuova",
   "dialog.openFile": "Apri file",
 
   // ---- welcome
@@ -46,6 +52,7 @@ export const itIT = {
 
   // ---- activity bar and panels
   "activity.label": "Visualizzazioni",
+  "activity.projects": "Progetti",
   "activity.explorer": "Esplora risorse (Ctrl+Maiusc+X)",
   "activity.search": "Cerca in tutti i documenti (Ctrl+Maiusc+F)",
   "activity.tags": "Tag (Ctrl+Maiusc+T)",
@@ -101,8 +108,10 @@ export const itIT = {
   "explorer.worktreeCount.one": "{n} worktree",
   "explorer.worktreeCount.other": "{n} worktree",
   "switcher.label": "{name}: cambia cartella",
-  "switcher.hint": "Passa a un'altra cartella, aprine una o chiudi questa",
-  "switcher.menu": "Cartelle",
+  "switcher.hint": "Cartelle recenti, un progetto nuovo o un'altra cartella",
+  "switcher.menu": "Progetti",
+  "projects.existed": "Questo progetto esisteva già. Si apre così com'è.",
+  "projects.seedFailed": "Impossibile creare la cartella del progetto: {message}",
   "switcher.noOthers": "Ancora nessun'altra cartella recente.",
   "switcher.remove": "Rimuovi {name} dalle cartelle recenti",
   "switcher.removeHint": "Solo l'elenco la dimentica. La cartella e i suoi file restano dove sono.",
@@ -162,6 +171,7 @@ export const itIT = {
   "menu.openExternal": "Apri in un editor esterno",
   "menu.openDefaultApp": "Apri con l'app predefinita",
   "menu.openInBrowser": "Apri nel browser",
+  "menu.openAsProject": "Apri come progetto",
   "menu.showInFileManager": "Mostra nel gestore file",
   "menu.openFolder": "Apri cartella contenitore",
   "menu.reveal": "Mostra nell'albero",
@@ -340,6 +350,7 @@ export const itIT = {
 
   // ---- commands (the Commands scope of search everywhere)
   "cmd.openFolder": "Apri cartella...",
+  "cmd.newProject": "Nuovo progetto...",
   "cmd.openFile": "Apri file...",
   "cmd.switchFolder": "Cambia cartella...",
   "cmd.closeFolder": "Chiudi cartella",

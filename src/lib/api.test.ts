@@ -52,6 +52,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   search: ["query", 5],
   referencedImages: [],
   initProjectFolder: [],
+  seedProject: ["F:/work/beta"],
+  openProjectWindow: ["F:/work/beta"],
   stateLocation: [],
   fileMeta: ["docs/a.md"],
   setFileTags: ["docs/a.md", ["spec"]],

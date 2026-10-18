@@ -34,6 +34,8 @@
     "search": ["query", "limit"],
     "referenced_images": [],
     "init_project_folder": [],
+    "seed_project": ["path"],
+    "open_project_window": ["path"],
     "state_location": [],
     "file_meta": ["path"],
     "set_file_tags": ["path", "tags"],
