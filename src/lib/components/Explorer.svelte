@@ -190,7 +190,7 @@
   data-drop-root
 >
   <!-- the project's row stays in view while the tree scrolls; the arrow only folds the files -->
-  <div class="section-header section-header--root" oncontextmenu={onRootMenu}>
+  <div class="section-header section-header--root" role="group" oncontextmenu={onRootMenu}>
     <button
       type="button"
       class="section-header__toggle"
