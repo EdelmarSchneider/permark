@@ -928,6 +928,7 @@ export const ptBR = {
   "edit.visualLoading": "Carregando o editor",
   "edit.editInSource": "Editar na fonte",
   "edit.editInSourceHint": "Abrir a fonte Markdown neste bloco",
+  "edit.diagramPreview": "Prévia do diagrama",
   "edit.locked.frontmatter": "Front matter, mantido como está",
   "edit.locked.html": "Bloco HTML, mantido como está",
   "edit.locked.math": "Bloco de matemática, mantido como está",

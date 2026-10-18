@@ -912,6 +912,7 @@ export const en = {
   "edit.visualLoading": "Loading the editor",
   "edit.editInSource": "Edit in Source",
   "edit.editInSourceHint": "Open the Markdown source at this block",
+  "edit.diagramPreview": "Diagram preview",
   "edit.locked.frontmatter": "Front matter, kept as written",
   "edit.locked.html": "HTML block, kept as written",
   "edit.locked.math": "Math block, kept as written",
