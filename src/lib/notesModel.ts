@@ -172,6 +172,29 @@ export function shortFolder(folder: string, max = FOLDER_LABEL_CHARS): string {
   return label.length <= max ? label : `…${folder.slice(folder.length - (max - 1))}`;
 }
 
+/** Copy path, or show the file in the system file manager. */
+export type PathAction = {
+  id: "copyPath" | "show";
+  /** `menu.copyPath`, or the show label a note and a loose file already use. */
+  label: "menu.copyPath" | "menu.showInFileManager" | "notes.file.showInFolder";
+};
+
+/**
+ * Copy path and Show in the file manager for a note or a loose file.
+ * Copy path stays while a path is known. A missing file is not shown: there is nothing to select.
+ * A note uses the project wording ("Show in file manager"); a loose file keeps "Show in folder".
+ */
+export function pathActions(kind: "note" | "file", missing: boolean): PathAction[] {
+  const actions: PathAction[] = [{ id: "copyPath", label: "menu.copyPath" }];
+  if (!missing) {
+    actions.push({
+      id: "show",
+      label: kind === "note" ? "menu.showInFileManager" : "notes.file.showInFolder",
+    });
+  }
+  return actions;
+}
+
 /** The place of a loose file as a tooltip shows it: its folder label and its name, with the separator the label uses. */
 export function fullPlace(folder: string | null, name: string): string {
   if (!folder) return name;
