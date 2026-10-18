@@ -936,6 +936,7 @@ export const itIT = {
   "edit.visualLoading": "Caricamento dell'editor",
   "edit.editInSource": "Modifica in Sorgente",
   "edit.editInSourceHint": "Apri il sorgente Markdown in corrispondenza di questo blocco",
+  "edit.diagramPreview": "Anteprima del diagramma",
   "edit.locked.frontmatter": "Front matter, mantenuto così com'è",
   "edit.locked.html": "Blocco HTML, mantenuto così com'è",
   "edit.locked.math": "Blocco di formule, mantenuto così com'è",

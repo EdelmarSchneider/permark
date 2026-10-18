@@ -938,6 +938,7 @@ export const de = {
   "edit.visualLoading": "Editor wird geladen",
   "edit.editInSource": "Im Quelltext bearbeiten",
   "edit.editInSourceHint": "Den Markdown-Quelltext an diesem Block öffnen",
+  "edit.diagramPreview": "Diagrammvorschau",
   "edit.locked.frontmatter": "Front Matter, unverändert beibehalten",
   "edit.locked.html": "HTML-Block, unverändert beibehalten",
   "edit.locked.math": "Formelblock, unverändert beibehalten",

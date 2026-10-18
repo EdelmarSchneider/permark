@@ -885,6 +885,7 @@ export const zhCN = {
   "edit.visualLoading": "正在加载编辑器",
   "edit.editInSource": "在源码中编辑",
   "edit.editInSourceHint": "在此块处打开 Markdown 源码",
+  "edit.diagramPreview": "图表预览",
   "edit.locked.frontmatter": "Front matter，保持原样",
   "edit.locked.html": "HTML 块，保持原样",
   "edit.locked.math": "公式块，保持原样",

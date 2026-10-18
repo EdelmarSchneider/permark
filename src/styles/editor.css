@@ -39,6 +39,41 @@
 .source__host .cm-focused {
   outline: none;
 }
+
+/* A Mermaid block under the caret: its drawing sits beside the text, and below it when the pane is narrow. */
+.source {
+  container-type: inline-size;
+}
+.source--diagram {
+  justify-content: stretch;
+}
+.source--diagram .source__host {
+  max-width: none;
+}
+.diagram-preview {
+  flex: 0 0 min(42%, 440px);
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  padding: var(--sp-4);
+}
+.diagram-preview__error {
+  margin: var(--sp-2) 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+@container (max-width: 720px) {
+  .source--diagram {
+    flex-direction: column;
+  }
+  .diagram-preview {
+    flex: 0 0 38%;
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}
 .source__host .cm-scroller:focus-visible {
   outline: none;
 }

@@ -931,6 +931,7 @@ export const es = {
   "edit.visualLoading": "Cargando el editor",
   "edit.editInSource": "Editar el código fuente",
   "edit.editInSourceHint": "Abrir el código fuente Markdown en este bloque",
+  "edit.diagramPreview": "Vista previa del diagrama",
   "edit.locked.frontmatter": "Front matter, se conserva tal cual",
   "edit.locked.html": "Bloque HTML, se conserva tal cual",
   "edit.locked.math": "Bloque de matemáticas, se conserva tal cual",
