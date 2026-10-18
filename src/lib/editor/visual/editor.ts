@@ -7,6 +7,8 @@ import {
   imageSchema,
   inlineCodeKeymap,
   blockquoteKeymap,
+  headingKeymap,
+  paragraphKeymap,
 } from "@milkdown/kit/preset/commonmark";
 import { strikethroughKeymap } from "@milkdown/kit/preset/gfm";
 import type { Node as PMNode } from "@milkdown/kit/prose/model";
@@ -152,6 +154,9 @@ export class VisualEditor {
       updated: (view) => editor?.viewUpdated(view),
       files: (files, source) => options.handlers.files(files, source),
       link: () => options.handlers.link(),
+      setBlock: (block) => {
+        editor?.run(block);
+      },
       editInSource: (block) => options.handlers.editInSource(block),
       slashKey: (key) => editor?.slashOpen === true && options.handlers.slashKey(key),
       completeKey: (key) =>
@@ -176,6 +181,22 @@ export class VisualEditor {
         ctx.update(blockquoteKeymap.key, (keys) => ({
           ...keys,
           WrapInBlockquote: { shortcuts: ["Mod-Shift-.", "Mod->"] },
+        }));
+        // Ctrl+Alt+digit is AltGr on Windows, so the preset's heading chords never match a layout that
+        // types ¹ for that key. Paragraph and headings are Ctrl+Shift+0–6 (blockKeys in plugins.ts).
+        const noChord: { shortcuts: string[] } = { shortcuts: [] };
+        ctx.update(paragraphKeymap.key, (keys) => ({
+          ...keys,
+          TurnIntoText: noChord,
+        }));
+        ctx.update(headingKeymap.key, (keys) => ({
+          ...keys,
+          TurnIntoH1: noChord,
+          TurnIntoH2: noChord,
+          TurnIntoH3: noChord,
+          TurnIntoH4: noChord,
+          TurnIntoH5: noChord,
+          TurnIntoH6: noChord,
         }));
         // a relative image path is drawn from the app's own image scheme; the Markdown keeps the path as written
         ctx.update(imageSchema.key, (previous) => (c) => {

@@ -3,6 +3,7 @@ import type { MenuEntry } from "../../components/Menu.svelte";
 import { t } from "../../i18n";
 import { NO_FORMAT, tableUnavailable } from "./format";
 import {
+  BLOCK_TYPES,
   BLOCK_TYPE_WIDTH,
   MORE_WIDTH,
   SLASH_ITEMS,
@@ -72,6 +73,20 @@ describe("the buttons", () => {
     expect(pressed({ list: "task" })).toEqual(["task"]);
     expect(pressed({ quote: true, table: true })).toEqual(["quote", "table"]);
     expect(pressed({ block: "code" })).toEqual(["codeBlock"]);
+  });
+});
+
+describe("block types", () => {
+  it("shows the chord that sets the paragraph and headings 1 to 6", () => {
+    expect(BLOCK_TYPES.map((b) => [b.id, b.hint])).toEqual([
+      ["paragraph", "Ctrl+Shift+0"],
+      ["h1", "Ctrl+Shift+1"],
+      ["h2", "Ctrl+Shift+2"],
+      ["h3", "Ctrl+Shift+3"],
+      ["h4", "Ctrl+Shift+4"],
+      ["h5", "Ctrl+Shift+5"],
+      ["h6", "Ctrl+Shift+6"],
+    ]);
   });
 });
 

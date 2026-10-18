@@ -463,7 +463,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | New file | `Ctrl+N` |
 | Bold / italic / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
 | Link / inline code | `Ctrl+K` / ``Ctrl+` `` |
-| Headings 1 to 4 / paragraph (Visual) | `Ctrl+Alt+1` … `4` / `Ctrl+Alt+0` |
+| Headings 1 to 6 / paragraph (Visual) | `Ctrl+Shift+1` … `6` / `Ctrl+Shift+0` |
 | Block menu (Visual) | `/` in an empty paragraph |
 
 **Notes**
