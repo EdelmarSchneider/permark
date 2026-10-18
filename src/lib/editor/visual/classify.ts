@@ -2,7 +2,7 @@
 // as the same Markdown; every other block becomes a locked atom that keeps its bytes. The rules, in this order:
 //
 //  1. By kind. Front matter, raw HTML, math, footnote definitions and `other` (alerts, description lists and anything
-//     else the parser has no plain block for) are locked, and so is a Mermaid fence (a diagram, not text).
+//     else the parser has no plain block for) are locked, and so is a Mermaid or PlantUML fence (a diagram, not text).
 //  2. By content. A block with inline math (`$x$`) is locked: the editor has no math, and would read `$a_b_c$` as
 //     emphasis and write it back changed. So is a block that starts with a byte order mark (not the file's own), which the
 //     parser would drop.
@@ -53,9 +53,9 @@ export function tidy(text: string): string {
   return text.replace(/\r\n|\r/g, "\n").replace(/\n+$/, "");
 }
 
-/** A fenced code block whose language is `mermaid`. */
+/** A fenced code block whose language is `mermaid`, `plantuml` or `puml`. */
 export function isDiagram(text: string): boolean {
-  return /^ {0,3}(?:`{3,}|~{3,})[ \t]*mermaid(?:[ \t\r\n]|$)/i.test(text);
+  return /^ {0,3}(?:`{3,}|~{3,})[ \t]*(?:mermaid|plantuml|puml)(?:[ \t\r\n]|$)/i.test(text);
 }
 
 /** Text with something that looks like inline math: `$x$`, `$a_b$` (a `$` followed by no space, closed by one after no space). */

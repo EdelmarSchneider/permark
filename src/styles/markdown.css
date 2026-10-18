@@ -512,7 +512,7 @@
   color: var(--muted);
 }
 
-/* diagrams (Mermaid) */
+/* diagrams (Mermaid and PlantUML) */
 .diagram {
   margin: 0 0 1em;
   padding: 18px 12px 12px;

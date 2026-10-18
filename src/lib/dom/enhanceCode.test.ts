@@ -129,5 +129,24 @@ describe("a fenced block in the reading view", () => {
     template.innerHTML = fence("mermaid", "graph TD; A-->B");
     const { els } = enhanceBlocks(Array.from(template.content.children) as HTMLElement[], context);
     expect(els[0].tagName).toBe("FIGURE");
+    expect(els[0].dataset.kind).toBe("mermaid");
+  });
+
+  it("leaves a PlantUML diagram to its own renderer, including the short name", () => {
+    const template = document.createElement("template");
+    template.innerHTML = fence("plantuml", "@startuml\nAlice -> Bob\n@enduml");
+    const { els } = enhanceBlocks(Array.from(template.content.children) as HTMLElement[], context);
+    expect(els[0].tagName).toBe("FIGURE");
+    expect(els[0].className).toContain("diagram");
+    expect(els[0].dataset.kind).toBe("plantuml");
+    expect(els[0].dataset.source).toContain("Alice -> Bob");
+
+    const short = document.createElement("template");
+    short.innerHTML = fence("puml", "Alice -> Bob");
+    const { els: puml } = enhanceBlocks(
+      Array.from(short.content.children) as HTMLElement[],
+      context,
+    );
+    expect(puml[0].dataset.kind).toBe("plantuml");
   });
 });
