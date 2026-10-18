@@ -1,9 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { mermaidAt } from "./mermaidAt";
+import { diagramAt, mermaidAt } from "./mermaidAt";
 
-const doc = ["# T", "", "```mermaid", "graph LR", "  A --> B", "```", "", "```js", "mermaid", "```", "", "~~~mermaid", "mindmap", "  root", "~~~"].join(
-  "\n",
-);
+const doc = [
+  "# T",
+  "",
+  "```mermaid",
+  "graph LR",
+  "  A --> B",
+  "```",
+  "",
+  "```js",
+  "mermaid",
+  "```",
+  "",
+  "~~~mermaid",
+  "mindmap",
+  "  root",
+  "~~~",
+].join("\n");
 
 describe("mermaidAt", () => {
   it("returns the diagram the caret is inside, including its fence lines", () => {
@@ -29,5 +43,24 @@ describe("mermaidAt", () => {
   it("accepts an indented fence and a title after the language", () => {
     const text = "   ```mermaid title\ngraph TD\n```";
     expect(mermaidAt(text, 2)?.source).toBe("graph TD");
+  });
+});
+
+describe("diagramAt", () => {
+  it("names a PlantUML fence, including the short tag, and leaves the body", () => {
+    const text = "```plantuml\nAlice -> Bob: hi\n@enduml\n```";
+    expect(diagramAt(text, 2)).toEqual({
+      source: "Alice -> Bob: hi\n@enduml",
+      startLine: 1,
+      kind: "plantuml",
+    });
+    expect(diagramAt("~~~puml\nA -> B\n~~~", 2)?.kind).toBe("plantuml");
+    expect(diagramAt("```PUML\nA -> B\n```", 2)?.kind).toBe("plantuml");
+  });
+
+  it("keeps a Mermaid fence as mermaid and ignores a lookalike language", () => {
+    expect(diagramAt(doc, 4)?.kind).toBe("mermaid");
+    expect(diagramAt("```plantumlish\nA -> B\n```", 2)).toBeNull();
+    expect(diagramAt("```js\nplantuml\n```", 2)).toBeNull();
   });
 });

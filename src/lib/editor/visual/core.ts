@@ -74,7 +74,7 @@ export const LOCKED = "tm_locked";
 export type LockReason =
   /** its kind: front matter, raw HTML, math, footnote definitions or something the editor has no node for */
   | "kind"
-  /** a Mermaid diagram, which is drawn, not edited as text */
+  /** a Mermaid or PlantUML diagram, which is drawn, not edited as text */
   | "diagram"
   /** the editor could not read the block, or read it as something other than one block */
   | "parse"

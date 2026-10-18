@@ -1,25 +1,28 @@
 <script lang="ts">
-  // The drawing beside a Mermaid block while its text is edited. A pause redraws it. A typo keeps the last
-  // drawing of this same block and says the text cannot be drawn yet.
+  // The drawing beside a Mermaid or PlantUML block while its text is edited. A pause redraws it. A typo keeps the
+  // last drawing of this same block and says the text cannot be drawn yet.
   import { tick } from "svelte";
-  import { drawDiagram } from "../dom/enhance";
+  import { drawDiagram, type DiagramKind } from "../dom/enhance";
   import { t } from "../i18n";
   import { session } from "../stores/session.svelte";
 
-  type Props = { source: string; fence: number };
-  let { source, fence }: Props = $props();
+  type Props = { source: string; fence: number; kind?: DiagramKind };
+  let { source, fence, kind = "mermaid" }: Props = $props();
 
   const DELAY_MS = 300;
 
   let svg = $state("");
   let failed = $state(false);
   let drawnFor = -1;
+  let request = 0;
   let host: HTMLElement | undefined = $state();
 
   $effect(() => {
     const text = source;
     const id = fence;
+    const engine = kind;
     const theme = session.resolvedTheme;
+    const mine = ++request;
     if (text.trim() === "") {
       svg = "";
       failed = false;
@@ -27,7 +30,8 @@
       return;
     }
     const timer = setTimeout(() => {
-      void drawDiagram(text, theme).then(async (drawn) => {
+      void drawDiagram(text, theme, engine).then(async (drawn) => {
+        if (mine !== request) return;
         if (drawn) {
           svg = drawn;
           failed = false;
