@@ -13,15 +13,17 @@
   margin: 0 0 1em;
 }
 
-/* Breakout (docs/design/v0.2.md section 15). Tables, code, diagrams, display math and lone images take the
+/* Breakout (docs/design/v0.2.md section 15). Tables, diagrams, display math and lone images take the
    width their content needs: never below the text measure, never above the pane. They sit at the top level of
    the document only, centred on the column, so glow, gutter bar and find highlights follow the block itself.
-   `.doc-column` is a size container, which makes `cqw` the pane width without any script. */
+   `.doc-column` is a size container, which makes `cqw` the pane width without any script.
+   A fenced block is not one of these. A max-content box centred on the column is as wide as its longest line,
+   so the pre never becomes a scrollport and the pane clips the rest. The fence stays in the column and
+   scrolls inside itself (see "code blocks" below). */
 .doc-column {
   container-type: inline-size;
 }
 .md-body > .table-wrap,
-.md-body > .code-block,
 .md-body > .diagram,
 .md-body > .tm-wide {
   width: max-content;
@@ -363,7 +365,11 @@
 .md pre {
   margin: 0;
   padding: 14px 16px;
+  /* The fence is only as wide as the column. Prose wraps here; a line with nowhere to break
+     (a long token) overflows this box and scrolls, instead of widening the pane. */
+  max-width: 100%;
   overflow-x: auto;
+  white-space: pre-wrap;
   border-radius: var(--radius-card);
   background: var(--surface);
   border: 1px solid var(--border);
@@ -374,6 +380,13 @@
   padding: 0;
   border: 0;
   background: none;
+}
+/* A table row or a line of diagram source stays one line (see markSolidLines). The pre scrolls to it.
+   A diagram that failed to draw is the same kind of text, so the whole fallback pre stays unwrapped.
+   The span stays inline: a block box would add breaks when the line is copied. */
+.md pre .code-line--unbroken,
+.diagram-error pre {
+  white-space: pre;
 }
 /* the language in the corner, left of the copy button; muted (not faint) so it keeps AA contrast on the block's surface */
 .code-block__lang {

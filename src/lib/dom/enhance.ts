@@ -6,6 +6,7 @@
 import type { CodeOutcome } from "../code/highlighter";
 import { resolveRelative } from "../paths";
 import { viewBoxWidth } from "./breakout";
+import { markSolidLines } from "./codeLines";
 import { decorateCodeRefs, type CodeRefsContext } from "./codeRefsDom";
 import { renderPlantuml } from "./plantuml";
 
@@ -277,6 +278,7 @@ function showCode(
     if (label.auto) element.title = ctx.labels.codeAutoHint;
     wrap.insertBefore(element, wrap.firstChild);
   }
+  markSolidLines(code);
 }
 
 /**
