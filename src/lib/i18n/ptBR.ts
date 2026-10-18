@@ -572,6 +572,13 @@ export const ptBR = {
   "init.failed": "Não foi possível criar .permark/: {message}",
 
   // ---- search
+  "quiet.silence": "Silenciar",
+  "quiet.silenceHint": "Continua na árvore, sem as mudanças",
+  "quiet.listen": "Ouvir",
+  "quiet.listenHint": "As mudanças daqui passam a contar, de agora em diante",
+  "quiet.mark": "Silenciado",
+  "search.includeQuiet": "Incluir silenciados",
+  "search.includeQuietHint": "Buscar também pastas e arquivos silenciados",
   "search.title": "Pesquisar",
   "search.label": "Pesquisar em todos os docs",
   "search.placeholder": "Pesquisar em todos os docs",

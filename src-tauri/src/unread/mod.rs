@@ -571,6 +571,20 @@ impl UnreadService {
         }
     }
 
+    /// The documents being tracked, sorted. Empty until the folder has been looked at.
+    pub fn document_paths(&self) -> Vec<String> {
+        lock(&self.shared.inner).tracker.paths()
+    }
+
+    /// These documents count as read. Used when a silenced folder starts speaking, so what changed
+    /// while it was quiet does not arrive as a pile of unread marks.
+    pub fn mark_paths_read(&self, paths: &[String]) {
+        if self.tx.is_some() && !paths.is_empty() {
+            let wrote = self.shared.update(|tracker| tracker.mark_paths_read(paths));
+            self.touch(wrote);
+        }
+    }
+
     /// Everything in a folder counts as read (the project root is every folder).
     pub fn mark_folder_read(&self, folder: &str) -> Result<(), VaultError> {
         let resolved = self.vault.resolve(folder)?;

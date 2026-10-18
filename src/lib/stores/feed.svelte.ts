@@ -4,6 +4,7 @@ import { SvelteSet } from "svelte/reactivity";
 import { FeedStore, type FeedEntry, type FeedUpdate, type OperationEntry } from "../feed";
 import { FollowGate } from "../follow";
 import type { FsBatch } from "../types";
+import { quiet } from "./quiet.svelte";
 
 class FeedState {
   private model = new FeedStore();
@@ -52,6 +53,15 @@ class FeedState {
     this.showAll.clear();
     this.gate.clear();
   }
+
+  /** A path that just became quiet leaves the list, and does not come back when it speaks again. */
+  forgetQuiet(): void {
+    this.model.retain((path) => !quiet.isQuiet(path));
+    this.entries = [...this.model.entries];
+    this.lastEventMs = this.model.lastEventMs;
+  }
 }
 
 export const feed = new FeedState();
+
+quiet.subscribe(() => feed.forgetQuiet());

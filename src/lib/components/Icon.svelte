@@ -86,6 +86,8 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Undo2 from "@lucide/svelte/icons/undo-2";
   import Video from "@lucide/svelte/icons/video";
+  import Volume from "@lucide/svelte/icons/volume-2";
+  import VolumeX from "@lucide/svelte/icons/volume-x";
   import X from "@lucide/svelte/icons/x";
   import ZoomIn from "@lucide/svelte/icons/zoom-in";
   import ZoomOut from "@lucide/svelte/icons/zoom-out";
@@ -180,6 +182,8 @@
     alert: TriangleAlert,
     undo: Undo2,
     video: Video,
+    volume: Volume,
+    "volume-x": VolumeX,
     x: X,
     "zoom-in": ZoomIn,
     "zoom-out": ZoomOut,

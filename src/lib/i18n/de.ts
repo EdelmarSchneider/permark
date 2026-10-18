@@ -581,6 +581,13 @@ export const de = {
   "init.failed": ".permark/ konnte nicht angelegt werden: {message}",
 
   // ---- search
+  "quiet.silence": "Stummschalten",
+  "quiet.silenceHint": "Bleibt im Baum, ohne seine Änderungen",
+  "quiet.listen": "Zuhören",
+  "quiet.listenHint": "Änderungen hier zählen wieder, ab jetzt",
+  "quiet.mark": "Stummgeschaltet",
+  "search.includeQuiet": "Stumme einbeziehen",
+  "search.includeQuietHint": "Auch stummgeschaltete Ordner und Dateien durchsuchen",
   "search.title": "Suche",
   "search.label": "Alle Dokumente durchsuchen",
   "search.placeholder": "Alle Dokumente durchsuchen",

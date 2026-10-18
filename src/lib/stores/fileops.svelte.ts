@@ -34,6 +34,7 @@ import { feed } from "./feed.svelte";
 import { session } from "./session.svelte";
 import { toast } from "./toast.svelte";
 import { ui } from "./ui.svelte";
+import { quiet } from "./quiet.svelte";
 import { vault } from "./vault.svelte";
 
 /** What the person answered to "Update N links in M files?". */
@@ -251,6 +252,7 @@ class FileOpsStore {
   /** The stores that keep paths follow a move (or an undo of one). */
   private follow(moves: readonly Move[]): void {
     vault.followMoves(moves);
+    void quiet.refresh();
     session.followMoves(moves);
     this.pick(
       [...this.selection].map((p) => mapPath(p, moves)),

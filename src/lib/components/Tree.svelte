@@ -12,6 +12,7 @@
   } from "../fileOps";
   import { gitBadgeTitle } from "../gitLabels";
   import { formatNumber, t, tn } from "../i18n";
+  import { folderCounts } from "../unread";
   import { categoryOf } from "../fileKinds";
   import { fileIconOf } from "../fileIcons";
   import { dirname, isWebPage } from "../paths";
@@ -20,13 +21,14 @@
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
   import { fileops } from "../stores/fileops.svelte";
+  import { quiet } from "../stores/quiet.svelte";
   import { filter } from "../stores/filter.svelte";
   import { ui } from "../stores/ui.svelte";
   import { tags } from "../stores/tags.svelte";
   import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { treeTooltip } from "../tagModel";
-  import { badgeFor, flattenTree, navigate, typeahead } from "../tree";
+  import { badgeFor, flattenTree, navigate, rollups, typeahead } from "../tree";
   import type { TreeNode } from "../types";
   import Icon from "./Icon.svelte";
   import Menu, { type MenuEntry } from "./Menu.svelte";
@@ -54,6 +56,20 @@
   let afterDrag = false;
 
   const rows = $derived(flattenTree(nodes, vault.expanded));
+  /** Unread marks the person still wants to see: a silenced document does not count. */
+  const heardUnread = $derived(unread.paths.filter((path) => !quiet.isQuiet(path)));
+  const heardFolders = $derived(folderCounts(heardUnread));
+  const heardUnreadSet = $derived(new Set(heardUnread));
+  /** Git marks with silenced files left out, so a quiet folder does not light up its parents. */
+  const heardRollups = $derived.by(() => {
+    const files = vault.git?.files;
+    if (!files) return rollups({});
+    const heard: typeof files = {};
+    for (const [path, info] of Object.entries(files)) {
+      if (!quiet.isQuiet(path)) heard[path] = info;
+    }
+    return rollups(heard);
+  });
   const rowPaths = $derived(rows.map((r) => r.node.path));
   const selected = $derived(docs.current?.path ?? null);
   const picked = $derived(fileops.selection.size > 1 ? fileops.selection : null);
@@ -295,11 +311,13 @@
             {
               id: "markRead",
               label: t("unread.markFolderRead"),
-              disabled: unread.inFolder(node.path) === 0,
+              disabled: (heardFolders.get(node.path) ?? 0) === 0,
               onselect: () => void unread.markFolderRead(node.path),
             },
             { type: "separator" },
           ] satisfies MenuEntry[])),
+      ...interestEntries(targets),
+      { type: "separator" },
       {
         id: "path",
         label: t("menu.copyPath"),
@@ -350,6 +368,33 @@
           ] satisfies MenuEntry[])
         : []),
     ];
+  }
+
+  /** Silence, or listen again. A mixed selection offers both. */
+  function interestEntries(targets: readonly string[]): MenuEntry[] {
+    if (targets.length === 0) return [];
+    const allQuiet = targets.every((path) => quiet.isQuiet(path));
+    const allSpeaking = targets.every((path) => !quiet.isQuiet(path));
+    const entries: MenuEntry[] = [];
+    if (!allQuiet) {
+      entries.push({
+        id: "silence",
+        label: t("quiet.silence"),
+        icon: "volume-x",
+        title: t("quiet.silenceHint"),
+        onselect: () => void quiet.set(targets, "quiet"),
+      });
+    }
+    if (!allSpeaking) {
+      entries.push({
+        id: "listen",
+        label: t("quiet.listen"),
+        icon: "volume",
+        title: t("quiet.listenHint"),
+        onselect: () => void quiet.set(targets, "speaking"),
+      });
+    }
+    return entries;
   }
 
   /**
@@ -410,15 +455,17 @@
     {#key fileops.newFolder.n}<TreeEntryInput variant="folder" folder="" depth={0} />{/key}
   {/if}
   {#each rows as row, i (row.node.path)}
-    {@const git = badges && !row.isDir ? vault.git?.files[row.node.path] : undefined}
+    {@const rowQuiet = quiet.isQuiet(row.node.path)}
+    {@const git =
+      badges && !row.isDir && !rowQuiet ? vault.git?.files[row.node.path] : undefined}
     {@const badge = badgeFor(git?.state)}
-    {@const rollup = badges && row.isDir ? vault.rollups.get(row.node.path) : undefined}
+    {@const rollup = badges && row.isDir && !rowQuiet ? heardRollups.get(row.node.path) : undefined}
     {@const branch =
       row.node.kind === "worktree" ? vault.worktree(row.node.name)?.branch : undefined}
     {@const isPicked = picked?.has(row.node.path) === true}
     {@const renaming = fileops.renaming?.path === row.node.path}
-    {@const unreadIn = row.isDir ? unread.inFolder(row.node.path) : 0}
-    {@const isUnread = !row.isDir && unread.isUnread(row.node.path)}
+    {@const unreadIn = row.isDir && !rowQuiet ? (heardFolders.get(row.node.path) ?? 0) : 0}
+    {@const isUnread = !row.isDir && !rowQuiet && heardUnreadSet.has(row.node.path)}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
       id="{label}-row-{i}"
@@ -434,6 +481,7 @@
         unreadIn > 0 && "has-unread",
         filter.forced.has(row.node.path) && "is-filtered",
         hasFocus && focusIndex === i && "is-focused",
+        rowQuiet && "is-quiet",
         git?.state === "deleted" && "is-deleted",
         git?.state === "conflicted" && "is-conflicted",
       ]}
@@ -487,6 +535,11 @@
         {/key}
       {:else}
         <span class="tree-name">{row.node.name}</span>
+        {#if rowQuiet}
+          <span class="quiet-mark" title={t("quiet.mark")} role="img" aria-label={t("quiet.mark")}>
+            <Icon name="volume-x" size="sm" />
+          </span>
+        {/if}
       {/if}
       {#if edit.dirty && edit.path === row.node.path}
         <span class="dirty-dot" role="img" aria-label={t("edit.unsaved")} title={t("edit.unsaved")}

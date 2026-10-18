@@ -82,6 +82,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   markUnread: ["docs/a.md"],
   markAllRead: [],
   markFolderRead: ["docs"],
+  interestRules: [],
+  setInterest: [["src"], "quiet"],
   reviewList: [],
   reviewGet: ["docs/a.md"],
   reviewKeep: ["docs/a.md", { hash: "00000000000000a1", reviewedHash: "00000000000000b2" }, 0],

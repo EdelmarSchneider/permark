@@ -7,6 +7,7 @@ import { flattenResults, groupHits, hitKey, type HitGroup, type ResultRow } from
 import { hasAllTags, unknownTags } from "../tagQuery";
 import { TagQueryState } from "../tagQueryState.svelte";
 import type { SearchHit } from "../types";
+import { quiet } from "./quiet.svelte";
 import { tags } from "./tags.svelte";
 
 const DEBOUNCE_MS = 150;
@@ -21,7 +22,11 @@ class SearchStore {
   readonly box = new TagQueryState(() => tags.counts);
   status = $state<SearchStatus>("idle");
   error = $state<string | null>(null);
-  hits = $state.raw<SearchHit[]>([]);
+  /** Hits before silenced paths are left out. */
+  private found = $state.raw<SearchHit[]>([]);
+  hits = $derived(
+    quiet.includeQuiet ? this.found : this.found.filter((hit) => !quiet.isQuiet(hit.path)),
+  );
   /** The query the current `hits` answer (the one to pre-fill the find bar with). */
   answered = $state("");
   collapsed = new SvelteSet<string>();
@@ -98,7 +103,7 @@ class SearchStore {
               .filter((h) => hasAllTags(tags.index.get(h.path)?.tags, wanted))
               .slice(0, RESULT_LIMIT)
           : found;
-      this.hits = hits;
+      this.found = hits;
       this.answered = query;
       this.status = "ready";
       this.error = null;
@@ -115,7 +120,7 @@ class SearchStore {
     if (this.timer !== null) clearTimeout(this.timer);
     this.seq++;
     if (clearQuery) this.box.clear();
-    this.hits = [];
+    this.found = [];
     this.answered = "";
     this.status = "idle";
     this.error = null;

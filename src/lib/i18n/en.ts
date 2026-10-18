@@ -565,6 +565,13 @@ export const en = {
   "init.failed": "Couldn't create .permark/: {message}",
 
   // ---- search
+  "quiet.silence": "Silence",
+  "quiet.silenceHint": "Keep it in the tree, without its changes",
+  "quiet.listen": "Listen",
+  "quiet.listenHint": "Changes here count again, from now on",
+  "quiet.mark": "Silenced",
+  "search.includeQuiet": "Include silenced",
+  "search.includeQuietHint": "Also search folders and files you silenced",
   "search.title": "Search",
   "search.label": "Search all docs",
   "search.placeholder": "Search all docs",

@@ -31,6 +31,7 @@ use crate::meta::style::TagStyleView;
 use crate::open_request::OpenInbox;
 #[cfg(target_os = "macos")]
 use crate::open_request::{self, Action};
+use crate::quiet::Interest;
 use crate::render::DocumentView;
 use crate::review::{Basis as ReviewBasis, Entry as ReviewEntry, ReviewView};
 use crate::search::SearchHit;
@@ -843,6 +844,27 @@ pub async fn mark_all_read(state: State<'_, AppState>) -> Result<(), AppError> {
 pub async fn mark_folder_read(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
     let ws = state.current()?;
     blocking(move || ws.mark_folder_read(&path)).await
+}
+
+/// The folders and files the person silenced, and any they marked as speaking inside those.
+#[tauri::command]
+pub async fn interest_rules(
+    state: State<'_, AppState>,
+) -> Result<BTreeMap<String, Interest>, AppError> {
+    let ws = state.current()?;
+    blocking(move || Ok(ws.interest())).await
+}
+
+/// Silences `paths`, or makes them speak (`interest` is `quiet` or `speaking`). A path that starts
+/// speaking is marked read, so earlier changes do not all show up at once.
+#[tauri::command]
+pub async fn set_interest(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    interest: Interest,
+) -> Result<BTreeMap<String, Interest>, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.set_interest(&paths, interest)).await
 }
 
 /// The documents that differ from the version the person approved, sorted (the `review-changed` event carries the same
