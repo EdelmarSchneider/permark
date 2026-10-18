@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The header's mode switch: Read | Visual | Source (docs/design/v0.2.md section 3). It is always there while a document is open:
-  // one click goes to any mode, and a document that cannot be edited keeps Read with the other two off and the reason as their tooltip.
+  // The header's mode switch: View | Edit | Source (docs/design/v0.2.md section 3). It is always there while a document is open:
+  // one click goes to any mode, and a document that cannot be edited keeps View with the other two off and the reason as their tooltip.
   import { DOC_MODES, focusTarget, shortcutToward, type DocMode } from "../editMode";
   import { keys, t, type MessageKey } from "../i18n";
   import { edit } from "../stores/edit.svelte";
@@ -18,7 +18,7 @@
   let group = $state<HTMLElement>();
 
   const current = $derived<DocMode>(edit.active ? edit.mode : "read");
-  // why a mode is off: the document cannot be edited at all, or (a plain text file) Visual is for Markdown
+  // why a mode is off: the document cannot be edited at all, or (a plain text file) Edit is for Markdown
   const blocked = $derived(edit.blocked);
   const visualBlocked = $derived(blocked ?? (edit.sourceOnly ? t("edit.visualForMarkdown") : null));
 

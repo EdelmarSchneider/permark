@@ -30,6 +30,17 @@ describe("t", () => {
     expect(t("app.name")).toBe("PerMark");
   });
 
+  it("names the modes View, Edit and Source", () => {
+    expect(t("mode.read")).toBe("View");
+    expect(t("edit.visual")).toBe("Edit");
+    expect(t("edit.source")).toBe("Source");
+    expect(t("mode.readHint")).toBe("View this document");
+    expect(t("mode.visualHint")).toBe("Edit this document");
+    expect(t("cmd.toggleEdit")).toBe("Switch between View and the last editor");
+    expect(t("cmd.toggleEditMode")).toBe("Switch between Edit and Source");
+    expect(t("edit.doneHint")).toBe("Back to View (Ctrl+E or Esc)");
+  });
+
   it("fills placeholders", () => {
     expect(t("welcome.openFailed", { path: "F:/x", message: "access denied" })).toBe(
       "Can't open F:/x: access denied",

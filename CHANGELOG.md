@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **View, Edit, and Source.** The header switch is View for the rendered document, Edit for changing it, and Source for the Markdown text. The shortcuts stay `Ctrl+E` and `Ctrl+Alt+E`.
+
 ## [0.5.8] - 2026-10-18
 
 Draw a PlantUML diagram in the page, start a new file from a folder, and keep a wide block inside the pane.
