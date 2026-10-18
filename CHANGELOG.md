@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **New file.** Right-click a folder, or the project name, and choose **New Markdown file** or **New text file**. The same two entries are in the Projects menu and in the Explorer menu. A text file opens in Source. On Windows, right-click a folder or its background and choose **New Markdown file with PerMark**: the folder opens with `untitled.md` in it.
+
 ### Fixed
 - **Heading shortcuts in Visual.** `Ctrl+Alt` with a number is the AltGr key on Windows, so those chords typed a character instead of changing the block. Paragraph and headings 1 to 6 are `Ctrl+Shift+0` through `Ctrl+Shift+6`.
 

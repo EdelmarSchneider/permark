@@ -10,18 +10,20 @@ use windows::core::{implement, IUnknown, Interface, Ref, Result, BOOL, GUID};
 use windows::Win32::Foundation::{CLASS_E_NOAGGREGATION, E_POINTER};
 use windows::Win32::System::Com::{IClassFactory, IClassFactory_Impl};
 
-use crate::command::OpenWithPerMark;
+use crate::command::{MenuAction, OpenWithPerMark};
 use crate::guard::guarded;
 use crate::module::{self, InUse};
 
 #[implement(IClassFactory)]
 pub(crate) struct Factory {
+    action: MenuAction,
     _in_use: InUse,
 }
 
 impl Factory {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(action: MenuAction) -> Self {
         Self {
+            action,
             _in_use: InUse::new(),
         }
     }
@@ -44,7 +46,7 @@ impl IClassFactory_Impl for Factory_Impl {
             if !outer.is_null() {
                 return Err(CLASS_E_NOAGGREGATION.into());
             }
-            let command: IUnknown = OpenWithPerMark::new().into();
+            let command: IUnknown = OpenWithPerMark::new(self.action).into();
             // SAFETY: both pointers are valid (checked above); `query` writes an interface the caller then owns.
             unsafe { command.query(iid, object).ok() }
         })

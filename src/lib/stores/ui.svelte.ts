@@ -75,7 +75,7 @@ class UiStore {
    */
   trail = $state.raw<{ view: "back" | "forward" | "all"; anchor: Anchor | null } | null>(null);
   /** The folder the name of a new file is being typed in (the input shows in the tree under it). */
-  newFile = $state.raw<{ folder: string; n: number } | null>(null);
+  newFile = $state.raw<{ folder: string; kind: "markdown" | "text"; n: number } | null>(null);
   /** The tree row the person last moved to or clicked: where Ctrl+N puts a new file. */
   treeCursor = $state.raw<{ path: string; isDir: boolean } | null>(null);
   /** Id of the control showing its "Copied" check right now. */

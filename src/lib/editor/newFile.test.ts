@@ -44,7 +44,9 @@ describe("nameProblem", () => {
     }
     expect(nameProblem("trailing .md.", siblings)).toBe("invalidEnd");
     expect(nameProblem(" leading.md", siblings)).toBe("invalidEnd");
-    expect(nameProblem("notes.txt", siblings)).toBe("notMarkdown");
+    expect(nameProblem("notes.txt", siblings)).toBeNull();
+    expect(nameProblem("notes.text", siblings)).toBeNull();
+    expect(nameProblem("notes.json", siblings)).toBe("notMarkdown");
     expect(nameProblem(".md", siblings)).toBe("notMarkdown");
     expect(nameProblem("CON.md", siblings)).toBe("reserved");
     expect(nameProblem("lpt1.md", siblings)).toBe("reserved");
@@ -72,12 +74,20 @@ describe("the name field", () => {
     expect(freshName([])).toBe("untitled.md");
     expect(freshName(["untitled.md"])).toBe("untitled-2.md");
     expect(freshName(["Untitled.md", "untitled-2.md"])).toBe("untitled-3.md");
+    expect(freshName([], "text")).toBe("untitled.txt");
+    expect(freshName(["untitled.txt"], "text")).toBe("untitled-2.txt");
+  });
+
+  it("adds the chosen extension when the name has none", () => {
+    expect(withExtension("notes", "text")).toBe("notes.txt");
+    expect(withExtension("notes.txt", "markdown")).toBe("notes.txt");
   });
 
   it("starts the file with a title made from its name", () => {
     expect(titleOf("meeting-notes_2026.md")).toBe("meeting notes 2026");
     expect(blankTemplate("untitled.md")).toBe("# untitled\n");
     expect(blankTemplate("Release Plan.markdown")).toBe("# Release Plan\n");
+    expect(blankTemplate("notes.txt")).toBe("");
   });
 });
 

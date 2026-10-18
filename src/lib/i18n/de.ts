@@ -371,7 +371,8 @@ export const de = {
   "cmd.zoomReset": "Zoom zurücksetzen",
   "cmd.cycleWidth": "Lesebreite ändern",
   "cmd.settings": "Einstellungen öffnen",
-  "cmd.newFile": "Neue Datei ...",
+  "cmd.newFile": "Neue Markdown-Datei ...",
+  "cmd.newTextFile": "Neue Textdatei ...",
   "cmd.edit": "Dieses Dokument bearbeiten",
   "cmd.toggleEdit": "Bearbeitungsmodus umschalten",
   "cmd.toggleEditMode": "Zwischen Visuell und Quelltext wechseln",
@@ -1046,7 +1047,7 @@ export const de = {
   "images.dropWhileEditing": "Zum Hinzufügen eines Bilds dieses ins Dokument einfügen (Strg+V).",
 
   // ---- new file
-  "newFile.newFile": "Neue Datei ...",
+  "newFile.newFile": "Neue Markdown-Datei ...",
   "newFile.label": "Name der neuen Datei",
   "newFile.hint": "Enter erstellt die Datei, Esc bricht ab",
   "newFile.empty": "Einen Namen für die Datei eingeben",
@@ -1054,7 +1055,7 @@ export const de = {
   "newFile.invalidChars": 'Namen dürfen \\ / : * ? " < > | nicht enthalten',
   "newFile.invalidEnd":
     "Namen dürfen nicht mit einem Leerzeichen beginnen und nicht mit einem Leerzeichen oder Punkt enden",
-  "newFile.notMarkdown": "Neue Dateien müssen Markdown sein, mit einem Namen auf .md",
+  "newFile.notMarkdown": "Neue Dateien müssen Markdown (.md) oder reiner Text (.txt) sein",
   "newFile.reserved": "Dieser Name ist vom System reserviert",
   "newFile.tooLong": "Der Name ist zu lang",
   "newFile.failed": "{name} konnte nicht erstellt werden: {message}",
