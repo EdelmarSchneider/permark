@@ -12,6 +12,7 @@ import type {
   AgentOpen,
   AgentStatus,
   AssetWritten,
+  BrokenReport,
   BufferText,
   ChangedSince,
   CreatedDoc,
@@ -28,6 +29,7 @@ import type {
   Move,
   MoveOutcome,
   MovePreview,
+  RepairOutcome,
   NewComment,
   Comment,
   LooseStatus,
@@ -198,6 +200,22 @@ export interface Api {
    * and listed as skipped.
    */
   previewMove(moves: Move[], scanLinks: boolean, heldBack: string[]): Promise<MovePreview>;
+  /**
+   * Every link in the open folder whose file does not exist. `buffers` are documents open with unsaved
+   * text: those are read from the editor instead of the disk.
+   */
+  brokenLinks(buffers: BufferText[]): Promise<BrokenReport>;
+  /**
+   * Points one broken link at `target`. When `buffer` is that document's unsaved text, the file is not
+   * written and the change for the editor comes back instead.
+   */
+  repairLink(
+    path: string,
+    start: number,
+    end: number,
+    target: string,
+    buffer: BufferText | null,
+  ): Promise<RepairOutcome>;
   /**
    * Makes the move of a preview, once. With `updateLinks` the links it listed are rewritten (a document whose file
    * changed since is skipped and reported); documents in `buffers` have unsaved edits: they are not written, the
@@ -441,6 +459,9 @@ export const tauriApi: Api = {
     invoke<AssetWritten>("write_asset", { docPath, nameHint, data }),
   previewMove: (moves, scanLinks, heldBack) =>
     invoke<MovePreview>("preview_move", { moves, scanLinks, heldBack }),
+  brokenLinks: (buffers) => invoke<BrokenReport>("broken_links", { buffers }),
+  repairLink: (path, start, end, target, buffer) =>
+    invoke<RepairOutcome>("repair_link", { path, start, end, target, buffer }),
   applyMove: (planId, updateLinks, buffers) =>
     invoke<MoveOutcome>("apply_move", { planId, updateLinks, buffers }),
   deleteEntries: (paths) => invoke<DeleteOutcome>("delete_entries", { paths }),
@@ -631,6 +652,8 @@ function createMockApi(): Api {
     createDocument: command("createDocument"),
     writeAsset: command("writeAsset"),
     previewMove: command("previewMove"),
+    brokenLinks: command("brokenLinks"),
+    repairLink: command("repairLink"),
     applyMove: command("applyMove"),
     deleteEntries: command("deleteEntries"),
     newFolder: command("newFolder"),

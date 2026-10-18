@@ -34,6 +34,13 @@
     onclick={() => app.clickView("tags")}
   />
   <IconButton
+    class="ab-btn"
+    icon="link-off"
+    label={t("activity.links")}
+    pressed={ui.sidebarView === "links" && session.left.open}
+    onclick={() => app.clickView("links")}
+  />
+  <IconButton
     class="ab-btn ab-btn--toggle"
     icon="activity"
     label={t("activity.live")}

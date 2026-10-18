@@ -272,6 +272,8 @@ export const mockImpl: Api = {
     path.startsWith("@file/") ? mockNotes.recreateLoose(path, text) : createDocument(path, text),
   writeAsset: (docPath, nameHint, data) => writeAsset(docPath, nameHint, data),
   previewMove: (moves, scanLinks, heldBack) => previewMove(moves, scanLinks, heldBack),
+  brokenLinks: async () => ({ links: [], total: 0, truncated: false, skipped: 0 }),
+  repairLink: async () => ({ status: "stale", opId: null, buffer: null }),
   applyMove: (planId, updateLinks, buffers) => applyMove(planId, updateLinks, buffers),
   deleteEntries: (paths) => deleteEntries(paths),
   newFolder: (path) => newFolder(path),

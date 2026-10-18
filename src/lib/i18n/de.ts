@@ -1347,8 +1347,10 @@ export const de = {
   "review.undone": "Rückgängig gemacht",
   "review.undoStale": "Rückgängig nicht möglich: {name} hat sich seitdem geändert.",
   "review.allDone": "Alle Änderungen sind geprüft",
-  "review.stale": "{name} hat sich während der Prüfung geändert. Die Prüfung ist aktuell; es wurde nichts geschrieben.",
-  "review.noBaseline": "Die frühere Fassung wurde nicht aufgehoben, daher lassen sich die Änderungen nicht zeigen. Ab der nächsten Änderung geht es wieder.",
+  "review.stale":
+    "{name} hat sich während der Prüfung geändert. Die Prüfung ist aktuell; es wurde nichts geschrieben.",
+  "review.noBaseline":
+    "Die frühere Fassung wurde nicht aufgehoben, daher lassen sich die Änderungen nicht zeigen. Ab der nächsten Änderung geht es wieder.",
   "review.tooLarge": "Dieses Dokument ist zu groß zum Vergleichen (über 2 MB).",
   "review.restore": "Wiederherstellen",
   "review.restored": "{name} wiederhergestellt",
@@ -1368,8 +1370,31 @@ export const de = {
   "cmd.reviewKeepAll": "Alle Änderungen behalten",
   "cmd.reviewRevertAll": "Alle Änderungen zurücknehmen",
   "header.reviewChanges": "Änderungen prüfen",
-  "error.reviewStale": "{subject} hat sich während der Prüfung geändert. Die Prüfung ist aktuell; es wurde nichts geschrieben.",
-  "error.reviewNoBaseline": "Die freigegebene Fassung von {subject} wurde nicht aufgehoben und lässt sich weder zeigen noch wiederherstellen.",
+  "error.reviewStale":
+    "{subject} hat sich während der Prüfung geändert. Die Prüfung ist aktuell; es wurde nichts geschrieben.",
+  "error.reviewNoBaseline":
+    "Die freigegebene Fassung von {subject} wurde nicht aufgehoben und lässt sich weder zeigen noch wiederherstellen.",
   "error.reviewOff": "Änderungen werden hier nicht geprüft (Notizen und einzelne Dateien).",
-  "error.reviewConflict": "Diese Änderung lässt sich in {subject} nicht für sich behalten oder zurücknehmen. Nimm Alle behalten oder Alle zurücknehmen.",
+  "error.reviewConflict":
+    "Diese Änderung lässt sich in {subject} nicht für sich behalten oder zurücknehmen. Nimm Alle behalten oder Alle zurücknehmen.",
+
+  "activity.links": "Defekte Links (Strg+Umschalt+B)",
+  "cmd.brokenLinks": "Defekte Links anzeigen",
+  "links.title": "Defekte Links",
+  "links.looking": "Dokumente werden geprüft…",
+  "links.empty": "Keine defekten Links",
+  "links.summary.one": "{n} defekter Link",
+  "links.summary.other": "{n} defekte Links",
+  "links.skipped.one": "{n} Dokument konnte nicht geprüft werden",
+  "links.skipped.other": "{n} Dokumente konnten nicht geprüft werden",
+  "links.truncated": "Die ersten {n} werden gezeigt",
+  "links.repair": "Reparieren",
+  "links.repairHint": "Diesen Link auf {path} setzen",
+  "links.noMatch": "Keine Datei mit diesem Namen",
+  "links.openHint": "In Zeile {line} öffnen",
+  "links.repaired": "Der Link zeigt jetzt auf {path}",
+  "links.stale": "Dieser Link hat sich geändert. Die Liste wurde neu geladen.",
+  "links.unsaved": "Speichere {name} zuerst. Es gibt ungespeicherte Änderungen.",
+  "links.failed": "Der Link konnte nicht repariert werden.",
+  "links.refresh": "Erneut prüfen",
 } satisfies Messages;

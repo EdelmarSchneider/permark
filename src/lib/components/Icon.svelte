@@ -16,6 +16,7 @@
   import Image from "@lucide/svelte/icons/image";
   import Italic from "@lucide/svelte/icons/italic";
   import Link from "@lucide/svelte/icons/link";
+  import Link2Off from "@lucide/svelte/icons/link-2-off";
   import List from "@lucide/svelte/icons/list";
   import ListChecks from "@lucide/svelte/icons/list-checks";
   import ListOrdered from "@lucide/svelte/icons/list-ordered";
@@ -109,6 +110,7 @@
     image: Image,
     italic: Italic,
     link: Link,
+    "link-off": Link2Off,
     list: List,
     "list-checks": ListChecks,
     "list-ordered": ListOrdered,

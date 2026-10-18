@@ -704,8 +704,7 @@ export const es = {
   "status.stateProject": "Estado: .permark",
   "status.stateLocalHint":
     "El estado del proyecto se guarda solo en este equipo. Haz clic para guardarlo en el proyecto (.permark/).",
-  "status.stateProjectHint":
-    "El estado del proyecto se guarda en .permark/, dentro del proyecto.",
+  "status.stateProjectHint": "El estado del proyecto se guarda en .permark/, dentro del proyecto.",
   "status.stateMenu": "Estado del proyecto",
   "status.follow": "Seguir",
   "status.following": "Siguiendo",
@@ -1241,8 +1240,7 @@ export const es = {
   "settings.startIn": "Al iniciar",
   "settings.startIn.welcome": "Pantalla de bienvenida",
   "settings.startIn.notes": "Notas",
-  "settings.startInHint":
-    "Dónde se abre PerMark cuando lo inicias sin una carpeta ni un archivo.",
+  "settings.startInHint": "Dónde se abre PerMark cuando lo inicias sin una carpeta ni un archivo.",
   "activity.notes": "Notas",
   "activity.notesHint": "Mostrar las notas",
   "cmd.newNote": "Nueva nota",
@@ -1333,7 +1331,8 @@ export const es = {
   "review.undoStale": "No se puede deshacer: {name} cambió después.",
   "review.allDone": "Todos los cambios están revisados",
   "review.stale": "{name} cambió mientras revisabas. La revisión está al día; no se escribió nada.",
-  "review.noBaseline": "La versión anterior no se guardó, así que los cambios no se pueden mostrar. Se podrán revisar a partir del próximo cambio.",
+  "review.noBaseline":
+    "La versión anterior no se guardó, así que los cambios no se pueden mostrar. Se podrán revisar a partir del próximo cambio.",
   "review.tooLarge": "Este documento es demasiado grande para comparar (más de 2 MB).",
   "review.restore": "Restaurar",
   "review.restored": "{name} restaurado",
@@ -1353,8 +1352,31 @@ export const es = {
   "cmd.reviewKeepAll": "Conservar todos los cambios",
   "cmd.reviewRevertAll": "Revertir todos los cambios",
   "header.reviewChanges": "Revisar cambios",
-  "error.reviewStale": "{subject} cambió mientras revisabas. La revisión está al día; no se escribió nada.",
-  "error.reviewNoBaseline": "La versión aprobada de {subject} no se guardó, así que no se puede mostrar ni restaurar.",
+  "error.reviewStale":
+    "{subject} cambió mientras revisabas. La revisión está al día; no se escribió nada.",
+  "error.reviewNoBaseline":
+    "La versión aprobada de {subject} no se guardó, así que no se puede mostrar ni restaurar.",
   "error.reviewOff": "Aquí no se revisan los cambios (notas y archivos sueltos).",
-  "error.reviewConflict": "Ese cambio no se puede conservar ni revertir solo en {subject}. Usa Conservar todos o Revertir todos.",
+  "error.reviewConflict":
+    "Ese cambio no se puede conservar ni revertir solo en {subject}. Usa Conservar todos o Revertir todos.",
+
+  "activity.links": "Enlaces rotos (Ctrl+Mayús+B)",
+  "cmd.brokenLinks": "Mostrar enlaces rotos",
+  "links.title": "Enlaces rotos",
+  "links.looking": "Revisando los documentos…",
+  "links.empty": "No hay enlaces rotos",
+  "links.summary.one": "{n} enlace roto",
+  "links.summary.other": "{n} enlaces rotos",
+  "links.skipped.one": "{n} documento no se pudo comprobar",
+  "links.skipped.other": "{n} documentos no se pudieron comprobar",
+  "links.truncated": "Mostrando los primeros {n}",
+  "links.repair": "Reparar",
+  "links.repairHint": "Apuntar este enlace a {path}",
+  "links.noMatch": "No hay un archivo con ese nombre",
+  "links.openHint": "Abrir en la línea {line}",
+  "links.repaired": "El enlace ahora apunta a {path}",
+  "links.stale": "Ese enlace cambió. La lista se actualizó.",
+  "links.unsaved": "Guarda {name} primero. Tiene cambios sin guardar.",
+  "links.failed": "No se pudo reparar el enlace.",
+  "links.refresh": "Comprobar de nuevo",
 } satisfies Messages;

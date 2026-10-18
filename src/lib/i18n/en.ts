@@ -1302,8 +1302,10 @@ export const en = {
   "review.undone": "Undone",
   "review.undoStale": "Can't undo: {name} changed since.",
   "review.allDone": "All changes reviewed",
-  "review.stale": "{name} changed while you were reviewing. The review is up to date; nothing was written.",
-  "review.noBaseline": "The earlier version wasn't kept, so the changes can't be shown. They can be reviewed from the next change.",
+  "review.stale":
+    "{name} changed while you were reviewing. The review is up to date; nothing was written.",
+  "review.noBaseline":
+    "The earlier version wasn't kept, so the changes can't be shown. They can be reviewed from the next change.",
   "review.tooLarge": "This document is too large to compare (over 2 MB).",
   "review.restore": "Restore",
   "review.restored": "{name} restored",
@@ -1323,10 +1325,33 @@ export const en = {
   "cmd.reviewKeepAll": "Keep all changes",
   "cmd.reviewRevertAll": "Revert all changes",
   "header.reviewChanges": "Review changes",
-  "error.reviewStale": "{subject} changed while you were reviewing. The review is up to date; nothing was written.",
-  "error.reviewNoBaseline": "The approved version of {subject} wasn't kept, so it can't be shown or restored.",
+  "error.reviewStale":
+    "{subject} changed while you were reviewing. The review is up to date; nothing was written.",
+  "error.reviewNoBaseline":
+    "The approved version of {subject} wasn't kept, so it can't be shown or restored.",
   "error.reviewOff": "Changes aren't reviewed here (notes and single files).",
-  "error.reviewConflict": "That change can't be kept or reverted on its own in {subject}. Use Keep all or Revert all.",
+  "error.reviewConflict":
+    "That change can't be kept or reverted on its own in {subject}. Use Keep all or Revert all.",
+
+  "activity.links": "Broken links (Ctrl+Shift+B)",
+  "cmd.brokenLinks": "Show broken links",
+  "links.title": "Broken links",
+  "links.looking": "Looking through the documents…",
+  "links.empty": "No broken links",
+  "links.summary.one": "{n} broken link",
+  "links.summary.other": "{n} broken links",
+  "links.truncated": "Showing the first {n}",
+  "links.skipped.one": "{n} document could not be checked",
+  "links.skipped.other": "{n} documents could not be checked",
+  "links.repair": "Repair",
+  "links.repairHint": "Point this link at {path}",
+  "links.noMatch": "No file with this name",
+  "links.openHint": "Open at line {line}",
+  "links.repaired": "Link now points at {path}",
+  "links.stale": "That link changed. The list was refreshed.",
+  "links.unsaved": "Save {name} first. It has unsaved edits.",
+  "links.failed": "The link could not be repaired.",
+  "links.refresh": "Check again",
 } as const;
 
 /** The shape of a table for any language: the keys of English, each a string. */

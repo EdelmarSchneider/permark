@@ -118,6 +118,12 @@ export const COMMANDS: readonly Command[] = [
 
   { id: "explorer", label: "cmd.explorer", shortcut: "Ctrl+Shift+X", available: inProject },
   { id: "tagsView", label: "cmd.tagsView", shortcut: "Ctrl+Shift+T", available: inProject },
+  {
+    id: "brokenLinks",
+    label: "cmd.brokenLinks",
+    shortcut: "Ctrl+Shift+B",
+    available: inProject,
+  },
   { id: "toggleLeft", label: "cmd.toggleLeft", shortcut: "Ctrl+B", available: inFolder },
   { id: "toggleRight", label: "cmd.toggleRight", shortcut: "Ctrl+Alt+B", available: inProject },
   { id: "toggleOutline", label: "cmd.toggleOutline", shortcut: "Ctrl+Alt+O" },

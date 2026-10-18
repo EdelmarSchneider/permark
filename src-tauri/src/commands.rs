@@ -20,7 +20,8 @@ use crate::edit::{self, AssetWritten, CreatedDoc, ParsedBlocks, SaveOutcome, Sou
 use crate::error::AppError;
 use crate::external_editor::{self, EditorError, EditorTemplate};
 use crate::fileops::{
-    BufferText, CreatedFolder, DeleteOutcome, Move, MoveOutcome, MovePreview, UndoOutcome,
+    BrokenReport, BufferText, CreatedFolder, DeleteOutcome, Move, MoveOutcome, MovePreview,
+    RepairOutcome, UndoOutcome,
 };
 use crate::git::{BaselineKind, GitSnapshot};
 use crate::links::{self, LinkTarget};
@@ -708,6 +709,32 @@ pub async fn preview_move(
 ) -> Result<MovePreview, AppError> {
     let ws = state.current()?;
     blocking(move || ws.preview_move(&moves, scan_links, &held_back)).await
+}
+
+/// Every link in the open folder whose file does not exist, and the files a repair can point each one
+/// at. Documents in `buffers` are open with unsaved text and are read from there.
+#[tauri::command]
+pub async fn broken_links(
+    state: State<'_, AppState>,
+    buffers: Vec<BufferText>,
+) -> Result<BrokenReport, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.broken_links(&buffers)).await
+}
+
+/// Points one broken link at `target`. When `buffer` is that document's unsaved text, the file is not
+/// written and the change for the editor comes back instead.
+#[tauri::command]
+pub async fn repair_link(
+    state: State<'_, AppState>,
+    path: String,
+    start: usize,
+    end: usize,
+    target: String,
+    buffer: Option<BufferText>,
+) -> Result<RepairOutcome, AppError> {
+    let ws = state.current()?;
+    blocking(move || ws.repair_link(&path, start, end, &target, buffer.as_ref())).await
 }
 
 /// Makes the move of a preview. With `update_links` the links it listed are rewritten; the documents in
