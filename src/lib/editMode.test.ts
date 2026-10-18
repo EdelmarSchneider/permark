@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DOC_MODES, focusTarget, otherEditMode, shortcutToward } from "./editMode";
 
 describe("the modes of the header switch", () => {
-  it("are Read, Visual and Source, in that order", () => {
+  it("are View, Edit and Source, stored as read, visual and source, in that order", () => {
     expect([...DOC_MODES]).toEqual(["read", "visual", "source"]);
   });
 

@@ -138,7 +138,7 @@
           <li><strong>It reads like a page.</strong> Tables, checklists, highlighted code, Mermaid diagrams, math, alerts and footnotes. Light and dark themes, three reading widths and a focus mode</li>
           <li><strong>Links work.</strong> Links between documents open in the app, with back and forward, and images show where they belong</li>
           <li><strong>An outline for long documents.</strong> The headings sit in a panel beside the page: the section you are reading is marked, and a click jumps to any other</li>
-          <li><strong>Visual or Source.</strong> Edit like a word processor, with a toolbar and a <code>/</code> block menu, or in the Markdown itself. One click switches, keeping your place and your unsaved work</li>
+          <li><strong>Edit or Source.</strong> Change the document like a word processor, with a toolbar and a <code>/</code> block menu, or in the Markdown itself. One click switches, keeping your place and your unsaved work</li>
           <li><strong>Only your changes are saved.</strong> Every other byte of the file stays as it was. If something else changes the file while you edit, you choose <em>Reload theirs</em> or <em>Keep mine</em></li>
           <li><strong>Make it your .md app.</strong> PerMark is listed under <em>Open with</em> for Markdown files and never takes over: whether it becomes your app for <code>.md</code> files is up to you</li>
         </ul>
@@ -168,7 +168,7 @@
             <picture>
               <source srcset="assets/screenshot-notes-dark.png" media="(prefers-color-scheme: dark)">
               <img src="assets/screenshot-notes.png" width="1440" height="900" loading="lazy" decoding="async"
-                   alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in the Visual editor.">
+                   alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in Edit.">
             </picture>
           </div>
         </figure>
@@ -435,14 +435,14 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
               <tr><td>Zoom in / out / reset</td><td><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
               <tr class="keys__group"><th scope="rowgroup" colspan="2">Editing</th></tr>
               <tr><td>Start editing</td><td><kbd>E</kbd> or <kbd>Ctrl</kbd>+<kbd>E</kbd></td></tr>
-              <tr><td>Done, back to reading</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd> or <kbd>Esc</kbd></td></tr>
-              <tr><td>Switch between Visual and Source</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td></tr>
+              <tr><td>Done, back to View</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd> or <kbd>Esc</kbd></td></tr>
+              <tr><td>Switch between Edit and Source</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td></tr>
               <tr><td>Save</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
               <tr><td>New file</td><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td></tr>
               <tr><td>Bold / italic / strikethrough</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd></td></tr>
               <tr><td>Link / inline code</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>`</kbd></td></tr>
-              <tr><td>Headings 1 to 6 / paragraph (Visual)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>6</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd></td></tr>
-              <tr><td>Block menu (Visual)</td><td><kbd>/</kbd> in an empty paragraph</td></tr>
+              <tr><td>Headings 1 to 6 / paragraph (Edit)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>6</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd></td></tr>
+              <tr><td>Block menu (Edit)</td><td><kbd>/</kbd> in an empty paragraph</td></tr>
               <tr class="keys__group"><th scope="rowgroup" colspan="2">Notes</th></tr>
               <tr><td>New note (from any PerMark window)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td></tr>
               <tr><td>Show the Notes window</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td></tr>
@@ -519,7 +519,7 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
               <svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
             </span>
             <h3>Edit without fear</h3>
-            <p>A visual editor and a source editor that rewrite <strong>only the blocks you changed</strong>. If an agent changes the file while you edit, you choose: reload theirs or keep mine. Images you paste land in <code>assets/</code>.</p>
+            <p>Edit and Source rewrite <strong>only the blocks you changed</strong>. If an agent changes the file while you edit, you choose: reload theirs or keep mine. Images you paste land in <code>assets/</code>.</p>
           </li>
           <li class="card">
             <span class="card__icon" aria-hidden="true">

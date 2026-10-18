@@ -1,9 +1,9 @@
-// Editing the open document, in the Visual or the Source editor (docs/design/v0.2.md section 3). This store
+// Editing the open document, in Edit or Source (docs/design/v0.2.md section 3). This store
 // holds the version of the file the editor started from (`base`: text, hash and block map) and decides what
-// happens at each step: entering and leaving (the Read | Visual | Source switch of the header, Ctrl+E, E and
+// happens at each step: entering and leaving (the View | Edit | Source switch of the header, Ctrl+E, E and
 // Ctrl+Alt+E), switching between the two editors, saving, the unsaved-changes bar, and what to do when the
 // file changes on disk meanwhile. The text itself lives in the editor (reached through `bridge.editor`): Source
-// holds a buffer, Visual holds a document that writes the text on demand.
+// holds a buffer, Edit holds a document that writes the text on demand. The stored mode names stay `visual` and `source`.
 
 import { tick } from "svelte";
 import { api } from "../api";
@@ -1244,7 +1244,7 @@ class EditStore {
     docs.noteDeleted();
   }
 
-  // ---- the modes: Read, Visual and Source -----------------------------------------------------------------
+  // ---- the modes: View, Edit and Source (stored as read, visual and source) --------------------------------
 
   /**
    * A segment of the header switch: one click goes to any mode. Read asks first when there is unsaved work (the bar), Visual and

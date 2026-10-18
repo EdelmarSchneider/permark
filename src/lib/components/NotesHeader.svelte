@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The header of the Notes window: the title of the note (its first line), the Read | Visual | Source switch, Copy and a menu.
+  // The header of the Notes window: the title of the note (its first line), the View | Edit | Source switch, Copy and a menu.
   import { tick } from "svelte";
   import { bridge } from "../bridge";
   import { keys, t } from "../i18n";

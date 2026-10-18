@@ -363,7 +363,7 @@ describe("renaming and moving", () => {
 
   const GUIDE_HELD: SkippedFile = { path: "docs/guide.md", reason: "unsavedVisual" };
   const GUIDE_NOTE =
-    "guide.md: has unsaved edits in Visual mode, so its links were not updated; save it, then undo the move and move it again";
+    "guide.md: has unsaved edits in Edit, so its links were not updated; save it, then undo the move and move it again";
   const REFERENCE: Move[] = [{ from: "docs/api.md", to: "docs/reference.md" }];
 
   it("leaves a document with unsaved edits in Visual mode out of the rewrite, says so, and keeps the rest working", async () => {

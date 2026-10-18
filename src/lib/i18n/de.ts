@@ -374,8 +374,8 @@ export const de = {
   "cmd.newFile": "Neue Markdown-Datei ...",
   "cmd.newTextFile": "Neue Textdatei ...",
   "cmd.edit": "Dieses Dokument bearbeiten",
-  "cmd.toggleEdit": "Bearbeitungsmodus umschalten",
-  "cmd.toggleEditMode": "Zwischen Visuell und Quelltext wechseln",
+  "cmd.toggleEdit": "Zwischen Ansicht und dem zuletzt verwendeten Editor wechseln",
+  "cmd.toggleEditMode": "Zwischen Bearbeiten und Quelltext wechseln",
   "cmd.save": "Speichern",
   "cmd.editTags": "Tags und Beschreibung bearbeiten",
   "cmd.find": "Auf der Seite suchen",
@@ -902,21 +902,21 @@ export const de = {
   "error.nameNoStem": "Vor der Dateiendung muss noch etwas stehen",
   "error.imageEmpty": "Das Bild ist leer",
 
-  // ---- mode switch: Read | Visual | Source (the editors are named by edit.visual and edit.source)
+  // ---- mode switch: View | Edit | Source (stored as read, visual and source; the editors are named by edit.visual and edit.source)
   "mode.label": "Modus",
-  "mode.read": "Lesen",
-  "mode.readHint": "Dieses Dokument lesen",
-  "mode.visualHint": "Im visuellen Editor bearbeiten",
+  "mode.read": "Ansicht",
+  "mode.readHint": "Dieses Dokument ansehen",
+  "mode.visualHint": "Dieses Dokument bearbeiten",
   "mode.sourceHint": "Den Markdown-Quelltext bearbeiten",
   "mode.withKeys": "{hint} ({keys})",
 
   // ---- editing
   "edit.done": "Fertig",
-  "edit.doneHint": "Zurück zum Lesen (Strg+E oder Esc)",
+  "edit.doneHint": "Zurück zur Ansicht (Strg+E oder Esc)",
   "edit.save": "Speichern",
   "edit.saveHint": "Speichern (Strg+S)",
   "edit.saving": "Wird gespeichert ...",
-  "edit.visual": "Visuell",
+  "edit.visual": "Bearbeiten",
   "edit.source": "Quelltext",
   "edit.unsaved": "Ungespeichert",
   "edit.saved": "Gespeichert",
@@ -939,7 +939,7 @@ export const de = {
     "Diese Datei ist kein UTF-8-Text und lässt sich hier nicht bearbeiten, ohne die Kodierung zu ändern.",
   "edit.openFailed": "{name} kann nicht bearbeitet werden: {message}",
   "edit.followPaused": "Verfolgen pausiert",
-  "edit.statusMode": "Bearbeitung: {mode}",
+  "edit.statusMode": "{mode}",
   "edit.position": "Z. {line}, Sp. {col}",
   "edit.sourceLabel": "Markdown-Quelltext von {name}",
   "edit.closePrompt": "Ungespeicherte Änderungen in {name}. Vor dem Schließen speichern?",
@@ -950,10 +950,10 @@ export const de = {
   "edit.switchFailed": "Editor konnte nicht gewechselt werden: {message}",
   "edit.switchTyping": "der Text hat sich beim Lesen weiter geändert. Bitte erneut versuchen.",
   "edit.blocksUnreadable":
-    "Gespeichert, aber die Blöcke der neuen Version konnten nicht gelesen werden ({message}). Der visuelle Editor behält seine Ansicht bis zum nächsten Speichern.",
+    "Gespeichert, aber die Blöcke der neuen Version konnten nicht gelesen werden ({message}). Bearbeiten behält seine Ansicht bis zum nächsten Speichern.",
   "edit.visualFailed":
-    "Der visuelle Editor konnte nicht geladen werden, daher ist dieses Dokument im Quelltext geöffnet.",
-  "edit.visualLabel": "Visueller Editor von {name}",
+    "Bearbeiten konnte nicht geladen werden, daher ist dieses Dokument im Quelltext geöffnet.",
+  "edit.visualLabel": "Bearbeiten von {name}",
   "edit.visualLoading": "Editor wird geladen",
   "edit.editInSource": "Im Quelltext bearbeiten",
   "edit.editInSourceHint": "Den Markdown-Quelltext an diesem Block öffnen",
@@ -964,14 +964,14 @@ export const de = {
   "edit.locked.footnoteDef": "Fußnote, unverändert beibehalten",
   "edit.locked.code": "Diagramm, unverändert beibehalten",
   "edit.locked.other": "Block unverändert beibehalten",
-  "edit.lockedWhy.kind": "Der visuelle Editor bearbeitet diese Art von Block nicht.",
+  "edit.lockedWhy.kind": "Bearbeiten ändert diese Art von Block nicht.",
   "edit.lockedWhy.diagram": "Diagramme werden gezeichnet, nicht als Text bearbeitet.",
-  "edit.lockedWhy.parse": "Der visuelle Editor kann diesen Block nicht lesen.",
-  "edit.lockedWhy.differs": "Der visuelle Editor würde diesen Block anders schreiben.",
+  "edit.lockedWhy.parse": "Bearbeiten kann diesen Block nicht lesen.",
+  "edit.lockedWhy.differs": "Bearbeiten würde diesen Block anders schreiben.",
   "edit.lockedWhy.reference":
     "Dieser Block nutzt einen Link oder eine Fußnote, die an anderer Stelle definiert ist.",
   "edit.lockedWhy.definition":
-    "Dieser Block definiert einen Link oder eine Fußnote, die der visuelle Editor verwerfen würde.",
+    "Dieser Block definiert einen Link oder eine Fußnote, die Bearbeiten verwerfen würde.",
   "edit.lockedWhy.math": "Dieser Block enthält Formeln im Text.",
   "edit.unsavedBlocks.one": "{n} ungespeicherter Block",
   "edit.unsavedBlocks.other": "{n} ungespeicherte Blöcke",
@@ -1140,7 +1140,7 @@ export const de = {
   "fileOps.reason.missing": "ist nicht mehr vorhanden",
   "fileOps.reason.occupied": "kann nicht zurück, etwas steht im Weg",
   "fileOps.reason.unsavedVisual":
-    "hat ungespeicherte Änderungen im visuellen Modus, daher wurden die Links nicht aktualisiert; speichern, die Verschiebung rückgängig machen und erneut verschieben",
+    "hat ungespeicherte Änderungen in Bearbeiten, daher wurden die Links nicht aktualisiert; speichern, die Verschiebung rückgängig machen und erneut verschieben",
   "fileOps.working": "Wird bearbeitet ...",
   "fileOps.simpleMode":
     "Dateien lassen sich umbenennen und verschieben, sobald ein Ordner geöffnet ist.",
@@ -1295,7 +1295,7 @@ export const de = {
   "error.notAFile": "{subject} ist keine Datei.",
   "error.binaryFile": "{subject} ist keine Textdatei und kann hier nicht geöffnet werden.",
   "edit.visualForMarkdown":
-    "Die visuelle Bearbeitung ist für Markdown-Dateien. Nutze für diese den Quelltext.",
+    "Bearbeiten ist für Markdown-Dateien. Für diese den Quelltext verwenden.",
   "notes.group.files": "Dateien",
   "settings.files": "Dateien",
   "settings.autoReload": "Eine Datei neu laden, die sich auf dem Datenträger geändert hat",

@@ -1,5 +1,6 @@
-// How a document opens for editing (docs/design/v0.2.md section 3): the visual editor or the Markdown source. The choice is the
-// session's `editMode`; the segmented switch in the header (Read | Visual | Source) moves between reading and the two editors.
+// How a document opens for editing (docs/design/v0.2.md section 3): Edit or the Markdown source. The choice is the
+// session's `editMode`; the segmented switch in the header (View | Edit | Source) moves between the rendered page and the two editors.
+// The stored names stay `read`, `visual` and `source`.
 
 export const EDIT_MODES = ["visual", "source"] as const;
 export type EditMode = (typeof EDIT_MODES)[number];

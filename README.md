@@ -85,7 +85,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 - **Code blocks are highlighted for about 190 languages.** Name the language after the opening backticks, for example `` ```python ``, and
   the block is colored and labelled in its corner. The usual short names work (`js`, `ts`, `py`, `sh`, `ps1`, `c#`, `c++`, `yml`, `rs`...),
   and so do fences with attributes (`` ```rust title="main.rs" ``). A block with no language is colored only when its language is
-  unmistakable, and is then labelled *auto*; otherwise it stays plain. Visual and Source color the code too while you edit
+  unmistakable, and is then labelled *auto*; otherwise it stays plain. Edit and Source color the code too while you edit
 - Frontmatter shown as a clean metadata card
 - Light and dark themes (with a softer paper, sage or gray tone for the light one), adjustable zoom, and a focus mode with both side panels collapsed
 - Three **reading widths**: Comfortable (a book-like column), Wide and Full. Wide tables, diagrams and images take the room
@@ -177,13 +177,14 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 </picture>
 
 ### ✏️ Edit without fear
-- One switch in the header, **Read | Visual | Source**, goes to any mode in one click and keeps your place and your unsaved work. **Visual** is a
-  WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks (with a language picker that searches every language
-  and takes any text you type); **Source** is a Markdown editor with highlighting, also inside code fences, and line numbers. `Ctrl+E` toggles Read and the editor you used last, `Ctrl+Alt+E` toggles Visual and Source. Both editors are loaded only
+- One switch in the header, **View | Edit | Source**, goes to any mode in one click and keeps your place and your unsaved work. **View** is the
+  rendered document. **Edit** is a WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks (with a language picker
+  that searches every language and takes any text you type); **Source** is a Markdown editor with highlighting, also inside code fences, and
+  line numbers. `Ctrl+E` toggles View and the editor you used last, `Ctrl+Alt+E` toggles Edit and Source. Both editors are loaded only
   when you start editing
 - **Only the blocks you changed are rewritten.** Every other byte of the file stays as its author (or agent) wrote it, including line
   endings and a byte-order mark. A block you edited carries a bar in the margin until you save, and the status bar counts them
-- Blocks the visual editor can't write back faithfully (front matter, raw HTML, math, diagrams, footnotes) stay as they are,
+- Blocks Edit can't write back faithfully (front matter, raw HTML, math, diagrams, footnotes) stay as they are,
   with an **Edit in Source** button that opens the Markdown at that block
 - **Agents and you can share a file safely.** If something changes the file while you edit, a clean buffer reloads in place, and
   one with your edits asks: **Reload theirs** or **Keep mine**. A save never overwrites a version you haven't seen
@@ -194,7 +195,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-editor-dark.png">
-  <img src="docs/assets/screenshot-editor.png" alt="The Visual editor: a toolbar with bold active, a table and a paragraph with one block marked as unsaved, a Mermaid diagram shown as a locked block with an Edit in Source button, and the Outline tab on the right">
+  <img src="docs/assets/screenshot-editor.png" alt="Edit: a toolbar with bold active, a table and a paragraph with one block marked as unsaved, a Mermaid diagram shown as a locked block with an Edit in Source button, and the Outline tab on the right">
 </picture>
 
 ### 🔗 File operations that keep your links working
@@ -224,11 +225,11 @@ Open PerMark, type, close: nothing to name, nothing to save, no folder to pick.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-notes-dark.png">
-  <img src="docs/assets/screenshot-notes.png" alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in the Visual editor">
+  <img src="docs/assets/screenshot-notes.png" alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in Edit">
 </picture>
 
 - **A notes window of its own** (`Ctrl+Shift+D`, or the sticky-note icon in the activity bar, or **Notes** on the welcome screen). `Ctrl+Shift+N`
-  starts a new note from any PerMark window, in the Visual editor with the caret ready. From the welcome screen the window itself turns
+  starts a new note from any PerMark window, in Edit with the caret ready. From the welcome screen the window itself turns
   into the Notes window, in the same place and size, so there is never a second window to close. A note is a plain Markdown file in
   `Documents/PerMark Notes` (change it in **Settings → Notes**); PerMark makes the default folder by itself the first time. A note's name
   is the date and time (`2026-10-15 1432.md`) and its title is its first line, until then "Untitled note"
@@ -458,14 +459,14 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Action | Shortcut |
 |---|---|
 | Start editing, in the editor you used last | `E` or `Ctrl+E` |
-| Done (back to reading) | `Ctrl+E` or `Esc` |
-| Switch between Visual and Source (from reading: the editor you did not use last) | `Ctrl+Alt+E` |
+| Done (back to View) | `Ctrl+E` or `Esc` |
+| Switch between Edit and Source (from View: the editor you did not use last) | `Ctrl+Alt+E` |
 | Save | `Ctrl+S` |
 | New file | `Ctrl+N` |
 | Bold / italic / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
 | Link / inline code | `Ctrl+K` / ``Ctrl+` `` |
-| Headings 1 to 6 / paragraph (Visual) | `Ctrl+Shift+1` … `6` / `Ctrl+Shift+0` |
-| Block menu (Visual) | `/` in an empty paragraph |
+| Headings 1 to 6 / paragraph (Edit) | `Ctrl+Shift+1` … `6` / `Ctrl+Shift+0` |
+| Block menu (Edit) | `/` in an empty paragraph |
 
 **Notes**
 
@@ -540,7 +541,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 
 PerMark is a [Tauri 2](https://v2.tauri.app) app. The core is written in **Rust**: rendering (comrak + ammonia), file watching
 (notify), git (libgit2), the search index and the block-preserving saves. The UI is **Svelte 5** + TypeScript running in the system
-webview, with **CodeMirror 6** (Source editor) and **Milkdown** (Visual editor). That keeps the installer small and memory use
+webview, with **CodeMirror 6** (Source) and **Milkdown** (Edit). That keeps the installer small and memory use
 low compared to Electron apps.
 
 ## Contributing
