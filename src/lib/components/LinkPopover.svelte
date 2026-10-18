@@ -1,10 +1,13 @@
 <script lang="ts">
-  // The link popover of Visual mode (Ctrl+K, or the link button): the text and the target of a link. No autocomplete. A target that
-  // points to a file the folder does not have is flagged. Enter applies, Esc closes.
+  // The link popover of Visual mode (Ctrl+K, or the link button): the text and the target of a link. The target offers
+  // files in the folder, and headings of this document after #. A target that points to a file the folder does not have
+  // is flagged. Enter applies, Esc closes. Down and then Enter picks a suggestion instead of applying.
   import { onMount } from "svelte";
   import { api } from "../api";
+  import { linkSuggestions } from "../editor/complete";
   import { t } from "../i18n";
   import type { LinkTarget } from "../editor/visual/link";
+  import { vault } from "../stores/vault.svelte";
   import Popover, { type Anchor } from "./Popover.svelte";
 
   type Props = {
@@ -12,11 +15,13 @@
     target: LinkTarget;
     /** The document the link is written in (relative targets are looked up from it). */
     docPath: string;
+    /** Headings of the document, offered after `#`. */
+    headings?: readonly string[];
     onapply(next: { text: string; href: string }): void;
     onremove(): void;
     onclose(): void;
   };
-  let { anchor, target, docPath, onapply, onremove, onclose }: Props = $props();
+  let { anchor, target, docPath, headings = [], onapply, onremove, onclose }: Props = $props();
 
   // svelte-ignore state_referenced_locally
   let text = $state(target.text);
@@ -25,6 +30,51 @@
   let broken = $state(false);
   let hrefInput: HTMLInputElement | undefined = $state();
   let textInput: HTMLInputElement | undefined = $state();
+  // svelte-ignore state_referenced_locally
+  let caret = $state(target.href.length);
+  let pick = $state(-1);
+
+  const suggestions = $derived(
+    linkSuggestions(href.slice(0, caret), {
+      fromFile: docPath,
+      files: vault.files,
+      headings,
+      wrap: false,
+    }),
+  );
+
+  $effect(() => {
+    void href;
+    pick = -1;
+  });
+
+  function syncCaret(e: Event): void {
+    const input = e.currentTarget as HTMLInputElement;
+    caret = input.selectionStart ?? href.length;
+  }
+
+  function onTargetKey(e: KeyboardEvent): void {
+    if (suggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      pick = Math.min(suggestions.length - 1, pick + 1);
+    } else if (e.key === "ArrowUp") {
+      if (pick < 0) return;
+      e.preventDefault();
+      pick -= 1;
+    } else if (e.key === "Enter" && pick >= 0) {
+      e.preventDefault();
+      const item = suggestions[pick];
+      href = item.insert;
+      caret = item.insert.length;
+    }
+  }
+
+  function useSuggestion(insert: string): void {
+    href = insert;
+    caret = insert.length;
+    hrefInput?.focus();
+  }
 
   // a link to a file that is not there: asked of the backend a moment after typing stops
   $effect(() => {
@@ -78,7 +128,36 @@
         spellcheck="false"
         placeholder={t("link.targetPlaceholder")}
         aria-invalid={broken}
+        aria-autocomplete="list"
+        aria-controls="link-suggestions"
+        oninput={syncCaret}
+        onkeyup={syncCaret}
+        onclick={syncCaret}
+        onkeydown={onTargetKey}
       />
+      {#if suggestions.length > 0}
+        <div
+          id="link-suggestions"
+          class="link-suggest"
+          role="listbox"
+          aria-label={t("complete.label")}
+        >
+          {#each suggestions as item, i (`${item.kind}:${item.insert}`)}
+            <button
+              type="button"
+              role="option"
+              class={["suggest__item", i === pick && "is-active"]}
+              aria-selected={i === pick}
+              onmousedown={(e) => e.preventDefault()}
+              onmousemove={() => (pick = i)}
+              onclick={() => useSuggestion(item.insert)}
+            >
+              <span class="suggest__label">{item.label}</span>
+              {#if item.detail}<span class="suggest__detail">{item.detail}</span>{/if}
+            </button>
+          {/each}
+        </div>
+      {/if}
       <span class="field__hint field__hint--warn" role="status"
         >{broken ? t("link.broken") : ""}</span
       >

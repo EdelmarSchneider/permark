@@ -222,3 +222,31 @@
     display: none;
   }
 }
+
+/* Suggestions in the Source editor. The tooltip is drawn on the page, so the theme on <html> reaches it. */
+.cm-tooltip.cm-tooltip-autocomplete {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+[data-theme="dark"] .cm-tooltip.cm-tooltip-autocomplete {
+  background: var(--surface-2);
+}
+.cm-tooltip-autocomplete ul {
+  font-family: inherit;
+}
+.cm-tooltip-autocomplete ul li {
+  padding: 2px 8px;
+  line-height: 22px;
+}
+.cm-tooltip-autocomplete ul li[aria-selected] {
+  background: var(--hover);
+  color: var(--text);
+}
+.cm-tooltip-autocomplete .cm-completionDetail {
+  color: var(--muted);
+  font-style: normal;
+}

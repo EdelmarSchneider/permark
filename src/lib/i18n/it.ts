@@ -997,6 +997,7 @@ export const itIT = {
   "toolbar.more": "Altra formattazione",
   "slash.label": "Inserisci un blocco",
   "slash.empty": "Nessun blocco corrisponde",
+  "complete.label": "Suggerimenti",
   "link.edit": "Link",
   "link.text": "Testo",
   "link.target": "Link a",

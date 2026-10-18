@@ -989,6 +989,7 @@ export const ptBR = {
   "toolbar.more": "Mais formatação",
   "slash.label": "Inserir um bloco",
   "slash.empty": "Nenhum bloco corresponde",
+  "complete.label": "Sugestões",
   "link.edit": "Link",
   "link.text": "Texto",
   "link.target": "Link para",

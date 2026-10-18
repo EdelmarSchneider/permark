@@ -292,7 +292,8 @@
   background: transparent;
 }
 .vtool:focus-visible,
-.slash__item:focus-visible {
+.slash__item:focus-visible,
+.suggest__item:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -317,8 +318,9 @@
   white-space: nowrap;
 }
 
-/* Slash menu */
-.slash {
+/* Slash menu, and the word suggestions while typing */
+.slash,
+.suggest {
   position: fixed;
   z-index: 20;
   display: flex;
@@ -333,10 +335,15 @@
   box-shadow: var(--shadow-pop);
   animation: tm-rise var(--dur-fast) var(--ease) both;
 }
-[data-theme="dark"] .slash {
+[data-theme="dark"] .slash,
+[data-theme="dark"] .suggest {
   background: var(--surface-2);
 }
-.slash__item {
+.suggest {
+  max-width: 360px;
+}
+.slash__item,
+.suggest__item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -351,11 +358,22 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.slash__item .icon {
+.slash__item .icon,
+.suggest__item .icon {
   color: var(--muted);
 }
-.slash__item.is-active {
+.slash__item.is-active,
+.suggest__item.is-active {
   background: var(--hover);
+}
+.suggest__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.suggest__detail {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--fs-ui-xs);
 }
 .slash__empty {
   padding: 6px 8px;
@@ -422,6 +440,12 @@
 }
 .link-form .field__hint {
   min-height: 1.3em;
+}
+.link-suggest {
+  display: flex;
+  flex-direction: column;
+  max-height: 180px;
+  overflow-y: auto;
 }
 .field__hint--warn {
   color: var(--git-deleted-text);
