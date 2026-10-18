@@ -27,6 +27,11 @@ export const ptBR = {
   "copy.failed": "Não foi possível copiar para a área de transferência.",
   "dialog.filter.docs": "Documentos",
   "dialog.openFolder": "Abrir pasta",
+  "dialog.newProject": "Novo projeto",
+  "dialog.windowTitle": "Onde esta pasta deve abrir?",
+  "dialog.windowBody": "Esta janela troca a pasta aberta. Uma janela nova deixa esta como está.",
+  "dialog.windowHere": "Esta janela",
+  "dialog.windowNew": "Janela nova",
   "dialog.openFile": "Abrir arquivo",
 
   // ---- welcome
@@ -44,6 +49,7 @@ export const ptBR = {
 
   // ---- activity bar and panels
   "activity.label": "Visões",
+  "activity.projects": "Projetos",
   "activity.explorer": "Explorador (Ctrl+Shift+X)",
   "activity.search": "Pesquisar em todos os docs (Ctrl+Shift+F)",
   "activity.tags": "Tags (Ctrl+Shift+T)",
@@ -99,8 +105,10 @@ export const ptBR = {
   "explorer.worktreeCount.one": "{n} worktree",
   "explorer.worktreeCount.other": "{n} worktrees",
   "switcher.label": "{name}: trocar de pasta",
-  "switcher.hint": "Trocar para outra pasta, abrir uma ou fechar esta",
-  "switcher.menu": "Pastas",
+  "switcher.hint": "Pastas recentes, um projeto novo, ou outra pasta",
+  "switcher.menu": "Projetos",
+  "projects.existed": "Esse projeto já existia. Ele será aberto como está.",
+  "projects.seedFailed": "Não foi possível criar a pasta do projeto: {message}",
   "switcher.noOthers": "Nenhuma outra pasta recente ainda.",
   "switcher.remove": "Remover {name} das pastas recentes",
   "switcher.removeHint": "Só a lista esquece a pasta. Ela e seus arquivos continuam onde estão.",
@@ -159,6 +167,7 @@ export const ptBR = {
   "menu.openExternal": "Abrir em editor externo",
   "menu.openDefaultApp": "Abrir com o aplicativo padrão",
   "menu.openInBrowser": "Abrir no navegador",
+  "menu.openAsProject": "Abrir como projeto",
   "menu.showInFileManager": "Mostrar no gerenciador de arquivos",
   "menu.openFolder": "Abrir pasta que contém o arquivo",
   "menu.reveal": "Mostrar na árvore",
@@ -337,6 +346,7 @@ export const ptBR = {
 
   // ---- comandos (o escopo Comandos da pesquisa em tudo)
   "cmd.openFolder": "Abrir pasta...",
+  "cmd.newProject": "Novo projeto...",
   "cmd.openFile": "Abrir arquivo...",
   "cmd.switchFolder": "Trocar de pasta...",
   "cmd.closeFolder": "Fechar pasta",

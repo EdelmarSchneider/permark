@@ -548,6 +548,34 @@ pub async fn init_project_folder(state: State<'_, AppState>) -> Result<(), AppEr
     blocking(move || ws.init_project_folder()).await
 }
 
+/// Creates `.permark/` in `path` when the folder is not already a project. `false` means it already had one, so
+/// nothing was written.
+#[tauri::command]
+pub async fn seed_project(app: AppHandle, path: String) -> Result<bool, AppError> {
+    let app_data = app_data_dir(&app)?;
+    blocking(move || {
+        let root = PathBuf::from(&path);
+        if !root.is_dir() {
+            return Err(crate::vault::VaultError::NotFound(path).into());
+        }
+        Ok(crate::session::seed_new_project(&app_data, &root)?)
+    })
+    .await
+}
+
+/// Opens `path` in another PerMark window. This window stays as it is.
+#[tauri::command]
+pub async fn open_project_window(path: String) -> Result<(), AppError> {
+    blocking(move || {
+        let folder = PathBuf::from(&path);
+        if !folder.is_dir() {
+            return Err(crate::vault::VaultError::NotFound(path).into());
+        }
+        crate::notes_commands::launch_folder(&folder).map_err(|e| AppError::Internal(e.to_string()))
+    })
+    .await
+}
+
 #[tauri::command]
 pub async fn state_location(state: State<'_, AppState>) -> Result<StateLocation, AppError> {
     let ws = state.current()?;

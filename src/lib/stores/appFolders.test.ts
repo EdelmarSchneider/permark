@@ -18,6 +18,8 @@ const fake = vi.hoisted(() => ({
   launchShow: vi.fn(),
   takeAgentOpen: vi.fn(),
   agentStatus: vi.fn(),
+  seedProject: vi.fn(),
+  openProjectWindow: vi.fn(),
 }));
 vi.mock("../api", () => ({
   api: {
@@ -47,6 +49,7 @@ vi.mock("../platform", () => ({
   isMock: true,
 }));
 
+import { pickFolder } from "../platform";
 import { app } from "./app.svelte";
 import { edit } from "./edit.svelte";
 import { session } from "./session.svelte";
@@ -243,14 +246,49 @@ describe("the folder switcher menu", () => {
     expect(ui.folderSwitcher).toBeNull();
   });
 
-  it("opens only in a project, not on the welcome screen or in the Notes window", async () => {
+  it("opens on the welcome screen, and not in the Notes window", async () => {
     app.screen = "welcome";
+    vault.info = null;
     await app.openFolderSwitcher(anchor);
-    expect(ui.folderSwitcher).toBeNull();
+    expect(ui.folderSwitcher).toEqual({ anchor });
+    ui.folderSwitcher = null;
     app.screen = "project";
     vault.info = { ...ALPHA, kind: "notes" };
     await app.openFolderSwitcher(anchor);
     expect(ui.folderSwitcher).toBeNull();
+  });
+
+  it("asks which window, and opens another PerMark when the answer is a new window", async () => {
+    vi.spyOn(app, "chooseWindow").mockResolvedValue("new");
+    await app.placeProject(BETA.root);
+    expect(fake.openProjectWindow).toHaveBeenCalledWith(BETA.root);
+    expect(fake.openVault).not.toHaveBeenCalled();
+    expect(vault.info).toEqual(ALPHA);
+  });
+
+  it("opens in this window when that is the answer, and does nothing when dismissed", async () => {
+    fake.openVault.mockResolvedValue(BETA);
+    vi.spyOn(app, "chooseWindow").mockResolvedValue("here");
+    await app.placeProject(BETA.root);
+    expect(vault.info).toEqual(BETA);
+    showAlpha();
+    vi.spyOn(app, "chooseWindow").mockResolvedValue(null);
+    await app.placeProject(BETA.root);
+    expect(vault.info).toEqual(ALPHA);
+    expect(fake.openVault).toHaveBeenCalledTimes(1);
+  });
+
+  it("seeds a new project, and says so when the folder was already a project", async () => {
+    vi.mocked(pickFolder).mockResolvedValue("F:\\work\\gamma");
+    fake.seedProject.mockResolvedValue(true);
+    vi.spyOn(app, "chooseWindow").mockResolvedValue(null);
+    await app.newProject();
+    expect(fake.seedProject).toHaveBeenCalledWith("F:\\work\\gamma");
+    expect(toast.current).toBeNull();
+
+    fake.seedProject.mockResolvedValue(false);
+    await app.newProject();
+    expect(toast.current).toMatchObject({ type: "message" });
   });
 
   it("is a command that opens the menu and a command that closes the folder", async () => {

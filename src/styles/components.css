@@ -1635,6 +1635,20 @@ mark {
 }
 
 /* Welcome ------------------------------------------------------------------------------ */
+.welcome-screen {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+.welcome-screen > .activitybar {
+  width: var(--w-activity);
+  height: 100%;
+  flex: none;
+}
+.welcome-screen > .welcome {
+  flex: 1;
+  min-width: 0;
+}
 .welcome {
   height: 100%;
   overflow: auto;

@@ -1,4 +1,4 @@
-/* The folder switcher: the project's row in the Explorer, and the menu it opens. ------------------------------------ */
+/* The project's row in the Explorer, and the Projects menu. ---------------------------------------------------- */
 
 /* The project's row stays in view while a long tree scrolls under it, so the way to another folder is always there. */
 .section-header--root {
@@ -33,47 +33,17 @@
 .section-header__toggle[aria-expanded="false"] .twisty {
   transform: rotate(-90deg);
 }
-.folder-switch {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  height: 22px;
-  padding: 0 6px;
-  border: 0;
-  border-radius: 4px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.folder-switch:hover,
-.folder-switch[aria-expanded="true"] {
-  background: var(--hover);
-  color: var(--text);
-}
-.section-header__toggle:focus-visible,
-.folder-switch:focus-visible {
+.section-header__toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 .folder-switch__name {
+  flex: 1;
   min-width: 0;
+  padding: 0 6px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.folder-switch .icon {
-  flex: none;
-  color: var(--faint);
-}
-.folder-switch:hover .icon,
-.folder-switch[aria-expanded="true"] .icon {
-  color: var(--muted);
 }
 
 /* The menu ------------------------------------------------------------------------------------------------------- */

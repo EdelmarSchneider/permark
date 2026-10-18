@@ -225,6 +225,8 @@ pub fn run() {
             commands::search,
             commands::referenced_images,
             commands::init_project_folder,
+            commands::seed_project,
+            commands::open_project_window,
             commands::state_location,
             commands::file_meta,
             commands::set_file_tags,

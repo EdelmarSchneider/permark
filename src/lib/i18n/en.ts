@@ -25,6 +25,12 @@ export const en = {
   "copy.failed": "Couldn't copy to the clipboard.",
   "dialog.filter.docs": "Documents",
   "dialog.openFolder": "Open folder",
+  "dialog.newProject": "New project",
+  "dialog.windowTitle": "Where should this folder open?",
+  "dialog.windowBody":
+    "This window replaces the folder you have open. A new window leaves this one as it is.",
+  "dialog.windowHere": "This window",
+  "dialog.windowNew": "New window",
   "dialog.openFile": "Open file",
 
   // ---- welcome
@@ -42,6 +48,7 @@ export const en = {
 
   // ---- activity bar and panels
   "activity.label": "Views",
+  "activity.projects": "Projects",
   "activity.explorer": "Explorer (Ctrl+Shift+X)",
   "activity.search": "Search all docs (Ctrl+Shift+F)",
   "activity.tags": "Tags (Ctrl+Shift+T)",
@@ -96,8 +103,10 @@ export const en = {
   "explorer.worktreeCount.one": "{n} worktree",
   "explorer.worktreeCount.other": "{n} worktrees",
   "switcher.label": "{name}: switch folder",
-  "switcher.hint": "Switch to another folder, open one, or close this one",
-  "switcher.menu": "Folders",
+  "switcher.hint": "Recent folders, a new project, or another folder",
+  "switcher.menu": "Projects",
+  "projects.existed": "This project already existed. It will open as it is.",
+  "projects.seedFailed": "Can't create the project folder: {message}",
   "switcher.noOthers": "No other recent folders yet.",
   "switcher.remove": "Remove {name} from recent folders",
   "switcher.removeHint": "Only the list forgets it. The folder and its files stay where they are.",
@@ -155,6 +164,7 @@ export const en = {
   "menu.openExternal": "Open in external editor",
   "menu.openDefaultApp": "Open with default app",
   "menu.openInBrowser": "Open in browser",
+  "menu.openAsProject": "Open as project",
   "menu.showInFileManager": "Show in file manager",
   "menu.openFolder": "Open containing folder",
   "menu.reveal": "Reveal in tree",
@@ -332,6 +342,7 @@ export const en = {
 
   // ---- commands (the Commands scope of search everywhere)
   "cmd.openFolder": "Open folder...",
+  "cmd.newProject": "New project...",
   "cmd.openFile": "Open file...",
   "cmd.switchFolder": "Switch folder...",
   "cmd.closeFolder": "Close folder",

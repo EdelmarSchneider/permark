@@ -595,6 +595,22 @@ fn project_holding(file: &std::path::Path, roots: &[PathBuf]) -> Option<PathBuf>
         .cloned()
 }
 
+/// Starts another PerMark on `folder` and lets it go its own way. Nothing is shown first.
+pub(crate) fn launch_folder(folder: &std::path::Path) -> std::io::Result<()> {
+    use std::process::{Command, Stdio};
+
+    let mut child = Command::new(std::env::current_exe()?)
+        .arg(folder)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 /// Starts another PerMark on a project, with the file to show first, and lets it go its own way.
 fn start_project_window(folder: &std::path::Path, file: &std::path::Path) -> std::io::Result<()> {
     use std::process::{Command, Stdio};

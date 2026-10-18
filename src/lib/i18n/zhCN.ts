@@ -30,6 +30,11 @@ export const zhCN = {
   "copy.failed": "无法复制到剪贴板。",
   "dialog.filter.docs": "文档",
   "dialog.openFolder": "打开文件夹",
+  "dialog.newProject": "新建项目",
+  "dialog.windowTitle": "这个文件夹在哪里打开？",
+  "dialog.windowBody": "此窗口会换成这个文件夹。新窗口则保留当前窗口不变。",
+  "dialog.windowHere": "此窗口",
+  "dialog.windowNew": "新窗口",
   "dialog.openFile": "打开文件",
 
   // ---- welcome
@@ -47,6 +52,7 @@ export const zhCN = {
 
   // ---- activity bar and panels
   "activity.label": "视图",
+  "activity.projects": "项目",
   "activity.explorer": "资源管理器 (Ctrl+Shift+X)",
   "activity.search": "搜索所有文档 (Ctrl+Shift+F)",
   "activity.tags": "标签 (Ctrl+Shift+T)",
@@ -101,8 +107,10 @@ export const zhCN = {
   "explorer.worktreeCount.one": "{n} 个 worktree",
   "explorer.worktreeCount.other": "{n} 个 worktree",
   "switcher.label": "{name}：切换文件夹",
-  "switcher.hint": "切换到其他文件夹、打开文件夹或关闭当前文件夹",
-  "switcher.menu": "文件夹",
+  "switcher.hint": "最近的文件夹、新建项目，或打开另一个文件夹",
+  "switcher.menu": "项目",
+  "projects.existed": "这个项目已经存在，将直接打开。",
+  "projects.seedFailed": "无法创建项目文件夹：{message}",
   "switcher.noOthers": "还没有其他最近打开的文件夹。",
   "switcher.remove": "将 {name} 从最近的文件夹中移除",
   "switcher.removeHint": "仅从列表中移除，文件夹及其中的文件保持原样。",
@@ -159,6 +167,7 @@ export const zhCN = {
   "menu.openExternal": "在外部编辑器中打开",
   "menu.openDefaultApp": "用默认应用打开",
   "menu.openInBrowser": "在浏览器中打开",
+  "menu.openAsProject": "作为项目打开",
   "menu.showInFileManager": "在文件管理器中显示",
   "menu.openFolder": "打开所在文件夹",
   "menu.reveal": "在文件树中定位",
@@ -324,6 +333,7 @@ export const zhCN = {
 
   // ---- commands (the Commands scope of search everywhere)
   "cmd.openFolder": "打开文件夹...",
+  "cmd.newProject": "新建项目...",
   "cmd.openFile": "打开文件...",
   "cmd.switchFolder": "切换文件夹...",
   "cmd.closeFolder": "关闭文件夹",

@@ -7,6 +7,8 @@
   import { relativeTime } from "../time";
   import Icon from "./Icon.svelte";
   import BrandMark from "./BrandMark.svelte";
+  import IconButton from "./IconButton.svelte";
+  import { ui } from "../stores/ui.svelte";
 
   let active = $state(0);
   let list: HTMLElement | undefined = $state();
@@ -45,11 +47,25 @@
   }
 
   async function open(root: string | undefined): Promise<void> {
-    if (root && !missing(root)) await app.openProject(root);
+    if (root && !missing(root)) await app.placeProject(root);
   }
 </script>
 
-<div class="welcome">
+<div class="welcome-screen">
+  <nav class="activitybar" aria-label={t("activity.label")}>
+    <IconButton
+      class="ab-btn"
+      icon="folder"
+      label={t("activity.projects")}
+      hint={t("switcher.hint")}
+      pressed={ui.folderSwitcher !== null}
+      data-projects
+      data-popover-trigger
+      onclick={(e) =>
+        void app.openFolderSwitcher((e.currentTarget as HTMLElement).getBoundingClientRect())}
+    />
+  </nav>
+  <div class="welcome">
   <div class="welcome__logo"><BrandMark size={64} /></div>
   <h1>{t("app.name")}</h1>
   <p class="welcome__tagline">{t("welcome.tagline")}</p>
@@ -167,4 +183,5 @@
     </section>
   </div>
   <p class="welcome__hint">{t("welcome.dropHint")}</p>
+  </div>
 </div>
