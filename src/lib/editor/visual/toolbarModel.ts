@@ -201,11 +201,13 @@ export const BLOCK_TYPES: readonly {
   label: MessageKey;
   hint: string;
 }[] = [
-  { id: "paragraph", block: "paragraph", label: "toolbar.paragraph", hint: "Ctrl+Alt+0" },
-  { id: "h1", block: "h1", label: "toolbar.heading1", hint: "Ctrl+Alt+1" },
-  { id: "h2", block: "h2", label: "toolbar.heading2", hint: "Ctrl+Alt+2" },
-  { id: "h3", block: "h3", label: "toolbar.heading3", hint: "Ctrl+Alt+3" },
-  { id: "h4", block: "h4", label: "toolbar.heading4", hint: "Ctrl+Alt+4" },
+  { id: "paragraph", block: "paragraph", label: "toolbar.paragraph", hint: "Ctrl+Shift+0" },
+  { id: "h1", block: "h1", label: "toolbar.heading1", hint: "Ctrl+Shift+1" },
+  { id: "h2", block: "h2", label: "toolbar.heading2", hint: "Ctrl+Shift+2" },
+  { id: "h3", block: "h3", label: "toolbar.heading3", hint: "Ctrl+Shift+3" },
+  { id: "h4", block: "h4", label: "toolbar.heading4", hint: "Ctrl+Shift+4" },
+  { id: "h5", block: "h5", label: "toolbar.heading5", hint: "Ctrl+Shift+5" },
+  { id: "h6", block: "h6", label: "toolbar.heading6", hint: "Ctrl+Shift+6" },
 ];
 
 /** The label of the block the caret is in, for the dropdown's button. */

@@ -99,7 +99,7 @@ export function formatState(state: EditorState): FormatState {
   return out;
 }
 
-const HEADING_LEVEL: Record<string, number> = { h1: 1, h2: 2, h3: 3, h4: 4 };
+const HEADING_LEVEL: Record<string, number> = { h1: 1, h2: 2, h3: 3, h4: 4, h5: 5, h6: 6 };
 
 /** Sets `checked` on every list item the selection touches. */
 function setChecked(core: Core, value: boolean | null): void {
@@ -213,6 +213,8 @@ export function runCommand(core: Core, id: CommandId): boolean {
     case "h2":
     case "h3":
     case "h4":
+    case "h5":
+    case "h6":
       done =
         state.block === id
           ? send(core, turnIntoTextCommand)

@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **Heading shortcuts in Visual.** `Ctrl+Alt` with a number is the AltGr key on Windows, so those chords typed a character instead of changing the block. Paragraph and headings 1 to 6 are `Ctrl+Shift+0` through `Ctrl+Shift+6`.
+
 ## [0.5.7] - 2026-10-18
 
 Review what an agent changed, send your comments to it, and keep a noisy folder quiet.
