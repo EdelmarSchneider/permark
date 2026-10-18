@@ -17,7 +17,7 @@ function readHintDismissed(): boolean {
 }
 
 class UiStore {
-  sidebarView = $state<"explorer" | "search" | "tags">("explorer");
+  sidebarView = $state<"explorer" | "search" | "tags" | "links">("explorer");
   /** The Search everywhere box (Ctrl+T, Ctrl+P, Ctrl+Shift+P): null while closed, else the scope it was asked to show. */
   searchBox = $state.raw<{ scope: Scope } | null>(null);
   /** The scope Ctrl+T opens: the one last picked with Tab or a click on the strip. Kept for the session. */
@@ -26,8 +26,10 @@ class UiStore {
   initDialog = $state(false);
   /** The "What do these letters mean?" popover of the git badges: where it is anchored, and which control opened it. */
   gitLegend = $state.raw<{ anchor: Anchor; from: "status" | "explorer" } | null>(null);
-  /** The folder switcher (the menu on the project's name in the Explorer): null while closed, else where it is anchored. */
+  /** The Projects menu: null while closed, else where it is anchored. */
   folderSwitcher = $state.raw<{ anchor: Anchor } | null>(null);
+  /** The question of whether a folder opens in this window or in a new one. */
+  windowChoice = $state(false);
   find = $state({
     open: false,
     query: "",
@@ -63,6 +65,8 @@ class UiStore {
   searchFocusTick = $state(0);
   explorerFocusTick = $state(0);
   tagsFocusTick = $state(0);
+  /** Bumped to move the keyboard into the broken-links list (Ctrl+Shift+B). */
+  linksFocusTick = $state(0);
   /** The tag editor popover; `anchor` is where it opens (null: next to the document header). */
   tagEditor = $state.raw<{ anchor: Anchor | null } | null>(null);
   /**

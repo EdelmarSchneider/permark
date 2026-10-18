@@ -34,6 +34,8 @@
     "search": ["query", "limit"],
     "referenced_images": [],
     "init_project_folder": [],
+    "seed_project": ["path"],
+    "open_project_window": ["path"],
     "state_location": [],
     "file_meta": ["path"],
     "set_file_tags": ["path", "tags"],
@@ -51,6 +53,8 @@
     "create_document": ["path", "text"],
     "write_asset": ["doc_path", "name_hint", "data"],
     "preview_move": ["moves", "scan_links", "held_back"],
+    "broken_links": ["buffers"],
+    "repair_link": ["path", "start", "end", "target", "buffer"],
     "apply_move": ["plan_id", "update_links", "buffers"],
     "delete_entries": ["paths"],
     "new_folder": ["path"],
@@ -60,6 +64,17 @@
     "mark_unread": ["path"],
     "mark_all_read": [],
     "mark_folder_read": ["path"],
+    "interest_rules": [],
+    "set_interest": ["paths", "interest"],
+    "review_list": [],
+    "review_get": ["path"],
+    "review_keep": ["path", "hash", "reviewed_hash", "index"],
+    "review_revert": ["path", "hash", "reviewed_hash", "index"],
+    "review_keep_all": ["path", "hash", "reviewed_hash"],
+    "review_revert_all": ["path", "hash", "reviewed_hash"],
+    "review_restore_deleted": ["path", "hash", "reviewed_hash"],
+    "review_undo": ["path"],
+    "review_release": ["path"],
     "set_agent_connection": ["enabled"],
     "agent_status": [],
     "publish_agent_context": ["context"],
@@ -112,5 +127,5 @@
     "become_notes_window": ["new_note", "open", "open_file"],
     "take_notes_request": []
   },
-  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "open-path", "show-in-project", "agent-status", "agent-open", "comments-changed", "notes-request"]
+  "events": ["fs-change", "tree-changed", "git-status-changed", "index-progress", "meta-changed", "image-refs-changed", "unread-changed", "review-changed", "open-path", "show-in-project", "agent-status", "agent-open", "comments-changed", "notes-request"]
 }

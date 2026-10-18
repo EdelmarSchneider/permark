@@ -4,6 +4,7 @@
   import ImageZoom from "./lib/components/ImageZoom.svelte";
   import DropOverlay from "./lib/components/DropOverlay.svelte";
   import FolderSwitcher from "./lib/components/FolderSwitcher.svelte";
+  import WindowChoice from "./lib/components/WindowChoice.svelte";
   import GitLegend from "./lib/components/GitLegend.svelte";
   import InitDialog from "./lib/components/InitDialog.svelte";
   import LinkUpdateDialog from "./lib/components/LinkUpdateDialog.svelte";
@@ -24,6 +25,7 @@
   import {
     isMacPlatform,
     matchNotesShortcut,
+    matchReviewKey,
     matchShortcut,
     yieldsToTyping,
   } from "./lib/shortcuts";
@@ -32,6 +34,7 @@
   import { edit } from "./lib/stores/edit.svelte";
   import { fileops } from "./lib/stores/fileops.svelte";
   import { comments } from "./lib/stores/comments.svelte";
+  import { review } from "./lib/stores/review.svelte";
   import { notes } from "./lib/stores/notes.svelte";
   import { session } from "./lib/stores/session.svelte";
   import { ui } from "./lib/stores/ui.svelte";
@@ -105,12 +108,18 @@
       }
       // Esc also leaves editing, once menus and bars are closed (and not from some other text field)
       const target = e.target as Element | null;
+      if (review.open && !isEditable(target)) {
+        e.preventDefault();
+        review.closeLayer();
+        return;
+      }
       if (edit.active && (!isEditable(target) || target?.closest(".cm-editor, .tm-visual"))) {
         e.preventDefault();
         edit.requestExit();
       }
       return;
     }
+    if (review.open && !edit.active && !hasOpenOverlay() && reviewKey(e)) return;
     // the editor took the key (Ctrl+B is bold there, not the sidebar)
     if (e.defaultPrevented) return;
     if (app.screen === "notes" && notesKey(e)) return;
@@ -123,6 +132,25 @@
     }
     e.preventDefault();
     app.run(action);
+  }
+
+  /** The keys of an open review. Ctrl+Z stays with the Explorer when focus is in the tree. */
+  function reviewKey(e: KeyboardEvent): boolean {
+    const key = matchReviewKey(e);
+    if (key === null) return false;
+    const target = e.target as Element | null;
+    if (key !== "undo" && (isEditable(target) || hasKeyOverlay())) return false;
+    if (key === "undo" && !target?.closest(".main, .review-bar")) return false;
+    e.preventDefault();
+    if (key === "next") review.move(1);
+    else if (key === "prev") review.move(-1);
+    else if (key === "keep") void review.keep();
+    else if (key === "revert") void review.revert();
+    else if (key === "keepAll") void review.keepAll();
+    else if (key === "revertAll") void review.revertAll();
+    else if (key === "close") review.closeLayer();
+    else void review.undo();
+    return true;
   }
 
   /** The keys that only the Notes window has: the pinned notes, stepping through the notes, renaming. Returns whether one was used. */
@@ -169,7 +197,6 @@
   {#if ui.settingsOpen}<SettingsPopover />{/if}
   {#if ui.initDialog}<InitDialog />{/if}
   <GitLegend />
-  {#if ui.folderSwitcher}<FolderSwitcher anchor={ui.folderSwitcher.anchor} />{/if}
   {#if fileops.prompt}<LinkUpdateDialog prompt={fileops.prompt} />{/if}
   {#if ui.tagEditor}<TagEditor />{/if}
   {#if ui.outlinePopover}<OutlinePopover />{/if}
@@ -186,6 +213,8 @@
   <div class="welcome" aria-busy="true" aria-label={t("app.loading")}></div>
 {/if}
 
+{#if ui.folderSwitcher}<FolderSwitcher anchor={ui.folderSwitcher.anchor} />{/if}
+{#if ui.windowChoice}<WindowChoice />{/if}
 {#if ui.zoomImage}<ImageZoom src={ui.zoomImage} />{/if}
 <DropOverlay />
 {#if MockControls}<MockControls />{/if}

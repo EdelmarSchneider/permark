@@ -42,6 +42,7 @@ import type {
   BufferEdits,
   BufferText,
   FsBatch,
+  TextEdit,
   Move,
   ParsedBlocks,
   PendingEdits,
@@ -1016,6 +1017,19 @@ class EditStore {
    * text is still exactly that. The file is looked at again, because its links may have been rewritten on disk (a
    * buffer with no edits takes them in). Resolves to false when the changes could not be applied.
    */
+  /**
+   * Applies link edits to the Source editor when its text is still `sent`. False when the text moved on,
+   * so a repair does not splice into a different version.
+   */
+  applyLinkEdits(edits: readonly TextEdit[], sent: string): boolean {
+    const editor = bridge.editor;
+    if (editor?.mode === "source" && editor.getText() === sent) {
+      editor.applyChanges(edits);
+      return true;
+    }
+    return false;
+  }
+
   followMoves(moves: readonly Move[], changes?: BufferEdits, sent?: string): boolean {
     if (!this.path) return true;
     this.path = mapPath(this.path, moves);

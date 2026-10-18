@@ -7,7 +7,8 @@
 //! opens a file in the person's editor).
 //! [`media`] knows the pictures, sound and video of a folder, serves them in parts and decides which files the system may open.
 //! [`refs`] knows which images and media the documents use (for the Explorer filter); [`unread`] knows which documents
-//! changed since they were last read; [`comments`] keeps the comments a person leaves on passages.
+//! changed since they were last read; [`review`] shows what changed in them since the person approved them, and keeps or
+//! reverts each part; [`comments`] keeps the comments a person leaves on passages.
 //! [`shell_integration`] adds "Open with PerMark" to the file manager (Windows); [`open_request`] receives what the
 //! macOS Finder opens with the app.
 //! [`nav`] keeps the window on the app's own page, and [`window`] remembers where it is. [`workspace`] wires the
@@ -32,8 +33,10 @@ mod nav;
 mod notes;
 mod notes_commands;
 mod open_request;
+mod quiet;
 mod refs;
 mod render;
+mod review;
 mod search;
 mod session;
 mod shell_integration;
@@ -223,6 +226,8 @@ pub fn run() {
             commands::search,
             commands::referenced_images,
             commands::init_project_folder,
+            commands::seed_project,
+            commands::open_project_window,
             commands::state_location,
             commands::file_meta,
             commands::set_file_tags,
@@ -240,6 +245,8 @@ pub fn run() {
             commands::create_document,
             commands::write_asset,
             commands::preview_move,
+            commands::broken_links,
+            commands::repair_link,
             commands::apply_move,
             commands::delete_entries,
             commands::new_folder,
@@ -249,6 +256,17 @@ pub fn run() {
             commands::mark_unread,
             commands::mark_all_read,
             commands::mark_folder_read,
+            commands::interest_rules,
+            commands::set_interest,
+            commands::review_list,
+            commands::review_get,
+            commands::review_keep,
+            commands::review_revert,
+            commands::review_keep_all,
+            commands::review_revert_all,
+            commands::review_restore_deleted,
+            commands::review_undo,
+            commands::review_release,
             commands::set_agent_connection,
             commands::agent_status,
             commands::publish_agent_context,

@@ -5,6 +5,22 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-10-18
+
+Review what an agent changed, send your comments to it, and keep a noisy folder quiet.
+
+### Added
+- **Silence a folder.** Right-click a folder or a file and choose **Silence**. It stays in the tree, and it opens and edits, but its changes, unread marks and Git letters stay quiet. A folder inside it can **Listen** on its own, and that choice covers what is already there and what appears later. **Listen** brings the folder back as already read, so older changes do not all arrive at once. Search leaves silenced paths out until **Include silenced** is on. An agent's search and unread list are unchanged.
+- **Complete as you type, without AI.** In Source, a link target offers files in the folder as a path from the current document, and after `#` the headings of that document. A word you have started offers words from the document and from file names. In Visual, the link box does the same for its target, and a word you have started offers those words beside the caret. Enter or Tab accepts; Esc closes.
+- **Projects.** A Projects button at the top of the activity bar lists recent folders and offers New project, Open folder and Close folder. New project adds a `.permark` folder to the folder you pick. Opening a folder, a recent folder, a new project, or a folder from the Explorer's menu asks whether it opens in this window or in a new one.
+- **Broken links.** A Broken links panel lists every link in the project whose file does not exist. When one file with that name exists somewhere else, Repair points the link at it. When several do, you pick which one.
+- **See a Mermaid diagram while you edit its text.** In Source, with the caret in a Mermaid block, the drawing sits beside the text and updates as you type. A text Mermaid cannot draw yet keeps the last drawing of that block and says so. Dragging nodes is not part of this.
+- **Review what changed since you last read a document.** A quiet bar names how many blocks changed. Review shows each one in the reading view, and Keep or Revert accepts it or writes the old text back. Your own edits are already approved, and a change is not written if the file moved on while you were looking.
+- **Send comments to your agent.** In the Comments tab, **Send to agent** on a comment, or **Send all** at the top, copies a prompt with the document, the section, the lines, the quoted passage and your words. Paste it into any agent chat. The prompt asks the agent to mark each comment done with a short reply. `get_context`, `permark context` and the state file say how many comments are open, so an agent that reads where you are knows to look.
+
+### Changed
+- **简体中文 wording** is tighter in a few places (the tagline, a few hints and the Git legend), following a native speaker's review.
+
 ## [0.5.6] - 2026-10-17
 
 TrailMark is now PerMark. Same app, same logo, a name of its own.

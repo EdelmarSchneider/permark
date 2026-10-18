@@ -14,6 +14,7 @@ import { onlyUnread } from "../unread";
 import { docs } from "./docs.svelte";
 import { fileops } from "./fileops.svelte";
 import { session } from "./session.svelte";
+import { quiet } from "./quiet.svelte";
 import { unread } from "./unread.svelte";
 import { vault } from "./vault.svelte";
 
@@ -45,11 +46,17 @@ class FilterStore {
     this.showAll ? vault.roots : { main: this.outcome.main, worktrees: this.outcome.worktrees },
   );
   /** What the Explorer lists: that, or only what is unread (and the open document, so it does not vanish when read). */
+  /** Unread documents the person still follows. A silenced one stays out of "only unread". */
+  private heardUnread = $derived.by(() => {
+    const heard = new Set<string>();
+    for (const path of unread.set) if (!quiet.isQuiet(path)) heard.add(path);
+    return heard;
+  });
   roots = $derived(
     unread.onlyUnread
       ? {
-          main: onlyUnread(this.filtered.main, unread.set, docs.path),
-          worktrees: onlyUnread(this.filtered.worktrees, unread.set, docs.path),
+          main: onlyUnread(this.filtered.main, this.heardUnread, docs.path),
+          worktrees: onlyUnread(this.filtered.worktrees, this.heardUnread, docs.path),
         }
       : this.filtered,
   );

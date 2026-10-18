@@ -16,6 +16,7 @@
   import Image from "@lucide/svelte/icons/image";
   import Italic from "@lucide/svelte/icons/italic";
   import Link from "@lucide/svelte/icons/link";
+  import Link2Off from "@lucide/svelte/icons/link-2-off";
   import List from "@lucide/svelte/icons/list";
   import ListChecks from "@lucide/svelte/icons/list-checks";
   import ListOrdered from "@lucide/svelte/icons/list-ordered";
@@ -85,6 +86,8 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import Undo2 from "@lucide/svelte/icons/undo-2";
   import Video from "@lucide/svelte/icons/video";
+  import Volume from "@lucide/svelte/icons/volume-2";
+  import VolumeX from "@lucide/svelte/icons/volume-x";
   import X from "@lucide/svelte/icons/x";
   import ZoomIn from "@lucide/svelte/icons/zoom-in";
   import ZoomOut from "@lucide/svelte/icons/zoom-out";
@@ -109,6 +112,7 @@
     image: Image,
     italic: Italic,
     link: Link,
+    "link-off": Link2Off,
     list: List,
     "list-checks": ListChecks,
     "list-ordered": ListOrdered,
@@ -178,6 +182,8 @@
     alert: TriangleAlert,
     undo: Undo2,
     video: Video,
+    volume: Volume,
+    "volume-x": VolumeX,
     x: X,
     "zoom-in": ZoomIn,
     "zoom-out": ZoomOut,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isMacPlatform,
   matchNotesShortcut,
+  matchReviewKey,
   matchShortcut,
   parseCombo,
   shortcutLabel,
@@ -32,6 +33,7 @@ describe("matchShortcut", () => {
     ["Ctrl+Shift+F", ctrl("F", { shiftKey: true }), "searchAll"],
     ["Ctrl+Shift+X", ctrl("X", { shiftKey: true }), "explorer"],
     ["Ctrl+Shift+T", ctrl("T", { shiftKey: true }), "tagsView"],
+    ["Ctrl+Shift+B", ctrl("B", { shiftKey: true }), "brokenLinks"],
     ["T (reading)", press("t"), "editTags"],
     ["E (reading)", press("e"), "edit"],
     ["C (reading)", press("c"), "addComment"],
@@ -112,12 +114,38 @@ describe("matchShortcut", () => {
   });
 });
 
+describe("matchReviewKey", () => {
+  it("moves, keeps and reverts only from the plain keys", () => {
+    expect(matchReviewKey(press("n"))).toBe("next");
+    expect(matchReviewKey(press("p"))).toBe("prev");
+    expect(matchReviewKey(press("k"))).toBe("keep");
+    expect(matchReviewKey(press("r"))).toBe("revert");
+    expect(matchReviewKey(press("K", { shiftKey: true }))).toBe("keepAll");
+    expect(matchReviewKey(press("R", { shiftKey: true }))).toBe("revertAll");
+    expect(matchReviewKey(press("Escape"))).toBe("close");
+    expect(matchReviewKey(press("F7"))).toBe("next");
+    expect(matchReviewKey(press("F7", { shiftKey: true }))).toBe("prev");
+    expect(matchReviewKey(ctrl("z"))).toBe("undo");
+  });
+
+  it("leaves the letter keys alone when Ctrl or Alt is held", () => {
+    for (const key of ["n", "p", "k", "r"]) {
+      expect(matchReviewKey(ctrl(key))).toBeNull();
+      expect(matchReviewKey(press(key, { altKey: true }))).toBeNull();
+    }
+    expect(matchReviewKey(press("Escape", { altKey: true }))).toBeNull();
+  });
+});
+
 describe("matchNotesShortcut", () => {
   it("jumps to the pinned notes with Ctrl+1 to Ctrl+9, by the physical key", () => {
     expect(matchNotesShortcut(ctrl("1", {}, "Digit1"))).toEqual({ kind: "pinned", n: 1 });
     expect(matchNotesShortcut(ctrl("9", {}, "Digit9"))).toEqual({ kind: "pinned", n: 9 });
     expect(matchNotesShortcut(ctrl("&", {}, "Digit1"))).toEqual({ kind: "pinned", n: 1 });
-    expect(matchNotesShortcut(press("1", { metaKey: true }, "Digit1"))).toEqual({ kind: "pinned", n: 1 });
+    expect(matchNotesShortcut(press("1", { metaKey: true }, "Digit1"))).toEqual({
+      kind: "pinned",
+      n: 1,
+    });
     expect(matchNotesShortcut(ctrl("0", {}, "Digit0"))).toBeNull();
     expect(matchNotesShortcut(press("1"))).toBeNull();
     expect(matchNotesShortcut(ctrl("1", { altKey: true }, "Digit1"))).toBeNull();
@@ -126,7 +154,10 @@ describe("matchNotesShortcut", () => {
 
   it("steps through the notes with Ctrl+Tab and Ctrl+Shift+Tab", () => {
     expect(matchNotesShortcut(ctrl("Tab"))).toEqual({ kind: "step", direction: 1 });
-    expect(matchNotesShortcut(ctrl("Tab", { shiftKey: true }))).toEqual({ kind: "step", direction: -1 });
+    expect(matchNotesShortcut(ctrl("Tab", { shiftKey: true }))).toEqual({
+      kind: "step",
+      direction: -1,
+    });
     expect(matchNotesShortcut(press("Tab"))).toBeNull();
     expect(matchNotesShortcut(press("Tab", { metaKey: true }))).toBeNull();
   });

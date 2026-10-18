@@ -33,6 +33,7 @@ import { applyMove, deleteEntries, newFolder, previewMove, undoFileOp } from "./
 import { agentStatus, publishAgentContext, setAgentConnection, takeAgentOpen } from "./mockAgent";
 import { addComment, deleteComment, listComments, setCommentDone } from "./mockComments";
 import * as mockNotes from "./mockNotes";
+import { reviewGet, reviewList } from "./mockReview";
 import { listUnread, markAllRead, markFolderRead, markRead, markUnread } from "./mockUnread";
 import {
   createDocument,
@@ -241,6 +242,8 @@ export const mockImpl: Api = {
   },
   // `docs/design/wireframes.md` embeds it from another folder
   referencedImages: async () => ["docs/images/pipeline.svg"],
+  seedProject: async () => true,
+  openProjectWindow: async () => {},
   initProjectFolder: async () => {
     await wait(400);
     stateLocation = "project";
@@ -271,6 +274,8 @@ export const mockImpl: Api = {
     path.startsWith("@file/") ? mockNotes.recreateLoose(path, text) : createDocument(path, text),
   writeAsset: (docPath, nameHint, data) => writeAsset(docPath, nameHint, data),
   previewMove: (moves, scanLinks, heldBack) => previewMove(moves, scanLinks, heldBack),
+  brokenLinks: async () => ({ links: [], total: 0, truncated: false, skipped: 0 }),
+  repairLink: async () => ({ status: "stale", opId: null, buffer: null }),
   applyMove: (planId, updateLinks, buffers) => applyMove(planId, updateLinks, buffers),
   deleteEntries: (paths) => deleteEntries(paths),
   newFolder: (path) => newFolder(path),
@@ -280,6 +285,17 @@ export const mockImpl: Api = {
   markUnread: async (path) => markUnread(path),
   markAllRead: async () => markAllRead(),
   markFolderRead: async (path) => markFolderRead(path),
+  interestRules: async () => ({}),
+  setInterest: async () => ({}),
+  reviewList: async () => reviewList(),
+  reviewGet: async (path) => reviewGet(path),
+  reviewKeep: async (path) => reviewGet(path),
+  reviewRevert: async (path) => reviewGet(path),
+  reviewKeepAll: async (path) => reviewGet(path),
+  reviewRevertAll: async (path) => reviewGet(path),
+  reviewRestoreDeleted: async (path) => reviewGet(path),
+  reviewUndo: async (path) => reviewGet(path),
+  reviewRelease: async () => {},
   setAgentConnection: async (enabled) => setAgentConnection(enabled),
   agentStatus: async () => agentStatus(),
   publishAgentContext: async (context) => publishAgentContext(context),

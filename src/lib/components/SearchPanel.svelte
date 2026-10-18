@@ -5,6 +5,7 @@
   import { crumbOf, sanitizeSnippet } from "../searchModel";
   import { knownTagsHint } from "../tagModel";
   import { app } from "../stores/app.svelte";
+  import { quiet } from "../stores/quiet.svelte";
   import { search } from "../stores/search.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
@@ -202,6 +203,15 @@
   {/if}
 </label>
 <div class="search-sub">
+  <button
+    type="button"
+    class="chip-toggle"
+    aria-pressed={quiet.includeQuiet}
+    title={t("search.includeQuietHint")}
+    onclick={() => quiet.toggleInclude()}
+  >
+    {t("search.includeQuiet")}
+  </button>
   <span class="switch is-disabled" title={t("search.semanticHint")}>
     <span
       class="switch__track"

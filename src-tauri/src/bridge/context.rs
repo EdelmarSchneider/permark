@@ -79,14 +79,38 @@ pub struct AgentContext {
     pub unsaved: bool,
 }
 
-/// A context with the time it was published (`updatedAtMs`, milliseconds since the Unix epoch): the answer of
-/// `get_context` and the content of `agent.json`.
+/// A context with the time it was published (`updatedAtMs`, milliseconds since the Unix epoch) and how many
+/// comments are open (`openComments`, counted by the program when this is answered or written, not by the
+/// window): the answer of `get_context` and the content of `agent.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Published {
     #[serde(flatten)]
     pub context: AgentContext,
     pub updated_at_ms: u64,
+    /// How many of the person's comments are open, awaiting an agent. Old files and older windows say 0.
+    #[serde(default)]
+    pub open_comments: u32,
+}
+
+impl Published {
+    /// The context as one short paragraph (see [`AgentContext::summary`]), with how many comments are open
+    /// joined to the same sentence when there are any, so a hook points the agent at `list_comments`.
+    #[must_use]
+    pub fn summary_with_comments(&self) -> String {
+        let mut out = self.context.summary();
+        if self.open_comments > 0 {
+            // the summary is one sentence that ends with a period; the count joins it before the period
+            out.truncate(out.len() - 1);
+            let noun = if self.open_comments == 1 {
+                "comment"
+            } else {
+                "comments"
+            };
+            let _ = write!(out, ", {} {} open.", self.open_comments, noun);
+        }
+        out
+    }
 }
 
 /// Cuts `text` to `max` characters (not bytes), at a character boundary. Returns whether it was cut.
@@ -286,12 +310,39 @@ mod tests {
         let published = Published {
             context: full(),
             updated_at_ms: 1_760_000_000_000,
+            open_comments: 2,
         };
         let json = serde_json::to_value(&published).expect("json");
         assert_eq!(json["document"], "docs/plan.md");
         assert_eq!(json["updatedAtMs"], 1_760_000_000_000_u64);
+        assert_eq!(json["openComments"], 2);
         let back: Published = serde_json::from_value(json).expect("parse");
         assert_eq!(back, published);
+        // An older window, or an `agent.json` from before the count, still reads: it says 0.
+        let old = serde_json::json!({ "document": "docs/plan.md", "updatedAtMs": 1 });
+        let old: Published = serde_json::from_value(old).expect("parse");
+        assert_eq!(old.open_comments, 0);
+    }
+
+    #[test]
+    fn the_published_summary_says_how_many_comments_are_open() {
+        let published = |open: u32| Published {
+            context: full(),
+            updated_at_ms: 1,
+            open_comments: open,
+        };
+        assert_eq!(
+            published(1).summary_with_comments(),
+            "Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): \
+'ship it on Friday', 1 comment open."
+        );
+        assert_eq!(
+            published(3).summary_with_comments(),
+            "Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): \
+'ship it on Friday', 3 comments open."
+        );
+        // None open: the paragraph says nothing of comments.
+        assert_eq!(published(0).summary_with_comments(), full().summary());
     }
 
     #[test]

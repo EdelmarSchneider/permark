@@ -9,6 +9,7 @@ import { t } from "../i18n";
 import { NavHistory, type TrailStop } from "../history";
 import { shouldAutoReveal } from "../reveal";
 import type { DocumentView, FsBatch, FsChange, Move } from "../types";
+import { review } from "./review.svelte";
 import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
 import { toast } from "./toast.svelte";
@@ -429,7 +430,7 @@ class DocStore {
       scrollTop: null,
       followScroll,
       diffAgainstLast: false,
-      quiet,
+      quiet: quiet || review.open,
     };
   }
 

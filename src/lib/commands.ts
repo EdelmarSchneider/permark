@@ -14,6 +14,7 @@ import { foldChars } from "./text";
 /** Actions that have no key: they live in a menu, the status bar or the settings. */
 export type MenuAction =
   | "switchFolder"
+  | "newProject"
   | "closeFolder"
   | "initProject"
   | "checkUpdates"
@@ -33,7 +34,10 @@ export type MenuAction =
   | "openContainingFolder"
   | "agentOn"
   | "agentOff"
-  | "agentCopySetup";
+  | "agentCopySetup"
+  | "reviewChanges"
+  | "reviewKeepAll"
+  | "reviewRevertAll";
 
 /** What `app.run` can do. */
 export type CommandAction = ShortcutAction | MenuAction;
@@ -65,6 +69,8 @@ export type CommandContext = {
   agentOn: boolean;
   /** This is the Microsoft Store build, which the Store updates (it has no "Check for updates"). */
   storeBuild: boolean;
+  /** How the open document stands against the version that was approved, when a review has been read. */
+  reviewStatus: "changes" | "tooLarge" | "noBaseline" | null;
 };
 
 export type Command = {
@@ -93,6 +99,7 @@ const canEdit = (ctx: CommandContext): boolean => ctx.hasDoc || ctx.editing;
  */
 export const COMMANDS: readonly Command[] = [
   { id: "openFolder", label: "cmd.openFolder", shortcut: "Ctrl+O", available: notInNotes },
+  { id: "newProject", label: "cmd.newProject", available: notInNotes },
   // a file opened in the Notes window is listed under Files (or is the note it is)
   { id: "openFile", label: "cmd.openFile", shortcut: "Ctrl+Shift+O" },
   { id: "switchFolder", label: "cmd.switchFolder", available: inProject },
@@ -113,10 +120,34 @@ export const COMMANDS: readonly Command[] = [
 
   { id: "explorer", label: "cmd.explorer", shortcut: "Ctrl+Shift+X", available: inProject },
   { id: "tagsView", label: "cmd.tagsView", shortcut: "Ctrl+Shift+T", available: inProject },
+  {
+    id: "brokenLinks",
+    label: "cmd.brokenLinks",
+    shortcut: "Ctrl+Shift+B",
+    available: inProject,
+  },
   { id: "toggleLeft", label: "cmd.toggleLeft", shortcut: "Ctrl+B", available: inFolder },
   { id: "toggleRight", label: "cmd.toggleRight", shortcut: "Ctrl+Alt+B", available: inProject },
   { id: "toggleOutline", label: "cmd.toggleOutline", shortcut: "Ctrl+Alt+O" },
   { id: "showComments", label: "cmd.showComments", available: inProject },
+  {
+    id: "reviewChanges",
+    label: "cmd.reviewChanges",
+    available: (ctx) => inProjectWithDoc(ctx) && !ctx.editing && ctx.reviewStatus === "changes",
+  },
+  {
+    id: "reviewKeepAll",
+    label: "cmd.reviewKeepAll",
+    available: (ctx) =>
+      inProjectWithDoc(ctx) &&
+      !ctx.editing &&
+      (ctx.reviewStatus === "changes" || ctx.reviewStatus === "tooLarge"),
+  },
+  {
+    id: "reviewRevertAll",
+    label: "cmd.reviewRevertAll",
+    available: (ctx) => inProjectWithDoc(ctx) && !ctx.editing && ctx.reviewStatus === "changes",
+  },
   { id: "toggleFollow", label: "cmd.toggleFollow", shortcut: "Ctrl+Shift+L", available: inProject },
   { id: "zoomIn", label: "cmd.zoomIn", shortcut: "Ctrl+=" },
   { id: "zoomOut", label: "cmd.zoomOut", shortcut: "Ctrl+-" },

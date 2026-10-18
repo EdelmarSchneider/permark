@@ -61,6 +61,7 @@ const IDLE: CommandContext = {
   hasUnread: false,
   agentOn: false,
   storeBuild: false,
+  reviewStatus: null,
 };
 const idsOf = (list: Command[]): string[] => list.map((c) => c.id);
 
@@ -130,6 +131,7 @@ describe("the notes", () => {
     for (const projectOnly of [
       "explorer",
       "tagsView",
+      "brokenLinks",
       "toggleRight",
       "showComments",
       "toggleFollow",
@@ -307,7 +309,15 @@ describe("availableCommands", () => {
 
   it("leaves the folder commands out of Simple mode, where only the file's own commands remain", () => {
     const simple = idsOf(availableCommands({ ...IDLE, ide: false, hasDoc: true }));
-    for (const id of ["quickOpen", "searchAll", "explorer", "tagsView", "newFile", "newFolder"]) {
+    for (const id of [
+      "quickOpen",
+      "searchAll",
+      "explorer",
+      "tagsView",
+      "brokenLinks",
+      "newFile",
+      "newFolder",
+    ]) {
       expect(simple, id).not.toContain(id);
     }
     expect(simple).toEqual(

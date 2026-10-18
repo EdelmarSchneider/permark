@@ -15,6 +15,9 @@ use crate::util::{hash_hex, write_atomic};
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
 const READ_FILE: &str = "read.json";
+const QUIET_FILE: &str = "quiet.json";
+const REVIEWED_FILE: &str = "reviewed.json";
+const REVIEWED_DIR: &str = "reviewed";
 const COMMENTS_FILE: &str = "comments.json";
 const AGENT_FILE: &str = "agent.json";
 const META_FILE: &str = "meta.toml";
@@ -136,6 +139,22 @@ impl StateStore {
     /// Where the unread markers keep what was last read: `read.json` with the rest of the local state.
     pub fn read_path(&self) -> PathBuf {
         self.dir.join(READ_FILE)
+    }
+
+    /// Where silenced folders and files are kept: `quiet.json`, next to `read.json`. Personal, like it.
+    pub fn quiet_path(&self) -> PathBuf {
+        self.dir.join(QUIET_FILE)
+    }
+
+    /// Where the review keeps which version of each document the person approved: `reviewed.json`, next to
+    /// `read.json`, and in the `reviewed/` folder the text of those versions (see [`StateStore::reviewed_dir`]).
+    pub fn reviewed_path(&self) -> PathBuf {
+        self.dir.join(REVIEWED_FILE)
+    }
+
+    /// The folder of the copies of the approved versions, one file named for the hash of its text.
+    pub fn reviewed_dir(&self) -> PathBuf {
+        self.dir.join(REVIEWED_DIR)
     }
 
     /// Where the comments are kept: `comments.json` with the rest of the local state. Personal, like `read.json`.
@@ -271,6 +290,7 @@ impl StateStore {
                 SESSION_FILE,
                 LAST_VISIT_FILE,
                 READ_FILE,
+                REVIEWED_FILE,
                 COMMENTS_FILE,
                 window::FILE_NAME,
             ] {
@@ -285,6 +305,25 @@ impl StateStore {
         self.dir = local;
         Ok(())
     }
+}
+
+/// Seeds `root` with a `.permark/` folder when it has none. `Ok(false)` means a project was already there
+/// (`.permark/`, or the older `.trailmark/`), so nothing was written.
+pub fn seed_new_project(app_data_dir: &Path, root: &Path) -> Result<bool, SessionError> {
+    if !root.is_dir() {
+        return Err(SessionError::io(
+            root,
+            std::io::Error::new(std::io::ErrorKind::NotFound, "not a folder"),
+        ));
+    }
+    if std::fs::symlink_metadata(root.join(PERMARK_DIR)).is_ok()
+        || private::is_real_folder(&root.join(legacy::LEGACY_STATE_DIR))
+    {
+        return Ok(false);
+    }
+    let mut store = StateStore::open(app_data_dir, root);
+    store.init_project_folder()?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -464,6 +503,24 @@ mod tests {
             .join(".permark/local/session.json")
             .is_file());
         assert!(!f.app.path().join("projects").exists());
+    }
+
+    #[test]
+    fn seeding_a_folder_makes_a_permark_dir_and_refuses_one_that_already_is_a_project() {
+        let f = fx();
+        fs::write(f.project.path().join("notes.md"), "hello").expect("write");
+
+        assert!(seed_new_project(f.app.path(), f.project.path()).expect("seed"));
+        assert!(f.project.path().join(".permark/config.toml").is_file());
+        assert!(f.project.path().join(".permark/.gitignore").is_file());
+        assert!(f.project.path().join("notes.md").is_file());
+        assert!(!seed_new_project(f.app.path(), f.project.path()).expect("again"));
+
+        let legacy = tempfile::tempdir().expect("tempdir");
+        fs::create_dir(legacy.path().join(".trailmark")).expect("mkdir");
+        assert!(!seed_new_project(f.app.path(), legacy.path()).expect("legacy"));
+        assert!(legacy.path().join(".trailmark").is_dir());
+        assert!(!legacy.path().join(".permark").exists());
     }
 
     /// A folder `outside` the project that a link can point to, with a marker file in it.
@@ -684,6 +741,29 @@ mod tests {
         );
         // never in the part of .permark that is shared
         assert_eq!(f.store().read_path(), s.read_path());
+    }
+
+    #[test]
+    fn the_approved_versions_are_kept_next_to_what_was_read_and_follow_it_into_the_project() {
+        let f = fx();
+        let mut s = f.store();
+        assert_eq!(s.reviewed_path(), s.dir().join("reviewed.json"));
+        assert_eq!(s.reviewed_dir(), s.dir().join("reviewed"));
+        assert!(s.reviewed_path().starts_with(f.app.path()));
+        fs::create_dir_all(s.dir()).expect("mkdir");
+        fs::write(
+            s.reviewed_path(),
+            r#"{"version": 1, "documents": {"a.md": {"hash": "00000000000000ab"}}}"#,
+        )
+        .expect("write");
+        s.init_project_folder().expect("init");
+        let local = Path::new(".permark").join("local");
+        assert!(s.reviewed_path().ends_with(local.join("reviewed.json")));
+        assert!(s.reviewed_dir().ends_with(local.join("reviewed")));
+        assert_eq!(
+            fs::read_to_string(s.reviewed_path()).expect("carried over"),
+            r#"{"version": 1, "documents": {"a.md": {"hash": "00000000000000ab"}}}"#
+        );
     }
 
     #[test]

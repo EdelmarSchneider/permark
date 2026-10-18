@@ -14,6 +14,7 @@
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
   import { media } from "../stores/media.svelte";
+  import { review } from "../stores/review.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
   import { unread } from "../stores/unread.svelte";
@@ -154,6 +155,22 @@
             label: t("menu.openDefaultApp"),
             icon: "external",
             onselect: () => void app.openWithDefaultApp(),
+          },
+        ] satisfies MenuEntry[])
+      : []),
+    ...(view?.kind === "markdown" && !vault.isSimple
+      ? ([
+          {
+            id: "review",
+            label: t("header.reviewChanges"),
+            disabled: review.view?.path !== path || review.view.status !== "changes",
+            title:
+              review.view?.status === "noBaseline"
+                ? t("review.noBaseline")
+                : review.view?.status === "tooLarge"
+                  ? t("review.tooLarge")
+                  : undefined,
+            onselect: () => review.start(),
           },
         ] satisfies MenuEntry[])
       : []),

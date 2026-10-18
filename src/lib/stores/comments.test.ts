@@ -10,6 +10,10 @@ const fake = vi.hoisted(() => ({
 }));
 vi.mock("../api", () => ({ api: { ...fake, on: async () => () => {} } }));
 
+// The clipboard is replaced too: these tests are about what lands on it and what the person is told.
+const clipboard = vi.hoisted(() => ({ copyText: vi.fn(async (_text: string) => true) }));
+vi.mock("../platform", () => clipboard);
+
 import { bridge } from "../bridge";
 import type { CommentTarget } from "../dom/commentDom";
 import type { DocumentView, FsBatch, Comment, VaultInfo } from "../types";
@@ -61,6 +65,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   for (const fn of Object.values(fake)) fn.mockReset();
   fake.listComments.mockResolvedValue([]);
+  clipboard.copyText.mockReset();
+  clipboard.copyText.mockResolvedValue(true);
   toast.clear();
   clockMs = 1_000_000;
   store = new CommentsStore(() => clockMs);
@@ -327,5 +333,58 @@ describe("the list's own actions", () => {
     store.show("c1");
     expect(store.focus?.id).toBe("c1");
     expect(store.focus?.n).toBeGreaterThan(first?.n ?? 0);
+  });
+});
+
+describe("sending to an agent", () => {
+  it("puts one comment on the clipboard as a prompt and says so", async () => {
+    const open = comment({ text: "Too vague." });
+    fake.listComments.mockResolvedValue([open]);
+    await store.refresh();
+    await store.sendToAgent(open.id);
+    expect(clipboard.copyText).toHaveBeenCalledTimes(1);
+    expect(clipboard.copyText.mock.calls[0][0]).toContain("Too vague.");
+    expect(toast.current?.type === "message" && toast.current.tone).toBe("info");
+  });
+
+  it("does not send a comment that is done", async () => {
+    const done = comment({ done: true, doneMs: 5 });
+    fake.listComments.mockResolvedValue([done]);
+    await store.refresh();
+    await store.sendToAgent(done.id);
+    expect(clipboard.copyText).not.toHaveBeenCalled();
+  });
+
+  it("sends every open comment grouped by document, and not the done ones", async () => {
+    const list = [
+      comment({ text: "first one" }),
+      comment({ path: "docs/other.md", text: "second one" }),
+      comment({ done: true, doneMs: 5, text: "finished one" }),
+    ];
+    fake.listComments.mockResolvedValue(list);
+    await store.refresh();
+    await store.sendAllToAgent();
+    expect(clipboard.copyText).toHaveBeenCalledTimes(1);
+    const text = clipboard.copyText.mock.calls[0][0];
+    expect(text).toContain("## docs/plan.md");
+    expect(text).toContain("## docs/other.md");
+    expect(text).toContain("first one");
+    expect(text).toContain("second one");
+    expect(text).not.toContain("finished one");
+  });
+
+  it("says what every failed copy says when the clipboard refuses", async () => {
+    clipboard.copyText.mockResolvedValueOnce(false);
+    fake.listComments.mockResolvedValue([comment()]);
+    await store.refresh();
+    await store.sendAllToAgent();
+    expect(toast.current?.type === "message" && toast.current.tone).toBe("warn");
+  });
+
+  it("sends nothing when no comment is open", async () => {
+    fake.listComments.mockResolvedValue([comment({ done: true, doneMs: 5 })]);
+    await store.refresh();
+    await store.sendAllToAgent();
+    expect(clipboard.copyText).not.toHaveBeenCalled();
   });
 });

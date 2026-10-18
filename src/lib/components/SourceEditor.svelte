@@ -3,16 +3,21 @@
   import { onMount } from "svelte";
   import { bridge } from "../bridge";
   import type { SourceView } from "../editor/cm";
+  import { mermaidAt, type MermaidFence } from "../editor/mermaidAt";
   import { EditorOutline } from "../editor/outlineSync";
   import { t } from "../i18n";
   import { basename } from "../paths";
   import { edit } from "../stores/edit.svelte";
   import { outline } from "../stores/outline.svelte";
+  import { vault } from "../stores/vault.svelte";
+  import DiagramPreview from "./DiagramPreview.svelte";
   import Notice from "./Notice.svelte";
 
   let host: HTMLElement | undefined = $state();
   let ready = $state(false);
   let failed = $state(false);
+  /** The Mermaid block the caret is in, drawn beside the text. */
+  let diagram = $state<MermaidFence | null>(null);
 
   onMount(() => {
     const start = edit.initial;
@@ -24,6 +29,10 @@
     import("../editor/cm")
       .then(({ createSourceView }) => {
         if (gone) return;
+        const look = (): void => {
+          if (!view) return;
+          diagram = mermaidAt(view.getText(), view.caretLine() + 1);
+        };
         view = createSourceView(
           mount,
           start.buffer,
@@ -33,13 +42,19 @@
             onChange: (length) => {
               edit.noteChange(length);
               sync?.changed();
+              look();
             },
-            onCaret: (line, column) => edit.noteCaret(line, column),
+            onCaret: (line, column) => {
+              edit.noteCaret(line, column);
+              look();
+            },
             onFiles: (files, source) => void edit.addFiles(files, source),
           },
           start.atEnd === true,
           start.top,
+          { files: () => vault.files, path: () => edit.path ?? "" },
         );
+        look();
         bridge.editor = view;
         // the reading view is hidden while editing, so the Outline is built from, and scrolls, this editor
         if (edit.path) {
@@ -63,8 +78,11 @@
   });
 </script>
 
-<div class="source" aria-busy={!ready && !failed}>
+<div class={["source", diagram && "source--diagram"]} aria-busy={!ready && !failed}>
   <div bind:this={host} class="source__host"></div>
+  {#if diagram}
+    <DiagramPreview source={diagram.source} fence={diagram.startLine} />
+  {/if}
   {#if failed}
     <Notice icon="circle-alert" title={t("edit.loadFailed")} />
   {:else if !ready}

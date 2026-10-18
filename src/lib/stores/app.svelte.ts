@@ -51,10 +51,14 @@ import { editorCommand } from "./editorCommand.svelte";
 import { feed } from "./feed.svelte";
 import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
+import { brokenLinks } from "./brokenLinks.svelte";
 import { comments } from "./comments.svelte";
+import { review } from "./review.svelte";
 import { notes } from "./notes.svelte";
 import { media } from "./media.svelte";
 import { outline } from "./outline.svelte";
+import { withoutQuiet } from "../quiet";
+import { quiet } from "./quiet.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
@@ -74,12 +78,9 @@ const SINCE_REFRESH_MS = 1200;
  * Explorer when that is on screen, else near the top left of the window.
  */
 function switcherAnchor(): Anchor {
-  const name =
-    session.left.open && ui.sidebarView === "explorer"
-      ? document.querySelector<HTMLElement>("[data-folder-switcher]")
-      : null;
-  const rect = name?.getBoundingClientRect();
-  return rect && rect.width > 0 ? rect : { left: 56, right: 56, top: 40, bottom: 40 };
+  const button = document.querySelector<HTMLElement>("[data-projects]");
+  const rect = button?.getBoundingClientRect();
+  return rect && rect.width > 0 ? rect : { left: 8, right: 44, top: 8, bottom: 44 };
 }
 
 function readHiddenRecents(): string[] {
@@ -95,6 +96,8 @@ function readHiddenRecents(): string[] {
 class AppStore {
   /** "notes" is the Notes window: a program of its own (see `notes.svelte.ts`). */
   screen = $state<"boot" | "welcome" | "project" | "notes">("boot");
+  /** Resolves the open window question while it is on screen. */
+  private windowAnswer: ((choice: "here" | "new" | null) => void) | null = null;
   opening = $state(false);
   openError = $state<string | null>(null);
   recents = $state.raw<RecentVault[]>([]);
@@ -320,9 +323,65 @@ class AppStore {
   async chooseFolder(): Promise<void> {
     try {
       const path = await pickFolder();
-      if (path) await this.openProject(path);
+      if (path) await this.placeProject(path);
     } catch (error) {
       this.openError = errorMessage(error);
+    }
+  }
+
+  /**
+   * Asks where `path` should open, then opens it there. "This window" replaces the folder on screen (unsaved edits are
+   * asked about first). "New window" starts another PerMark and leaves this one as it is. Cancelling does neither.
+   */
+  async placeProject(path: string): Promise<void> {
+    const choice = await this.chooseWindow();
+    if (choice === null) return;
+    if (choice === "new") {
+      try {
+        await api.openProjectWindow(path);
+      } catch (error) {
+        const message = errorMessage(error);
+        if (this.screen === "welcome") this.openError = message;
+        else toast.message(message, "warn");
+      }
+      return;
+    }
+    if (this.screen === "project" && sameFolder(path, vault.info?.root)) return;
+    await this.openProject(path);
+  }
+
+  /** The open window question. A second question cancels the one still waiting. */
+  chooseWindow(): Promise<"here" | "new" | null> {
+    this.windowAnswer?.(null);
+    return new Promise((resolve) => {
+      this.windowAnswer = resolve;
+      ui.windowChoice = true;
+    });
+  }
+
+  /** Closes the open window question with `choice` (`null` when it was dismissed). */
+  answerWindow(choice: "here" | "new" | null): void {
+    ui.windowChoice = false;
+    const resolve = this.windowAnswer;
+    this.windowAnswer = null;
+    resolve?.(choice);
+  }
+
+  /**
+   * Makes `path` a project (a `.permark/` folder) and then opens it the way Open folder does. A folder that is already
+   * a project is not written again: a notice says so, and it still opens.
+   */
+  async newProject(): Promise<void> {
+    try {
+      const path = await pickFolder(t("dialog.newProject"));
+      if (!path) return;
+      const created = await api.seedProject(path);
+      if (!created) toast.message(t("projects.existed"));
+      await this.placeProject(path);
+    } catch (error) {
+      const message = t("projects.seedFailed", { message: errorMessage(error) });
+      if (this.screen === "welcome") this.openError = message;
+      else toast.message(message, "warn");
     }
   }
 
@@ -388,6 +447,7 @@ class AppStore {
     this.openError = null;
     try {
       await session.flush();
+      await review.releaseAll();
       let info: VaultInfo;
       try {
         info = await api.openVault(path);
@@ -426,6 +486,7 @@ class AppStore {
         void tags.refreshStyles();
         void vault.refreshImageRefs();
         void unread.refresh();
+        void quiet.refresh();
         void comments.refresh();
       }
       const restored = session.load(stored);
@@ -464,7 +525,9 @@ class AppStore {
     tags.reset();
     toast.clear();
     comments.reset();
+    review.clear();
     unread.reset();
+    quiet.reset();
     vault.reset();
     ui.followChip = null;
     ui.find.open = false;
@@ -492,18 +555,20 @@ class AppStore {
   }
 
   /**
-   * Opens the folder switcher (the menu on the project's name), or closes it when it is open. It is placed under `anchor`, else
-   * under the project's name in the Explorer, else near the top left of the window when the Explorer is not on screen.
+   * Opens the Projects menu, or closes it when it is open. It is placed under `anchor`, else under the Projects button.
+   * The welcome screen has the button too. The Notes window and a single open file do not.
    */
   async openFolderSwitcher(anchor?: Anchor): Promise<void> {
-    if (this.screen !== "project" || vault.isNotes || vault.isSimple) return;
+    if (this.screen === "notes" || this.screen === "boot" || vault.isNotes || vault.isSimple) return;
+    if (this.screen !== "welcome" && this.screen !== "project") return;
     if (ui.folderSwitcher) {
       ui.folderSwitcher = null;
       return;
     }
     await this.refreshRecents();
-    // the window may have changed while the list was read
-    if (this.screen === "project") ui.folderSwitcher = { anchor: anchor ?? switcherAnchor() };
+    if (this.screen === "welcome" || this.screen === "project") {
+      ui.folderSwitcher = { anchor: anchor ?? switcherAnchor() };
+    }
   }
 
   /**
@@ -525,6 +590,7 @@ class AppStore {
     this.opening = true;
     try {
       await session.flush();
+      await review.releaseAll();
       try {
         await api.closeVault();
       } catch (error) {
@@ -575,6 +641,7 @@ class AppStore {
       await api.on("unread-changed", (paths) => {
         if (this.screen === "project" && !vault.isSimple) unread.onChanged(paths);
       }),
+      await api.on("review-changed", (entries) => review.setEntries(entries)),
       await api.on("comments-changed", () => {
         if (this.screen === "project" && !vault.isSimple) comments.onChanged();
       }),
@@ -678,9 +745,10 @@ class AppStore {
       docs.handleBatch(batch, false);
       return;
     }
-    const update = feed.apply(batch, now);
+    const update = feed.apply(withoutQuiet(batch, (path) => quiet.isQuiet(path)), now);
     if (batch.rescan) void vault.refreshTree();
     tags.onFilesChanged();
+    brokenLinks.filesChanged();
     comments.filesChanged(batch);
 
     const docChanged = update.bulk !== null || update.files.some((f) => f.isDoc);
@@ -691,7 +759,7 @@ class AppStore {
     let jumped: string | null = null;
     if (session.follow && update.bulk === null) {
       const candidate = followCandidate(batch);
-      if (candidate !== null && candidate !== docs.path) {
+      if (candidate !== null && !quiet.isQuiet(candidate) && candidate !== docs.path) {
         jumped = feed.gate.offer(candidate, now, this.followBlocked());
         if (jumped !== null) void this.followTo(jumped);
         else this.scheduleFollowRetry();
@@ -824,8 +892,9 @@ class AppStore {
 
   /** Alt+U: opens the next unread document (the live feed first, newest first, then the tree), or says there is none. */
   async openNextUnread(): Promise<void> {
+    const heard = new Set([...unread.set].filter((path) => !quiet.isQuiet(path)));
     const next = nextUnread({
-      unread: unread.set,
+      unread: heard,
       feed: feed.entries.flatMap((entry) => (entry.type === "file" ? [entry.path] : [])),
       tree: vault.files,
       current: docs.path,
@@ -960,6 +1029,14 @@ class AppStore {
     void tags.refreshFiles();
   }
 
+  showLinks(): void {
+    if (vault.isSimple) return;
+    ui.sidebarView = "links";
+    if (!session.left.open) session.setPanel("left", { open: true });
+    ui.linksFocusTick++;
+    void brokenLinks.refresh();
+  }
+
   /** A tag chip was clicked: the Tags view, showing the files with that tag. */
   showTagsFor(tag: string): void {
     if (vault.isSimple) return;
@@ -969,13 +1046,14 @@ class AppStore {
   }
 
   /** Activity bar: switch the sidebar view, or collapse the sidebar when its view is already showing. */
-  clickView(view: "explorer" | "search" | "tags"): void {
+  clickView(view: "explorer" | "search" | "tags" | "links"): void {
     if (ui.sidebarView === view && session.left.open) {
       session.setPanel("left", { open: false });
       return;
     }
     if (view === "search") this.showSearch();
     else if (view === "tags") this.showTags();
+    else if (view === "links") this.showLinks();
     else this.showExplorer();
   }
 
@@ -1212,6 +1290,8 @@ class AppStore {
   run(action: CommandAction): void {
     if (this.screen === "welcome") {
       if (action === "openFolder") void this.chooseFolder();
+      else if (action === "newProject") void this.newProject();
+      else if (action === "switchFolder") void this.openFolderSwitcher();
       else if (action === "openFile") void this.chooseFile();
       else if (action === "newNote") void this.newNote();
       else if (action === "showNotes") void this.showNotes();
@@ -1223,6 +1303,8 @@ class AppStore {
     switch (action) {
       case "openFolder":
         return void this.chooseFolder();
+      case "newProject":
+        return void this.newProject();
       case "openFile":
         return void this.chooseFile();
       case "switchFolder":
@@ -1248,6 +1330,8 @@ class AppStore {
         return this.showExplorer();
       case "tagsView":
         return this.showTags();
+      case "brokenLinks":
+        return this.showLinks();
       case "editTags":
         if (ide && docs.current && !edit.active) ui.openTagEditor();
         return;
@@ -1256,6 +1340,15 @@ class AppStore {
         return;
       case "showComments":
         if (ide) this.showComments();
+        return;
+      case "reviewChanges":
+        if (ide && !edit.active) review.start();
+        return;
+      case "reviewKeepAll":
+        if (ide && !edit.active) void review.keepAll();
+        return;
+      case "reviewRevertAll":
+        if (ide && !edit.active) void review.revertAll();
         return;
       case "edit":
         if (docs.current && !edit.active) void edit.enter();

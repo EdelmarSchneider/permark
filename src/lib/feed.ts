@@ -100,6 +100,14 @@ export class FeedStore {
     this.list = [];
   }
 
+  /** Drops entries a predicate rejects. A bulk or operation stays while any of its paths stay. */
+  retain(keep: (path: string) => boolean): void {
+    this.list = this.list.filter((entry) => {
+      if (entry.type === "file") return keep(entry.path);
+      return entry.items.some((item) => keep(item.path));
+    });
+  }
+
   apply(batch: FsBatch, now: number): FeedUpdate {
     if (batch.bulk !== null) {
       const bulk = this.addBulk(batch, batch.bulk, now);

@@ -1,6 +1,7 @@
 <script lang="ts">
   // One comment in the Comments tab: a check to mark it done, the quoted passage with the comment and where it is (a click
-  // goes to the passage), and the reply an agent left when it resolved it.
+  // goes to the passage), the button that puts it on the clipboard as a prompt for an agent, and the reply an agent left
+  // when it resolved it.
   import { t } from "../i18n";
   import { documentTitle, excerpt, trail } from "../comments";
   import { app } from "../stores/app.svelte";
@@ -56,6 +57,15 @@
     <span class="comment-text">{comment.text}</span>
     <span class="comment-meta">{meta}</span>
   </button>
+  {#if !comment.done}
+    <IconButton
+      small
+      class="comment-send"
+      icon="external"
+      label={t("comments.send")}
+      onclick={() => void comments.sendToAgent(comment.id)}
+    />
+  {/if}
   <IconButton
     small
     class="comment-delete"

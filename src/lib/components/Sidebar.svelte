@@ -2,6 +2,7 @@
   import { t } from "../i18n";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
+  import BrokenLinksPanel from "./BrokenLinksPanel.svelte";
   import Explorer from "./Explorer.svelte";
   import Resizer from "./Resizer.svelte";
   import SearchPanel from "./SearchPanel.svelte";
@@ -20,6 +21,9 @@
     </section>
     <section class="panel-inner" hidden={ui.sidebarView !== "tags"}>
       <TagsPanel />
+    </section>
+    <section class="panel-inner" hidden={ui.sidebarView !== "links"}>
+      <BrokenLinksPanel />
     </section>
   </div>
 </aside>

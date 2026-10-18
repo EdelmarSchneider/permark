@@ -7,6 +7,7 @@
   import { docs } from "../stores/docs.svelte";
   import { session } from "../stores/session.svelte";
   import { ui } from "../stores/ui.svelte";
+  import { quiet } from "../stores/quiet.svelte";
   import { unread } from "../stores/unread.svelte";
   import { vault } from "../stores/vault.svelte";
   import { baselineLabel } from "../time";
@@ -19,7 +20,10 @@
   const since = $derived(vault.since);
   const git = $derived(vault.git);
   const open = $derived(!ui.collapsedSections.has(SECTION));
-  const groups = $derived(since ? groupSince(since.files) : []);
+  const visible = $derived(
+    since ? since.files.filter((file) => !quiet.isQuiet(file.path)) : [],
+  );
+  const groups = $derived(groupSince(visible));
   const when = $derived(since?.sinceMs != null ? baselineLabel(since.sinceMs, clock.now) : null);
   const byFileTimes = $derived(!git?.isRepo || git.gitError !== null);
   const showHint = $derived(
@@ -41,8 +45,7 @@
     onclick={() => ui.toggleSection(SECTION)}
   >
     <Icon name="chevron-down" size="sm" class="twisty" />{t("since.title")}
-    {#if since && since.files.length > 0}<span class="count-pill" style="margin-left:4px"
-        >{since.files.length}</span
+    {#if visible.length > 0}<span class="count-pill" style="margin-left:4px">{visible.length}</span
       >{/if}
     {#if when}
       <span
@@ -78,7 +81,7 @@
       <p class="panel-note">{t("since.loading")}</p>
     {:else if since && since.sinceMs === null && since.files.length === 0}
       <p class="panel-note">{t("since.firstVisit")}</p>
-    {:else if since && since.files.length === 0}
+    {:else if since && visible.length === 0}
       <p class="panel-note">{t("since.nothing", { when: when ?? "" })}</p>
     {:else}
       {#if byFileTimes && when}

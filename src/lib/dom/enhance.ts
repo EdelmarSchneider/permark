@@ -435,6 +435,36 @@ async function loadMermaid(theme: "light" | "dark"): Promise<Mermaid> {
   return mermaidModule;
 }
 
+/**
+ * Draws `source` and returns its SVG, or null when Mermaid cannot draw it yet. Shares the queue and the cache with
+ * the reading view, so a preview and a document do not render at the same time.
+ */
+export function drawDiagram(source: string, theme: "light" | "dark"): Promise<string | null> {
+  const key = `${paletteKey(theme)}\u0000${source}`;
+  const cached = diagramCache.get(key);
+  if (cached !== undefined) return Promise.resolve(cached);
+  const job = mermaidQueue.then(async () => {
+    const id = `tm-mermaid-${++mermaidCounter}`;
+    try {
+      const mermaid = await loadMermaid(theme);
+      const { svg } = await mermaid.render(id, source);
+      if (diagramCache.size > 60) diagramCache.clear();
+      diagramCache.set(key, svg);
+      return svg;
+    } catch {
+      document.getElementById(id)?.remove();
+      return null;
+    } finally {
+      document.getElementById(`d${id}`)?.remove();
+    }
+  });
+  mermaidQueue = job.then(
+    () => undefined,
+    () => undefined,
+  );
+  return job;
+}
+
 /** Renders (or re-renders, after a theme change) the diagram held in `figure.dataset.source`. */
 export function renderDiagram(figure: HTMLElement, ctx: EnhanceContext): Promise<void> {
   const source = figure.dataset.source ?? "";

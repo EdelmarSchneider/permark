@@ -17,6 +17,7 @@
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::io;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -122,7 +123,7 @@ impl LinkPlan {
 // ---- paths ------------------------------------------------------------------------------------------
 
 /// `@wt/<name>/` and the rest, for a worktree path; `""` and the whole path otherwise.
-fn split_root(rel: &str) -> (&str, &str) {
+pub(crate) fn split_root(rel: &str) -> (&str, &str) {
     let Some(rest) = rel.strip_prefix(WORKTREE_PREFIX) else {
         return ("", rel);
     };
@@ -563,6 +564,66 @@ impl<'a> Planner<'a> {
         }
         None
     }
+}
+
+/// The destination token that points `dest` (as written in `text` of the document `doc`) at the
+/// vault-relative file `target`. The anchor, the query and the way the path was spelled stay.
+/// `None` when the destination is not a local path, `target` sits in another root, or the token
+/// would not change.
+pub(crate) fn destination_for(doc: &str, text: &str, dest: &Dest, target: &str) -> Option<String> {
+    let raw = dest.inner(text);
+    if dest.form == Form::Html && (raw.contains('&') || raw.trim() != raw) {
+        return None;
+    }
+    let (path_raw, suffix) = split_suffix(raw);
+    let path = unescape(path_raw);
+    if path.is_empty() || path.starts_with("//") || path.starts_with("\\\\") {
+        return None;
+    }
+    // `https:` stays external. `file:` and a Windows drive letter are local paths written absolutely.
+    if let Some(scheme) = scheme_of(&path) {
+        if scheme != "file" && scheme.len() != 1 {
+            return None;
+        }
+    }
+    let decoded = percent_decode(&path).replace('\\', "/");
+    let name = decoded
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(decoded.as_str());
+    let extless = !name.is_empty() && Path::new(name).extension().is_none();
+    let root_relative = scheme_of(&path).is_none()
+        && decoded.starts_with('/')
+        && path.as_bytes().get(1) != Some(&b':');
+
+    let (doc_root, doc_inner) = split_root(doc);
+    let (target_root, target_inner) = split_root(target);
+    if doc_root != target_root || target_inner.is_empty() {
+        return None;
+    }
+    let written = if extless && is_md(target_inner) {
+        strip_md(target_inner).to_owned()
+    } else {
+        target_inner.to_owned()
+    };
+    let rel = if root_relative {
+        format!("/{written}")
+    } else {
+        let mut dir = segments(doc_inner);
+        dir.pop();
+        relative_path(&dir, &segments(&written))
+    };
+    let (percent, percent_non_ascii) = percent_style(path.as_ref());
+    let style = Style {
+        form: dest.form,
+        percent,
+        percent_non_ascii,
+        backslash: path.contains('\\') && !path.contains('/'),
+        dot_slash: path.starts_with("./") || path.starts_with(".\\"),
+        trailing_slash: decoded.ends_with('/') && decoded.len() > 1,
+    };
+    let token = render_path(&rel, suffix, style);
+    (token != dest.raw(text)).then_some(token)
 }
 
 fn is_md(path: &str) -> bool {

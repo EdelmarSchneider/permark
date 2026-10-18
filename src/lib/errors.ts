@@ -121,6 +121,10 @@ const KIND_KEYS = {
   moveInside: "error.moveInside",
   notesNewer: "error.notesNewer",
   blockedType: "error.blockedType",
+  reviewStale: "error.reviewStale",
+  reviewNoBaseline: "error.reviewNoBaseline",
+  reviewOff: "error.reviewOff",
+  reviewConflict: "error.reviewConflict",
 } as const satisfies Record<string, MessageKey>;
 
 function field(error: Record<string, unknown>, name: string): string | undefined {

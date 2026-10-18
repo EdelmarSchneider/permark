@@ -129,7 +129,7 @@ impl AgentBridge {
             .map_err(|error| start_failure(&error))?;
         let file = lock(&self.agent_path)
             .clone()
-            .map(|path| ContextFile::start(path, WRITE_INTERVAL, self.hub.context()));
+            .map(|path| ContextFile::start(path, WRITE_INTERVAL, self.hub.context_with_comments()));
         Ok(Running {
             server: Some(server),
             file,
@@ -171,7 +171,11 @@ impl AgentBridge {
         match (path, running.file.as_ref()) {
             (Some(path), Some(file)) => file.relocate(path),
             (Some(path), None) => {
-                running.file = Some(ContextFile::start(path, WRITE_INTERVAL, self.hub.context()));
+                running.file = Some(ContextFile::start(
+                    path,
+                    WRITE_INTERVAL,
+                    self.hub.context_with_comments(),
+                ));
             }
             (None, _) => running.file = None,
         }
@@ -205,7 +209,7 @@ mod tests {
 
     use super::*;
     use crate::bridge::context::{Section, ViewMode};
-    use crate::bridge::hub::testing::Fake;
+    use crate::bridge::hub::testing::{comment, Fake};
     use crate::bridge::link::{Link, LinkError};
     use crate::bridge::protocol::{ErrorKind, Request};
     use crate::search::SearchHit;
@@ -265,10 +269,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_agent_reads_what_the_window_published() {
+    async fn an_agent_reads_what_the_window_published_and_how_many_comments_are_open() {
         let fx = fx("context", None);
         let status = fx.bridge.set_enabled(true);
         assert!(status.enabled && status.listening, "{status:?}");
+        *fx.fake.comments.lock().expect("lock") = vec![
+            comment("c1", "docs/plan.md", 5),
+            comment("c2", "docs/plan.md", 6),
+        ];
         fx.bridge.publish(AgentContext {
             document: Some("docs/plan.md".to_owned()),
             mode: Some(ViewMode::Reading),
@@ -288,6 +296,7 @@ mod tests {
         assert_eq!(result["section"]["headingPath"], json!(["Plan", "Rollout"]));
         assert_eq!(result["section"]["startLine"], 5);
         assert_eq!(result["unsaved"], false);
+        assert_eq!(result["openComments"], 2);
         fx.bridge.shutdown();
     }
 

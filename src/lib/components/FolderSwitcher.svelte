@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The menu on the project's name in the Explorer: the recent folders (this window's one marked), "Open folder...", and "Close
-  // folder". A folder's entry can be removed from the list (the folder itself is never touched). Opened from the Explorer and
-  // from the command "Switch folder..." (see `app.openFolderSwitcher`); it is mounted while `ui.folderSwitcher` is set.
+  // The Projects menu: recent folders (this window's one marked), New project, Open folder, and Close folder when a
+  // project is open. A folder's entry can be removed from the list (the folder itself is never touched). Opened from the
+  // Projects button and from "Switch folder..." (see `app.openFolderSwitcher`); mounted while `ui.folderSwitcher` is set.
   import { onMount, tick } from "svelte";
   import { switcherRows, type SwitcherRow } from "../folderSwitcher";
   import { keys, t } from "../i18n";
@@ -47,10 +47,10 @@
   }
 
   function choose(row: SwitcherRow): void {
-    // a folder that was not found cannot be switched to: only its entry can be removed
+    // a folder that was not found cannot be opened: only its entry can be removed
     if (row.missing) return;
     close();
-    if (!row.current) void app.switchFolder(row.root);
+    void app.placeProject(row.root);
   }
 
   /** The entries that are folders (the rest are the two actions). */
@@ -147,12 +147,11 @@
       data-item
       onclick={() => {
         close();
-        void app.chooseFolder();
+        void app.newProject();
       }}
     >
-      <Icon name="folder-open" size="sm" />
-      <span class="menu-item__label">{t("cmd.openFolder")}</span>
-      <span class="menu-item__hint">{keys("Ctrl+O")}</span>
+      <Icon name="folder-plus" size="sm" />
+      <span class="menu-item__label">{t("cmd.newProject")}</span>
     </button>
     <button
       type="button"
@@ -161,11 +160,27 @@
       data-item
       onclick={() => {
         close();
-        void app.closeFolder();
+        void app.chooseFolder();
       }}
     >
-      <Icon name="x" size="sm" />
-      <span class="menu-item__label">{t("cmd.closeFolder")}</span>
+      <Icon name="folder-open" size="sm" />
+      <span class="menu-item__label">{t("cmd.openFolder")}</span>
+      <span class="menu-item__hint">{keys("Ctrl+O")}</span>
     </button>
+    {#if app.screen === "project"}
+      <button
+        type="button"
+        class="menu-item"
+        role="menuitem"
+        data-item
+        onclick={() => {
+          close();
+          void app.closeFolder();
+        }}
+      >
+        <Icon name="x" size="sm" />
+        <span class="menu-item__label">{t("cmd.closeFolder")}</span>
+      </button>
+    {/if}
   </div>
 </Popover>

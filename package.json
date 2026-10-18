@@ -1,6 +1,6 @@
 {
   "name": "permark",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "Read what your AI writes. Write what it reads. A free, open-source Markdown app.",
   "license": "MIT OR Apache-2.0",
   "author": "Edelmar Schneider",
@@ -37,6 +37,7 @@
     "vitest": "^5.0.4"
   },
   "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.11.1",
     "@codemirror/lang-markdown": "^6.5.2",
     "@codemirror/lang-yaml": "^6.1.3",

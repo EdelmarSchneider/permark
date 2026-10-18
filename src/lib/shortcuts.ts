@@ -14,6 +14,7 @@ export const SHORTCUT_ACTIONS = [
   "searchAll",
   "explorer",
   "tagsView",
+  "brokenLinks",
   "editTags",
   "addComment",
   "edit",
@@ -121,6 +122,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "explorer";
       case "t":
         return "tagsView";
+      case "b":
+        return "brokenLinks";
       case "p":
         return "commands";
       case "l":
@@ -177,6 +180,35 @@ export type NotesShortcut =
  * `Ctrl+1` to `Ctrl+9` jump to the pinned notes, `Ctrl+Tab` and `Ctrl+Shift+Tab` go to the next and the previous note, `F2`
  * renames the open one. Only the Notes window reads these.
  */
+/** Keys that only apply while a review of changes is open. They are not part of the global shortcut map. */
+export type ReviewKey =
+  "next" | "prev" | "keep" | "revert" | "keepAll" | "revertAll" | "close" | "undo";
+
+/**
+ * N/P and F7 move, K/R keep or revert, Shift+K/Shift+R do them all, Esc closes, Ctrl+Z undoes.
+ * A letter with Ctrl or Alt is left alone (those belong to the rest of the app).
+ */
+export function matchReviewKey(e: KeyInfo): ReviewKey | null {
+  if (e.altKey || e.metaKey) return null;
+  if (e.ctrlKey) {
+    if (!e.shiftKey && e.key.toLowerCase() === "z") return "undo";
+    return null;
+  }
+  if (e.key === "Escape" && !e.shiftKey) return "close";
+  if (e.key === "F7") return e.shiftKey ? "prev" : "next";
+  const key = e.key.toLowerCase();
+  if (e.shiftKey) {
+    if (key === "k") return "keepAll";
+    if (key === "r") return "revertAll";
+    return null;
+  }
+  if (key === "n") return "next";
+  if (key === "p") return "prev";
+  if (key === "k") return "keep";
+  if (key === "r") return "revert";
+  return null;
+}
+
 export function matchNotesShortcut(e: KeyInfo): NotesShortcut | null {
   const mod = e.ctrlKey || e.metaKey === true;
   if (!e.altKey && !e.shiftKey && !mod && e.key === "F2") return { kind: "rename" };

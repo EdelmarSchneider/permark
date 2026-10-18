@@ -18,3 +18,16 @@
 .tree-row--dir.has-unread .tree-name {
   font-weight: 600;
 }
+
+/* A silenced row stays in the tree and reads as quieter, in both themes. The mark itself stays solid. */
+.tree-row.is-quiet .tree-name,
+.tree-row.is-quiet .file-icon,
+.tree-row.is-quiet .twisty {
+  opacity: 0.55;
+}
+.tree-row .quiet-mark {
+  display: inline-flex;
+  flex: none;
+  margin-left: 4px;
+  color: var(--muted);
+}
