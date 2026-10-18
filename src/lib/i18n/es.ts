@@ -1002,6 +1002,7 @@ export const es = {
   "toolbar.more": "Más formato",
   "slash.label": "Insertar un bloque",
   "slash.empty": "Ningún bloque coincide",
+  "complete.label": "Sugerencias",
   "link.edit": "Enlace",
   "link.text": "Texto",
   "link.target": "Enlace a",

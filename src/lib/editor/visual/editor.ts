@@ -16,6 +16,7 @@ import { SELECTION_READ_LIMIT, type SelectedText } from "../../agentContext";
 import type { HeadingInfo } from "../../outline";
 import { currentHeading } from "../../outline";
 import { joinBlockMap, type BlockMap } from "../blockModel";
+import { collectWords, wordAt, type CompleteItem } from "../complete";
 import { codeHighlight } from "./codeHighlight";
 import { showsAtTop, watchViewport } from "../viewport";
 import {
@@ -38,6 +39,15 @@ import { appPlugins, type PluginHost } from "./plugins";
 /** The slash menu is open: what has been typed after the `/`, and where the caret is on screen. */
 export type SlashState = { query: string; rect: DOMRect | null };
 
+/** A word completion is open: the range to replace, and the words that continue it. */
+export type CompleteState = {
+  query: string;
+  from: number;
+  to: number;
+  rect: DOMRect | null;
+  items: CompleteItem[];
+};
+
 /** What Visual mode tells the rest of the app. */
 export type VisualHandlers = {
   /** The document or the selection changed: read `status()` and `format()` again. */
@@ -52,6 +62,15 @@ export type VisualHandlers = {
   slash(state: SlashState | null): void;
   /** The slash menu is open and wants this key (Up, Down, Enter). */
   slashKey(key: string): boolean;
+  /** The word menu opened, changed, or closed (null). */
+  complete?(state: CompleteState | null): void;
+  /** The word menu is open and wants this key (Up, Down, Enter). */
+  completeKey?(key: string): boolean;
+  /**
+   * Words that continue `query`. Absent in tests: nothing is offered while typing. The list is asked only when the
+   * text changed, so moving the caret does not open it.
+   */
+  suggestions?(query: string): CompleteItem[];
 };
 
 export type VisualEditorOptions = {
@@ -113,6 +132,12 @@ export class VisualEditor {
   private readonly headingCache = new WeakMap<PMNode, DocHeading[]>();
   private slashOpen = false;
   private slashDismissed = false;
+  private completeOpen = false;
+  /** The query Esc closed, so the same word does not open the list again until it changes. */
+  private completeDismissed: string | null = null;
+  /** The document already seen, so the text a document opens with does not pop the list. */
+  private seenDoc: PMNode | null = null;
+  private wordCache: { doc: PMNode; words: string[] } | null = null;
   private destroyed = false;
 
   private constructor(
@@ -129,6 +154,8 @@ export class VisualEditor {
       link: () => options.handlers.link(),
       editInSource: (block) => options.handlers.editInSource(block),
       slashKey: (key) => editor?.slashOpen === true && options.handlers.slashKey(key),
+      completeKey: (key) =>
+        editor?.completeOpen === true && (options.handlers.completeKey?.(key) ?? false),
     };
     const core = await createCore({
       host: options.host,
@@ -588,6 +615,42 @@ export class VisualEditor {
     if (this.slashOpen) this.slashDismissed = true;
   }
 
+  /** Words of the document, code left out, cached for the document currently shown. */
+  documentWords(): string[] {
+    const doc = this.core.view.state.doc;
+    if (this.wordCache?.doc === doc) return this.wordCache.words;
+    const parts: string[] = [];
+    doc.descendants((node) => {
+      if (node.type.name === "code_block") return false;
+      if (
+        node.isText &&
+        node.text &&
+        !node.marks.some((mark) => mark.type.name === "code" || mark.type.name === "inlineCode")
+      ) {
+        parts.push(node.text);
+      }
+      return true;
+    });
+    const words = collectWords(parts.join(" "));
+    this.wordCache = { doc, words };
+    return words;
+  }
+
+  /** Replaces the word the list was offering. */
+  applyComplete(from: number, to: number, text: string): void {
+    const { view } = this.core;
+    const max = view.state.doc.content.size;
+    if (from < 0 || to > max || from > to) return;
+    view.dispatch(view.state.tr.insertText(text, from, to).scrollIntoView());
+    view.focus();
+  }
+
+  /** The person closed the word list with Esc: the same letters do not open it again. */
+  dismissComplete(query: string): void {
+    this.completeDismissed = query;
+    this.completeOpen = false;
+  }
+
   insertImage(src: string, alt = ""): boolean {
     return insertImage(this.core, src, alt);
   }
@@ -637,14 +700,69 @@ export class VisualEditor {
     else view.focus();
   }
 
+  /** The word before the caret, when the document has something that continues it. */
+  private completeState(view: EditorView): CompleteState | null {
+    if (!this.options.handlers.suggestions) return null;
+    const { selection } = view.state;
+    if (!selection.empty) return null;
+    const { $from } = selection;
+    const parent = $from.parent;
+    if (parent.type.name === "code_block") return null;
+    if (
+      $from.marks().some((mark) => mark.type.name === "code" || mark.type.name === "inlineCode")
+    ) {
+      return null;
+    }
+    const start = Math.max(0, $from.parentOffset - 64);
+    const before = parent.textBetween(start, $from.parentOffset, "\0", "\0");
+    const after = parent.textBetween(
+      $from.parentOffset,
+      Math.min(parent.content.size, $from.parentOffset + 64),
+      "\0",
+      "\0",
+    );
+    const word = wordAt(before, after);
+    if (!word) return null;
+    const items = this.options.handlers.suggestions(word.query);
+    if (items.length === 0) return null;
+    let rect: DOMRect | null = null;
+    try {
+      const at = view.coordsAtPos($from.pos);
+      rect = new DOMRect(at.left, at.top, 1, at.bottom - at.top);
+    } catch {
+      // no layout (tests): the menu has nowhere to go, the state is still right
+    }
+    return {
+      query: word.query,
+      from: $from.pos - word.before,
+      to: $from.pos + word.after,
+      rect,
+      items,
+    };
+  }
+
   private viewUpdated(view: EditorView): void {
     if (this.destroyed) return;
     let slash = this.slashState(view);
     if (slash === null) this.slashDismissed = false;
     else if (this.slashDismissed) slash = null;
-    const was = this.slashOpen;
+    const wasSlash = this.slashOpen;
     this.slashOpen = slash !== null;
-    if (slash || was) this.options.handlers.slash(slash);
+    if (slash || wasSlash) this.options.handlers.slash(slash);
+
+    const docChanged = view.state.doc !== this.seenDoc;
+    const first = this.seenDoc === null;
+    this.seenDoc = view.state.doc;
+    // A caret move does not look for words unless a list is already open (then the move closes it).
+    const found = slash || (!docChanged && !this.completeOpen) ? null : this.completeState(view);
+    if (docChanged && !found) this.completeDismissed = null;
+    let complete = docChanged && !first ? found : null;
+    if (complete && this.completeDismissed === found?.query) complete = null;
+    const wasComplete = this.completeOpen;
+    this.completeOpen = complete !== null;
+    if ((complete || wasComplete) && this.options.handlers.complete) {
+      this.options.handlers.complete(complete);
+    }
     this.options.handlers.changed();
   }
 

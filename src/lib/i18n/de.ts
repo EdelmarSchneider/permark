@@ -1010,6 +1010,7 @@ export const de = {
   "toolbar.more": "Weitere Formatierung",
   "slash.label": "Block einfügen",
   "slash.empty": "Kein Block passt",
+  "complete.label": "Vorschläge",
   "link.edit": "Link",
   "link.text": "Text",
   "link.target": "Link zu",

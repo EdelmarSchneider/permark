@@ -22,6 +22,8 @@ export type PluginHost = {
   editInSource(block: number | null): void;
   /** The slash menu is open and wants this key. Resolves to whether it took it. */
   slashKey(key: string): boolean;
+  /** The word menu is open and wants this key. Resolves to whether it took it. */
+  completeKey(key: string): boolean;
 };
 
 const isEmptyParagraph = (node: PMNode): boolean =>
@@ -165,7 +167,7 @@ export function appPlugins(host: PluginHost) {
             // an input method that is composing text keeps its Enter and arrow keys
             if (composing(event, view)) return false;
             if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return false;
-            return host.slashKey(event.key);
+            return host.slashKey(event.key) || host.completeKey(event.key);
           },
         },
       }),

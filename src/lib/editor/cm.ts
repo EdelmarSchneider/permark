@@ -3,7 +3,8 @@
 
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { EditorSelection, EditorState, type Extension, type Text } from "@codemirror/state";
+import { acceptCompletion, autocompletion, type CompletionSource } from "@codemirror/autocomplete";
+import { EditorSelection, EditorState, Prec, type Extension, type Text } from "@codemirror/state";
 import {
   EditorView,
   drawSelection,
@@ -16,6 +17,14 @@ import { tags } from "@lezer/highlight";
 import { SELECTION_READ_LIMIT } from "../agentContext";
 import type { SourceApi } from "../bridge";
 import { currentHeading } from "../outline";
+import {
+  contextAt,
+  fileWords,
+  linkSuggestions,
+  suggestWords,
+  wordsOf,
+  type CompleteItem,
+} from "./complete";
 import { imageMarkdown } from "./imageName";
 import { sourceHeadings, sourceLanguage, type SourceHeading } from "./sourceHeadings";
 import { showsAtTop, watchViewport } from "./viewport";
@@ -114,6 +123,37 @@ function imageFiles(list: FileList | undefined | null): File[] {
   return Array.from(list ?? []);
 }
 
+/** Files of the open folder, and the document being edited, so completions can name them. */
+export type SourceComplete = {
+  files(): readonly string[];
+  path(): string;
+};
+
+function optionOf(item: CompleteItem) {
+  return { label: item.label, detail: item.detail || undefined, apply: item.insert };
+}
+
+function completionSource(complete: SourceComplete | undefined): CompletionSource {
+  return (context) => {
+    const at = contextAt(context.state.doc.toString(), context.pos, context.explicit);
+    if (!at) return null;
+    const files = complete?.files() ?? [];
+    const path = complete?.path() ?? "";
+    const items =
+      at.kind === "link"
+        ? linkSuggestions(at.query, {
+            fromFile: path,
+            files,
+            headings: sourceHeadings(context.state).headings.map((heading) => heading.text),
+            wrap: true,
+            bracketed: at.bracketed,
+          })
+        : suggestWords(at.query, [...wordsOf(context.state.doc.toString()), ...fileWords(files)]);
+    if (items.length === 0) return null;
+    return { from: at.from, to: at.to, options: items.map(optionOf) };
+  };
+}
+
 export function createSourceView(
   parent: HTMLElement,
   text: string,
@@ -122,6 +162,7 @@ export function createSourceView(
   handlers: SourceHandlers,
   caretAtEnd = false,
   topLine?: number,
+  complete?: SourceComplete,
 ): SourceView {
   const extensions: Extension[] = [
     lineNumbers(),
@@ -136,6 +177,9 @@ export function createSourceView(
     EditorState.allowMultipleSelections.of(false),
     EditorView.contentAttributes.of({ "aria-label": label, "aria-multiline": "true" }),
     formatKeymap,
+    autocompletion({ override: [completionSource(complete)], icons: false, maxRenderedOptions: 8 }),
+    // Tab accepts a suggestion when the list is open, and otherwise keeps its usual meaning.
+    Prec.high(keymap.of([{ key: "Tab", run: acceptCompletion }])),
     keymap.of([...defaultKeymap, ...historyKeymap]),
     theme,
     EditorView.updateListener.of((update) => {

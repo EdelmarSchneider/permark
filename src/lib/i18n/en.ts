@@ -982,6 +982,7 @@ export const en = {
   "toolbar.more": "More formatting",
   "slash.label": "Insert a block",
   "slash.empty": "No block matches",
+  "complete.label": "Suggestions",
   "link.edit": "Link",
   "link.text": "Text",
   "link.target": "Link to",

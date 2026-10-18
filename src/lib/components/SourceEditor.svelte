@@ -9,6 +9,7 @@
   import { basename } from "../paths";
   import { edit } from "../stores/edit.svelte";
   import { outline } from "../stores/outline.svelte";
+  import { vault } from "../stores/vault.svelte";
   import DiagramPreview from "./DiagramPreview.svelte";
   import Notice from "./Notice.svelte";
 
@@ -51,6 +52,7 @@
           },
           start.atEnd === true,
           start.top,
+          { files: () => vault.files, path: () => edit.path ?? "" },
         );
         look();
         bridge.editor = view;

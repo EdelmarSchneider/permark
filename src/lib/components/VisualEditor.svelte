@@ -6,7 +6,8 @@
   import { enhanceContextFor } from "../dom/enhanceContext";
   import { createLockedHost, type LockedHostHandle } from "../editor/lockedHost";
   import { EditorOutline } from "../editor/outlineSync";
-  import type { SlashState, VisualEditor } from "../editor/visual/editor";
+  import { fileWords, suggestWords, type CompleteItem } from "../editor/complete";
+  import type { CompleteState, SlashState, VisualEditor } from "../editor/visual/editor";
   import { NO_FORMAT, type CommandId, type FormatState } from "../editor/visual/format";
   import type { LinkTarget } from "../editor/visual/link";
   import type { SlashItem } from "../editor/visual/toolbarModel";
@@ -17,12 +18,14 @@
   import { edit } from "../stores/edit.svelte";
   import { outline } from "../stores/outline.svelte";
   import { session } from "../stores/session.svelte";
+  import { vault } from "../stores/vault.svelte";
   import { tone } from "../stores/toneChoice.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import LinkPopover from "./LinkPopover.svelte";
   import Notice from "./Notice.svelte";
   import type { Anchor } from "./Popover.svelte";
   import SlashMenu, { type SlashApi } from "./SlashMenu.svelte";
+  import SuggestMenu, { type SuggestApi } from "./SuggestMenu.svelte";
 
   let host: HTMLElement | undefined = $state();
   let ready = $state(false);
@@ -32,6 +35,9 @@
   let format = $state.raw<FormatState>(NO_FORMAT);
   let slash = $state.raw<SlashState | null>(null);
   let slashApi = $state<SlashApi | undefined>();
+  let completing = $state.raw<CompleteState | null>(null);
+  let suggestApi = $state<SuggestApi | undefined>();
+  let linkHeadings = $state<string[]>([]);
   let link = $state.raw<{ anchor: Anchor; target: LinkTarget } | null>(null);
   let fileInput: HTMLInputElement | undefined = $state();
   let scroller: HTMLElement | undefined = $state();
@@ -65,6 +71,7 @@
     if (!editor || format.atom) return;
     const rect = editor.caretRect() ?? host?.getBoundingClientRect() ?? null;
     if (!rect) return;
+    linkHeadings = editor.headings().map((heading) => heading.text);
     link = { anchor: rect, target: editor.linkTarget() };
   }
 
@@ -82,6 +89,22 @@
   function closeSlash(): void {
     editor?.dismissSlash();
     slash = null;
+  }
+
+  function suggestions(query: string): CompleteItem[] {
+    return suggestWords(query, [...(editor?.documentWords() ?? []), ...fileWords(vault.files)]);
+  }
+
+  function pickComplete(item: CompleteItem): void {
+    const current = completing;
+    completing = null;
+    if (current) editor?.applyComplete(current.from, current.to, item.insert);
+  }
+
+  function closeComplete(): void {
+    const query = completing?.query ?? "";
+    editor?.dismissComplete(query);
+    completing = null;
   }
 
   function onFiles(e: Event): void {
@@ -148,6 +171,9 @@
             link: openLink,
             slash: (state) => (slash = state),
             slashKey: (key) => slashApi?.key(key) ?? false,
+            complete: (state) => (completing = state),
+            completeKey: (key) => suggestApi?.key(key) ?? false,
+            suggestions,
           },
         });
         if (gone) {
@@ -232,11 +258,20 @@
 {#if slash}
   <SlashMenu {slash} bind:api={slashApi} onpick={pickSlash} onclose={closeSlash} />
 {/if}
+{#if completing}
+  <SuggestMenu
+    completion={completing}
+    bind:api={suggestApi}
+    onpick={pickComplete}
+    onclose={closeComplete}
+  />
+{/if}
 {#if link}
   <LinkPopover
     anchor={link.anchor}
     target={link.target}
     docPath={edit.path ?? ""}
+    headings={linkHeadings}
     onapply={(next) => {
       if (link) editor?.applyLink(link.target, next);
       closeLink();

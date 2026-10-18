@@ -951,6 +951,7 @@ export const zhCN = {
   "toolbar.more": "更多格式",
   "slash.label": "插入块",
   "slash.empty": "没有匹配的块",
+  "complete.label": "建议",
   "link.edit": "链接",
   "link.text": "文本",
   "link.target": "链接到",
