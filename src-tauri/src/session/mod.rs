@@ -29,7 +29,7 @@ pub(crate) use private::{
 };
 pub use recent::{RecentStore, RecentVault};
 pub(crate) use store::project_key;
-pub use store::{FileStamp, LastVisit, StateLocation, StateStore};
+pub use store::{seed_new_project, FileStamp, LastVisit, StateLocation, StateStore};
 pub use window::{saved_for_launch, WindowState};
 
 #[derive(Debug, thiserror::Error)]

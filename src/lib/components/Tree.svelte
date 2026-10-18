@@ -247,6 +247,17 @@
     const isRoot = isRootPath(node.path);
     const folder = isFile ? dirname(node.path) : node.path;
     return [
+      ...(isFile
+        ? []
+        : ([
+            {
+              id: "openAsProject",
+              label: t("menu.openAsProject"),
+              icon: "folder-open",
+              onselect: () => void app.placeProject(node.path),
+            },
+            { type: "separator" },
+          ] satisfies MenuEntry[])),
       {
         id: "new",
         label: t("newFile.newFile"),

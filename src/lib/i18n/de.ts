@@ -28,6 +28,12 @@ export const de = {
   "copy.failed": "Kopieren in die Zwischenablage nicht möglich.",
   "dialog.filter.docs": "Dokumente",
   "dialog.openFolder": "Ordner öffnen",
+  "dialog.newProject": "Neues Projekt",
+  "dialog.windowTitle": "Wo soll dieser Ordner aufgehen?",
+  "dialog.windowBody":
+    "Dieses Fenster ersetzt den offenen Ordner. Ein neues Fenster lässt dieses, wie es ist.",
+  "dialog.windowHere": "Dieses Fenster",
+  "dialog.windowNew": "Neues Fenster",
   "dialog.openFile": "Datei öffnen",
 
   // ---- welcome
@@ -45,6 +51,7 @@ export const de = {
 
   // ---- activity bar and panels
   "activity.label": "Ansichten",
+  "activity.projects": "Projekte",
   "activity.explorer": "Explorer (Strg+Umschalt+X)",
   "activity.search": "Alle Dokumente durchsuchen (Strg+Umschalt+F)",
   "activity.tags": "Tags (Strg+Umschalt+T)",
@@ -100,8 +107,10 @@ export const de = {
   "explorer.worktreeCount.one": "{n} Worktree",
   "explorer.worktreeCount.other": "{n} Worktrees",
   "switcher.label": "{name}: Ordner wechseln",
-  "switcher.hint": "Zu einem anderen Ordner wechseln, einen öffnen oder diesen schließen",
-  "switcher.menu": "Ordner",
+  "switcher.hint": "Letzte Ordner, ein neues Projekt oder ein anderer Ordner",
+  "switcher.menu": "Projekte",
+  "projects.existed": "Dieses Projekt gab es schon. Es wird so geöffnet, wie es ist.",
+  "projects.seedFailed": "Der Projektordner konnte nicht erstellt werden: {message}",
   "switcher.noOthers": "Noch keine weiteren zuletzt geöffneten Ordner.",
   "switcher.remove": "{name} aus den zuletzt geöffneten Ordnern entfernen",
   "switcher.removeHint":
@@ -162,6 +171,7 @@ export const de = {
   "menu.openExternal": "In externem Editor öffnen",
   "menu.openDefaultApp": "Mit Standard-App öffnen",
   "menu.openInBrowser": "Im Browser öffnen",
+  "menu.openAsProject": "Als Projekt öffnen",
   "menu.showInFileManager": "Im Dateimanager anzeigen",
   "menu.openFolder": "Übergeordneten Ordner öffnen",
   "menu.reveal": "Im Baum anzeigen",
@@ -341,6 +351,7 @@ export const de = {
 
   // ---- Befehle (der Bereich Befehle der Suche überall)
   "cmd.openFolder": "Ordner öffnen ...",
+  "cmd.newProject": "Neues Projekt ...",
   "cmd.openFile": "Datei öffnen ...",
   "cmd.switchFolder": "Ordner wechseln ...",
   "cmd.closeFolder": "Ordner schließen",

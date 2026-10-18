@@ -27,6 +27,12 @@ export const es = {
   "copy.failed": "No se pudo copiar al portapapeles.",
   "dialog.filter.docs": "Documentos",
   "dialog.openFolder": "Abrir carpeta",
+  "dialog.newProject": "Nuevo proyecto",
+  "dialog.windowTitle": "¿Dónde se abre esta carpeta?",
+  "dialog.windowBody":
+    "Esta ventana sustituye la carpeta abierta. Una ventana nueva deja esta como está.",
+  "dialog.windowHere": "Esta ventana",
+  "dialog.windowNew": "Ventana nueva",
   "dialog.openFile": "Abrir archivo",
 
   // ---- welcome
@@ -44,6 +50,7 @@ export const es = {
 
   // ---- activity bar and panels
   "activity.label": "Vistas",
+  "activity.projects": "Proyectos",
   "activity.explorer": "Explorador (Ctrl+Mayús+X)",
   "activity.search": "Buscar en todos los docs (Ctrl+Mayús+F)",
   "activity.tags": "Etiquetas (Ctrl+Mayús+T)",
@@ -99,8 +106,10 @@ export const es = {
   "explorer.worktreeCount.one": "{n} worktree",
   "explorer.worktreeCount.other": "{n} worktrees",
   "switcher.label": "{name}: cambiar de carpeta",
-  "switcher.hint": "Cambiar a otra carpeta, abrir una o cerrar esta",
-  "switcher.menu": "Carpetas",
+  "switcher.hint": "Carpetas recientes, un proyecto nuevo u otra carpeta",
+  "switcher.menu": "Proyectos",
+  "projects.existed": "Ese proyecto ya existía. Se abrirá tal como está.",
+  "projects.seedFailed": "No se pudo crear la carpeta del proyecto: {message}",
   "switcher.noOthers": "Aún no hay otras carpetas recientes.",
   "switcher.remove": "Quitar {name} de las carpetas recientes",
   "switcher.removeHint": "Solo la lista la olvida. La carpeta y sus archivos siguen donde están.",
@@ -160,6 +169,7 @@ export const es = {
   "menu.openExternal": "Abrir en un editor externo",
   "menu.openDefaultApp": "Abrir con la aplicación predeterminada",
   "menu.openInBrowser": "Abrir en el navegador",
+  "menu.openAsProject": "Abrir como proyecto",
   "menu.showInFileManager": "Mostrar en el administrador de archivos",
   "menu.openFolder": "Abrir la carpeta contenedora",
   "menu.reveal": "Mostrar en el árbol",
@@ -338,6 +348,7 @@ export const es = {
 
   // ---- comandos (el ámbito Comandos de buscar en todo)
   "cmd.openFolder": "Abrir carpeta...",
+  "cmd.newProject": "Nuevo proyecto...",
   "cmd.openFile": "Abrir archivo...",
   "cmd.switchFolder": "Cambiar de carpeta...",
   "cmd.closeFolder": "Cerrar carpeta",

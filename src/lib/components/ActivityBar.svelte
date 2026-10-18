@@ -14,6 +14,17 @@
 <nav class="activitybar" aria-label={t("activity.label")}>
   <IconButton
     class="ab-btn"
+    icon="folder"
+    label={t("activity.projects")}
+    hint={t("switcher.hint")}
+    pressed={ui.folderSwitcher !== null}
+    data-projects
+    data-popover-trigger
+    onclick={(e) =>
+      void app.openFolderSwitcher((e.currentTarget as HTMLElement).getBoundingClientRect())}
+  />
+  <IconButton
+    class="ab-btn"
     icon="files"
     label={t("activity.explorer")}
     pressed={ui.sidebarView === "explorer" && session.left.open}

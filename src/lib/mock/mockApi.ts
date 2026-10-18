@@ -242,6 +242,8 @@ export const mockImpl: Api = {
   },
   // `docs/design/wireframes.md` embeds it from another folder
   referencedImages: async () => ["docs/images/pipeline.svg"],
+  seedProject: async () => true,
+  openProjectWindow: async () => {},
   initProjectFolder: async () => {
     await wait(400);
     stateLocation = "project";
