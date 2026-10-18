@@ -364,6 +364,34 @@ export type MoveOutcome = {
   skipped: SkippedFile[];
 };
 export type DeleteOutcome = { deleted: string[] };
+/** One link, image or reference definition whose file is not in the project. */
+export type BrokenLink = {
+  path: string;
+  /** 1-based line of the destination. */
+  line: number;
+  /** Byte range of the destination token. */
+  start: number;
+  end: number;
+  /** The destination as written. */
+  written: string;
+  /** Files with the name this link asks for. */
+  repairs: string[];
+};
+/** Every broken link of the open folder. The list stops at a couple of thousand; `total` does not. */
+export type BrokenReport = {
+  links: BrokenLink[];
+  total: number;
+  truncated: boolean;
+  /** Documents that were too large, not text, or unreadable. */
+  skipped: number;
+};
+export type RepairStatus = "repaired" | "stale" | "notAMatch";
+/** A repair. `buffer` is the change for an unsaved editor; `opId` undoes a write to disk. */
+export type RepairOutcome = {
+  status: RepairStatus;
+  opId: number | null;
+  buffer: BufferEdits | null;
+};
 export type CreatedFolder = { opId: number; path: string };
 export type UndoOutcome = {
   movedBack: Move[];

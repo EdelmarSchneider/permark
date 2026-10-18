@@ -51,6 +51,7 @@ import { editorCommand } from "./editorCommand.svelte";
 import { feed } from "./feed.svelte";
 import { fileops } from "./fileops.svelte";
 import { filter } from "./filter.svelte";
+import { brokenLinks } from "./brokenLinks.svelte";
 import { comments } from "./comments.svelte";
 import { review } from "./review.svelte";
 import { notes } from "./notes.svelte";
@@ -686,6 +687,7 @@ class AppStore {
     const update = feed.apply(batch, now);
     if (batch.rescan) void vault.refreshTree();
     tags.onFilesChanged();
+    brokenLinks.filesChanged();
     comments.filesChanged(batch);
 
     const docChanged = update.bulk !== null || update.files.some((f) => f.isDoc);
@@ -965,6 +967,14 @@ class AppStore {
     void tags.refreshFiles();
   }
 
+  showLinks(): void {
+    if (vault.isSimple) return;
+    ui.sidebarView = "links";
+    if (!session.left.open) session.setPanel("left", { open: true });
+    ui.linksFocusTick++;
+    void brokenLinks.refresh();
+  }
+
   /** A tag chip was clicked: the Tags view, showing the files with that tag. */
   showTagsFor(tag: string): void {
     if (vault.isSimple) return;
@@ -974,13 +984,14 @@ class AppStore {
   }
 
   /** Activity bar: switch the sidebar view, or collapse the sidebar when its view is already showing. */
-  clickView(view: "explorer" | "search" | "tags"): void {
+  clickView(view: "explorer" | "search" | "tags" | "links"): void {
     if (ui.sidebarView === view && session.left.open) {
       session.setPanel("left", { open: false });
       return;
     }
     if (view === "search") this.showSearch();
     else if (view === "tags") this.showTags();
+    else if (view === "links") this.showLinks();
     else this.showExplorer();
   }
 
@@ -1253,6 +1264,8 @@ class AppStore {
         return this.showExplorer();
       case "tagsView":
         return this.showTags();
+      case "brokenLinks":
+        return this.showLinks();
       case "editTags":
         if (ide && docs.current && !edit.active) ui.openTagEditor();
         return;

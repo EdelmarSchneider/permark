@@ -1341,8 +1341,10 @@ export const itIT = {
   "review.undone": "Annullato",
   "review.undoStale": "Impossibile annullare: {name} è cambiato dopo.",
   "review.allDone": "Tutte le modifiche sono state riviste",
-  "review.stale": "{name} è cambiato durante la revisione. La revisione è aggiornata; non è stato scritto nulla.",
-  "review.noBaseline": "La versione precedente non è stata conservata, quindi le modifiche non si possono mostrare. Si potranno rivedere dal prossimo cambiamento.",
+  "review.stale":
+    "{name} è cambiato durante la revisione. La revisione è aggiornata; non è stato scritto nulla.",
+  "review.noBaseline":
+    "La versione precedente non è stata conservata, quindi le modifiche non si possono mostrare. Si potranno rivedere dal prossimo cambiamento.",
   "review.tooLarge": "Questo documento è troppo grande da confrontare (oltre 2 MB).",
   "review.restore": "Ripristina",
   "review.restored": "{name} ripristinato",
@@ -1362,8 +1364,31 @@ export const itIT = {
   "cmd.reviewKeepAll": "Tieni tutte le modifiche",
   "cmd.reviewRevertAll": "Annulla tutte le modifiche",
   "header.reviewChanges": "Rivedi le modifiche",
-  "error.reviewStale": "{subject} è cambiato durante la revisione. La revisione è aggiornata; non è stato scritto nulla.",
-  "error.reviewNoBaseline": "La versione approvata di {subject} non è stata conservata, quindi non si può mostrare né ripristinare.",
+  "error.reviewStale":
+    "{subject} è cambiato durante la revisione. La revisione è aggiornata; non è stato scritto nulla.",
+  "error.reviewNoBaseline":
+    "La versione approvata di {subject} non è stata conservata, quindi non si può mostrare né ripristinare.",
   "error.reviewOff": "Qui le modifiche non si rivedono (note e file singoli).",
-  "error.reviewConflict": "Quella modifica non si può tenere o annullare da sola in {subject}. Usa Tieni tutte o Annulla tutte.",
+  "error.reviewConflict":
+    "Quella modifica non si può tenere o annullare da sola in {subject}. Usa Tieni tutte o Annulla tutte.",
+
+  "activity.links": "Link interrotti (Ctrl+Maiusc+B)",
+  "cmd.brokenLinks": "Mostra link interrotti",
+  "links.title": "Link interrotti",
+  "links.looking": "Controllo i documenti…",
+  "links.empty": "Nessun link interrotto",
+  "links.summary.one": "{n} link interrotto",
+  "links.summary.other": "{n} link interrotti",
+  "links.skipped.one": "{n} documento non è stato controllato",
+  "links.skipped.other": "{n} documenti non sono stati controllati",
+  "links.truncated": "Mostro i primi {n}",
+  "links.repair": "Ripara",
+  "links.repairHint": "Punta questo link a {path}",
+  "links.noMatch": "Nessun file con questo nome",
+  "links.openHint": "Apri alla riga {line}",
+  "links.repaired": "Il link ora punta a {path}",
+  "links.stale": "Quel link è cambiato. L'elenco è stato aggiornato.",
+  "links.unsaved": "Salva prima {name}. Ha modifiche non salvate.",
+  "links.failed": "Non è stato possibile riparare il link.",
+  "links.refresh": "Controlla di nuovo",
 } satisfies Messages;

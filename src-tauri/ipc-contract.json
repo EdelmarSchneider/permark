@@ -51,6 +51,8 @@
     "create_document": ["path", "text"],
     "write_asset": ["doc_path", "name_hint", "data"],
     "preview_move": ["moves", "scan_links", "held_back"],
+    "broken_links": ["buffers"],
+    "repair_link": ["path", "start", "end", "target", "buffer"],
     "apply_move": ["plan_id", "update_links", "buffers"],
     "delete_entries": ["paths"],
     "new_folder": ["path"],

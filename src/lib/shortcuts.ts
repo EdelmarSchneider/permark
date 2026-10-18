@@ -14,6 +14,7 @@ export const SHORTCUT_ACTIONS = [
   "searchAll",
   "explorer",
   "tagsView",
+  "brokenLinks",
   "editTags",
   "addComment",
   "edit",
@@ -121,6 +122,8 @@ export function matchShortcut(e: KeyInfo): ShortcutAction | null {
         return "explorer";
       case "t":
         return "tagsView";
+      case "b":
+        return "brokenLinks";
       case "p":
         return "commands";
       case "l":
@@ -179,14 +182,7 @@ export type NotesShortcut =
  */
 /** Keys that only apply while a review of changes is open. They are not part of the global shortcut map. */
 export type ReviewKey =
-  | "next"
-  | "prev"
-  | "keep"
-  | "revert"
-  | "keepAll"
-  | "revertAll"
-  | "close"
-  | "undo";
+  "next" | "prev" | "keep" | "revert" | "keepAll" | "revertAll" | "close" | "undo";
 
 /**
  * N/P and F7 move, K/R keep or revert, Shift+K/Shift+R do them all, Esc closes, Ctrl+Z undoes.

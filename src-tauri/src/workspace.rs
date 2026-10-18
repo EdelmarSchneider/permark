@@ -24,8 +24,8 @@ use crate::comments::{
 use crate::edit::{AssetWritten, CreatedDoc, Editor, SaveOutcome, SourceDoc};
 use crate::error::AppError;
 use crate::fileops::{
-    BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers, Move,
-    MoveOutcome, MovePreview, OsRecycler, Recycler, UndoOutcome,
+    BrokenReport, BufferText, CreatedFolder, DeleteOutcome, FileOpError, FileOpsService, Followers,
+    Move, MoveOutcome, MovePreview, OsRecycler, Recycler, RepairOutcome, UndoOutcome,
 };
 use crate::git::{
     self, BaselineKind, Discovery, GitContext, GitHandle, GitSettings, GitSnapshot, GitState,
@@ -1147,6 +1147,29 @@ impl Workspace {
 
     pub fn undo_file_op(&self, op_id: u64) -> Result<UndoOutcome, AppError> {
         Ok(self.file_ops()?.undo(op_id)?)
+    }
+
+    /// Every link in the folder whose file does not exist. A document open with unsaved text is
+    /// read from `buffers` instead of the disk. A single opened file has no project to scan.
+    pub fn broken_links(&self, buffers: &[BufferText]) -> Result<BrokenReport, AppError> {
+        if self.vault.is_shallow() {
+            return Err(FileOpError::SimpleMode.into());
+        }
+        Ok(crate::fileops::scan(&self.vault, buffers))
+    }
+
+    /// Points one broken link at a file with the same name. See [`FileOpsService::repair_link`].
+    pub fn repair_link(
+        &self,
+        path: &str,
+        start: usize,
+        end: usize,
+        target: &str,
+        buffer: Option<&BufferText>,
+    ) -> Result<RepairOutcome, AppError> {
+        Ok(self
+            .file_ops()?
+            .repair_link(path, start, end, target, buffer)?)
     }
 
     pub fn resolve_link(&self, from: &str, href: &str) -> LinkTarget {

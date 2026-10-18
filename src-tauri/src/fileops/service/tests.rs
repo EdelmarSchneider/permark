@@ -1139,3 +1139,64 @@ fn the_documents_of_a_gitignored_folder_are_not_touched() {
     assert_eq!(fx.read("a.md"), "[x](h.md)\n");
     assert_eq!(fx.read("build/out.md"), "[x](../g.md)\n");
 }
+
+#[test]
+fn a_broken_link_is_rewritten_to_the_file_of_that_name_and_can_be_undone() {
+    let fx = Fx::new(&[
+        ("readme.md", "See [g](old/guide.md#Setup).\n"),
+        ("docs/guide.md", "a\n"),
+    ]);
+    let text = fx.read("readme.md");
+    let start = text.find("old/guide.md#Setup").expect("link");
+    let end = start + "old/guide.md#Setup".len();
+    let outcome = fx
+        .svc
+        .repair_link("readme.md", start, end, "docs/guide.md", None)
+        .expect("repair");
+    assert_eq!(outcome.status, RepairStatus::Repaired);
+    let op_id = outcome.op_id.expect("undo id");
+    assert_eq!(fx.read("readme.md"), "See [g](docs/guide.md#Setup).\n");
+    assert_eq!(lock(&fx.followers.rewritten).len(), 1);
+
+    let again = fx
+        .svc
+        .repair_link("readme.md", start, end, "docs/guide.md", None)
+        .expect("second");
+    assert_eq!(again.status, RepairStatus::Stale);
+    assert_eq!(fx.read("readme.md"), "See [g](docs/guide.md#Setup).\n");
+
+    let undone = fx.svc.undo(op_id).expect("undo");
+    assert_eq!(undone.links_restored, 1);
+    assert_eq!(fx.read("readme.md"), text);
+}
+
+#[test]
+fn a_repair_of_unsaved_text_does_not_write_the_file() {
+    let fx = Fx::new(&[
+        ("readme.md", "See [g](docs/guide.md).\n"),
+        ("docs/guide.md", "a\n"),
+    ]);
+    let text = "See [g](old/guide.md).\n";
+    let start = text.find("old/guide.md").expect("link");
+    let end = start + "old/guide.md".len();
+    let outcome = fx
+        .svc
+        .repair_link(
+            "readme.md",
+            start,
+            end,
+            "docs/guide.md",
+            Some(&BufferText {
+                path: "readme.md".to_owned(),
+                text: text.to_owned(),
+            }),
+        )
+        .expect("repair");
+    assert_eq!(outcome.status, RepairStatus::Repaired);
+    assert!(outcome.op_id.is_none());
+    let edits = &outcome.buffer.expect("editor edits").edits;
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].insert, "docs/guide.md");
+    assert_eq!(fx.read("readme.md"), "See [g](docs/guide.md).\n");
+    assert!(lock(&fx.followers.rewritten).is_empty());
+}

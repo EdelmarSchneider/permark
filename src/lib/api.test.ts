@@ -69,6 +69,8 @@ const calls: Record<Exclude<keyof Api, "on">, unknown[]> = {
   createDocument: ["docs/new.md", "# New"],
   writeAsset: ["docs/a.md", "shot.png", "aGVsbG8="],
   previewMove: [[{ from: "docs/a.md", to: "docs/b.md" }], true, ["docs/c.md"]],
+  brokenLinks: [[{ path: "docs/a.md", text: "See [x](gone.md)" }]],
+  repairLink: ["docs/a.md", 4, 11, "notes/gone.md", null],
   applyMove: [7, true, [{ path: "docs/a.md", text: "# A" }]],
   deleteEntries: [["docs/a.md"]],
   newFolder: ["docs/new"],

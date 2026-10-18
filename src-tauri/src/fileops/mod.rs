@@ -10,6 +10,7 @@
 //!   project, deleting goes to the recycle bin);
 //! * [`service`] ties them together: preview, apply (guarded writes, own-write suppression) and undo.
 
+mod broken;
 mod ops;
 mod plan;
 pub(crate) mod scan;
@@ -20,6 +21,8 @@ use std::io;
 
 use serde::{Deserialize, Serialize};
 
+pub(crate) use broken::scan;
+pub use broken::{BrokenReport, RepairOutcome};
 pub use ops::{OsRecycler, Recycler};
 pub use plan::Move;
 pub use service::{FileOpsService, Followers};

@@ -242,6 +242,8 @@ pub fn run() {
             commands::create_document,
             commands::write_asset,
             commands::preview_move,
+            commands::broken_links,
+            commands::repair_link,
             commands::apply_move,
             commands::delete_entries,
             commands::new_folder,

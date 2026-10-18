@@ -8,6 +8,7 @@
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use super::broken::{self, Prepared, RepairOutcome, RepairStatus};
 use super::ops::{
     check_deletes, check_moves, create_folder, execute_deletes, execute_moves, remove_empty_folder,
     Recycler, ValidMove,
@@ -297,6 +298,111 @@ impl FileOpsService {
             Err(_) => {
                 self.own.retract(&resolved.rel, new_hash);
                 Err(SkipReason::WriteFailed)
+            }
+        }
+    }
+
+    // ---- broken links -------------------------------------------------------------------------------
+
+    /// Points one broken link at `target`, a file with the name the link asks for. The document is
+    /// left on disk when `buffer` is its unsaved text: the change for the editor comes back instead.
+    pub fn repair_link(
+        &self,
+        path: &str,
+        start: usize,
+        end: usize,
+        target: &str,
+        buffer: Option<&BufferText>,
+    ) -> Result<RepairOutcome, FileOpError> {
+        if let Some(buf) = buffer.filter(|b| key(&b.path) == key(path)) {
+            let outcome = match broken::prepare(&self.vault, path, &buf.text, start, end, target) {
+                Prepared::Edit(edit) => RepairOutcome {
+                    status: RepairStatus::Repaired,
+                    op_id: None,
+                    buffer: Some(BufferEdits {
+                        path: path.to_owned(),
+                        new_path: path.to_owned(),
+                        edits: to_text_edits(&buf.text, std::slice::from_ref(&edit)),
+                    }),
+                },
+                Prepared::Stale => RepairOutcome::status(RepairStatus::Stale),
+                Prepared::NotAMatch => RepairOutcome::status(RepairStatus::NotAMatch),
+            };
+            return Ok(outcome);
+        }
+        let resolved = self.vault.resolve(path)?;
+        let bytes = read_with_retry(&resolved.abs).map_err(|source| FileOpError::Io {
+            path: path.to_owned(),
+            source,
+        })?;
+        if bytes.len() as u64 > crate::render::MAX_RENDER_BYTES {
+            return Ok(RepairOutcome::status(RepairStatus::Stale));
+        }
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            return Ok(RepairOutcome::status(RepairStatus::Stale));
+        };
+        let edit = match broken::prepare(&self.vault, path, text, start, end, target) {
+            Prepared::Edit(edit) => edit,
+            Prepared::Stale => return Ok(RepairOutcome::status(RepairStatus::Stale)),
+            Prepared::NotAMatch => return Ok(RepairOutcome::status(RepairStatus::NotAMatch)),
+        };
+        self.write_repair(&resolved.rel, &bytes, &edit)
+    }
+
+    /// Writes one link edit when the file is still `bytes`, and remembers it for undo.
+    fn write_repair(
+        &self,
+        path: &str,
+        bytes: &[u8],
+        edit: &LinkEdit,
+    ) -> Result<RepairOutcome, FileOpError> {
+        let resolved = self.vault.resolve(path)?;
+        let text = std::str::from_utf8(bytes).map_err(|_| FileOpError::Io {
+            path: path.to_owned(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, "not utf-8"),
+        })?;
+        let old_hash = hash_hex(bytes);
+        let rewritten = apply_edits(text, std::slice::from_ref(edit)).into_bytes();
+        let new_hash_num = hash_bytes(&rewritten);
+        self.own.expect(&resolved.rel, new_hash_num);
+        let written = write_atomic_guarded(&resolved.abs, &rewritten, || {
+            let on_disk = read_with_retry(&resolved.abs)?;
+            Ok((hash_hex(&on_disk) != old_hash).then_some(()))
+        });
+        match written {
+            Ok(Guarded::Written) => {
+                let new_hash = format!("{new_hash_num:016x}");
+                self.followers
+                    .rewritten(&resolved.rel, &old_hash, &new_hash);
+                let op_id = self.next_id();
+                self.remember(Operation {
+                    id: op_id,
+                    moves: Vec::new(),
+                    rewrites: vec![Rewrite {
+                        path: resolved.rel,
+                        old_hash,
+                        new_hash,
+                        inverse: invert_edits(std::slice::from_ref(edit)),
+                        links: 1,
+                    }],
+                    folders: Vec::new(),
+                });
+                Ok(RepairOutcome {
+                    status: RepairStatus::Repaired,
+                    op_id: Some(op_id),
+                    buffer: None,
+                })
+            }
+            Ok(Guarded::Refused(())) => {
+                self.own.retract(&resolved.rel, new_hash_num);
+                Ok(RepairOutcome::status(RepairStatus::Stale))
+            }
+            Err(source) => {
+                self.own.retract(&resolved.rel, new_hash_num);
+                Err(FileOpError::Io {
+                    path: path.to_owned(),
+                    source,
+                })
             }
         }
     }

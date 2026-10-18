@@ -17,7 +17,7 @@ function readHintDismissed(): boolean {
 }
 
 class UiStore {
-  sidebarView = $state<"explorer" | "search" | "tags">("explorer");
+  sidebarView = $state<"explorer" | "search" | "tags" | "links">("explorer");
   /** The Search everywhere box (Ctrl+T, Ctrl+P, Ctrl+Shift+P): null while closed, else the scope it was asked to show. */
   searchBox = $state.raw<{ scope: Scope } | null>(null);
   /** The scope Ctrl+T opens: the one last picked with Tab or a click on the strip. Kept for the session. */
@@ -63,6 +63,8 @@ class UiStore {
   searchFocusTick = $state(0);
   explorerFocusTick = $state(0);
   tagsFocusTick = $state(0);
+  /** Bumped to move the keyboard into the broken-links list (Ctrl+Shift+B). */
+  linksFocusTick = $state(0);
   /** The tag editor popover; `anchor` is where it opens (null: next to the document header). */
   tagEditor = $state.raw<{ anchor: Anchor | null } | null>(null);
   /**
