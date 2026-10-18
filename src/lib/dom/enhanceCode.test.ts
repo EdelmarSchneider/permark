@@ -124,10 +124,40 @@ describe("a fenced block in the reading view", () => {
     expect(els[0].querySelector(".hljs-keyword")).not.toBeNull();
   });
 
+  it("wraps prose and keeps a table row intact, without dropping characters Copy would read", async () => {
+    const prose = "A long paragraph that is one source line of ordinary prose inside the fence.";
+    const table = "| name | purpose | notes that run on |";
+    const block = await drawn(fence("markdown", `${prose}\n${table}`));
+    const code = block.querySelector("code");
+    expect(code?.textContent).toBe(`${prose}\n${table}\n`);
+    expect(
+      Array.from(block.querySelectorAll(".code-line--unbroken"), (el) => el.textContent),
+    ).toEqual([table]);
+  });
+
   it("leaves a Mermaid diagram to its own renderer", () => {
     const template = document.createElement("template");
     template.innerHTML = fence("mermaid", "graph TD; A-->B");
     const { els } = enhanceBlocks(Array.from(template.content.children) as HTMLElement[], context);
     expect(els[0].tagName).toBe("FIGURE");
+    expect(els[0].dataset.kind).toBe("mermaid");
+  });
+
+  it("leaves a PlantUML diagram to its own renderer, including the short name", () => {
+    const template = document.createElement("template");
+    template.innerHTML = fence("plantuml", "@startuml\nAlice -> Bob\n@enduml");
+    const { els } = enhanceBlocks(Array.from(template.content.children) as HTMLElement[], context);
+    expect(els[0].tagName).toBe("FIGURE");
+    expect(els[0].className).toContain("diagram");
+    expect(els[0].dataset.kind).toBe("plantuml");
+    expect(els[0].dataset.source).toContain("Alice -> Bob");
+
+    const short = document.createElement("template");
+    short.innerHTML = fence("puml", "Alice -> Bob");
+    const { els: puml } = enhanceBlocks(
+      Array.from(short.content.children) as HTMLElement[],
+      context,
+    );
+    expect(puml[0].dataset.kind).toBe("plantuml");
   });
 });

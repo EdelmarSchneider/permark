@@ -68,6 +68,20 @@ pub struct LooseDoc {
     pub asset: Option<String>,
 }
 
+/// Whether `path` is the absolute place of the file named `name`, with nothing that climbs out of a folder.
+fn recorded_file(path: &Path, name: &str) -> bool {
+    path.is_absolute()
+        && !path.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::ParentDir | std::path::Component::CurDir
+            )
+        })
+        && path
+            .file_name()
+            .is_some_and(|file_name| loose::same_path(&file_name.to_string_lossy(), name))
+}
+
 /// Whether the start of a file is text (or no text we know of), which is what a file must be to be listed.
 fn is_text_file(path: &Path) -> bool {
     let Ok(file) = std::fs::File::open(path) else {
@@ -339,6 +353,34 @@ impl NotesService {
             name,
             asset,
         })
+    }
+
+    /// The last known place of a loose file, when `path` names that file and the file is not there.
+    ///
+    /// "Copy path" still has the place the file was opened at. That place was made canonical then, and it is
+    /// returned only when it is still that file: an absolute path, with no `..`, whose name is the file's name.
+    /// A different name is refused. `Ok(None)` when `path` is not a loose file, or the file is still there —
+    /// the ordinary resolve is the one to use then.
+    pub fn remembered_file(&self, path: &str) -> Result<Option<PathBuf>, NotesError> {
+        let Some((id, rest)) = loose::parse(path) else {
+            return Ok(None);
+        };
+        if rest.contains(['/', '\\']) || rest == "." || rest == ".." {
+            return Err(VaultError::Escapes(path.to_owned()).into());
+        }
+        let file = self.loose_file(path)?;
+        // A different name is not this file: an image next to it, or another file, is not copied as if it were.
+        if file.id != id || !loose::same_path(rest, &file.name()) {
+            return Err(NotesError::NotANote(path.to_owned()));
+        }
+        let stored = file.abs().to_path_buf();
+        if !recorded_file(&stored, &file.name()) {
+            return Err(NotesError::NotANote(path.to_owned()));
+        }
+        if stored.is_file() {
+            return Ok(None);
+        }
+        Ok(Some(stored))
     }
 
     /// The file `id` was read: this is the version the person sees, and a different one on disk later is a change.

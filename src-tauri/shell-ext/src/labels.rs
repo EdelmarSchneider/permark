@@ -11,6 +11,13 @@ pub(crate) const GERMAN: &str = "Mit PerMark öffnen";
 pub(crate) const CHINESE: &str = "用 PerMark 打开";
 pub(crate) const ITALIAN: &str = "Apri con PerMark";
 
+pub(crate) const NEW_ENGLISH: &str = "New Markdown file with PerMark";
+pub(crate) const NEW_PORTUGUESE: &str = "Novo arquivo Markdown com o PerMark";
+pub(crate) const NEW_SPANISH: &str = "Nuevo archivo Markdown con PerMark";
+pub(crate) const NEW_GERMAN: &str = "Neue Markdown-Datei mit PerMark";
+pub(crate) const NEW_CHINESE: &str = "用 PerMark 新建 Markdown 文件";
+pub(crate) const NEW_ITALIAN: &str = "Nuovo file Markdown con PerMark";
+
 /// The text for the first of `preferred` (Windows' display languages, best first, as tags such as `pt-BR`) that the app
 /// is translated into. English when none is.
 pub(crate) fn for_languages<S: AsRef<str>>(preferred: &[S]) -> &'static str {
@@ -23,14 +30,44 @@ pub(crate) fn for_languages<S: AsRef<str>>(preferred: &[S]) -> &'static str {
 /// The text for one language tag. Only the language counts, not the region: `pt-PT` reads the Brazilian text, which is
 /// the one translation of Portuguese the app has, and every Chinese tag (`zh-Hans-CN`, `zh-TW`) reads the Simplified text.
 fn for_language(tag: &str) -> Option<&'static str> {
+    phrase(tag, ENGLISH, PORTUGUESE, SPANISH, GERMAN, CHINESE, ITALIAN)
+}
+
+/// The "New Markdown file" title, chosen the same way as [`for_languages`].
+pub(crate) fn new_markdown_for_languages<S: AsRef<str>>(preferred: &[S]) -> &'static str {
+    preferred
+        .iter()
+        .find_map(|tag| {
+            phrase(
+                tag.as_ref(),
+                NEW_ENGLISH,
+                NEW_PORTUGUESE,
+                NEW_SPANISH,
+                NEW_GERMAN,
+                NEW_CHINESE,
+                NEW_ITALIAN,
+            )
+        })
+        .unwrap_or(NEW_ENGLISH)
+}
+
+fn phrase(
+    tag: &str,
+    english: &'static str,
+    portuguese: &'static str,
+    spanish: &'static str,
+    german: &'static str,
+    chinese: &'static str,
+    italian: &'static str,
+) -> Option<&'static str> {
     let language = tag.split(['-', '_']).next()?;
     match language.to_ascii_lowercase().as_str() {
-        "en" => Some(ENGLISH),
-        "pt" => Some(PORTUGUESE),
-        "es" => Some(SPANISH),
-        "de" => Some(GERMAN),
-        "zh" => Some(CHINESE),
-        "it" => Some(ITALIAN),
+        "en" => Some(english),
+        "pt" => Some(portuguese),
+        "es" => Some(spanish),
+        "de" => Some(german),
+        "zh" => Some(chinese),
+        "it" => Some(italian),
         _ => None,
     }
 }

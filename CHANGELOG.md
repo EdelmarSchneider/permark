@@ -5,6 +5,19 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.8] - 2026-10-18
+
+Draw a PlantUML diagram in the page, start a new file from a folder, and keep a wide block inside the pane.
+
+### Added
+- **PlantUML diagrams.** A `plantuml` or `puml` block draws in the reading view, the same way a Mermaid block does. In Visual the source stays, with a live preview beside it. No Java and no PlantUML server. A diagram that would fetch a file does not run.
+- **New file.** Right-click a folder, or the project name, and choose **New Markdown file** or **New text file**. The same two entries are in the Projects menu and in the Explorer menu. A text file opens in Source. On Windows, right-click a folder or its background and choose **New Markdown file with PerMark**: the folder opens with `untitled.md` in it.
+- **A note's path.** From a note or a loose file, **Copy path** puts its path on the clipboard, and **Show in file manager** selects the file. Copy stays available while the path is known. A file that is missing is not shown.
+
+### Fixed
+- **Heading shortcuts in Visual.** `Ctrl+Alt` with a number is the AltGr key on Windows, so those chords typed a character instead of changing the block. Paragraph and headings 1 to 6 are `Ctrl+Shift+0` through `Ctrl+Shift+6`.
+- **A wide block stays inside the pane.** Prose wraps in the column. A long table row or a diagram line scrolls inside its block, instead of growing the page past the window.
+
 ## [0.5.7] - 2026-10-18
 
 Review what an agent changed, send your comments to it, and keep a noisy folder quiet.

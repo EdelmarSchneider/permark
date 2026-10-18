@@ -988,7 +988,8 @@ impl Workspace {
     // ---- editing --------------------------------------------------------------------------------
 
     fn editor(&self) -> Editor<'_> {
-        Editor::new(&self.vault, &self.own_writes)
+        // Plain text (`.txt`) is a file the project can make and edit, the same as Markdown.
+        Editor::new(&self.vault, &self.own_writes).with_text_files()
     }
 
     /// A Markdown file as the editor needs it: the exact text, its hash and its blocks.
@@ -1206,6 +1207,13 @@ impl Workspace {
     }
 
     pub fn absolute_path(&self, path: &str) -> Result<String, AppError> {
+        // A loose file that is gone still has the place it was opened at. A note resolves in the notes
+        // folder, which is this window's root even though that folder is not a project.
+        if let Some(part) = &self.notes {
+            if let Some(remembered) = part.service.remembered_file(path)? {
+                return Ok(remembered.display().to_string());
+            }
+        }
         Ok(self.resolve_path(path)?.abs.display().to_string())
     }
 
@@ -2944,8 +2952,90 @@ deepword
         ws.close();
     }
 
+    /// A note's path is its file in the notes folder, which is not a project. A file that is gone can still
+    /// be named, and is not revealed. A path that leaves the folder is not a note.
     #[test]
-    fn a_text_file_opens_for_editing_in_the_notes_and_stays_read_only_in_a_project() {
+    fn a_note_path_is_its_file_and_a_missing_file_is_not_revealed() {
+        let fx = Fx::new();
+        let notes_dir = tempfile::tempdir().expect("notes");
+        write(notes_dir.path(), "ideas.md", "# Ideas\n");
+        let sink: Arc<dyn EventSink> = fx.rec.clone();
+        let ws =
+            Workspace::open_notes(notes_dir.path(), fx.app.path(), None, &sink).expect("notes");
+        let expected = ws.vault().root().join("ideas.md");
+        assert_eq!(
+            ws.absolute_path("ideas.md").expect("abs"),
+            expected.display().to_string()
+        );
+        assert_eq!(ws.reveal_target("ideas.md").expect("reveal"), expected);
+
+        // the same file, asked for from a project, is not a path of that project
+        let project = fx.open();
+        let outside = expected.display().to_string();
+        assert!(project.absolute_path(&outside).is_err());
+        assert!(project.reveal_target(&outside).is_err());
+        for bad in ["../outside.md", "/etc/passwd", "C:/Windows/win.ini"] {
+            assert!(project.absolute_path(bad).is_err(), "{bad}");
+            assert!(ws.absolute_path(bad).is_err(), "{bad}");
+            assert!(ws.reveal_target(bad).is_err(), "{bad}");
+        }
+        project.close();
+
+        std::fs::remove_file(&expected).expect("remove");
+        assert_eq!(
+            ws.absolute_path("ideas.md").expect("the place it had"),
+            expected.display().to_string()
+        );
+        assert!(
+            ws.reveal_target("ideas.md").is_err(),
+            "a missing file is not revealed"
+        );
+        ws.close();
+    }
+
+    /// A loose file lives outside the notes folder. Copy path keeps the place it was opened at after it is
+    /// gone. Showing it, or naming a different file, does not.
+    #[test]
+    fn a_missing_loose_file_keeps_its_path_and_is_not_revealed() {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let disk = sent.path().join("proposal.md");
+        let path = open_loose(&ws, &disk);
+        let file = dunce::canonicalize(&disk).expect("canonical");
+        let id = path
+            .strip_prefix("@file/")
+            .and_then(|rest| rest.split('/').next())
+            .expect("an id")
+            .to_owned();
+        assert_eq!(
+            ws.absolute_path(&path).expect("abs"),
+            file.display().to_string()
+        );
+        assert_eq!(ws.reveal_target(&path).expect("reveal"), file);
+        // a picture next to it, a climb out, and an id that is not this file are not its path
+        assert!(ws.absolute_path(&format!("@file/{id}/pic.png")).is_err());
+        assert!(ws
+            .absolute_path(&format!("@file/{id}/../proposal.md"))
+            .is_err());
+        assert!(ws.absolute_path("@file/ffffffff/proposal.md").is_err());
+
+        std::fs::remove_file(&file).expect("remove");
+        assert_eq!(
+            ws.absolute_path(&path).expect("last known path"),
+            file.display().to_string()
+        );
+        assert!(
+            ws.reveal_target(&path).is_err(),
+            "a missing file is not revealed"
+        );
+        assert!(ws.absolute_path(&format!("@file/{id}/pic.png")).is_err());
+        assert!(ws.reveal_target(&format!("@file/{id}/pic.png")).is_err());
+        ws.close();
+    }
+
+    #[test]
+    fn a_text_file_opens_for_editing_in_the_notes_and_in_a_project() {
         let fx = Fx::new();
         let ws = fx.open_notes();
         let sent = sent_files();
@@ -2962,12 +3052,18 @@ deepword
 
         let project = Fx::new();
         write(project.project.path(), "todo.txt", "buy milk\n");
-        let ws = project.open();
-        assert_eq!(
-            ws.document_source("todo.txt").err().map(|e| e.kind()),
-            Some("notMarkdown")
-        );
-        ws.close();
+        let opened = project.open();
+        let project_source = opened
+            .document_source("todo.txt")
+            .expect("a project edits a text file");
+        assert_eq!(project_source.text, "buy milk\n");
+        opened
+            .save_document("todo.txt", "buy milk\nand eggs\n", &project_source.hash)
+            .expect("saved");
+        let created = opened.create_document("fresh.txt", "").expect("create");
+        assert_eq!(created.path, "fresh.txt");
+        assert!(opened.create_document("fresh.json", "{}").is_err());
+        opened.close();
     }
 
     #[test]

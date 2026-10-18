@@ -1,12 +1,14 @@
 // Post-processing of the backend's HTML after it is injected: code blocks (copy button, language label, highlighting),
-// tables, heading anchors, alerts, task lists, KaTeX, Mermaid and relative images.
+// tables, heading anchors, alerts, task lists, KaTeX, Mermaid, PlantUML and relative images.
 // Structural changes are synchronous and keep one element per top-level block, so the block diff
 // can address blocks by index; the heavy libraries load lazily and fill in afterwards.
 
 import type { CodeOutcome } from "../code/highlighter";
 import { resolveRelative } from "../paths";
 import { viewBoxWidth } from "./breakout";
+import { markSolidLines } from "./codeLines";
 import { decorateCodeRefs, type CodeRefsContext } from "./codeRefsDom";
+import { renderPlantuml } from "./plantuml";
 
 export type EnhanceLabels = {
   copyCode: string;
@@ -139,10 +141,12 @@ function wrapCode(pre: HTMLElement, ctx: EnhanceContext, tasks: Promise<void>[])
   const info = infoOf(code);
   const source = (code ?? pre).textContent ?? "";
 
-  if (info !== null && info.toLowerCase() === "mermaid") {
+  const kind = diagramKind(info);
+  if (kind !== null) {
     const figure = document.createElement("figure");
     figure.className = "diagram is-pending";
     figure.dataset.source = source;
+    figure.dataset.kind = kind;
     figure.textContent = ctx.labels.diagramPending;
     copySourcepos(pre, figure);
     pre.replaceWith(figure);
@@ -274,6 +278,7 @@ function showCode(
     if (label.auto) element.title = ctx.labels.codeAutoHint;
     wrap.insertBefore(element, wrap.firstChild);
   }
+  markSolidLines(code);
 }
 
 /**
@@ -388,12 +393,21 @@ async function loadPlayer(player: HTMLMediaElement, ctx: EnhanceContext): Promis
   }
 }
 
-// ---- Mermaid ------------------------------------------------------------------------------------
+// ---- Diagrams (Mermaid, PlantUML) ---------------------------------------------------------------
+
+export type DiagramKind = "mermaid" | "plantuml";
+
+function diagramKind(info: string | null): DiagramKind | null {
+  const name = info?.toLowerCase();
+  if (name === "mermaid") return "mermaid";
+  if (name === "plantuml" || name === "puml") return "plantuml";
+  return null;
+}
 
 type Mermaid = typeof import("mermaid").default;
 let mermaidModule: Mermaid | null = null;
 let mermaidTheme: string | null = null;
-let mermaidQueue: Promise<unknown> = Promise.resolve();
+let diagramQueue: Promise<unknown> = Promise.resolve();
 let mermaidCounter = 0;
 const diagramCache = new Map<string, string>();
 
@@ -435,30 +449,52 @@ async function loadMermaid(theme: "light" | "dark"): Promise<Mermaid> {
   return mermaidModule;
 }
 
+function cacheKey(kind: DiagramKind, theme: "light" | "dark", source: string): string {
+  return `${kind}\u0000${paletteKey(theme)}\u0000${source}`;
+}
+
+async function renderMermaid(source: string, theme: "light" | "dark"): Promise<string | null> {
+  const id = `tm-mermaid-${++mermaidCounter}`;
+  try {
+    const mermaid = await loadMermaid(theme);
+    const { svg } = await mermaid.render(id, source);
+    return svg;
+  } catch {
+    // Mermaid leaves its error graphic behind in the page when a render fails
+    document.getElementById(id)?.remove();
+    return null;
+  } finally {
+    document.getElementById(`d${id}`)?.remove();
+  }
+}
+
 /**
- * Draws `source` and returns its SVG, or null when Mermaid cannot draw it yet. Shares the queue and the cache with
- * the reading view, so a preview and a document do not render at the same time.
+ * Draws `source` and returns its SVG, or null when the engine cannot draw it yet. Shares the queue and the cache
+ * with the reading view, so a preview and a document do not render at the same time.
  */
-export function drawDiagram(source: string, theme: "light" | "dark"): Promise<string | null> {
-  const key = `${paletteKey(theme)}\u0000${source}`;
+export function drawDiagram(
+  source: string,
+  theme: "light" | "dark",
+  kind: DiagramKind = "mermaid",
+): Promise<string | null> {
+  const key = cacheKey(kind, theme, source);
   const cached = diagramCache.get(key);
   if (cached !== undefined) return Promise.resolve(cached);
-  const job = mermaidQueue.then(async () => {
-    const id = `tm-mermaid-${++mermaidCounter}`;
+  const job = diagramQueue.then(async () => {
     try {
-      const mermaid = await loadMermaid(theme);
-      const { svg } = await mermaid.render(id, source);
+      const svg =
+        kind === "plantuml"
+          ? await renderPlantuml(source, theme)
+          : await renderMermaid(source, theme);
+      if (svg === null) return null;
       if (diagramCache.size > 60) diagramCache.clear();
       diagramCache.set(key, svg);
       return svg;
     } catch {
-      document.getElementById(id)?.remove();
       return null;
-    } finally {
-      document.getElementById(`d${id}`)?.remove();
     }
   });
-  mermaidQueue = job.then(
+  diagramQueue = job.then(
     () => undefined,
     () => undefined,
   );
@@ -468,30 +504,17 @@ export function drawDiagram(source: string, theme: "light" | "dark"): Promise<st
 /** Renders (or re-renders, after a theme change) the diagram held in `figure.dataset.source`. */
 export function renderDiagram(figure: HTMLElement, ctx: EnhanceContext): Promise<void> {
   const source = figure.dataset.source ?? "";
-  const key = `${paletteKey(ctx.theme)}\u0000${source}`;
+  const kind: DiagramKind = figure.dataset.kind === "plantuml" ? "plantuml" : "mermaid";
+  const key = cacheKey(kind, ctx.theme, source);
   const cached = diagramCache.get(key);
   if (cached !== undefined) {
     showDiagram(figure, cached);
     return Promise.resolve();
   }
-  const job = mermaidQueue.then(async () => {
-    const id = `tm-mermaid-${++mermaidCounter}`;
-    try {
-      const mermaid = await loadMermaid(ctx.theme);
-      const { svg } = await mermaid.render(id, source);
-      if (diagramCache.size > 60) diagramCache.clear();
-      diagramCache.set(key, svg);
-      showDiagram(figure, svg);
-    } catch {
-      showDiagramError(figure, source, ctx);
-      // Mermaid leaves its error graphic behind in the page when a render fails
-      document.getElementById(id)?.remove();
-    } finally {
-      document.getElementById(`d${id}`)?.remove();
-    }
+  return drawDiagram(source, ctx.theme, kind).then((svg) => {
+    if (svg) showDiagram(figure, svg);
+    else showDiagramError(figure, source, ctx);
   });
-  mermaidQueue = job.catch(() => undefined);
-  return job;
 }
 
 function showDiagram(figure: HTMLElement, svg: string): void {

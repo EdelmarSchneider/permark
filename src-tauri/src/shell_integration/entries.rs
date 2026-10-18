@@ -22,6 +22,9 @@ use crate::session::Language;
 /// The name of the verb (the key under `shell`) the context-menu entries use.
 pub(crate) const VERB: &str = "PerMark";
 
+/// The verb that makes a new Markdown file in the folder that was clicked.
+pub(crate) const NEW_MARKDOWN_VERB: &str = "PerMarkNew";
+
 /// The `ProgID` of a Markdown document that PerMark opens.
 pub(crate) const PROG_ID: &str = "PerMark.Markdown";
 
@@ -47,7 +50,24 @@ impl MenuTarget {
     pub fn key(&self) -> String {
         format!(r"{}\shell\{VERB}", self.class)
     }
+
+    /// The key of the "new Markdown file" verb.
+    pub fn new_markdown_key(&self) -> String {
+        format!(r"{}\shell\{NEW_MARKDOWN_VERB}", self.class)
+    }
 }
+
+/// Where "New Markdown file with PerMark" is added: a folder, and the background of a folder.
+pub(crate) const NEW_MARKDOWN_TARGETS: [MenuTarget; 2] = [
+    MenuTarget {
+        class: "Directory",
+        placeholder: "%1",
+    },
+    MenuTarget {
+        class: r"Directory\Background",
+        placeholder: "%V",
+    },
+];
 
 /// Folders, the background of a folder, and Markdown files (`SystemFileAssociations` applies a verb to an
 /// extension whichever program owns it).
@@ -107,6 +127,35 @@ pub(crate) fn command_line(exe: &Path, placeholder: &str) -> String {
 /// The icon of an entry: the first icon of the program.
 pub(crate) fn icon_value(exe: &Path) -> String {
     format!("\"{}\",0", exe.display())
+}
+
+/// `"exe" --new-markdown "%1"`, each quoted so a path with spaces stays one argument.
+pub(crate) fn new_markdown_command_line(exe: &Path, placeholder: &str) -> String {
+    format!(
+        "\"{}\" {} \"{placeholder}\"",
+        exe.display(),
+        crate::new_file::NEW_MARKDOWN_FLAG
+    )
+}
+
+/// The keys of "New Markdown file with PerMark": the verb and its command, on a folder and on its background.
+pub(crate) fn new_markdown_keys(exe: &Path, label: &str) -> Vec<Key> {
+    NEW_MARKDOWN_TARGETS
+        .iter()
+        .flat_map(|target| {
+            let verb = target.new_markdown_key();
+            [
+                key(
+                    verb.clone(),
+                    vec![text("", label), text("Icon", icon_value(exe))],
+                ),
+                key(
+                    format!(r"{verb}\command"),
+                    vec![text("", new_markdown_command_line(exe, target.placeholder))],
+                ),
+            ]
+        })
+        .collect()
 }
 
 /// The keys of the context-menu entries: for each place, the verb (label and icon) and its command.
@@ -182,6 +231,18 @@ pub(crate) fn open_with_keys() -> Vec<Key> {
         .iter()
         .map(|extension| key(open_with_key(extension), vec![text(PROG_ID, "")]))
         .collect()
+}
+
+/// The text of "New Markdown file with PerMark", in the language of the interface.
+pub(crate) fn new_markdown_label(language: Language) -> &'static str {
+    match language {
+        Language::En | Language::System => "New Markdown file with PerMark",
+        Language::PtBr => "Novo arquivo Markdown com o PerMark",
+        Language::Es => "Nuevo archivo Markdown con PerMark",
+        Language::De => "Neue Markdown-Datei mit PerMark",
+        Language::ZhCn => "用 PerMark 新建 Markdown 文件",
+        Language::It => "Nuovo file Markdown con PerMark",
+    }
 }
 
 /// The text of the context-menu entry, in the language of the interface (English for "System default": the
@@ -307,6 +368,30 @@ mod tests {
     }
 
     #[test]
+    fn a_new_markdown_file_is_offered_on_a_folder_and_on_its_background() {
+        let keys = new_markdown_keys(&exe(), "New Markdown file with PerMark");
+        let paths: Vec<&str> = keys.iter().map(|k| k.path.as_str()).collect();
+        assert_eq!(
+            paths,
+            [
+                r"Directory\shell\PerMarkNew",
+                r"Directory\shell\PerMarkNew\command",
+                r"Directory\Background\shell\PerMarkNew",
+                r"Directory\Background\shell\PerMarkNew\command",
+            ]
+        );
+        let program = r#""C:\Program Files\Per Mark\permark.exe""#;
+        assert_eq!(
+            text_of(&keys, r"Directory\shell\PerMarkNew\command", ""),
+            format!("{program} --new-markdown \"%1\"")
+        );
+        assert_eq!(
+            text_of(&keys, r"Directory\Background\shell\PerMarkNew\command", ""),
+            format!("{program} --new-markdown \"%V\"")
+        );
+    }
+
+    #[test]
     fn the_association_is_a_prog_id_that_opens_the_file_it_is_given() {
         let keys = association_keys(&exe(), "Markdown document");
         assert_eq!(text_of(&keys, "PerMark.Markdown", ""), "Markdown document");
@@ -383,6 +468,34 @@ mod tests {
         assert_eq!(menu_label(Language::It), "Apri con PerMark");
         // the registry cannot follow the system's language, so "System default" reads as English
         assert_eq!(menu_label(Language::System), menu_label(Language::En));
+        assert_eq!(
+            new_markdown_label(Language::En),
+            "New Markdown file with PerMark"
+        );
+        assert_eq!(
+            new_markdown_label(Language::PtBr),
+            "Novo arquivo Markdown com o PerMark"
+        );
+        assert_eq!(
+            new_markdown_label(Language::Es),
+            "Nuevo archivo Markdown con PerMark"
+        );
+        assert_eq!(
+            new_markdown_label(Language::De),
+            "Neue Markdown-Datei mit PerMark"
+        );
+        assert_eq!(
+            new_markdown_label(Language::ZhCn),
+            "用 PerMark 新建 Markdown 文件"
+        );
+        assert_eq!(
+            new_markdown_label(Language::It),
+            "Nuovo file Markdown con PerMark"
+        );
+        assert_eq!(
+            new_markdown_label(Language::System),
+            new_markdown_label(Language::En)
+        );
         assert_eq!(type_name(Language::En), "Markdown document");
         assert_eq!(type_name(Language::PtBr), "Documento Markdown");
         assert_eq!(type_name(Language::Es), "Documento de Markdown");

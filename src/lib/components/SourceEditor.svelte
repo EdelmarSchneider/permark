@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import { bridge } from "../bridge";
   import type { SourceView } from "../editor/cm";
-  import { mermaidAt, type MermaidFence } from "../editor/mermaidAt";
+  import { diagramAt, type DiagramFence } from "../editor/mermaidAt";
   import { EditorOutline } from "../editor/outlineSync";
   import { t } from "../i18n";
   import { basename } from "../paths";
@@ -16,8 +16,8 @@
   let host: HTMLElement | undefined = $state();
   let ready = $state(false);
   let failed = $state(false);
-  /** The Mermaid block the caret is in, drawn beside the text. */
-  let diagram = $state<MermaidFence | null>(null);
+  /** The diagram block the caret is in, drawn beside the text. */
+  let diagram = $state<DiagramFence | null>(null);
 
   onMount(() => {
     const start = edit.initial;
@@ -31,7 +31,7 @@
         if (gone) return;
         const look = (): void => {
           if (!view) return;
-          diagram = mermaidAt(view.getText(), view.caretLine() + 1);
+          diagram = diagramAt(view.getText(), view.caretLine() + 1);
         };
         view = createSourceView(
           mount,
@@ -81,7 +81,7 @@
 <div class={["source", diagram && "source--diagram"]} aria-busy={!ready && !failed}>
   <div bind:this={host} class="source__host"></div>
   {#if diagram}
-    <DiagramPreview source={diagram.source} fence={diagram.startLine} />
+    <DiagramPreview source={diagram.source} fence={diagram.startLine} kind={diagram.kind} />
   {/if}
   {#if failed}
     <Notice icon="circle-alert" title={t("edit.loadFailed")} />

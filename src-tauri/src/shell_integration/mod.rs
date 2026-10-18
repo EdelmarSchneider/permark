@@ -161,6 +161,14 @@ mod tests {
             );
             assert!(HOOKS.contains(&line), "{line}");
         }
+        for target in &entries::NEW_MARKDOWN_TARGETS {
+            let line = format!(
+                "!insertmacro OPENWITH_NEWFILE_${{OP}} \"{}\" \"{}\"",
+                target.new_markdown_key(),
+                target.placeholder
+            );
+            assert!(HOOKS.contains(&line), "{line}");
+        }
         // the ProgID and where it is listed
         assert!(HOOKS.contains(&format!("!define OPENWITH_PROGID \"{}\"", entries::PROG_ID)));
         for ext in entries::EXTENSIONS {
@@ -196,6 +204,7 @@ mod tests {
             for (name, text) in [
                 ("OpenWithMenuLabel", entries::menu_label(language)),
                 ("OpenWithTypeName", entries::type_name(language)),
+                ("NewMarkdownLabel", entries::new_markdown_label(language)),
             ] {
                 let line = format!("LangString {name} {lcid} \"{text}\"");
                 assert!(HOOKS.contains(&line), "{line}");
@@ -278,6 +287,8 @@ mod tests {
             crate::session::Language::It,
         ] {
             let line = format!("= \"{}\";", entries::menu_label(language));
+            assert!(STORE_LABELS.contains(&line), "{line}");
+            let line = format!("= \"{}\";", entries::new_markdown_label(language));
             assert!(STORE_LABELS.contains(&line), "{line}");
         }
     }

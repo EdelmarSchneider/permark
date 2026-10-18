@@ -139,6 +139,10 @@ mod tests {
         assert!(MANIFEST.contains("<com:SurrogateServer"));
         // the same id as the one the DLL answers to (its own test checks the number, this the text)
         assert!(SHELL_SOURCE.contains("0xD5FF_B935_7A42_4E3D_90E1_0180_A799_9B94"));
+        let new_id = "C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09";
+        assert!(MANIFEST.contains(&format!(r#"<com:Class Id="{new_id}""#)));
+        assert_eq!(MANIFEST.matches(&format!(r#"Clsid="{new_id}""#)).count(), 2);
+        assert!(SHELL_SOURCE.contains("0xC3B7_E2A1_9D54_4C18_B6F0_2E8A_71D4_5C09"));
         // the program the DLL starts is the one the manifest declares
         assert!(MANIFEST.contains(r#"Executable="permark.exe""#));
     }

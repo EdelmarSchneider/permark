@@ -25,13 +25,42 @@ use windows::Win32::UI::Shell::{
 use crate::guard::guarded;
 use crate::launch;
 use crate::module::{self, InUse};
-use crate::{labels, shell, CLSID_OPEN_WITH_PERMARK};
+use crate::{labels, shell, CLSID_NEW_MARKDOWN, CLSID_OPEN_WITH_PERMARK};
+
+/// Which entry of the menu this command is.
+#[derive(Clone, Copy)]
+pub(crate) enum MenuAction {
+    /// Open the folder.
+    Open,
+    /// Make a Markdown file in the folder and open the folder.
+    NewMarkdown,
+}
+
+impl MenuAction {
+    pub(crate) fn from_class(class: &GUID) -> Option<Self> {
+        if *class == CLSID_OPEN_WITH_PERMARK {
+            Some(Self::Open)
+        } else if *class == CLSID_NEW_MARKDOWN {
+            Some(Self::NewMarkdown)
+        } else {
+            None
+        }
+    }
+
+    fn class_id(self) -> GUID {
+        match self {
+            Self::Open => CLSID_OPEN_WITH_PERMARK,
+            Self::NewMarkdown => CLSID_NEW_MARKDOWN,
+        }
+    }
+}
 
 // `Agile = false`: the default makes the object agile (callable from any apartment, through the free-threaded marshaler),
 // which is not what it is. It lives in the surrogate's single-threaded apartment, and the `RefCell` and the site it keeps
 // (an Explorer object, bound to that apartment) rely on that.
 #[implement(IExplorerCommand, IObjectWithSite, Agile = false)]
 pub(crate) struct OpenWithPerMark {
+    action: MenuAction,
     /// Explorer's site: how the command finds the folder when it was used on the background of one. Explorer calls the
     /// command on one thread (the COM class is declared `STA`), so a `RefCell` is enough.
     site: RefCell<Option<IUnknown>>,
@@ -39,8 +68,9 @@ pub(crate) struct OpenWithPerMark {
 }
 
 impl OpenWithPerMark {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(action: MenuAction) -> Self {
         Self {
+            action,
             site: RefCell::new(None),
             _in_use: InUse::new(),
         }
@@ -68,14 +98,22 @@ fn program() -> Result<PathBuf> {
 }
 
 /// The title, in the display language of Windows. Found once: the language changes only when the person signs in again.
-fn title() -> &'static str {
-    static TITLE: OnceLock<&'static str> = OnceLock::new();
-    TITLE.get_or_init(|| labels::for_languages(&shell::display_languages()))
+fn title(action: MenuAction) -> &'static str {
+    match action {
+        MenuAction::Open => {
+            static TITLE: OnceLock<&'static str> = OnceLock::new();
+            TITLE.get_or_init(|| labels::for_languages(&shell::display_languages()))
+        }
+        MenuAction::NewMarkdown => {
+            static TITLE: OnceLock<&'static str> = OnceLock::new();
+            TITLE.get_or_init(|| labels::new_markdown_for_languages(&shell::display_languages()))
+        }
+    }
 }
 
 impl IExplorerCommand_Impl for OpenWithPerMark_Impl {
     fn GetTitle(&self, _items: Ref<IShellItemArray>) -> Result<PWSTR> {
-        guarded(|| shell::alloc_string(title()))
+        guarded(|| shell::alloc_string(title(self.action)))
     }
 
     /// The first icon of the program: the one the installer version's entry shows.
@@ -89,7 +127,7 @@ impl IExplorerCommand_Impl for OpenWithPerMark_Impl {
 
     /// A name of its own, so that Explorer does not take it for another command.
     fn GetCanonicalName(&self) -> Result<GUID> {
-        Ok(CLSID_OPEN_WITH_PERMARK)
+        Ok(self.action.class_id())
     }
 
     /// Shown for folders (what the package registers it for). Hidden for a selection of more folders than it opens.
@@ -109,7 +147,11 @@ impl IExplorerCommand_Impl for OpenWithPerMark_Impl {
         guarded(|| {
             let program = program()?;
             let folders = launch::folders_to_open(self.folders(items.as_ref()));
-            launch::open(&program, &folders).map_err(Error::from)
+            let started = match self.action {
+                MenuAction::Open => launch::open(&program, &folders),
+                MenuAction::NewMarkdown => launch::new_markdown(&program, &folders),
+            };
+            started.map_err(Error::from)
         })
     }
 

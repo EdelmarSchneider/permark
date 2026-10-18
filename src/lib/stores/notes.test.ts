@@ -59,6 +59,7 @@ const fake = vi.hoisted(() => ({
   saveDocument: vi.fn(),
   createDocument: vi.fn(),
   revealInFolder: vi.fn(),
+  absolutePath: vi.fn(),
   setNoteShared: vi.fn(),
   moveSuggestion: vi.fn(),
   moveNoteToProject: vi.fn(),
@@ -1730,6 +1731,33 @@ describe("loose files", () => {
     expect(notes.order(NOW)).toEqual([FILE, "a.md"]);
     await notes.togglePin(FILE);
     expect(fake.setNotePinned).toHaveBeenCalledWith(FILE, false);
+  });
+
+  it("copies a note's absolute path, and does not reveal a file that is missing", async () => {
+    addNote("ideas.md", "# Ideas\n");
+    addFile(FILE, "# Proposal\n", { missing: true });
+    openName = "ideas.md";
+    await start();
+    fake.absolutePath.mockResolvedValue("C:\\Users\\ana\\Documents\\PerMark Notes\\ideas.md");
+    await notes.copyPath("ideas.md");
+    expect(fake.absolutePath).toHaveBeenCalledWith("ideas.md");
+    expect(platform.copyText).toHaveBeenCalledWith(
+      "C:/Users/ana/Documents/PerMark Notes/ideas.md",
+    );
+    // copying the path is not copying the text, so the note is not marked copied
+    expect(fake.markNoteCopied).not.toHaveBeenCalled();
+
+    fake.absolutePath.mockResolvedValue("C:\\Users\\ana\\Downloads\\proposal.md");
+    await notes.copyPath(FILE);
+    expect(platform.copyText).toHaveBeenCalledWith("C:/Users/ana/Downloads/proposal.md");
+
+    await notes.revealFile(FILE);
+    expect(fake.revealInFolder).not.toHaveBeenCalled();
+    await notes.revealFile("ideas.md");
+    expect(fake.revealInFolder).toHaveBeenCalledExactlyOnceWith("ideas.md");
+
+    await notes.copyNote("ideas.md");
+    expect(platform.copyText).toHaveBeenLastCalledWith("# Ideas\n");
   });
 
   it("copies the text of a file, and offers nothing to delete: the file is not ours", async () => {

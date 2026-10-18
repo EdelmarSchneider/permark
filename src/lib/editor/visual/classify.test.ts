@@ -77,6 +77,14 @@ describe("rule 1: by kind", () => {
     expect(reason("```js\nmermaid\n```", "code")).toBeNull();
     expect(isDiagram("```mermaid")).toBe(true);
   });
+
+  it("locks a PlantUML fence, including the short name", () => {
+    expect(reason("```plantuml\nAlice -> Bob\n```", "code")).toBe("diagram");
+    expect(reason("```puml\nAlice -> Bob\n```", "code")).toBe("diagram");
+    expect(reason("~~~ plantuml\nAlice -> Bob\n~~~", "code")).toBe("diagram");
+    expect(reason("   ```PlantUML\n@startuml\n@enduml\n```", "code")).toBe("diagram");
+    expect(reason("```plantumlish\nx\n```", "code")).toBeNull();
+  });
 });
 
 describe("rule 2: inline math", () => {

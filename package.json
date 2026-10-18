@@ -1,6 +1,6 @@
 {
   "name": "permark",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Read what your AI writes. Write what it reads. A free, open-source Markdown app.",
   "license": "MIT OR Apache-2.0",
   "author": "Edelmar Schneider",
@@ -50,6 +50,7 @@
     "@lezer/highlight": "^1.2.5",
     "@lucide/svelte": "^1.56.0",
     "@milkdown/kit": "^7.22.3",
+    "@plantuml/core": "^1.2026.9",
     "@tauri-apps/api": "^2.12.3",
     "@tauri-apps/plugin-dialog": "^2.8.2",
     "@tauri-apps/plugin-opener": "^2.7.1",

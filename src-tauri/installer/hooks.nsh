@@ -10,7 +10,8 @@
 ;
 ; 2. "OPEN WITH PERMARK" in the file manager. Two options, both offered on the first page of a fresh install (checked
 ;    by default) and both also available in the app's Settings:
-;      - the context menu: "Open with PerMark" on folders, on the background of a folder and on .md/.markdown files;
+;      - the context menu: "Open with PerMark" on folders, on the background of a folder and on .md/.markdown files,
+;        and "New Markdown file with PerMark" on folders and on the background of a folder;
 ;      - the file association: PerMark is listed in the "Open with" menu of .md/.markdown files. The default app
 ;        is never set here: Windows protects it, and the person picks it in Windows Settings.
 ;    The choices are remembered as HKCU\Software\PerMark\OpenWithMenu and \FileAssociation (1 = on, 0 = off). An update
@@ -45,6 +46,12 @@ LangString OpenWithMenuLabel 3082 "Abrir con PerMark"
 LangString OpenWithMenuLabel 1031 "Mit PerMark öffnen"
 LangString OpenWithMenuLabel 2052 "用 PerMark 打开"
 LangString OpenWithMenuLabel 1040 "Apri con PerMark"
+LangString NewMarkdownLabel 1033 "New Markdown file with PerMark"
+LangString NewMarkdownLabel 1046 "Novo arquivo Markdown com o PerMark"
+LangString NewMarkdownLabel 3082 "Nuevo archivo Markdown con PerMark"
+LangString NewMarkdownLabel 1031 "Neue Markdown-Datei mit PerMark"
+LangString NewMarkdownLabel 2052 "用 PerMark 新建 Markdown 文件"
+LangString NewMarkdownLabel 1040 "Nuovo file Markdown con PerMark"
 LangString OpenWithTypeName 1033 "Markdown document"
 LangString OpenWithTypeName 1046 "Documento Markdown"
 LangString OpenWithTypeName 3082 "Documento de Markdown"
@@ -71,6 +78,7 @@ Var OpenWithMenuBox
 Var OpenWithAssocBox
 ; The text of the menu entry and of the file type, and the program they start, while the entries are written.
 Var OpenWithLabel
+Var NewFileLabel
 Var OpenWithTypeName
 Var OpenWithExe
 Var OpenWithChanged
@@ -94,6 +102,22 @@ Var OpenWithChanged
   !insertmacro OPENWITH_MENU_${OP} "Directory\Background\shell\PerMark" "%V"
   !insertmacro OPENWITH_MENU_${OP} "SystemFileAssociations\.md\shell\PerMark" "%1"
   !insertmacro OPENWITH_MENU_${OP} "SystemFileAssociations\.markdown\shell\PerMark" "%1"
+!macroend
+
+; The same keys as "Open with", with a command that makes a Markdown file in the folder and opens it.
+!macro OPENWITH_NEWFILE_WRITE KEY ARGUMENT
+  WriteRegStr HKCU "${PERMARK_CLASSES_KEY}\${KEY}" "" "$NewFileLabel"
+  WriteRegStr HKCU "${PERMARK_CLASSES_KEY}\${KEY}" "Icon" "$\"$OpenWithExe$\",0"
+  WriteRegStr HKCU "${PERMARK_CLASSES_KEY}\${KEY}\command" "" "$\"$OpenWithExe$\" --new-markdown $\"${ARGUMENT}$\""
+!macroend
+
+!macro OPENWITH_NEWFILE_DELETE KEY ARGUMENT
+  DeleteRegKey HKCU "${PERMARK_CLASSES_KEY}\${KEY}"
+!macroend
+
+!macro OPENWITH_NEWFILE OP
+  !insertmacro OPENWITH_NEWFILE_${OP} "Directory\shell\PerMarkNew" "%1"
+  !insertmacro OPENWITH_NEWFILE_${OP} "Directory\Background\shell\PerMarkNew" "%V"
 !macroend
 
 !macro OPENWITH_PROGID_WRITE
@@ -214,11 +238,14 @@ Var OpenWithChanged
   !insertmacro OPENWITH_RESOLVE $OpenWithMenu "${OPENWITH_MENU_CHOICE}"
   ${If} $OpenWithMenu == "1"
     !insertmacro OPENWITH_TEXT $OpenWithLabel "Directory\shell\PerMark" "$(OpenWithMenuLabel)"
+    !insertmacro OPENWITH_TEXT $NewFileLabel "Directory\shell\PerMarkNew" "$(NewMarkdownLabel)"
     !insertmacro OPENWITH_MENU WRITE
+    !insertmacro OPENWITH_NEWFILE WRITE
     WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "${OPENWITH_MENU_CHOICE}" 1
     StrCpy $OpenWithChanged 1
   ${ElseIf} $OpenWithMenu == "0"
     !insertmacro OPENWITH_MENU DELETE
+    !insertmacro OPENWITH_NEWFILE DELETE
     !insertmacro OPENWITH_MENU_TIDY
     WriteRegDWORD HKCU "${PERMARK_APP_KEY}" "${OPENWITH_MENU_CHOICE}" 0
     StrCpy $OpenWithChanged 1
@@ -343,6 +370,7 @@ FunctionEnd
   ; unless they also ask for the application data to go.
   ${If} $UpdateMode <> 1
     !insertmacro OPENWITH_MENU DELETE
+    !insertmacro OPENWITH_NEWFILE DELETE
     !insertmacro OPENWITH_MENU_TIDY
     !insertmacro OPENWITH_LIST DELETE
     !insertmacro OPENWITH_PROGID_DELETE

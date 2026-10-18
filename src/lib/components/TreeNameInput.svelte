@@ -1,7 +1,7 @@
 <script lang="ts">
   // The name of a new file, typed in the tree under its folder (docs/design/v0.2.md section 3, "New file"). It starts
-  // as `untitled.md` with the stem selected; `.md` is added when there is no extension. Enter creates the file and
-  // opens it for editing, Esc (or leaving the field) cancels.
+  // as `untitled.md` or `untitled.txt` with the stem selected; that extension is added when there is none. Enter
+  // creates the file and opens it for editing, Esc (or leaving the field) cancels.
   import { onMount, tick } from "svelte";
   import {
     NAME_PROBLEM_TEXT,
@@ -10,6 +10,7 @@
     namesIn,
     stemRange,
     withExtension,
+    type NewFileKind,
   } from "../editor/newFile";
   import { t } from "../i18n";
   import { isComposingKey } from "../ime";
@@ -18,8 +19,8 @@
   import { vault } from "../stores/vault.svelte";
   import Icon from "./Icon.svelte";
 
-  type Props = { folder: string; depth: number };
-  let { folder, depth }: Props = $props();
+  type Props = { folder: string; depth: number; kind: NewFileKind };
+  let { folder, depth, kind }: Props = $props();
 
   let input: HTMLInputElement | undefined = $state();
   let value = $state("");
@@ -27,12 +28,12 @@
   let busy = $state(false);
 
   const siblings = $derived(namesIn(folder, vault.files));
-  const name = $derived(withExtension(value));
+  const name = $derived(withExtension(value, kind));
   const problem = $derived(value.trim() === "" ? null : nameProblem(name, siblings));
   const message = $derived(refused ?? (problem ? t(NAME_PROBLEM_TEXT[problem]) : null));
 
   onMount(() => {
-    value = freshName(siblings);
+    value = freshName(siblings, kind);
     // the field shows the name after the next update; only then can the stem be selected
     void tick().then(() => {
       const field = input;
@@ -52,7 +53,7 @@
 
   async function submit(): Promise<void> {
     if (busy) return;
-    const final = withExtension(value);
+    const final = withExtension(value, kind);
     const found = nameProblem(final, siblings);
     if (found) {
       refused = t(NAME_PROBLEM_TEXT[found]);

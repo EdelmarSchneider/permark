@@ -5,7 +5,14 @@
   import { trackPointerDrag } from "../dom/treeDrag";
   import { keys, t } from "../i18n";
   import { isComposingKey } from "../ime";
-  import { GROUP_ORDER, drawnOrder, fullPlace, shortFolder, type GroupId } from "../notesModel";
+  import {
+    GROUP_ORDER,
+    drawnOrder,
+    fullPlace,
+    pathActions,
+    shortFolder,
+    type GroupId,
+  } from "../notesModel";
   import { clock } from "../stores/clock.svelte";
   import { notes } from "../stores/notes.svelte";
   import type { NoteEntry } from "../types";
@@ -151,6 +158,26 @@
 
   // ---- menus -------------------------------------------------------------------------------------
 
+  /** Copy path, and show the file when it is still there. */
+  function pathItems(entry: NoteEntry): MenuEntry[] {
+    return pathActions(entry.kind, entry.missing).map((action): MenuEntry => {
+      if (action.id === "copyPath") {
+        return {
+          id: "copyPath",
+          label: t(action.label),
+          icon: "copy",
+          onselect: () => void notes.copyPath(entry.path),
+        };
+      }
+      return {
+        id: "show",
+        label: t(action.label),
+        icon: entry.kind === "file" ? "folder-open" : "folder",
+        onselect: () => void notes.revealFile(entry.path),
+      };
+    });
+  }
+
   function rowEntries(path: string): MenuEntry[] {
     const note = notes.entries.find((n) => n.path === path);
     if (!note) return [];
@@ -179,6 +206,7 @@
         icon: "copy",
         onselect: () => void notes.copyNote(path),
       },
+      ...pathItems(note),
       {
         id: "move",
         label: t("notes.moveToProject"),
@@ -220,13 +248,7 @@
         disabled: file.missing,
         onselect: () => void notes.copyNote(file.path),
       },
-      {
-        id: "show",
-        label: t("notes.file.showInFolder"),
-        icon: "folder-open",
-        disabled: file.missing,
-        onselect: () => void notes.revealFile(file.path),
-      },
+      ...pathItems(file),
       {
         id: "locate",
         label: t("notes.file.locate"),

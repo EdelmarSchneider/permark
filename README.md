@@ -269,10 +269,11 @@ PerMark keeps its state in your user profile. If you want settings and tags to t
 
 ### 🖱️ Open with PerMark
 **Windows**: right-click a folder, the background of a folder or a Markdown file and choose **Open with PerMark** (under *Show more options* on
-Windows 11). You can also list PerMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
+Windows 11). The same menu offers **New Markdown file with PerMark**, which makes `untitled.md` in that folder and opens it.
+You can also list PerMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
 **Settings → File manager**, which adds and removes them at once. PerMark never sets itself as your default app; **Make default...** takes you to the
 Windows page where you do. Nothing needs administrator rights, and uninstalling removes every entry.
-The **Microsoft Store** version has the same entry on folders and on the background of a folder, and on Windows 11 it is in the main
+The **Microsoft Store** version has the same entries on folders and on the background of a folder, and on Windows 11 they are in the main
 right-click menu, not under *Show more options*. The package provides it (and the **Open with** entry for Markdown files), so
 there are no switches for it in Settings, and uninstalling the app removes it.
 
@@ -463,7 +464,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | New file | `Ctrl+N` |
 | Bold / italic / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
 | Link / inline code | `Ctrl+K` / ``Ctrl+` `` |
-| Headings 1 to 4 / paragraph (Visual) | `Ctrl+Alt+1` … `4` / `Ctrl+Alt+0` |
+| Headings 1 to 6 / paragraph (Visual) | `Ctrl+Shift+1` … `6` / `Ctrl+Shift+0` |
 | Block menu (Visual) | `/` in an empty paragraph |
 
 **Notes**
@@ -519,6 +520,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
   months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
 - v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
   show up in Quick open
+- v0.5.8: PlantUML diagrams, a new Markdown or text file from a folder, a note's path, heading shortcuts that work with AltGr, and wide blocks that stay in the pane
 - v0.5.7: review what changed since you last read (Keep or Revert), send comments to your agent, silence a folder, repair broken links, complete as you type, a Mermaid preview while you edit, and a Projects menu
 - v0.5.6: TrailMark is now PerMark: a new name, the same app, and nothing lost on the way
 - v0.5.5: tags with colors and icons, tags as your agent's index (`list_tags`, tag filter in `search`), a folder switcher, the navigation trail, and Open in browser for web pages

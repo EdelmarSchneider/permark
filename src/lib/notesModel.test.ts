@@ -10,6 +10,7 @@ import {
   neighbour,
   pinnedAt,
   fullPlace,
+  pathActions,
   placeOf,
   saveStatus,
   shortFolder,
@@ -268,6 +269,21 @@ describe("placeOf", () => {
     expect(placeOf("C:\\ask.md")).toEqual({ file: "ask.md", folder: "C:" });
     expect(placeOf("ask.md")).toEqual({ file: "ask.md", folder: "" });
     expect(placeOf("")).toEqual({ file: "", folder: "" });
+  });
+});
+
+describe("path actions", () => {
+  it("offers copy path and show in the file manager, and hides show when the file is missing", () => {
+    expect(pathActions("note", false)).toEqual([
+      { id: "copyPath", label: "menu.copyPath" },
+      { id: "show", label: "menu.showInFileManager" },
+    ]);
+    expect(pathActions("file", false)).toEqual([
+      { id: "copyPath", label: "menu.copyPath" },
+      { id: "show", label: "notes.file.showInFolder" },
+    ]);
+    expect(pathActions("note", true)).toEqual([{ id: "copyPath", label: "menu.copyPath" }]);
+    expect(pathActions("file", true)).toEqual([{ id: "copyPath", label: "menu.copyPath" }]);
   });
 });
 

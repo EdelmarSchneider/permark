@@ -162,6 +162,9 @@ pub fn initial_path(inbox: State<'_, OpenInbox>) -> Option<String> {
 /// The path given on the command line (`permark <path>`), if it exists. Relative paths resolve
 /// against the current directory.
 pub fn command_line_path() -> Option<String> {
+    if let Some(folder) = crate::new_file::launch_folder() {
+        return Some(folder);
+    }
     let arg = std::env::args_os().nth(1)?;
     initial_path_from(arg, std::env::current_dir().ok())
 }

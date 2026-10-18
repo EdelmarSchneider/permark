@@ -10,6 +10,7 @@ import { Decoration, DecorationSet, type EditorView } from "@milkdown/kit/prose/
 import { $prose } from "@milkdown/kit/utils";
 import { LOCKED, TM_BLOCK } from "./core";
 import { originOf, type Analysis } from "./doc";
+import { takeHeadingShortcut, type HeadingShortcut } from "./headingKeys";
 import { composing, tableKeymap } from "./tableKeys";
 
 /** What the plugins ask of the editor object that owns them. */
@@ -19,6 +20,8 @@ export type PluginHost = {
   updated(view: EditorView): void;
   files(files: File[], source: "paste" | "drop"): void;
   link(): void;
+  /** Ctrl+Shift+0–6 asked for this block. */
+  setBlock(block: HeadingShortcut): void;
   editInSource(block: number | null): void;
   /** The slash menu is open and wants this key. Resolves to whether it took it. */
   slashKey(key: string): boolean;
@@ -173,6 +176,22 @@ export function appPlugins(host: PluginHost) {
       }),
   );
 
+  // Ctrl+Shift+0–6 sets the paragraph and headings 1–6. The match uses event.code (Digit/Numpad),
+  // not the typed character, so a key of "¹" with code Digit1 still becomes heading 1. These plugins
+  // run before the Markdown presets, and a handled key is not inserted. The presets' Mod-Alt-0–6
+  // bindings are cleared in the editor config: Ctrl+Alt is AltGr on Windows.
+  const blockKeys = $prose(
+    () =>
+      new Plugin({
+        key: new PluginKey("TM_BLOCK_KEYS"),
+        props: {
+          handleKeyDown(_view, event) {
+            return takeHeadingShortcut(event, (block) => host.setBlock(block));
+          },
+        },
+      }),
+  );
+
   const keys = $prose(() =>
     keymap({
       "Mod-k": () => {
@@ -203,5 +222,5 @@ export function appPlugins(host: PluginHost) {
     });
   });
 
-  return [tracking, interaction, keys, tableKeys];
+  return [tracking, interaction, blockKeys, keys, tableKeys];
 }
