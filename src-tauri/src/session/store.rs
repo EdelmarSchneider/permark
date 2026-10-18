@@ -15,6 +15,7 @@ use crate::util::{hash_hex, write_atomic};
 const SESSION_FILE: &str = "session.json";
 const LAST_VISIT_FILE: &str = "last_visit.json";
 const READ_FILE: &str = "read.json";
+const QUIET_FILE: &str = "quiet.json";
 const REVIEWED_FILE: &str = "reviewed.json";
 const REVIEWED_DIR: &str = "reviewed";
 const COMMENTS_FILE: &str = "comments.json";
@@ -138,6 +139,11 @@ impl StateStore {
     /// Where the unread markers keep what was last read: `read.json` with the rest of the local state.
     pub fn read_path(&self) -> PathBuf {
         self.dir.join(READ_FILE)
+    }
+
+    /// Where silenced folders and files are kept: `quiet.json`, next to `read.json`. Personal, like it.
+    pub fn quiet_path(&self) -> PathBuf {
+        self.dir.join(QUIET_FILE)
     }
 
     /// Where the review keeps which version of each document the person approved: `reviewed.json`, next to

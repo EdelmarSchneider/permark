@@ -245,6 +245,16 @@ export interface Api {
   markAllRead(): Promise<void>;
   /** Every document in a folder, and below it, counts as read. */
   markFolderRead(path: string): Promise<void>;
+  /** Silenced folders and files, and folders marked as speaking inside them. A missing path speaks. */
+  interestRules(): Promise<Record<string, "quiet" | "speaking">>;
+  /**
+   * Silences `paths`, or makes them speak. A path that starts speaking is marked read, so changes from
+   * while it was quiet do not all appear at once. Resolves to every mark.
+   */
+  setInterest(
+    paths: string[],
+    interest: "quiet" | "speaking",
+  ): Promise<Record<string, "quiet" | "speaking">>;
   /** The documents that differ from the version the person approved, sorted (the `review-changed` event carries the same list). */
   reviewList(): Promise<ReviewEntry[]>;
   /**
@@ -481,6 +491,9 @@ export const tauriApi: Api = {
   markUnread: (path) => invoke<void>("mark_unread", { path }),
   markAllRead: () => invoke<void>("mark_all_read"),
   markFolderRead: (path) => invoke<void>("mark_folder_read", { path }),
+  interestRules: () => invoke<Record<string, "quiet" | "speaking">>("interest_rules"),
+  setInterest: (paths, interest) =>
+    invoke<Record<string, "quiet" | "speaking">>("set_interest", { paths, interest }),
   reviewList: () => invoke<ReviewEntry[]>("review_list"),
   reviewGet: (path) => invoke<ReviewView>("review_get", { path }),
   reviewKeep: (path, basis, index) =>
@@ -674,6 +687,8 @@ function createMockApi(): Api {
     markUnread: command("markUnread"),
     markAllRead: command("markAllRead"),
     markFolderRead: command("markFolderRead"),
+    interestRules: command("interestRules"),
+    setInterest: command("setInterest"),
     reviewList: command("reviewList"),
     reviewGet: command("reviewGet"),
     reviewKeep: command("reviewKeep"),

@@ -551,6 +551,13 @@ export const zhCN = {
   "init.failed": "无法创建 .permark/：{message}",
 
   // ---- search
+  "quiet.silence": "静音",
+  "quiet.silenceHint": "仍留在树中，但不显示其更改",
+  "quiet.listen": "收听",
+  "quiet.listenHint": "此处的更改从现在起重新计入",
+  "quiet.mark": "已静音",
+  "search.includeQuiet": "包含已静音",
+  "search.includeQuietHint": "同时搜索已静音的文件夹和文件",
   "search.title": "搜索",
   "search.label": "搜索所有文档",
   "search.placeholder": "搜索所有文档",

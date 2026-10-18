@@ -6,6 +6,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Silence a folder.** Right-click a folder or a file and choose **Silence**. It stays in the tree, and it opens and edits, but its changes, unread marks and Git letters stay quiet. A folder inside it can **Listen** on its own, and that choice covers what is already there and what appears later. **Listen** brings the folder back as already read, so older changes do not all arrive at once. Search leaves silenced paths out until **Include silenced** is on. An agent's search and unread list are unchanged.
 - **Complete as you type, without AI.** In Source, a link target offers files in the folder as a path from the current document, and after `#` the headings of that document. A word you have started offers words from the document and from file names. In Visual, the link box does the same for its target, and a word you have started offers those words beside the caret. Enter or Tab accepts; Esc closes.
 - **Projects.** A Projects button at the top of the activity bar lists recent folders and offers New project, Open folder and Close folder. New project adds a `.permark` folder to the folder you pick. Opening a folder, a recent folder, a new project, or a folder from the Explorer's menu asks whether it opens in this window or in a new one.
 - **Broken links.** A Broken links panel lists every link in the project whose file does not exist. When one file with that name exists somewhere else, Repair points the link at it. When several do, you pick which one.

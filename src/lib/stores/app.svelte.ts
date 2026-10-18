@@ -57,6 +57,8 @@ import { review } from "./review.svelte";
 import { notes } from "./notes.svelte";
 import { media } from "./media.svelte";
 import { outline } from "./outline.svelte";
+import { withoutQuiet } from "../quiet";
+import { quiet } from "./quiet.svelte";
 import { search } from "./search.svelte";
 import { session } from "./session.svelte";
 import { tags } from "./tags.svelte";
@@ -484,6 +486,7 @@ class AppStore {
         void tags.refreshStyles();
         void vault.refreshImageRefs();
         void unread.refresh();
+        void quiet.refresh();
         void comments.refresh();
       }
       const restored = session.load(stored);
@@ -524,6 +527,7 @@ class AppStore {
     comments.reset();
     review.clear();
     unread.reset();
+    quiet.reset();
     vault.reset();
     ui.followChip = null;
     ui.find.open = false;
@@ -741,7 +745,7 @@ class AppStore {
       docs.handleBatch(batch, false);
       return;
     }
-    const update = feed.apply(batch, now);
+    const update = feed.apply(withoutQuiet(batch, (path) => quiet.isQuiet(path)), now);
     if (batch.rescan) void vault.refreshTree();
     tags.onFilesChanged();
     brokenLinks.filesChanged();
@@ -755,7 +759,7 @@ class AppStore {
     let jumped: string | null = null;
     if (session.follow && update.bulk === null) {
       const candidate = followCandidate(batch);
-      if (candidate !== null && candidate !== docs.path) {
+      if (candidate !== null && !quiet.isQuiet(candidate) && candidate !== docs.path) {
         jumped = feed.gate.offer(candidate, now, this.followBlocked());
         if (jumped !== null) void this.followTo(jumped);
         else this.scheduleFollowRetry();
@@ -888,8 +892,9 @@ class AppStore {
 
   /** Alt+U: opens the next unread document (the live feed first, newest first, then the tree), or says there is none. */
   async openNextUnread(): Promise<void> {
+    const heard = new Set([...unread.set].filter((path) => !quiet.isQuiet(path)));
     const next = nextUnread({
-      unread: unread.set,
+      unread: heard,
       feed: feed.entries.flatMap((entry) => (entry.type === "file" ? [entry.path] : [])),
       tree: vault.files,
       current: docs.path,

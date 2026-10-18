@@ -33,6 +33,7 @@ mod nav;
 mod notes;
 mod notes_commands;
 mod open_request;
+mod quiet;
 mod refs;
 mod render;
 mod review;
@@ -255,6 +256,8 @@ pub fn run() {
             commands::mark_unread,
             commands::mark_all_read,
             commands::mark_folder_read,
+            commands::interest_rules,
+            commands::set_interest,
             commands::review_list,
             commands::review_get,
             commands::review_keep,

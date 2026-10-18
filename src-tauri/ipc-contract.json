@@ -64,6 +64,8 @@
     "mark_unread": ["path"],
     "mark_all_read": [],
     "mark_folder_read": ["path"],
+    "interest_rules": [],
+    "set_interest": ["paths", "interest"],
     "review_list": [],
     "review_get": ["path"],
     "review_keep": ["path", "hash", "reviewed_hash", "index"],

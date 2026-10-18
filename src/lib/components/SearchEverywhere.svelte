@@ -50,6 +50,7 @@
   import { notes } from "../stores/notes.svelte";
   import { review } from "../stores/review.svelte";
   import { outline } from "../stores/outline.svelte";
+  import { quiet } from "../stores/quiet.svelte";
   import { tags } from "../stores/tags.svelte";
   import { ui } from "../stores/ui.svelte";
   import { unread } from "../stores/unread.svelte";
@@ -162,7 +163,14 @@
   });
 
   /** The files the box lists by name: the Explorer filter's, and the pictures, sound and video it hides. */
-  const listed = $derived(withAssets(filter.files, filter.hiddenFiles));
+  const listed = $derived.by(() => {
+    const all = withAssets(filter.files, filter.hiddenFiles);
+    if (quiet.includeQuiet) return all;
+    return {
+      files: all.files.filter((path) => !quiet.isQuiet(path)),
+      hidden: all.hidden.filter((path) => !quiet.isQuiet(path)),
+    };
+  });
 
   /** What the file search finds. When only files the Explorer filter hides match, they are listed at once. */
   const matches = $derived.by<QuickMatches | null>(() => {
@@ -172,7 +180,9 @@
       tags: q.chips,
       files: listed.files,
       hiddenFiles: listed.hidden,
-      allFiles: vault.files,
+      allFiles: quiet.includeQuiet
+        ? vault.files
+        : vault.files.filter((path) => !quiet.isQuiet(path)),
       reveal: revealHidden,
       tagsOf: (path) => tags.index.get(path)?.tags,
       describe,
@@ -186,7 +196,12 @@
     if (idle) {
       const changed: { path: string; atMs: number }[] = [];
       for (const e of feed.entries) {
-        if (e.type === "file" && e.isDoc && e.kind !== "removed") {
+        if (
+          e.type === "file" &&
+          e.isDoc &&
+          e.kind !== "removed" &&
+          (quiet.includeQuiet || !quiet.isQuiet(e.path))
+        ) {
           changed.push({ path: e.path, atMs: e.atMs });
         }
       }
@@ -206,7 +221,9 @@
   /** The folders the Explorer shows: one that is not in the tree cannot be revealed in it. The Notes window has none. */
   const folderPaths = $derived(
     (scope === "all" || scope === "files") && hasWords && !vault.isNotes
-      ? collectFolders([...filter.roots.main, ...filter.roots.worktrees])
+      ? collectFolders([...filter.roots.main, ...filter.roots.worktrees]).filter(
+          (path) => quiet.includeQuiet || !quiet.isQuiet(path),
+        )
       : [],
   );
   const folderList = $derived<FolderRow[]>(
@@ -270,7 +287,9 @@
     }
     if (!hasWords || unknown.length > 0) return [];
     return sectionRows({
-      hits: sectionHits,
+      hits: quiet.includeQuiet
+        ? sectionHits
+        : sectionHits.filter((hit) => !quiet.isQuiet(hit.path)),
       visible: new Set(files),
       tags: q.chips,
       tagsOf: (path) => tags.index.get(path)?.tags,
@@ -579,6 +598,20 @@
             {t(SCOPE_NAME[s])}
           </button>
         {/each}
+      </div>
+    {/if}
+    {#if !vault.isNotes}
+      <div class="palette__scopes">
+        <button
+          type="button"
+          class="chip-toggle"
+          aria-pressed={quiet.includeQuiet}
+          title={t("search.includeQuietHint")}
+          onmousedown={(e) => e.preventDefault()}
+          onclick={() => quiet.toggleInclude()}
+        >
+          {t("search.includeQuiet")}
+        </button>
       </div>
     {/if}
     {#if suggesting}

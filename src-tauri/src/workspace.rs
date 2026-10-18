@@ -39,6 +39,7 @@ use crate::meta::{MetaService, Timing};
 use crate::notes::{
     self, LooseDoc, NoteSaved, NotesError, NotesService, OpenReport, ReadOnlyReason,
 };
+use crate::quiet::{self, Interest, QuietBook};
 use crate::refs::ImageRefs;
 use crate::render::{self, DocumentView, Registry};
 use crate::review::{
@@ -57,7 +58,8 @@ use crate::vault::{NodeKind, Resolved, TreeNode, TreeOptions, Vault, VaultError,
 use crate::watch::service::WatchOutput;
 use crate::watch::sigs::hash_file;
 use crate::watch::{
-    FsBatch, GitProbe, OwnWrites, PathFilter, SigStore, Verdict, WatchConfig, WatchService,
+    ChangeKind, FsBatch, GitProbe, OwnWrites, PathFilter, SigStore, Verdict, WatchConfig,
+    WatchService,
 };
 
 /// "Since your last visit" lists at most this many files.
@@ -304,6 +306,8 @@ pub struct Workspace {
     review: Arc<ReviewService>,
     /// The comments the person left on passages.
     comments: Arc<CommentBook>,
+    /// Folders and files the person silenced. Personal, and invisible to agents.
+    quiet: Arc<QuietBook>,
     /// Content the editor is writing, so the watcher does not report it back as an external change.
     own_writes: Arc<OwnWrites>,
     /// Rename, move, delete and new folder in the Explorer.
@@ -323,6 +327,7 @@ struct AppFollower {
     meta: Arc<MetaService>,
     unread: Arc<UnreadService>,
     comments: Arc<CommentBook>,
+    quiet: Arc<QuietBook>,
 }
 
 impl Followers for AppFollower {
@@ -334,6 +339,9 @@ impl Followers for AppFollower {
         }
         self.unread.renamed(from, to);
         self.comments.renamed(from, to, is_dir);
+        // A file mark moves with the file. A folder mark moves with everything marked inside it.
+        let _ = is_dir;
+        self.quiet.renamed(from, to);
     }
 
     fn rewritten(&self, path: &str, old_hash: &str, new_hash: &str) {
@@ -449,6 +457,7 @@ struct WatchWiring {
     indexer: Arc<IndexWorker>,
     meta: Arc<MetaService>,
     unread: Arc<UnreadService>,
+    quiet: Arc<QuietBook>,
     own_writes: Arc<OwnWrites>,
 }
 
@@ -476,6 +485,7 @@ fn start_watcher(
         indexer,
         meta,
         unread,
+        quiet,
         own_writes,
     } = wiring;
     let known = Arc::clone(&sigs);
@@ -518,6 +528,14 @@ fn start_watcher(
                 ..
             } = out;
             // Lost events or a partly listed folder: the index reconciles with the disk instead.
+            // A rename made outside the app (an agent, another program) carries a silence along.
+            for change in &all_changes {
+                if change.kind == ChangeKind::Renamed {
+                    if let Some(from) = &change.from {
+                        quiet.renamed(from, &change.path);
+                    }
+                }
+            }
             if batch.rescan {
                 indexer.rescan();
                 unread.rescan();
@@ -752,6 +770,7 @@ impl Workspace {
             CommentBook::new(Arc::clone(&vault), store.comments_path())
                 .with_listener(comments_heard),
         );
+        let quiet = Arc::new(QuietBook::open(store.quiet_path()));
 
         let fileops = FileOpsService::new(
             Arc::clone(&vault),
@@ -760,6 +779,7 @@ impl Workspace {
                 meta: Arc::clone(&meta),
                 unread: Arc::clone(&unread),
                 comments: Arc::clone(&comments),
+                quiet: Arc::clone(&quiet),
             }),
             recycler,
         );
@@ -789,6 +809,7 @@ impl Workspace {
                 indexer: Arc::clone(&indexer),
                 meta: Arc::clone(&meta),
                 unread: Arc::clone(&unread),
+                quiet: Arc::clone(&quiet),
                 own_writes: Arc::clone(&own_writes),
             },
             git_ctx.as_ref(),
@@ -855,6 +876,7 @@ impl Workspace {
             unread,
             review,
             comments,
+            quiet,
             own_writes,
             fileops,
             agent,
@@ -1410,6 +1432,7 @@ impl Workspace {
             // The tags and descriptions added so far move into `.permark/meta.toml`.
             self.meta.migrate_to(store.meta_path(), true)?;
             self.unread.relocate(store.read_path());
+            self.quiet.relocate(store.quiet_path());
             self.review.relocate(ReviewPaths {
                 state: store.reviewed_path(),
                 copies: store.reviewed_dir(),
@@ -1493,6 +1516,33 @@ impl Workspace {
     /// Everything in a folder counts as read.
     pub fn mark_folder_read(&self, path: &str) -> Result<(), AppError> {
         Ok(self.unread.mark_folder_read(path)?)
+    }
+
+    /// The folders and files the person silenced, and the ones they marked as speaking inside those.
+    pub fn interest(&self) -> BTreeMap<String, Interest> {
+        self.quiet.rules()
+    }
+
+    /// Silences `paths`, or makes them speak. A path that starts speaking is marked read, so changes
+    /// that happened while it was quiet do not arrive all at once. Later changes still do.
+    pub fn set_interest(
+        &self,
+        paths: &[String],
+        interest: Interest,
+    ) -> Result<BTreeMap<String, Interest>, AppError> {
+        let mut resolved = Vec::with_capacity(paths.len());
+        for path in paths {
+            resolved.push(self.vault.resolve(path)?.rel);
+        }
+        let before = self.quiet.rules();
+        let after = self.quiet.set(&resolved, interest);
+        let wake = quiet::waking_paths(
+            self.unread.document_paths().iter().map(String::as_str),
+            &before,
+            &after,
+        );
+        self.unread.mark_paths_read(&wake);
+        Ok(after)
     }
 
     // ---- review of changes ----------------------------------------------------------------------

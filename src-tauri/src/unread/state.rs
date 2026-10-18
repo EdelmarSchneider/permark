@@ -416,6 +416,27 @@ impl Tracker {
         self.read_all_of(&keys)
     }
 
+    /// The documents being tracked, in path order.
+    pub fn paths(&self) -> Vec<String> {
+        let mut paths: Vec<String> = self
+            .docs
+            .values()
+            .filter(|doc| is_tracked(&doc.path))
+            .map(|doc| doc.path.clone())
+            .collect();
+        paths.sort();
+        paths
+    }
+
+    /// These documents count as read, when their content is already known. Returns whether `read.json` has to be written.
+    pub fn mark_paths_read(&mut self, paths: &[String]) -> bool {
+        if self.baseline_pending {
+            return false;
+        }
+        let keys: Vec<String> = paths.iter().map(|path| key(path)).collect();
+        self.read_all_of(&keys)
+    }
+
     /// The app rewrote a document (the links in it) and it went from `old` to `new`: a document that had been
     /// read stays read, because the change is the app's own doing. Returns whether `read.json` has to be written.
     pub fn rewritten(&mut self, path: &str, old: u64, new: u64) -> bool {
