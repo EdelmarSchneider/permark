@@ -124,6 +124,17 @@ describe("a fenced block in the reading view", () => {
     expect(els[0].querySelector(".hljs-keyword")).not.toBeNull();
   });
 
+  it("wraps prose and keeps a table row intact, without dropping characters Copy would read", async () => {
+    const prose = "A long paragraph that is one source line of ordinary prose inside the fence.";
+    const table = "| name | purpose | notes that run on |";
+    const block = await drawn(fence("markdown", `${prose}\n${table}`));
+    const code = block.querySelector("code");
+    expect(code?.textContent).toBe(`${prose}\n${table}\n`);
+    expect(
+      Array.from(block.querySelectorAll(".code-line--unbroken"), (el) => el.textContent),
+    ).toEqual([table]);
+  });
+
   it("leaves a Mermaid diagram to its own renderer", () => {
     const template = document.createElement("template");
     template.innerHTML = fence("mermaid", "graph TD; A-->B");
