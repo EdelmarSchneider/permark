@@ -850,8 +850,13 @@ class NotesStore {
     }
   }
 
-  /** "Show in folder": the file in the system's file manager. */
+  /**
+   * "Show in file manager" (a note) or "Show in folder" (a loose file): the file selected in the system's
+   * file manager. A missing file is not revealed: there is nothing to select.
+   */
   async revealFile(path: string): Promise<void> {
+    const entry = this.entries.find((n) => n.path === path);
+    if (entry?.missing) return;
     try {
       await api.revealInFolder(path);
     } catch (error) {
@@ -986,6 +991,22 @@ class NotesStore {
   }
 
   // ---- copying -------------------------------------------------------------------------------------
+
+  /**
+   * "Copy path": the absolute path of a note or a loose file, with backslashes written as slashes.
+   * This is the file's place, not its text (that is {@link copyNote}).
+   */
+  async copyPath(path = this.current): Promise<void> {
+    if (!path) return;
+    let absolute: string;
+    try {
+      absolute = (await api.absolutePath(path)).replace(/\\/g, "/");
+    } catch (error) {
+      toast.message(errorMessage(error), "warn");
+      return;
+    }
+    if (!(await copyText(absolute))) toast.message(t("copy.failed"), "warn");
+  }
 
   /** `Ctrl+Shift+C` and the Copy button: the note's text exactly as the file holds it, as plain text. */
   async copyNote(path = this.current): Promise<void> {

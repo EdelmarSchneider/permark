@@ -1206,6 +1206,13 @@ impl Workspace {
     }
 
     pub fn absolute_path(&self, path: &str) -> Result<String, AppError> {
+        // A loose file that is gone still has the place it was opened at. A note resolves in the notes
+        // folder, which is this window's root even though that folder is not a project.
+        if let Some(part) = &self.notes {
+            if let Some(remembered) = part.service.remembered_file(path)? {
+                return Ok(remembered.display().to_string());
+            }
+        }
         Ok(self.resolve_path(path)?.abs.display().to_string())
     }
 
@@ -2941,6 +2948,88 @@ deepword
         assert_eq!(ws.external_target(&path).expect("external"), file);
         assert_eq!(ws.reveal_target(&path).expect("reveal"), file);
         assert_eq!(ws.editor_target(&path).expect("editor"), file);
+        ws.close();
+    }
+
+    /// A note's path is its file in the notes folder, which is not a project. A file that is gone can still
+    /// be named, and is not revealed. A path that leaves the folder is not a note.
+    #[test]
+    fn a_note_path_is_its_file_and_a_missing_file_is_not_revealed() {
+        let fx = Fx::new();
+        let notes_dir = tempfile::tempdir().expect("notes");
+        write(notes_dir.path(), "ideas.md", "# Ideas\n");
+        let sink: Arc<dyn EventSink> = fx.rec.clone();
+        let ws =
+            Workspace::open_notes(notes_dir.path(), fx.app.path(), None, &sink).expect("notes");
+        let expected = ws.vault().root().join("ideas.md");
+        assert_eq!(
+            ws.absolute_path("ideas.md").expect("abs"),
+            expected.display().to_string()
+        );
+        assert_eq!(ws.reveal_target("ideas.md").expect("reveal"), expected);
+
+        // the same file, asked for from a project, is not a path of that project
+        let project = fx.open();
+        let outside = expected.display().to_string();
+        assert!(project.absolute_path(&outside).is_err());
+        assert!(project.reveal_target(&outside).is_err());
+        for bad in ["../outside.md", "/etc/passwd", "C:/Windows/win.ini"] {
+            assert!(project.absolute_path(bad).is_err(), "{bad}");
+            assert!(ws.absolute_path(bad).is_err(), "{bad}");
+            assert!(ws.reveal_target(bad).is_err(), "{bad}");
+        }
+        project.close();
+
+        std::fs::remove_file(&expected).expect("remove");
+        assert_eq!(
+            ws.absolute_path("ideas.md").expect("the place it had"),
+            expected.display().to_string()
+        );
+        assert!(
+            ws.reveal_target("ideas.md").is_err(),
+            "a missing file is not revealed"
+        );
+        ws.close();
+    }
+
+    /// A loose file lives outside the notes folder. Copy path keeps the place it was opened at after it is
+    /// gone. Showing it, or naming a different file, does not.
+    #[test]
+    fn a_missing_loose_file_keeps_its_path_and_is_not_revealed() {
+        let fx = Fx::new();
+        let ws = fx.open_notes();
+        let sent = sent_files();
+        let disk = sent.path().join("proposal.md");
+        let path = open_loose(&ws, &disk);
+        let file = dunce::canonicalize(&disk).expect("canonical");
+        let id = path
+            .strip_prefix("@file/")
+            .and_then(|rest| rest.split('/').next())
+            .expect("an id")
+            .to_owned();
+        assert_eq!(
+            ws.absolute_path(&path).expect("abs"),
+            file.display().to_string()
+        );
+        assert_eq!(ws.reveal_target(&path).expect("reveal"), file);
+        // a picture next to it, a climb out, and an id that is not this file are not its path
+        assert!(ws.absolute_path(&format!("@file/{id}/pic.png")).is_err());
+        assert!(ws
+            .absolute_path(&format!("@file/{id}/../proposal.md"))
+            .is_err());
+        assert!(ws.absolute_path("@file/ffffffff/proposal.md").is_err());
+
+        std::fs::remove_file(&file).expect("remove");
+        assert_eq!(
+            ws.absolute_path(&path).expect("last known path"),
+            file.display().to_string()
+        );
+        assert!(
+            ws.reveal_target(&path).is_err(),
+            "a missing file is not revealed"
+        );
+        assert!(ws.absolute_path(&format!("@file/{id}/pic.png")).is_err());
+        assert!(ws.reveal_target(&format!("@file/{id}/pic.png")).is_err());
         ws.close();
     }
 

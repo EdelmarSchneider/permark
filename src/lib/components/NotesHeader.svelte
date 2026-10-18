@@ -6,7 +6,7 @@
   import { isComposingKey } from "../ime";
   import { docs } from "../stores/docs.svelte";
   import { edit } from "../stores/edit.svelte";
-  import { fullPlace } from "../notesModel";
+  import { fullPlace, pathActions } from "../notesModel";
   import { notes } from "../stores/notes.svelte";
   import Icon from "./Icon.svelte";
   import IconButton from "./IconButton.svelte";
@@ -67,6 +67,26 @@
 
   const isFile = $derived(entry?.kind === "file");
   const missing = $derived(entry?.missing === true);
+
+  /** Copy path, and show the file when it is still there. Both stay while the note or file is open. */
+  function pathItems(filePath: string, kind: "note" | "file", fileMissing: boolean): MenuEntry[] {
+    return pathActions(kind, fileMissing).map((action): MenuEntry => {
+      if (action.id === "copyPath") {
+        return {
+          id: "copyPath",
+          label: t(action.label),
+          icon: "copy",
+          onselect: () => void notes.copyPath(filePath),
+        };
+      }
+      return {
+        id: "show",
+        label: t(action.label),
+        icon: kind === "file" ? "folder-open" : "folder",
+        onselect: () => void notes.revealFile(filePath),
+      };
+    });
+  }
   const unsaved = $derived(isFile && (entry?.unsaved === true || (edit.loose && edit.dirty)));
 
   // A loose file keeps its name, has no earlier versions here, and is taken out of the list rather than deleted: the file is
@@ -82,13 +102,7 @@
             onselect: () => path && void notes.togglePin(path),
           },
           { type: "separator" },
-          {
-            id: "show",
-            label: t("notes.file.showInFolder"),
-            icon: "folder-open",
-            disabled: !path || missing,
-            onselect: () => path && void notes.revealFile(path),
-          },
+          ...(path ? pathItems(path, "file", missing) : []),
           {
             id: "locate",
             label: t("notes.file.locate"),
@@ -129,6 +143,9 @@
             onselect: () => (notes.renaming = true),
           },
           { type: "separator" },
+          ...(path
+            ? ([...pathItems(path, "note", missing), { type: "separator" }] satisfies MenuEntry[])
+            : []),
           {
             id: "move",
             label: t("notes.moveToProject"),
