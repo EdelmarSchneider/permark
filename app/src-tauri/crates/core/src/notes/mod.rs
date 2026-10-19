@@ -57,6 +57,7 @@ pub struct SharedNote {
     /// The note's file name: what the agent asks for.
     pub id: String,
     pub title: String,
+    #[ts(type = "number")]
     pub updated_ms: u64,
 }
 

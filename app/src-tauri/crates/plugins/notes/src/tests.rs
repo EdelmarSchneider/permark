@@ -1530,3 +1530,44 @@ fn a_note_that_changes_while_it_is_copied_is_kept_with_its_copy() {
         "before"
     );
 }
+
+#[test]
+fn what_an_editor_of_this_run_is_typing_is_not_text_a_crash_left() {
+    let f = fx();
+    note(&f, "a.md", "saved", 100);
+    let file = loose_file(&f.tmp.path().join("d"), "x.md", "disk");
+    let path = f.service.open_file(&file.display().to_string(), 1).unwrap();
+    let live = f.service.started_ms + 10_000;
+    f.service
+        .buffer("a.md", "h", Some("typing now"), live)
+        .unwrap();
+    f.service
+        .buffer(&path, "h", Some("typing here"), live)
+        .unwrap();
+    let list = f.service.list(1);
+    assert!(list.entries.iter().all(|e| !e.recovered));
+    let row = list
+        .entries
+        .iter()
+        .find(|e| e.kind == EntryKind::File)
+        .unwrap();
+    assert_eq!(row.state, Some(LooseState::Clean));
+    assert!(row.pending, "the typed text is still known");
+    // the same entries from before this run are what a crash left
+    f.service
+        .buffer("a.md", "h", Some("typing now"), 5)
+        .unwrap();
+    f.service
+        .buffer(&path, "h", Some("typing here"), 5)
+        .unwrap();
+    let list = f.service.list(2);
+    assert!(list.entries.iter().any(|e| e.recovered));
+    assert_eq!(
+        list.entries
+            .iter()
+            .find(|e| e.kind == EntryKind::File)
+            .unwrap()
+            .state,
+        Some(LooseState::Unsaved)
+    );
+}

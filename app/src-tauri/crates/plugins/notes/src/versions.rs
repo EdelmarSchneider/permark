@@ -28,7 +28,9 @@ pub const ORPHAN_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 pub struct Version {
     /// Opaque: the moment it was taken, in milliseconds.
     pub id: String,
+    #[ts(type = "number")]
     pub at_ms: u64,
+    #[ts(type = "number")]
     pub size: u64,
 }
 

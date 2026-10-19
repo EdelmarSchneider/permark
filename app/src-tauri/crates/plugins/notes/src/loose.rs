@@ -151,7 +151,9 @@ impl NotesService {
                 });
                 let state = match now {
                     None => LooseState::Gone,
-                    Some(_) if pending => LooseState::Unsaved,
+                    Some(_) if pending && kept.is_some_and(|k| self.left_by_a_crash(k)) => {
+                        LooseState::Unsaved
+                    }
                     Some(stamp) if entry.stamp != Stamp::default() && stamp != entry.stamp => {
                         LooseState::ChangedOnDisk
                     }

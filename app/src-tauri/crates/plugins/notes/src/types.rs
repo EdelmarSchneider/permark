@@ -42,7 +42,9 @@ pub struct NoteEntry {
     /// The first line, marks removed. Empty for a note with no text (the window says "Untitled note").
     pub title: String,
     pub snippet: String,
+    #[ts(type = "number")]
     pub modified_ms: u64,
+    #[ts(type = "number")]
     pub size: u64,
     pub pinned: bool,
     /// Shared with agents.
@@ -87,6 +89,7 @@ pub struct NotesSummary {
 #[ts(export)]
 pub struct Deleted {
     /// Asks for them back; none when they are too big to keep for it.
+    #[ts(type = "number | null")]
     pub undo_id: Option<u64>,
     pub names: Vec<String>,
 }
@@ -98,6 +101,7 @@ pub struct Deleted {
 pub struct Moved {
     /// Where the copy is (a full path: the person chose the folder).
     pub destination: String,
+    #[ts(type = "number | null")]
     pub undo_id: Option<u64>,
     /// The note changed while it was copied: both are kept, nothing was removed.
     pub kept: bool,

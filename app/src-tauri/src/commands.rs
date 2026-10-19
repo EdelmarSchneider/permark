@@ -425,6 +425,12 @@ pub fn file_abs_path(
     window: WebviewWindow,
     path: String,
 ) -> Result<String, IpcError> {
+    // the Notes: a note in its folder, a loose file where it is
+    if let Some((_, Workspace::Notes(core))) = state(&handle).registry.workspace_of(window.label())
+    {
+        let (_, abs) = core.scope().resolve_new(&path)?;
+        return Ok(abs.display().to_string());
+    }
     let core = project_of(&handle, &window)?;
     let parsed = VaultPath::parse(&path).map_err(IpcError::from)?;
     let abs = core.vault().resolve(&parsed).map_err(IpcError::from)?;
@@ -439,9 +445,20 @@ pub fn file_open_external(
     path: String,
     mode: OpenMode,
 ) -> Result<(), IpcError> {
-    let core = project_of(&handle, &window)?;
-    // the vault checks the path and the kind of file; the opener only ever sees the validated absolute path
-    let abs = external_target(core.vault(), &path, mode)?;
+    let abs = if let Some((_, Workspace::Notes(core))) =
+        state(&handle).registry.workspace_of(window.label())
+    {
+        // the Notes only show a file in the file manager; they never hand a note to another program
+        if mode != OpenMode::Reveal {
+            return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
+        }
+        let (_, abs) = core.scope().resolve(&path)?;
+        abs
+    } else {
+        let core = project_of(&handle, &window)?;
+        // the vault checks the path and the kind of file; the opener only ever sees the validated absolute path
+        external_target(core.vault(), &path, mode)?
+    };
     let opener = handle.opener();
     let done = match mode {
         OpenMode::Reveal => opener.reveal_item_in_dir(&abs),

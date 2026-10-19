@@ -137,6 +137,8 @@ pub struct NotesService {
     pub(crate) scope: Arc<NotesScope>,
     chosen: Box<dyn Fn() -> String + Send + Sync>,
     ctx: RwLock<Arc<Ctx>>,
+    /// When this run began: text journaled before it is text a crash left (the editors of this run keep theirs too).
+    pub(crate) started_ms: u64,
 }
 
 impl NotesService {
@@ -157,6 +159,7 @@ impl NotesService {
             scope,
             chosen,
             ctx: RwLock::new(ctx),
+            started_ms: now_ms(),
         });
         service.sync_scope(&service.ctx());
         service
@@ -319,12 +322,13 @@ impl NotesService {
                 .collect()
         };
         let mut journal = load_journal();
-        let (mut notes, mut names, listed) = Self::read_notes(&ctx, &info, &journal);
+        let (mut notes, mut names, listed) =
+            Self::read_notes(&ctx, &info, &journal, self.started_ms);
         if listed {
             if self.recover_orphans(&ctx, &names, &journal, now_ms) {
                 // text that was only in the journal is a note now
                 journal = load_journal();
-                (notes, names, _) = Self::read_notes(&ctx, &info, &journal);
+                (notes, names, _) = Self::read_notes(&ctx, &info, &journal, self.started_ms);
             }
             ctx.update(|state| {
                 let loose_keys: HashSet<String> =
@@ -406,6 +410,7 @@ impl NotesService {
         ctx: &Ctx,
         info: &FolderInfo,
         journal: &HashMap<String, JournalEntry>,
+        started_ms: u64,
     ) -> (Vec<NoteEntry>, HashSet<String>, bool) {
         let mut notes = Vec::new();
         let mut names = HashSet::new();
@@ -447,9 +452,9 @@ impl NotesService {
                     fresh
                 }
             };
-            let recovered = journal
-                .get(&name)
-                .is_some_and(|entry| differs_from_file(entry, &path));
+            let recovered = journal.get(&name).is_some_and(|entry| {
+                entry.saved_ms < started_ms && differs_from_file(entry, &path)
+            });
             if recovered {
                 Self::keep_recovered(ctx, &name, journal.get(&name));
             }
@@ -473,6 +478,11 @@ impl NotesService {
         }
         titles.retain(|name, _| names.contains(name));
         (notes, names, true)
+    }
+
+    /// The entry was kept by an earlier run: nobody is typing it now.
+    pub(crate) fn left_by_a_crash(&self, entry: &JournalEntry) -> bool {
+        entry.saved_ms < self.started_ms
     }
 
     /// Recovered text is also a version, so it stays whatever the person decides.
