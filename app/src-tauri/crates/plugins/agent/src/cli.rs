@@ -271,32 +271,10 @@ pub fn program_path() -> Option<PathBuf> {
 /// # Errors
 /// The program's own path is unknown, or it cannot be started.
 pub fn launch_app(project: &Path) -> io::Result<()> {
-    use std::process::{Command, Stdio};
     let program =
         program_path().ok_or_else(|| io::Error::other("the program's own path is unknown"))?;
-    let mut command = Command::new(program);
-    command
-        .arg("--")
-        .arg(project)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const DETACHED_PROCESS: u32 = 0x0000_0008;
-        const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-        command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    let mut child = command.spawn()?;
-    // collects the exit status so the finished process is not left as a zombie
-    std::thread::spawn(move || {
-        let _ = child.wait();
-    });
-    Ok(())
+    permark_core::process::spawn_detached(
+        &program,
+        &[std::ffi::OsStr::new("--"), project.as_os_str()],
+    )
 }

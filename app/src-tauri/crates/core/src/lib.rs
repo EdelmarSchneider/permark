@@ -16,6 +16,7 @@ pub mod open;
 pub mod organizing;
 pub mod paths;
 pub mod plugins;
+pub mod process;
 pub mod search;
 pub mod secrets;
 pub mod session;
