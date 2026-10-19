@@ -17,6 +17,9 @@ use permark_core::fileops::{
 };
 use permark_core::format::{FormatRegistry, Measure, OutlineItem, Segment, TextKind};
 use permark_core::paths::VaultPath;
+use permark_core::search::{
+    IndexStatus, PathResults, Recent, SearchFilter, SearchOptions, SectionResults,
+};
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{AppSettings, SettingChange};
 use permark_core::tree::{TreeFilter, TreeSnapshot};
@@ -701,6 +704,64 @@ pub fn analyze(
     Ok(formats.analyze(&text, kind))
 }
 
+// ---- Search ----------------------------------------------------------------------------------------------------------------
+
+fn as_limit(limit: u32) -> usize {
+    usize::try_from(limit).unwrap_or(usize::MAX)
+}
+
+/// Where the project's index is (the first build, then ready).
+#[tauri::command(async)]
+pub fn search_status(handle: AppHandle, window: WebviewWindow) -> Result<IndexStatus, IpcError> {
+    Ok(project_of(&handle, &window)?.search().status())
+}
+
+/// Ranked sections for the words (partial while the first build runs).
+#[tauri::command(async)]
+pub fn search_sections(
+    handle: AppHandle,
+    window: WebviewWindow,
+    query: String,
+    limit: u32,
+    options: SearchOptions,
+) -> Result<SectionResults, IpcError> {
+    let core = project_of(&handle, &window)?;
+    let filter = core.search_filter(&options)?;
+    Ok(core.search().sections(&query, as_limit(limit), &filter))
+}
+
+/// Files (and folders) whose path matches the words: Quick open, Search everywhere.
+#[tauri::command(async)]
+pub fn search_files(
+    handle: AppHandle,
+    window: WebviewWindow,
+    query: String,
+    limit: u32,
+    folder_limit: u32,
+) -> Result<PathResults, IpcError> {
+    let core = project_of(&handle, &window)?;
+    Ok(core.search().paths(
+        &query,
+        as_limit(limit),
+        as_limit(folder_limit),
+        &SearchFilter::default(),
+    ))
+}
+
+/// What Quick open lists for an empty box: the opened files that still exist, and the newest files.
+#[tauri::command(async)]
+pub fn search_recent(
+    handle: AppHandle,
+    window: WebviewWindow,
+    opened: Vec<String>,
+    limit: u32,
+) -> Result<Recent, IpcError> {
+    let core = project_of(&handle, &window)?;
+    Ok(core
+        .search()
+        .recent(&opened, as_limit(limit), &SearchFilter::default()))
+}
+
 /// Closes this window for real (after the unsaved prompt): the guard is let go first.
 #[tauri::command(async)]
 pub fn window_close(handle: AppHandle, window: WebviewWindow) -> Result<(), IpcError> {
@@ -766,6 +827,10 @@ commands![
     edit_headings,
     edit_link_targets,
     analyze,
+    search_status,
+    search_sections,
+    search_files,
+    search_recent,
     window_close,
 ];
 
