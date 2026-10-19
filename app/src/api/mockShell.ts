@@ -63,6 +63,20 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("fmt-properties", "format", "app"),
   manifest("fmt-ignore", "format", "app"),
   manifest("text-view", "format", "app"),
+  {
+    ...manifest("shell-integration", "feature", "app"),
+    requires: {
+      needs: [
+        { need: "platform", platforms: ["windows"] },
+        { need: "distribution", distribution: "direct" },
+      ],
+      prefers: [],
+    },
+  },
+  {
+    ...manifest("updates", "feature", "app"),
+    requires: { needs: [{ need: "distribution", distribution: "direct" }], prefers: [] },
+  },
 ];
 
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });

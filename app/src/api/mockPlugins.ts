@@ -6,6 +6,7 @@ import { createMockAgent, type AgentProbe } from "./mockAgent";
 import { MockPluginError, type OrganizingProbe } from "./mockOrganizing";
 import type { createMockOrganizing } from "./mockOrganizing";
 import type { createMockNotes, NotesProbe } from "./mockNotes";
+import type { createMockDistribution } from "./mockDistribution";
 import type { ReviewChange } from "./generated/ReviewChange";
 import type {
   BaselineKind,
@@ -75,6 +76,7 @@ export function createMockPlugins(
   hashOfGuide: () => string,
   organizing: ReturnType<typeof createMockOrganizing>,
   notes: ReturnType<typeof createMockNotes>,
+  distribution: ReturnType<typeof createMockDistribution>["handlers"],
 ): {
   call<M extends PluginMethod>(
     method: M,
@@ -164,6 +166,7 @@ export function createMockPlugins(
     ...organizing.handlers,
     ...agent.handlers,
     ...notes.handlers,
+    ...distribution,
     "git.snapshot": () => snapshot(),
     "git.refresh": () => null,
     "git.setBaseline": ({ kind }) => {

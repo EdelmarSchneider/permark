@@ -82,7 +82,7 @@ afterEach(async () => {
   unregister?.();
   // put the shared mock back where the next test expects it
   await store.changeSetting({ key: "openIn", value: "ask" });
-  for (const id of ["git", "unread", "review", "notes", "agent"]) {
+  for (const id of ["git", "unread", "review", "notes", "agent", "updates", "shell-integration"]) {
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: null } });
   }
   mock.probe.shell.setOthers([]);
@@ -181,29 +181,37 @@ describe("the settings page", () => {
     ).toBeTruthy();
   });
 
-  it("Integration: the rows of the plugins that are on, nothing else", async () => {
+  it("Integration: the default app, then the rows of the plugins that are on", async () => {
     await open();
     await until(
-      () => contributions.visible("settingsSection", conditions.current).length >= 2,
-      "plugins",
+      () => contributions.visible("settingsSection", conditions.current).length >= 4,
+      `plugins ${contributions
+        .visible("settingsSection", conditions.current)
+        .map((c) => c.id)
+        .join(",")} / ${conditions.current.plugins.join(",")}`,
     );
     mountPage("integration");
-    await until(() => target.querySelectorAll("section.group").length >= 2, "groups");
+    await until(() => target.querySelectorAll("section.group").length >= 5, "groups");
     const headings = Array.from(target.querySelectorAll("section.group h3")).map((h) =>
       h.textContent?.trim(),
     );
-    expect(headings).toEqual(expect.arrayContaining(["Git", "Notes"]));
-    // no dead control: nothing about default apps, file manager or updates
-    expect(target.textContent?.toLowerCase()).not.toContain("default app");
-    expect(target.textContent?.toLowerCase()).not.toContain("update");
-    // plugins off: no section, and a quiet line
-    for (const id of ["git", "notes", "agent"]) {
+    expect(headings[0]).toBe("Default app");
+    expect(headings).toEqual(expect.arrayContaining(["File manager", "Updates", "Git", "Notes"]));
+    // Windows: who opens the files now, and the way to Windows' own page
+    await until(
+      () => target.textContent?.includes("Choose in Windows Settings") === true,
+      "handoff",
+    );
+    expect(target.textContent).toContain("Opens with PerMark");
+    // plugins off: their sections go, the default app stays
+    for (const id of ["git", "notes", "agent", "updates", "shell-integration"]) {
       await store.changeSetting({ key: "pluginEnabled", value: { plugin: id, enabled: false } });
     }
     await until(
-      () => target.textContent?.includes("Nothing to set here yet.") === true,
-      "nothing to set",
+      () => target.querySelectorAll("section.group").length === 1,
+      "only the default app",
     );
+    expect(target.textContent?.toLowerCase()).not.toContain("update");
   });
 });
 
@@ -223,7 +231,7 @@ describe("the plugins page", () => {
 
   it("every plugin is listed once, grouped by kind, with its switch on", async () => {
     await pluginsPage();
-    expect(target.querySelectorAll(".plugin")).toHaveLength(29);
+    expect(target.querySelectorAll(".plugin")).toHaveLength(31);
     const groups = Array.from(target.querySelectorAll("section.group h3")).map(
       (h) => h.textContent,
     );

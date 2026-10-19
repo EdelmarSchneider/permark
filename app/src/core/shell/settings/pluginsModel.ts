@@ -35,6 +35,8 @@ export const KNOWN_PLUGINS = [
   "fmt-properties",
   "fmt-ignore",
   "text-view",
+  "shell-integration",
+  "updates",
 ] as const;
 type Known = (typeof KNOWN_PLUGINS)[number];
 

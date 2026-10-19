@@ -154,9 +154,11 @@ describe("plugin host", () => {
       "plantuml",
       "quiet",
       "review",
+      "shell-integration",
       "tags",
       "text-view",
       "unread",
+      "updates",
       "word-count",
       "xml-view",
     ]);

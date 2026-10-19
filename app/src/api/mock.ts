@@ -7,6 +7,7 @@ import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
 import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs";
 import { createMockConfig } from "./mockConfig";
+import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
 import { createMockOrganizing } from "./mockOrganizing";
@@ -16,6 +17,8 @@ import { mockFiles, mockRecent, mockSections } from "./mockSearch";
 import { createMockShell, MOCK_MANIFESTS, type MockShell } from "./mockShell";
 import type {
   Api,
+  AppPluginEventName,
+  AppPluginEvents,
   AppSettings,
   CommandName,
   EventName,
@@ -141,6 +144,8 @@ export type MockProbe = {
   shell: MockShell["probe"];
   /** Themes the window's title bar was asked to take (`null`: the system's). */
   windowThemes: ("light" | "dark" | null)[];
+  /** The default app, the file manager entries, the updater. */
+  distribution: DistributionProbe;
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -254,11 +259,18 @@ export function createMockApi(): Api & {
   const organizing = createMockOrganizing(emitPlugin, project);
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
   const notes = createMockNotes(editing.probe.files);
+  const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
+    "updates:state": new Set(),
+  };
+  const distribution = createMockDistribution((event, payload) => {
+    for (const handler of appListeners[event]) handler(payload);
+  });
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
     organizing,
     notes,
+    distribution.handlers,
   );
   const probe: MockProbe = {
     opened: [],
@@ -270,6 +282,7 @@ export function createMockApi(): Api & {
     plugins: plugins.probe,
     shell: shell.probe,
     windowThemes,
+    distribution: distribution.probe,
   };
   let tree: TreeView | null = null;
 
@@ -616,6 +629,16 @@ export function createMockApi(): Api & {
     },
     showWindow: () => ok(undefined),
     pluginCall: plugins.call,
+    defaultAppGet: distribution.defaultAppGet,
+    defaultAppSet: distribution.defaultAppSet,
+    defaultAppAsked: distribution.defaultAppAsked,
+    defaultAppHandoff: distribution.defaultAppHandoff,
+    onAppPlugin: (event, handler) => {
+      appListeners[event].add(handler);
+      return Promise.resolve(() => {
+        appListeners[event].delete(handler);
+      });
+    },
     onPlugin: (event, handler) => {
       pluginListeners[event].add(handler);
       return Promise.resolve(() => {

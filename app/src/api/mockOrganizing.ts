@@ -47,7 +47,8 @@ export class MockPluginError extends Error {
       | "denied"
       | "exists"
       | "invalidName"
-      | "intoItself",
+      | "intoItself"
+      | "conflict",
     readonly subject: string | null = null,
   ) {
     super(kind);

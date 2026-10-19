@@ -140,6 +140,12 @@ export const tauriApi: Api = {
   pluginRemoveData: (plugin) => call("plugin_remove_data", { plugin }),
   workspaceClose: (id) => call("workspace_close", { id }),
   windowClose: () => call("window_close", {}),
+  defaultAppGet: () => call("default_app_get", {}),
+  defaultAppSet: (group, on) => call("default_app_set", { group, on }),
+  defaultAppAsked: () => call("default_app_asked", {}),
+  defaultAppHandoff: () => call("default_app_handoff", {}),
+  onAppPlugin: (event, handler) =>
+    listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
   assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
   on: (event, handler) => listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
   onDrop: (handler) =>

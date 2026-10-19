@@ -4,6 +4,11 @@ import type { AppInfo } from "./generated/AppInfo";
 import type { AppSettings } from "./generated/AppSettings";
 import type { BootInfo } from "./generated/BootInfo";
 import type { CommandName } from "./generated/CommandName";
+import type { DefaultAppView } from "./generated/DefaultAppView";
+import type { FileGroup } from "./generated/FileGroup";
+import type { ShellEntry } from "./generated/ShellEntry";
+import type { ShellState } from "./generated/ShellState";
+import type { UpdateState } from "./generated/UpdateState";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
 import type { OpenIn } from "./generated/OpenIn";
@@ -289,6 +294,10 @@ export interface Commands {
   plugin_remove_data: { args: { plugin: string }; result: null };
   workspace_close: { args: { id: WorkspaceId }; result: null };
   window_close: { args: Record<string, never>; result: null };
+  default_app_get: { args: Record<string, never>; result: DefaultAppView };
+  default_app_set: { args: { group: FileGroup; on: boolean }; result: DefaultAppView };
+  default_app_asked: { args: Record<string, never>; result: null };
+  default_app_handoff: { args: Record<string, never>; result: null };
 }
 
 /**
@@ -399,6 +408,13 @@ export interface PluginMethods {
   "agent.setDefaults": { args: Record<string, never>; result: null };
   "agent.publish": { args: { context: AgentWindowContext }; result: null };
   "agent.setup": { args: Record<string, never>; result: string | null };
+  "shell-integration.state": { args: Record<string, never>; result: ShellState };
+  "shell-integration.set": { args: { entry: ShellEntry; on: boolean }; result: ShellState };
+  "updates.state": { args: Record<string, never>; result: UpdateState };
+  "updates.check": { args: Record<string, never>; result: UpdateState };
+  "updates.download": { args: Record<string, never>; result: UpdateState };
+  "updates.restart": { args: Record<string, never>; result: UpdateState };
+  "updates.dismiss": { args: Record<string, never>; result: UpdateState };
 }
 export type PluginMethod = keyof PluginMethods;
 
@@ -417,6 +433,16 @@ export interface PluginEvents {
 }
 export type PluginEventName = keyof PluginEvents;
 export type PluginEnvelope<E extends PluginEventName> = { root: string; data: PluginEvents[E] };
+
+/** Events of app plugins: the payload as is (no folder: one instance for the whole app). */
+export interface AppPluginEvents {
+  "updates:state": UpdateState;
+}
+export type AppPluginEventName = keyof AppPluginEvents;
+export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
+export type { DefaultAppMode } from "./generated/DefaultAppMode";
+export type { GroupView } from "./generated/GroupView";
+export type { UpdateStage } from "./generated/UpdateStage";
 
 export type {
   Basis,
@@ -614,6 +640,19 @@ export interface Api {
     event: E,
     handler: (payload: PluginEnvelope<E>) => void,
   ): Promise<Unlisten>;
+  /** Listens to an event of an app plugin (one instance for the app: no folder). */
+  onAppPlugin<E extends AppPluginEventName>(
+    event: E,
+    handler: (payload: AppPluginEvents[E]) => void,
+  ): Promise<Unlisten>;
+  /** The default app: the rows of the settings and whether to ask now (first run). */
+  defaultAppGet(): Promise<Result<DefaultAppView>>;
+  /** Makes PerMark the default app of a group, or gives it back (macOS, an installed Linux package). */
+  defaultAppSet(group: FileGroup, on: boolean): Promise<Result<DefaultAppView>>;
+  /** The first-run question was answered or put off. */
+  defaultAppAsked(): Promise<Result<null>>;
+  /** Opens Windows' Default Apps page. */
+  defaultAppHandoff(): Promise<Result<null>>;
   /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
   projectInit(path: string): Promise<Result<null>>;
   /** The shared settings (`.permark/config.toml`) of this window's project. */

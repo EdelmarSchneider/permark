@@ -1,36 +1,34 @@
 <script lang="ts">
-  // Integration: what plugins that are on put in the settings (the agent connection, which git, the Notes folder). A
-  // feature that does not exist in this build has no row: nothing here is a dead control.
+  // Integration: the default app (every build), then what plugins that are on put in the settings (file manager
+  // entries, updates, the agent connection, which git, the Notes folder). A feature this build lacks has no row.
   import { conditions } from "../../conditions/context.svelte";
   import { t } from "../../i18n";
   import { contributions } from "../../plugins/instance.svelte";
   import Card from "./Card.svelte";
+  import DefaultAppCard from "./DefaultAppCard.svelte";
 
   const sections = $derived(contributions.visible("settingsSection", conditions.current));
 </script>
 
-{#if sections.length === 0}
-  <p class="none">{t("settings.integrationNone")}</p>
-{:else}
-  {#each sections as section (section.owner + section.id)}
-    <section class="group" aria-labelledby={`int-${section.owner}-${section.id}`}>
-      <h3 id={`int-${section.owner}-${section.id}`}>{t(section.label)}</h3>
-      <Card>
-        {#await section.view() then loaded}
-          {@const Section = loaded.default}
-          <Section />
-        {/await}
-      </Card>
-    </section>
-  {/each}
-{/if}
+<section class="group" aria-labelledby="int-core-default-app">
+  <h3 id="int-core-default-app">{t("defaultApp.title")}</h3>
+  <Card>
+    <DefaultAppCard />
+  </Card>
+</section>
+{#each sections as section (section.owner + section.id)}
+  <section class="group" aria-labelledby={`int-${section.owner}-${section.id}`}>
+    <h3 id={`int-${section.owner}-${section.id}`}>{t(section.label)}</h3>
+    <Card>
+      {#await section.view() then loaded}
+        {@const Section = loaded.default}
+        <Section />
+      {/await}
+    </Card>
+  </section>
+{/each}
 
 <style>
-  .none {
-    margin: 0;
-    padding: var(--sp-4);
-    color: var(--muted);
-  }
   .group + .group {
     margin-top: var(--sp-5);
   }

@@ -10,6 +10,8 @@
   import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import Notices from "./core/shell/Notices.svelte";
+  import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
+  import { defaultApp } from "./core/shell/defaultApp.svelte";
   import InitDialog from "./core/shell/InitDialog.svelte";
   import SettingsPage from "./core/shell/settings/SettingsPage.svelte";
   import SettingsPopover from "./core/shell/SettingsPopover.svelte";
@@ -167,6 +169,10 @@
     };
   });
   $effect(() => language.watchSystem());
+  // first run: "Open these files with PerMark?" in the first window, once (the backend says when it is due)
+  $effect(() => {
+    if (store.label !== "") void defaultApp.askIfDue(store.label);
+  });
 </script>
 
 {#snippet header()}
@@ -324,6 +330,7 @@
 {#if ui.keyboard}
   <KeymapDialog {store} />
 {/if}
+<DefaultAppDialog />
 <Notices {store} />
 {#if store.drag.status === "over"}
   <div class="drop" aria-hidden="true">
