@@ -2711,6 +2711,7 @@ dependencies = [
  "permark-plugin-plantuml",
  "permark-plugin-prompt-blocks",
  "permark-plugin-text-view",
+ "permark-plugin-word-count",
  "permark-plugin-xml-view",
  "serde",
  "serde_json",
@@ -2817,6 +2818,15 @@ name = "permark-plugin-text-view"
 version = "0.5.8"
 dependencies = [
  "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-word-count"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

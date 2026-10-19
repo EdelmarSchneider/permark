@@ -12,6 +12,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     let mut plugins: Vec<Arc<dyn Plugin>> = Vec::new();
     #[cfg(feature = "plugin-md-family")]
     plugins.push(permark_plugin_md_family::plugin());
+    #[cfg(feature = "plugin-word-count")]
+    plugins.push(permark_plugin_word_count::plugin());
     #[cfg(feature = "plugin-prompt-blocks")]
     plugins.push(permark_plugin_prompt_blocks::plugin());
     #[cfg(feature = "plugin-frontmatter-card")]

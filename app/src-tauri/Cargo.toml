@@ -22,6 +22,7 @@ permark-plugin-mermaid = { path = "crates/plugins/mermaid" }
 permark-plugin-plantuml = { path = "crates/plugins/plantuml" }
 permark-plugin-prompt-blocks = { path = "crates/plugins/prompt-blocks" }
 permark-plugin-text-view = { path = "crates/plugins/text-view" }
+permark-plugin-word-count = { path = "crates/plugins/word-count" }
 permark-plugin-xml-view = { path = "crates/plugins/xml-view" }
 serde = { version = "1", features = ["derive"] }
 ts-rs = { version = "12.0", features = ["serde-json-impl"] }
@@ -79,8 +80,9 @@ name = "permark_lib"
 
 [features]
 # Plugin crates join here as features; default = full build.
-default = ["plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view"]
+default = ["plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count"]
 plugin-md-family = ["dep:permark-plugin-md-family"]
+plugin-word-count = ["dep:permark-plugin-word-count"]
 plugin-prompt-blocks = ["dep:permark-plugin-prompt-blocks"]
 plugin-frontmatter-card = ["dep:permark-plugin-frontmatter-card"]
 plugin-highlight = ["dep:permark-plugin-highlight"]
@@ -100,6 +102,7 @@ tauri-build = { version = "2.5", features = [] }
 [dependencies]
 permark-core.workspace = true
 permark-plugin-md-family = { workspace = true, optional = true }
+permark-plugin-word-count = { workspace = true, optional = true }
 permark-plugin-prompt-blocks = { workspace = true, optional = true }
 permark-plugin-frontmatter-card = { workspace = true, optional = true }
 permark-plugin-highlight = { workspace = true, optional = true }

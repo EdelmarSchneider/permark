@@ -15,7 +15,7 @@ use std::time::Duration;
 use permark_core::ipc_local::{self, Endpoint, IpcLocalError, Listening};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::state::AppDirs;
-use tauri::{Manager, RunEvent, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
 
 pub use shell::Shell;
 
@@ -116,7 +116,31 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
             windows::remember_geometry(handle, label);
             shell.saver.poke();
         }
-        WindowEvent::CloseRequested { .. } => {
+        WindowEvent::CloseRequested { api, .. } => {
+            // unsaved edits: the window asks the person first (`window_close` closes it for real)
+            if let Some(path) = shell
+                .registry
+                .workspace_of(label)
+                .and_then(|(_, workspace)| match &workspace {
+                    permark_core::workspace::Workspace::Project(core) => {
+                        core.documents().unsaved(label)
+                    }
+                    permark_core::workspace::Workspace::SingleFile(file) => {
+                        file.documents.unsaved(label)
+                    }
+                })
+            {
+                api.prevent_close();
+                let _ = handle.emit_to(
+                    label,
+                    "close-requested",
+                    commands::CloseRequested {
+                        window: label.to_owned(),
+                        path,
+                    },
+                );
+                return;
+            }
             // last window: the session keeps it (saved now, frozen until exit)
             if handle.webview_windows().len() <= 1 {
                 shell.save_session_now(handle);

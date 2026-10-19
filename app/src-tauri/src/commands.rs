@@ -10,11 +10,12 @@ use std::sync::{Arc, Mutex};
 
 use permark_core::conditions::{Context, Platform};
 use permark_core::document::{editor, resolve_code_refs, DocumentView, LinkTarget};
+use permark_core::edit::{EditSource, Editor, LineEdit, SaveOutcome};
 use permark_core::events::{OpenFailed, StateRecovered};
 use permark_core::fileops::{
     external_target, DeleteOutcome, MoveOutcome, MovePlan, MoveSpec, NewKind, OpenMode, UndoOutcome,
 };
-use permark_core::format::FormatRegistry;
+use permark_core::format::{FormatRegistry, Measure, OutlineItem, Segment, TextKind};
 use permark_core::paths::VaultPath;
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{AppSettings, SettingChange};
@@ -44,6 +45,16 @@ pub struct BootInfo {
     /// Opens from outside that failed before this window could listen.
     pub failures: Vec<OpenFailed>,
     pub platform: Platform,
+}
+
+/// Event `close-requested`: the window was asked to close while it holds unsaved edits (the close waits).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CloseRequested {
+    pub window: String,
+    /// The document with the unsaved edits.
+    pub path: String,
 }
 
 /// Where an open from the UI goes.
@@ -287,9 +298,11 @@ pub fn fileops_plan_move(
     moves: Vec<MoveSpec>,
     update_links: bool,
 ) -> Result<MovePlan, IpcError> {
-    Ok(project_of(&handle, &window)?
+    let core = project_of(&handle, &window)?;
+    let unsaved = core.documents().unsaved_keys();
+    Ok(core
         .fileops()
-        .plan_move(&moves, update_links)?)
+        .plan_move_with(&moves, update_links, &unsaved)?)
 }
 
 #[tauri::command(async)]
@@ -535,6 +548,170 @@ fn web_url_allowed(url: &str) -> bool {
             || lower.starts_with("mailto:"))
 }
 
+// ---- Editing --------------------------------------------------------------------------------------------------------
+
+/// The editor of the invoking window's workspace.
+fn with_editor<R>(
+    handle: &AppHandle,
+    window: &WebviewWindow,
+    run: impl FnOnce(&Editor<'_>, &Workspace) -> Result<R, IpcError>,
+) -> Result<R, IpcError> {
+    let (workspace, formats) = reading_of(handle, window)?;
+    let own = match &workspace {
+        Workspace::Project(core) => Some(core.watcher().own().as_ref()),
+        Workspace::SingleFile(_) => None,
+    };
+    let editor = Editor {
+        scope: documents_of(&workspace).scope(),
+        formats: &formats,
+        own,
+    };
+    run(&editor, &workspace)
+}
+
+/// The text an editor starts from (BOM gone, LF breaks) with its hash and block map.
+#[tauri::command(async)]
+pub fn edit_source(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+) -> Result<EditSource, IpcError> {
+    with_editor(&handle, &window, |editor, _| editor.source(&path))
+}
+
+/// The block map of an unsaved Markdown text (Source -> Edit).
+#[tauri::command(async)]
+pub fn edit_segments(
+    handle: AppHandle,
+    window: WebviewWindow,
+    text: String,
+) -> Result<Vec<Segment>, IpcError> {
+    with_editor(&handle, &window, |editor, _| Ok(editor.segments(&text)))
+}
+
+/// Applies line edits to the version `seen_hash`; a different disk version is a conflict.
+#[tauri::command(async)]
+pub fn edit_save(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    seen_hash: String,
+    edits: Vec<LineEdit>,
+) -> Result<SaveOutcome, IpcError> {
+    with_editor(&handle, &window, |editor, workspace| {
+        let outcome = editor.save(&path, &seen_hash, &edits)?;
+        if let SaveOutcome::Saved { hash, .. } = &outcome {
+            documents_of(workspace).saved(window.label(), &path, hash);
+        }
+        Ok(outcome)
+    })
+}
+
+/// The person's text as a new file (`exact`: at `path` itself, when free). Returns its path.
+#[tauri::command(async)]
+pub fn edit_save_as(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    text: String,
+    exact: bool,
+) -> Result<String, IpcError> {
+    with_editor(&handle, &window, |editor, _| {
+        editor.save_as(&path, &text, exact)
+    })
+}
+
+/// Picture bytes (raw body; headers `pm-doc`: document path, percent-encoded; `pm-ext`: type) saved next to the
+/// document. Returns the picture's path.
+#[tauri::command]
+pub async fn edit_write_asset(
+    handle: AppHandle,
+    window: WebviewWindow,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, IpcError> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(IpcError::new(ErrorKind::InvalidData).subject("body"));
+    };
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(permark_core::links::percent_decode)
+            .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject(name.to_owned()))
+    };
+    let doc = header("pm-doc")?;
+    let ext = header("pm-ext")?;
+    let bytes = bytes.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        with_editor(&handle, &window, |editor, _| {
+            editor.write_asset(&doc, &ext, &bytes)
+        })
+    })
+    .await
+    .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?
+}
+
+/// This window holds unsaved edits of `path` (`None`: none): close guard, link updates.
+#[tauri::command(async)]
+pub fn edit_set_unsaved(handle: AppHandle, window: WebviewWindow, path: Option<String>) {
+    if let Some((_, workspace)) = state(&handle).registry.workspace_of(window.label()) {
+        documents_of(&workspace).set_unsaved(window.label(), path);
+    }
+}
+
+/// Headings of a Markdown document (link completion after `#`).
+#[tauri::command(async)]
+pub fn edit_headings(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+) -> Result<Vec<OutlineItem>, IpcError> {
+    with_editor(&handle, &window, |editor, _| editor.headings(&path))
+}
+
+/// Files a link can point at (project: listed, not ignored; single file: none).
+#[tauri::command(async)]
+pub fn edit_link_targets(
+    handle: AppHandle,
+    window: WebviewWindow,
+) -> Result<Vec<String>, IpcError> {
+    let (workspace, _) = reading_of(&handle, &window)?;
+    Ok(match workspace {
+        Workspace::Project(core) => core.explorer().files(""),
+        Workspace::SingleFile(_) => Vec::new(),
+    })
+}
+
+/// Measures of the enabled analyses: of a document (`path`) or of a text.
+#[tauri::command(async)]
+pub fn analyze(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: Option<String>,
+    text: Option<String>,
+    kind: TextKind,
+) -> Result<Vec<Measure>, IpcError> {
+    let (workspace, formats) = reading_of(&handle, &window)?;
+    let text = match (path, text) {
+        (_, Some(text)) => text,
+        (Some(path), None) => documents_of(&workspace).text(&path)?,
+        (None, None) => String::new(),
+    };
+    Ok(formats.analyze(&text, kind))
+}
+
+/// Closes this window for real (after the unsaved prompt): the guard is let go first.
+#[tauri::command(async)]
+pub fn window_close(handle: AppHandle, window: WebviewWindow) -> Result<(), IpcError> {
+    if let Some((_, workspace)) = state(&handle).registry.workspace_of(window.label()) {
+        documents_of(&workspace).set_unsaved(window.label(), None);
+    }
+    window
+        .close()
+        .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))
+}
+
 /// Lists every command once: Tauri handler + names (contract test).
 macro_rules! commands {
     ($($name:ident),+ $(,)?) => {
@@ -580,6 +757,16 @@ commands![
     code_refs_resolve,
     open_in_editor,
     open_web,
+    edit_source,
+    edit_segments,
+    edit_save,
+    edit_save_as,
+    edit_write_asset,
+    edit_set_unsaved,
+    edit_headings,
+    edit_link_targets,
+    analyze,
+    window_close,
 ];
 
 #[cfg(test)]
