@@ -56,6 +56,13 @@ import type { ReviewStatus } from "./generated/ReviewStatus";
 import type { ReviewView } from "./generated/ReviewView";
 import type { SinceVisit } from "./generated/SinceVisit";
 import type { UnreadList } from "./generated/UnreadList";
+import type { AgentMode } from "./generated/AgentMode";
+import type { AgentRequest } from "./generated/AgentRequest";
+import type { AgentSection } from "./generated/AgentSection";
+import type { AgentSelection } from "./generated/AgentSelection";
+import type { AgentServerState } from "./generated/AgentServerState";
+import type { AgentStatus } from "./generated/AgentStatus";
+import type { AgentWindowContext } from "./generated/AgentWindowContext";
 import type { BrokenDoc } from "./generated/BrokenDoc";
 import type { BrokenLink } from "./generated/BrokenLink";
 import type { BrokenReport } from "./generated/BrokenReport";
@@ -338,6 +345,12 @@ export interface PluginMethods {
     result: Moved;
   };
   "notes.undoMove": { args: { undoId: number }; result: MoveUndone };
+  "agent.status": { args: Record<string, never>; result: AgentStatus };
+  "agent.setEnabled": { args: { enabled: boolean }; result: AgentStatus };
+  "agent.setGroup": { args: { group: string; on: boolean }; result: AgentStatus };
+  "agent.setDefaults": { args: Record<string, never>; result: null };
+  "agent.publish": { args: { context: AgentWindowContext }; result: null };
+  "agent.setup": { args: Record<string, never>; result: string | null };
 }
 export type PluginMethod = keyof PluginMethods;
 
@@ -350,6 +363,9 @@ export interface PluginEvents {
   "comments:changed": null;
   "quiet:changed": QuietMarks;
   "broken-links:changed": BrokenSummary;
+  "agent:status": AgentStatus;
+  "agent:open": { path: string; line: number | null; heading: string | null };
+  "agent:ask": { group: string };
 }
 export type PluginEventName = keyof PluginEvents;
 export type PluginEnvelope<E extends PluginEventName> = { root: string; data: PluginEvents[E] };
@@ -368,6 +384,15 @@ export type {
   SinceVisit,
 };
 export type { UnreadList };
+export type {
+  AgentMode,
+  AgentRequest,
+  AgentSection,
+  AgentSelection,
+  AgentServerState,
+  AgentStatus,
+  AgentWindowContext,
+};
 export type {
   Deleted,
   EntryKind,

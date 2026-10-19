@@ -2,6 +2,7 @@
 // unread documents, and a review of `docs/guide.md`. In memory; the same shapes the real plugins serve.
 
 import type { Block } from "./generated/Block";
+import { createMockAgent, type AgentProbe } from "./mockAgent";
 import { MockPluginError, type OrganizingProbe } from "./mockOrganizing";
 import type { createMockOrganizing } from "./mockOrganizing";
 import type { createMockNotes, NotesProbe } from "./mockNotes";
@@ -40,6 +41,8 @@ export type MockPluginProbe = {
   organizing: OrganizingProbe;
   /** The notes: what the backend holds, ways to put them in a state. */
   notes: NotesProbe;
+  /** The agent connection: what the window published, a client connecting, requests. */
+  agent: AgentProbe;
   /** Announces a plugin event as the backend would. */
   announce<E extends PluginEventName>(event: E, data: PluginEvents[E]): void;
 };
@@ -156,8 +159,10 @@ export function createMockPlugins(
     changes = changes.filter((_, i) => i !== index);
   };
 
+  const agent = createMockAgent(emit);
   const handlers: Handlers = {
     ...organizing.handlers,
+    ...agent.handlers,
     ...notes.handlers,
     "git.snapshot": () => snapshot(),
     "git.refresh": () => null,
@@ -262,6 +267,7 @@ export function createMockPlugins(
       announceGit: (next) => emit("git:snapshot", next),
       organizing: organizing.probe,
       notes: notes.probe,
+      agent: agent.probe,
       announce: emit,
     },
   };

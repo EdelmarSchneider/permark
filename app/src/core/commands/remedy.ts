@@ -1,6 +1,8 @@
 // What a remedy button of the palette does. Only the remedies the app can carry out today have a handler; for the
-// others the reason is the whole help (no button).
+// others the reason is the whole help (no button). A remedy named like a registered command runs that command (a
+// plugin's own remedy, such as `agent.turnOn`, exists while the plugin is on).
 
+import { contributions } from "../plugins/instance.svelte";
 import { ui } from "../shell/ui.svelte";
 import { windowStore } from "../window.svelte";
 
@@ -19,7 +21,9 @@ export function remedyAction(command: string | null): (() => void) | null {
         : null;
     case "settings.git":
       return () => ui.openSettings();
-    default:
-      return null;
+    default: {
+      const found = contributions.items.find((c) => c.kind === "command" && c.id === command);
+      return found?.kind === "command" ? () => void found.run() : null;
+    }
   }
 }

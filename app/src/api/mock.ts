@@ -79,6 +79,7 @@ const MOCK_PLUGINS = [
   "text-view",
   "word-count",
   "notes",
+  "agent",
 ];
 
 function neutralContext(): Context {
@@ -196,6 +197,9 @@ export function createMockApi(): Api & {
     "comments:changed": new Set(),
     "quiet:changed": new Set(),
     "broken-links:changed": new Set(),
+    "agent:status": new Set(),
+    "agent:open": new Set(),
+    "agent:ask": new Set(),
   };
   /** The folder the window shows, as the events of its plugins name it. */
   function rootNow(): string {
@@ -203,6 +207,8 @@ export function createMockApi(): Api & {
   }
   function emitPlugin<E extends PluginEventName>(event: E, data: PluginEvents[E]): void {
     for (const handler of pluginListeners[event]) handler({ root: rootNow(), data });
+    // the agent switch is part of the window's context, as in the app
+    if (event === "agent:status") emit("context-changed", { window: "main", context: context() });
   }
   const project = new MockProject();
   const organizing = createMockOrganizing(emitPlugin, project);
@@ -283,7 +289,14 @@ export function createMockApi(): Api & {
     const base = { ...neutralContext(), plugins: MOCK_PLUGINS };
     if (view.state !== "showing") return base;
     const kinds = { project: "project", singleFile: "singleFile", notes: "notes" } as const;
-    return { ...base, workspace: kinds[view.workspace.kind] };
+    const agent = plugins.probe.agent.status();
+    const condition: Context["agent"] =
+      view.workspace.kind !== "project" || !agent.enabled
+        ? { status: "off" }
+        : agent.clients[0] !== undefined
+          ? { status: "connected", client: agent.clients[0] }
+          : { status: "on" };
+    return { ...base, workspace: kinds[view.workspace.kind], agent: condition };
   }
 
   function show(path: string): WindowView {
