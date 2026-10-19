@@ -1,0 +1,240 @@
+// What the plugins' backend halves answer in the mock backend (`dev:mock`, tests): git letters on two files, a feed,
+// unread documents, and a review of `docs/guide.md`. In memory; the same shapes the real plugins serve.
+
+import type { Block } from "./generated/Block";
+import type { ReviewChange } from "./generated/ReviewChange";
+import type {
+  BaselineKind,
+  FeedItem,
+  GitSnapshot,
+  PluginEventName,
+  PluginEvents,
+  PluginMethod,
+  PluginMethods,
+  Result,
+  SinceVisit,
+  UnreadList,
+} from "./types";
+
+const GUIDE = "docs/guide.md";
+
+type Handlers = {
+  [M in PluginMethod]: (args: PluginMethods[M]["args"]) => PluginMethods[M]["result"];
+};
+
+export type MockPluginProbe = {
+  /** Pushes feed items as if the watch had reported them. */
+  feed(items: FeedItem[]): void;
+  /** Marks documents unread as if an agent changed them. */
+  unread(paths: string[]): void;
+  /** Calls the plugins got, `<plugin>.<method>`. */
+  calls: string[];
+  /** The git snapshot now. */
+  git(): GitSnapshot;
+  /** Announces a snapshot as the backend would (`null`: no repository any more). */
+  announceGit(snapshot: GitSnapshot | null): void;
+};
+
+function ghost(id: string, html: string): Block {
+  return { id, kind: "p", lineStart: 1, lineEnd: 1, html: `<p data-b="${id}">${html}</p>` };
+}
+
+function startChanges(): ReviewChange[] {
+  return [
+    {
+      index: 0,
+      kind: "edited",
+      start: 3,
+      len: 1,
+      ghosts: [ghost("old-open", "Open a folder and read it.")],
+    },
+    {
+      index: 1,
+      kind: "removed",
+      start: 5,
+      len: 0,
+      ghosts: [ghost("old-gone", "This paragraph was removed by the agent.")],
+    },
+  ];
+}
+
+export function createMockPlugins(
+  emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
+  hashOfGuide: () => string,
+): {
+  call<M extends PluginMethod>(
+    method: M,
+    args: PluginMethods[M]["args"],
+  ): Promise<Result<PluginMethods[M]["result"]>>;
+  probe: MockPluginProbe;
+} {
+  const calls: string[] = [];
+  let baseline: BaselineKind = "lastVisit";
+  let basis: PluginMethods["review.basis"]["result"] = "read";
+  const gitFiles: GitSnapshot["files"] = [
+    { path: GUIDE, letter: "modified", staged: false, from: null },
+    { path: "notes/ideas.md", letter: "untracked", staged: false, from: null },
+  ];
+  let seq = 1;
+  const snapshot = (): GitSnapshot => ({
+    seq,
+    backend: "builtin",
+    head: {
+      branch: "main",
+      oid: "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+      detached: false,
+      unborn: false,
+    },
+    state: "clean",
+    baseline: {
+      kind: baseline,
+      oid: baseline === "lastVisit" ? "0f1e2d3c4b5a69788796a5b4c3d2e1f001122334" : null,
+    },
+    files: gitFiles,
+    truncated: false,
+    worktrees: [],
+  });
+  let feed: FeedItem[] = [
+    {
+      item: "entry",
+      id: 2,
+      path: GUIDE,
+      kind: "modified",
+      atMs: Date.now() - 20_000,
+      saves: 3,
+      own: false,
+      isDir: false,
+    },
+    {
+      item: "entry",
+      id: 1,
+      path: "notes/ideas.md",
+      kind: "created",
+      atMs: Date.now() - 90_000,
+      saves: 1,
+      own: false,
+      isDir: false,
+    },
+  ];
+  let unread = new Set<string>([GUIDE]);
+  const unreadList = (): UnreadList => ({ ready: true, unread: [...unread].sort() });
+  const announceUnread = (): void => emit("unread:changed", unreadList());
+  const since: SinceVisit = {
+    ready: true,
+    first: false,
+    atMs: Date.now() - 3_600_000,
+    items: [
+      { path: GUIDE, kind: "changed" },
+      { path: "notes/ideas.md", kind: "new" },
+    ],
+    more: 0,
+  };
+  let changes = startChanges();
+  const undo: ReviewChange[][] = [];
+  const reviewView = (path: string): PluginMethods["review.open"]["result"] => ({
+    path,
+    hash: hashOfGuide(),
+    basis,
+    asked: basis,
+    count: changes.length,
+    canKeep: basis === "read",
+    changes: changes.map((c, index) => ({ ...c, index })),
+  });
+  const without = (index: number): void => {
+    undo.push(changes);
+    changes = changes.filter((_, i) => i !== index);
+  };
+
+  const handlers: Handlers = {
+    "git.snapshot": () => snapshot(),
+    "git.refresh": () => null,
+    "git.setBaseline": ({ kind }) => {
+      baseline = kind;
+      seq += 1;
+      emit("git:snapshot", snapshot());
+      return null;
+    },
+    "live-feed.items": () => feed,
+    "live-feed.clear": () => {
+      feed = [];
+      return null;
+    },
+    "unread.list": () => unreadList(),
+    "unread.sinceLastVisit": () => since,
+    "unread.markRead": ({ path }) => {
+      unread.delete(path);
+      announceUnread();
+      return null;
+    },
+    "unread.markUnread": ({ path }) => {
+      unread.add(path);
+      announceUnread();
+      return null;
+    },
+    "unread.markFolderRead": ({ folder }) => {
+      unread = new Set(
+        [...unread].filter((p) => folder !== "" && !(p === folder || p.startsWith(`${folder}/`))),
+      );
+      announceUnread();
+      return null;
+    },
+    "review.status": ({ path }) => ({
+      state: !/\.md$/i.test(path)
+        ? { state: "unsupported" }
+        : path === GUIDE && changes.length > 0
+          ? { state: "changes", count: changes.length }
+          : { state: "same" },
+      basis,
+    }),
+    "review.open": ({ path }) => reviewView(path),
+    "review.keep": ({ path, index }) => {
+      without(index);
+      return reviewView(path);
+    },
+    "review.keepAll": ({ path }) => {
+      undo.push(changes);
+      changes = [];
+      return reviewView(path);
+    },
+    "review.revert": ({ path, index }) => {
+      without(index);
+      return reviewView(path);
+    },
+    "review.revertAll": ({ path }) => {
+      undo.push(changes);
+      changes = [];
+      return reviewView(path);
+    },
+    "review.undo": ({ path }) => {
+      changes = undo.pop() ?? changes;
+      return reviewView(path);
+    },
+    "review.release": () => null,
+    "review.restore": () => null,
+    "review.setBasis": (args) => {
+      basis = args.basis;
+      return null;
+    },
+    "review.basis": () => basis,
+  };
+
+  return {
+    call: (method, args) => {
+      calls.push(method);
+      return Promise.resolve({ ok: true, value: handlers[method](args) });
+    },
+    probe: {
+      feed: (items) => {
+        feed = [...items, ...feed];
+        emit("live-feed:items", { upsert: items });
+      },
+      unread: (paths) => {
+        for (const path of paths) unread.add(path);
+        announceUnread();
+      },
+      calls,
+      git: snapshot,
+      announceGit: (next) => emit("git:snapshot", next),
+    },
+  };
+}

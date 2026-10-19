@@ -6,6 +6,7 @@ import {
   type Api,
   type ApiError,
   type DropEvent,
+  type GitBackendPref,
   type IpcError,
   type LinkUpdate,
   type OpenPlacement,
@@ -51,6 +52,8 @@ export class WindowStore {
   referenceTemplate = $state("{path}#{section}");
   /** The editor Ctrl+E opens for Markdown. */
   editMode = $state<"edit" | "source">("edit");
+  /** Which git the git plugin uses. */
+  gitBackend = $state<GitBackendPref>("automatic");
   /** The command that opens a file in the person's editor (setting; empty = not set). */
   editor = $state("");
   /** The person's keyboard map: command id -> combo (`""` = unbound). */
@@ -75,6 +78,7 @@ export class WindowStore {
         this.linkUpdate = e.settings.linkUpdate;
         this.referenceTemplate = e.settings.referenceTemplate;
         this.editMode = e.settings.editMode;
+        this.gitBackend = e.settings.gitBackend;
         this.editor = e.settings.editor;
         this.keymap = e.settings.keymap;
         void language.choose(parsePreference(e.settings.language));
@@ -95,6 +99,7 @@ export class WindowStore {
       this.linkUpdate = info.settings.linkUpdate;
       this.referenceTemplate = info.settings.referenceTemplate;
       this.editMode = info.settings.editMode;
+      this.gitBackend = info.settings.gitBackend;
       this.editor = info.settings.editor;
       this.keymap = info.settings.keymap;
       await language.choose(parsePreference(info.settings.language));

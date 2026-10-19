@@ -44,6 +44,18 @@ import type { WindowChanged } from "./generated/WindowChanged";
 import type { WorkspaceId } from "./generated/WorkspaceId";
 import type { WorkspacesChanged } from "./generated/WorkspacesChanged";
 import type { WorkspaceSummary } from "./generated/WorkspaceSummary";
+import type { Basis } from "./generated/Basis";
+import type { BaselineKind } from "./generated/BaselineKind";
+import type { FeedItem } from "./generated/FeedItem";
+import type { GitFile } from "./generated/GitFile";
+import type { GitSnapshot } from "./generated/GitSnapshot";
+import type { Letter } from "./generated/Letter";
+import type { ReviewChange } from "./generated/ReviewChange";
+import type { ReviewChangeKind } from "./generated/ReviewChangeKind";
+import type { ReviewStatus } from "./generated/ReviewStatus";
+import type { ReviewView } from "./generated/ReviewView";
+import type { SinceVisit } from "./generated/SinceVisit";
+import type { UnreadList } from "./generated/UnreadList";
 
 export type {
   AppInfo,
@@ -79,6 +91,7 @@ export type {
   WorkspaceSummary,
 };
 export type { Added } from "./generated/Added";
+export type { GitBackendPref } from "./generated/GitBackendPref";
 export type { FileHit } from "./generated/FileHit";
 export type { FolderHit } from "./generated/FolderHit";
 export type { IndexPhase } from "./generated/IndexPhase";
@@ -181,8 +194,68 @@ export interface Commands {
     result: PathResults;
   };
   search_recent: { args: { opened: string[]; limit: number }; result: Recent };
+  plugin_call: { args: { plugin: string; method: string; args: JsonValue }; result: JsonValue };
   window_close: { args: Record<string, never>; result: null };
 }
+
+/**
+ * What running plugins serve (`plugin_call`): `<plugin>.<method>` -> args + result. Mirror of the plugins' `rpc`
+ * registrations; DTOs from `generated/`. A plugin that is off answers `unavailable`.
+ */
+export interface PluginMethods {
+  "git.snapshot": { args: Record<string, never>; result: GitSnapshot | null };
+  "git.refresh": { args: Record<string, never>; result: null };
+  "git.setBaseline": { args: { kind: BaselineKind }; result: null };
+  "live-feed.items": { args: Record<string, never>; result: FeedItem[] };
+  "live-feed.clear": { args: Record<string, never>; result: null };
+  "unread.list": { args: Record<string, never>; result: UnreadList };
+  "unread.sinceLastVisit": { args: Record<string, never>; result: SinceVisit };
+  "unread.markRead": { args: { path: string; hash: string }; result: null };
+  "unread.markUnread": { args: { path: string }; result: null };
+  "unread.markFolderRead": { args: { folder: string }; result: null };
+  "review.status": { args: { path: string }; result: ReviewStatus };
+  "review.open": { args: { path: string; basis?: Basis }; result: ReviewView };
+  "review.keep": {
+    args: { path: string; hash: string; index: number; basis?: Basis };
+    result: ReviewView;
+  };
+  "review.keepAll": { args: { path: string; hash: string; basis?: Basis }; result: ReviewView };
+  "review.revert": {
+    args: { path: string; hash: string; index: number; basis?: Basis };
+    result: ReviewView;
+  };
+  "review.revertAll": { args: { path: string; hash: string; basis?: Basis }; result: ReviewView };
+  "review.undo": { args: { path: string; basis?: Basis }; result: ReviewView };
+  "review.release": { args: { path: string }; result: null };
+  "review.restore": { args: { path: string }; result: null };
+  "review.setBasis": { args: { basis: Basis }; result: null };
+  "review.basis": { args: Record<string, never>; result: Basis };
+}
+export type PluginMethod = keyof PluginMethods;
+
+/** Events of project plugins: `{ root, data }` (the folder they are about; a window keeps its own). */
+export interface PluginEvents {
+  "git:snapshot": GitSnapshot | null;
+  "live-feed:items": { upsert: FeedItem[] };
+  "unread:changed": UnreadList;
+}
+export type PluginEventName = keyof PluginEvents;
+export type PluginEnvelope<E extends PluginEventName> = { root: string; data: PluginEvents[E] };
+
+export type {
+  Basis,
+  BaselineKind,
+  FeedItem,
+  GitFile,
+  GitSnapshot,
+  Letter,
+  ReviewChange,
+  ReviewChangeKind,
+  ReviewStatus,
+  ReviewView,
+  SinceVisit,
+};
+export type { UnreadList };
 
 /** Contract: `Commands` has exactly the registered commands (generated from Rust). Fails to compile on drift. */
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -290,6 +363,16 @@ export interface Api {
   searchFiles(query: string, limit: number, folderLimit: number): Promise<Result<PathResults>>;
   /** Quick open's empty box: the opened files that still exist, and the newest files. */
   searchRecent(opened: string[], limit: number): Promise<Result<Recent>>;
+  /** Calls a method a running plugin of this window's project serves. */
+  pluginCall<M extends PluginMethod>(
+    method: M,
+    args: PluginMethods[M]["args"],
+  ): Promise<Result<PluginMethods[M]["result"]>>;
+  /** Listens to an event of the project plugins (every project's: the listener keeps its own folder's). */
+  onPlugin<E extends PluginEventName>(
+    event: E,
+    handler: (payload: PluginEnvelope<E>) => void,
+  ): Promise<Unlisten>;
   /** Closes this window for real (after the unsaved prompt). */
   windowClose(): Promise<Result<null>>;
   /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */

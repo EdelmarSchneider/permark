@@ -2,7 +2,9 @@
   // Settings popover (skeleton): language, theme, light tone. The full settings page comes with the shell features.
   import type { LanguagePref, LinkUpdate, ThemePref, Tone } from "../../api";
   import { language, LOCALE_NAMES, LOCALES, t, type MessageKey } from "../i18n";
+  import { conditions } from "../conditions/context.svelte";
   import { look } from "../look.svelte";
+  import { contributions } from "../plugins/instance.svelte";
   import ReadingSettings from "./ReadingSettings.svelte";
   import type { WindowStore } from "../window.svelte";
   import { ui } from "./ui.svelte";
@@ -34,6 +36,9 @@
   }
 
   let panel: HTMLElement | undefined = $state();
+
+  /** The rows plugins add (git: which git), in the order they were contributed. */
+  const sections = $derived(contributions.visible("settingsSection", conditions.current));
 
   // closes on Escape | click outside (imperative listeners, torn down on close)
   $effect(() => {
@@ -126,6 +131,13 @@
   </div>
 
   <ReadingSettings {store} />
+
+  {#each sections as section (section.owner + section.id)}
+    {#await section.view() then loaded}
+      {@const Section = loaded.default}
+      <Section />
+    {/await}
+  {/each}
 
   <div class="row">
     <span title={t("settings.keyboardHint")}>{t("settings.keyboard")}</span>

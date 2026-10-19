@@ -3,7 +3,8 @@
 
 import type { Preset } from "../search/finderModel";
 
-export type SidebarView = "files" | "search";
+/** `files`, `search`, or the id of a panel a plugin put in the sidebar. */
+export type SidebarView = string;
 /** The three faces of the one overlay: Quick open, Search everywhere, the command palette. */
 export type FinderPreset = Preset;
 export type Finder =
@@ -13,6 +14,8 @@ export type Finder =
 
 class UiStore {
   sidebar = $state<SidebarView>("files");
+  /** The id of the plugin panel at the right of the page (`null`: none; the outline shows when it is on). */
+  right = $state<string | null>(null);
   finder = $state.raw<Finder>({ status: "closed" });
   keyboard = $state(false);
   settings = $state(false);
@@ -38,6 +41,11 @@ class UiStore {
   showSidebar(view: SidebarView): void {
     this.sidebar = view;
     if (view === "search") this.searchFocus += 1;
+  }
+
+  /** Shows the plugin panel `id` at the right, or closes it when it is the one that shows. */
+  toggleRight(id: string): void {
+    this.right = this.right === id ? null : id;
   }
 
   openSettings(): void {

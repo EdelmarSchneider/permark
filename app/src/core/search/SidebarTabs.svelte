@@ -3,28 +3,43 @@
   import FolderTree from "@lucide/svelte/icons/folder-tree";
   import SearchIcon from "@lucide/svelte/icons/search";
   import { t } from "../i18n";
-  import { ui, type SidebarView } from "../shell/ui.svelte";
+  import { activeSidebar, leftPanels } from "../shell/panels.svelte";
+  import { ui } from "../shell/ui.svelte";
 
-  const TABS: { view: SidebarView; label: "sidebar.files" | "sidebar.search" }[] = [
-    { view: "files", label: "sidebar.files" },
-    { view: "search", label: "sidebar.search" },
-  ];
+  const plugins = $derived(leftPanels());
+  const shown = $derived(activeSidebar());
 </script>
 
 <div class="tabs" role="tablist" aria-label={t("sidebar.views")}>
-  {#each TABS as tab (tab.view)}
+  <button
+    type="button"
+    role="tab"
+    class="tab"
+    aria-selected={shown === "files"}
+    onclick={() => ui.showSidebar("files")}
+  >
+    <FolderTree size={14} aria-hidden="true" />
+    {t("sidebar.files")}
+  </button>
+  <button
+    type="button"
+    role="tab"
+    class="tab"
+    aria-selected={shown === "search"}
+    onclick={() => ui.showSidebar("search")}
+  >
+    <SearchIcon size={14} aria-hidden="true" />
+    {t("sidebar.search")}
+  </button>
+  {#each plugins as panel (panel.owner + panel.id)}
     <button
       type="button"
       role="tab"
       class="tab"
-      aria-selected={ui.sidebar === tab.view}
-      onclick={() => ui.showSidebar(tab.view)}
+      aria-selected={shown === panel.id}
+      onclick={() => ui.showSidebar(panel.id)}
     >
-      {#if tab.view === "files"}<FolderTree size={14} aria-hidden="true" />{:else}<SearchIcon
-          size={14}
-          aria-hidden="true"
-        />{/if}
-      {t(tab.label)}
+      {t(panel.label)}
     </button>
   {/each}
 </div>

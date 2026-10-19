@@ -12,7 +12,8 @@
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
-  import type { ContributionRegistry } from "../plugins/registry.svelte";
+  import type { ContributionRegistry, TreeBadge } from "../plugins/registry.svelte";
+  import Badge from "../shell/Badge.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import FilterPopover from "./FilterPopover.svelte";
   import { WorktreeIcon, iconOf } from "./icons";
@@ -109,11 +110,26 @@
     }
   });
 
-  function badgeText(path: string): string[] {
+  /** What plugins say about a row (a git letter, an unread dot or count). */
+  function badgesOf(node: TreeNode): TreeBadge[] {
+    const isDir = node.kind.type === "dir";
     return badges.flatMap((b) => {
-      const text = b.badge(path);
-      return text === null ? [] : [text];
+      const badge = b.badge(node.path, isDir);
+      return badge === null ? [] : [badge];
     });
+  }
+
+  /** The entries plugins add to the menu of one row. */
+  function pluginEntries(node: TreeNode, targets: readonly string[]): MenuEntry[] {
+    const isDir = node.kind.type === "dir";
+    return registry
+      .visible("treeMenu", conditions.current)
+      .filter((entry) => entry.applies(node.path, isDir))
+      .map((entry) => ({
+        kind: "item" as const,
+        label: t(entry.label),
+        run: () => entry.run(targets),
+      }));
   }
 
   function rowPath(row: Display): string {
@@ -205,6 +221,7 @@
           label: t("header.copyReference"),
           run: () => void store.copyReference(node.path),
         },
+        ...withSeparator(pluginEntries(node, targets)),
         { kind: "separator" },
         {
           kind: "item",
@@ -233,6 +250,11 @@
       run: () => void store.remove(),
     });
     return entries;
+  }
+
+  /** `entries` set apart by a separator, when there are any. */
+  function withSeparator(entries: MenuEntry[]): MenuEntry[] {
+    return entries.length === 0 ? [] : [{ kind: "separator" }, ...entries];
   }
 
   function onkeydown(e: KeyboardEvent): void {
@@ -533,8 +555,8 @@
                 {:else if node.kind.type === "dir" && node.kind.unlisted?.type === "ignored"}
                   <span class="tag" title={t("explorer.ignoredHint")}>{t("explorer.ignored")}</span>
                 {/if}
-                {#each badgeText(node.path) as badge, n (n)}
-                  <span class="badge">{badge}</span>
+                {#each badgesOf(node) as badge, n (n)}
+                  <Badge {badge} />
                 {/each}
               {/if}
             </div>
@@ -686,8 +708,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .tag,
-  .badge {
+  .tag {
     flex: none;
     padding: 0 5px;
     border-radius: 999px;

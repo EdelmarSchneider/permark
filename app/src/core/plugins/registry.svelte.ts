@@ -4,7 +4,7 @@
 import type { Component } from "svelte";
 import type { Manifest } from "../../api/generated/Manifest";
 import type { PluginId } from "../../api/generated/PluginId";
-import type { Context } from "../../api";
+import type { Block, Context, DocumentView } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
 import type { EmbedProps, FrontMatterProps, ViewerProps } from "./props";
@@ -19,6 +19,11 @@ export type LazyComponent<Props extends Record<string, unknown> = Record<string,
 export const CORE_OWNER: PluginId = "core";
 
 type Owned = { owner: PluginId; requires: Requirement };
+
+/** What a badge says about a path (a git letter, an unread dot, a count on a folder). */
+export type BadgeTone =
+  "modified" | "added" | "untracked" | "deleted" | "renamed" | "conflict" | "unread" | "muted";
+export type TreeBadge = { text: string; tone?: BadgeTone; title?: string };
 
 /** Everything a plugin can add to the core UI. */
 export type Contribution = Owned &
@@ -43,7 +48,29 @@ export type Contribution = Owned &
         order: number;
         view: LazyComponent;
       }
-    | { kind: "treeBadge"; id: string; badge: (path: string) => string | null }
+    /** A badge on a row of the Explorer and in the document header. Reads reactive state: the row follows it. */
+    | {
+        kind: "treeBadge";
+        id: string;
+        badge: (path: string, isDir: boolean) => TreeBadge | null;
+      }
+    /** A strip under the document header (the review bar, a repository notice). Lowest `order` first. */
+    | { kind: "docBar"; id: string; order: number; view: LazyComponent }
+    /** Changes the blocks the page shows (the review adds the removed ones and its own bars). Reads reactive state. */
+    | {
+        kind: "docBlocks";
+        id: string;
+        transform: (blocks: readonly Block[], view: DocumentView) => readonly Block[];
+      }
+    /** An entry of the Explorer's context menu (a single row). */
+    | {
+        kind: "treeMenu";
+        id: string;
+        label: MessageKey;
+        applies: (path: string, isDir: boolean) => boolean;
+        run: (paths: readonly string[]) => void;
+      }
+    /** Runs on the root of the page when it exists; returns what undoes it. */
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
     | {

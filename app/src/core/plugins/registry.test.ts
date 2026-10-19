@@ -132,14 +132,19 @@ describe("plugin host", () => {
 
   it("the lazy module map is keyed by folder name: the plugins that have a UI", () => {
     expect(Object.keys(pluginLoaders()).sort()).toEqual([
+      "follow",
       "frontmatter-card",
+      "git",
       "highlight",
       "json-view",
+      "live-feed",
       "math",
       "media",
       "mermaid",
       "plantuml",
+      "review",
       "text-view",
+      "unread",
       "word-count",
       "xml-view",
     ]);

@@ -23,6 +23,7 @@
   import { ui } from "./core/shell/ui.svelte";
   import { windowTitle } from "./core/title";
   import StatusItems from "./core/shell/StatusItems.svelte";
+  import { activeRight, activeSidebar, leftPanels, rightPanels } from "./core/shell/panels.svelte";
   import { windowStore as store } from "./core/window.svelte";
 
   type InfoState =
@@ -79,6 +80,9 @@
   });
 
   const title = $derived(windowTitle(store.view, editing.unsaved));
+
+  const sidebarView = $derived(activeSidebar());
+  const rightPanel = $derived(activeRight());
 
   /** The outline of the document shown, when it has one and the panel is on. */
   const outline = $derived.by(() => {
@@ -167,18 +171,35 @@
     {#key shown.workspace.id}
       <SidebarTabs />
       <!-- both views stay alive: the Explorer keeps its list and place while the Search shows -->
-      <div class="view" class:off={ui.sidebar !== "files"} inert={ui.sidebar !== "files"}>
+      <div class="view" class:off={sidebarView !== "files"} inert={sidebarView !== "files"}>
         <ExplorerSidebar {store} document={shown.document} />
       </div>
-      <div class="view" class:off={ui.sidebar !== "search"} inert={ui.sidebar !== "search"}>
+      <div class="view" class:off={sidebarView !== "search"} inert={sidebarView !== "search"}>
         <SearchPanel root={shown.workspace.root} />
       </div>
+      {#each leftPanels() as plugin (plugin.owner + plugin.id)}
+        <div class="view" class:off={sidebarView !== plugin.id} inert={sidebarView !== plugin.id}>
+          {#await plugin.view() then loaded}
+            {@const PanelView = loaded.default}
+            <PanelView />
+          {/await}
+        </div>
+      {/each}
     {/key}
   {/if}
 {/snippet}
 
 {#snippet panel()}
-  {#if outline}
+  {#if rightPanel !== null}
+    {#each rightPanels() as plugin (plugin.owner + plugin.id)}
+      {#if plugin.id === rightPanel}
+        {#await plugin.view() then loaded}
+          {@const PanelView = loaded.default}
+          <PanelView />
+        {/await}
+      {/if}
+    {/each}
+  {:else if outline}
     <OutlinePanel items={outline} />
   {/if}
 {/snippet}
@@ -206,7 +227,7 @@
   <Frame
     {header}
     sidebar={shown?.workspace.kind === "project" ? sidebar : undefined}
-    panel={outline && reading.outline ? panel : undefined}
+    panel={rightPanel !== null || (outline && reading.outline) ? panel : undefined}
     {main}
     {status}
   />

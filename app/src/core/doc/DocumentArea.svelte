@@ -36,6 +36,9 @@
   const view = $derived(documents.view);
   const deleted = $derived(doc.status === "ready" ? doc.deleted : null);
   const viewers = $derived(contributions.visible("viewer", conditions.current));
+  const bars = $derived(
+    [...contributions.visible("docBar", conditions.current)].sort((a, b) => a.order - b.order),
+  );
   const viewer = $derived(view === null ? undefined : viewers.find((v) => v.id === view.format));
   const outline = $derived(view?.body.kind === "markdown" ? view.body.outline : []);
   const markdown = $derived(view?.format === "markdown");
@@ -150,6 +153,12 @@
       canOpenSystem={workspace.kind === "project"}
       modes={view !== null && view.body.kind !== "media" ? modes : undefined}
     />
+    {#each bars as bar (bar.owner + bar.id)}
+      {#await bar.view() then loaded}
+        {@const Bar = loaded.default}
+        <Bar />
+      {/await}
+    {/each}
   {/if}
 
   <div class="pane">

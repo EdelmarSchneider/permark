@@ -15,6 +15,9 @@
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
   import { language, t, type MessageKey } from "../i18n";
+  import { conditions } from "../conditions/context.svelte";
+  import { contributions } from "../plugins/instance.svelte";
+  import Badge from "../shell/Badge.svelte";
   import { documents } from "./document.svelte";
   import ReadingMenu from "./ReadingMenu.svelte";
   import { reading } from "./reading.svelte";
@@ -50,6 +53,14 @@
     const key = ROLES[role];
     return key === undefined ? role : t(key);
   }
+
+  /** What plugins say about this document (a git letter, unread). */
+  const badges = $derived(
+    contributions.visible("treeBadge", conditions.current).flatMap((b) => {
+      const badge = b.badge(path, false);
+      return badge === null ? [] : [badge];
+    }),
+  );
 
   type Popup = { x: number; y: number; entries: readonly MenuEntry[] };
   let popup = $state.raw<Popup | null>(null);
@@ -169,6 +180,9 @@
     {/each}
     <span class="crumb current">{name}</span>
   </nav>
+  {#each badges as badge, at (at)}
+    <Badge {badge} />
+  {/each}
   {#if role}
     <span class="role" title={t("header.roleHint")}>{roleLabel(role)}</span>
   {/if}

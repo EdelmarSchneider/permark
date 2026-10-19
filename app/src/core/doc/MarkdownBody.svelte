@@ -43,10 +43,26 @@
     return () => documents.detachBody();
   });
 
-  // the document (or the embeds on offer) changed: the page follows
+  const blockTransforms = $derived(contributions.visible("docBlocks", conditions.current));
+  const decorations = $derived(contributions.visible("docDecoration", conditions.current));
+
+  // the document (or the embeds on offer, or what plugins add to the blocks) changed: the page follows
   $effect(() => {
     void documents.state;
-    documents.paint(lookup);
+    void documents.paintTick;
+    documents.paint(lookup, (blocks, shown) =>
+      blockTransforms.reduce((now, t) => t.transform(now, shown), blocks),
+    );
+  });
+
+  // plugins that work on the page itself (listeners on its root) while it exists
+  $effect(() => {
+    const root = container;
+    if (!root) return;
+    const undo = decorations.map((d) => d.decorate(root));
+    return () => {
+      for (const stop of undo) stop();
+    };
   });
 
   // where the reader is: remembered, and the heading found (one frame at a time)

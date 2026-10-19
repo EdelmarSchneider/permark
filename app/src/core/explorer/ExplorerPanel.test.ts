@@ -169,14 +169,14 @@ describe("the list", () => {
       id: "b1",
       owner: "git",
       requires: { needs: [], prefers: [] },
-      badge: (path) => (path === "README.md" ? "M" : null),
+      badge: (path) => (path === "README.md" ? { text: "M", tone: "modified" } : null),
     });
     registry.register({
       kind: "treeBadge",
       id: "b2",
       owner: "git",
       requires: { needs: [{ need: "gitRepo" }], prefers: [] },
-      badge: () => "X",
+      badge: () => ({ text: "X" }),
     });
     await tick();
     expect(row(root, "README.md").querySelector(".badge")?.textContent).toBe("M");
@@ -295,6 +295,39 @@ describe("context menu", () => {
       ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     await tick();
     expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("plugins add entries for the rows they apply to, and run them with the targets", async () => {
+    const { root, registry } = await render();
+    const run = vi.fn();
+    registry.register({
+      kind: "treeMenu",
+      id: "unread.menu.folder",
+      owner: "unread",
+      requires: { needs: [], prefers: [] },
+      label: "unread.markFolderRead",
+      applies: (_path, isDir) => isDir,
+      run,
+    });
+    row(root, "README.md").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    await tick();
+    expect(document.querySelector('[role="menu"]')?.textContent).not.toContain("folder read");
+    document
+      .querySelector('[role="menu"]')
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+    row(root, "docs").dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true }),
+    );
+    await tick();
+    const item = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menu"] [role="menuitem"]'),
+    ).find((i) => (i.textContent ?? "").toLowerCase().includes("folder"));
+    expect(item).toBeDefined();
+    item?.click();
+    expect(run).toHaveBeenCalledWith(["docs"]);
   });
 
   it("never offers the system program for a script or an svg", async () => {

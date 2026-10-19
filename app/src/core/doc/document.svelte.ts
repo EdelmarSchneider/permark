@@ -8,6 +8,7 @@ import {
   api as defaultApi,
   type Api,
   type ApiError,
+  type Block,
   type DocumentChanged,
   type DocumentView,
   type LinkTarget,
@@ -48,6 +49,17 @@ function extensionOf(path: string): string {
   return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
 }
 
+/** What an update of the page that was not a fresh document changed, in block ids. */
+export type BlockUpdate = {
+  /** Blocks that are new on the page (not there before the update). */
+  added: readonly string[];
+  /** Blocks that went, each with the block before it that stayed (`null`: the top). */
+  removed: readonly { id: string; after: string | null }[];
+};
+
+/** A view of the blocks to show instead of the document's own (a plugin's review). */
+export type BlockTransform = (blocks: readonly Block[], view: DocumentView) => readonly Block[];
+
 export type Hooks = {
   /** A quiet note for the person. */
   note(text: string): void;
@@ -80,6 +92,10 @@ export class DocumentController {
   #line: number | null = null;
   #headings: (HTMLElement | null)[] = [];
   #painters = new Set<() => void>();
+  #updaters = new Set<(update: BlockUpdate) => void>();
+  #repaint = false;
+  /** Goes up when the blocks shown have to be made again (a plugin changed what it adds). */
+  paintTick = $state(0);
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
@@ -223,29 +239,63 @@ export class DocumentController {
   }
 
   /** Puts the document in the DOM when its view is new. Called by the body when the state changes. */
-  paint(embeds: EmbedLookup): void {
+  paint(embeds: EmbedLookup, transform: BlockTransform = (blocks) => blocks): void {
     this.decorator.setEmbeds(embeds);
     const s = this.state;
     if (s.status !== "ready") return;
     const view = s.view;
     const body = view.body;
     if (body.kind !== "markdown") return;
-    if (this.#painted === view) return;
+    const again = this.#repaint && this.#painted === view;
+    this.#repaint = false;
+    if (this.#painted === view && !again) return;
     this.#painted = view;
     this.decorator.setDocument(view.path);
-    const applied = this.host.apply(body.blocks, s.fresh);
+    const blocks = transform(body.blocks, view);
+    // the blocks of a page that is there are updated, not built again (the place stays)
+    const fresh = s.fresh && !again;
+    const before = fresh ? null : this.host.ids();
+    const applied = this.host.apply(blocks, fresh);
     if (applied.missing.length > 0) {
       // the window was told it holds blocks it does not: ask again for everything
       void this.#open(view.path, true);
       return;
     }
     this.#headings = [];
+    if (before !== null) this.#told(before, blocks);
     const seq = this.#seq;
     void applied.settled.then(() => {
       if (seq !== this.#seq) return;
-      this.#settled(view, s.fresh);
+      this.#settled(view, s.fresh && !again);
       for (const painted of this.#painters) painted();
     });
+  }
+
+  /** The page has to be made again from the same document (a plugin changed the blocks it adds). */
+  refreshBlocks(): void {
+    this.#repaint = true;
+    this.paintTick += 1;
+  }
+
+  /** Called after each update of the blocks of a document that was already on the page. Returns what stops it. */
+  onUpdated(listener: (update: BlockUpdate) => void): () => void {
+    this.#updaters.add(listener);
+    return () => this.#updaters.delete(listener);
+  }
+
+  #told(before: readonly string[], blocks: readonly Block[]): void {
+    if (this.#updaters.size === 0) return;
+    const now = new Set(blocks.map((b) => b.id));
+    const had = new Set(before);
+    const added = blocks.filter((b) => !had.has(b.id)).map((b) => b.id);
+    const removed: { id: string; after: string | null }[] = [];
+    let after: string | null = null;
+    for (const id of before) {
+      if (now.has(id)) after = id;
+      else removed.push({ id, after });
+    }
+    if (added.length === 0 && removed.length === 0) return;
+    for (const listener of this.#updaters) listener({ added, removed });
   }
 
   /** Called after each paint (find re-runs). Returns what stops it. */

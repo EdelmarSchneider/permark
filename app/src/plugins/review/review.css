@@ -1,0 +1,56 @@
+/* The review on the page: tinted blocks, ghosts of what went, a small bar for each change. Tokens only. */
+.md-body > .rv-added {
+  background: var(--review-add-bg);
+  box-shadow: -3px 0 0 var(--git-added);
+  border-radius: 3px;
+}
+.md-body > .rv-edited {
+  background: var(--review-add-bg);
+  box-shadow: -3px 0 0 var(--git-modified);
+  border-radius: 3px;
+}
+.md-body > .rv-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.md-body > .rv-ghost {
+  background: var(--review-del-bg);
+  box-shadow: -3px 0 0 var(--git-deleted);
+  border-radius: 3px;
+  opacity: 0.85;
+  user-select: none;
+}
+.md-body > .rv-ghost :is(p, li, h1, h2, h3, h4, h5, h6, td, th, code) {
+  text-decoration: line-through;
+  text-decoration-color: var(--git-deleted);
+}
+.md-body > .rv-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 12px/1.6 var(--font-ui);
+}
+.md-body > .rv-bar.is-current {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.md-body > .rv-bar button {
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.md-body > .rv-bar button:hover {
+  border-color: var(--accent);
+}

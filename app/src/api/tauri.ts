@@ -4,7 +4,17 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { asIpcError, errorMessage } from "./error";
-import type { Api, CommandName, Commands, DropEvent, Result } from "./types";
+import type {
+  Api,
+  CommandName,
+  Commands,
+  DropEvent,
+  PluginEnvelope,
+  PluginEventName,
+  PluginMethod,
+  PluginMethods,
+  Result,
+} from "./types";
 
 /** Typed `invoke`: command name fixes args + result type; rejection -> `Result` error (backend shape when it is one). */
 export async function call<C extends CommandName>(
@@ -31,6 +41,27 @@ export function assetUrl(
 ): string {
   const base = convert(`${workspace}/${path}`, "pm-asset");
   return version === null ? base : `${base}?v=${encodeURIComponent(version)}`;
+}
+
+/** A plugin method: the key is `<plugin>.<method>`; the backend takes the two parts. */
+async function pluginCall<M extends PluginMethod>(
+  method: M,
+  args: PluginMethods[M]["args"],
+): Promise<Result<PluginMethods[M]["result"]>> {
+  const [plugin = "", name = ""] = method.split(".", 2);
+  try {
+    const value = await invoke<PluginMethods[M]["result"]>("plugin_call", {
+      plugin,
+      method: name,
+      args,
+    });
+    return { ok: true, value };
+  } catch (error) {
+    const command = "plugin_call";
+    const backend = asIpcError(error);
+    if (backend) return { ok: false, error: { kind: "backend", command, error: backend } };
+    return { ok: false, error: { kind: "command", command, message: errorMessage(error) } };
+  }
 }
 
 export const tauriApi: Api = {
@@ -91,6 +122,9 @@ export const tauriApi: Api = {
   searchSections: (query, limit, options) => call("search_sections", { query, limit, options }),
   searchFiles: (query, limit, folderLimit) => call("search_files", { query, limit, folderLimit }),
   searchRecent: (opened, limit) => call("search_recent", { opened, limit }),
+  pluginCall,
+  onPlugin: <E extends PluginEventName>(event: E, handler: (payload: PluginEnvelope<E>) => void) =>
+    listen<PluginEnvelope<E>>(event, (e) => handler(e.payload)),
   windowClose: () => call("window_close", {}),
   assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
   on: (event, handler) => listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),

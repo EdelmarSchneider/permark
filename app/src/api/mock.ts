@@ -7,6 +7,7 @@ import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
 import { mockAssetUrl, mockLinkTarget, mockView } from "./mockDocs";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
+import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
 import { mockFiles, mockRecent, mockSections } from "./mockSearch";
 import type {
@@ -16,6 +17,9 @@ import type {
   EventName,
   Events,
   JsonValue,
+  PluginEnvelope,
+  PluginEventName,
+  PluginEvents,
   RecentFolder,
   Renamed,
   Result,
@@ -40,6 +44,7 @@ function defaultSettings(): AppSettings {
     startIn: "welcome",
     linkUpdate: "ask",
     editMode: "edit",
+    gitBackend: "automatic",
     referenceTemplate: "{path}#{section}",
     editor: "",
     keymap: {},
@@ -49,6 +54,11 @@ function defaultSettings(): AppSettings {
 
 /** The plugins the real build runs by default. */
 const MOCK_PLUGINS = [
+  "git",
+  "live-feed",
+  "follow",
+  "unread",
+  "review",
   "md-family",
   "prompt-blocks",
   "frontmatter-card",
@@ -95,6 +105,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, linkUpdate: change.value };
     case "editMode":
       return { ...settings, editMode: change.value };
+    case "gitBackend":
+      return { ...settings, gitBackend: change.value };
     case "referenceTemplate":
       return { ...settings, referenceTemplate: change.value.trim() || "{path}#{section}" };
     case "editor":
@@ -132,6 +144,8 @@ export type MockProbe = {
   project: MockProject;
   /** Editing: saves, unsaved flag, files as the editor sees them. */
   edit: MockEditProbe;
+  /** The plugins' backend halves: calls they got, ways to make them report. */
+  plugins: MockPluginProbe;
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -164,6 +178,22 @@ export function createMockApi(): Api & {
     "close-requested": new Set(),
     "index-progress": new Set(),
   };
+  const pluginListeners: { [E in PluginEventName]: Set<(payload: PluginEnvelope<E>) => void> } = {
+    "git:snapshot": new Set(),
+    "live-feed:items": new Set(),
+    "unread:changed": new Set(),
+  };
+  /** The folder the window shows, as the events of its plugins name it. */
+  function rootNow(): string {
+    return view.state === "showing" && view.workspace.kind === "project" ? view.workspace.root : "";
+  }
+  function emitPlugin<E extends PluginEventName>(event: E, data: PluginEvents[E]): void {
+    for (const handler of pluginListeners[event]) handler({ root: rootNow(), data });
+  }
+  const plugins = createMockPlugins(
+    emitPlugin,
+    () => mockView("docs/guide.md", [], true)?.hash ?? "0",
+  );
   const project = new MockProject();
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
   const probe: MockProbe = {
@@ -173,6 +203,7 @@ export function createMockApi(): Api & {
     shown: { path: null, known: [] },
     project,
     edit: editing.probe,
+    plugins: plugins.probe,
   };
   let tree: TreeView | null = null;
 
@@ -452,6 +483,13 @@ export function createMockApi(): Api & {
       return Promise.resolve();
     },
     showWindow: () => ok(undefined),
+    pluginCall: plugins.call,
+    onPlugin: (event, handler) => {
+      pluginListeners[event].add(handler);
+      return Promise.resolve(() => {
+        pluginListeners[event].delete(handler);
+      });
+    },
   };
 }
 
