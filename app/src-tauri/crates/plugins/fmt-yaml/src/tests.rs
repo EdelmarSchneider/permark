@@ -2,6 +2,8 @@ use permark_core::format::config::fidelity::{check_corpus, check_masking, masked
 use permark_core::format::config::{RowValue, ScalarKind};
 use permark_core::format::{ConfigEdit, EditRefusal, Editability, Format, NewValue};
 
+use std::fmt::Write as _;
+
 use super::*;
 
 const COMPOSE: &str = r#"# Local stack
@@ -349,4 +351,53 @@ fn text_that_is_not_a_mapping_or_list_is_text() {
     let empty = format().sheet("# only a comment\n").expect("empty");
     assert_eq!(empty.row_count(), 0);
     assert_eq!(format().sheet("").expect("empty").row_count(), 0);
+}
+
+struct NoEnv;
+
+impl permark_core::format::DocEnv for NoEnv {
+    fn file_exists(&self, _: &str) -> bool {
+        false
+    }
+}
+
+fn rendered_notes(text: &str) -> Vec<&'static str> {
+    let known = std::collections::HashSet::new();
+    let features = permark_core::format::MarkdownFeatures::default();
+    format()
+        .render(
+            text,
+            &permark_core::format::RenderCx {
+                path: "big.yml",
+                env: &NoEnv,
+                features: &features,
+                known: &known,
+            },
+        )
+        .notes
+}
+
+#[test]
+fn a_big_file_parses_quickly_and_one_over_the_limit_is_shown_as_text() {
+    let mut text = String::from("services:\n");
+    let mut n = 0;
+    while text.len() < 200_000 {
+        let _ = writeln!(
+            text,
+            "  svc{n}:\n    image: app:{n}\n    env:\n      KEY_{n}: value-{n}"
+        );
+        n += 1;
+    }
+    let start = std::time::Instant::now();
+    let sheet = format().sheet(&text).expect("parses");
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(3),
+        "{:?}",
+        start.elapsed()
+    );
+    assert!(sheet.row_count() > 1500);
+    // a sheet this long is shown as text; so is a file over the size limit
+    assert_eq!(rendered_notes(&text), ["bigConfig"]);
+    assert_eq!(rendered_notes(&text.repeat(2)), ["bigConfig"]);
+    assert_eq!(rendered_notes("a: 1\n"), Vec::<&str>::new());
 }
