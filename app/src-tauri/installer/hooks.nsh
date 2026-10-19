@@ -7,7 +7,7 @@
 ; 2. "OPEN WITH". Every file type PerMark reads is registered so it is offered under "Open with" (a ProgID per group of
 ;    types, the extension's OpenWithProgids list, and the app's capabilities for the Default Apps page). The default app
 ;    of a type is NEVER set here: Windows protects it. The welcome page asks "Open these files with PerMark" (Markdown
-;    checked, the other types unchecked); with a type checked, the installer opens Windows' Default Apps page for
+;    checked, the other types unchecked; the welcome text says Windows confirms); with a type checked, the installer opens Windows' Default Apps page for
 ;    PerMark at the end, where the person confirms. An update asks nothing and opens nothing.
 ;
 ; 3. FILE MANAGER ENTRIES. "Open with PerMark" (folders, the background of a folder, Markdown files) and "New Markdown
@@ -37,12 +37,12 @@
 
 ; ---- Words (Windows language ids: 1033 en, 1046 pt-BR, 3082 es, 1031 de, 2052 zh-CN, 1040 it) ----------------------
 
-LangString PermarkWelcome 1033 "Setup will install PerMark for you. No administrator rights are needed.$\r$\n$\r$\nClick Next to continue."
-LangString PermarkWelcome 1046 "O instalador vai instalar o PerMark para você. Não é preciso ser administrador.$\r$\n$\r$\nClique em Avançar para continuar."
-LangString PermarkWelcome 3082 "El instalador instalará PerMark para usted. No se necesitan permisos de administrador.$\r$\n$\r$\nHaga clic en Siguiente para continuar."
-LangString PermarkWelcome 1031 "Das Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig.$\r$\n$\r$\nKlicken Sie auf Weiter, um fortzufahren."
-LangString PermarkWelcome 2052 "安装程序将为您安装 PerMark，无需管理员权限。$\r$\n$\r$\n单击“下一步”继续。"
-LangString PermarkWelcome 1040 "Il programma di installazione installerà PerMark per te. Non servono i permessi di amministratore.$\r$\n$\r$\nFai clic su Avanti per continuare."
+LangString PermarkWelcome 1033 "Setup will install PerMark for you. No administrator rights are needed.$\r$\n$\r$\nFor the file types you check below, Windows asks you to confirm in its Settings after the installation."
+LangString PermarkWelcome 1046 "O instalador vai instalar o PerMark para você. Não é preciso ser administrador.$\r$\n$\r$\nPara os tipos de arquivo marcados abaixo, o Windows pede sua confirmação nas Configurações depois da instalação."
+LangString PermarkWelcome 3082 "El instalador instalará PerMark para usted. No se necesitan permisos de administrador.$\r$\n$\r$\nPara los tipos de archivo que marque abajo, Windows le pedirá que lo confirme en Configuración después de la instalación."
+LangString PermarkWelcome 1031 "Das Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig.$\r$\n$\r$\nFür die unten angehakten Dateitypen bittet Windows Sie nach der Installation um Bestätigung in den Einstellungen."
+LangString PermarkWelcome 2052 "安装程序将为您安装 PerMark，无需管理员权限。$\r$\n$\r$\n对于下面勾选的文件类型，安装后 Windows 会请您在“设置”中确认。"
+LangString PermarkWelcome 1040 "Il programma di installazione installerà PerMark per te. Non servono i permessi di amministratore.$\r$\n$\r$\nPer i tipi di file selezionati qui sotto, dopo l'installazione Windows ti chiederà di confermare nelle Impostazioni."
 
 LangString PermarkTypesTitle 1033 "Open these files with PerMark:"
 LangString PermarkTypesTitle 1046 "Abrir estes arquivos com o PerMark:"
@@ -50,13 +50,6 @@ LangString PermarkTypesTitle 3082 "Abrir estos archivos con PerMark:"
 LangString PermarkTypesTitle 1031 "Diese Dateien mit PerMark öffnen:"
 LangString PermarkTypesTitle 2052 "用 PerMark 打开这些文件："
 LangString PermarkTypesTitle 1040 "Apri questi file con PerMark:"
-
-LangString PermarkTypesHint 1033 "Windows asks you to confirm in its Settings after the installation."
-LangString PermarkTypesHint 1046 "O Windows pede para você confirmar nas Configurações depois da instalação."
-LangString PermarkTypesHint 3082 "Windows le pedirá que lo confirme en Configuración después de la instalación."
-LangString PermarkTypesHint 1031 "Windows bittet Sie nach der Installation, dies in den Einstellungen zu bestätigen."
-LangString PermarkTypesHint 2052 "安装后，Windows 会请您在“设置”中确认。"
-LangString PermarkTypesHint 1040 "Dopo l'installazione, Windows ti chiederà di confermare nelle Impostazioni."
 
 LangString PermarkText 1033 "Text"
 LangString PermarkText 1046 "Texto"
@@ -356,7 +349,8 @@ Var PermarkBoxProperties
 
 ; ---- The welcome page: short text, the types, the two entries -------------------------------------------------------
 
-!define MUI_WELCOMEPAGE_TEXT "$(PermarkWelcome)"
+; the page's own text ends with the title of the check grid (a label of ours over that text would not show)
+!define MUI_WELCOMEPAGE_TEXT "$(PermarkWelcome)$\r$\n$\r$\n$(PermarkTypesTitle)"
 
 !macro PERMARK_TYPE_BOX VAR X Y LABEL NAME
   ${NSD_CreateCheckbox} ${X} ${Y} 48u 11u "${LABEL}"
@@ -378,13 +372,13 @@ Var PermarkBoxProperties
   ${EndIf}
 !macroend
 
-!macro PERMARK_ENTRY_BOX VAR Y LABEL CHOICE
+!macro PERMARK_ENTRY_BOX VAR Y H LABEL CHOICE
   ClearErrors
   ReadRegDWORD $0 HKCU "${PERMARK_APP_KEY}" "${CHOICE}"
   ${If} ${Errors}
     StrCpy $0 1
   ${EndIf}
-  ${NSD_CreateCheckbox} 120u ${Y} 195u 11u "${LABEL}"
+  ${NSD_CreateCheckbox} 120u ${Y} 195u ${H} "${LABEL}"
   Pop ${VAR}
   SetCtlColors ${VAR} "000000" "FFFFFF"
   System::Call 'user32::SetWindowPos(p ${VAR}, p 0, i 0, i 0, i 0, i 0, i 3)'
@@ -406,25 +400,17 @@ Function PermarkWelcomeShow
   StrCpy $R9 ";$R9"
   ClearErrors
 
-  ${NSD_CreateLabel} 120u 92u 195u 10u "$(PermarkTypesTitle)"
-  Pop $0
-  SetCtlColors $0 "000000" "FFFFFF"
-  System::Call 'user32::SetWindowPos(p $0, p 0, i 0, i 0, i 0, i 0, i 3)'
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 104u "Markdown" ";markdown"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 169u 104u "$(PermarkText)" ";text"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 218u 104u "JSON" ";json"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 267u 104u "XML" ";xml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 116u "YAML" ";yaml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 169u 116u "TOML" ";toml"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 218u 116u "INI" ";ini"
-  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 267u 116u "$(PermarkProperties)" ";properties"
-  ${NSD_CreateLabel} 120u 129u 195u 18u "$(PermarkTypesHint)"
-  Pop $0
-  SetCtlColors $0 "555555" "FFFFFF"
-  System::Call 'user32::SetWindowPos(p $0, p 0, i 0, i 0, i 0, i 0, i 3)'
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxMarkdown 120u 110u "Markdown" ";markdown"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxText 169u 110u "$(PermarkText)" ";text"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxJson 218u 110u "JSON" ";json"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxXml 267u 110u "XML" ";xml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxYaml 120u 121u "YAML" ";yaml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxToml 169u 121u "TOML" ";toml"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxIni 218u 121u "INI" ";ini"
+  !insertmacro PERMARK_TYPE_BOX $PermarkBoxProperties 267u 121u "$(PermarkProperties)" ";properties"
 
-  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 152u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}"
-  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 165u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}"
+  !insertmacro PERMARK_ENTRY_BOX $PermarkMenuBox 141u 16u "$(OpenWithMenuOption)" "${PERMARK_MENU_CHOICE}"
+  !insertmacro PERMARK_ENTRY_BOX $PermarkNewBox 162u 20u "$(NewMarkdownOption)" "${PERMARK_NEW_CHOICE}"
   Pop $R9
   Pop $R8
   Pop $0
