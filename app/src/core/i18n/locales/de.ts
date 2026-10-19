@@ -91,7 +91,8 @@ export default {
   "error.unknown": "Etwas ist schiefgelaufen: {message}",
 
   // ---- conditions
-  "condition.workspace": "Das funktioniert in einer anderen Art von Fenster.",
+  "condition.workspace": "Zuerst einen Ordner oder eine Datei öffnen.",
+  "condition.workspaceProject": "Zuerst einen Ordner öffnen.",
   "condition.gitRepo": "Dieser Ordner ist kein git-Repository.",
   "condition.gitAvailable": "Git ist auf diesem Computer nicht verfügbar.",
   "condition.permark": "PerMark ist in diesem Ordner noch nicht eingerichtet.",

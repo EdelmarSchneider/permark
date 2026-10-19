@@ -22,6 +22,7 @@
   import { FinderStore, type FinderHost } from "./finderStore.svelte";
   import { outlineRows, type GroupTitle, type Row, type Scope } from "./finderModel";
   import { markRuns } from "./fuzzy";
+  import Marked from "./Marked.svelte";
   import PathText from "./PathText.svelte";
   import { recentFiles } from "./recent.svelte";
   import SnippetText from "./SnippetText.svelte";
@@ -273,9 +274,7 @@
               <Terminal size={15} aria-hidden="true" />
               <span class="text">
                 <span class="strong">
-                  {#each markRuns(t(row.entry.command.label), row.positions) as run, i (i)}{#if run.mark}<mark
-                        >{run.text}</mark
-                      >{:else}{run.text}{/if}{/each}
+                  <Marked runs={markRuns(t(row.entry.command.label), row.positions)} />
                 </span>
                 {#if row.entry.availability.status === "unavailable"}
                   <span class="reason">
@@ -495,11 +494,6 @@
     color: var(--muted);
     font: inherit;
     font-size: var(--fs-ui-xs);
-  }
-  mark {
-    background: var(--mark);
-    color: inherit;
-    border-radius: 2px;
   }
   .note {
     margin: var(--sp-4) var(--sp-2);

@@ -90,7 +90,8 @@ export default {
   "error.unknown": "Algo salió mal: {message}",
 
   // ---- conditions
-  "condition.workspace": "Esto funciona en otro tipo de ventana.",
+  "condition.workspace": "Primero hay que abrir una carpeta o un archivo.",
+  "condition.workspaceProject": "Primero hay que abrir una carpeta.",
   "condition.gitRepo": "Esta carpeta no es un repositorio git.",
   "condition.gitAvailable": "Git no está disponible en este equipo.",
   "condition.permark": "PerMark aún no está configurado en esta carpeta.",

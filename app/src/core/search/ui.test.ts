@@ -97,7 +97,7 @@ describe("the command palette", () => {
     expect(find("Open folder")?.classList.contains("dim")).toBe(false);
     const explorer = find("Show Explorer");
     expect(explorer?.classList.contains("dim")).toBe(true);
-    expect(explorer?.textContent).toContain("This works in another kind of window.");
+    expect(explorer?.textContent).toContain("Open a folder first.");
     // the commands that open the box are not listed; the keys are
     expect(rows.some((r) => r.textContent?.includes("Command palette"))).toBe(false);
     expect(find("Open folder")?.querySelector("kbd")?.textContent).toBe("Ctrl+O");
@@ -148,6 +148,40 @@ describe("the command palette", () => {
     expect(ui.settings).toBe(true);
     expect(ui.finder.status).toBe("closed");
     ui.closeSettingsPopover();
+  });
+});
+
+describe("typing in the box", () => {
+  // the runs of a label change length with every key: the text must always be the label, the marks the typed words
+  it("keeps every row's text whole and marks what is typed, key by key", async () => {
+    await open();
+    ui.openFinder("commands");
+    component = mount(Finder, { target, props: { preset: "commands" } });
+    flushSync();
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    const labels = new Set(["Zoom in", "Zoom out", "Reset zoom"]);
+    for (const typed of ["z", "zo", "zoo", "zoom"]) {
+      type(input, typed);
+      flushSync();
+      await tick();
+      const rows = Array.from(target.querySelectorAll(".row .strong"));
+      expect(rows.map((r) => r.textContent?.trim()).sort()).toEqual([...labels].sort());
+      for (const row of rows) {
+        const marked = Array.from(row.querySelectorAll(".hit"))
+          .map((m) => m.textContent)
+          .join("")
+          .toLowerCase();
+        expect(marked, `${row.textContent} for ${typed}`).toBe(typed);
+      }
+    }
+    // and back: fewer words, other rows
+    type(input, "reset");
+    flushSync();
+    await tick();
+    const only = Array.from(target.querySelectorAll(".row .strong"));
+    expect(only.map((r) => r.textContent?.trim())).toEqual(["Reset zoom"]);
+    expect(only[0]?.querySelector(".hit")?.textContent).toBe("Reset");
   });
 });
 
@@ -252,7 +286,7 @@ describe("the Search panel", () => {
     expect(target.querySelector(".file")?.textContent).toContain("ideas.md");
     expect(target.querySelector(".summary")?.textContent).toContain("file");
     // marks are elements, never HTML from the document
-    expect(target.querySelector(".snippet mark")).not.toBeNull();
+    expect(target.querySelector(".snippet .hit")).not.toBeNull();
     const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => {});
     target.querySelector<HTMLElement>(".hit")?.click();
     expect(navigate).toHaveBeenCalledWith("notes/ideas.md", "ideas", 1);

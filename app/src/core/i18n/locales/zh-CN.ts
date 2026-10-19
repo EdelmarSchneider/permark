@@ -87,7 +87,8 @@ export default {
   "error.unknown": "出现问题：{message}",
 
   // ---- conditions
-  "condition.workspace": "此功能适用于另一种窗口。",
+  "condition.workspace": "请先打开文件夹或文件。",
+  "condition.workspaceProject": "请先打开文件夹。",
   "condition.gitRepo": "这个文件夹不是 git 仓库。",
   "condition.gitAvailable": "此电脑上没有可用的 git。",
   "condition.permark": "尚未在此文件夹中设置 PerMark。",

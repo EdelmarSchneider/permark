@@ -1,6 +1,7 @@
 <script lang="ts">
   // A project path: the file name first and strong, its folder after it and dim; the characters the query matched
   // are marked.
+  import Marked from "./Marked.svelte";
   import { markRuns } from "./fuzzy";
 
   type Props = { path: string; positions?: readonly number[]; folderOnly?: boolean };
@@ -17,13 +18,8 @@
   const folder = $derived(cut === 0 ? [] : markRuns(chars.slice(0, cut - 1).join(""), positions));
 </script>
 
-<span class="name" class:folder-only={folderOnly}
-  >{#each name as run, i (i)}{#if run.mark}<mark>{run.text}</mark
-      >{:else}{run.text}{/if}{/each}</span
->{#if folder.length > 0}<span class="folder"
-    >{#each folder as run, i (i)}{#if run.mark}<mark>{run.text}</mark
-        >{:else}{run.text}{/if}{/each}</span
-  >{/if}
+<span class="name" class:folder-only={folderOnly}><Marked runs={name} /></span
+>{#if folder.length > 0}<span class="folder"><Marked runs={folder} /></span>{/if}
 
 <style>
   .name {
@@ -36,10 +32,5 @@
     margin-left: var(--sp-2);
     color: var(--faint);
     font-size: var(--fs-ui-sm);
-  }
-  mark {
-    background: var(--mark);
-    color: inherit;
-    border-radius: 2px;
   }
 </style>

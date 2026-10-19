@@ -89,7 +89,8 @@ export default {
   "error.unknown": "Qualcosa è andato storto: {message}",
 
   // ---- conditions
-  "condition.workspace": "Questo funziona in un altro tipo di finestra.",
+  "condition.workspace": "Prima apri una cartella o un file.",
+  "condition.workspaceProject": "Prima apri una cartella.",
   "condition.gitRepo": "Questa cartella non è un repository git.",
   "condition.gitAvailable": "Git non è disponibile su questo computer.",
   "condition.permark": "PerMark non è ancora configurato in questa cartella.",

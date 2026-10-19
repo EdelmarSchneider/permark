@@ -87,7 +87,8 @@ const en = {
   "error.unknown": "Something went wrong: {message}",
 
   // ---- conditions: why a feature can't work here (one plain sentence) + the fix
-  "condition.workspace": "This works in another kind of window.",
+  "condition.workspace": "Open a folder or a file first.",
+  "condition.workspaceProject": "Open a folder first.",
   "condition.gitRepo": "This folder isn't a git repository.",
   "condition.gitAvailable": "Git isn't available on this computer.",
   "condition.permark": "PerMark isn't set up in this folder yet.",

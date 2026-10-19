@@ -7,7 +7,10 @@ import type { Reason } from "./available";
 export function reasonKey(reason: Reason): MessageKey {
   switch (reason.need) {
     case "workspace":
-      return "condition.workspace";
+      // a feature for projects only says what to open; one for documents may be satisfied by a file too
+      return reason.kinds.length === 1 && reason.kinds[0] === "project"
+        ? "condition.workspaceProject"
+        : "condition.workspace";
     case "gitRepo":
       return "condition.gitRepo";
     case "gitAvailable":

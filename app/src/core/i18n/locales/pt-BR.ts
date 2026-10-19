@@ -88,7 +88,8 @@ export default {
   "error.unknown": "Algo deu errado: {message}",
 
   // ---- conditions
-  "condition.workspace": "Isto funciona em outro tipo de janela.",
+  "condition.workspace": "Abra uma pasta ou um arquivo primeiro.",
+  "condition.workspaceProject": "Abra uma pasta primeiro.",
   "condition.gitRepo": "Esta pasta não é um repositório git.",
   "condition.gitAvailable": "O git não está disponível neste computador.",
   "condition.permark": "O PerMark ainda não foi configurado nesta pasta.",
