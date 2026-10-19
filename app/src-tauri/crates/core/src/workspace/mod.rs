@@ -116,6 +116,8 @@ impl WorkspaceRef {
 #[derive(Debug, Clone)]
 pub struct FileSession {
     pub scope: FileScope,
+    /// Reads the file and tells windows when it changes.
+    pub documents: std::sync::Arc<crate::document::Documents>,
 }
 
 /// A live workspace.

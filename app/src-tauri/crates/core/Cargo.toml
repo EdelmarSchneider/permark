@@ -24,6 +24,7 @@ ignore.workspace = true
 notify.workspace = true
 trash.workspace = true
 comrak.workspace = true
+ammonia.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

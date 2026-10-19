@@ -1,0 +1,16 @@
+[package]
+name = "permark-plugin-json-view"
+description = "PerMark plugin json-view."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API).
+[dependencies]
+permark-core.workspace = true
+
+[lints]
+workspace = true

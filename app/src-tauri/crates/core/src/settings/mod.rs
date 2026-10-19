@@ -79,6 +79,11 @@ choice!(
     LinkUpdate { Ask = "ask", Always = "always", Never = "never" } default Ask
 );
 
+/// Reference template when none is set.
+pub const DEFAULT_REFERENCE_TEMPLATE: &str = "{path}#{section}";
+/// Longest reference template kept.
+pub const MAX_REFERENCE_TEMPLATE: usize = 200;
+
 /// A plugin's raw settings table (equality by its TOML text).
 #[derive(Debug, Clone, Default)]
 pub struct RawTable(pub Table);
@@ -90,7 +95,7 @@ impl PartialEq for RawTable {
 }
 
 /// App settings as the app uses them.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct AppSettings {
@@ -99,12 +104,32 @@ pub struct AppSettings {
     pub tone: Tone,
     pub start_in: StartIn,
     pub link_update: LinkUpdate,
+    /// How "copy reference" is written (`{path} {section} {line} {name}`).
+    pub reference_template: String,
+    /// The person's editor: a command template (empty = not set). Only the person sets it (app settings).
+    pub editor: String,
     /// Explicit plugin switches (absent = manifest default).
     pub plugins: BTreeMap<PluginId, bool>,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
     #[serde(skip)]
     #[ts(skip)]
     pub plugin_tables: BTreeMap<PluginId, RawTable>,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            language: LanguagePref::default(),
+            theme: ThemePref::default(),
+            tone: Tone::default(),
+            start_in: StartIn::default(),
+            link_update: LinkUpdate::default(),
+            reference_template: DEFAULT_REFERENCE_TEMPLATE.to_owned(),
+            editor: String::new(),
+            plugins: BTreeMap::new(),
+            plugin_tables: BTreeMap::new(),
+        }
+    }
 }
 
 /// One change of one key.
@@ -117,6 +142,10 @@ pub enum SettingChange {
     Tone(Tone),
     StartIn(StartIn),
     LinkUpdate(LinkUpdate),
+    /// Empty = the default template.
+    ReferenceTemplate(String),
+    /// Empty = not set.
+    Editor(String),
     /// `None` = back to the manifest default (key removed).
     PluginEnabled {
         plugin: PluginId,
@@ -134,6 +163,8 @@ impl SettingChange {
             Self::Tone(_) => "tone".to_owned(),
             Self::StartIn(_) => "start_in".to_owned(),
             Self::LinkUpdate(_) => "link_update".to_owned(),
+            Self::ReferenceTemplate(_) => "reference_template".to_owned(),
+            Self::Editor(_) => "editor".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
         }
     }
@@ -151,12 +182,42 @@ pub enum SettingsScope {
 pub enum SettingsError {
     #[error("cannot write {path}: {source}")]
     Io { path: String, source: io::Error },
+    /// The value is not acceptable (`reason`: a word the UI can word).
+    #[error("{key} is not valid: {reason}")]
+    Invalid { key: String, reason: String },
 }
 
 impl From<SettingsError> for IpcError {
     fn from(error: SettingsError) -> Self {
         match error {
             SettingsError::Io { path, source } => IpcError::io(path, &source),
+            SettingsError::Invalid { key, reason } => {
+                IpcError::new(crate::error::ErrorKind::InvalidData)
+                    .subject(key)
+                    .detail(reason)
+            }
+        }
+    }
+}
+
+impl SettingChange {
+    /// Refuses values that must never reach the file.
+    ///
+    /// # Errors
+    /// `Invalid`: reference template too long; editor command that is not a valid template.
+    pub fn validate(&self) -> Result<(), SettingsError> {
+        let invalid = |reason: &str| SettingsError::Invalid {
+            key: self.key(),
+            reason: reason.to_owned(),
+        };
+        match self {
+            Self::ReferenceTemplate(text) if text.chars().count() > MAX_REFERENCE_TEMPLATE => {
+                Err(invalid("tooLong"))
+            }
+            Self::Editor(text) => crate::document::editor::EditorTemplate::parse(text)
+                .map(|_| ())
+                .map_err(|problem| invalid(problem.code())),
+            _ => Ok(()),
         }
     }
 }
@@ -221,6 +282,14 @@ impl AppSettings {
             link_update: str_of(doc, "link_update")
                 .and_then(LinkUpdate::parse)
                 .unwrap_or_default(),
+            reference_template: str_of(doc, "reference_template")
+                .filter(|t| !t.trim().is_empty() && t.chars().count() <= MAX_REFERENCE_TEMPLATE)
+                .map_or_else(|| DEFAULT_REFERENCE_TEMPLATE.to_owned(), str::to_owned),
+            // a hand-edited value that is not a valid template counts as not set
+            editor: str_of(doc, "editor")
+                .filter(|t| crate::document::editor::EditorTemplate::parse(t).is_ok())
+                .map(str::to_owned)
+                .unwrap_or_default(),
             plugins,
             plugin_tables,
         }
@@ -251,9 +320,20 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::Tone(v) => set_keeping_decor(root, "tone", v.as_str().into()),
         SettingChange::StartIn(v) => set_keeping_decor(root, "start_in", v.as_str().into()),
         SettingChange::LinkUpdate(v) => set_keeping_decor(root, "link_update", v.as_str().into()),
+        SettingChange::ReferenceTemplate(v) => set_text(root, "reference_template", v),
+        SettingChange::Editor(v) => set_text(root, "editor", v),
         SettingChange::PluginEnabled { plugin, enabled } => {
             set_plugin_enabled(root, plugin, *enabled);
         }
+    }
+}
+
+/// A text key: empty text removes the key (back to the default).
+fn set_text(table: &mut Table, key: &str, value: &str) {
+    if value.trim().is_empty() {
+        table.remove(key);
+    } else {
+        set_keeping_decor(table, key, value.into());
     }
 }
 
@@ -336,8 +416,9 @@ impl SettingsFile {
     /// A file that is not TOML is moved to `settings.toml.broken-<ms>` first (never silently overwritten).
     ///
     /// # Errors
-    /// IO failure writing the file.
+    /// `Invalid` value; IO failure writing the file.
     pub fn apply(&self, change: &SettingChange) -> Result<AppSettings, SettingsError> {
+        change.validate()?;
         let original = std::fs::read_to_string(&self.path).unwrap_or_default();
         let exists = std::fs::symlink_metadata(&self.path).is_ok();
         let mut doc = if let Some(doc) = read_doc(&self.path) {

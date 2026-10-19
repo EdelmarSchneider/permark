@@ -19,6 +19,7 @@ pub use set::PluginSet;
 
 use crate::conditions::{Context, Requirement};
 use crate::events::{CoreEvent, EventSink};
+use crate::format::Contributions;
 use crate::paths::Vault;
 
 /// Kebab-case plugin id: `[a-z0-9]+(-[a-z0-9]+)*`, <= 32 chars.
@@ -127,6 +128,65 @@ pub trait Plugin: Send + Sync {
     /// # Errors
     /// The plugin cannot run (it + its dependents stay off; others run).
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError>;
+    /// Data this plugin adds to core registries while it is on (formats, roles, Markdown features).
+    fn contributions(&self) -> Contributions {
+        Contributions::default()
+    }
+}
+
+/// A running instance that does nothing: the plugin's work happens through its contributions.
+struct Idle;
+impl Running for Idle {}
+
+/// A plugin with no process of its own: a manifest and the data it contributes (viewers, roles, embeds that live
+/// in the UI). Dropping its instance has nothing to tear down.
+pub struct StaticPlugin {
+    manifest: Manifest,
+    contributions: Contributions,
+}
+
+impl StaticPlugin {
+    #[must_use]
+    pub fn new(manifest: Manifest, contributions: Contributions) -> Arc<Self> {
+        Arc::new(Self {
+            manifest,
+            contributions,
+        })
+    }
+
+    /// An app-scope plugin that is on by default, with no requirement and no dependency.
+    #[must_use]
+    pub fn app(
+        id: &'static str,
+        kind: PluginKind,
+        contributions: Contributions,
+    ) -> Arc<dyn Plugin> {
+        Self::new(
+            Manifest {
+                id: PluginId::of(id),
+                kind,
+                scope: PluginScope::App,
+                requires: Requirement::NONE,
+                depends_on: Cow::Borrowed(&[]),
+                default_enabled: true,
+            },
+            contributions,
+        )
+    }
+}
+
+impl Plugin for StaticPlugin {
+    fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
+    fn start(&self, _cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
+        Ok(Box::new(Idle))
+    }
+
+    fn contributions(&self) -> Contributions {
+        self.contributions.clone()
+    }
 }
 
 /// What an instance works on.

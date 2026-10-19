@@ -9,4 +9,4 @@ import type { Tone } from "./Tone";
 /**
  * One change of one key.
  */
-export type SettingChange = { "key": "language", "value": LanguagePref } | { "key": "theme", "value": ThemePref } | { "key": "tone", "value": Tone } | { "key": "startIn", "value": StartIn } | { "key": "linkUpdate", "value": LinkUpdate } | { "key": "pluginEnabled", "value": { plugin: PluginId, enabled: boolean | null, } };
+export type SettingChange = { "key": "language", "value": LanguagePref } | { "key": "theme", "value": ThemePref } | { "key": "tone", "value": Tone } | { "key": "startIn", "value": StartIn } | { "key": "linkUpdate", "value": LinkUpdate } | { "key": "referenceTemplate", "value": string } | { "key": "editor", "value": string } | { "key": "pluginEnabled", "value": { plugin: PluginId, enabled: boolean | null, } };

@@ -11,6 +11,14 @@ import type { Tone } from "./Tone";
  */
 export type AppSettings = { language: LanguagePref, theme: ThemePref, tone: Tone, startIn: StartIn, linkUpdate: LinkUpdate, 
 /**
+ * How "copy reference" is written (`{path} {section} {line} {name}`).
+ */
+referenceTemplate: string, 
+/**
+ * The person's editor: a command template (empty = not set). Only the person sets it (app settings).
+ */
+editor: string, 
+/**
  * Explicit plugin switches (absent = manifest default).
  */
 plugins: { [key in PluginId]: boolean }, };

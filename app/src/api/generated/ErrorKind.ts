@@ -3,4 +3,4 @@
 /**
  * Flat error category: what the UI words. camelCase on the wire = i18n key suffix.
  */
-export type ErrorKind = "notFound" | "pathEscape" | "invalidPath" | "denied" | "io" | "exists" | "binary" | "tooLarge" | "encoding" | "unsupported" | "invalidData" | "conflict" | "unavailable" | "superseded" | "internal" | "invalidName" | "intoItself" | "otherRoot" | "protected" | "overlap" | "trash" | "partlyMoved";
+export type ErrorKind = "notFound" | "pathEscape" | "invalidPath" | "denied" | "io" | "exists" | "binary" | "tooLarge" | "encoding" | "unsupported" | "invalidData" | "conflict" | "unavailable" | "superseded" | "internal" | "invalidName" | "intoItself" | "otherRoot" | "protected" | "overlap" | "trash" | "partlyMoved" | "editorNotSet" | "editorFailed";

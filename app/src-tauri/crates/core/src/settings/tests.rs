@@ -280,3 +280,75 @@ fn project_config_only_from_a_real_permark_folder() {
     .unwrap();
     assert_eq!(ProjectConfig::load(&root), ProjectConfig::default());
 }
+
+#[test]
+fn reference_template_and_editor_round_trip_and_reset() {
+    let defaults = AppSettings::from_doc(&doc(""));
+    assert_eq!(defaults.reference_template, DEFAULT_REFERENCE_TEMPLATE);
+    assert_eq!(defaults.editor, "");
+    let text = applied(
+        "",
+        &SettingChange::ReferenceTemplate("@{path} ({section})".to_owned()),
+    );
+    let text = applied(
+        &text,
+        &SettingChange::Editor("code -g {path}:{line}:{col}".to_owned()),
+    );
+    let read = AppSettings::from_doc(&doc(&text));
+    assert_eq!(read.reference_template, "@{path} ({section})");
+    assert_eq!(read.editor, "code -g {path}:{line}:{col}");
+    // empty text puts the key back to its default (the key leaves the file)
+    let text = applied(&text, &SettingChange::Editor(String::new()));
+    let text = applied(&text, &SettingChange::ReferenceTemplate("  ".to_owned()));
+    assert!(
+        !text.contains("editor") && !text.contains("reference_template"),
+        "{text}"
+    );
+    assert_eq!(AppSettings::from_doc(&doc(&text)), AppSettings::default());
+}
+
+#[test]
+fn bad_editor_templates_and_long_references_are_refused_before_they_reach_the_file() {
+    for editor in [
+        "code",
+        "code \"{path}",
+        "{path}",
+        "code {file}",
+        &format!("x {{path}} {}", "a".repeat(500)),
+    ] {
+        let change = SettingChange::Editor(editor.to_owned());
+        assert!(
+            matches!(change.validate(), Err(SettingsError::Invalid { .. })),
+            "{editor}"
+        );
+    }
+    assert!(SettingChange::Editor("zed {path}:{line}".to_owned())
+        .validate()
+        .is_ok());
+    assert!(SettingChange::Editor(String::new()).validate().is_ok());
+    let long = SettingChange::ReferenceTemplate("x".repeat(MAX_REFERENCE_TEMPLATE + 1));
+    assert!(long.validate().is_err());
+    let dir = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(dir.path()));
+    let error = file
+        .apply(&SettingChange::Editor("code".to_owned()))
+        .unwrap_err();
+    let ipc = IpcError::from(error);
+    assert_eq!(ipc.kind, crate::error::ErrorKind::InvalidData);
+    assert_eq!(ipc.subject.as_deref(), Some("editor"));
+    assert_eq!(ipc.detail.as_deref(), Some("noPath"));
+    assert!(!file.path().exists(), "a refused change writes nothing");
+}
+
+#[test]
+fn hand_edited_editor_and_reference_values_that_are_not_valid_read_as_defaults() {
+    let s = AppSettings::from_doc(&doc("editor = \"code\"\nreference_template = \"\"\n"));
+    assert_eq!(s.editor, "");
+    assert_eq!(s.reference_template, DEFAULT_REFERENCE_TEMPLATE);
+    let s = AppSettings::from_doc(&doc(&format!(
+        "reference_template = \"{}\"\neditor = 5\n",
+        "x".repeat(300)
+    )));
+    assert_eq!(s.reference_template, DEFAULT_REFERENCE_TEMPLATE);
+    assert_eq!(s.editor, "");
+}

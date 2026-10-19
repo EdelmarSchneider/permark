@@ -2,9 +2,11 @@
 
 pub mod app_info;
 pub mod conditions;
+pub mod document;
 pub mod error;
 pub mod events;
 pub mod fileops;
+pub mod format;
 pub mod fsx;
 pub mod ipc_local;
 pub mod links;

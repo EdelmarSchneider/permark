@@ -97,11 +97,11 @@ impl From<FsxError> for IpcError {
     }
 }
 
-/// Reads a text file of at most `limit` bytes.
+/// Reads a file of at most `limit` bytes.
 ///
 /// # Errors
-/// `TooLarge` (checked before reading), `Binary` (NUL in the head, no UTF-16 BOM), `Io`.
-pub fn read_text(path: &Path, limit: u64) -> Result<Decoded, FsxError> {
+/// `TooLarge` (checked before reading), `Io`.
+pub fn read_bytes(path: &Path, limit: u64) -> Result<Vec<u8>, FsxError> {
     let bytes = retry(&RETRY_DELAYS, || {
         let file = std::fs::File::open(path)?;
         let len = file.metadata()?.len();
@@ -125,7 +125,16 @@ pub fn read_text(path: &Path, limit: u64) -> Result<Decoded, FsxError> {
             limit,
         });
     }
-    decode(&bytes).ok_or_else(|| FsxError::Binary(shown()))
+    Ok(bytes)
+}
+
+/// Reads a text file of at most `limit` bytes.
+///
+/// # Errors
+/// `TooLarge` (checked before reading), `Binary` (NUL in the head, no UTF-16 BOM), `Io`.
+pub fn read_text(path: &Path, limit: u64) -> Result<Decoded, FsxError> {
+    let bytes = read_bytes(path, limit)?;
+    decode(&bytes).ok_or_else(|| FsxError::Binary(path.display().to_string()))
 }
 
 /// Scratch files of editors and tools (`*.tmp`, `*~`, `.#*`, `*.swp`, Vim's `4913`) and the hidden

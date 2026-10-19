@@ -38,11 +38,15 @@ pub enum ErrorKind {
     Trash,
     /// A move failed half way and something could not be put back (`detail` lists it).
     PartlyMoved,
+    /// The person has not set an editor.
+    EditorNotSet,
+    /// The editor could not be started (`detail`: `notFound | dash | <template problem> | <system text>`).
+    EditorFailed,
 }
 
 impl ErrorKind {
     /// Every kind (i18n parity test: one `error.<kind>` per entry).
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 24] = [
         Self::NotFound,
         Self::PathEscape,
         Self::InvalidPath,
@@ -65,6 +69,8 @@ impl ErrorKind {
         Self::Overlap,
         Self::Trash,
         Self::PartlyMoved,
+        Self::EditorNotSet,
+        Self::EditorFailed,
     ];
 }
 
@@ -138,7 +144,11 @@ mod tests {
     fn kinds_serialize_as_camel_case_i18n_suffixes() {
         let json = serde_json::to_string(&ErrorKind::PathEscape).unwrap();
         assert_eq!(json, "\"pathEscape\"");
-        assert_eq!(ErrorKind::ALL.len(), 22);
+        assert_eq!(ErrorKind::ALL.len(), 24);
+        assert_eq!(
+            serde_json::to_string(&ErrorKind::EditorNotSet).unwrap(),
+            "\"editorNotSet\""
+        );
     }
 
     #[test]

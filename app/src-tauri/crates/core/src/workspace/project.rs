@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::conditions::{Context, Distribution};
+use crate::document::{DocScope, Documents};
 use crate::events::{CoreEvent, EventSink};
 use crate::fileops::FileOps;
+use crate::format::FormatRegistry;
 use crate::paths::{Root, Vault};
 use crate::plugins::{
     resolve_enabled, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId, PluginRegistry,
@@ -27,6 +29,8 @@ pub struct CoreEnv {
     pub distribution: Distribution,
     settings: RwLock<AppSettings>,
     app_plugins: Mutex<PluginSet>,
+    /// Formats of the app-scope plugins that are on (single-file windows read with these).
+    formats: RwLock<Arc<FormatRegistry>>,
     /// Called when a project live updates change (the registry recomputes contexts).
     status_hook: Mutex<Option<StatusHook>>,
 }
@@ -55,6 +59,7 @@ impl CoreEnv {
             distribution,
             settings: RwLock::new(settings),
             app_plugins: Mutex::new(PluginSet::new(PluginScope::App)),
+            formats: RwLock::new(Arc::new(FormatRegistry::core())),
             status_hook: Mutex::new(None),
         }
     }
@@ -112,9 +117,17 @@ impl CoreEnv {
             .collect()
     }
 
+    /// The formats of the plugins that are on, app-wide.
+    #[must_use]
+    pub fn formats(&self) -> Arc<FormatRegistry> {
+        Arc::clone(&self.formats.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
     /// Starts | stops app plugins to match settings.
     pub fn apply_app_plugins(&self) {
         let on = crate::plugins::on_ids(&self.app_enablement());
+        *self.formats.write().unwrap_or_else(PoisonError::into_inner) =
+            Arc::new(FormatRegistry::build(&self.registry.contributions(&on)));
         let settings = self.settings();
         let state = StateStore::app(&self.dirs);
         let context = Context::welcome(self.distribution);
@@ -164,8 +177,11 @@ pub struct ProjectCore {
     // Teardown order = declaration order after `Drop::drop` stops the plugins: the Explorer stops listening, the
     // watcher joins its thread, then file operations, the Explorer and the rest go.
     _explorer_sub: Subscription,
+    _documents_sub: Subscription,
     watcher: Watcher,
     fileops: FileOps,
+    documents: Arc<Documents>,
+    formats: RwLock<Arc<FormatRegistry>>,
     explorer: Arc<Explorer>,
     hub: Arc<WatchHub>,
     id: ProjectId,
@@ -205,6 +221,12 @@ impl ProjectCore {
             let explorer = Arc::clone(&explorer);
             move |batch| explorer.apply_batch(batch)
         });
+        let documents =
+            Documents::for_project(DocScope::Project(vault.clone()), Arc::clone(&env.sink));
+        let documents_sub = hub.subscribe({
+            let documents = Arc::clone(&documents);
+            move |batch| documents.on_batch(batch)
+        });
         let watcher = Watcher::start(
             &vault,
             explorer.ignorers(),
@@ -215,8 +237,11 @@ impl ProjectCore {
         let fileops = FileOps::new(vault.clone(), Arc::clone(&explorer), own, &store);
         let core = Arc::new(Self {
             _explorer_sub: explorer_sub,
+            _documents_sub: documents_sub,
             watcher,
             fileops,
+            documents,
+            formats: RwLock::new(Arc::new(FormatRegistry::core())),
             explorer,
             hub,
             id,
@@ -228,6 +253,18 @@ impl ProjectCore {
         });
         core.apply_plugins(env);
         core
+    }
+
+    /// Reads documents and tells windows when the ones they show change.
+    #[must_use]
+    pub fn documents(&self) -> &Arc<Documents> {
+        &self.documents
+    }
+
+    /// The formats of the plugins that are on for this project.
+    #[must_use]
+    pub fn formats(&self) -> Arc<FormatRegistry> {
+        Arc::clone(&self.formats.read().unwrap_or_else(PoisonError::into_inner))
     }
 
     /// The project tree service.
@@ -326,6 +363,8 @@ impl ProjectCore {
             .enablement
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = enablement;
+        *self.formats.write().unwrap_or_else(PoisonError::into_inner) =
+            Arc::new(FormatRegistry::build(&env.registry.contributions(&on)));
         let mut context = Context::welcome(env.distribution);
         context.workspace = crate::conditions::WorkspaceKind::Project;
         context.plugins.clone_from(&on);

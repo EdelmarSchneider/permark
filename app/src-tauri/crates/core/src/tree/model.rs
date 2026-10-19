@@ -235,6 +235,23 @@ impl TreeModel {
         self.nodes.get(key)
     }
 
+    /// Listed files (not ignored) by exact name: name -> project paths.
+    pub(crate) fn files_named(
+        &self,
+        names: &std::collections::HashSet<String>,
+    ) -> HashMap<String, Vec<String>> {
+        let mut found: HashMap<String, Vec<String>> = HashMap::new();
+        for node in self.nodes.values() {
+            if !node.is_dir() && !node.ignored && names.contains(&node.name) {
+                found
+                    .entry(node.name.clone())
+                    .or_default()
+                    .push(node.path.clone());
+            }
+        }
+        found
+    }
+
     pub(crate) fn children_of(&self, key: &str) -> &[String] {
         self.children.get(key).map_or(&[], Vec::as_slice)
     }

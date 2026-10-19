@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core"]
+members = ["crates/core", "crates/plugins/*"]
 resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
@@ -12,6 +12,17 @@ authors = ["Edelmar Schneider"]
 
 [workspace.dependencies]
 permark-core = { path = "crates/core" }
+permark-plugin-frontmatter-card = { path = "crates/plugins/frontmatter-card" }
+permark-plugin-highlight = { path = "crates/plugins/highlight" }
+permark-plugin-json-view = { path = "crates/plugins/json-view" }
+permark-plugin-math = { path = "crates/plugins/math" }
+permark-plugin-md-family = { path = "crates/plugins/md-family" }
+permark-plugin-media = { path = "crates/plugins/media" }
+permark-plugin-mermaid = { path = "crates/plugins/mermaid" }
+permark-plugin-plantuml = { path = "crates/plugins/plantuml" }
+permark-plugin-prompt-blocks = { path = "crates/plugins/prompt-blocks" }
+permark-plugin-text-view = { path = "crates/plugins/text-view" }
+permark-plugin-xml-view = { path = "crates/plugins/xml-view" }
 serde = { version = "1", features = ["derive"] }
 ts-rs = { version = "12.0", features = ["serde-json-impl"] }
 serde_json = "1"
@@ -35,6 +46,7 @@ ignore = "0.4.33"
 notify = "8.2.0"
 trash = "5.2.9"
 comrak = { version = "0.56", default-features = false }
+ammonia = "4.2"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -67,7 +79,18 @@ name = "permark_lib"
 
 [features]
 # Plugin crates join here as features; default = full build.
-default = []
+default = ["plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view"]
+plugin-md-family = ["dep:permark-plugin-md-family"]
+plugin-prompt-blocks = ["dep:permark-plugin-prompt-blocks"]
+plugin-frontmatter-card = ["dep:permark-plugin-frontmatter-card"]
+plugin-highlight = ["dep:permark-plugin-highlight"]
+plugin-math = ["dep:permark-plugin-math"]
+plugin-mermaid = ["dep:permark-plugin-mermaid"]
+plugin-plantuml = ["dep:permark-plugin-plantuml"]
+plugin-media = ["dep:permark-plugin-media"]
+plugin-json-view = ["dep:permark-plugin-json-view"]
+plugin-xml-view = ["dep:permark-plugin-xml-view"]
+plugin-text-view = ["dep:permark-plugin-text-view"]
 # Microsoft Store build (Store updates the app; distribution slice).
 store = []
 
@@ -76,6 +99,17 @@ tauri-build = { version = "2.5", features = [] }
 
 [dependencies]
 permark-core.workspace = true
+permark-plugin-md-family = { workspace = true, optional = true }
+permark-plugin-prompt-blocks = { workspace = true, optional = true }
+permark-plugin-frontmatter-card = { workspace = true, optional = true }
+permark-plugin-highlight = { workspace = true, optional = true }
+permark-plugin-math = { workspace = true, optional = true }
+permark-plugin-mermaid = { workspace = true, optional = true }
+permark-plugin-plantuml = { workspace = true, optional = true }
+permark-plugin-media = { workspace = true, optional = true }
+permark-plugin-json-view = { workspace = true, optional = true }
+permark-plugin-xml-view = { workspace = true, optional = true }
+permark-plugin-text-view = { workspace = true, optional = true }
 # generate_context! expands to serde_json (plugin config).
 serde_json.workspace = true
 serde.workspace = true
@@ -84,6 +118,9 @@ ts-rs.workspace = true
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8.2"
 tauri-plugin-opener = "2.7"
+
+[dev-dependencies]
+tempfile.workspace = true
 
 [lints]
 workspace = true

@@ -33,6 +33,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ammonia"
+version = "4.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f45dfa685e1ec33b1bf1a3b93b8047cbdbef41b6040deebbe6bea7720a45574"
+dependencies = [
+ "cssparser 0.38.0",
+ "html5ever 0.40.1",
+ "maplit",
+ "url",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -653,6 +665,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cssparser"
+version = "0.38.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11119743ad110e8c1bdccd930d7f5c30c99e5fc76a7b63ec9807e84eef0c5f59"
+dependencies = [
+ "dtoa-short",
+ "itoa",
+ "smallvec",
+]
+
+[[package]]
 name = "cssparser-macros"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -864,9 +887,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fac5fca71e65e94cc718a6e2af65d6e0f9c6027751c2aa562fbb5087fda639bc"
 dependencies = [
  "bit-set",
- "cssparser",
+ "cssparser 0.37.0",
  "foldhash",
- "html5ever",
+ "html5ever 0.39.0",
  "precomputed-hash",
  "selectors",
  "tendril",
@@ -1550,7 +1573,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46a1761807faccc9a19e86944bbf40610014066306f96edcdedc2fb714bcb7b8"
 dependencies = [
  "log",
- "markup5ever",
+ "markup5ever 0.39.0",
+]
+
+[[package]]
+name = "html5ever"
+version = "0.40.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "456a1a377e608e555d22ddab27ac0114bc7a7b4199078108e34c2aeae6c9b130"
+dependencies = [
+ "log",
+ "markup5ever 0.40.0",
+ "memchr",
 ]
 
 [[package]]
@@ -2161,6 +2195,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
+name = "maplit"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
+
+[[package]]
 name = "markup5ever"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2168,7 +2208,18 @@ checksum = "7122d987ec5f704ee56f6e5b41a7d93722e9aae27ae07cafa4036c4d3f9757de"
 dependencies = [
  "log",
  "tendril",
- "web_atoms",
+ "web_atoms 0.2.6",
+]
+
+[[package]]
+name = "markup5ever"
+version = "0.40.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ab3dc68ac4a0f5719e560136778c1ee716e296030d75dbd4484e37e39e3a842"
+dependencies = [
+ "log",
+ "tendril",
+ "web_atoms 0.3.0",
 ]
 
 [[package]]
@@ -2650,12 +2701,24 @@ name = "permark"
 version = "0.5.8"
 dependencies = [
  "permark-core",
+ "permark-plugin-frontmatter-card",
+ "permark-plugin-highlight",
+ "permark-plugin-json-view",
+ "permark-plugin-math",
+ "permark-plugin-md-family",
+ "permark-plugin-media",
+ "permark-plugin-mermaid",
+ "permark-plugin-plantuml",
+ "permark-plugin-prompt-blocks",
+ "permark-plugin-text-view",
+ "permark-plugin-xml-view",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tempfile",
  "thiserror 2.0.21",
  "ts-rs",
 ]
@@ -2664,6 +2727,7 @@ dependencies = [
 name = "permark-core"
 version = "0.5.8"
 dependencies = [
+ "ammonia",
  "comrak",
  "dirs",
  "dunce",
@@ -2682,6 +2746,84 @@ dependencies = [
  "widestring",
  "windows-sys 0.61.2",
  "xxhash-rust",
+]
+
+[[package]]
+name = "permark-plugin-frontmatter-card"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+ "toml_edit 0.25.17+spec-1.1.0",
+]
+
+[[package]]
+name = "permark-plugin-highlight"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-json-view"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-math"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-md-family"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-media"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-mermaid"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-plantuml"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-prompt-blocks"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-text-view"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-xml-view"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
 ]
 
 [[package]]
@@ -3225,7 +3367,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8adfa1c298912827b8a28b223b3b874357397ae706e6190acd9bf28cee99114d"
 dependencies = [
  "bitflags 2.13.2",
- "cssparser",
+ "cssparser 0.37.0",
  "derive_more",
  "log",
  "new_debug_unreachable",
@@ -3540,6 +3682,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "string_cache"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffa8a5dbe8b3f0bbe29d4c3225daafaeead63afdc1b65fc4c01a1384166038e6"
+dependencies = [
+ "new_debug_unreachable",
+ "parking_lot",
+ "phf_shared 0.14.0",
+ "precomputed-hash",
+]
+
+[[package]]
 name = "string_cache_codegen"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3547,6 +3701,18 @@ checksum = "585635e46db231059f76c5849798146164652513eb9e8ab2685939dd90f29b69"
 dependencies = [
  "phf_generator 0.13.1",
  "phf_shared 0.13.1",
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "string_cache_codegen"
+version = "0.11.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "928dcdf75e47626b3617a976ec205d9f057584c371c1f23b782129268d0e6edc"
+dependencies = [
+ "phf_generator 0.14.0",
+ "phf_shared 0.14.0",
  "proc-macro2",
  "quote",
 ]
@@ -4633,8 +4799,20 @@ checksum = "ba8b815c1b593dc0baf78dd0f4fc8fdb2de53198fb1163738093e9a311c33fb3"
 dependencies = [
  "phf 0.13.1",
  "phf_codegen 0.13.1",
- "string_cache",
- "string_cache_codegen",
+ "string_cache 0.9.0",
+ "string_cache_codegen 0.6.1",
+]
+
+[[package]]
+name = "web_atoms"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7572660c8890448ba236b7376f27e389c6a7e1c70195622faced601f855c0ada"
+dependencies = [
+ "phf 0.14.0",
+ "phf_codegen 0.14.0",
+ "string_cache 0.11.0",
+ "string_cache_codegen 0.11.2",
 ]
 
 [[package]]

@@ -1,9 +1,10 @@
 //! `PluginRegistry`: the plugins compiled in, validated once at construction; keeps a dependency order.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::{is_valid_id, Manifest, Plugin, PluginId, PluginScope};
+use crate::format::Contributions;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum RegistryError {
@@ -103,6 +104,19 @@ impl PluginRegistry {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.plugins.is_empty()
+    }
+
+    /// What the plugins in `on` contribute, in plugin order (dependencies first).
+    #[must_use]
+    pub fn contributions(&self, on: &BTreeSet<PluginId>) -> Contributions {
+        let mut all = Contributions::default();
+        for &index in &self.order {
+            let plugin = &self.plugins[index];
+            if on.contains(&plugin.manifest().id) {
+                all.extend(plugin.contributions());
+            }
+        }
+        all
     }
 }
 

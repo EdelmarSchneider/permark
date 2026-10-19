@@ -6,6 +6,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
 use super::fsm::{holds, step, Effect, WindowEvent, WindowState};
+use crate::document::{DocScope, Documents};
+
 use super::{
     CoreEnv, FileSession, ProjectCore, WindowView, Workspace, WorkspaceError, WorkspaceId,
     WorkspaceKey, WorkspaceRef, WorkspaceRefDto, WorkspaceSummary, WorkspaceView,
@@ -214,9 +216,12 @@ impl WorkspaceRegistry {
                 };
                 Workspace::Project(core)
             }
-            WorkspaceRef::SingleFile(path) => Workspace::SingleFile(FileSession {
-                scope: FileScope::open(path)?,
-            }),
+            WorkspaceRef::SingleFile(path) => {
+                let scope = FileScope::open(path)?;
+                let documents =
+                    Documents::for_file(DocScope::File(scope.clone()), Arc::clone(&self.env.sink));
+                Workspace::SingleFile(FileSession { scope, documents })
+            }
             WorkspaceRef::Notes => return Err(WorkspaceError::NotesUnavailable),
         };
         Ok(Prepared {
@@ -428,6 +433,15 @@ impl WorkspaceRegistry {
             return None;
         };
         inner.workspaces.get(&id).map(|e| (id, e.workspace.clone()))
+    }
+
+    /// A live workspace by id (the asset protocol serves for the workspace a URL names).
+    #[must_use]
+    pub fn workspace(&self, id: WorkspaceId) -> Option<Workspace> {
+        lock(&self.inner)
+            .workspaces
+            .get(&id)
+            .map(|e| e.workspace.clone())
     }
 
     /// Reference a window shows, for the session (oldest window first).

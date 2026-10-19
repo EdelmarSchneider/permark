@@ -5,6 +5,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use crate::conditions::Context;
+use crate::document::DocumentChanged;
 use crate::settings::{AppSettings, SettingsScope};
 use crate::tree::TreeChanged;
 use crate::workspace::{WindowView, WorkspaceSummary};
@@ -73,6 +74,8 @@ pub enum CoreEvent {
     OpenFailed(OpenFailed),
     /// To one window: its Explorer list changed.
     TreeChanged(TreeChanged),
+    /// To one window: the document it shows changed on disk.
+    DocumentChanged(DocumentChanged),
     PluginsChanged,
     PluginFailed {
         message: String,
@@ -96,6 +99,7 @@ impl CoreEvent {
             Self::StateRecovered(_) => "state-recovered",
             Self::OpenFailed(_) => "open-failed",
             Self::TreeChanged(_) => "tree-changed",
+            Self::DocumentChanged(_) => "document-changed",
             Self::PluginsChanged => "plugins-changed",
             Self::PluginFailed { .. } => "plugin-failed",
             Self::Plugin { name, .. } => name,
@@ -110,6 +114,7 @@ impl CoreEvent {
             Self::ContextChanged(e) => Some(&e.window),
             Self::OpenFailed(e) => Some(&e.window),
             Self::TreeChanged(e) => Some(&e.window),
+            Self::DocumentChanged(e) => Some(&e.window),
             _ => None,
         }
     }

@@ -391,6 +391,15 @@ impl Explorer {
         docs
     }
 
+    /// Listed files (not ignored) by exact name: name -> project paths (code references).
+    #[must_use]
+    pub fn files_named(&self, names: &HashSet<String>) -> HashMap<String, Vec<String>> {
+        let guard = self.model();
+        guard
+            .as_ref()
+            .map_or_else(HashMap::new, |model| model.files_named(names))
+    }
+
     /// Whether a project path is listed (folder or file), and what.
     #[must_use]
     pub fn listed(&self, path: &str) -> Option<NodeKind> {
