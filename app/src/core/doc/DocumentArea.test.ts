@@ -340,3 +340,47 @@ describe("a document that changes under the reader", () => {
     expect(target.querySelectorAll(".md-body > *").length).toBeGreaterThan(5);
   });
 });
+
+describe("editing", () => {
+  const modeButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  it("Edit shows the visual editor with its toolbar and the blocks it keeps; Ctrl+E goes back", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    modeButton("Edit")?.click();
+    await until(() => target.querySelector(".ProseMirror") !== null, "visual editor");
+    const errors = vi.spyOn(console, "error");
+    await until(
+      () => target.querySelector(".pm-locked") !== null || errors.mock.calls.length > 0,
+      "visual document",
+    );
+    expect(errors.mock.calls[0]?.[0]).toBeUndefined();
+    expect(target.querySelector("[role=toolbar][aria-label=Formatting]")).not.toBeNull();
+    // the front matter stays as written, with the way to Source
+    const locked = [...target.querySelectorAll<HTMLElement>(".pm-locked")];
+    expect(locked.map((l) => `${l.dataset.kind}:${l.dataset.reason}`).join(",")).toContain(
+      "frontMatter:frontMatter",
+    );
+    expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(true);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "e", ctrlKey: true }));
+    await until(() => target.querySelector(".ProseMirror") === null, "back to View");
+    expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(false);
+  });
+
+  it("Source shows the text editor; a text file has Source only", async () => {
+    await show("README.md");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    expect(target.querySelector(".cm-content")?.textContent).toContain("Reading showcase");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await until(() => target.querySelector(".cm-editor") === null, "back to View");
+    await show("notes/todo.txt");
+    await until(() => modeButton("Edit")?.disabled === true, "no visual editor for text");
+    expect(modeButton("Source")?.disabled).toBe(false);
+  });
+});

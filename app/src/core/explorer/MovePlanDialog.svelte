@@ -15,6 +15,7 @@
     writeFailed: "fileOps.reason.writeFailed",
     missing: "fileOps.reason.missing",
     occupied: "fileOps.reason.occupied",
+    unsaved: "fileOps.reason.unsaved",
   };
 
   /** Moves listed before "and n more". */

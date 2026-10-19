@@ -2,6 +2,7 @@
 // every action on files. The backend owns the truth (tree, files, undo); this mirrors it through snapshots + deltas
 // and sends actions. UI modes are tagged unions; actions are methods called from event handlers.
 
+import { confirmLeave } from "../editing/guard";
 import { DEFAULT_REFERENCE_TEMPLATE, formatReference } from "../doc/reference";
 import {
   type Api,
@@ -387,6 +388,7 @@ export class ExplorerStore {
       await this.toggle(path);
       return;
     }
+    if (!(await confirmLeave({ kind: "document", path }))) return;
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#host.fail(result.error);
   }

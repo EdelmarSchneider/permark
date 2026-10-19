@@ -1,4 +1,5 @@
-// Window title: tells windows apart in the task bar | Alt+Tab. `<doc> — <project> — PerMark`.
+// Window title: tells windows apart in the task bar | Alt+Tab. `<doc> — <project> — PerMark`; `*<doc>` while the
+// document has unsaved edits.
 
 import type { WindowView } from "../api";
 import { t } from "./i18n";
@@ -8,15 +9,15 @@ function lastSegment(path: string): string {
   return parts[parts.length - 1] ?? path;
 }
 
-export function windowTitle(view: WindowView): string {
+export function windowTitle(view: WindowView, unsaved = false): string {
   switch (view.state) {
     case "welcome":
     case "closing":
       return t("app.name");
     case "opening":
-      return view.showing ? workspaceTitle(view.showing, null) : t("app.name");
+      return view.showing ? workspaceTitle(view.showing, null, false) : t("app.name");
     case "showing":
-      return workspaceTitle(view.workspace, view.document);
+      return workspaceTitle(view.workspace, view.document, unsaved);
     default:
       return view satisfies never;
   }
@@ -25,14 +26,19 @@ export function windowTitle(view: WindowView): string {
 function workspaceTitle(
   workspace: Extract<WindowView, { state: "showing" }>["workspace"],
   document: string | null,
+  unsaved: boolean,
 ): string {
+  const star = unsaved ? "*" : "";
   switch (workspace.kind) {
     case "project":
       return document
-        ? t("window.title.project", { document: lastSegment(document), project: workspace.name })
+        ? t("window.title.project", {
+            document: star + lastSegment(document),
+            project: workspace.name,
+          })
         : t("window.title.projectOnly", { project: workspace.name });
     case "singleFile":
-      return t("window.title.file", { document: workspace.name });
+      return t("window.title.file", { document: star + workspace.name });
     default:
       return workspace satisfies never;
   }

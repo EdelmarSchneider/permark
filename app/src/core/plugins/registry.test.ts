@@ -140,6 +140,7 @@ describe("plugin host", () => {
       "mermaid",
       "plantuml",
       "text-view",
+      "word-count",
       "xml-view",
     ]);
   });

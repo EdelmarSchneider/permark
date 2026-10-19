@@ -66,6 +66,28 @@ export const tauriApi: Api = {
   resolveCodeRefs: (doc, written) => call("code_refs_resolve", { doc, written }),
   openInEditor: (path, line, col) => call("open_in_editor", { path, line, col }),
   openWeb: (url) => call("open_web", { url }),
+  editSource: (path) => call("edit_source", { path }),
+  editSegments: (text) => call("edit_segments", { text }),
+  editSave: (path, seenHash, edits) => call("edit_save", { path, seenHash, edits }),
+  editSaveAs: (path, text, exact) => call("edit_save_as", { path, text, exact }),
+  editWriteAsset: async (doc, ext, bytes) => {
+    try {
+      const value = await invoke<string>("edit_write_asset", bytes, {
+        headers: { "pm-doc": encodeURIComponent(doc), "pm-ext": encodeURIComponent(ext) },
+      });
+      return { ok: true, value };
+    } catch (error) {
+      const backend = asIpcError(error);
+      const command = "edit_write_asset";
+      if (backend) return { ok: false, error: { kind: "backend", command, error: backend } };
+      return { ok: false, error: { kind: "command", command, message: errorMessage(error) } };
+    }
+  },
+  editSetUnsaved: (path) => call("edit_set_unsaved", { path }),
+  editHeadings: (path) => call("edit_headings", { path }),
+  editLinkTargets: () => call("edit_link_targets", {}),
+  analyze: (path, text, kind) => call("analyze", { path, text, kind }),
+  windowClose: () => call("window_close", {}),
   assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
   on: (event, handler) => listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
   onDrop: (handler) =>

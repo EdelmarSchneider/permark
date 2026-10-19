@@ -49,6 +49,8 @@ export class WindowStore {
   linkUpdate = $state<LinkUpdate>("ask");
   /** How "copy reference" is written (setting). */
   referenceTemplate = $state("{path}#{section}");
+  /** The editor Ctrl+E opens for Markdown. */
+  editMode = $state<"edit" | "source">("edit");
   /** The command that opens a file in the person's editor (setting; empty = not set). */
   editor = $state("");
   #nextNotice = 1;
@@ -70,6 +72,7 @@ export class WindowStore {
         look.set(e.settings);
         this.linkUpdate = e.settings.linkUpdate;
         this.referenceTemplate = e.settings.referenceTemplate;
+        this.editMode = e.settings.editMode;
         this.editor = e.settings.editor;
         void language.choose(parsePreference(e.settings.language));
       }),
@@ -88,6 +91,7 @@ export class WindowStore {
       look.set(info.settings);
       this.linkUpdate = info.settings.linkUpdate;
       this.referenceTemplate = info.settings.referenceTemplate;
+      this.editMode = info.settings.editMode;
       this.editor = info.settings.editor;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });

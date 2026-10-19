@@ -20,6 +20,7 @@ import { currentIndex } from "./outline";
 import { reading } from "./reading.svelte";
 import { formatQuote, formatReference, type Reference } from "./reference";
 import { Trail, type Place } from "./trail";
+import { confirmLeave } from "../editing/guard";
 import { t } from "../i18n";
 
 export type Deleted = { movedTo: string | null; at: number };
@@ -283,6 +284,38 @@ export class DocumentController {
     return currentIndex(tops, 40);
   }
 
+  /** Reads the shown document again (after a save of this window: no event comes back for it). */
+  reload(): void {
+    if (this.#shown !== null) void this.#open(this.#shown, false);
+  }
+
+  /** Line (1-based) of the first block at the top of the pane (1 when unknown). */
+  topLine(): number {
+    const view = this.view;
+    const scroller = this.host.scroller;
+    if (view?.body.kind !== "markdown" || !scroller) return 1;
+    const top = scroller.getBoundingClientRect().top;
+    for (const block of view.body.blocks) {
+      const element = this.host.element(block.id);
+      if (element && element.getBoundingClientRect().bottom > top + 1) return block.lineStart;
+    }
+    return 1;
+  }
+
+  /** Scrolls the block holding `line` to the top of the pane. */
+  scrollToLine(line: number): void {
+    const view = this.view;
+    const scroller = this.host.scroller;
+    if (view?.body.kind !== "markdown" || !scroller) return;
+    let target: HTMLElement | undefined;
+    for (const block of view.body.blocks) {
+      if (block.lineStart > line) break;
+      target = this.host.element(block.id) ?? target;
+    }
+    if (!target) return;
+    scroller.scrollTop += target.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  }
+
   /** Scrolls so that the element with this id is at the top of the pane; false when there is none. */
   scrollToAnchor(id: string): boolean {
     const scroller = this.host.scroller;
@@ -382,24 +415,33 @@ export class DocumentController {
     void this.#show(path);
   }
 
-  async #show(path: string): Promise<void> {
+  async #show(path: string): Promise<boolean> {
+    if (!(await confirmLeave({ kind: "document", path }))) return false;
     const result = await this.#api.showDocument(path);
     if (!result.ok) this.#hooks.fail(result.error);
+    return true;
   }
 
   async back(): Promise<void> {
-    await this.#go(this.trail.back());
+    const from = this.#trailIndex();
+    await this.#go(this.trail.back(), from);
   }
 
   async forward(): Promise<void> {
-    await this.#go(this.trail.forward());
+    const from = this.#trailIndex();
+    await this.#go(this.trail.forward(), from);
   }
 
   async jump(index: number): Promise<void> {
-    await this.#go(this.trail.jump(index));
+    const from = this.#trailIndex();
+    await this.#go(this.trail.jump(index), from);
   }
 
-  async #go(place: Place | null): Promise<void> {
+  #trailIndex(): number {
+    return this.trail.recent(Number.MAX_SAFE_INTEGER).find((r) => r.current)?.index ?? -1;
+  }
+
+  async #go(place: Place | null, from: number): Promise<void> {
     if (place === null) return;
     if (place.path === this.#shown) {
       if (place.anchor === null) {
@@ -409,7 +451,11 @@ export class DocumentController {
       return;
     }
     this.#viaTrail = place.path;
-    await this.#show(place.path);
+    if (!(await this.#show(place.path))) {
+      // the person stayed (unsaved edits): the trail stays where it was
+      this.#viaTrail = null;
+      if (from >= 0) this.trail.jump(from);
+    }
   }
 
   /** Follows the document that took this one's place (renamed). */

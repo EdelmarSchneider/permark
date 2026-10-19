@@ -13,7 +13,10 @@
   import SettingsPopover from "./core/shell/SettingsPopover.svelte";
   import Welcome from "./core/shell/Welcome.svelte";
   import WindowChoice from "./core/shell/WindowChoice.svelte";
+  import { confirmLeave } from "./core/editing/guard";
+  import { editing } from "./core/editing/session.svelte";
   import { windowTitle } from "./core/title";
+  import StatusItems from "./core/shell/StatusItems.svelte";
   import { windowStore as store } from "./core/window.svelte";
 
   type InfoState =
@@ -71,7 +74,7 @@
     }
   });
 
-  const title = $derived(windowTitle(store.view));
+  const title = $derived(windowTitle(store.view, editing.unsaved));
 
   /** The outline of the document shown, when it has one and the panel is on. */
   const outline = $derived.by(() => {
@@ -92,6 +95,30 @@
     void api.setTitle(title);
   });
   $effect(() => look.watchSystem());
+  // the window was asked to close with unsaved edits: the person answers, then it closes for real
+  $effect(() => {
+    let off: (() => void) | null = null;
+    let gone = false;
+    void api
+      .on("close-requested", (event) => {
+        if (event.window !== store.label) return;
+        void confirmLeave({ kind: "window" }).then((ok) => {
+          if (ok) void api.windowClose();
+        });
+      })
+      .then((stop) => {
+        if (gone) stop();
+        else off = stop;
+      });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  });
+
+  async function closeWorkspace(): Promise<void> {
+    if (await confirmLeave({ kind: "workspace" })) await store.closeWorkspace();
+  }
   $effect(() => language.watchSystem());
 
   function toggleSettings(): void {
@@ -116,7 +143,7 @@
       type="button"
       class="btn btn--ghost btn--sm"
       title={t("header.closeHint")}
-      onclick={() => void store.closeWorkspace()}
+      onclick={() => void closeWorkspace()}
     >
       {t("header.close")}
     </button>
@@ -161,6 +188,7 @@
 
 {#snippet status()}
   <span class="spacer"></span>
+  <StatusItems />
   <span>{versionText}</span>
 {/snippet}
 

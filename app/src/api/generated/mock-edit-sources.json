@@ -1,0 +1,326 @@
+{
+  "CLAUDE.md": {
+    "encoding": "utf8",
+    "hash": "a84192067c0b6d86",
+    "lineEnding": "lf",
+    "path": "CLAUDE.md",
+    "segments": [
+      {
+        "kind": "frontMatter",
+        "lineEnd": 4,
+        "lineStart": 1,
+        "lock": "frontMatter"
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 6,
+        "lineStart": 6,
+        "lock": null
+      },
+      {
+        "kind": "html",
+        "lineEnd": 8,
+        "lineStart": 8,
+        "lock": "html"
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 9,
+        "lineStart": 9,
+        "lock": null
+      },
+      {
+        "kind": "html",
+        "lineEnd": 10,
+        "lineStart": 10,
+        "lock": "html"
+      },
+      {
+        "kind": "html",
+        "lineEnd": 12,
+        "lineStart": 12,
+        "lock": "html"
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 14,
+        "lineStart": 13,
+        "lock": null
+      },
+      {
+        "kind": "html",
+        "lineEnd": 15,
+        "lineStart": 15,
+        "lock": "html"
+      }
+    ],
+    "text": "---\nname: project-rules\ndescription: Rules the agent follows in this repository\n---\n\n# Project rules\n\n<instructions>\nRead @docs/guide.md first. Greet {{user}} by name.\n</instructions>\n\n<example>\nInput: a question about the **guide**.\nOutput: a short answer with a link.\n</example>\n"
+  },
+  "README.md": {
+    "encoding": "utf8",
+    "hash": "e873f21c2d5f5e0b",
+    "lineEnding": "lf",
+    "path": "README.md",
+    "segments": [
+      {
+        "kind": "frontMatter",
+        "lineEnd": 7,
+        "lineStart": 1,
+        "lock": "frontMatter"
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 9,
+        "lineStart": 9,
+        "lock": null
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 11,
+        "lineStart": 11,
+        "lock": null
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 13,
+        "lineStart": 13,
+        "lock": null
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 15,
+        "lineStart": 15,
+        "lock": null
+      },
+      {
+        "kind": "list",
+        "lineEnd": 19,
+        "lineStart": 17,
+        "lock": null
+      },
+      {
+        "kind": "list",
+        "lineEnd": 24,
+        "lineStart": 21,
+        "lock": null
+      },
+      {
+        "kind": "alert",
+        "lineEnd": 27,
+        "lineStart": 26,
+        "lock": "kind"
+      },
+      {
+        "kind": "alert",
+        "lineEnd": 30,
+        "lineStart": 29,
+        "lock": "kind"
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 32,
+        "lineStart": 32,
+        "lock": null
+      },
+      {
+        "kind": "code",
+        "lineEnd": 39,
+        "lineStart": 34,
+        "lock": null
+      },
+      {
+        "kind": "code",
+        "lineEnd": 43,
+        "lineStart": 41,
+        "lock": null
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 45,
+        "lineStart": 45,
+        "lock": null
+      },
+      {
+        "kind": "table",
+        "lineEnd": 51,
+        "lineStart": 47,
+        "lock": null
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 53,
+        "lineStart": 53,
+        "lock": null
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 55,
+        "lineStart": 55,
+        "lock": null
+      },
+      {
+        "kind": "math",
+        "lineEnd": 59,
+        "lineStart": 57,
+        "lock": "math"
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 61,
+        "lineStart": 61,
+        "lock": null
+      },
+      {
+        "kind": "code",
+        "lineEnd": 69,
+        "lineStart": 63,
+        "lock": "diagram"
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 71,
+        "lineStart": 71,
+        "lock": null
+      },
+      {
+        "kind": "html",
+        "lineEnd": 73,
+        "lineStart": 73,
+        "lock": "html"
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 74,
+        "lineStart": 74,
+        "lock": null
+      },
+      {
+        "kind": "list",
+        "lineEnd": 77,
+        "lineStart": 76,
+        "lock": null
+      },
+      {
+        "kind": "html",
+        "lineEnd": 78,
+        "lineStart": 78,
+        "lock": "html"
+      },
+      {
+        "kind": "html",
+        "lineEnd": 80,
+        "lineStart": 80,
+        "lock": "html"
+      },
+      {
+        "kind": "list",
+        "lineEnd": 82,
+        "lineStart": 81,
+        "lock": null
+      },
+      {
+        "kind": "html",
+        "lineEnd": 83,
+        "lineStart": 83,
+        "lock": "html"
+      },
+      {
+        "kind": "footnote",
+        "lineEnd": 85,
+        "lineStart": 85,
+        "lock": "footnote"
+      }
+    ],
+    "text": "---\ntitle: Reading showcase\nstatus: draft\nowner: Ana Souza\ntags: [reading, markdown, demo]\nupdated: 2026-10-19\n---\n\n# Reading showcase\n\nA page of everything the reading view draws. It links to the [guide](docs/guide.md), to a [missing page](docs/nope.md) and to [a section](#diagrams). Code references open in your editor: `src/main.rs:12`, and plain text like src/main.rs:3 works too.\n\n## Text and lists\n\nParagraphs keep a comfortable measure at **any** zoom: *emphasis*, `inline code`, ~~strike~~, a footnote[^1] and an autolink https://example.com. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.\n\n- [x] Render Markdown\n- [x] Keep my place when the file changes\n- [ ] Review the changes\n\n1. First\n2. Second\n   - nested item\n   - another one\n\n> [!NOTE]\n> Alerts come with a title and an icon.\n\n> [!WARNING]\n> Reading is the main mode. Beautiful, clear reading is a requirement.\n\n## Code\n\n```rust\nfn main() {\n    let name = \"PerMark\";\n    println!(\"Hello, {name}!\");\n}\n```\n\n```json\n{ \"name\": \"permark\", \"private\": true, \"version\": \"0.6.0\" }\n```\n\n## Tables\n\n| Feature  | Status  | Notes                         |\n| -------- | ------- | ----------------------------- |\n| Tables   | done    | Zebra rows, sticky header     |\n| Math     | done    | KaTeX, loaded when needed     |\n| Diagrams | done    | Mermaid and PlantUML in page  |\n\n## Math\n\nInline math $E = mc^2$ sits in the text. A display formula:\n\n$$\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n$$\n\n## Diagrams\n\n```mermaid\ngraph LR\n  A[Markdown] --> B(Render)\n  B --> C{Sanitize}\n  C -->|safe| D[Page]\n  C -->|unsafe| E[Dropped]\n```\n\n## Prompt blocks\n\n<context>\nYou are reading a prompt file. The tags below fold, and **Markdown inside them** still renders.\n\n- Variables look like {{customer_name}} and are marked.\n- Files are linked: see @docs/guide.md for the guide.\n</context>\n\n<instructions>\n1. Be brief.\n2. Quote the source.\n</instructions>\n\n[^1]: Footnotes list at the end of the page, with a way back.\n"
+  },
+  "docs/guide.md": {
+    "encoding": "utf8",
+    "hash": "9da2cfe46f93b782",
+    "lineEnding": "lf",
+    "path": "docs/guide.md",
+    "segments": [
+      {
+        "kind": "heading",
+        "lineEnd": 1,
+        "lineStart": 1,
+        "lock": null
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 3,
+        "lineStart": 3,
+        "lock": null
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 5,
+        "lineStart": 5,
+        "lock": null
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 7,
+        "lineStart": 7,
+        "lock": null
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 9,
+        "lineStart": 9,
+        "lock": null
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 11,
+        "lineStart": 11,
+        "lock": null
+      },
+      {
+        "kind": "table",
+        "lineEnd": 17,
+        "lineStart": 13,
+        "lock": null
+      }
+    ],
+    "text": "# Guide\n\nBack to the [readme](../README.md). More ideas in [ideas](../notes/ideas.md#second-idea).\n\n## Getting started\n\nOpen a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.\n\n![PerMark logo](img/logo.png)\n\n## Shortcuts\n\n| Keys         | Action          |\n| ------------ | --------------- |\n| Ctrl+F       | Find in page    |\n| Alt+Left     | Back            |\n| Ctrl+= / Ctrl+- | Zoom         |\n"
+  },
+  "notes/ideas.md": {
+    "encoding": "utf8",
+    "hash": "5f62a879c799aae8",
+    "lineEnding": "lf",
+    "path": "notes/ideas.md",
+    "segments": [
+      {
+        "kind": "heading",
+        "lineEnd": 1,
+        "lineStart": 1,
+        "lock": null
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 3,
+        "lineStart": 3,
+        "lock": null
+      },
+      {
+        "kind": "paragraph",
+        "lineEnd": 5,
+        "lineStart": 5,
+        "lock": null
+      },
+      {
+        "kind": "heading",
+        "lineEnd": 7,
+        "lineStart": 7,
+        "lock": null
+      },
+      {
+        "kind": "list",
+        "lineEnd": 10,
+        "lineStart": 9,
+        "lock": null
+      }
+    ],
+    "text": "# Ideas\n\n## First idea\n\nShort and sweet.\n\n## Second idea\n\n- one\n- two\n"
+  }
+}

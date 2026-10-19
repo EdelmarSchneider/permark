@@ -1,11 +1,12 @@
 <script lang="ts">
   // The document area: header, the page (or the viewer of the file's kind), the notices around it, find in page.
   // Everything about what is shown lives in the document controller; this is the frame and the keys.
+  import { untrack } from "svelte";
   import { api, type WorkspaceView } from "../../api";
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
   import { revealInTree } from "../explorer/current";
-  import { t } from "../i18n";
+  import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import type { WindowStore } from "../window.svelte";
   import BodyNotice from "./BodyNotice.svelte";
@@ -15,6 +16,8 @@
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
   import { reading } from "./reading.svelte";
+  import ModeSwitch from "../editing/ModeSwitch.svelte";
+  import { editing, type EditMode } from "../editing/session.svelte";
 
   type Props = {
     workspace: Extract<WorkspaceView, { kind: "project" | "singleFile" }>;
@@ -35,6 +38,28 @@
   const viewers = $derived(contributions.visible("viewer", conditions.current));
   const viewer = $derived(view === null ? undefined : viewers.find((v) => v.id === view.format));
   const outline = $derived(view?.body.kind === "markdown" ? view.body.outline : []);
+  const markdown = $derived(view?.format === "markdown");
+  const readOnly = $derived(
+    view === null
+      ? "noViewer"
+      : view.editable.editable === "readOnly"
+        ? view.editable.reason
+        : null,
+  );
+  const editingNow = $derived(editing.mode !== "view" && editing.path === documents.path);
+
+  /** View | Edit | Source from the header or the keys. */
+  function choose(mode: EditMode): void {
+    const shown = documents.path;
+    if (mode === "view") {
+      void editing.switchTo("view");
+      return;
+    }
+    if (shown === null || readOnly !== null || view === null) return;
+    if (editing.mode === "view" || editing.path !== shown) {
+      void editing.enter(mode, shown, markdown, { kind: "explicit" });
+    } else void editing.switchTo(mode);
+  }
 
   $effect(() => {
     documents.bind({
@@ -42,16 +67,37 @@
       fail: (error) => store.notifyFileOpFailed(error),
       reveal: (folder) => revealInTree(folder),
     });
+    editing.bind({
+      note: (text) => store.notifyNote(text),
+      fail: (error) => store.notifyFileOpFailed(error),
+      saved: () => documents.reload(),
+      open: (next) => documents.navigate(next, null),
+      readingLine: () => documents.topLine(),
+      showReadingLine: (line) => {
+        // the page shows again first
+        requestAnimationFrame(() => requestAnimationFrame(() => documents.scrollToLine(line)));
+      },
+      savedText: (count, first) =>
+        tn("edit.savedBlocks", count) + (first ? ` ${t("edit.firstSaveHint")}` : ""),
+    });
   });
 
   // which workspace and document: the controller follows (idempotent: same ids do nothing)
   $effect(() => {
     documents.setWorkspace(workspace);
+    // another document came without the leave guard (it saved or discarded first when it was asked)
+    const shown = path;
+    untrack(() => {
+      if (editing.path !== null && editing.path !== shown) editing.release();
+    });
     void documents.show(path);
   });
 
   // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document
-  $effect(() => () => documents.release());
+  $effect(() => () => {
+    editing.release();
+    documents.release();
+  });
 
   // the file changed on disk, or went away
   $effect(() => {
@@ -59,7 +105,9 @@
     let gone = false;
     void api
       .on("document-changed", (event) => {
-        if (event.window === store.label) documents.onChanged(event);
+        if (event.window !== store.label) return;
+        editing.onDocumentChanged(event);
+        documents.onChanged(event);
       })
       .then((stop) => {
         if (gone) stop();
@@ -76,6 +124,37 @@
     const onKey = (event: KeyboardEvent): void => {
       if (event.isComposing || event.defaultPrevented) return;
       const mod = event.ctrlKey || event.metaKey;
+      if (mod && !event.shiftKey && event.key.toLowerCase() === "e") {
+        // Ctrl+E: View <-> the last editor; Ctrl+Alt+E: Source (AltGr types characters: left alone)
+        if (event.getModifierState("AltGraph")) return;
+        event.preventDefault();
+        if (event.altKey) choose("source");
+        else choose(editing.mode === "view" ? editing.lastEditOr(store.editMode) : "view");
+        return;
+      }
+      if (event.key === "Escape" && editingNow && !mod && !event.altKey) {
+        const inside =
+          event.target instanceof Element
+            ? event.target.closest("input, select, textarea, form, [role=dialog], [role=listbox]")
+            : null;
+        if (inside === null) {
+          event.preventDefault();
+          choose("view");
+        }
+        return;
+      }
+      if (
+        mod &&
+        !event.shiftKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === "s" &&
+        editingNow
+      ) {
+        event.preventDefault();
+        editing.save();
+        return;
+      }
+      if (editingNow) return;
       if (mod && !event.altKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         finding = true;
@@ -107,6 +186,10 @@
   );
 </script>
 
+{#snippet modes()}
+  <ModeSwitch session={editing} {readOnly} {markdown} {choose} />
+{/snippet}
+
 <section class="area" aria-label={t("doc.region")}>
   {#if doc.status !== "empty" && documents.path !== null}
     <DocHeader
@@ -117,6 +200,7 @@
       hasOutline={outline.length > 0}
       onFind={() => (finding = true)}
       canOpenSystem={workspace.kind === "project"}
+      modes={view !== null && view.body.kind !== "media" ? modes : undefined}
     />
   {/if}
 
@@ -159,13 +243,27 @@
           </p>
         {/if}
 
+        {#if editingNow && scroller}
+          <!-- the editors load on first use: reading never pays for them -->
+          {#await import("../editing/EditorPane.svelte") then loaded}
+            {@const EditorPane = loaded.default}
+            <EditorPane
+              session={editing}
+              {scroller}
+              project={workspace.kind === "project"}
+              note={(text) => store.notifyNote(text)}
+            />
+          {/await}
+        {/if}
         {#if view.body.kind === "markdown" && scroller}
-          <MarkdownBody
-            {view}
-            {scroller}
-            template={store.referenceTemplate}
-            deleted={deleted !== null}
-          />
+          <div class="reading" hidden={editingNow}>
+            <MarkdownBody
+              {view}
+              {scroller}
+              template={store.referenceTemplate}
+              deleted={deleted !== null}
+            />
+          </div>
         {:else if view.body.kind === "notice"}
           <BodyNotice
             notice={view.body.notice}
@@ -173,6 +271,8 @@
             path={view.path}
             canOpenSystem={workspace.kind === "project"}
           />
+        {:else if editingNow}
+          <!-- the editor shows instead -->
         {:else if view.body.kind === "text" || view.body.kind === "media"}
           {#if viewer}
             {#key view.path}
@@ -193,7 +293,7 @@
       {/if}
     </div>
 
-    {#if finding && scroller}
+    {#if finding && scroller && !editingNow}
       <FindBar root={scroller} close={() => (finding = false)} />
     {/if}
   </div>

@@ -5,3 +5,4 @@ src-tauri
 src/api/generated
 .claude
 *.md
+testdata

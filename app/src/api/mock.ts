@@ -6,7 +6,8 @@ import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
 import { mockAssetUrl, mockLinkTarget, mockView } from "./mockDocs";
-import { MockProject, MockRefusal } from "./mockFs";
+import { createMockEditing, type MockEditProbe } from "./mockEdit";
+import { MockProject, MockRefusal, seedFiles } from "./mockFs";
 import type {
   Api,
   AppSettings,
@@ -37,6 +38,7 @@ function defaultSettings(): AppSettings {
     tone: "white",
     startIn: "welcome",
     linkUpdate: "ask",
+    editMode: "edit",
     referenceTemplate: "{path}#{section}",
     editor: "",
     plugins: {},
@@ -56,6 +58,7 @@ const MOCK_PLUGINS = [
   "json-view",
   "xml-view",
   "text-view",
+  "word-count",
 ];
 
 function neutralContext(): Context {
@@ -88,6 +91,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, startIn: change.value };
     case "linkUpdate":
       return { ...settings, linkUpdate: change.value };
+    case "editMode":
+      return { ...settings, editMode: change.value };
     case "referenceTemplate":
       return { ...settings, referenceTemplate: change.value.trim() || "{path}#{section}" };
     case "editor":
@@ -117,6 +122,8 @@ export type MockProbe = {
   shown: { path: string | null; known: string[] };
   /** The project in memory. */
   project: MockProject;
+  /** Editing: saves, unsaved flag, files as the editor sees them. */
+  edit: MockEditProbe;
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -146,14 +153,17 @@ export function createMockApi(): Api & {
     "open-failed": new Set(),
     "tree-changed": new Set(),
     "document-changed": new Set(),
+    "close-requested": new Set(),
   };
   const project = new MockProject();
+  const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
   const probe: MockProbe = {
     opened: [],
     editor: [],
     web: [],
     shown: { path: null, known: [] },
     project,
+    edit: editing.probe,
   };
   let tree: TreeView | null = null;
 
@@ -376,6 +386,7 @@ export function createMockApi(): Api & {
       probe.web.push(url);
       return ok(null);
     },
+    ...editing.api,
     assetUrl: (_workspace, path) => mockAssetUrl(path),
     showDocument: (path) => {
       if (view.state === "showing") {

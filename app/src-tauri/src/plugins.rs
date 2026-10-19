@@ -225,5 +225,21 @@ mod tests {
         if std::fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
             std::fs::write(target, text).unwrap();
         }
+        // what the editors start from (mock `edit_source`)
+        let editor = permark_core::edit::Editor {
+            scope: docs.scope(),
+            formats: &formats,
+            own: None,
+        };
+        let mut sources = serde_json::Map::new();
+        for (path, _) in documents {
+            let source = editor.source(path).unwrap();
+            sources.insert(path.to_owned(), serde_json::to_value(source).unwrap());
+        }
+        let text = format!("{}\n", serde_json::to_string_pretty(&sources).unwrap());
+        let target = generated.join("mock-edit-sources.json");
+        if std::fs::read_to_string(&target).ok().as_deref() != Some(text.as_str()) {
+            std::fs::write(target, text).unwrap();
+        }
     }
 }

@@ -10,6 +10,7 @@
   import Search from "@lucide/svelte/icons/search";
   import SquareArrowOutUpRight from "@lucide/svelte/icons/square-arrow-out-up-right";
   import Type from "@lucide/svelte/icons/a-large-small";
+  import type { Snippet } from "svelte";
   import { revealInTree } from "../explorer/current";
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
@@ -29,8 +30,10 @@
     onFind: () => void;
     /** Opens the system program: only for files of a project. */
     canOpenSystem: boolean;
+    /** The mode switch (View | Edit | Source) and Save, when the document can be edited. */
+    modes?: Snippet;
   };
-  let { path, savedMs, role, template, hasOutline, onFind, canOpenSystem }: Props = $props();
+  let { path, savedMs, role, template, hasOutline, onFind, canOpenSystem, modes }: Props = $props();
 
   const ROLES: Readonly<Record<string, MessageKey>> = {
     agents: "role.agents",
@@ -170,6 +173,7 @@
     <span class="role" title={t("header.roleHint")}>{roleLabel(role)}</span>
   {/if}
   <span class="spacer"></span>
+  {#if modes}{@render modes()}{/if}
   {#if saved}
     <span class="saved">{saved}</span>
   {/if}

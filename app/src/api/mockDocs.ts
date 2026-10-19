@@ -37,6 +37,11 @@ const TEXTS: Record<string, { text: string; language: string; format: string }> 
   ".github/ci.yml": { text: "name: ci\non: push\n", language: "yml", format: "text" },
 };
 
+/** Text of a mock text file (not Markdown), or `null`. */
+export function mockTextOf(path: string): string | null {
+  return TEXTS[path]?.text ?? null;
+}
+
 function nameOf(path: string): string {
   return path.split("/").at(-1) ?? path;
 }

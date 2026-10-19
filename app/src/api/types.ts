@@ -5,7 +5,14 @@ import type { AppSettings } from "./generated/AppSettings";
 import type { BootInfo } from "./generated/BootInfo";
 import type { CommandName } from "./generated/CommandName";
 import type { ContextChanged } from "./generated/ContextChanged";
+import type { CloseRequested } from "./generated/CloseRequested";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
+import type { EditSource } from "./generated/EditSource";
+import type { LineEdit } from "./generated/LineEdit";
+import type { Measure } from "./generated/Measure";
+import type { SaveOutcome } from "./generated/SaveOutcome";
+import type { Segment } from "./generated/Segment";
+import type { TextKind } from "./generated/TextKind";
 import type { DocumentChanged } from "./generated/DocumentChanged";
 import type { DocumentView } from "./generated/DocumentView";
 import type { IpcError } from "./generated/IpcError";
@@ -15,6 +22,7 @@ import type { MovePlan } from "./generated/MovePlan";
 import type { MoveSpec } from "./generated/MoveSpec";
 import type { NewKind } from "./generated/NewKind";
 import type { OpenFailed } from "./generated/OpenFailed";
+import type { OutlineItem } from "./generated/OutlineItem";
 import type { OpenMode } from "./generated/OpenMode";
 import type { OpenOutcome } from "./generated/OpenOutcome";
 import type { OpenPlacement } from "./generated/OpenPlacement";
@@ -33,6 +41,13 @@ import type { WorkspaceSummary } from "./generated/WorkspaceSummary";
 
 export type {
   AppInfo,
+  CloseRequested,
+  EditSource,
+  LineEdit,
+  Measure,
+  SaveOutcome,
+  Segment,
+  TextKind,
   CommandName,
   AppSettings,
   BootInfo,
@@ -68,6 +83,10 @@ export type { FrontMatter } from "./generated/FrontMatter";
 export type { MediaKind } from "./generated/MediaKind";
 export type { Notice } from "./generated/Notice";
 export type { OutlineItem } from "./generated/OutlineItem";
+export type { LockReason } from "./generated/LockReason";
+export type { SegmentKind } from "./generated/SegmentKind";
+export type { MeasureUnit } from "./generated/MeasureUnit";
+export type { EditModePref } from "./generated/EditModePref";
 export type { Category } from "./generated/Category";
 export type { FilterShow } from "./generated/FilterShow";
 export type { LinkUpdate } from "./generated/LinkUpdate";
@@ -124,6 +143,23 @@ export interface Commands {
     result: null;
   };
   open_web: { args: { url: string }; result: null };
+  edit_source: { args: { path: string }; result: EditSource };
+  edit_segments: { args: { text: string }; result: Segment[] };
+  edit_save: {
+    args: { path: string; seenHash: string; edits: LineEdit[] };
+    result: SaveOutcome;
+  };
+  edit_save_as: { args: { path: string; text: string; exact: boolean }; result: string };
+  /** Raw body (the picture's bytes); `doc` + `ext` travel as headers. */
+  edit_write_asset: { args: { doc: string; ext: string; bytes: Uint8Array }; result: string };
+  edit_set_unsaved: { args: { path: string | null }; result: null };
+  edit_headings: { args: { path: string }; result: OutlineItem[] };
+  edit_link_targets: { args: Record<string, never>; result: string[] };
+  analyze: {
+    args: { path: string | null; text: string | null; kind: TextKind };
+    result: Measure[];
+  };
+  window_close: { args: Record<string, never>; result: null };
 }
 
 /** Contract: `Commands` has exactly the registered commands (generated from Rust). Fails to compile on drift. */
@@ -140,6 +176,7 @@ export interface Events {
   "open-failed": OpenFailed;
   "tree-changed": TreeChanged;
   "document-changed": DocumentChanged;
+  "close-requested": CloseRequested;
 }
 export type EventName = keyof Events;
 
@@ -202,6 +239,24 @@ export interface Api {
   openInEditor(path: string, line: number | null, col: number | null): Promise<Result<null>>;
   /** Opens a web link in the system browser (http | https | mailto only). */
   openWeb(url: string): Promise<Result<null>>;
+  /** What an editor starts from: the text (LF), its hash, the block map (Markdown). */
+  editSource(path: string): Promise<Result<EditSource>>;
+  /** Block map of an unsaved Markdown text. */
+  editSegments(text: string): Promise<Result<Segment[]>>;
+  /** Line edits against the version `seenHash`; another version on disk = `conflict`, nothing written. */
+  editSave(path: string, seenHash: string, edits: LineEdit[]): Promise<Result<SaveOutcome>>;
+  /** The person's text as a new file next to `path` (`exact`: at `path`, when free). Resolves to its path. */
+  editSaveAs(path: string, text: string, exact: boolean): Promise<Result<string>>;
+  /** Picture bytes saved next to `doc`; resolves to the picture's path. */
+  editWriteAsset(doc: string, ext: string, bytes: Uint8Array): Promise<Result<string>>;
+  /** This window holds unsaved edits of `path` (`null`: none). */
+  editSetUnsaved(path: string | null): Promise<Result<null>>;
+  editHeadings(path: string): Promise<Result<OutlineItem[]>>;
+  editLinkTargets(): Promise<Result<string[]>>;
+  /** Measures of the enabled analyses, of a document (`path`) or a text. */
+  analyze(path: string | null, text: string | null, kind: TextKind): Promise<Result<Measure[]>>;
+  /** Closes this window for real (after the unsaved prompt). */
+  windowClose(): Promise<Result<null>>;
   /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */
   assetUrl(workspace: WorkspaceId, path: string, version: string | null): string;
   /** Listens to a backend event. Resolves to teardown. */
