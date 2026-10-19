@@ -1,22 +1,26 @@
 <script lang="ts">
-  // "Where should this folder open?" This window | New window; Cancel | Escape | backdrop = neither.
+  // "Where should this folder open?" This window | New window; Cancel | Escape | backdrop = neither. "Remember my
+  // choice" keeps the answer as the setting (never for Cancel).
   import { t } from "../i18n";
 
-  type Props = { answer: (choice: "here" | "new" | null) => void };
+  type Props = { answer: (choice: "here" | "new" | null, remember: boolean) => void };
   let { answer }: Props = $props();
 
   let dialog: HTMLElement | undefined = $state();
   let here: HTMLButtonElement | undefined = $state();
+  let remember = $state(false);
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
       e.preventDefault();
-      answer(null);
+      answer(null, false);
       return;
     }
     if (e.key !== "Tab" || !dialog) return;
     // focus stays inside the dialog
-    const focusable = Array.from(dialog.querySelectorAll<HTMLElement>("button:not(:disabled)"));
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)"),
+    );
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (e.shiftKey && document.activeElement === first) {
@@ -40,7 +44,7 @@
 <div
   class="backdrop"
   onclick={(e) => {
-    if (e.target === e.currentTarget) answer(null);
+    if (e.target === e.currentTarget) answer(null, false);
   }}
 >
   <div
@@ -54,16 +58,22 @@
   >
     <h2 id="window-choice-title">{t("dialog.windowTitle")}</h2>
     <p>{t("dialog.windowBody")}</p>
+    <label class="remember">
+      <input type="checkbox" bind:checked={remember} />
+      <span>{t("dialog.windowRemember")}</span>
+    </label>
     <footer>
-      <button type="button" class="btn" onclick={() => answer(null)}>{t("common.cancel")}</button>
-      <button type="button" class="btn" onclick={() => answer("new")}
-        >{t("dialog.windowNew")}</button
-      >
+      <button type="button" class="btn" onclick={() => answer(null, false)}>
+        {t("common.cancel")}
+      </button>
+      <button type="button" class="btn" onclick={() => answer("new", remember)}>
+        {t("dialog.windowNew")}
+      </button>
       <button
         bind:this={here}
         type="button"
         class="btn btn--primary"
-        onclick={() => answer("here")}
+        onclick={() => answer("here", remember)}
       >
         {t("dialog.windowHere")}
       </button>
@@ -83,7 +93,7 @@
     animation: pm-fade var(--dur) var(--ease);
   }
   .dialog {
-    width: min(440px, 100%);
+    width: min(460px, 100%);
     padding: var(--sp-5);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
@@ -97,11 +107,20 @@
     font-weight: 600;
   }
   p {
-    margin: 0 0 var(--sp-5);
+    margin: 0 0 var(--sp-4);
     color: var(--muted);
+  }
+  .remember {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: 0 0 var(--sp-5);
+    font-size: var(--fs-ui-sm);
+    cursor: pointer;
   }
   footer {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--sp-2);
   }

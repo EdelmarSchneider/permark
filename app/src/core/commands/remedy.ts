@@ -3,6 +3,7 @@
 // plugin's own remedy, such as `agent.turnOn`, exists while the plugin is on).
 
 import { contributions } from "../plugins/instance.svelte";
+import { askInitHere } from "../shell/initProject";
 import { ui } from "../shell/ui.svelte";
 import { windowStore } from "../window.svelte";
 
@@ -19,6 +20,8 @@ export function remedyAction(command: string | null): (() => void) | null {
               value: { plugin: argument, enabled: true },
             })
         : null;
+    case "project.init":
+      return () => askInitHere();
     case "settings.git":
       return () => ui.openSettings();
     default: {

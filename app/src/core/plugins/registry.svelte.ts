@@ -106,6 +106,8 @@ export type Contribution = Owned &
     /** Runs on the root of the page when it exists; returns what undoes it. */
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
+    /** Rows a plugin adds to the Project section of the settings (what the project shares in `.permark/`). */
+    | { kind: "projectSection"; id: string; label: MessageKey; view: LazyComponent }
     /** What the window shows for a workspace of a kind the core has no page for (the Notes): its sidebar and its page. */
     | {
         kind: "workspaceView";

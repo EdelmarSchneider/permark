@@ -9,6 +9,7 @@ import {
   type GitBackendPref,
   type IpcError,
   type LinkUpdate,
+  type OpenIn,
   type OpenPlacement,
   type RecentFolder,
   type StartIn,
@@ -18,7 +19,7 @@ import {
   type WindowView,
 } from "../api";
 import { conditions } from "./conditions/context.svelte";
-import { syncPlugins } from "./plugins/instance.svelte";
+import { restartPlugins, syncPlugins } from "./plugins/instance.svelte";
 import { language, parsePreference, t } from "./i18n";
 import { look } from "./look.svelte";
 
@@ -30,6 +31,7 @@ export type Notice =
   | { id: number; kind: "dropOne" }
   | { id: number; kind: "stateRecovered"; notice: StateRecovered }
   | { id: number; kind: "settingNotSaved"; error: ApiError }
+  | { id: number; kind: "initFailed"; path: string; error: ApiError }
   | { id: number; kind: "fileOpFailed"; error: ApiError }
   | { id: number; kind: "note"; text: string }
   /** A quiet line with buttons (Undo, Open in project). */
@@ -66,6 +68,8 @@ export class WindowStore {
   notesFolder = $state("");
   /** What the app starts on. */
   startIn = $state<StartIn>("welcome");
+  /** What opening over a shown workspace does: ask, reuse this window, open a new one. */
+  openIn = $state<OpenIn>("ask");
   /** The person's keyboard map: command id -> combo (`""` = unbound). */
   keymap = $state.raw<Readonly<Record<string, string>>>({});
   #nextNotice = 1;
@@ -94,6 +98,7 @@ export class WindowStore {
         this.editor = e.settings.editor;
         this.notesFolder = e.settings.notesFolder;
         this.startIn = e.settings.startIn;
+        this.openIn = e.settings.openIn;
         this.keymap = e.settings.keymap;
         void language.choose(parsePreference(e.settings.language));
       }),
@@ -117,6 +122,7 @@ export class WindowStore {
       this.editor = info.settings.editor;
       this.notesFolder = info.settings.notesFolder;
       this.startIn = info.settings.startIn;
+      this.openIn = info.settings.openIn;
       this.keymap = info.settings.keymap;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
@@ -139,7 +145,19 @@ export class WindowStore {
   }
 
   #showView(view: WindowView): void {
+    const before = this.view;
     this.view = view;
+    // PerMark was initialized in the project this window shows: its plugins started over on the new state folder
+    if (
+      before.state === "showing" &&
+      view.state === "showing" &&
+      before.workspace.kind === "project" &&
+      view.workspace.kind === "project" &&
+      before.workspace.id === view.workspace.id &&
+      before.workspace.stateLocation !== view.workspace.stateLocation
+    ) {
+      restartPlugins();
+    }
     if (view.state === "welcome") void this.refreshRecent();
   }
 
@@ -158,13 +176,33 @@ export class WindowStore {
     if (path) await this.open(path, "ask");
   }
 
+  /** `ask` = what the `open_in` setting says (ask = the dialog when this window shows something). */
+  #placement(placement: OpenPlacement): OpenPlacement {
+    if (placement !== "ask") return placement;
+    switch (this.openIn) {
+      case "ask":
+        return "ask";
+      case "this":
+        return "thisWindow";
+      case "new":
+        return "newWindow";
+      default:
+        return this.openIn satisfies never;
+    }
+  }
+
   async open(path: string, placement: OpenPlacement): Promise<void> {
-    await this.#opened(await this.#api.openPath(path, placement), { kind: "path", path });
+    await this.#opened(await this.#api.openPath(path, this.#placement(placement)), {
+      kind: "path",
+      path,
+    });
   }
 
   /** Shows the Notes in this window (asks first when the window shows something). */
   async openNotes(placement: OpenPlacement = "ask"): Promise<void> {
-    await this.#opened(await this.#api.openNotes(placement), { kind: "notes" });
+    await this.#opened(await this.#api.openNotes(this.#placement(placement)), {
+      kind: "notes",
+    });
   }
 
   async #opened(
@@ -199,11 +237,14 @@ export class WindowStore {
     }
   }
 
-  /** Answer of the "This window | New window" dialog; `null` = cancelled. */
-  async answerChoice(answer: "here" | "new" | null): Promise<void> {
+  /** Answer of the "This window | New window" dialog; `null` = cancelled. `remember`: keep the answer as the setting. */
+  async answerChoice(answer: "here" | "new" | null, remember = false): Promise<void> {
     const asked = this.choice;
     this.choice = { status: "closed" };
     if (asked.status !== "asking" || answer === null) return;
+    if (remember) {
+      await this.changeSetting({ key: "openIn", value: answer === "here" ? "this" : "new" });
+    }
     const placement = answer === "here" ? "thisWindow" : "newWindow";
     if (asked.path === null) await this.openNotes(placement);
     else await this.open(asked.path, placement);
@@ -211,6 +252,23 @@ export class WindowStore {
 
   async closeWorkspace(): Promise<void> {
     await this.#api.showWelcome();
+  }
+
+  /** Creates `.permark/` in a folder; a project open on it reloads at once. `true` when it worked. */
+  async initProject(path: string): Promise<boolean> {
+    const result = await this.#api.projectInit(path);
+    if (!result.ok) {
+      this.#notify({ kind: "initFailed", path, error: result.error });
+      return false;
+    }
+    return true;
+  }
+
+  /** New project: a folder is picked, PerMark is initialized in it, and it opens like any folder. */
+  async newProject(): Promise<void> {
+    const path = await this.#api.pickFolder(t("dialog.newProject"));
+    if (path === null) return;
+    if (await this.initProject(path)) await this.open(path, "ask");
   }
 
   async removeRecent(path: string): Promise<void> {
@@ -222,6 +280,12 @@ export class WindowStore {
     const result = await this.#api.settingsSet(change);
     if (!result.ok) this.#notify({ kind: "settingNotSaved", error: result.error });
     // success: `settings-changed` reaches every window (this one included)
+  }
+
+  /** One setting, with the refusal handed back (the page words it under the control) instead of a notice. */
+  async trySetting(change: SettingChange): Promise<ApiError | null> {
+    const result = await this.#api.settingsSet(change);
+    return result.ok ? null : result.error;
   }
 
   /** A file operation of the Explorer failed. */

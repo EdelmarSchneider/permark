@@ -9,6 +9,13 @@ export const host = new PluginHost(contributions, pluginLoaders());
 
 let asked = new Set<PluginId>();
 
+/** The project's state moved (PerMark was initialized): the plugin modules start over, so their stores read again. */
+export function restartPlugins(plugins: PluginHost = host): void {
+  const ids = [...asked];
+  for (const id of ids) plugins.disable(id);
+  for (const id of ids) void plugins.enable(id);
+}
+
 /** Activates the plugins that came on, deactivates the ones that went off (ids without a UI module are skipped). */
 export function syncPlugins(on: readonly PluginId[], plugins: PluginHost = host): void {
   const wanted = new Set(on.filter((id) => plugins.has(id)));

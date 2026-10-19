@@ -14,7 +14,11 @@ import {
   type ContributionInput,
   type ContributionRegistry,
 } from "../plugins/registry.svelte";
+import { askInitHere } from "../shell/initProject";
+import { switcher } from "../shell/workspaceList.svelte";
+import { shownId } from "../shell/switcherModel";
 import { ui } from "../shell/ui.svelte";
+import { conditions } from "../conditions/context.svelte";
 import { windowStore as store } from "../window.svelte";
 import { NO_REQUIREMENT, type Requirement } from "../conditions/available";
 
@@ -55,7 +59,29 @@ const SPECS: readonly Spec[] = [
   { id: "app.openFolder", label: "cmd.openFolder", keys: ["Mod+o"], run: () => store.openFolder() },
   { id: "app.openFile", label: "cmd.openFile", keys: ["Mod+Shift+o"], run: () => store.openFile() },
   { id: "app.settings", label: "cmd.settings", keys: ["Mod+,"], run: () => ui.toggleSettings() },
+  { id: "app.settingsPage", label: "cmd.settingsPage", run: () => ui.openSettingsPage() },
   { id: "app.keyboard", label: "cmd.keyboard", run: () => ui.openKeyboard() },
+  {
+    id: "workspace.next",
+    label: "cmd.workspaceNext",
+    keys: ["Mod+Alt+ArrowRight"],
+    when: () => switcher.visible,
+    run: () => switcher.focusNeighbor(1, shownId(store.view)),
+  },
+  {
+    id: "workspace.previous",
+    label: "cmd.workspacePrevious",
+    keys: ["Mod+Alt+ArrowLeft"],
+    when: () => switcher.visible,
+    run: () => switcher.focusNeighbor(-1, shownId(store.view)),
+  },
+  {
+    id: "project.init",
+    label: "cmd.initProject",
+    requires: PROJECT,
+    when: () => conditions.current.permark === "notInitialized",
+    run: () => askInitHere(),
+  },
   {
     id: "app.closeWorkspace",
     label: "cmd.closeFolder",

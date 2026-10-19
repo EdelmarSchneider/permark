@@ -135,6 +135,107 @@ describe("window title", () => {
   });
 });
 
+describe("where a folder opens, and what is remembered", () => {
+  it("with open_in = this the dialog never shows and the window is reused", async () => {
+    const store = await started();
+    await store.openFolder();
+    await store.changeSetting({ key: "openIn", value: "this" });
+    expect(store.openIn).toBe("this");
+    await store.open("C:/second project", "ask");
+    expect(store.choice.status).toBe("closed");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("second project");
+  });
+
+  it("with open_in = new the folder goes to a new window and this one stays as it is", async () => {
+    const store = await started();
+    await store.openFolder();
+    await store.changeSetting({ key: "openIn", value: "new" });
+    await store.open("C:/second project", "ask");
+    expect(store.choice.status).toBe("closed");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
+    // an explicit placement is never rewritten by the setting
+    await store.open("C:/third project", "thisWindow");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("third project");
+  });
+
+  it("the remember check keeps the answer as the setting; cancel keeps nothing", async () => {
+    const store = await started();
+    await store.openFolder();
+    await store.open("C:/second project", "ask");
+    await store.answerChoice(null, true);
+    expect(store.openIn).toBe("ask");
+    await store.open("C:/second project", "ask");
+    await store.answerChoice("here", true);
+    expect(store.openIn).toBe("this");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("second project");
+    // the next open does not ask
+    await store.open("C:/third project", "ask");
+    expect(store.choice.status).toBe("closed");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("third project");
+    await store.changeSetting({ key: "openIn", value: "ask" });
+    await store.open("C:/fourth", "ask");
+    await store.answerChoice("new", true);
+    expect(store.openIn).toBe("new");
+  });
+
+  it("a choice made without the check leaves the setting alone", async () => {
+    const store = await started();
+    await store.openFolder();
+    await store.open("C:/second project", "ask");
+    await store.answerChoice("new");
+    expect(store.openIn).toBe("ask");
+  });
+});
+
+describe("initializing a folder", () => {
+  it("New project picks a folder, initializes it and opens it", async () => {
+    const api = createMockApi();
+    const store = await started(api);
+    await store.newProject();
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
+    expect(store.notices).toEqual([]);
+  });
+
+  it("a folder that cannot be initialized says why and nothing opens", async () => {
+    const api = createMockApi();
+    const store = await started({
+      ...api,
+      projectInit: () =>
+        Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "project_init",
+            error: { kind: "denied", subject: "C:/locked", detail: null },
+          },
+        }),
+    });
+    await store.newProject();
+    expect(store.view.state).toBe("welcome");
+    expect(store.notices.map((n) => n.kind)).toEqual(["initFailed"]);
+    expect(await store.initProject("C:/locked")).toBe(false);
+  });
+
+  it("the window of an initialized project hears the new state location and its plugins start over", async () => {
+    const api = createMockApi();
+    const store = await started(api);
+    await store.openFolder();
+    const before = store.view;
+    expect(
+      before.state === "showing" &&
+        before.workspace.kind === "project" &&
+        before.workspace.stateLocation,
+    ).toBe("profile");
+    expect(await store.initProject("C:/Users/demo/permark-docs")).toBe(true);
+    const after = store.view;
+    expect(
+      after.state === "showing" &&
+        after.workspace.kind === "project" &&
+        after.workspace.stateLocation,
+    ).toBe("project");
+  });
+});
+
 describe("errors in words", () => {
   it("every backend error kind has a message key", () => {
     for (const kind of ERROR_KINDS) expect(Object.keys(en)).toContain(errorKey(kind));

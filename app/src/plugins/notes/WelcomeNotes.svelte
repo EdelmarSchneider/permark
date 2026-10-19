@@ -61,9 +61,8 @@
   .notes {
     display: flex;
     flex-direction: column;
-    gap: var(--sp-2);
-    width: min(600px, 100%);
-    margin-top: var(--sp-6);
+    gap: var(--sp-1);
+    min-width: 0;
   }
   .head {
     display: flex;
