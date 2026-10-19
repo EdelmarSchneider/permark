@@ -30,7 +30,7 @@ describe("findIn", () => {
 
   it("skips scripts, styles, hidden parts", () => {
     const root = page(
-      "<p>word</p><script>word</script><style>word</style><div hidden>word</div><template>word</template><p>Word</p>",
+      "<p>word</p><script>word</script><style>.word { color: red }</style><div hidden>word</div><template>word</template><p>Word</p>",
     );
     expect(texts(findIn(root, "word"))).toEqual(["word", "Word"]);
   });
