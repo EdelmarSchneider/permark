@@ -64,6 +64,23 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # The exact token counts are tested against the reference counts, which needs the two public rank files. They are
+      # not part of the repository (the app downloads them after the person asks); the hashes are the ones the app pins.
+      - name: Fetch the token rank files (tests only)
+        shell: bash
+        run: |
+          dir="$RUNNER_TEMP/token-vocab"
+          mkdir -p "$dir"
+          fetch() {
+            curl -fsSL --retry 3 -o "$dir/$1.tiktoken" "https://openaipublic.blob.core.windows.net/encodings/$1.tiktoken"
+            got=$(openssl dgst -sha256 -r "$dir/$1.tiktoken" | cut -d' ' -f1)
+            if [ "$got" != "$2" ]; then echo "unexpected hash for $1: $got"; exit 1; fi
+          }
+          fetch o200k_base 446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d
+          fetch cl100k_base 223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7
+          echo "PERMARK_TOKEN_VOCAB_DIR=$dir" >> "$GITHUB_ENV"
+          echo "PERMARK_TOKEN_VOCAB_REQUIRED=1" >> "$GITHUB_ENV"
+
       # Builds the frontend first (`tauri::generate_context!` embeds app/dist at compile time).
       - name: Quality gate
         run: npm run check
