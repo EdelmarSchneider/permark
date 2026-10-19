@@ -32,6 +32,13 @@
   // a single file shows its own file; a project shows the document the window was told to
   const path = $derived(workspace.kind === "singleFile" ? workspace.name : shown);
 
+  /** What the header shows as the place: a loose file of the Notes shows its name, not its internal path. */
+  function headerPath(place: string): string {
+    return workspace.kind === "notes" && place.startsWith("@file/")
+      ? (place.split("/").at(-1) ?? place)
+      : place;
+  }
+
   const doc = $derived(documents.state);
   const view = $derived(documents.view);
   const deleted = $derived(doc.status === "ready" ? doc.deleted : null);
@@ -77,10 +84,11 @@
     documents.setWorkspace(workspace);
     // another document came without the leave guard (it saved or discarded first when it was asked)
     const shown = path;
+    // only the workspace and the path decide when this runs: a failed open must not make it run again by itself
     untrack(() => {
       if (editing.path !== null && editing.path !== shown) editing.release();
+      void documents.show(path);
     });
-    void documents.show(path);
   });
 
   // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document
@@ -144,7 +152,7 @@
 <section class="area" aria-label={t("doc.region")}>
   {#if doc.status !== "empty" && documents.path !== null}
     <DocHeader
-      path={view?.path ?? documents.path}
+      path={headerPath(view?.path ?? documents.path)}
       savedMs={view?.mtimeMs ?? null}
       role={view?.role ?? null}
       template={store.referenceTemplate}

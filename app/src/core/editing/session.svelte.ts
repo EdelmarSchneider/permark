@@ -99,6 +99,8 @@ export class EditingSession {
   #autosave: ReturnType<typeof setTimeout> | null = null;
   #journal: Journal | null = null;
   #journalTimer: ReturnType<typeof setInterval> | null = null;
+  /** This session handed text of the document to the journal (so it is the one to take it back). */
+  #journaled = false;
   /** The window lets go of a document that may still hold unsaved text: its journal entry stays. */
   #keepJournal = false;
   #savedListeners = new Set<(path: string) => void>();
@@ -267,9 +269,10 @@ export class EditingSession {
 
   #close(): void {
     this.#stopJournal();
-    if (!this.#keepJournal && this.#path !== null && this.#journal !== null) {
+    if (!this.#keepJournal && this.#journaled && this.#path !== null && this.#journal !== null) {
       this.#journal(this.#path, this.base?.hash ?? "", null);
     }
+    this.#journaled = false;
     this.#reset();
     this.#unguard?.();
     this.#unguard = null;
@@ -528,10 +531,14 @@ export class EditingSession {
     this.#journalTimer = null;
   }
 
-  /** The text is on disk (or let go): the entry goes. */
+  /** The text is on disk (or let go): the entry this session made goes. An entry an earlier run left stays until the
+   * person chooses. */
   #clearJournal(): void {
     this.#stopJournal();
-    if (this.#path !== null) this.#journal?.(this.#path, this.base?.hash ?? "", null);
+    if (this.#journaled && this.#path !== null) {
+      this.#journal?.(this.#path, this.base?.hash ?? "", null);
+    }
+    this.#journaled = false;
   }
 
   #writeJournal(): void {
@@ -539,7 +546,9 @@ export class EditingSession {
     const base = this.base;
     if (path === null || base === null || !this.unsaved) return;
     const text = this.#editor?.text() ?? this.content?.text ?? base.text;
-    if (text !== base.text) this.#journal?.(path, base.hash, text);
+    if (text === base.text || this.#journal === null) return;
+    this.#journal(path, base.hash, text);
+    this.#journaled = true;
   }
 
   #clearTimers(): void {

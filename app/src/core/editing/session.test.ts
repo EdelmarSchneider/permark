@@ -215,3 +215,111 @@ describe("editing session", () => {
     expect(session.state.s).toBe("dirty");
   });
 });
+
+describe("the journal of unsaved text", () => {
+  type Call = { path: string; baseHash: string; text: string | null };
+
+  async function typed(
+    session: EditingSession,
+    calls: Call[],
+    policy: "explicit" | "auto" = "explicit",
+  ) {
+    session.bindJournal((path, baseHash, text) => calls.push({ path, baseHash, text }));
+    await session.enter(
+      "source",
+      "docs/guide.md",
+      true,
+      policy === "auto" ? { kind: "auto", delayMs: 800 } : { kind: "explicit" },
+    );
+    const content = session.content;
+    if (!content) throw new Error("no content");
+    const editor = fakeEditor(content.text);
+    session.attach(content.seq, editor);
+    return { editor, content };
+  }
+
+  it("hands the unsaved text over every two seconds and forgets it once it is on disk", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    const { editor, content } = await typed(session, calls);
+    editor.set("# Typed but not saved\n" + content.text);
+    session.changed();
+    await settle();
+    expect(calls).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      path: "docs/guide.md",
+      text: "# Typed but not saved\n" + content.text,
+    });
+    expect(calls[0]?.baseHash).toBe(mockHash(content.text));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toHaveLength(2);
+    session.save();
+    await settle();
+    expect(calls.at(-1)).toMatchObject({ path: "docs/guide.md", text: null });
+    const count = calls.length;
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(calls).toHaveLength(count);
+  });
+
+  it("an autosave inside the two seconds never writes the journal and takes nothing back", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    const { editor, content } = await typed(session, calls, "auto");
+    editor.set(content.text + "more\n");
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.state.s).toBe("clean");
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(calls).toEqual([]);
+  });
+
+  it("an entry an earlier run left is not touched by opening the document", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    await typed(session, calls);
+    await session.switchTo("view").catch(() => {});
+    expect(calls).toEqual([]);
+  });
+
+  it("letting go of the workspace keeps the entry; discarding the text takes it back", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    const first = await typed(session, calls);
+    first.editor.set("changed\n" + first.content.text);
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toHaveLength(1);
+    session.release();
+    expect(calls).toHaveLength(1);
+    const second = await typed(session, calls);
+    second.editor.set("again\n" + second.content.text);
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(2000);
+    const written = calls.length;
+    void session.confirmLeave({ kind: "document", path: "other.md" });
+    await settle();
+    session.answer("discard");
+    await settle();
+    expect(calls.length).toBeGreaterThan(written);
+    expect(calls.at(-1)?.text).toBeNull();
+  });
+
+  it("hears every save", async () => {
+    const { session } = setup();
+    const heard: string[] = [];
+    const off = session.onSaved((path) => heard.push(path));
+    const { editor, content } = await open(session);
+    editor.set(content.text + "x\n");
+    session.changed();
+    await settle();
+    session.save();
+    await settle();
+    expect(heard).toEqual(["docs/guide.md"]);
+    off();
+  });
+});

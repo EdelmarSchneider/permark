@@ -55,6 +55,7 @@
       <span class="label">{t("notes.move.name")}</span>
       <input
         type="text"
+        data-first
         value={shown.name}
         spellcheck="false"
         autocomplete="off"

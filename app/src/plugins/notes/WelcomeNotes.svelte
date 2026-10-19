@@ -62,13 +62,14 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    width: min(420px, 100%);
-    margin-top: var(--sp-5);
+    width: min(600px, 100%);
+    margin-top: var(--sp-6);
   }
   .head {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding-left: var(--sp-3);
   }
   h2 {
     margin: 0;
@@ -89,7 +90,7 @@
     justify-content: space-between;
     gap: var(--sp-3);
     width: 100%;
-    padding: 5px 8px;
+    padding: 5px 10px;
     border: 0;
     border-radius: var(--radius-control);
     background: transparent;
