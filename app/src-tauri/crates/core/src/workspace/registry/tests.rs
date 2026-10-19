@@ -202,7 +202,15 @@ fn events_only_when_something_differs() {
     assert!(names.contains(&"context-changed".to_owned()));
     assert!(names.contains(&"window-changed".to_owned()));
     f.registry.refresh();
-    assert_eq!(f.sink.take().len(), 0);
+    // the search index reports its own progress whenever it likes; everything else stays quiet
+    let rest: Vec<String> = f
+        .sink
+        .take()
+        .iter()
+        .map(|e| e.name().to_owned())
+        .filter(|n| n != "index-progress")
+        .collect();
+    assert_eq!(rest, Vec::<String>::new());
     let context = f.registry.context_of("main").unwrap();
     assert_eq!(context.workspace, WorkspaceKind::Project);
     assert_eq!(context.permark, PermarkCondition::NotInitialized);
