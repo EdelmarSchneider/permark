@@ -43,6 +43,7 @@ function delta(partial: Partial<TreeDelta>): TreeDelta {
     totalFiles: 0,
     shownFiles: 0,
     bulk: false,
+    filter: null,
     ...partial,
   };
 }

@@ -121,6 +121,7 @@ describe("loading", () => {
         totalFiles: 0,
         shownFiles: 0,
         bulk: false,
+        filter: null,
       },
     };
     api.emit("tree-changed", event);

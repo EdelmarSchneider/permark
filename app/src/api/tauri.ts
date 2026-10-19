@@ -132,6 +132,13 @@ export const tauriApi: Api = {
   pluginCall,
   onPlugin: <E extends PluginEventName>(event: E, handler: (payload: PluginEnvelope<E>) => void) =>
     listen<PluginEnvelope<E>>(event, (e) => handler(e.payload)),
+  projectInit: (path) => call("project_init", { path }),
+  projectConfigGet: () => call("project_config_get", {}),
+  projectConfigSet: (change) => call("project_config_set", { change }),
+  pluginsList: () => call("plugins_list", {}),
+  pluginSetProject: (plugin, enabled) => call("plugin_set_project", { plugin, enabled }),
+  pluginRemoveData: (plugin) => call("plugin_remove_data", { plugin }),
+  workspaceClose: (id) => call("workspace_close", { id }),
   windowClose: () => call("window_close", {}),
   assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
   on: (event, handler) => listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
@@ -177,6 +184,13 @@ export const tauriApi: Api = {
       await getCurrentWindow().setTitle(title);
     } catch {
       // the title only helps tell windows apart; nothing depends on it
+    }
+  },
+  setWindowTheme: async (theme) => {
+    try {
+      await getCurrentWindow().setTheme(theme);
+    } catch {
+      // the bar keeps the system's look; nothing depends on it
     }
   },
   showWindow: async () => {

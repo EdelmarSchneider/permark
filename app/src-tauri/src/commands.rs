@@ -5,6 +5,7 @@
 // Tauri hands command arguments (handle, window, deserialized args) over by value.
 #![allow(clippy::needless_pass_by_value)]
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -20,17 +21,19 @@ use permark_core::format::{
     Body, ConfigEdit, FormatRegistry, Measure, OutlineItem, Segment, TextKind,
 };
 use permark_core::paths::VaultPath;
-use permark_core::plugins::{PluginId, PluginScope, RpcCall};
+use permark_core::plugins::{Enablement, Manifest, PluginId, PluginScope, RpcCall};
 use permark_core::search::{IndexStatus, PathResults, Recent, SearchOptions, SectionResults};
 use permark_core::session::{ProjectSession, RecentFolder};
-use permark_core::settings::{AppSettings, SettingChange};
+use permark_core::settings::{
+    AppSettings, ProjectConfigFile, ProjectSettingChange, ProjectSettings, SettingChange,
+};
 use permark_core::tree::{TreeFilter, TreeSnapshot};
 use permark_core::workspace::{
     ProjectCore, WindowView, Workspace, WorkspaceId, WorkspaceRef, WorkspaceSummary,
 };
 use permark_core::{AppInfo, ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, WebviewWindow};
+use tauri::{AppHandle, Emitter, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
 use ts_rs::TS;
 
@@ -60,6 +63,31 @@ pub struct CloseRequested {
     pub window: String,
     /// The document with the unsaved edits.
     pub path: String,
+}
+
+/// Event `workspace-close-requested`: a window that shows a workspace is asked to close it (it runs its unsaved-changes
+/// prompt, then goes to Welcome; no window is closed).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WorkspaceCloseRequested {
+    pub window: String,
+}
+
+/// One plugin as the Plugins page shows it, for the invoking window.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PluginInfo {
+    pub manifest: Manifest,
+    /// The app-wide switch (the setting, else the manifest default).
+    pub app_on: bool,
+    /// On | off for this window: the open project's resolution (overrides included), else the app's.
+    pub state: Enablement,
+    /// The person's own choice for this project (profile); `None` = follows the app.
+    pub project_choice: Option<bool>,
+    /// The project's `.permark/config.toml` turns it off.
+    pub project_config_off: bool,
 }
 
 /// Where an open from the UI goes.
@@ -266,7 +294,7 @@ pub fn settings_set(handle: AppHandle, change: SettingChange) -> Result<AppSetti
 
 fn project_session(handle: &AppHandle, label: &str) -> Result<ProjectSession, IpcError> {
     match state(handle).registry.workspace_of(label) {
-        Some((_, Workspace::Project(core))) => Ok(ProjectSession::new(core.store())),
+        Some((_, Workspace::Project(core))) => Ok(ProjectSession::new(&core.store())),
         _ => Err(IpcError::new(ErrorKind::Unsupported).subject("project session")),
     }
 }
@@ -959,6 +987,139 @@ macro_rules! commands {
     };
 }
 
+// ---- Shell: initialize, project settings, plugins page, workspaces -------------------------------------------------------
+
+/// Creates `.permark/` in a folder (New project, the Explorer menu, the settings). A project open on that folder reloads
+/// its state at once.
+#[tauri::command(async)]
+pub fn project_init(handle: AppHandle, path: String) -> Result<(), IpcError> {
+    state(&handle).init_project(std::path::Path::new(&path))
+}
+
+/// The shared settings of the project the window shows.
+#[tauri::command(async)]
+pub fn project_config_get(
+    handle: AppHandle,
+    window: WebviewWindow,
+) -> Result<ProjectSettings, IpcError> {
+    let core = project_of(&handle, &window)?;
+    let initialized = ProjectConfigFile::of(core.root()).initialized();
+    Ok(ProjectSettings::of(initialized, &core.config()))
+}
+
+/// One shared setting of the project: written surgically to `.permark/config.toml`, live at once.
+#[tauri::command(async)]
+pub fn project_config_set(
+    handle: AppHandle,
+    window: WebviewWindow,
+    change: ProjectSettingChange,
+) -> Result<ProjectSettings, IpcError> {
+    let core = project_of(&handle, &window)?;
+    let config = core.change_config(&change)?;
+    Ok(ProjectSettings::of(true, &config))
+}
+
+/// Every plugin of this build with its state for the window (the Plugins page).
+#[tauri::command(async)]
+pub fn plugins_list(handle: AppHandle, window: WebviewWindow) -> Vec<PluginInfo> {
+    let shell = state(&handle);
+    let settings = shell.env.settings();
+    let project = match shell.registry.workspace_of(window.label()) {
+        Some((_, Workspace::Project(core))) => Some(core),
+        _ => None,
+    };
+    let (states, choices, config_off) = match &project {
+        Some(core) => (
+            core.enablement(),
+            core.plugin_choices(),
+            core.config().plugins_off,
+        ),
+        None => (shell.env.app_enablement(), BTreeMap::new(), BTreeSet::new()),
+    };
+    shell
+        .env
+        .registry
+        .ordered()
+        .map(|manifest| PluginInfo {
+            manifest: manifest.clone(),
+            app_on: settings
+                .plugins
+                .get(&manifest.id)
+                .copied()
+                .unwrap_or(manifest.default_enabled),
+            state: states.get(&manifest.id).cloned().unwrap_or(Enablement::On),
+            project_choice: choices.get(&manifest.id).copied(),
+            project_config_off: config_off.contains(&manifest.id),
+        })
+        .collect()
+}
+
+/// The person's own choice for a plugin in the project the window shows (`None`: follow the app).
+#[tauri::command(async)]
+pub fn plugin_set_project(
+    handle: AppHandle,
+    window: WebviewWindow,
+    plugin: String,
+    enabled: Option<bool>,
+) -> Result<(), IpcError> {
+    let shell = state(&handle);
+    let id = PluginId::parse(&plugin)
+        .filter(|id| shell.env.registry.manifest(id).map(|m| m.scope) == Some(PluginScope::Project))
+        .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(plugin.clone()))?;
+    let core = project_of(&handle, &window)?;
+    core.set_plugin_choice(&shell.env, &id, enabled)?;
+    shell
+        .env
+        .sink
+        .emit(permark_core::events::CoreEvent::PluginsChanged);
+    shell.registry.refresh();
+    Ok(())
+}
+
+/// Deletes the data a plugin keeps (the app's and every project's). Refused while the plugin is on anywhere.
+#[tauri::command(async)]
+pub fn plugin_remove_data(handle: AppHandle, plugin: String) -> Result<(), IpcError> {
+    let shell = state(&handle);
+    let id = PluginId::parse(&plugin)
+        .filter(|id| shell.env.registry.manifest(id).is_some())
+        .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(plugin.clone()))?;
+    let manifest_on = shell.env.registry.manifest(&id).map(|m| m.default_enabled);
+    let app_on = shell
+        .env
+        .settings()
+        .plugins
+        .get(&id)
+        .copied()
+        .or(manifest_on)
+        .unwrap_or(true);
+    let cores = shell.registry.cores();
+    if app_on || cores.iter().any(|core| core.plugins_on().contains(&id)) {
+        return Err(IpcError::new(ErrorKind::Unavailable).subject(plugin));
+    }
+    let roots: Vec<_> = cores.iter().map(|core| core.root().clone()).collect();
+    permark_core::state::remove_plugin_data_everywhere(&shell.env.dirs, &id, &roots)?;
+    Ok(())
+}
+
+/// Asks every window that shows the workspace to close it (each runs its unsaved-changes prompt first).
+#[tauri::command(async)]
+pub fn workspace_close(handle: AppHandle, id: WorkspaceId) -> Result<(), IpcError> {
+    let windows = state(&handle).registry.windows_of(id);
+    if windows.is_empty() {
+        return Err(IpcError::new(ErrorKind::NotFound).subject(id.0.to_string()));
+    }
+    for window in windows {
+        let _ = handle.emit_to(
+            window.as_str(),
+            "workspace-close-requested",
+            WorkspaceCloseRequested {
+                window: window.clone(),
+            },
+        );
+    }
+    Ok(())
+}
+
 commands![
     app_info,
     window_boot,
@@ -1012,6 +1173,13 @@ commands![
     search_files,
     search_recent,
     plugin_call,
+    project_init,
+    project_config_get,
+    project_config_set,
+    plugins_list,
+    plugin_set_project,
+    plugin_remove_data,
+    workspace_close,
     window_close,
 ];
 

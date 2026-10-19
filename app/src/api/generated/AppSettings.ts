@@ -3,6 +3,7 @@ import type { EditModePref } from "./EditModePref";
 import type { GitBackendPref } from "./GitBackendPref";
 import type { LanguagePref } from "./LanguagePref";
 import type { LinkUpdate } from "./LinkUpdate";
+import type { OpenIn } from "./OpenIn";
 import type { PluginId } from "./PluginId";
 import type { StartIn } from "./StartIn";
 import type { ThemePref } from "./ThemePref";
@@ -12,6 +13,10 @@ import type { Tone } from "./Tone";
  * App settings as the app uses them.
  */
 export type AppSettings = { language: LanguagePref, theme: ThemePref, tone: Tone, startIn: StartIn, linkUpdate: LinkUpdate, editMode: EditModePref, 
+/**
+ * What opening something over a shown workspace does.
+ */
+openIn: OpenIn, 
 /**
  * Which git the git plugin uses (`[plugins.git] backend`).
  */

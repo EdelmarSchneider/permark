@@ -13,6 +13,7 @@ import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
 import { mockFiles, mockRecent, mockSections } from "./mockSearch";
+import { createMockShell, MOCK_MANIFESTS, type MockShell } from "./mockShell";
 import type {
   Api,
   AppSettings,
@@ -31,6 +32,7 @@ import type {
   TreeNode,
   TreeSnapshot,
   Unlisten,
+  WorkspaceSummary,
 } from "./types";
 
 export const MOCK_VERSION = "0.0.0-mock";
@@ -47,6 +49,7 @@ function defaultSettings(): AppSettings {
     startIn: "welcome",
     linkUpdate: "ask",
     editMode: "edit",
+    openIn: "ask",
     gitBackend: "automatic",
     notesFolder: "",
     referenceTemplate: "{path}#{section}",
@@ -57,38 +60,6 @@ function defaultSettings(): AppSettings {
 }
 
 /** The plugins the real build runs by default. */
-const MOCK_PLUGINS = [
-  "git",
-  "live-feed",
-  "follow",
-  "unread",
-  "review",
-  "tags",
-  "comments",
-  "quiet",
-  "broken-links",
-  "md-family",
-  "prompt-blocks",
-  "frontmatter-card",
-  "highlight",
-  "math",
-  "mermaid",
-  "plantuml",
-  "media",
-  "json-view",
-  "xml-view",
-  "fmt-toml",
-  "fmt-yaml",
-  "fmt-ini",
-  "fmt-dotenv",
-  "fmt-properties",
-  "fmt-ignore",
-  "text-view",
-  "word-count",
-  "notes",
-  "agent",
-];
-
 function neutralContext(): Context {
   return {
     workspace: "welcome",
@@ -121,6 +92,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, linkUpdate: change.value };
     case "editMode":
       return { ...settings, editMode: change.value };
+    case "openIn":
+      return { ...settings, openIn: change.value };
     case "gitBackend":
       return { ...settings, gitBackend: change.value };
     case "notesFolder":
@@ -164,6 +137,10 @@ export type MockProbe = {
   edit: MockEditProbe;
   /** The plugins' backend halves: calls they got, ways to make them report. */
   plugins: MockPluginProbe;
+  /** The shell's backend half: the project's shared settings, other workspaces, what was asked. */
+  shell: MockShell["probe"];
+  /** Themes the window's title bar was asked to take (`null`: the system's). */
+  windowThemes: ("light" | "dark" | null)[];
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -194,6 +171,8 @@ export function createMockApi(): Api & {
     "tree-changed": new Set(),
     "document-changed": new Set(),
     "close-requested": new Set(),
+    "workspace-close-requested": new Set(),
+    "plugins-changed": new Set(),
     "index-progress": new Set(),
   };
   const pluginListeners: { [E in PluginEventName]: Set<(payload: PluginEnvelope<E>) => void> } = {
@@ -217,6 +196,60 @@ export function createMockApi(): Api & {
     // the agent switch is part of the window's context, as in the app
     if (event === "agent:status") emit("context-changed", { window: "main", context: context() });
   }
+  function inProject(): boolean {
+    return view.state === "showing" && view.workspace.kind === "project";
+  }
+
+  /** The workspace this window shows, as the process lists it. */
+  function ownSummary(): WorkspaceSummary | null {
+    if (view.state !== "showing") return null;
+    const workspace = view.workspace;
+    switch (workspace.kind) {
+      case "project":
+        return {
+          id: workspace.id,
+          kind: "project",
+          title: workspace.name,
+          path: workspace.root,
+          windows: 1,
+        };
+      case "singleFile":
+        return {
+          id: workspace.id,
+          kind: "singleFile",
+          title: workspace.name,
+          path: workspace.path,
+          windows: 1,
+        };
+      case "notes":
+        return {
+          id: workspace.id,
+          kind: "notes",
+          title: "Notes",
+          path: workspace.folder ?? "",
+          windows: 1,
+        };
+      default:
+        return workspace satisfies never;
+    }
+  }
+
+  /** The list of workspaces or the plugins moved: windows hear it, as from the backend. */
+  function announceShell(): void {
+    void shell.api.listWorkspaces().then((listed) => {
+      if (listed.ok) emit("workspaces-changed", { workspaces: listed.value });
+    });
+    emit("plugins-changed", null);
+    emit("context-changed", { window: "main", context: context() });
+  }
+
+  const shell = createMockShell({
+    settings: () => settings,
+    workspace: ownSummary,
+    changed: announceShell,
+  });
+  const windowThemes: ("light" | "dark" | null)[] = [];
+
   const project = new MockProject();
   const organizing = createMockOrganizing(emitPlugin, project);
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
@@ -235,6 +268,8 @@ export function createMockApi(): Api & {
     project,
     edit: editing.probe,
     plugins: plugins.probe,
+    shell: shell.probe,
+    windowThemes,
   };
   let tree: TreeView | null = null;
 
@@ -273,6 +308,7 @@ export function createMockApi(): Api & {
         totalFiles: counts.total,
         shownFiles: counts.shown,
         bulk: false,
+        filter: null,
       },
     });
   }
@@ -293,7 +329,7 @@ export function createMockApi(): Api & {
   }
 
   function context(): Context {
-    const base = { ...neutralContext(), plugins: MOCK_PLUGINS };
+    const base = shell.context({ ...neutralContext(), plugins: shell.pluginsOn(inProject()) });
     if (view.state !== "showing") return base;
     const kinds = { project: "project", singleFile: "singleFile", notes: "notes" } as const;
     const agent = plugins.probe.agent.status();
@@ -318,6 +354,7 @@ export function createMockApi(): Api & {
         }
       : { kind: "project", id, name: nameOf(path), root: path, stateLocation: "profile" };
     view = { state: "showing", workspace, document: null };
+    if (workspace.kind === "project") shell.reset();
     if (workspace.kind === "project") {
       recent = [
         { path, name: workspace.name, openedMs: Date.now(), missing: false },
@@ -373,8 +410,17 @@ export function createMockApi(): Api & {
       emit("context-changed", { window: "main", context: context() });
       return ok(null);
     },
-    listWorkspaces: () => ok([]),
-    focusWorkspace: () => ok(null),
+    ...shell.api,
+    pluginsList: () => shell.api.pluginsList(inProject()),
+    projectInit: () => {
+      shell.initProject();
+      if (view.state === "showing" && view.workspace.kind === "project") {
+        view = { ...view, workspace: { ...view.workspace, stateLocation: "project" } };
+        emit("window-changed", { window: "main", view });
+        emit("context-changed", { window: "main", context: context() });
+      }
+      return ok(null);
+    },
     recentList: () => ok(recent),
     recentRemove: (path) => {
       recent = recent.filter((r) => r.path !== path);
@@ -384,6 +430,7 @@ export function createMockApi(): Api & {
     settingsSet: (change) => {
       settings = applyChange(settings, change);
       emit("settings-changed", { scope: { scope: "app" }, keys: [change.key], settings });
+      if (change.key === "pluginEnabled") announceShell();
       return ok(settings);
     },
     projectSessionGet: (key) => ok(session.get(key) ?? null),
@@ -559,6 +606,10 @@ export function createMockApi(): Api & {
     },
     pickFolder: () => Promise.resolve(MOCK_FOLDER),
     pickFile: () => Promise.resolve(MOCK_FILE),
+    setWindowTheme: (theme) => {
+      windowThemes.push(theme);
+      return Promise.resolve();
+    },
     setTitle: (title) => {
       if (typeof document !== "undefined") document.title = title;
       return Promise.resolve();

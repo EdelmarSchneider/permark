@@ -205,6 +205,8 @@ export class ExplorerStore {
       return;
     }
     this.#seq = delta.seq;
+    // the project's default moved and this window follows it
+    if (delta.filter !== null) this.filter = delta.filter;
     // state that follows renames moves before the list changes
     this.expanded = remapSet(this.expanded, delta.renamed);
     this.selection = remapSet(this.selection, delta.renamed);

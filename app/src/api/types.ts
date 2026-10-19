@@ -6,6 +6,11 @@ import type { BootInfo } from "./generated/BootInfo";
 import type { CommandName } from "./generated/CommandName";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
+import type { OpenIn } from "./generated/OpenIn";
+import type { PluginInfo } from "./generated/PluginInfo";
+import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
+import type { ProjectSettings } from "./generated/ProjectSettings";
+import type { WorkspaceCloseRequested } from "./generated/WorkspaceCloseRequested";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
 import type { Body } from "./generated/Body";
 import type { ConfigEdit } from "./generated/ConfigEdit";
@@ -112,6 +117,11 @@ import type { Version } from "./generated/Version";
 export type {
   AppInfo,
   CloseRequested,
+  OpenIn,
+  PluginInfo,
+  ProjectSettingChange,
+  ProjectSettings,
+  WorkspaceCloseRequested,
   ConfigEdit,
   ConfigEdited,
   EditSource,
@@ -267,6 +277,13 @@ export interface Commands {
     result: Recent;
   };
   plugin_call: { args: { plugin: string; method: string; args: JsonValue }; result: JsonValue };
+  project_init: { args: { path: string }; result: null };
+  project_config_get: { args: Record<string, never>; result: ProjectSettings };
+  project_config_set: { args: { change: ProjectSettingChange }; result: ProjectSettings };
+  plugins_list: { args: Record<string, never>; result: PluginInfo[] };
+  plugin_set_project: { args: { plugin: string; enabled: boolean | null }; result: null };
+  plugin_remove_data: { args: { plugin: string }; result: null };
+  workspace_close: { args: { id: WorkspaceId }; result: null };
   window_close: { args: Record<string, never>; result: null };
 }
 
@@ -473,6 +490,8 @@ export interface Events {
   "tree-changed": TreeChanged;
   "document-changed": DocumentChanged;
   "close-requested": CloseRequested;
+  "workspace-close-requested": WorkspaceCloseRequested;
+  "plugins-changed": null;
   "index-progress": IndexProgress;
 }
 export type EventName = keyof Events;
@@ -591,6 +610,19 @@ export interface Api {
     event: E,
     handler: (payload: PluginEnvelope<E>) => void,
   ): Promise<Unlisten>;
+  /** Creates `.permark/` in a folder; a project open on it reloads its state at once. */
+  projectInit(path: string): Promise<Result<null>>;
+  /** The shared settings (`.permark/config.toml`) of this window's project. */
+  projectConfigGet(): Promise<Result<ProjectSettings>>;
+  projectConfigSet(change: ProjectSettingChange): Promise<Result<ProjectSettings>>;
+  /** Every plugin with its state for this window. */
+  pluginsList(): Promise<Result<PluginInfo[]>>;
+  /** The person's own choice for a plugin in this project (`null`: follow the app). */
+  pluginSetProject(plugin: string, enabled: boolean | null): Promise<Result<null>>;
+  /** Deletes what a plugin keeps; refused while it is on. */
+  pluginRemoveData(plugin: string): Promise<Result<null>>;
+  /** Asks every window that shows the workspace to close it. */
+  workspaceClose(id: WorkspaceId): Promise<Result<null>>;
   /** Closes this window for real (after the unsaved prompt). */
   windowClose(): Promise<Result<null>>;
   /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */
@@ -604,6 +636,8 @@ export interface Api {
   /** `anyFile`: no filter on the kind of file (the Notes open any text file). */
   pickFile(title: string, filterName: string, anyFile?: boolean): Promise<string | null>;
   setTitle(title: string): Promise<void>;
+  /** The native title bar follows the theme (`null`: the system's). */
+  setWindowTheme(theme: "light" | "dark" | null): Promise<void>;
   /** Shows the window (created hidden: first paint already themed). */
   showWindow(): Promise<Result<void>>;
 }

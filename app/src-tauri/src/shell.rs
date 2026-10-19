@@ -9,13 +9,15 @@ use permark_core::conditions::Distribution;
 use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, StateRecovered};
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
+use permark_core::paths::Root;
 use permark_core::plugins::PluginId;
 use permark_core::session::{app_session_file, AppSession, Geometry, RecentStore, SavedWindow};
 use permark_core::settings::{
-    AppSettings, SettingChange, SettingsError, SettingsFile, SettingsScope,
+    installer_language, AppSettings, SettingChange, SettingsError, SettingsFile, SettingsScope,
 };
 use permark_core::state::{AppDirs, Loaded, StateStore};
 use permark_core::workspace::{CoreEnv, WorkspaceRegistry};
+use permark_core::IpcError;
 use tauri::{AppHandle, Manager};
 
 use crate::saver::SessionSaver;
@@ -67,6 +69,8 @@ impl Shell {
     #[must_use]
     pub fn new(handle: AppHandle, dirs: &AppDirs) -> Self {
         let settings_file = SettingsFile::app(dirs);
+        // first start: the language the installer recorded (a failed write leaves the system language)
+        let _ = settings_file.adopt_language(installer_language());
         let settings = settings_file.load();
         let sink: Arc<dyn EventSink> = Arc::new(TauriSink::new(handle.clone()));
         let env = Arc::new(CoreEnv::new(
@@ -229,6 +233,22 @@ impl Shell {
                 settings: settings.clone(),
             }));
         Ok(settings)
+    }
+
+    /// Creates `.permark/` in `path`; a project open on that folder reloads its state and its windows are told.
+    ///
+    /// # Errors
+    /// The folder does not exist | is not a folder; a link or a file is in the way; IO failure.
+    pub fn init_project(&self, path: &std::path::Path) -> Result<(), IpcError> {
+        let root = Root::open(path)?;
+        permark_core::state::init_project(&self.env.dirs, &root)?;
+        for core in self.registry.cores() {
+            if core.root().key() == root.key() {
+                core.reload_state(&self.env);
+            }
+        }
+        self.registry.refresh();
+        Ok(())
     }
 
     /// App exit: stop serving, stop plugins (reverse order), final session save already done on last close.
