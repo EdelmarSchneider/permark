@@ -13,6 +13,7 @@ authors = ["Edelmar Schneider"]
 [workspace.dependencies]
 permark-core = { path = "crates/core" }
 permark-plugin-frontmatter-card = { path = "crates/plugins/frontmatter-card" }
+permark-plugin-git = { path = "crates/plugins/git" }
 permark-plugin-highlight = { path = "crates/plugins/highlight" }
 permark-plugin-json-view = { path = "crates/plugins/json-view" }
 permark-plugin-math = { path = "crates/plugins/math" }
@@ -48,6 +49,7 @@ notify = "8.2.0"
 trash = "5.2.9"
 comrak = { version = "0.56", default-features = false }
 ammonia = "4.2"
+git2 = { version = "0.21.0", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
