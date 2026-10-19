@@ -17,7 +17,7 @@ use permark_core::plugins::{
 use permark_core::watch::Subscription;
 use serde_json::json;
 
-pub use feed::{EntryKind, Feed, GroupReason, Item, COALESCE_MS, MAX_ITEMS};
+pub use feed::{Feed, FeedEntryKind, FeedGroupReason, FeedItem, COALESCE_MS, MAX_ITEMS};
 
 const ID: PluginId = PluginId::of("live-feed");
 

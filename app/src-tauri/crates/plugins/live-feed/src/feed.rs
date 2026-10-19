@@ -22,7 +22,7 @@ const SAMPLE: usize = 5;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(export)]
-pub enum EntryKind {
+pub enum FeedEntryKind {
     Created,
     Modified,
     Removed,
@@ -33,7 +33,7 @@ pub enum EntryKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
-pub enum GroupReason {
+pub enum FeedGroupReason {
     /// A git operation moved the files (checkout, merge, pull, ...).
     Git,
     /// A great many files changed at once.
@@ -47,14 +47,14 @@ pub enum GroupReason {
     rename_all_fields = "camelCase"
 )]
 #[ts(export)]
-pub enum Item {
+pub enum FeedItem {
     /// One file (or folder, when moved | removed).
     Entry {
         #[ts(type = "number")]
         id: u64,
         path: String,
         #[serde(flatten)]
-        kind: EntryKind,
+        kind: FeedEntryKind,
         #[ts(type = "number")]
         at_ms: u64,
         /// Saves in a row (1 = one).
@@ -67,7 +67,7 @@ pub enum Item {
     Group {
         #[ts(type = "number")]
         id: u64,
-        reason: GroupReason,
+        reason: FeedGroupReason,
         count: u32,
         #[ts(type = "number")]
         at_ms: u64,
@@ -84,7 +84,7 @@ pub enum Item {
     },
 }
 
-impl Item {
+impl FeedItem {
     #[must_use]
     pub fn id(&self) -> u64 {
         match self {
@@ -96,7 +96,7 @@ impl Item {
 #[derive(Debug, Default)]
 pub struct Feed {
     /// Newest first.
-    items: VecDeque<Item>,
+    items: VecDeque<FeedItem>,
     next_id: u64,
 }
 
@@ -108,7 +108,7 @@ impl Feed {
 
     /// Newest first.
     #[must_use]
-    pub fn items(&self) -> Vec<Item> {
+    pub fn items(&self) -> Vec<FeedItem> {
         self.items.iter().cloned().collect()
     }
 
@@ -121,18 +121,18 @@ impl Feed {
         self.next_id
     }
 
-    fn push(&mut self, item: Item) -> Item {
+    fn push(&mut self, item: FeedItem) -> FeedItem {
         self.items.push_front(item.clone());
         self.items.truncate(MAX_ITEMS);
         item
     }
 
     /// Takes one batch at time `now_ms`; returns the items it created or changed (for the UI to upsert).
-    pub fn apply(&mut self, batch: &FsBatch, now_ms: u64) -> Vec<Item> {
+    pub fn apply(&mut self, batch: &FsBatch, now_ms: u64) -> Vec<FeedItem> {
         let mut changed = Vec::new();
         if batch.rescan {
             let id = self.take_id();
-            changed.push(self.push(Item::Resync { id, at_ms: now_ms }));
+            changed.push(self.push(FeedItem::Resync { id, at_ms: now_ms }));
         }
         if batch.bulk {
             if let Some(group) = self.group(batch, now_ms) {
@@ -145,13 +145,13 @@ impl Feed {
                 continue;
             }
             let kind = match &change.kind {
-                ChangeKind::Created => EntryKind::Created,
-                ChangeKind::Modified => EntryKind::Modified,
-                ChangeKind::Removed => EntryKind::Removed,
-                ChangeKind::Renamed { from } => EntryKind::Renamed { from: from.clone() },
+                ChangeKind::Created => FeedEntryKind::Created,
+                ChangeKind::Modified => FeedEntryKind::Modified,
+                ChangeKind::Removed => FeedEntryKind::Removed,
+                ChangeKind::Renamed { from } => FeedEntryKind::Renamed { from: from.clone() },
             };
             // the person's saves are not news; their moves and deletes are operations
-            let operation = matches!(kind, EntryKind::Renamed { .. } | EntryKind::Removed);
+            let operation = matches!(kind, FeedEntryKind::Renamed { .. } | FeedEntryKind::Removed);
             if change.own && !operation {
                 continue;
             }
@@ -166,7 +166,7 @@ impl Feed {
         changed
     }
 
-    fn group(&mut self, batch: &FsBatch, now_ms: u64) -> Option<Item> {
+    fn group(&mut self, batch: &FsBatch, now_ms: u64) -> Option<FeedItem> {
         let files: Vec<&str> = batch
             .changes
             .iter()
@@ -184,12 +184,12 @@ impl Feed {
                 .filter(|c| !is_git_signal(&c.path))
                 .all(|c| c.own);
         let id = self.take_id();
-        let item = Item::Group {
+        let item = FeedItem::Group {
             id,
             reason: if git {
-                GroupReason::Git
+                FeedGroupReason::Git
             } else {
-                GroupReason::Large
+                FeedGroupReason::Large
             },
             count: u32::try_from(files.len()).unwrap_or(u32::MAX),
             at_ms: now_ms,
@@ -203,13 +203,13 @@ impl Feed {
     fn entry(
         &mut self,
         path: &str,
-        kind: EntryKind,
+        kind: FeedEntryKind,
         own: bool,
         is_dir: bool,
         now_ms: u64,
-    ) -> Option<Item> {
-        let same_kind = |existing: &EntryKind| match (existing, &kind) {
-            (EntryKind::Modified | EntryKind::Created, EntryKind::Modified) => true,
+    ) -> Option<FeedItem> {
+        let same_kind = |existing: &FeedEntryKind| match (existing, &kind) {
+            (FeedEntryKind::Modified | FeedEntryKind::Created, FeedEntryKind::Modified) => true,
             (a, b) => a == b,
         };
         let found = self
@@ -217,7 +217,7 @@ impl Feed {
             .iter_mut()
             .take(LOOKBACK)
             .find_map(|item| match item {
-                Item::Entry {
+                FeedItem::Entry {
                     path: p,
                     kind: k,
                     at_ms,
@@ -232,18 +232,18 @@ impl Feed {
                 }
                 _ => None,
             });
-        if let Some(Item::Entry { saves, at_ms, .. }) = found {
+        if let Some(FeedItem::Entry { saves, at_ms, .. }) = found {
             *saves = saves.saturating_add(1);
             *at_ms = now_ms;
             let updated = self
                 .items
                 .iter()
-                .find(|i| matches!(i, Item::Entry { path: p, at_ms: t, .. } if p == path && *t == now_ms))
+                .find(|i| matches!(i, FeedItem::Entry { path: p, at_ms: t, .. } if p == path && *t == now_ms))
                 .cloned();
             return updated;
         }
         let id = self.take_id();
-        Some(self.push(Item::Entry {
+        Some(self.push(FeedItem::Entry {
             id,
             path: path.to_owned(),
             kind,
@@ -282,7 +282,7 @@ mod tests {
         feed.items()
             .into_iter()
             .filter_map(|i| match i {
-                Item::Entry { path, saves, .. } => Some((path, saves)),
+                FeedItem::Entry { path, saves, .. } => Some((path, saves)),
                 _ => None,
             })
             .collect()
@@ -313,8 +313,8 @@ mod tests {
         let items = feed.items();
         assert!(matches!(
             &items[0],
-            Item::Entry {
-                kind: EntryKind::Created,
+            FeedItem::Entry {
+                kind: FeedEntryKind::Created,
                 saves: 2,
                 ..
             }
@@ -323,8 +323,8 @@ mod tests {
         assert_eq!(feed.items().len(), 2);
         assert!(matches!(
             &feed.items()[0],
-            Item::Entry {
-                kind: EntryKind::Removed,
+            FeedItem::Entry {
+                kind: FeedEntryKind::Removed,
                 ..
             }
         ));
@@ -356,7 +356,7 @@ mod tests {
             .items()
             .into_iter()
             .map(|i| match i {
-                Item::Entry { path, own, .. } => (path, own),
+                FeedItem::Entry { path, own, .. } => (path, own),
                 _ => unreachable!(),
             })
             .collect();
@@ -392,9 +392,9 @@ mod tests {
         assert_eq!(out.len(), 1);
         assert!(matches!(
             &out[0],
-            Item::Entry {
+            FeedItem::Entry {
                 is_dir: true,
-                kind: EntryKind::Removed,
+                kind: FeedEntryKind::Removed,
                 ..
             }
         ));
@@ -413,7 +413,7 @@ mod tests {
         };
         let out = feed.apply(&large, 5);
         assert_eq!(out.len(), 1);
-        let Item::Group {
+        let FeedItem::Group {
             reason,
             count,
             sample,
@@ -425,7 +425,7 @@ mod tests {
         };
         assert_eq!(
             (*reason, *count, sample.len(), *own),
-            (GroupReason::Large, 300, 5, false)
+            (FeedGroupReason::Large, 300, 5, false)
         );
 
         let mut checkout = vec![
@@ -441,8 +441,8 @@ mod tests {
         let out = feed.apply(&git, 6);
         assert!(matches!(
             &out[0],
-            Item::Group {
-                reason: GroupReason::Git,
+            FeedItem::Group {
+                reason: FeedGroupReason::Git,
                 count: 3,
                 ..
             }
@@ -455,8 +455,8 @@ mod tests {
         };
         assert!(matches!(
             &feed.apply(&signals, 7)[0],
-            Item::Group {
-                reason: GroupReason::Git,
+            FeedItem::Group {
+                reason: FeedGroupReason::Git,
                 count: 0,
                 ..
             }
@@ -494,7 +494,7 @@ mod tests {
         );
         assert!(matches!(
             &out[0],
-            Item::Group {
+            FeedItem::Group {
                 own: true,
                 count: 250,
                 ..
@@ -513,7 +513,7 @@ mod tests {
             },
             1,
         );
-        assert!(matches!(&out[0], Item::Resync { .. }));
+        assert!(matches!(&out[0], FeedItem::Resync { .. }));
         for n in 0..(MAX_ITEMS + 50) {
             feed.apply(
                 &batch(vec![change(&format!("f{n}.md"), ChangeKind::Created)]),
@@ -522,7 +522,7 @@ mod tests {
         }
         assert_eq!(feed.items().len(), MAX_ITEMS);
         // ids keep going up, newest first
-        let ids: Vec<u64> = feed.items().iter().map(Item::id).collect();
+        let ids: Vec<u64> = feed.items().iter().map(FeedItem::id).collect();
         assert!(ids.windows(2).all(|w| w[0] > w[1]));
         feed.clear();
         assert_eq!(feed.items(), Vec::new());

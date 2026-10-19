@@ -86,7 +86,13 @@ name = "permark_lib"
 
 [features]
 # Plugin crates join here as features; default = full build.
-default = ["plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count"]
+default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count"]
+plugin-git = ["dep:permark-plugin-git"]
+plugin-live-feed = ["dep:permark-plugin-live-feed"]
+# follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
+plugin-follow = ["dep:permark-plugin-follow", "plugin-live-feed"]
+plugin-unread = ["dep:permark-plugin-unread"]
+plugin-review = ["dep:permark-plugin-review", "plugin-unread"]
 plugin-md-family = ["dep:permark-plugin-md-family"]
 plugin-word-count = ["dep:permark-plugin-word-count"]
 plugin-prompt-blocks = ["dep:permark-plugin-prompt-blocks"]
@@ -107,6 +113,11 @@ tauri-build = { version = "2.5", features = [] }
 
 [dependencies]
 permark-core.workspace = true
+permark-plugin-git = { workspace = true, optional = true }
+permark-plugin-live-feed = { workspace = true, optional = true }
+permark-plugin-follow = { workspace = true, optional = true }
+permark-plugin-unread = { workspace = true, optional = true }
+permark-plugin-review = { workspace = true, optional = true }
 permark-plugin-md-family = { workspace = true, optional = true }
 permark-plugin-word-count = { workspace = true, optional = true }
 permark-plugin-prompt-blocks = { workspace = true, optional = true }

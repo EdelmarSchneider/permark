@@ -10,6 +10,16 @@ use permark_core::plugins::{Plugin, PluginRegistry};
 pub fn all() -> Vec<Arc<dyn Plugin>> {
     #[allow(unused_mut)]
     let mut plugins: Vec<Arc<dyn Plugin>> = Vec::new();
+    #[cfg(feature = "plugin-git")]
+    plugins.push(permark_plugin_git::plugin());
+    #[cfg(feature = "plugin-live-feed")]
+    plugins.push(permark_plugin_live_feed::plugin());
+    #[cfg(feature = "plugin-follow")]
+    plugins.push(permark_plugin_follow::plugin());
+    #[cfg(feature = "plugin-unread")]
+    plugins.push(permark_plugin_unread::plugin());
+    #[cfg(feature = "plugin-review")]
+    plugins.push(permark_plugin_review::plugin());
     #[cfg(feature = "plugin-md-family")]
     plugins.push(permark_plugin_md_family::plugin());
     #[cfg(feature = "plugin-word-count")]
@@ -71,6 +81,11 @@ mod tests {
         let registry = registry_of_all();
         let ids: Vec<_> = registry.ordered().map(|m| m.id.to_string()).collect();
         for expected in [
+            "git",
+            "live-feed",
+            "follow",
+            "unread",
+            "review",
             "md-family",
             "prompt-blocks",
             "frontmatter-card",

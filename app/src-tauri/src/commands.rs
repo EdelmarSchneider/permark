@@ -17,6 +17,7 @@ use permark_core::fileops::{
 };
 use permark_core::format::{FormatRegistry, Measure, OutlineItem, Segment, TextKind};
 use permark_core::paths::VaultPath;
+use permark_core::plugins::RpcCall;
 use permark_core::search::{
     IndexStatus, PathResults, Recent, SearchFilter, SearchOptions, SectionResults,
 };
@@ -762,6 +763,29 @@ pub fn search_recent(
         .recent(&opened, as_limit(limit), &SearchFilter::default()))
 }
 
+// ---- Plugins -----------------------------------------------------------------------------------------------------------
+
+/// Calls a method a running plugin of the window's project serves (data in, data out). A plugin that is off, or a
+/// method nobody serves, is `Unavailable`.
+#[tauri::command(async)]
+pub fn plugin_call(
+    handle: AppHandle,
+    window: WebviewWindow,
+    plugin: String,
+    method: String,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, IpcError> {
+    let core = project_of(&handle, &window)?;
+    core.rpc().call(
+        &plugin,
+        &method,
+        &RpcCall {
+            window: window.label().to_owned(),
+            args,
+        },
+    )
+}
+
 /// Closes this window for real (after the unsaved prompt): the guard is let go first.
 #[tauri::command(async)]
 pub fn window_close(handle: AppHandle, window: WebviewWindow) -> Result<(), IpcError> {
@@ -831,6 +855,7 @@ commands![
     search_sections,
     search_files,
     search_recent,
+    plugin_call,
     window_close,
 ];
 

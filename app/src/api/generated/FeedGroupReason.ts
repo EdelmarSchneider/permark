@@ -3,4 +3,4 @@
 /**
  * Why a batch is one group.
  */
-export type GroupReason = "git" | "large";
+export type FeedGroupReason = "git" | "large";

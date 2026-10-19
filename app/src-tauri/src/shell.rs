@@ -9,6 +9,7 @@ use permark_core::conditions::Distribution;
 use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, StateRecovered};
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
+use permark_core::plugins::PluginId;
 use permark_core::session::{app_session_file, AppSession, Geometry, RecentStore, SavedWindow};
 use permark_core::settings::{
     AppSettings, SettingChange, SettingsError, SettingsFile, SettingsScope,
@@ -204,6 +205,13 @@ impl Shell {
             self.settings_file.apply(change)?
         };
         self.env.set_settings(settings.clone());
+        if matches!(change, SettingChange::GitBackend(_)) {
+            // the git plugin of every open project starts again with the other backend
+            for core in self.registry.cores() {
+                core.restart_plugin(&self.env, &PluginId::of("git"));
+            }
+            self.registry.refresh();
+        }
         if matches!(change, SettingChange::PluginEnabled { .. }) {
             self.env.apply_app_plugins();
             for core in self.registry.cores() {
