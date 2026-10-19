@@ -494,6 +494,7 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
         ignorers: &shared.ignorers,
     };
     let mut done = reconcile(&env, pending);
+    shared.own.pair_moves(&mut done.changes);
     shared.own.mark(&mut done.changes, |path| {
         shared.sigs.get(&key_of(path)).map(|s| s.hash)
     });

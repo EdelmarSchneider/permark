@@ -26,6 +26,7 @@ pub use fuzzy::{fold_aligned, Match, Needle};
 pub use prepare::{prepare, read_and_prepare, Prepared, Sig, MARKDOWN_LIMIT, TEXT_LIMIT};
 
 use crate::events::EventSink;
+use crate::organizing::SilenceLookup;
 use crate::paths::Vault;
 use crate::tree::{Category, Explorer};
 use crate::watch::FsBatch;
@@ -150,20 +151,35 @@ pub struct SearchOptions {
     pub tags: Vec<String>,
 }
 
-/// Which documents may answer: the typed seam for the tags (`only`) and silence (`skip`) plugins.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Which documents may answer: the typed seam for the tags (`only`) and silence (`skip`, `muted`) plugins.
+#[derive(Clone, Default)]
 pub struct SearchFilter {
     pub only: Option<HashSet<String>>,
     pub skip: HashSet<String>,
+    /// The silence plugin's answer: silenced paths do not answer either (asked per path, so a folder mark covers
+    /// the files that appear later).
+    pub muted: Option<Arc<dyn SilenceLookup>>,
+}
+
+impl std::fmt::Debug for SearchFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearchFilter")
+            .field("only", &self.only)
+            .field("skip", &self.skip)
+            .field("muted", &self.muted.is_some())
+            .finish()
+    }
 }
 
 impl SearchFilter {
     fn allows(&self, path: &str) -> bool {
-        self.only.as_ref().is_none_or(|only| only.contains(path)) && !self.skip.contains(path)
+        self.only.as_ref().is_none_or(|only| only.contains(path))
+            && !self.skip.contains(path)
+            && !self.muted.as_ref().is_some_and(|m| m.is_silenced(path))
     }
 
     fn is_open(&self) -> bool {
-        self.only.is_none() && self.skip.is_empty()
+        self.only.is_none() && self.skip.is_empty() && self.muted.is_none()
     }
 }
 

@@ -22,6 +22,9 @@ pub struct OwnWrites {
     writes: Mutex<HashMap<String, Vec<(u64, Instant)>>>,
     /// Path keys moved from, moved to or deleted by the app.
     moves: Mutex<HashMap<String, Instant>>,
+    /// Moves the app announced: key of the new path -> the old path. Tells one move from a removal and a creation that
+    /// happen to be reported together (the watch has not seen the old file's content, so it cannot pair them itself).
+    pairs: Mutex<HashMap<String, (String, Instant)>>,
 }
 
 fn fresh(at: Instant, now: Instant) -> bool {
@@ -68,9 +71,51 @@ impl OwnWrites {
         let now = Instant::now();
         let mut map = self.moves.lock().unwrap_or_else(PoisonError::into_inner);
         map.retain(|_, at| fresh(*at, now));
+        let mut known = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        known.retain(|_, (_, at)| fresh(*at, now));
         for (from, to) in pairs {
             map.insert(key_of(from), now);
             map.insert(key_of(to), now);
+            known.insert(key_of(to), (from.clone(), now));
+        }
+    }
+
+    /// A removal and a creation reported together that are a move the app announced become one `Renamed` change
+    /// (files and folders). The announcement stays for [`OwnWrites::mark`], which marks the change as the app's own.
+    pub fn pair_moves(&self, changes: &mut Vec<Change>) {
+        let now = Instant::now();
+        let mut known = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        known.retain(|_, (_, at)| fresh(*at, now));
+        if known.is_empty() {
+            return;
+        }
+        let mut dropped: Vec<usize> = Vec::new();
+        for at in 0..changes.len() {
+            if !matches!(changes[at].kind, ChangeKind::Created) {
+                continue;
+            }
+            let key = key_of(&changes[at].path);
+            let Some((from, _)) = known.get(&key) else {
+                continue;
+            };
+            let from_key = key_of(from);
+            let partner = changes.iter().enumerate().find(|(i, c)| {
+                matches!(c.kind, ChangeKind::Removed)
+                    && c.is_dir == changes[at].is_dir
+                    && !dropped.contains(i)
+                    && key_of(&c.path) == from_key
+            });
+            let Some((removed_at, _)) = partner else {
+                continue;
+            };
+            let from = from.clone();
+            changes[at].kind = ChangeKind::Renamed { from };
+            dropped.push(removed_at);
+            known.remove(&key);
+        }
+        dropped.sort_unstable();
+        for at in dropped.into_iter().rev() {
+            changes.remove(at);
         }
     }
 
@@ -92,8 +137,12 @@ impl OwnWrites {
     /// Takes back the announcements of moves | deletes that did not happen.
     pub fn retract_moves(&self, paths: &[String]) {
         let mut map = self.moves.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut known = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
         for path in paths {
-            map.remove(&key_of(path));
+            let key = key_of(path);
+            map.remove(&key);
+            known.remove(&key);
+            known.retain(|_, (from, _)| key_of(from) != key);
         }
     }
 
@@ -259,5 +308,85 @@ mod tests {
         let mut changes = [change("a.md", ChangeKind::Modified)];
         own.mark(&mut changes, |_| Some(7));
         assert!(!changes[0].own);
+    }
+
+    #[test]
+    fn an_announced_move_reported_as_removal_and_creation_is_one_rename() {
+        let own = OwnWrites::new();
+        own.expect_moves(&[("x.md".to_owned(), "docs/y.md".to_owned())]);
+        let mut changes = vec![
+            change("other.md", ChangeKind::Modified),
+            change("x.md", ChangeKind::Removed),
+            change("docs/y.md", ChangeKind::Created),
+            change("z.md", ChangeKind::Removed),
+        ];
+        own.pair_moves(&mut changes);
+        assert_eq!(changes.len(), 3);
+        assert_eq!(
+            changes[1].kind,
+            ChangeKind::Renamed {
+                from: "x.md".to_owned()
+            }
+        );
+        assert_eq!(changes[1].path, "docs/y.md");
+        own.mark(&mut changes, |_| None);
+        assert!(changes[1].own, "still the app's own doing");
+        assert!(!changes[2].own, "an unrelated removal stays what it was");
+    }
+
+    #[test]
+    fn pairing_needs_the_announcement_both_ends_and_the_same_kind() {
+        let own = OwnWrites::new();
+        // nothing announced: the watch's own pairing (content) is the only one
+        let mut plain = vec![
+            change("x.md", ChangeKind::Removed),
+            change("y.md", ChangeKind::Created),
+        ];
+        own.pair_moves(&mut plain);
+        assert_eq!(plain.len(), 2);
+        // announced, but the removal is not in this report: the creation stays a creation
+        own.expect_moves(&[("x.md".to_owned(), "y.md".to_owned())]);
+        let mut half = vec![change("y.md", ChangeKind::Created)];
+        own.pair_moves(&mut half);
+        assert_eq!(half[0].kind, ChangeKind::Created);
+        // a folder removed next to a file created at the new place is no move of that folder
+        let mut mixed = vec![change("y.md", ChangeKind::Created)];
+        mixed.push(Change {
+            path: "x.md".to_owned(),
+            kind: ChangeKind::Removed,
+            is_dir: true,
+            own: false,
+        });
+        own.pair_moves(&mut mixed);
+        assert_eq!(mixed.len(), 2);
+        // retracted: gone
+        own.retract_moves(&["x.md".to_owned()]);
+        let mut gone = vec![
+            change("x.md", ChangeKind::Removed),
+            change("y.md", ChangeKind::Created),
+        ];
+        own.pair_moves(&mut gone);
+        assert_eq!(gone.len(), 2);
+    }
+
+    #[test]
+    fn two_moves_in_one_report_pair_each_with_its_own_partner() {
+        let own = OwnWrites::new();
+        own.expect_moves(&[
+            ("a.md".to_owned(), "b.md".to_owned()),
+            ("b2.md".to_owned(), "a2.md".to_owned()),
+        ]);
+        let mut changes = vec![
+            change("a.md", ChangeKind::Removed),
+            change("b2.md", ChangeKind::Removed),
+            change("b.md", ChangeKind::Created),
+            change("a2.md", ChangeKind::Created),
+        ];
+        own.pair_moves(&mut changes);
+        assert_eq!(changes.len(), 2);
+        assert!(changes.iter().all(|c| matches!(
+            &c.kind,
+            ChangeKind::Renamed { from } if (c.path == "b.md" && from == "a.md") || (c.path == "a2.md" && from == "b2.md")
+        )));
     }
 }

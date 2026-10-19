@@ -22,6 +22,13 @@ use crate::error::{ErrorKind, IpcError};
 /// File systems of Windows (NTFS) + macOS (APFS, HFS+) ignore case by default: identity compares folded.
 pub const CASE_INSENSITIVE: bool = cfg!(any(windows, target_os = "macos"));
 
+/// Identity key of a project path as written (NFC + case folded where the OS ignores case); text that is no valid
+/// project path is only folded.
+#[must_use]
+pub fn key_of(path: &str) -> String {
+    VaultPath::parse(path).map_or_else(|_| fold(path), |p| p.key())
+}
+
 /// Case-folded form for identity keys (see [`CASE_INSENSITIVE`]).
 #[must_use]
 pub fn fold(text: &str) -> String {

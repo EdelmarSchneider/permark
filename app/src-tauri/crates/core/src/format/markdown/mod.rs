@@ -20,7 +20,7 @@ use std::collections::HashSet;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{format_html, parse_document, Anchorizer, Arena, Options};
 
-pub use sections::{sections, Section};
+pub use sections::{sections, units, Section, TextUnit};
 pub use segments::{segments, LockReason, Segment, SegmentKind};
 
 use super::{Block, Body, Claim, Format, FormatId, FrontMatter, OutlineItem, RenderCx, Rendered};

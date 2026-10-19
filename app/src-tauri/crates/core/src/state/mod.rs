@@ -2,6 +2,7 @@
 //! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns. Plugins get own namespaces.
 
 mod private;
+mod raw;
 
 use std::io;
 use std::marker::PhantomData;
@@ -17,9 +18,13 @@ use crate::fsx::write_atomic;
 use crate::paths::Root;
 use crate::plugins::PluginId;
 
+pub use raw::RawFile;
+
 pub const PERMARK_DIR: &str = ".permark";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them).
 pub const PROFILE_ONLY: [&str; 2] = ["agent.json", "plugins.json"];
+/// Per-project files that live in the shared `.permark/` itself (never in `local/`).
+pub const SHARED_FILES: [&str; 1] = ["meta.toml"];
 
 const PROJECT_GITIGNORE: &str = "# PerMark private state: not shared.\nlocal/\ncache/\n";
 
@@ -260,6 +265,8 @@ pub struct StateStore {
     cache: PathBuf,
     /// `<profile>/projects/<id>/`: profile-only files of a project (agent switch, plugin choices).
     profile_dir: PathBuf,
+    /// `.permark/` when the project has it (shared files), else the state folder.
+    shared: PathBuf,
     guard: Option<Guard>,
     cache_guard: Option<Guard>,
 }
@@ -273,6 +280,7 @@ impl StateStore {
             dir: dirs.profile.clone(),
             cache: dirs.cache.clone(),
             profile_dir: dirs.profile.clone(),
+            shared: dirs.profile.clone(),
             guard: None,
             cache_guard: None,
         }
@@ -304,6 +312,7 @@ impl StateStore {
                     profile_cache
                 },
                 profile_dir,
+                shared: permark.clone(),
                 guard: Some(guard(&local)),
                 cache_guard: cache_usable.then(|| guard(&cache)),
             }
@@ -312,6 +321,7 @@ impl StateStore {
                 location: StateLocation::Profile,
                 dir: profile_dir.clone(),
                 cache: profile_cache,
+                shared: profile_dir.clone(),
                 profile_dir,
                 guard: None,
                 cache_guard: None,
@@ -341,6 +351,31 @@ impl StateStore {
             guard: self.guard.clone(),
             _data: PhantomData,
         }
+    }
+
+    /// A raw file (the person's data in a layout of an earlier version, no envelope) in the state folder.
+    #[must_use]
+    pub fn raw_file(&self, name: &str) -> RawFile {
+        RawFile::private(self.dir.join(name), self.guard.clone())
+    }
+
+    /// A raw file shared with the team: `.permark/<name>` when the project has `.permark/`, else the profile.
+    #[must_use]
+    pub fn shared_file(&self, name: &str) -> RawFile {
+        match (&self.location, &self.guard) {
+            (StateLocation::Project, Some(guard)) => {
+                RawFile::shared(self.shared.join(name), guard.permark.clone())
+            }
+            _ => RawFile::private(self.shared.join(name), None),
+        }
+    }
+
+    /// The profile's copy of a shared file (what the project kept there before it had `.permark/`); `None` while
+    /// the project has no `.permark/` (then the profile copy IS the file).
+    #[must_use]
+    pub fn legacy_shared_file(&self, name: &str) -> Option<RawFile> {
+        (self.location == StateLocation::Project)
+            .then(|| RawFile::private(self.profile_dir.join(name), None))
     }
 
     /// File that ALWAYS lives in the profile (`PROFILE_ONLY`), whatever the project holds.
@@ -483,7 +518,7 @@ fn copy_missing(from: &Path, to: &Path, top: bool) -> io::Result<()> {
     };
     for entry in entries.flatten() {
         let name = entry.file_name();
-        if top && PROFILE_ONLY.iter().any(|p| name == *p) {
+        if top && PROFILE_ONLY.iter().chain(&SHARED_FILES).any(|p| name == *p) {
             continue;
         }
         let target = to.join(&name);

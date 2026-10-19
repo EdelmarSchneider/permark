@@ -717,10 +717,15 @@ secondwords
         include_silenced: true,
         tags: Vec::new(),
     };
-    assert_eq!(
-        core.search_filter(&options).unwrap(),
-        SearchFilter::default()
-    );
+    let open = core.search_filter(&options).unwrap();
+    assert!(open.only.is_none() && open.skip.is_empty() && open.muted.is_none());
+    // no silence plugin: nothing is silenced, whatever the option says
+    let hidden = SearchOptions {
+        include_silenced: false,
+        tags: Vec::new(),
+    };
+    let none = core.search_filter(&hidden).unwrap();
+    assert!(none.muted.is_none());
     let started = Instant::now();
     drop(core);
     assert!(

@@ -12,6 +12,7 @@ pub mod fsx;
 pub mod ipc_local;
 pub mod links;
 pub mod open;
+pub mod organizing;
 pub mod paths;
 pub mod plugins;
 pub mod search;

@@ -300,3 +300,87 @@ fn unicode_space_project_paths_work() {
     file.save(&sample(1)).unwrap();
     assert_eq!(file.load(), Loaded::Found(sample(1)));
 }
+
+// ---- raw files (the person's data in the layouts of earlier versions) ------------------------------------------------
+
+#[test]
+fn a_shared_file_is_in_permark_when_the_project_has_it_else_in_the_profile() {
+    let f = fx();
+    let before = f.store();
+    let shared = before.shared_file("meta.toml");
+    assert_eq!(shared.path(), before.dir().join("meta.toml"));
+    assert!(before.legacy_shared_file("meta.toml").is_none());
+    shared.write(b"x = 1\n").unwrap();
+    assert!(f.project.path().join(".permark").read_dir().is_err());
+
+    let after = init_project(&f.dirs, &f.root()).unwrap();
+    let shared = after.shared_file("meta.toml");
+    assert_eq!(
+        shared.path(),
+        f.project.path().join(".permark").join("meta.toml")
+    );
+    // the profile's copy is the legacy one; it did not land in local/
+    let legacy = after.legacy_shared_file("meta.toml").unwrap();
+    assert_eq!(legacy.read().unwrap().as_deref(), Some(&b"x = 1\n"[..]));
+    assert!(!after.dir().join("meta.toml").exists());
+    assert_eq!(shared.read().unwrap(), None);
+    shared.write(b"y = 2\n").unwrap();
+    assert_eq!(shared.read().unwrap().as_deref(), Some(&b"y = 2\n"[..]));
+    legacy.remove().unwrap();
+    legacy.remove().unwrap();
+    assert_eq!(legacy.read().unwrap(), None);
+}
+
+#[test]
+fn a_raw_file_in_the_state_folder_is_guarded_like_the_others() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let s = f.store();
+    let raw = s.raw_file("comments.json");
+    raw.write(b"{}").unwrap();
+    assert_eq!(
+        fs::read(f.project.path().join(".permark/local/comments.json")).unwrap(),
+        b"{}"
+    );
+    // the state folder ignores itself, `.permark/` itself does not get an ignore file
+    assert!(f.project.path().join(".permark/local/.gitignore").exists());
+    assert!(!f.project.path().join(".permark/.gitignore").exists());
+    // `local/` replaced by a file after the store was made: refused, nothing written
+    fs::remove_dir_all(f.project.path().join(".permark/local")).unwrap();
+    fs::write(f.project.path().join(".permark/local"), "now a file").unwrap();
+    assert!(raw.write(b"{ \"x\": 1 }").is_err());
+    assert_eq!(
+        fs::read_to_string(f.project.path().join(".permark/local")).unwrap(),
+        "now a file"
+    );
+}
+
+#[test]
+fn a_shared_write_is_refused_when_permark_stops_being_a_folder() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let shared = f.store().shared_file("meta.toml");
+    shared.write(b"a = 1\n").unwrap();
+    fs::remove_dir_all(f.project.path().join(".permark")).unwrap();
+    fs::write(f.project.path().join(".permark"), "now a file").unwrap();
+    assert!(shared.write(b"a = 2\n").is_err());
+    assert_eq!(
+        fs::read_to_string(f.project.path().join(".permark")).unwrap(),
+        "now a file"
+    );
+}
+
+#[test]
+fn a_raw_file_reads_bytes_exactly_and_tells_a_change_by_its_stamp() {
+    let f = fx();
+    let raw = f.store().raw_file("quiet.json");
+    assert_eq!(raw.read().unwrap(), None);
+    assert_eq!(raw.stamp(), None);
+    let bytes = "{\r\n  \"é 档\": \"quiet\"\r\n}".as_bytes();
+    raw.write(bytes).unwrap();
+    assert_eq!(raw.read().unwrap().as_deref(), Some(bytes));
+    let stamp = raw.stamp().unwrap();
+    assert_eq!(stamp.0, bytes.len() as u64);
+    raw.write(b"{}").unwrap();
+    assert_ne!(raw.stamp().unwrap().0, stamp.0);
+}

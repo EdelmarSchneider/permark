@@ -18,7 +18,9 @@ pub use contrib::{
     Contributions, Field, FieldValue, FrontMatterParser, FrontMatterSyntax, MarkdownFeature,
     MarkdownFeatures, PromptBlocks, RoleMatch, RoleRule, DEFAULT_PROMPT_TAGS,
 };
-pub use markdown::{sections, segments, LockReason, MarkdownFormat, Section, Segment, SegmentKind};
+pub use markdown::{
+    sections, segments, units, LockReason, MarkdownFormat, Section, Segment, SegmentKind, TextUnit,
+};
 pub use registry::FormatRegistry;
 pub use viewers::{media_of, MediaFormat, TextViewer, MEDIA_EXTENSIONS};
 

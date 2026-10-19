@@ -11,6 +11,7 @@ use crate::document::{DocScope, Documents};
 use crate::events::{CoreEvent, EventSink};
 use crate::fileops::FileOps;
 use crate::format::FormatRegistry;
+use crate::organizing::{SilenceApi, TagsApi};
 use crate::paths::{Root, Vault};
 use crate::plugins::{
     resolve_enabled, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId, PluginRegistry,
@@ -328,16 +329,23 @@ impl ProjectCore {
         &self.search
     }
 
-    /// The path filter a search asks for. The tags and silence plugins (organizing area) fill `only` and `skip`;
-    /// until they exist, tags cannot be honored and silenced paths do not exist.
+    /// The path filter a search asks for: `tags` keep the files that have all of them (the `tags` plugin answers),
+    /// silenced paths are left out unless `include_silenced` (the `quiet` plugin answers; the agent never asks).
     ///
     /// # Errors
     /// `Unsupported` (subject `tags`): tags were asked for and the tags plugin is not on.
     pub fn search_filter(&self, options: &SearchOptions) -> Result<SearchFilter, crate::IpcError> {
+        let mut filter = SearchFilter::default();
         if !options.tags.is_empty() {
-            return Err(crate::IpcError::new(crate::ErrorKind::Unsupported).subject("tags"));
+            let api = self.services.get::<TagsApi>().ok_or_else(|| {
+                crate::IpcError::new(crate::ErrorKind::Unsupported).subject("tags")
+            })?;
+            filter.only = Some(api.0.files_with_all(&options.tags));
         }
-        Ok(SearchFilter::default())
+        if !options.include_silenced {
+            filter.muted = self.services.get::<SilenceApi>().map(|api| api.0.clone());
+        }
+        Ok(filter)
     }
 
     /// The project tree service.
