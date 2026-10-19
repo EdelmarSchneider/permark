@@ -1,7 +1,7 @@
 // Frontend side of the plugin boundary: typed contributions, the registry the core UI renders from, plugin modules
 // (`plugins/<id>/index.ts`, loaded lazily) and their activation with teardown symmetry.
 
-import type { Component } from "svelte";
+import { untrack, type Component } from "svelte";
 import type { Manifest } from "../../api/generated/Manifest";
 import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView } from "../../api";
@@ -96,19 +96,28 @@ export type ContributionOf<K extends ContributionKind> = Extract<Contribution, {
 export class ContributionRegistry {
   items = $state.raw<readonly Contribution[]>([]);
 
-  /** Adds one contribution; returns its removal. */
+  /**
+   * Adds one contribution; returns its removal. Changing the registry never makes the caller depend on it (an effect
+   * that registers would otherwise run again for every registration, and for its own).
+   */
   register(contribution: Contribution): () => void {
-    this.items = [...this.items, contribution];
+    untrack(() => {
+      this.items = [...this.items, contribution];
+    });
     return () => {
-      this.items = this.items.filter((item) => item !== contribution);
+      untrack(() => {
+        this.items = this.items.filter((item) => item !== contribution);
+      });
     };
   }
 
   /** Removes everything an owner contributed (safety net after deactivate). Returns how many were left. */
   removeOwner(owner: PluginId): number {
-    const left = this.items.filter((item) => item.owner === owner).length;
-    if (left > 0) this.items = this.items.filter((item) => item.owner !== owner);
-    return left;
+    return untrack(() => {
+      const left = this.items.filter((item) => item.owner === owner).length;
+      if (left > 0) this.items = this.items.filter((item) => item.owner !== owner);
+      return left;
+    });
   }
 
   ownedBy(owner: PluginId): readonly Contribution[] {
