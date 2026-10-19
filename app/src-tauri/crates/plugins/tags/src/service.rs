@@ -19,7 +19,7 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 use permark_core::document::DocScope;
 use permark_core::error::{ErrorKind, IpcError};
 use permark_core::fsx;
-use permark_core::organizing::TagLookup;
+use permark_core::organizing::{TagCount, TagLookup, TagsSummary};
 use permark_core::paths::{key_of, VaultPath, WORKTREE_PREFIX};
 use permark_core::state::RawFile;
 use permark_core::tree::{category_of, Category, Explorer};
@@ -1040,6 +1040,43 @@ impl TagLookup for Lookup {
         let inner = self.0.lock();
         let docs = self.0.docs.read().unwrap_or_else(PoisonError::into_inner);
         catalog::tags_of(&inner.entries, &docs, path)
+    }
+
+    fn summary(&self) -> TagsSummary {
+        let inner = self.0.lock();
+        let docs = self.0.docs.read().unwrap_or_else(PoisonError::into_inner);
+        let count = |n: usize| u32::try_from(n).unwrap_or(u32::MAX);
+        TagsSummary {
+            tags: catalog::tag_counts(&inner.entries, &docs)
+                .into_iter()
+                .map(|t| TagCount {
+                    tag: t.name,
+                    count: count(t.count),
+                })
+                .collect(),
+            documents: count(docs.len()),
+            untagged: count(catalog::untagged(&inner.entries, &docs).len()),
+        }
+    }
+
+    fn description_of(&self, path: &str) -> String {
+        self.0
+            .lock()
+            .entries
+            .get(path)
+            .map(|e| e.description.clone())
+            .unwrap_or_default()
+    }
+
+    fn wait_ready(&self, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while !self.0.catalog_ready.load(Ordering::Acquire) {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        true
     }
 }
 

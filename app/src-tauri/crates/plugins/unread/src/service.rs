@@ -240,6 +240,8 @@ pub struct ServiceArgs {
     pub visit_file: Option<StateFile<VisitFile>>,
     pub announce: Announce,
     pub timing: Timing,
+    /// `false`: a reader with no window (`files_only`): `read.json` is read, never written.
+    pub persist: bool,
 }
 
 pub struct UnreadService {
@@ -357,6 +359,27 @@ impl Drop for UnreadService {
     }
 }
 
+impl permark_core::organizing::UnreadLookup for UnreadHub {
+    fn unread(&self) -> permark_core::organizing::UnreadNow {
+        let list = list_of(&lock(&self.tracker));
+        permark_core::organizing::UnreadNow {
+            ready: list.ready,
+            paths: list.unread,
+        }
+    }
+
+    fn wait_ready(&self, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while !lock(&self.tracker).looked() {
+            if start.elapsed() > timeout {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        true
+    }
+}
+
 fn list_of(tracker: &Tracker) -> UnreadList {
     UnreadList {
         ready: tracker.looked(),
@@ -443,7 +466,7 @@ impl Worker {
     }
 
     fn save(&self) {
-        let Some(file) = &self.args.read_file else {
+        let Some(file) = self.args.read_file.as_ref().filter(|_| self.args.persist) else {
             return;
         };
         let tracker = lock(&self.tracker);

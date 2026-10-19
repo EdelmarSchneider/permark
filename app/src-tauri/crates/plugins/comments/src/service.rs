@@ -520,6 +520,34 @@ impl CommentsService {
         })
     }
 
+    /// Marks a comment done by an agent, with its short reply (the only change an agent makes). Already done: left
+    /// as it is.
+    ///
+    /// # Errors
+    /// No such comment, or the file cannot be used.
+    pub fn resolve_by_agent(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError> {
+        let reply = reply
+            .map(|r| cut(r.trim(), MAX_REPLY_CHARS))
+            .filter(|r| !r.is_empty());
+        self.shared.change(|book| {
+            let comment = book
+                .comments
+                .iter_mut()
+                .find(|c| c.id == id)
+                .ok_or_else(|| not_found(id))?;
+            if comment.done.is_some() {
+                return Ok(((), false));
+            }
+            comment.done = Some(crate::model::Done {
+                at_ms: now_ms(),
+                by: By::Agent,
+                reply,
+                extra: BTreeMap::default(),
+            });
+            Ok(((), true))
+        })
+    }
+
     /// Deletes a comment.
     ///
     /// # Errors

@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
 use permark_core::error::{ErrorKind, IpcError};
+use permark_core::organizing::{UnreadApi, UnreadLookup};
 use permark_core::paths::{VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -100,7 +101,12 @@ impl Plugin for UnreadPlugin {
             explorer: Arc::clone(&project.explorer),
             roots,
             read_file: cx.state_file("read.json"),
-            visit_file: cx.state_file("visit.json"),
+            // a reader with no window leaves the picture of the last visit alone
+            visit_file: if cx.files_only() {
+                None
+            } else {
+                cx.state_file("visit.json")
+            },
             announce: Arc::new(move |list| {
                 events.emit(
                     "changed",
@@ -108,6 +114,7 @@ impl Plugin for UnreadPlugin {
                 );
             }),
             timing: Timing::default(),
+            persist: !cx.files_only(),
         }));
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
@@ -153,10 +160,14 @@ impl Plugin for UnreadPlugin {
             }),
         ));
         let lease = project.services.provide(Arc::clone(service.hub()));
+        let api = project.services.provide(Arc::new(UnreadApi(
+            Arc::clone(service.hub()) as Arc<dyn UnreadLookup>
+        )));
         Ok(Box::new(UnreadRunning {
             subscription: Some(subscription),
             registrations,
             lease: Some(lease),
+            api: Some(api),
             service: Some(service),
         }))
     }
@@ -168,6 +179,7 @@ struct UnreadRunning {
     subscription: Option<Subscription>,
     registrations: Vec<RpcRegistration>,
     lease: Option<ServiceLease>,
+    api: Option<ServiceLease>,
     service: Option<Arc<UnreadService>>,
 }
 
@@ -177,6 +189,7 @@ impl Drop for UnreadRunning {
     fn drop(&mut self) {
         self.subscription.take();
         self.registrations.clear();
+        self.api.take();
         self.lease.take();
         self.service.take();
     }

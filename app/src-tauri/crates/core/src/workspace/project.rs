@@ -243,7 +243,7 @@ pub struct ProjectCore {
     _explorer_sub: Subscription,
     _documents_sub: Subscription,
     _search_sub: Subscription,
-    search: SearchIndex,
+    search: Arc<SearchIndex>,
     watcher: Watcher,
     fileops: FileOps,
     documents: Arc<Documents>,
@@ -261,6 +261,9 @@ pub struct ProjectCore {
     facts: Arc<ProjectFacts>,
     rpc: Arc<RpcTable>,
     services: Arc<Services>,
+    app_services: Arc<Services>,
+    /// Opened for a reader with no window: only these plugins run, each told `files_only`.
+    files_only: Option<BTreeSet<PluginId>>,
 }
 
 impl std::fmt::Debug for ProjectCore {
@@ -275,11 +278,23 @@ impl ProjectCore {
     /// Opens a project: state store, config, plugins started. Single step (no `activate`).
     #[must_use]
     pub fn open(root: Root, env: &CoreEnv) -> Arc<Self> {
+        Self::build(root, env, None)
+    }
+
+    /// The same project for a reader with no window (`permark mcp` while the app is closed): the same services, built
+    /// from the files; only the plugins in `only` that are on run, each started `files_only` (no state written of
+    /// their own accord).
+    #[must_use]
+    pub fn from_files(root: Root, env: &CoreEnv, only: &[PluginId]) -> Arc<Self> {
+        Self::build(root, env, Some(only.iter().cloned().collect()))
+    }
+
+    fn build(root: Root, env: &CoreEnv, files_only: Option<BTreeSet<PluginId>>) -> Arc<Self> {
         let id = ProjectId::of(&root);
         let store = StateStore::for_project(&env.dirs, &root);
         let config = ProjectConfig::load(&root);
         // plugins that are on may offer extra roots (linked worktrees) before the project is built
-        let (enablement, on) = project_enablement(env, &config, &store);
+        let (enablement, on) = project_enablement(env, &config, &store, files_only.as_ref());
         let extra_roots = env.registry.roots(&on, &root);
         let vault = Vault::new(root).with_worktrees(extra_roots);
         let hub = WatchHub::new();
@@ -302,12 +317,12 @@ impl ProjectCore {
             move |batch| documents.on_batch(batch)
         });
         // the index walks the project at once and follows the watch from the first batch on
-        let search = SearchIndex::start(
+        let search = Arc::new(SearchIndex::start(
             vault.clone(),
             Arc::clone(&explorer),
             Arc::clone(&env.sink),
             vault.main().path().display().to_string(),
-        );
+        ));
         let search_sub = hub.subscribe(search.feeder());
         let watcher = Watcher::start(
             &vault,
@@ -343,6 +358,8 @@ impl ProjectCore {
             facts: ProjectFacts::new(env.status_hook()),
             rpc: RpcTable::new(),
             services: Services::new(),
+            app_services: Arc::clone(env.services()),
+            files_only,
         });
         core.start_plugins(env, enablement, &on);
         core
@@ -360,6 +377,12 @@ impl ProjectCore {
         &self.rpc
     }
 
+    /// What a Project plugin gets: the composition every reader of the project shares (windows and `permark mcp`).
+    #[must_use]
+    pub fn services(&self) -> ProjectServices {
+        self.project_services()
+    }
+
     fn project_services(&self) -> ProjectServices {
         ProjectServices::new(
             Arc::clone(&self.documents),
@@ -367,6 +390,8 @@ impl ProjectCore {
             Arc::clone(&self.own),
             Arc::clone(&self.facts),
             Arc::clone(&self.services),
+            Arc::clone(&self.search),
+            Arc::clone(&self.app_services),
             Arc::clone(&self.rpc),
             Arc::clone(&self.formats),
         )
@@ -488,7 +513,8 @@ impl ProjectCore {
 
     /// Re-resolves enablement (settings | choices changed) and starts | stops project plugins to match.
     pub fn apply_plugins(&self, env: &CoreEnv) {
-        let (enablement, on) = project_enablement(env, &self.config, &self.store);
+        let (enablement, on) =
+            project_enablement(env, &self.config, &self.store, self.files_only.as_ref());
         self.start_plugins(env, enablement, &on);
     }
 
@@ -526,7 +552,7 @@ impl ProjectCore {
                     settings.plugin_tables.get(id),
                     self.config.plugin_tables.get(id),
                 );
-                PluginCx::new(
+                let cx = PluginCx::new(
                     id.clone(),
                     CxWorkspace::Project(self.vault.clone()),
                     self.store.plugin_dir(id),
@@ -536,7 +562,12 @@ impl ProjectCore {
                 )
                 .with_watch(Arc::clone(&self.hub))
                 .with_project(self.project_services())
-                .with_store(self.store.clone())
+                .with_store(self.store.clone());
+                if self.files_only.is_some() {
+                    cx.with_files_only()
+                } else {
+                    cx
+                }
             });
         for failure in failures {
             env.sink.emit(CoreEvent::PluginFailed {
@@ -570,6 +601,7 @@ fn project_enablement(
     env: &CoreEnv,
     config: &ProjectConfig,
     store: &StateStore,
+    only: Option<&BTreeSet<PluginId>>,
 ) -> (BTreeMap<PluginId, Enablement>, BTreeSet<PluginId>) {
     let choices = store
         .profile_file::<ProjectPluginChoices>(PLUGIN_CHOICES_FILE)
@@ -581,7 +613,10 @@ fn project_enablement(
         project_choice: choices.choices,
     };
     let enablement = resolve_enabled(&env.registry, &inputs);
-    let on = crate::plugins::on_ids(&enablement);
+    let mut on = crate::plugins::on_ids(&enablement);
+    if let Some(only) = only {
+        on.retain(|id| only.contains(id));
+    }
     (enablement, on)
 }
 

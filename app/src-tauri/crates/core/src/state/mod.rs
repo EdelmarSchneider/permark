@@ -265,6 +265,8 @@ pub struct StateStore {
     cache: PathBuf,
     /// `<profile>/projects/<id>/`: profile-only files of a project (agent switch, plugin choices).
     profile_dir: PathBuf,
+    /// `<profile>/`: app-wide files (defaults a project starts from).
+    app_dir: PathBuf,
     /// `.permark/` when the project has it (shared files), else the state folder.
     shared: PathBuf,
     guard: Option<Guard>,
@@ -280,6 +282,7 @@ impl StateStore {
             dir: dirs.profile.clone(),
             cache: dirs.cache.clone(),
             profile_dir: dirs.profile.clone(),
+            app_dir: dirs.profile.clone(),
             shared: dirs.profile.clone(),
             guard: None,
             cache_guard: None,
@@ -312,6 +315,7 @@ impl StateStore {
                     profile_cache
                 },
                 profile_dir,
+                app_dir: dirs.profile.clone(),
                 shared: permark.clone(),
                 guard: Some(guard(&local)),
                 cache_guard: cache_usable.then(|| guard(&cache)),
@@ -323,6 +327,7 @@ impl StateStore {
                 cache: profile_cache,
                 shared: profile_dir.clone(),
                 profile_dir,
+                app_dir: dirs.profile.clone(),
                 guard: None,
                 cache_guard: None,
             }
@@ -383,6 +388,22 @@ impl StateStore {
     pub fn profile_file<T: StateData>(&self, name: &str) -> StateFile<T> {
         StateFile {
             path: self.profile_dir.join(name),
+            guard: None,
+            _data: PhantomData,
+        }
+    }
+
+    /// The profile folder itself (app-wide state).
+    #[must_use]
+    pub fn app_dir(&self) -> &Path {
+        &self.app_dir
+    }
+
+    /// App-wide file in the profile folder itself (defaults every project starts from).
+    #[must_use]
+    pub fn app_file<T: StateData>(&self, name: &str) -> StateFile<T> {
+        StateFile {
+            path: self.app_dir.join(name),
             guard: None,
             _data: PhantomData,
         }

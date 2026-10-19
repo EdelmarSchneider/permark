@@ -16,11 +16,13 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
+use permark_core::organizing::{CommentBook, CommentFilter, CommentItem, CommentsApi};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
-    RpcRegistration, Running,
+    RpcRegistration, Running, ServiceLease,
 };
 use permark_core::watch::Subscription;
+use permark_core::IpcError;
 use serde::Deserialize;
 
 pub use model::{Comment, CommentScope, CommentView, PassageState};
@@ -143,9 +145,13 @@ impl Plugin for CommentsPlugin {
             "reply",
             typed(move |args: ReplyArgs, _| s.reply(&args.id, &args.text)),
         ));
+        let lease = project
+            .services
+            .provide(Arc::new(CommentsApi(Arc::new(Book(Arc::clone(&service))))));
         Ok(Box::new(CommentsRunning {
             subscription: Some(subscription),
             registrations,
+            lease: Some(lease),
             service: Some(service),
         }))
     }
@@ -155,6 +161,7 @@ impl Plugin for CommentsPlugin {
 struct CommentsRunning {
     subscription: Option<Subscription>,
     registrations: Vec<RpcRegistration>,
+    lease: Option<ServiceLease>,
     service: Option<Arc<CommentsService>>,
 }
 
@@ -164,6 +171,46 @@ impl Drop for CommentsRunning {
     fn drop(&mut self) {
         self.subscription.take();
         self.registrations.clear();
+        self.lease.take();
         self.service.take();
+    }
+}
+
+/// What the agent connection asks of the comments.
+struct Book(Arc<CommentsService>);
+
+impl CommentBook for Book {
+    fn list(&self, which: CommentFilter) -> Result<Vec<CommentItem>, IpcError> {
+        let scope = match which {
+            CommentFilter::Open => CommentScope::Open,
+            CommentFilter::Done => CommentScope::Done,
+            CommentFilter::All => CommentScope::All,
+        };
+        Ok(self
+            .0
+            .list(None, scope)?
+            .into_iter()
+            .map(|view| CommentItem {
+                state: match view.state {
+                    PassageState::Anchored => "anchored",
+                    PassageState::Moved => "moved",
+                    PassageState::PassageChanged => "passageChanged",
+                    PassageState::DocumentMissing => "documentMissing",
+                },
+                id: view.id,
+                path: view.path,
+                quote: view.quote,
+                text: view.text,
+                heading_path: view.heading_path,
+                line: view.line,
+                created_ms: view.created_ms,
+                done: view.done,
+                reply: view.reply,
+            })
+            .collect())
+    }
+
+    fn resolve(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError> {
+        self.0.resolve_by_agent(id, reply)
     }
 }

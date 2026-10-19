@@ -117,7 +117,12 @@ impl Plugin for TagsPlugin {
         let events = cx.events().clone();
         let service = Arc::new(TagsService::start(ServiceArgs {
             file: store.shared_file(META_FILE),
-            legacy: store.legacy_shared_file(META_FILE),
+            // a reader with no window does not carry the profile copy over (the app does, on its next open)
+            legacy: if cx.files_only() {
+                None
+            } else {
+                store.legacy_shared_file(META_FILE)
+            },
             location: if shared_in_project {
                 TagsLocation::Project
             } else {

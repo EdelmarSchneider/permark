@@ -1,6 +1,7 @@
 //! Plugin `quiet`: silence a folder or a file. It stays in the tree (dimmed) and can be opened and searched, but its
 //! changes stop calling for attention: no unread dot, no feed row, no toast, no follow jump, no git letter. Personal
-//! (project local state, `quiet.json` in the layout of 0.5) and invisible to agents.
+//! (project local state, `quiet.json` in the layout of 0.5). Agents never learn the marks: a silenced path is simply
+//! not shared with them.
 //!
 //! This side keeps the marks, answers search (`SilenceApi`) and hands the marks to the window, which draws the effects.
 

@@ -262,18 +262,25 @@ pub struct ProjectServices {
     pub facts: Arc<ProjectFacts>,
     /// Typed APIs plugins hand to each other (one registry per project).
     pub services: Arc<Services>,
+    /// The project's search index (sections, file list).
+    pub search: Arc<crate::search::SearchIndex>,
+    /// The app's typed services (shared notes).
+    pub app_services: Arc<Services>,
     rpc: Arc<RpcTable>,
     formats: Arc<RwLock<Arc<FormatRegistry>>>,
 }
 
 impl ProjectServices {
     #[must_use]
+    #[allow(clippy::too_many_arguments)] // one composition root fills every part at once
     pub fn new(
         documents: Arc<Documents>,
         explorer: Arc<Explorer>,
         own: Arc<OwnWrites>,
         facts: Arc<ProjectFacts>,
         services: Arc<Services>,
+        search: Arc<crate::search::SearchIndex>,
+        app_services: Arc<Services>,
         rpc: Arc<RpcTable>,
         formats: Arc<RwLock<Arc<FormatRegistry>>>,
     ) -> Self {
@@ -283,6 +290,8 @@ impl ProjectServices {
             own,
             facts,
             services,
+            search,
+            app_services,
             rpc,
             formats,
         }
@@ -327,6 +336,7 @@ pub struct PluginCx {
     project: Option<ProjectServices>,
     app: Option<AppServices>,
     store: Option<StateStore>,
+    files_only: bool,
 }
 
 impl PluginCx {
@@ -355,6 +365,7 @@ impl PluginCx {
             project: None,
             app: None,
             store: None,
+            files_only: false,
         }
     }
 
@@ -376,6 +387,19 @@ impl PluginCx {
     pub fn with_store(mut self, store: StateStore) -> Self {
         self.store = Some(store);
         self
+    }
+
+    /// Started for a reader with no window (`permark mcp` with the app closed): the plugin answers from the files and
+    /// writes no state of its own accord (only what a caller explicitly asks, such as resolving a comment).
+    #[must_use]
+    pub fn with_files_only(mut self) -> Self {
+        self.files_only = true;
+        self
+    }
+
+    #[must_use]
+    pub fn files_only(&self) -> bool {
+        self.files_only
     }
 
     /// The state store (a plugin keeps its files under its own id: `StateStore::plugin_file` | `plugin_dir`).

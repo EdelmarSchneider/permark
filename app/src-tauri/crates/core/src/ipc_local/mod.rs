@@ -1,4 +1,4 @@
-//! Local socket between PerMark processes of ONE user (single instance now; agent server later).
+//! Local socket between PerMark processes of ONE user: single instance and the agent server of each project.
 //!
 //! Names are guessable and machine-wide, so neither side trusts the other by name:
 //! - Windows: named pipe `\\.\pipe\permark-<id>`, owner-only DACL, first instance exclusive, remote clients
@@ -8,17 +8,20 @@
 //!   listener is refused instead of stealing the socket). Client refuses a folder that is not private; both sides
 //!   check the peer's euid.
 //!
-//! Protocol: one JSON line each way per connection, line <= [`MAX_LINE`].
+//! Protocol: one JSON line each way per connection, line <= [`MAX_LINE`], the first line within
+//! [`FIRST_LINE_DEADLINE`]; a server may hold a connection after its answer (a session, see [`Reply::Hold`]).
 
 #[cfg(windows)]
 mod identity;
+#[cfg(windows)]
+mod peek;
 
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use interprocess::local_socket::prelude::*;
 use interprocess::local_socket::{ListenerOptions, Name, Stream};
@@ -95,6 +98,27 @@ impl Endpoint {
         let profile = crate::paths::fold(&crate::paths::slash(&dirs.profile));
         let id = crate::fsx::hash(format!("{user}\napp\n{profile}").as_bytes()).hex();
         Self::in_folder(&default_folder(&user), &format!("app-{id}"))
+    }
+
+    /// The agent endpoint of one project: per user + profile folder + project folder.
+    ///
+    /// # Errors
+    /// Unix socket path too long.
+    pub fn project(profile: &Path, root: &crate::paths::Root) -> Result<Self, IpcLocalError> {
+        let user = user_name();
+        let profile = crate::paths::fold(&crate::paths::slash(profile));
+        let id = crate::fsx::hash(
+            format!(
+                "{user}
+project
+{profile}
+{}",
+                root.key().as_str()
+            )
+            .as_bytes(),
+        )
+        .hex();
+        Self::in_folder(&default_folder(&user), &format!("p-{id}"))
     }
 
     /// Endpoint `<id>` in `folder` (Unix: socket file there; Windows: pipe namespace, folder unused).
@@ -468,12 +492,176 @@ pub fn request<Req: Serialize, Resp: DeserializeOwned + Send + 'static>(
         .map_err(|_| IpcLocalError::NoAnswer(endpoint.describe()))?
 }
 
-/// Serves requests on a listening endpoint: one thread accepts, one short thread per connection answers.
-/// Drop stops accepting (wakes the accept loop) and joins it (teardown symmetry).
+/// How long a client may take to send its first line (a slow or silent peer is dropped).
+pub const FIRST_LINE_DEADLINE: Duration = Duration::from_secs(2);
+/// Connections open at once (being read, answered or held); more are dropped unread.
+pub const MAX_CONNECTIONS: usize = 32;
+/// Connections held after their answer ([`Reply::Hold`]).
+pub const MAX_SESSIONS: usize = 8;
+/// How often a held connection looks whether its peer left or the server stops.
+const SESSION_POLL: Duration = Duration::from_millis(200);
+/// Pause between reads of a first line that is still coming.
+const READ_POLL: Duration = Duration::from_millis(5);
+
+/// What the server does with a connection after its first line.
+pub enum Reply<Resp> {
+    /// Answer, then close.
+    Answer(Resp),
+    /// Answer, then keep the connection open until the peer leaves or the server stops; `guard` is dropped then
+    /// (a session: the peer's presence is the point, nothing more is read).
+    Hold(Resp, Box<dyn Send>),
+}
+
+/// One look at a stream that must not block.
+enum Polled {
+    Data(usize),
+    Empty,
+    Closed,
+}
+
+/// Prepares a stream for [`poll_read`] (Unix: nonblocking; Windows: the pipe is peeked instead).
+#[allow(clippy::unnecessary_wraps)] // Windows: cannot fail; same signature on every OS
+fn poll_mode(stream: &Stream, on: bool) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        stream.set_nonblocking(on)
+    }
+    #[cfg(windows)]
+    {
+        let _ = (stream, on);
+        Ok(())
+    }
+}
+
+/// Reads what is there now, never waiting for more.
+fn poll_read(stream: &Stream, buf: &mut [u8]) -> Polled {
+    #[cfg(windows)]
+    let buf = match peek::available(stream) {
+        Ok(0) => return Polled::Empty,
+        Ok(n) => {
+            let n = usize::try_from(n).unwrap_or(usize::MAX).min(buf.len());
+            &mut buf[..n]
+        }
+        Err(_) => return Polled::Closed,
+    };
+    let mut reader = stream;
+    match reader.read(buf) {
+        Ok(0) => Polled::Closed,
+        Ok(n) => Polled::Data(n),
+        Err(e)
+            if e.kind() == io::ErrorKind::WouldBlock || e.kind() == io::ErrorKind::Interrupted =>
+        {
+            Polled::Empty
+        }
+        Err(_) => Polled::Closed,
+    }
+}
+
+/// Reads one JSON line that must be complete by `deadline` (polled without blocking: a peer that sends nothing,
+/// or one byte at a time, cannot hold the thread longer).
+///
+/// # Errors
+/// Too long, late, not JSON of `T`, closed early.
+pub fn read_line_by<T: DeserializeOwned>(
+    stream: &Stream,
+    deadline: Instant,
+) -> Result<T, IpcLocalError> {
+    let io = |source| IpcLocalError::Io {
+        place: "peer".to_owned(),
+        source,
+    };
+    poll_mode(stream, true).map_err(io)?;
+    let mut line: Vec<u8> = Vec::new();
+    let mut chunk = [0_u8; 4096];
+    let outcome = loop {
+        match poll_read(stream, &mut chunk) {
+            Polled::Closed => {
+                break Err(IpcLocalError::BadMessage(
+                    "closed before end of line".to_owned(),
+                ))
+            }
+            Polled::Data(n) => {
+                let part = &chunk[..n];
+                if let Some(end) = part.iter().position(|b| *b == b'\n') {
+                    line.extend_from_slice(&part[..=end]);
+                    break Ok(());
+                }
+                line.extend_from_slice(part);
+                if line.len() as u64 > MAX_LINE {
+                    break Err(IpcLocalError::BadMessage("line too long".to_owned()));
+                }
+            }
+            Polled::Empty => {
+                if Instant::now() >= deadline {
+                    break Err(IpcLocalError::BadMessage("too slow".to_owned()));
+                }
+                std::thread::sleep(READ_POLL);
+            }
+        }
+    };
+    outcome?;
+    if line.len() as u64 > MAX_LINE {
+        return Err(IpcLocalError::BadMessage("line too long".to_owned()));
+    }
+    poll_mode(stream, false).map_err(io)?;
+    serde_json::from_slice(&line).map_err(|e| IpcLocalError::BadMessage(e.to_string()))
+}
+
+/// Opens a session: sends `hello`, reads the answer, and keeps the connection (dropping the stream ends it).
+///
+/// # Errors
+/// `Unreachable`, `Untrusted`, `NoAnswer`, `BadMessage`.
+pub fn open_session<Req: Serialize, Resp: DeserializeOwned + Send + 'static>(
+    endpoint: &Endpoint,
+    hello: &Req,
+) -> Result<(Resp, Stream), IpcLocalError> {
+    let mut stream = endpoint.connect()?;
+    write_line(&mut stream, hello)?;
+    let answer = read_line_by::<Resp>(&stream, Instant::now() + ANSWER_TIMEOUT)
+        .map_err(|_| IpcLocalError::NoAnswer(endpoint.describe()))?;
+    Ok((answer, stream))
+}
+
+/// Counts what is open; a slot is given back when its guard drops.
+struct Slots {
+    open: AtomicUsize,
+    limit: usize,
+}
+
+struct Slot(Arc<Slots>);
+
+impl Slots {
+    fn new(limit: usize) -> Arc<Self> {
+        Arc::new(Self {
+            open: AtomicUsize::new(0),
+            limit,
+        })
+    }
+
+    fn take(self: &Arc<Self>) -> Option<Slot> {
+        self.open
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                (n < self.limit).then_some(n + 1)
+            })
+            .ok()
+            .map(|_| Slot(Arc::clone(self)))
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        self.0.open.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+/// Serves requests on a listening endpoint: one thread accepts, one short thread per connection answers (at most
+/// [`MAX_CONNECTIONS`] at once, first line within [`FIRST_LINE_DEADLINE`]); held connections poll the stop flag.
+/// Drop stops accepting (wakes the accept loop), ends held connections and joins the accept thread.
 pub struct Server {
     stop: Arc<AtomicBool>,
     endpoint: Endpoint,
     thread: Option<JoinHandle<()>>,
+    connections: Arc<Slots>,
 }
 
 impl std::fmt::Debug for Server {
@@ -485,6 +673,8 @@ impl std::fmt::Debug for Server {
 }
 
 impl Server {
+    /// Answers each connection's line, then closes it.
+    ///
     /// # Errors
     /// Thread spawn failure.
     pub fn spawn<Req, Resp, H>(listening: Listening, handler: H) -> io::Result<Self>
@@ -493,10 +683,27 @@ impl Server {
         Resp: Serialize + 'static,
         H: Fn(Req) -> Resp + Send + Sync + 'static,
     {
+        Self::spawn_with(listening, move |request| Reply::Answer(handler(request)))
+    }
+
+    /// Like [`Server::spawn`]; the handler may also keep a connection open ([`Reply::Hold`], at most
+    /// [`MAX_SESSIONS`]: over it the answer is sent and the connection closed).
+    ///
+    /// # Errors
+    /// Thread spawn failure.
+    pub fn spawn_with<Req, Resp, H>(listening: Listening, handler: H) -> io::Result<Self>
+    where
+        Req: DeserializeOwned + 'static,
+        Resp: Serialize + 'static,
+        H: Fn(Req) -> Reply<Resp> + Send + Sync + 'static,
+    {
         let stop = Arc::new(AtomicBool::new(false));
         let endpoint = listening.endpoint.clone();
         let handler = Arc::new(handler);
         let flag = Arc::clone(&stop);
+        let connections = Slots::new(MAX_CONNECTIONS);
+        let sessions = Slots::new(MAX_SESSIONS);
+        let slots = Arc::clone(&connections);
         let thread = std::thread::Builder::new()
             .name("permark-ipc".to_owned())
             .spawn(move || {
@@ -512,15 +719,18 @@ impl Server {
                     if flag.load(Ordering::Acquire) {
                         break;
                     }
+                    // a flood is dropped unread; the ones already open keep being served
+                    let Some(slot) = slots.take() else {
+                        continue;
+                    };
                     let handler = Arc::clone(&handler);
+                    let stop = Arc::clone(&flag);
+                    let sessions = Arc::clone(&sessions);
                     let _ = std::thread::Builder::new()
                         .name("permark-ipc-conn".to_owned())
                         .spawn(move || {
-                            let mut reader = BufReader::new(stream);
-                            if let Ok(request) = read_line::<Req>(&mut reader) {
-                                let answer = handler(request);
-                                let _ = write_line(reader.get_mut(), &answer);
-                            }
+                            let _slot = slot;
+                            serve_one(&stream, &*handler, &stop, &sessions);
                         });
                 }
             })?;
@@ -528,7 +738,57 @@ impl Server {
             stop,
             endpoint,
             thread: Some(thread),
+            connections,
         })
+    }
+
+    /// Connections open now (tests, status).
+    #[must_use]
+    pub fn open_connections(&self) -> usize {
+        self.connections.open.load(Ordering::Acquire)
+    }
+}
+
+fn serve_one<Req, Resp>(
+    stream: &Stream,
+    handler: &dyn Fn(Req) -> Reply<Resp>,
+    stop: &AtomicBool,
+    sessions: &Arc<Slots>,
+) where
+    Req: DeserializeOwned,
+    Resp: Serialize,
+{
+    let Ok(request) = read_line_by::<Req>(stream, Instant::now() + FIRST_LINE_DEADLINE) else {
+        return;
+    };
+    let mut writer = stream;
+    match handler(request) {
+        Reply::Answer(answer) => {
+            let _ = write_line(&mut writer, &answer);
+        }
+        Reply::Hold(answer, guard) => {
+            let session = sessions.take();
+            if write_line(&mut writer, &answer).is_err() || session.is_none() {
+                return;
+            }
+            hold(stream, stop);
+            drop(guard);
+        }
+    }
+}
+
+/// Waits until the peer leaves (EOF | error) or the server stops; anything the peer sends is ignored.
+fn hold(stream: &Stream, stop: &AtomicBool) {
+    if poll_mode(stream, true).is_err() {
+        return;
+    }
+    let mut sink = [0_u8; 256];
+    while !stop.load(Ordering::Acquire) {
+        match poll_read(stream, &mut sink) {
+            Polled::Closed => return,
+            Polled::Data(_) => {}
+            Polled::Empty => std::thread::sleep(SESSION_POLL),
+        }
     }
 }
 
@@ -541,6 +801,11 @@ impl Drop for Server {
             if woke {
                 let _ = thread.join();
             }
+        }
+        // held connections see the flag within one poll and let their guards go
+        let deadline = Instant::now() + SESSION_POLL * 5;
+        while self.open_connections() > 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 }

@@ -1,9 +1,9 @@
-//! Facts a plugin writes for the rest of the app to read: the git condition of a project (windows read it into their
-//! `Context`) and the read-only reader of the repository other plugins use.
+//! Facts a plugin writes for the rest of the app to read: the git and agent conditions of a project (windows read them
+//! into their `Context`) and the read-only reader of the repository other plugins use.
 
 use std::sync::{Arc, PoisonError, RwLock};
 
-use crate::conditions::GitCondition;
+use crate::conditions::{AgentCondition, GitCondition};
 use crate::watch::StatusHook;
 
 /// Read-only look at the repository of a project (set by the `git` plugin while it runs).
@@ -25,6 +25,7 @@ impl std::fmt::Debug for RepoHandle {
 /// What plugins publish about a project. A change calls the status hook, which recomputes the windows' contexts.
 pub struct ProjectFacts {
     git: RwLock<GitCondition>,
+    agent: RwLock<AgentCondition>,
     hook: Option<StatusHook>,
 }
 
@@ -41,6 +42,7 @@ impl ProjectFacts {
     pub fn new(hook: Option<StatusHook>) -> Arc<Self> {
         Arc::new(Self {
             git: RwLock::new(GitCondition::NoRepo),
+            agent: RwLock::new(AgentCondition::Off),
             hook,
         })
     }
@@ -51,6 +53,28 @@ impl ProjectFacts {
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
+    }
+
+    #[must_use]
+    pub fn agent(&self) -> AgentCondition {
+        self.agent
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Sets the agent condition (written by the `agent` plugin); announces it only when it differs.
+    pub fn set_agent(&self, condition: AgentCondition) {
+        {
+            let mut agent = self.agent.write().unwrap_or_else(PoisonError::into_inner);
+            if *agent == condition {
+                return;
+            }
+            *agent = condition;
+        }
+        if let Some(hook) = &self.hook {
+            hook();
+        }
     }
 
     /// Sets the git condition; announces it only when it differs.

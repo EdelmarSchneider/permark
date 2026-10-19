@@ -49,6 +49,8 @@ pub struct ProjectConfig {
     pub ignore: Vec<String>,
     /// `[agent] deny`: permission groups this project never allows (narrowing only).
     pub agent_deny: BTreeSet<String>,
+    /// `[agent] deny_paths`: gitignore-style patterns of paths agents never get (narrowing only).
+    pub agent_deny_paths: Vec<String>,
     /// `[plugins.<id>] enabled = false` (a project may only disable).
     pub plugins_off: BTreeSet<PluginId>,
     pub plugin_tables: BTreeMap<PluginId, RawTable>,
@@ -103,6 +105,7 @@ impl ProjectConfig {
             agent_deny: strings(agent.and_then(|t| t.get("deny")))
                 .into_iter()
                 .collect(),
+            agent_deny_paths: strings(agent.and_then(|t| t.get("deny_paths"))),
             plugins_off,
             plugin_tables,
         }
