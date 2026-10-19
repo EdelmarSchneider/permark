@@ -5,4 +5,4 @@ import type { WorkspaceId } from "./WorkspaceId";
 /**
  * What a window shows, for its frontend.
  */
-export type WorkspaceView = { "kind": "project", id: WorkspaceId, name: string, root: string, stateLocation: StateLocation, } | { "kind": "singleFile", id: WorkspaceId, name: string, path: string, folder: string, };
+export type WorkspaceView = { "kind": "project", id: WorkspaceId, name: string, root: string, stateLocation: StateLocation, } | { "kind": "singleFile", id: WorkspaceId, name: string, path: string, folder: string, } | { "kind": "notes", id: WorkspaceId, name: string, folder: string | null, };

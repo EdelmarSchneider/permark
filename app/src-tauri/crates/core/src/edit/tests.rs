@@ -46,6 +46,7 @@ impl Fx {
             scope: &self.scope,
             formats: &self.formats,
             own: Some(&self.own),
+            observer: None,
         }
     }
 
@@ -391,6 +392,7 @@ fn a_single_file_workspace_edits_its_file_and_puts_pictures_beside_it() {
         scope: &scope,
         formats: &formats,
         own: None,
+        observer: None,
     };
     let source = editor.source("only.md").unwrap();
     editor

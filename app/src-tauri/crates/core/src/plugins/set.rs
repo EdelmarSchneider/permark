@@ -121,6 +121,13 @@ impl PluginSet {
         }
     }
 
+    /// Tells every running instance that the app settings changed.
+    pub fn settings_changed(&self, settings: &crate::settings::AppSettings) {
+        for (_, instance) in &self.running {
+            instance.settings_changed(settings);
+        }
+    }
+
     /// Stops everything (reverse start order).
     pub fn stop_all(&mut self) {
         while let Some(instance) = self.running.pop() {

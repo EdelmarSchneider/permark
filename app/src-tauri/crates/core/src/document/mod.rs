@@ -270,9 +270,9 @@ impl Documents {
         })
     }
 
-    /// For a single file: its changes are polled while the service lives.
+    /// For a single file, or the Notes: the shown files are polled while the service lives.
     #[must_use]
-    pub fn for_file(scope: DocScope, sink: Arc<dyn EventSink>) -> Arc<Self> {
+    pub fn polled(scope: DocScope, sink: Arc<dyn EventSink>) -> Arc<Self> {
         let inner = Arc::new(Inner {
             scope,
             sink,

@@ -17,6 +17,10 @@ export type AppSettings = { language: LanguagePref, theme: ThemePref, tone: Tone
  */
 gitBackend: GitBackendPref, 
 /**
+ * Where the notes are (`[plugins.notes] folder`; empty = the default folder).
+ */
+notesFolder: string, 
+/**
  * How "copy reference" is written (`{path} {section} {line} {name}`).
  */
 referenceTemplate: string, 

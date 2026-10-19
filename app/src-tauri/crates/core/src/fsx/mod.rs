@@ -38,6 +38,14 @@ pub fn hash(bytes: &[u8]) -> ContentHash {
     ContentHash(xxhash_rust::xxh3::xxh3_64(bytes))
 }
 
+/// Sends files to the system recycle bin (the files stay where they are when it fails).
+///
+/// # Errors
+/// The bin refused (the reason as text).
+pub fn recycle(paths: &[PathBuf]) -> Result<(), String> {
+    trash::delete_all(paths).map_err(|e| e.to_string())
+}
+
 /// Retry delays for transient Windows sharing | lock violations.
 pub const RETRY_DELAYS: [Duration; 3] = [
     Duration::from_millis(20),

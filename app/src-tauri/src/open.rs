@@ -6,6 +6,7 @@ use std::path::Path;
 use permark_core::events::OpenFailed;
 use permark_core::open::{create_untitled_markdown, route, OpenRequest, Route};
 use permark_core::paths::{Root, VaultPath};
+use permark_core::settings::StartIn;
 use permark_core::workspace::{OpenError, WorkspaceId, WorkspaceRef};
 use permark_core::IpcError;
 use tauri::{AppHandle, Manager};
@@ -91,6 +92,15 @@ pub fn first_launch(handle: &AppHandle, request: OpenRequest) {
 fn restore_session(handle: &AppHandle) {
     let shell = state(handle);
     let session = shell.load_session();
+    // the person chose to start on the Notes: the first window that shows nothing opens them
+    let notes_first = shell.env.settings().start_in == StartIn::Notes;
+    if session.windows.is_empty() && notes_first {
+        let (handle, label) = (handle.clone(), MAIN.to_owned());
+        std::thread::spawn(move || {
+            let _ = open_in(&handle, &label, &WorkspaceRef::Notes, None, true);
+        });
+        return;
+    }
     for (index, saved) in session.windows.into_iter().enumerate() {
         let window = if index == 0 {
             handle.get_webview_window(MAIN)
@@ -103,9 +113,11 @@ fn restore_session(handle: &AppHandle) {
         if let Some(geometry) = &saved.geometry {
             windows::restore(&window, geometry);
         }
-        if let Some(reference) = saved
+        let saved_reference = saved
             .workspace
-            .and_then(|dto| WorkspaceRef::parse(&dto).ok())
+            .and_then(|dto| WorkspaceRef::parse(&dto).ok());
+        if let Some(reference) =
+            saved_reference.or_else(|| (index == 0 && notes_first).then_some(WorkspaceRef::Notes))
         {
             let (handle, label) = (handle.clone(), window.label().to_owned());
             std::thread::spawn(move || {

@@ -407,7 +407,7 @@ fn single(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> (Arc<Documents>,
     let file = dir.path().join(name);
     std::fs::write(&file, bytes).unwrap();
     let events = Arc::new(Recorder::default());
-    let docs = Documents::for_file(
+    let docs = Documents::polled(
         DocScope::File(FileScope::open(&file).unwrap()),
         events.clone(),
     );

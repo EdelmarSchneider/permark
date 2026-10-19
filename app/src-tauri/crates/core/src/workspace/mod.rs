@@ -125,6 +125,7 @@ pub struct FileSession {
 pub enum Workspace {
     Project(std::sync::Arc<ProjectCore>),
     SingleFile(FileSession),
+    Notes(std::sync::Arc<crate::notes::NotesCore>),
 }
 
 /// One workspace as windows list it (switcher bar).
@@ -159,6 +160,13 @@ pub enum WorkspaceView {
         path: String,
         folder: String,
     },
+    /// The Notes window; `folder`: where the notes are (none until the plugin knows).
+    #[serde(rename_all = "camelCase")]
+    Notes {
+        id: WorkspaceId,
+        name: String,
+        folder: Option<String>,
+    },
 }
 
 /// State of a window, for its frontend.
@@ -184,7 +192,7 @@ pub enum WindowView {
 pub enum WorkspaceError {
     #[error(transparent)]
     Vault(#[from] VaultError),
-    #[error("the Notes workspace is not available in this build")]
+    #[error("the Notes need the notes plugin")]
     NotesUnavailable,
 }
 

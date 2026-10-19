@@ -16,6 +16,7 @@ use crate::conditions::{Context, LiveUpdates, PermarkCondition, WorkspaceKind};
 use crate::error::{ErrorKind, IpcError};
 use crate::events::{ContextChanged, CoreEvent, WindowChanged, WorkspacesChanged};
 use crate::paths::{FileScope, RootKey, VaultPath};
+use crate::plugins::PluginId;
 use crate::state::StateLocation;
 
 #[derive(Debug, thiserror::Error)]
@@ -219,10 +220,16 @@ impl WorkspaceRegistry {
             WorkspaceRef::SingleFile(path) => {
                 let scope = FileScope::open(path)?;
                 let documents =
-                    Documents::for_file(DocScope::File(scope.clone()), Arc::clone(&self.env.sink));
+                    Documents::polled(DocScope::File(scope.clone()), Arc::clone(&self.env.sink));
                 Workspace::SingleFile(FileSession { scope, documents })
             }
-            WorkspaceRef::Notes => return Err(WorkspaceError::NotesUnavailable),
+            WorkspaceRef::Notes => {
+                // the Notes need the `notes` plugin: it sets the folder and serves the list
+                if !self.env.app_plugins_on().contains(&PluginId::of("notes")) {
+                    return Err(WorkspaceError::NotesUnavailable);
+                }
+                Workspace::Notes(self.env.notes())
+            }
         };
         Ok(Prepared {
             reference: reference.clone(),
@@ -473,7 +480,7 @@ impl WorkspaceRegistry {
             .values()
             .filter_map(|e| match &e.workspace {
                 Workspace::Project(core) => Some(Arc::clone(core)),
-                Workspace::SingleFile(_) => None,
+                Workspace::SingleFile(_) | Workspace::Notes(_) => None,
             })
             .collect()
     }
@@ -577,6 +584,12 @@ fn list_of(inner: &Inner) -> Vec<WorkspaceSummary> {
                 Workspace::SingleFile(file) => {
                     (file.scope.name(), file.scope.file().display().to_string())
                 }
+                Workspace::Notes(core) => (
+                    "Notes".to_owned(),
+                    core.scope()
+                        .folder()
+                        .map_or_else(String::new, |root| root.path().display().to_string()),
+                ),
             };
             WorkspaceSummary {
                 id: *id,
@@ -602,6 +615,14 @@ fn workspace_view(id: WorkspaceId, entry: &Entry) -> WorkspaceView {
             name: file.scope.name(),
             path: file.scope.file().display().to_string(),
             folder: file.scope.folder().path().display().to_string(),
+        },
+        Workspace::Notes(core) => WorkspaceView::Notes {
+            id,
+            name: "Notes".to_owned(),
+            folder: core
+                .scope()
+                .folder()
+                .map(|root| root.path().display().to_string()),
         },
     }
 }
@@ -657,6 +678,10 @@ fn context_of(
         }
         Workspace::SingleFile(_) => {
             context.workspace = WorkspaceKind::SingleFile;
+            context.live_updates = no_watcher;
+        }
+        Workspace::Notes(_) => {
+            context.workspace = WorkspaceKind::Notes;
             context.live_updates = no_watcher;
         }
     }

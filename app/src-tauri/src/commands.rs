@@ -17,7 +17,7 @@ use permark_core::fileops::{
 };
 use permark_core::format::{FormatRegistry, Measure, OutlineItem, Segment, TextKind};
 use permark_core::paths::VaultPath;
-use permark_core::plugins::RpcCall;
+use permark_core::plugins::{PluginId, PluginScope, RpcCall};
 use permark_core::search::{IndexStatus, PathResults, Recent, SearchOptions, SectionResults};
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{AppSettings, SettingChange};
@@ -116,17 +116,27 @@ pub fn open_path(
     path: String,
     placement: OpenPlacement,
 ) -> Result<OpenOutcome, IpcError> {
-    let shell = state(&handle);
     let label = window.label().to_owned();
     let reference = WorkspaceRef::classify(&PathBuf::from(&path))?;
-    let shown = shell.registry.workspace_of(&label);
+    open_reference(&handle, &label, reference, placement)
+}
+
+/// Opens `reference` in the window `label`, in a new window, or asks which (`placement`).
+fn open_reference(
+    handle: &AppHandle,
+    label: &str,
+    reference: WorkspaceRef,
+    placement: OpenPlacement,
+) -> Result<OpenOutcome, IpcError> {
+    let shell = state(handle);
+    let shown = shell.registry.workspace_of(label);
     let placement = match placement {
         OpenPlacement::Ask if shown.is_some() => return Ok(OpenOutcome::NeedsChoice),
         OpenPlacement::Ask => OpenPlacement::ThisWindow,
         other => other,
     };
     if placement == OpenPlacement::NewWindow {
-        let window = open_in_new_window(&handle, &reference, None)
+        let window = open_in_new_window(handle, &reference, None)
             .ok_or_else(|| IpcError::new(ErrorKind::Internal).subject("window"))?;
         return Ok(OpenOutcome::OpenedElsewhere { window });
     }
@@ -135,12 +145,67 @@ pub fn open_path(
         (&reference, &shown)
     {
         if let Some(document) = core.vault().relativize(file) {
-            shell.registry.set_document(&label, Some(document));
-            return Ok(opened(&shell, &label));
+            shell.registry.set_document(label, Some(document));
+            return Ok(opened(&shell, label));
         }
     }
-    open_in(&handle, &label, &reference, None, false)?;
-    Ok(opened(&shell, &label))
+    open_in(handle, label, &reference, None, false)?;
+    Ok(opened(&shell, label))
+}
+
+/// Opens the Notes in this window (or a new one, or asks first when this window shows something).
+#[tauri::command(async)]
+pub fn open_notes(
+    handle: AppHandle,
+    window: WebviewWindow,
+    placement: OpenPlacement,
+) -> Result<OpenOutcome, IpcError> {
+    let shell = state(&handle);
+    let label = window.label().to_owned();
+    // already here: nothing to do
+    if let Some((_, Workspace::Notes(_))) = shell.registry.workspace_of(&label) {
+        return Ok(opened(&shell, &label));
+    }
+    open_reference(&handle, &label, WorkspaceRef::Notes, placement)
+}
+
+/// Opens the project that holds `path` in a window of its own, showing that file: the deepest project opened lately
+/// that contains it, else the file's folder.
+#[tauri::command(async)]
+pub fn open_in_project(handle: AppHandle, path: String) -> Result<(), IpcError> {
+    let shell = state(&handle);
+    let file = PathBuf::from(&path);
+    if !file.is_file() {
+        return Err(IpcError::new(ErrorKind::NotFound).subject(path));
+    }
+    let mut best: Option<(usize, permark_core::paths::Root, VaultPath)> = None;
+    for recent in shell.recent.list().into_iter().filter(|r| !r.missing) {
+        let Ok(root) = permark_core::paths::Root::open(std::path::Path::new(&recent.path)) else {
+            continue;
+        };
+        let vault = permark_core::paths::Vault::new(root.clone());
+        if let Some(inside) = vault.relativize(&file) {
+            let depth = root.path().components().count();
+            if best.as_ref().is_none_or(|(d, _, _)| depth > *d) {
+                best = Some((depth, root, inside));
+            }
+        }
+    }
+    let (root, document) = if let Some((_, root, document)) = best {
+        (root, document)
+    } else {
+        let folder = file
+            .parent()
+            .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path.clone()))?;
+        let root = permark_core::paths::Root::open(folder)?;
+        let document = permark_core::paths::Vault::new(root.clone())
+            .relativize(&file)
+            .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path))?;
+        (root, document)
+    };
+    open_in_new_window(&handle, &WorkspaceRef::Project(root), Some(document))
+        .map(|_| ())
+        .ok_or_else(|| IpcError::new(ErrorKind::Internal).subject("window"))
 }
 
 fn opened(shell: &crate::Shell, label: &str) -> OpenOutcome {
@@ -425,7 +490,7 @@ fn reading_of(
         .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject("document"))?;
     let formats = match &workspace {
         Workspace::Project(core) => core.formats(),
-        Workspace::SingleFile(_) => shell.env.formats(),
+        Workspace::SingleFile(_) | Workspace::Notes(_) => shell.env.formats(),
     };
     Ok((workspace, formats))
 }
@@ -434,6 +499,7 @@ fn documents_of(workspace: &Workspace) -> &Arc<permark_core::document::Documents
     match workspace {
         Workspace::Project(core) => core.documents(),
         Workspace::SingleFile(file) => &file.documents,
+        Workspace::Notes(core) => core.documents(),
     }
 }
 
@@ -503,7 +569,9 @@ pub fn code_refs_resolve(
     let (workspace, _) = reading_of(&handle, &window)?;
     Ok(match workspace {
         Workspace::Project(core) => resolve_code_refs(core.explorer(), &doc, &written),
-        Workspace::SingleFile(_) => written.iter().map(|_| Vec::new()).collect(),
+        Workspace::SingleFile(_) | Workspace::Notes(_) => {
+            written.iter().map(|_| Vec::new()).collect()
+        }
     })
 }
 
@@ -561,12 +629,18 @@ fn with_editor<R>(
     let (workspace, formats) = reading_of(handle, window)?;
     let own = match &workspace {
         Workspace::Project(core) => Some(core.watcher().own().as_ref()),
-        Workspace::SingleFile(_) => None,
+        Workspace::SingleFile(_) | Workspace::Notes(_) => None,
+    };
+    // the Notes keep earlier versions of what a save replaces
+    let observer = match &workspace {
+        Workspace::Notes(core) => core.scope().observer(),
+        Workspace::Project(_) | Workspace::SingleFile(_) => None,
     };
     let editor = Editor {
         scope: documents_of(&workspace).scope(),
         formats: &formats,
         own,
+        observer: observer.as_deref(),
     };
     run(&editor, &workspace)
 }
@@ -681,7 +755,7 @@ pub fn edit_link_targets(
     let (workspace, _) = reading_of(&handle, &window)?;
     Ok(match workspace {
         Workspace::Project(core) => core.explorer().files(""),
-        Workspace::SingleFile(_) => Vec::new(),
+        Workspace::SingleFile(_) | Workspace::Notes(_) => Vec::new(),
     })
 }
 
@@ -772,15 +846,21 @@ pub fn plugin_call(
     method: String,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, IpcError> {
-    let core = project_of(&handle, &window)?;
-    core.rpc().call(
-        &plugin,
-        &method,
-        &RpcCall {
-            window: window.label().to_owned(),
-            args,
-        },
-    )
+    let call = RpcCall {
+        window: window.label().to_owned(),
+        args,
+    };
+    // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes window have no project
+    let shell = state(&handle);
+    let app_scope = PluginId::parse(&plugin)
+        .and_then(|id| shell.env.registry.manifest(&id).map(|m| m.scope))
+        == Some(PluginScope::App);
+    if app_scope {
+        return shell.env.rpc().call(&plugin, &method, &call);
+    }
+    project_of(&handle, &window)?
+        .rpc()
+        .call(&plugin, &method, &call)
 }
 
 /// Closes this window for real (after the unsaved prompt): the guard is let go first.
@@ -810,6 +890,8 @@ commands![
     app_info,
     window_boot,
     open_path,
+    open_notes,
+    open_in_project,
     show_welcome,
     list_workspaces,
     focus_workspace,

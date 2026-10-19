@@ -63,11 +63,21 @@ pub enum SaveOutcome {
     Conflict { disk_hash: Option<String> },
 }
 
+/// Hears the saves of a workspace's editor (the Notes keep earlier versions with it). Both calls are best effort and
+/// quick: a save never waits on more than a small file write.
+pub trait SaveObserver: Send + Sync {
+    /// The file `path` is about to be replaced by other bytes; `old` is what it holds now.
+    fn replacing(&self, path: &str, old: &[u8]);
+    /// The file `path` was replaced.
+    fn replaced(&self, path: &str);
+}
+
 /// Editing in one workspace: its scope, its formats, the announcements of own writes (projects).
 pub struct Editor<'a> {
     pub scope: &'a DocScope,
     pub formats: &'a FormatRegistry,
     pub own: Option<&'a OwnWrites>,
+    pub observer: Option<&'a dyn SaveObserver>,
 }
 
 fn mtime_ms(path: &Path) -> u64 {
@@ -221,6 +231,9 @@ impl Editor<'_> {
                 mtime_ms: mtime_ms(&abs),
             });
         }
+        if let Some(observer) = self.observer {
+            observer.replacing(path, &bytes);
+        }
         let announced = self.announce(path, &out);
         let mut gone = false;
         let mut other = None;
@@ -236,10 +249,15 @@ impl Editor<'_> {
             }
         });
         match written {
-            Ok(true) => Ok(SaveOutcome::Saved {
-                hash: fsx::hash(&out).hex(),
-                mtime_ms: mtime_ms(&abs),
-            }),
+            Ok(true) => {
+                if let Some(observer) = self.observer {
+                    observer.replaced(path);
+                }
+                Ok(SaveOutcome::Saved {
+                    hash: fsx::hash(&out).hex(),
+                    mtime_ms: mtime_ms(&abs),
+                })
+            }
             Ok(false) => {
                 self.retract(path, announced);
                 Ok(SaveOutcome::Conflict {

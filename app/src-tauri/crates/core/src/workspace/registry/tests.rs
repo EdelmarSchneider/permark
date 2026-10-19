@@ -51,7 +51,7 @@ fn take(log: &Log) -> Vec<String> {
 fn core_of(f: &Fx, label: &str) -> Arc<ProjectCore> {
     match f.registry.workspace_of(label).unwrap().1 {
         Workspace::Project(core) => core,
-        Workspace::SingleFile(_) => panic!("not a project"),
+        Workspace::SingleFile(_) | Workspace::Notes(_) => panic!("not a project"),
     }
 }
 
@@ -290,4 +290,86 @@ fn rapid_open_storm_from_one_window_ends_on_the_last() {
         &Root::open(dirs[49 % 5].path()).unwrap()
     );
     drop(f.registry);
+}
+
+fn fx_notes(plugin_on: bool) -> Fx {
+    let base = tempfile::tempdir().unwrap();
+    let log = Log::default();
+    let mut plugins: Vec<Arc<dyn Plugin>> = Vec::new();
+    if plugin_on {
+        plugins.push(Arc::new(
+            Fake::new("notes", PluginScope::App, &[]).with_log(&log),
+        ));
+    }
+    let sink = Arc::new(Recorder::default());
+    let env = CoreEnv::new(
+        AppDirs::under(base.path()),
+        Arc::new(PluginRegistry::new(plugins).unwrap()),
+        sink.clone(),
+        Distribution::Direct,
+        AppSettings::default(),
+    );
+    let registry = Arc::new(WorkspaceRegistry::new(Arc::new(env)));
+    registry.add_window("main");
+    registry.add_window("w-1");
+    Fx {
+        _base: base,
+        registry,
+        sink,
+        log,
+    }
+}
+
+#[test]
+fn the_notes_open_only_while_the_notes_plugin_is_on() {
+    let off = fx_notes(false);
+    let error = off
+        .registry
+        .open("main", &WorkspaceRef::Notes, None)
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        OpenError::Workspace(WorkspaceError::NotesUnavailable)
+    ));
+    assert_eq!(IpcError::from(error).kind, ErrorKind::Unsupported);
+    assert!(off.registry.workspace_of("main").is_none());
+
+    let on = fx_notes(true);
+    on.env_apply();
+    let id = on
+        .registry
+        .open("main", &WorkspaceRef::Notes, None)
+        .unwrap();
+    assert!(matches!(
+        on.registry.workspace_of("main").unwrap().1,
+        Workspace::Notes(_)
+    ));
+    // one Notes workspace for the process: a second window shows the same one
+    let again = on.registry.open("w-1", &WorkspaceRef::Notes, None).unwrap();
+    assert_eq!(id, again);
+    let list = on.registry.list();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].title, "Notes");
+    assert_eq!(list[0].windows, 2);
+    assert!(matches!(
+        on.registry.window_view("main"),
+        Some(WindowView::Showing {
+            workspace: WorkspaceView::Notes { .. },
+            ..
+        })
+    ));
+    assert_eq!(
+        on.registry.context_of("main").unwrap().workspace,
+        WorkspaceKind::Notes
+    );
+    on.registry.show_welcome("main");
+    on.registry.show_welcome("w-1");
+    assert_eq!(on.registry.list().len(), 0);
+}
+
+impl Fx {
+    /// Starts the app plugins the way the shell does at launch.
+    fn env_apply(&self) {
+        self.registry.env().apply_app_plugins();
+    }
 }

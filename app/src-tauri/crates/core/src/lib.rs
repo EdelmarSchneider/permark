@@ -11,6 +11,7 @@ pub mod format;
 pub mod fsx;
 pub mod ipc_local;
 pub mod links;
+pub mod notes;
 pub mod open;
 pub mod organizing;
 pub mod paths;

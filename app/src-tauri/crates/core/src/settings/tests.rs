@@ -489,3 +489,62 @@ fn the_git_backend_lives_in_the_plugin_table_and_default_leaves_nothing() {
         "plugins.git.backend"
     );
 }
+
+#[test]
+fn the_notes_folder_is_a_plugin_key_changed_surgically() {
+    let abs = if cfg!(windows) {
+        r"D:\sync\My Notes"
+    } else {
+        "/srv/my notes"
+    };
+    let before =
+        "# mine\r\ntheme = \"dark\"  # keep\r\n\r\n[plugins.git]\r\nbackend = \"system\"\r\n";
+    let text = applied(before, &SettingChange::NotesFolder(abs.to_owned()));
+    let read = AppSettings::from_doc(&doc(&text));
+    assert_eq!(read.notes_folder, abs);
+    assert_eq!(read.git_backend, GitBackendPref::System);
+    assert!(
+        text.starts_with("# mine\r\ntheme = \"dark\"  # keep\r\n"),
+        "{text:?}"
+    );
+    assert!(
+        text.contains("[plugins.git]\r\nbackend = \"system\"\r\n"),
+        "{text:?}"
+    );
+    // empty = the default folder: the key goes, nothing else
+    let back = applied(&text, &SettingChange::NotesFolder(String::new()));
+    assert_eq!(AppSettings::from_doc(&doc(&back)).notes_folder, "");
+    assert_eq!(back.replace("[plugins.notes]\r\n", ""), before);
+    assert_eq!(
+        SettingChange::NotesFolder(String::new()).key(),
+        "plugins.notes.folder"
+    );
+    // hand edits that are not a folder read as the default
+    for hand in ["relative/notes", ""] {
+        let text = format!("[plugins.notes]\nfolder = \"{hand}\"\n");
+        assert_eq!(
+            AppSettings::from_doc(&doc(&text)).notes_folder,
+            "",
+            "{hand}"
+        );
+    }
+    let wrong = "[plugins.notes]\nfolder = 3\n";
+    assert_eq!(AppSettings::from_doc(&doc(wrong)).notes_folder, "");
+}
+
+#[test]
+fn a_notes_folder_must_be_absolute_and_sane() {
+    assert!(SettingChange::NotesFolder(String::new()).validate().is_ok());
+    let abs = if cfg!(windows) { r"C:\notes" } else { "/notes" };
+    assert!(SettingChange::NotesFolder(abs.to_owned())
+        .validate()
+        .is_ok());
+    for bad in ["notes", "./notes", r"..\x", "a\0b", &"x".repeat(2000)] {
+        assert!(
+            SettingChange::NotesFolder(bad.to_owned())
+                .validate()
+                .is_err(),
+            "{bad:?}"
+        );
+    }
+}

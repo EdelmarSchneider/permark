@@ -128,6 +128,9 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
                     permark_core::workspace::Workspace::SingleFile(file) => {
                         file.documents.unsaved(label)
                     }
+                    permark_core::workspace::Workspace::Notes(core) => {
+                        core.documents().unsaved(label)
+                    }
                 })
             {
                 api.prevent_close();

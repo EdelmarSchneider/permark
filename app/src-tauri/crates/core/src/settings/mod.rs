@@ -138,6 +138,8 @@ pub struct AppSettings {
     pub edit_mode: EditModePref,
     /// Which git the git plugin uses (`[plugins.git] backend`).
     pub git_backend: GitBackendPref,
+    /// Where the notes are (`[plugins.notes] folder`; empty = the default folder).
+    pub notes_folder: String,
     /// How "copy reference" is written (`{path} {section} {line} {name}`).
     pub reference_template: String,
     /// The person's editor: a command template (empty = not set). Only the person sets it (app settings).
@@ -162,6 +164,7 @@ impl Default for AppSettings {
             link_update: LinkUpdate::default(),
             edit_mode: EditModePref::default(),
             git_backend: GitBackendPref::default(),
+            notes_folder: String::new(),
             reference_template: DEFAULT_REFERENCE_TEMPLATE.to_owned(),
             editor: String::new(),
             keymap: BTreeMap::new(),
@@ -183,6 +186,8 @@ pub enum SettingChange {
     LinkUpdate(LinkUpdate),
     EditMode(EditModePref),
     GitBackend(GitBackendPref),
+    /// An absolute folder; empty = the default folder.
+    NotesFolder(String),
     /// Empty = the default template.
     ReferenceTemplate(String),
     /// Empty = not set.
@@ -211,6 +216,7 @@ impl SettingChange {
             Self::LinkUpdate(_) => "link_update".to_owned(),
             Self::EditMode(_) => "edit_mode".to_owned(),
             Self::GitBackend(_) => "plugins.git.backend".to_owned(),
+            Self::NotesFolder(_) => "plugins.notes.folder".to_owned(),
             Self::ReferenceTemplate(_) => "reference_template".to_owned(),
             Self::Editor(_) => "editor".to_owned(),
             Self::Keymap { command, .. } => format!("keymap.{command}"),
@@ -263,6 +269,7 @@ impl SettingChange {
             Self::ReferenceTemplate(text) if text.chars().count() > MAX_REFERENCE_TEMPLATE => {
                 Err(invalid("tooLong"))
             }
+            Self::NotesFolder(text) if !valid_notes_folder(text) => Err(invalid("folder")),
             Self::Editor(text) => crate::document::editor::EditorTemplate::parse(text)
                 .map(|_| ())
                 .map_err(|problem| invalid(problem.code())),
@@ -278,6 +285,17 @@ impl SettingChange {
             _ => Ok(()),
         }
     }
+}
+
+/// The longest notes folder path accepted.
+const MAX_NOTES_FOLDER: usize = 1024;
+
+/// A notes folder as the setting keeps it: empty (the default) or an absolute path of reasonable length.
+fn valid_notes_folder(text: &str) -> bool {
+    text.is_empty()
+        || (text.chars().count() <= MAX_NOTES_FOLDER
+            && !text.contains('\0')
+            && std::path::Path::new(text).is_absolute())
 }
 
 /// Reads a settings file as a document; missing | too large | unreadable | not TOML -> `None`.
@@ -365,6 +383,12 @@ impl AppSettings {
                 .and_then(|table| table.0.get("backend")?.as_str())
                 .and_then(GitBackendPref::parse)
                 .unwrap_or_default(),
+            notes_folder: PluginId::parse("notes")
+                .and_then(|notes| plugin_tables.get(&notes))
+                .and_then(|table| table.0.get("folder")?.as_str())
+                .filter(|folder| !folder.is_empty() && valid_notes_folder(folder))
+                .map(str::to_owned)
+                .unwrap_or_default(),
             reference_template: str_of(doc, "reference_template")
                 .filter(|t| !t.trim().is_empty() && t.chars().count() <= MAX_REFERENCE_TEMPLATE)
                 .map_or_else(|| DEFAULT_REFERENCE_TEMPLATE.to_owned(), str::to_owned),
@@ -411,6 +435,14 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
                 &PluginId::of("git"),
                 "backend",
                 (*v != GitBackendPref::Automatic).then(|| v.as_str().into()),
+            );
+        }
+        SettingChange::NotesFolder(v) => {
+            set_plugin_key(
+                root,
+                &PluginId::of("notes"),
+                "folder",
+                (!v.trim().is_empty()).then(|| v.trim().into()),
             );
         }
         SettingChange::ReferenceTemplate(v) => set_text(root, "reference_template", v),

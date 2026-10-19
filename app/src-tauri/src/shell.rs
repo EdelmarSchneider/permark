@@ -205,6 +205,7 @@ impl Shell {
             self.settings_file.apply(change)?
         };
         self.env.set_settings(settings.clone());
+        self.env.settings_changed();
         if matches!(change, SettingChange::GitBackend(_)) {
             // the git plugin of every open project starts again with the other backend
             for core in self.registry.cores() {

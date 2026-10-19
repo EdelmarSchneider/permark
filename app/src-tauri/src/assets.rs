@@ -83,6 +83,7 @@ fn serve(handle: &AppHandle, uri_path: &str, range: Option<&str>) -> Result<Asse
     let abs = match &workspace {
         Workspace::Project(core) => core.vault().resolve(&parsed)?,
         Workspace::SingleFile(file) => file.scope.resolve_asset(&parsed)?,
+        Workspace::Notes(core) => core.scope().resolve_asset(&parsed)?,
     };
     Ok(assets::read(&path, &abs, range)?)
 }

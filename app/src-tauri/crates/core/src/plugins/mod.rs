@@ -29,6 +29,7 @@ use crate::edit::Editor;
 use crate::events::{CoreEvent, EventSink};
 use crate::format::{Contributions, FormatRegistry};
 use crate::paths::{Root, Vault};
+use crate::settings::AppSettings;
 use crate::state::{StateData, StateFile, StateStore};
 use crate::tree::Explorer;
 use crate::watch::OwnWrites;
@@ -129,7 +130,10 @@ pub enum PluginError {
 }
 
 /// A started plugin. `Drop` = teardown: threads joined, watchers removed, sockets closed (RAII).
-pub trait Running: Send {}
+pub trait Running: Send {
+    /// The app settings changed (App scope; called with the new settings, quick).
+    fn settings_changed(&self, _settings: &AppSettings) {}
+}
 
 /// A plugin implementation (one per plugin crate).
 pub trait Plugin: Send + Sync {
@@ -205,6 +209,39 @@ impl Plugin for StaticPlugin {
     }
 }
 
+/// What an App-scope instance gets besides its own state: the app's RPC table (the Notes window and the welcome screen
+/// call it, no project needed), the typed services plugins hand to each other, and the live app settings.
+#[derive(Clone)]
+pub struct AppServices {
+    pub rpc: Arc<RpcTable>,
+    pub services: Arc<Services>,
+    settings: Arc<RwLock<AppSettings>>,
+}
+
+impl AppServices {
+    #[must_use]
+    pub fn new(
+        rpc: Arc<RpcTable>,
+        services: Arc<Services>,
+        settings: Arc<RwLock<AppSettings>>,
+    ) -> Self {
+        Self {
+            rpc,
+            services,
+            settings,
+        }
+    }
+
+    /// The app settings now.
+    #[must_use]
+    pub fn settings(&self) -> AppSettings {
+        self.settings
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
 /// What an instance works on.
 #[derive(Debug, Clone)]
 pub enum CxWorkspace {
@@ -269,6 +306,7 @@ impl ProjectServices {
             scope: self.documents.scope(),
             formats: &formats,
             own: Some(&self.own),
+            observer: None,
         };
         f(&editor)
     }
@@ -287,6 +325,7 @@ pub struct PluginCx {
     events: PluginEvents,
     watch: Option<Arc<crate::watch::WatchHub>>,
     project: Option<ProjectServices>,
+    app: Option<AppServices>,
     store: Option<StateStore>,
 }
 
@@ -314,8 +353,22 @@ impl PluginCx {
             events,
             watch: None,
             project: None,
+            app: None,
             store: None,
         }
+    }
+
+    /// Gives an App-scope instance the app's services.
+    #[must_use]
+    pub fn with_app(mut self, services: AppServices) -> Self {
+        self.app = Some(services);
+        self
+    }
+
+    /// The app's services (App scope).
+    #[must_use]
+    pub fn app(&self) -> Option<&AppServices> {
+        self.app.as_ref()
     }
 
     /// Gives the instance the state store its files live in (own namespace: `state_file`).
@@ -355,12 +408,16 @@ impl PluginCx {
         self.project.as_ref()
     }
 
-    /// Serves `method` of this plugin until the registration is dropped (Project scope; `None` otherwise).
+    /// Serves `method` of this plugin until the registration is dropped: on the project's table (Project scope) or the
+    /// app's (App scope); `None` when the instance has neither.
     #[must_use]
     pub fn rpc(&self, method: &str, handler: RpcHandler) -> Option<RpcRegistration> {
-        self.project
+        let table = self
+            .project
             .as_ref()
-            .map(|project| project.rpc.register(&self.id, method, handler))
+            .map(|project| &project.rpc)
+            .or_else(|| self.app.as_ref().map(|app| &app.rpc))?;
+        Some(table.register(&self.id, method, handler))
     }
 
     /// Gives a Project-scope instance the file watch of its project.

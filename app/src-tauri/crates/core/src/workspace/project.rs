@@ -2,7 +2,7 @@
 //! down its plugins in reverse dependency order.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -11,11 +11,13 @@ use crate::document::{DocScope, Documents};
 use crate::events::{CoreEvent, EventSink};
 use crate::fileops::FileOps;
 use crate::format::FormatRegistry;
+use crate::notes::{NotesCore, NotesScope};
 use crate::organizing::{SilenceApi, TagsApi};
 use crate::paths::{Root, Vault};
 use crate::plugins::{
-    resolve_enabled, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId, PluginRegistry,
-    PluginScope, PluginSet, ProjectFacts, ProjectServices, RpcTable, Services,
+    resolve_enabled, AppServices, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId,
+    PluginRegistry, PluginScope, PluginSet, ProjectFacts, ProjectServices, RpcTable, ServiceLease,
+    Services,
 };
 use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{AppSettings, ProjectConfig};
@@ -29,8 +31,17 @@ pub struct CoreEnv {
     pub registry: Arc<PluginRegistry>,
     pub sink: Arc<dyn EventSink>,
     pub distribution: Distribution,
-    settings: RwLock<AppSettings>,
+    settings: Arc<RwLock<AppSettings>>,
     app_plugins: Mutex<PluginSet>,
+    /// What App-scope plugins serve (the Notes window and the welcome screen call it; no project needed).
+    rpc: Arc<RpcTable>,
+    /// Typed APIs App-scope plugins hand to core and to each other.
+    services: Arc<Services>,
+    /// Where the Notes window's documents are (the `notes` plugin fills it).
+    notes_scope: Arc<NotesScope>,
+    _notes_lease: ServiceLease,
+    /// The Notes workspace, built when first opened.
+    notes: OnceLock<Arc<NotesCore>>,
     /// Formats of the app-scope plugins that are on (single-file windows read with these).
     formats: RwLock<Arc<FormatRegistry>>,
     /// Called when a project live updates change (the registry recomputes contexts).
@@ -54,16 +65,52 @@ impl CoreEnv {
         distribution: Distribution,
         settings: AppSettings,
     ) -> Self {
+        let services = Services::new();
+        let notes_scope = NotesScope::new();
+        let notes_lease = services.provide(Arc::clone(&notes_scope));
         Self {
             dirs,
             registry,
             sink,
             distribution,
-            settings: RwLock::new(settings),
+            settings: Arc::new(RwLock::new(settings)),
             app_plugins: Mutex::new(PluginSet::new(PluginScope::App)),
+            rpc: RpcTable::new(),
+            services,
+            notes_scope,
+            _notes_lease: notes_lease,
+            notes: OnceLock::new(),
             formats: RwLock::new(Arc::new(FormatRegistry::core())),
             status_hook: Mutex::new(None),
         }
+    }
+
+    /// What App-scope plugins serve.
+    #[must_use]
+    pub fn rpc(&self) -> &Arc<RpcTable> {
+        &self.rpc
+    }
+
+    /// The typed APIs App-scope plugins offer.
+    #[must_use]
+    pub fn services(&self) -> &Arc<Services> {
+        &self.services
+    }
+
+    /// Where the Notes window's documents are.
+    #[must_use]
+    pub fn notes_scope(&self) -> &Arc<NotesScope> {
+        &self.notes_scope
+    }
+
+    /// The Notes workspace (built on first use: it polls its open documents on a thread of its own).
+    #[must_use]
+    pub fn notes(&self) -> Arc<NotesCore> {
+        Arc::clone(
+            self.notes.get_or_init(|| {
+                NotesCore::new(Arc::clone(&self.notes_scope), Arc::clone(&self.sink))
+            }),
+        )
     }
 
     pub fn set_status_hook(&self, hook: StatusHook) {
@@ -94,6 +141,15 @@ impl CoreEnv {
             .settings
             .write()
             .unwrap_or_else(PoisonError::into_inner) = settings;
+    }
+
+    /// Tells the running App-scope plugins that the settings changed (after [`CoreEnv::set_settings`]).
+    pub fn settings_changed(&self) {
+        let settings = self.settings();
+        self.app_plugins
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .settings_changed(&settings);
     }
 
     /// App-level enablement (no project overrides).
@@ -147,6 +203,11 @@ impl CoreEnv {
                     Arc::clone(&self.sink),
                 )
                 .with_store(state.clone())
+                .with_app(AppServices::new(
+                    Arc::clone(&self.rpc),
+                    Arc::clone(&self.services),
+                    Arc::clone(&self.settings),
+                ))
             });
         for failure in failures {
             self.sink.emit(CoreEvent::PluginFailed {
