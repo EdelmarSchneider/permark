@@ -185,7 +185,7 @@ describe("the strip under the header", () => {
       path: "docs/guide.md",
       description: "About it",
     });
-    vi.spyOn(documents, "path", "get").mockReturnValue("docs/guide.md");
+    vi.spyOn(documents, "shown", "get").mockReturnValue("docs/guide.md");
     component = mount(TagStrip, { target });
     flushSync();
     await until(() => target.querySelector(".strip") !== null, "the strip");
@@ -198,7 +198,7 @@ describe("the strip under the header", () => {
 
   it("draws nothing for a document that has neither", async () => {
     await open();
-    vi.spyOn(documents, "path", "get").mockReturnValue("README.md");
+    vi.spyOn(documents, "shown", "get").mockReturnValue("README.md");
     component = mount(TagStrip, { target });
     flushSync();
     await tick();

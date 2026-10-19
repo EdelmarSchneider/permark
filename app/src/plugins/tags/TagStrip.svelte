@@ -9,7 +9,7 @@
   import { PANEL } from "./ids";
   import { tags } from "./store.svelte";
 
-  const path = $derived(documents.path);
+  const path = $derived(documents.shown);
   const names = $derived(path === null ? [] : tags.tagsOf(path));
   const description = $derived(path === null ? "" : tags.descriptionOf(path));
 

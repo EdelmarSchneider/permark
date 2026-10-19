@@ -46,10 +46,19 @@
     const outside = (event: PointerEvent): void => {
       if (root && event.target instanceof Node && !root.contains(event.target)) void close();
     };
+    // Escape closes the editor wherever the focus is inside the window
+    const escape = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void close();
+    };
     window.addEventListener("pointerdown", outside, true);
+    window.addEventListener("keydown", escape, true);
     return () => {
       gone = true;
       window.removeEventListener("pointerdown", outside, true);
+      window.removeEventListener("keydown", escape, true);
       before?.focus();
     };
   });
@@ -99,11 +108,6 @@
   function onkeydown(event: KeyboardEvent): void {
     if (event.isComposing || event.keyCode === 229) return;
     switch (event.key) {
-      case "Escape":
-        event.preventDefault();
-        event.stopPropagation();
-        void close();
-        break;
       case "ArrowDown":
         if (suggestions.length === 0) break;
         event.preventDefault();

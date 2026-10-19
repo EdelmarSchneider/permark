@@ -9,7 +9,7 @@ import { comments } from "./store.svelte";
 
 /** Marks the page and follows it; returns what takes the marks off again. */
 export function decorateMargin(root: HTMLElement): () => void {
-  const sync = (): void => applyMarks(root, comments.bars(documents.path));
+  const sync = (): void => applyMarks(root, comments.bars(documents.shown));
   // the page painted again (blocks made | replaced)
   const unpaint = documents.onPainted(sync);
   // the comments (or the document, or its blocks) changed

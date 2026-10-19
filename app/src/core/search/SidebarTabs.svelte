@@ -17,31 +17,34 @@
     type="button"
     role="tab"
     class="tab"
+    class:icon-only={crowded && shown !== "files"}
     aria-selected={shown === "files"}
     aria-label={t("sidebar.files")}
     title={t("sidebar.files")}
     onclick={() => ui.showSidebar("files")}
   >
     <FolderTree size={14} aria-hidden="true" />
-    {#if !crowded || shown === "files"}{t("sidebar.files")}{/if}
+    {#if !crowded || shown === "files"}<span class="label">{t("sidebar.files")}</span>{/if}
   </button>
   <button
     type="button"
     role="tab"
     class="tab"
+    class:icon-only={crowded && shown !== "search"}
     aria-selected={shown === "search"}
     aria-label={t("sidebar.search")}
     title={t("sidebar.search")}
     onclick={() => ui.showSidebar("search")}
   >
     <SearchIcon size={14} aria-hidden="true" />
-    {#if !crowded || shown === "search"}{t("sidebar.search")}{/if}
+    {#if !crowded || shown === "search"}<span class="label">{t("sidebar.search")}</span>{/if}
   </button>
   {#each plugins as panel (panel.owner + panel.id)}
     <button
       type="button"
       role="tab"
       class="tab"
+      class:icon-only={panel.icon !== undefined && crowded && shown !== panel.id}
       aria-selected={shown === panel.id}
       aria-label={t(panel.label)}
       title={t(panel.label)}
@@ -51,7 +54,8 @@
         {@const Icon = panel.icon}
         <Icon size={14} />
       {/if}
-      {#if !panel.icon || !crowded || shown === panel.id}{t(panel.label)}{/if}
+      {#if !panel.icon || !crowded || shown === panel.id}<span class="label">{t(panel.label)}</span
+        >{/if}
     </button>
   {/each}
 </div>
@@ -62,10 +66,13 @@
     flex: none;
     gap: 2px;
     padding: var(--sp-2) var(--sp-2) 0;
+    overflow: hidden;
     border-bottom: 1px solid var(--border);
   }
+  /* the open tab gives way before the others do: every tab stays reachable */
   .tab {
-    flex: none;
+    flex: 0 1 auto;
+    min-width: 0;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -77,6 +84,16 @@
     font: inherit;
     font-size: var(--fs-ui-sm);
     cursor: pointer;
+  }
+  .tab.icon-only {
+    flex: none;
+    padding-inline: var(--sp-2);
+  }
+  .label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tab:hover {
     color: var(--text);

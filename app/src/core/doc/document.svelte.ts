@@ -117,6 +117,11 @@ export class DocumentController {
     return this.#shown;
   }
 
+  /** The path of what the page shows now. Reactive (it follows the view), unlike `path`, which only the controller moves. */
+  get shown(): string | null {
+    return this.view?.path ?? null;
+  }
+
   get workspaceId(): number | null {
     return this.#workspace?.id ?? null;
   }
