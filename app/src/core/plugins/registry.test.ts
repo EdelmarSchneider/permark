@@ -157,6 +157,7 @@ describe("plugin host", () => {
       "shell-integration",
       "tags",
       "text-view",
+      "token-count",
       "unread",
       "updates",
       "word-count",

@@ -2,8 +2,7 @@
   // Status bar item: words (or characters, or minutes to read) of the document, or of the selection when there is
   // one. Live while editing (counted here); in View, the file's text is counted once per version. Click: next measure.
   import { api } from "../../api";
-  import { documents } from "../../core/doc/document.svelte";
-  import { editing } from "../../core/editing/session.svelte";
+  import { createAnalysisText } from "../../core/doc/analysisText.svelte";
   import { language, t, tn } from "../../core/i18n";
   import { measure, minutes, type Counts } from "./count";
 
@@ -12,52 +11,16 @@
   /** Longer texts are counted by the backend. */
   const LOCAL_LIMIT = 200_000;
 
+  const source = createAnalysisText();
   let unit = $state<Unit>("words");
-  let viewText = $state.raw<{ path: string; hash: string | null; text: string } | null>(null);
-  let viewSelection = $state("");
   let big = $state.raw<Counts | null>(null);
 
-  const view = $derived(documents.view);
-  const editingNow = $derived(editing.mode !== "view" && editing.path === documents.path);
-  const markdown = $derived(view?.format === "markdown");
-  const countable = $derived(
-    view !== null && (view.body.kind === "markdown" || view.body.kind === "text"),
-  );
-
-  // the file's text in View: read once per version (external I/O)
-  $effect(() => {
-    const current = view;
-    if (!current || !countable || editingNow) return;
-    if (viewText?.path === current.path && viewText.hash === current.hash) return;
-    let gone = false;
-    void api.documentText(current.path).then((result) => {
-      if (!gone && result.ok)
-        viewText = { path: current.path, hash: current.hash, text: result.value };
-    });
-    return () => {
-      gone = true;
-    };
-  });
-
-  // the selection of the page in View
-  $effect(() => {
-    if (editingNow) return;
-    const onSelection = (): void => {
-      const selection = window.getSelection();
-      const node = selection?.anchorNode ?? null;
-      const inPage = node !== null && node.parentElement?.closest("[data-scroller]") !== null;
-      viewSelection = inPage ? (selection?.toString() ?? "") : "";
-    };
-    document.addEventListener("selectionchange", onSelection);
-    return () => document.removeEventListener("selectionchange", onSelection);
-  });
-
-  const text = $derived(
-    editingNow ? editing.text : viewText?.path === view?.path ? (viewText?.text ?? "") : "",
-  );
-  const selection = $derived(editingNow ? editing.selection : viewSelection);
+  const text = $derived(source.text);
+  const selection = $derived(source.selection);
+  const markdown = $derived(source.markdown);
+  const countable = $derived(source.countable);
   /** Selection text is plain (Edit, View) except in Source. */
-  const selectionKind = $derived(editingNow && editing.mode === "source" ? "markdown" : "plain");
+  const selectionKind = $derived(source.selectionMarkdown ? "markdown" : "plain");
 
   // a long text: the backend counts it (debounced while typing)
   $effect(() => {

@@ -80,6 +80,8 @@ export class WindowStore {
   openIn = $state<OpenIn>("ask");
   /** The person's keyboard map: command id -> combo (`""` = unbound). */
   keymap = $state.raw<Readonly<Record<string, string>>>({});
+  /** The tokenizers the token count shows, first = primary (the app's choice; a project may have its own). */
+  tokenizers = $state.raw<readonly string[]>([]);
   #nextNotice = 1;
   /** A window page that takes dropped files itself (the Notes): returns whether it did. */
   dropHook: ((paths: readonly string[]) => boolean) | null = null;
@@ -110,6 +112,7 @@ export class WindowStore {
         this.startIn = e.settings.startIn;
         this.openIn = e.settings.openIn;
         this.keymap = e.settings.keymap;
+        this.tokenizers = e.settings.tokenizers;
         void language.choose(parsePreference(e.settings.language));
       }),
       this.#api.on("open-failed", (e) => {
@@ -134,6 +137,7 @@ export class WindowStore {
       this.startIn = info.settings.startIn;
       this.openIn = info.settings.openIn;
       this.keymap = info.settings.keymap;
+      this.tokenizers = info.settings.tokenizers;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
       for (const failed of info.failures) {

@@ -8,6 +8,7 @@ import type { WorkspaceView } from "./generated/WorkspaceView";
 import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs";
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
+import { createMockTokens, type TokensProbe } from "./mockTokens";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
@@ -56,6 +57,7 @@ function defaultSettings(): AppSettings {
     openIn: "ask",
     gitBackend: "automatic",
     notesFolder: "",
+    tokenizers: [],
     referenceTemplate: "{path}#{section}",
     editor: "",
     keymap: {},
@@ -100,6 +102,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, openIn: change.value };
     case "gitBackend":
       return { ...settings, gitBackend: change.value };
+    case "tokenizers":
+      return { ...settings, tokenizers: change.value };
     case "notesFolder":
       return { ...settings, notesFolder: change.value };
     case "referenceTemplate":
@@ -147,6 +151,8 @@ export type MockProbe = {
   windowThemes: ("light" | "dark" | null)[];
   /** The default app, the file manager entries, the updater. */
   distribution: DistributionProbe;
+  /** The token count plugin: vocabularies, what it was asked to count. */
+  tokens: TokensProbe;
   /** Drop into project: what lies outside, the plans and applies, a hold to keep one running. */
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
@@ -268,8 +274,12 @@ export function createMockApi(): Api & {
   const notes = createMockNotes(editing.probe.files);
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
     "updates:state": new Set(),
+    "token-count:state": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
+    for (const handler of appListeners[event]) handler(payload);
+  });
+  const tokens = createMockTokens((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
   });
   const plugins = createMockPlugins(
@@ -277,7 +287,7 @@ export function createMockApi(): Api & {
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
     organizing,
     notes,
-    distribution.handlers,
+    { ...distribution.handlers, ...tokens.handlers },
   );
   const importing = createMockImport(project, emit, () => refreshTree());
   const probe: MockProbe = {
@@ -291,6 +301,7 @@ export function createMockApi(): Api & {
     shell: shell.probe,
     windowThemes,
     distribution: distribution.probe,
+    tokens: tokens.probe,
     imports: importing.probe,
     pictures: [],
   };

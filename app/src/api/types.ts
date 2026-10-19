@@ -9,6 +9,8 @@ import type { FileGroup } from "./generated/FileGroup";
 import type { ShellEntry } from "./generated/ShellEntry";
 import type { ShellState } from "./generated/ShellState";
 import type { UpdateState } from "./generated/UpdateState";
+import type { CountResult } from "./generated/CountResult";
+import type { TokenCountState } from "./generated/TokenCountState";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
 import type { OpenIn } from "./generated/OpenIn";
@@ -445,6 +447,15 @@ export interface PluginMethods {
   "updates.download": { args: Record<string, never>; result: UpdateState };
   "updates.restart": { args: Record<string, never>; result: UpdateState };
   "updates.dismiss": { args: Record<string, never>; result: UpdateState };
+  "token-count.state": { args: Record<string, never>; result: TokenCountState };
+  "token-count.download": { args: { tokenizer: string }; result: TokenCountState };
+  "token-count.cancel": { args: { tokenizer: string }; result: TokenCountState };
+  "token-count.removeVocab": { args: { tokenizer: string }; result: TokenCountState };
+  "token-count.setOutline": { args: { on: boolean }; result: TokenCountState };
+  "token-count.count": {
+    args: { tokenizers: string[]; text: string; parts?: [number, number][] };
+    result: CountResult[];
+  };
 }
 export type PluginMethod = keyof PluginMethods;
 
@@ -467,9 +478,14 @@ export type PluginEnvelope<E extends PluginEventName> = { root: string; data: Pl
 /** Events of app plugins: the payload as is (no folder: one instance for the whole app). */
 export interface AppPluginEvents {
   "updates:state": UpdateState;
+  "token-count:state": TokenCountState;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
+export type { CountResult, TokenCountState };
+export type { VocabEntry } from "./generated/VocabEntry";
+export type { VocabFailure } from "./generated/VocabFailure";
+export type { VocabState } from "./generated/VocabState";
 export type { DefaultAppMode } from "./generated/DefaultAppMode";
 export type { GroupView } from "./generated/GroupView";
 export type { UpdateStage } from "./generated/UpdateStage";

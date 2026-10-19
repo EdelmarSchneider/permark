@@ -10,6 +10,7 @@ import type { MessageKey } from "../i18n";
 import type {
   EmbedProps,
   FrontMatterProps,
+  OutlineWatcherProps,
   PageSelection,
   ViewerProps,
   WorkspaceViewProps,
@@ -40,6 +41,9 @@ export type TreeBadge = {
   dim?: boolean;
   tip?: string;
 };
+
+/** What a plugin puts in a column of the outline panel: a short text and, when useful, a longer one for the tooltip. */
+export type OutlineCell = { text: string; title?: string };
 
 /** Everything a plugin can add to the core UI. */
 export type Contribution = Owned &
@@ -77,6 +81,18 @@ export type Contribution = Owned &
         kind: "treeBadge";
         id: string;
         badge: (path: string, isDir: boolean) => TreeBadge | null;
+      }
+    /**
+     * A column right of the outline items (the tokens of each section). `header` null = no column. `cell` and `header`
+     * read reactive state. `watcher` is mounted (it draws nothing) while the outline shows, with the items: where the
+     * plugin works out its figures, with the effects it needs.
+     */
+    | {
+        kind: "outlineColumn";
+        id: string;
+        header: () => OutlineCell | null;
+        cell: (index: number) => OutlineCell | null;
+        watcher: LazyComponent<OutlineWatcherProps>;
       }
     /** A strip under the document header (the review bar, a repository notice). Lowest `order` first. */
     | { kind: "docBar"; id: string; order: number; view: LazyComponent }

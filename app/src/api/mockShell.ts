@@ -47,6 +47,7 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("agent", "feature", "project"),
   manifest("md-family", "role", "app"),
   manifest("word-count", "analysis", "app"),
+  { ...manifest("token-count", "analysis", "app"), defaultEnabled: false },
   manifest("prompt-blocks", "embed", "app"),
   manifest("frontmatter-card", "embed", "app"),
   manifest("highlight", "embed", "app"),
@@ -100,12 +101,20 @@ function emptyProject(): ProjectSettings {
     ignore: [],
     agentDeny: [],
     agentDenyPaths: [],
+    tokenizers: [],
   };
 }
 
 /** Whether a list change is acceptable (the backend's limits, lighter). */
 function listProblem(change: ProjectSettingChange): string | null {
   if (change.key === "treeShow") return null;
+  if (change.key === "tokenizers") {
+    const ids = change.value;
+    const valid = ids.every(
+      (id, at) => /^[a-z0-9]{1,16}$/.test(id) && !ids.slice(0, at).includes(id),
+    );
+    return ids.length <= 3 && valid ? null : "tokenizers";
+  }
   const entries = change.value;
   if (entries.length > 200) return "tooMany";
   for (const entry of entries) {
@@ -233,6 +242,9 @@ export function createMockShell(deps: {
             break;
           case "agentDenyPaths":
             project = { ...project, agentDenyPaths: tidy(change.value) };
+            break;
+          case "tokenizers":
+            project = { ...project, tokenizers: change.value };
             break;
           default:
             change satisfies never;

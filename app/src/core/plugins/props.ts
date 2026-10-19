@@ -1,6 +1,6 @@
 // What the core hands to the views plugins contribute (types only; the registry and the components share them).
 
-import type { DocumentView, WorkspaceId, WorkspaceView } from "../../api";
+import type { DocumentView, OutlineItem, WorkspaceId, WorkspaceView } from "../../api";
 
 /** An embed (a code block, a formula, a diagram) is mounted with the text it draws. */
 export type EmbedProps = {
@@ -44,4 +44,9 @@ export type FrontMatterProps = {
 export type WorkspaceViewProps = {
   /** This window's workspace. */
   workspace: Extract<WorkspaceView, { kind: "notes" }>;
+};
+
+/** The headings the outline panel shows: a plugin that adds a column to them works out its figures from these. */
+export type OutlineWatcherProps = {
+  items: readonly OutlineItem[];
 };

@@ -19,6 +19,7 @@ export const KNOWN_PLUGINS = [
   "agent",
   "md-family",
   "word-count",
+  "token-count",
   "prompt-blocks",
   "frontmatter-card",
   "highlight",
