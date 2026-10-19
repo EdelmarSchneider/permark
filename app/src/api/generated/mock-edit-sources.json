@@ -1,4 +1,28 @@
 {
+  ".editorconfig": {
+    "encoding": "utf8",
+    "hash": "21db472fdd5aa623",
+    "lineEnding": "lf",
+    "path": ".editorconfig",
+    "segments": null,
+    "text": "# EditorConfig is awesome: https://EditorConfig.org\nroot = true\n\n[*]\nindent_style = space\nindent_size = 2\nend_of_line = lf\ncharset = utf-8\ntrim_trailing_whitespace = true\ninsert_final_newline = true\n\n# Tabs for Makefiles\n[Makefile]\nindent_style = tab\n\n[*.{js,py}]\nmax_line_length = 100\n"
+  },
+  ".env.example": {
+    "encoding": "utf8",
+    "hash": "c4799ed021ad6b91",
+    "lineEnding": "lf",
+    "path": ".env.example",
+    "segments": null,
+    "text": "# App\nNODE_ENV=development\nPORT=3000\nDEBUG=false\n\n# Database\nDATABASE_URL=postgres://docs:pa55w0rd@localhost:5432/docs\nDB_PASSWORD=\"s3cr3t pass\"\nexport API_KEY='sk-live-abc123'\nSECRET_KEY_BASE=\nAPP_NAME=Docs Site # shown in the header\nBASE_URL=${HOST}/api\n"
+  },
+  ".gitignore": {
+    "encoding": "utf8",
+    "hash": "d0c1d0b7d8f7fee2",
+    "lineEnding": "lf",
+    "path": ".gitignore",
+    "segments": null,
+    "text": "# Dependencies\nnode_modules/\n.pnp.js\n\n# Build output\n/dist\n/build/\n*.log\n!important.log\n\n# Env files\n.env\n.env.*\n!.env.example\n"
+  },
   "CLAUDE.md": {
     "encoding": "utf8",
     "hash": "a84192067c0b6d86",
@@ -55,6 +79,14 @@
       }
     ],
     "text": "---\nname: project-rules\ndescription: Rules the agent follows in this repository\n---\n\n# Project rules\n\n<instructions>\nRead @docs/guide.md first. Greet {{user}} by name.\n</instructions>\n\n<example>\nInput: a question about the **guide**.\nOutput: a short answer with a link.\n</example>\n"
+  },
+  "Cargo.toml": {
+    "encoding": "utf8",
+    "hash": "0518bf737bbf4cd5",
+    "lineEnding": "lf",
+    "path": "Cargo.toml",
+    "segments": null,
+    "text": "# The docs site generator.\n[package]\nname = \"docs-site\"\nversion = \"0.4.2\"\nedition = \"2021\"\ndescription = \"Builds the project documentation\"\nauthors = [\"Ana Souza\", \"Bo Chen\"]\npublish = false\n\n[dependencies]\nserde = { version = \"1\", features = [\"derive\"] }\ntokio = \"1.40\"\npulldown-cmark = \"0.12\"\n\n# Release build\n[profile.release]\nopt-level = 3\nlto = true\ncodegen-units = 1\n\n[package.metadata.deploy]\nhost = \"docs.example.org\"\napi_token = \"dp_live_4f9a1c77b2\"\nretries = 3\n"
   },
   "README.md": {
     "encoding": "utf8",
@@ -232,6 +264,22 @@
       }
     ],
     "text": "---\ntitle: Reading showcase\nstatus: draft\nowner: Ana Souza\ntags: [reading, markdown, demo]\nupdated: 2026-10-19\n---\n\n# Reading showcase\n\nA page of everything the reading view draws. It links to the [guide](docs/guide.md), to a [missing page](docs/nope.md) and to [a section](#diagrams). Code references open in your editor: `src/main.rs:12`, and plain text like src/main.rs:3 works too.\n\n## Text and lists\n\nParagraphs keep a comfortable measure at **any** zoom: *emphasis*, `inline code`, ~~strike~~, a footnote[^1] and an autolink https://example.com. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.\n\n- [x] Render Markdown\n- [x] Keep my place when the file changes\n- [ ] Review the changes\n\n1. First\n2. Second\n   - nested item\n   - another one\n\n> [!NOTE]\n> Alerts come with a title and an icon.\n\n> [!WARNING]\n> Reading is the main mode. Beautiful, clear reading is a requirement.\n\n## Code\n\n```rust\nfn main() {\n    let name = \"PerMark\";\n    println!(\"Hello, {name}!\");\n}\n```\n\n```json\n{ \"name\": \"permark\", \"private\": true, \"version\": \"0.6.0\" }\n```\n\n## Tables\n\n| Feature  | Status  | Notes                         |\n| -------- | ------- | ----------------------------- |\n| Tables   | done    | Zebra rows, sticky header     |\n| Math     | done    | KaTeX, loaded when needed     |\n| Diagrams | done    | Mermaid and PlantUML in page  |\n\n## Math\n\nInline math $E = mc^2$ sits in the text. A display formula:\n\n$$\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n$$\n\n## Diagrams\n\n```mermaid\ngraph LR\n  A[Markdown] --> B(Render)\n  B --> C{Sanitize}\n  C -->|safe| D[Page]\n  C -->|unsafe| E[Dropped]\n```\n\n## Prompt blocks\n\n<context>\nYou are reading a prompt file. The tags below fold, and **Markdown inside them** still renders.\n\n- Variables look like {{customer_name}} and are marked.\n- Files are linked: see @docs/guide.md for the guide.\n</context>\n\n<instructions>\n1. Be brief.\n2. Quote the source.\n</instructions>\n\n[^1]: Footnotes list at the end of the page, with a way back.\n"
+  },
+  "config/app.properties": {
+    "encoding": "utf8",
+    "hash": "ba06daf0bc9b8182",
+    "lineEnding": "lf",
+    "path": "config/app.properties",
+    "segments": null,
+    "text": "# Server\nserver.port=8080\nserver.servlet.context-path = /api\n\n# Database\nspring.datasource.url=jdbc:postgresql://localhost:5432/docs\nspring.datasource.username: docs\nspring.datasource.password=s3cr3t-prop\nspring.jpa.show-sql true\nspring.jpa.open-in-view=false\n\napp.name=Docs Site\napp.greeting=Hello, \\u00e9\\u00e8!\n"
+  },
+  "docker-compose.yml": {
+    "encoding": "utf8",
+    "hash": "37c4740eb8983c9b",
+    "lineEnding": "lf",
+    "path": "docker-compose.yml",
+    "segments": null,
+    "text": "# Local stack\nname: docs\nservices:\n  web:\n    image: nginx:1.27   # pinned\n    ports:\n      - \"8080:80\"\n      - \"8443:443\"\n    environment:\n      MODE: production\n      DEBUG: false\n      API_KEY: sk-live-9d2c41aa\n    depends_on: [db]\n  db:\n    image: 'postgres:16'\n    restart: unless-stopped\n    environment:\n      POSTGRES_USER: docs\n      POSTGRES_PASSWORD: hunter2-prod\n    healthcheck:\n      interval: 10s\n      retries: 5\n"
   },
   "docs/guide.md": {
     "encoding": "utf8",

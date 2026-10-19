@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use super::bm25::SectionInput;
 use super::fold::tokenize;
-use crate::format::{sections, Section};
+use crate::format::{sections, FormatRegistry, Section};
 use crate::fsx::read_text;
 use crate::links::{local_target, parse as parse_links};
 use crate::tree::{key_of, Category};
@@ -48,7 +48,11 @@ impl Sig {
 /// Whether the index reads the content of this category.
 #[must_use]
 pub fn reads_content(category: Category) -> bool {
-    matches!(category, Category::Markdown | Category::Text)
+    // config files are read for their keys when a config format is on
+    matches!(
+        category,
+        Category::Markdown | Category::Text | Category::Config
+    )
 }
 
 /// A file read and ready to insert.
@@ -102,20 +106,35 @@ fn section_input(section: Section, file_name: Option<&str>) -> SectionInput {
     }
 }
 
-/// Reads `abs` (project path `path`) and prepares it. `None`: not readable as text, over the limit, binary.
+/// Reads `abs` (project path `path`) and prepares it. `None`: not readable as text, over the limit, binary, or a
+/// config file no format on reads (listed by name only).
 #[must_use]
-pub fn read_and_prepare(path: &str, abs: &Path, category: Category) -> Option<Prepared> {
+pub fn read_and_prepare(
+    path: &str,
+    abs: &Path,
+    category: Category,
+    formats: &FormatRegistry,
+) -> Option<Prepared> {
     let limit = match category {
         Category::Markdown => MARKDOWN_LIMIT,
-        Category::Text => TEXT_LIMIT,
+        Category::Text | Category::Config => TEXT_LIMIT,
         _ => return None,
     };
+    if category == Category::Config {
+        // a config format that is on says what of the file may be searched: keys, never values
+        formats.pick(path, &[])?;
+    }
     let meta = std::fs::metadata(abs).ok()?;
     if !meta.is_file() || meta.len() > limit {
         return None;
     }
     let sig = Sig::of(&meta);
     let decoded = read_text(abs, limit).ok()?;
+    if category == Category::Config {
+        let head = &decoded.text.as_bytes()[..decoded.text.len().min(4096)];
+        let searchable = formats.pick(path, head)?.searchable(&decoded.text)?;
+        return Some(prepare(path, sig, &searchable, category));
+    }
     Some(prepare(path, sig, &decoded.text, category))
 }
 

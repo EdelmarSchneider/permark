@@ -2775,6 +2775,12 @@ dependencies = [
  "permark-plugin-agent",
  "permark-plugin-broken-links",
  "permark-plugin-comments",
+ "permark-plugin-fmt-dotenv",
+ "permark-plugin-fmt-ignore",
+ "permark-plugin-fmt-ini",
+ "permark-plugin-fmt-properties",
+ "permark-plugin-fmt-toml",
+ "permark-plugin-fmt-yaml",
  "permark-plugin-follow",
  "permark-plugin-frontmatter-card",
  "permark-plugin-git",
@@ -2870,6 +2876,49 @@ dependencies = [
  "serde_json",
  "tempfile",
  "ts-rs",
+]
+
+[[package]]
+name = "permark-plugin-fmt-dotenv"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-fmt-ignore"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-fmt-ini"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-fmt-properties"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-fmt-toml"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+ "toml_edit 0.25.17+spec-1.1.0",
+]
+
+[[package]]
+name = "permark-plugin-fmt-yaml"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
 ]
 
 [[package]]

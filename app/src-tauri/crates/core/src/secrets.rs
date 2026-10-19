@@ -20,11 +20,35 @@ const SECRET_WORDS: [&str; 9] = [
     "private",
 ];
 
-/// Whether a key names a secret (`API_KEY`, `client-secret`, `authToken`, `db.password`).
+/// Words that contain a secret word and are not secrets (compared with separators removed).
+const HARMLESS: [&str; 10] = [
+    "author",
+    "keyword",
+    "keyboard",
+    "keymap",
+    "maxtokens",
+    "numtokens",
+    "tokenizer",
+    "monkey",
+    "turkey",
+    "donkey",
+];
+
+/// Whether a key names a secret (`API_KEY`, `client-secret`, `authToken`, `db.password`). Separators are ignored
+/// (`pass_word` counts) and a few harmless words are set aside (`authors`, `keywords`, `max_tokens`).
 #[must_use]
 pub fn is_secret_key(key: &str) -> bool {
-    let lower = key.to_ascii_lowercase();
-    SECRET_WORDS.iter().any(|word| lower.contains(word))
+    let mut flat: String = key
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    for word in HARMLESS {
+        if flat.contains(word) {
+            flat = flat.replace(word, "");
+        }
+    }
+    SECRET_WORDS.iter().any(|word| flat.contains(word))
 }
 
 fn is_ident(c: char) -> bool {
@@ -34,10 +58,12 @@ fn is_ident(c: char) -> bool {
 /// `text` with every secret value replaced by [`HIDDEN`]; borrowed when nothing was hidden.
 #[must_use]
 pub fn mask_text(text: &str) -> Cow<'_, str> {
-    if !SECRET_WORDS
-        .iter()
-        .any(|word| text.to_ascii_lowercase().contains(word))
-    {
+    let flat: String = text
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    if !SECRET_WORDS.iter().any(|word| flat.contains(word)) && !text.contains("://") {
         return Cow::Borrowed(text);
     }
     let mut out = String::with_capacity(text.len());
@@ -62,8 +88,49 @@ pub fn mask_text(text: &str) -> Cow<'_, str> {
     }
 }
 
-/// One line: each `key <sep> value` pair whose key is secret.
+/// Where the password of a `scheme://user:password@host` address sits in `text`: the first one.
+#[must_use]
+pub fn url_password(text: &str) -> Option<std::ops::Range<usize>> {
+    let mut from = 0;
+    while let Some(found) = text[from..].find("://") {
+        let start = from + found + 3;
+        let end = text[start..]
+            .find(|c: char| matches!(c, '/' | '?' | '#' | '"' | '\'' | '\\') || c.is_whitespace())
+            .map_or(text.len(), |i| start + i);
+        let authority = &text[start..end];
+        if let Some(at) = authority.rfind('@') {
+            if let Some(colon) = authority[..at].find(':') {
+                let password = start + colon + 1..start + at;
+                if !password.is_empty() && &text[password.clone()] != HIDDEN {
+                    return Some(password);
+                }
+            }
+        }
+        from = start;
+    }
+    None
+}
+
+/// One line: each `key <sep> value` pair whose key is secret; the password of every address.
 fn mask_line(line: &str) -> Cow<'_, str> {
+    let mut out = String::new();
+    let mut rest = line;
+    let mut changed = false;
+    while let Some(range) = url_password(rest) {
+        changed = true;
+        out.push_str(&rest[..range.start]);
+        out.push_str(HIDDEN);
+        rest = &rest[range.end..];
+    }
+    if !changed {
+        return mask_pairs(line);
+    }
+    out.push_str(rest);
+    Cow::Owned(mask_pairs(&out).into_owned())
+}
+
+/// `key <sep> value` pairs whose key is secret.
+fn mask_pairs(line: &str) -> Cow<'_, str> {
     let chars: Vec<(usize, char)> = line.char_indices().collect();
     let mut out = String::new();
     let mut copied = 0; // byte offset in `line` copied so far
@@ -186,6 +253,52 @@ mod tests {
         for (input, expected) in cases {
             assert_eq!(mask_text(input), expected, "{input}");
         }
+    }
+
+    #[test]
+    fn the_password_of_an_address_is_hidden() {
+        assert_eq!(
+            mask_text("DATABASE_URL=postgres://user:pass@localhost:5432/app"),
+            "DATABASE_URL=postgres://user:<hidden>@localhost:5432/app"
+        );
+        assert_eq!(
+            mask_text("see https://a:b@x.org/p and ftp://u:p2@y"),
+            "see https://a:<hidden>@x.org/p and ftp://u:<hidden>@y"
+        );
+        for plain in [
+            "https://example.org/a@b",
+            "mailto:a@b.c",
+            "ssh://git@github.com/x/y",
+            "http://h:80/p",
+        ] {
+            assert_eq!(mask_text(plain), plain);
+        }
+        assert_eq!(url_password("x://u:p@h"), Some(6..7));
+    }
+
+    #[test]
+    fn harmless_words_are_not_secret_keys() {
+        for key in [
+            "authors",
+            "keywords",
+            "max_tokens",
+            "keyboard",
+            "name",
+            "version",
+        ] {
+            assert!(!is_secret_key(key), "{key}");
+        }
+        for key in [
+            "API_KEY",
+            "pass_word",
+            "authToken",
+            "client-secret",
+            "db.pwd",
+            "author_token",
+        ] {
+            assert!(is_secret_key(key), "{key}");
+        }
+        assert_eq!(mask_text("authors = [\"a\"]"), "authors = [\"a\"]");
     }
 
     #[test]

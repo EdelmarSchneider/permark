@@ -1165,3 +1165,107 @@ fn ten_thousand_documents_build_and_answer_quickly() {
     assert!(build < build_limit, "build {build:?}");
     assert!(worst < query_limit, "worst query {worst:?}");
 }
+
+// ---- config files: keys, never values --------------------------------------------------------------------------------
+
+struct KeysOnly;
+
+impl crate::format::Format for KeysOnly {
+    fn id(&self) -> crate::format::FormatId {
+        crate::format::FormatId::TOML
+    }
+
+    fn claims(&self, _name: &str, ext: Option<&str>, _head: &[u8]) -> crate::format::Claim {
+        if ext == Some("toml") {
+            crate::format::Claim::Strong
+        } else {
+            crate::format::Claim::No
+        }
+    }
+
+    fn render(&self, text: &str, _cx: &crate::format::RenderCx<'_>) -> crate::format::Rendered {
+        crate::format::Rendered {
+            body: crate::format::Body::Text {
+                text: text.to_owned(),
+                language: None,
+            },
+            notes: Vec::new(),
+        }
+    }
+
+    fn searchable(&self, text: &str) -> Option<String> {
+        Some(
+            text.lines()
+                .filter_map(|l| l.split_once('=').map(|(k, _)| k.trim().to_owned()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    }
+}
+
+#[test]
+fn config_files_are_found_by_their_keys_while_a_format_is_on_and_never_by_values() {
+    use crate::format::{Contributions, FormatRegistry};
+    use std::sync::RwLock;
+
+    let dir = tempfile::tempdir().unwrap();
+    write(
+        dir.path(),
+        "app.toml",
+        "database_host = \"zebra-value\"\napi_token = \"TOPSECRET99\"\n",
+    );
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    let formats = Arc::new(RwLock::new(Arc::new(FormatRegistry::core())));
+    let index = SearchIndex::start_with(
+        vault,
+        explorer,
+        sink,
+        "root".to_owned(),
+        Arc::clone(&formats),
+    );
+    assert!(index.wait_ready(Duration::from_secs(60)));
+    let found = |q: &str| -> Vec<String> {
+        index
+            .sections(q, 20, &SearchFilter::default())
+            .hits
+            .into_iter()
+            .map(|h| h.path)
+            .collect()
+    };
+    let wait_for = |what: &str, mut ok: Box<dyn FnMut() -> bool>| {
+        let start = Instant::now();
+        while !ok() {
+            assert!(start.elapsed() < Duration::from_secs(20), "{what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    // no config format on: by name only
+    assert!(found("database_host").is_empty());
+    // a format on: the keys are searchable
+    *formats.write().unwrap() = Arc::new(FormatRegistry::build(
+        &Contributions::default().formats(vec![Arc::new(KeysOnly)]),
+    ));
+    index.formats_changed();
+    wait_for(
+        "keys indexed",
+        Box::new(|| !found("database_host").is_empty()),
+    );
+    assert_eq!(found("database_host"), ["app.toml"]);
+    assert_eq!(found("api_token"), ["app.toml"]);
+    // values never
+    assert!(found("zebra").is_empty() && found("TOPSECRET99").is_empty());
+    // the format off again: back to the name
+    *formats.write().unwrap() = Arc::new(FormatRegistry::core());
+    index.formats_changed();
+    wait_for(
+        "keys forgotten",
+        Box::new(|| found("database_host").is_empty()),
+    );
+}

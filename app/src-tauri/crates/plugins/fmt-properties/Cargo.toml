@@ -1,0 +1,17 @@
+[package]
+name = "permark-plugin-fmt-properties"
+description = "PerMark plugin fmt-properties."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API).
+[dependencies]
+permark-core.workspace = true
+
+
+[lints]
+workspace = true

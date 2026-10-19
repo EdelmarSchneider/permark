@@ -1,0 +1,24 @@
+# The docs site generator.
+[package]
+name = "docs-site"
+version = "0.4.2"
+edition = "2021"
+description = "Builds the project documentation"
+authors = ["Ana Souza", "Bo Chen"]
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tokio = "1.40"
+pulldown-cmark = "0.12"
+
+# Release build
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[package.metadata.deploy]
+host = "docs.example.org"
+api_token = "dp_live_4f9a1c77b2"
+retries = 3

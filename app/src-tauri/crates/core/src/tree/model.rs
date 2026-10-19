@@ -601,7 +601,7 @@ pub struct ScanFile {
     /// Project path.
     pub path: String,
     pub category: super::Category,
-    /// Where it is on disk; only for the categories whose content is read (Markdown | Text).
+    /// Where it is on disk; only for the categories whose content is read (Markdown | Text | Config).
     pub abs: Option<PathBuf>,
 }
 
@@ -678,8 +678,10 @@ fn scan_dir(
         if !entry.is_dir {
             if !ignored {
                 let category = category_of(&entry.name);
-                let reads_content =
-                    matches!(category, super::Category::Markdown | super::Category::Text);
+                let reads_content = matches!(
+                    category,
+                    super::Category::Markdown | super::Category::Text | super::Category::Config
+                );
                 cx.out.files.push(ScanFile {
                     path,
                     category,

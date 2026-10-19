@@ -26,6 +26,7 @@ pub use fuzzy::{fold_aligned, Match, Needle};
 pub use prepare::{prepare, read_and_prepare, Prepared, Sig, MARKDOWN_LIMIT, TEXT_LIMIT};
 
 use crate::events::EventSink;
+use crate::format::FormatRegistry;
 use crate::organizing::SilenceLookup;
 use crate::paths::Vault;
 use crate::tree::{Category, Explorer};
@@ -262,6 +263,20 @@ impl SearchIndex {
         sink: Arc<dyn EventSink>,
         root: String,
     ) -> Self {
+        let formats = Arc::new(std::sync::RwLock::new(Arc::new(FormatRegistry::core())));
+        Self::start_with(vault, explorer, sink, root, formats)
+    }
+
+    /// [`SearchIndex::start`] with the formats of the project (config files are searched by their keys when a config
+    /// format is on); the cell is read at every pass, so a change of plugins is seen after [`Self::formats_changed`].
+    #[must_use]
+    pub fn start_with(
+        vault: Vault,
+        explorer: Arc<Explorer>,
+        sink: Arc<dyn EventSink>,
+        root: String,
+        formats: Arc<std::sync::RwLock<Arc<FormatRegistry>>>,
+    ) -> Self {
         let shared = Arc::new(Shared::new());
         let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = channel::<Msg>();
@@ -272,6 +287,7 @@ impl SearchIndex {
             sink,
             root,
             stop: Arc::clone(&stop),
+            formats,
         };
         let thread = std::thread::Builder::new()
             .name("permark-index".to_owned())
@@ -284,6 +300,11 @@ impl SearchIndex {
             stop,
             thread: Mutex::new(thread),
         }
+    }
+
+    /// The formats that are on changed: config files are read again for their keys.
+    pub fn formats_changed(&self) {
+        let _ = self.tx.send(Msg::FormatsChanged);
     }
 
     /// The function to subscribe to the project's watch with: batches go to the worker.

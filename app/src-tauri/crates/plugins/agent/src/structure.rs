@@ -1,9 +1,10 @@
-//! Structure before content: the outline of a file (Markdown headings, JSON top-level keys, plain line count) and
-//! the text of one part of it (`at`: lines, a heading path, an anchor, a key). Every text that leaves is masked.
+//! Structure before content: the outline of a file (Markdown headings, JSON top-level keys, the top-level parts of a
+//! config file, plain line count) and the text of one part of it (`at`: lines, a heading path, an anchor, a key path).
+//! Every text that leaves is masked: config files by their structure (the secret values of the format), all by key.
 
-use permark_core::format::{ext_of, sections};
+use permark_core::format::{ext_of, sections, FormatRegistry, Sheet, Span};
 use permark_core::paths::fold;
-use permark_core::secrets::mask_text;
+use permark_core::secrets::{mask_text, HIDDEN};
 use serde_json::{json, Value};
 
 use crate::tools::MAX_READ_CHARS;
@@ -14,6 +15,14 @@ enum Kind {
     Markdown,
     Json,
     Text,
+}
+
+/// The sheet of a config file when a config format that is on reads it.
+fn sheet_of(formats: &FormatRegistry, path: &str, text: &str) -> Option<(Sheet, Vec<Span>)> {
+    let head = &text.as_bytes()[..text.len().min(4096)];
+    let format = formats.pick(path, head)?;
+    let sheet = format.sheet(text)?;
+    Some((sheet, format.secrets(text)))
 }
 
 fn kind_of(path: &str) -> Kind {
@@ -148,8 +157,16 @@ fn json_parts(text: &str) -> Vec<(Part, &'static str)> {
 
 /// The outline answer.
 #[must_use]
-pub fn outline(path: &str, text: &str) -> Value {
+pub fn outline(formats: &FormatRegistry, path: &str, text: &str) -> Value {
     let lines = line_count(text);
+    if let Some((sheet, _)) = sheet_of(formats, path, text) {
+        let items: Vec<Value> = sheet
+            .outline()
+            .into_iter()
+            .map(|p| json!({ "at": p.path, "label": p.label, "level": 1, "line": p.line, "lines": p.end.saturating_sub(p.line) + 1 }))
+            .collect();
+        return json!({ "path": path, "kind": "config", "lines": lines, "items": items });
+    }
     match kind_of(path) {
         Kind::Markdown => {
             let items: Vec<Value> = markdown_parts(text)
@@ -241,9 +258,15 @@ pub fn heading_line(path: &str, text: &str, heading: &str) -> Option<u32> {
 ///
 /// # Errors
 /// `NotFound(at)` when the file has no such part.
-pub fn read(path: &str, text: &str, at: Option<&str>) -> Result<Value, ToolError> {
+pub fn read(
+    formats: &FormatRegistry,
+    path: &str,
+    text: &str,
+    at: Option<&str>,
+) -> Result<Value, ToolError> {
     let total = line_count(text);
     let at = at.map(str::trim).filter(|a| !a.is_empty());
+    let config = sheet_of(formats, path, text);
     let (from, to) = match at {
         None => (1, total),
         Some(at) => match line_range(at) {
@@ -251,6 +274,9 @@ pub fn read(path: &str, text: &str, at: Option<&str>) -> Result<Value, ToolError
             Some(_) => return Err(ToolError::NotFound(at.to_owned())),
             None => {
                 let found = match kind_of(path) {
+                    _ if config.is_some() => {
+                        config.as_ref().and_then(|(sheet, _)| sheet.range_of(at))
+                    }
                     Kind::Markdown => find_part(&markdown_parts(text), at),
                     Kind::Json => {
                         let parts: Vec<Part> =
@@ -266,8 +292,10 @@ pub fn read(path: &str, text: &str, at: Option<&str>) -> Result<Value, ToolError
     let mut out = String::new();
     let mut last = from.saturating_sub(1);
     let mut cut = None;
+    let mut base = 0_usize;
     for (n, line) in (1_u32..).zip(text.split_inclusive('\n')) {
         if n < from {
+            base += line.len();
             continue;
         }
         if n > to {
@@ -283,7 +311,7 @@ pub fn read(path: &str, text: &str, at: Option<&str>) -> Result<Value, ToolError
     let mut answer = json!({
         "path": path,
         "lines": [from, last.max(from)],
-        "text": mask_text(&out),
+        "text": masked(&out, base, config.as_ref().map(|(_, spans)| spans.as_slice())),
     });
     if let (Some(map), Some(at)) = (answer.as_object_mut(), at) {
         map.insert("at".to_owned(), json!(at));
@@ -292,6 +320,28 @@ pub fn read(path: &str, text: &str, at: Option<&str>) -> Result<Value, ToolError
         map.insert("cut".to_owned(), json!(format!("L{next}-L{to}")));
     }
     Ok(answer)
+}
+
+/// `part` (the bytes of the file from `base` on) with the secret `spans` of the format hidden, then the key-based
+/// mask over what is left.
+fn masked(part: &str, base: usize, spans: Option<&[Span]>) -> String {
+    let Some(spans) = spans.filter(|s| !s.is_empty()) else {
+        return mask_text(part).into_owned();
+    };
+    let end = base + part.len();
+    let mut out = String::with_capacity(part.len());
+    let mut at = base;
+    for span in spans {
+        let (from, to) = (span.start.max(base), span.end.min(end));
+        if from >= to || from < at {
+            continue;
+        }
+        out.push_str(part.get(at - base..from - base).unwrap_or_default());
+        out.push_str(HIDDEN);
+        at = to;
+    }
+    out.push_str(part.get(at - base..).unwrap_or_default());
+    mask_text(&out).into_owned()
 }
 
 #[cfg(test)]
@@ -304,7 +354,7 @@ mod tests {
 
     #[test]
     fn markdown_outline_has_headings_with_lines() {
-        let value = outline("docs/plan.md", DOC);
+        let value = outline(&FormatRegistry::core(), "docs/plan.md", DOC);
         let items = value["items"].as_array().unwrap();
         let ats: Vec<&str> = items.iter().map(|i| i["at"].as_str().unwrap()).collect();
         assert_eq!(
@@ -322,28 +372,34 @@ mod tests {
 
     #[test]
     fn read_a_section_by_path_tail_anchor_and_lines() {
-        let full = read("p.md", DOC, Some("Plan > Rollout")).unwrap();
+        let full = read(&FormatRegistry::core(), "p.md", DOC, Some("Plan > Rollout")).unwrap();
         assert!(full["text"].as_str().unwrap().starts_with("## Rollout"));
         assert!(full["text"].as_str().unwrap().contains("### Steps"));
         assert!(!full["text"].as_str().unwrap().contains("## Risks"));
         assert!(full["text"].as_str().unwrap().contains("API_KEY=<hidden>"));
-        let tail = read("p.md", DOC, Some("rollout › steps")).unwrap();
+        let tail = read(
+            &FormatRegistry::core(),
+            "p.md",
+            DOC,
+            Some("rollout › steps"),
+        )
+        .unwrap();
         assert!(tail["text"].as_str().unwrap().starts_with("### Steps"));
-        let anchor = read("p.md", DOC, Some("#risks")).unwrap();
+        let anchor = read(&FormatRegistry::core(), "p.md", DOC, Some("#risks")).unwrap();
         assert_eq!(anchor["text"], "## Risks\n\nNone.\n");
-        let lines = read("p.md", DOC, Some("L1-L3")).unwrap();
+        let lines = read(&FormatRegistry::core(), "p.md", DOC, Some("L1-L3")).unwrap();
         assert_eq!(lines["text"], "# Plan\n\nIntro.\n");
         assert_eq!(lines["lines"], json!([1, 3]));
         assert!(matches!(
-            read("p.md", DOC, Some("Nowhere")),
+            read(&FormatRegistry::core(), "p.md", DOC, Some("Nowhere")),
             Err(ToolError::NotFound(_))
         ));
         assert!(matches!(
-            read("p.md", DOC, Some("L900")),
+            read(&FormatRegistry::core(), "p.md", DOC, Some("L900")),
             Err(ToolError::NotFound(_))
         ));
         assert!(matches!(
-            read("p.md", DOC, Some("L5-L2")),
+            read(&FormatRegistry::core(), "p.md", DOC, Some("L5-L2")),
             Err(ToolError::NotFound(_))
         ));
     }
@@ -351,13 +407,13 @@ mod tests {
     #[test]
     fn json_outline_and_read_by_key() {
         let text = "{\n  \"name\": \"x\",\n  \"auth\": {\n    \"token\": \"t-1\"\n  },\n  \"list\": [1, 2]\n}\n";
-        let value = outline("a.json", text);
+        let value = outline(&FormatRegistry::core(), "a.json", text);
         let items = value["items"].as_array().unwrap();
         assert_eq!(items.len(), 3);
         assert_eq!(items[1]["at"], "auth");
         assert_eq!(items[1]["type"], "object");
         assert_eq!(items[1]["line"], 3);
-        let auth = read("a.json", text, Some("auth")).unwrap();
+        let auth = read(&FormatRegistry::core(), "a.json", text, Some("auth")).unwrap();
         assert_eq!(
             auth["text"],
             "  \"auth\": {\n    \"token\": \"<hidden>\"\n  },\n"
@@ -370,7 +426,7 @@ mod tests {
             let _ = writeln!(text, "line {i} with some words");
             text
         });
-        let value = read("big.txt", &text, None).unwrap();
+        let value = read(&FormatRegistry::core(), "big.txt", &text, None).unwrap();
         assert!(value["text"].as_str().unwrap().chars().count() <= MAX_READ_CHARS);
         let cut = value["cut"].as_str().unwrap();
         assert!(cut.starts_with('L') && cut.ends_with("-L5000"), "{cut}");
@@ -389,10 +445,10 @@ mod tests {
             "\u{feff}# x",
             "[\"k\": 1]",
         ] {
-            let _ = outline("x.json", text);
-            let _ = outline("x.md", text);
-            let _ = read("x.json", text, Some("a"));
-            let _ = read("x.md", text, Some("x"));
+            let _ = outline(&FormatRegistry::core(), "x.json", text);
+            let _ = outline(&FormatRegistry::core(), "x.md", text);
+            let _ = read(&FormatRegistry::core(), "x.json", text, Some("a"));
+            let _ = read(&FormatRegistry::core(), "x.md", text, Some("x"));
         }
     }
 }

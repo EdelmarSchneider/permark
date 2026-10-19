@@ -1,0 +1,499 @@
+//! The structure of a small configuration file: groups (cards) of rows, each row a key and a value, with the lines it
+//! sits on and the bytes of every value token. Parsers fill it; the sheet view, the outline, masking, search keys and
+//! surgical edits read it.
+
+use std::ops::Range;
+
+use serde::{Deserialize, Serialize};
+use ts_rs::TS;
+
+use super::util::split_path;
+use crate::format::Editability;
+use crate::secrets::{is_secret_key, mask_text, url_password};
+
+/// Bytes of a text.
+pub type Span = Range<usize>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ScalarKind {
+    String,
+    Number,
+    Bool,
+    Date,
+    Null,
+}
+
+/// How a string is written (kept when it is edited).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Quote {
+    #[default]
+    Plain,
+    Single,
+    Double,
+}
+
+/// One value: a row's own, or one item of a list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Scalar {
+    pub path: String,
+    pub kind: ScalarKind,
+    /// A string without its quotes; any other kind as written.
+    pub text: String,
+    pub edit: Editability,
+    pub secret: bool,
+    /// The value token in the text (quotes included).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub span: Option<Span>,
+    #[serde(skip)]
+    #[ts(skip)]
+    pub quote: Quote,
+}
+
+impl Scalar {
+    #[must_use]
+    pub fn new(path: String, kind: ScalarKind, text: String, span: Span) -> Self {
+        Self {
+            path,
+            kind,
+            text,
+            edit: Editability::Surgical,
+            secret: false,
+            span: Some(span),
+            quote: Quote::Plain,
+        }
+    }
+
+    #[must_use]
+    pub fn quoted(mut self, quote: Quote) -> Self {
+        self.quote = quote;
+        self
+    }
+
+    /// Cannot be edited, with the reason (a word the UI knows).
+    #[must_use]
+    pub fn read_only(mut self, reason: &str) -> Self {
+        self.edit = Editability::ReadOnly {
+            reason: reason.to_owned(),
+        };
+        self
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(export)]
+pub enum RowValue {
+    Scalar(Scalar),
+    List {
+        items: Vec<Scalar>,
+    },
+    /// A value shown as written and not editable here (a map in flow style, an inline table, a block scalar).
+    Raw {
+        text: String,
+        reason: String,
+        secret: bool,
+        #[serde(skip)]
+        #[ts(skip)]
+        span: Option<Span>,
+    },
+    /// A line of an ignore file (`text` as written, with its `!`).
+    Pattern {
+        path: String,
+        text: String,
+        negated: bool,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Row {
+    pub path: String,
+    /// The key as the person reads it (`name`, `a.b`).
+    pub key: String,
+    pub line: u32,
+    /// Last line of the row (a value may span lines).
+    pub end: u32,
+    pub value: RowValue,
+    pub comment: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Group {
+    /// Path of the table | mapping (`""` for the rows before any header).
+    pub path: String,
+    pub title: String,
+    pub line: u32,
+    pub end: u32,
+    pub comment: Option<String>,
+    pub rows: Vec<Row>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum SheetKind {
+    Config,
+    Ignore,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Sheet {
+    pub kind: SheetKind,
+    pub groups: Vec<Group>,
+    /// The text is not valid for its syntax (the sheet is empty; Source shows the text).
+    #[serde(skip)]
+    #[ts(skip)]
+    pub failed: bool,
+}
+
+/// A top-level part of a file (agents read it by `path`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Part {
+    pub path: String,
+    pub label: String,
+    pub line: u32,
+    pub end: u32,
+}
+
+impl Sheet {
+    #[must_use]
+    pub fn new(kind: SheetKind) -> Self {
+        Self {
+            kind,
+            groups: Vec::new(),
+            failed: false,
+        }
+    }
+
+    #[must_use]
+    pub fn failed(kind: SheetKind) -> Self {
+        Self {
+            failed: true,
+            ..Self::new(kind)
+        }
+    }
+
+    #[must_use]
+    pub fn row_count(&self) -> usize {
+        self.groups.iter().map(|g| g.rows.len()).sum()
+    }
+
+    pub fn rows(&self) -> impl Iterator<Item = (&Group, &Row)> {
+        self.groups
+            .iter()
+            .flat_map(|g| g.rows.iter().map(move |r| (g, r)))
+    }
+
+    /// The scalar at `path` (a row's own value or a list item).
+    #[must_use]
+    pub fn scalar(&self, path: &str) -> Option<&Scalar> {
+        self.rows().find_map(|(_, row)| match &row.value {
+            RowValue::Scalar(s) if s.path == path => Some(s),
+            RowValue::List { items } => items.iter().find(|s| s.path == path),
+            _ => None,
+        })
+    }
+
+    /// The row at `path`.
+    #[must_use]
+    pub fn row(&self, path: &str) -> Option<&Row> {
+        self.rows().map(|(_, r)| r).find(|r| r.path == path)
+    }
+
+    /// Marks the secret values: a value under a secret key (any segment of its path) that is not a bool or empty;
+    /// the `value` next to a `name: DB_PASSWORD`; the text of a `API_KEY=...` list item.
+    pub fn finalize(&mut self) {
+        for group in &mut self.groups {
+            let named_secret = group.rows.iter().any(|r| {
+                matches!(r.key.as_str(), "name" | "key" | "env" | "var" | "variable")
+                    && matches!(&r.value, RowValue::Scalar(s) if is_secret_key(&s.text))
+            });
+            let group_secret = split_path(&group.path).iter().any(|s| is_secret_key(s));
+            for row in &mut group.rows {
+                let key_secret =
+                    group_secret || split_path(&row.path).iter().any(|s| is_secret_key(s));
+                let value_of_named =
+                    named_secret && matches!(row.key.as_str(), "value" | "val" | "default");
+                match &mut row.value {
+                    RowValue::Scalar(s) => mark(s, key_secret || value_of_named),
+                    RowValue::List { items } => {
+                        for s in items {
+                            let assignment = s.text.split_once('=').is_some_and(|(k, _)| {
+                                is_secret_key(k.trim_start_matches("export "))
+                            });
+                            mark(s, key_secret || assignment);
+                        }
+                    }
+                    RowValue::Raw { text, secret, .. } => {
+                        *secret = !text.trim().is_empty()
+                            && (key_secret || mask_text(text) != text.as_str());
+                    }
+                    RowValue::Pattern { .. } => {}
+                }
+            }
+        }
+    }
+
+    /// Bytes of every secret value token, in file order.
+    #[must_use]
+    pub fn secret_spans(&self) -> Vec<Span> {
+        let mut spans: Vec<Span> = Vec::new();
+        for (_, row) in self.rows() {
+            match &row.value {
+                RowValue::Scalar(s) if s.secret => spans.extend(s.span.clone()),
+                RowValue::List { items } => {
+                    spans.extend(
+                        items
+                            .iter()
+                            .filter(|s| s.secret)
+                            .filter_map(|s| s.span.clone()),
+                    );
+                }
+                RowValue::Raw {
+                    secret: true,
+                    span: Some(span),
+                    ..
+                } => spans.push(span.clone()),
+                _ => {}
+            }
+        }
+        spans.sort_by_key(|s| s.start);
+        spans
+    }
+
+    /// Top-level parts: the first path segment of every group and row, in file order, with their line range.
+    #[must_use]
+    pub fn outline(&self) -> Vec<Part> {
+        if self.kind == SheetKind::Ignore {
+            // the commented blocks of an ignore file
+            return self
+                .groups
+                .iter()
+                .filter(|g| !g.title.is_empty())
+                .map(|g| Part {
+                    path: g.path.clone(),
+                    label: g.title.clone(),
+                    line: g.line,
+                    end: g.end,
+                })
+                .collect();
+        }
+        let mut parts: Vec<Part> = Vec::new();
+        let mut add = |path: &str, line: u32, end: u32| {
+            let Some(first) = split_path(path).into_iter().next() else {
+                return;
+            };
+            let key = super::util::quote_key(&first);
+            match parts.iter_mut().find(|p| p.path == key) {
+                Some(part) => {
+                    part.line = part.line.min(line);
+                    part.end = part.end.max(end);
+                }
+                None => parts.push(Part {
+                    path: key,
+                    label: first,
+                    line,
+                    end,
+                }),
+            }
+        };
+        for group in &self.groups {
+            if !group.path.is_empty() {
+                add(&group.path, group.line, group.end);
+            }
+            for row in &group.rows {
+                add(&row.path, row.line, row.end);
+            }
+        }
+        parts
+    }
+
+    /// The lines of a group (with the groups below it) or of a row: `(first, last)`.
+    #[must_use]
+    pub fn range_of(&self, path: &str) -> Option<(u32, u32)> {
+        let mut range: Option<(u32, u32)> = None;
+        let mut grow = |line: u32, end: u32| {
+            range = Some(range.map_or((line, end), |(a, b)| (a.min(line), b.max(end))));
+        };
+        let below = |candidate: &str| {
+            candidate == path
+                || candidate
+                    .strip_prefix(path)
+                    .is_some_and(|rest| rest.starts_with(['.', '[']))
+        };
+        for group in &self.groups {
+            if !group.path.is_empty() && below(&group.path) {
+                grow(group.line, group.end);
+            }
+            for row in &group.rows {
+                if below(&row.path) {
+                    grow(row.line, row.end);
+                }
+            }
+        }
+        range
+    }
+
+    /// What search may read: the keys (group titles and row keys, once each), never a value or a comment.
+    #[must_use]
+    pub fn keys_text(&self, limit: usize) -> String {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = String::new();
+        let mut push = |word: &str| {
+            if out.len() < limit && !word.is_empty() && seen.insert(word.to_owned()) {
+                out.push_str(word);
+                out.push('\n');
+            }
+        };
+        for group in &self.groups {
+            if let Some(last) = split_path(&group.path).last() {
+                push(last);
+            }
+            for row in &group.rows {
+                if self.kind == SheetKind::Config {
+                    push(&row.key);
+                }
+            }
+        }
+        out
+    }
+
+    /// Patterns of an ignore sheet (they are not secrets), one per line.
+    #[must_use]
+    pub fn patterns_text(&self, limit: usize) -> String {
+        let mut out = String::new();
+        for (_, row) in self.rows() {
+            if let RowValue::Pattern { text, .. } = &row.value {
+                if out.len() + text.len() < limit {
+                    out.push_str(text);
+                    out.push('\n');
+                }
+            }
+        }
+        out
+    }
+}
+
+fn mark(scalar: &mut Scalar, key_secret: bool) {
+    scalar.secret = key_secret
+        && !matches!(scalar.kind, ScalarKind::Bool | ScalarKind::Null)
+        && !scalar.text.is_empty()
+        && !is_reference(&scalar.text)
+        || url_password(&scalar.text).is_some();
+}
+
+/// `${VAR}`, `$VAR`, `{{ secrets.NAME }}`: a pointer to a secret, not the secret.
+fn is_reference(text: &str) -> bool {
+    let t = text.trim();
+    let name = |s: &str| {
+        !s.is_empty()
+            && s.chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-' | ' ' | ':'))
+    };
+    if let Some(inner) = t.strip_prefix("${{").and_then(|r| r.strip_suffix("}}")) {
+        return name(inner);
+    }
+    if let Some(inner) = t.strip_prefix("{{").and_then(|r| r.strip_suffix("}}")) {
+        return name(inner);
+    }
+    if let Some(inner) = t.strip_prefix("${").and_then(|r| r.strip_suffix('}')) {
+        return name(inner);
+    }
+    t.strip_prefix('$')
+        .is_some_and(|r| !r.is_empty() && r.chars().all(|c| c.is_alphanumeric() || c == '_'))
+}
+
+/// What a new value is.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(export)]
+pub enum NewValue {
+    /// A string (quoted as the file needs).
+    Text { text: String },
+    /// A number, date or bool as typed.
+    Literal { text: String },
+}
+
+impl NewValue {
+    #[must_use]
+    pub fn text(&self) -> &str {
+        match self {
+            Self::Text { text } | Self::Literal { text } => text,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, TS)]
+#[serde(tag = "op", rename_all = "camelCase")]
+#[ts(export)]
+pub enum ConfigEdit {
+    Set {
+        path: String,
+        value: NewValue,
+    },
+    /// Ignore files: delete the line.
+    Remove {
+        path: String,
+    },
+    /// Ignore files: a new line after the row `after` (`None`: at the end).
+    Insert {
+        after: Option<String>,
+        text: String,
+    },
+}
+
+/// Replace `start..end` of the text by `insert`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Splice {
+    pub start: usize,
+    pub end: usize,
+    pub insert: String,
+}
+
+impl Splice {
+    /// `text` with the splice applied.
+    #[must_use]
+    pub fn apply(&self, text: &str) -> String {
+        let mut out = String::with_capacity(text.len() + self.insert.len());
+        out.push_str(&text[..self.start]);
+        out.push_str(&self.insert);
+        out.push_str(&text[self.end..]);
+        out
+    }
+}
+
+/// Why an edit was not made.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum EditRefusal {
+    #[error("no such value")]
+    NotFound,
+    #[error("read only: {0}")]
+    ReadOnly(String),
+    #[error("invalid: {0}")]
+    Invalid(&'static str),
+    #[error("not supported by this format")]
+    Unsupported,
+}
+
+impl EditRefusal {
+    /// The word the UI shows.
+    #[must_use]
+    pub fn word(&self) -> String {
+        match self {
+            Self::NotFound => "notFound".to_owned(),
+            Self::ReadOnly(reason) => reason.clone(),
+            Self::Invalid(why) => (*why).to_owned(),
+            Self::Unsupported => "unsupported".to_owned(),
+        }
+    }
+}

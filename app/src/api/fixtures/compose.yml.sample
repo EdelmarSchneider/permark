@@ -1,0 +1,22 @@
+# Local stack
+name: docs
+services:
+  web:
+    image: nginx:1.27   # pinned
+    ports:
+      - "8080:80"
+      - "8443:443"
+    environment:
+      MODE: production
+      DEBUG: false
+      API_KEY: sk-live-9d2c41aa
+    depends_on: [db]
+  db:
+    image: 'postgres:16'
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: docs
+      POSTGRES_PASSWORD: hunter2-prod
+    healthcheck:
+      interval: 10s
+      retries: 5

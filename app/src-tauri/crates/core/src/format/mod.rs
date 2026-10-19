@@ -1,8 +1,9 @@
 //! Formats: how a file becomes something to read. Core owns the API and Markdown; viewers, roles and Markdown
-//! features arrive from plugins as data ([`Contributions`]). Editing parts (`edit`, `secrets`, parts of a
-//! structure) join the trait with the editing area.
+//! features arrive from plugins as data ([`Contributions`]). The config formats add a structure (the sheet), value
+//! edits and secret spans to the trait (`config`).
 
 mod analysis;
+pub mod config;
 mod contrib;
 mod markdown;
 mod registry;
@@ -14,6 +15,9 @@ use serde::Serialize;
 use ts_rs::TS;
 
 pub use analysis::{Analysis, Measure, MeasureUnit, TextKind};
+pub use config::{
+    ConfigEdit, ConfigFormat, ConfigSyntax, EditRefusal, NewValue, Sheet, Span, Splice,
+};
 pub use contrib::{
     Contributions, Field, FieldValue, FrontMatterParser, FrontMatterSyntax, MarkdownFeature,
     MarkdownFeatures, PromptBlocks, RoleMatch, RoleRule, DEFAULT_PROMPT_TAGS,
@@ -35,6 +39,12 @@ impl FormatId {
     pub const JSON: Self = Self("json");
     pub const XML: Self = Self("xml");
     pub const MEDIA: Self = Self("media");
+    pub const TOML: Self = Self("toml");
+    pub const YAML: Self = Self("yaml");
+    pub const INI: Self = Self("ini");
+    pub const DOTENV: Self = Self("dotenv");
+    pub const PROPERTIES: Self = Self("properties");
+    pub const IGNORE: Self = Self("ignore");
 }
 
 /// How strongly a format claims a file (by name > by extension > by sniffing the head).
@@ -71,6 +81,27 @@ pub trait Format: Send + Sync {
     }
     /// The viewer data of `text`.
     fn render(&self, text: &str, cx: &RenderCx<'_>) -> Rendered;
+    /// The structure of `text` (config formats): groups of rows with lines and value spans.
+    fn sheet(&self, _text: &str) -> Option<Sheet> {
+        None
+    }
+    /// The splice that makes `edit` in `text` (a value token, or an ignore line); nothing else moves.
+    ///
+    /// # Errors
+    /// The part cannot be edited exactly (read-only reason), is missing, or the new value cannot be written.
+    fn edit(&self, _text: &str, _edit: &ConfigEdit) -> Result<Splice, EditRefusal> {
+        Err(EditRefusal::Unsupported)
+    }
+    /// Bytes of the secret value tokens of `text`, in order.
+    fn secrets(&self, text: &str) -> Vec<Span> {
+        self.sheet(text)
+            .map(|sheet| sheet.secret_spans())
+            .unwrap_or_default()
+    }
+    /// What search may read of `text`: keys only, never values (`None`: the format adds nothing).
+    fn searchable(&self, _text: &str) -> Option<String> {
+        None
+    }
 }
 
 /// A render: the body and the notes about it (`utf16 | lossy | deepNesting` words the UI knows).
@@ -101,6 +132,10 @@ pub enum Body {
     Media {
         media: MediaKind,
         mime: String,
+    },
+    /// A small configuration file as a sheet of cards and rows.
+    Sheet {
+        sheet: Sheet,
     },
     Notice {
         notice: Notice,

@@ -1,5 +1,6 @@
 //! The plugins compiled into this build: one Cargo feature per plugin crate (`plugin-<id>`, all default).
-//! Order matters for ties between formats: `media` before `xml-view` (an SVG is a picture), `text-view` last (weakest).
+//! Order matters for ties between formats: `media` before `xml-view` (an SVG is a picture), the config formats before
+//! `text-view` (last, weakest).
 
 use std::sync::Arc;
 
@@ -54,6 +55,18 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_json_view::plugin());
     #[cfg(feature = "plugin-xml-view")]
     plugins.push(permark_plugin_xml_view::plugin());
+    #[cfg(feature = "plugin-fmt-toml")]
+    plugins.push(permark_plugin_fmt_toml::plugin());
+    #[cfg(feature = "plugin-fmt-yaml")]
+    plugins.push(permark_plugin_fmt_yaml::plugin());
+    #[cfg(feature = "plugin-fmt-ini")]
+    plugins.push(permark_plugin_fmt_ini::plugin());
+    #[cfg(feature = "plugin-fmt-dotenv")]
+    plugins.push(permark_plugin_fmt_dotenv::plugin());
+    #[cfg(feature = "plugin-fmt-properties")]
+    plugins.push(permark_plugin_fmt_properties::plugin());
+    #[cfg(feature = "plugin-fmt-ignore")]
+    plugins.push(permark_plugin_fmt_ignore::plugin());
     #[cfg(feature = "plugin-text-view")]
     plugins.push(permark_plugin_text_view::plugin());
     plugins
@@ -113,6 +126,12 @@ mod tests {
             "media",
             "json-view",
             "xml-view",
+            "fmt-toml",
+            "fmt-yaml",
+            "fmt-ini",
+            "fmt-dotenv",
+            "fmt-properties",
+            "fmt-ignore",
             "text-view",
         ] {
             assert!(
@@ -136,6 +155,21 @@ mod tests {
         assert_eq!(id("logo.svg"), Some(FormatId::MEDIA), "an SVG is a picture");
         assert_eq!(id("clip.mp4"), Some(FormatId::MEDIA));
         assert_eq!(id("notes.txt"), Some(FormatId::TEXT));
+        for (path, format) in [
+            ("Cargo.toml", FormatId::TOML),
+            ("ci/workflow.yml", FormatId::YAML),
+            ("docker-compose.yaml", FormatId::YAML),
+            (".editorconfig", FormatId::INI),
+            ("setup.cfg", FormatId::INI),
+            (".gitconfig", FormatId::INI),
+            (".env", FormatId::DOTENV),
+            (".env.example", FormatId::DOTENV),
+            ("app.properties", FormatId::PROPERTIES),
+            (".gitignore", FormatId::IGNORE),
+            (".aiignore", FormatId::IGNORE),
+        ] {
+            assert_eq!(id(path), Some(format), "{path}");
+        }
         assert_eq!(formats.role_of("CLAUDE.md"), Some("claude"));
         assert!(formats.features().prompt_blocks.is_some());
         assert!(formats.features().front_matter_card.is_some());
@@ -156,6 +190,21 @@ mod tests {
             Some(FormatId::TEXT)
         );
         assert!(without("text-view").pick("a.txt", b"").is_none());
+        // a config format off: the file is text again
+        for (off, path) in [
+            ("fmt-toml", "Cargo.toml"),
+            ("fmt-yaml", "a.yml"),
+            ("fmt-ini", ".editorconfig"),
+            ("fmt-dotenv", ".env"),
+            ("fmt-properties", "a.properties"),
+            ("fmt-ignore", ".gitignore"),
+        ] {
+            assert_eq!(
+                without(off).pick(path, b"").map(|f| f.id()),
+                Some(FormatId::TEXT),
+                "{off}"
+            );
+        }
         let none = FormatRegistry::build(&registry.contributions(&on(&[])));
         assert!(none.pick("a.json", b"").is_none());
         assert!(none.pick("a.md", b"").is_some());
@@ -205,6 +254,96 @@ mod tests {
         );
     }
 
+    /// The editor's config calls with the real plugins: one value edit changes only that value, secrets come back in
+    /// UTF-16 units, a part that cannot be edited exactly says why, ignore patterns count their files.
+    #[test]
+    fn config_calls_through_the_editor() {
+        use permark_core::document::DocScope;
+        use permark_core::edit::Editor;
+        use permark_core::format::{ConfigEdit, NewValue};
+        use permark_core::paths::{Root, Vault};
+        use permark_core::ErrorKind;
+
+        let registry = registry_of_all();
+        let all_on: BTreeSet<PluginId> = registry.ordered().map(|m| m.id.clone()).collect();
+        let formats = FormatRegistry::build(&registry.contributions(&all_on));
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.log"), "x").unwrap();
+        std::fs::write(dir.path().join("b.log"), "x").unwrap();
+        std::fs::write(dir.path().join("c.txt"), "x").unwrap();
+        std::fs::write(
+            dir.path().join(".gitignore"),
+            "*.log
+!keep.log
+nothing
+",
+        )
+        .unwrap();
+        let scope = DocScope::Project(Vault::new(Root::open(dir.path()).unwrap()));
+        let editor = Editor {
+            scope: &scope,
+            formats: &formats,
+            own: None,
+            observer: None,
+        };
+        let set = |path: &str, text: &str| ConfigEdit::Set {
+            path: path.to_owned(),
+            value: NewValue::Text {
+                text: text.to_owned(),
+            },
+        };
+        let text = "# ünï 😀
+name = \"x\"
+api_key = \"sekret\"
+long = \"\"\"
+a
+b\"\"\"
+";
+        let edited = editor
+            .config_edit("a.toml", text, &set("name", "y"))
+            .unwrap();
+        assert_eq!(edited.text, text.replace("\"x\"", "\"y\""));
+        assert!(matches!(edited.body, Body::Sheet { .. }));
+        let secrets = editor.config_secrets("a.toml", text).unwrap();
+        assert_eq!(secrets.len(), 1);
+        let units: Vec<u16> = text.encode_utf16().collect();
+        let hidden =
+            String::from_utf16(&units[secrets[0].from as usize..secrets[0].to as usize]).unwrap();
+        assert_eq!(hidden, "\"sekret\"");
+        let refused = editor
+            .config_edit("a.toml", text, &set("long", "z"))
+            .unwrap_err();
+        assert_eq!(refused.kind, ErrorKind::InvalidData);
+        assert_eq!(refused.detail.as_deref(), Some("multiline"));
+        let missing = editor
+            .config_edit("a.toml", text, &set("nope", "z"))
+            .unwrap_err();
+        assert_eq!(missing.kind, ErrorKind::NotFound);
+        assert_eq!(
+            editor
+                .config_edit("c.txt", "x", &set("a", "b"))
+                .unwrap_err()
+                .kind,
+            ErrorKind::Unsupported
+        );
+        // text that is not valid TOML comes back as text, not as a sheet
+        assert!(matches!(
+            editor.config_sheet("a.toml", "name = ").unwrap(),
+            Body::Text { .. }
+        ));
+        let matches = editor
+            .ignore_matches(
+                ".gitignore",
+                "*.log
+!keep.log
+nothing
+",
+            )
+            .unwrap();
+        let counts: Vec<(u32, u32)> = matches.counts.iter().map(|c| (c.line, c.count)).collect();
+        assert_eq!(counts, [(1, 2), (2, 0), (3, 0)]);
+    }
+
     /// Renders the fixture documents (`src/api/fixtures/`) with every plugin on and writes the views the mock backend
     /// (`dev:mock`, UI tests) serves: `src/api/generated/mock-documents.json`. `cargo test` regenerates it; CI fails when
     /// regeneration changes the file.
@@ -236,9 +375,18 @@ mod tests {
             ("docs/guide.md", "guide.md"),
             ("notes/ideas.md", "ideas.md"),
             ("CLAUDE.md", "claude-rules.md"),
+            ("Cargo.toml", "cargo.toml.sample"),
+            ("docker-compose.yml", "compose.yml.sample"),
+            (".env.example", "env.example.sample"),
+            (".editorconfig", "editorconfig.sample"),
+            ("config/app.properties", "app.properties.sample"),
+            (".gitignore", "gitignore.sample"),
         ];
         for (path, file) in documents {
-            place(path, &std::fs::read(fixtures.join(file)).unwrap());
+            // the same bytes on every checkout (a Windows checkout may hold CRLF)
+            let bytes = std::fs::read(fixtures.join(file)).unwrap();
+            let text = String::from_utf8(bytes).unwrap().replace("\r\n", "\n");
+            place(path, text.as_bytes());
         }
         place("src/main.rs", b"fn main() {}");
         let docs = Documents::for_project(

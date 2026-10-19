@@ -10,12 +10,15 @@ use std::sync::{Arc, Mutex};
 
 use permark_core::conditions::{Context, Platform};
 use permark_core::document::{editor, resolve_code_refs, DocumentView, LinkTarget};
-use permark_core::edit::{EditSource, Editor, LineEdit, SaveOutcome};
+use permark_core::edit::{ConfigEdited, EditSource, Editor, LineEdit, SaveOutcome, SecretRange};
 use permark_core::events::{OpenFailed, StateRecovered};
 use permark_core::fileops::{
     external_target, DeleteOutcome, MoveOutcome, MovePlan, MoveSpec, NewKind, OpenMode, UndoOutcome,
 };
-use permark_core::format::{FormatRegistry, Measure, OutlineItem, Segment, TextKind};
+use permark_core::format::config::IgnoreMatches;
+use permark_core::format::{
+    Body, ConfigEdit, FormatRegistry, Measure, OutlineItem, Segment, TextKind,
+};
 use permark_core::paths::VaultPath;
 use permark_core::plugins::{PluginId, PluginScope, RpcCall};
 use permark_core::search::{IndexStatus, PathResults, Recent, SearchOptions, SectionResults};
@@ -776,6 +779,59 @@ pub fn edit_link_targets(
     })
 }
 
+/// The sheet of an unsaved text of a config file (Edit mode); text the sheet cannot show comes back as text.
+#[tauri::command(async)]
+pub fn config_sheet(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    text: String,
+) -> Result<Body, IpcError> {
+    with_editor(&handle, &window, |editor, _| {
+        editor.config_sheet(&path, &text)
+    })
+}
+
+/// One value edit on the editor's text of a config file: the new text (only that value changed) and its sheet.
+#[tauri::command(async)]
+pub fn config_edit(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    text: String,
+    edit: ConfigEdit,
+) -> Result<ConfigEdited, IpcError> {
+    with_editor(&handle, &window, |editor, _| {
+        editor.config_edit(&path, &text, &edit)
+    })
+}
+
+/// Where the secret values of the editor's text are (UTF-16 units), for the mask in Source.
+#[tauri::command(async)]
+pub fn config_secrets(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    text: String,
+) -> Result<Vec<SecretRange>, IpcError> {
+    with_editor(&handle, &window, |editor, _| {
+        editor.config_secrets(&path, &text)
+    })
+}
+
+/// How many project files each pattern of an ignore file matches.
+#[tauri::command(async)]
+pub fn ignore_matches(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    text: String,
+) -> Result<IgnoreMatches, IpcError> {
+    with_editor(&handle, &window, |editor, _| {
+        editor.ignore_matches(&path, &text)
+    })
+}
+
 /// Measures of the enabled analyses: of a document (`path`) or of a text.
 #[tauri::command(async)]
 pub fn analyze(
@@ -946,6 +1002,10 @@ commands![
     edit_set_unsaved,
     edit_headings,
     edit_link_targets,
+    config_sheet,
+    config_edit,
+    config_secrets,
+    ignore_matches,
     analyze,
     search_status,
     search_sections,

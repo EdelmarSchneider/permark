@@ -317,11 +317,13 @@ impl ProjectCore {
             move |batch| documents.on_batch(batch)
         });
         // the index walks the project at once and follows the watch from the first batch on
-        let search = Arc::new(SearchIndex::start(
+        let formats = Arc::new(RwLock::new(Arc::new(FormatRegistry::core())));
+        let search = Arc::new(SearchIndex::start_with(
             vault.clone(),
             Arc::clone(&explorer),
             Arc::clone(&env.sink),
             vault.main().path().display().to_string(),
+            Arc::clone(&formats),
         ));
         let search_sub = hub.subscribe(search.feeder());
         let watcher = Watcher::start(
@@ -345,7 +347,7 @@ impl ProjectCore {
             watcher,
             fileops,
             documents,
-            formats: Arc::new(RwLock::new(Arc::new(FormatRegistry::core()))),
+            formats,
             explorer,
             hub,
             id,
@@ -540,6 +542,8 @@ impl ProjectCore {
             .unwrap_or_else(PoisonError::into_inner) = enablement;
         *self.formats.write().unwrap_or_else(PoisonError::into_inner) =
             Arc::new(FormatRegistry::build(&env.registry.contributions(on)));
+        // config files are searched by their keys while a config format is on
+        self.search.formats_changed();
         let mut context = Context::welcome(env.distribution);
         context.workspace = crate::conditions::WorkspaceKind::Project;
         context.plugins.clone_from(on);

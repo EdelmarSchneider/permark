@@ -14,8 +14,21 @@ use permark_core::workspace::{CoreEnv, ProjectCore};
 use permark_plugin_agent::cli::{launch_app, Agent, Compose, Composed};
 use permark_plugin_agent::tools::Tools;
 
-/// The plugins a reader with no window starts: what the tools ask of (tags, silence, comments, unread, notes).
-const FILES_PLUGINS: [&str; 5] = ["tags", "quiet", "comments", "unread", "notes"];
+/// The plugins a reader with no window starts: what the tools ask of (tags, silence, comments, unread, notes) and
+/// the config formats, so secret values are hidden by the structure of the file here too.
+const FILES_PLUGINS: [&str; 11] = [
+    "tags",
+    "quiet",
+    "comments",
+    "unread",
+    "notes",
+    "fmt-toml",
+    "fmt-yaml",
+    "fmt-ini",
+    "fmt-dotenv",
+    "fmt-properties",
+    "fmt-ignore",
+];
 
 /// Keeps the headless project alive for the tools; stops it in order (project first, then the app's plugins).
 struct Keep {
@@ -203,5 +216,138 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, ["README.md", "docs"]);
+    }
+
+    /// Config files are hidden by their structure in files mode: no secret value in `read` | `outline` | `search`.
+    #[test]
+    #[allow(clippy::too_many_lines)] // one project, every format, every way out
+    fn config_secrets_never_reach_the_agent() {
+        let dir = tempfile::tempdir().unwrap();
+        let root_dir = dir.path().join("proj");
+        std::fs::create_dir_all(&root_dir).unwrap();
+        let files = [
+            (
+                ".env",
+                "# app
+API_KEY=abc123xyz
+PORT=3000
+DATABASE_URL=postgres://u:dbpass@h/db
+",
+            ),
+            (
+                "deploy.toml",
+                "name = \"site\"
+[auth]
+user = \"bobby\"
+pass = \"p4ssw0rd\"
+[server]
+host = \"example.org\"
+api_token = \"tok-777\"
+",
+            ),
+            (
+                "stack.yml",
+                "services:
+  db:
+    environment:
+      DB_PASSWORD: hunter2
+      MODE: prod
+    command: |
+      run --password=letmein
+",
+            ),
+            (
+                "app.properties",
+                "db.password=pw-prop
+db.user=sa
+",
+            ),
+            (
+                ".npmrc",
+                "//registry.npmjs.org/:_authToken=npm_tok_999
+",
+            ),
+        ];
+        for (name, text) in files {
+            std::fs::write(root_dir.join(name), text).unwrap();
+        }
+        let dirs = AppDirs::under(&dir.path().join("state"));
+        let root = Root::open(&root_dir).unwrap();
+        let store = StateStore::for_project(&dirs, &root);
+        store
+            .profile_file::<ProjectChoice>(PROJECT_FILE)
+            .save(&ProjectChoice {
+                enabled: true,
+                groups: [("find".to_owned(), true)].into_iter().collect(),
+                resolve_asked: true,
+            })
+            .unwrap();
+        let composed = compose(dirs.clone())(&root).unwrap();
+        let tools = &composed.tools;
+        let secrets = [
+            "abc123xyz",
+            "dbpass",
+            "bobby",
+            "p4ssw0rd",
+            "tok-777",
+            "hunter2",
+            "letmein",
+            "pw-prop",
+            "npm_tok_999",
+        ];
+        for (name, _) in files {
+            let whole = tools.call("read", json!({ "path": name })).unwrap();
+            let outline = tools.call("outline", json!({ "path": name })).unwrap();
+            let both = format!("{whole}{outline}");
+            for secret in secrets {
+                assert!(!both.contains(secret), "{name}: {secret} leaked: {both}");
+            }
+        }
+        // what stays: keys, plain values, the structure
+        let env = tools.call("read", json!({ "path": ".env" })).unwrap();
+        let text = env["text"].as_str().unwrap();
+        assert!(
+            text.contains("API_KEY=<hidden>") && text.contains("PORT=3000"),
+            "{text}"
+        );
+        let outline = tools
+            .call("outline", json!({ "path": "deploy.toml" }))
+            .unwrap();
+        assert_eq!(outline["kind"], "config", "{outline}");
+        let at: Vec<&str> = outline["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|i| i["at"].as_str().unwrap())
+            .collect();
+        assert_eq!(at, ["name", "auth", "server"], "{outline}");
+        let part = tools
+            .call("read", json!({ "path": "deploy.toml", "at": "server" }))
+            .unwrap();
+        let text = part["text"].as_str().unwrap();
+        assert!(
+            text.contains("host = \"example.org\"") && text.contains("api_token = <hidden>"),
+            "{text}"
+        );
+        assert_eq!(part["lines"], json!([5, 7]), "{part}");
+        let key_path = tools
+            .call(
+                "read",
+                json!({ "path": "stack.yml", "at": "services.db.environment" }),
+            )
+            .unwrap();
+        let text = key_path["text"].as_str().unwrap();
+        assert!(
+            text.contains("DB_PASSWORD: <hidden>") && text.contains("MODE: prod"),
+            "{text}"
+        );
+        // search finds keys, never values
+        let hits = tools.call("search", json!({ "query": "hunter2" })).unwrap();
+        assert!(hits["hits"].as_array().unwrap().is_empty(), "{hits}");
+        let hits = tools
+            .call("search", json!({ "query": "DB_PASSWORD" }))
+            .unwrap();
+        assert!(!hits["hits"].as_array().unwrap().is_empty(), "{hits}");
+        assert!(!hits.to_string().contains("hunter2"), "{hits}");
     }
 }

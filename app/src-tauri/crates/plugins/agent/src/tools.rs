@@ -238,8 +238,8 @@ impl Tools {
             "list_unread" => self.list_unread(args, &guard),
             "search" => self.search(args, &guard),
             "list_tags" => self.list_tags(args, &guard),
-            "outline" => outline(args, &guard),
-            "read" => read(args, &guard),
+            "outline" => self.outline(args, &guard),
+            "read" => self.read(args, &guard),
             "list_comments" => self.list_comments(args, &guard),
             "resolve_comment" => self.resolve_comment(args, &guard),
             "list_notes" => self.list_notes(args),
@@ -538,6 +538,20 @@ impl Tools {
         Ok(json!({ "note": note, "title": mask_text(&found.title), "text": mask_text(&text) }))
     }
 
+    fn outline(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
+        let PathArgs { path } = args(raw)?;
+        let (path, abs) = guard.file(&path)?;
+        let text = read_text(&abs)?;
+        Ok(structure::outline(&self.services.formats(), &path, &text))
+    }
+
+    fn read(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
+        let ReadArgs { path, at } = args(raw)?;
+        let (path, abs) = guard.file(&path)?;
+        let text = read_text(&abs)?;
+        structure::read(&self.services.formats(), &path, &text, at.as_deref())
+    }
+
     fn open(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
         let OpenArgs {
             path,
@@ -567,20 +581,6 @@ impl Tools {
         }
         Ok(answer)
     }
-}
-
-fn outline(raw: Value, guard: &Guard) -> Result<Value, ToolError> {
-    let PathArgs { path } = args(raw)?;
-    let (path, abs) = guard.file(&path)?;
-    let text = read_text(&abs)?;
-    Ok(structure::outline(&path, &text))
-}
-
-fn read(raw: Value, guard: &Guard) -> Result<Value, ToolError> {
-    let ReadArgs { path, at } = args(raw)?;
-    let (path, abs) = guard.file(&path)?;
-    let text = read_text(&abs)?;
-    structure::read(&path, &text, at.as_deref())
 }
 
 fn read_text(abs: &Path) -> Result<String, ToolError> {

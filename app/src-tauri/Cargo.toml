@@ -35,6 +35,12 @@ permark-plugin-tags = { path = "crates/plugins/tags" }
 permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
 permark-plugin-xml-view = { path = "crates/plugins/xml-view" }
+permark-plugin-fmt-toml = { path = "crates/plugins/fmt-toml" }
+permark-plugin-fmt-yaml = { path = "crates/plugins/fmt-yaml" }
+permark-plugin-fmt-ini = { path = "crates/plugins/fmt-ini" }
+permark-plugin-fmt-dotenv = { path = "crates/plugins/fmt-dotenv" }
+permark-plugin-fmt-properties = { path = "crates/plugins/fmt-properties" }
+permark-plugin-fmt-ignore = { path = "crates/plugins/fmt-ignore" }
 serde = { version = "1", features = ["derive"] }
 ts-rs = { version = "12.0", features = ["serde-json-impl"] }
 serde_json = "1"
@@ -96,7 +102,7 @@ name = "permark_lib"
 
 [features]
 # Plugin crates join here as features; default = full build.
-default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent"]
+default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -114,6 +120,12 @@ plugin-plantuml = ["dep:permark-plugin-plantuml"]
 plugin-media = ["dep:permark-plugin-media"]
 plugin-json-view = ["dep:permark-plugin-json-view"]
 plugin-xml-view = ["dep:permark-plugin-xml-view"]
+plugin-fmt-toml = ["dep:permark-plugin-fmt-toml"]
+plugin-fmt-yaml = ["dep:permark-plugin-fmt-yaml"]
+plugin-fmt-ini = ["dep:permark-plugin-fmt-ini"]
+plugin-fmt-dotenv = ["dep:permark-plugin-fmt-dotenv"]
+plugin-fmt-properties = ["dep:permark-plugin-fmt-properties"]
+plugin-fmt-ignore = ["dep:permark-plugin-fmt-ignore"]
 plugin-text-view = ["dep:permark-plugin-text-view"]
 plugin-tags = ["dep:permark-plugin-tags"]
 plugin-quiet = ["dep:permark-plugin-quiet"]
@@ -145,6 +157,12 @@ permark-plugin-plantuml = { workspace = true, optional = true }
 permark-plugin-media = { workspace = true, optional = true }
 permark-plugin-json-view = { workspace = true, optional = true }
 permark-plugin-xml-view = { workspace = true, optional = true }
+permark-plugin-fmt-toml = { workspace = true, optional = true }
+permark-plugin-fmt-yaml = { workspace = true, optional = true }
+permark-plugin-fmt-ini = { workspace = true, optional = true }
+permark-plugin-fmt-dotenv = { workspace = true, optional = true }
+permark-plugin-fmt-properties = { workspace = true, optional = true }
+permark-plugin-fmt-ignore = { workspace = true, optional = true }
 permark-plugin-text-view = { workspace = true, optional = true }
 permark-plugin-tags = { workspace = true, optional = true }
 permark-plugin-quiet = { workspace = true, optional = true }

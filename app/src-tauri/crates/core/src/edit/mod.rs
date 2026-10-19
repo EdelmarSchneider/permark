@@ -25,7 +25,10 @@ pub use lines::LineEdit;
 
 use crate::document::{DocScope, MAX_TEXT_BYTES};
 use crate::error::{ErrorKind, IpcError};
-use crate::format::{segments, FormatId, FormatRegistry, OutlineItem, Segment};
+use crate::format::config::{ignore_matches, IgnoreMatches, RowValue};
+use crate::format::{
+    segments, Body, ConfigEdit, EditRefusal, FormatId, FormatRegistry, OutlineItem, Segment,
+};
 use crate::fsx::{self, Encoding, FsxError, LineEnding};
 use crate::paths::VaultPath;
 use crate::watch::OwnWrites;
@@ -44,6 +47,24 @@ pub struct EditSource {
     pub encoding: Encoding,
     /// Block map (Markdown only).
     pub segments: Option<Vec<Segment>>,
+}
+
+/// The result of one value edit in a sheet: the text with only that value replaced, and its sheet.
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ConfigEdited {
+    pub text: String,
+    pub body: Body,
+}
+
+/// A secret value in the editor's text, in UTF-16 code units (what the editor counts).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SecretRange {
+    pub from: u32,
+    pub to: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -378,6 +399,111 @@ impl Editor<'_> {
         Err(IpcError::new(ErrorKind::Exists).subject(doc))
     }
 
+    /// The format of `path` read from the editor's `text`.
+    fn config_format(
+        &self,
+        path: &str,
+        text: &str,
+    ) -> Result<&std::sync::Arc<dyn crate::format::Format>, IpcError> {
+        let head = &text.as_bytes()[..text.len().min(4096)];
+        self.formats
+            .pick(path, head)
+            .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(path))
+    }
+
+    /// The sheet (or the text fallback) of an unsaved text of a config file.
+    ///
+    /// # Errors
+    /// No format reads `path`.
+    pub fn config_sheet(&self, path: &str, text: &str) -> Result<Body, IpcError> {
+        let format = self.config_format(path, text)?;
+        let known = std::collections::HashSet::new();
+        let cx = crate::format::RenderCx {
+            path,
+            env: self.scope,
+            features: self.formats.features(),
+            known: &known,
+        };
+        Ok(format.render(text, &cx).body)
+    }
+
+    /// One value edit on the editor's text: only that value's bytes change.
+    ///
+    /// # Errors
+    /// The format cannot make the edit (`invalidData`, `detail` = why: a read-only reason, `notFound`, `syntax`,
+    /// `roundTrip`, ...).
+    pub fn config_edit(
+        &self,
+        path: &str,
+        text: &str,
+        edit: &ConfigEdit,
+    ) -> Result<ConfigEdited, IpcError> {
+        let format = self.config_format(path, text)?;
+        let splice = format.edit(text, edit).map_err(|refusal| {
+            let kind = match refusal {
+                EditRefusal::NotFound => ErrorKind::NotFound,
+                EditRefusal::Unsupported => ErrorKind::Unsupported,
+                EditRefusal::ReadOnly(_) | EditRefusal::Invalid(_) => ErrorKind::InvalidData,
+            };
+            IpcError::new(kind).subject(path).detail(refusal.word())
+        })?;
+        let new = splice.apply(text);
+        let body = self.config_sheet(path, &new)?;
+        Ok(ConfigEdited { text: new, body })
+    }
+
+    /// Where the secret values of an unsaved text are, in UTF-16 units.
+    ///
+    /// # Errors
+    /// No format reads `path`.
+    pub fn config_secrets(&self, path: &str, text: &str) -> Result<Vec<SecretRange>, IpcError> {
+        let format = self.config_format(path, text)?;
+        let spans = format.secrets(text);
+        let mut out = Vec::with_capacity(spans.len());
+        let mut units = 0_u32;
+        let mut byte = 0_usize;
+        for span in spans {
+            // spans come in file order; count UTF-16 units between them
+            if span.start < byte || span.end > text.len() {
+                continue;
+            }
+            let from = units + utf16_len(&text[byte..span.start]);
+            let to = from + utf16_len(&text[span.start..span.end]);
+            out.push(SecretRange { from, to });
+            units = to;
+            byte = span.end;
+        }
+        Ok(out)
+    }
+
+    /// How many project files each pattern of an ignore file matches (Project workspaces only).
+    ///
+    /// # Errors
+    /// Not a Project workspace | no format reads `path` | outside.
+    pub fn ignore_matches(&self, path: &str, text: &str) -> Result<IgnoreMatches, IpcError> {
+        if !matches!(self.scope, DocScope::Project(_)) {
+            return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
+        }
+        let (_, abs) = self.scope.resolve(path)?;
+        let base = abs
+            .parent()
+            .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path))?;
+        let format = self.config_format(path, text)?;
+        let patterns: Vec<(u32, String)> = format
+            .sheet(text)
+            .map(|sheet| {
+                sheet
+                    .rows()
+                    .filter_map(|(_, row)| match &row.value {
+                        RowValue::Pattern { text, .. } => Some((row.line, text.clone())),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(ignore_matches(base, &patterns))
+    }
+
     /// Headings of a Markdown document (link completion after `#`): anchor ids as the reading view makes them.
     ///
     /// # Errors
@@ -398,6 +524,10 @@ impl Editor<'_> {
             _ => Ok(Vec::new()),
         }
     }
+}
+
+fn utf16_len(text: &str) -> u32 {
+    u32::try_from(text.encode_utf16().count()).unwrap_or(u32::MAX)
 }
 
 /// `name` -> (stem, `.ext` | ""). A dotfile has no extension.

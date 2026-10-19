@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use super::prepare::{read_and_prepare, reads_content, Prepared, Sig};
 use super::{IndexPhase, IndexProgress, Shared};
 use crate::events::{CoreEvent, EventSink};
+use crate::format::FormatRegistry;
 use crate::paths::{Vault, VaultPath};
 use crate::tree::{category_of, Category, Explorer, ScanFile};
 use crate::watch::{Change, ChangeKind, FsBatch};
@@ -29,6 +30,8 @@ pub enum Msg {
         changes: Vec<Change>,
         reconcile: bool,
     },
+    /// The formats that are on changed: config files are read again.
+    FormatsChanged,
     Stop,
 }
 
@@ -39,6 +42,7 @@ pub struct Worker {
     pub sink: Arc<dyn EventSink>,
     pub root: String,
     pub stop: Arc<AtomicBool>,
+    pub formats: Arc<std::sync::RwLock<Arc<FormatRegistry>>>,
 }
 
 /// What a helper thread found for one document.
@@ -69,6 +73,10 @@ impl Worker {
             while let Some(msg) = next {
                 match msg {
                     Msg::Stop => return,
+                    Msg::FormatsChanged => {
+                        self.forget_config_content();
+                        reconcile = true;
+                    }
                     Msg::Changes {
                         changes: more,
                         reconcile: force,
@@ -85,6 +93,29 @@ impl Worker {
                 self.apply(&changes);
             }
             self.publish_linked();
+        }
+    }
+
+    /// The registry now: one snapshot per batch of reads.
+    fn formats(&self) -> Arc<FormatRegistry> {
+        Arc::clone(&self.formats.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// Config files were indexed by the formats of that time: forget their content so the next pass reads them again.
+    fn forget_config_content(&self) {
+        let mut index = self
+            .shared
+            .index
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        let config: Vec<String> = index
+            .files
+            .iter()
+            .filter(|(_, f)| f.category == Category::Config)
+            .map(|(p, _)| p.clone())
+            .collect();
+        for path in config {
+            index.drop_content(&path);
         }
     }
 
@@ -164,9 +195,10 @@ impl Worker {
             }
         }
         // 3. documents are read (the ones whose length or time changed)
+        let formats = self.formats();
         let todo: Vec<(&str, &PathBuf, Category)> = files
             .iter()
-            .filter(|f| reads_content(f.category))
+            .filter(|f| reads_content(f.category) && wanted(&f.path, f.category, &formats))
             .filter_map(|f| f.abs.as_ref().map(|abs| (f.path.as_str(), abs, f.category)))
             .collect();
         let total = self.read_documents(&todo, initial);
@@ -196,6 +228,7 @@ impl Worker {
             .clamp(1, 6)
             .min(total);
         let next = AtomicUsize::new(0);
+        let formats = self.formats();
         let (tx, rx) = sync_channel::<(usize, Outcome)>(256);
         std::thread::scope(|scope| {
             for _ in 0..threads {
@@ -203,6 +236,7 @@ impl Worker {
                 let next = &next;
                 let shared = &self.shared;
                 let stop = &self.stop;
+                let formats = &formats;
                 let spawned =
                     std::thread::Builder::new()
                         .stack_size(STACK)
@@ -219,7 +253,7 @@ impl Worker {
                                 .read()
                                 .unwrap_or_else(PoisonError::into_inner)
                                 .sig_of(path);
-                            let outcome = outcome_of(path, abs, *category, known);
+                            let outcome = outcome_of(path, abs, *category, known, formats);
                             if tx.send((at, outcome)).is_err() {
                                 return;
                             }
@@ -345,12 +379,15 @@ impl Worker {
                 .unwrap_or_else(PoisonError::into_inner);
             index.add_file(path, category);
             index.set_mtime(path, sig.mtime_ms);
-            if !reads_content(category) || index.sig_of(path) == Some(sig) {
+            if !reads_content(category)
+                || !wanted(path, category, &self.formats())
+                || index.sig_of(path) == Some(sig)
+            {
                 return;
             }
         }
         // read outside the lock
-        let outcome = outcome_of(path, &abs, category, None);
+        let outcome = outcome_of(path, &abs, category, None, &self.formats());
         let mut index = self
             .shared
             .index
@@ -364,18 +401,25 @@ impl Worker {
     }
 }
 
+/// Whether the content of a file is read: documents and text always; a config file only when a config format that is
+/// on claims it (else it stays in the list by name, unread).
+fn wanted(path: &str, category: Category, formats: &FormatRegistry) -> bool {
+    category != Category::Config || formats.pick(path, &[]).is_some()
+}
+
 fn outcome_of(
     path: &str,
     abs: &std::path::Path,
     category: Category,
     known: Option<Sig>,
+    formats: &FormatRegistry,
 ) -> Outcome {
     if let (Some(known), Ok(meta)) = (known, std::fs::metadata(abs)) {
         if Sig::of(&meta) == known {
             return Outcome::Unchanged;
         }
     }
-    match read_and_prepare(path, abs, category) {
+    match read_and_prepare(path, abs, category, formats) {
         Some(prepared) => Outcome::Read(prepared, category),
         None => Outcome::NameOnly(path.to_owned()),
     }
