@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use permark_core::events::{CoreEvent, OpenFailed};
+use permark_core::events::OpenFailed;
 use permark_core::open::{create_untitled_markdown, route, OpenRequest, Route};
 use permark_core::paths::{Root, VaultPath};
 use permark_core::workspace::{OpenError, WorkspaceId, WorkspaceRef};
@@ -21,14 +21,11 @@ fn now_ms() -> u64 {
 
 /// Tells `window` that opening `path` failed (it shows a notice).
 fn report(handle: &AppHandle, window: &str, path: &Path, error: IpcError) {
-    state(handle)
-        .env
-        .sink
-        .emit(CoreEvent::OpenFailed(OpenFailed {
-            window: window.to_owned(),
-            path: path.display().to_string(),
-            error,
-        }));
+    state(handle).report_open_failed(OpenFailed {
+        window: window.to_owned(),
+        path: path.display().to_string(),
+        error,
+    });
 }
 
 /// Opens `reference` in window `label` (any thread). Projects go to the recent list; failures are reported to the

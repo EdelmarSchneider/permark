@@ -127,7 +127,15 @@ export function createMockApi(): Api & {
     emit,
     appInfo: () => ok({ version: MOCK_VERSION }),
     windowBoot: () =>
-      ok({ window: "main", view, context: context(), settings, notices: [], platform: "windows" }),
+      ok({
+        window: "main",
+        view,
+        context: context(),
+        settings,
+        notices: [],
+        failures: [],
+        platform: "windows",
+      }),
     openPath: (path, placement) => {
       if (placement === "ask" && view.state === "showing") return ok({ outcome: "needsChoice" });
       if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });

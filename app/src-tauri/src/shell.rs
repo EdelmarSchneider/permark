@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use permark_core::conditions::Distribution;
-use permark_core::events::{CoreEvent, EventSink, SettingsChanged, StateRecovered};
+use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, StateRecovered};
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::plugins::PluginRegistry;
@@ -20,6 +20,12 @@ use tauri::{AppHandle, Manager};
 
 use crate::saver::SessionSaver;
 use crate::sink::TauriSink;
+
+#[derive(Default)]
+struct Delivery {
+    listening: std::collections::HashSet<String>,
+    pending: HashMap<String, Vec<OpenFailed>>,
+}
 
 pub struct Shell {
     pub env: Arc<CoreEnv>,
@@ -35,6 +41,8 @@ pub struct Shell {
     normal: Mutex<HashMap<String, Geometry>>,
     /// Startup notices, handed to the first window that boots.
     notices: Mutex<Vec<StateRecovered>>,
+    /// Open failures: emitted to windows whose frontend listens, kept for the others until they boot.
+    delivery: Mutex<Delivery>,
     server: Mutex<Option<Server>>,
 }
 
@@ -94,6 +102,7 @@ impl Shell {
             next_window: AtomicU64::new(1),
             normal: Mutex::new(HashMap::new()),
             notices: Mutex::new(Vec::new()),
+            delivery: Mutex::new(Delivery::default()),
             server: Mutex::new(None),
         }
     }
@@ -132,6 +141,34 @@ impl Shell {
 
     pub fn take_notices(&self) -> Vec<StateRecovered> {
         std::mem::take(&mut *lock(&self.notices))
+    }
+
+    /// Open failure for `window`: emitted when its frontend listens, else kept until it boots (first launch races).
+    pub fn report_open_failed(&self, failure: OpenFailed) {
+        let mut delivery = lock(&self.delivery);
+        if delivery.listening.contains(&failure.window) {
+            drop(delivery);
+            self.env.sink.emit(CoreEvent::OpenFailed(failure));
+        } else {
+            delivery
+                .pending
+                .entry(failure.window.clone())
+                .or_default()
+                .push(failure);
+        }
+    }
+
+    /// A window's frontend booted: from now on it hears events. Returns the failures kept for it.
+    pub fn window_booted(&self, window: &str) -> Vec<OpenFailed> {
+        let mut delivery = lock(&self.delivery);
+        delivery.listening.insert(window.to_owned());
+        delivery.pending.remove(window).unwrap_or_default()
+    }
+
+    pub fn window_gone(&self, window: &str) {
+        let mut delivery = lock(&self.delivery);
+        delivery.listening.remove(window);
+        delivery.pending.remove(window);
     }
 
     /// Loads the saved session (corrupt -> notice).

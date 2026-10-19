@@ -120,6 +120,7 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
         }
         WindowEvent::Destroyed => {
             shell.registry.forget_window(label);
+            shell.window_gone(label);
             shell.saver.poke();
         }
         _ => {}

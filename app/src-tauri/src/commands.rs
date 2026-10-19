@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use permark_core::conditions::{Context, Platform};
-use permark_core::events::StateRecovered;
+use permark_core::events::{OpenFailed, StateRecovered};
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{AppSettings, SettingChange};
 use permark_core::workspace::{WindowView, Workspace, WorkspaceId, WorkspaceRef, WorkspaceSummary};
@@ -31,6 +31,8 @@ pub struct BootInfo {
     pub context: Context,
     pub settings: AppSettings,
     pub notices: Vec<StateRecovered>,
+    /// Opens from outside that failed before this window could listen.
+    pub failures: Vec<OpenFailed>,
     pub platform: Platform,
 }
 
@@ -78,6 +80,7 @@ pub fn window_boot(handle: AppHandle, window: WebviewWindow) -> BootInfo {
             .unwrap_or_else(|| Context::welcome(shell.env.distribution)),
         settings: shell.env.settings(),
         notices: shell.take_notices(),
+        failures: shell.window_booted(&label),
         platform: Platform::current(),
         window: label,
     }

@@ -153,11 +153,6 @@
     margin-top: var(--sp-6);
     outline: none;
   }
-  .recents:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 4px;
-    border-radius: var(--radius-control);
-  }
   ul {
     list-style: none;
     margin: 4px 0 0;

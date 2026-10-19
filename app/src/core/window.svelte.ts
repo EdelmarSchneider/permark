@@ -75,6 +75,9 @@ export class WindowStore {
       look.set(info.settings);
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
+      for (const failed of info.failures) {
+        this.#notify({ kind: "openFailed", path: failed.path, error: failed.error });
+      }
       this.#showView(info.view);
       this.boot = { status: "ready" };
     } else {
