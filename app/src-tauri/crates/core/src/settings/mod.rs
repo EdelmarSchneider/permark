@@ -74,6 +74,10 @@ choice!(
     /// What a start with nothing to open shows.
     StartIn { Welcome = "welcome", Notes = "notes" } default Welcome
 );
+choice!(
+    /// Whether moving or renaming a file rewrites the links that point at it.
+    LinkUpdate { Ask = "ask", Always = "always", Never = "never" } default Ask
+);
 
 /// A plugin's raw settings table (equality by its TOML text).
 #[derive(Debug, Clone, Default)]
@@ -94,6 +98,7 @@ pub struct AppSettings {
     pub theme: ThemePref,
     pub tone: Tone,
     pub start_in: StartIn,
+    pub link_update: LinkUpdate,
     /// Explicit plugin switches (absent = manifest default).
     pub plugins: BTreeMap<PluginId, bool>,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
@@ -111,6 +116,7 @@ pub enum SettingChange {
     Theme(ThemePref),
     Tone(Tone),
     StartIn(StartIn),
+    LinkUpdate(LinkUpdate),
     /// `None` = back to the manifest default (key removed).
     PluginEnabled {
         plugin: PluginId,
@@ -127,6 +133,7 @@ impl SettingChange {
             Self::Theme(_) => "theme".to_owned(),
             Self::Tone(_) => "tone".to_owned(),
             Self::StartIn(_) => "start_in".to_owned(),
+            Self::LinkUpdate(_) => "link_update".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
         }
     }
@@ -211,6 +218,9 @@ impl AppSettings {
             start_in: str_of(doc, "start_in")
                 .and_then(StartIn::parse)
                 .unwrap_or_default(),
+            link_update: str_of(doc, "link_update")
+                .and_then(LinkUpdate::parse)
+                .unwrap_or_default(),
             plugins,
             plugin_tables,
         }
@@ -240,6 +250,7 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::Theme(v) => set_keeping_decor(root, "theme", v.as_str().into()),
         SettingChange::Tone(v) => set_keeping_decor(root, "tone", v.as_str().into()),
         SettingChange::StartIn(v) => set_keeping_decor(root, "start_in", v.as_str().into()),
+        SettingChange::LinkUpdate(v) => set_keeping_decor(root, "link_update", v.as_str().into()),
         SettingChange::PluginEnabled { plugin, enabled } => {
             set_plugin_enabled(root, plugin, *enabled);
         }

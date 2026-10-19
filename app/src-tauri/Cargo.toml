@@ -31,6 +31,10 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_System_Threading",
 ] }
 tempfile = "3.27.0"
+ignore = "0.4.33"
+notify = "8.2.0"
+trash = "5.2.9"
+comrak = { version = "0.56", default-features = false }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -79,6 +83,7 @@ thiserror.workspace = true
 ts-rs.workspace = true
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8.2"
+tauri-plugin-opener = "2.7"
 
 [lints]
 workspace = true

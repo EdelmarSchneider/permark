@@ -14,6 +14,7 @@ use std::path::{Component, Path, PathBuf, Prefix, PrefixComponent};
 pub use root::{Root, RootKey};
 pub use scope::FileScope;
 pub use vault::{Vault, Worktree, WORKTREE_PREFIX};
+pub(crate) use vault_path::windows_name_ok;
 pub use vault_path::VaultPath;
 
 use crate::error::{ErrorKind, IpcError};

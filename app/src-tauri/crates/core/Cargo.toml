@@ -20,6 +20,10 @@ xxhash-rust.workspace = true
 toml_edit.workspace = true
 dirs.workspace = true
 interprocess.workspace = true
+ignore.workspace = true
+notify.workspace = true
+trash.workspace = true
+comrak.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

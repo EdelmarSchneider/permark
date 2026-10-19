@@ -6,6 +6,7 @@ use ts_rs::TS;
 
 use crate::conditions::Context;
 use crate::settings::{AppSettings, SettingsScope};
+use crate::tree::TreeChanged;
 use crate::workspace::{WindowView, WorkspaceSummary};
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -70,6 +71,8 @@ pub enum CoreEvent {
     StateRecovered(StateRecovered),
     /// To one window.
     OpenFailed(OpenFailed),
+    /// To one window: its Explorer list changed.
+    TreeChanged(TreeChanged),
     PluginsChanged,
     PluginFailed {
         message: String,
@@ -92,6 +95,7 @@ impl CoreEvent {
             Self::SettingsChanged(_) => "settings-changed",
             Self::StateRecovered(_) => "state-recovered",
             Self::OpenFailed(_) => "open-failed",
+            Self::TreeChanged(_) => "tree-changed",
             Self::PluginsChanged => "plugins-changed",
             Self::PluginFailed { .. } => "plugin-failed",
             Self::Plugin { name, .. } => name,
@@ -105,6 +109,7 @@ impl CoreEvent {
             Self::WindowChanged(e) => Some(&e.window),
             Self::ContextChanged(e) => Some(&e.window),
             Self::OpenFailed(e) => Some(&e.window),
+            Self::TreeChanged(e) => Some(&e.window),
             _ => None,
         }
     }

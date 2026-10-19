@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::conditions::{Context, Distribution};
 use crate::events::{CoreEvent, EventSink};
+use crate::fileops::FileOps;
 use crate::paths::{Root, Vault};
 use crate::plugins::{
     resolve_enabled, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId, PluginRegistry,
@@ -15,6 +16,8 @@ use crate::plugins::{
 };
 use crate::settings::{AppSettings, ProjectConfig};
 use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
+use crate::tree::Explorer;
+use crate::watch::{LiveStatus, OwnWrites, StatusHook, Subscription, WatchHub, Watcher};
 
 /// Process-wide services every workspace uses.
 pub struct CoreEnv {
@@ -24,6 +27,8 @@ pub struct CoreEnv {
     pub distribution: Distribution,
     settings: RwLock<AppSettings>,
     app_plugins: Mutex<PluginSet>,
+    /// Called when a project live updates change (the registry recomputes contexts).
+    status_hook: Mutex<Option<StatusHook>>,
 }
 
 impl std::fmt::Debug for CoreEnv {
@@ -50,7 +55,23 @@ impl CoreEnv {
             distribution,
             settings: RwLock::new(settings),
             app_plugins: Mutex::new(PluginSet::new(PluginScope::App)),
+            status_hook: Mutex::new(None),
         }
+    }
+
+    pub fn set_status_hook(&self, hook: StatusHook) {
+        *self
+            .status_hook
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(hook);
+    }
+
+    #[must_use]
+    pub fn status_hook(&self) -> Option<StatusHook> {
+        self.status_hook
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     #[must_use]
@@ -140,6 +161,13 @@ impl StateData for ProjectPluginChoices {
 pub const PLUGIN_CHOICES_FILE: &str = "plugins.json";
 
 pub struct ProjectCore {
+    // Teardown order = declaration order after `Drop::drop` stops the plugins: the Explorer stops listening, the
+    // watcher joins its thread, then file operations, the Explorer and the rest go.
+    _explorer_sub: Subscription,
+    watcher: Watcher,
+    fileops: FileOps,
+    explorer: Arc<Explorer>,
+    hub: Arc<WatchHub>,
     id: ProjectId,
     vault: Vault,
     store: StateStore,
@@ -160,16 +188,70 @@ impl ProjectCore {
     /// Opens a project: state store, config, plugins started. Single step (no `activate`).
     #[must_use]
     pub fn open(root: Root, env: &CoreEnv) -> Arc<Self> {
+        let id = ProjectId::of(&root);
+        let store = StateStore::for_project(&env.dirs, &root);
+        let config = ProjectConfig::load(&root);
+        let vault = Vault::new(root);
+        let hub = WatchHub::new();
+        let own = Arc::new(OwnWrites::new());
+        let explorer = Arc::new(Explorer::new(
+            &vault,
+            &config,
+            Arc::clone(&env.sink),
+            crate::tree::Ignorer::global_excludes().as_ref(),
+        ));
+        // the Explorer hears every batch first: the tree is current before plugins react
+        let explorer_sub = hub.subscribe({
+            let explorer = Arc::clone(&explorer);
+            move |batch| explorer.apply_batch(batch)
+        });
+        let watcher = Watcher::start(
+            &vault,
+            explorer.ignorers(),
+            Arc::clone(&hub),
+            Arc::clone(&own),
+            env.status_hook(),
+        );
+        let fileops = FileOps::new(vault.clone(), Arc::clone(&explorer), own, &store);
         let core = Arc::new(Self {
-            id: ProjectId::of(&root),
-            store: StateStore::for_project(&env.dirs, &root),
-            config: ProjectConfig::load(&root),
-            vault: Vault::new(root),
+            _explorer_sub: explorer_sub,
+            watcher,
+            fileops,
+            explorer,
+            hub,
+            id,
+            store,
+            config,
+            vault,
             enablement: Mutex::new(BTreeMap::new()),
             plugins: Mutex::new(PluginSet::new(PluginScope::Project)),
         });
         core.apply_plugins(env);
         core
+    }
+
+    /// The project tree service.
+    #[must_use]
+    pub fn explorer(&self) -> &Arc<Explorer> {
+        &self.explorer
+    }
+
+    /// File operations (move, rename, delete, new, undo).
+    #[must_use]
+    pub fn fileops(&self) -> &FileOps {
+        &self.fileops
+    }
+
+    /// File watch: own writes, polled documents, status.
+    #[must_use]
+    pub fn watcher(&self) -> &Watcher {
+        &self.watcher
+    }
+
+    /// Whether changes of the project files reach the app as they happen.
+    #[must_use]
+    pub fn live_status(&self) -> LiveStatus {
+        self.watcher.status()
     }
 
     #[must_use]
@@ -266,6 +348,7 @@ impl ProjectCore {
                     context.clone(),
                     Arc::clone(&env.sink),
                 )
+                .with_watch(Arc::clone(&self.hub))
             });
         for failure in failures {
             env.sink.emit(CoreEvent::PluginFailed {

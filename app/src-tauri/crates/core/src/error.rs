@@ -24,11 +24,25 @@ pub enum ErrorKind {
     Unavailable,
     Superseded,
     Internal,
+    /// A name that cannot be used (`detail`: the reason, `empty | chars | edge | dot | reserved | tooLong | notMarkdown`).
+    InvalidName,
+    /// A folder moved into itself | its own descendant.
+    IntoItself,
+    /// Between the project and a worktree (or two roots in one move).
+    OtherRoot,
+    /// Git's folder, PerMark's own folder, a root, a folder holding a worktree.
+    Protected,
+    /// Two items of one operation overlap or land on one name.
+    Overlap,
+    /// The recycle bin refused.
+    Trash,
+    /// A move failed half way and something could not be put back (`detail` lists it).
+    PartlyMoved,
 }
 
 impl ErrorKind {
     /// Every kind (i18n parity test: one `error.<kind>` per entry).
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 22] = [
         Self::NotFound,
         Self::PathEscape,
         Self::InvalidPath,
@@ -44,6 +58,13 @@ impl ErrorKind {
         Self::Unavailable,
         Self::Superseded,
         Self::Internal,
+        Self::InvalidName,
+        Self::IntoItself,
+        Self::OtherRoot,
+        Self::Protected,
+        Self::Overlap,
+        Self::Trash,
+        Self::PartlyMoved,
     ];
 }
 
@@ -117,7 +138,7 @@ mod tests {
     fn kinds_serialize_as_camel_case_i18n_suffixes() {
         let json = serde_json::to_string(&ErrorKind::PathEscape).unwrap();
         assert_eq!(json, "\"pathEscape\"");
-        assert_eq!(ErrorKind::ALL.len(), 15);
+        assert_eq!(ErrorKind::ALL.len(), 22);
     }
 
     #[test]

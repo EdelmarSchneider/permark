@@ -128,6 +128,22 @@ pub fn read_text(path: &Path, limit: u64) -> Result<Decoded, FsxError> {
     decode(&bytes).ok_or_else(|| FsxError::Binary(shown()))
 }
 
+/// Scratch files of editors and tools (`*.tmp`, `*~`, `.#*`, `*.swp`, Vim's `4913`) and the hidden
+/// `.<name>.<pid>.<n>.part` temps [`write_atomic`] leaves for an instant: never news, never listed.
+#[must_use]
+pub fn is_scratch_name(name: &str) -> bool {
+    let has_ext = |wanted: &str| {
+        Path::new(name)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case(wanted))
+    };
+    name.ends_with('~')
+        || name.starts_with(".#")
+        || name == "4913"
+        || (name.starts_with('.') && has_ext("part"))
+        || ["tmp", "swp", "swo", "swx"].into_iter().any(has_ext)
+}
+
 /// Temp files of this process: two writes of one file never share a temp.
 static TEMP_COUNT: AtomicU64 = AtomicU64::new(0);
 

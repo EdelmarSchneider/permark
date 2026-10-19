@@ -89,6 +89,41 @@ impl VaultPath {
     pub fn name(&self) -> Option<&str> {
         self.segments().last()
     }
+
+    /// The folder this path is in (the root for a top-level entry); `None` for the root itself.
+    #[must_use]
+    pub fn parent(&self) -> Option<Self> {
+        if self.is_root() {
+            return None;
+        }
+        Some(Self(
+            self.0
+                .rsplit_once('/')
+                .map_or("", |(parent, _)| parent)
+                .to_owned(),
+        ))
+    }
+
+    /// This path plus one more segment. `name` must be one valid name (see `fileops::check_name`).
+    #[must_use]
+    pub fn join_name(&self, name: &str) -> Self {
+        if self.is_root() {
+            Self(name.to_owned())
+        } else {
+            Self(format!("{}/{name}", self.0))
+        }
+    }
+
+    /// Whether `self` is `other` or inside it (whole segments, identity keys).
+    #[must_use]
+    pub fn is_within(&self, other: &Self) -> bool {
+        let (mine, theirs) = (self.key(), other.key());
+        other.is_root()
+            || mine == theirs
+            || mine
+                .strip_prefix(theirs.as_str())
+                .is_some_and(|rest| rest.starts_with('/'))
+    }
 }
 
 impl fmt::Display for VaultPath {
@@ -127,7 +162,8 @@ fn is_reserved_device(name: &str) -> bool {
     }
 }
 
-fn windows_name_ok(name: &str) -> bool {
+/// One file name Windows accepts: no `:`, no trailing dot | space, no `< > " | ? *`, no control chars, no device name.
+pub(crate) fn windows_name_ok(name: &str) -> bool {
     !name.contains(':')
         && !name.ends_with('.')
         && !name.ends_with(' ')

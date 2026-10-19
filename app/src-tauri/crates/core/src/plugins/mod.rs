@@ -147,6 +147,7 @@ pub struct PluginCx {
     /// Context when the instance started.
     pub context: Context,
     events: PluginEvents,
+    watch: Option<Arc<crate::watch::WatchHub>>,
 }
 
 impl PluginCx {
@@ -170,7 +171,22 @@ impl PluginCx {
             settings,
             context,
             events,
+            watch: None,
         }
+    }
+
+    /// Gives a Project-scope instance the file watch of its project.
+    #[must_use]
+    pub fn with_watch(mut self, hub: Arc<crate::watch::WatchHub>) -> Self {
+        self.watch = Some(hub);
+        self
+    }
+
+    /// The file watch of the project (Project scope): `subscribe` to hear verified changes; drop the subscription
+    /// to stop.
+    #[must_use]
+    pub fn watch(&self) -> Option<&Arc<crate::watch::WatchHub>> {
+        self.watch.as_ref()
     }
 
     #[must_use]

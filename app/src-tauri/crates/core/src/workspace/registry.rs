@@ -109,6 +109,20 @@ impl WorkspaceRegistry {
         }
     }
 
+    /// A registry shared by the app: projects whose live updates change recompute the windows' contexts.
+    #[must_use]
+    pub fn new_shared(env: &Arc<CoreEnv>) -> Arc<Self> {
+        Arc::new_cyclic(|weak: &std::sync::Weak<Self>| {
+            let weak = weak.clone();
+            env.set_status_hook(Arc::new(move || {
+                if let Some(registry) = weak.upgrade() {
+                    registry.refresh();
+                }
+            }));
+            Self::new(Arc::clone(env))
+        })
+    }
+
     #[must_use]
     pub fn env(&self) -> &Arc<CoreEnv> {
         &self.env
@@ -142,7 +156,7 @@ impl WorkspaceRegistry {
             slot.state = state;
             inner.windows.remove(label);
             if let Effect::Release(id) = effect {
-                dropped.extend(release(&mut inner, id));
+                dropped.extend(release(&mut inner, id, label));
             }
         }
         self.publish(&mut inner);
@@ -283,7 +297,7 @@ impl WorkspaceRegistry {
                 slot.document = ticket.document;
             }
             if let Effect::Release(old) = effect {
-                dropped.extend(release(&mut inner, old));
+                dropped.extend(release(&mut inner, old, &ticket.window));
             }
             Ok(id)
         };
@@ -320,7 +334,7 @@ impl WorkspaceRegistry {
             slot.target = None;
             slot.document = None;
             if let Effect::Release(id) = effect {
-                dropped.extend(release(&mut inner, id));
+                dropped.extend(release(&mut inner, id, label));
             }
         }
         self.publish(&mut inner);
@@ -506,7 +520,15 @@ impl WorkspaceRegistry {
 }
 
 /// Removes `id` when no window holds it any more; the entry is returned to be dropped outside the lock.
-fn release(inner: &mut Inner, id: WorkspaceId) -> Option<Entry> {
+fn release(inner: &mut Inner, id: WorkspaceId, window: &str) -> Option<Entry> {
+    // the window's Explorer view goes with its workspace
+    if let Some(Entry {
+        workspace: Workspace::Project(core),
+        ..
+    }) = inner.workspaces.get(&id)
+    {
+        core.explorer().close_view(window);
+    }
     let held = inner
         .windows
         .values()
@@ -611,7 +633,12 @@ fn context_of(
                 PermarkCondition::NotInitialized
             };
             context.plugins = core.plugins_on();
-            context.live_updates = no_watcher;
+            context.live_updates = match core.live_status() {
+                crate::watch::LiveStatus::Available => LiveUpdates::Available,
+                crate::watch::LiveStatus::Unavailable { reason } => {
+                    LiveUpdates::Unavailable { reason }
+                }
+            };
         }
         Workspace::SingleFile(_) => {
             context.workspace = WorkspaceKind::SingleFile;
