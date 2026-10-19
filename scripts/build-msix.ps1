@@ -22,7 +22,7 @@
   from before the packaging existed needs the packaging files copied in first; docs/msstore.md says how).
 
 .PARAMETER Build
-  Build first: the Store flavor, `npx tauri build --no-bundle --no-default-features --features store --config <overlay>`
+  Build first: the Store flavor, `tauri build --no-bundle --features store --config <overlay> -- --no-default-features`
   (needs the frontend dependencies, npm ci, Rust and the usual Tauri prerequisites), and the shell extension,
   `cargo build --profile release-shell -p permark-shell` (a profile that unwinds on a panic).
 
@@ -111,8 +111,9 @@ if ($Build) {
   Write-Host "Building the Store flavor of PerMark $Version ..."
   Push-Location $App
   try {
-    # npx rather than `npm run tauri --`: Windows PowerShell 5.1 swallows the `--` and npm then rejects the flags.
-    & npx tauri build --no-bundle --no-default-features --features store --config $Overlay
+    # The Tauri CLI itself (not `npm run tauri --` | npx: Windows PowerShell 5.1 and npm eat a bare `--`). Cargo flags the
+    # CLI has no option for go after a quoted '--'.
+    & (Join-Path $App 'node_modules\.bin\tauri.cmd') build --no-bundle --features store --config $Overlay '--' --no-default-features
     if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit code $LASTEXITCODE)." }
 
     # The DLL that File Explorer's helper process loads for the folder menu entries. Its profile unwinds on a panic (the
