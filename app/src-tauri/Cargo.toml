@@ -64,6 +64,8 @@ name = "permark_lib"
 [features]
 # Plugin crates join here as features; default = full build.
 default = []
+# Microsoft Store build (Store updates the app; distribution slice).
+store = []
 
 [build-dependencies]
 tauri-build = { version = "2.5", features = [] }
@@ -73,6 +75,8 @@ permark-core.workspace = true
 # generate_context! expands to serde_json (plugin config).
 serde_json.workspace = true
 serde.workspace = true
+thiserror.workspace = true
+ts-rs.workspace = true
 tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8.2"
 

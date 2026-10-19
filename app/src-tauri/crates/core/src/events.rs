@@ -49,6 +49,16 @@ pub struct StateRecovered {
     pub backup: Option<String>,
 }
 
+/// An open that came from outside (command line, OS) failed; shown in `window`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct OpenFailed {
+    pub window: String,
+    pub path: String,
+    pub error: crate::error::IpcError,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CoreEvent {
     WorkspacesChanged(WorkspacesChanged),
@@ -58,6 +68,8 @@ pub enum CoreEvent {
     ContextChanged(ContextChanged),
     SettingsChanged(SettingsChanged),
     StateRecovered(StateRecovered),
+    /// To one window.
+    OpenFailed(OpenFailed),
     PluginsChanged,
     PluginFailed {
         message: String,
@@ -79,6 +91,7 @@ impl CoreEvent {
             Self::ContextChanged(_) => "context-changed",
             Self::SettingsChanged(_) => "settings-changed",
             Self::StateRecovered(_) => "state-recovered",
+            Self::OpenFailed(_) => "open-failed",
             Self::PluginsChanged => "plugins-changed",
             Self::PluginFailed { .. } => "plugin-failed",
             Self::Plugin { name, .. } => name,
@@ -91,6 +104,7 @@ impl CoreEvent {
         match self {
             Self::WindowChanged(e) => Some(&e.window),
             Self::ContextChanged(e) => Some(&e.window),
+            Self::OpenFailed(e) => Some(&e.window),
             _ => None,
         }
     }
