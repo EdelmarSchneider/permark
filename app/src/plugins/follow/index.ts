@@ -26,7 +26,7 @@ export default definePlugin({
       cx.contribute({
         kind: "statusItem",
         id: "follow.status",
-        slot: "right",
+        slot: "left",
         order: 7,
         requires: NO_REQUIREMENT,
         view: () => import("./FollowStatus.svelte"),

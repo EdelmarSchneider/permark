@@ -193,9 +193,11 @@ pub fn open_notes(
 ) -> Result<OpenOutcome, IpcError> {
     let shell = state(&handle);
     let label = window.label().to_owned();
-    // already here: nothing to do
-    if let Some((_, Workspace::Notes(_))) = shell.registry.workspace_of(&label) {
-        return Ok(opened(&shell, &label));
+    // already here: nothing to do (unless a window of its own was asked for)
+    if placement != OpenPlacement::NewWindow {
+        if let Some((_, Workspace::Notes(_))) = shell.registry.workspace_of(&label) {
+            return Ok(opened(&shell, &label));
+        }
     }
     open_reference(&handle, &label, WorkspaceRef::Notes, placement)
 }

@@ -1,10 +1,17 @@
 <script lang="ts">
-  // Status bar items plugins contribute (word count, ...), by order. A plugin off: its item is gone.
+  // Status bar items plugins contribute, one slot of the bar (left | center | right), lowest `order` first. A plugin
+  // off: its item is gone.
   import { conditions } from "../conditions/context.svelte";
   import { contributions } from "../plugins/instance.svelte";
 
+  type Props = { slot: "left" | "center" | "right" };
+  let { slot }: Props = $props();
+
   const items = $derived(
-    [...contributions.visible("statusItem", conditions.current)].sort((a, b) => a.order - b.order),
+    contributions
+      .visible("statusItem", conditions.current)
+      .filter((item) => item.slot === slot)
+      .sort((a, b) => a.order - b.order),
   );
 </script>
 

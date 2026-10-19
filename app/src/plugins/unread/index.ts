@@ -34,7 +34,7 @@ export default definePlugin({
       cx.contribute({
         kind: "statusItem",
         id: "unread.status",
-        slot: "right",
+        slot: "left",
         order: 9,
         requires: NO_REQUIREMENT,
         view: () => import("./UnreadStatus.svelte"),

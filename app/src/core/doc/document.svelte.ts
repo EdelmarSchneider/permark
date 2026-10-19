@@ -19,6 +19,7 @@ import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./de
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
 import { currentIndex } from "./outline";
 import { reading } from "./reading.svelte";
+import { layout } from "../shell/layout.svelte";
 import { recentFiles } from "../search/recent.svelte";
 import { formatQuote, formatReference, type Reference } from "./reference";
 import { Trail, type Place } from "./trail";
@@ -149,6 +150,7 @@ export class DocumentController {
     this.trail.clear();
     if (workspace !== null) {
       void reading.load(this.#api);
+      void layout.load(this.#api, workspace.kind === "project");
       if (workspace.kind === "project") void recentFiles.load(this.#api);
     }
   }

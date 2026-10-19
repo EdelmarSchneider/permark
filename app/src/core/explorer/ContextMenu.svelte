@@ -3,8 +3,15 @@
   import { t } from "../i18n";
   import type { MenuEntry } from "./menu";
 
-  type Props = { x: number; y: number; entries: readonly MenuEntry[]; close: () => void };
-  let { x, y, entries, close }: Props = $props();
+  type Props = {
+    x: number;
+    y: number;
+    entries: readonly MenuEntry[];
+    close: () => void;
+    /** What the menu is called for assistive tech (default: the file actions). */
+    label?: string;
+  };
+  let { x, y, entries, close, label }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
@@ -62,7 +69,7 @@
   class="menu"
   role="menu"
   tabindex="-1"
-  aria-label={t("menu.fileActions")}
+  aria-label={label ?? t("menu.fileActions")}
   style:left="{x}px"
   style:top="{y}px"
   {onkeydown}

@@ -26,7 +26,7 @@ export default definePlugin({
       cx.contribute({
         kind: "statusItem",
         id: "live-feed.status",
-        slot: "right",
+        slot: "left",
         order: 8,
         requires: NO_REQUIREMENT,
         view: () => import("./FeedStatus.svelte"),

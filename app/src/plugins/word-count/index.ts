@@ -10,7 +10,7 @@ export default definePlugin({
       kind: "statusItem",
       id: "word-count.status",
       slot: "right",
-      order: 10,
+      order: 1,
       requires: NO_REQUIREMENT,
       view: () => import("./WordCount.svelte"),
     });

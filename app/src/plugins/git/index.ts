@@ -22,7 +22,7 @@ export default definePlugin({
       cx.contribute({
         kind: "statusItem",
         id: "git.status",
-        slot: "right",
+        slot: "left",
         order: 5,
         requires: REPO,
         view: () => import("./GitStatus.svelte"),
@@ -31,7 +31,7 @@ export default definePlugin({
       cx.contribute({
         kind: "statusItem",
         id: "git.problem",
-        slot: "right",
+        slot: "left",
         order: 6,
         requires: NO_REQUIREMENT,
         view: () => import("./GitProblem.svelte"),
