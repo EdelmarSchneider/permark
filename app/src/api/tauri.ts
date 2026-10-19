@@ -1,6 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { asIpcError, errorMessage } from "./error";
@@ -15,6 +15,55 @@ import type {
   PluginMethods,
   Result,
 } from "./types";
+
+/** A point the system reports in physical pixels, as CSS pixels of the window. */
+export function cssPoint(
+  position: { x: number; y: number },
+  scale: number,
+): { x: number; y: number } {
+  const factor = Number.isFinite(scale) && scale > 0 ? scale : 1;
+  return { x: position.x / factor, y: position.y / factor };
+}
+
+/** A Tauri drag-drop event as the app's drop event. Only `enter` carries the paths being dragged; `held` keeps them for
+ *  the `over` events that follow. */
+export function mapDrop(
+  payload: DragDropEvent,
+  held: readonly string[],
+  scale: number,
+): { event: DropEvent; held: readonly string[] } {
+  switch (payload.type) {
+    case "enter":
+      return {
+        event: {
+          type: "over",
+          count: payload.paths.length,
+          paths: payload.paths,
+          ...cssPoint(payload.position, scale),
+        },
+        held: payload.paths,
+      };
+    case "over":
+      return {
+        event: {
+          type: "over",
+          count: held.length,
+          paths: held,
+          ...cssPoint(payload.position, scale),
+        },
+        held,
+      };
+    case "leave":
+      return { event: { type: "leave" }, held: [] };
+    case "drop":
+      return {
+        event: { type: "drop", paths: payload.paths, ...cssPoint(payload.position, scale) },
+        held: [],
+      };
+    default:
+      return payload satisfies never;
+  }
+}
 
 /** Typed `invoke`: command name fixes args + result type; rejection -> `Result` error (backend shape when it is one). */
 export async function call<C extends CommandName>(
@@ -89,6 +138,10 @@ export const tauriApi: Api = {
   deleteFiles: (paths) => call("fileops_delete", { paths }),
   newEntry: (dir, name, kind) => call("fileops_new", { dir, name, kind }),
   undoFileOp: () => call("fileops_undo", {}),
+  planImport: (target, sources) => call("fileops_import_plan", { target, sources }),
+  applyImport: (planId, mode, conflicts) =>
+    call("fileops_import_apply", { planId, mode, conflicts }),
+  cancelImport: (planId) => call("fileops_import_cancel", { planId }),
   absPath: (path) => call("file_abs_path", { path }),
   openExternal: (path, mode) => call("file_open_external", { path, mode }),
   showDocument: (path) => call("show_document", { path }),
@@ -112,6 +165,17 @@ export const tauriApi: Api = {
     } catch (error) {
       const backend = asIpcError(error);
       const command = "edit_write_asset";
+      if (backend) return { ok: false, error: { kind: "backend", command, error: backend } };
+      return { ok: false, error: { kind: "command", command, message: errorMessage(error) } };
+    }
+  },
+  readPicture: async (path) => {
+    const command = "picture_read";
+    try {
+      const value = await invoke<ArrayBuffer>(command, { path });
+      return { ok: true, value: new Uint8Array(value) };
+    } catch (error) {
+      const backend = asIpcError(error);
       if (backend) return { ok: false, error: { kind: "backend", command, error: backend } };
       return { ok: false, error: { kind: "command", command, message: errorMessage(error) } };
     }
@@ -148,28 +212,14 @@ export const tauriApi: Api = {
     listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
   assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
   on: (event, handler) => listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
-  onDrop: (handler) =>
-    getCurrentWebview().onDragDropEvent((event) => {
-      const payload = event.payload;
-      let mapped: DropEvent | null;
-      switch (payload.type) {
-        case "enter":
-          mapped = { type: "over", count: payload.paths.length };
-          break;
-        case "over":
-          mapped = null;
-          break;
-        case "leave":
-          mapped = { type: "leave" };
-          break;
-        case "drop":
-          mapped = { type: "drop", paths: payload.paths };
-          break;
-        default:
-          mapped = payload satisfies never;
-      }
-      if (mapped) handler(mapped);
-    }),
+  onDrop: (handler) => {
+    let held: readonly string[] = [];
+    return getCurrentWebview().onDragDropEvent((event) => {
+      const mapped = mapDrop(event.payload, held, window.devicePixelRatio);
+      held = mapped.held;
+      handler(mapped.event);
+    });
+  },
   pickFolder: async (title) => {
     const picked = await open({ directory: true, multiple: false, title });
     return typeof picked === "string" ? picked : null;

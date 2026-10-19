@@ -323,3 +323,35 @@ describe("the journal of unsaved text", () => {
     off();
   });
 });
+
+describe("pictures dropped from the system", () => {
+  it("go to the editor on screen, at the point of the drop", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const taken: { files: File[]; x: number; y: number }[] = [];
+    editor.pictures = (files, point) => taken.push({ files, ...point });
+    const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+    expect(session.dropPictures([file], { x: 12, y: 34 })).toBe(true);
+    expect(taken).toEqual([{ files: [file], x: 12, y: 34 }]);
+  });
+
+  it("are not taken when no editor is on screen or the editor takes none", async () => {
+    const { session } = setup();
+    const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+    expect(session.dropPictures([file], { x: 1, y: 1 })).toBe(false);
+    await open(session);
+    expect(session.dropPictures([file], { x: 1, y: 1 })).toBe(false);
+  });
+
+  it("are not taken after the editor is gone", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    const taken: unknown[] = [];
+    editor.pictures = () => taken.push(1);
+    session.release();
+    void content;
+    const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+    expect(session.dropPictures([file], { x: 1, y: 1 })).toBe(false);
+    expect(taken).toEqual([]);
+  });
+});

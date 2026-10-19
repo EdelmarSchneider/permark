@@ -41,6 +41,8 @@ export type ActiveEditor = {
   /** The selected text ("" when none). */
   selection(): string;
   focus(): void;
+  /** Puts pictures dropped at a point of the window into the text (the editors that take pictures). */
+  pictures?(files: File[], point: { x: number; y: number }): void;
 };
 
 /** What an editor mounts with. `line`: put this line at the top. */
@@ -306,6 +308,14 @@ export class EditingSession {
     return () => {
       if (this.#editor === editor) this.#editor = null;
     };
+  }
+
+  /** Pictures dropped from the system at a point of the window go into the editor on screen. `false`: none takes them. */
+  dropPictures(files: File[], point: { x: number; y: number }): boolean {
+    const editor = this.#editor;
+    if (!editor?.pictures) return false;
+    editor.pictures(files, point);
+    return true;
   }
 
   /** The editor's text changed (checked shortly after, against the base). */

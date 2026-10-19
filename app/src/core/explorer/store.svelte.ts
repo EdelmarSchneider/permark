@@ -119,6 +119,10 @@ export class ExplorerStore {
   edit = $state.raw<Edit>({ mode: "none" });
   dialog = $state.raw<Dialog>({ status: "closed" });
   drag = $state.raw<Drag>({ status: "idle" });
+  /** The folder files dragged in from outside would land in (`""` = the project folder; `null`: no such drag). */
+  outside = $state<string | null>(null);
+  /** The list's geometry: the folder a point on screen belongs to (`null`: outside the list). Set by the panel. */
+  geometry: ((x: number, y: number) => string | null) | null = null;
   /** A request to bring a row into view (`n` makes repeated requests for one path distinct). */
   scrollTo = $state.raw<{ path: string; n: number } | null>(null);
 
@@ -682,6 +686,16 @@ export class ExplorerStore {
   }
 
   // ---- drag ------------------------------------------------------------------------------------------------------
+
+  /** The folder an outside drop at this point would land in, if the point is over the list. */
+  dropFolderAt(x: number, y: number): string | null {
+    return this.geometry?.(x, y) ?? null;
+  }
+
+  /** Marks (or clears, `null`) the folder an outside drag is over. */
+  markDrop(folder: string | null): void {
+    this.outside = folder;
+  }
 
   beginDrag(paths: readonly string[]): void {
     this.drag = { status: "dragging", paths, over: null };

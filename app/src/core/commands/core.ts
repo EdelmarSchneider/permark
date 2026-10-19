@@ -188,6 +188,15 @@ const SPECS: readonly Spec[] = [
     run: cycleWidth,
   },
   {
+    id: "doc.focus",
+    label: "cmd.focus",
+    keys: ["Mod+Alt+f"],
+    requires: READING,
+    // the way out never disappears: while focus is on the command runs even with no document
+    when: () => ui.focus === "on" || hasDocument(),
+    run: () => ui.toggleFocus(),
+  },
+  {
     id: "doc.outline",
     label: "cmd.toggleOutline",
     keys: ["Mod+Alt+o"],

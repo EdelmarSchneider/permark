@@ -23,6 +23,7 @@ const { reading } = await import("./reading.svelte");
 const { WindowStore } = await import("../window.svelte");
 const { syncPlugins } = await import("../plugins/instance.svelte");
 const { installWindowKeys } = await import("../commands/install");
+const { ui } = await import("../shell/ui.svelte");
 
 // `api` is the mock created by the factory above
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
@@ -92,6 +93,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  ui.resetFocus();
+  ui.closeFind();
+  ui.closeFinder();
   stopKeys?.();
   stopFollowing?.();
   if (component) await unmount(component);
@@ -447,5 +451,179 @@ describe("config files", () => {
     expect(target.querySelector(".cm-content")?.textContent).toContain("API_KEY");
     expect(target.querySelector(".cm-content")?.textContent).not.toContain("sk-live-abc123");
     expect(target.querySelector(".cm-content")?.textContent).not.toContain("pa55w0rd");
+  });
+});
+
+describe("focus mode", () => {
+  const modeButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+  const chrome = (): HTMLElement | null => target.querySelector<HTMLElement>(".chrome");
+  const escape = (init: KeyboardEventInit = {}, on: EventTarget = window): KeyboardEvent => {
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+      ...init,
+    });
+    on.dispatchEvent(event);
+    return event;
+  };
+
+  it("folds the header and the strips away but keeps them mounted; the page stays", async () => {
+    await show("README.md");
+    await until(() => target.querySelector(".crumb.current") !== null, "header");
+    const header = target.querySelector(".crumb.current");
+    expect(chrome()?.classList.contains("folded")).toBe(false);
+    ui.setFocus("on");
+    await tick();
+    expect(chrome()?.classList.contains("folded")).toBe(true);
+    // inert: no Tab stop, no clicks, no screen reader text; still the same nodes
+    expect(chrome()?.inert).toBe(true);
+    expect(target.querySelector(".crumb.current")).toBe(header);
+    expect(target.querySelectorAll(".md-body > *").length).toBeGreaterThan(5);
+    ui.setFocus("off");
+    await tick();
+    expect(chrome()?.classList.contains("folded")).toBe(false);
+    expect(chrome()?.inert).toBe(false);
+  });
+
+  it("the transition class is there only for the moment after a toggle", async () => {
+    vi.useFakeTimers();
+    try {
+      await show("README.md");
+      await until(() => chrome() !== null, "header");
+      ui.setFocus("on");
+      await tick();
+      expect(chrome()?.classList.contains("clip")).toBe(true);
+      vi.advanceTimersByTime(300);
+      await tick();
+      expect(chrome()?.classList.contains("clip")).toBe(false);
+      expect(chrome()?.classList.contains("folded")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("Escape leaves it; the same key toggles it", async () => {
+    await show("README.md");
+    await until(() => chrome() !== null, "header");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, altKey: true }));
+    expect(ui.focus).toBe("on");
+    const event = escape();
+    expect(ui.focus).toBe("off");
+    expect(event.defaultPrevented).toBe(true);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, altKey: true }));
+    expect(ui.focus).toBe("on");
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", ctrlKey: true, altKey: true }));
+    expect(ui.focus).toBe("off");
+  });
+
+  it("Escape in View does nothing outside focus mode", async () => {
+    await show("README.md");
+    await until(() => chrome() !== null, "header");
+    const event = escape();
+    expect(ui.focus).toBe("off");
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("Escape is left to what is innermost: a field, a dialog, an overlay, a pop-up, the zoom", async () => {
+    await show("README.md");
+    await until(() => chrome() !== null, "header");
+    ui.setFocus("on");
+    const input = document.createElement("input");
+    document.body.append(input);
+    escape({}, input);
+    expect(ui.focus).toBe("on");
+    input.remove();
+    const dialog = document.createElement("div");
+    dialog.setAttribute("role", "dialog");
+    const inner = document.createElement("button");
+    dialog.append(inner);
+    document.body.append(dialog);
+    escape({}, inner);
+    expect(ui.focus).toBe("on");
+    dialog.remove();
+    const slash = document.createElement("div");
+    slash.className = "slash";
+    document.body.append(slash);
+    escape();
+    expect(ui.focus).toBe("on");
+    slash.remove();
+    ui.openFinder("quick");
+    escape();
+    expect(ui.focus).toBe("on");
+    ui.closeFinder();
+    documents.zoomed = { src: "x.png", alt: "" };
+    escape();
+    expect(ui.focus).toBe("on");
+    documents.zoomed = null;
+    // with the keys that are not a plain Escape, nor while composing
+    escape({ ctrlKey: true });
+    escape({ altKey: true });
+    escape({ metaKey: true });
+    escape({ isComposing: true });
+    expect(ui.focus).toBe("on");
+    escape();
+    expect(ui.focus).toBe("off");
+  });
+
+  it("with the find bar open, the first Escape closes the bar and focus mode stays", async () => {
+    await show("README.md");
+    await until(() => chrome() !== null, "header");
+    ui.setFocus("on");
+    ui.openFind();
+    await tick();
+    expect(
+      target.querySelector("input[type=search], .find input, [role=search] input") !== null ||
+        ui.finding,
+    ).toBe(true);
+    escape();
+    expect(ui.finding).toBe(false);
+    expect(ui.focus).toBe("on");
+    escape();
+    expect(ui.focus).toBe("off");
+  });
+
+  it("the Edit toolbar goes away in focus mode and the first Escape leaves focus, not the editor", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("README.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    modeButton("Edit")?.click();
+    await until(
+      () => target.querySelector("[role=toolbar][aria-label=Formatting]") !== null,
+      "toolbar",
+    );
+    ui.setFocus("on");
+    await until(
+      () => target.querySelector("[role=toolbar][aria-label=Formatting]") === null,
+      "no toolbar",
+    );
+    expect(target.querySelector(".ProseMirror")).not.toBeNull();
+    // the editors see Escape too: it is taken before they do
+    const editor = target.querySelector(".ProseMirror") as HTMLElement;
+    const event = escape({}, editor);
+    expect(event.defaultPrevented).toBe(true);
+    expect(ui.focus).toBe("off");
+    await until(
+      () => target.querySelector("[role=toolbar][aria-label=Formatting]") !== null,
+      "toolbar back",
+    );
+    expect(target.querySelector(".ProseMirror")).not.toBeNull();
+    expect(editing.mode).toBe("edit");
+  });
+
+  it("in Source the first Escape leaves focus; the second leaves the editor for View", async () => {
+    await show("README.md");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    ui.setFocus("on");
+    escape();
+    expect(ui.focus).toBe("off");
+    expect(target.querySelector(".cm-editor")).not.toBeNull();
+    escape();
+    await until(() => target.querySelector(".cm-editor") === null, "back to View");
   });
 });

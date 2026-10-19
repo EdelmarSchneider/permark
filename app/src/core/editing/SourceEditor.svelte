@@ -80,6 +80,10 @@
         topLine: () => made.topLine(),
         selection: () => made.selection(),
         focus: () => made.view.focus(),
+        pictures: (files, point) => {
+          const at = made.view.posAtCoords(point) ?? made.view.state.selection.main.head;
+          void insertPictures(files, at);
+        },
       });
     });
     return () => {
@@ -129,7 +133,7 @@
   }
 </script>
 
-<div class="source" class:with-preview={fence !== null}>
+<div class="source" class:with-preview={fence !== null} data-drop-editor>
   {#if finding}
     <div class="find" role="search">
       <input

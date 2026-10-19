@@ -22,6 +22,7 @@ import { conditions } from "./conditions/context.svelte";
 import { restartPlugins, syncPlugins } from "./plugins/instance.svelte";
 import { language, parsePreference, t } from "./i18n";
 import { look } from "./look.svelte";
+import { ui } from "./shell/ui.svelte";
 
 export type NoticeAction = { label: string; run: () => void };
 
@@ -42,6 +43,13 @@ type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : n
 /** `path: null` = the Notes. */
 export type Choice = { status: "closed" } | { status: "asking"; path: string | null };
 export type Drag = { status: "idle" } | { status: "over"; count: number };
+
+/** A project window takes what is dragged over it and dropped on it (into the project, or into an editor). */
+export type ProjectDrop = {
+  over(x: number, y: number, paths: readonly string[], count: number): void;
+  leave(): void;
+  drop(paths: readonly string[], x: number, y: number): void;
+};
 export type Boot =
   { status: "booting" } | { status: "ready" } | { status: "failed"; error: ApiError };
 
@@ -75,6 +83,8 @@ export class WindowStore {
   #nextNotice = 1;
   /** A window page that takes dropped files itself (the Notes): returns whether it did. */
   dropHook: ((paths: readonly string[]) => boolean) | null = null;
+  /** The project this window shows takes dropped files itself (they come into the project). */
+  projectDrop: ProjectDrop | null = null;
 
   constructor(backend: Api) {
     this.#api = backend;
@@ -147,6 +157,15 @@ export class WindowStore {
   #showView(view: WindowView): void {
     const before = this.view;
     this.view = view;
+    // focus mode belongs to the workspace it was turned on in
+    if (
+      view.state === "welcome" ||
+      (view.state === "showing" &&
+        before.state === "showing" &&
+        before.workspace.id !== view.workspace.id)
+    ) {
+      ui.resetFocus();
+    }
     // PerMark was initialized in the project this window shows: its plugins started over on the new state folder
     if (
       before.state === "showing" &&
@@ -317,13 +336,19 @@ export class WindowStore {
     switch (event.type) {
       case "over":
         this.drag = { status: "over", count: event.count };
+        this.projectDrop?.over(event.x, event.y, event.paths, event.count);
         return;
       case "leave":
         this.drag = { status: "idle" };
+        this.projectDrop?.leave();
         return;
       case "drop": {
         this.drag = { status: "idle" };
         if (this.dropHook?.(event.paths)) return;
+        if (this.projectDrop) {
+          this.projectDrop.drop(event.paths, event.x, event.y);
+          return;
+        }
         const [first, ...rest] = event.paths;
         if (first === undefined || rest.length > 0) {
           this.#notify({ kind: "dropOne" });

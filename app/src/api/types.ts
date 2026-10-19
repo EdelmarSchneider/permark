@@ -43,6 +43,17 @@ import type { IndexProgress } from "./generated/IndexProgress";
 import type { IndexStatus } from "./generated/IndexStatus";
 import type { IpcError } from "./generated/IpcError";
 import type { LinkTarget } from "./generated/LinkTarget";
+import type { ConflictChoice } from "./generated/ConflictChoice";
+import type { ImportFailure } from "./generated/ImportFailure";
+import type { ImportItem } from "./generated/ImportItem";
+import type { ImportKind } from "./generated/ImportKind";
+import type { ImportMode } from "./generated/ImportMode";
+import type { ImportOutcome } from "./generated/ImportOutcome";
+import type { ImportPhase } from "./generated/ImportPhase";
+import type { ImportPlan } from "./generated/ImportPlan";
+import type { ImportProgress } from "./generated/ImportProgress";
+import type { ImportRefusal } from "./generated/ImportRefusal";
+import type { ImportRefused } from "./generated/ImportRefused";
 import type { MoveOutcome } from "./generated/MoveOutcome";
 import type { MovePlan } from "./generated/MovePlan";
 import type { MoveSpec } from "./generated/MoveSpec";
@@ -154,6 +165,17 @@ export type {
   DeleteOutcome,
   DocumentChanged,
   DocumentView,
+  ConflictChoice,
+  ImportFailure,
+  ImportItem,
+  ImportKind,
+  ImportMode,
+  ImportOutcome,
+  ImportPhase,
+  ImportPlan,
+  ImportProgress,
+  ImportRefusal,
+  ImportRefused,
   IpcError,
   LinkTarget,
   MoveOutcome,
@@ -239,6 +261,12 @@ export interface Commands {
   fileops_delete: { args: { paths: string[] }; result: DeleteOutcome };
   fileops_new: { args: { dir: string; name: string; kind: NewKind }; result: string };
   fileops_undo: { args: Record<string, never>; result: UndoOutcome | null };
+  fileops_import_plan: { args: { target: string; sources: string[] }; result: ImportPlan };
+  fileops_import_apply: {
+    args: { planId: number; mode: ImportMode; conflicts: ConflictChoice };
+    result: ImportOutcome;
+  };
+  fileops_import_cancel: { args: { planId: number }; result: boolean };
   file_abs_path: { args: { path: string }; result: string };
   file_open_external: { args: { path: string; mode: OpenMode }; result: null };
   show_document: { args: { path: string | null }; result: null };
@@ -261,6 +289,8 @@ export interface Commands {
   edit_save_as: { args: { path: string; text: string; exact: boolean }; result: string };
   /** Raw body (the picture's bytes); `doc` + `ext` travel as headers. */
   edit_write_asset: { args: { doc: string; ext: string; bytes: Uint8Array }; result: string };
+  /** A picture dropped from the system onto an editor: the file's bytes (raw response). */
+  picture_read: { args: { path: string }; result: ArrayBuffer };
   edit_set_unsaved: { args: { path: string | null }; result: null };
   edit_headings: { args: { path: string }; result: OutlineItem[] };
   edit_link_targets: { args: Record<string, never>; result: string[] };
@@ -523,6 +553,7 @@ export interface Events {
   "workspace-close-requested": WorkspaceCloseRequested;
   "plugins-changed": null;
   "index-progress": IndexProgress;
+  "import-progress": ImportProgress;
 }
 export type EventName = keyof Events;
 
@@ -535,9 +566,11 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: ApiError };
 
 export type Unlisten = () => void;
 
-/** Files | folders dragged onto the window. */
+/** Files | folders dragged onto the window. `x`, `y`: where the pointer is, in CSS pixels of the window. */
 export type DropEvent =
-  { type: "over"; count: number } | { type: "leave" } | { type: "drop"; paths: string[] };
+  | { type: "over"; count: number; paths: readonly string[]; x: number; y: number }
+  | { type: "leave" }
+  | { type: "drop"; paths: string[]; x: number; y: number };
 
 export interface Api {
   appInfo(): Promise<Result<AppInfo>>;
@@ -571,6 +604,16 @@ export interface Api {
   newEntry(dir: string, name: string, kind: NewKind): Promise<Result<string>>;
   /** Takes the newest file operation back; `null` = nothing to undo. */
   undoFileOp(): Promise<Result<UndoOutcome | null>>;
+  /** What dropping files | folders from outside onto `target` (a project folder) would do. Touches nothing. */
+  planImport(target: string, sources: string[]): Promise<Result<ImportPlan>>;
+  /** Does what the plan listed; resolves when done (progress arrives as `import-progress`). */
+  applyImport(
+    planId: number,
+    mode: ImportMode,
+    conflicts: ConflictChoice,
+  ): Promise<Result<ImportOutcome>>;
+  /** Stops a running import; what was finished stays. */
+  cancelImport(planId: number): Promise<Result<boolean>>;
   absPath(path: string): Promise<Result<string>>;
   openExternal(path: string, mode: OpenMode): Promise<Result<null>>;
   /** This window shows this document (`null`: none). */
@@ -599,6 +642,8 @@ export interface Api {
   editSaveAs(path: string, text: string, exact: boolean): Promise<Result<string>>;
   /** Picture bytes saved next to `doc`; resolves to the picture's path. */
   editWriteAsset(doc: string, ext: string, bytes: Uint8Array): Promise<Result<string>>;
+  /** The bytes of a picture file dropped onto an editor (absolute path). */
+  readPicture(path: string): Promise<Result<Uint8Array<ArrayBuffer>>>;
   /** This window holds unsaved edits of `path` (`null`: none). */
   editSetUnsaved(path: string | null): Promise<Result<null>>;
   editHeadings(path: string): Promise<Result<OutlineItem[]>>;

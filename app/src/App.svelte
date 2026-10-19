@@ -1,13 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type AppInfo, type WorkspaceView } from "./api";
-  import { language, t } from "./core/i18n";
+  import { language, t, tn } from "./core/i18n";
   import DocumentArea from "./core/doc/DocumentArea.svelte";
   import { documents } from "./core/doc/document.svelte";
   import OutlinePanel from "./core/doc/OutlinePanel.svelte";
   import { reading } from "./core/doc/reading.svelte";
   import { look } from "./core/look.svelte";
   import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
+  import ImportDialog from "./core/explorer/ImportDialog.svelte";
+  import ImportProgress from "./core/explorer/ImportProgress.svelte";
+  import { folderLabel } from "./core/explorer/importModel";
+  import { importFlow } from "./core/explorer/importWindow.svelte";
+  import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
@@ -167,6 +172,44 @@
     };
   });
   $effect(() => language.watchSystem());
+
+  // a project window takes what is dropped on it into the project (or into its editor); the flow listens to the
+  // import's progress while the project is shown and forgets its question when another workspace comes
+  const projectShown = $derived(shown?.workspace.kind === "project" ? shown.workspace.id : null);
+  $effect(() => {
+    if (projectShown === null) return;
+    store.projectDrop = {
+      over: (x, y, paths, count) => importFlow.over(x, y, paths, count),
+      leave: () => importFlow.leave(),
+      drop: (paths, x, y) => void importFlow.drop(paths, x, y),
+    };
+    let off: (() => void) | null = null;
+    let gone = false;
+    void importFlow.start().then((stop) => {
+      if (gone) stop();
+      else off = stop;
+    });
+    return () => {
+      gone = true;
+      off?.();
+      store.projectDrop = null;
+      importFlow.reset();
+    };
+  });
+
+  /** What the dashed overlay says while a drag is over the window. */
+  const dropText = $derived.by(() => {
+    const hover = importFlow.hover;
+    if (store.projectDrop === null || hover === null) {
+      return store.drag.status === "over" && store.drag.count === 1
+        ? t("welcome.dropActive")
+        : t("welcome.dropOne");
+    }
+    if (hover.pictures) return t("import.overlayPictures");
+    return tn("import.overlay", hover.count, {
+      folder: folderLabel(hover.folder, shown?.workspace.name ?? ""),
+    });
+  });
   // first run: "Open these files with PerMark?" in the first window, once (the backend says when it is due)
   $effect(() => {
     if (store.label !== "") void defaultApp.askIfDue(store.label);
@@ -260,9 +303,14 @@
       ? sidebar
       : undefined}
     panel={rightPanel !== null || (outline && reading.outline) ? panel : undefined}
+    focus={ui.focus === "on"}
+    moving={ui.focusMoving}
     {main}
     {status}
   />
+  {#if ui.focus === "on"}
+    <FocusExit />
+  {/if}
 {/if}
 
 {#if store.choice.status === "asking"}
@@ -291,10 +339,32 @@
   <KeymapDialog {store} />
 {/if}
 <DefaultAppDialog />
+{#if importFlow.state.status === "asking"}
+  {@const asked = importFlow.state}
+  <ImportDialog
+    plan={asked.plan}
+    where={asked.where}
+    mode={asked.mode}
+    conflicts={asked.conflicts}
+    setMode={(mode) => importFlow.setMode(mode)}
+    setConflicts={(choice) => importFlow.setConflicts(choice)}
+    confirm={() => void importFlow.confirm()}
+    cancel={() => importFlow.cancelAsking()}
+  />
+{:else if importFlow.state.status === "running"}
+  {@const running = importFlow.state}
+  <ImportProgress
+    where={running.where}
+    mode={running.mode}
+    progress={running.progress}
+    cancelling={running.cancelling}
+    stop={() => void importFlow.stop()}
+  />
+{/if}
 <Notices {store} />
 {#if store.drag.status === "over"}
   <div class="drop" aria-hidden="true">
-    {store.drag.count === 1 ? t("welcome.dropActive") : t("welcome.dropOne")}
+    {dropText}
   </div>
 {/if}
 

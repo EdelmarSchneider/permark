@@ -16,6 +16,7 @@
     missing: "fileOps.reason.missing",
     occupied: "fileOps.reason.occupied",
     unsaved: "fileOps.reason.unsaved",
+    trash: "fileOps.reason.trash",
   };
 
   /** Moves listed before "and n more". */

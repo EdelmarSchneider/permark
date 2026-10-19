@@ -87,7 +87,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
   and so do fences with attributes (`` ```rust title="main.rs" ``). A block with no language is colored only when its language is
   unmistakable, and is then labelled *auto*; otherwise it stays plain. Edit and Source color the code too while you edit
 - Frontmatter shown as a clean metadata card
-- Light and dark themes (with a softer paper, sage or gray tone for the light one), adjustable zoom, and a focus mode with both side panels collapsed
+- Light and dark themes (with a softer paper, sage or gray tone for the light one), adjustable zoom, and a focus mode (`Ctrl+Alt+F`) that leaves only the page
 - Three **reading widths**: Comfortable (a book-like column), Wide and Full. Wide tables, diagrams and images take the room
   they need while the text stays at a comfortable measure
 - JSON, XML and plain text through an extensible renderer registry
@@ -201,6 +201,9 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 ### 🔗 File operations that keep your links working
 - **Rename** (`F2`), **move** (drag and drop, or `Ctrl+X` / `Ctrl+V`), **delete** (`Del`, to the system trash, after asking) and
   **New folder**, from the keyboard, the context menu or the `[:]` menu. Select several files with `Ctrl+click` or `Shift+click`
+- **Drop files in from outside.** With a project open, files and folders dragged onto it from the file manager come into the project, into the
+  folder under the pointer. You choose **Copy** or **Move**; names that already exist are listed first (keep both, or skip them); a big
+  folder shows its progress and can be stopped; and one **Undo** takes it all back
 - **Links are updated for you.** Moving or renaming a file or folder rewrites the links and images that point to it, and the
   relative links inside the files that move. "Update 7 links in 4 files?" shows every change first: **Apply**, **Move without
   updating** or **Cancel**. Only the destination changes; code is never touched
@@ -444,6 +447,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 | Show the Explorer / the Tags view | `Ctrl+Shift+X` / `Ctrl+Shift+T` |
 | Show the Outline (press again to go back) | `Ctrl+Alt+O` |
 | Cycle the reading width | `Ctrl+Alt+W` |
+| Focus mode: only the page (`Esc` or the same keys leave it) | `Ctrl+Alt+F` |
 | Toggle left / right panel | `Ctrl+B` / `Ctrl+Alt+B` |
 | Next / previous change | `F7` / `Shift+F7` |
 | Next unread document | `Alt+U` |

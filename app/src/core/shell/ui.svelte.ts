@@ -25,8 +25,18 @@ export type SettingsPage = { status: "closed" } | { status: "open"; section: Set
 /** The "Initialize PerMark" question: which folder (`path`, absolute) and what it is called. */
 export type InitDialog = { status: "closed" } | { status: "asking"; path: string; name: string };
 
+/** Focus mode: only the page. */
+export type Focus = "off" | "on";
+/** How long the frame's tracks animate after a toggle (ms): a little over the 180 ms transition. */
+export const FOCUS_MOVE_MS = 260;
+
 class UiStore {
   sidebar = $state<SidebarView>("files");
+  /** Focus mode of this window (not stored: a new window or a restart starts `off`). */
+  focus = $state<Focus>("off");
+  /** The 260 ms after a toggle: the frame's tracks transition only then (dragging a splitter never animates). */
+  focusMoving = $state(false);
+  #moving: ReturnType<typeof setTimeout> | null = null;
   /** The id of the plugin panel at the right of the page (`null`: none; the outline shows when it is on). */
   right = $state<string | null>(null);
   finder = $state.raw<Finder>({ status: "closed" });
@@ -66,6 +76,30 @@ class UiStore {
   /** Shows the plugin panel `id` at the right, or closes it when it is the one that shows. */
   toggleRight(id: string): void {
     this.right = this.right === id ? null : id;
+  }
+
+  /** Enters or leaves focus mode (the frame animates unless the person asked for less motion). */
+  setFocus(next: Focus): void {
+    if (next === this.focus) return;
+    this.focus = next;
+    this.focusMoving = true;
+    if (this.#moving !== null) clearTimeout(this.#moving);
+    this.#moving = setTimeout(() => {
+      this.#moving = null;
+      this.focusMoving = false;
+    }, FOCUS_MOVE_MS);
+  }
+
+  toggleFocus(): void {
+    this.setFocus(this.focus === "on" ? "off" : "on");
+  }
+
+  /** The document area went away (another workspace, the Welcome): focus ends at once, no animation. */
+  resetFocus(): void {
+    if (this.#moving !== null) clearTimeout(this.#moving);
+    this.#moving = null;
+    this.focusMoving = false;
+    this.focus = "off";
   }
 
   openSettings(): void {

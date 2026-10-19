@@ -62,7 +62,8 @@ export function seedFiles(): Record<string, string> {
 type Op =
   | { kind: "move"; moves: MoveSpec[]; before: Map<string, string> }
   | { kind: "new"; path: string }
-  | { kind: "delete"; paths: string[]; files: Map<string, string> };
+  | { kind: "delete"; paths: string[]; files: Map<string, string> }
+  | { kind: "import"; paths: string[] };
 
 export class MockProject {
   readonly files = new Map<string, string>();
@@ -250,6 +251,11 @@ export class MockProject {
     this.#undo.push({ kind: "delete", paths, files });
   }
 
+  /** Items an import put in place (project paths): one undo step takes them out again. */
+  recordImport(paths: string[]): void {
+    this.#undo.push({ kind: "import", paths });
+  }
+
   create(dir: string, name: string, kind: NewKind): string {
     const full = kind === "file" && !/\.[a-z]+$/i.test(name) ? `${name}.md` : name;
     if (/[\\/:*?"<>|]/.test(full)) throw new MockRefusal("invalidName", "chars");
@@ -279,6 +285,15 @@ export class MockProject {
         return true;
       case "delete":
         for (const [path, text] of op.files) this.add(path, text);
+        return true;
+      case "import":
+        for (const path of op.paths) {
+          for (const p of [...this.files.keys()]) {
+            if (p === path || p.startsWith(`${path}/`)) this.files.delete(p);
+          }
+          for (const d of [...this.dirs])
+            if (d === path || d.startsWith(`${path}/`)) this.dirs.delete(d);
+        }
         return true;
       default:
         return op satisfies never;

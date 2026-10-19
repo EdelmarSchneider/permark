@@ -9,6 +9,7 @@ import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
+import { createMockImport, type ImportProbe } from "./mockImport";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
 import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
@@ -146,6 +147,10 @@ export type MockProbe = {
   windowThemes: ("light" | "dark" | null)[];
   /** The default app, the file manager entries, the updater. */
   distribution: DistributionProbe;
+  /** Drop into project: what lies outside, the plans and applies, a hold to keep one running. */
+  imports: ImportProbe;
+  /** Picture files read for a drop on an editor, by path. */
+  pictures: string[];
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -177,6 +182,7 @@ export function createMockApi(): Api & {
     "document-changed": new Set(),
     "close-requested": new Set(),
     "workspace-close-requested": new Set(),
+    "import-progress": new Set(),
     "plugins-changed": new Set(),
     "index-progress": new Set(),
   };
@@ -273,6 +279,7 @@ export function createMockApi(): Api & {
     notes,
     distribution.handlers,
   );
+  const importing = createMockImport(project, emit, () => refreshTree());
   const probe: MockProbe = {
     opened: [],
     editor: [],
@@ -284,6 +291,8 @@ export function createMockApi(): Api & {
     shell: shell.probe,
     windowThemes,
     distribution: distribution.probe,
+    imports: importing.probe,
+    pictures: [],
   };
   let tree: TreeView | null = null;
 
@@ -504,6 +513,11 @@ export function createMockApi(): Api & {
       if (done) refreshTree();
       return ok(done ? { kind: "move", restored: 1, skipped: [] } : null);
     },
+    ...importing.api,
+    readPicture: (path) => {
+      probe.pictures.push(path);
+      return ok(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    },
     absPath: (path) => ok(path === "" ? MOCK_FOLDER : `${MOCK_FOLDER}/${path}`),
     openExternal: (path, mode) => {
       probe.opened.push({ path, mode });
@@ -600,14 +614,19 @@ export function createMockApi(): Api & {
       const count = (e: DragEvent): number => e.dataTransfer?.items.length || 1;
       const over = (e: DragEvent): void => {
         e.preventDefault();
-        handler({ type: "over", count: count(e) });
+        handler({ type: "over", count: count(e), paths: [], x: e.clientX, y: e.clientY });
       };
       const leave = (e: DragEvent): void => {
         if (e.relatedTarget === null) handler({ type: "leave" });
       };
       const drop = (e: DragEvent): void => {
         e.preventDefault();
-        handler({ type: "drop", paths: Array.from({ length: count(e) }, () => MOCK_FOLDER) });
+        handler({
+          type: "drop",
+          paths: Array.from({ length: count(e) }, () => MOCK_FOLDER),
+          x: e.clientX,
+          y: e.clientY,
+        });
       };
       window.addEventListener("dragover", over);
       window.addEventListener("dragleave", leave);

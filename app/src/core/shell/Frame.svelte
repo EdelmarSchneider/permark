@@ -1,6 +1,7 @@
 <script lang="ts">
   // Window frame: top bar | left sidebar | document area | right panel | status bar. Regions are slots; features fill them (empty slot = region not rendered). The two side panels are
   // resizable: widths come in as props (the layout store keeps them), a splitter on each inner edge asks for changes.
+  // Focus mode collapses every region but the page: they stay mounted (state kept) and become inert once faded.
   import type { Snippet } from "svelte";
   import { fit, RIGHT, SIDEBAR } from "./layout";
   import Splitter from "./Splitter.svelte";
@@ -15,6 +16,10 @@
     rightWidth?: number;
     onSidebarWidth?: (px: number) => void;
     onRightWidth?: (px: number) => void;
+    /** Focus mode: only the page. */
+    focus?: boolean;
+    /** The moment of a toggle: the tracks animate now (never while a splitter is dragged). */
+    moving?: boolean;
   };
 
   let {
@@ -27,6 +32,8 @@
     rightWidth = RIGHT.def,
     onSidebarWidth = () => {},
     onRightWidth = () => {},
+    focus = false,
+    moving = false,
   }: Props = $props();
 
   let bodyWidth = $state(0);
@@ -40,8 +47,8 @@
   );
 </script>
 
-<div class="frame">
-  <header class="top">{@render top()}</header>
+<div class="frame" class:focus class:moving>
+  <header class="top" inert={focus}>{@render top()}</header>
   <div
     class="body"
     class:has-sidebar={sidebar !== undefined}
@@ -51,13 +58,13 @@
     style:--w-right={widths.right === null ? undefined : `${widths.right}px`}
   >
     {#if sidebar}
-      <aside class="sidebar">{@render sidebar()}</aside>
+      <aside class="sidebar" inert={focus}>{@render sidebar()}</aside>
     {/if}
     <main class="main">{@render main()}</main>
     {#if panel}
-      <aside class="panel">{@render panel()}</aside>
+      <aside class="panel" inert={focus}>{@render panel()}</aside>
     {/if}
-    {#if sidebar}
+    {#if sidebar && !focus}
       <Splitter
         side="sidebar"
         range={SIDEBAR}
@@ -65,7 +72,7 @@
         onchange={onSidebarWidth}
       />
     {/if}
-    {#if panel}
+    {#if panel && !focus}
       <Splitter
         side="right"
         range={RIGHT}
@@ -74,7 +81,7 @@
       />
     {/if}
   </div>
-  <footer class="status">{@render status()}</footer>
+  <footer class="status" inert={focus}>{@render status()}</footer>
 </div>
 
 <style>
@@ -86,6 +93,7 @@
   .top {
     display: flex;
     min-width: 0;
+    min-height: 0;
     overflow: hidden;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
@@ -130,6 +138,7 @@
   }
   .status {
     display: flex;
+    min-height: 0;
     align-items: center;
     gap: var(--sp-3);
     min-width: 0;
@@ -139,5 +148,60 @@
     color: var(--muted);
     background: var(--surface);
     border-top: 1px solid var(--border);
+  }
+
+  /* Focus mode: every region but the page collapses and fades; after the fade it is hidden for good (no Tab stop, no
+     screen reader text). The tracks transition only just after a toggle, so a splitter drag never animates. */
+  .top,
+  .sidebar,
+  .panel,
+  .status {
+    transition:
+      opacity var(--dur) var(--ease),
+      visibility 0s;
+  }
+  .frame.moving {
+    transition: grid-template-rows var(--dur) var(--ease);
+  }
+  .frame.moving .body {
+    transition: grid-template-columns var(--dur) var(--ease);
+  }
+  .frame.focus {
+    grid-template-rows: 0px minmax(0, 1fr) 0px;
+  }
+  .frame.focus .body.has-sidebar {
+    grid-template-columns: 0px minmax(0, 1fr);
+  }
+  .frame.focus .body.has-panel {
+    grid-template-columns: minmax(0, 1fr) 0px;
+  }
+  .frame.focus .body.has-sidebar.has-panel {
+    grid-template-columns: 0px minmax(0, 1fr) 0px;
+  }
+  .frame.focus .top,
+  .frame.focus .sidebar,
+  .frame.focus .panel,
+  .frame.focus .status {
+    border-width: 0;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity var(--dur) var(--ease),
+      visibility 0s linear var(--dur);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .frame,
+    .frame.moving,
+    .frame.moving .body,
+    .top,
+    .sidebar,
+    .panel,
+    .status,
+    .frame.focus .top,
+    .frame.focus .sidebar,
+    .frame.focus .panel,
+    .frame.focus .status {
+      transition: none;
+    }
   }
 </style>

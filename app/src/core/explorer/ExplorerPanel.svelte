@@ -384,6 +384,29 @@
     }
   }
 
+  /** Folder files dragged in from outside would land in at a point: any folder row is itself (also an unopened large
+   *  | ignored one), a file row its folder, the empty part the project folder; `null` outside the list. */
+  function importFolderAt(x: number, y: number): string | null {
+    if (!list) return null;
+    const box = list.getBoundingClientRect();
+    if (x < box.left || x > box.right || y < box.top || y > box.bottom) return null;
+    const row = display[Math.floor((y - box.top + list.scrollTop) / ROW)];
+    if (row === undefined || row.type === "new") return "";
+    return row.type === "root"
+      ? row.root.path
+      : row.node.kind.type === "dir"
+        ? row.node.path
+        : parentOf(row.node.path);
+  }
+
+  // the window can ask where a drop from outside would land (it draws the mark through the store)
+  $effect(() => {
+    store.geometry = importFolderAt;
+    return () => {
+      store.geometry = null;
+    };
+  });
+
   function onpointermove(e: PointerEvent): void {
     if (!press || !list) return;
     if (store.drag.status === "idle") {
@@ -399,7 +422,7 @@
   }
 </script>
 
-<div class="explorer">
+<div class="explorer" data-drop-explorer>
   <div class="bar">
     <span class="menu-label">{t("project.explorer")}</span>
     <span class="spacer"></span>
@@ -469,7 +492,11 @@
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
       bind:this={list}
-      class={["list", store.drag.status === "dragging" && store.drag.over === "" && "drop-root"]}
+      class={[
+        "list",
+        ((store.drag.status === "dragging" && store.drag.over === "") || store.outside === "") &&
+          "drop-root",
+      ]}
       role="tree"
       aria-label={t("project.explorer")}
       aria-multiselectable="true"
@@ -487,7 +514,7 @@
           {#if row.type === "root"}
             <button
               type="button"
-              class="row root"
+              class={["row root", store.outside === row.root.path && "drop-target"]}
               style:top="{top}px"
               style:height="{ROW}px"
               aria-expanded={row.expanded}
@@ -534,7 +561,9 @@
                 store.focus === node.path && "is-focused",
                 (node.hidden || node.ignored || said.some((b) => b.dim)) && "is-dim",
                 node.forced && "is-forced",
-                store.drag.status === "dragging" && store.drag.over === node.path && "drop-target",
+                ((store.drag.status === "dragging" && store.drag.over === node.path) ||
+                  store.outside === node.path) &&
+                  "drop-target",
               ]}
               role="treeitem"
               tabindex="-1"

@@ -531,6 +531,56 @@ describe("drag", () => {
   });
 });
 
+describe("files dragged in from outside", () => {
+  it("answers which folder a point belongs to: a folder row is itself, a file row its folder, the rest the root", async () => {
+    const { store, root } = await render();
+    expect(store.dropFolderAt(10, 5)).not.toBeNull();
+    const at = (path: string): number =>
+      store.rows.findIndex((r) => r.type === "node" && r.node.path === path);
+    expect(store.dropFolderAt(50, at("docs") * 26 + 5)).toBe("docs");
+    expect(store.dropFolderAt(50, at("package.json") * 26 + 5)).toBe("");
+    // below the last row: the empty space is the project folder
+    expect(store.dropFolderAt(50, 390)).toBe("");
+    // outside the list: not the tree's
+    expect(store.dropFolderAt(500, 5)).toBeNull();
+    expect(store.dropFolderAt(50, -10)).toBeNull();
+    expect(root.querySelector("[data-drop-explorer]")).not.toBeNull();
+  });
+
+  it("a file inside a folder answers with that folder", async () => {
+    const { store } = await render();
+    await store.toggle("docs");
+    await tick();
+    const at = store.rows.findIndex((r) => r.type === "node" && r.node.path === "docs/guide.md");
+    expect(at).toBeGreaterThan(0);
+    expect(store.dropFolderAt(50, at * 26 + 5)).toBe("docs");
+  });
+
+  it("marks the folder under an outside drag like a drag inside, and the whole list for the project folder", async () => {
+    const { root, store } = await render();
+    store.markDrop("docs");
+    await tick();
+    expect(row(root, "docs").className).toContain("drop-target");
+    expect(root.querySelector(".list")?.className).not.toContain("drop-root");
+    store.markDrop("");
+    await tick();
+    expect(row(root, "docs").className).not.toContain("drop-target");
+    expect(root.querySelector(".list")?.className).toContain("drop-root");
+    store.markDrop(null);
+    await tick();
+    expect(root.querySelector(".list")?.className).not.toContain("drop-root");
+    expect(root.querySelectorAll(".drop-target")).toHaveLength(0);
+  });
+
+  it("lets go of the geometry when the panel goes away", async () => {
+    const { store, destroy } = await render();
+    expect(store.geometry).not.toBeNull();
+    destroy();
+    expect(store.geometry).toBeNull();
+    expect(store.dropFolderAt(10, 10)).toBeNull();
+  });
+});
+
 describe("filter popover", () => {
   it("opens from the toolbar, switches the preset and closes on Escape", async () => {
     const { root, store } = await render();

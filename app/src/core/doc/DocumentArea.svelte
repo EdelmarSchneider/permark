@@ -136,17 +136,36 @@
     };
   });
 
+  /** What may keep an Escape for itself: a field, a menu, a dialog, the editors' pop-ups. */
+  const OWNS_ESCAPE = "input, select, textarea, form, [role=dialog], [role=listbox], [role=menu]";
+
+  // Escape leaves focus mode first, and before the editors see it (the visual editor's key map takes Escape for
+  // itself). Not while something innermost is open: a field, a menu, a dialog, an overlay, the image zoom, a pop-up of
+  // an editor; the find bar closes first.
+  $effect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (ui.focus !== "on" || event.isComposing || event.key !== "Escape") return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const inside = event.target instanceof Element ? event.target.closest(OWNS_ESCAPE) : null;
+      if (inside !== null || ui.modal || documents.zoomed !== null) return;
+      if (document.querySelector(".slash, .cm-tooltip-autocomplete") !== null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (ui.finding) ui.closeFind();
+      else ui.setFocus("off");
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  });
+
   // Escape leaves an editor for View (not while a field, a menu or a dialog has the key). The other keys are commands
-  // (`core/commands`): find, back | forward, zoom, modes, save.
+  // (`core/commands`): find, back | forward, zoom, modes, save, focus.
   $effect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.isComposing || event.defaultPrevented) return;
       if (event.key !== "Escape" || !editingNow || event.ctrlKey || event.metaKey || event.altKey)
         return;
-      const inside =
-        event.target instanceof Element
-          ? event.target.closest("input, select, textarea, form, [role=dialog], [role=listbox]")
-          : null;
+      const inside = event.target instanceof Element ? event.target.closest(OWNS_ESCAPE) : null;
       if (inside === null) {
         event.preventDefault();
         chooseMode("view");
@@ -167,24 +186,34 @@
   <ModeSwitch session={editing} {readOnly} {visual} choose={chooseMode} />
 {/snippet}
 
-<section class="area" aria-label={t("doc.region")}>
+<section class="area" aria-label={t("doc.region")} data-drop-page>
   {#if doc.status !== "empty" && documents.path !== null}
-    <DocHeader
-      path={headerPath(view?.path ?? documents.path)}
-      savedMs={view?.mtimeMs ?? null}
-      role={view?.role ?? null}
-      template={store.referenceTemplate}
-      hasOutline={outline.length > 0}
-      onFind={() => ui.openFind()}
-      canOpenSystem={workspace.kind === "project"}
-      modes={view !== null && view.body.kind !== "media" ? modes : undefined}
-    />
-    {#each bars as bar (bar.owner + bar.id)}
-      {#await bar.view() then loaded}
-        {@const Bar = loaded.default}
-        <Bar />
-      {/await}
-    {/each}
+    <!-- focus mode folds the header and the strips away; they stay mounted (menus, strips keep their state) -->
+    <div
+      class="chrome"
+      class:folded={ui.focus === "on"}
+      class:clip={ui.focusMoving}
+      inert={ui.focus === "on"}
+    >
+      <div class="chrome-inner">
+        <DocHeader
+          path={headerPath(view?.path ?? documents.path)}
+          savedMs={view?.mtimeMs ?? null}
+          role={view?.role ?? null}
+          template={store.referenceTemplate}
+          hasOutline={outline.length > 0}
+          onFind={() => ui.openFind()}
+          canOpenSystem={workspace.kind === "project"}
+          modes={view !== null && view.body.kind !== "media" ? modes : undefined}
+        />
+        {#each bars as bar (bar.owner + bar.id)}
+          {#await bar.view() then loaded}
+            {@const Bar = loaded.default}
+            <Bar />
+          {/await}
+        {/each}
+      </div>
+    </div>
   {/if}
 
   <div class="pane">
@@ -297,6 +326,37 @@
     flex: 1;
     min-width: 0;
     min-height: 0;
+  }
+  .chrome {
+    display: grid;
+    grid-template-rows: 1fr;
+    transition:
+      grid-template-rows var(--dur) var(--ease),
+      opacity var(--dur) var(--ease),
+      visibility 0s;
+  }
+  .chrome-inner {
+    min-height: 0;
+  }
+  /* while it moves or when it is folded, whatever overflows the header (menus) is cut */
+  .chrome.clip .chrome-inner,
+  .chrome.folded .chrome-inner {
+    overflow: hidden;
+  }
+  .chrome.folded {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      grid-template-rows var(--dur) var(--ease),
+      opacity var(--dur) var(--ease),
+      visibility 0s linear var(--dur);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .chrome,
+    .chrome.folded {
+      transition: none;
+    }
   }
   .pane {
     position: relative;

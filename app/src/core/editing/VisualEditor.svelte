@@ -9,6 +9,7 @@
   import { t, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import "../doc/markdown.css";
+  import { ui } from "../shell/ui.svelte";
   import EditorToolbar from "./EditorToolbar.svelte";
   import { frontMatterSyntax } from "../config/frontMatter";
   import { pictureFiles, pictureLink } from "./pictures";
@@ -275,6 +276,13 @@
           return core.view.state.doc.textBetween(from, to, "\n", " ");
         },
         focus: () => core?.view.focus(),
+        pictures: (files, point) => {
+          const view = core?.view;
+          if (!view) return;
+          const at =
+            view.posAtCoords({ left: point.x, top: point.y })?.pos ?? view.state.selection.from;
+          void insertPictures(files, at);
+        },
       });
     })().catch((error: unknown) => {
       // the visual editor could not be made: the document opens in Source instead
@@ -391,8 +399,8 @@
   }
 </script>
 
-<div class="visual">
-  {#if format && ready}
+<div class="visual" data-drop-editor>
+  {#if format && ready && ui.focus === "off"}
     <EditorToolbar {format} run={runCommand} link={openLink} image={openImage} />
   {/if}
   {#if popover.kind === "link"}
