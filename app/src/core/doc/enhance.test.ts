@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { assetPathOf, enhanceBlock, languageOf, type EnhanceEnv } from "./enhance";
+import { assetPathOf, enhanceBlock, languageOf, realCode, type EnhanceEnv } from "./enhance";
 
 const env: EnhanceEnv = { assetUrl: (path) => `asset://localhost/${path}` };
 
@@ -23,6 +23,30 @@ describe("enhanceBlock", () => {
     expect(root.getAttribute("data-info")).toBe("rust");
     expect(root.querySelector("pre")?.hasAttribute("data-b")).toBe(false);
     expect(root.querySelector("pre > code")?.textContent).toBe("fn main() {}");
+  });
+
+  it("hides the secret values of a code block until each is clicked, and keeps the real text for the embeds", () => {
+    const code =
+      "name: demo\nAPI_KEY=abc123\npassword: hunter2\nDATABASE_URL=postgres://u:dbpass@h/db\n";
+    const root = enhanceBlock(make(`<pre><code class="language-yaml">${code}</code></pre>`), env);
+    const page = root.textContent ?? "";
+    for (const secret of ["abc123", "hunter2", "dbpass"])
+      expect(page, secret).not.toContain(secret);
+    expect(page).toContain("API_KEY=");
+    expect(page).toContain("name: demo");
+    expect(root.querySelectorAll("button.secret")).toHaveLength(3);
+    // what the embed (highlight) and copy start from is the real text
+    expect(realCode.get(root)).toBe(code);
+    root.querySelector<HTMLButtonElement>("button.secret")?.click();
+    expect(root.textContent).toContain("abc123");
+    expect(root.textContent).not.toContain("hunter2");
+    expect(root.querySelectorAll("button.secret")).toHaveLength(2);
+  });
+
+  it("leaves a code block without secrets alone", () => {
+    const root = enhanceBlock(make("<pre><code>let ideas = 1;</code></pre>"), env);
+    expect(root.querySelector("button.secret")).toBeNull();
+    expect(realCode.has(root)).toBe(false);
   });
 
   it("wraps code inside a list in place", () => {

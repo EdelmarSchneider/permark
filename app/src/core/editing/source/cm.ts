@@ -23,7 +23,9 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import { configLanguage } from "./configLang";
 import { completionSources, type CompletionHost } from "./complete";
+import { secretMask, type LoadSecrets } from "./mask";
 
 export type SourceHost = CompletionHost & {
   changed(): void;
@@ -140,7 +142,9 @@ function languageFor(path: string, markdownText: boolean): Extension | Promise<E
     });
   }
   const name = path.split("/").at(-1) ?? path;
-  const found = LanguageDescription.matchFilename(languages, name);
+  const own = configLanguage(name);
+  if (own !== null && typeof own !== "string") return own;
+  const found = LanguageDescription.matchFilename(languages, own ?? name);
   return found ? found.load() : [];
 }
 
@@ -162,6 +166,8 @@ export function createSource(options: {
   path: string;
   markdown: boolean;
   host: SourceHost;
+  /** A config file: the secret values are masked (ranges from the backend). */
+  secrets?: { load: LoadSecrets; label: string };
 }): SourceView {
   const { host } = options;
   const language = new Compartment();
@@ -212,6 +218,7 @@ export function createSource(options: {
         language.of(loaded instanceof Promise ? [] : loaded),
         syntaxHighlighting(style),
         theme,
+        ...(options.secrets ? [secretMask(options.secrets.load, options.secrets.label)] : []),
         autocompletion({ override: completionSources(host), activateOnTyping: true }),
         keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {

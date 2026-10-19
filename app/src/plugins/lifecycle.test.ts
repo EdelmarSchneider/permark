@@ -205,3 +205,49 @@ describe("the notes plugin", () => {
     host.disable("notes");
   });
 });
+
+describe("the config format plugins", () => {
+  const FORMATS: [PluginId, string, string[], string[]][] = [
+    ["fmt-toml", "toml", ["Cargo.toml", "pyproject.toml"], ["a.json", "toml"]],
+    ["fmt-yaml", "yaml", ["ci.yml", "docker-compose.yaml"], ["a.yaml.bak", "yml"]],
+    [
+      "fmt-ini",
+      "ini",
+      [".editorconfig", "setup.cfg", "php.ini", ".gitconfig", ".npmrc"],
+      ["editorconfig", "a.toml"],
+    ],
+    [
+      "fmt-dotenv",
+      "dotenv",
+      [".env", ".env.example", ".env.local", "prod.env"],
+      [".envrc", "env.txt"],
+    ],
+    ["fmt-properties", "properties", ["application.properties"], ["a.prop"]],
+    [
+      "fmt-ignore",
+      "ignore",
+      [".gitignore", ".aiignore", ".cursorignore", ".dockerignore"],
+      ["gitignore", "notes.txt"],
+    ],
+  ];
+
+  it("each one adds a viewer for its format and leaves nothing when off", async () => {
+    const loaders = pluginLoaders();
+    for (const [id, format, yes, no] of FORMATS) {
+      const registry = new ContributionRegistry();
+      const host = new PluginHost(registry, loaders);
+      await host.enable(id);
+      expect(host.state(id), id).toBe("on");
+      const viewers = registry.of("viewer").filter((v) => v.owner === id);
+      expect(
+        viewers.map((v) => v.id),
+        id,
+      ).toEqual([format]);
+      const claims = viewers[0]?.claims;
+      for (const name of yes) expect(claims?.(name), `${id} claims ${name}`).toBe(true);
+      for (const name of no) expect(claims?.(name), `${id} leaves ${name}`).toBe(false);
+      expect(host.disable(id), `${id}: contributions left after deactivate`).toBe(0);
+      expect(registry.items, id).toHaveLength(0);
+    }
+  });
+});

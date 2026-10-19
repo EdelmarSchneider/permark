@@ -391,6 +391,24 @@
   border: 0;
   background: none;
 }
+/* a secret value in a code block: a mask until it is clicked */
+.md .secret {
+  display: inline;
+  margin: 0;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+.md .secret:hover,
+.md .secret:focus-visible {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
 
 /* blockquote */
 .md blockquote {

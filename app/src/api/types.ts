@@ -7,7 +7,19 @@ import type { CommandName } from "./generated/CommandName";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
+import type { Body } from "./generated/Body";
+import type { ConfigEdit } from "./generated/ConfigEdit";
+import type { ConfigEdited } from "./generated/ConfigEdited";
 import type { EditSource } from "./generated/EditSource";
+import type { IgnoreMatches } from "./generated/IgnoreMatches";
+import type { NewValue } from "./generated/NewValue";
+import type { Row } from "./generated/Row";
+import type { RowValue } from "./generated/RowValue";
+import type { Scalar } from "./generated/Scalar";
+import type { ScalarKind } from "./generated/ScalarKind";
+import type { SecretRange } from "./generated/SecretRange";
+import type { Sheet } from "./generated/Sheet";
+import type { Group } from "./generated/Group";
 import type { LineEdit } from "./generated/LineEdit";
 import type { Measure } from "./generated/Measure";
 import type { SaveOutcome } from "./generated/SaveOutcome";
@@ -100,7 +112,18 @@ import type { Version } from "./generated/Version";
 export type {
   AppInfo,
   CloseRequested,
+  ConfigEdit,
+  ConfigEdited,
   EditSource,
+  Group,
+  IgnoreMatches,
+  NewValue,
+  Row,
+  RowValue,
+  Scalar,
+  ScalarKind,
+  SecretRange,
+  Sheet,
   LineEdit,
   Measure,
   SaveOutcome,
@@ -222,6 +245,10 @@ export interface Commands {
   edit_set_unsaved: { args: { path: string | null }; result: null };
   edit_headings: { args: { path: string }; result: OutlineItem[] };
   edit_link_targets: { args: Record<string, never>; result: string[] };
+  config_sheet: { args: { path: string; text: string }; result: Body };
+  config_edit: { args: { path: string; text: string; edit: ConfigEdit }; result: ConfigEdited };
+  config_secrets: { args: { path: string; text: string }; result: SecretRange[] };
+  ignore_matches: { args: { path: string; text: string | null }; result: IgnoreMatches };
   analyze: {
     args: { path: string | null; text: string | null; kind: TextKind };
     result: Measure[];
@@ -527,6 +554,14 @@ export interface Api {
   editSetUnsaved(path: string | null): Promise<Result<null>>;
   editHeadings(path: string): Promise<Result<OutlineItem[]>>;
   editLinkTargets(): Promise<Result<string[]>>;
+  /** The sheet of an unsaved text of a config file (or the text, when it cannot be shown as a sheet). */
+  configSheet(path: string, text: string): Promise<Result<Body>>;
+  /** One value edit on the editor's text: the new text (only that value changed) and its sheet. */
+  configEdit(path: string, text: string, edit: ConfigEdit): Promise<Result<ConfigEdited>>;
+  /** Where the secret values of the text are (UTF-16 units). */
+  configSecrets(path: string, text: string): Promise<Result<SecretRange[]>>;
+  /** How many project files each pattern of an ignore file matches (`text`: the editor's version, else the disk's). */
+  ignoreMatches(path: string, text: string | null): Promise<Result<IgnoreMatches>>;
   /** Measures of the enabled analyses, of a document (`path`) or a text. */
   analyze(path: string | null, text: string | null, kind: TextKind): Promise<Result<Measure[]>>;
   /** Where the project's search index is (the first build, then ready). */

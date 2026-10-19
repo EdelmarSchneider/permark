@@ -25,6 +25,10 @@ import { lineEdits } from "./lines";
 
 export type EditMode = "view" | "edit" | "source";
 
+/** What Edit is for a document: the visual editor (Markdown), the editable sheet (config formats), or nothing
+ * (other text: Source only). */
+export type EditKind = "markdown" | "sheet" | "text";
+
 /** What an editor on screen offers the session. */
 export type ActiveEditor = {
   kind: "edit" | "source";
@@ -82,8 +86,8 @@ export class EditingSession {
   /** The editor's text, kept fresh for measures (word count). */
   text = $state.raw("");
   selection = $state("");
-  /** The format is Markdown (Edit mode possible). */
-  markdown = $state(false);
+  /** What Edit is here (`text`: no Edit mode, Source only). */
+  kind = $state<EditKind>("text");
   /** First save of the session: the hint shows once. */
   firstSave = $state(true);
 
@@ -167,23 +171,25 @@ export class EditingSession {
 
   // ---- entering and leaving ----------------------------------------------------------------------------------
 
-  /** Opens `path` in an editor (`markdown`: the visual editor is possible). */
+  /** Opens `path` in an editor (`kind`: which Edit the document has; `at`: the line to start at, else the reading
+   * place). */
   async enter(
     mode: "edit" | "source",
     path: string,
-    markdown: boolean,
+    kind: EditKind,
     policy: SavePolicy,
+    at?: number,
   ): Promise<void> {
-    const wanted = markdown ? mode : "source";
+    const wanted = kind === "text" ? "source" : mode;
     if (this.#path === path && this.mode !== "view") {
-      await this.switchTo(wanted);
+      await this.switchTo(wanted, at);
       return;
     }
-    const line = this.#hooks?.readingLine() ?? 1;
+    const line = at ?? this.#hooks?.readingLine() ?? 1;
     this.#reset();
     this.#path = path;
     this.#policy = policy;
-    this.markdown = markdown;
+    this.kind = kind;
     this.state = { s: "loading" };
     this.mode = wanted;
     this.lastEdit = wanted;
@@ -227,12 +233,12 @@ export class EditingSession {
       return;
     }
     if (this.#path === null || this.content === null) return;
-    if (mode === "edit" && !this.markdown) return;
+    if (mode === "edit" && this.kind === "text") return;
     const editor = this.#editor;
     const text = editor?.text() ?? this.content.text;
     const line = at ?? editor?.topLine() ?? this.content.line;
     let segments: Segment[] | null = null;
-    if (mode === "edit") {
+    if (mode === "edit" && this.kind === "markdown") {
       if (text === this.base?.text && this.#loadedSegments) segments = this.#loadedSegments;
       else {
         const result = await this.#api.editSegments(text);

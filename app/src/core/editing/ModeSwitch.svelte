@@ -8,10 +8,11 @@
     session: EditingSession;
     /** Why the document cannot be edited (`null`: it can). */
     readOnly: string | null;
-    markdown: boolean;
+    /** The document has an Edit mode (Markdown | a sheet). */
+    visual: boolean;
     choose: (mode: EditMode) => void;
   };
-  let { session, readOnly, markdown, choose }: Props = $props();
+  let { session, readOnly, visual, choose }: Props = $props();
 
   const WHY: Readonly<Record<string, MessageKey>> = {
     binary: "edit.disabled.binary",
@@ -39,8 +40,8 @@
     type="button"
     class="mode"
     aria-pressed={session.mode === "edit"}
-    disabled={why !== null || !markdown}
-    title={why ?? (markdown ? t("mode.editHint") : t("edit.visualForMarkdown"))}
+    disabled={why !== null || !visual}
+    title={why ?? (visual ? t("mode.editHint") : t("edit.visualForMarkdown"))}
     onclick={() => choose("edit")}
   >
     {t("mode.edit")}

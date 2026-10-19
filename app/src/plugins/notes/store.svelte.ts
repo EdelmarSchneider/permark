@@ -257,9 +257,9 @@ export class NotesStore {
     if (view === null || this.#documents.shown !== path || view.editable.editable === "readOnly") {
       return;
     }
-    const markdown = view.format === "markdown";
+    const kind = view.format === "markdown" ? "markdown" : "text";
     const mode = this.#editing.lastEditOr(this.#window.editMode);
-    await this.#editing.enter(mode, path, markdown, this.#documents.savePolicy);
+    await this.#editing.enter(mode, path, kind, this.#documents.savePolicy);
   }
 
   /** A new empty note, shown and ready for typing. */

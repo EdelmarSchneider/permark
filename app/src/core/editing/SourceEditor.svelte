@@ -12,11 +12,13 @@
     session: EditingSession;
     content: Content;
     markdown: boolean;
+    /** A config file (a sheet format): its secret values are masked. */
+    config?: boolean;
     /** Single file: no project files to link to. */
     project: boolean;
     pictures: (files: File[]) => Promise<string[]>;
   };
-  let { session, content, markdown, project, pictures }: Props = $props();
+  let { session, content, markdown, config = false, project, pictures }: Props = $props();
 
   let host: HTMLElement | undefined = $state();
   let finding = $state(false);
@@ -39,6 +41,15 @@
         text: current.text,
         path: current.path,
         markdown,
+        secrets: config
+          ? {
+              load: async (text) => {
+                const result = await api.configSecrets(current.path, text);
+                return result.ok ? result.value : [];
+              },
+              label: t("config.reveal"),
+            }
+          : undefined,
         host: {
           changed: () => session.changed(),
           selected: () => session.selected(),

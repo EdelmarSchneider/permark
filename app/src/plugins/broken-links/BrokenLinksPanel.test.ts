@@ -22,6 +22,7 @@ const { contributions } = await import("../../core/plugins/instance.svelte");
 const { ui } = await import("../../core/shell/ui.svelte");
 const { NO_REQUIREMENT } = await import("../../core/conditions/available");
 const { conditions } = await import("../../core/conditions/context.svelte");
+const { syncPlugins } = await import("../../core/plugins/instance.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 
@@ -95,6 +96,8 @@ describe("the tabs of the sidebar", () => {
         requires: NO_REQUIREMENT,
         view: () => import("./BrokenLinksPanel.svelte"),
       });
+    // the window started plugins of its own in the background: with them still arriving, the strip may be crowded
+    syncPlugins([]);
     conditions.set({ ...conditions.current, plugins: [] });
     const removals = [tab("a", "a.panel"), tab("b", "b.panel")];
     component = mount(SidebarTabs, { target });

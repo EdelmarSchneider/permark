@@ -6,7 +6,7 @@
   import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
   import { revealInTree } from "../explorer/current";
-  import { t, tn } from "../i18n";
+  import { t, tn, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import type { WindowStore } from "../window.svelte";
   import BodyNotice from "./BodyNotice.svelte";
@@ -16,7 +16,8 @@
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
   import ModeSwitch from "../editing/ModeSwitch.svelte";
-  import { chooseMode } from "../editing/choose";
+  import { SHEET_FORMATS } from "../config/formats";
+  import { chooseMode, editKindOf } from "../editing/choose";
   import { editing } from "../editing/session.svelte";
   import { ui } from "../shell/ui.svelte";
 
@@ -39,6 +40,15 @@
       : place;
   }
 
+  /** The words in `DocumentView.notes`. */
+  const NOTES: Readonly<Record<string, MessageKey>> = {
+    utf16: "note.utf16",
+    lossy: "note.lossy",
+    deepNesting: "note.deepNesting",
+    bigConfig: "note.bigConfig",
+    parseError: "note.parseError",
+  };
+
   const doc = $derived(documents.state);
   const view = $derived(documents.view);
   const deleted = $derived(doc.status === "ready" ? doc.deleted : null);
@@ -46,9 +56,17 @@
   const bars = $derived(
     [...contributions.visible("docBar", conditions.current)].sort((a, b) => a.order - b.order),
   );
-  const viewer = $derived(view === null ? undefined : viewers.find((v) => v.id === view.format));
+  // a config file the sheet could not show (too large, not valid) is text: the text viewer shows it
+  const viewer = $derived.by(() => {
+    if (view === null) return undefined;
+    const own =
+      view.body.kind === "sheet" || !SHEET_FORMATS.has(view.format)
+        ? viewers.find((v) => v.id === view.format)
+        : undefined;
+    return own ?? viewers.find((v) => v.id === "text");
+  });
   const outline = $derived(view?.body.kind === "markdown" ? view.body.outline : []);
-  const markdown = $derived(view?.format === "markdown");
+  const visual = $derived(view !== null && editKindOf(view) !== "text");
   const readOnly = $derived(
     view === null
       ? "noViewer"
@@ -146,7 +164,7 @@
 </script>
 
 {#snippet modes()}
-  <ModeSwitch session={editing} {readOnly} {markdown} choose={chooseMode} />
+  <ModeSwitch session={editing} {readOnly} {visual} choose={chooseMode} />
 {/snippet}
 
 <section class="area" aria-label={t("doc.region")}>
@@ -238,7 +256,7 @@
           />
         {:else if editingNow}
           <!-- the editor shows instead -->
-        {:else if view.body.kind === "text" || view.body.kind === "media"}
+        {:else if view.body.kind === "text" || view.body.kind === "media" || view.body.kind === "sheet"}
           {#if viewer}
             {#key view.path}
               {#await viewer.view() then loaded}

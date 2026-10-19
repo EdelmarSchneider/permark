@@ -42,7 +42,7 @@ function setup() {
 }
 
 async function open(session: EditingSession, path = "docs/guide.md") {
-  await session.enter("source", path, true, { kind: "explicit" });
+  await session.enter("source", path, "markdown", { kind: "explicit" });
   const content = session.content;
   if (!content) throw new Error("no content");
   const editor = fakeEditor(content.text);
@@ -228,7 +228,7 @@ describe("the journal of unsaved text", () => {
     await session.enter(
       "source",
       "docs/guide.md",
-      true,
+      "markdown",
       policy === "auto" ? { kind: "auto", delayMs: 800 } : { kind: "explicit" },
     );
     const content = session.content;

@@ -61,8 +61,18 @@ export type LockedHost = {
   editLabel: string;
   /** "Edit in Source" on this node. */
   edit(node: PMNode): void;
-  /** Draws more than the source (a diagram); returns its teardown. */
-  draw(body: HTMLElement, kind: string, source: string): (() => void) | null;
+  /**
+   * Draws more than the source (a diagram), or takes the source's place (the front matter as editable properties);
+   * returns its teardown. `replace` puts a new source in the node.
+   */
+  draw(
+    body: HTMLElement,
+    kind: string,
+    source: string,
+    replace: (source: string) => void,
+  ): (() => void) | null;
+  /** What the bar says of a block that edits itself (the properties card). */
+  cardText?: string;
 };
 
 const noHost: LockedHost = {
@@ -118,7 +128,7 @@ export const lockedNode = $node(LOCKED, () => ({
 }));
 
 const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
-  return (node) => {
+  return (node, view, getPos) => {
     const host = ctx.get(lockedHostCtx.key);
     const dom = document.createElement("div");
     dom.className = "pm-locked";
@@ -144,8 +154,18 @@ const lockedView = $view(lockedNode, (ctx): NodeViewConstructor => {
     dom.append(bar, source);
     const drawing = document.createElement("div");
     drawing.className = "pm-locked__drawing";
-    const undraw = host.draw(drawing, String(node.attrs.kind), String(node.attrs.source));
+    const replace = (next: string): void => {
+      const at = getPos();
+      if (at === undefined) return;
+      view.dispatch(view.state.tr.setNodeMarkup(at, undefined, { ...node.attrs, source: next }));
+    };
+    const undraw = host.draw(drawing, String(node.attrs.kind), String(node.attrs.source), replace);
     if (undraw) dom.append(drawing);
+    // the front matter as properties takes the source's place
+    if (undraw && reason === "frontMatter") {
+      dom.classList.add("pm-locked--card");
+      if (host.cardText) why.textContent = host.cardText;
+    }
     return {
       dom,
       stopEvent: (event) => event.target instanceof Node && button.contains(event.target),

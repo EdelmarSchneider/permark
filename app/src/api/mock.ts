@@ -6,6 +6,7 @@ import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
 import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs";
+import { createMockConfig } from "./mockConfig";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
 import { createMockOrganizing } from "./mockOrganizing";
@@ -497,6 +498,7 @@ export function createMockApi(): Api & {
       return ok(null);
     },
     ...editing.api,
+    ...createMockConfig((path) => editing.probe.files.get(path) ?? null),
     searchStatus: () =>
       ok({
         phase: "ready",

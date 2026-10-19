@@ -122,6 +122,14 @@
 
   {#if doc.s === "loading" || content === null}
     <div class="loading" role="progressbar" aria-label={t("doc.loading")}></div>
+  {:else if session.mode === "edit" && session.kind === "sheet"}
+    {#key content.seq}
+      <!-- the sheet of a config file loads on first use too -->
+      {#await import("../config/SheetEditor.svelte") then loaded}
+        {@const SheetEditor = loaded.default}
+        <SheetEditor {session} {content} />
+      {/await}
+    {/key}
   {:else if session.mode === "edit"}
     {#key content.seq}
       <VisualEditor
@@ -139,7 +147,14 @@
     {/key}
   {:else if session.mode === "source"}
     {#key content.seq}
-      <SourceEditor {session} {content} markdown={session.markdown} {project} {pictures} />
+      <SourceEditor
+        {session}
+        {content}
+        markdown={session.kind === "markdown"}
+        config={session.kind === "sheet"}
+        {project}
+        {pictures}
+      />
     {/key}
   {/if}
 </div>

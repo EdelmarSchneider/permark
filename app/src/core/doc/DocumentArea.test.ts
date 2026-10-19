@@ -18,6 +18,7 @@ Object.defineProperty(window, "matchMedia", {
 const { api } = await import("../../api");
 const { default: DocumentArea } = await import("./DocumentArea.svelte");
 const { documents } = await import("./document.svelte");
+const { editing } = await import("../editing/session.svelte");
 const { reading } = await import("./reading.svelte");
 const { WindowStore } = await import("../window.svelte");
 const { syncPlugins } = await import("../plugins/instance.svelte");
@@ -75,6 +76,10 @@ beforeEach(async () => {
     "json-view",
     "media",
     "xml-view",
+    "fmt-toml",
+    "fmt-yaml",
+    "fmt-dotenv",
+    "fmt-ignore",
   ]);
   // the window shows what the backend says; the area follows
   stopFollowing = await mock.on("window-changed", (event) => {
@@ -387,5 +392,60 @@ describe("editing", () => {
     await show("notes/todo.txt");
     await until(() => modeButton("Edit")?.disabled === true, "no visual editor for text");
     expect(modeButton("Source")?.disabled).toBe(false);
+  });
+});
+
+describe("config files", () => {
+  const modeButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  async function open(path: string): Promise<void> {
+    mock.probe.project.files.set(path, "placeholder");
+    await show(path);
+    await until(() => target.querySelector(".sheet") !== null, `the sheet of ${path}`);
+  }
+
+  it("reads as a sheet, with Edit and Source one click away", async () => {
+    await open("Cargo.toml");
+    expect(target.querySelector(".crumb.current")?.textContent).toBe("Cargo.toml");
+    expect(target.querySelectorAll(".sheet .card").length).toBeGreaterThan(2);
+    expect(modeButton("Edit")?.disabled).toBe(false);
+    expect(modeButton("Source")?.disabled).toBe(false);
+    expect(target.querySelector(".sheet .hit")).toBeNull();
+  });
+
+  it("Edit makes the values take typing; the document is unsaved until it is saved", async () => {
+    await open("Cargo.toml");
+    modeButton("Edit")?.click();
+    await until(() => target.querySelector(".sheet .hit") !== null, "editable values");
+    expect(editing.mode).toBe("edit");
+    const row = [...target.querySelectorAll<HTMLElement>(".sheet .row")].find(
+      (r) => r.querySelector(".key")?.textContent === "version",
+    );
+    row?.querySelector<HTMLButtonElement>(".hit")?.click();
+    flushSync();
+    const input = row?.querySelector<HTMLInputElement>("input");
+    if (!input) throw new Error("no input");
+    input.value = "1.0.0";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await until(() => editing.state.s === "dirty", "unsaved");
+    expect(editing.text).toContain('version = "1.0.0"');
+    // back to View asks first: the edit is not saved
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true }));
+    await until(() => editing.state.s === "clean", "saved");
+    expect(mock.probe.edit.saves.at(-1)?.edits).toHaveLength(1);
+  });
+
+  it("Source shows the text with the secret values masked", async () => {
+    await open(".env.example");
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    await until(() => target.querySelector(".cm-secret") !== null, "masks");
+    expect(target.querySelector(".cm-content")?.textContent).toContain("API_KEY");
+    expect(target.querySelector(".cm-content")?.textContent).not.toContain("sk-live-abc123");
+    expect(target.querySelector(".cm-content")?.textContent).not.toContain("pa55w0rd");
   });
 });

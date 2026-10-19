@@ -10,6 +10,7 @@
   import { contributions } from "../plugins/instance.svelte";
   import "../doc/markdown.css";
   import EditorToolbar from "./EditorToolbar.svelte";
+  import { frontMatterSyntax } from "../config/frontMatter";
   import { pictureFiles, pictureLink } from "./pictures";
   import { relativeLink } from "./source/complete";
   import type { Content, EditingSession } from "./session.svelte";
@@ -133,8 +134,14 @@
     }
   }
 
-  /** A diagram drawn in a locked block. */
-  function draw(body: HTMLElement, kind: string, source: string): (() => void) | null {
+  /** A diagram drawn in a locked block; the front matter as properties that can be edited. */
+  function draw(
+    body: HTMLElement,
+    kind: string,
+    source: string,
+    replace: (source: string) => void,
+  ): (() => void) | null {
+    if (kind === "frontMatter") return propertiesCard(body, source, replace);
     if (kind !== "code") return null;
     const match = /^ {0,3}(?:`{3,}|~{3,})[ \t]*(\S+)/.exec(source);
     const language = (match?.[1] ?? "").toLowerCase();
@@ -152,6 +159,29 @@
         target: body,
         props: { source: code, info: language, display: false },
       });
+    });
+    return () => {
+      gone = true;
+      if (mounted) void unmount(mounted);
+    };
+  }
+
+  /** The front matter as editable properties, when a plugin reads its syntax (YAML | TOML). */
+  function propertiesCard(
+    body: HTMLElement,
+    source: string,
+    replace: (source: string) => void,
+  ): (() => void) | null {
+    const syntax = frontMatterSyntax(source);
+    const readable = contributions
+      .visible("viewer", conditions.current)
+      .some((viewer) => viewer.id === syntax);
+    if (syntax === null || !readable) return null;
+    let gone = false;
+    let mounted: ReturnType<typeof mount> | null = null;
+    void import("../config/FrontMatterEditor.svelte").then((loaded) => {
+      if (gone) return;
+      mounted = mount(loaded.default, { target: body, props: { source, syntax, replace } });
     });
     return () => {
       gone = true;
@@ -187,6 +217,7 @@
         locked: {
           reasonText: (reason) => t(REASONS[reason]),
           editLabel: t("edit.editInSource"),
+          cardText: t("config.fm.bar"),
           edit: (node) => void session.switchTo("source", lineOf(node)),
           draw,
         },
@@ -527,6 +558,14 @@
   .host :global(.pm-locked__drawing) {
     padding: var(--sp-2) var(--sp-3);
     border-top: 1px solid var(--border);
+  }
+  /* the front matter as properties: the card replaces the source */
+  .host :global(.pm-locked--card .pm-locked__source) {
+    display: none;
+  }
+  .host :global(.pm-locked--card .pm-locked__drawing) {
+    padding: 0;
+    border-top: 0;
   }
   .popover {
     position: sticky;
