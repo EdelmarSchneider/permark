@@ -2762,6 +2762,7 @@ dependencies = [
  "permark-plugin-plantuml",
  "permark-plugin-prompt-blocks",
  "permark-plugin-review",
+ "permark-plugin-tags",
  "permark-plugin-text-view",
  "permark-plugin-unread",
  "permark-plugin-word-count",
@@ -2912,6 +2913,19 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "ts-rs",
+]
+
+[[package]]
+name = "permark-plugin-tags"
+version = "0.5.8"
+dependencies = [
+ "dunce",
+ "permark-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml_edit 0.25.17+spec-1.1.0",
  "ts-rs",
 ]
 

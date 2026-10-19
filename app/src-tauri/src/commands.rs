@@ -18,9 +18,7 @@ use permark_core::fileops::{
 use permark_core::format::{FormatRegistry, Measure, OutlineItem, Segment, TextKind};
 use permark_core::paths::VaultPath;
 use permark_core::plugins::RpcCall;
-use permark_core::search::{
-    IndexStatus, PathResults, Recent, SearchFilter, SearchOptions, SectionResults,
-};
+use permark_core::search::{IndexStatus, PathResults, Recent, SearchOptions, SectionResults};
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{AppSettings, SettingChange};
 use permark_core::tree::{TreeFilter, TreeSnapshot};
@@ -739,14 +737,13 @@ pub fn search_files(
     query: String,
     limit: u32,
     folder_limit: u32,
+    options: SearchOptions,
 ) -> Result<PathResults, IpcError> {
     let core = project_of(&handle, &window)?;
-    Ok(core.search().paths(
-        &query,
-        as_limit(limit),
-        as_limit(folder_limit),
-        &SearchFilter::default(),
-    ))
+    let filter = core.search_filter(&options)?;
+    Ok(core
+        .search()
+        .paths(&query, as_limit(limit), as_limit(folder_limit), &filter))
 }
 
 /// What Quick open lists for an empty box: the opened files that still exist, and the newest files.
@@ -756,11 +753,11 @@ pub fn search_recent(
     window: WebviewWindow,
     opened: Vec<String>,
     limit: u32,
+    options: SearchOptions,
 ) -> Result<Recent, IpcError> {
     let core = project_of(&handle, &window)?;
-    Ok(core
-        .search()
-        .recent(&opened, as_limit(limit), &SearchFilter::default()))
+    let filter = core.search_filter(&options)?;
+    Ok(core.search().recent(&opened, as_limit(limit), &filter))
 }
 
 // ---- Plugins -----------------------------------------------------------------------------------------------------------
