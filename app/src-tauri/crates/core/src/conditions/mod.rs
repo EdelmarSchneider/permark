@@ -179,6 +179,14 @@ impl Requirement {
         needs: Cow::Borrowed(&[]),
         prefers: Cow::Borrowed(&[]),
     };
+
+    /// A project window (not a single file, not Notes, not Welcome): what project-only features need.
+    pub const PROJECT: Self = Self {
+        needs: Cow::Borrowed(&[Need::Workspace {
+            kinds: Cow::Borrowed(&[WorkspaceKind::Project]),
+        }]),
+        prefers: Cow::Borrowed(&[]),
+    };
 }
 
 /// Why something is unavailable | degraded, with the command that fixes it when there is one.

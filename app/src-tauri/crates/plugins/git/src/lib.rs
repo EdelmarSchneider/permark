@@ -19,7 +19,7 @@ use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use permark_core::conditions::{GitCondition, Need, Requirement, WorkspaceKind};
+use permark_core::conditions::{GitCondition, Requirement};
 use permark_core::paths::Root;
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -45,12 +45,7 @@ fn manifest() -> Manifest {
         id: ID,
         kind: PluginKind::Feature,
         scope: PluginScope::Project,
-        requires: Requirement {
-            needs: Cow::Owned(vec![Need::Workspace {
-                kinds: Cow::Borrowed(&[WorkspaceKind::Project]),
-            }]),
-            prefers: Cow::Borrowed(&[]),
-        },
+        requires: Requirement::PROJECT,
         depends_on: Cow::Borrowed(&[]),
         default_enabled: true,
     }

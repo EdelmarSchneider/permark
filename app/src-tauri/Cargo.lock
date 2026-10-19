@@ -2798,6 +2798,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "permark-plugin-follow"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+]
+
+[[package]]
 name = "permark-plugin-frontmatter-card"
 version = "0.5.8"
 dependencies = [
@@ -2833,6 +2840,17 @@ name = "permark-plugin-json-view"
 version = "0.5.8"
 dependencies = [
  "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-live-feed"
+version = "0.5.8"
+dependencies = [
+ "permark-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]
@@ -2878,10 +2896,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "permark-plugin-review"
+version = "0.5.8"
+dependencies = [
+ "dunce",
+ "git2",
+ "permark-core",
+ "permark-plugin-git",
+ "permark-plugin-unread",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
+]
+
+[[package]]
 name = "permark-plugin-text-view"
 version = "0.5.8"
 dependencies = [
  "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-unread"
+version = "0.5.8"
+dependencies = [
+ "dunce",
+ "permark-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

@@ -13,16 +13,20 @@ authors = ["Edelmar Schneider"]
 [workspace.dependencies]
 permark-core = { path = "crates/core" }
 permark-plugin-frontmatter-card = { path = "crates/plugins/frontmatter-card" }
+permark-plugin-follow = { path = "crates/plugins/follow" }
 permark-plugin-git = { path = "crates/plugins/git" }
 permark-plugin-highlight = { path = "crates/plugins/highlight" }
 permark-plugin-json-view = { path = "crates/plugins/json-view" }
+permark-plugin-live-feed = { path = "crates/plugins/live-feed" }
 permark-plugin-math = { path = "crates/plugins/math" }
 permark-plugin-md-family = { path = "crates/plugins/md-family" }
 permark-plugin-media = { path = "crates/plugins/media" }
 permark-plugin-mermaid = { path = "crates/plugins/mermaid" }
 permark-plugin-plantuml = { path = "crates/plugins/plantuml" }
+permark-plugin-review = { path = "crates/plugins/review" }
 permark-plugin-prompt-blocks = { path = "crates/plugins/prompt-blocks" }
 permark-plugin-text-view = { path = "crates/plugins/text-view" }
+permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
 permark-plugin-xml-view = { path = "crates/plugins/xml-view" }
 serde = { version = "1", features = ["derive"] }

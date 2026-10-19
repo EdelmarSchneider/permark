@@ -325,6 +325,12 @@ impl PluginCx {
         self
     }
 
+    /// The state store (a plugin keeps its files under its own id: `StateStore::plugin_file` | `plugin_dir`).
+    #[must_use]
+    pub fn store(&self) -> Option<&StateStore> {
+        self.store.as_ref()
+    }
+
     /// One typed state file in the plugin's own namespace (`None`: no store was given).
     #[must_use]
     pub fn state_file<T: StateData>(&self, name: &str) -> Option<StateFile<T>> {
