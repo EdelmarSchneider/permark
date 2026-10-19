@@ -27,6 +27,7 @@ permark-plugin-review = { path = "crates/plugins/review" }
 permark-plugin-prompt-blocks = { path = "crates/plugins/prompt-blocks" }
 permark-plugin-text-view = { path = "crates/plugins/text-view" }
 permark-plugin-broken-links = { path = "crates/plugins/broken-links" }
+permark-plugin-notes = { path = "crates/plugins/notes" }
 permark-plugin-quiet = { path = "crates/plugins/quiet" }
 permark-plugin-comments = { path = "crates/plugins/comments" }
 permark-plugin-tags = { path = "crates/plugins/tags" }
@@ -42,6 +43,7 @@ unicode-normalization = "0.1.25"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 toml_edit = "0.25.17"
 dirs = "7.0.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 interprocess = "2.4.4"
 widestring = "1.2.1"
 rustix = { version = "1.1.5", features = ["process"] }
@@ -90,7 +92,7 @@ name = "permark_lib"
 
 [features]
 # Plugin crates join here as features; default = full build.
-default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links"]
+default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -113,6 +115,7 @@ plugin-tags = ["dep:permark-plugin-tags"]
 plugin-quiet = ["dep:permark-plugin-quiet"]
 plugin-comments = ["dep:permark-plugin-comments"]
 plugin-broken-links = ["dep:permark-plugin-broken-links"]
+plugin-notes = ["dep:permark-plugin-notes"]
 # Microsoft Store build (the Store updates the app).
 store = []
 
@@ -142,6 +145,7 @@ permark-plugin-tags = { workspace = true, optional = true }
 permark-plugin-quiet = { workspace = true, optional = true }
 permark-plugin-comments = { workspace = true, optional = true }
 permark-plugin-broken-links = { workspace = true, optional = true }
+permark-plugin-notes = { workspace = true, optional = true }
 # generate_context! expands to serde_json (plugin config).
 serde_json.workspace = true
 serde.workspace = true

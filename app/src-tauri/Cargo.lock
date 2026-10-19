@@ -2761,6 +2761,7 @@ dependencies = [
  "permark-plugin-md-family",
  "permark-plugin-media",
  "permark-plugin-mermaid",
+ "permark-plugin-notes",
  "permark-plugin-plantuml",
  "permark-plugin-prompt-blocks",
  "permark-plugin-quiet",
@@ -2912,6 +2913,20 @@ name = "permark-plugin-mermaid"
 version = "0.5.8"
 dependencies = [
  "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-notes"
+version = "0.5.8"
+dependencies = [
+ "chrono",
+ "dirs",
+ "dunce",
+ "permark-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

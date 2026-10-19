@@ -28,6 +28,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_comments::plugin());
     #[cfg(feature = "plugin-broken-links")]
     plugins.push(permark_plugin_broken_links::plugin());
+    #[cfg(feature = "plugin-notes")]
+    plugins.push(permark_plugin_notes::plugin());
     #[cfg(feature = "plugin-md-family")]
     plugins.push(permark_plugin_md_family::plugin());
     #[cfg(feature = "plugin-word-count")]
@@ -98,6 +100,7 @@ mod tests {
             "quiet",
             "comments",
             "broken-links",
+            "notes",
             "md-family",
             "prompt-blocks",
             "frontmatter-card",
@@ -257,6 +260,7 @@ mod tests {
             scope: docs.scope(),
             formats: &formats,
             own: None,
+            observer: None,
         };
         let mut sources = serde_json::Map::new();
         for (path, _) in documents {
