@@ -69,7 +69,7 @@ export function mockView(
             blocks: fixture.body.blocks.map((b) => (held.has(b.id) ? { ...b, html: null } : b)),
           }
         : fixture.body;
-    return { ...fixture, body };
+    return { ...fixture, body, mtimeMs: Date.now() - 180_000 };
   }
   const text = TEXTS[path];
   if (text) {

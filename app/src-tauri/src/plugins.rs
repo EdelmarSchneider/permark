@@ -201,7 +201,7 @@ mod tests {
             ("README.md", "README.md"),
             ("docs/guide.md", "guide.md"),
             ("notes/ideas.md", "ideas.md"),
-            ("CLAUDE.md", "CLAUDE.md"),
+            ("CLAUDE.md", "claude-rules.md"),
         ];
         for (path, file) in documents {
             place(path, &std::fs::read(fixtures.join(file)).unwrap());
@@ -213,7 +213,9 @@ mod tests {
         );
         let mut views = serde_json::Map::new();
         for (path, _) in documents {
-            let view = docs.open("mock", path, &[], &formats).unwrap();
+            let mut view = docs.open("mock", path, &[], &formats).unwrap();
+            // the time of a file is not part of the fixture (the generated file must not change with the clock)
+            view.mtime_ms = 0;
             views.insert(path.to_owned(), serde_json::to_value(view).unwrap());
         }
         let text = format!("{}\n", serde_json::to_string_pretty(&views).unwrap());
