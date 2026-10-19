@@ -49,6 +49,15 @@
 
   let box: HTMLElement | undefined = $state();
 
+  /** The status bar clips what overflows it, so the legend is fixed and put above the item when it opens. */
+  function above(node: HTMLElement): void {
+    if (!box) return;
+    const anchor = box.getBoundingClientRect();
+    const left = Math.min(anchor.left, window.innerWidth - node.offsetWidth - 8);
+    node.style.left = `${String(Math.max(8, left))}px`;
+    node.style.bottom = `${String(window.innerHeight - anchor.top + 6)}px`;
+  }
+
   // closes on Escape | a click outside
   $effect(() => {
     if (!git.legend) return;
@@ -90,7 +99,7 @@
       <span class="state" role="status">{t(repoState)}</span>
     {/if}
     {#if git.legend}
-      <div class="legend" role="dialog" aria-label={t("git.legend.title")}>
+      <div class="legend" role="dialog" aria-label={t("git.legend.title")} use:above>
         <p class="title">{t("git.legend.title")}</p>
         <ul>
           {#each LETTER_ORDER as letter (letter)}
@@ -176,9 +185,7 @@
     letter-spacing: 0.02em;
   }
   .legend {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 0;
+    position: fixed;
     z-index: 40;
     width: 360px;
     max-width: calc(100vw - 24px);

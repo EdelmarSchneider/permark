@@ -38,14 +38,15 @@
 
 <section class="feed" aria-label={t("live.label")}>
   <header>
-    <span class="dot" class:active aria-hidden="true"></span>
+    <span
+      class="dot"
+      class:active
+      role="img"
+      aria-label={active ? t("live.active") : t("live.idle")}
+      title={active ? t("live.active") : t("live.idle")}
+    ></span>
     <h2>{t("live.label")}</h2>
-    <span class="state">{active ? t("live.active") : t("live.idle")}</span>
     <span class="spacer"></span>
-    <label class="docs" title={t("live.docsOnlyHint")}>
-      <input type="checkbox" bind:checked={feed.docsOnly} />
-      {t("live.docsOnly")}
-    </label>
     <button
       type="button"
       class="icon"
@@ -62,6 +63,10 @@
       title={t("feed.close")}
       onclick={() => ui.toggleRight("live-feed.panel")}>×</button
     >
+    <label class="docs" title={t("live.docsOnlyHint")}>
+      <input type="checkbox" bind:checked={feed.docsOnly} />
+      {t("live.docsOnly")}
+    </label>
   </header>
   <ul>
     {#each feed.visible as item (item.id)}
@@ -135,19 +140,17 @@
   }
   header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--sp-2);
+    gap: var(--sp-1) var(--sp-2);
     padding: var(--sp-2) var(--sp-3);
     border-bottom: 1px solid var(--border);
   }
   h2 {
     margin: 0;
+    white-space: nowrap;
     font-size: var(--fs-ui);
     font-weight: 600;
-  }
-  .state {
-    color: var(--muted);
-    font-size: var(--fs-ui-xs);
   }
   .spacer {
     flex: 1;
@@ -164,6 +167,7 @@
     opacity: 1;
   }
   .docs {
+    flex-basis: 100%;
     display: inline-flex;
     align-items: center;
     gap: 4px;
