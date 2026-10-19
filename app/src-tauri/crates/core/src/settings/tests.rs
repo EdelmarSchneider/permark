@@ -1,3 +1,5 @@
+use std::fs;
+
 use super::*;
 use crate::paths::Root;
 use crate::state::DEFAULT_CONFIG_TOML;
@@ -351,4 +353,97 @@ fn hand_edited_editor_and_reference_values_that_are_not_valid_read_as_defaults()
     )));
     assert_eq!(s.reference_template, DEFAULT_REFERENCE_TEMPLATE);
     assert_eq!(s.editor, "");
+}
+
+// ---- keyboard map ---------------------------------------------------------------------------------------------------
+
+fn keymap_file(initial: &str) -> (tempfile::TempDir, SettingsFile) {
+    let dir = tempfile::tempdir().unwrap();
+    let file = SettingsFile::app(&AppDirs::under(dir.path()));
+    if !initial.is_empty() {
+        fs::create_dir_all(file.path().parent().unwrap()).unwrap();
+        fs::write(file.path(), initial).unwrap();
+    }
+    (dir, file)
+}
+
+fn bind(command: &str, combo: Option<&str>) -> SettingChange {
+    SettingChange::Keymap {
+        command: command.to_owned(),
+        combo: combo.map(str::to_owned),
+    }
+}
+
+#[test]
+fn keymap_round_trips_through_the_file_and_only_its_bytes_change() {
+    let original = "# mine\ntheme = \"dark\" # keep\n\n[plugins.git]\nenabled = true\n";
+    let (_dir, file) = keymap_file(original);
+    let s = file
+        .apply(&bind("search.quickOpen", Some("Mod+Shift+K")))
+        .unwrap();
+    assert_eq!(
+        s.keymap.get("search.quickOpen").map(String::as_str),
+        Some("Mod+Shift+K")
+    );
+    let s = file.apply(&bind("doc.find", Some(""))).unwrap();
+    assert_eq!(
+        s.keymap.get("doc.find").map(String::as_str),
+        Some(""),
+        "unbound is kept"
+    );
+    let text = fs::read_to_string(file.path()).unwrap();
+    assert!(
+        text.starts_with("# mine\ntheme = \"dark\" # keep\n"),
+        "{text}"
+    );
+    assert!(text.contains("[plugins.git]\nenabled = true"));
+    assert!(
+        text.contains("\"search.quickOpen\" = \"Mod+Shift+K\""),
+        "{text}"
+    );
+    // back to the defaults removes the key, and the table with the last key
+    file.apply(&bind("search.quickOpen", None)).unwrap();
+    let s = file.apply(&bind("doc.find", None)).unwrap();
+    assert!(s.keymap.is_empty());
+    let after = fs::read_to_string(file.path()).unwrap();
+    assert!(!after.contains("keymap"), "{after}");
+    assert_eq!(after, original);
+    // removing from a file with no table writes nothing new
+    file.apply(&bind("never.there", None)).unwrap();
+    assert_eq!(fs::read_to_string(file.path()).unwrap(), original);
+}
+
+#[test]
+fn keymap_values_that_are_not_valid_are_refused_and_hand_edits_skipped() {
+    for (command, combo) in [
+        ("", "Mod+P"),
+        ("has space", "Mod+P"),
+        ("a/b", "Mod+P"),
+        ("ok", "Mod + P"),
+        ("ok", "Mod+\u{1}"),
+        ("ok", "é"),
+    ] {
+        let change = bind(command, Some(combo));
+        assert!(
+            matches!(change.validate(), Err(SettingsError::Invalid { .. })),
+            "{command:?} {combo:?}"
+        );
+    }
+    assert!(bind(&"x".repeat(65), Some("Mod+P")).validate().is_err());
+    assert!(bind("ok", Some(&"x".repeat(41))).validate().is_err());
+    assert!(bind("ok", Some("")).validate().is_ok());
+    assert!(bind("ok", None).validate().is_ok());
+    let s = AppSettings::from_doc(&doc(
+        "[keymap]\n\"good.one\" = \"Mod+P\"\n\"bad id\" = \"Mod+P\"\nnumber = 5\n\"x.y\" = \"two words\"\n",
+    ));
+    assert_eq!(
+        s.keymap.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["good.one"]
+    );
+    let s = AppSettings::from_doc(&doc("keymap = 3\n"));
+    assert!(s.keymap.is_empty());
+    let many: String = std::iter::once("[keymap]\n".to_owned())
+        .chain((0..500).map(|n| format!("c{n} = \"Mod+K\"\n")))
+        .collect();
+    assert_eq!(AppSettings::from_doc(&doc(&many)).keymap.len(), MAX_KEYMAP);
 }

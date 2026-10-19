@@ -347,3 +347,41 @@ fn percent_decode_and_scheme_basics() {
     assert_eq!(scheme_of("a b:c"), None);
     assert_eq!(scheme_of("./x:y"), None);
 }
+
+#[test]
+fn local_target_names_a_project_path_without_the_disk() {
+    let t = |from: &str, href: &str| local_target(from, href);
+    assert_eq!(
+        t("docs/a.md", "img/p.png").as_deref(),
+        Some("docs/img/p.png")
+    );
+    assert_eq!(t("docs/a.md", "../img/p.png").as_deref(), Some("img/p.png"));
+    assert_eq!(t("docs/a.md", "/img/p.png").as_deref(), Some("img/p.png"));
+    assert_eq!(t("docs/a.md", "b.md#sec").as_deref(), Some("docs/b.md"));
+    assert_eq!(t("docs/a.md", "b.md?x=1").as_deref(), Some("docs/b.md"));
+    assert_eq!(t("a.md", "my%20pic.png").as_deref(), Some("my pic.png"));
+    assert_eq!(
+        t("docs/a.md", "..\\img\\p.png").as_deref(),
+        Some("img/p.png")
+    );
+    assert_eq!(t("docs/a.md", "  ./p.png  ").as_deref(), Some("docs/p.png"));
+    assert_eq!(t("@wt/w/a.md", "x/p.png").as_deref(), Some("@wt/w/x/p.png"));
+}
+
+#[test]
+fn local_target_ignores_what_is_not_a_project_path() {
+    for href in [
+        "",
+        "#sec",
+        "https://x.org/a.png",
+        "mailto:a@b.c",
+        "javascript:alert(1)",
+        "data:image/png;base64,AAAA",
+        "file:///etc/passwd",
+        "C:\\x\\y.png",
+        "?only=query",
+    ] {
+        assert_eq!(local_target("docs/a.md", href), None, "{href}");
+    }
+    assert_eq!(local_target("a.md", "../../up.png"), None, "climbs out");
+}

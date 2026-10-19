@@ -16,7 +16,8 @@ pub use category::{category_of, extension_of, is_html, may_open_with_default_app
 pub use explorer::Explorer;
 pub use filter::{FilterShow, TreeFilter};
 pub use ignore::Ignorer;
-pub(crate) use model::{below_root, key_of};
+pub(crate) use model::{below_root, key_of, path_always_out};
+pub use model::{Scan, ScanFile};
 
 use crate::error::{ErrorKind, IpcError};
 

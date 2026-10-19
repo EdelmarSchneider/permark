@@ -192,6 +192,8 @@ pub struct MovePlan {
     pub files: Vec<PlanFile>,
     pub truncated: bool,
     pub skipped: Vec<Skip>,
+    /// Ignored folders whose documents were not looked at (project paths); empty when the links were not planned.
+    pub unchecked: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -357,15 +359,15 @@ impl FileOps {
             .iter()
             .map(|m| (m.from.to_string(), m.to.to_string()))
             .collect();
-        let (docs, skipped) = if update_links {
+        let (docs, skipped, unchecked) = if update_links {
             self.plan_links(&pairs, unsaved)
         } else {
-            (Vec::new(), Vec::new())
+            (Vec::new(), Vec::new(), Vec::new())
         };
         let mut plans = lock(&self.plans);
         plans.next += 1;
         let id = plans.next;
-        let plan = build_dto(id, &pairs, &docs, skipped);
+        let plan = build_dto(id, &pairs, &docs, skipped, unchecked);
         plans.kept.push_back(StoredPlan {
             id,
             moves: pairs,
@@ -381,15 +383,17 @@ impl FileOps {
         &self,
         pairs: &[(String, String)],
         unsaved: &HashSet<String>,
-    ) -> (Vec<DocPlan>, Vec<Skip>) {
+    ) -> (Vec<DocPlan>, Vec<Skip>, Vec<String>) {
         let Some((first, _)) = pairs.first() else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), Vec::new());
         };
         let root = split_root(first).0.trim_end_matches('/').to_owned();
         let planner = Planner::new(&self.vault, pairs);
         let mut docs = Vec::new();
         let mut skipped = Vec::new();
-        for doc in self.explorer.documents(&root) {
+        // a fresh walk: documents in folders the tree leaves unlisted for their size are links to keep as well
+        let (documents, unchecked) = self.explorer.scan_documents(&root);
+        for doc in documents {
             let moved_to = planner.mover().map(&doc);
             let Ok(path) = VaultPath::parse(&doc) else {
                 continue;
@@ -442,7 +446,7 @@ impl FileOps {
                 });
             }
         }
-        (docs, skipped)
+        (docs, skipped, unchecked)
     }
 
     /// Makes the moves of a preview, then rewrites the links (when asked): each document only if it still is what the
@@ -899,6 +903,7 @@ fn build_dto(
     pairs: &[(String, String)],
     docs: &[DocPlan],
     skipped: Vec<Skip>,
+    unchecked: Vec<String>,
 ) -> MovePlan {
     let mut shown = 0;
     let mut truncated = false;
@@ -941,6 +946,7 @@ fn build_dto(
         files,
         truncated,
         skipped,
+        unchecked,
     }
 }
 

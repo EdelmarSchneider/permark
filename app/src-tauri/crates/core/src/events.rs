@@ -76,6 +76,8 @@ pub enum CoreEvent {
     TreeChanged(TreeChanged),
     /// To one window: the document it shows changed on disk.
     DocumentChanged(DocumentChanged),
+    /// The search index of a project made progress (all windows; the payload names the project).
+    IndexProgress(crate::search::IndexProgress),
     PluginsChanged,
     PluginFailed {
         message: String,
@@ -100,6 +102,7 @@ impl CoreEvent {
             Self::OpenFailed(_) => "open-failed",
             Self::TreeChanged(_) => "tree-changed",
             Self::DocumentChanged(_) => "document-changed",
+            Self::IndexProgress(_) => "index-progress",
             Self::PluginsChanged => "plugins-changed",
             Self::PluginFailed { .. } => "plugin-failed",
             Self::Plugin { name, .. } => name,

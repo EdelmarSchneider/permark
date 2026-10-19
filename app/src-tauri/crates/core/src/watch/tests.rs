@@ -660,6 +660,76 @@ fn a_project_core_updates_the_tree_before_plugins_hear_and_tears_everything_down
 }
 
 #[test]
+fn a_project_core_indexes_its_files_follows_the_real_watch_and_lets_go_on_close() {
+    use crate::search::{SearchFilter, SearchOptions};
+    let base = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    fs::write(
+        project.path().join("a.md"),
+        "# A
+
+firstwords
+",
+    )
+    .unwrap();
+    let seen: Seen = Arc::default();
+    let sink = Arc::new(Recorder::default());
+    let env = project_env(base.path(), &seen, sink.clone());
+    let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+    assert!(core.search().wait_ready(Duration::from_secs(30)));
+    let found = |q: &str| -> Vec<String> {
+        core.search()
+            .sections(q, 10, &SearchFilter::default())
+            .hits
+            .into_iter()
+            .map(|h| h.path)
+            .collect()
+    };
+    assert_eq!(found("firstwords"), ["a.md"]);
+    std::thread::sleep(Duration::from_millis(200));
+    fs::write(
+        project.path().join("b.md"),
+        "# B
+
+secondwords
+",
+    )
+    .unwrap();
+    let start = Instant::now();
+    while found("secondwords").is_empty() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "the watch reaches the index"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    // tags need their plugin; nothing else is asked of the filter yet
+    let tags = SearchOptions {
+        include_silenced: false,
+        tags: vec!["x".to_owned()],
+    };
+    assert_eq!(
+        core.search_filter(&tags).unwrap_err().kind,
+        crate::ErrorKind::Unsupported
+    );
+    let options = SearchOptions {
+        include_silenced: true,
+        tags: Vec::new(),
+    };
+    assert_eq!(
+        core.search_filter(&options).unwrap(),
+        SearchFilter::default()
+    );
+    let started = Instant::now();
+    drop(core);
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "joined in {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
 fn live_updates_in_the_context_follow_the_watcher() {
     use crate::conditions::LiveUpdates;
     use crate::workspace::{WorkspaceRef, WorkspaceRegistry};

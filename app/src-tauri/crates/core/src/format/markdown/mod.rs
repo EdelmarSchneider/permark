@@ -9,6 +9,7 @@ mod frontmatter;
 mod inline;
 mod prompt;
 mod sanitize;
+mod sections;
 mod segments;
 #[cfg(test)]
 mod tests;
@@ -19,6 +20,7 @@ use std::collections::HashSet;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{format_html, parse_document, Anchorizer, Arena, Options};
 
+pub use sections::{sections, Section};
 pub use segments::{segments, LockReason, Segment, SegmentKind};
 
 use super::{Block, Body, Claim, Format, FormatId, FrontMatter, OutlineItem, RenderCx, Rendered};

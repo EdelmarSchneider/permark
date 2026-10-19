@@ -592,3 +592,116 @@ impl TreeModel {
         true
     }
 }
+
+// ---- scan ---------------------------------------------------------------------------------------------------
+
+/// A file found by [`scan_root`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScanFile {
+    /// Project path.
+    pub path: String,
+    pub category: super::Category,
+    /// Where it is on disk; only for the categories whose content is read (Markdown | Text).
+    pub abs: Option<PathBuf>,
+}
+
+/// What a fresh walk of one root found.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Scan {
+    pub files: Vec<ScanFile>,
+    /// Ignored folders the walk did not enter (project paths).
+    pub unchecked: Vec<String>,
+    /// The walk hit a limit (depth, entries) or was cancelled: the list may be incomplete.
+    pub cut_off: bool,
+}
+
+struct ScanCx<'a> {
+    root: &'a RootCtx,
+    cancel: &'a std::sync::atomic::AtomicBool,
+    budget: usize,
+    out: Scan,
+}
+
+/// Walks `root` afresh with the tree's ignore rules and without its large-folder guard: every file that is not
+/// ignored (links never followed). Ignored folders are not entered; the ones that are not containers are named in
+/// `unchecked`.
+pub(crate) fn scan_root(root: &RootCtx, cancel: &std::sync::atomic::AtomicBool) -> Scan {
+    root.ignorer.clear();
+    let frames = root.ignorer.root_frames();
+    let mut cx = ScanCx {
+        root,
+        cancel,
+        budget: MAX_ENTRIES,
+        out: Scan::default(),
+    };
+    scan_dir(&mut cx, &root.abs, &root.prefix, &frames, false, 0);
+    cx.out
+}
+
+fn scan_dir(
+    cx: &mut ScanCx<'_>,
+    dir_abs: &Path,
+    dir_path: &str,
+    parent_frames: &Frames,
+    in_ignored: bool,
+    depth: usize,
+) {
+    if cx.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+        cx.out.cut_off = true;
+        return;
+    }
+    let Some((found, hints)) = read_entries(dir_abs, dir_path) else {
+        return;
+    };
+    let root = cx.root;
+    let frames = if depth == 0 {
+        parent_frames.clone()
+    } else {
+        root.ignorer.enter_hinted(parent_frames, dir_abs, hints)
+    };
+    for entry in found {
+        let path = if dir_path.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{dir_path}/{}", entry.name)
+        };
+        let abs = dir_abs.join(&entry.name);
+        // a nested repository is walked under its own rules, whatever surrounds it
+        let nested = entry.is_dir && root.ignorer.is_nested_repo(&abs);
+        let ignored =
+            !nested && (in_ignored || root.ignorer.is_ignored(&frames, &abs, entry.is_dir));
+        if cx.budget == 0 {
+            cx.out.cut_off = true;
+            return;
+        }
+        cx.budget -= 1;
+        if !entry.is_dir {
+            if !ignored {
+                let category = category_of(&entry.name);
+                let reads_content =
+                    matches!(category, super::Category::Markdown | super::Category::Text);
+                cx.out.files.push(ScanFile {
+                    path,
+                    category,
+                    abs: reads_content.then_some(abs),
+                });
+            }
+            continue;
+        }
+        if depth + 1 > MAX_DEPTH {
+            cx.out.cut_off = true;
+            continue;
+        }
+        if ignored {
+            // an ignored folder that leads to a nested repository is a container: entered, its own files stay out
+            let mut budget = REPO_SEARCH_ENTRIES;
+            if holds_repo(&abs, REPO_SEARCH_DEPTH, &mut budget) {
+                scan_dir(cx, &abs, &path, &frames, true, depth + 1);
+            } else {
+                cx.out.unchecked.push(path);
+            }
+            continue;
+        }
+        scan_dir(cx, &abs, &path, &frames, false, depth + 1);
+    }
+}

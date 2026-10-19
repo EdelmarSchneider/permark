@@ -1177,3 +1177,146 @@ fn documents_lists_markdown_outside_ignored_folders() {
     );
     assert_eq!(f.explorer.listed("nope.md"), None);
 }
+
+// ---- scan + linked files --------------------------------------------------------------------------------------------
+
+fn scanned(f: &Fixture) -> (Vec<String>, Vec<String>) {
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let mut files = Vec::new();
+    let mut unchecked = Vec::new();
+    for (_, scan) in f.explorer.scan(&never) {
+        files.extend(scan.files.into_iter().map(|f| f.path));
+        unchecked.extend(scan.unchecked);
+    }
+    files.sort();
+    (files, unchecked)
+}
+
+#[test]
+fn scan_lists_what_the_tree_lists_without_the_size_guard_and_names_ignored_folders() {
+    let f = fixture(&[
+        ".gitignore",
+        "docs/a.md",
+        "docs/img/p.png",
+        "build/out.md",
+        "node_modules/x/y.md",
+    ]);
+    fs::write(f.dir.path().join(".gitignore"), "build/\n").unwrap();
+    let (files, unchecked) = scanned(&f);
+    assert_eq!(files, [".gitignore", "docs/a.md", "docs/img/p.png"]);
+    assert_eq!(unchecked, ["build", "node_modules"]);
+    // Markdown and Text files carry their place on disk; the others do not
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let scan = &f.explorer.scan(&never)[0].1;
+    assert!(scan
+        .files
+        .iter()
+        .find(|x| x.path == "docs/a.md")
+        .unwrap()
+        .abs
+        .is_some());
+    assert!(scan
+        .files
+        .iter()
+        .find(|x| x.path == "docs/img/p.png")
+        .unwrap()
+        .abs
+        .is_none());
+}
+
+#[test]
+fn scan_walks_a_folder_over_the_size_limit_and_scan_documents_finds_its_markdown() {
+    let f = fixture(&["docs/a.md"]);
+    let big = f.dir.path().join("big");
+    fs::create_dir_all(&big).unwrap();
+    for n in 0..(LARGE_FOLDER + 3) {
+        fs::write(big.join(format!("f{n}.md")), "x").unwrap();
+    }
+    let (files, _) = scanned(&f);
+    assert_eq!(files.len(), LARGE_FOLDER + 4);
+    let (docs, unchecked) = f.explorer.scan_documents("");
+    assert_eq!(docs.len(), LARGE_FOLDER + 4);
+    assert_eq!(unchecked.len(), 0);
+    assert!(
+        f.explorer.listed("big/f0.md").is_none(),
+        "the tree still guards that folder"
+    );
+    assert_eq!(f.explorer.scan_documents("@wt/none").0.len(), 0);
+}
+
+#[test]
+fn scan_stops_when_cancelled_and_never_follows_links_or_enters_git() {
+    let f = fixture(&["a.md", "sub/b.md", ".git/config"]);
+    let cancelled = std::sync::atomic::AtomicBool::new(true);
+    let scan = &f.explorer.scan(&cancelled)[0].1;
+    assert!(scan.cut_off);
+    let (files, _) = scanned(&f);
+    assert_eq!(files, ["a.md", "sub/b.md"]);
+}
+
+#[test]
+fn linked_assets_are_shown_wherever_they_sit_and_leave_when_the_link_goes() {
+    let f = fixture(&[
+        "docs/a.md",
+        "far/deep/er/p.png",
+        "far/deep/er/q.png",
+        "docs/near.png",
+    ]);
+    let shown = |name: &str| -> Vec<String> {
+        f.explorer
+            .open_view(name, None)
+            .nodes
+            .into_iter()
+            .map(|n| n.path)
+            .collect()
+    };
+    let before = shown("w1");
+    assert!(before.contains(&"docs/near.png".to_owned()));
+    assert!(
+        !before.contains(&"far/deep/er/p.png".to_owned()),
+        "far from every document"
+    );
+    f.sink.take();
+    f.explorer.set_linked(Arc::new(
+        [key_of("far/deep/er/p.png")].into_iter().collect(),
+    ));
+    let after = shown("w2");
+    assert!(after.contains(&"far/deep/er/p.png".to_owned()));
+    assert!(
+        !after.contains(&"far/deep/er/q.png".to_owned()),
+        "an unlinked sibling stays out"
+    );
+    let sent = deltas(&f, "w1");
+    assert_eq!(sent.len(), 1, "the open view heard it");
+    assert!(sent[0]
+        .added
+        .iter()
+        .any(|a| a.node.path == "far/deep/er/p.png"));
+    // the same set again says nothing; an empty set takes the picture away
+    f.explorer.set_linked(Arc::new(
+        [key_of("far/deep/er/p.png")].into_iter().collect(),
+    ));
+    assert_eq!(deltas(&f, "w1").len(), 0);
+    f.explorer.set_linked(Arc::new(HashSet::new()));
+    let gone = deltas(&f, "w1");
+    assert!(
+        gone[0].removed.contains(&"far/deep/er/p.png".to_owned()),
+        "{gone:?}"
+    );
+    // a filter that shows everything is unaffected; documents-only never shows assets
+    let docs_only = TreeFilter {
+        show: FilterShow::Documents,
+        ..TreeFilter::default()
+    };
+    f.explorer.set_linked(Arc::new(
+        [key_of("far/deep/er/p.png")].into_iter().collect(),
+    ));
+    let only: Vec<String> = f
+        .explorer
+        .open_view("w3", Some(docs_only))
+        .nodes
+        .into_iter()
+        .map(|n| n.path)
+        .collect();
+    assert!(!only.contains(&"far/deep/er/p.png".to_owned()));
+}

@@ -10,4 +10,8 @@ export type MovePlan = { planId: number, moves: Array<MoveSpec>, linkCount: numb
 /**
  * The first documents and links (cut off after a few thousand links).
  */
-files: Array<PlanFile>, truncated: boolean, skipped: Array<Skip>, };
+files: Array<PlanFile>, truncated: boolean, skipped: Array<Skip>, 
+/**
+ * Ignored folders whose documents were not looked at (project paths); empty when the links were not planned.
+ */
+unchecked: Array<string>, };

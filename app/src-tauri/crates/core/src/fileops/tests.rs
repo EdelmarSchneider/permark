@@ -1051,3 +1051,58 @@ fn links_in_worktree_documents_stay_inside_the_worktree() {
         .map_err(kind_of);
     assert_eq!(across, Err(ErrorKind::OtherRoot));
 }
+
+// ---- documents the tree does not list -------------------------------------------------------------------------------------
+
+#[test]
+fn the_plan_reaches_documents_in_folders_the_tree_leaves_unlisted_for_their_size() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("docs")).unwrap();
+    fs::write(dir.path().join("docs/target.md"), "# T\n").unwrap();
+    let big = dir.path().join("big");
+    fs::create_dir_all(&big).unwrap();
+    for n in 0..(crate::tree::LARGE_FOLDER + 5) {
+        fs::write(big.join(format!("n{n}.md")), "x").unwrap();
+    }
+    fs::write(big.join("links.md"), "[to](../docs/target.md)\n").unwrap();
+    let fx = fx_in(dir);
+    // the tree does not list the folder
+    assert!(fx.explorer.listed("big/links.md").is_none());
+    let plan = fx
+        .ops
+        .plan_move(&[spec("docs/target.md", "docs/renamed.md")], true)
+        .unwrap();
+    assert_eq!(plan.link_count, 1, "{plan:?}");
+    assert_eq!(plan.files[0].path, "big/links.md");
+    fx.ops.apply_move(plan.plan_id, true).unwrap();
+    assert_eq!(read(&fx, "big/links.md"), "[to](../docs/renamed.md)\n");
+}
+
+#[test]
+fn the_plan_names_the_ignored_folders_it_did_not_look_into() {
+    let fx = fx(&[
+        (".gitignore", "build/\nout/\n"),
+        ("docs/target.md", "# T\n"),
+        ("docs/a.md", "[t](target.md)\n"),
+        ("build/b.md", "[t](../docs/target.md)\n"),
+        ("src/x.md", "x"),
+    ]);
+    let plan = fx
+        .ops
+        .plan_move(&[spec("docs/target.md", "docs/new.md")], true)
+        .unwrap();
+    assert_eq!(plan.link_count, 1, "the ignored document is not touched");
+    assert_eq!(
+        plan.unchecked,
+        ["build"],
+        "only folders that exist and are ignored"
+    );
+    let without = fx
+        .ops
+        .plan_move(&[spec("docs/target.md", "docs/new2.md")], false)
+        .unwrap();
+    assert!(
+        without.unchecked.is_empty(),
+        "no links planned, nothing to say"
+    );
+}

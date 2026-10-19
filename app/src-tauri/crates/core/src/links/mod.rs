@@ -7,7 +7,7 @@ mod resolve;
 mod tests;
 
 pub use parse::{parse, Dest, Form, Kind};
-pub use resolve::{join_relative, resolve, Target};
+pub use resolve::{join_relative, local_target, resolve, Target};
 
 /// Decodes `%XX` escapes (invalid sequences are kept as written; invalid UTF-8 becomes U+FFFD).
 #[must_use]

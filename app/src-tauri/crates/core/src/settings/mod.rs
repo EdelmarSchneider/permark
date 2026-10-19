@@ -88,6 +88,28 @@ pub const DEFAULT_REFERENCE_TEMPLATE: &str = "{path}#{section}";
 /// Longest reference template kept.
 pub const MAX_REFERENCE_TEMPLATE: usize = 200;
 
+/// Longest command id | combo kept in the keyboard map; most entries read.
+pub const MAX_COMBO: usize = 40;
+pub const MAX_COMMAND_ID: usize = 64;
+pub const MAX_KEYMAP: usize = 200;
+
+/// A command id: `[A-Za-z0-9._:-]`, 1..=64.
+#[must_use]
+pub fn valid_command_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_COMMAND_ID
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+}
+
+/// A combo as the keyboard map stores it: printable ASCII without spaces, <= 40 (the grammar is the frontend's;
+/// empty = the command is unbound).
+#[must_use]
+pub fn valid_combo(combo: &str) -> bool {
+    combo.len() <= MAX_COMBO && combo.chars().all(|c| c.is_ascii_graphic())
+}
+
 /// A plugin's raw settings table (equality by its TOML text).
 #[derive(Debug, Clone, Default)]
 pub struct RawTable(pub Table);
@@ -113,6 +135,8 @@ pub struct AppSettings {
     pub reference_template: String,
     /// The person's editor: a command template (empty = not set). Only the person sets it (app settings).
     pub editor: String,
+    /// The person's keyboard map: command id -> combo (empty = unbound). Absent = the command's defaults.
+    pub keymap: BTreeMap<String, String>,
     /// Explicit plugin switches (absent = manifest default).
     pub plugins: BTreeMap<PluginId, bool>,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
@@ -132,6 +156,7 @@ impl Default for AppSettings {
             edit_mode: EditModePref::default(),
             reference_template: DEFAULT_REFERENCE_TEMPLATE.to_owned(),
             editor: String::new(),
+            keymap: BTreeMap::new(),
             plugins: BTreeMap::new(),
             plugin_tables: BTreeMap::new(),
         }
@@ -153,6 +178,11 @@ pub enum SettingChange {
     ReferenceTemplate(String),
     /// Empty = not set.
     Editor(String),
+    /// One command's combo; `None` = back to its defaults (key removed); `Some("")` = unbound.
+    Keymap {
+        command: String,
+        combo: Option<String>,
+    },
     /// `None` = back to the manifest default (key removed).
     PluginEnabled {
         plugin: PluginId,
@@ -173,6 +203,7 @@ impl SettingChange {
             Self::EditMode(_) => "edit_mode".to_owned(),
             Self::ReferenceTemplate(_) => "reference_template".to_owned(),
             Self::Editor(_) => "editor".to_owned(),
+            Self::Keymap { command, .. } => format!("keymap.{command}"),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
         }
     }
@@ -225,6 +256,15 @@ impl SettingChange {
             Self::Editor(text) => crate::document::editor::EditorTemplate::parse(text)
                 .map(|_| ())
                 .map_err(|problem| invalid(problem.code())),
+            Self::Keymap { command, combo } => {
+                if !valid_command_id(command) {
+                    Err(invalid("command"))
+                } else if combo.as_deref().is_some_and(|c| !valid_combo(c)) {
+                    Err(invalid("combo"))
+                } else {
+                    Ok(())
+                }
+            }
             _ => Ok(()),
         }
     }
@@ -265,10 +305,27 @@ pub(crate) fn plugin_tables(doc: &DocumentMut) -> BTreeMap<PluginId, RawTable> {
         .collect()
 }
 
+/// `[keymap]` of a document: entries with a valid command id and combo (at most [`MAX_KEYMAP`]).
+fn keymap_of(doc: &DocumentMut) -> BTreeMap<String, String> {
+    let Some(table) = doc.get("keymap").and_then(Item::as_table_like) else {
+        return BTreeMap::new();
+    };
+    table
+        .iter()
+        .filter_map(|(command, item)| {
+            let combo = item.as_str()?;
+            (valid_command_id(command) && valid_combo(combo))
+                .then(|| (command.to_owned(), combo.to_owned()))
+        })
+        .take(MAX_KEYMAP)
+        .collect()
+}
+
 impl AppSettings {
     /// Lenient read of a document: each key on its own.
     #[must_use]
     pub fn from_doc(doc: &DocumentMut) -> Self {
+        let keymap = keymap_of(doc);
         let plugin_tables = plugin_tables(doc);
         let plugins = plugin_tables
             .iter()
@@ -301,6 +358,7 @@ impl AppSettings {
                 .filter(|t| crate::document::editor::EditorTemplate::parse(t).is_ok())
                 .map(str::to_owned)
                 .unwrap_or_default(),
+            keymap,
             plugins,
             plugin_tables,
         }
@@ -334,8 +392,29 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::EditMode(v) => set_keeping_decor(root, "edit_mode", v.as_str().into()),
         SettingChange::ReferenceTemplate(v) => set_text(root, "reference_template", v),
         SettingChange::Editor(v) => set_text(root, "editor", v),
+        SettingChange::Keymap { command, combo } => set_keymap(root, command, combo.as_deref()),
         SettingChange::PluginEnabled { plugin, enabled } => {
             set_plugin_enabled(root, plugin, *enabled);
+        }
+    }
+}
+
+fn set_keymap(root: &mut Table, command: &str, combo: Option<&str>) {
+    if !root.get("keymap").is_some_and(Item::is_table) {
+        if combo.is_none() {
+            return;
+        }
+        root.insert("keymap", Item::Table(Table::new()));
+    }
+    let Some(Item::Table(map)) = root.get_mut("keymap") else {
+        return;
+    };
+    if let Some(combo) = combo {
+        set_keeping_decor(map, command, combo.into());
+    } else {
+        map.remove(command);
+        if map.is_empty() {
+            root.remove("keymap");
         }
     }
 }

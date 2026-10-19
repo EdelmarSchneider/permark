@@ -8,7 +8,7 @@ use ignore::gitignore::Gitignore;
 
 use super::filter::{apply, Compiled, Visible};
 use super::ignore::Ignorer;
-use super::model::{key_of, RootCtx, TreeModel};
+use super::model::{key_of, scan_root, RootCtx, TreeModel};
 use super::{
     Added, NodeKind, Renamed, RootKind, RootNode, TreeChanged, TreeDelta, TreeError, TreeFilter,
     TreeNode, TreeSnapshot,
@@ -73,6 +73,8 @@ pub struct Explorer {
     views: Mutex<HashMap<String, View>>,
     /// Keys of folders made in the Explorer: shown while empty.
     kept_dirs: Mutex<HashSet<String>>,
+    /// Keys of the project paths some document links to (search link index): assets shown wherever they sit.
+    linked: Mutex<Arc<HashSet<String>>>,
     default_filter: TreeFilter,
     sink: Arc<dyn EventSink>,
 }
@@ -118,6 +120,7 @@ impl Explorer {
             model: Mutex::new(None),
             views: Mutex::new(HashMap::new()),
             kept_dirs: Mutex::new(HashSet::new()),
+            linked: Mutex::new(Arc::new(HashSet::new())),
             default_filter: TreeFilter::from_config(&config.tree),
             sink,
         }
@@ -160,11 +163,13 @@ impl Explorer {
     }
 
     fn visible(&self, model: &TreeModel, view: &View) -> Visible {
+        let linked = Arc::clone(&lock(&self.linked));
         apply(
             model,
             &view.compiled,
             view.keep.as_deref(),
             &lock(&self.kept_dirs),
+            &linked,
         )
     }
 
@@ -359,6 +364,51 @@ impl Explorer {
     }
 
     // ---- reading the model (file operations) -------------------------------------------------------------------
+
+    /// A fresh walk of every root without the large-folder guard (the search index reads it).
+    #[must_use]
+    pub fn scan(&self, cancel: &std::sync::atomic::AtomicBool) -> Vec<(String, super::Scan)> {
+        self.roots
+            .iter()
+            .map(|root| (root.prefix.clone(), scan_root(root, cancel)))
+            .collect()
+    }
+
+    /// Markdown documents of the root `prefix` (`""` | `@wt/<name>`) found by a fresh walk (also the ones in folders the
+    /// tree leaves unlisted for their size), plus the ignored folders that were not looked into.
+    #[must_use]
+    pub fn scan_documents(&self, prefix: &str) -> (Vec<String>, Vec<String>) {
+        let never = std::sync::atomic::AtomicBool::new(false);
+        let key = key_of(prefix);
+        let Some(root) = self.roots.iter().find(|r| key_of(&r.prefix) == key) else {
+            return (Vec::new(), Vec::new());
+        };
+        let scan = scan_root(root, &never);
+        let mut docs: Vec<String> = scan
+            .files
+            .into_iter()
+            .filter(|f| f.category == super::Category::Markdown)
+            .map(|f| f.path)
+            .collect();
+        docs.sort();
+        (docs, scan.unchecked)
+    }
+
+    /// The files documents link to (keys): assets among them are shown by the "near documents" filter wherever they
+    /// sit. Views are refreshed when the set differs.
+    pub fn set_linked(&self, linked: Arc<HashSet<String>>) {
+        {
+            let mut current = lock(&self.linked);
+            if **current == *linked {
+                return;
+            }
+            *current = linked;
+        }
+        let guard = lock(&self.model);
+        if let Some(model) = guard.as_ref() {
+            self.refresh_views(model, &[], false);
+        }
+    }
 
     /// Listed Markdown documents of the root `prefix` (`""` | `@wt/<name>`), not ignored.
     #[must_use]

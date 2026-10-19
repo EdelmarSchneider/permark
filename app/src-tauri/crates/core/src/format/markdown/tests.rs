@@ -463,3 +463,149 @@ fn one_megabyte_of_markdown_renders_in_time() {
     assert!(elapsed.as_secs() < 20, "{elapsed:?}");
     assert!(blocks.len() > 3000);
 }
+
+// ---- sections (search) ----------------------------------------------------------------------------------------
+
+fn heads(text: &str) -> Vec<(Vec<String>, u32)> {
+    sections(text)
+        .into_iter()
+        .map(|s| (s.heading_path, s.line))
+        .collect()
+}
+
+#[test]
+fn sections_split_at_every_heading_with_a_breadcrumb() {
+    let text = "# A\n\nintro\n\n## B\n\nbody b\n\n### C\n\nbody c\n\n## D\n\nbody d\n";
+    let found = sections(text);
+    let paths: Vec<Vec<&str>> = found
+        .iter()
+        .map(|s| s.heading_path.iter().map(String::as_str).collect())
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            vec!["A"],
+            vec!["A", "B"],
+            vec!["A", "B", "C"],
+            vec!["A", "D"]
+        ]
+    );
+    assert_eq!(
+        found.iter().map(|s| s.line).collect::<Vec<_>>(),
+        [1, 5, 9, 13]
+    );
+    // flat: a parent never repeats its children
+    assert_eq!(found[0].text, "intro");
+    assert_eq!(found[1].text, "body b");
+    assert_eq!(found[3].anchor.as_deref(), Some("d"));
+}
+
+#[test]
+fn sections_have_a_preamble_with_front_matter_values_and_no_anchor() {
+    let text = "---\ntags: [alpha, beta]\ntitle: Plan\n---\nBefore any heading.\n\n# First\n\nx\n";
+    let found = sections(text);
+    assert_eq!(found.len(), 2);
+    assert!(found[0].heading_path.is_empty());
+    assert_eq!(found[0].anchor, None);
+    assert!(found[0].text.contains("alpha"), "{:?}", found[0].text);
+    assert!(found[0].text.contains("Before any heading."));
+    assert_eq!(found[1].line, 7, "front matter lines keep their numbers");
+}
+
+#[test]
+fn sections_ignore_headings_in_code_and_keep_empty_ones() {
+    let text = "# A\n\n```\n# not a heading\n```\n\n## Empty\n\n## Next\n\ntext\n";
+    let found = sections(text);
+    assert_eq!(found.len(), 3);
+    assert!(
+        found[0].text.contains("# not a heading"),
+        "code text is searchable"
+    );
+    assert_eq!(found[1].heading_path, ["A", "Empty"]);
+    assert_eq!(found[1].text, "");
+}
+
+#[test]
+fn sections_anchors_match_the_reader_and_repeat_with_a_suffix() {
+    let text = "# Same\n\na\n\n# Same\n\nb\n\n# Other heading!\n";
+    let ids: Vec<_> = sections(text).into_iter().map(|s| s.anchor).collect();
+    assert_eq!(
+        ids,
+        [
+            Some("same".to_owned()),
+            Some("same-1".to_owned()),
+            Some("other-heading".to_owned())
+        ]
+    );
+    // the outline of the rendered page gives the same ids and lines
+    let rendered = render_with(text, "a.md", &MarkdownFeatures::default(), &HashSet::new());
+    let Body::Markdown { outline, .. } = rendered.body else {
+        panic!("markdown body");
+    };
+    let from_outline: Vec<_> = outline.iter().map(|o| (o.id.clone(), o.line)).collect();
+    let from_sections: Vec<_> = sections(text)
+        .into_iter()
+        .map(|s| (s.anchor.unwrap_or_default(), s.line))
+        .collect();
+    assert_eq!(from_outline, from_sections);
+}
+
+#[test]
+fn sections_text_has_words_not_syntax() {
+    let text = "# T\n\n**bold** and [a link](https://x.org/secret-path) ![alt words](p.png)\n\n| h1 | h2 |\n|----|----|\n| c1 | c2 |\n\n- item one\n- [ ] task two\n\n<context>\ninner words\n</context>\n";
+    let body = &sections(text)[0].text;
+    for word in [
+        "bold",
+        "a link",
+        "alt words",
+        "h1",
+        "c2",
+        "item one",
+        "task two",
+        "inner words",
+    ] {
+        assert!(body.contains(word), "{word} in {body:?}");
+    }
+    for junk in ["https", "secret-path", "p.png", "**", "<context>", "|---"] {
+        assert!(!body.contains(junk), "{junk} not in {body:?}");
+    }
+}
+
+#[test]
+fn sections_setext_and_crlf_and_empty_input() {
+    assert_eq!(
+        heads("Title\n=====\n\ntext\n"),
+        [(vec!["Title".to_owned()], 1)]
+    );
+    assert_eq!(
+        heads("# A\r\n\r\ntext\r\n\r\n## B\r\n"),
+        [
+            (vec!["A".to_owned()], 1),
+            (vec!["A".to_owned(), "B".to_owned()], 5)
+        ]
+    );
+    assert!(sections("").is_empty());
+    assert!(sections("  \n\n \n").is_empty());
+}
+
+#[test]
+fn sections_survive_hostile_input() {
+    // nesting bombs fall back to one raw section; nothing panics or hangs
+    let bomb = ">".repeat(5000) + " x";
+    assert_eq!(sections(&bomb).len(), 1);
+    let deep = "- a\n".repeat(10) + "  - b\n";
+    assert!(!sections(&deep).is_empty());
+    for hostile in [
+        "\0\0\0",
+        "# \u{202e}rtl\n",
+        "#\n#\n#",
+        "## \n",
+        "```\n# open fence",
+    ] {
+        let _ = sections(hostile);
+    }
+    let big = format!("# H\n\n{}\n", "word ".repeat(200_000));
+    let found = sections(&big);
+    assert_eq!(found.len(), 1);
+    assert!(found[0].text.len() > 900_000);
+}

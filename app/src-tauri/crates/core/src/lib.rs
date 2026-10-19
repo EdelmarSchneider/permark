@@ -14,6 +14,7 @@ pub mod links;
 pub mod open;
 pub mod paths;
 pub mod plugins;
+pub mod search;
 pub mod session;
 pub mod settings;
 pub mod state;

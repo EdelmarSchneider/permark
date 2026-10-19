@@ -244,6 +244,8 @@ struct Pass<'a> {
     keep: Option<String>,
     keep_ancestors: HashSet<String>,
     kept_dirs: &'a HashSet<String>,
+    /// Keys of the files some document links to.
+    linked: &'a HashSet<String>,
     out: Visible,
 }
 
@@ -272,6 +274,7 @@ pub(crate) fn apply(
     c: &Compiled,
     keep: Option<&str>,
     kept_dirs: &HashSet<String>,
+    linked: &HashSet<String>,
 ) -> Visible {
     let doc_folders = model_doc_folders(model, c);
     let mut keep_ancestors = HashSet::new();
@@ -289,6 +292,7 @@ pub(crate) fn apply(
         keep: keep.map(key_of),
         keep_ancestors,
         kept_dirs,
+        linked,
         out: Visible::default(),
     };
     for root in &model.roots {
@@ -414,7 +418,9 @@ impl Pass<'_> {
             false
         } else if f.assets_near_docs_only && f.show != FilterShow::Documents && category.is_asset()
         {
-            self.near_docs(node) || (category.is_media() && in_asset_folder)
+            self.near_docs(node)
+                || (category.is_media() && in_asset_folder)
+                || self.linked.contains(node.key())
         } else {
             true
         };

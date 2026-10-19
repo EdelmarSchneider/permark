@@ -78,6 +78,25 @@ pub fn resolve(vault: &Vault, from: &VaultPath, href: &str) -> Target {
     }
 }
 
+/// The project path `href` (found in the document `from`) names, without looking at the disk: anchor and query
+/// dropped, percent-decoded, `\` read as `/`, joined onto the document's folder (a leading `/` is the project root).
+/// `None` for anchors only, anything with a scheme (web, `file:`, a drive letter) and paths that climb above their root.
+/// The candidate may not exist, and a folder link or a missing `.md` is not completed.
+#[must_use]
+pub fn local_target(from: &str, href: &str) -> Option<String> {
+    let href = href.trim();
+    let target = href.split_once('#').map_or(href, |(t, _)| t);
+    if scheme_of(target).is_some() {
+        return None;
+    }
+    let path_part = target.split_once('?').map_or(target, |(p, _)| p);
+    if path_part.is_empty() {
+        return None;
+    }
+    let decoded = percent_decode(path_part).replace('\\', "/");
+    join_relative(from, &decoded)
+}
+
 /// The candidate itself, then `.md`, then `README.md | index.md` for folders.
 fn find_existing(vault: &Vault, rel: &str, anchor: Option<String>) -> Target {
     let base = rel.trim_end_matches('/');

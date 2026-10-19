@@ -20,6 +20,10 @@ referenceTemplate: string,
  */
 editor: string, 
 /**
+ * The person's keyboard map: command id -> combo (empty = unbound). Absent = the command's defaults.
+ */
+keymap: { [key in string]: string }, 
+/**
  * Explicit plugin switches (absent = manifest default).
  */
 plugins: { [key in PluginId]: boolean }, };

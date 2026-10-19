@@ -16,6 +16,7 @@ use crate::plugins::{
     resolve_enabled, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId, PluginRegistry,
     PluginScope, PluginSet,
 };
+use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{AppSettings, ProjectConfig};
 use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
@@ -178,6 +179,8 @@ pub struct ProjectCore {
     // watcher joins its thread, then file operations, the Explorer and the rest go.
     _explorer_sub: Subscription,
     _documents_sub: Subscription,
+    _search_sub: Subscription,
+    search: SearchIndex,
     watcher: Watcher,
     fileops: FileOps,
     documents: Arc<Documents>,
@@ -227,6 +230,14 @@ impl ProjectCore {
             let documents = Arc::clone(&documents);
             move |batch| documents.on_batch(batch)
         });
+        // the index walks the project at once and follows the watch from the first batch on
+        let search = SearchIndex::start(
+            vault.clone(),
+            Arc::clone(&explorer),
+            Arc::clone(&env.sink),
+            vault.main().path().display().to_string(),
+        );
+        let search_sub = hub.subscribe(search.feeder());
         let watcher = Watcher::start(
             &vault,
             explorer.ignorers(),
@@ -238,6 +249,8 @@ impl ProjectCore {
         let core = Arc::new(Self {
             _explorer_sub: explorer_sub,
             _documents_sub: documents_sub,
+            _search_sub: search_sub,
+            search,
             watcher,
             fileops,
             documents,
@@ -265,6 +278,24 @@ impl ProjectCore {
     #[must_use]
     pub fn formats(&self) -> Arc<FormatRegistry> {
         Arc::clone(&self.formats.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// The search index (sections, file list, links).
+    #[must_use]
+    pub fn search(&self) -> &SearchIndex {
+        &self.search
+    }
+
+    /// The path filter a search asks for. The tags and silence plugins (organizing area) fill `only` and `skip`;
+    /// until they exist, tags cannot be honored and silenced paths do not exist.
+    ///
+    /// # Errors
+    /// `Unsupported` (subject `tags`): tags were asked for and the tags plugin is not on.
+    pub fn search_filter(&self, options: &SearchOptions) -> Result<SearchFilter, crate::IpcError> {
+        if !options.tags.is_empty() {
+            return Err(crate::IpcError::new(crate::ErrorKind::Unsupported).subject("tags"));
+        }
+        Ok(SearchFilter::default())
     }
 
     /// The project tree service.
