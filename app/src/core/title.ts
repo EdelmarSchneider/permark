@@ -39,6 +39,8 @@ function workspaceTitle(
         : t("window.title.projectOnly", { project: workspace.name });
     case "singleFile":
       return t("window.title.file", { document: star + workspace.name });
+    case "notes":
+      return star + t("window.title.notes");
     default:
       return workspace satisfies never;
   }

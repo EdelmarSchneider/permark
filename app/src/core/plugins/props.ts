@@ -1,6 +1,6 @@
 // What the core hands to the views plugins contribute (types only; the registry and the components share them).
 
-import type { DocumentView, WorkspaceId } from "../../api";
+import type { DocumentView, WorkspaceId, WorkspaceView } from "../../api";
 
 /** An embed (a code block, a formula, a diagram) is mounted with the text it draws. */
 export type EmbedProps = {
@@ -38,4 +38,10 @@ export type FrontMatterProps = {
     key: string;
     value: { type: "text"; text: string } | { type: "list"; items: string[] };
   }[];
+};
+
+/** The page a plugin gives a workspace of its own kind (the Notes window). */
+export type WorkspaceViewProps = {
+  /** This window's workspace. */
+  workspace: Extract<WorkspaceView, { kind: "notes" }>;
 };

@@ -11,6 +11,7 @@ import {
   type LinkUpdate,
   type OpenPlacement,
   type RecentFolder,
+  type StartIn,
   type SettingChange,
   type StateRecovered,
   type Unlisten,
@@ -21,6 +22,8 @@ import { syncPlugins } from "./plugins/instance.svelte";
 import { language, parsePreference, t } from "./i18n";
 import { look } from "./look.svelte";
 
+export type NoticeAction = { label: string; run: () => void };
+
 export type Notice =
   | { id: number; kind: "openFailed"; path: string; error: IpcError }
   | { id: number; kind: "apiFailed"; path: string | null; error: ApiError }
@@ -28,11 +31,14 @@ export type Notice =
   | { id: number; kind: "stateRecovered"; notice: StateRecovered }
   | { id: number; kind: "settingNotSaved"; error: ApiError }
   | { id: number; kind: "fileOpFailed"; error: ApiError }
-  | { id: number; kind: "note"; text: string };
+  | { id: number; kind: "note"; text: string }
+  /** A quiet line with buttons (Undo, Open in project). */
+  | { id: number; kind: "action"; text: string; actions: readonly NoticeAction[] };
 
 type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : never) : never;
 
-export type Choice = { status: "closed" } | { status: "asking"; path: string };
+/** `path: null` = the Notes. */
+export type Choice = { status: "closed" } | { status: "asking"; path: string | null };
 export type Drag = { status: "idle" } | { status: "over"; count: number };
 export type Boot =
   { status: "booting" } | { status: "ready" } | { status: "failed"; error: ApiError };
@@ -56,9 +62,15 @@ export class WindowStore {
   gitBackend = $state<GitBackendPref>("automatic");
   /** The command that opens a file in the person's editor (setting; empty = not set). */
   editor = $state("");
+  /** Where the notes are (setting; empty = the default folder). */
+  notesFolder = $state("");
+  /** What the app starts on. */
+  startIn = $state<StartIn>("welcome");
   /** The person's keyboard map: command id -> combo (`""` = unbound). */
   keymap = $state.raw<Readonly<Record<string, string>>>({});
   #nextNotice = 1;
+  /** A window page that takes dropped files itself (the Notes): returns whether it did. */
+  dropHook: ((paths: readonly string[]) => boolean) | null = null;
 
   constructor(backend: Api) {
     this.#api = backend;
@@ -80,6 +92,8 @@ export class WindowStore {
         this.editMode = e.settings.editMode;
         this.gitBackend = e.settings.gitBackend;
         this.editor = e.settings.editor;
+        this.notesFolder = e.settings.notesFolder;
+        this.startIn = e.settings.startIn;
         this.keymap = e.settings.keymap;
         void language.choose(parsePreference(e.settings.language));
       }),
@@ -101,6 +115,8 @@ export class WindowStore {
       this.editMode = info.settings.editMode;
       this.gitBackend = info.settings.gitBackend;
       this.editor = info.settings.editor;
+      this.notesFolder = info.settings.notesFolder;
+      this.startIn = info.settings.startIn;
       this.keymap = info.settings.keymap;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
@@ -143,11 +159,26 @@ export class WindowStore {
   }
 
   async open(path: string, placement: OpenPlacement): Promise<void> {
-    const result = await this.#api.openPath(path, placement);
+    await this.#opened(await this.#api.openPath(path, placement), { kind: "path", path });
+  }
+
+  /** Shows the Notes in this window (asks first when the window shows something). */
+  async openNotes(placement: OpenPlacement = "ask"): Promise<void> {
+    await this.#opened(await this.#api.openNotes(placement), { kind: "notes" });
+  }
+
+  async #opened(
+    result: Awaited<ReturnType<Api["openPath"]>>,
+    what: { kind: "path"; path: string } | { kind: "notes" },
+  ): Promise<void> {
     if (!result.ok) {
       // a newer open in this window won: nothing to tell
       if (result.error.kind === "backend" && result.error.error.kind === "superseded") return;
-      this.#notify({ kind: "apiFailed", path, error: result.error });
+      this.#notify({
+        kind: "apiFailed",
+        path: what.kind === "path" ? what.path : null,
+        error: result.error,
+      });
       return;
     }
     const outcome = result.value;
@@ -156,7 +187,10 @@ export class WindowStore {
         this.#showView(outcome.view);
         return;
       case "needsChoice":
-        this.choice = { status: "asking", path };
+        this.choice =
+          what.kind === "path"
+            ? { status: "asking", path: what.path }
+            : { status: "asking", path: null };
         return;
       case "openedElsewhere":
         return;
@@ -170,7 +204,9 @@ export class WindowStore {
     const asked = this.choice;
     this.choice = { status: "closed" };
     if (asked.status !== "asking" || answer === null) return;
-    await this.open(asked.path, answer === "here" ? "thisWindow" : "newWindow");
+    const placement = answer === "here" ? "thisWindow" : "newWindow";
+    if (asked.path === null) await this.openNotes(placement);
+    else await this.open(asked.path, placement);
   }
 
   async closeWorkspace(): Promise<void> {
@@ -198,6 +234,11 @@ export class WindowStore {
     this.#notify({ kind: "note", text });
   }
 
+  /** A quiet line with buttons ("Deleted a note" + Undo). */
+  notifyAction(text: string, ...actions: NoticeAction[]): void {
+    this.#notify({ kind: "action", text, actions });
+  }
+
   dismiss(id: number): void {
     this.notices = this.notices.filter((n) => n.id !== id);
   }
@@ -218,6 +259,7 @@ export class WindowStore {
         return;
       case "drop": {
         this.drag = { status: "idle" };
+        if (this.dropHook?.(event.paths)) return;
         const [first, ...rest] = event.paths;
         if (first === undefined || rest.length > 0) {
           this.#notify({ kind: "dropOne" });

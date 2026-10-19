@@ -4,6 +4,7 @@
 import type { Block } from "./generated/Block";
 import { MockPluginError, type OrganizingProbe } from "./mockOrganizing";
 import type { createMockOrganizing } from "./mockOrganizing";
+import type { createMockNotes, NotesProbe } from "./mockNotes";
 import type { ReviewChange } from "./generated/ReviewChange";
 import type {
   BaselineKind,
@@ -37,6 +38,8 @@ export type MockPluginProbe = {
   announceGit(snapshot: GitSnapshot | null): void;
   /** Tags, comments, silence: what the organizing plugins hold. */
   organizing: OrganizingProbe;
+  /** The notes: what the backend holds, ways to put them in a state. */
+  notes: NotesProbe;
   /** Announces a plugin event as the backend would. */
   announce<E extends PluginEventName>(event: E, data: PluginEvents[E]): void;
 };
@@ -68,6 +71,7 @@ export function createMockPlugins(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
   hashOfGuide: () => string,
   organizing: ReturnType<typeof createMockOrganizing>,
+  notes: ReturnType<typeof createMockNotes>,
 ): {
   call<M extends PluginMethod>(
     method: M,
@@ -154,6 +158,7 @@ export function createMockPlugins(
 
   const handlers: Handlers = {
     ...organizing.handlers,
+    ...notes.handlers,
     "git.snapshot": () => snapshot(),
     "git.refresh": () => null,
     "git.setBaseline": ({ kind }) => {
@@ -256,6 +261,7 @@ export function createMockPlugins(
       git: snapshot,
       announceGit: (next) => emit("git:snapshot", next),
       organizing: organizing.probe,
+      notes: notes.probe,
       announce: emit,
     },
   };

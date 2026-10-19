@@ -3,7 +3,7 @@
 // only serves them (blocks the caller already holds leave out their HTML) and makes up the simple ones (text, picture).
 
 import mockDocuments from "./generated/mock-documents.json";
-import type { DocumentView, LinkTarget } from "./types";
+import type { Block, DocumentView, LinkTarget, OutlineItem } from "./types";
 
 function isView(value: unknown): value is DocumentView {
   if (typeof value !== "object" || value === null) return false;
@@ -141,4 +141,53 @@ export function mockLinkTarget(
     }
   }
   return { type: "missing", path: joined };
+}
+
+const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
+
+/** A simple view of a note's text for the mock: a heading or a paragraph per run of lines (no renderer here). */
+export function mockNoteView(path: string, text: string): DocumentView {
+  const lines = text.split("\n");
+  const blocks: Block[] = [];
+  const outline: OutlineItem[] = [];
+  let start = -1;
+  const close = (end: number): void => {
+    const run = lines.slice(start, end).join("\n");
+    const id = `n${blocks.length}-${run.length}`;
+    const heading = /^(#{1,6})\s+(.*)$/.exec(run);
+    const safe = (heading?.[2] ?? run)
+      .replace(/[&<>]/g, (c) => ESCAPES[c] ?? c)
+      .replace(/\n/g, "<br>");
+    const tag = heading ? `h${heading[1]?.length ?? 1}` : "p";
+    if (heading) {
+      outline.push({
+        id: `h-${blocks.length}`,
+        level: heading[1]?.length ?? 1,
+        label: heading[2] ?? "",
+        line: start + 1,
+        block: id,
+      });
+    }
+    blocks.push({
+      id,
+      kind: tag,
+      lineStart: start + 1,
+      lineEnd: end,
+      html: `<${tag} data-b="${id}">${safe}</${tag}>`,
+    });
+    start = -1;
+  };
+  lines.forEach((line, i) => {
+    const filled = line.trim() !== "";
+    if (filled && start < 0) start = i;
+    if (!filled && start >= 0) close(i);
+  });
+  if (start >= 0) close(lines.length);
+  return {
+    ...base(path),
+    format: "markdown",
+    body: { kind: "markdown", blocks, outline, frontMatter: null },
+    editable: { editable: "surgical" },
+    size: text.length,
+  };
 }

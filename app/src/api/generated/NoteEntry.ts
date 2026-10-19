@@ -17,7 +17,7 @@ name: string,
 /**
  * The first line, marks removed. Empty for a note with no text (the window says "Untitled note").
  */
-title: string, snippet: string, modifiedMs: bigint, size: bigint, pinned: boolean, 
+title: string, snippet: string, modifiedMs: number, size: number, pinned: boolean, 
 /**
  * Shared with agents.
  */

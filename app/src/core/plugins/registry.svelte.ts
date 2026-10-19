@@ -7,7 +7,13 @@ import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
-import type { EmbedProps, FrontMatterProps, PageSelection, ViewerProps } from "./props";
+import type {
+  EmbedProps,
+  FrontMatterProps,
+  PageSelection,
+  ViewerProps,
+  WorkspaceViewProps,
+} from "./props";
 
 /** Lazily loaded UI piece (heavy views load when first needed). */
 export type LazyComponent<Props extends Record<string, unknown> = Record<string, never>> =
@@ -100,6 +106,15 @@ export type Contribution = Owned &
     /** Runs on the root of the page when it exists; returns what undoes it. */
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
+    /** What the window shows for a workspace of a kind the core has no page for (the Notes): its sidebar and its page. */
+    | {
+        kind: "workspaceView";
+        workspace: "notes";
+        sidebar: LazyComponent;
+        main: LazyComponent<WorkspaceViewProps>;
+      }
+    /** A block of the welcome screen (the latest notes). */
+    | { kind: "welcomeSection"; id: string; order: number; view: LazyComponent }
     | {
         kind: "viewer";
         id: string;

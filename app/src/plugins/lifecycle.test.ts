@@ -171,3 +171,37 @@ describe("the organizing plugins", () => {
     expect(new Set(keys).size, "no two commands share a default key").toBe(keys.length);
   });
 });
+
+describe("the notes plugin", () => {
+  it("adds the Notes page, the welcome block, its settings and commands, and leaves nothing when off", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("notes");
+    expect(host.state("notes")).toBe("on");
+    const found = [...new Set(registry.ownedBy("notes").map((c) => c.kind))].sort();
+    expect(found).toEqual([
+      "command",
+      "settingsSection",
+      "shortcut",
+      "statusItem",
+      "welcomeSection",
+      "workspaceView",
+    ]);
+    expect(registry.of("workspaceView").map((v) => v.workspace)).toEqual(["notes"]);
+    expect(host.disable("notes"), "contributions left after deactivate").toBe(0);
+    expect(registry.items).toHaveLength(0);
+  });
+
+  it("every key it adds names a command it added, and the ids are free", async () => {
+    const registry = new ContributionRegistry();
+    const host = new PluginHost(registry, pluginLoaders());
+    await host.enable("notes");
+    const ids = registry.of("command").map((c) => c.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const keys = registry.of("shortcut");
+    for (const shortcut of keys) expect(ids, shortcut.command).toContain(shortcut.command);
+    // Ctrl+1..9 open the pinned notes
+    expect(keys.filter((k) => /^Mod\+[1-9]$/.test(k.keys))).toHaveLength(9);
+    host.disable("notes");
+  });
+});

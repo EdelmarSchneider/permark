@@ -10,6 +10,7 @@ export type { WindowView } from "./generated/WindowView";
 export type { WorkspaceView } from "./generated/WorkspaceView";
 export type { StateRecovered } from "./generated/StateRecovered";
 export type { LanguagePref } from "./generated/LanguagePref";
+export type { StartIn } from "./generated/StartIn";
 export type { ThemePref } from "./generated/ThemePref";
 export type { Tone } from "./generated/Tone";
 

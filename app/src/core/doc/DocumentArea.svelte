@@ -21,7 +21,7 @@
   import { ui } from "../shell/ui.svelte";
 
   type Props = {
-    workspace: Extract<WorkspaceView, { kind: "project" | "singleFile" }>;
+    workspace: Extract<WorkspaceView, { kind: "project" | "singleFile" | "notes" }>;
     document: string | null;
     store: WindowStore;
   };

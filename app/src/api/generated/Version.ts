@@ -7,4 +7,4 @@ export type Version = {
 /**
  * Opaque: the moment it was taken, in milliseconds.
  */
-id: string, atMs: bigint, size: bigint, };
+id: string, atMs: number, size: number, };

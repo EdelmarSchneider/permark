@@ -65,6 +65,11 @@ export type Hooks = {
 
 const AUTOSAVE_MS = 800;
 const CHECK_MS = 150;
+/** How often the text the editor holds and the disk does not is handed to the journal. */
+const JOURNAL_MS = 2000;
+
+/** Keeps (`text`) or forgets (`null`) the unsaved text of a document: crash recovery. */
+export type Journal = (path: string, baseHash: string, text: string | null) => void;
 
 export class EditingSession {
   mode = $state<EditMode>("view");
@@ -92,6 +97,11 @@ export class EditingSession {
   #seq = 0;
   #check: ReturnType<typeof setTimeout> | null = null;
   #autosave: ReturnType<typeof setTimeout> | null = null;
+  #journal: Journal | null = null;
+  #journalTimer: ReturnType<typeof setInterval> | null = null;
+  /** The window lets go of a document that may still hold unsaved text: its journal entry stays. */
+  #keepJournal = false;
+  #savedListeners = new Set<(path: string) => void>();
   #waiting: ((ok: boolean) => void)[] = [];
   #unguard: (() => void) | null = null;
   #loadedSegments: Segment[] | null = null;
@@ -102,6 +112,23 @@ export class EditingSession {
 
   bind(hooks: Hooks): void {
     this.#hooks = hooks;
+  }
+
+  /** The unsaved text is handed to `journal` every couple of seconds while it differs from the disk (`null`: stop). */
+  bindJournal(journal: Journal | null): void {
+    this.#journal = journal;
+    if (journal === null) this.#stopJournal();
+  }
+
+  /** Hears every save of this window. Returns its removal. */
+  onSaved(listener: (path: string) => void): () => void {
+    this.#savedListeners.add(listener);
+    return () => this.#savedListeners.delete(listener);
+  }
+
+  /** How the document being edited is saved. */
+  get policy(): SavePolicy {
+    return this.#policy;
   }
 
   get path(): string | null {
@@ -239,6 +266,10 @@ export class EditingSession {
   }
 
   #close(): void {
+    this.#stopJournal();
+    if (!this.#keepJournal && this.#path !== null && this.#journal !== null) {
+      this.#journal(this.#path, this.base?.hash ?? "", null);
+    }
     this.#reset();
     this.#unguard?.();
     this.#unguard = null;
@@ -251,7 +282,9 @@ export class EditingSession {
   /** The window lets go of the document (workspace gone): no question, nothing kept. */
   release(): void {
     if (this.unsaved) void this.#api.editSetUnsaved(null);
+    this.#keepJournal = true;
     this.#close();
+    this.#keepJournal = false;
   }
 
   // ---- the editor on screen ----------------------------------------------------------------------------------
@@ -339,6 +372,8 @@ export class EditingSession {
         this.#leave(effect.leave);
         return;
       case "setUnsaved":
+        if (effect.unsaved) this.#startJournal();
+        else this.#clearJournal();
         await this.#api.editSetUnsaved(effect.unsaved ? this.#path : null);
         return;
       case "scheduleAutosave":
@@ -383,12 +418,16 @@ export class EditingSession {
     const outcome = result.value;
     switch (outcome.outcome) {
       case "saved":
-        this.#hooks?.note(this.#hooks.savedText(changes, this.firstSave));
-        this.firstSave = false;
+        // an autosave says nothing: it would speak every second
+        if (this.#policy.kind === "explicit") {
+          this.#hooks?.note(this.#hooks.savedText(changes, this.firstSave));
+          this.firstSave = false;
+        }
         this.dispatch({ e: "saved", base: { hash: outcome.hash, text } });
         // the editor typed on while saving: compare against the new base
         if (editor && editor.text() !== text) this.changed();
         this.#hooks?.saved();
+        for (const listener of this.#savedListeners) listener(path);
         return;
       case "conflict":
         this.dispatch({ e: "conflict", disk: outcome.diskHash });
@@ -475,6 +514,32 @@ export class EditingSession {
       default:
         return event satisfies never;
     }
+  }
+
+  // ---- the journal ---------------------------------------------------------------------------------------------
+
+  #startJournal(): void {
+    if (this.#journal === null || this.#journalTimer !== null) return;
+    this.#journalTimer = setInterval(() => this.#writeJournal(), JOURNAL_MS);
+  }
+
+  #stopJournal(): void {
+    if (this.#journalTimer !== null) clearInterval(this.#journalTimer);
+    this.#journalTimer = null;
+  }
+
+  /** The text is on disk (or let go): the entry goes. */
+  #clearJournal(): void {
+    this.#stopJournal();
+    if (this.#path !== null) this.#journal?.(this.#path, this.base?.hash ?? "", null);
+  }
+
+  #writeJournal(): void {
+    const path = this.#path;
+    const base = this.base;
+    if (path === null || base === null || !this.unsaved) return;
+    const text = this.#editor?.text() ?? this.content?.text ?? base.text;
+    if (text !== base.text) this.#journal?.(path, base.hash, text);
   }
 
   #clearTimers(): void {

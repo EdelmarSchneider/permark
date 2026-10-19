@@ -40,7 +40,14 @@ type Handlers = Pick<
 
 export class MockPluginError extends Error {
   constructor(
-    readonly kind: "unavailable" | "notFound" | "invalidData" | "denied",
+    readonly kind:
+      | "unavailable"
+      | "notFound"
+      | "invalidData"
+      | "denied"
+      | "exists"
+      | "invalidName"
+      | "intoItself",
     readonly subject: string | null = null,
   ) {
     super(kind);

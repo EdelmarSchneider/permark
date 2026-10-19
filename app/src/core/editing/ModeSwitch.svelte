@@ -56,7 +56,7 @@
     {t("mode.source")}
   </button>
 </div>
-{#if editing}
+{#if editing && session.policy.kind === "explicit"}
   <button
     type="button"
     class="btn btn--sm"

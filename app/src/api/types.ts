@@ -78,6 +78,17 @@ import type { TagsIndex } from "./generated/TagsIndex";
 import type { TagsLocation } from "./generated/TagsLocation";
 import type { TagsOverview } from "./generated/TagsOverview";
 import type { TagsStatus } from "./generated/TagsStatus";
+import type { Deleted } from "./generated/Deleted";
+import type { EntryKind } from "./generated/EntryKind";
+import type { FolderInfo } from "./generated/FolderInfo";
+import type { FolderStatus } from "./generated/FolderStatus";
+import type { LooseState } from "./generated/LooseState";
+import type { MoveUndone } from "./generated/MoveUndone";
+import type { Moved } from "./generated/Moved";
+import type { NoteEntry } from "./generated/NoteEntry";
+import type { NoteList } from "./generated/NoteList";
+import type { NotesSummary } from "./generated/NotesSummary";
+import type { Version } from "./generated/Version";
 
 export type {
   AppInfo,
@@ -158,6 +169,8 @@ export interface Commands {
   app_info: { args: Record<string, never>; result: AppInfo };
   window_boot: { args: Record<string, never>; result: BootInfo };
   open_path: { args: { path: string; placement: OpenPlacement }; result: OpenOutcome };
+  open_notes: { args: { placement: OpenPlacement }; result: OpenOutcome };
+  open_in_project: { args: { path: string }; result: null };
   show_welcome: { args: Record<string, never>; result: null };
   list_workspaces: { args: Record<string, never>; result: WorkspaceSummary[] };
   focus_workspace: { args: { id: WorkspaceId }; result: null };
@@ -289,6 +302,42 @@ export interface PluginMethods {
   "quiet.rules": { args: Record<string, never>; result: QuietMarks };
   "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
   "broken-links.list": { args: Record<string, never>; result: BrokenReport };
+  "notes.folder": { args: Record<string, never>; result: FolderInfo };
+  "notes.createFolder": { args: Record<string, never>; result: FolderInfo };
+  "notes.list": { args: Record<string, never>; result: NoteList };
+  "notes.summary": { args: Record<string, never>; result: NotesSummary };
+  "notes.create": { args: Record<string, never>; result: string };
+  "notes.delete": { args: { paths: string[] }; result: Deleted };
+  "notes.undoDelete": { args: { undoId: number }; result: string[] };
+  "notes.rename": { args: { path: string; name: string }; result: string };
+  "notes.setPinned": { args: { path: string; pinned: boolean }; result: null };
+  "notes.setPinOrder": { args: { order: string[] }; result: null };
+  "notes.setShared": { args: { path: string; shared: boolean }; result: null };
+  "notes.markCopied": { args: { path: string }; result: null };
+  "notes.deleteCopied": { args: Record<string, never>; result: Deleted };
+  "notes.opened": { args: { path: string | null }; result: null };
+  "notes.versions": { args: { path: string }; result: Version[] };
+  "notes.versionText": { args: { path: string; id: string }; result: string };
+  "notes.restoreVersion": { args: { path: string; id: string }; result: null };
+  "notes.buffer": {
+    args: { path: string; baseHash: string; text: string | null };
+    result: null;
+  };
+  "notes.recoveredText": { args: { path: string }; result: string | null };
+  "notes.keepRecovered": { args: { path: string }; result: null };
+  "notes.discardRecovered": { args: { path: string }; result: null };
+  "notes.openFile": { args: { path: string }; result: string };
+  "notes.removeFile": { args: { path: string }; result: null };
+  "notes.locateFile": { args: { path: string; newPath: string }; result: string };
+  "notes.reloadFile": { args: { path: string }; result: null };
+  "notes.keepMine": { args: { path: string }; result: null };
+  "notes.saveAsNote": { args: { path: string }; result: string };
+  "notes.suggestName": { args: { path: string; folder: string | null }; result: string };
+  "notes.moveToProject": {
+    args: { path: string; folder: string; name: string };
+    result: Moved;
+  };
+  "notes.undoMove": { args: { undoId: number }; result: MoveUndone };
 }
 export type PluginMethod = keyof PluginMethods;
 
@@ -319,6 +368,19 @@ export type {
   SinceVisit,
 };
 export type { UnreadList };
+export type {
+  Deleted,
+  EntryKind,
+  FolderInfo,
+  FolderStatus,
+  LooseState,
+  MoveUndone,
+  Moved,
+  NoteEntry,
+  NoteList,
+  NotesSummary,
+  Version,
+};
 export type {
   BrokenDoc,
   BrokenLink,
@@ -380,6 +442,10 @@ export interface Api {
   appInfo(): Promise<Result<AppInfo>>;
   windowBoot(): Promise<Result<BootInfo>>;
   openPath(path: string, placement: OpenPlacement): Promise<Result<OpenOutcome>>;
+  /** Shows the Notes in this window (or a new one, or asks first). */
+  openNotes(placement: OpenPlacement): Promise<Result<OpenOutcome>>;
+  /** Opens the project that holds a file in a window of its own, showing the file. */
+  openInProject(path: string): Promise<Result<null>>;
   showWelcome(): Promise<Result<null>>;
   listWorkspaces(): Promise<Result<WorkspaceSummary[]>>;
   focusWorkspace(id: WorkspaceId): Promise<Result<null>>;
@@ -475,7 +541,8 @@ export interface Api {
   onDrop(handler: (event: DropEvent) => void): Promise<Unlisten>;
   /** System folder | file picker; `null` = cancelled. */
   pickFolder(title: string): Promise<string | null>;
-  pickFile(title: string, filterName: string): Promise<string | null>;
+  /** `anyFile`: no filter on the kind of file (the Notes open any text file). */
+  pickFile(title: string, filterName: string, anyFile?: boolean): Promise<string | null>;
   setTitle(title: string): Promise<void>;
   /** Shows the window (created hidden: first paint already themed). */
   showWindow(): Promise<Result<void>>;

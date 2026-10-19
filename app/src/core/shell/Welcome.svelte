@@ -1,7 +1,9 @@
 <script lang="ts">
   // Start screen: open folder | file, recent folders (missing marked, removable; arrows + Enter + Delete), drop hint.
   import type { RecentFolder } from "../../api";
+  import { conditions } from "../conditions/context.svelte";
   import { t } from "../i18n";
+  import { contributions } from "../plugins/instance.svelte";
   import type { WindowStore } from "../window.svelte";
 
   type Props = { store: WindowStore };
@@ -11,6 +13,12 @@
   let list: HTMLElement | undefined = $state();
 
   const recents = $derived(store.recent);
+  /** Blocks plugins add under the recent folders (the latest notes). */
+  const sections = $derived(
+    [...contributions.visible("welcomeSection", conditions.current)].sort(
+      (a, b) => a.order - b.order,
+    ),
+  );
   const opening = $derived(store.view.state === "opening");
 
   function open(recent: RecentFolder | undefined): void {
@@ -114,6 +122,12 @@
       </ul>
     {/if}
   </div>
+  {#each sections as section (section.owner + section.id)}
+    {#await section.view() then loaded}
+      {@const Section = loaded.default}
+      <Section />
+    {/await}
+  {/each}
   <p class="hint">{t("welcome.dropHint")}</p>
 </div>
 

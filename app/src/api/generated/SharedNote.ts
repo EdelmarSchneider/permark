@@ -7,4 +7,4 @@ export type SharedNote = {
 /**
  * The note's file name: what the agent asks for.
  */
-id: string, title: string, updatedMs: bigint, };
+id: string, title: string, updatedMs: number, };

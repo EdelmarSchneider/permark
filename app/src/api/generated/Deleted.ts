@@ -7,4 +7,4 @@ export type Deleted = {
 /**
  * Asks for them back; none when they are too big to keep for it.
  */
-undoId: bigint | null, names: Array<string>, };
+undoId: number | null, names: Array<string>, };

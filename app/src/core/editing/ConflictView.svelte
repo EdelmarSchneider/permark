@@ -2,7 +2,7 @@
   // The file changed (or went away) on disk while the person edited it: nothing is overwritten. The banner says
   // so and offers the three ways out; the differences (theirs -> mine) unfold below it.
   import { t } from "../i18n";
-  import { diff, splitLines } from "./lines";
+  import { diffRows, type DiffRow } from "./diffRows";
 
   type Props = {
     /** The disk's text; `null` while it is read; `deleted` when the file is gone. */
@@ -18,42 +18,7 @@
   let open = $state(false);
   let confirming = $state(false);
 
-  type Row =
-    | { kind: "same" | "add" | "del"; text: string; key: string }
-    | { kind: "fold"; count: number; key: string };
-
-  const CONTEXT = 3;
-
-  const rows = $derived.by((): Row[] => {
-    if (!open || theirs === null) return [];
-    const a = splitLines(theirs);
-    const b = splitLines(mine);
-    const out: Row[] = [];
-    for (const op of diff(a, b)) {
-      if (op.kind === "same") {
-        const lines = a.slice(op.a, op.a + op.count);
-        if (lines.length > CONTEXT * 2 + 1) {
-          lines
-            .slice(0, CONTEXT)
-            .forEach((text, i) => out.push({ kind: "same", text, key: `s${op.a + i}` }));
-          out.push({ kind: "fold", count: lines.length - CONTEXT * 2, key: `f${op.a}` });
-          lines
-            .slice(-CONTEXT)
-            .forEach((text, i) =>
-              out.push({ kind: "same", text, key: `s${op.a + op.count - CONTEXT + i}` }),
-            );
-        } else lines.forEach((text, i) => out.push({ kind: "same", text, key: `s${op.a + i}` }));
-      } else {
-        a.slice(op.a, op.a + op.remove).forEach((text, i) =>
-          out.push({ kind: "del", text, key: `d${op.a + i}` }),
-        );
-        b.slice(op.b, op.b + op.add).forEach((text, i) =>
-          out.push({ kind: "add", text, key: `a${op.b + i}` }),
-        );
-      }
-    }
-    return out;
-  });
+  const rows = $derived<DiffRow[]>(open && theirs !== null ? diffRows(theirs, mine) : []);
 </script>
 
 <div class="conflict" role="alert">

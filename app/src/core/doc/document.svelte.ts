@@ -22,6 +22,7 @@ import { reading } from "./reading.svelte";
 import { recentFiles } from "../search/recent.svelte";
 import { formatQuote, formatReference, type Reference } from "./reference";
 import { Trail, type Place } from "./trail";
+import type { SavePolicy } from "../editing/docMachine";
 import { confirmLeave } from "../editing/guard";
 import { t } from "../i18n";
 
@@ -122,6 +123,13 @@ export class DocumentController {
     return this.view?.path ?? null;
   }
 
+  /** Notes save by themselves; project documents and single files on request. */
+  get savePolicy(): SavePolicy {
+    return this.#workspace?.kind === "notes"
+      ? { kind: "auto", delayMs: 800 }
+      : { kind: "explicit" };
+  }
+
   get workspaceId(): number | null {
     return this.#workspace?.id ?? null;
   }
@@ -185,7 +193,7 @@ export class DocumentController {
     this.#anchor = anchor;
     this.#line = intent?.line ?? null;
     this.#shown = path;
-    if (!this.singleFile) recentFiles.visit(path);
+    if (this.#workspace?.kind === "project") recentFiles.visit(path);
     this.#painted = null;
     await this.#open(path, true);
   }

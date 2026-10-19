@@ -7,7 +7,7 @@ export type Moved = {
 /**
  * Where the copy is (a full path: the person chose the folder).
  */
-destination: string, undoId: bigint | null, 
+destination: string, undoId: number | null, 
 /**
  * The note changed while it was copied: both are kept, nothing was removed.
  */

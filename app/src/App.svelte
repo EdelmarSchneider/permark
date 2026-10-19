@@ -21,6 +21,8 @@
   import SidebarTabs from "./core/search/SidebarTabs.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
   import { ui } from "./core/shell/ui.svelte";
+  import { conditions } from "./core/conditions/context.svelte";
+  import { contributions } from "./core/plugins/instance.svelte";
   import { windowTitle } from "./core/title";
   import StatusItems from "./core/shell/StatusItems.svelte";
   import { activeRight, activeSidebar, leftPanels, rightPanels } from "./core/shell/panels.svelte";
@@ -60,7 +62,7 @@
             .at(-1) ?? view.target.path
         );
       case "notes":
-        return t("app.name");
+        return t("notes.title");
       default:
         return view.target satisfies never;
     }
@@ -81,6 +83,10 @@
 
   const title = $derived(windowTitle(store.view, editing.unsaved));
 
+  /** What the notes plugin shows for the Notes workspace (none while the plugin is off). */
+  const notesView = $derived(
+    contributions.visible("workspaceView", conditions.current).find((v) => v.workspace === "notes"),
+  );
   const sidebarView = $derived(activeSidebar());
   const rightPanel = $derived(activeRight());
 
@@ -137,7 +143,11 @@
   {#if shown}
     <span
       class="title"
-      title={shown.workspace.kind === "project" ? shown.workspace.root : shown.workspace.path}
+      title={shown.workspace.kind === "project"
+        ? shown.workspace.root
+        : shown.workspace.kind === "singleFile"
+          ? shown.workspace.path
+          : (shown.workspace.folder ?? "")}
     >
       {shown.workspace.name}
     </span>
@@ -186,6 +196,11 @@
         </div>
       {/each}
     {/key}
+  {:else if shown?.workspace.kind === "notes" && notesView}
+    {#await notesView.sidebar() then loaded}
+      {@const Sidebar = loaded.default}
+      <Sidebar />
+    {/await}
   {/if}
 {/snippet}
 
@@ -207,6 +222,16 @@
 {#snippet main()}
   {#if shown?.workspace.kind === "project" || shown?.workspace.kind === "singleFile"}
     <DocumentArea workspace={shown.workspace} document={shown.document} {store} />
+  {:else if shown?.workspace.kind === "notes"}
+    {@const notes = shown.workspace}
+    {#if notesView}
+      {#await notesView.main() then loaded}
+        {@const Main = loaded.default}
+        <Main workspace={notes} />
+      {/await}
+    {:else}
+      <div class="off"><p>{t("notes.off")}</p></div>
+    {/if}
   {:else}
     <Welcome {store} />
   {/if}
@@ -226,7 +251,9 @@
 {#if store.boot.status !== "booting"}
   <Frame
     {header}
-    sidebar={shown?.workspace.kind === "project" ? sidebar : undefined}
+    sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
+      ? sidebar
+      : undefined}
     panel={rightPanel !== null || (outline && reading.outline) ? panel : undefined}
     {main}
     {status}
@@ -267,6 +294,12 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
+  }
+  .off {
+    display: grid;
+    place-items: center;
+    flex: 1;
+    color: var(--muted);
   }
   .view.off {
     flex: none;

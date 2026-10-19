@@ -68,6 +68,8 @@ export const tauriApi: Api = {
   appInfo: () => call("app_info", {}),
   windowBoot: () => call("window_boot", {}),
   openPath: (path, placement) => call("open_path", { path, placement }),
+  openNotes: (placement) => call("open_notes", { placement }),
+  openInProject: (path) => call("open_in_project", { path }),
   showWelcome: () => call("show_welcome", {}),
   listWorkspaces: () => call("list_workspaces", {}),
   focusWorkspace: (id) => call("focus_workspace", { id }),
@@ -155,12 +157,14 @@ export const tauriApi: Api = {
     const picked = await open({ directory: true, multiple: false, title });
     return typeof picked === "string" ? picked : null;
   },
-  pickFile: async (title, filterName) => {
+  pickFile: async (title, filterName, anyFile = false) => {
     const picked = await open({
       directory: false,
       multiple: false,
       title,
-      filters: [{ name: filterName, extensions: ["md", "markdown", "mdown", "mdx", "txt"] }],
+      filters: anyFile
+        ? []
+        : [{ name: filterName, extensions: ["md", "markdown", "mdown", "mdx", "txt"] }],
     });
     return typeof picked === "string" ? picked : null;
   },

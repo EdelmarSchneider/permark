@@ -25,6 +25,6 @@ export function chooseMode(mode: EditMode): void {
   const view = documents.view;
   if (shown === null || view === null || editBlockedReason() !== null) return;
   if (editing.mode === "view" || editing.path !== shown) {
-    void editing.enter(mode, shown, view.format === "markdown", { kind: "explicit" });
+    void editing.enter(mode, shown, view.format === "markdown", documents.savePolicy);
   } else void editing.switchTo(mode);
 }

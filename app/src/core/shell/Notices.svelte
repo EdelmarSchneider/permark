@@ -24,6 +24,7 @@
       case "fileOpFailed":
         return apiErrorText(notice.error);
       case "note":
+      case "action":
         return notice.text;
       default:
         return notice satisfies never;
@@ -36,6 +37,20 @@
     {#each store.notices as notice (notice.id)}
       <div class="notice">
         <span class="text">{text(notice)}</span>
+        {#if notice.kind === "action"}
+          {#each notice.actions as action (action.label)}
+            <button
+              type="button"
+              class="btn btn--sm"
+              onclick={() => {
+                store.dismiss(notice.id);
+                action.run();
+              }}
+            >
+              {action.label}
+            </button>
+          {/each}
+        {/if}
         <button
           type="button"
           class="btn btn--ghost btn--sm"

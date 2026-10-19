@@ -143,6 +143,7 @@ describe("plugin host", () => {
       "math",
       "media",
       "mermaid",
+      "notes",
       "plantuml",
       "quiet",
       "review",

@@ -5,8 +5,9 @@ import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
-import { mockAssetUrl, mockLinkTarget, mockView } from "./mockDocs";
+import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
+import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
 import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
@@ -46,6 +47,7 @@ function defaultSettings(): AppSettings {
     linkUpdate: "ask",
     editMode: "edit",
     gitBackend: "automatic",
+    notesFolder: "",
     referenceTemplate: "{path}#{section}",
     editor: "",
     keymap: {},
@@ -76,6 +78,7 @@ const MOCK_PLUGINS = [
   "xml-view",
   "text-view",
   "word-count",
+  "notes",
 ];
 
 function neutralContext(): Context {
@@ -112,6 +115,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, editMode: change.value };
     case "gitBackend":
       return { ...settings, gitBackend: change.value };
+    case "notesFolder":
+      return { ...settings, notesFolder: change.value };
     case "referenceTemplate":
       return { ...settings, referenceTemplate: change.value.trim() || "{path}#{section}" };
     case "editor":
@@ -201,12 +206,14 @@ export function createMockApi(): Api & {
   }
   const project = new MockProject();
   const organizing = createMockOrganizing(emitPlugin, project);
+  const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
+  const notes = createMockNotes(editing.probe.files);
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
     organizing,
+    notes,
   );
-  const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
   const probe: MockProbe = {
     opened: [],
     editor: [],
@@ -275,7 +282,8 @@ export function createMockApi(): Api & {
   function context(): Context {
     const base = { ...neutralContext(), plugins: MOCK_PLUGINS };
     if (view.state !== "showing") return base;
-    return { ...base, workspace: view.workspace.kind === "project" ? "project" : "singleFile" };
+    const kinds = { project: "project", singleFile: "singleFile", notes: "notes" } as const;
+    return { ...base, workspace: kinds[view.workspace.kind] };
   }
 
   function show(path: string): WindowView {
@@ -319,6 +327,24 @@ export function createMockApi(): Api & {
       if (placement === "ask" && view.state === "showing") return ok({ outcome: "needsChoice" });
       if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });
       return ok({ outcome: "opened", view: show(path) });
+    },
+    openNotes: (placement) => {
+      if (placement === "ask" && view.state === "showing" && view.workspace.kind !== "notes") {
+        return ok({ outcome: "needsChoice" });
+      }
+      if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });
+      view = {
+        state: "showing",
+        workspace: { kind: "notes", id: nextId++, name: "Notes", folder: MOCK_NOTES_FOLDER },
+        document: null,
+      };
+      emit("window-changed", { window: "main", view });
+      emit("context-changed", { window: "main", context: context() });
+      return ok({ outcome: "opened", view });
+    },
+    openInProject: (path) => {
+      probe.opened.push({ path, mode: "project" });
+      return ok(null);
     },
     showWelcome: () => {
       view = { state: "welcome" };
@@ -403,6 +429,21 @@ export function createMockApi(): Api & {
       return ok(null);
     },
     openDocument: (path, known) => {
+      if (view.state === "showing" && view.workspace.kind === "notes") {
+        const text = editing.probe.files.get(path);
+        if (text === undefined) {
+          return Promise.resolve({
+            ok: false,
+            error: {
+              kind: "backend",
+              command: "document_open",
+              error: { kind: "notFound", subject: path, detail: null },
+            },
+          });
+        }
+        probe.shown = { path, known };
+        return ok(mockNoteView(path, text));
+      }
       // a single file shows its own name; the mock serves the showcase for it
       const asked =
         view.state === "showing" && view.workspace.kind === "singleFile" ? "README.md" : path;
@@ -424,7 +465,12 @@ export function createMockApi(): Api & {
       probe.shown = { path: null, known: [] };
       return ok(null);
     },
-    documentText: (path) => ok(`# ${path}\n`),
+    documentText: (path) =>
+      ok(
+        view.state === "showing" && view.workspace.kind === "notes"
+          ? (editing.probe.files.get(path) ?? "")
+          : `# ${path}\n`,
+      ),
     resolveLinks: (doc, hrefs) =>
       ok(hrefs.map((href) => mockLinkTarget(doc, href, (p) => project.exists(p)))),
     resolveCodeRefs: (_doc, written) =>
