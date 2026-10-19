@@ -4,4 +4,4 @@ import type { TreeShow } from "./TreeShow";
 /**
  * One change of one key of `.permark/config.toml`.
  */
-export type ProjectSettingChange = { "key": "treeShow", "value": TreeShow | null } | { "key": "treeInclude", "value": Array<string> } | { "key": "treeExclude", "value": Array<string> } | { "key": "ignore", "value": Array<string> } | { "key": "agentDeny", "value": Array<string> } | { "key": "agentDenyPaths", "value": Array<string> };
+export type ProjectSettingChange = { "key": "treeShow", "value": TreeShow | null } | { "key": "treeInclude", "value": Array<string> } | { "key": "treeExclude", "value": Array<string> } | { "key": "ignore", "value": Array<string> } | { "key": "agentDeny", "value": Array<string> } | { "key": "agentDenyPaths", "value": Array<string> } | { "key": "tokenizers", "value": Array<string> };

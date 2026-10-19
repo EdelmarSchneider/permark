@@ -38,6 +38,10 @@ editor: string,
  */
 keymap: { [key in string]: string }, 
 /**
+ * Tokenizers the token count shows, first = primary (`[plugins.token-count] tokenizers`; at most 3).
+ */
+tokenizers: Array<string>, 
+/**
  * Explicit plugin switches (absent = manifest default).
  */
 plugins: { [key in PluginId]: boolean }, };

@@ -156,6 +156,8 @@ pub struct AppSettings {
     pub editor: String,
     /// The person's keyboard map: command id -> combo (empty = unbound). Absent = the command's defaults.
     pub keymap: BTreeMap<String, String>,
+    /// Tokenizers the token count shows, first = primary (`[plugins.token-count] tokenizers`; at most 3).
+    pub tokenizers: Vec<String>,
     /// Explicit plugin switches (absent = manifest default).
     pub plugins: BTreeMap<PluginId, bool>,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
@@ -179,6 +181,7 @@ impl Default for AppSettings {
             reference_template: DEFAULT_REFERENCE_TEMPLATE.to_owned(),
             editor: String::new(),
             keymap: BTreeMap::new(),
+            tokenizers: Vec::new(),
             plugins: BTreeMap::new(),
             plugin_tables: BTreeMap::new(),
         }
@@ -209,6 +212,8 @@ pub enum SettingChange {
         command: String,
         combo: Option<String>,
     },
+    /// Tokenizer ids of the token count, first = primary; empty = none chosen (key removed).
+    Tokenizers(Vec<String>),
     /// `None` = back to the manifest default (key removed).
     PluginEnabled {
         plugin: PluginId,
@@ -233,6 +238,7 @@ impl SettingChange {
             Self::ReferenceTemplate(_) => "reference_template".to_owned(),
             Self::Editor(_) => "editor".to_owned(),
             Self::Keymap { command, .. } => format!("keymap.{command}"),
+            Self::Tokenizers(_) => "plugins.token-count.tokenizers".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
         }
     }
@@ -292,6 +298,7 @@ impl SettingChange {
             Self::Editor(text) => crate::document::editor::EditorTemplate::parse(text)
                 .map(|_| ())
                 .map_err(|problem| invalid(problem.code())),
+            Self::Tokenizers(ids) if !valid_tokenizers(ids) => Err(invalid("tokenizers")),
             Self::Keymap { command, combo } => {
                 if !valid_command_id(command) {
                     Err(invalid("command"))
@@ -304,6 +311,55 @@ impl SettingChange {
             _ => Ok(()),
         }
     }
+}
+
+/// Most tokenizers shown at once; longest id.
+pub const MAX_TOKENIZERS: usize = 3;
+const MAX_TOKENIZER_ID: usize = 16;
+
+/// A tokenizer id as a setting keeps it: lowercase letters and digits.
+fn valid_tokenizer_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= MAX_TOKENIZER_ID
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+}
+
+/// At most [`MAX_TOKENIZERS`] ids, each valid, none twice.
+#[must_use]
+pub fn valid_tokenizers(ids: &[String]) -> bool {
+    ids.len() <= MAX_TOKENIZERS
+        && ids.iter().all(|id| valid_tokenizer_id(id))
+        && ids
+            .iter()
+            .enumerate()
+            .all(|(at, id)| !ids[..at].contains(id))
+}
+
+/// The ids of a `tokenizers` array, leniently: valid ones, first occurrence, the first [`MAX_TOKENIZERS`].
+pub(crate) fn tokenizers_of(table: Option<&Table>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let Some(array) = table
+        .and_then(|t| t.get("tokenizers"))
+        .and_then(Item::as_array)
+    else {
+        return out;
+    };
+    for id in array.iter().filter_map(Value::as_str) {
+        if valid_tokenizer_id(id) && !out.iter().any(|seen| seen == id) {
+            out.push(id.to_owned());
+        }
+        if out.len() == MAX_TOKENIZERS {
+            break;
+        }
+    }
+    out
+}
+
+/// A TOML array of the ids; `None` for an empty list (the key goes).
+pub(crate) fn tokenizers_value(ids: &[String]) -> Option<Value> {
+    (!ids.is_empty()).then(|| Value::Array(ids.iter().map(String::as_str).collect()))
 }
 
 /// The longest notes folder path accepted.
@@ -411,6 +467,11 @@ impl AppSettings {
                 .filter(|folder| !folder.is_empty() && valid_notes_folder(folder))
                 .map(str::to_owned)
                 .unwrap_or_default(),
+            tokenizers: tokenizers_of(
+                PluginId::parse("token-count")
+                    .and_then(|id| plugin_tables.get(&id))
+                    .map(|table| &table.0),
+            ),
             reference_template: str_of(doc, "reference_template")
                 .filter(|t| !t.trim().is_empty() && t.chars().count() <= MAX_REFERENCE_TEMPLATE)
                 .map_or_else(|| DEFAULT_REFERENCE_TEMPLATE.to_owned(), str::to_owned),
@@ -471,6 +532,14 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::ReferenceTemplate(v) => set_text(root, "reference_template", v),
         SettingChange::Editor(v) => set_text(root, "editor", v),
         SettingChange::Keymap { command, combo } => set_keymap(root, command, combo.as_deref()),
+        SettingChange::Tokenizers(ids) => {
+            set_plugin_key(
+                root,
+                &PluginId::of("token-count"),
+                "tokenizers",
+                tokenizers_value(ids),
+            );
+        }
         SettingChange::PluginEnabled { plugin, enabled } => {
             set_plugin_key(root, plugin, "enabled", enabled.map(Value::from));
         }

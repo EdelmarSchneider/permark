@@ -491,6 +491,77 @@ fn the_git_backend_lives_in_the_plugin_table_and_default_leaves_nothing() {
 }
 
 #[test]
+fn the_tokenizers_live_in_the_token_count_table_and_leave_nothing_when_cleared() {
+    let before = "theme = \"dark\"\n\n[plugins.token-count]\nenabled = true\n";
+    assert_eq!(
+        AppSettings::from_doc(&doc(before)).tokenizers,
+        Vec::<String>::new()
+    );
+    let chosen = applied(
+        before,
+        &SettingChange::Tokenizers(list(&["claude", "o200k"])),
+    );
+    assert_eq!(
+        chosen,
+        "theme = \"dark\"\n\n[plugins.token-count]\nenabled = true\ntokenizers = [\"claude\", \"o200k\"]\n"
+    );
+    assert_eq!(
+        AppSettings::from_doc(&doc(&chosen)).tokenizers,
+        list(&["claude", "o200k"])
+    );
+    // clearing removes the key and keeps the rest; on its own it removes the emptied table
+    assert_eq!(
+        applied(&chosen, &SettingChange::Tokenizers(Vec::new())),
+        before
+    );
+    let only = applied("", &SettingChange::Tokenizers(list(&["chars4"])));
+    assert_eq!(only, "[plugins.token-count]\ntokenizers = [\"chars4\"]\n");
+    assert_eq!(applied(&only, &SettingChange::Tokenizers(Vec::new())), "");
+    assert_eq!(
+        SettingChange::Tokenizers(Vec::new()).key(),
+        "plugins.token-count.tokenizers"
+    );
+}
+
+#[test]
+fn hand_written_tokenizers_are_read_leniently_and_written_strictly() {
+    let read = |text: &str| AppSettings::from_doc(&doc(text)).tokenizers;
+    // wrong type, wrong entries, repeats and the fourth are dropped
+    assert_eq!(
+        read("[plugins.token-count]\ntokenizers = \"o200k\"\n"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        read("[plugins.token-count]\ntokenizers = [\"o200k\", 3, \"O200K\", \"o200k\", \"claude\", \"gemini\", \"chars4\"]\n"),
+        list(&["o200k", "claude", "gemini"])
+    );
+    let too_long = "a".repeat(17);
+    for bad in [
+        list(&["a", "b", "c", "d"]),
+        list(&["a", "a"]),
+        list(&[""]),
+        list(&["Upper"]),
+        list(&["with space"]),
+        list(&[&too_long]),
+    ] {
+        assert!(
+            matches!(
+                SettingChange::Tokenizers(bad.clone()).validate(),
+                Err(SettingsError::Invalid { .. })
+            ),
+            "{bad:?}"
+        );
+        assert!(ProjectSettingChange::Tokenizers(bad).validate().is_err());
+    }
+    assert!(
+        SettingChange::Tokenizers(list(&["o200k", "claude", "chars4"]))
+            .validate()
+            .is_ok()
+    );
+    assert!(SettingChange::Tokenizers(Vec::new()).validate().is_ok());
+}
+
+#[test]
 fn the_notes_folder_is_a_plugin_key_changed_surgically() {
     let abs = if cfg!(windows) {
         r"D:\sync\My Notes"
@@ -662,6 +733,7 @@ fn every_project_setting_round_trips_through_the_file() {
         ProjectSettingChange::Ignore(list(&["drafts/", "*.generated.md"])),
         ProjectSettingChange::AgentDeny(list(&["notes", "comments.resolve"])),
         ProjectSettingChange::AgentDenyPaths(list(&["secret/**"])),
+        ProjectSettingChange::Tokenizers(list(&["claude", "o200k"])),
     ] {
         text = project_applied(&text, &change);
     }
@@ -672,6 +744,7 @@ fn every_project_setting_round_trips_through_the_file() {
     assert_eq!(config.ignore, list(&["drafts/", "*.generated.md"]));
     assert!(config.agent_deny.contains("notes") && config.agent_deny.contains("comments.resolve"));
     assert_eq!(config.agent_deny_paths, list(&["secret/**"]));
+    assert_eq!(config.tokenizers, list(&["claude", "o200k"]));
     // the commented defaults are still explaining the file
     assert!(text.contains("# PerMark project settings."));
     assert!(text.contains("# Turn a plugin off for everyone in this project."));
@@ -687,6 +760,7 @@ fn removing_every_project_setting_gives_the_file_back_byte_for_byte() {
         ProjectSettingChange::Ignore(list(&["c"])),
         ProjectSettingChange::AgentDeny(list(&["notes"])),
         ProjectSettingChange::AgentDenyPaths(list(&["d"])),
+        ProjectSettingChange::Tokenizers(list(&["gemini"])),
     ];
     for change in &changes {
         text = project_applied(&text, change);
@@ -699,6 +773,7 @@ fn removing_every_project_setting_gives_the_file_back_byte_for_byte() {
         ProjectSettingChange::Ignore(Vec::new()),
         ProjectSettingChange::AgentDeny(Vec::new()),
         ProjectSettingChange::AgentDenyPaths(Vec::new()),
+        ProjectSettingChange::Tokenizers(Vec::new()),
     ];
     for change in &clears {
         text = project_applied(&text, change);

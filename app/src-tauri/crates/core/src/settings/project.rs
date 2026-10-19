@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{Array, DocumentMut, Item, Table, Value};
 use ts_rs::TS;
 
-use super::{edit_file, plugin_tables, read_doc, set_keeping_decor, RawTable, SettingsError};
+use super::{
+    edit_file, plugin_tables, read_doc, set_keeping_decor, set_plugin_key, tokenizers_of,
+    tokenizers_value, valid_tokenizers, RawTable, SettingsError,
+};
 use crate::paths::Root;
 use crate::plugins::PluginId;
 use crate::state::PERMARK_DIR;
@@ -64,6 +67,9 @@ pub struct ProjectConfig {
     pub agent_deny: BTreeSet<String>,
     /// `[agent] deny_paths`: gitignore-style patterns of paths agents never get (narrowing only).
     pub agent_deny_paths: Vec<String>,
+    /// `[plugins.token-count] tokenizers`: the tokenizers this project counts with, first = primary (replaces the
+    /// app's list when it has an entry).
+    pub tokenizers: Vec<String>,
     /// `[plugins.<id>] enabled = false` (a project may only disable).
     pub plugins_off: BTreeSet<PluginId>,
     pub plugin_tables: BTreeMap<PluginId, RawTable>,
@@ -119,6 +125,11 @@ impl ProjectConfig {
                 .into_iter()
                 .collect(),
             agent_deny_paths: strings(agent.and_then(|t| t.get("deny_paths"))),
+            tokenizers: tokenizers_of(
+                PluginId::parse("token-count")
+                    .and_then(|id| plugin_tables.get(&id))
+                    .map(|table| &table.0),
+            ),
             plugins_off,
             plugin_tables,
         }
@@ -142,6 +153,7 @@ pub struct ProjectSettings {
     pub ignore: Vec<String>,
     pub agent_deny: Vec<String>,
     pub agent_deny_paths: Vec<String>,
+    pub tokenizers: Vec<String>,
 }
 
 impl ProjectSettings {
@@ -153,6 +165,7 @@ impl ProjectSettings {
             ignore: config.ignore.clone(),
             agent_deny: config.agent_deny.iter().cloned().collect(),
             agent_deny_paths: config.agent_deny_paths.clone(),
+            tokenizers: config.tokenizers.clone(),
         }
     }
 }
@@ -170,6 +183,8 @@ pub enum ProjectSettingChange {
     /// Permission groups this project never allows.
     AgentDeny(Vec<String>),
     AgentDenyPaths(Vec<String>),
+    /// The token count's tokenizers for this project (empty = the app's choice; key removed).
+    Tokenizers(Vec<String>),
 }
 
 impl ProjectSettingChange {
@@ -183,12 +198,13 @@ impl ProjectSettingChange {
             Self::Ignore(_) => "ignore",
             Self::AgentDeny(_) => "agent.deny",
             Self::AgentDenyPaths(_) => "agent.deny_paths",
+            Self::Tokenizers(_) => "plugins.token-count.tokenizers",
         }
     }
 
     fn list(&self) -> Option<&[String]> {
         match self {
-            Self::TreeShow(_) => None,
+            Self::TreeShow(_) | Self::Tokenizers(_) => None,
             Self::TreeInclude(v)
             | Self::TreeExclude(v)
             | Self::Ignore(v)
@@ -207,6 +223,13 @@ impl ProjectSettingChange {
             key: self.key().to_owned(),
             reason: reason.to_owned(),
         };
+        if let Self::Tokenizers(ids) = self {
+            return if valid_tokenizers(ids) {
+                Ok(())
+            } else {
+                Err(invalid("tokenizers"))
+            };
+        }
         let Some(entries) = self.list() else {
             return Ok(());
         };
@@ -309,6 +332,14 @@ pub fn apply_project_change(doc: &mut DocumentMut, change: &ProjectSettingChange
         }
         ProjectSettingChange::AgentDenyPaths(v) => {
             set_key(root, Some("agent"), "deny_paths", strings_value(v));
+        }
+        ProjectSettingChange::Tokenizers(ids) => {
+            set_plugin_key(
+                root,
+                &PluginId::of("token-count"),
+                "tokenizers",
+                tokenizers_value(ids),
+            );
         }
     }
 }
