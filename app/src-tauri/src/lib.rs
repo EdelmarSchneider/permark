@@ -81,6 +81,8 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
     let app = tauri::Builder::default()
         .plugin(nav::guard(dev_url))
         .plugin(tauri_plugin_dialog::init())
+        // used from Rust only (validated paths): no permission is granted to the windows
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(commands::handler())
         .setup(move |app| {
             let shell = Shell::new(app.handle().clone(), &dirs);

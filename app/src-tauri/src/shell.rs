@@ -92,7 +92,7 @@ impl Shell {
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
         Self {
-            registry: Arc::new(WorkspaceRegistry::new(Arc::clone(&env))),
+            registry: WorkspaceRegistry::new_shared(&env),
             recent: RecentStore::new(&app_store),
             saver: SessionSaver::start(handle),
             app_store,

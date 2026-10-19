@@ -6,16 +6,24 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use permark_core::conditions::{Context, Platform};
 use permark_core::events::{OpenFailed, StateRecovered};
+use permark_core::fileops::{
+    external_target, DeleteOutcome, MoveOutcome, MovePlan, MoveSpec, NewKind, OpenMode, UndoOutcome,
+};
+use permark_core::paths::VaultPath;
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{AppSettings, SettingChange};
-use permark_core::workspace::{WindowView, Workspace, WorkspaceId, WorkspaceRef, WorkspaceSummary};
+use permark_core::tree::{TreeFilter, TreeSnapshot};
+use permark_core::workspace::{
+    ProjectCore, WindowView, Workspace, WorkspaceId, WorkspaceRef, WorkspaceSummary,
+};
 use permark_core::{AppInfo, ErrorKind, IpcError};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, WebviewWindow};
+use tauri_plugin_opener::OpenerExt;
 use ts_rs::TS;
 
 use crate::open::{open_in, open_in_new_window};
@@ -203,6 +211,189 @@ pub fn project_session_set(
     Ok(session.set(&key, value)?)
 }
 
+/// The project the invoking window shows.
+fn project_of(handle: &AppHandle, window: &WebviewWindow) -> Result<Arc<ProjectCore>, IpcError> {
+    match state(handle).registry.workspace_of(window.label()) {
+        Some((_, Workspace::Project(core))) => Ok(core),
+        _ => Err(IpcError::new(ErrorKind::Unsupported).subject("project")),
+    }
+}
+
+// ---- Explorer: tree ------------------------------------------------------------------------------------------------------
+
+/// The window's tree: its filter (None: the project default) and the whole list. Later changes arrive as
+/// `tree-changed` events.
+#[tauri::command(async)]
+pub fn tree_open(
+    handle: AppHandle,
+    window: WebviewWindow,
+    filter: Option<TreeFilter>,
+) -> Result<TreeSnapshot, IpcError> {
+    Ok(project_of(&handle, &window)?
+        .explorer()
+        .open_view(window.label(), filter))
+}
+
+#[tauri::command(async)]
+pub fn tree_set_filter(
+    handle: AppHandle,
+    window: WebviewWindow,
+    filter: TreeFilter,
+) -> Result<TreeSnapshot, IpcError> {
+    Ok(project_of(&handle, &window)?
+        .explorer()
+        .set_filter(window.label(), filter)?)
+}
+
+/// Lists a folder left unopened (large | ignored).
+#[tauri::command(async)]
+pub fn tree_open_folder(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+) -> Result<(), IpcError> {
+    Ok(project_of(&handle, &window)?
+        .explorer()
+        .open_folder(&path)?)
+}
+
+/// The open document stays in the tree even when the filter hides it.
+#[tauri::command(async)]
+pub fn tree_keep(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: Option<String>,
+) -> Result<(), IpcError> {
+    Ok(project_of(&handle, &window)?
+        .explorer()
+        .keep(window.label(), path.as_deref())?)
+}
+
+#[tauri::command(async)]
+pub fn tree_close(handle: AppHandle, window: WebviewWindow) {
+    if let Ok(core) = project_of(&handle, &window) {
+        core.explorer().close_view(window.label());
+    }
+}
+
+// ---- Explorer: file operations -------------------------------------------------------------------------------------------
+
+#[tauri::command(async)]
+pub fn fileops_plan_move(
+    handle: AppHandle,
+    window: WebviewWindow,
+    moves: Vec<MoveSpec>,
+    update_links: bool,
+) -> Result<MovePlan, IpcError> {
+    Ok(project_of(&handle, &window)?
+        .fileops()
+        .plan_move(&moves, update_links)?)
+}
+
+#[tauri::command(async)]
+pub fn fileops_apply_move(
+    handle: AppHandle,
+    window: WebviewWindow,
+    plan_id: u64,
+    update_links: bool,
+) -> Result<MoveOutcome, IpcError> {
+    Ok(project_of(&handle, &window)?
+        .fileops()
+        .apply_move(plan_id, update_links)?)
+}
+
+#[tauri::command(async)]
+pub fn fileops_delete(
+    handle: AppHandle,
+    window: WebviewWindow,
+    paths: Vec<String>,
+) -> Result<DeleteOutcome, IpcError> {
+    Ok(project_of(&handle, &window)?.fileops().delete(&paths)?)
+}
+
+/// A new empty file | folder; returns its project path.
+#[tauri::command(async)]
+pub fn fileops_new(
+    handle: AppHandle,
+    window: WebviewWindow,
+    dir: String,
+    name: String,
+    kind: NewKind,
+) -> Result<String, IpcError> {
+    Ok(project_of(&handle, &window)?
+        .fileops()
+        .create(&dir, &name, kind)?)
+}
+
+/// Takes the newest operation back; `None`: nothing to undo.
+#[tauri::command(async)]
+pub fn fileops_undo(
+    handle: AppHandle,
+    window: WebviewWindow,
+) -> Result<Option<UndoOutcome>, IpcError> {
+    Ok(project_of(&handle, &window)?.fileops().undo()?)
+}
+
+// ---- Explorer: files outside PerMark -------------------------------------------------------------------------------------
+
+/// Absolute place of a project path ("copy full path").
+#[tauri::command(async)]
+pub fn file_abs_path(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+) -> Result<String, IpcError> {
+    let core = project_of(&handle, &window)?;
+    let parsed = VaultPath::parse(&path).map_err(IpcError::from)?;
+    let abs = core.vault().resolve(&parsed).map_err(IpcError::from)?;
+    Ok(abs.display().to_string())
+}
+
+/// Default program | browser | file manager, for a file of the project: never an executable | script.
+#[tauri::command(async)]
+pub fn file_open_external(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    mode: OpenMode,
+) -> Result<(), IpcError> {
+    let core = project_of(&handle, &window)?;
+    // the vault checks the path and the kind of file; the opener only ever sees the validated absolute path
+    let abs = external_target(core.vault(), &path, mode)?;
+    let opener = handle.opener();
+    let done = match mode {
+        OpenMode::Reveal => opener.reveal_item_in_dir(&abs),
+        OpenMode::DefaultApp | OpenMode::Browser => {
+            opener.open_path(abs.to_string_lossy(), None::<&str>)
+        }
+    };
+    done.map_err(|e| {
+        IpcError::new(ErrorKind::Io)
+            .subject(path)
+            .detail(e.to_string())
+    })
+}
+
+/// The window shows this document (None: none): the hint other features follow.
+#[tauri::command(async)]
+pub fn show_document(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: Option<String>,
+) -> Result<(), IpcError> {
+    let core = project_of(&handle, &window)?;
+    let parsed = path
+        .as_deref()
+        .map(VaultPath::parse)
+        .transpose()
+        .map_err(IpcError::from)?;
+    // without live updates the open document is polled
+    let abs = parsed.as_ref().and_then(|p| core.vault().resolve(p).ok());
+    core.watcher().poll_document(window.label(), abs.as_deref());
+    state(&handle).registry.set_document(window.label(), parsed);
+    Ok(())
+}
+
 /// Lists every command once: Tauri handler + names (contract test).
 macro_rules! commands {
     ($($name:ident),+ $(,)?) => {
@@ -228,6 +419,19 @@ commands![
     settings_set,
     project_session_get,
     project_session_set,
+    tree_open,
+    tree_set_filter,
+    tree_open_folder,
+    tree_keep,
+    tree_close,
+    fileops_plan_move,
+    fileops_apply_move,
+    fileops_delete,
+    fileops_new,
+    fileops_undo,
+    file_abs_path,
+    file_open_external,
+    show_document,
 ];
 
 #[cfg(test)]
