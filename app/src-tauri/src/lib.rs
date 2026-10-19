@@ -1,8 +1,10 @@
 //! `PerMark` app crate: Tauri shell. Wires core services to windows + IPC; holds no domain logic.
 
+mod assets;
 mod commands;
 mod nav;
 mod open;
+mod plugins;
 mod saver;
 mod shell;
 mod sink;
@@ -83,6 +85,7 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
         .plugin(tauri_plugin_dialog::init())
         // used from Rust only (validated paths): no permission is granted to the windows
         .plugin(tauri_plugin_opener::init())
+        .register_asynchronous_uri_scheme_protocol(assets::SCHEME, assets::handle)
         .invoke_handler(commands::handler())
         .setup(move |app| {
             let shell = Shell::new(app.handle().clone(), &dirs);

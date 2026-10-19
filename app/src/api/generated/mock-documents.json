@@ -1,0 +1,506 @@
+{
+  "CLAUDE.md": {
+    "body": {
+      "blocks": [
+        {
+          "html": "<h1 data-b=\"93113f53a7490843\" id=\"project-rules\">Project rules</h1>",
+          "id": "93113f53a7490843",
+          "kind": "h1",
+          "lineEnd": 6,
+          "lineStart": 6
+        },
+        {
+          "html": "<details data-b=\"14edcb67d7af6899\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<p>Read <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> first. Greet <span class=\"tvar\">{{user}}</span> by name.</p>\n</details>",
+          "id": "14edcb67d7af6899",
+          "kind": "details",
+          "lineEnd": 9,
+          "lineStart": 9
+        },
+        {
+          "html": "<details data-b=\"1f1a29026f2c492c\" class=\"prompt-block\" data-tag=\"example\" open=\"\"><summary>example</summary>\n<p>Input: a question about the <strong>guide</strong>.\nOutput: a short answer with a link.</p>\n</details>",
+          "id": "1f1a29026f2c492c",
+          "kind": "details",
+          "lineEnd": 14,
+          "lineStart": 13
+        }
+      ],
+      "frontMatter": {
+        "fields": [
+          {
+            "key": "name",
+            "value": {
+              "text": "project-rules",
+              "type": "text"
+            }
+          },
+          {
+            "key": "description",
+            "value": {
+              "text": "Rules the agent follows in this repository",
+              "type": "text"
+            }
+          }
+        ],
+        "raw": "name: project-rules\ndescription: Rules the agent follows in this repository\n",
+        "syntax": "yaml"
+      },
+      "kind": "markdown",
+      "outline": [
+        {
+          "block": "93113f53a7490843",
+          "id": "project-rules",
+          "label": "Project rules",
+          "level": 1,
+          "line": 6
+        }
+      ]
+    },
+    "editable": {
+      "editable": "surgical"
+    },
+    "format": "markdown",
+    "hash": "a84192067c0b6d86",
+    "mtimeMs": 1792401990441,
+    "name": "CLAUDE.md",
+    "notes": [],
+    "path": "CLAUDE.md",
+    "role": "claude",
+    "size": 281
+  },
+  "README.md": {
+    "body": {
+      "blocks": [
+        {
+          "html": "<h1 data-b=\"6e8c49c6ca01f758\" id=\"reading-showcase\">Reading showcase</h1>",
+          "id": "6e8c49c6ca01f758",
+          "kind": "h1",
+          "lineEnd": 9,
+          "lineStart": 9
+        },
+        {
+          "html": "<p data-b=\"5321c4139258cb20\">A page of everything the reading view draws. It links to the <a href=\"docs/guide.md\">guide</a>, to a <a href=\"docs/nope.md\">missing page</a> and to <a href=\"#diagrams\">a section</a>. Code references open in your editor: <code>src/main.rs:12</code>, and plain text like src/main.rs:3 works too.</p>",
+          "id": "5321c4139258cb20",
+          "kind": "p",
+          "lineEnd": 11,
+          "lineStart": 11
+        },
+        {
+          "html": "<h2 data-b=\"873c5f87daea9d00\" id=\"text-and-lists\">Text and lists</h2>",
+          "id": "873c5f87daea9d00",
+          "kind": "h2",
+          "lineEnd": 13,
+          "lineStart": 13
+        },
+        {
+          "html": "<p data-b=\"a5341c8c93a6c5b5\">Paragraphs keep a comfortable measure at <strong>any</strong> zoom: <em>emphasis</em>, <code>inline code</code>, <del>strike</del>, a footnote<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\" data-footnote-ref=\"\">1</a></sup> and an autolink <a href=\"https://example.com\">https://example.com</a>. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.</p>",
+          "id": "a5341c8c93a6c5b5",
+          "kind": "p",
+          "lineEnd": 15,
+          "lineStart": 15
+        },
+        {
+          "html": "<ul data-b=\"e5c2585e73eec433\" class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Render Markdown</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Keep my place when the file changes</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\"> Review the changes</li>\n</ul>",
+          "id": "e5c2585e73eec433",
+          "kind": "ul",
+          "lineEnd": 19,
+          "lineStart": 17
+        },
+        {
+          "html": "<ol data-b=\"15fd71eacccb3241\">\n<li>First</li>\n<li>Second\n<ul>\n<li>nested item</li>\n<li>another one</li>\n</ul>\n</li>\n</ol>",
+          "id": "15fd71eacccb3241",
+          "kind": "ol",
+          "lineEnd": 24,
+          "lineStart": 21
+        },
+        {
+          "html": "<div data-b=\"4039196382a45f77\" class=\"markdown-alert markdown-alert-note\">\n<p class=\"markdown-alert-title\">Note</p>\n<p>Alerts come with a title and an icon.</p>\n</div>",
+          "id": "4039196382a45f77",
+          "kind": "div",
+          "lineEnd": 27,
+          "lineStart": 26
+        },
+        {
+          "html": "<div data-b=\"473128ef3bce20dd\" class=\"markdown-alert markdown-alert-warning\">\n<p class=\"markdown-alert-title\">Warning</p>\n<p>Reading is the main mode. Beautiful, clear reading is a requirement.</p>\n</div>",
+          "id": "473128ef3bce20dd",
+          "kind": "div",
+          "lineEnd": 30,
+          "lineStart": 29
+        },
+        {
+          "html": "<h2 data-b=\"3c47fb4f8c38266d\" id=\"code\">Code</h2>",
+          "id": "3c47fb4f8c38266d",
+          "kind": "h2",
+          "lineEnd": 32,
+          "lineStart": 32
+        },
+        {
+          "html": "<pre data-b=\"b04254981a03178d\"><code class=\"language-rust\">fn main() {\n    let name = \"PerMark\";\n    println!(\"Hello, {name}!\");\n}\n</code></pre>",
+          "id": "b04254981a03178d",
+          "kind": "pre",
+          "lineEnd": 39,
+          "lineStart": 34
+        },
+        {
+          "html": "<pre data-b=\"48208e466c8d0b0e\"><code class=\"language-json\">{ \"name\": \"permark\", \"private\": true, \"version\": \"0.6.0\" }\n</code></pre>",
+          "id": "48208e466c8d0b0e",
+          "kind": "pre",
+          "lineEnd": 43,
+          "lineStart": 41
+        },
+        {
+          "html": "<h2 data-b=\"f086e37712246e23\" id=\"tables\">Tables</h2>",
+          "id": "f086e37712246e23",
+          "kind": "h2",
+          "lineEnd": 45,
+          "lineStart": 45
+        },
+        {
+          "html": "<table data-b=\"1bef1313d773460b\">\n<thead>\n<tr>\n<th>Feature</th>\n<th>Status</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Tables</td>\n<td>done</td>\n<td>Zebra rows, sticky header</td>\n</tr>\n<tr>\n<td>Math</td>\n<td>done</td>\n<td>KaTeX, loaded when needed</td>\n</tr>\n<tr>\n<td>Diagrams</td>\n<td>done</td>\n<td>Mermaid and PlantUML in page</td>\n</tr>\n</tbody>\n</table>",
+          "id": "1bef1313d773460b",
+          "kind": "table",
+          "lineEnd": 51,
+          "lineStart": 47
+        },
+        {
+          "html": "<h2 data-b=\"9d35b0bf7336ecf1\" id=\"math\">Math</h2>",
+          "id": "9d35b0bf7336ecf1",
+          "kind": "h2",
+          "lineEnd": 53,
+          "lineStart": 53
+        },
+        {
+          "html": "<p data-b=\"8a4f9da86326315a\">Inline math <span data-math-style=\"inline\">E = mc^2</span> sits in the text. A display formula:</p>",
+          "id": "8a4f9da86326315a",
+          "kind": "p",
+          "lineEnd": 55,
+          "lineStart": 55
+        },
+        {
+          "html": "<p data-b=\"90bb95a3830c8bd8\"><span data-math-style=\"display\">\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n</span></p>",
+          "id": "90bb95a3830c8bd8",
+          "kind": "p",
+          "lineEnd": 59,
+          "lineStart": 57
+        },
+        {
+          "html": "<h2 data-b=\"c88ae3e0aaae1228\" id=\"diagrams\">Diagrams</h2>",
+          "id": "c88ae3e0aaae1228",
+          "kind": "h2",
+          "lineEnd": 61,
+          "lineStart": 61
+        },
+        {
+          "html": "<pre data-b=\"ae4de58cc43ef70f\"><code class=\"language-mermaid\">graph LR\n  A[Markdown] --&gt; B(Render)\n  B --&gt; C{Sanitize}\n  C --&gt;|safe| D[Page]\n  C --&gt;|unsafe| E[Dropped]\n</code></pre>",
+          "id": "ae4de58cc43ef70f",
+          "kind": "pre",
+          "lineEnd": 69,
+          "lineStart": 63
+        },
+        {
+          "html": "<h2 data-b=\"810676eb3ab98479\" id=\"prompt-blocks\">Prompt blocks</h2>",
+          "id": "810676eb3ab98479",
+          "kind": "h2",
+          "lineEnd": 71,
+          "lineStart": 71
+        },
+        {
+          "html": "<details data-b=\"03f8544ce18765a3\" class=\"prompt-block\" data-tag=\"context\" open=\"\"><summary>context</summary>\n<p>You are reading a prompt file. The tags below fold, and <strong>Markdown inside them</strong> still renders.</p>\n<ul>\n<li>Variables look like <span class=\"tvar\">{{customer_name}}</span> and are marked.</li>\n<li>Files are linked: see <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> for the guide.</li>\n</ul>\n</details>",
+          "id": "03f8544ce18765a3",
+          "kind": "details",
+          "lineEnd": 77,
+          "lineStart": 74
+        },
+        {
+          "html": "<details data-b=\"2e3e3c7fb133d8c8\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<ol>\n<li>Be brief.</li>\n<li>Quote the source.</li>\n</ol>\n</details>",
+          "id": "2e3e3c7fb133d8c8",
+          "kind": "details",
+          "lineEnd": 82,
+          "lineStart": 81
+        },
+        {
+          "html": "<section data-b=\"72d9896ee9d78f62\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\">\n<p>Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n</ol>\n</section>",
+          "id": "72d9896ee9d78f62",
+          "kind": "section",
+          "lineEnd": 85,
+          "lineStart": 85
+        }
+      ],
+      "frontMatter": {
+        "fields": [
+          {
+            "key": "title",
+            "value": {
+              "text": "Reading showcase",
+              "type": "text"
+            }
+          },
+          {
+            "key": "status",
+            "value": {
+              "text": "draft",
+              "type": "text"
+            }
+          },
+          {
+            "key": "owner",
+            "value": {
+              "text": "Ana Souza",
+              "type": "text"
+            }
+          },
+          {
+            "key": "tags",
+            "value": {
+              "items": [
+                "reading",
+                "markdown",
+                "demo"
+              ],
+              "type": "list"
+            }
+          },
+          {
+            "key": "updated",
+            "value": {
+              "text": "2026-10-19",
+              "type": "text"
+            }
+          }
+        ],
+        "raw": "title: Reading showcase\nstatus: draft\nowner: Ana Souza\ntags: [reading, markdown, demo]\nupdated: 2026-10-19\n",
+        "syntax": "yaml"
+      },
+      "kind": "markdown",
+      "outline": [
+        {
+          "block": "6e8c49c6ca01f758",
+          "id": "reading-showcase",
+          "label": "Reading showcase",
+          "level": 1,
+          "line": 9
+        },
+        {
+          "block": "873c5f87daea9d00",
+          "id": "text-and-lists",
+          "label": "Text and lists",
+          "level": 2,
+          "line": 13
+        },
+        {
+          "block": "3c47fb4f8c38266d",
+          "id": "code",
+          "label": "Code",
+          "level": 2,
+          "line": 32
+        },
+        {
+          "block": "f086e37712246e23",
+          "id": "tables",
+          "label": "Tables",
+          "level": 2,
+          "line": 45
+        },
+        {
+          "block": "9d35b0bf7336ecf1",
+          "id": "math",
+          "label": "Math",
+          "level": 2,
+          "line": 53
+        },
+        {
+          "block": "c88ae3e0aaae1228",
+          "id": "diagrams",
+          "label": "Diagrams",
+          "level": 2,
+          "line": 61
+        },
+        {
+          "block": "810676eb3ab98479",
+          "id": "prompt-blocks",
+          "label": "Prompt blocks",
+          "level": 2,
+          "line": 71
+        }
+      ]
+    },
+    "editable": {
+      "editable": "surgical"
+    },
+    "format": "markdown",
+    "hash": "e873f21c2d5f5e0b",
+    "mtimeMs": 1792401990440,
+    "name": "README.md",
+    "notes": [],
+    "path": "README.md",
+    "role": null,
+    "size": 1975
+  },
+  "docs/guide.md": {
+    "body": {
+      "blocks": [
+        {
+          "html": "<h1 data-b=\"65f4606ba1c95c40\" id=\"guide\">Guide</h1>",
+          "id": "65f4606ba1c95c40",
+          "kind": "h1",
+          "lineEnd": 1,
+          "lineStart": 1
+        },
+        {
+          "html": "<p data-b=\"58efff504d681764\">Back to the <a href=\"../README.md\">readme</a>. More ideas in <a href=\"../notes/ideas.md#second-idea\">ideas</a>.</p>",
+          "id": "58efff504d681764",
+          "kind": "p",
+          "lineEnd": 3,
+          "lineStart": 3
+        },
+        {
+          "html": "<h2 data-b=\"02dbe23f5510d144\" id=\"getting-started\">Getting started</h2>",
+          "id": "02dbe23f5510d144",
+          "kind": "h2",
+          "lineEnd": 5,
+          "lineStart": 5
+        },
+        {
+          "html": "<p data-b=\"337da5e5e7be0c91\">Open a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.</p>",
+          "id": "337da5e5e7be0c91",
+          "kind": "p",
+          "lineEnd": 7,
+          "lineStart": 7
+        },
+        {
+          "html": "<p data-b=\"8fdc87e29eccc892\"><img src=\"pm-asset:docs/img/logo.png\" alt=\"PerMark logo\"></p>",
+          "id": "8fdc87e29eccc892",
+          "kind": "p",
+          "lineEnd": 9,
+          "lineStart": 9
+        },
+        {
+          "html": "<h2 data-b=\"e0ebc72e9d23a1a5\" id=\"shortcuts\">Shortcuts</h2>",
+          "id": "e0ebc72e9d23a1a5",
+          "kind": "h2",
+          "lineEnd": 11,
+          "lineStart": 11
+        },
+        {
+          "html": "<table data-b=\"555cd2721da8a357\">\n<thead>\n<tr>\n<th>Keys</th>\n<th>Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Ctrl+F</td>\n<td>Find in page</td>\n</tr>\n<tr>\n<td>Alt+Left</td>\n<td>Back</td>\n</tr>\n<tr>\n<td>Ctrl+= / Ctrl+-</td>\n<td>Zoom</td>\n</tr>\n</tbody>\n</table>",
+          "id": "555cd2721da8a357",
+          "kind": "table",
+          "lineEnd": 17,
+          "lineStart": 13
+        }
+      ],
+      "frontMatter": null,
+      "kind": "markdown",
+      "outline": [
+        {
+          "block": "65f4606ba1c95c40",
+          "id": "guide",
+          "label": "Guide",
+          "level": 1,
+          "line": 1
+        },
+        {
+          "block": "02dbe23f5510d144",
+          "id": "getting-started",
+          "label": "Getting started",
+          "level": 2,
+          "line": 5
+        },
+        {
+          "block": "e0ebc72e9d23a1a5",
+          "id": "shortcuts",
+          "label": "Shortcuts",
+          "level": 2,
+          "line": 11
+        }
+      ]
+    },
+    "editable": {
+      "editable": "surgical"
+    },
+    "format": "markdown",
+    "hash": "9da2cfe46f93b782",
+    "mtimeMs": 1792401990441,
+    "name": "guide.md",
+    "notes": [],
+    "path": "docs/guide.md",
+    "role": null,
+    "size": 461
+  },
+  "notes/ideas.md": {
+    "body": {
+      "blocks": [
+        {
+          "html": "<h1 data-b=\"c421d8ac2e0b71dd\" id=\"ideas\">Ideas</h1>",
+          "id": "c421d8ac2e0b71dd",
+          "kind": "h1",
+          "lineEnd": 1,
+          "lineStart": 1
+        },
+        {
+          "html": "<h2 data-b=\"519b53b4e508df3d\" id=\"first-idea\">First idea</h2>",
+          "id": "519b53b4e508df3d",
+          "kind": "h2",
+          "lineEnd": 3,
+          "lineStart": 3
+        },
+        {
+          "html": "<p data-b=\"adab86a67eefa364\">Short and sweet.</p>",
+          "id": "adab86a67eefa364",
+          "kind": "p",
+          "lineEnd": 5,
+          "lineStart": 5
+        },
+        {
+          "html": "<h2 data-b=\"b5dbfa12b47b31dc\" id=\"second-idea\">Second idea</h2>",
+          "id": "b5dbfa12b47b31dc",
+          "kind": "h2",
+          "lineEnd": 7,
+          "lineStart": 7
+        },
+        {
+          "html": "<ul data-b=\"b23501e81f56172e\">\n<li>one</li>\n<li>two</li>\n</ul>",
+          "id": "b23501e81f56172e",
+          "kind": "ul",
+          "lineEnd": 10,
+          "lineStart": 9
+        }
+      ],
+      "frontMatter": null,
+      "kind": "markdown",
+      "outline": [
+        {
+          "block": "c421d8ac2e0b71dd",
+          "id": "ideas",
+          "label": "Ideas",
+          "level": 1,
+          "line": 1
+        },
+        {
+          "block": "519b53b4e508df3d",
+          "id": "first-idea",
+          "label": "First idea",
+          "level": 2,
+          "line": 3
+        },
+        {
+          "block": "b5dbfa12b47b31dc",
+          "id": "second-idea",
+          "label": "Second idea",
+          "level": 2,
+          "line": 7
+        }
+      ]
+    },
+    "editable": {
+      "editable": "surgical"
+    },
+    "format": "markdown",
+    "hash": "5f62a879c799aae8",
+    "mtimeMs": 1792401990441,
+    "name": "ideas.md",
+    "notes": [],
+    "path": "notes/ideas.md",
+    "role": null,
+    "size": 70
+  }
+}

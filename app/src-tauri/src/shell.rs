@@ -9,7 +9,6 @@ use permark_core::conditions::Distribution;
 use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, StateRecovered};
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
-use permark_core::plugins::PluginRegistry;
 use permark_core::session::{app_session_file, AppSession, Geometry, RecentStore, SavedWindow};
 use permark_core::settings::{
     AppSettings, SettingChange, SettingsError, SettingsFile, SettingsScope,
@@ -63,19 +62,6 @@ fn distribution() -> Distribution {
     }
 }
 
-/// Plugins compiled into this build (plugin crates join behind Cargo features).
-fn plugins() -> PluginRegistry {
-    match PluginRegistry::new(Vec::new()) {
-        Ok(registry) => registry,
-        Err(error) => {
-            // a broken plugin set is a build bug: loud in debug, survivable in release
-            debug_assert!(false, "plugin registry: {error}");
-            eprintln!("PerMark: plugins disabled: {error}");
-            PluginRegistry::empty()
-        }
-    }
-}
-
 impl Shell {
     #[must_use]
     pub fn new(handle: AppHandle, dirs: &AppDirs) -> Self {
@@ -84,7 +70,7 @@ impl Shell {
         let sink: Arc<dyn EventSink> = Arc::new(TauriSink::new(handle.clone()));
         let env = Arc::new(CoreEnv::new(
             dirs.clone(),
-            Arc::new(plugins()),
+            Arc::new(crate::plugins::registry()),
             sink,
             distribution(),
             settings,

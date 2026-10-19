@@ -9,10 +9,12 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use permark_core::conditions::{Context, Platform};
+use permark_core::document::{editor, resolve_code_refs, DocumentView, LinkTarget};
 use permark_core::events::{OpenFailed, StateRecovered};
 use permark_core::fileops::{
     external_target, DeleteOutcome, MoveOutcome, MovePlan, MoveSpec, NewKind, OpenMode, UndoOutcome,
 };
+use permark_core::format::FormatRegistry;
 use permark_core::paths::VaultPath;
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{AppSettings, SettingChange};
@@ -394,6 +396,145 @@ pub fn show_document(
     Ok(())
 }
 
+// ---- Reading: documents ---------------------------------------------------------------------------------------------
+
+/// The workspace the invoking window shows, with the formats its plugins give.
+fn reading_of(
+    handle: &AppHandle,
+    window: &WebviewWindow,
+) -> Result<(Workspace, Arc<FormatRegistry>), IpcError> {
+    let shell = state(handle);
+    let (_, workspace) = shell
+        .registry
+        .workspace_of(window.label())
+        .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject("document"))?;
+    let formats = match &workspace {
+        Workspace::Project(core) => core.formats(),
+        Workspace::SingleFile(_) => shell.env.formats(),
+    };
+    Ok((workspace, formats))
+}
+
+fn documents_of(workspace: &Workspace) -> &Arc<permark_core::document::Documents> {
+    match workspace {
+        Workspace::Project(core) => core.documents(),
+        Workspace::SingleFile(file) => &file.documents,
+    }
+}
+
+/// Reads and renders a document for this window and remembers it as the one shown. `known`: ids of the blocks the
+/// window holds (their HTML is not sent again).
+#[tauri::command(async)]
+pub fn document_open(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    known: Vec<String>,
+) -> Result<DocumentView, IpcError> {
+    let (workspace, formats) = reading_of(&handle, &window)?;
+    let view = documents_of(&workspace).open(window.label(), &path, &known, &formats)?;
+    if let Workspace::Project(core) = &workspace {
+        // without live updates the open document is polled
+        let abs = VaultPath::parse(&path)
+            .ok()
+            .and_then(|parsed| core.vault().resolve(&parsed).ok());
+        core.watcher().poll_document(window.label(), abs.as_deref());
+    }
+    Ok(view)
+}
+
+/// The window shows no document any more.
+#[tauri::command(async)]
+pub fn document_close(handle: AppHandle, window: WebviewWindow) {
+    if let Some((_, workspace)) = state(&handle).registry.workspace_of(window.label()) {
+        documents_of(&workspace).close(window.label());
+        if let Workspace::Project(core) = &workspace {
+            core.watcher().poll_document(window.label(), None);
+        }
+    }
+}
+
+/// The text of a document as read ("copy document").
+#[tauri::command(async)]
+pub fn document_text(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+) -> Result<String, IpcError> {
+    let (workspace, _) = reading_of(&handle, &window)?;
+    documents_of(&workspace).text(&path)
+}
+
+/// Where each link of a document leads.
+#[tauri::command(async)]
+pub fn link_resolve(
+    handle: AppHandle,
+    window: WebviewWindow,
+    doc: String,
+    hrefs: Vec<String>,
+) -> Result<Vec<LinkTarget>, IpcError> {
+    let (workspace, _) = reading_of(&handle, &window)?;
+    Ok(documents_of(&workspace).resolve_links(&doc, &hrefs))
+}
+
+/// The project files each written code reference can mean (single file: none).
+#[tauri::command(async)]
+pub fn code_refs_resolve(
+    handle: AppHandle,
+    window: WebviewWindow,
+    doc: String,
+    written: Vec<String>,
+) -> Result<Vec<Vec<String>>, IpcError> {
+    let (workspace, _) = reading_of(&handle, &window)?;
+    Ok(match workspace {
+        Workspace::Project(core) => resolve_code_refs(core.explorer(), &doc, &written),
+        Workspace::SingleFile(_) => written.iter().map(|_| Vec::new()).collect(),
+    })
+}
+
+/// Opens a file of the workspace in the person's editor (setting `editor`) at a line. The path is checked against the
+/// workspace; the program and its arguments come from the setting only.
+#[tauri::command(async)]
+pub fn open_in_editor(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Result<(), IpcError> {
+    let (workspace, _) = reading_of(&handle, &window)?;
+    let (_, abs) = documents_of(&workspace).scope().resolve(&path)?;
+    let template = state(&handle).env.settings().editor;
+    editor::launch(&template, &abs, line.unwrap_or(1), col.unwrap_or(1))?;
+    Ok(())
+}
+
+/// Opens a web link in the system browser. Only `http`, `https` and `mailto`.
+#[tauri::command(async)]
+pub fn open_web(handle: AppHandle, url: String) -> Result<(), IpcError> {
+    if !web_url_allowed(&url) {
+        return Err(IpcError::new(ErrorKind::Unsupported).subject(url));
+    }
+    handle
+        .opener()
+        .open_url(url.clone(), None::<&str>)
+        .map_err(|e| {
+            IpcError::new(ErrorKind::Io)
+                .subject(url)
+                .detail(e.to_string())
+        })
+}
+
+/// Web links the browser may be given: a known scheme, no control characters, a sane length.
+fn web_url_allowed(url: &str) -> bool {
+    let lower = url.trim().to_ascii_lowercase();
+    url.len() <= 4096
+        && !url.chars().any(char::is_control)
+        && (lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("mailto:"))
+}
+
 /// Lists every command once: Tauri handler + names (contract test).
 macro_rules! commands {
     ($($name:ident),+ $(,)?) => {
@@ -432,6 +573,13 @@ commands![
     file_abs_path,
     file_open_external,
     show_document,
+    document_open,
+    document_close,
+    document_text,
+    link_resolve,
+    code_refs_resolve,
+    open_in_editor,
+    open_web,
 ];
 
 #[cfg(test)]
@@ -462,6 +610,34 @@ mod tests {
         }
         let unique: std::collections::BTreeSet<_> = NAMES.iter().collect();
         assert_eq!(unique.len(), NAMES.len(), "duplicate command");
+    }
+
+    #[test]
+    fn web_links_are_limited_to_known_schemes() {
+        for good in [
+            "https://example.com/a?b=c#d",
+            "HTTP://x.org",
+            "mailto:me@example.com",
+        ] {
+            assert!(web_url_allowed(good), "{good}");
+        }
+        for bad in [
+            "javascript:alert(1)",
+            "file:///C:/tools/run.cmd",
+            "custom-handler:/id",
+            "C:\\tool.cmd",
+            "https://a.com/\n",
+            "  vbscript:x",
+            "data:text/html,x",
+            "",
+            "tel:123",
+        ] {
+            assert!(!web_url_allowed(bad), "{bad}");
+        }
+        assert!(!web_url_allowed(&format!(
+            "https://a.com/{}",
+            "x".repeat(5000)
+        )));
     }
 
     #[test]

@@ -78,7 +78,11 @@ pub struct Rendered {
 
 /// What a viewer shows.
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum Body {
     Markdown {
@@ -114,7 +118,10 @@ pub enum MediaKind {
 #[ts(export)]
 pub enum Notice {
     Binary,
-    TooLarge { limit: u64 },
+    TooLarge {
+        #[ts(type = "number")]
+        limit: u64,
+    },
     NoViewer,
 }
 

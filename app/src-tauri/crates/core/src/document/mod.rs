@@ -52,7 +52,9 @@ pub struct DocumentView {
     pub body: Body,
     /// xxh3 hex16 of the file bytes (none for media and notices).
     pub hash: Option<String>,
+    #[ts(type = "number")]
     pub size: u64,
+    #[ts(type = "number")]
     pub mtime_ms: u64,
     pub editable: Editability,
     /// `utf16 | lossy | deepNesting`.
@@ -61,7 +63,11 @@ pub struct DocumentView {
 
 /// What happened to the document a window shows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
-#[serde(tag = "change", rename_all = "camelCase")]
+#[serde(
+    tag = "change",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 #[ts(export)]
 pub enum DocChange {
     /// The file has other content (or is back): ask for the view again.

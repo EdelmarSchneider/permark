@@ -8,4 +8,4 @@ import type { OutlineItem } from "./OutlineItem";
 /**
  * What a viewer shows.
  */
-export type Body = { "kind": "markdown", blocks: Array<Block>, outline: Array<OutlineItem>, front_matter: FrontMatter | null, } | { "kind": "text", text: string, language: string | null, } | { "kind": "media", media: MediaKind, mime: string, } | { "kind": "notice", notice: Notice, };
+export type Body = { "kind": "markdown", blocks: Array<Block>, outline: Array<OutlineItem>, frontMatter: FrontMatter | null, } | { "kind": "text", text: string, language: string | null, } | { "kind": "media", media: MediaKind, mime: string, } | { "kind": "notice", notice: Notice, };

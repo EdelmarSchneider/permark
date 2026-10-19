@@ -3,4 +3,4 @@
 /**
  * Why there is no body.
  */
-export type Notice = { "notice": "binary" } | { "notice": "tooLarge", limit: bigint, } | { "notice": "noViewer" };
+export type Notice = { "notice": "binary" } | { "notice": "tooLarge", limit: number, } | { "notice": "noViewer" };

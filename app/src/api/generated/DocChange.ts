@@ -3,4 +3,4 @@
 /**
  * What happened to the document a window shows.
  */
-export type DocChange = { "change": "changed", version: string, } | { "change": "deleted", moved_to: string | null, };
+export type DocChange = { "change": "changed", version: string, } | { "change": "deleted", movedTo: string | null, };

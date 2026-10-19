@@ -17,7 +17,7 @@ role: string | null, body: Body,
 /**
  * xxh3 hex16 of the file bytes (none for media and notices).
  */
-hash: string | null, size: bigint, mtimeMs: bigint, editable: Editability, 
+hash: string | null, size: number, mtimeMs: number, editable: Editability, 
 /**
  * `utf16 | lossy | deepNesting`.
  */
