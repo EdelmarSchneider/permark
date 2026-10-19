@@ -1,0 +1,27 @@
+[package]
+name = "permark-plugin-shell-integration"
+description = "PerMark plugin shell-integration: \"Open with PerMark\" and \"New Markdown file\" in the Windows file manager (current user, no admin)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API).
+[dependencies]
+permark-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+winreg.workspace = true
+dunce.workspace = true
+windows-sys = { workspace = true, features = ["Win32_UI_Shell", "Win32_Globalization"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
