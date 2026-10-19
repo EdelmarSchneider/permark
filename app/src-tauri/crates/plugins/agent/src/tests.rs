@@ -196,7 +196,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     root: PathBuf,
     dirs: AppDirs,
-    _env: Arc<CoreEnv>,
+    env: Arc<CoreEnv>,
     core: Option<Arc<ProjectCore>>,
     sink: Arc<Rec>,
     comments: Arc<Comments>,
@@ -273,7 +273,7 @@ fn fx() -> Fx {
         _dir: dir,
         root,
         dirs,
-        _env: env,
+        env,
         core: Some(core),
         sink,
         comments,
@@ -1208,4 +1208,83 @@ fn mcp_initialize_list_and_call_over_stdio_lines() {
         drop(read);
         let _ = tokio::time::timeout(Duration::from_secs(5), serving).await;
     });
+}
+
+/// A counter that gives the characters of the text divided by two, as the tokenizer `half`.
+struct Half {
+    approx: bool,
+}
+
+impl permark_core::tokens::TokenCounter for Half {
+    fn primary(
+        &self,
+        _project: &permark_core::settings::ProjectConfig,
+        text: &str,
+    ) -> Option<permark_core::tokens::Counted> {
+        Some(permark_core::tokens::Counted {
+            value: text.chars().count() as u64 / 2,
+            tokenizer: "half",
+            approx: self.approx,
+        })
+    }
+}
+
+#[test]
+fn the_outline_sizes_every_part_and_counts_tokens_only_when_the_plugin_serves() {
+    let fx = fx();
+    fx.on();
+    write(
+        &fx.root,
+        "docs/sized.md",
+        "# Top\n\nIntro API_KEY=sekret123\n\n## Part\n\nBody text.\n",
+    );
+    let tools = fx.tools(None);
+    // no token count plugin: sizes by the core estimator, no tokens, no tokenizer named
+    let plain = tools
+        .call("outline", json!({ "path": "docs/sized.md" }))
+        .unwrap();
+    let items = plain["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items.iter().all(|i| i["size_tok"].as_u64().unwrap() > 0));
+    assert!(items[0]["size_tok"].as_u64() > items[1]["size_tok"].as_u64());
+    assert!(items.iter().all(|i| i.get("tokens").is_none()));
+    assert!(plain.get("tokenizer").is_none() && plain.get("tokens_approx").is_none());
+
+    // an exact tokenizer: tokens per part, the tokenizer named, no approx flag
+    let lease = fx
+        .env
+        .services()
+        .provide(Arc::new(permark_core::tokens::TokenCounterApi(Arc::new(
+            Half { approx: false },
+        ))));
+    let exact = tools
+        .call("outline", json!({ "path": "docs/sized.md" }))
+        .unwrap();
+    let items = exact["items"].as_array().unwrap();
+    // the whole file is 52 characters but the secret is hidden first: the counted text is what `read` returns
+    let top = tools
+        .call("read", json!({ "path": "docs/sized.md", "at": "Top" }))
+        .unwrap();
+    let shown = top["text"].as_str().unwrap();
+    assert!(shown.contains("API_KEY=<hidden>"));
+    assert_eq!(
+        items[0]["tokens"].as_u64().unwrap(),
+        shown.chars().count() as u64 / 2
+    );
+    assert_eq!(exact["tokenizer"], "half");
+    assert!(exact.get("tokens_approx").is_none());
+
+    // an estimate: marked
+    drop(lease);
+    let _estimate = fx
+        .env
+        .services()
+        .provide(Arc::new(permark_core::tokens::TokenCounterApi(Arc::new(
+            Half { approx: true },
+        ))));
+    let marked = tools
+        .call("outline", json!({ "path": "docs/sized.md" }))
+        .unwrap();
+    assert_eq!(marked["tokens_approx"], true);
+    assert_eq!(marked["tokenizer"], "half");
 }

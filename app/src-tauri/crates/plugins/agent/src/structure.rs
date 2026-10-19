@@ -5,6 +5,7 @@
 use permark_core::format::{ext_of, sections, FormatRegistry, Sheet, Span};
 use permark_core::paths::fold;
 use permark_core::secrets::{mask_text, HIDDEN};
+use permark_core::tokens::{estimate, Counted};
 use serde_json::{json, Value};
 
 use crate::tools::MAX_READ_CHARS;
@@ -155,23 +156,108 @@ fn json_parts(text: &str) -> Vec<(Part, &'static str)> {
     parts
 }
 
-/// The outline answer.
+/// Counts the text of a part by the project's primary tokenizer; `None` = nothing chosen | no vocabulary.
+pub type Tokens<'a> = &'a dyn Fn(&str) -> Option<Counted>;
+
+/// Sizes the parts of one file: `size_tok` (the core estimator, always) and `tokens` (the person's tokenizer, when
+/// one is on and ready) of the text a read of the part returns, secrets hidden.
+struct Sizer<'a> {
+    text: &'a str,
+    /// Byte offset where each line starts.
+    starts: Vec<usize>,
+    spans: Option<&'a [Span]>,
+    tokens: Option<Tokens<'a>>,
+    /// The tokenizer of the first count: id, estimate or not.
+    used: std::cell::Cell<Option<(&'static str, bool)>>,
+}
+
+impl<'a> Sizer<'a> {
+    fn new(text: &'a str, spans: Option<&'a [Span]>, tokens: Option<Tokens<'a>>) -> Self {
+        let mut starts = vec![0];
+        starts.extend(text.match_indices('\n').map(|(at, _)| at + 1));
+        Self {
+            text,
+            starts,
+            spans,
+            tokens,
+            used: std::cell::Cell::new(None),
+        }
+    }
+
+    /// Adds the sizes of lines `from..=to` (1-based) to a part's object.
+    fn add(&self, item: &mut Value, from: u32, to: u32) {
+        let count = self.starts.len();
+        let first = (from.max(1) as usize).min(count + 1);
+        let last = (to as usize).min(count);
+        let (base, part) = if first > last {
+            (0, "")
+        } else {
+            let begin = self.starts[first - 1];
+            let end = if last == count {
+                self.text.len()
+            } else {
+                self.starts[last]
+            };
+            (begin, &self.text[begin..end])
+        };
+        let shown = masked(part, base, self.spans);
+        let Some(map) = item.as_object_mut() else {
+            return;
+        };
+        map.insert("size_tok".to_owned(), json!(estimate(&shown)));
+        if let Some(counted) = self.tokens.and_then(|count| count(&shown)) {
+            map.insert("tokens".to_owned(), json!(counted.value));
+            if self.used.get().is_none() {
+                self.used.set(Some((counted.tokenizer, counted.approx)));
+            }
+        }
+    }
+
+    /// Names the tokenizer on the answer (once, not on every part).
+    fn name_tokenizer(&self, answer: &mut Value) {
+        if let (Some((id, approx)), Some(map)) = (self.used.get(), answer.as_object_mut()) {
+            map.insert("tokenizer".to_owned(), json!(id));
+            if approx {
+                map.insert("tokens_approx".to_owned(), json!(true));
+            }
+        }
+    }
+}
+
+/// The outline answer. `tokens`: the project's primary tokenizer, when the token count plugin is on and ready.
 #[must_use]
-pub fn outline(formats: &FormatRegistry, path: &str, text: &str) -> Value {
+pub fn outline(
+    formats: &FormatRegistry,
+    path: &str,
+    text: &str,
+    tokens: Option<Tokens<'_>>,
+) -> Value {
     let lines = line_count(text);
-    if let Some((sheet, _)) = sheet_of(formats, path, text) {
+    if let Some((sheet, spans)) = sheet_of(formats, path, text) {
+        let sizer = Sizer::new(text, Some(&spans), tokens);
         let items: Vec<Value> = sheet
             .outline()
             .into_iter()
-            .map(|p| json!({ "at": p.path, "label": p.label, "level": 1, "line": p.line, "lines": p.end.saturating_sub(p.line) + 1 }))
+            .map(|p| {
+                let mut item = json!({ "at": p.path, "label": p.label, "level": 1, "line": p.line, "lines": p.end.saturating_sub(p.line) + 1 });
+                sizer.add(&mut item, p.line, p.end);
+                item
+            })
             .collect();
-        return json!({ "path": path, "kind": "config", "lines": lines, "items": items });
+        let mut answer = json!({ "path": path, "kind": "config", "lines": lines, "items": items });
+        sizer.name_tokenizer(&mut answer);
+        return answer;
     }
-    match kind_of(path) {
+    let sizer = Sizer::new(text, None, tokens);
+    let mut answer = match kind_of(path) {
         Kind::Markdown => {
             let items: Vec<Value> = markdown_parts(text)
                 .into_iter()
-                .map(|p| json!({ "at": p.at, "level": p.level, "line": p.from, "lines": p.to - p.from + 1 }))
+                .map(|p| {
+                    let mut item = json!({ "at": p.at, "level": p.level, "line": p.from, "lines": p.to - p.from + 1 });
+                    sizer.add(&mut item, p.from, p.to);
+                    item
+                })
                 .collect();
             json!({ "path": path, "kind": "markdown", "lines": lines, "items": items })
         }
@@ -179,12 +265,18 @@ pub fn outline(formats: &FormatRegistry, path: &str, text: &str) -> Value {
             let valid = serde_json::from_str::<Value>(text).is_ok();
             let items: Vec<Value> = json_parts(text)
                 .into_iter()
-                .map(|(p, kind)| json!({ "at": p.at, "type": kind, "line": p.from, "lines": p.to - p.from + 1 }))
+                .map(|(p, kind)| {
+                    let mut item = json!({ "at": p.at, "type": kind, "line": p.from, "lines": p.to - p.from + 1 });
+                    sizer.add(&mut item, p.from, p.to);
+                    item
+                })
                 .collect();
             json!({ "path": path, "kind": "json", "valid": valid, "lines": lines, "items": items })
         }
         Kind::Text => json!({ "path": path, "kind": "text", "lines": lines, "items": [] }),
-    }
+    };
+    sizer.name_tokenizer(&mut answer);
+    answer
 }
 
 /// `L12` | `L12-L40` (also `12-40`).
@@ -354,7 +446,7 @@ mod tests {
 
     #[test]
     fn markdown_outline_has_headings_with_lines() {
-        let value = outline(&FormatRegistry::core(), "docs/plan.md", DOC);
+        let value = outline(&FormatRegistry::core(), "docs/plan.md", DOC, None);
         let items = value["items"].as_array().unwrap();
         let ats: Vec<&str> = items.iter().map(|i| i["at"].as_str().unwrap()).collect();
         assert_eq!(
@@ -407,7 +499,7 @@ mod tests {
     #[test]
     fn json_outline_and_read_by_key() {
         let text = "{\n  \"name\": \"x\",\n  \"auth\": {\n    \"token\": \"t-1\"\n  },\n  \"list\": [1, 2]\n}\n";
-        let value = outline(&FormatRegistry::core(), "a.json", text);
+        let value = outline(&FormatRegistry::core(), "a.json", text, None);
         let items = value["items"].as_array().unwrap();
         assert_eq!(items.len(), 3);
         assert_eq!(items[1]["at"], "auth");
@@ -445,8 +537,8 @@ mod tests {
             "\u{feff}# x",
             "[\"k\": 1]",
         ] {
-            let _ = outline(&FormatRegistry::core(), "x.json", text);
-            let _ = outline(&FormatRegistry::core(), "x.md", text);
+            let _ = outline(&FormatRegistry::core(), "x.json", text, None);
+            let _ = outline(&FormatRegistry::core(), "x.md", text, None);
             let _ = read(&FormatRegistry::core(), "x.json", text, Some("a"));
             let _ = read(&FormatRegistry::core(), "x.md", text, Some("x"));
         }

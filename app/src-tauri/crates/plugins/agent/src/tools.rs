@@ -15,6 +15,7 @@ use permark_core::search::SearchFilter;
 use permark_core::secrets::mask_text;
 use permark_core::settings::ProjectConfig;
 use permark_core::state::StateStore;
+use permark_core::tokens::TokenCounterApi;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 
@@ -542,7 +543,21 @@ impl Tools {
         let PathArgs { path } = args(raw)?;
         let (path, abs) = guard.file(&path)?;
         let text = read_text(&abs)?;
-        Ok(structure::outline(&self.services.formats(), &path, &text))
+        // the person's tokenizer, when the token count plugin is on: the project's own choice over the app's
+        let api = self.services.app_services.get::<TokenCounterApi>();
+        let config = api
+            .is_some()
+            .then(|| ProjectConfig::load(self.vault.main()));
+        let count = |part: &str| match (&api, &config) {
+            (Some(api), Some(config)) => api.0.primary(config, part),
+            _ => None,
+        };
+        Ok(structure::outline(
+            &self.services.formats(),
+            &path,
+            &text,
+            api.is_some().then_some(&count as structure::Tokens<'_>),
+        ))
     }
 
     fn read(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
