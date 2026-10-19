@@ -1,28 +1,31 @@
-// Theme follows the system (setting comes with the settings slice). Applied before first paint (no flash).
+// Look: theme (system | light | dark) + light tone, applied to `<html>` before first paint (no flash). Pure parts here;
+// reactive state in `look.svelte.ts`.
+
+import type { ThemePref, Tone } from "../api";
 
 export type Theme = "light" | "dark";
 
-const DARK_QUERY = "(prefers-color-scheme: dark)";
+export const DARK_QUERY = "(prefers-color-scheme: dark)";
 
-export function themeFor(prefersDark: boolean): Theme {
-  return prefersDark ? "dark" : "light";
+export function themeFor(preference: ThemePref, systemDark: boolean): Theme {
+  switch (preference) {
+    case "system":
+      return systemDark ? "dark" : "light";
+    case "light":
+      return "light";
+    case "dark":
+      return "dark";
+    default:
+      return preference satisfies never;
+  }
 }
 
-export function applyTheme(root: HTMLElement, theme: Theme): void {
+/** `data-theme` + `data-tone` on the root (tokens.css keys off both; tone only affects light). */
+export function applyLook(root: HTMLElement, theme: Theme, tone: Tone): void {
   root.dataset["theme"] = theme;
+  root.dataset["tone"] = tone;
 }
 
-/** Current system theme, applied to `<html>`. */
-export function applySystemTheme(): void {
-  applyTheme(document.documentElement, themeFor(window.matchMedia(DARK_QUERY).matches));
-}
-
-/** Follows system theme changes. Returns teardown. */
-export function watchSystemTheme(): () => void {
-  const query = window.matchMedia(DARK_QUERY);
-  const onChange = (event: MediaQueryListEvent): void => {
-    applyTheme(document.documentElement, themeFor(event.matches));
-  };
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+export function systemPrefersDark(): boolean {
+  return typeof window !== "undefined" && window.matchMedia(DARK_QUERY).matches;
 }

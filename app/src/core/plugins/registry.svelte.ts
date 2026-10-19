@@ -1,0 +1,184 @@
+// Frontend side of the plugin boundary: typed contributions, the registry the core UI renders from, plugin modules
+// (`plugins/<id>/index.ts`, loaded lazily) and their activation with teardown symmetry.
+
+import type { Component } from "svelte";
+import type { Manifest } from "../../api/generated/Manifest";
+import type { PluginId } from "../../api/generated/PluginId";
+import type { Context } from "../../api";
+import { available, type Requirement } from "../conditions/available";
+import type { MessageKey } from "../i18n";
+
+/** Lazily loaded UI piece (heavy views load when first needed). */
+export type LazyComponent = () => Promise<{ default: Component }>;
+
+type Owned = { owner: PluginId; requires: Requirement };
+
+/** Everything a plugin can add to the core UI. */
+export type Contribution = Owned &
+  (
+    | { kind: "command"; id: string; label: MessageKey; run: () => void | Promise<void> }
+    | { kind: "paletteEntry"; id: string; label: MessageKey; command: string }
+    | { kind: "shortcut"; keys: string; command: string }
+    | { kind: "panel"; id: string; side: "left" | "right"; label: MessageKey; view: LazyComponent }
+    | {
+        kind: "statusItem";
+        id: string;
+        slot: "left" | "center" | "right";
+        order: number;
+        view: LazyComponent;
+      }
+    | { kind: "treeBadge"; id: string; badge: (path: string) => string | null }
+    | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
+    | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
+    | { kind: "viewer"; id: string; claims: (name: string) => boolean; view: LazyComponent }
+    | { kind: "editor"; id: string; claims: (name: string) => boolean; view: LazyComponent }
+    | { kind: "embed"; id: string; language: string; view: LazyComponent }
+  );
+
+export type ContributionKind = Contribution["kind"];
+/** A contribution as a plugin hands it over (owner added by the host). */
+export type ContributionInput = Contribution extends infer C
+  ? C extends Contribution
+    ? Omit<C, "owner">
+    : never
+  : never;
+export type ContributionOf<K extends ContributionKind> = Extract<Contribution, { kind: K }>;
+
+export class ContributionRegistry {
+  items = $state.raw<readonly Contribution[]>([]);
+
+  /** Adds one contribution; returns its removal. */
+  register(contribution: Contribution): () => void {
+    this.items = [...this.items, contribution];
+    return () => {
+      this.items = this.items.filter((item) => item !== contribution);
+    };
+  }
+
+  /** Removes everything an owner contributed (safety net after deactivate). Returns how many were left. */
+  removeOwner(owner: PluginId): number {
+    const left = this.items.filter((item) => item.owner === owner).length;
+    if (left > 0) this.items = this.items.filter((item) => item.owner !== owner);
+    return left;
+  }
+
+  ownedBy(owner: PluginId): readonly Contribution[] {
+    return this.items.filter((item) => item.owner === owner);
+  }
+
+  of<K extends ContributionKind>(kind: K): ContributionOf<K>[] {
+    return this.items.filter((item): item is ContributionOf<K> => item.kind === kind);
+  }
+
+  /** Contributions the UI may render in `context` (palette lists unavailable ones too, with their reason). */
+  visible<K extends ContributionKind>(kind: K, context: Context): ContributionOf<K>[] {
+    return this.of(kind).filter(
+      (item) => available(item.requires, context).status !== "unavailable",
+    );
+  }
+}
+
+/** What an active plugin may use. */
+export type PluginContext = {
+  id: PluginId;
+  /** Registers a contribution owned by this plugin; returns its removal. */
+  contribute(contribution: ContributionInput): () => void;
+};
+
+/** Teardown returned by `activate`: MUST remove every contribution + listener it added. */
+export type Deactivate = () => void;
+
+export type PluginModule = {
+  manifest: Pick<Manifest, "id" | "kind" | "dependsOn">;
+  activate(cx: PluginContext): Deactivate;
+};
+
+export function definePlugin(module: PluginModule): PluginModule {
+  return module;
+}
+
+type Loader = () => Promise<{ default: PluginModule }>;
+
+/** Plugin modules by id, from `plugins/<id>/index.ts` (each a separate chunk). */
+export function pluginLoaders(): Record<string, Loader> {
+  const found = import.meta.glob<{ default: PluginModule }>("../../plugins/*/index.ts");
+  const loaders: Record<string, Loader> = {};
+  for (const [path, loader] of Object.entries(found)) {
+    const id = path.split("/").at(-2);
+    if (id) loaders[id] = loader;
+  }
+  return loaders;
+}
+
+type PluginState =
+  | { status: "off" }
+  | { status: "loading"; seq: number }
+  | { status: "on"; deactivate: Deactivate }
+  | { status: "failed"; error: string };
+
+/** Activates | deactivates plugin modules. Rapid toggles: only the latest wish wins (stale loads never activate). */
+export class PluginHost {
+  #states = new Map<PluginId, PluginState>();
+  #seq = 0;
+  readonly registry: ContributionRegistry;
+  readonly #loaders: Record<string, Loader>;
+
+  constructor(registry: ContributionRegistry, loaders: Record<string, Loader>) {
+    this.registry = registry;
+    this.#loaders = loaders;
+  }
+
+  state(id: PluginId): PluginState["status"] {
+    return this.#states.get(id)?.status ?? "off";
+  }
+
+  async enable(id: PluginId): Promise<void> {
+    const current = this.#states.get(id);
+    if (current?.status === "on" || current?.status === "loading") return;
+    const loader = this.#loaders[id];
+    if (!loader) {
+      this.#states.set(id, { status: "failed", error: "no module" });
+      return;
+    }
+    const seq = ++this.#seq;
+    this.#states.set(id, { status: "loading", seq });
+    let module: PluginModule;
+    try {
+      module = (await loader()).default;
+    } catch (error) {
+      if (this.#isLatest(id, seq)) this.#states.set(id, { status: "failed", error: String(error) });
+      return;
+    }
+    // disabled (or re-requested) while loading: this load is stale
+    if (!this.#isLatest(id, seq)) return;
+    const cx: PluginContext = {
+      id,
+      contribute: (contribution) => this.registry.register({ ...contribution, owner: id }),
+    };
+    try {
+      this.#states.set(id, { status: "on", deactivate: module.activate(cx) });
+    } catch (error) {
+      this.registry.removeOwner(id);
+      this.#states.set(id, { status: "failed", error: String(error) });
+    }
+  }
+
+  /** Deactivates; returns how many contributions the plugin failed to remove (0 = clean teardown). */
+  disable(id: PluginId): number {
+    const current = this.#states.get(id);
+    this.#states.set(id, { status: "off" });
+    if (current?.status === "on") {
+      try {
+        current.deactivate();
+      } catch {
+        // a throwing teardown still loses its contributions below
+      }
+    }
+    return this.registry.removeOwner(id);
+  }
+
+  #isLatest(id: PluginId, seq: number): boolean {
+    const state = this.#states.get(id);
+    return state?.status === "loading" && state.seq === seq;
+  }
+}

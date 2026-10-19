@@ -1,15 +1,17 @@
 import "./core/styles/fonts.css";
 import "./core/styles/tokens.css";
 import "./core/styles/base.css";
+import "./core/styles/controls.css";
 import { mount } from "svelte";
 import App from "./App.svelte";
 import { api } from "./api";
-import { language } from "./core/i18n";
-import { applySystemTheme } from "./core/theme";
+import { look } from "./core/look.svelte";
+import { windowStore } from "./core/window.svelte";
 
-// Window starts hidden: theme + language resolved before first paint, then shown (no flash).
-applySystemTheme();
-await language.choose("system");
+// Window starts hidden. System look first (in case boot fails), then the person's settings + what this window shows,
+// all before first paint (no flash, no English flash), then mount, then show.
+look.apply();
+await windowStore.start();
 
 try {
   const target = document.getElementById("app");

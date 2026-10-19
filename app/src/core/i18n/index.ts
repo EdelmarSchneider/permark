@@ -4,7 +4,13 @@ import { language } from "./language.svelte";
 import type { MessageKey, Params } from "./messages";
 
 export { language } from "./language.svelte";
-export { LOCALES, parsePreference, type LanguagePreference, type Locale } from "./locales";
+export {
+  LOCALE_NAMES,
+  LOCALES,
+  parsePreference,
+  type LanguagePreference,
+  type Locale,
+} from "./locales";
 export type { MessageKey, Messages, Params } from "./messages";
 
 /** Fills `{name}` placeholders; unknown | missing names stay visible (never silently empty). */

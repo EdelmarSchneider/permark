@@ -18,7 +18,10 @@
     },
     {
       "name": "workspace kind met",
-      "requirement": { "needs": [{ "need": "workspace", "kinds": ["project", "singleFile"] }], "prefers": [] },
+      "requirement": {
+        "needs": [{ "need": "workspace", "kinds": ["project", "singleFile"] }],
+        "prefers": []
+      },
       "context": {},
       "expected": { "status": "available", "degraded": [] }
     },
@@ -35,7 +38,10 @@
       "name": "empty kinds list never met",
       "requirement": { "needs": [{ "need": "workspace", "kinds": [] }], "prefers": [] },
       "context": {},
-      "expected": { "status": "unavailable", "reason": { "need": "workspace", "kinds": [], "remedy": null } }
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "workspace", "kinds": [], "remedy": null }
+      }
     },
     {
       "name": "git repo met while merging",
@@ -65,13 +71,19 @@
       "name": "git available unmet: remedy settings.git",
       "requirement": { "needs": [{ "need": "gitAvailable" }], "prefers": [] },
       "context": { "git": { "status": "unavailable" } },
-      "expected": { "status": "unavailable", "reason": { "need": "gitAvailable", "remedy": "settings.git" } }
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "gitAvailable", "remedy": "settings.git" }
+      }
     },
     {
       "name": "permark unmet: remedy project.init",
       "requirement": { "needs": [{ "need": "permark" }], "prefers": [] },
       "context": { "permark": "notInitialized" },
-      "expected": { "status": "unavailable", "reason": { "need": "permark", "remedy": "project.init" } }
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "permark", "remedy": "project.init" }
+      }
     },
     {
       "name": "agent on met when connected",
@@ -83,13 +95,19 @@
       "name": "agent on unmet when off: remedy agent.turnOn",
       "requirement": { "needs": [{ "need": "agentOn" }], "prefers": [] },
       "context": { "agent": { "status": "off" } },
-      "expected": { "status": "unavailable", "reason": { "need": "agentOn", "remedy": "agent.turnOn" } }
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "agentOn", "remedy": "agent.turnOn" }
+      }
     },
     {
       "name": "agent connected unmet when only on",
       "requirement": { "needs": [{ "need": "agentConnected" }], "prefers": [] },
       "context": {},
-      "expected": { "status": "unavailable", "reason": { "need": "agentConnected", "remedy": null } }
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "agentConnected", "remedy": null }
+      }
     },
     {
       "name": "live updates unmet",
@@ -99,7 +117,10 @@
     },
     {
       "name": "distribution store unmet on direct",
-      "requirement": { "needs": [{ "need": "distribution", "distribution": "direct" }], "prefers": [] },
+      "requirement": {
+        "needs": [{ "need": "distribution", "distribution": "direct" }],
+        "prefers": []
+      },
       "context": { "distribution": "store" },
       "expected": {
         "status": "unavailable",
@@ -108,7 +129,10 @@
     },
     {
       "name": "platform list met",
-      "requirement": { "needs": [{ "need": "platform", "platforms": ["mac", "windows"] }], "prefers": [] },
+      "requirement": {
+        "needs": [{ "need": "platform", "platforms": ["mac", "windows"] }],
+        "prefers": []
+      },
       "context": {},
       "expected": { "status": "available", "degraded": [] }
     },
@@ -143,7 +167,10 @@
         "prefers": []
       },
       "context": { "permark": "notInitialized", "agent": { "status": "off" } },
-      "expected": { "status": "unavailable", "reason": { "need": "permark", "remedy": "project.init" } }
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "permark", "remedy": "project.init" }
+      }
     },
     {
       "name": "unmet prefers degrade in declaration order",
@@ -151,7 +178,10 @@
         "needs": [{ "need": "workspace", "kinds": ["project"] }],
         "prefers": [{ "need": "liveUpdates" }, { "need": "gitRepo" }, { "need": "permark" }]
       },
-      "context": { "git": { "status": "noRepo" }, "liveUpdates": { "status": "unavailable", "reason": "x" } },
+      "context": {
+        "git": { "status": "noRepo" },
+        "liveUpdates": { "status": "unavailable", "reason": "x" }
+      },
       "expected": {
         "status": "available",
         "degraded": [
@@ -162,9 +192,15 @@
     },
     {
       "name": "needs beat prefers: unavailable ignores prefers",
-      "requirement": { "needs": [{ "need": "agentConnected" }], "prefers": [{ "need": "gitRepo" }] },
+      "requirement": {
+        "needs": [{ "need": "agentConnected" }],
+        "prefers": [{ "need": "gitRepo" }]
+      },
       "context": { "git": { "status": "noRepo" } },
-      "expected": { "status": "unavailable", "reason": { "need": "agentConnected", "remedy": null } }
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "agentConnected", "remedy": null }
+      }
     },
     {
       "name": "welcome neutral context: plugin need unmet",

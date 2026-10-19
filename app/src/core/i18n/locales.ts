@@ -4,6 +4,16 @@
 export const LOCALES = ["en", "pt-BR", "es", "de", "zh-CN", "it"] as const;
 export type Locale = (typeof LOCALES)[number];
 
+/** Each language in its own name (pickers show autonyms; same in every interface language). */
+export const LOCALE_NAMES: Record<Locale, string> = {
+  en: "English",
+  "pt-BR": "Português (Brasil)",
+  es: "Español",
+  de: "Deutsch",
+  "zh-CN": "简体中文",
+  it: "Italiano",
+};
+
 /** Source language: complete table; answers whenever another table lacks a string. */
 export const DEFAULT_LOCALE: Locale = "en";
 
