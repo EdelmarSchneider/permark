@@ -1,7 +1,7 @@
 {
   "name": "permark",
   "version": "0.5.8",
-  "description": "Read what your AI writes. Write what it reads. Connects Gemini CLI to the PerMark desktop Markdown IDE via MCP for live reading context, tag/section search, shared notes, and inline comment resolution.",
+  "description": "Read what your AI writes. Write what it reads. Connects Gemini CLI to the PerMark desktop Markdown app via MCP for live reading context, tag/section search, shared notes, and inline comment resolution.",
   "contextFileName": "skills/permark/SKILL.md",
   "mcpServers": {
     "permark": {

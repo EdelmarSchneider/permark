@@ -1,6 +1,6 @@
 ---
 name: permark
-description: Collaborate with the developer through PerMark's desktop Markdown IDE—inspect what document and passage they are currently reading, search tagged specs, read shared notes, and resolve inline review comments via MCP.
+description: Collaborate with the developer through PerMark's desktop Markdown app—inspect what document and passage they are currently reading, search tagged specs, read shared notes, and resolve inline review comments via MCP.
 ---
 
 # PerMark Agent Skill
@@ -9,7 +9,7 @@ Use this skill when the project is opened in **PerMark** or when the `permark` M
 
 ## Overview
 
-PerMark is a local-first desktop Markdown IDE where developers read, plan, formalize specifications, and review AI-written documents. When the agent connection is enabled for a project folder, `permark mcp` exposes 9 tools over standard input/output:
+PerMark is a local-first working environment for documents where developers read, plan, formalize specifications, and review AI-written documents. When the agent connection is enabled for a project folder, `permark mcp` exposes 9 tools over standard input/output:
 
 | Tool | Purpose | When to Call |
 |---|---|---|

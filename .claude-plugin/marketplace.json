@@ -5,7 +5,7 @@
     "url": "https://github.com/EdelmarSchneider"
   },
   "metadata": {
-    "description": "Official Claude Code plugin for PerMark — the desktop Markdown IDE for planning, reviewing, and steering AI-written specs and docs.",
+    "description": "Official Claude Code plugin for PerMark — the desktop Markdown app for planning, reviewing, and steering AI-written specs and docs.",
     "version": "0.5.8"
   },
   "plugins": [
@@ -24,7 +24,6 @@
       "keywords": [
         "markdown",
         "mcp",
-        "ide",
         "spec-driven-development",
         "code-review",
         "documentation"

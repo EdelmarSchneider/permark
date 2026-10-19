@@ -7,7 +7,7 @@
 **Read what your AI writes. Write what it reads.**
 
 PerMark is a free, open-source Markdown app for Windows, macOS and Linux, built for the reader. It opens any `.md` file as a
-clean page, keeps notes that save themselves, and turns a project folder into an IDE where you follow, review and steer what
+clean page, keeps notes that save themselves, and turns a project folder into a place where you follow, review and steer what
 your AI agents write. It works with any AI tool, or with none.
 
 Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneider).
@@ -32,7 +32,7 @@ Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneide
 
 ### Build with AI agents?
 
-Your agents write the plans, specs and reports. Your job is to read them, judge them and steer. PerMark is the IDE for that
+Your agents write the plans, specs and reports. Your job is to read them, judge them and steer. PerMark is the working environment for that
 job: open the project folder and keep it next to your terminal. It doesn't run your agent; it shows you what your agent writes.
 
 - **Watch.** Changed passages glow as your agent writes, removed ones leave a marker, and a live feed lists every file it
@@ -93,7 +93,7 @@ comparable line by line in git, readable by any AI, and never locked inside one 
 - JSON, XML and plain text through an extensible renderer registry
 
 ### 🧭 Navigate like a wiki
-- Open a **folder** for IDE mode (tree, search, live feed) or a **single file** for a distraction-free reader
+- Open a **folder** as a project (tree, search, live feed) or a **single file** for a distraction-free reader
 - Relative links, anchors and images resolve inside the app, with back and forward history. **Right-click (or press and hold) Back or
   Forward** to list the documents on that side and jump straight to one, like in a browser; **Go to a recent place...** in the command
   palette (`Ctrl+Shift+P`) lists your whole trail
@@ -306,7 +306,7 @@ npm run tauri build
 
 ```bash
 permark                  # welcome screen with recent projects
-permark .                # open the current folder in IDE mode
+permark .                # open the current folder as a project
 permark docs/plan.md     # open a single file in simple mode
 ```
 
@@ -495,7 +495,7 @@ On macOS, use `Cmd` where this table says `Ctrl`.
 
 ## Roadmap
 
-**v0.2: the Markdown IDE** (released)
+**v0.2: organize, edit and reorganize** (released)
 - Tags and descriptions, the Explorer filter, reading widths, an Explorer that follows the open file, and the Outline
 - A visual and a source editor with block-preserving saves, safe sharing of a file with agents, new files and images
 - File operations (rename, move, delete) that update links and can be undone

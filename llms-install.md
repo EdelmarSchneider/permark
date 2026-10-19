@@ -1,6 +1,6 @@
 # PerMark MCP Server — Automated LLM Installation Guide (`llms-install.md`)
 
-PerMark is a local-first desktop Markdown IDE with a built-in Model Context Protocol (MCP) server (`permark mcp`) over standard input/output (`stdio`). It requires **no API keys, no account, and no environment variables**.
+PerMark is a local-first desktop Markdown app with a built-in Model Context Protocol (MCP) server (`permark mcp`) over standard input/output (`stdio`). It requires **no API keys, no account, and no environment variables**.
 
 ## Step 1: Install the `permark` Binary
 
