@@ -33,6 +33,8 @@
   );
   const card = $derived(contributions.visible("frontMatterCard", conditions.current)[0]);
   const front = $derived(view.body.kind === "markdown" ? view.body.frontMatter : null);
+  /** A long document lets the webview skip the layout of blocks far from the screen. */
+  const long = $derived(view.body.kind === "markdown" && view.body.blocks.length > 500);
 
   // the page exists while this component does
   $effect(() => {
@@ -178,6 +180,7 @@
     class="md"
     class:is-wide={reading.width === "wide"}
     class:is-full={reading.width === "full"}
+    class:is-long={long}
     class:is-tombstone={deleted}
     style:--zoom={reading.zoom / 100}
     lang={undefined}

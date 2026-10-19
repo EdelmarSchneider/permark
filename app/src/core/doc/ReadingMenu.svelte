@@ -17,14 +17,19 @@
 
   // a click outside the popover (or its button) closes it
   $effect(() => {
-    const onPointer = (event: PointerEvent): void => {
+    const onOutside = (event: Event): void => {
       const target = event.target;
       if (!(target instanceof Node) || panel?.contains(target)) return;
       if (target instanceof Element && target.closest("[data-reading-trigger]")) return;
       close();
     };
-    window.addEventListener("pointerdown", onPointer, true);
-    return () => window.removeEventListener("pointerdown", onPointer, true);
+    window.addEventListener("pointerdown", onOutside, true);
+    // focus moving elsewhere (find in page, say) closes it too
+    window.addEventListener("focusin", onOutside);
+    return () => {
+      window.removeEventListener("pointerdown", onOutside, true);
+      window.removeEventListener("focusin", onOutside);
+    };
   });
 
   function onkeydown(event: KeyboardEvent): void {

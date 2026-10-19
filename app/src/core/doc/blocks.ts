@@ -17,8 +17,10 @@ export type BlockHooks = {
 
 /** Blocks built before the first paint of a fresh document. */
 export const FIRST_SLICE = 120;
-/** Blocks built per turn after that. */
-export const NEXT_SLICE = 300;
+/** Most blocks built per turn after that (a turn also ends when it has taken [`SLICE_MS`]). */
+export const NEXT_SLICE = 2000;
+/** Time one turn of building may take. */
+export const SLICE_MS = 8;
 
 type Mark = { id: string; offset: number };
 
@@ -133,9 +135,7 @@ export class BlockHost {
     this.#place(this.#order);
     if (!fresh) this.#restore(marks);
     const settled =
-      rest.length === 0
-        ? Promise.resolve()
-        : new Promise<void>((done) => this.#slices(rest, order, done));
+      rest.length === 0 ? Promise.resolve() : new Promise<void>((done) => this.#slices(rest, done));
     return { missing, settled };
   }
 
@@ -185,29 +185,30 @@ export class BlockHost {
     }
   }
 
-  #slices(
-    rest: readonly { block: Block; html: string }[],
-    order: readonly string[],
-    done: () => void,
-  ): void {
+  #slices(rest: readonly { block: Block; html: string }[], done: () => void): void {
     let at = 0;
     this.#sliceDone = done;
     const step = (): void => {
       this.#timer = null;
-      const chunk = rest.slice(at, at + this.#nextSlice);
-      at += chunk.length;
-      this.#build(chunk);
-      const built = new Set(this.#els.keys());
-      const container = this.#container;
-      if (container !== null) {
-        const fragment = document.createDocumentFragment();
-        for (const { block } of chunk) {
-          const el = this.#els.get(block.id);
-          if (el) fragment.append(el);
-        }
-        container.append(fragment);
+      // as many blocks as fit in the time one frame can spare (a few at least), so the window stays responsive
+      const started = performance.now();
+      const chunk: { block: Block; html: string }[] = [];
+      while (at < rest.length && chunk.length < this.#nextSlice) {
+        const group = rest.slice(at, at + 25);
+        at += group.length;
+        this.#build(group);
+        chunk.push(...group);
+        if (performance.now() - started > SLICE_MS) break;
       }
-      this.#order = order.filter((id) => built.has(id));
+      const container = this.#container;
+      const fragment = document.createDocumentFragment();
+      for (const { block } of chunk) {
+        const el = this.#els.get(block.id);
+        if (!el) continue;
+        fragment.append(el);
+        this.#order.push(block.id);
+      }
+      container?.append(fragment);
       if (at < rest.length) {
         this.#timer = setTimeout(step, 0);
       } else {

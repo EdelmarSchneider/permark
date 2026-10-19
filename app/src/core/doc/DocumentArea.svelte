@@ -50,6 +50,9 @@
     void documents.show(path);
   });
 
+  // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document
+  $effect(() => () => documents.release());
+
   // the file changed on disk, or went away
   $effect(() => {
     let off: (() => void) | null = null;

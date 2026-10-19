@@ -43,6 +43,21 @@ function defaultSettings(): AppSettings {
   };
 }
 
+/** The plugins the real build runs by default. */
+const MOCK_PLUGINS = [
+  "md-family",
+  "prompt-blocks",
+  "frontmatter-card",
+  "highlight",
+  "math",
+  "mermaid",
+  "plantuml",
+  "media",
+  "json-view",
+  "xml-view",
+  "text-view",
+];
+
 function neutralContext(): Context {
   return {
     workspace: "welcome",
@@ -197,7 +212,7 @@ export function createMockApi(): Api & {
   }
 
   function context(): Context {
-    const base = neutralContext();
+    const base = { ...neutralContext(), plugins: MOCK_PLUGINS };
     if (view.state !== "showing") return base;
     return { ...base, workspace: view.workspace.kind === "project" ? "project" : "singleFile" };
   }

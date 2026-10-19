@@ -23,6 +23,9 @@ async function load(theme: "light" | "dark"): Promise<Mermaid> {
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
+      // labels are SVG text, not HTML in a foreignObject: the drawing is cleaned of foreign content before it enters the page
+      htmlLabels: false,
+      flowchart: { htmlLabels: false },
       theme: "base",
       fontFamily: '"Inter Variable", Inter, system-ui, sans-serif',
       themeVariables: {

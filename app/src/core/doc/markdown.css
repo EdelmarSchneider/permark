@@ -22,6 +22,11 @@
 .md-body > * {
   margin: 0 0 1em;
 }
+/* a long document: blocks far from the screen skip layout and painting (their size is remembered once seen) */
+.md.is-long .md-body > * {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
 
 /* Breakout: tables, diagrams, display math and lone images take the width their content needs, never below the
    text measure and never above the pane. Top level only, centred on the column, so find highlights and the
@@ -259,11 +264,11 @@
   font-size: 0.9em;
   text-decoration-style: dotted;
 }
-.md dl dt {
+.md-body dl dt {
   font-weight: 600;
   margin-top: 0.6em;
 }
-.md dl dd {
+.md-body dl dd {
   margin: 0.15em 0 0 1.4em;
   color: var(--muted);
 }

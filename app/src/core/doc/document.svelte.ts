@@ -115,6 +115,12 @@ export class DocumentController {
     if (workspace !== null) void reading.load(this.#api);
   }
 
+  /** The page went away (the window left its workspace): nothing is shown any more, no outline, no trail. */
+  release(): void {
+    if (this.#shown !== null) void this.#api.closeDocument();
+    this.setWorkspace(null);
+  }
+
   #reset(): void {
     this.#seq += 1;
     this.#shown = null;
@@ -273,7 +279,8 @@ export class DocumentController {
       el?.isConnected ? el.getBoundingClientRect().top - top : Infinity,
     );
     // not yet built (a document still arriving in slices) counts as far below
-    return currentIndex(tops, 12);
+    // a heading within the first bit of the pane counts as reached (a jump leaves it a little below the edge)
+    return currentIndex(tops, 40);
   }
 
   /** Scrolls so that the element with this id is at the top of the pane; false when there is none. */
@@ -504,14 +511,6 @@ export class DocumentController {
 
   async copyPlain(text: string): Promise<void> {
     await this.#copy(text);
-  }
-
-  /** Lets go of the DOM (the document area is leaving). */
-  release(): void {
-    this.#leave();
-    this.host.detach();
-    this.decorator.dispose();
-    this.#painted = null;
   }
 }
 

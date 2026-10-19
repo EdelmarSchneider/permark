@@ -179,6 +179,20 @@ describe("the page", () => {
   });
 });
 
+describe("leaving", () => {
+  it("lets go of the document and its outline when the area goes away", async () => {
+    await show("README.md");
+    await until(() => target.querySelectorAll(".md-body > *").length > 5, "blocks");
+    expect(documents.view).not.toBeNull();
+    // the window goes back to the welcome screen: the area is destroyed, nothing else tells the controller
+    if (component) await unmount(component);
+    component = null;
+    expect(documents.view).toBeNull();
+    expect(documents.workspaceId).toBeNull();
+    expect(documents.currentHeading).toBe(-1);
+  });
+});
+
 describe("reading", () => {
   it("zoom keys change the size and are remembered", async () => {
     await show("docs/guide.md");
