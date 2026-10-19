@@ -4,3 +4,4 @@
 *.icns binary
 *.woff2 binary
 app/testdata/** -text
+app/src-tauri/crates/plugins/*/src/fixtures/** -text
