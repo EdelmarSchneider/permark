@@ -388,11 +388,12 @@ fn noise_is_dropped_and_git_signals_pass() {
 #[test]
 fn a_burst_of_files_is_one_bulk_batch() {
     let f = make(&["start.md"], true);
-    for n in 0..300 {
+    // plenty over the bulk limit: a stall of the machine between two flushes still leaves one of them bulk
+    for n in 0..1000 {
         fs::write(f.dir.path().join(format!("burst{n}.md")), "b").unwrap();
     }
     wait_for(&f.seen, "all created", |c| {
-        c.iter().filter(|c| c.path.starts_with("burst")).count() >= 300
+        c.iter().filter(|c| c.path.starts_with("burst")).count() >= 1000
     });
     let batches = f.seen.lock().unwrap();
     assert!(batches.iter().any(|b| b.bulk), "{}", batches.len());

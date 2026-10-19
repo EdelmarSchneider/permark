@@ -1225,22 +1225,12 @@ fn scan_lists_what_the_tree_lists_without_the_size_guard_and_names_ignored_folde
 }
 
 #[test]
-fn scan_walks_a_folder_over_the_size_limit_and_scan_documents_finds_its_markdown() {
-    let f = fixture(&["docs/a.md"]);
-    let big = f.dir.path().join("big");
-    fs::create_dir_all(&big).unwrap();
-    for n in 0..(LARGE_FOLDER + 3) {
-        fs::write(big.join(format!("f{n}.md")), "x").unwrap();
-    }
-    let (files, _) = scanned(&f);
-    assert_eq!(files.len(), LARGE_FOLDER + 4);
+fn scan_documents_names_a_root_and_knows_when_there_is_none() {
+    // (a folder over the size limit is walked: the search and plan tests make one)
+    let f = fixture(&["docs/a.md", "docs/b.txt", "top.md"]);
     let (docs, unchecked) = f.explorer.scan_documents("");
-    assert_eq!(docs.len(), LARGE_FOLDER + 4);
+    assert_eq!(docs, ["docs/a.md", "top.md"]);
     assert_eq!(unchecked.len(), 0);
-    assert!(
-        f.explorer.listed("big/f0.md").is_none(),
-        "the tree still guards that folder"
-    );
     assert_eq!(f.explorer.scan_documents("@wt/none").0.len(), 0);
 }
 

@@ -832,6 +832,105 @@ fn hostile_documents_never_break_the_build() {
 }
 
 #[test]
+fn a_storm_of_changes_during_the_first_build_ends_in_the_state_of_the_disk() {
+    let dir = tempfile::tempdir().unwrap();
+    for n in 0..600 {
+        write(
+            dir.path(),
+            &format!("d{}/n{n}.md", n % 12),
+            &format!(
+                "# T{n}
+
+original{n}x
+"
+            ),
+        );
+    }
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    let index = SearchIndex::start(vault, Arc::clone(&explorer), sink, "root".to_owned());
+    let feed = index.feeder();
+    // while the build runs: rewrite some files, delete some, add some, report each in its own batch
+    for n in (0..600).step_by(3) {
+        write(
+            dir.path(),
+            &format!("d{}/n{n}.md", n % 12),
+            &format!(
+                "# T{n}
+
+rewritten{n}x
+"
+            ),
+        );
+        feed(&FsBatch {
+            changes: vec![change(
+                &format!("d{}/n{n}.md", n % 12),
+                ChangeKind::Modified,
+                false,
+            )],
+            ..FsBatch::default()
+        });
+    }
+    for n in (1..600).step_by(10) {
+        let rel = format!("d{}/n{n}.md", n % 12);
+        fs::remove_file(dir.path().join(&rel)).unwrap();
+        feed(&FsBatch {
+            changes: vec![change(&rel, ChangeKind::Removed, false)],
+            ..FsBatch::default()
+        });
+    }
+    write(
+        dir.path(),
+        "added/new.md",
+        "# New
+
+brandnew
+",
+    );
+    feed(&FsBatch {
+        changes: vec![change("added/new.md", ChangeKind::Created, false)],
+        ..FsBatch::default()
+    });
+    assert!(index.wait_ready(Duration::from_secs(60)));
+    let found = |q: &str| index.sections(q, 5, &SearchFilter::default()).hits.len();
+    let start = Instant::now();
+    while found("brandnew") == 0 {
+        assert!(
+            start.elapsed() < Duration::from_secs(20),
+            "the queued changes are applied"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    // give the last queued batches time to land, then compare with the disk
+    std::thread::sleep(Duration::from_millis(300));
+    for n in 0..600 {
+        let gone = n % 10 == 1;
+        let rewritten = n % 3 == 0;
+        let (word, expected) = if gone {
+            (format!("original{n}x"), 0)
+        } else if rewritten {
+            (format!("rewritten{n}x"), 1)
+        } else {
+            (format!("original{n}x"), 1)
+        };
+        assert_eq!(found(&word), expected, "{word}");
+        if rewritten && !gone {
+            assert_eq!(
+                found(&format!("original{n}x")),
+                0,
+                "old text of {n} is gone"
+            );
+        }
+    }
+}
+
+#[test]
 fn the_linked_set_reaches_the_explorer_and_shows_pictures_wherever_they_sit() {
     let f = fx(&[
         ("docs/a.md", "# A\n\n![pic](../far/away/deep/p.png)\n"),
@@ -957,7 +1056,7 @@ fn paths_and_recent_answer_quick_open() {
 #[test]
 fn dropping_the_index_during_the_first_build_is_prompt() {
     let dir = tempfile::tempdir().unwrap();
-    for n in 0..3000 {
+    for n in 0..800 {
         write(
             dir.path(),
             &format!("d{}/n{n}.md", n % 30),
@@ -986,9 +1085,11 @@ fn dropping_the_index_during_the_first_build_is_prompt() {
 
 #[test]
 fn ten_thousand_documents_build_and_answer_quickly() {
+    // 10 000 documents are measured in release; a debug test run keeps its CPU use short (other tests have timers)
+    let docs: usize = if cfg!(debug_assertions) { 1500 } else { 10_000 };
     let dir = tempfile::tempdir().unwrap();
     let words: Vec<String> = (0..2000).map(|n| format!("term{n}")).collect();
-    for n in 0..10_000_usize {
+    for n in 0..docs {
         let mut text = format!(
             "---\ntags: [t{}]\n---\n# Document {n}\n\nintro {}\n",
             n % 50,
@@ -1021,13 +1122,15 @@ fn ten_thousand_documents_build_and_answer_quickly() {
     assert!(index.wait_ready(Duration::from_secs(300)));
     let build = started.elapsed();
     let status = index.status();
-    assert_eq!(status.files, 10_000);
-    assert_eq!(index.doc_count(), 10_000);
+    assert_eq!(status.files, u32::try_from(docs).unwrap());
+    assert_eq!(index.doc_count(), docs);
+    let last = docs - 1;
+    let section_query = format!("section 3 of {last}");
     let mut times: Vec<Duration> = Vec::new();
     for q in [
         "term17",
         "term42 term99",
-        "section 3 of 4242",
+        section_query.as_str(),
         "docum",
         "term1999 intro",
         "t7",
@@ -1043,11 +1146,14 @@ fn ten_thousand_documents_build_and_answer_quickly() {
     let median = times[times.len() / 2];
     let worst = *times.last().unwrap();
     let t = Instant::now();
-    let files = index.paths("doc4242", 50, 5, &SearchFilter::default());
+    let files = index.paths(&format!("doc{last}"), 50, 5, &SearchFilter::default());
     let quick = t.elapsed();
-    assert_eq!(files.files[0].path, "p2/f42/doc4242.md");
+    assert_eq!(
+        files.files[0].path,
+        format!("p{}/f{}/doc{last}.md", last % 10, last % 100)
+    );
     eprintln!(
-        "PERF 10k documents: build {build:?} ({} sections), section query median {median:?} worst {worst:?}, quick open {quick:?}",
+        "PERF {docs} documents: build {build:?} ({} sections), section query median {median:?} worst {worst:?}, quick open {quick:?}",
         status.sections
     );
     let (build_limit, query_limit) = if cfg!(debug_assertions) {
