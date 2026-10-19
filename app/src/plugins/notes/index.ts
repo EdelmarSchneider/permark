@@ -30,7 +30,7 @@ export default definePlugin({
       cx.contribute({
         kind: "settingsSection",
         id: "notes.settings",
-        label: "notes.settings.folder",
+        label: "notes.title",
         requires: NO_REQUIREMENT,
         view: () => import("./NotesSettings.svelte"),
       }),

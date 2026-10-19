@@ -10,7 +10,10 @@
   import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import Notices from "./core/shell/Notices.svelte";
+  import InitDialog from "./core/shell/InitDialog.svelte";
+  import SettingsPage from "./core/shell/settings/SettingsPage.svelte";
   import SettingsPopover from "./core/shell/SettingsPopover.svelte";
+  import Switcher from "./core/shell/Switcher.svelte";
   import Welcome from "./core/shell/Welcome.svelte";
   import WindowChoice from "./core/shell/WindowChoice.svelte";
   import { confirmLeave } from "./core/editing/guard";
@@ -20,6 +23,10 @@
   import SearchPanel from "./core/search/SearchPanel.svelte";
   import SidebarTabs from "./core/search/SidebarTabs.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
+  import { confirmInit } from "./core/shell/initProject";
+  import { layout } from "./core/shell/layout.svelte";
+  import { switcher } from "./core/shell/workspaceList.svelte";
+  import { shownId } from "./core/shell/switcherModel";
   import { ui } from "./core/shell/ui.svelte";
   import { conditions } from "./core/conditions/context.svelte";
   import { contributions } from "./core/plugins/instance.svelte";
@@ -107,10 +114,15 @@
   // the core's commands and keys live in the registry while the window does; one key listener runs them
   $effect(() => installWindowKeys());
 
-  // external I/O only: window title, system theme + language watchers
+  // external I/O only: window title, the native title bar's theme, system theme + language watchers
   $effect(() => {
     void api.setTitle(title);
   });
+  $effect(() => {
+    void api.setWindowTheme(look.preference === "system" ? null : look.preference);
+  });
+  // the other workspaces of the process, for the switcher bar and its keys
+  $effect(() => switcher.start());
   $effect(() => look.watchSystem());
   // the window was asked to close with unsaved edits: the person answers, then it closes for real
   $effect(() => {
@@ -136,6 +148,24 @@
   async function closeWorkspace(): Promise<void> {
     if (await confirmLeave({ kind: "workspace" })) await store.closeWorkspace();
   }
+
+  // the switcher (or another window) asked this window to close its workspace: the unsaved prompt runs first
+  $effect(() => {
+    let off: (() => void) | null = null;
+    let gone = false;
+    void api
+      .on("workspace-close-requested", (event) => {
+        if (event.window === store.label) void closeWorkspace();
+      })
+      .then((stop) => {
+        if (gone) stop();
+        else off = stop;
+      });
+    return () => {
+      gone = true;
+      off?.();
+    };
+  });
   $effect(() => language.watchSystem());
 </script>
 
@@ -242,14 +272,23 @@
   {/if}
 {/snippet}
 
+{#snippet switcherBar()}
+  <Switcher current={shownId(store.view)} />
+{/snippet}
+
 {#snippet status()}
-  <span class="spacer"></span>
-  <StatusItems />
-  <span>{versionText}</span>
+  <div class="slot left"><StatusItems slot="left" /></div>
+  <div class="slot center"><StatusItems slot="center" /></div>
+  <div class="slot right"><StatusItems slot="right" /><span>{versionText}</span></div>
 {/snippet}
 
 {#if store.boot.status !== "booting"}
   <Frame
+    switcher={switcher.visible ? switcherBar : undefined}
+    sidebarWidth={layout.sidebar}
+    rightWidth={layout.right}
+    onSidebarWidth={(px) => layout.setSidebar(px)}
+    onRightWidth={(px) => layout.setRight(px)}
     {header}
     sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
       ? sidebar
@@ -261,10 +300,21 @@
 {/if}
 
 {#if store.choice.status === "asking"}
-  <WindowChoice answer={(choice) => void store.answerChoice(choice)} />
+  <WindowChoice answer={(choice, remember) => void store.answerChoice(choice, remember)} />
 {/if}
 {#if ui.settings}
   <SettingsPopover {store} close={() => ui.closeSettingsPopover()} />
+{/if}
+{#if ui.settingsPage.status === "open"}
+  <SettingsPage {store} />
+{/if}
+{#if ui.initDialog.status === "asking"}
+  {@const asked = ui.initDialog}
+  <InitDialog
+    name={asked.name}
+    path={asked.path}
+    answer={(yes) => (yes ? void confirmInit(asked.path) : ui.closeInit())}
+  />
 {/if}
 {#if ui.finder.status === "open"}
   {#key ui.finder.seed}
@@ -288,6 +338,25 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: 600;
+  }
+  .slot {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-width: 0;
+  }
+  .slot.left {
+    flex: 0 1 auto;
+    overflow: hidden;
+  }
+  .slot.center {
+    flex: 1 1 0;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .slot.right {
+    flex: none;
+    margin-left: auto;
   }
   .view {
     display: flex;

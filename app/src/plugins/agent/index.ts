@@ -34,6 +34,13 @@ export default definePlugin({
         view: () => import("./AgentSettings.svelte"),
       }),
       cx.contribute({
+        kind: "projectSection",
+        id: "agent.narrowing",
+        label: "agent.narrow.title",
+        requires: PROJECT,
+        view: () => import("./AgentNarrowing.svelte"),
+      }),
+      cx.contribute({
         kind: "command",
         id: "agent.turnOn",
         label: "agent.turnOn",

@@ -17,3 +17,12 @@ export function presetOf(command: string): string {
   if (text === "") return "none";
   return EDITOR_PRESETS.find((p) => p.command === text)?.id ?? "custom";
 }
+
+/** A command as it would run for a sample file (what the settings show under the field). */
+export function editorPreview(command: string): string {
+  return command
+    .trim()
+    .replaceAll("{path}", "/docs/plan.md")
+    .replaceAll("{line}", "12")
+    .replaceAll("{col}", "1");
+}

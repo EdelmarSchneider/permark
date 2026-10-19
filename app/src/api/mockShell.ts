@@ -114,6 +114,9 @@ export function createMockShell(deps: {
   changed: () => void;
 }) {
   let project = emptyProject();
+  /** The folders PerMark was initialized in (the real thing is a `.permark/` folder on disk). */
+  const initializedPaths = new Set<string>();
+  let currentPath = "";
   const choices = new Map<string, boolean>();
   const removed: string[] = [];
   let others: WorkspaceSummary[] = [];
@@ -139,9 +142,10 @@ export function createMockShell(deps: {
       return [...resolved(inProject).keys()];
     },
     initialized: () => project.initialized,
-    /** A fresh project is shown: nothing set, not initialized. */
-    reset(): void {
-      project = emptyProject();
+    /** A project is shown: its settings are what its folder holds (nothing set, unless initialized before). */
+    reset(path: string): void {
+      currentPath = path;
+      project = { ...emptyProject(), initialized: initializedPaths.has(path) };
       choices.clear();
     },
     context(base: Context): Context {
@@ -157,9 +161,18 @@ export function createMockShell(deps: {
         deps.changed();
       },
       project: (): ProjectSettings => project,
+      /** Every folder is as new: nothing is initialized. */
+      forgetInit(): void {
+        initializedPaths.clear();
+        project = emptyProject();
+      },
     },
-    initProject(): void {
+    /** `.permark/` was created in `path`; `true` when that is the folder shown. */
+    initProject(path: string): boolean {
+      initializedPaths.add(path);
+      if (path !== currentPath) return false;
       project = { ...project, initialized: true };
+      return true;
     },
     api: {
       listWorkspaces: () => {

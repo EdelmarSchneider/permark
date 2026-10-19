@@ -2,6 +2,7 @@
   // Settings row of the git plugin: which git it uses.
   import type { GitBackendPref } from "../../api";
   import { t, type MessageKey } from "../../core/i18n";
+  import SettingRow from "../../core/shell/settings/SettingRow.svelte";
   import { windowStore } from "../../core/window.svelte";
 
   const OPTIONS: { value: GitBackendPref; label: MessageKey }[] = [
@@ -15,9 +16,10 @@
   }
 </script>
 
-<label class="row" title={t("git.backend.hint")}>
-  <span>{t("git.backend.label")}</span>
+<SettingRow label={t("git.backend.row")} labelFor="set-git" hint={t("git.backend.hint")}>
   <select
+    id="set-git"
+    class="field-select"
     value={windowStore.gitBackend}
     onchange={(e) =>
       void windowStore.changeSetting({ key: "gitBackend", value: parse(e.currentTarget.value) })}
@@ -26,23 +28,4 @@
       <option value={option.value}>{t(option.label)}</option>
     {/each}
   </select>
-</label>
-
-<style>
-  .row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-3);
-    padding: 6px 10px;
-  }
-  select {
-    min-width: 160px;
-    height: 28px;
-    padding: 0 6px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    background: var(--bg);
-    color: var(--text);
-  }
-</style>
+</SettingRow>

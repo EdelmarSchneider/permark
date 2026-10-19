@@ -3,6 +3,8 @@
   // the Notes.
   import { t, type MessageKey } from "../../core/i18n";
   import { pluginClient } from "../../core/plugins/client";
+  import Segments from "../../core/shell/settings/Segments.svelte";
+  import SettingRow from "../../core/shell/settings/SettingRow.svelte";
   import { windowStore } from "../../core/window.svelte";
   import { api, type StartIn } from "../../api";
 
@@ -34,8 +36,7 @@
   }
 </script>
 
-<div class="row" title={t("notes.settings.folderHint")}>
-  <span>{t("notes.settings.folder")}</span>
+<SettingRow label={t("notes.settings.folder")} hint={t("notes.settings.folderHint")} wide>
   <div class="value">
     <span class="path" title={place}>{place}</span>
     <button type="button" class="btn btn--sm" onclick={() => void change()}>
@@ -51,65 +52,31 @@
       </button>
     {/if}
   </div>
-</div>
-<div class="row">
-  <span id="start-in-label">{t("notes.settings.startIn")}</span>
-  <div class="segments" role="radiogroup" aria-labelledby="start-in-label">
-    {#each START as option (option.value)}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={windowStore.startIn === option.value}
-        class={["segment", windowStore.startIn === option.value && "is-on"]}
-        onclick={() => void windowStore.changeSetting({ key: "startIn", value: option.value })}
-        >{t(option.label)}</button
-      >
-    {/each}
-  </div>
-</div>
+</SettingRow>
+<SettingRow label={t("notes.settings.startIn")} labelId="start-in-label">
+  <Segments
+    labelledby="start-in-label"
+    value={windowStore.startIn}
+    options={START.map((o) => ({ value: o.value, label: t(o.label) }))}
+    onchange={(value) => void windowStore.changeSetting({ key: "startIn", value })}
+  />
+</SettingRow>
 
 <style>
-  .row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-3);
-    padding: 6px 10px;
-  }
   .value {
     display: flex;
     align-items: center;
-    gap: var(--sp-1);
+    gap: var(--sp-2);
     min-width: 0;
   }
   .path {
-    max-width: 150px;
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     color: var(--muted);
-    font-size: var(--fs-ui-sm);
+    font-family: var(--font-code);
+    font-size: var(--fs-ui-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .segments {
-    display: inline-flex;
-    padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-control);
-    background: var(--surface);
-  }
-  .segment {
-    height: 22px;
-    padding: 0 8px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--muted);
-    font-size: var(--fs-ui-sm);
-    cursor: pointer;
-  }
-  .segment.is-on {
-    background: var(--bg);
-    color: var(--text);
-    box-shadow: 0 0 0 1px var(--border);
   }
 </style>

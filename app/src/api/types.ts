@@ -7,6 +7,8 @@ import type { CommandName } from "./generated/CommandName";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
 import type { OpenIn } from "./generated/OpenIn";
+import type { TreeShow } from "./generated/TreeShow";
+import type { PluginKind } from "./generated/PluginKind";
 import type { PluginInfo } from "./generated/PluginInfo";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
@@ -118,7 +120,9 @@ export type {
   AppInfo,
   CloseRequested,
   OpenIn,
+  TreeShow,
   PluginInfo,
+  PluginKind,
   ProjectSettingChange,
   ProjectSettings,
   WorkspaceCloseRequested,

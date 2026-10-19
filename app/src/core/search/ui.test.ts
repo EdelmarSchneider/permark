@@ -155,6 +155,9 @@ describe("typing in the box", () => {
   // the runs of a label change length with every key: the text must always be the label, the marks the typed words
   it("keeps every row's text whole and marks what is typed, key by key", async () => {
     await open();
+    // an initialized project does not offer "Initialize PerMark…" (its letters would match too)
+    await mock.projectInit(MOCK_FOLDER);
+    await tick();
     ui.openFinder("commands");
     component = mount(Finder, { target, props: { preset: "commands" } });
     flushSync();

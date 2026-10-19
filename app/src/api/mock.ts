@@ -354,7 +354,7 @@ export function createMockApi(): Api & {
         }
       : { kind: "project", id, name: nameOf(path), root: path, stateLocation: "profile" };
     view = { state: "showing", workspace, document: null };
-    if (workspace.kind === "project") shell.reset();
+    if (workspace.kind === "project") shell.reset(path);
     if (workspace.kind === "project") {
       recent = [
         { path, name: workspace.name, openedMs: Date.now(), missing: false },
@@ -412,9 +412,9 @@ export function createMockApi(): Api & {
     },
     ...shell.api,
     pluginsList: () => shell.api.pluginsList(inProject()),
-    projectInit: () => {
-      shell.initProject();
-      if (view.state === "showing" && view.workspace.kind === "project") {
+    projectInit: (path) => {
+      const shown = shell.initProject(path);
+      if (shown && view.state === "showing" && view.workspace.kind === "project") {
         view = { ...view, workspace: { ...view.workspace, stateLocation: "project" } };
         emit("window-changed", { window: "main", view });
         emit("context-changed", { window: "main", context: context() });

@@ -12,6 +12,19 @@ export type Finder =
   /** `seed` changes on every open: the box starts fresh. */
   | { status: "open"; preset: FinderPreset; seed: number };
 
+/** The sections of the settings page. */
+export type SettingsSection = "reading" | "editing" | "integration" | "plugins" | "project";
+export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
+  "reading",
+  "editing",
+  "integration",
+  "plugins",
+  "project",
+];
+export type SettingsPage = { status: "closed" } | { status: "open"; section: SettingsSection };
+/** The "Initialize PerMark" question: which folder (`path`, absolute) and what it is called. */
+export type InitDialog = { status: "closed" } | { status: "asking"; path: string; name: string };
+
 class UiStore {
   sidebar = $state<SidebarView>("files");
   /** The id of the plugin panel at the right of the page (`null`: none; the outline shows when it is on). */
@@ -19,6 +32,8 @@ class UiStore {
   finder = $state.raw<Finder>({ status: "closed" });
   keyboard = $state(false);
   settings = $state(false);
+  settingsPage = $state.raw<SettingsPage>({ status: "closed" });
+  initDialog = $state.raw<InitDialog>({ status: "closed" });
   finding = $state(false);
   /** Counts the requests to put the cursor in the Search panel's box. */
   searchFocus = $state(0);
@@ -26,7 +41,12 @@ class UiStore {
 
   /** An overlay owns the keyboard. */
   get modal(): boolean {
-    return this.finder.status === "open" || this.keyboard;
+    return (
+      this.finder.status === "open" ||
+      this.keyboard ||
+      this.settingsPage.status === "open" ||
+      this.initDialog.status === "asking"
+    );
   }
 
   openFinder(preset: FinderPreset): void {
@@ -58,6 +78,29 @@ class UiStore {
 
   closeSettingsPopover(): void {
     this.settings = false;
+  }
+
+  /** The full settings page (the popover closes). */
+  openSettingsPage(section: SettingsSection = "reading"): void {
+    this.settings = false;
+    this.settingsPage = { status: "open", section };
+  }
+
+  showSettingsSection(section: SettingsSection): void {
+    if (this.settingsPage.status === "open") this.settingsPage = { status: "open", section };
+  }
+
+  closeSettingsPage(): void {
+    this.settingsPage = { status: "closed" };
+  }
+
+  /** Asks whether to initialize PerMark in a folder. */
+  askInit(path: string, name: string): void {
+    this.initDialog = { status: "asking", path, name };
+  }
+
+  closeInit(): void {
+    this.initDialog = { status: "closed" };
   }
 
   openKeyboard(): void {
