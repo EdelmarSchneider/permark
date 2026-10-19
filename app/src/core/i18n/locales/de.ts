@@ -495,4 +495,8 @@ export default {
   // ---- editing
   "edit.visualFailed":
     "Der Bearbeitungsmodus konnte nicht geladen werden, daher ist das Dokument im Quelltext geöffnet.",
+
+  // ---- editing
+  "settings.editMode": "Bearbeitungsmodus",
+  "settings.editModeHint": "Der Editor, den Strg+E für Markdown öffnet.",
 } satisfies Messages;

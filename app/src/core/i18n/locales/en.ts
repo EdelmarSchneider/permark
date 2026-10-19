@@ -478,6 +478,10 @@ const en = {
 
   // ---- editing
   "edit.visualFailed": "Edit could not be loaded, so this document is open in Source.",
+
+  // ---- editing
+  "settings.editMode": "Editing mode",
+  "settings.editModeHint": "The editor Ctrl+E opens for Markdown.",
 } as const;
 
 export default en;

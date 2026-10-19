@@ -26,6 +26,23 @@
 </script>
 
 <div class="field">
+  <label for="edit-mode">{t("settings.editMode")}</label>
+  <select
+    id="edit-mode"
+    value={store.editMode}
+    onchange={(e) =>
+      void store.changeSetting({
+        key: "editMode",
+        value: e.currentTarget.value === "source" ? "source" : "edit",
+      })}
+  >
+    <option value="edit">{t("mode.edit")}</option>
+    <option value="source">{t("mode.source")}</option>
+  </select>
+  <p class="hint">{t("settings.editModeHint")}</p>
+</div>
+
+<div class="field">
   <label for="reference-template">{t("settings.refTemplate")}</label>
   <input
     id="reference-template"

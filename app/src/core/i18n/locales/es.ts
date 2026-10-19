@@ -489,4 +489,8 @@ export default {
   // ---- editing
   "edit.visualFailed":
     "No se pudo cargar el modo Editar, así que el documento está abierto en Fuente.",
+
+  // ---- editing
+  "settings.editMode": "Modo de edición",
+  "settings.editModeHint": "El editor que Ctrl+E abre para Markdown.",
 } satisfies Messages;

@@ -491,4 +491,8 @@ export default {
   // ---- editing
   "edit.visualFailed":
     "Non è stato possibile caricare la modalità Modifica, quindi il documento è aperto in Sorgente.",
+
+  // ---- editing
+  "settings.editMode": "Modalità di modifica",
+  "settings.editModeHint": "L'editor che Ctrl+E apre per il Markdown.",
 } satisfies Messages;

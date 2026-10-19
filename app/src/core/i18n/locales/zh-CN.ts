@@ -468,4 +468,8 @@ export default {
 
   // ---- editing
   "edit.visualFailed": "无法加载编辑模式，因此文档以源码方式打开。",
+
+  // ---- editing
+  "settings.editMode": "编辑模式",
+  "settings.editModeHint": "Ctrl+E 为 Markdown 打开的编辑器。",
 } satisfies Messages;
