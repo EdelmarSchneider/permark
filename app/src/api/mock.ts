@@ -252,6 +252,7 @@ export function createMockApi(): Api & {
     settings: () => settings,
     workspace: ownSummary,
     changed: announceShell,
+    closeOwn: () => emit("workspace-close-requested", { window: "main" }),
   });
   const windowThemes: ("light" | "dark" | null)[] = [];
 

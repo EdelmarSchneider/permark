@@ -40,9 +40,9 @@ const en = {
   "welcome.openFailed": "Can't open {path}: {message}",
 
   // ---- header + workspaces
-  "header.close": "Close",
-  "header.closeHint": "Close and go back to the start screen",
   "header.settings": "Settings",
+  "top.open": "Open",
+  "top.openHint": "Open a folder, a file or a recent folder",
   "project.explorer": "Explorer",
   "project.panel": "Panel",
 
@@ -486,7 +486,7 @@ const en = {
   // ---- search, commands, keyboard
   "cmd.openFolder": "Open folder...",
   "cmd.openFile": "Open file...",
-  "cmd.closeFolder": "Close folder",
+  "cmd.closeFolder": "Close folder or file",
   "cmd.quickOpen": "Go to file",
   "cmd.searchAll": "Search all docs",
   "cmd.back": "Go back",
@@ -1244,6 +1244,7 @@ const en = {
   "settings.problem.notInitialized": "PerMark is not initialized in this project.",
   "settings.problem.other": "This value was not accepted.",
   "switcher.close": "Close",
+  "switcher.closeOne": "Close {name}",
   "switcher.label": "Open workspaces",
   "switcher.menu": "Workspace actions",
   "switcher.openNew": "Open in a new window",

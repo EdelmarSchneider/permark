@@ -40,9 +40,9 @@ export default {
   "welcome.openFailed": "无法打开 {path}：{message}",
 
   // ---- header + workspaces
-  "header.close": "关闭",
-  "header.closeHint": "关闭并返回开始界面",
   "header.settings": "设置",
+  "top.open": "打开",
+  "top.openHint": "打开文件夹、文件或最近的文件夹",
   "project.explorer": "资源管理器",
   "project.panel": "面板",
 
@@ -476,7 +476,7 @@ export default {
   // ---- search, commands, keyboard
   "cmd.openFolder": "打开文件夹...",
   "cmd.openFile": "打开文件...",
-  "cmd.closeFolder": "关闭文件夹",
+  "cmd.closeFolder": "关闭文件夹或文件",
   "cmd.quickOpen": "转到文件",
   "cmd.searchAll": "搜索所有文档",
   "cmd.back": "后退",
@@ -1215,6 +1215,7 @@ export default {
   "settings.problem.notInitialized": "此项目尚未初始化 PerMark。",
   "settings.problem.other": "此值未被接受。",
   "switcher.close": "关闭",
+  "switcher.closeOne": "关闭 {name}",
   "switcher.label": "已打开的工作区",
   "switcher.menu": "工作区操作",
   "switcher.openNew": "在新窗口中打开",

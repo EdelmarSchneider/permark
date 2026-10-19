@@ -108,11 +108,11 @@
 <style>
   .popover {
     position: fixed;
-    top: calc(var(--h-header) - 4px);
+    top: calc(var(--h-top) - 2px);
     right: var(--sp-3);
     z-index: 40;
     width: min(380px, calc(100vw - var(--sp-4)));
-    max-height: calc(100vh - var(--h-header) - var(--sp-4));
+    max-height: calc(100vh - var(--h-top) - var(--sp-4));
     overflow-y: auto;
     padding: var(--sp-2) var(--sp-2) var(--sp-3);
     border: 1px solid var(--border);

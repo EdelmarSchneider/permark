@@ -1,14 +1,12 @@
 <script lang="ts">
-  // Window frame: switcher bar (only with >= 2 workspaces) | header | left sidebar | document area | right panel |
-  // status bar. Regions are slots; features fill them (empty slot = region not rendered). The two side panels are
+  // Window frame: top bar | left sidebar | document area | right panel | status bar. Regions are slots; features fill them (empty slot = region not rendered). The two side panels are
   // resizable: widths come in as props (the layout store keeps them), a splitter on each inner edge asks for changes.
   import type { Snippet } from "svelte";
   import { fit, RIGHT, SIDEBAR } from "./layout";
   import Splitter from "./Splitter.svelte";
 
   type Props = {
-    switcher?: Snippet;
-    header: Snippet;
+    top: Snippet;
     sidebar?: Snippet;
     main: Snippet;
     panel?: Snippet;
@@ -20,8 +18,7 @@
   };
 
   let {
-    switcher,
-    header,
+    top,
     sidebar,
     main,
     panel,
@@ -43,11 +40,8 @@
   );
 </script>
 
-<div class="frame" class:has-switcher={switcher !== undefined}>
-  {#if switcher}
-    <div class="switcher">{@render switcher()}</div>
-  {/if}
-  <header class="header">{@render header()}</header>
+<div class="frame">
+  <header class="top">{@render top()}</header>
   <div
     class="body"
     class:has-sidebar={sidebar !== undefined}
@@ -86,24 +80,13 @@
 <style>
   .frame {
     display: grid;
-    grid-template-rows: var(--h-header) minmax(0, 1fr) var(--h-status);
+    grid-template-rows: var(--h-top) minmax(0, 1fr) var(--h-status);
     height: 100%;
   }
-  .frame.has-switcher {
-    grid-template-rows: var(--h-switcher) var(--h-header) minmax(0, 1fr) var(--h-status);
-  }
-  .switcher {
+  .top {
+    display: flex;
     min-width: 0;
     overflow: hidden;
-    background: var(--surface-2);
-    border-bottom: 1px solid var(--border);
-  }
-  .header {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    min-width: 0;
-    padding: 0 var(--sp-3);
     background: var(--surface);
     border-bottom: 1px solid var(--border);
   }

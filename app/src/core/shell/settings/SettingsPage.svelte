@@ -1,12 +1,11 @@
 <script lang="ts">
   // The full settings: a left list of sections (Reading, Editing, Integration, Plugins, Project) and the shown one at
-  // the right, each a card of rows. Covers the window below the switcher bar; Escape or Close goes back to where the
+  // the right, each a card of rows. Covers the window below the top bar; Escape or Close goes back to where the
   // person was.
   import X from "@lucide/svelte/icons/x";
   import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
   import type { WindowStore } from "../../window.svelte";
-  import { switcher } from "../workspaceList.svelte";
   import { SETTINGS_SECTIONS, ui, type SettingsSection } from "../ui.svelte";
   import Card from "./Card.svelte";
   import EditingSection from "./EditingSection.svelte";
@@ -83,7 +82,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="overlay" style:top={switcher.visible ? "var(--h-switcher)" : "0"}>
+<div class="overlay">
   <div
     class="page"
     role="dialog"
@@ -139,7 +138,7 @@
 <style>
   .overlay {
     position: fixed;
-    inset: 0;
+    inset: var(--h-top) 0 0;
     z-index: 45;
     display: flex;
     background: var(--bg);

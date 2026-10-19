@@ -10,8 +10,10 @@
     close: () => void;
     /** What the menu is called for assistive tech (default: the file actions). */
     label?: string;
+    /** The button that opened it: a press on it is that button's own (it toggles the menu). */
+    anchor?: HTMLElement;
   };
-  let { x, y, entries, close, label }: Props = $props();
+  let { x, y, entries, close, label, anchor }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
@@ -54,7 +56,9 @@
       menu.focus();
     }
     const onPointer = (e: PointerEvent): void => {
-      if (menu && e.target instanceof Node && !menu.contains(e.target)) close();
+      if (!(e.target instanceof Node) || !menu || menu.contains(e.target)) return;
+      if (anchor?.contains(e.target)) return;
+      close();
     };
     window.addEventListener("pointerdown", onPointer, true);
     return () => {
@@ -77,6 +81,8 @@
   {#each entries as entry, at (at)}
     {#if entry.kind === "separator"}
       <div class="sep" role="separator"></div>
+    {:else if entry.kind === "heading"}
+      <div class="menu-label heading" role="presentation">{entry.label}</div>
     {:else}
       <button
         type="button"
@@ -85,7 +91,14 @@
         onpointerenter={() => (picked = at)}
         onclick={() => run(at)}
       >
-        <span>{entry.label}</span>
+        {#if entry.detail}
+          <span class="two" title={entry.detail}>
+            <span class="label">{entry.label}</span>
+            <span class="detail">{entry.detail}</span>
+          </span>
+        {:else}
+          <span>{entry.label}</span>
+        {/if}
         {#if entry.hint}<kbd>{entry.hint}</kbd>{/if}
       </button>
     {/if}
@@ -97,6 +110,7 @@
     position: fixed;
     z-index: 55;
     min-width: 200px;
+    max-width: min(380px, calc(100vw - 8px));
     padding: var(--sp-1);
     border: 1px solid var(--border);
     border-radius: var(--radius-control);
@@ -131,6 +145,25 @@
     color: var(--faint);
     font: inherit;
     font-size: var(--fs-ui-xs);
+  }
+  .two {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .label,
+  .detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .detail {
+    color: var(--faint);
+    font-size: var(--fs-ui-xs);
+  }
+  .heading {
+    padding-top: var(--sp-2);
   }
   .sep {
     height: 1px;

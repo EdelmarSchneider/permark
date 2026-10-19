@@ -38,7 +38,7 @@
   --w-right: 280px;
   --h-status: 24px;
   --h-header: 44px;
-  --h-switcher: 32px;
+  --h-top: 42px;
   /* motion */
   --dur-fast: 120ms;
   --dur: 180ms;
@@ -95,6 +95,7 @@
   --mark-strong: #ffd33d;
   --zebra: #fafafb;
   --shadow-pop: 0 10px 28px rgb(31 35 40 / 0.12), 0 1px 3px rgb(31 35 40 / 0.08);
+  --shadow-chip: 0 1px 2px rgb(31 35 40 / 0.07), 0 1px 1px rgb(31 35 40 / 0.04);
   --backdrop: rgb(31 35 40 / 0.28);
   /* behind a picture with transparency (the image viewer), and behind a video */
   --checker-a: #ffffff;
@@ -229,6 +230,7 @@
   --mark-strong: rgb(242 204 96 / 0.55);
   --zebra: #1a1c1f;
   --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.35);
+  --shadow-chip: 0 1px 2px rgb(0 0 0 / 0.35);
   --backdrop: rgb(0 0 0 / 0.45);
   --checker-a: #23262b;
   --checker-b: #2e3238;

@@ -1136,14 +1136,24 @@ pub fn plugin_remove_data(handle: AppHandle, plugin: String) -> Result<(), IpcEr
     Ok(())
 }
 
-/// Asks every window that shows the workspace to close it (each runs its unsaved-changes prompt first).
+/// Asks every window that shows the workspace to close it: each settles its unsaved edits first (brought to the front
+/// when it has some), then closes, or shows the Welcome when no other workspace is open.
 #[tauri::command(async)]
 pub fn workspace_close(handle: AppHandle, id: WorkspaceId) -> Result<(), IpcError> {
-    let windows = state(&handle).registry.windows_of(id);
+    let shell = state(&handle);
+    let windows = shell.registry.windows_of(id);
     if windows.is_empty() {
         return Err(IpcError::new(ErrorKind::NotFound).subject(id.0.to_string()));
     }
     for window in windows {
+        // a window with unsaved edits asks the person: it comes to the front so the question is seen
+        let unsaved = shell
+            .registry
+            .workspace_of(&window)
+            .is_some_and(|(_, workspace)| documents_of(&workspace).unsaved(&window).is_some());
+        if unsaved {
+            crate::windows::focus(&handle, &window);
+        }
         let _ = handle.emit_to(
             window.as_str(),
             "workspace-close-requested",

@@ -42,9 +42,9 @@ export default {
   "welcome.openFailed": "No se pudo abrir {path}: {message}",
 
   // ---- header + workspaces
-  "header.close": "Cerrar",
-  "header.closeHint": "Cerrar y volver a la pantalla de inicio",
   "header.settings": "Configuración",
+  "top.open": "Abrir",
+  "top.openHint": "Abrir una carpeta, un archivo o una carpeta reciente",
   "project.explorer": "Explorador",
   "project.panel": "Panel",
 
@@ -497,7 +497,7 @@ export default {
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir carpeta...",
   "cmd.openFile": "Abrir archivo...",
-  "cmd.closeFolder": "Cerrar carpeta",
+  "cmd.closeFolder": "Cerrar carpeta o archivo",
   "cmd.quickOpen": "Ir al archivo",
   "cmd.searchAll": "Buscar en todos los docs",
   "cmd.back": "Atrás",
@@ -1266,6 +1266,7 @@ export default {
   "settings.problem.notInitialized": "PerMark no está inicializado en este proyecto.",
   "settings.problem.other": "Este valor no se aceptó.",
   "switcher.close": "Cerrar",
+  "switcher.closeOne": "Cerrar {name}",
   "switcher.label": "Espacios de trabajo abiertos",
   "switcher.menu": "Acciones del espacio de trabajo",
   "switcher.openNew": "Abrir en una ventana nueva",

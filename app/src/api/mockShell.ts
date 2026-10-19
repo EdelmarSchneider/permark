@@ -121,11 +121,15 @@ function listProblem(change: ProjectSettingChange): string | null {
 
 export type MockShell = ReturnType<typeof createMockShell>;
 
-/** `workspace`: what the window shows (so the list can name it); `changed`: tells the window the list moved. */
+/**
+ * `workspace`: what the window shows (so the list can name it); `changed`: tells the window the list moved;
+ * `closeOwn`: asks the window to close what it shows (as the backend does for each window that shows a workspace).
+ */
 export function createMockShell(deps: {
   settings: () => AppSettings;
   workspace: () => WorkspaceSummary | null;
   changed: () => void;
+  closeOwn: () => void;
 }) {
   let project = emptyProject();
   /** The folders PerMark was initialized in (the real thing is a `.permark/` folder on disk). */
@@ -199,6 +203,7 @@ export function createMockShell(deps: {
       },
       workspaceClose: (id: number) => {
         closed.push(id);
+        if (deps.workspace()?.id === id) deps.closeOwn();
         return ok(null);
       },
       projectConfigGet: () => ok(project),

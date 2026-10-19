@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // The shell's own screens against the mock backend: the settings page (sections, plugins, project settings), the
-// initialize question, the switcher bar and its keys, the welcome screen.
+// initialize question, the top bar (chips, Open menu, closing) and its keys, the welcome screen.
 import { flushSync, mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MOCK_FOLDER } from "../../api/mock";
@@ -13,11 +13,18 @@ Object.defineProperty(window, "matchMedia", {
   value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
 });
 Element.prototype.scrollIntoView = () => {};
+// jsdom has no layout: the chip row's size watcher sees nothing (the real web views have one)
+globalThis.ResizeObserver ??= class {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+};
 
 const { api } = await import("../../api");
 const { default: SettingsPage } = await import("./settings/SettingsPage.svelte");
 const { default: InitDialog } = await import("./InitDialog.svelte");
-const { default: Switcher } = await import("./Switcher.svelte");
+const { default: TopBar } = await import("./TopBar.svelte");
+const { closeHere } = await import("./closeWorkspace");
 const { default: Welcome } = await import("./Welcome.svelte");
 const { ui } = await import("./ui.svelte");
 const { windowStore } = await import("../window.svelte");
@@ -427,69 +434,112 @@ describe("the project settings and Initialize PerMark", () => {
   });
 });
 
-describe("the switcher bar", () => {
+describe("the top bar", () => {
   const list = (): void =>
     mock.probe.shell.setOthers([
       { id: 90, kind: "project", title: "api-specs", path: "C:/work/api-specs", windows: 2 },
-      { id: 91, kind: "singleFile", title: "proposal.md", path: "C:/p/proposal.md", windows: 1 },
+      {
+        id: 91,
+        kind: "singleFile",
+        title: "proposal-for-the-quarterly-budget-review.md",
+        path: "C:/p/proposal-for-the-quarterly-budget-review.md",
+        windows: 1,
+      },
       { id: 92, kind: "notes", title: "Notes", path: "C:/Notes", windows: 1 },
     ]);
 
-  async function mountBar(): Promise<void> {
+  const chips = (): HTMLElement[] => Array.from(target.querySelectorAll<HTMLElement>("[data-tab]"));
+  const closeOf = (at: number): HTMLElement =>
+    target.querySelectorAll<HTMLElement>(".chip")[at]!.querySelector<HTMLElement>(".close")!;
+
+  async function mountBar(notes = true): Promise<void> {
     await open();
     switcher.start(mock);
     list();
     await until(() => switcher.list.length === 4, "the list");
-    component = mount(Switcher, { target, props: { current: switcher.list[0]?.id ?? null } });
+    component = mount(TopBar, {
+      target,
+      props: { store, current: switcher.list[0]?.id ?? null, notes },
+    });
     flushSync();
   }
 
-  it("is for two or more: one tab per workspace, its window count when it has several", async () => {
+  it("one chip per workspace, also with one: name, window count, a close button each", async () => {
     await open();
     const stop = switcher.start(mock);
     await until(() => switcher.list.length === 1, "one workspace");
-    expect(switcher.visible).toBe(false);
-    list();
-    await until(() => switcher.visible, "now it shows");
+    expect(switcher.canSwitch).toBe(false);
+    component = mount(TopBar, {
+      target,
+      props: { store, current: switcher.list[0]?.id ?? null, notes: true },
+    });
+    flushSync();
+    expect(chips().map((c) => c.getAttribute("aria-label"))).toEqual(["permark-docs"]);
+    expect(closeOf(0).getAttribute("aria-label")).toBe("Close permark-docs (Ctrl+W)");
+    await unmount(component);
+    component = null;
     stop();
     await mountBar();
-    const tabs = Array.from(target.querySelectorAll("[data-tab]"));
-    expect(tabs.map((t) => t.textContent?.replace(/\s+/g, " ").trim())).toEqual([
+    expect(switcher.canSwitch).toBe(true);
+    expect(chips().map((c) => c.getAttribute("aria-label"))).toEqual([
       "permark-docs",
-      "api-specs 2 2 windows",
-      "proposal.md",
+      "api-specs, 2 windows",
+      "proposal-for-the-quarterly-budget-review.md",
       "Notes",
     ]);
-    expect(tabs[0]?.getAttribute("aria-current")).toBe("true");
-    expect(tabs[1]?.getAttribute("title")).toBe("C:/work/api-specs");
+    expect(chips()[0]?.getAttribute("aria-current")).toBe("page");
+    expect(chips()[1]?.getAttribute("aria-current")).toBeNull();
+    expect(chips()[1]?.getAttribute("title")).toBe("C:/work/api-specs");
+    // a long name is cut in the middle: the end of the name (and its extension) always shows
+    expect(chips()[2]?.querySelector(".tail")?.textContent).toBe("view.md");
+    // only this window's chip names the shortcut
+    expect(closeOf(1).getAttribute("aria-label")).toBe("Close api-specs");
+    // each chip wears its kind's hue (Notes yellow, a file gray)
+    const hue = (at: number): string =>
+      target.querySelectorAll<HTMLElement>(".chip")[at]!.style.getPropertyValue("--hue");
+    expect([hue(2), hue(3)]).toEqual(["var(--tag-gray)", "var(--tag-yellow)"]);
   });
 
   it("a click focuses the window that shows the workspace", async () => {
     await mountBar();
-    (target.querySelectorAll("[data-tab]")[2] as HTMLElement).click();
+    chips()[2]!.click();
     expect(mock.probe.shell.focused).toEqual([91]);
   });
 
-  it("the arrows move between tabs (wrapping), Home and End go to the ends", async () => {
+  it("closes from the close button, the Delete key or a middle click", async () => {
     await mountBar();
-    const tabs = Array.from(target.querySelectorAll<HTMLElement>("[data-tab]"));
-    tabs[0]?.focus();
-    press(tabs[0]!, "ArrowLeft");
-    expect(document.activeElement).toBe(tabs[3]);
-    press(tabs[3]!, "ArrowRight");
-    expect(document.activeElement).toBe(tabs[0]);
-    press(tabs[0]!, "End");
-    expect(document.activeElement).toBe(tabs[3]);
-    press(tabs[3]!, "Home");
-    expect(document.activeElement).toBe(tabs[0]);
-    // only one tab is in the tab order: the one this window shows
-    expect(tabs.map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
+    closeOf(1).click();
+    press(chips()[2]!, "Delete");
+    chips()[3]!.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    // other mouse buttons and Delete with a modifier do nothing
+    chips()[3]!.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 2 }));
+    press(chips()[3]!, "Delete", { ctrlKey: true });
+    expect(mock.probe.shell.closed).toEqual([90, 91, 92]);
+    expect(mock.probe.shell.focused).toEqual([]);
+  });
+
+  it("the arrows move between chips (wrapping), Home and End go to the ends", async () => {
+    await mountBar();
+    const all = chips();
+    all[0]?.focus();
+    press(all[0]!, "ArrowLeft");
+    expect(document.activeElement).toBe(all[3]);
+    press(all[3]!, "ArrowRight");
+    expect(document.activeElement).toBe(all[0]);
+    press(all[0]!, "End");
+    expect(document.activeElement).toBe(all[3]);
+    press(all[3]!, "Home");
+    expect(document.activeElement).toBe(all[0]);
+    // only one chip is in the tab order (this window's); the close buttons are reached by Delete | the menu
+    expect(all.map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
+    const closes = Array.from(target.querySelectorAll<HTMLElement>(".close"));
+    expect(closes.map((b) => b.tabIndex)).toEqual([-1, -1, -1, -1]);
   });
 
   it("the context menu opens in a new window or closes the workspace", async () => {
     await mountBar();
-    const tab = target.querySelectorAll<HTMLElement>("[data-tab]")[1]!;
-    tab.dispatchEvent(
+    const chip = chips()[1]!;
+    chip.dispatchEvent(
       new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 30 }),
     );
     await tick();
@@ -500,7 +550,7 @@ describe("the switcher bar", () => {
     (document.querySelectorAll('[role="menuitem"]')[1] as HTMLElement).click();
     expect(mock.probe.shell.closed).toEqual([90]);
     // the keyboard way in: the Menu key
-    press(tab, "ContextMenu");
+    press(chip, "ContextMenu");
     await tick();
     expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe(
       "Workspace actions",
@@ -510,7 +560,76 @@ describe("the switcher bar", () => {
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
 
-  it("Ctrl+Alt+Right | Left go to the next | previous workspace; nothing happens with one", async () => {
+  it("the Open menu: folder, file, new project, Notes, then the recent folders that exist", async () => {
+    await mountBar();
+    const button = target.querySelector<HTMLElement>("button.open")!;
+    expect(button.getAttribute("aria-label")).toBe("Open");
+    const menuShows = () => until(() => document.querySelector('[role="menu"]') !== null, "menu");
+    button.click();
+    await menuShows();
+    const menu = document.querySelector('[role="menu"]')!;
+    expect(menu.getAttribute("aria-label")).toBe("Open");
+    const items = Array.from(menu.querySelectorAll('[role="menuitem"]')).map((i) =>
+      i.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    // the missing recent folder is left out (the Welcome lists it with its Remove)
+    expect(items).toEqual([
+      "Open folder... Ctrl+O",
+      "Open file... Ctrl+Shift+O",
+      "New project…",
+      "Notes",
+      `permark-docs ${MOCK_FOLDER}`,
+    ]);
+    expect(menu.querySelector(".heading")?.textContent).toBe("Recent folders");
+    // a recent folder that is open already: its window comes forward, nothing opens again
+    (menu.querySelectorAll('[role="menuitem"]')[4] as HTMLElement).click();
+    await tick();
+    expect(mock.probe.shell.focused).toEqual([switcher.list[0]?.id]);
+    // the Notes are open (chip 92): the same
+    button.click();
+    await menuShows();
+    (document.querySelectorAll('[role="menuitem"]')[3] as HTMLElement).click();
+    await tick();
+    expect(mock.probe.shell.focused.at(-1)).toBe(92);
+    // a second click on the button closes the menu it opened
+    button.click();
+    await menuShows();
+    button.click();
+    await tick();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("the Open menu leaves the Notes out while their plugin is off", async () => {
+    await mountBar(false);
+    target.querySelector<HTMLElement>("button.open")!.click();
+    await until(() => document.querySelector('[role="menu"]') !== null, "menu");
+    const items = Array.from(document.querySelectorAll('[role="menuitem"]')).map((i) =>
+      i.textContent?.trim(),
+    );
+    expect(items.some((i) => i === "Notes")).toBe(false);
+  });
+
+  it("with nothing open anywhere: the app name, no chips, no Open button; settings always there", async () => {
+    await store.start().catch(() => {});
+    started = true;
+    await mock.showWelcome();
+    await until(() => store.view.state === "welcome", "welcome");
+    const stop = switcher.start(mock);
+    await until(() => switcher.list.length === 0, "nothing open");
+    component = mount(TopBar, { target, props: { store, current: null, notes: true } });
+    flushSync();
+    expect(target.querySelector(".brand")?.textContent).toBe("PerMark");
+    expect(chips()).toHaveLength(0);
+    expect(target.querySelector("button.open")).toBeNull();
+    const settings = target.querySelector<HTMLElement>("[data-settings-trigger]")!;
+    expect(settings.getAttribute("aria-label")).toBe("Settings");
+    settings.click();
+    expect(ui.settings).toBe(true);
+    ui.closeSettingsPopover();
+    stop();
+  });
+
+  it("Mod+W closes this window's workspace; Ctrl+Alt+Right | Left go to the next | previous", async () => {
     await open();
     const stop = switcher.start(mock);
     await until(() => switcher.list.length === 1, "one workspace");
@@ -522,12 +641,98 @@ describe("the switcher bar", () => {
     await command("workspace.next").run();
     await command("workspace.previous").run();
     expect(mock.probe.shell.focused).toEqual([90, 92]);
-    const keys = contributions.of("shortcut").filter((s) => s.command.startsWith("workspace."));
+    const own = switcher.list[0]!.id;
+    await command("app.closeWorkspace").run();
+    expect(mock.probe.shell.closed).toEqual([own]);
+    const keys = contributions
+      .of("shortcut")
+      .filter((s) => s.command.startsWith("workspace.") || s.command === "app.closeWorkspace");
     expect(keys.map((k) => [k.command, k.keys])).toEqual([
       ["workspace.next", "Mod+Alt+ArrowRight"],
       ["workspace.previous", "Mod+Alt+ArrowLeft"],
+      ["app.closeWorkspace", "Mod+w"],
     ]);
     stop();
+  });
+});
+
+describe("closing a workspace in a window", () => {
+  type Deps = NonNullable<Parameters<typeof closeHere>[0]>;
+
+  function deps(
+    listed: number[],
+    shown: number | null,
+    focused: boolean,
+  ): { calls: string[]; deps: Deps } {
+    const calls: string[] = [];
+    const summaries = listed.map((id) => ({ id }));
+    const fake = {
+      api: {
+        windowClose: async () => {
+          calls.push("windowClose");
+          return { ok: true, value: null };
+        },
+      },
+      store: {
+        view:
+          shown === null
+            ? { state: "welcome" }
+            : {
+                state: "showing",
+                document: null,
+                workspace: {
+                  kind: "project",
+                  id: shown,
+                  name: "p",
+                  root: "/p",
+                  stateLocation: "profile",
+                },
+              },
+        closeWorkspace: async () => {
+          calls.push("welcome");
+        },
+      },
+      switcher: {
+        afterClose: (id: number) => {
+          const rest = summaries.filter((w) => w.id !== id);
+          const at = summaries.findIndex((w) => w.id === id);
+          return rest[Math.min(Math.max(at, 0), rest.length - 1)] ?? null;
+        },
+        focus: (id: number) => {
+          calls.push(`focus ${id}`);
+        },
+      },
+      focused: () => focused,
+    };
+    return { calls, deps: fake as unknown as Deps };
+  }
+
+  it("other workspaces remain: the window closes, the focused one first moves to the next", async () => {
+    const a = deps([1, 2, 3], 2, true);
+    await closeHere(a.deps);
+    expect(a.calls).toEqual(["focus 3", "windowClose"]);
+    const last = deps([1, 2, 3], 3, true);
+    await closeHere(last.deps);
+    expect(last.calls).toEqual(["focus 2", "windowClose"]);
+    // a window in the background closes without pulling the focus away from where the person is
+    const b = deps([1, 2], 1, false);
+    await closeHere(b.deps);
+    expect(b.calls).toEqual(["windowClose"]);
+  });
+
+  it("the last workspace: the window stays and shows the Welcome", async () => {
+    const a = deps([1], 1, true);
+    await closeHere(a.deps);
+    expect(a.calls).toEqual(["welcome"]);
+  });
+
+  it("unsaved edits the person keeps (Cancel): nothing closes", async () => {
+    const { setLeaveGuard } = await import("../editing/guard");
+    const off = setLeaveGuard(async () => false);
+    const a = deps([1, 2], 1, true);
+    await closeHere(a.deps);
+    expect(a.calls).toEqual([]);
+    off();
   });
 });
 

@@ -5,7 +5,6 @@ import type { WorkspaceKind } from "../../api/generated/WorkspaceKind";
 import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
 import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
-import { confirmLeave } from "../editing/guard";
 import { editing } from "../editing/session.svelte";
 import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
 import type { MessageKey } from "../i18n";
@@ -14,6 +13,7 @@ import {
   type ContributionInput,
   type ContributionRegistry,
 } from "../plugins/registry.svelte";
+import { closeOwnWorkspace } from "../shell/closeWorkspace";
 import { askInitHere } from "../shell/initProject";
 import { switcher } from "../shell/workspaceList.svelte";
 import { shownId } from "../shell/switcherModel";
@@ -45,10 +45,6 @@ const hasDocument = (): boolean => documents.path !== null;
 const readable = (): boolean => hasDocument() && !editingNow();
 const canEdit = (): boolean => (hasDocument() && editBlockedReason() === null) || editingNow();
 
-async function closeWorkspace(): Promise<void> {
-  if (await confirmLeave({ kind: "workspace" })) await store.closeWorkspace();
-}
-
 function cycleWidth(): void {
   const at = WIDTHS.indexOf(reading.width);
   reading.setWidth(WIDTHS[(at + 1) % WIDTHS.length] ?? "comfortable");
@@ -65,14 +61,14 @@ const SPECS: readonly Spec[] = [
     id: "workspace.next",
     label: "cmd.workspaceNext",
     keys: ["Mod+Alt+ArrowRight"],
-    when: () => switcher.visible,
+    when: () => switcher.canSwitch,
     run: () => switcher.focusNeighbor(1, shownId(store.view)),
   },
   {
     id: "workspace.previous",
     label: "cmd.workspacePrevious",
     keys: ["Mod+Alt+ArrowLeft"],
-    when: () => switcher.visible,
+    when: () => switcher.canSwitch,
     run: () => switcher.focusNeighbor(-1, shownId(store.view)),
   },
   {
@@ -85,8 +81,9 @@ const SPECS: readonly Spec[] = [
   {
     id: "app.closeWorkspace",
     label: "cmd.closeFolder",
+    keys: ["Mod+w"],
     requires: READING,
-    run: () => closeWorkspace(),
+    run: () => closeOwnWorkspace(),
   },
   {
     id: "search.quickOpen",

@@ -15,7 +15,8 @@
   import InitDialog from "./core/shell/InitDialog.svelte";
   import SettingsPage from "./core/shell/settings/SettingsPage.svelte";
   import SettingsPopover from "./core/shell/SettingsPopover.svelte";
-  import Switcher from "./core/shell/Switcher.svelte";
+  import TopBar from "./core/shell/TopBar.svelte";
+  import { closeHere } from "./core/shell/closeWorkspace";
   import Welcome from "./core/shell/Welcome.svelte";
   import WindowChoice from "./core/shell/WindowChoice.svelte";
   import { confirmLeave } from "./core/editing/guard";
@@ -96,6 +97,7 @@
   const notesView = $derived(
     contributions.visible("workspaceView", conditions.current).find((v) => v.workspace === "notes"),
   );
+  const notesOn = $derived(conditions.current.plugins.includes("notes"));
   const sidebarView = $derived(activeSidebar());
   const rightPanel = $derived(activeRight());
 
@@ -123,7 +125,7 @@
   $effect(() => {
     void api.setWindowTheme(look.preference === "system" ? null : look.preference);
   });
-  // the other workspaces of the process, for the switcher bar and its keys
+  // the workspaces of the process, for the top bar chips and their keys
   $effect(() => switcher.start());
   $effect(() => look.watchSystem());
   // the window was asked to close with unsaved edits: the person answers, then it closes for real
@@ -147,17 +149,13 @@
     };
   });
 
-  async function closeWorkspace(): Promise<void> {
-    if (await confirmLeave({ kind: "workspace" })) await store.closeWorkspace();
-  }
-
-  // the switcher (or another window) asked this window to close its workspace: the unsaved prompt runs first
+  // a chip, Mod+W or another window asked this window to close its workspace: the unsaved prompt runs first
   $effect(() => {
     let off: (() => void) | null = null;
     let gone = false;
     void api
       .on("workspace-close-requested", (event) => {
-        if (event.window === store.label) void closeWorkspace();
+        if (event.window === store.label) void closeHere();
       })
       .then((stop) => {
         if (gone) stop();
@@ -175,41 +173,8 @@
   });
 </script>
 
-{#snippet header()}
-  {#if shown}
-    <span
-      class="title"
-      title={shown.workspace.kind === "project"
-        ? shown.workspace.root
-        : shown.workspace.kind === "singleFile"
-          ? shown.workspace.path
-          : (shown.workspace.folder ?? "")}
-    >
-      {shown.workspace.kind === "notes" ? t("notes.title") : shown.workspace.name}
-    </span>
-  {:else}
-    <span class="title">{t("app.name")}</span>
-  {/if}
-  <span class="spacer"></span>
-  {#if shown}
-    <button
-      type="button"
-      class="btn btn--ghost btn--sm"
-      title={t("header.closeHint")}
-      onclick={() => void closeWorkspace()}
-    >
-      {t("header.close")}
-    </button>
-  {/if}
-  <button
-    type="button"
-    class="btn btn--ghost btn--sm"
-    data-settings-trigger
-    aria-expanded={ui.settings}
-    onclick={() => ui.toggleSettings()}
-  >
-    {t("header.settings")}
-  </button>
+{#snippet top()}
+  <TopBar {store} current={shownId(store.view)} notes={notesOn} />
 {/snippet}
 
 {#snippet sidebar()}
@@ -278,10 +243,6 @@
   {/if}
 {/snippet}
 
-{#snippet switcherBar()}
-  <Switcher current={shownId(store.view)} />
-{/snippet}
-
 {#snippet status()}
   <div class="slot left"><StatusItems slot="left" /></div>
   <div class="slot center"><StatusItems slot="center" /></div>
@@ -290,12 +251,11 @@
 
 {#if store.boot.status !== "booting"}
   <Frame
-    switcher={switcher.visible ? switcherBar : undefined}
     sidebarWidth={layout.sidebar}
     rightWidth={layout.right}
     onSidebarWidth={(px) => layout.setSidebar(px)}
     onRightWidth={(px) => layout.setRight(px)}
-    {header}
+    {top}
     sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
       ? sidebar
       : undefined}
@@ -339,13 +299,6 @@
 {/if}
 
 <style>
-  .title {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 600;
-  }
   .slot {
     display: flex;
     align-items: center;

@@ -40,9 +40,9 @@ export default {
   "welcome.openFailed": "Não foi possível abrir {path}: {message}",
 
   // ---- header + workspaces
-  "header.close": "Fechar",
-  "header.closeHint": "Fechar e voltar à tela inicial",
   "header.settings": "Configurações",
+  "top.open": "Abrir",
+  "top.openHint": "Abrir uma pasta, um arquivo ou uma pasta recente",
   "project.explorer": "Explorador",
   "project.panel": "Painel",
 
@@ -494,7 +494,7 @@ export default {
   // ---- search, commands, keyboard
   "cmd.openFolder": "Abrir pasta...",
   "cmd.openFile": "Abrir arquivo...",
-  "cmd.closeFolder": "Fechar pasta",
+  "cmd.closeFolder": "Fechar pasta ou arquivo",
   "cmd.quickOpen": "Ir para o arquivo",
   "cmd.searchAll": "Pesquisar em todos os docs",
   "cmd.back": "Voltar",
@@ -1264,6 +1264,7 @@ export default {
   "settings.problem.notInitialized": "O PerMark não está inicializado neste projeto.",
   "settings.problem.other": "Este valor não foi aceito.",
   "switcher.close": "Fechar",
+  "switcher.closeOne": "Fechar {name}",
   "switcher.label": "Espaços de trabalho abertos",
   "switcher.menu": "Ações do espaço de trabalho",
   "switcher.openNew": "Abrir em uma nova janela",
