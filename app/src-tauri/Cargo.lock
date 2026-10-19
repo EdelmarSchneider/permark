@@ -2761,6 +2761,7 @@ dependencies = [
  "permark-plugin-mermaid",
  "permark-plugin-plantuml",
  "permark-plugin-prompt-blocks",
+ "permark-plugin-quiet",
  "permark-plugin-review",
  "permark-plugin-tags",
  "permark-plugin-text-view",
@@ -2899,6 +2900,18 @@ name = "permark-plugin-prompt-blocks"
 version = "0.5.8"
 dependencies = [
  "permark-core",
+]
+
+[[package]]
+name = "permark-plugin-quiet"
+version = "0.5.8"
+dependencies = [
+ "dunce",
+ "permark-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

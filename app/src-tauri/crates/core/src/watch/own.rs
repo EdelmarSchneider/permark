@@ -100,8 +100,9 @@ impl OwnWrites {
             };
             let from_key = key_of(from);
             let partner = changes.iter().enumerate().find(|(i, c)| {
+                // a removal does not always know it was a folder (never seen): a folder created may pair with it
                 matches!(c.kind, ChangeKind::Removed)
-                    && c.is_dir == changes[at].is_dir
+                    && (c.is_dir == changes[at].is_dir || changes[at].is_dir)
                     && !dropped.contains(i)
                     && key_of(&c.path) == from_key
             });
@@ -367,6 +368,32 @@ mod tests {
         ];
         own.pair_moves(&mut gone);
         assert_eq!(gone.len(), 2);
+    }
+
+    #[test]
+    fn a_moved_folder_pairs_with_a_removal_that_did_not_know_it_was_one() {
+        let own = OwnWrites::new();
+        own.expect_moves(&[("old".to_owned(), "new".to_owned())]);
+        let mut changes = vec![
+            change("old", ChangeKind::Removed),
+            Change {
+                path: "new".to_owned(),
+                kind: ChangeKind::Created,
+                is_dir: true,
+                own: false,
+            },
+            change("new/a.md", ChangeKind::Created),
+        ];
+        own.pair_moves(&mut changes);
+        assert_eq!(changes.len(), 2);
+        assert!(changes[0].is_dir);
+        assert_eq!(
+            changes[0].kind,
+            ChangeKind::Renamed {
+                from: "old".to_owned()
+            }
+        );
+        assert_eq!(changes[1].path, "new/a.md");
     }
 
     #[test]
