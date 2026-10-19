@@ -30,6 +30,7 @@ permark-plugin-broken-links = { path = "crates/plugins/broken-links" }
 permark-plugin-notes = { path = "crates/plugins/notes" }
 permark-plugin-quiet = { path = "crates/plugins/quiet" }
 permark-plugin-comments = { path = "crates/plugins/comments" }
+permark-plugin-agent = { path = "crates/plugins/agent" }
 permark-plugin-tags = { path = "crates/plugins/tags" }
 permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
@@ -52,6 +53,7 @@ windows-sys = { version = "0.61.2", features = [
   "Win32_Security",
   "Win32_Storage_FileSystem",
   "Win32_System_Threading",
+  "Win32_System_Pipes",
 ] }
 tempfile = "3.27.0"
 ignore = "0.4.33"
@@ -60,6 +62,8 @@ trash = "5.2.9"
 comrak = { version = "0.56", default-features = false }
 ammonia = "4.2"
 git2 = { version = "0.21.0", default-features = false }
+rmcp = { version = "3.5.0", default-features = false, features = ["server", "transport-io"] }
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time", "io-util"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"
@@ -92,7 +96,7 @@ name = "permark_lib"
 
 [features]
 # Plugin crates join here as features; default = full build.
-default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes"]
+default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -116,6 +120,7 @@ plugin-quiet = ["dep:permark-plugin-quiet"]
 plugin-comments = ["dep:permark-plugin-comments"]
 plugin-broken-links = ["dep:permark-plugin-broken-links"]
 plugin-notes = ["dep:permark-plugin-notes"]
+plugin-agent = ["dep:permark-plugin-agent"]
 # Microsoft Store build (the Store updates the app).
 store = []
 
@@ -146,6 +151,7 @@ permark-plugin-quiet = { workspace = true, optional = true }
 permark-plugin-comments = { workspace = true, optional = true }
 permark-plugin-broken-links = { workspace = true, optional = true }
 permark-plugin-notes = { workspace = true, optional = true }
+permark-plugin-agent = { workspace = true, optional = true }
 # generate_context! expands to serde_json (plugin config).
 serde_json.workspace = true
 serde.workspace = true

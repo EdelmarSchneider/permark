@@ -1,5 +1,7 @@
 //! `PerMark` app crate: Tauri shell. Wires core services to windows + IPC; holds no domain logic.
 
+#[cfg(feature = "plugin-agent")]
+pub mod agent;
 mod assets;
 mod commands;
 mod nav;

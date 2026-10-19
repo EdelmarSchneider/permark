@@ -30,6 +30,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_broken_links::plugin());
     #[cfg(feature = "plugin-notes")]
     plugins.push(permark_plugin_notes::plugin());
+    #[cfg(feature = "plugin-agent")]
+    plugins.push(permark_plugin_agent::plugin());
     #[cfg(feature = "plugin-md-family")]
     plugins.push(permark_plugin_md_family::plugin());
     #[cfg(feature = "plugin-word-count")]
