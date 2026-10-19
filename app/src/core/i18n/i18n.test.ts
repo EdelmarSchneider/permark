@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { fill, language, t } from "./index";
+import { fill, language, t, tn } from "./index";
 import {
   LOCALES,
   matchLocale,
@@ -43,6 +43,22 @@ describe("t", () => {
     await language.choose("system", ["it-IT", "en-US"]);
     expect(language.locale).toBe("it");
     expect(t("app.loading")).toBe("Caricamento");
+  });
+});
+
+describe("tn", () => {
+  it("picks the singular or plural form of the active language and fills the count", async () => {
+    expect(tn("fileOps.files", 1)).toBe("1 file");
+    expect(tn("fileOps.files", 0)).toBe("0 files");
+    expect(tn("fileOps.files", 3)).toBe("3 files");
+    expect(tn("fileOps.updateLinks", 2, { files: tn("fileOps.files", 1) })).toBe(
+      "Update 2 links in 1 file?",
+    );
+    await language.choose("pt-BR", []);
+    expect(tn("fileOps.files", 1)).toMatch(/^1 /);
+    expect(tn("fileOps.files", 2)).toMatch(/^2 /);
+    await language.choose("zh-CN", []);
+    expect(tn("fileOps.files", 5)).toContain("5");
   });
 });
 

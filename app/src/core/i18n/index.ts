@@ -22,6 +22,21 @@ export function fill(template: string, params?: Params): string {
   });
 }
 
+/** Keys that come in `.one` + `.other` pairs: `tn("fileOps.files", 3)`. */
+export type PluralKey = {
+  [K in MessageKey]: K extends `${infer Base}.one`
+    ? `${Base}.other` extends MessageKey
+      ? Base
+      : never
+    : never;
+}[MessageKey];
+
+/** UI string for a count: the `.one` form when the language says "one", else `.other`; `{n}` is the count. */
+export function tn(base: PluralKey, count: number, params?: Params): string {
+  const form = new Intl.PluralRules(language.locale).select(count) === "one" ? "one" : "other";
+  return fill(language.table[`${base}.${form}`], { n: count, ...params });
+}
+
 /** UI string in the active language (English fallback). */
 export function t(key: MessageKey, params?: Params): string {
   return fill(language.table[key], params);

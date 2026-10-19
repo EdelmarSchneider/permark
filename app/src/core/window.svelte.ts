@@ -7,6 +7,7 @@ import {
   type ApiError,
   type DropEvent,
   type IpcError,
+  type LinkUpdate,
   type OpenPlacement,
   type RecentFolder,
   type SettingChange,
@@ -23,7 +24,9 @@ export type Notice =
   | { id: number; kind: "apiFailed"; path: string | null; error: ApiError }
   | { id: number; kind: "dropOne" }
   | { id: number; kind: "stateRecovered"; notice: StateRecovered }
-  | { id: number; kind: "settingNotSaved"; error: ApiError };
+  | { id: number; kind: "settingNotSaved"; error: ApiError }
+  | { id: number; kind: "fileOpFailed"; error: ApiError }
+  | { id: number; kind: "note"; text: string };
 
 type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : never) : never;
 
@@ -41,6 +44,8 @@ export class WindowStore {
   choice = $state.raw<Choice>({ status: "closed" });
   drag = $state.raw<Drag>({ status: "idle" });
   notices = $state.raw<readonly Notice[]>([]);
+  /** Whether a move rewrites the links that point at it (the setting). */
+  linkUpdate = $state<LinkUpdate>("ask");
   #nextNotice = 1;
 
   constructor(backend: Api) {
@@ -58,6 +63,7 @@ export class WindowStore {
       }),
       this.#api.on("settings-changed", (e) => {
         look.set(e.settings);
+        this.linkUpdate = e.settings.linkUpdate;
         void language.choose(parsePreference(e.settings.language));
       }),
       this.#api.on("open-failed", (e) => {
@@ -73,6 +79,7 @@ export class WindowStore {
       this.label = info.window;
       conditions.set(info.context);
       look.set(info.settings);
+      this.linkUpdate = info.settings.linkUpdate;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
       for (const failed of info.failures) {
@@ -151,6 +158,16 @@ export class WindowStore {
     const result = await this.#api.settingsSet(change);
     if (!result.ok) this.#notify({ kind: "settingNotSaved", error: result.error });
     // success: `settings-changed` reaches every window (this one included)
+  }
+
+  /** A file operation of the Explorer failed. */
+  notifyFileOpFailed(error: ApiError): void {
+    this.#notify({ kind: "fileOpFailed", error });
+  }
+
+  /** A quiet note ("Moved a.md", "Undone"). */
+  notifyNote(text: string): void {
+    this.#notify({ kind: "note", text });
   }
 
   dismiss(id: number): void {

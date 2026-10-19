@@ -30,6 +30,13 @@ export const ERROR_KINDS = [
   "unavailable",
   "superseded",
   "internal",
+  "invalidName",
+  "intoItself",
+  "otherRoot",
+  "protected",
+  "overlap",
+  "trash",
+  "partlyMoved",
 ] as const satisfies readonly ErrorKind[];
 
 type MissingKinds = Exclude<ErrorKind, (typeof ERROR_KINDS)[number]>;

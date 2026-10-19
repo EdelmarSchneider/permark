@@ -21,6 +21,10 @@
         return t("notice.stateRecovered", { file: notice.notice.file });
       case "settingNotSaved":
         return t("settings.notSaved", { message: apiErrorText(notice.error) });
+      case "fileOpFailed":
+        return apiErrorText(notice.error);
+      case "note":
+        return notice.text;
       default:
         return notice satisfies never;
     }

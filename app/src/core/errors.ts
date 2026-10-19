@@ -36,6 +36,20 @@ export function errorKey(kind: ErrorKind): MessageKey {
       return "error.superseded";
     case "internal":
       return "error.internal";
+    case "invalidName":
+      return "error.invalidName";
+    case "intoItself":
+      return "error.intoItself";
+    case "otherRoot":
+      return "error.otherRoot";
+    case "protected":
+      return "error.protected";
+    case "overlap":
+      return "error.overlap";
+    case "trash":
+      return "error.trash";
+    case "partlyMoved":
+      return "error.partlyMoved";
     default:
       return kind satisfies never;
   }

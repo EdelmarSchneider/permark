@@ -12,6 +12,9 @@ const toolFolder = `${process.cwd().split(path.sep).join("/")}/.claude/**`;
 export default defineConfig({
   plugins: [svelte()],
 
+  // component tests mount the browser build of Svelte (jsdom), not the server one
+  resolve: process.env["VITEST"] ? { conditions: ["browser"] } : undefined,
+
   // Tauri: keep Rust errors visible; fixed port (= tauri.conf.json devUrl).
   clearScreen: false,
   server: {

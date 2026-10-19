@@ -1,6 +1,6 @@
 <script lang="ts">
   // Settings popover (skeleton): language, theme, light tone. The full settings page comes with the shell features.
-  import type { LanguagePref, ThemePref, Tone } from "../../api";
+  import type { LanguagePref, LinkUpdate, ThemePref, Tone } from "../../api";
   import { language, LOCALE_NAMES, LOCALES, t, type MessageKey } from "../i18n";
   import { look } from "../look.svelte";
   import type { WindowStore } from "../window.svelte";
@@ -18,6 +18,12 @@
     { value: "paper", label: "settings.tonePaper" },
     { value: "sage", label: "settings.toneSage" },
     { value: "gray", label: "settings.toneGray" },
+  ];
+
+  const LINK_UPDATES: { value: LinkUpdate; label: MessageKey }[] = [
+    { value: "ask", label: "settings.linkAsk" },
+    { value: "always", label: "settings.linkAlways" },
+    { value: "never", label: "settings.linkNever" },
   ];
 
   function parseLanguage(value: string): LanguagePref {
@@ -95,6 +101,22 @@
           disabled={look.theme === "dark"}
           class={["segment", look.tone === option.value && "is-on"]}
           onclick={() => void store.changeSetting({ key: "tone", value: option.value })}
+          >{t(option.label)}</button
+        >
+      {/each}
+    </div>
+  </div>
+
+  <div class="row">
+    <span id="link-update-label">{t("settings.linkUpdate")}</span>
+    <div class="segments" role="radiogroup" aria-labelledby="link-update-label">
+      {#each LINK_UPDATES as option (option.value)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={store.linkUpdate === option.value}
+          class={["segment", store.linkUpdate === option.value && "is-on"]}
+          onclick={() => void store.changeSetting({ key: "linkUpdate", value: option.value })}
           >{t(option.label)}</button
         >
       {/each}

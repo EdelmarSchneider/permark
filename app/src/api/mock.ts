@@ -1,17 +1,25 @@
 // Mock backend (`npm run dev:mock`, tests): same interface, no Tauri. One window ("main"), in memory.
 
+import { DEFAULT_FILTER } from "../core/explorer/filter";
 import type { Context } from "./generated/Context";
+import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
+import { MockProject, MockRefusal } from "./mockFs";
 import type {
   Api,
   AppSettings,
+  CommandName,
   EventName,
   Events,
   JsonValue,
   RecentFolder,
+  Renamed,
   Result,
   SettingChange,
+  TreeFilter,
+  TreeNode,
+  TreeSnapshot,
   Unlisten,
 } from "./types";
 
@@ -22,7 +30,14 @@ export const MOCK_FILE = "C:/Users/demo/Downloads/proposal.md";
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
 function defaultSettings(): AppSettings {
-  return { language: "system", theme: "system", tone: "white", startIn: "welcome", plugins: {} };
+  return {
+    language: "system",
+    theme: "system",
+    tone: "white",
+    startIn: "welcome",
+    linkUpdate: "ask",
+    plugins: {},
+  };
 }
 
 function neutralContext(): Context {
@@ -53,6 +68,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, tone: change.value };
     case "startIn":
       return { ...settings, startIn: change.value };
+    case "linkUpdate":
+      return { ...settings, linkUpdate: change.value };
     case "pluginEnabled": {
       const plugins = { ...settings.plugins };
       if (change.value.enabled === null) delete plugins[change.value.plugin];
@@ -64,9 +81,20 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
   }
 }
 
+type TreeView = { filter: TreeFilter; list: TreeNode[]; seq: number; keep: string | null };
+
+/** What the mock did outside the interface: tests read it. */
+export type MockProbe = {
+  /** Paths handed to `openExternal`, with the mode. */
+  opened: { path: string; mode: string }[];
+  /** The project in memory. */
+  project: MockProject;
+};
+
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
 export function createMockApi(): Api & {
   emit<E extends EventName>(event: E, payload: Events[E]): void;
+  probe: MockProbe;
 } {
   let settings = defaultSettings();
   let view: WindowView = { state: "welcome" };
@@ -88,10 +116,64 @@ export function createMockApi(): Api & {
     "settings-changed": new Set(),
     "state-recovered": new Set(),
     "open-failed": new Set(),
+    "tree-changed": new Set(),
   };
+  const project = new MockProject();
+  const probe: MockProbe = { opened: [], project };
+  let tree: TreeView | null = null;
 
   function emit<E extends EventName>(event: E, payload: Events[E]): void {
     for (const handler of listeners[event]) handler(payload);
+  }
+
+  function fail<T>(command: CommandName, refusal: unknown): Result<T> {
+    if (!(refusal instanceof MockRefusal)) throw refusal;
+    const kind: ErrorKind = refusal.kind;
+    const detail = kind === "invalidName" ? refusal.subject : null;
+    return {
+      ok: false,
+      error: {
+        kind: "backend",
+        command,
+        error: { kind, subject: kind === "invalidName" ? null : refusal.subject, detail },
+      },
+    };
+  }
+
+  /** Recomputes the window list and tells it the difference, like the backend does after a change. */
+  function refreshTree(renamed: Renamed[] = []): void {
+    if (!tree) return;
+    const list = project.list(tree.filter);
+    const { removed, added } = project.diff(tree.list, list);
+    const counts = project.counts(tree.filter);
+    tree = { ...tree, list, seq: tree.seq + 1 };
+    emit("tree-changed", {
+      window: "main",
+      delta: {
+        seq: tree.seq,
+        removed,
+        added,
+        renamed,
+        totalFiles: counts.total,
+        shownFiles: counts.shown,
+        bulk: false,
+      },
+    });
+  }
+
+  function snapshot(filter: TreeFilter): TreeSnapshot {
+    const list = project.list(filter);
+    tree = { filter, list, seq: (tree?.seq ?? 0) + 1, keep: tree?.keep ?? null };
+    const counts = project.counts(filter);
+    return {
+      roots: [{ name: "demo", kind: "main", path: "" }],
+      nodes: list,
+      filter,
+      seq: tree.seq,
+      invalidPatterns: [],
+      totalFiles: counts.total,
+      shownFiles: counts.shown,
+    };
   }
 
   function context(): Context {
@@ -125,6 +207,7 @@ export function createMockApi(): Api & {
 
   return {
     emit,
+    probe,
     appInfo: () => ok({ version: MOCK_VERSION }),
     windowBoot: () =>
       ok({
@@ -143,6 +226,7 @@ export function createMockApi(): Api & {
     },
     showWelcome: () => {
       view = { state: "welcome" };
+      tree = null;
       emit("window-changed", { window: "main", view });
       emit("context-changed", { window: "main", context: context() });
       return ok(null);
@@ -164,6 +248,69 @@ export function createMockApi(): Api & {
     projectSessionSet: (key, value) => {
       if (value === null) session.delete(key);
       else session.set(key, value);
+      return ok(null);
+    },
+    treeOpen: (filter) => ok(snapshot(filter ?? DEFAULT_FILTER)),
+    treeSetFilter: (filter) => ok(snapshot(filter)),
+    treeOpenFolder: () => ok(null),
+    treeKeep: (path) => {
+      if (tree) tree = { ...tree, keep: path };
+      return ok(null);
+    },
+    treeClose: () => {
+      tree = null;
+      return ok(null);
+    },
+    planMove: (moves, updateLinks) => {
+      try {
+        return ok(project.plan(moves, updateLinks));
+      } catch (e) {
+        return Promise.resolve(fail("fileops_plan_move", e));
+      }
+    },
+    applyMove: (planId, updateLinks) => {
+      try {
+        const specs = project.moves(planId);
+        const outcome = project.apply(planId, updateLinks);
+        refreshTree(specs);
+        return ok(outcome);
+      } catch (e) {
+        return Promise.resolve(fail("fileops_apply_move", e));
+      }
+    },
+    deleteFiles: (paths) => {
+      try {
+        project.delete(paths);
+        refreshTree();
+        return ok({ deleted: paths });
+      } catch (e) {
+        return Promise.resolve(fail("fileops_delete", e));
+      }
+    },
+    newEntry: (dir, name, kind) => {
+      try {
+        const path = project.create(dir, name, kind);
+        refreshTree();
+        return ok(path);
+      } catch (e) {
+        return Promise.resolve(fail("fileops_new", e));
+      }
+    },
+    undoFileOp: () => {
+      const done = project.undo();
+      if (done) refreshTree();
+      return ok(done ? { kind: "move", restored: 1, skipped: [] } : null);
+    },
+    absPath: (path) => ok(`${MOCK_FOLDER}/${path}`),
+    openExternal: (path, mode) => {
+      probe.opened.push({ path, mode });
+      return ok(null);
+    },
+    showDocument: (path) => {
+      if (view.state === "showing") {
+        view = { ...view, document: path };
+        emit("window-changed", { window: "main", view });
+      }
       return ok(null);
     },
     on: (event, handler) => {

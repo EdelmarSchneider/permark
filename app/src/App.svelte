@@ -3,6 +3,7 @@
   import { api, type AppInfo, type WorkspaceView } from "./api";
   import { language, t } from "./core/i18n";
   import { look } from "./core/look.svelte";
+  import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import ProjectView from "./core/shell/ProjectView.svelte";
@@ -122,7 +123,11 @@
 {/snippet}
 
 {#snippet sidebar()}
-  <div class="menu-label">{t("project.explorer")}</div>
+  {#if shown?.workspace.kind === "project"}
+    {#key shown.workspace.id}
+      <ExplorerSidebar {store} document={shown.document} />
+    {/key}
+  {/if}
 {/snippet}
 
 {#snippet main()}
