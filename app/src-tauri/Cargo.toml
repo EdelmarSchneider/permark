@@ -90,7 +90,7 @@ name = "permark_lib"
 
 [features]
 # Plugin crates join here as features; default = full build.
-default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments"]
+default = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -112,6 +112,7 @@ plugin-text-view = ["dep:permark-plugin-text-view"]
 plugin-tags = ["dep:permark-plugin-tags"]
 plugin-quiet = ["dep:permark-plugin-quiet"]
 plugin-comments = ["dep:permark-plugin-comments"]
+plugin-broken-links = ["dep:permark-plugin-broken-links"]
 # Microsoft Store build (Store updates the app; distribution slice).
 store = []
 
@@ -140,6 +141,7 @@ permark-plugin-text-view = { workspace = true, optional = true }
 permark-plugin-tags = { workspace = true, optional = true }
 permark-plugin-quiet = { workspace = true, optional = true }
 permark-plugin-comments = { workspace = true, optional = true }
+permark-plugin-broken-links = { workspace = true, optional = true }
 # generate_context! expands to serde_json (plugin config).
 serde_json.workspace = true
 serde.workspace = true
