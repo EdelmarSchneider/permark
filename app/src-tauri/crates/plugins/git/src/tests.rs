@@ -646,7 +646,7 @@ fn the_worker_announces_changes_once_and_follows_the_files() {
             running.service.snapshot().is_some()
         });
         let snap = running.service.snapshot().unwrap();
-        assert!(snap.files.is_empty() && snap.seq == 1, "{name}");
+        assert!(snap.files.is_empty() && snap.seq > 0, "{name}");
         assert_eq!(snap.head.oid.as_deref(), Some(first.as_str()), "{name}");
         assert_eq!(snap.backend, ops.kind(), "{name}");
         assert_eq!(
@@ -667,7 +667,14 @@ fn the_worker_announces_changes_once_and_follows_the_files() {
         });
         let after = running.service.snapshot().unwrap();
         assert_eq!(files_of(&after), [("a.md", Letter::Modified)], "{name}");
-        assert_eq!(after.seq, 2, "{name}");
+        assert!(after.seq > snap.seq, "{name}");
+
+        // a service that starts again (the backend setting changed) numbers its pictures above the old one's
+        let again = start(&fx.root, &ops, Vec::new());
+        wait_until("the picture of the new service", || {
+            again.service.snapshot().is_some()
+        });
+        assert!(again.service.snapshot().unwrap().seq > after.seq, "{name}");
 
         // nothing changed: a trigger announces nothing
         let before = running.announced.lock().unwrap().len();

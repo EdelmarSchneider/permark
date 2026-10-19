@@ -3,7 +3,7 @@
 //! announced only when its content differs. Discovery runs on the worker too: opening a project never waits for git.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, PoisonError, RwLock};
 use std::thread::{self, JoinHandle};
@@ -201,7 +201,6 @@ impl GitService {
             stored_visit,
             session: Session::Unset,
             last_head: None,
-            seq: 0,
             looked: false,
             backend: None,
             main: None,
@@ -291,6 +290,10 @@ impl RepoReader for Reader {
     }
 }
 
+/// The number of the last snapshot announced by any service of the process. One counter for all, so a service that
+/// starts again (the backend setting changed) never announces a number below what the window already has.
+static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
 struct Worker {
     args: ServiceArgs,
     shared: Arc<Shared>,
@@ -299,7 +302,6 @@ struct Worker {
     stored_visit: Option<String>,
     session: Session,
     last_head: Option<String>,
-    seq: u64,
     /// A discovery has run (a folder found without a repository is not looked at again for plain file changes).
     looked: bool,
     backend: Option<Arc<dyn GitOps>>,
@@ -574,8 +576,7 @@ impl Worker {
             if current.as_deref().is_some_and(|c| c.same_content(&next)) {
                 return;
             }
-            self.seq += 1;
-            next.seq = self.seq;
+            next.seq = SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
             let arc = Arc::new(next);
             *current = Some(Arc::clone(&arc));
             drop(current);
