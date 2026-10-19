@@ -5,3 +5,4 @@
 *.woff2 binary
 app/testdata/** -text
 app/src-tauri/crates/plugins/*/src/fixtures/** -text
+app/src-tauri/crates/plugins/token-count/corpus/** -text

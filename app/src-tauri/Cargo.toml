@@ -34,6 +34,7 @@ permark-plugin-agent = { path = "crates/plugins/agent" }
 permark-plugin-tags = { path = "crates/plugins/tags" }
 permark-plugin-unread = { path = "crates/plugins/unread" }
 permark-plugin-word-count = { path = "crates/plugins/word-count" }
+permark-plugin-token-count = { path = "crates/plugins/token-count" }
 permark-plugin-xml-view = { path = "crates/plugins/xml-view" }
 permark-plugin-fmt-toml = { path = "crates/plugins/fmt-toml" }
 permark-plugin-fmt-yaml = { path = "crates/plugins/fmt-yaml" }
@@ -115,7 +116,7 @@ name = "permark_lib"
 # default = the direct build; `store` = the Microsoft Store build (`--no-default-features --features store`): the
 # store updates the app and the package declares the file manager entries.
 default = ["common", "plugin-updates", "plugin-shell-integration"]
-common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore"]
+common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -124,6 +125,7 @@ plugin-unread = ["dep:permark-plugin-unread"]
 plugin-review = ["dep:permark-plugin-review", "plugin-unread"]
 plugin-md-family = ["dep:permark-plugin-md-family"]
 plugin-word-count = ["dep:permark-plugin-word-count"]
+plugin-token-count = ["dep:permark-plugin-token-count"]
 plugin-prompt-blocks = ["dep:permark-plugin-prompt-blocks"]
 plugin-frontmatter-card = ["dep:permark-plugin-frontmatter-card"]
 plugin-highlight = ["dep:permark-plugin-highlight"]
@@ -162,6 +164,7 @@ permark-plugin-unread = { workspace = true, optional = true }
 permark-plugin-review = { workspace = true, optional = true }
 permark-plugin-md-family = { workspace = true, optional = true }
 permark-plugin-word-count = { workspace = true, optional = true }
+permark-plugin-token-count = { workspace = true, optional = true }
 permark-plugin-prompt-blocks = { workspace = true, optional = true }
 permark-plugin-frontmatter-card = { workspace = true, optional = true }
 permark-plugin-highlight = { workspace = true, optional = true }

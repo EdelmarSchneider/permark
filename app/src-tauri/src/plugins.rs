@@ -37,6 +37,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_md_family::plugin());
     #[cfg(feature = "plugin-word-count")]
     plugins.push(permark_plugin_word_count::plugin());
+    #[cfg(feature = "plugin-token-count")]
+    plugins.push(permark_plugin_token_count::plugin());
     #[cfg(feature = "plugin-prompt-blocks")]
     plugins.push(permark_plugin_prompt_blocks::plugin());
     #[cfg(feature = "plugin-frontmatter-card")]
