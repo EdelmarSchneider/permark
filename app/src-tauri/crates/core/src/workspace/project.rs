@@ -14,7 +14,7 @@ use crate::format::FormatRegistry;
 use crate::paths::{Root, Vault};
 use crate::plugins::{
     resolve_enabled, CxWorkspace, EnableInputs, Enablement, PluginCx, PluginId, PluginRegistry,
-    PluginScope, PluginSet,
+    PluginScope, PluginSet, ProjectFacts, ProjectServices, RpcTable, Services,
 };
 use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{AppSettings, ProjectConfig};
@@ -145,6 +145,7 @@ impl CoreEnv {
                     context.clone(),
                     Arc::clone(&self.sink),
                 )
+                .with_store(state.clone())
             });
         for failure in failures {
             self.sink.emit(CoreEvent::PluginFailed {
@@ -184,7 +185,7 @@ pub struct ProjectCore {
     watcher: Watcher,
     fileops: FileOps,
     documents: Arc<Documents>,
-    formats: RwLock<Arc<FormatRegistry>>,
+    formats: Arc<RwLock<Arc<FormatRegistry>>>,
     explorer: Arc<Explorer>,
     hub: Arc<WatchHub>,
     id: ProjectId,
@@ -193,6 +194,11 @@ pub struct ProjectCore {
     config: ProjectConfig,
     enablement: Mutex<BTreeMap<PluginId, Enablement>>,
     plugins: Mutex<PluginSet>,
+    // what the plugins share; they outlive the plugins (stopped first in Drop)
+    own: Arc<OwnWrites>,
+    facts: Arc<ProjectFacts>,
+    rpc: Arc<RpcTable>,
+    services: Arc<Services>,
 }
 
 impl std::fmt::Debug for ProjectCore {
@@ -210,7 +216,10 @@ impl ProjectCore {
         let id = ProjectId::of(&root);
         let store = StateStore::for_project(&env.dirs, &root);
         let config = ProjectConfig::load(&root);
-        let vault = Vault::new(root);
+        // plugins that are on may offer extra roots (linked worktrees) before the project is built
+        let (enablement, on) = project_enablement(env, &config, &store);
+        let extra_roots = env.registry.roots(&on, &root);
+        let vault = Vault::new(root).with_worktrees(extra_roots);
         let hub = WatchHub::new();
         let own = Arc::new(OwnWrites::new());
         let explorer = Arc::new(Explorer::new(
@@ -245,7 +254,12 @@ impl ProjectCore {
             Arc::clone(&own),
             env.status_hook(),
         );
-        let fileops = FileOps::new(vault.clone(), Arc::clone(&explorer), own, &store);
+        let fileops = FileOps::new(
+            vault.clone(),
+            Arc::clone(&explorer),
+            Arc::clone(&own),
+            &store,
+        );
         let core = Arc::new(Self {
             _explorer_sub: explorer_sub,
             _documents_sub: documents_sub,
@@ -254,7 +268,7 @@ impl ProjectCore {
             watcher,
             fileops,
             documents,
-            formats: RwLock::new(Arc::new(FormatRegistry::core())),
+            formats: Arc::new(RwLock::new(Arc::new(FormatRegistry::core()))),
             explorer,
             hub,
             id,
@@ -263,9 +277,37 @@ impl ProjectCore {
             vault,
             enablement: Mutex::new(BTreeMap::new()),
             plugins: Mutex::new(PluginSet::new(PluginScope::Project)),
+            own,
+            facts: ProjectFacts::new(env.status_hook()),
+            rpc: RpcTable::new(),
+            services: Services::new(),
         });
-        core.apply_plugins(env);
+        core.start_plugins(env, enablement, &on);
         core
+    }
+
+    /// What plugins publish about the project (the git condition windows read).
+    #[must_use]
+    pub fn facts(&self) -> &Arc<ProjectFacts> {
+        &self.facts
+    }
+
+    /// The methods running plugins serve (`plugin_call`).
+    #[must_use]
+    pub fn rpc(&self) -> &Arc<RpcTable> {
+        &self.rpc
+    }
+
+    fn project_services(&self) -> ProjectServices {
+        ProjectServices::new(
+            Arc::clone(&self.documents),
+            Arc::clone(&self.explorer),
+            Arc::clone(&self.own),
+            Arc::clone(&self.facts),
+            Arc::clone(&self.services),
+            Arc::clone(&self.rpc),
+            Arc::clone(&self.formats),
+        )
     }
 
     /// Reads documents and tells windows when the ones they show change.
@@ -377,39 +419,44 @@ impl ProjectCore {
 
     /// Re-resolves enablement (settings | choices changed) and starts | stops project plugins to match.
     pub fn apply_plugins(&self, env: &CoreEnv) {
+        let (enablement, on) = project_enablement(env, &self.config, &self.store);
+        self.start_plugins(env, enablement, &on);
+    }
+
+    /// Stops plugin `id` and its dependents, then starts them again (a setting of `id` changed).
+    pub fn restart_plugin(&self, env: &CoreEnv, id: &PluginId) {
+        self.plugins
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stop_with_dependents(&env.registry, id);
+        self.apply_plugins(env);
+    }
+
+    fn start_plugins(
+        &self,
+        env: &CoreEnv,
+        enablement: BTreeMap<PluginId, Enablement>,
+        on: &BTreeSet<PluginId>,
+    ) {
         let settings = env.settings();
-        let choices = self
-            .store
-            .profile_file::<ProjectPluginChoices>(PLUGIN_CHOICES_FILE)
-            .load()
-            .into_value();
-        let inputs = EnableInputs {
-            app: settings.plugins.clone(),
-            project_config_off: self.config.plugins_off.clone(),
-            project_choice: choices.choices,
-        };
-        let enablement = resolve_enabled(&env.registry, &inputs);
-        let on = crate::plugins::on_ids(&enablement);
         *self
             .enablement
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = enablement;
         *self.formats.write().unwrap_or_else(PoisonError::into_inner) =
-            Arc::new(FormatRegistry::build(&env.registry.contributions(&on)));
+            Arc::new(FormatRegistry::build(&env.registry.contributions(on)));
         let mut context = Context::welcome(env.distribution);
         context.workspace = crate::conditions::WorkspaceKind::Project;
-        context.plugins.clone_from(&on);
+        context.plugins.clone_from(on);
         let failures = self
             .plugins
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .apply(&env.registry, &on, |id| {
-                let table = self
-                    .config
-                    .plugin_tables
-                    .get(id)
-                    .or_else(|| settings.plugin_tables.get(id))
-                    .map(|t| t.0.clone());
+            .apply(&env.registry, on, |id| {
+                let table = merged_table(
+                    settings.plugin_tables.get(id),
+                    self.config.plugin_tables.get(id),
+                );
                 PluginCx::new(
                     id.clone(),
                     CxWorkspace::Project(self.vault.clone()),
@@ -419,6 +466,8 @@ impl ProjectCore {
                     Arc::clone(&env.sink),
                 )
                 .with_watch(Arc::clone(&self.hub))
+                .with_project(self.project_services())
+                .with_store(self.store.clone())
             });
         for failure in failures {
             env.sink.emit(CoreEvent::PluginFailed {
@@ -426,6 +475,45 @@ impl ProjectCore {
             });
         }
     }
+}
+
+/// The plugin's table: the app's keys, the project's keys over them.
+fn merged_table(
+    app: Option<&crate::settings::RawTable>,
+    project: Option<&crate::settings::RawTable>,
+) -> Option<toml_edit::Table> {
+    match (app, project) {
+        (None, None) => None,
+        (Some(table), None) | (None, Some(table)) => Some(table.0.clone()),
+        (Some(app), Some(project)) => {
+            let mut merged = app.0.clone();
+            for (key, item) in &project.0 {
+                merged.insert(key, item.clone());
+            }
+            Some(merged)
+        }
+    }
+}
+
+/// Enablement of every plugin for a project (app settings, the project's config, the person's choices) and the
+/// ids that are on.
+fn project_enablement(
+    env: &CoreEnv,
+    config: &ProjectConfig,
+    store: &StateStore,
+) -> (BTreeMap<PluginId, Enablement>, BTreeSet<PluginId>) {
+    let choices = store
+        .profile_file::<ProjectPluginChoices>(PLUGIN_CHOICES_FILE)
+        .load()
+        .into_value();
+    let inputs = EnableInputs {
+        app: env.settings().plugins,
+        project_config_off: config.plugins_off.clone(),
+        project_choice: choices.choices,
+    };
+    let enablement = resolve_enabled(&env.registry, &inputs);
+    let on = crate::plugins::on_ids(&enablement);
+    (enablement, on)
 }
 
 impl Drop for ProjectCore {

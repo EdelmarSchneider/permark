@@ -102,6 +102,25 @@ impl PluginSet {
         failures
     }
 
+    /// Stops `id` and every running plugin that depends on it (dependents first), so that the next
+    /// [`PluginSet::apply`] starts them again with fresh state (a setting of `id` changed).
+    pub fn stop_with_dependents(&mut self, registry: &PluginRegistry, id: &PluginId) {
+        let mut stopping: BTreeSet<PluginId> = BTreeSet::from([id.clone()]);
+        // `ordered` is topological: one pass finds every transitive dependent
+        for manifest in registry.ordered() {
+            if manifest.depends_on.iter().any(|dep| stopping.contains(dep)) {
+                stopping.insert(manifest.id.clone());
+            }
+        }
+        let mut index = self.running.len();
+        while index > 0 {
+            index -= 1;
+            if stopping.contains(&self.running[index].0) {
+                drop(self.running.remove(index));
+            }
+        }
+    }
+
     /// Stops everything (reverse start order).
     pub fn stop_all(&mut self) {
         while let Some(instance) = self.running.pop() {
@@ -185,6 +204,26 @@ mod tests {
             take(&log),
             ["stop:review", "stop:unread", "stop:git", "stop:tags"]
         );
+    }
+
+    #[test]
+    fn restart_stops_the_plugin_and_its_dependents_only_and_apply_starts_them_again() {
+        let log = Log::default();
+        let registry = setup(&log);
+        let mut set = PluginSet::new(Project);
+        let all = ids(&["updates", "git", "unread", "review", "tags"]);
+        set.apply(&registry, &all, cx);
+        take(&log);
+        set.stop_with_dependents(&registry, &PluginId::of("git"));
+        assert_eq!(take(&log), ["stop:review", "stop:unread", "stop:git"]);
+        assert_eq!(set.running_ids(), [PluginId::of("tags")]);
+        set.apply(&registry, &all, cx);
+        assert_eq!(take(&log), ["start:git", "start:unread", "start:review"]);
+        // a plugin nobody depends on stops alone; an unknown id stops nothing
+        set.stop_with_dependents(&registry, &PluginId::of("tags"));
+        assert_eq!(take(&log), ["stop:tags"]);
+        set.stop_with_dependents(&registry, &PluginId::of("nope"));
+        assert_eq!(take(&log), Vec::<String>::new());
     }
 
     #[test]

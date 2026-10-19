@@ -106,6 +106,24 @@ impl PluginRegistry {
         self.plugins.is_empty()
     }
 
+    /// The extra roots the Project plugins in `on` offer for the project at `root` (plugin order).
+    #[must_use]
+    pub fn roots(
+        &self,
+        on: &BTreeSet<PluginId>,
+        root: &crate::paths::Root,
+    ) -> Vec<(String, std::path::PathBuf)> {
+        let mut found = Vec::new();
+        for &index in &self.order {
+            let plugin = &self.plugins[index];
+            let manifest = plugin.manifest();
+            if manifest.scope == PluginScope::Project && on.contains(&manifest.id) {
+                found.extend(plugin.roots(root));
+            }
+        }
+        found
+    }
+
     /// What the plugins in `on` contribute, in plugin order (dependencies first).
     #[must_use]
     pub fn contributions(&self, on: &BTreeSet<PluginId>) -> Contributions {

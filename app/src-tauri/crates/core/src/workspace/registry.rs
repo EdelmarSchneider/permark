@@ -647,6 +647,7 @@ fn context_of(
                 PermarkCondition::NotInitialized
             };
             context.plugins = core.plugins_on();
+            context.git = core.facts().git();
             context.live_updates = match core.live_status() {
                 crate::watch::LiveStatus::Available => LiveUpdates::Available,
                 crate::watch::LiveStatus::Unavailable { reason } => {

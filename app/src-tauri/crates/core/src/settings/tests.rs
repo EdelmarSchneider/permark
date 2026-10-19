@@ -447,3 +447,45 @@ fn keymap_values_that_are_not_valid_are_refused_and_hand_edits_skipped() {
         .collect();
     assert_eq!(AppSettings::from_doc(&doc(&many)).keymap.len(), MAX_KEYMAP);
 }
+
+#[test]
+fn the_git_backend_lives_in_the_plugin_table_and_default_leaves_nothing() {
+    let before = "theme = \"dark\"\n\n[plugins.git]\nenabled = true\n";
+    assert_eq!(
+        AppSettings::from_doc(&doc(before)).git_backend,
+        GitBackendPref::Automatic
+    );
+    for &choice in GitBackendPref::ALL {
+        let text = applied(before, &SettingChange::GitBackend(choice));
+        assert_eq!(AppSettings::from_doc(&doc(&text)).git_backend, choice);
+        // the other keys of the table and the file stay
+        assert!(text.contains("theme = \"dark\"") && text.contains("enabled = true"));
+    }
+    let system = applied(before, &SettingChange::GitBackend(GitBackendPref::System));
+    assert_eq!(
+        system,
+        "theme = \"dark\"\n\n[plugins.git]\nenabled = true\nbackend = \"system\"\n"
+    );
+    // back to automatic removes the key (and an emptied table)
+    assert_eq!(
+        applied(
+            &system,
+            &SettingChange::GitBackend(GitBackendPref::Automatic)
+        ),
+        before
+    );
+    let only = applied("", &SettingChange::GitBackend(GitBackendPref::Builtin));
+    assert_eq!(
+        applied(&only, &SettingChange::GitBackend(GitBackendPref::Automatic)),
+        ""
+    );
+    // a hand-written value that is not one of the three reads as the default
+    assert_eq!(
+        AppSettings::from_doc(&doc("[plugins.git]\nbackend = \"libgit\"\n")).git_backend,
+        GitBackendPref::Automatic
+    );
+    assert_eq!(
+        SettingChange::GitBackend(GitBackendPref::System).key(),
+        "plugins.git.backend"
+    );
+}

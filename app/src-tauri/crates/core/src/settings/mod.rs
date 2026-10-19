@@ -83,6 +83,11 @@ choice!(
     EditModePref { Edit = "edit", Source = "source" } default Edit
 );
 
+choice!(
+    /// Which git the git plugin uses: the one installed (`System`), the built-in one, or the first that works.
+    GitBackendPref { Automatic = "automatic", System = "system", Builtin = "builtin" } default Automatic
+);
+
 /// Reference template when none is set.
 pub const DEFAULT_REFERENCE_TEMPLATE: &str = "{path}#{section}";
 /// Longest reference template kept.
@@ -131,6 +136,8 @@ pub struct AppSettings {
     pub start_in: StartIn,
     pub link_update: LinkUpdate,
     pub edit_mode: EditModePref,
+    /// Which git the git plugin uses (`[plugins.git] backend`).
+    pub git_backend: GitBackendPref,
     /// How "copy reference" is written (`{path} {section} {line} {name}`).
     pub reference_template: String,
     /// The person's editor: a command template (empty = not set). Only the person sets it (app settings).
@@ -154,6 +161,7 @@ impl Default for AppSettings {
             start_in: StartIn::default(),
             link_update: LinkUpdate::default(),
             edit_mode: EditModePref::default(),
+            git_backend: GitBackendPref::default(),
             reference_template: DEFAULT_REFERENCE_TEMPLATE.to_owned(),
             editor: String::new(),
             keymap: BTreeMap::new(),
@@ -174,6 +182,7 @@ pub enum SettingChange {
     StartIn(StartIn),
     LinkUpdate(LinkUpdate),
     EditMode(EditModePref),
+    GitBackend(GitBackendPref),
     /// Empty = the default template.
     ReferenceTemplate(String),
     /// Empty = not set.
@@ -201,6 +210,7 @@ impl SettingChange {
             Self::StartIn(_) => "start_in".to_owned(),
             Self::LinkUpdate(_) => "link_update".to_owned(),
             Self::EditMode(_) => "edit_mode".to_owned(),
+            Self::GitBackend(_) => "plugins.git.backend".to_owned(),
             Self::ReferenceTemplate(_) => "reference_template".to_owned(),
             Self::Editor(_) => "editor".to_owned(),
             Self::Keymap { command, .. } => format!("keymap.{command}"),
@@ -350,6 +360,11 @@ impl AppSettings {
             edit_mode: str_of(doc, "edit_mode")
                 .and_then(EditModePref::parse)
                 .unwrap_or_default(),
+            git_backend: PluginId::parse("git")
+                .and_then(|git| plugin_tables.get(&git))
+                .and_then(|table| table.0.get("backend")?.as_str())
+                .and_then(GitBackendPref::parse)
+                .unwrap_or_default(),
             reference_template: str_of(doc, "reference_template")
                 .filter(|t| !t.trim().is_empty() && t.chars().count() <= MAX_REFERENCE_TEMPLATE)
                 .map_or_else(|| DEFAULT_REFERENCE_TEMPLATE.to_owned(), str::to_owned),
@@ -390,11 +405,19 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::StartIn(v) => set_keeping_decor(root, "start_in", v.as_str().into()),
         SettingChange::LinkUpdate(v) => set_keeping_decor(root, "link_update", v.as_str().into()),
         SettingChange::EditMode(v) => set_keeping_decor(root, "edit_mode", v.as_str().into()),
+        SettingChange::GitBackend(v) => {
+            set_plugin_key(
+                root,
+                &PluginId::of("git"),
+                "backend",
+                (*v != GitBackendPref::Automatic).then(|| v.as_str().into()),
+            );
+        }
         SettingChange::ReferenceTemplate(v) => set_text(root, "reference_template", v),
         SettingChange::Editor(v) => set_text(root, "editor", v),
         SettingChange::Keymap { command, combo } => set_keymap(root, command, combo.as_deref()),
         SettingChange::PluginEnabled { plugin, enabled } => {
-            set_plugin_enabled(root, plugin, *enabled);
+            set_plugin_key(root, plugin, "enabled", enabled.map(Value::from));
         }
     }
 }
@@ -428,10 +451,11 @@ fn set_text(table: &mut Table, key: &str, value: &str) {
     }
 }
 
-fn set_plugin_enabled(root: &mut Table, plugin: &PluginId, enabled: Option<bool>) {
+/// Sets | removes `[plugins.<id>] <key>`; an emptied table goes with its last key.
+fn set_plugin_key(root: &mut Table, plugin: &PluginId, key: &str, value: Option<Value>) {
     let id = plugin.as_str();
     if !root.get("plugins").is_some_and(Item::is_table) {
-        if enabled.is_none() {
+        if value.is_none() {
             return;
         }
         let mut plugins = Table::new();
@@ -446,18 +470,18 @@ fn set_plugin_enabled(root: &mut Table, plugin: &PluginId, enabled: Option<bool>
         let table = inline.clone().into_table();
         plugins.insert(id, Item::Table(table));
     }
-    match enabled {
-        Some(on) => {
+    match value {
+        Some(value) => {
             if !plugins.get(id).is_some_and(Item::is_table) {
                 plugins.insert(id, Item::Table(Table::new()));
             }
             if let Some(Item::Table(table)) = plugins.get_mut(id) {
-                set_keeping_decor(table, "enabled", on.into());
+                set_keeping_decor(table, key, value);
             }
         }
         None => {
             if let Some(Item::Table(table)) = plugins.get_mut(id) {
-                table.remove("enabled");
+                table.remove(key);
                 if table.is_empty() {
                     plugins.remove(id);
                 }

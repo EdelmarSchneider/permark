@@ -2,25 +2,36 @@
 //! Plugins get core services through [`PluginCx`] only; a running plugin = [`Running`] whose `Drop` tears it down.
 
 mod enable;
+mod facts;
 mod registry;
+mod rpc;
+mod services;
 mod set;
 
 use std::borrow::Cow;
 use std::fmt;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
+pub use facts::{ProjectFacts, RepoHandle, RepoReader};
 pub use registry::{PluginRegistry, RegistryError};
+pub use rpc::{typed, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
+pub use services::{ServiceLease, Services};
 pub use set::PluginSet;
 
 use crate::conditions::{Context, Requirement};
+use crate::document::Documents;
+use crate::edit::Editor;
 use crate::events::{CoreEvent, EventSink};
-use crate::format::Contributions;
-use crate::paths::Vault;
+use crate::format::{Contributions, FormatRegistry};
+use crate::paths::{Root, Vault};
+use crate::state::{StateData, StateFile, StateStore};
+use crate::tree::Explorer;
+use crate::watch::OwnWrites;
 
 /// Kebab-case plugin id: `[a-z0-9]+(-[a-z0-9]+)*`, <= 32 chars.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, TS)]
@@ -132,6 +143,11 @@ pub trait Plugin: Send + Sync {
     fn contributions(&self) -> Contributions {
         Contributions::default()
     }
+    /// Extra roots the plugin offers for the project at `root` (`(name, folder)`, like linked worktrees), asked
+    /// before the project is built and before `start`. Must be quick (file reads only).
+    fn roots(&self, _root: &Root) -> Vec<(String, PathBuf)> {
+        Vec::new()
+    }
 }
 
 /// A running instance that does nothing: the plugin's work happens through its contributions.
@@ -196,6 +212,68 @@ pub enum CxWorkspace {
     Project(Vault),
 }
 
+/// The project services a Project-scope plugin may use besides the file watch.
+#[derive(Clone)]
+pub struct ProjectServices {
+    /// Reads and renders documents of the project.
+    pub documents: Arc<Documents>,
+    /// The tree service (document scans).
+    pub explorer: Arc<Explorer>,
+    /// Announcements of the app's own writes (the watch marks them `own`).
+    pub own: Arc<OwnWrites>,
+    /// What plugins publish about the project (git condition).
+    pub facts: Arc<ProjectFacts>,
+    /// Typed APIs plugins hand to each other (one registry per project).
+    pub services: Arc<Services>,
+    rpc: Arc<RpcTable>,
+    formats: Arc<RwLock<Arc<FormatRegistry>>>,
+}
+
+impl ProjectServices {
+    #[must_use]
+    pub fn new(
+        documents: Arc<Documents>,
+        explorer: Arc<Explorer>,
+        own: Arc<OwnWrites>,
+        facts: Arc<ProjectFacts>,
+        services: Arc<Services>,
+        rpc: Arc<RpcTable>,
+        formats: Arc<RwLock<Arc<FormatRegistry>>>,
+    ) -> Self {
+        Self {
+            documents,
+            explorer,
+            own,
+            facts,
+            services,
+            rpc,
+            formats,
+        }
+    }
+
+    /// The formats of the plugins that are on for the project, now.
+    #[must_use]
+    pub fn formats(&self) -> Arc<FormatRegistry> {
+        Arc::clone(&self.formats.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    #[must_use]
+    pub fn rpc(&self) -> &Arc<RpcTable> {
+        &self.rpc
+    }
+
+    /// Runs `f` with an editor over the project (surgical saves; writes announced as the app's own).
+    pub fn with_editor<R>(&self, f: impl FnOnce(&Editor<'_>) -> R) -> R {
+        let formats = self.formats();
+        let editor = Editor {
+            scope: self.documents.scope(),
+            formats: &formats,
+            own: Some(&self.own),
+        };
+        f(&editor)
+    }
+}
+
 /// Core services handed to a plugin instance; nothing else of core is reachable from a plugin.
 pub struct PluginCx {
     pub id: PluginId,
@@ -208,6 +286,8 @@ pub struct PluginCx {
     pub context: Context,
     events: PluginEvents,
     watch: Option<Arc<crate::watch::WatchHub>>,
+    project: Option<ProjectServices>,
+    store: Option<StateStore>,
 }
 
 impl PluginCx {
@@ -223,6 +303,7 @@ impl PluginCx {
         let events = PluginEvents {
             id: id.clone(),
             sink,
+            root: None,
         };
         Self {
             id,
@@ -232,7 +313,48 @@ impl PluginCx {
             context,
             events,
             watch: None,
+            project: None,
+            store: None,
         }
+    }
+
+    /// Gives the instance the state store its files live in (own namespace: `state_file`).
+    #[must_use]
+    pub fn with_store(mut self, store: StateStore) -> Self {
+        self.store = Some(store);
+        self
+    }
+
+    /// One typed state file in the plugin's own namespace (`None`: no store was given).
+    #[must_use]
+    pub fn state_file<T: StateData>(&self, name: &str) -> Option<StateFile<T>> {
+        self.store
+            .as_ref()
+            .map(|store| store.plugin_file(&self.id, name))
+    }
+
+    /// Gives a Project-scope instance its project services; its events then carry the project folder.
+    #[must_use]
+    pub fn with_project(mut self, services: ProjectServices) -> Self {
+        if let CxWorkspace::Project(vault) = &self.workspace {
+            self.events.root = Some(vault.main().path().display().to_string());
+        }
+        self.project = Some(services);
+        self
+    }
+
+    /// The project services (Project scope).
+    #[must_use]
+    pub fn project(&self) -> Option<&ProjectServices> {
+        self.project.as_ref()
+    }
+
+    /// Serves `method` of this plugin until the registration is dropped (Project scope; `None` otherwise).
+    #[must_use]
+    pub fn rpc(&self, method: &str, handler: RpcHandler) -> Option<RpcRegistration> {
+        self.project
+            .as_ref()
+            .map(|project| project.rpc.register(&self.id, method, handler))
     }
 
     /// Gives a Project-scope instance the file watch of its project.
@@ -255,15 +377,21 @@ impl PluginCx {
     }
 }
 
-/// Event sink of one plugin: every name prefixed `<id>:`.
+/// Event sink of one plugin: every name prefixed `<id>:`. A Project plugin's payload is `{ root, data }`: windows
+/// keep the events of the folder they show.
 #[derive(Clone)]
 pub struct PluginEvents {
     id: PluginId,
     sink: Arc<dyn EventSink>,
+    root: Option<String>,
 }
 
 impl PluginEvents {
     pub fn emit(&self, name: &str, payload: serde_json::Value) {
+        let payload = match &self.root {
+            Some(root) => serde_json::json!({ "root": root, "data": payload }),
+            None => payload,
+        };
         self.sink.emit(CoreEvent::Plugin {
             name: format!("{}:{name}", self.id),
             payload,
