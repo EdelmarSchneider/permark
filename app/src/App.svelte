@@ -15,16 +15,20 @@
   import WindowChoice from "./core/shell/WindowChoice.svelte";
   import { confirmLeave } from "./core/editing/guard";
   import { editing } from "./core/editing/session.svelte";
+  import { installWindowKeys } from "./core/commands/install";
+  import Finder from "./core/search/Finder.svelte";
+  import SearchPanel from "./core/search/SearchPanel.svelte";
+  import SidebarTabs from "./core/search/SidebarTabs.svelte";
+  import KeymapDialog from "./core/shell/KeymapDialog.svelte";
+  import { ui } from "./core/shell/ui.svelte";
   import { windowTitle } from "./core/title";
   import StatusItems from "./core/shell/StatusItems.svelte";
   import { windowStore as store } from "./core/window.svelte";
 
   type InfoState =
     { status: "loading" } | { status: "ready"; info: AppInfo } | { status: "failed" };
-  type Settings = { status: "closed" } | { status: "open" };
 
   let info = $state<InfoState>({ status: "loading" });
-  let settings = $state<Settings>({ status: "closed" });
 
   /** What the window shows now; while opening, what stays on screen. */
   const shown = $derived.by((): { workspace: WorkspaceView; document: string | null } | null => {
@@ -90,6 +94,9 @@
     });
   });
 
+  // the core's commands and keys live in the registry while the window does; one key listener runs them
+  $effect(() => installWindowKeys());
+
   // external I/O only: window title, system theme + language watchers
   $effect(() => {
     void api.setTitle(title);
@@ -120,10 +127,6 @@
     if (await confirmLeave({ kind: "workspace" })) await store.closeWorkspace();
   }
   $effect(() => language.watchSystem());
-
-  function toggleSettings(): void {
-    settings = settings.status === "open" ? { status: "closed" } : { status: "open" };
-  }
 </script>
 
 {#snippet header()}
@@ -152,8 +155,8 @@
     type="button"
     class="btn btn--ghost btn--sm"
     data-settings-trigger
-    aria-expanded={settings.status === "open"}
-    onclick={toggleSettings}
+    aria-expanded={ui.settings}
+    onclick={() => ui.toggleSettings()}
   >
     {t("header.settings")}
   </button>
@@ -162,7 +165,14 @@
 {#snippet sidebar()}
   {#if shown?.workspace.kind === "project"}
     {#key shown.workspace.id}
-      <ExplorerSidebar {store} document={shown.document} />
+      <SidebarTabs />
+      <!-- both views stay alive: the Explorer keeps its list and place while the Search shows -->
+      <div class="view" class:off={ui.sidebar !== "files"} inert={ui.sidebar !== "files"}>
+        <ExplorerSidebar {store} document={shown.document} />
+      </div>
+      <div class="view" class:off={ui.sidebar !== "search"} inert={ui.sidebar !== "search"}>
+        <SearchPanel root={shown.workspace.root} />
+      </div>
     {/key}
   {/if}
 {/snippet}
@@ -205,8 +215,16 @@
 {#if store.choice.status === "asking"}
   <WindowChoice answer={(choice) => void store.answerChoice(choice)} />
 {/if}
-{#if settings.status === "open"}
-  <SettingsPopover {store} close={() => (settings = { status: "closed" })} />
+{#if ui.settings}
+  <SettingsPopover {store} close={() => ui.closeSettingsPopover()} />
+{/if}
+{#if ui.finder.status === "open"}
+  {#key ui.finder.seed}
+    <Finder preset={ui.finder.preset} />
+  {/key}
+{/if}
+{#if ui.keyboard}
+  <KeymapDialog {store} />
 {/if}
 <Notices {store} />
 {#if store.drag.status === "over"}
@@ -222,6 +240,18 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: 600;
+  }
+  .view {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+  }
+  .view.off {
+    flex: none;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
   }
   .opening {
     position: absolute;

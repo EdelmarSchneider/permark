@@ -25,6 +25,10 @@
   let primary: HTMLButtonElement | undefined = $state();
 
   const hasLinks = $derived(plan.linkCount > 0);
+  /** The ignored folders whose documents were not read: the first few, then "…". */
+  const uncheckedText = $derived(
+    plan.unchecked.slice(0, 3).join(", ") + (plan.unchecked.length > 3 ? ", …" : ""),
+  );
   const title = $derived(
     hasLinks
       ? tn("fileOps.updateLinks", plan.linkCount, {
@@ -121,6 +125,11 @@
           {/each}
         </ul>
       </section>
+    {/if}
+    {#if plan.unchecked.length > 0}
+      <p class="faint" data-unchecked>
+        {tn("fileOps.unchecked", plan.unchecked.length, { folders: uncheckedText })}
+      </p>
     {/if}
     <footer>
       <button type="button" class="btn" onclick={() => answer("cancel")}

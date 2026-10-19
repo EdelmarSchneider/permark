@@ -15,12 +15,24 @@ export type LazyComponent<Props extends Record<string, unknown> = Record<string,
     default: Component<Props>;
   }>;
 
+/** Owner of the contributions the core itself registers (commands, keys): never a plugin, never toggled. */
+export const CORE_OWNER: PluginId = "core";
+
 type Owned = { owner: PluginId; requires: Requirement };
 
 /** Everything a plugin can add to the core UI. */
 export type Contribution = Owned &
   (
-    | { kind: "command"; id: string; label: MessageKey; run: () => void | Promise<void> }
+    | {
+        kind: "command";
+        id: string;
+        label: MessageKey;
+        run: () => void | Promise<void>;
+        /** UI-local visibility (a document is open, ...): false = the command is not offered. */
+        when?: () => boolean;
+        /** `false`: not listed in the palette (the commands that open the box itself). */
+        inPalette?: boolean;
+      }
     | { kind: "paletteEntry"; id: string; label: MessageKey; command: string }
     | { kind: "shortcut"; keys: string; command: string }
     | { kind: "panel"; id: string; side: "left" | "right"; label: MessageKey; view: LazyComponent }

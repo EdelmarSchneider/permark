@@ -21,6 +21,7 @@ const { documents } = await import("./document.svelte");
 const { reading } = await import("./reading.svelte");
 const { WindowStore } = await import("../window.svelte");
 const { syncPlugins } = await import("../plugins/instance.svelte");
+const { installWindowKeys } = await import("../commands/install");
 
 // `api` is the mock created by the factory above
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
@@ -28,6 +29,7 @@ const mock = api as unknown as ReturnType<typeof import("../../api/mock").create
 type Shown = Extract<WorkspaceView, { kind: "project" }>;
 
 let component: Record<string, unknown> | null = null;
+let stopKeys: (() => void) | null = null;
 let target: HTMLElement;
 let workspace: Shown;
 let store: InstanceType<typeof WindowStore>;
@@ -78,11 +80,14 @@ beforeEach(async () => {
   stopFollowing = await mock.on("window-changed", (event) => {
     if (event.view.state === "showing") void documents.show(event.view.document);
   });
+  // the keys are commands now: the window's listener runs them, as in the app
+  stopKeys = installWindowKeys();
   component = mount(DocumentArea, { target, props: { workspace, document: null, store } });
   flushSync();
 });
 
 afterEach(async () => {
+  stopKeys?.();
   stopFollowing?.();
   if (component) await unmount(component);
   component = null;

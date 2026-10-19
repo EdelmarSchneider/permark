@@ -18,6 +18,7 @@ import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./de
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
 import { currentIndex } from "./outline";
 import { reading } from "./reading.svelte";
+import { recentFiles } from "../search/recent.svelte";
 import { formatQuote, formatReference, type Reference } from "./reference";
 import { Trail, type Place } from "./trail";
 import { confirmLeave } from "../editing/guard";
@@ -72,9 +73,11 @@ export class DocumentController {
   #seq = 0;
   #shown: string | null = null;
   #painted: DocumentView | null = null;
-  #intent: Place | null = null;
+  #intent: (Place & { line: number | null }) | null = null;
   #viaTrail: string | null = null;
   #anchor: string | null = null;
+  /** A line to scroll to when the document in the making is shown (a search hit without a heading). */
+  #line: number | null = null;
   #headings: (HTMLElement | null)[] = [];
   #painters = new Set<() => void>();
 
@@ -113,7 +116,10 @@ export class DocumentController {
     this.#reset();
     this.#workspace = workspace;
     this.trail.clear();
-    if (workspace !== null) void reading.load(this.#api);
+    if (workspace !== null) {
+      void reading.load(this.#api);
+      if (workspace.kind === "project") void recentFiles.load(this.#api);
+    }
   }
 
   /** The page went away (the window left its workspace): nothing is shown any more, no outline, no trail. */
@@ -129,6 +135,7 @@ export class DocumentController {
     this.#intent = null;
     this.#viaTrail = null;
     this.#anchor = null;
+    this.#line = null;
     this.#headings = [];
     this.currentHeading = -1;
     this.zoomed = null;
@@ -155,7 +162,9 @@ export class DocumentController {
     const anchor = intent?.anchor ?? (viaTrail ? (this.trail.here?.anchor ?? null) : null);
     if (!viaTrail) this.trail.visit({ path, anchor });
     this.#anchor = anchor;
+    this.#line = intent?.line ?? null;
     this.#shown = path;
+    if (!this.singleFile) recentFiles.visit(path);
     this.#painted = null;
     await this.#open(path, true);
   }
@@ -248,8 +257,14 @@ export class DocumentController {
   #settled(view: DocumentView, fresh: boolean): void {
     if (!fresh) return;
     const anchor = this.#anchor;
+    const line = this.#line;
     this.#anchor = null;
+    this.#line = null;
     if (anchor !== null && this.scrollToAnchor(anchor)) return;
+    if (line !== null) {
+      this.scrollToLine(line);
+      return;
+    }
     const scroller = this.host.scroller;
     if (scroller) scroller.scrollTop = reading.scrollOf(view.path) ?? 0;
   }
@@ -405,13 +420,19 @@ export class DocumentController {
     this.trail.visit({ path, anchor: id === "" ? null : id });
   }
 
-  /** Opens another document of the project (a link, the trail, the tree). */
-  navigate(path: string, anchor: string | null): void {
+  /**
+   * Opens another document of the project (a link, the trail, the tree, a search hit). `anchor`: a heading id;
+   * `line`: where to scroll when there is no heading to name (the start of a document).
+   */
+  navigate(path: string, anchor: string | null, line: number | null = null): void {
     if (path === this.#shown) {
-      this.#sameDocument(anchor ?? "");
+      if (anchor === null && line !== null) {
+        this.scrollToLine(line);
+        this.trail.visit({ path, anchor: null });
+      } else this.#sameDocument(anchor ?? "");
       return;
     }
-    this.#intent = { path, anchor };
+    this.#intent = { path, anchor, line };
     void this.#show(path);
   }
 

@@ -15,6 +15,8 @@ import type { Segment } from "./generated/Segment";
 import type { TextKind } from "./generated/TextKind";
 import type { DocumentChanged } from "./generated/DocumentChanged";
 import type { DocumentView } from "./generated/DocumentView";
+import type { IndexProgress } from "./generated/IndexProgress";
+import type { IndexStatus } from "./generated/IndexStatus";
 import type { IpcError } from "./generated/IpcError";
 import type { LinkTarget } from "./generated/LinkTarget";
 import type { MoveOutcome } from "./generated/MoveOutcome";
@@ -23,6 +25,10 @@ import type { MoveSpec } from "./generated/MoveSpec";
 import type { NewKind } from "./generated/NewKind";
 import type { OpenFailed } from "./generated/OpenFailed";
 import type { OutlineItem } from "./generated/OutlineItem";
+import type { PathResults } from "./generated/PathResults";
+import type { Recent } from "./generated/Recent";
+import type { SearchOptions } from "./generated/SearchOptions";
+import type { SectionResults } from "./generated/SectionResults";
 import type { OpenMode } from "./generated/OpenMode";
 import type { OpenOutcome } from "./generated/OpenOutcome";
 import type { OpenPlacement } from "./generated/OpenPlacement";
@@ -73,6 +79,12 @@ export type {
   WorkspaceSummary,
 };
 export type { Added } from "./generated/Added";
+export type { FileHit } from "./generated/FileHit";
+export type { FolderHit } from "./generated/FolderHit";
+export type { IndexPhase } from "./generated/IndexPhase";
+export type { SectionHit } from "./generated/SectionHit";
+export type { SnippetPart } from "./generated/SnippetPart";
+export type { IndexProgress, IndexStatus, PathResults, Recent, SearchOptions, SectionResults };
 export type { Block } from "./generated/Block";
 export type { Body } from "./generated/Body";
 export type { DocChange } from "./generated/DocChange";
@@ -159,6 +171,16 @@ export interface Commands {
     args: { path: string | null; text: string | null; kind: TextKind };
     result: Measure[];
   };
+  search_status: { args: Record<string, never>; result: IndexStatus };
+  search_sections: {
+    args: { query: string; limit: number; options: SearchOptions };
+    result: SectionResults;
+  };
+  search_files: {
+    args: { query: string; limit: number; folderLimit: number };
+    result: PathResults;
+  };
+  search_recent: { args: { opened: string[]; limit: number }; result: Recent };
   window_close: { args: Record<string, never>; result: null };
 }
 
@@ -177,6 +199,7 @@ export interface Events {
   "tree-changed": TreeChanged;
   "document-changed": DocumentChanged;
   "close-requested": CloseRequested;
+  "index-progress": IndexProgress;
 }
 export type EventName = keyof Events;
 
@@ -255,6 +278,18 @@ export interface Api {
   editLinkTargets(): Promise<Result<string[]>>;
   /** Measures of the enabled analyses, of a document (`path`) or a text. */
   analyze(path: string | null, text: string | null, kind: TextKind): Promise<Result<Measure[]>>;
+  /** Where the project's search index is (the first build, then ready). */
+  searchStatus(): Promise<Result<IndexStatus>>;
+  /** Ranked sections for the words; `partial` while the first build runs. */
+  searchSections(
+    query: string,
+    limit: number,
+    options: SearchOptions,
+  ): Promise<Result<SectionResults>>;
+  /** Files (and folders) whose path matches the words, best first. */
+  searchFiles(query: string, limit: number, folderLimit: number): Promise<Result<PathResults>>;
+  /** Quick open's empty box: the opened files that still exist, and the newest files. */
+  searchRecent(opened: string[], limit: number): Promise<Result<Recent>>;
   /** Closes this window for real (after the unsaved prompt). */
   windowClose(): Promise<Result<null>>;
   /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */

@@ -5,6 +5,7 @@
   import { look } from "../look.svelte";
   import ReadingSettings from "./ReadingSettings.svelte";
   import type { WindowStore } from "../window.svelte";
+  import { ui } from "./ui.svelte";
 
   type Props = { store: WindowStore; close: () => void };
   let { store, close }: Props = $props();
@@ -125,6 +126,13 @@
   </div>
 
   <ReadingSettings {store} />
+
+  <div class="row">
+    <span title={t("settings.keyboardHint")}>{t("settings.keyboard")}</span>
+    <button type="button" class="btn btn--sm" onclick={() => ui.openKeyboard()}
+      >{t("keymap.change")}</button
+    >
+  </div>
 </div>
 
 <style>

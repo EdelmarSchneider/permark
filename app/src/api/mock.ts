@@ -8,6 +8,7 @@ import type { WorkspaceView } from "./generated/WorkspaceView";
 import { mockAssetUrl, mockLinkTarget, mockView } from "./mockDocs";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
+import { mockFiles, mockRecent, mockSections } from "./mockSearch";
 import type {
   Api,
   AppSettings,
@@ -41,6 +42,7 @@ function defaultSettings(): AppSettings {
     editMode: "edit",
     referenceTemplate: "{path}#{section}",
     editor: "",
+    keymap: {},
     plugins: {},
   };
 }
@@ -97,6 +99,12 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, referenceTemplate: change.value.trim() || "{path}#{section}" };
     case "editor":
       return { ...settings, editor: change.value };
+    case "keymap": {
+      const keymap = { ...settings.keymap };
+      if (change.value.combo === null) delete keymap[change.value.command];
+      else keymap[change.value.command] = change.value.combo;
+      return { ...settings, keymap };
+    }
     case "pluginEnabled": {
       const plugins = { ...settings.plugins };
       if (change.value.enabled === null) delete plugins[change.value.plugin];
@@ -154,6 +162,7 @@ export function createMockApi(): Api & {
     "tree-changed": new Set(),
     "document-changed": new Set(),
     "close-requested": new Set(),
+    "index-progress": new Set(),
   };
   const project = new MockProject();
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
@@ -387,6 +396,17 @@ export function createMockApi(): Api & {
       return ok(null);
     },
     ...editing.api,
+    searchStatus: () =>
+      ok({
+        phase: "ready",
+        done: project.files.size,
+        total: project.files.size,
+        files: project.files.size,
+        sections: project.files.size,
+      }),
+    searchSections: (query, limit) => ok(mockSections(project, query, limit)),
+    searchFiles: (query, limit, folderLimit) => ok(mockFiles(project, query, limit, folderLimit)),
+    searchRecent: (opened, limit) => ok(mockRecent(project, opened, limit)),
     assetUrl: (_workspace, path) => mockAssetUrl(path),
     showDocument: (path) => {
       if (view.state === "showing") {

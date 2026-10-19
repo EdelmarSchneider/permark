@@ -15,9 +15,10 @@
   import FindBar from "./FindBar.svelte";
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
-  import { reading } from "./reading.svelte";
   import ModeSwitch from "../editing/ModeSwitch.svelte";
-  import { editing, type EditMode } from "../editing/session.svelte";
+  import { chooseMode } from "../editing/choose";
+  import { editing } from "../editing/session.svelte";
+  import { ui } from "../shell/ui.svelte";
 
   type Props = {
     workspace: Extract<WorkspaceView, { kind: "project" | "singleFile" }>;
@@ -27,7 +28,6 @@
   let { workspace, document: shown, store }: Props = $props();
 
   let scroller: HTMLElement | undefined = $state();
-  let finding = $state(false);
 
   // a single file shows its own file; a project shows the document the window was told to
   const path = $derived(workspace.kind === "singleFile" ? workspace.name : shown);
@@ -47,19 +47,6 @@
         : null,
   );
   const editingNow = $derived(editing.mode !== "view" && editing.path === documents.path);
-
-  /** View | Edit | Source from the header or the keys. */
-  function choose(mode: EditMode): void {
-    const shown = documents.path;
-    if (mode === "view") {
-      void editing.switchTo("view");
-      return;
-    }
-    if (shown === null || readOnly !== null || view === null) return;
-    if (editing.mode === "view" || editing.path !== shown) {
-      void editing.enter(mode, shown, markdown, { kind: "explicit" });
-    } else void editing.switchTo(mode);
-  }
 
   $effect(() => {
     documents.bind({
@@ -97,6 +84,7 @@
   $effect(() => () => {
     editing.release();
     documents.release();
+    ui.closeFind();
   });
 
   // the file changed on disk, or went away
@@ -119,60 +107,20 @@
     };
   });
 
-  // keys: find, back | forward, zoom (IME and dead keys never fire them)
+  // Escape leaves an editor for View (not while a field, a menu or a dialog has the key). The other keys are commands
+  // (`core/commands`): find, back | forward, zoom, modes, save.
   $effect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.isComposing || event.defaultPrevented) return;
-      const mod = event.ctrlKey || event.metaKey;
-      if (mod && !event.shiftKey && event.key.toLowerCase() === "e") {
-        // Ctrl+E: View <-> the last editor; Ctrl+Alt+E: Source (AltGr types characters: left alone)
-        if (event.getModifierState("AltGraph")) return;
-        event.preventDefault();
-        if (event.altKey) choose("source");
-        else choose(editing.mode === "view" ? editing.lastEditOr(store.editMode) : "view");
+      if (event.key !== "Escape" || !editingNow || event.ctrlKey || event.metaKey || event.altKey)
         return;
-      }
-      if (event.key === "Escape" && editingNow && !mod && !event.altKey) {
-        const inside =
-          event.target instanceof Element
-            ? event.target.closest("input, select, textarea, form, [role=dialog], [role=listbox]")
-            : null;
-        if (inside === null) {
-          event.preventDefault();
-          choose("view");
-        }
-        return;
-      }
-      if (
-        mod &&
-        !event.shiftKey &&
-        !event.altKey &&
-        event.key.toLowerCase() === "s" &&
-        editingNow
-      ) {
+      const inside =
+        event.target instanceof Element
+          ? event.target.closest("input, select, textarea, form, [role=dialog], [role=listbox]")
+          : null;
+      if (inside === null) {
         event.preventDefault();
-        editing.save();
-        return;
-      }
-      if (editingNow) return;
-      if (mod && !event.altKey && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        finding = true;
-      } else if (event.altKey && !mod && event.key === "ArrowLeft") {
-        event.preventDefault();
-        void documents.back();
-      } else if (event.altKey && !mod && event.key === "ArrowRight") {
-        event.preventDefault();
-        void documents.forward();
-      } else if (mod && !event.altKey && (event.key === "=" || event.key === "+")) {
-        event.preventDefault();
-        reading.zoomBy(1);
-      } else if (mod && !event.altKey && (event.key === "-" || event.key === "_")) {
-        event.preventDefault();
-        reading.zoomBy(-1);
-      } else if (mod && !event.altKey && event.key === "0") {
-        event.preventDefault();
-        reading.setZoom(100);
+        chooseMode("view");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -187,7 +135,7 @@
 </script>
 
 {#snippet modes()}
-  <ModeSwitch session={editing} {readOnly} {markdown} {choose} />
+  <ModeSwitch session={editing} {readOnly} {markdown} choose={chooseMode} />
 {/snippet}
 
 <section class="area" aria-label={t("doc.region")}>
@@ -198,7 +146,7 @@
       role={view?.role ?? null}
       template={store.referenceTemplate}
       hasOutline={outline.length > 0}
-      onFind={() => (finding = true)}
+      onFind={() => ui.openFind()}
       canOpenSystem={workspace.kind === "project"}
       modes={view !== null && view.body.kind !== "media" ? modes : undefined}
     />
@@ -293,8 +241,8 @@
       {/if}
     </div>
 
-    {#if finding && scroller && !editingNow}
-      <FindBar root={scroller} close={() => (finding = false)} />
+    {#if ui.finding && scroller && !editingNow}
+      <FindBar root={scroller} close={() => ui.closeFind()} />
     {/if}
   </div>
 </section>

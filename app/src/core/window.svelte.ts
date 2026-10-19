@@ -53,6 +53,8 @@ export class WindowStore {
   editMode = $state<"edit" | "source">("edit");
   /** The command that opens a file in the person's editor (setting; empty = not set). */
   editor = $state("");
+  /** The person's keyboard map: command id -> combo (`""` = unbound). */
+  keymap = $state.raw<Readonly<Record<string, string>>>({});
   #nextNotice = 1;
 
   constructor(backend: Api) {
@@ -74,6 +76,7 @@ export class WindowStore {
         this.referenceTemplate = e.settings.referenceTemplate;
         this.editMode = e.settings.editMode;
         this.editor = e.settings.editor;
+        this.keymap = e.settings.keymap;
         void language.choose(parsePreference(e.settings.language));
       }),
       this.#api.on("open-failed", (e) => {
@@ -93,6 +96,7 @@ export class WindowStore {
       this.referenceTemplate = info.settings.referenceTemplate;
       this.editMode = info.settings.editMode;
       this.editor = info.settings.editor;
+      this.keymap = info.settings.keymap;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
       for (const failed of info.failures) {

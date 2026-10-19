@@ -358,6 +358,22 @@ describe("move dialog", () => {
     expect(root).toBeTruthy();
   });
 
+  it("says in one quiet line which ignored folders it did not read", async () => {
+    const { store, api } = await render("ask");
+    const planned = api.planMove.bind(api);
+    api.planMove = async (moves, updateLinks) => {
+      const result = await planned(moves, updateLinks);
+      return result.ok
+        ? { ok: true, value: { ...result.value, unchecked: ["build", "dist", "out", "tmp"] } }
+        : result;
+    };
+    await store.requestMove([{ from: "notes/ideas.md", to: "notes/thoughts.md" }]);
+    await tick();
+    const note = document.querySelector("[data-unchecked]")?.textContent ?? "";
+    expect(note).toContain("4 ignored folders were not checked");
+    expect(note).toContain("build, dist, out, …");
+  });
+
   it("Escape and the backdrop cancel; focus stays inside", async () => {
     const { store, api } = await render("ask");
     await store.requestMove([{ from: "notes/ideas.md", to: "notes/thoughts.md" }]);

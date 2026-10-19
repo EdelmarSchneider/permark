@@ -184,6 +184,7 @@ export class MockProject {
       files,
       truncated: false,
       skipped: [],
+      unchecked: [],
     };
   }
 
