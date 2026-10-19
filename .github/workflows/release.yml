@@ -76,15 +76,15 @@ jobs:
             libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev
 
-      - name: Install Rust (stable)
+      # The toolchain app/rust-toolchain.toml pins; rustup reads the file from the working directory.
+      - name: Install Rust (pinned)
         if: env.RUN_THIS == 'true'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust-targets }}
+        working-directory: app
+        run: rustup toolchain install
 
-      # rust-toolchain.toml pins the compiler; the step above installs targets for "stable", so add them to the pinned one.
       - name: Add the cross-compilation targets to the pinned toolchain
         if: env.RUN_THIS == 'true' && matrix.rust-targets != ''
+        working-directory: app
         shell: bash
         run: rustup target add $(echo "${{ matrix.rust-targets }}" | tr ',' ' ')
 
@@ -109,17 +109,19 @@ jobs:
         if: env.RUN_THIS == 'true'
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: app/src-tauri
 
       - name: Set up Node
         if: env.RUN_THIS == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install frontend dependencies
         if: env.RUN_THIS == 'true'
+        working-directory: app
         run: npm ci
 
       - name: Build and publish the release
@@ -131,12 +133,13 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
+          projectPath: app
           tagName: ${{ env.TAG }}
           releaseName: "PerMark ${{ env.TAG }}"
           releaseBody: |
             **PerMark** is a free, open-source Markdown app: read what your AI writes, write what it reads. It opens any `.md`
-            file as a clean page, keeps notes that save themselves, and turns a project folder into an IDE for following your
-            agents. It works with any AI tool, or none: it only relies on your files and git.
+            file as a clean page, keeps notes that save themselves, and turns a project folder into a place to follow, review
+            and steer what your agents write. It works with any AI tool, or none: it only relies on your files and git.
 
             ${{ env.RELEASE_NOTES }}
 
@@ -182,23 +185,24 @@ jobs:
         with:
           ref: ${{ env.REF }}
 
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust (pinned)
+        working-directory: app
+        run: rustup toolchain install
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            src-tauri
-            src-tauri/shell-ext
+          workspaces: app/src-tauri
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install frontend dependencies
+        working-directory: app
         run: npm ci
 
       # A release is tagged after its version is bumped, so the tag and the app's version are the same number.
@@ -206,7 +210,7 @@ jobs:
         if: github.event_name == 'push'
         shell: pwsh
         run: |
-          $version = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $version = (Get-Content app/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
           if ("v$version" -ne $env:GITHUB_REF_NAME) {
             throw "The tag $env:GITHUB_REF_NAME is not the app's version, $version."
           }

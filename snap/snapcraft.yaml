@@ -2,9 +2,9 @@ name: permark
 title: PerMark
 base: core24
 adopt-info: permark
-summary: Read what your AI writes. Write what it reads. Markdown IDE for AI docs.
+summary: Read what your AI writes. Write what it reads. A Markdown app for AI docs.
 description: |
-  PerMark is the desktop IDE for the post-AI engineer—where humans and AI agents plan, mature ideas, formalize specs, and steer development using Markdown as their shared language.
+  PerMark is a working environment for documents: one place to read, write and organize Markdown and the files that go with it, and to steer AI projects through their documents (plans, specs, notes) with Markdown as the shared language of people and agents.
 
   Got a .md file?
   - Open any standalone .md file as a clean, well-typeset page—Mermaid diagrams, LaTeX math, tables, and ~190 syntax-highlighted languages.
@@ -17,7 +17,7 @@ description: |
   - Leave inline comments on any passage and let your agent read and resolve them via PerMark's built-in MCP server (permark mcp) or CLI hook (permark context).
   - Works with any AI tool (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Cline, Aider, Hermes Agent, OpenClaw...) or none.
 license: MIT OR Apache-2.0
-icon: src-tauri/icons/128x128@2x.png
+icon: app/src-tauri/icons/128x128@2x.png
 website: https://edelmarschneider.github.io/permark/
 source-code: https://github.com/EdelmarSchneider/permark
 issues: https://github.com/EdelmarSchneider/permark/issues
@@ -55,7 +55,7 @@ parts:
       - libgtk-3-0
     override-build: |
       set -eu
-      VER=$(grep -oE '"version": *"[^"]+"' "$CRAFT_PART_SRC/package.json" | head -n 1 | cut -d'"' -f4)
+      VER=$(grep -oE '"version": *"[^"]+"' "$CRAFT_PART_SRC/app/package.json" | head -n 1 | cut -d'"' -f4)
       DEB_URL="https://github.com/EdelmarSchneider/permark/releases/download/v${VER}/PerMark_${VER}_amd64.deb"
       if ! curl -fsSLI "$DEB_URL" >/dev/null 2>&1; then
         DEB_URL=$(curl -fsSL https://api.github.com/repos/EdelmarSchneider/permark/releases/latest | grep -oE 'https://[^"]+_amd64\.deb' | head -n 1)

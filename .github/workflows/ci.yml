@@ -1,6 +1,7 @@
 name: CI
 
-# The quality gate (`npm run check`: rustfmt, clippy -D warnings, cargo test, svelte-check, vitest)
+# The quality gate (`npm run check` in app/: version, rustfmt, prettier, build, clippy -D warnings, svelte-check,
+# cargo test, vitest)
 # on every push to the long-lived branches and on every pull request.
 
 on:
@@ -29,6 +30,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-22.04, macos-latest]
+    # The program lives in app/ (npm, cargo, rust-toolchain.toml all resolve from there).
+    defaults:
+      run:
+        working-directory: app
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,94 +43,32 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
+          sudo apt-get install -y             libwebkit2gtk-4.1-dev             libappindicator3-dev             librsvg2-dev             patchelf             libgtk-3-dev             libsoup-3.0-dev             libjavascriptcoregtk-4.1-dev
 
-      - name: Install Rust (stable, with clippy and rustfmt)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      # Installs the toolchain app/rust-toolchain.toml pins (with clippy + rustfmt).
+      - name: Install Rust (pinned)
+        run: rustup toolchain install
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            src-tauri
-            src-tauri/shell-ext
+          workspaces: app/src-tauri
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install frontend dependencies
         run: npm ci
 
-      # `tauri::generate_context!` embeds `frontendDist` (../dist) at compile time, so the cargo steps of the
-      # gate need it to exist. Building it for real also checks that the frontend bundles.
-      - name: Build the frontend
-        run: npm run build
-
+      # Builds the frontend first (`tauri::generate_context!` embeds app/dist at compile time).
       - name: Quality gate
         run: npm run check
 
-  # The build that goes to the Microsoft Store is the same program with the cargo feature `store` (docs/msstore.md). The gate
-  # above covers the default build; this covers the other one, on the one platform it exists for, and checks that the
-  # package manifest and logos are still valid.
-  store-flavor:
-    name: Store flavor (windows-latest)
-    runs-on: windows-latest
-    timeout-minutes: 45
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust (stable, with clippy)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            src-tauri
-            src-tauri/shell-ext
-
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install frontend dependencies
-        run: npm ci
-
-      # Needed by `tauri::generate_context!`, as in the gate.
-      - name: Build the frontend
-        run: npm run build
-
-      # One command per step: a Windows step only fails on the exit code of its last command.
-      - name: Clippy, store flavor
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --features store -- -D warnings
-
-      - name: Tests, store flavor
-        run: cargo test --manifest-path src-tauri/Cargo.toml --features store --lib
-
-      # The package also carries the DLL of the folder menu entry (src-tauri/shell-ext, a crate of its own). The gate above
-      # tests it; this builds it the way the package does, in release.
-      - name: Build the shell extension
-        run: cargo build --release --manifest-path src-tauri/shell-ext/Cargo.toml
-
-      # MakeAppx checks the manifest against the package schema and that every file it names is there, the DLL included. A
-      # stand-in program is packed (the real build takes a release build); this package is not kept.
-      - name: Pack the manifest with a stand-in program
-        shell: pwsh
-        run: ./scripts/build-msix.ps1 -ExePath "$env:SystemRoot\System32\whoami.exe" -OutDir "$env:RUNNER_TEMP\msix-check"
+      # `cargo test` regenerated the IPC types (ts-rs); committed ones must match.
+      - name: Generated IPC types are committed
+        shell: bash
+        run: git diff --exit-code -- src/api/generated

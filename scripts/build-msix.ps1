@@ -3,13 +3,13 @@
   Packs PerMark for the Microsoft Store: builds the Store flavor and writes an unsigned PerMark_<version>_x64.msix.
 
 .DESCRIPTION
-  The Store flavor is the same program built with the cargo feature `store` and the overlay `src-tauri/tauri.msstore.conf.json`
+  The Store flavor is the same program built with the cargo feature `store` and the overlay `app/src-tauri/tauri.msstore.conf.json`
   (no self-update; the agent setup lines name the `permark` alias). This script:
 
     1. builds it, and the shell extension next to it (with -Build; otherwise it packs what is already built),
-    2. lays out a package folder: permark.exe, permark_shell.dll (the right-click menu of folders, src-tauri/shell-ext),
-       the logos (src-tauri/msstore/Assets) and AppxManifest.xml, which it writes from the template
-       src-tauri/msstore/AppxManifest.xml with the version filled in,
+    2. lays out a package folder: permark.exe, permark_shell.dll (the right-click menu of folders, app/src-tauri/crates/shell-ext),
+       the logos (app/src-tauri/msstore/Assets) and AppxManifest.xml, which it writes from the template
+       app/src-tauri/msstore/AppxManifest.xml with the version filled in,
     3. runs MakeAppx.exe from the Windows SDK, which checks the manifest against the package schema and packs the folder.
 
   The package is not signed: the Store signs what is uploaded to it, and an unsigned package cannot be installed by hand.
@@ -24,16 +24,16 @@
 .PARAMETER Build
   Build first: the Store flavor, `npx tauri build --no-bundle --features store --config <overlay>` (needs the frontend
   dependencies, npm ci, Rust and the usual Tauri prerequisites), and the shell extension,
-  `cargo build --release --manifest-path src-tauri/shell-ext/Cargo.toml`.
+  `cargo build --release --manifest-path app/src-tauri/crates/shell-ext/Cargo.toml`.
 
 .PARAMETER ExePath
-  The built program. Default: src-tauri\target\release\permark.exe.
+  The built program. Default: app\src-tauri\target\release\permark.exe.
 
 .PARAMETER DllPath
-  The built shell extension. Default: src-tauri\shell-ext\target\release\permark_shell.dll.
+  The built shell extension. Default: app\src-tauri\target\release\permark_shell.dll (workspace target).
 
 .PARAMETER OutDir
-  Where the package folder and the .msix go. Default: src-tauri\target\msix.
+  Where the package folder and the .msix go. Default: app\src-tauri\target\msix.
 
 .PARAMETER Version
   The app's version, three parts. Default: the one in tauri.conf.json.
@@ -70,13 +70,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Repo root = parent of scripts/; the program lives in app/.
 $Root = Split-Path -Parent $PSScriptRoot
-$Tauri = Join-Path $Root 'src-tauri'
+$App = Join-Path $Root 'app'
+$Tauri = Join-Path $App 'src-tauri'
 $Template = Join-Path $Tauri 'msstore\AppxManifest.xml'
 $Assets = Join-Path $Tauri 'msstore\Assets'
-$Overlay = 'src-tauri/tauri.msstore.conf.json'
+$Overlay = 'src-tauri/tauri.msstore.conf.json' # relative to app/, where tauri build runs
 if (-not $ExePath) { $ExePath = Join-Path $Tauri 'target\release\permark.exe' }
-if (-not $DllPath) { $DllPath = Join-Path $Tauri 'shell-ext\target\release\permark_shell.dll' }
+if (-not $DllPath) { $DllPath = Join-Path $Tauri 'target\release\permark_shell.dll' }
 if (-not $OutDir) { $OutDir = Join-Path $Tauri 'target\msix' }
 
 function Find-MakeAppx {
@@ -107,7 +109,7 @@ if (-not $MakeAppx -or -not (Test-Path $MakeAppx)) {
 # ---- Build ----------------------------------------------------------------------------------------------------------
 if ($Build) {
   Write-Host "Building the Store flavor of PerMark $Version ..."
-  Push-Location $Root
+  Push-Location $App
   try {
     # npx rather than `npm run tauri --`: Windows PowerShell 5.1 swallows the `--` and npm then rejects the flags.
     & npx tauri build --no-bundle --features store --config $Overlay
@@ -116,7 +118,7 @@ if ($Build) {
     # The DLL that File Explorer's helper process loads for the folder menu entry. It is a crate of its own (its release
     # build unwinds on a panic, where the program's aborts), so it is built on its own.
     Write-Host 'Building the shell extension ...'
-    & cargo build --release --manifest-path (Join-Path $Tauri 'shell-ext\Cargo.toml')
+    & cargo build --release --manifest-path (Join-Path $Tauri 'crates\shell-ext\Cargo.toml')
     if ($LASTEXITCODE -ne 0) { throw "cargo build of the shell extension failed (exit code $LASTEXITCODE)." }
   }
   finally {
@@ -127,7 +129,7 @@ if (-not (Test-Path $ExePath)) {
   throw "The program is not built: $ExePath was not found. Run this script with -Build, or build the Store flavor first."
 }
 if (-not (Test-Path $DllPath)) {
-  throw "The shell extension is not built: $DllPath was not found. Run this script with -Build, or run cargo build --release in src-tauri\shell-ext first."
+  throw "The shell extension is not built: $DllPath was not found. Run this script with -Build, or run cargo build --release in app\src-tauri\crates\shell-ext first."
 }
 
 # ---- The package folder ---------------------------------------------------------------------------------------------
