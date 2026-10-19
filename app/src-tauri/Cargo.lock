@@ -2749,6 +2749,7 @@ name = "permark"
 version = "0.5.8"
 dependencies = [
  "permark-core",
+ "permark-plugin-comments",
  "permark-plugin-follow",
  "permark-plugin-frontmatter-card",
  "permark-plugin-git",
@@ -2802,6 +2803,18 @@ dependencies = [
  "widestring",
  "windows-sys 0.61.2",
  "xxhash-rust",
+]
+
+[[package]]
+name = "permark-plugin-comments"
+version = "0.5.8"
+dependencies = [
+ "dunce",
+ "permark-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "ts-rs",
 ]
 
 [[package]]

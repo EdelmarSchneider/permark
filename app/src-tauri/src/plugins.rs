@@ -24,6 +24,8 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_tags::plugin());
     #[cfg(feature = "plugin-quiet")]
     plugins.push(permark_plugin_quiet::plugin());
+    #[cfg(feature = "plugin-comments")]
+    plugins.push(permark_plugin_comments::plugin());
     #[cfg(feature = "plugin-md-family")]
     plugins.push(permark_plugin_md_family::plugin());
     #[cfg(feature = "plugin-word-count")]
@@ -92,6 +94,7 @@ mod tests {
             "review",
             "tags",
             "quiet",
+            "comments",
             "md-family",
             "prompt-blocks",
             "frontmatter-card",

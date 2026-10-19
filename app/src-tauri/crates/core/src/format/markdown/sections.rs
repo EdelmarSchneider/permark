@@ -177,6 +177,8 @@ pub struct TextUnit {
     pub heading_path: Vec<String>,
     /// Plain text of the block.
     pub text: String,
+    /// The block is a heading.
+    pub heading: bool,
 }
 
 /// The text units of `text` (any line endings), in document order, and the number of its last line. Same pipeline and
@@ -192,6 +194,7 @@ pub fn units(text: &str) -> (Vec<TextUnit>, u32) {
                 end_line: to_u32(at + 1),
                 heading_path: Vec::new(),
                 text: line.to_owned(),
+                heading: false,
             })
             .collect::<Vec<_>>()
     };
@@ -246,6 +249,7 @@ pub fn units(text: &str) -> (Vec<TextUnit>, u32) {
             end_line: end.max(start),
             heading_path: stack.iter().map(|(_, label)| label.clone()).collect(),
             text: plain,
+            heading: level.is_some(),
         });
     }
     (out, last_line)
