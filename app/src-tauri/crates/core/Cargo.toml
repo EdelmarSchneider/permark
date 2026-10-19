@@ -1,0 +1,20 @@
+[package]
+name = "permark-core"
+description = "PerMark domain: Tauri-free core services."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# NEVER depend on `tauri` here.
+[dependencies]
+serde.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

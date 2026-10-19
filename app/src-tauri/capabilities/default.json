@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window: least privilege. Add a permission only with the feature that needs it.",
+  "windows": ["main"],
+  "permissions": ["core:window:allow-show"]
+}
