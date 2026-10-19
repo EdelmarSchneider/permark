@@ -476,11 +476,16 @@ impl Editor<'_> {
         Ok(out)
     }
 
-    /// How many project files each pattern of an ignore file matches (Project workspaces only).
+    /// How many project files each pattern of an ignore file matches (Project workspaces only). `text`: the editor's
+    /// version; none = the file as it is on disk.
     ///
     /// # Errors
-    /// Not a Project workspace | no format reads `path` | outside.
-    pub fn ignore_matches(&self, path: &str, text: &str) -> Result<IgnoreMatches, IpcError> {
+    /// Not a Project workspace | no format reads `path` | outside | unreadable.
+    pub fn ignore_matches(
+        &self,
+        path: &str,
+        text: Option<&str>,
+    ) -> Result<IgnoreMatches, IpcError> {
         if !matches!(self.scope, DocScope::Project(_)) {
             return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
         }
@@ -488,6 +493,13 @@ impl Editor<'_> {
         let base = abs
             .parent()
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path))?;
+        let disk;
+        let text = if let Some(text) = text {
+            text
+        } else {
+            disk = fsx::read_text(&abs, MAX_TEXT_BYTES)?.text;
+            &disk
+        };
         let format = self.config_format(path, text)?;
         let patterns: Vec<(u32, String)> = format
             .sheet(text)

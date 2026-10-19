@@ -271,14 +271,7 @@ mod tests {
         std::fs::write(dir.path().join("a.log"), "x").unwrap();
         std::fs::write(dir.path().join("b.log"), "x").unwrap();
         std::fs::write(dir.path().join("c.txt"), "x").unwrap();
-        std::fs::write(
-            dir.path().join(".gitignore"),
-            "*.log
-!keep.log
-nothing
-",
-        )
-        .unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "*.log\n!keep.log\nnothing\n").unwrap();
         let scope = DocScope::Project(Vault::new(Root::open(dir.path()).unwrap()));
         let editor = Editor {
             scope: &scope,
@@ -292,13 +285,7 @@ nothing
                 text: text.to_owned(),
             },
         };
-        let text = "# ünï 😀
-name = \"x\"
-api_key = \"sekret\"
-long = \"\"\"
-a
-b\"\"\"
-";
+        let text = "# ünï 😀\nname = \"x\"\napi_key = \"sekret\"\nlong = \"\"\"\na\nb\"\"\"\n";
         let edited = editor
             .config_edit("a.toml", text, &set("name", "y"))
             .unwrap();
@@ -332,14 +319,11 @@ b\"\"\"
             Body::Text { .. }
         ));
         let matches = editor
-            .ignore_matches(
-                ".gitignore",
-                "*.log
-!keep.log
-nothing
-",
-            )
+            .ignore_matches(".gitignore", Some("*.log\n!keep.log\nnothing\n"))
             .unwrap();
+        // without the editor's text: the file as it is on disk
+        let on_disk = editor.ignore_matches(".gitignore", None).unwrap();
+        assert_eq!(on_disk.counts[0].count, 2);
         let counts: Vec<(u32, u32)> = matches.counts.iter().map(|c| (c.line, c.count)).collect();
         assert_eq!(counts, [(1, 2), (2, 0), (3, 0)]);
     }

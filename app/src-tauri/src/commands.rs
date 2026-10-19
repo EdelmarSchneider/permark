@@ -819,16 +819,16 @@ pub fn config_secrets(
     })
 }
 
-/// How many project files each pattern of an ignore file matches.
+/// How many project files each pattern of an ignore file matches (`text`: the editor's version, else the disk's).
 #[tauri::command(async)]
 pub fn ignore_matches(
     handle: AppHandle,
     window: WebviewWindow,
     path: String,
-    text: String,
+    text: Option<String>,
 ) -> Result<IgnoreMatches, IpcError> {
     with_editor(&handle, &window, |editor, _| {
-        editor.ignore_matches(&path, &text)
+        editor.ignore_matches(&path, text.as_deref())
     })
 }
 
