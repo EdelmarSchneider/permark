@@ -11,10 +11,25 @@ publish = false
 # NEVER depend on `tauri` here.
 [dependencies]
 serde.workspace = true
+serde_json.workspace = true
 ts-rs.workspace = true
+thiserror.workspace = true
+dunce.workspace = true
+unicode-normalization.workspace = true
+xxhash-rust.workspace = true
+toml_edit.workspace = true
+dirs.workspace = true
+interprocess.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+widestring.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

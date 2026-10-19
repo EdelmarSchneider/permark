@@ -1,0 +1,185 @@
+{
+  "base": {
+    "workspace": "project",
+    "git": { "status": "repo", "state": "clean" },
+    "permark": "initialized",
+    "agent": { "status": "on" },
+    "liveUpdates": { "status": "available" },
+    "distribution": "direct",
+    "platform": "windows",
+    "plugins": ["git", "unread"]
+  },
+  "cases": [
+    {
+      "name": "no needs: available",
+      "requirement": { "needs": [], "prefers": [] },
+      "context": {},
+      "expected": { "status": "available", "degraded": [] }
+    },
+    {
+      "name": "workspace kind met",
+      "requirement": { "needs": [{ "need": "workspace", "kinds": ["project", "singleFile"] }], "prefers": [] },
+      "context": {},
+      "expected": { "status": "available", "degraded": [] }
+    },
+    {
+      "name": "workspace kind unmet on welcome",
+      "requirement": { "needs": [{ "need": "workspace", "kinds": ["project"] }], "prefers": [] },
+      "context": { "workspace": "welcome" },
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "workspace", "kinds": ["project"], "remedy": null }
+      }
+    },
+    {
+      "name": "empty kinds list never met",
+      "requirement": { "needs": [{ "need": "workspace", "kinds": [] }], "prefers": [] },
+      "context": {},
+      "expected": { "status": "unavailable", "reason": { "need": "workspace", "kinds": [], "remedy": null } }
+    },
+    {
+      "name": "git repo met while merging",
+      "requirement": { "needs": [{ "need": "gitRepo" }], "prefers": [] },
+      "context": { "git": { "status": "repo", "state": "merging" } },
+      "expected": { "status": "available", "degraded": [] }
+    },
+    {
+      "name": "git repo unmet without repo",
+      "requirement": { "needs": [{ "need": "gitRepo" }], "prefers": [] },
+      "context": { "git": { "status": "noRepo" } },
+      "expected": { "status": "unavailable", "reason": { "need": "gitRepo", "remedy": null } }
+    },
+    {
+      "name": "git repo unmet on git error",
+      "requirement": { "needs": [{ "need": "gitRepo" }], "prefers": [] },
+      "context": { "git": { "status": "error", "reason": "bad index" } },
+      "expected": { "status": "unavailable", "reason": { "need": "gitRepo", "remedy": null } }
+    },
+    {
+      "name": "git available met without repo",
+      "requirement": { "needs": [{ "need": "gitAvailable" }], "prefers": [] },
+      "context": { "git": { "status": "noRepo" } },
+      "expected": { "status": "available", "degraded": [] }
+    },
+    {
+      "name": "git available unmet: remedy settings.git",
+      "requirement": { "needs": [{ "need": "gitAvailable" }], "prefers": [] },
+      "context": { "git": { "status": "unavailable" } },
+      "expected": { "status": "unavailable", "reason": { "need": "gitAvailable", "remedy": "settings.git" } }
+    },
+    {
+      "name": "permark unmet: remedy project.init",
+      "requirement": { "needs": [{ "need": "permark" }], "prefers": [] },
+      "context": { "permark": "notInitialized" },
+      "expected": { "status": "unavailable", "reason": { "need": "permark", "remedy": "project.init" } }
+    },
+    {
+      "name": "agent on met when connected",
+      "requirement": { "needs": [{ "need": "agentOn" }], "prefers": [] },
+      "context": { "agent": { "status": "connected", "client": "claude-code" } },
+      "expected": { "status": "available", "degraded": [] }
+    },
+    {
+      "name": "agent on unmet when off: remedy agent.turnOn",
+      "requirement": { "needs": [{ "need": "agentOn" }], "prefers": [] },
+      "context": { "agent": { "status": "off" } },
+      "expected": { "status": "unavailable", "reason": { "need": "agentOn", "remedy": "agent.turnOn" } }
+    },
+    {
+      "name": "agent connected unmet when only on",
+      "requirement": { "needs": [{ "need": "agentConnected" }], "prefers": [] },
+      "context": {},
+      "expected": { "status": "unavailable", "reason": { "need": "agentConnected", "remedy": null } }
+    },
+    {
+      "name": "live updates unmet",
+      "requirement": { "needs": [{ "need": "liveUpdates" }], "prefers": [] },
+      "context": { "liveUpdates": { "status": "unavailable", "reason": "noWatcher" } },
+      "expected": { "status": "unavailable", "reason": { "need": "liveUpdates", "remedy": null } }
+    },
+    {
+      "name": "distribution store unmet on direct",
+      "requirement": { "needs": [{ "need": "distribution", "distribution": "direct" }], "prefers": [] },
+      "context": { "distribution": "store" },
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "distribution", "distribution": "direct", "remedy": null }
+      }
+    },
+    {
+      "name": "platform list met",
+      "requirement": { "needs": [{ "need": "platform", "platforms": ["mac", "windows"] }], "prefers": [] },
+      "context": {},
+      "expected": { "status": "available", "degraded": [] }
+    },
+    {
+      "name": "platform list unmet on linux",
+      "requirement": { "needs": [{ "need": "platform", "platforms": ["windows"] }], "prefers": [] },
+      "context": { "platform": "linux" },
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "platform", "platforms": ["windows"], "remedy": null }
+      }
+    },
+    {
+      "name": "plugin met",
+      "requirement": { "needs": [{ "need": "plugin", "plugin": "unread" }], "prefers": [] },
+      "context": {},
+      "expected": { "status": "available", "degraded": [] }
+    },
+    {
+      "name": "plugin unmet: remedy plugins.enable",
+      "requirement": { "needs": [{ "need": "plugin", "plugin": "review" }], "prefers": [] },
+      "context": {},
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "plugin", "plugin": "review", "remedy": "plugins.enable:review" }
+      }
+    },
+    {
+      "name": "first unmet need wins, declaration order",
+      "requirement": {
+        "needs": [{ "need": "gitRepo" }, { "need": "permark" }, { "need": "agentOn" }],
+        "prefers": []
+      },
+      "context": { "permark": "notInitialized", "agent": { "status": "off" } },
+      "expected": { "status": "unavailable", "reason": { "need": "permark", "remedy": "project.init" } }
+    },
+    {
+      "name": "unmet prefers degrade in declaration order",
+      "requirement": {
+        "needs": [{ "need": "workspace", "kinds": ["project"] }],
+        "prefers": [{ "need": "liveUpdates" }, { "need": "gitRepo" }, { "need": "permark" }]
+      },
+      "context": { "git": { "status": "noRepo" }, "liveUpdates": { "status": "unavailable", "reason": "x" } },
+      "expected": {
+        "status": "available",
+        "degraded": [
+          { "need": "liveUpdates", "remedy": null },
+          { "need": "gitRepo", "remedy": null }
+        ]
+      }
+    },
+    {
+      "name": "needs beat prefers: unavailable ignores prefers",
+      "requirement": { "needs": [{ "need": "agentConnected" }], "prefers": [{ "need": "gitRepo" }] },
+      "context": { "git": { "status": "noRepo" } },
+      "expected": { "status": "unavailable", "reason": { "need": "agentConnected", "remedy": null } }
+    },
+    {
+      "name": "welcome neutral context: plugin need unmet",
+      "requirement": { "needs": [{ "need": "plugin", "plugin": "git" }], "prefers": [] },
+      "context": {
+        "workspace": "welcome",
+        "git": { "status": "noRepo" },
+        "permark": "notInitialized",
+        "agent": { "status": "off" },
+        "plugins": []
+      },
+      "expected": {
+        "status": "unavailable",
+        "reason": { "need": "plugin", "plugin": "git", "remedy": "plugins.enable:git" }
+      }
+    }
+  ]
+}

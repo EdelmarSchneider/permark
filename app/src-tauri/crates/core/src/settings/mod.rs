@@ -1,0 +1,361 @@
+//! Settings: app (`<profile>/settings.toml`) + project (`.permark/config.toml`). Read leniently (bad value of a key ->
+//! that key's default); written surgically via `toml_edit` (only the changed key's bytes; comments, order, unknown
+//! keys survive).
+
+mod project;
+
+use std::collections::BTreeMap;
+use std::io;
+use std::path::{Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+use toml_edit::{DocumentMut, Item, Table, Value};
+use ts_rs::TS;
+
+pub use project::{ProjectConfig, TreeConfig, TreeShow};
+
+use crate::error::IpcError;
+use crate::fsx::write_atomic;
+use crate::plugins::PluginId;
+use crate::state::AppDirs;
+
+/// Settings files larger than this are not settings (refused, defaults used).
+pub(crate) const MAX_SETTINGS_BYTES: u64 = 1024 * 1024;
+
+macro_rules! choice {
+    ($(#[$meta:meta])* $name:ident { $($variant:ident = $text:literal),+ $(,)? } default $default:ident) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+        #[ts(export)]
+        pub enum $name {
+            $(
+                #[serde(rename = $text)]
+                $variant,
+            )+
+        }
+
+        impl Default for $name {
+            fn default() -> Self {
+                Self::$default
+            }
+        }
+
+        impl $name {
+            pub const ALL: &'static [Self] = &[$(Self::$variant),+];
+
+            #[must_use]
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $text),+
+                }
+            }
+
+            #[must_use]
+            pub fn parse(text: &str) -> Option<Self> {
+                match text {
+                    $($text => Some(Self::$variant),)+
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+choice!(
+    /// Interface language: the system's, or one of the six.
+    LanguagePref { System = "system", En = "en", PtBr = "pt-BR", Es = "es", De = "de", ZhCn = "zh-CN", It = "it" } default System
+);
+choice!(ThemePref { System = "system", Light = "light", Dark = "dark" } default System);
+choice!(
+    /// Tone of the light theme.
+    Tone { White = "white", Paper = "paper", Sage = "sage", Gray = "gray" } default White
+);
+choice!(
+    /// What a start with nothing to open shows.
+    StartIn { Welcome = "welcome", Notes = "notes" } default Welcome
+);
+
+/// A plugin's raw settings table (equality by its TOML text).
+#[derive(Debug, Clone, Default)]
+pub struct RawTable(pub Table);
+
+impl PartialEq for RawTable {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_string() == other.0.to_string()
+    }
+}
+
+/// App settings as the app uses them.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AppSettings {
+    pub language: LanguagePref,
+    pub theme: ThemePref,
+    pub tone: Tone,
+    pub start_in: StartIn,
+    /// Explicit plugin switches (absent = manifest default).
+    pub plugins: BTreeMap<PluginId, bool>,
+    /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub plugin_tables: BTreeMap<PluginId, RawTable>,
+}
+
+/// One change of one key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "key", content = "value", rename_all = "camelCase")]
+#[ts(export)]
+pub enum SettingChange {
+    Language(LanguagePref),
+    Theme(ThemePref),
+    Tone(Tone),
+    StartIn(StartIn),
+    /// `None` = back to the manifest default (key removed).
+    PluginEnabled {
+        plugin: PluginId,
+        enabled: Option<bool>,
+    },
+}
+
+impl SettingChange {
+    /// Key path as written in the file (for `SettingsChanged.keys`).
+    #[must_use]
+    pub fn key(&self) -> String {
+        match self {
+            Self::Language(_) => "language".to_owned(),
+            Self::Theme(_) => "theme".to_owned(),
+            Self::Tone(_) => "tone".to_owned(),
+            Self::StartIn(_) => "start_in".to_owned(),
+            Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "scope", content = "project", rename_all = "camelCase")]
+#[ts(export)]
+pub enum SettingsScope {
+    App,
+    Project(crate::state::ProjectId),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    #[error("cannot write {path}: {source}")]
+    Io { path: String, source: io::Error },
+}
+
+impl From<SettingsError> for IpcError {
+    fn from(error: SettingsError) -> Self {
+        match error {
+            SettingsError::Io { path, source } => IpcError::io(path, &source),
+        }
+    }
+}
+
+/// Reads a settings file as a document; missing | too large | unreadable | not TOML -> `None`.
+pub(crate) fn read_doc(path: &Path) -> Option<DocumentMut> {
+    let meta = std::fs::metadata(path).ok()?;
+    if meta.len() > MAX_SETTINGS_BYTES {
+        return None;
+    }
+    std::fs::read_to_string(path)
+        .ok()?
+        .parse::<DocumentMut>()
+        .ok()
+}
+
+fn str_of<'a>(doc: &'a DocumentMut, key: &str) -> Option<&'a str> {
+    doc.get(key).and_then(Item::as_str)
+}
+
+/// `[plugins.<id>]` tables of a document (invalid ids skipped).
+pub(crate) fn plugin_tables(doc: &DocumentMut) -> BTreeMap<PluginId, RawTable> {
+    let Some(plugins) = doc.get("plugins").and_then(Item::as_table_like) else {
+        return BTreeMap::new();
+    };
+    plugins
+        .iter()
+        .filter_map(|(id, item)| {
+            let id = PluginId::parse(id)?;
+            let table = match item {
+                Item::Table(table) => table.clone(),
+                Item::Value(Value::InlineTable(inline)) => inline.clone().into_table(),
+                _ => return None,
+            };
+            Some((id, RawTable(table)))
+        })
+        .collect()
+}
+
+impl AppSettings {
+    /// Lenient read of a document: each key on its own.
+    #[must_use]
+    pub fn from_doc(doc: &DocumentMut) -> Self {
+        let plugin_tables = plugin_tables(doc);
+        let plugins = plugin_tables
+            .iter()
+            .filter_map(|(id, table)| Some((id.clone(), table.0.get("enabled")?.as_bool()?)))
+            .collect();
+        Self {
+            language: str_of(doc, "language")
+                .and_then(LanguagePref::parse)
+                .unwrap_or_default(),
+            theme: str_of(doc, "theme")
+                .and_then(ThemePref::parse)
+                .unwrap_or_default(),
+            tone: str_of(doc, "tone")
+                .and_then(Tone::parse)
+                .unwrap_or_default(),
+            start_in: str_of(doc, "start_in")
+                .and_then(StartIn::parse)
+                .unwrap_or_default(),
+            plugins,
+            plugin_tables,
+        }
+    }
+}
+
+/// Sets `table[key] = value`, keeping the old value's decor (inline comment, spacing) and the key's position.
+fn set_keeping_decor(table: &mut Table, key: &str, value: Value) {
+    match table.get_mut(key) {
+        Some(Item::Value(old)) => {
+            let decor = old.decor().clone();
+            *old = value;
+            *old.decor_mut() = decor;
+        }
+        Some(other) => *other = Item::Value(value),
+        None => {
+            table.insert(key, Item::Value(value));
+        }
+    }
+}
+
+/// Applies a change to a document: only the bytes of that key change.
+pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
+    let root = doc.as_table_mut();
+    match change {
+        SettingChange::Language(v) => set_keeping_decor(root, "language", v.as_str().into()),
+        SettingChange::Theme(v) => set_keeping_decor(root, "theme", v.as_str().into()),
+        SettingChange::Tone(v) => set_keeping_decor(root, "tone", v.as_str().into()),
+        SettingChange::StartIn(v) => set_keeping_decor(root, "start_in", v.as_str().into()),
+        SettingChange::PluginEnabled { plugin, enabled } => {
+            set_plugin_enabled(root, plugin, *enabled);
+        }
+    }
+}
+
+fn set_plugin_enabled(root: &mut Table, plugin: &PluginId, enabled: Option<bool>) {
+    let id = plugin.as_str();
+    if !root.get("plugins").is_some_and(Item::is_table) {
+        if enabled.is_none() {
+            return;
+        }
+        let mut plugins = Table::new();
+        plugins.set_implicit(true);
+        root.insert("plugins", Item::Table(plugins));
+    }
+    let Some(Item::Table(plugins)) = root.get_mut("plugins") else {
+        return;
+    };
+    // an inline table `[plugins] git = { enabled = true }` becomes a normal table (rare; still surgical elsewhere)
+    if let Some(Item::Value(Value::InlineTable(inline))) = plugins.get(id) {
+        let table = inline.clone().into_table();
+        plugins.insert(id, Item::Table(table));
+    }
+    match enabled {
+        Some(on) => {
+            if !plugins.get(id).is_some_and(Item::is_table) {
+                plugins.insert(id, Item::Table(Table::new()));
+            }
+            if let Some(Item::Table(table)) = plugins.get_mut(id) {
+                set_keeping_decor(table, "enabled", on.into());
+            }
+        }
+        None => {
+            if let Some(Item::Table(table)) = plugins.get_mut(id) {
+                table.remove("enabled");
+                if table.is_empty() {
+                    plugins.remove(id);
+                }
+            }
+        }
+    }
+}
+
+/// Document text in the line endings of `original` (`toml_edit` writes LF): an all-CRLF file stays CRLF.
+#[must_use]
+pub fn render(doc: &DocumentMut, original: &str) -> String {
+    let text = doc.to_string();
+    let crlf = original.contains("\r\n") && !original.replace("\r\n", "").contains('\n');
+    if crlf {
+        text.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        text
+    }
+}
+
+/// The app settings file.
+#[derive(Debug, Clone)]
+pub struct SettingsFile {
+    path: PathBuf,
+}
+
+impl SettingsFile {
+    #[must_use]
+    pub fn app(dirs: &AppDirs) -> Self {
+        Self {
+            path: dirs.profile.join("settings.toml"),
+        }
+    }
+
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Current settings (defaults when missing | unreadable).
+    #[must_use]
+    pub fn load(&self) -> AppSettings {
+        read_doc(&self.path).map_or_else(AppSettings::default, |doc| AppSettings::from_doc(&doc))
+    }
+
+    /// Applies one change to the file on disk (read fresh: hand edits kept) and returns the new settings.
+    /// A file that is not TOML is moved to `settings.toml.broken-<ms>` first (never silently overwritten).
+    ///
+    /// # Errors
+    /// IO failure writing the file.
+    pub fn apply(&self, change: &SettingChange) -> Result<AppSettings, SettingsError> {
+        let original = std::fs::read_to_string(&self.path).unwrap_or_default();
+        let exists = std::fs::symlink_metadata(&self.path).is_ok();
+        let mut doc = if let Some(doc) = read_doc(&self.path) {
+            doc
+        } else {
+            if exists {
+                let ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_or(0, |d| d.as_millis());
+                let backup = self
+                    .path
+                    .with_file_name(format!("settings.toml.broken-{ms}"));
+                std::fs::rename(&self.path, &backup).map_err(|source| SettingsError::Io {
+                    path: self.path.display().to_string(),
+                    source,
+                })?;
+            }
+            DocumentMut::new()
+        };
+        apply_change(&mut doc, change);
+        write_atomic(&self.path, render(&doc, &original).as_bytes()).map_err(|source| {
+            SettingsError::Io {
+                path: self.path.display().to_string(),
+                source,
+            }
+        })?;
+        Ok(AppSettings::from_doc(&doc))
+    }
+}
+
+#[cfg(test)]
+mod tests;
