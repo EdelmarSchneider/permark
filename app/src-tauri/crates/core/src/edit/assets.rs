@@ -3,6 +3,8 @@
 use std::io::{self, Write};
 use std::path::Path;
 
+use crate::error::{ErrorKind, IpcError};
+
 /// Hard limit of one pasted picture.
 pub const MAX_ASSET_BYTES: u64 = 50 * 1024 * 1024;
 
@@ -63,6 +65,31 @@ impl AssetKind {
     }
 }
 
+/// The bytes of a picture file dropped from the system onto an editor (the drop event carries paths, not files).
+///
+/// # Errors
+/// Not an absolute path | not a picture type | not a regular file | bytes not of that type (`unsupported`); over the
+/// limit (`tooLarge`); IO.
+pub fn read_picture(path: &Path) -> Result<Vec<u8>, IpcError> {
+    let shown = path.display().to_string();
+    let kind = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .and_then(asset_kind)
+        .filter(|_| path.is_absolute())
+        .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(shown.clone()))?;
+    if !std::fs::metadata(path).is_ok_and(|m| m.is_file()) {
+        return Err(IpcError::new(ErrorKind::NotFound).subject(shown));
+    }
+    let bytes = crate::fsx::read_bytes(path, MAX_ASSET_BYTES)?;
+    if !kind.matches(&bytes) {
+        return Err(IpcError::new(ErrorKind::Unsupported)
+            .subject(shown)
+            .detail("content"));
+    }
+    Ok(bytes)
+}
+
 /// Creates `abs` (must not exist) with `bytes`, durably; a failed write leaves nothing behind.
 ///
 /// # Errors
@@ -86,6 +113,29 @@ pub(super) fn write_new(abs: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A PNG signature and four more bytes.
+    const PNG_HEAD: &[u8] = b"\x89PNG\r\n\x1a\nrest";
+
+    #[test]
+    fn a_dropped_picture_is_read_when_it_is_what_its_name_says() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("p.PNG");
+        std::fs::write(&png, PNG_HEAD).unwrap();
+        assert_eq!(read_picture(&png).unwrap().len(), 12);
+        // a name that lies, a type that is no picture, a folder, a missing file, a relative path
+        let lie = dir.path().join("lie.png");
+        std::fs::write(&lie, b"not a png").unwrap();
+        let text = dir.path().join("t.txt");
+        std::fs::write(&text, PNG_HEAD).unwrap();
+        for bad in [&lie, &text, dir.path(), &dir.path().join("none.png")] {
+            assert!(read_picture(bad).is_err(), "{}", bad.display());
+        }
+        assert!(read_picture(Path::new("p.png")).is_err());
+        let folder = dir.path().join("dir.png");
+        std::fs::create_dir(&folder).unwrap();
+        assert_eq!(read_picture(&folder).unwrap_err().kind, ErrorKind::NotFound);
+    }
 
     #[test]
     fn kinds_by_extension_and_mime() {

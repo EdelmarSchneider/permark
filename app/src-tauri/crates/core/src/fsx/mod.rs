@@ -174,6 +174,13 @@ fn temp_path(path: &Path) -> PathBuf {
     dir.join(format!(".{name}.{}.{n}.part", std::process::id()))
 }
 
+/// Hidden temp in `dir` for something being built under another name (`.import.<pid>.<n>.part`): short, so a name
+/// at the length limit still has a temp.
+pub(crate) fn scratch_in(dir: &Path) -> PathBuf {
+    let n = TEMP_COUNT.fetch_add(1, Ordering::Relaxed);
+    dir.join(format!(".import.{}.{n}.part", std::process::id()))
+}
+
 /// Writes `bytes` atomically + durably: temp in the same folder -> fsync -> rename over target (Windows:
 /// `MoveFileExW` replace + write-through; Unix: folder fsync). Power loss leaves old or new file, never empty.
 /// Target permissions carried over (Unix mode bits | Windows read-only). Parent folders created.

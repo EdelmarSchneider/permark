@@ -3,4 +3,4 @@
 /**
  * Why a document's links were not updated (or an undo could not restore it).
  */
-export type SkipReason = "tooLarge" | "notUtf8" | "unreadable" | "changed" | "writeFailed" | "missing" | "occupied" | "unsaved";
+export type SkipReason = "tooLarge" | "notUtf8" | "unreadable" | "changed" | "writeFailed" | "missing" | "occupied" | "unsaved" | "trash";

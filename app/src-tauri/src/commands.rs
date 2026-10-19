@@ -14,7 +14,8 @@ use permark_core::document::{editor, resolve_code_refs, DocumentView, LinkTarget
 use permark_core::edit::{ConfigEdited, EditSource, Editor, LineEdit, SaveOutcome, SecretRange};
 use permark_core::events::{OpenFailed, StateRecovered};
 use permark_core::fileops::{
-    external_target, DeleteOutcome, MoveOutcome, MovePlan, MoveSpec, NewKind, OpenMode, UndoOutcome,
+    external_target, ConflictChoice, DeleteOutcome, ImportMode, ImportOutcome, ImportPlan,
+    MoveOutcome, MovePlan, MoveSpec, NewKind, OpenMode, UndoOutcome,
 };
 use permark_core::format::config::IgnoreMatches;
 use permark_core::format::{
@@ -449,6 +450,47 @@ pub fn fileops_undo(
     Ok(project_of(&handle, &window)?.fileops().undo()?)
 }
 
+// ---- Explorer: files dropped in from outside --------------------------------------------------------------------------
+
+/// What dropping files | folders from the system onto a folder of the project would do. Nothing is touched.
+#[tauri::command(async)]
+pub fn fileops_import_plan(
+    handle: AppHandle,
+    window: WebviewWindow,
+    target: String,
+    sources: Vec<String>,
+) -> Result<ImportPlan, IpcError> {
+    Ok(project_of(&handle, &window)?
+        .fileops()
+        .import_plan(&target, &sources)?)
+}
+
+/// Copies | moves what a plan listed. Returns when done; the window hears `import-progress` meanwhile.
+#[tauri::command(async)]
+pub fn fileops_import_apply(
+    handle: AppHandle,
+    window: WebviewWindow,
+    plan_id: u64,
+    mode: ImportMode,
+    conflicts: ConflictChoice,
+) -> Result<ImportOutcome, IpcError> {
+    let core = project_of(&handle, &window)?;
+    let label = window.label().to_owned();
+    // a progress event nobody hears (window gone) is not an error
+    let report = |progress: &permark_core::fileops::ImportProgress| {
+        let _ = handle.emit_to(label.as_str(), "import-progress", progress);
+    };
+    Ok(core
+        .fileops()
+        .import_apply(plan_id, mode, conflicts, &report)?)
+}
+
+/// Stops a running import; what was finished stays. `true`: there was one.
+#[tauri::command(async)]
+pub fn fileops_import_cancel(handle: AppHandle, window: WebviewWindow, plan_id: u64) -> bool {
+    project_of(&handle, &window).is_ok_and(|core| core.fileops().import_cancel(plan_id))
+}
+
 // ---- Explorer: files outside PerMark -------------------------------------------------------------------------------------
 
 /// Absolute place of a project path ("copy full path").
@@ -776,6 +818,15 @@ pub async fn edit_write_asset(
     })
     .await
     .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?
+}
+
+/// A picture dropped from the system onto an editor: its bytes (raw response). Absolute path, picture type, at most
+/// 50 MB; the bytes must be of the type the name says.
+#[tauri::command(async)]
+pub fn picture_read(path: String) -> Result<tauri::ipc::Response, IpcError> {
+    Ok(tauri::ipc::Response::new(permark_core::edit::read_picture(
+        std::path::Path::new(&path),
+    )?))
 }
 
 /// This window holds unsaved edits of `path` (`None`: none): close guard, link updates.
@@ -1190,6 +1241,9 @@ commands![
     fileops_delete,
     fileops_new,
     fileops_undo,
+    fileops_import_plan,
+    fileops_import_apply,
+    fileops_import_cancel,
     file_abs_path,
     file_open_external,
     show_document,
@@ -1205,6 +1259,7 @@ commands![
     edit_save,
     edit_save_as,
     edit_write_asset,
+    picture_read,
     edit_set_unsaved,
     edit_headings,
     edit_link_targets,

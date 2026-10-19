@@ -33,6 +33,13 @@ pub(crate) struct DocUndo {
     pub moved_by: Option<usize>,
 }
 
+/// An item an import moved in: where it came from (absolute) and where it is now (project path).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct ImportMoved {
+    pub from: String,
+    pub to: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub(crate) enum Op {
@@ -49,6 +56,11 @@ pub(crate) enum Op {
     },
     Delete {
         paths: Vec<String>,
+    },
+    /// Items dropped in from outside: copies (project paths) and moves.
+    Import {
+        copied: Vec<String>,
+        moved: Vec<ImportMoved>,
     },
 }
 

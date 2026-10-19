@@ -20,7 +20,7 @@ use std::time::UNIX_EPOCH;
 use serde::Serialize;
 use ts_rs::TS;
 
-pub use assets::{asset_kind, AssetKind, MAX_ASSET_BYTES};
+pub use assets::{asset_kind, read_picture, AssetKind, MAX_ASSET_BYTES};
 pub use lines::LineEdit;
 
 use crate::document::{DocScope, MAX_TEXT_BYTES};

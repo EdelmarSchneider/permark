@@ -10,6 +10,7 @@
 //!   watch, the tree synced at once) and undo.
 
 mod external;
+mod import;
 mod names;
 mod ops;
 mod plan;
@@ -29,6 +30,10 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use external::{external_target, OpenMode};
+pub use import::{
+    ConflictChoice, ImportFailure, ImportItem, ImportKind, ImportMode, ImportOutcome, ImportPhase,
+    ImportPlan, ImportProgress, ImportRefusal, ImportRefused,
+};
 pub use names::{check_name, new_file_name, NameProblem};
 
 use self::ops::{
@@ -148,6 +153,8 @@ pub enum SkipReason {
     Occupied,
     /// Open with unsaved edits in a window.
     Unsaved,
+    /// The recycle bin refused (an undo of an import).
+    Trash,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -230,6 +237,7 @@ pub enum UndoKind {
     NewFile,
     NewFolder,
     Delete,
+    Import,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -279,6 +287,8 @@ pub struct FileOps {
     /// The undo journal; locked for one read-modify-write at a time. Moves with the project's state folder.
     journal: Mutex<StateFile<Journal>>,
     plans: Mutex<Plans>,
+    /// Drop-into-project plans waiting and imports running.
+    imports: Mutex<import::Imports>,
 }
 
 impl std::fmt::Debug for FileOps {
@@ -301,6 +311,7 @@ impl FileOps {
             own,
             journal: Mutex::new(store.file::<Journal>(JOURNAL_FILE)),
             plans: Mutex::new(Plans::default()),
+            imports: Mutex::new(import::Imports::default()),
         }
     }
 
@@ -694,6 +705,7 @@ impl FileOps {
             Op::NewFile { path } => self.undo_new(&path, UndoKind::NewFile),
             Op::NewFolder { path } => self.undo_new(&path, UndoKind::NewFolder),
             Op::Delete { paths } => self.undo_delete(&paths),
+            Op::Import { copied, moved } => self.undo_import(&copied, &moved),
         }))
     }
 

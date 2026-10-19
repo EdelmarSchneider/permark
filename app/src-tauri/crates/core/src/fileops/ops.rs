@@ -16,7 +16,7 @@ use crate::paths::{fold, strip_root, Vault, VaultPath, WORKTREE_PREFIX};
 use crate::tree::below_root;
 
 /// At most this many files of a moved folder are announced to the watch; the rest would show as news.
-const MAX_ANNOUNCED: usize = 500;
+pub(super) const MAX_ANNOUNCED: usize = 500;
 
 /// A move that passed the checks: both ends inside the same root, the destination is free.
 #[derive(Debug, Clone)]
@@ -195,7 +195,7 @@ fn check_together(moves: &[ValidMove]) -> Result<(), FileOpError> {
 }
 
 /// Renames a file or folder, retrying the transient errors Windows gives while something else has it open.
-fn os_rename(from: &Path, to: &Path) -> io::Result<()> {
+pub(super) fn os_rename(from: &Path, to: &Path) -> io::Result<()> {
     retry(&RETRY_DELAYS, || fs::rename(from, to))
 }
 
@@ -255,7 +255,7 @@ fn put_back(
 }
 
 /// The project paths of the files inside a folder, any depth (up to a limit).
-fn list_files(abs_dir: &Path, rel_dir: &str, out: &mut Vec<String>) {
+pub(super) fn list_files(abs_dir: &Path, rel_dir: &str, out: &mut Vec<String>) {
     let Ok(entries) = fs::read_dir(abs_dir) else {
         return;
     };
