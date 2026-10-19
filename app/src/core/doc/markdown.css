@@ -62,27 +62,37 @@
   padding-bottom: 0.3em;
   border-bottom: 1px solid var(--border);
 }
+/* Heading scale: each level reads as its own step at a glance (size, weight, colour, space). H1-H4 shrink by about
+   a sixth each; H5 is smaller than the text but heavier; H6 is H5's size class, lighter and muted. No text-transform:
+   copy and find keep the author's words. */
 .md h2 {
-  font-size: 1.5em;
-  font-weight: 600;
-  letter-spacing: -0.012em;
+  font-size: 1.55em;
+  font-weight: 650;
+  letter-spacing: -0.015em;
   margin: 1.8em 0 0.6em;
 }
 .md h3 {
-  font-size: 1.2em;
+  font-size: 1.27em;
   font-weight: 600;
-  margin: 1.5em 0 0.5em;
+  letter-spacing: -0.005em;
+  margin: 1.6em 0 0.5em;
 }
 .md h4 {
-  font-size: 1.05em;
+  font-size: 1.08em;
   font-weight: 600;
-  margin: 1.4em 0 0.5em;
+  margin: 1.5em 0 0.45em;
 }
-.md h5,
+.md h5 {
+  font-size: 0.92em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin: 1.4em 0 0.4em;
+}
 .md h6 {
-  font-size: 0.95em;
+  font-size: 0.86em;
   font-weight: 600;
-  margin: 1.3em 0 0.4em;
+  letter-spacing: 0.01em;
+  margin: 1.3em 0 0.35em;
   color: var(--muted);
 }
 .md .anchor {
