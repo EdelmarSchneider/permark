@@ -10,17 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "PerMark",
-        "visible": false,
-        "width": 1280,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: pm-asset: http://pm-asset.localhost; media-src 'self' pm-asset: http://pm-asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
     }
@@ -52,7 +42,16 @@
           "SimpChinese",
           "Italian"
         ],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": true,
+        "installerHooks": "installer/hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/permark.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/permark.desktop"
       }
     }
   },
@@ -62,7 +61,9 @@
       "endpoints": [
         "https://github.com/EdelmarSchneider/permark/releases/latest/download/latest.json"
       ],
-      "windows": { "installMode": "passive" }
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

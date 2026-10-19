@@ -72,3 +72,48 @@ jobs:
       - name: Generated IPC types are committed
         shell: bash
         run: git diff --exit-code -- src/api/generated
+
+  # The Microsoft Store flavor: no updater, no registry writer (`--no-default-features --features store`), the shell
+  # extension DLL (profile `release-shell`, which unwinds on a panic) and the package (MakeAppx checks the manifest).
+  # The package is not kept: the Release workflow builds the one that is uploaded.
+  store:
+    name: Store package (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (pinned)
+        run: rustup toolchain install
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # `tauri::generate_context!` embeds app/dist at compile time.
+      - name: Build the frontend
+        run: npm run build
+
+      - name: Lint the Store flavor
+        working-directory: app/src-tauri
+        run: cargo clippy -p permark --no-default-features --features store --all-targets -- -D warnings
+
+      - name: Build and pack the Store package
+        shell: pwsh
+        working-directory: .
+        run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"

@@ -1,0 +1,92 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd"
+        ],
+        "name": "Markdown document",
+        "role": "Editor",
+        "rank": "Alternate",
+        "contentTypes": [
+          "net.daringfireball.markdown"
+        ]
+      },
+      {
+        "ext": [
+          "txt"
+        ],
+        "name": "Text document",
+        "role": "Editor",
+        "rank": "Alternate",
+        "contentTypes": [
+          "public.plain-text"
+        ]
+      },
+      {
+        "ext": [
+          "json",
+          "jsonl"
+        ],
+        "name": "JSON file",
+        "role": "Editor",
+        "rank": "Alternate",
+        "contentTypes": [
+          "public.json"
+        ]
+      },
+      {
+        "ext": [
+          "xml"
+        ],
+        "name": "XML file",
+        "role": "Editor",
+        "rank": "Alternate",
+        "contentTypes": [
+          "public.xml"
+        ]
+      },
+      {
+        "ext": [
+          "yaml",
+          "yml"
+        ],
+        "name": "YAML file",
+        "role": "Editor",
+        "rank": "Alternate",
+        "contentTypes": [
+          "public.yaml"
+        ]
+      },
+      {
+        "ext": [
+          "toml"
+        ],
+        "name": "TOML file",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": [
+          "ini",
+          "cfg"
+        ],
+        "name": "Settings file",
+        "role": "Editor",
+        "rank": "Alternate"
+      },
+      {
+        "ext": [
+          "properties"
+        ],
+        "name": "Properties file",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
+    ]
+  }
+}

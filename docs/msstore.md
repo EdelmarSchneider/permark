@@ -22,21 +22,21 @@ redirected.
 
 ## The folder menu ("Open with PerMark")
 
-The installer version adds the entry with registry keys under `HKEY_CURRENT_USER\Software\Classes` (`src-tauri/src/shell_integration`).
+The installer version adds the entry with registry keys under `HKEY_CURRENT_USER\Software\Classes` (`app/src-tauri/crates/plugins/shell-integration`).
 A packaged program cannot do that: what it writes under `HKEY_CURRENT_USER` goes to a private copy of the registry, and File Explorer
 reads the real one. Windows has a way for packages instead (documented in
 [Add a File Explorer context menu command to a packaged desktop app](https://learn.microsoft.com/windows/apps/desktop/modernize/integrate-packaged-app-with-file-explorer)):
 the package carries a COM class that implements `IExplorerCommand`, and its manifest says for which items the command is on the menu.
-That class is the DLL in `src-tauri/shell-ext`.
+That class is the DLL in `app/src-tauri/crates/shell-ext`.
 
 ### How it works
 
-1. **The component.** `src-tauri/shell-ext` is a small Rust crate that builds `permark_shell.dll`. It uses the `windows` crate and
+1. **The component.** `app/src-tauri/crates/shell-ext` is a small Rust crate that builds `permark_shell.dll`. It uses the `windows` crate and
    implements the command (`IExplorerCommand`, and `IObjectWithSite` to learn the folder when the menu is on the background of
    one) and its class factory. It exports `DllGetClassObject` and `DllCanUnloadNow`, and nothing to register
    (`DllRegisterServer` does not exist): Windows reads the manifest. It is a crate of its own, not part of the program's build,
    because its build settings differ (below).
-2. **The manifest** (`src-tauri/msstore/AppxManifest.xml`, in the application's `Extensions`; namespaces `com`, `desktop4` and
+2. **The manifest** (`app/src-tauri/msstore/AppxManifest.xml`, in the application's `Extensions`; namespaces `com`, `desktop4` and
    `desktop5`):
    * `com:Extension Category="windows.comServer"` with a `com:SurrogateServer` holding a `com:Class` with the class id, the DLL's
      path in the package (`Path="permark_shell.dll"`) and `ThreadingModel="STA"`;
@@ -47,7 +47,7 @@ That class is the DLL in `src-tauri/shell-ext`.
    there, and checks that every file the manifest names is in the package.
 4. **The class id** is `D5FFB935-7A42-4E3D-90E1-0180A7999B94`, generated once with `[guid]::NewGuid()`. It must never change: it is how
    Windows knows the command from one version of the package to the next. It is in three places, the DLL (`CLSID_OPEN_WITH_PERMARK`
-   in `shell-ext/src/lib.rs`) and the manifest (the class and, twice, the verbs), and tests keep them equal.
+   in `app/src-tauri/crates/shell-ext/src/lib.rs`) and the manifest (the class and, twice, the verbs), and tests keep them equal.
 5. **When the menu is drawn.** Explorer asks COM for the class. Windows finds it in the package's manifest and starts a helper
    process, `dllhost.exe`, **with the package's identity**, which loads the DLL (a *surrogate server*): the DLL is never loaded into
    Explorer, so a fault in it cannot take Explorer down, at worst the helper and the entry. Explorer then calls `GetState`, `GetTitle`
@@ -76,8 +76,8 @@ cannot be renamed or deleted, and the person may want to do that from the Explor
 Terminal's own shell extension starts `WindowsTerminal.exe` from beside its DLL.
 
 **It must not take anything down.** Every entry point runs inside `catch_unwind` and answers with an error code instead of a panic
-(the DLL is built with `panic = "unwind"`; the program's release profile aborts, which is why the DLL's crate is a workspace of its own
-and is built with its own `cargo build --release`). The menu calls read only what is at hand (the display languages, once); the work is
+(the DLL is built with `panic = "unwind"`: the program's release profile aborts, so the DLL is built with the workspace profile
+`release-shell`, which unwinds). The menu calls read only what is at hand (the display languages, once); the work is
 in `Invoke`. The DLL carries its own Visual C++ runtime (`static_vcruntime`, as the program's build does) so it loads on a computer
 without the redistributable, and uses nothing but Windows: no registry, no files, no network.
 
@@ -94,7 +94,7 @@ without the redistributable, and uses nothing but Windows: no registry, no files
 
 ### Checked without installing anything
 
-* `cargo test --manifest-path src-tauri/shell-ext/Cargo.toml` (part of `npm run check`):
+* `cargo test -p permark-shell` (part of `npm run check`):
   * unit tests for choosing the title from a list of display languages, for finding the program beside the DLL, for the folders
     to open (complete paths only, each once, at most 15) and the command that opens one (the folder is the one argument, as it is,
     also with spaces, accents, a drive root and a trailing backslash), and for the panic guard;
@@ -133,7 +133,7 @@ touched. It needs an elevated PowerShell for step 3 only, and it changes the cer
 ```powershell
 # 1. Build the package with its own identity (about the Windows SDK: see "Build the package locally")
 .\scripts\build-msix.ps1 -Build -Sideload -Version 0.5.1
-$msix = "src-tauri\target\msix\PerMark_0.5.1.0_x64_sideload.msix"
+$msix = "app\src-tauri\target\msix\PerMark_0.5.1.0_x64_sideload.msix"
 
 # 2. A test certificate whose subject is the sideload package's publisher, and the package signed with it
 $cert = New-SelfSignedCertificate -Type Custom -KeyUsage DigitalSignature -CertStoreLocation "Cert:\CurrentUser\My" `
@@ -208,18 +208,18 @@ npm ci
 .\scripts\build-msix.ps1 -Build
 ```
 
-`-Build` builds the Store flavor, `npx tauri build --no-bundle --features store --config src-tauri/tauri.msstore.conf.json`, which
+`-Build` builds the Store flavor, `npx tauri build --no-bundle --no-default-features --features store --config src-tauri/tauri.msstore.conf.json` (run in `app/`), which
 is the program with the `store` feature and without the updater's settings, and the folder menu's DLL,
-`cargo build --release --manifest-path src-tauri/shell-ext/Cargo.toml`. The script then:
+`cargo build --profile release-shell -p permark-shell`. The script then:
 
-1. lays out a package folder under `src-tauri\target\msix\package`: `permark.exe`, `permark_shell.dll`, the logos and
+1. lays out a package folder under `app\src-tauri\target\msix\package`: `permark.exe`, `permark_shell.dll`, the logos and
    `AppxManifest.xml`. The program and the DLL are the only code it needs: the interface is inside the program, and the web view is
    the system's WebView2 runtime;
-2. writes `AppxManifest.xml` from the template in `src-tauri\msstore\AppxManifest.xml`, with the version and the description from
+2. writes `AppxManifest.xml` from the template in `app\src-tauri\msstore\AppxManifest.xml`, with the version and the description from
    `tauri.conf.json` filled in;
 3. runs `MakeAppx.exe pack`, which checks the manifest against the package schema and that every file it names is there.
 
-The result is `src-tauri\target\msix\PerMark_<version>_x64.msix`. It is **not signed**: the Store signs what is uploaded to it,
+The result is `app\src-tauri\target\msix\PerMark_<version>_x64.msix`. It is **not signed**: the Store signs what is uploaded to it,
 and nobody can install an unsigned package by hand (for a try-out copy that can, see [below](#try-it-on-a-real-install)). Without
 `-Build` the script packs what is already built (`-ExePath` and `-DllPath` say where it is); `-OutDir`, `-Version`, `-MakeAppx` and
 `-Sideload` are also options (`Get-Help .\scripts\build-msix.ps1`).
@@ -230,8 +230,8 @@ app's version must be three plain numbers. Every upload to the Store needs a hig
 The manifest's identity (`Identity Name`, `Publisher` and the publisher's display name) is what the Store reserved for the app and
 must match it exactly. To look inside a package: `makeappx unpack /p PerMark_0.4.0.0_x64.msix /d out`.
 
-The logos are committed in `src-tauri\msstore\Assets`. If the icon changes, regenerate them with
-`.\scripts\make-msix-assets.ps1` (it draws them from `src-tauri\icons\icon.png`) and commit the result.
+The logos are committed in `app\src-tauri\msstore\Assets`. If the icon changes, regenerate them with
+`.\scripts\make-msix-assets.ps1` (it draws them from `app\src-tauri\icons\icon.png`) and commit the result.
 
 ## Build it in CI
 

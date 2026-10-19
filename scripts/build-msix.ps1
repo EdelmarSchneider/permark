@@ -3,8 +3,8 @@
   Packs PerMark for the Microsoft Store: builds the Store flavor and writes an unsigned PerMark_<version>_x64.msix.
 
 .DESCRIPTION
-  The Store flavor is the same program built with the cargo feature `store` and the overlay `app/src-tauri/tauri.msstore.conf.json`
-  (no self-update; the agent setup lines name the `permark` alias). This script:
+  The Store flavor is the same program built with `--no-default-features --features store` and the overlay
+  `app/src-tauri/tauri.msstore.conf.json` (no updater, no registry writer; the agent setup lines name the `permark` alias). This script:
 
     1. builds it, and the shell extension next to it (with -Build; otherwise it packs what is already built),
     2. lays out a package folder: permark.exe, permark_shell.dll (the right-click menu of folders, app/src-tauri/crates/shell-ext),
@@ -22,15 +22,15 @@
   from before the packaging existed needs the packaging files copied in first; docs/msstore.md says how).
 
 .PARAMETER Build
-  Build first: the Store flavor, `npx tauri build --no-bundle --features store --config <overlay>` (needs the frontend
-  dependencies, npm ci, Rust and the usual Tauri prerequisites), and the shell extension,
-  `cargo build --release --manifest-path app/src-tauri/crates/shell-ext/Cargo.toml`.
+  Build first: the Store flavor, `npx tauri build --no-bundle --no-default-features --features store --config <overlay>`
+  (needs the frontend dependencies, npm ci, Rust and the usual Tauri prerequisites), and the shell extension,
+  `cargo build --profile release-shell -p permark-shell` (a profile that unwinds on a panic).
 
 .PARAMETER ExePath
   The built program. Default: app\src-tauri\target\release\permark.exe.
 
 .PARAMETER DllPath
-  The built shell extension. Default: app\src-tauri\target\release\permark_shell.dll (workspace target).
+  The built shell extension. Default: app\src-tauri\target\release-shell\permark_shell.dll (workspace target).
 
 .PARAMETER OutDir
   Where the package folder and the .msix go. Default: app\src-tauri\target\msix.
@@ -78,7 +78,7 @@ $Template = Join-Path $Tauri 'msstore\AppxManifest.xml'
 $Assets = Join-Path $Tauri 'msstore\Assets'
 $Overlay = 'src-tauri/tauri.msstore.conf.json' # relative to app/, where tauri build runs
 if (-not $ExePath) { $ExePath = Join-Path $Tauri 'target\release\permark.exe' }
-if (-not $DllPath) { $DllPath = Join-Path $Tauri 'target\release\permark_shell.dll' }
+if (-not $DllPath) { $DllPath = Join-Path $Tauri 'target\release-shell\permark_shell.dll' }
 if (-not $OutDir) { $OutDir = Join-Path $Tauri 'target\msix' }
 
 function Find-MakeAppx {
@@ -112,13 +112,13 @@ if ($Build) {
   Push-Location $App
   try {
     # npx rather than `npm run tauri --`: Windows PowerShell 5.1 swallows the `--` and npm then rejects the flags.
-    & npx tauri build --no-bundle --features store --config $Overlay
+    & npx tauri build --no-bundle --no-default-features --features store --config $Overlay
     if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit code $LASTEXITCODE)." }
 
-    # The DLL that File Explorer's helper process loads for the folder menu entry. It is a crate of its own (its release
-    # build unwinds on a panic, where the program's aborts), so it is built on its own.
+    # The DLL that File Explorer's helper process loads for the folder menu entries. Its profile unwinds on a panic (the
+    # program's aborts), so its guard can turn a panic into an error code.
     Write-Host 'Building the shell extension ...'
-    & cargo build --release --manifest-path (Join-Path $Tauri 'crates\shell-ext\Cargo.toml')
+    & cargo build --profile release-shell -p permark-shell --manifest-path (Join-Path $Tauri 'Cargo.toml')
     if ($LASTEXITCODE -ne 0) { throw "cargo build of the shell extension failed (exit code $LASTEXITCODE)." }
   }
   finally {
@@ -129,7 +129,7 @@ if (-not (Test-Path $ExePath)) {
   throw "The program is not built: $ExePath was not found. Run this script with -Build, or build the Store flavor first."
 }
 if (-not (Test-Path $DllPath)) {
-  throw "The shell extension is not built: $DllPath was not found. Run this script with -Build, or run cargo build --release in app\src-tauri\crates\shell-ext first."
+  throw "The shell extension is not built: $DllPath was not found. Run this script with -Build, or run cargo build --profile release-shell -p permark-shell in app\src-tauri first."
 }
 
 # ---- The package folder ---------------------------------------------------------------------------------------------
