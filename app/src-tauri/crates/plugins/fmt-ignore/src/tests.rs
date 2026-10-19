@@ -45,8 +45,13 @@ fn comment_blocks_are_cards_patterns_are_rows() {
         ]
     );
     assert_eq!(sheet.groups[2].rows.len(), 4);
-    let outline: Vec<String> = sheet.outline().into_iter().map(|p| p.label).collect();
-    assert_eq!(outline, ["Dependencies", "Build output", "Env files"]);
+    let outline = sheet.outline();
+    let labels: Vec<&str> = outline.iter().map(|p| p.label.as_str()).collect();
+    assert_eq!(labels, ["Dependencies", "Build output", "Env files"]);
+    // a block is read by its own word, not by a line number (`L5` already means line 5)
+    let paths: Vec<&str> = outline.iter().map(|p| p.path.as_str()).collect();
+    assert_eq!(paths, ["section-1", "section-5", "section-11"]);
+    assert_eq!(sheet.range_of("section-5"), Some((5, 9)));
 }
 
 #[test]

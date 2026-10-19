@@ -115,8 +115,9 @@ pub enum EditProblem {
     LineBreak,
 }
 
-/// Applies `edits` to `base`: kept lines keep their bytes and endings; inserted lines (and a kept last line that now
-/// has lines after it) get the majority ending; the last line of the result has none.
+/// Applies `edits` to `base`: kept lines keep their bytes and endings; an inserted line that replaces a line keeps that
+/// line's ending; other inserted lines (and a kept last line that now has lines after it) get the majority ending; the
+/// last line of the result has none.
 ///
 /// # Errors
 /// [`EditProblem`].
@@ -154,8 +155,15 @@ pub fn apply(base: &str, edits: &[LineEdit]) -> Result<String, EditProblem> {
     for edit in edits {
         let at = edit.at as usize;
         push_kept(&mut out, &lines, next..at, new_ending);
-        for line in &edit.insert {
-            out.push((line.as_str(), new_ending));
+        for (j, line) in edit.insert.iter().enumerate() {
+            // a line that replaces a line keeps that line's own break; extra lines get the majority one
+            let ending = match lines.get(at + j) {
+                Some(replaced) if j < edit.remove as usize && !replaced.ending.is_empty() => {
+                    replaced.ending
+                }
+                _ => new_ending,
+            };
+            out.push((line.as_str(), ending));
         }
         next = at + edit.remove as usize;
     }
@@ -244,10 +252,25 @@ mod tests {
     }
 
     #[test]
-    fn changed_lines_take_the_majority_and_kept_lines_their_own() {
+    fn a_replacing_line_keeps_its_break_extra_lines_take_the_majority_kept_lines_their_own() {
         let base = "one\r\ntwo\nthree\r\nfour\r\n";
         let out = apply(base, &[edit(1, 1, &["TWO", "extra"])]).unwrap();
-        assert_eq!(out, "one\r\nTWO\r\nextra\r\nthree\r\nfour\r\n");
+        assert_eq!(out, "one\r\nTWO\nextra\r\nthree\r\nfour\r\n");
+        // one line for one line: the break stays whatever the majority is
+        let mixed = "a\r\nb\nc\r\nd\r\n";
+        assert_eq!(
+            apply(mixed, &[edit(1, 1, &["B"])]).unwrap(),
+            "a\r\nB\nc\r\nd\r\n"
+        );
+        assert_eq!(
+            apply(mixed, &[edit(2, 1, &["C"])]).unwrap(),
+            "a\r\nb\nC\r\nd\r\n"
+        );
+        // the base's last line has no break of its own: what follows it gets the majority
+        assert_eq!(
+            apply("a\r\nb", &[edit(1, 1, &["B", "c"])]).unwrap(),
+            "a\r\nB\r\nc"
+        );
     }
 
     #[test]

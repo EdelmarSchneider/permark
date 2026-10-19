@@ -90,7 +90,7 @@ impl ConfigSyntax for Ignore {
             previous_comment = false;
             if !block.is_empty() {
                 groups.push(Group {
-                    path: line_path(usize::try_from(block_line.saturating_sub(1)).unwrap_or(0)),
+                    path: format!("section-{block_line}"),
                     title: block.join(" "),
                     line: block_line,
                     end: line_no,

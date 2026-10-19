@@ -328,6 +328,132 @@ mod tests {
         assert_eq!(counts, [(1, 2), (2, 0), (3, 0)]);
     }
 
+    /// A sheet edit through the whole save path, on files with LF, CRLF and mixed breaks: every line but the edited
+    /// one is the original's, bytes and break; the edited line keeps its own break; saving no change writes nothing.
+    #[test]
+    #[allow(clippy::too_many_lines)] // four formats x three break styles, each through the whole save path
+    fn a_sheet_edit_saves_the_value_and_keeps_the_files_line_breaks() {
+        use permark_core::document::DocScope;
+        use permark_core::edit::{Editor, LineEdit, SaveOutcome};
+        use permark_core::format::{ConfigEdit, NewValue};
+        use permark_core::paths::{Root, Vault};
+
+        let registry = registry_of_all();
+        let all_on: BTreeSet<PluginId> = registry.ordered().map(|m| m.id.clone()).collect();
+        let formats = FormatRegistry::build(&registry.contributions(&all_on));
+        let dir = tempfile::tempdir().unwrap();
+        let scope = DocScope::Project(Vault::new(Root::open(dir.path()).unwrap()));
+        let editor = Editor {
+            scope: &scope,
+            formats: &formats,
+            own: None,
+            observer: None,
+        };
+        let cases: [(&str, [&str; 5], &str, &str); 4] = [
+            (
+                "a.properties",
+                ["# server", "server.port=8080", "app.name=Demo", "", "end=1"],
+                "app.name",
+                "Other",
+            ),
+            (
+                "b.toml",
+                [
+                    "# top",
+                    "[package]",
+                    "name = \"x\" # note",
+                    "version = \"1\"",
+                    "",
+                ],
+                "package.name",
+                "y z",
+            ),
+            (
+                "c.yml",
+                ["a: 1", "b:", "  c: \"q\"  # keep", "d: [1, 2]", ""],
+                "b.c",
+                "it's",
+            ),
+            ("d.env", ["A=1", "B=\"two\"", "C=3", "", ""], "B", "three"),
+        ];
+        for (name, lines, path, new) in cases {
+            for style in ["lf", "crlf", "mixed"] {
+                let mut file = String::new();
+                for (n, line) in lines.iter().enumerate() {
+                    file.push_str(line);
+                    let crlf = style == "crlf" || (style == "mixed" && n % 2 == 1);
+                    file.push_str(if crlf { "\r\n" } else { "\n" });
+                }
+                std::fs::write(dir.path().join(name), &file).unwrap();
+                let source = editor.source(name).unwrap();
+                let edit = ConfigEdit::Set {
+                    path: path.to_owned(),
+                    value: NewValue::Text {
+                        text: new.to_owned(),
+                    },
+                };
+                let edited = editor.config_edit(name, &source.text, &edit).unwrap();
+                // the one line that differs, as the editor sends it
+                let before: Vec<&str> = source.text.split('\n').collect();
+                let after: Vec<&str> = edited.text.split('\n').collect();
+                assert_eq!(before.len(), after.len(), "{name}");
+                let changed: Vec<usize> = (0..before.len())
+                    .filter(|i| before[*i] != after[*i])
+                    .collect();
+                assert_eq!(changed.len(), 1, "{name} {style}: one line changes");
+                let at = changed[0];
+                let outcome = editor
+                    .save(
+                        name,
+                        &source.hash,
+                        &[LineEdit {
+                            at: u32::try_from(at).unwrap(),
+                            remove: 1,
+                            insert: vec![after[at].to_owned()],
+                        }],
+                    )
+                    .unwrap();
+                assert!(matches!(outcome, SaveOutcome::Saved { .. }), "{name}");
+                let written = std::fs::read(dir.path().join(name)).unwrap();
+                let old_lines: Vec<&[u8]> =
+                    file.as_bytes().split_inclusive(|b| *b == b'\n').collect();
+                let new_lines: Vec<&[u8]> = written.split_inclusive(|b| *b == b'\n').collect();
+                assert_eq!(old_lines.len(), new_lines.len(), "{name} {style}");
+                let ending = |line: &[u8]| line[line.trim_ascii_end().len()..].to_vec();
+                for (n, (o, w)) in old_lines.iter().zip(&new_lines).enumerate() {
+                    if n == at {
+                        assert_eq!(
+                            ending(o),
+                            ending(w),
+                            "{name} {style}: the break of the edited line"
+                        );
+                    } else {
+                        assert_eq!(o, w, "{name} {style}: line {n}");
+                    }
+                }
+                // saving no change writes nothing
+                let path_on_disk = dir.path().join(name);
+                let mtime = std::fs::metadata(&path_on_disk)
+                    .unwrap()
+                    .modified()
+                    .unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                let hash = editor.source(name).unwrap().hash;
+                assert!(matches!(
+                    editor.save(name, &hash, &[]).unwrap(),
+                    SaveOutcome::Saved { .. }
+                ));
+                assert_eq!(
+                    std::fs::metadata(&path_on_disk)
+                        .unwrap()
+                        .modified()
+                        .unwrap(),
+                    mtime
+                );
+            }
+        }
+    }
+
     /// Renders the fixture documents (`src/api/fixtures/`) with every plugin on and writes the views the mock backend
     /// (`dev:mock`, UI tests) serves: `src/api/generated/mock-documents.json`. `cargo test` regenerates it; CI fails when
     /// regeneration changes the file.
