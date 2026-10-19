@@ -244,9 +244,11 @@ impl Plugin for AgentPlugin {
                 Ok(())
             }),
         ));
+        // a store copy (Microsoft Store alias, snap command) is started as `permark`: its own path changes per version
+        let by_name = cx.context.distribution == permark_core::conditions::Distribution::Store;
         registrations.extend(cx.rpc(
             "setup",
-            typed(move |_: NoArgs, _| Ok(cli::program_path().map(|p| p.display().to_string()))),
+            typed(move |_: NoArgs, _| Ok(setup_program(by_name, cli::program_path()))),
         ));
         Ok(Box::new(AgentRunning {
             registrations,
@@ -270,5 +272,34 @@ impl Drop for AgentRunning {
         if let Some(switch) = self.switch.take() {
             switch.stop();
         }
+    }
+}
+
+/// The program the setup lines name: `permark` for a store copy, else the running program's path.
+fn setup_program(by_name: bool, running: Option<std::path::PathBuf>) -> Option<String> {
+    if by_name {
+        Some("permark".to_owned())
+    } else {
+        running.map(|p| p.display().to_string())
+    }
+}
+
+#[cfg(test)]
+mod setup_tests {
+    use super::setup_program;
+
+    #[test]
+    fn a_store_copy_is_named_by_its_alias() {
+        let path = std::path::PathBuf::from("/opt/Per Mark/permark");
+        assert_eq!(
+            setup_program(true, Some(path.clone())).as_deref(),
+            Some("permark")
+        );
+        assert_eq!(setup_program(true, None).as_deref(), Some("permark"));
+        assert_eq!(
+            setup_program(false, Some(path.clone())),
+            Some(path.display().to_string())
+        );
+        assert_eq!(setup_program(false, None), None);
     }
 }

@@ -69,6 +69,10 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_fmt_ignore::plugin());
     #[cfg(feature = "plugin-text-view")]
     plugins.push(permark_plugin_text_view::plugin());
+    #[cfg(feature = "plugin-shell-integration")]
+    plugins.push(permark_plugin_shell_integration::plugin());
+    #[cfg(feature = "plugin-updates")]
+    plugins.push(permark_plugin_updates::plugin());
     plugins
 }
 

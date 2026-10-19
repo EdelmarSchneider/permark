@@ -4,7 +4,6 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use permark_core::conditions::Distribution;
 use permark_core::events::NoEvents;
 use permark_core::paths::Root;
 use permark_core::plugins::{PluginId, PluginRegistry};
@@ -51,11 +50,7 @@ fn compose(dirs: AppDirs) -> Compose {
             .filter(|p| only.contains(&p.manifest().id))
             .collect();
         let registry = PluginRegistry::new(plugins).map_err(|e| e.to_string())?;
-        let distribution = if cfg!(feature = "store") {
-            Distribution::Store
-        } else {
-            Distribution::Direct
-        };
+        let distribution = crate::shell::distribution();
         let env = Arc::new(CoreEnv::new(
             dirs.clone(),
             Arc::new(registry),

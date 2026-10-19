@@ -4,12 +4,15 @@
 pub mod agent;
 mod assets;
 mod commands;
+mod default_app;
 mod nav;
 mod open;
 mod plugins;
 mod saver;
 mod shell;
 mod sink;
+#[cfg(feature = "plugin-updates")]
+mod updater;
 mod windows;
 
 use std::time::Duration;
@@ -87,7 +90,11 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
         .plugin(tauri_plugin_dialog::init())
         // used from Rust only (validated paths): no permission is granted to the windows
         .plugin(tauri_plugin_opener::init())
-        .register_asynchronous_uri_scheme_protocol(assets::SCHEME, assets::handle)
+        .register_asynchronous_uri_scheme_protocol(assets::SCHEME, assets::handle);
+    // signed self-updates (direct builds; the plugin `updates` drives it, from Rust only: no window permission)
+    #[cfg(feature = "plugin-updates")]
+    let app = app.plugin(tauri_plugin_updater::Builder::new().build());
+    let app = app
         .invoke_handler(commands::handler())
         .setup(move |app| {
             let shell = Shell::new(app.handle().clone(), &dirs);
@@ -96,7 +103,7 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
             if let Some(listening) = listening {
                 shell::state(&handle).serve(listening);
             }
-            windows::adopt_main(&handle);
+            windows::create_main(&handle)?;
             open::first_launch(&handle, request);
             Ok(())
         })
@@ -160,3 +167,6 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
         _ => {}
     }
 }
+
+#[cfg(test)]
+mod packaging_tests;

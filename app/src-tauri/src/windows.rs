@@ -9,12 +9,31 @@ use tauri::{
 use crate::shell::{state, Shell};
 
 pub const MAIN: &str = "main";
-/// Smallest content area (logical px) = `tauri.conf.json` `minWidth` | `minHeight`.
+/// Smallest content area (logical px).
 const MIN_SIZE: (f64, f64) = (900.0, 600.0);
 
-/// The `main` window from `tauri.conf.json` joins the registry.
-pub fn adopt_main(handle: &AppHandle) {
+/// A hidden window (its frontend shows it after the first paint). Its web view keeps its data in PerMark's own cache
+/// folder (Windows, Linux; debug builds in the `PerMark-dev` one), never in a folder named after the app identifier:
+/// a development build and an installed PerMark never share it.
+fn build(handle: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
+    let builder = WebviewWindowBuilder::new(handle, label, WebviewUrl::App("index.html".into()))
+        .title("PerMark")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
+        .visible(false);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.data_directory(state(handle).env.dirs.cache.join("webview"));
+    builder.build()
+}
+
+/// The first window (`main`) joins the registry.
+///
+/// # Errors
+/// Window creation failure.
+pub fn create_main(handle: &AppHandle) -> tauri::Result<()> {
+    build(handle, MAIN)?;
     state(handle).registry.add_window(MAIN);
+    Ok(())
 }
 
 /// New hidden window (shown by its frontend after first paint, like `main`).
@@ -24,12 +43,7 @@ pub fn adopt_main(handle: &AppHandle) {
 pub fn create(handle: &AppHandle) -> tauri::Result<WebviewWindow> {
     let shell = state(handle);
     let label = shell.new_label();
-    let window = WebviewWindowBuilder::new(handle, &label, WebviewUrl::App("index.html".into()))
-        .title("PerMark")
-        .inner_size(1280.0, 800.0)
-        .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
-        .visible(false)
-        .build()?;
+    let window = build(handle, &label)?;
     shell.registry.add_window(&label);
     Ok(window)
 }

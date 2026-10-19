@@ -1,7 +1,7 @@
 //! Process-wide shell state (Tauri managed): core env + workspace registry + stores, single-instance server,
 //! session saver.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -10,7 +10,7 @@ use permark_core::events::{CoreEvent, EventSink, OpenFailed, SettingsChanged, St
 use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::paths::Root;
-use permark_core::plugins::PluginId;
+use permark_core::plugins::{PluginId, ServiceLease};
 use permark_core::session::{app_session_file, AppSession, Geometry, RecentStore, SavedWindow};
 use permark_core::settings::{
     installer_language, AppSettings, SettingChange, SettingsError, SettingsFile, SettingsScope,
@@ -46,6 +46,21 @@ pub struct Shell {
     /// Open failures: emitted to windows whose frontend listens, kept for the others until they boot.
     delivery: Mutex<Delivery>,
     server: Mutex<Option<Server>>,
+    /// The updater's IO, handed to the plugin `updates` for the app's whole run.
+    _updater: Option<ServiceLease>,
+}
+
+/// The file manager entries go with their plugin (off = leaves nothing behind); quitting the app leaves them.
+fn withdraw_if_switched_off(before: &BTreeSet<PluginId>, after: &BTreeSet<PluginId>) {
+    let id = PluginId::of("shell-integration");
+    if before.contains(&id) && !after.contains(&id) {
+        #[cfg(feature = "plugin-shell-integration")]
+        std::thread::spawn(|| {
+            if let Err(reason) = permark_plugin_shell_integration::withdraw() {
+                eprintln!("PerMark: file manager entries not removed: {reason}");
+            }
+        });
+    }
 }
 
 /// The shell of a running app.
@@ -57,8 +72,11 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-fn distribution() -> Distribution {
-    if cfg!(feature = "store") {
+/// `Store` = a store updates this copy: the Microsoft Store build (feature `store`), or the .deb inside a snap.
+pub(crate) fn distribution() -> Distribution {
+    let in_snap = cfg!(all(unix, not(target_os = "macos")))
+        && std::env::var_os("SNAP").is_some_and(|v| !v.is_empty());
+    if cfg!(feature = "store") || in_snap {
         Distribution::Store
     } else {
         Distribution::Direct
@@ -80,6 +98,11 @@ impl Shell {
             distribution(),
             settings,
         ));
+        #[cfg(feature = "plugin-updates")]
+        let updater = (env.distribution == Distribution::Direct)
+            .then(|| crate::updater::provide(&env, &handle));
+        #[cfg(not(feature = "plugin-updates"))]
+        let updater = None;
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
         Self {
@@ -95,6 +118,7 @@ impl Shell {
             notices: Mutex::new(Vec::new()),
             delivery: Mutex::new(Delivery::default()),
             server: Mutex::new(None),
+            _updater: updater,
         }
     }
 
@@ -218,7 +242,9 @@ impl Shell {
             self.registry.refresh();
         }
         if matches!(change, SettingChange::PluginEnabled { .. }) {
+            let before = self.env.app_plugins_on();
             self.env.apply_app_plugins();
+            withdraw_if_switched_off(&before, &self.env.app_plugins_on());
             for core in self.registry.cores() {
                 core.apply_plugins(&self.env);
             }

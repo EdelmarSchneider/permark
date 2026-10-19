@@ -977,6 +977,39 @@ pub fn window_close(handle: AppHandle, window: WebviewWindow) -> Result<(), IpcE
         .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))
 }
 
+// ---- Default app ----------------------------------------------------------------------------------------------------
+
+/// The default-app rows of the settings, and whether to ask (first run).
+#[tauri::command(async)]
+pub fn default_app_get(handle: AppHandle) -> permark_core::desktop::DefaultAppView {
+    let shell = state(&handle);
+    crate::default_app::view(&handle, &shell.env.dirs, shell.env.distribution)
+}
+
+/// Makes PerMark the default app of a group of file types, or gives the group back (macOS, an installed Linux package).
+#[tauri::command(async)]
+pub fn default_app_set(
+    handle: AppHandle,
+    group: permark_core::desktop::FileGroup,
+    on: bool,
+) -> Result<permark_core::desktop::DefaultAppView, IpcError> {
+    let shell = state(&handle);
+    crate::default_app::set(&handle, &shell.env.dirs, shell.env.distribution, group, on)
+}
+
+/// The first-run question was answered or put off.
+#[tauri::command(async)]
+pub fn default_app_asked(handle: AppHandle) -> Result<(), IpcError> {
+    crate::default_app::asked(&state(&handle).env.dirs)
+}
+
+/// Opens Windows' Default Apps page (Windows only).
+#[tauri::command(async)]
+pub fn default_app_handoff(handle: AppHandle) -> Result<(), IpcError> {
+    let shell = state(&handle);
+    crate::default_app::handoff(&handle, &shell.env.dirs, shell.env.distribution)
+}
+
 /// Lists every command once: Tauri handler + names (contract test).
 macro_rules! commands {
     ($($name:ident),+ $(,)?) => {
@@ -1183,6 +1216,10 @@ commands![
     plugin_remove_data,
     workspace_close,
     window_close,
+    default_app_get,
+    default_app_set,
+    default_app_asked,
+    default_app_handoff,
 ];
 
 #[cfg(test)]
