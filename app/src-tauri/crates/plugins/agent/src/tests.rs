@@ -1,3 +1,5 @@
+#![allow(clippy::assert_is_empty)]
+
 //! The agent connection over a real project core (search index, vault, state store) with the organizing services
 //! played by small fakes: switch, groups, hidden paths, masking, open, server sessions, proxy and files mode.
 
@@ -337,6 +339,7 @@ impl Fx {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)] // a predicate over the answer, read at the call
 fn not_found(result: Result<Value, ToolError>) -> bool {
     matches!(result, Err(ToolError::NotFound(_)))
 }
@@ -740,14 +743,21 @@ fn open_shows_a_place_and_never_moves_a_person_who_is_editing() {
     assert_eq!(events.len(), 2);
     assert_eq!(
         events[0],
-        json!({ "path": "docs/plan.md", "line": null, "heading": "Plan > Rollout" })
+        json!({ "path": "docs/plan.md", "line": 3, "heading": "Plan > Rollout" })
     );
     assert_eq!(events[1]["line"], 5);
+    let missing = tools
+        .call(
+            "open",
+            json!({ "path": "docs/plan.md", "heading": "Nowhere" }),
+        )
+        .unwrap();
+    assert_eq!(missing["headingNotFound"], true);
     // a hidden place is not shown, and nothing is sent to the window
     assert!(not_found(
         tools.call("open", json!({ "path": "private/secret.md" }))
     ));
-    assert_eq!(fx.sink.named("agent:open").len(), 2);
+    assert_eq!(fx.sink.named("agent:open").len(), 3);
 }
 
 #[test]
@@ -973,12 +983,12 @@ fn the_agent_proxies_to_the_app_and_falls_back_to_the_files() {
             })
         })
     };
-    let launched = Arc::new(Mutex::new(Vec::<PathBuf>::new()));
+    let started_roots = Arc::new(Mutex::new(Vec::<PathBuf>::new()));
     let launcher: crate::cli::Launcher = {
-        let launched = Arc::clone(&launched);
+        let started_roots = Arc::clone(&started_roots);
         let core = Arc::clone(fx.core());
         Arc::new(move |root: &Path| {
-            launched.lock().unwrap().push(root.to_path_buf());
+            started_roots.lock().unwrap().push(root.to_path_buf());
             // "the app starts": the switch is on, so the plugin listens once asked to apply it
             let _ = core.rpc().call(
                 "agent",
@@ -1024,12 +1034,12 @@ fn the_agent_proxies_to_the_app_and_falls_back_to_the_files() {
         agent.call("open", &json!({ "path": "private/secret.md" })),
         Err(ToolError::NotFound(_))
     ));
-    assert!(launched.lock().unwrap().is_empty());
+    assert!(started_roots.lock().unwrap().is_empty());
     let opened = agent
         .call("open", &json!({ "path": "docs/plan.md" }))
         .unwrap();
     assert_eq!(opened["started"], true);
-    assert_eq!(launched.lock().unwrap().len(), 1);
+    assert_eq!(started_roots.lock().unwrap().len(), 1);
     // now the app serves: calls go there, and the session shows the agent
     agent.hello("Claude Code");
     assert!(wait_for(|| matches!(

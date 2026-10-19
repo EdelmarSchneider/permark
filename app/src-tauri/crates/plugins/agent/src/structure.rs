@@ -227,6 +227,16 @@ fn find_part(parts: &[Part], at: &str) -> Option<(u32, u32)> {
     ending.first().map(|p| (p.from, p.to))
 }
 
+/// The first line of a heading of a Markdown text (`A > B`, a tail of it, or `#anchor`).
+#[must_use]
+pub fn heading_line(path: &str, text: &str, heading: &str) -> Option<u32> {
+    if kind_of(path) == Kind::Markdown {
+        find_part(&markdown_parts(text), heading).map(|(from, _)| from)
+    } else {
+        None
+    }
+}
+
 /// The text of one part (all of it when `at` is missing), masked, cut at [`MAX_READ_CHARS`].
 ///
 /// # Errors

@@ -544,17 +544,28 @@ impl Tools {
             line,
             heading,
         } = args(raw)?;
-        let (path, _) = guard.file(&path)?;
+        let (path, abs) = guard.file(&path)?;
+        let heading = heading
+            .map(|h| h.trim().to_owned())
+            .filter(|h| !h.is_empty());
+        // a heading wins over a line when the document has it; the window gets a line either way
+        let found = heading.as_deref().and_then(|h| {
+            read_text(&abs)
+                .ok()
+                .and_then(|text| structure::heading_line(&path, &text, h))
+        });
         let live = self.live.as_ref().ok_or(ToolError::NotOpen)?;
         let place = Place {
             path,
-            line: line.filter(|l| *l >= 1),
-            heading: heading
-                .map(|h| h.trim().to_owned())
-                .filter(|h| !h.is_empty()),
+            line: found.or(line.filter(|l| *l >= 1)),
+            heading: heading.clone(),
         };
         let shown = live.show(&place);
-        Ok(json!({ "path": place.path, "status": shown }))
+        let mut answer = json!({ "path": place.path, "status": shown });
+        if let (Some(map), Some(_), None) = (answer.as_object_mut(), &heading, found) {
+            map.insert("headingNotFound".to_owned(), json!(true));
+        }
+        Ok(answer)
     }
 }
 
