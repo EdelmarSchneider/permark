@@ -1,0 +1,170 @@
+[
+  {
+    "characters": 0,
+    "kind": "plain",
+    "minutes": 0,
+    "name": "empty",
+    "text": "",
+    "words": 0
+  },
+  {
+    "characters": 5,
+    "kind": "plain",
+    "minutes": 0,
+    "name": "spaces only",
+    "text": "   \n\t ",
+    "words": 0
+  },
+  {
+    "characters": 29,
+    "kind": "plain",
+    "minutes": 1,
+    "name": "plain words",
+    "text": "Hello world, this is PerMark.",
+    "words": 5
+  },
+  {
+    "characters": 25,
+    "kind": "plain",
+    "minutes": 1,
+    "name": "apostrophes join",
+    "text": "don't can’t 'quoted' it's",
+    "words": 4
+  },
+  {
+    "characters": 21,
+    "kind": "plain",
+    "minutes": 1,
+    "name": "accents and combining marks",
+    "text": "ação café café naïve",
+    "words": 4
+  },
+  {
+    "characters": 24,
+    "kind": "plain",
+    "minutes": 1,
+    "name": "numbers",
+    "text": "version 0.6 has 12 parts",
+    "words": 6
+  },
+  {
+    "characters": 20,
+    "kind": "plain",
+    "minutes": 1,
+    "name": "cjk counts per character",
+    "text": "中文字 and 日本語のテキスト 한국어",
+    "words": 15
+  },
+  {
+    "characters": 12,
+    "kind": "plain",
+    "minutes": 1,
+    "name": "mixed cjk and latin",
+    "text": "PerMark是一个应用",
+    "words": 6
+  },
+  {
+    "characters": 6,
+    "kind": "plain",
+    "minutes": 1,
+    "name": "emoji are not words",
+    "text": "🙂 ok 🎉",
+    "words": 1
+  },
+  {
+    "characters": 37,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown headings and emphasis",
+    "text": "# Title\n\nSome **bold** and _italic_ text.\n",
+    "words": 6
+  },
+  {
+    "characters": 28,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown lists and tasks",
+    "text": "- one item\n- [x] done task\n1. first\n2) second\n",
+    "words": 6
+  },
+  {
+    "characters": 29,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown quote",
+    "text": "> quoted words here\n>> nested quote\n",
+    "words": 5
+  },
+  {
+    "characters": 36,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown links and images",
+    "text": "See [the guide](docs/guide.md) and ![a picture](img.png) or [ref][1].\n\n[1]: http://example.com\n",
+    "words": 8
+  },
+  {
+    "characters": 16,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown code is left out",
+    "text": "Before\n\n```rust\nfn main() {}\n```\n\nafter `inline code` end\n",
+    "words": 3
+  },
+  {
+    "characters": 10,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown front matter is left out",
+    "text": "---\ntitle: Something long here\ntags: [a, b]\n---\n\nBody text.\n",
+    "words": 2
+  },
+  {
+    "characters": 12,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown html tags",
+    "text": "<div class=\"x\">inside</div> a < b\n",
+    "words": 3
+  },
+  {
+    "characters": 17,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown footnotes",
+    "text": "Text with a note[^1].\n\n[^1]: The note itself.\n",
+    "words": 4
+  },
+  {
+    "characters": 20,
+    "kind": "markdown",
+    "minutes": 1,
+    "name": "markdown crlf",
+    "text": "# Head\r\n\r\nline one\r\nline two\r\n",
+    "words": 5
+  },
+  {
+    "characters": 0,
+    "kind": "markdown",
+    "minutes": 0,
+    "name": "markdown tilde fence unclosed",
+    "text": "~~~\nall code\nstill code\n",
+    "words": 0
+  },
+  {
+    "characters": 2304,
+    "kind": "plain",
+    "minutes": 3,
+    "name": "long text minutes",
+    "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word",
+    "words": 461
+  },
+  {
+    "characters": 501,
+    "kind": "plain",
+    "minutes": 2,
+    "name": "cjk minutes",
+    "text": "字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字字",
+    "words": 501
+  }
+]

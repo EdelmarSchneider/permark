@@ -17,6 +17,7 @@ mod plan;
 mod tests;
 mod undo;
 
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fs;
 use std::io;
@@ -145,6 +146,8 @@ pub enum SkipReason {
     Missing,
     /// Something else is where the file has to go back to (an undo), or a move it depends on did not go back.
     Occupied,
+    /// Open with unsaved edits in a window.
+    Unsaved,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -334,6 +337,20 @@ impl FileOps {
         moves: &[MoveSpec],
         update_links: bool,
     ) -> Result<MovePlan, FileOpError> {
+        self.plan_move_with(moves, update_links, &HashSet::new())
+    }
+
+    /// [`FileOps::plan_move`]; documents with unsaved edits in a window (`unsaved`: folded keys) are skipped
+    /// (`unsaved`): their links are changed by the person's next save, not behind the editor.
+    ///
+    /// # Errors
+    /// A refusal of [`FileOpError`].
+    pub fn plan_move_with(
+        &self,
+        moves: &[MoveSpec],
+        update_links: bool,
+        unsaved: &HashSet<String>,
+    ) -> Result<MovePlan, FileOpError> {
         let parsed = parse_moves(moves)?;
         let valid = check_moves(&self.vault, &parsed)?;
         let pairs: Vec<(String, String)> = valid
@@ -341,7 +358,7 @@ impl FileOps {
             .map(|m| (m.from.to_string(), m.to.to_string()))
             .collect();
         let (docs, skipped) = if update_links {
-            self.plan_links(&pairs)
+            self.plan_links(&pairs, unsaved)
         } else {
             (Vec::new(), Vec::new())
         };
@@ -360,7 +377,11 @@ impl FileOps {
         Ok(plan)
     }
 
-    fn plan_links(&self, pairs: &[(String, String)]) -> (Vec<DocPlan>, Vec<Skip>) {
+    fn plan_links(
+        &self,
+        pairs: &[(String, String)],
+        unsaved: &HashSet<String>,
+    ) -> (Vec<DocPlan>, Vec<Skip>) {
         let Some((first, _)) = pairs.first() else {
             return (Vec::new(), Vec::new());
         };
@@ -405,6 +426,13 @@ impl FileOps {
                 continue;
             }
             let edits = planner.edits_for(&doc, text);
+            if !edits.is_empty() && unsaved.contains(&path.key()) {
+                skipped.push(Skip {
+                    path: doc,
+                    reason: SkipReason::Unsaved,
+                });
+                continue;
+            }
             if !edits.is_empty() {
                 docs.push(DocPlan {
                     path: doc,

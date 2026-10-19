@@ -3,6 +3,7 @@
 pub mod app_info;
 pub mod conditions;
 pub mod document;
+pub mod edit;
 pub mod error;
 pub mod events;
 pub mod fileops;

@@ -110,6 +110,8 @@ struct Inner {
     scope: DocScope,
     sink: Arc<dyn EventSink>,
     shown: Mutex<HashMap<String, Shown>>,
+    /// Window -> document with unsaved edits in it.
+    unsaved: Mutex<HashMap<String, String>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -262,6 +264,7 @@ impl Documents {
                 scope,
                 sink,
                 shown: Mutex::new(HashMap::new()),
+                unsaved: Mutex::new(HashMap::new()),
             }),
             _poller: None,
         })
@@ -274,6 +277,7 @@ impl Documents {
             scope,
             sink,
             shown: Mutex::new(HashMap::new()),
+            unsaved: Mutex::new(HashMap::new()),
         });
         let poller = Poller::start(Arc::clone(&inner));
         Arc::new(Self {
@@ -369,7 +373,7 @@ impl Documents {
                                 view.body = rendered.body;
                                 view.notes
                                     .extend(rendered.notes.iter().map(|n| (*n).to_owned()));
-                                view.editable = Editability::Surgical;
+                                view.editable = editability_of(&decoded);
                             } else {
                                 view.editable = read_only("noViewer");
                             }
@@ -400,6 +404,43 @@ impl Documents {
     /// The window shows no document any more.
     pub fn close(&self, window: &str) {
         lock(&self.inner.shown).remove(window);
+        lock(&self.inner.unsaved).remove(window);
+    }
+
+    /// The window saved `path` as `hash`: that version is the one it shows (no `document-changed` back to it).
+    pub fn saved(&self, window: &str, path: &str, hash: &str) {
+        let Ok(key) = crate::paths::VaultPath::parse(path).map(|p| p.key()) else {
+            return;
+        };
+        if let Some(entry) = lock(&self.inner.shown).get_mut(window) {
+            if entry.key == key && entry.mode == Mode::Hash {
+                entry.version = Some(hash.to_owned());
+            }
+        }
+    }
+
+    /// The window holds unsaved edits of `path` (`None`: none).
+    pub fn set_unsaved(&self, window: &str, path: Option<String>) {
+        let mut unsaved = lock(&self.inner.unsaved);
+        match path {
+            Some(path) => unsaved.insert(window.to_owned(), path),
+            None => unsaved.remove(window),
+        };
+    }
+
+    /// The document with unsaved edits in `window`.
+    #[must_use]
+    pub fn unsaved(&self, window: &str) -> Option<String> {
+        lock(&self.inner.unsaved).get(window).cloned()
+    }
+
+    /// Folded keys of every document with unsaved edits (any window).
+    #[must_use]
+    pub fn unsaved_keys(&self) -> HashSet<String> {
+        lock(&self.inner.unsaved)
+            .values()
+            .filter_map(|p| crate::paths::VaultPath::parse(p).ok().map(|p| p.key()))
+            .collect()
     }
 
     /// The text of a document as read (copy document). Same limit as the view.
@@ -443,6 +484,15 @@ impl Documents {
     #[must_use]
     pub fn resolve_links(&self, doc: &str, hrefs: &[String]) -> Vec<LinkTarget> {
         self.inner.scope.resolve_links(doc, hrefs)
+    }
+}
+
+/// A lossy decode would change bytes the person never touched: no editing.
+fn editability_of(decoded: &fsx::Decoded) -> Editability {
+    if decoded.lossy {
+        read_only("lossy")
+    } else {
+        Editability::Surgical
     }
 }
 

@@ -341,6 +341,28 @@ fn a_preview_lists_every_link_with_its_line_and_a_plan_without_links_reads_nothi
     );
 }
 
+#[test]
+fn a_document_with_unsaved_edits_is_skipped_and_said_so() {
+    let f = fx(&[
+        ("open doc.md", "[l](b.md)\n"),
+        ("other.md", "[l](b.md)\n"),
+        ("b.md", ""),
+    ]);
+    let unsaved: std::collections::HashSet<String> =
+        [crate::paths::VaultPath::parse("open doc.md").unwrap().key()].into();
+    let plan = f
+        .ops
+        .plan_move_with(&[spec("b.md", "c.md")], true, &unsaved)
+        .unwrap();
+    assert_eq!(plan.files.len(), 1);
+    assert_eq!(plan.files[0].path, "other.md");
+    assert_eq!(plan.skipped.len(), 1);
+    assert_eq!(plan.skipped[0].reason, SkipReason::Unsaved);
+    f.ops.apply_move(plan.plan_id, true).unwrap();
+    assert_eq!(read(&f, "open doc.md"), "[l](b.md)\n", "left to the editor");
+    assert_eq!(read(&f, "other.md"), "[l](c.md)\n");
+}
+
 // ---- apply: guards -------------------------------------------------------------------------------------------------------
 
 #[test]

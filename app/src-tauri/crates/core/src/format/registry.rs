@@ -12,6 +12,7 @@ pub struct FormatRegistry {
     formats: Vec<Arc<dyn Format>>,
     roles: Vec<RoleRule>,
     features: MarkdownFeatures,
+    analyses: Vec<Arc<dyn super::Analysis>>,
 }
 
 impl std::fmt::Debug for FormatRegistry {
@@ -50,7 +51,17 @@ impl FormatRegistry {
             formats,
             roles: contributions.roles.clone(),
             features,
+            analyses: contributions.analyses.clone(),
         }
+    }
+
+    /// Measures of `text` by every enabled analysis, in plugin order.
+    #[must_use]
+    pub fn analyze(&self, text: &str, kind: super::TextKind) -> Vec<super::Measure> {
+        self.analyses
+            .iter()
+            .flat_map(|a| a.measure(text, kind))
+            .collect()
     }
 
     #[must_use]

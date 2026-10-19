@@ -85,6 +85,20 @@ impl DocScope {
         Ok((parsed.key(), abs))
     }
 
+    /// Like [`DocScope::resolve`] for a file that may not exist yet (a new file of the workspace; single file: a file
+    /// of its folder).
+    ///
+    /// # Errors
+    /// Escapes the workspace | invalid.
+    pub fn resolve_new(&self, path: &str) -> Result<(String, PathBuf), IpcError> {
+        let parsed = VaultPath::parse(path)?;
+        let abs = match self {
+            Self::Project(vault) => vault.resolve(&parsed)?,
+            Self::File(scope) => scope.resolve_asset(&parsed)?,
+        };
+        Ok((parsed.key(), abs))
+    }
+
     /// The vault links are resolved against (a single file: its folder).
     fn link_vault(&self) -> Vault {
         match self {

@@ -78,6 +78,10 @@ choice!(
     /// Whether moving or renaming a file rewrites the links that point at it.
     LinkUpdate { Ask = "ask", Always = "always", Never = "never" } default Ask
 );
+choice!(
+    /// The editor Ctrl+E opens for Markdown.
+    EditModePref { Edit = "edit", Source = "source" } default Edit
+);
 
 /// Reference template when none is set.
 pub const DEFAULT_REFERENCE_TEMPLATE: &str = "{path}#{section}";
@@ -104,6 +108,7 @@ pub struct AppSettings {
     pub tone: Tone,
     pub start_in: StartIn,
     pub link_update: LinkUpdate,
+    pub edit_mode: EditModePref,
     /// How "copy reference" is written (`{path} {section} {line} {name}`).
     pub reference_template: String,
     /// The person's editor: a command template (empty = not set). Only the person sets it (app settings).
@@ -124,6 +129,7 @@ impl Default for AppSettings {
             tone: Tone::default(),
             start_in: StartIn::default(),
             link_update: LinkUpdate::default(),
+            edit_mode: EditModePref::default(),
             reference_template: DEFAULT_REFERENCE_TEMPLATE.to_owned(),
             editor: String::new(),
             plugins: BTreeMap::new(),
@@ -142,6 +148,7 @@ pub enum SettingChange {
     Tone(Tone),
     StartIn(StartIn),
     LinkUpdate(LinkUpdate),
+    EditMode(EditModePref),
     /// Empty = the default template.
     ReferenceTemplate(String),
     /// Empty = not set.
@@ -163,6 +170,7 @@ impl SettingChange {
             Self::Tone(_) => "tone".to_owned(),
             Self::StartIn(_) => "start_in".to_owned(),
             Self::LinkUpdate(_) => "link_update".to_owned(),
+            Self::EditMode(_) => "edit_mode".to_owned(),
             Self::ReferenceTemplate(_) => "reference_template".to_owned(),
             Self::Editor(_) => "editor".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
@@ -282,6 +290,9 @@ impl AppSettings {
             link_update: str_of(doc, "link_update")
                 .and_then(LinkUpdate::parse)
                 .unwrap_or_default(),
+            edit_mode: str_of(doc, "edit_mode")
+                .and_then(EditModePref::parse)
+                .unwrap_or_default(),
             reference_template: str_of(doc, "reference_template")
                 .filter(|t| !t.trim().is_empty() && t.chars().count() <= MAX_REFERENCE_TEMPLATE)
                 .map_or_else(|| DEFAULT_REFERENCE_TEMPLATE.to_owned(), str::to_owned),
@@ -320,6 +331,7 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::Tone(v) => set_keeping_decor(root, "tone", v.as_str().into()),
         SettingChange::StartIn(v) => set_keeping_decor(root, "start_in", v.as_str().into()),
         SettingChange::LinkUpdate(v) => set_keeping_decor(root, "link_update", v.as_str().into()),
+        SettingChange::EditMode(v) => set_keeping_decor(root, "edit_mode", v.as_str().into()),
         SettingChange::ReferenceTemplate(v) => set_text(root, "reference_template", v),
         SettingChange::Editor(v) => set_text(root, "editor", v),
         SettingChange::PluginEnabled { plugin, enabled } => {

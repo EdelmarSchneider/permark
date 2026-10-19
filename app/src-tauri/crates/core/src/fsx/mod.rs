@@ -173,6 +173,19 @@ fn temp_path(path: &Path) -> PathBuf {
 /// # Errors
 /// IO failure; temp removed, target untouched.
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    write_atomic_checked(path, bytes, || Ok(true)).map(|_| ())
+}
+
+/// [`write_atomic`] with `check` run after the temp is written and right before the rename: `Ok(false)` leaves the
+/// target untouched (another writer got in) and answers `Ok(false)`.
+///
+/// # Errors
+/// IO failure | `check` failing; temp removed, target untouched.
+pub fn write_atomic_checked(
+    path: &Path,
+    bytes: &[u8],
+    check: impl FnOnce() -> io::Result<bool>,
+) -> io::Result<bool> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
     let tmp = temp_path(path);
@@ -192,9 +205,12 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
                 // best effort: a file system without permissions still gets the bytes
                 let _ = std::fs::set_permissions(&tmp, meta.permissions());
             }
-            retry(&RETRY_DELAYS, || rename_durably(&tmp, path))
+            if !check()? {
+                return Ok(false);
+            }
+            retry(&RETRY_DELAYS, || rename_durably(&tmp, path)).map(|()| true)
         });
-    if result.is_err() {
+    if !matches!(result, Ok(true)) {
         discard(&tmp);
     }
     result

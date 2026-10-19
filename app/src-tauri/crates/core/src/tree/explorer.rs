@@ -363,11 +363,21 @@ impl Explorer {
     /// Listed Markdown documents of the root `prefix` (`""` | `@wt/<name>`), not ignored.
     #[must_use]
     pub fn documents(&self, prefix: &str) -> Vec<String> {
+        self.listed_files(prefix, true)
+    }
+
+    /// Every listed file of the root `prefix`, not ignored (link completion).
+    #[must_use]
+    pub fn files(&self, prefix: &str) -> Vec<String> {
+        self.listed_files(prefix, false)
+    }
+
+    fn listed_files(&self, prefix: &str, markdown_only: bool) -> Vec<String> {
         let guard = self.model();
         let Some(model) = guard.as_ref() else {
             return Vec::new();
         };
-        let mut docs = Vec::new();
+        let mut found = Vec::new();
         let mut stack = vec![key_of(prefix)];
         while let Some(folder) = stack.pop() {
             for child in model.children_of(&folder) {
@@ -375,20 +385,20 @@ impl Explorer {
                     continue;
                 };
                 match node.kind {
-                    NodeKind::File {
-                        category: super::Category::Markdown,
-                    } => {
-                        if !node.ignored {
-                            docs.push(node.path.clone());
+                    NodeKind::File { category } => {
+                        if !node.ignored
+                            && (!markdown_only || category == super::Category::Markdown)
+                        {
+                            found.push(node.path.clone());
                         }
                     }
                     NodeKind::Dir { unlisted: None } if !node.ignored => stack.push(child.clone()),
-                    _ => {}
+                    NodeKind::Dir { .. } => {}
                 }
             }
         }
-        docs.sort();
-        docs
+        found.sort();
+        found
     }
 
     /// Listed files (not ignored) by exact name: name -> project paths (code references).

@@ -2,6 +2,7 @@
 //! features arrive from plugins as data ([`Contributions`]). Editing parts (`edit`, `secrets`, parts of a
 //! structure) join the trait with the editing area.
 
+mod analysis;
 mod contrib;
 mod markdown;
 mod registry;
@@ -12,11 +13,12 @@ use std::collections::HashSet;
 use serde::Serialize;
 use ts_rs::TS;
 
+pub use analysis::{Analysis, Measure, MeasureUnit, TextKind};
 pub use contrib::{
     Contributions, Field, FieldValue, FrontMatterParser, FrontMatterSyntax, MarkdownFeature,
     MarkdownFeatures, PromptBlocks, RoleMatch, RoleRule, DEFAULT_PROMPT_TAGS,
 };
-pub use markdown::MarkdownFormat;
+pub use markdown::{segments, LockReason, MarkdownFormat, Segment, SegmentKind};
 pub use registry::FormatRegistry;
 pub use viewers::{media_of, MediaFormat, TextViewer, MEDIA_EXTENSIONS};
 

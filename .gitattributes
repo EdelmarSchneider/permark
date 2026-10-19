@@ -3,3 +3,4 @@
 *.ico binary
 *.icns binary
 *.woff2 binary
+app/testdata/** -text

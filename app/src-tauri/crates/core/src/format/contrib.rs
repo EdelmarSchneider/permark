@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::Format;
+use super::{Analysis, Format};
 
 /// Tags a prompt-blocks plugin folds by default.
 pub const DEFAULT_PROMPT_TAGS: &[&str] = &[
@@ -112,6 +112,7 @@ pub struct Contributions {
     pub formats: Vec<Arc<dyn Format>>,
     pub roles: Vec<RoleRule>,
     pub markdown: Vec<MarkdownFeature>,
+    pub analyses: Vec<Arc<dyn Analysis>>,
 }
 
 impl std::fmt::Debug for Contributions {
@@ -123,6 +124,10 @@ impl std::fmt::Debug for Contributions {
             )
             .field("roles", &self.roles)
             .field("markdown", &self.markdown.len())
+            .field(
+                "analyses",
+                &self.analyses.iter().map(|a| a.id()).collect::<Vec<_>>(),
+            )
             .finish()
     }
 }
@@ -133,6 +138,7 @@ impl Contributions {
         self.formats.extend(other.formats);
         self.roles.extend(other.roles);
         self.markdown.extend(other.markdown);
+        self.analyses.extend(other.analyses);
     }
 
     #[must_use]
@@ -144,6 +150,12 @@ impl Contributions {
     #[must_use]
     pub fn roles(mut self, roles: Vec<RoleRule>) -> Self {
         self.roles = roles;
+        self
+    }
+
+    #[must_use]
+    pub fn analyses(mut self, analyses: Vec<Arc<dyn Analysis>>) -> Self {
+        self.analyses = analyses;
         self
     }
 
