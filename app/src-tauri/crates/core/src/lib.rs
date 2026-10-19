@@ -2,6 +2,7 @@
 
 pub mod app_info;
 pub mod conditions;
+pub mod desktop;
 pub mod document;
 pub mod edit;
 pub mod error;
