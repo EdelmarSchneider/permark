@@ -420,6 +420,9 @@ export class NotesStore {
   ): Promise<void> {
     const before = this.drawn().map((e) => e.path);
     const wasAt = this.current === null ? -1 : before.indexOf(this.current);
+    // the words for the notice come from the row that is about to go
+    const gone = this.entries.find((e) => e.path === names[0]);
+    const label = gone ? shownName(gone) : stem(names[0] ?? "");
     await this.refresh();
     if (this.current !== null && names.includes(this.current)) {
       const rest = this.drawn().map((e) => e.path);
@@ -432,7 +435,7 @@ export class NotesStore {
     if (names.length === 0) return;
     const text =
       key === "notes.deleted" && names.length === 1
-        ? t("notes.deleted.one", { name: stem(names[0] ?? "") })
+        ? t("notes.deleted.one", { name: label })
         : tn(key, names.length);
     if (undoId === null) this.#window.notifyNote(text);
     else {

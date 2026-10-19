@@ -86,6 +86,8 @@ export class DocumentController {
   #seq = 0;
   #shown: string | null = null;
   #painted: DocumentView | null = null;
+  /** The open of the shown document that has not finished. */
+  #pending: Promise<void> | null = null;
   #intent: (Place & { line: number | null }) | null = null;
   #viaTrail: string | null = null;
   #anchor: string | null = null;
@@ -182,7 +184,8 @@ export class DocumentController {
       void this.#api.closeDocument();
       return;
     }
-    if (path === this.#shown && this.state.status !== "failed") return;
+    // the same document: whoever asked second waits for the open that is on its way
+    if (path === this.#shown && this.state.status !== "failed") return this.#pending ?? undefined;
     this.#leave();
     const intent = this.#intent?.path === path ? this.#intent : null;
     this.#intent = null;
@@ -195,7 +198,10 @@ export class DocumentController {
     this.#shown = path;
     if (this.#workspace?.kind === "project") recentFiles.visit(path);
     this.#painted = null;
-    await this.#open(path, true);
+    const opening = this.#open(path, true);
+    this.#pending = opening;
+    await opening;
+    if (this.#pending === opening) this.#pending = null;
   }
 
   async #open(path: string, fresh: boolean): Promise<void> {

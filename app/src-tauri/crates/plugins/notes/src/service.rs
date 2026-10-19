@@ -1077,8 +1077,10 @@ impl NotesService {
         self.loose_saved(path);
     }
 
-    /// The notes the person shared, as an agent may list them.
-    pub(crate) fn shared_notes(&self) -> Vec<permark_core::notes::SharedNote> {
+    /// The notes the person shared, as an agent may list them (the agent area builds a service over the profile and
+    /// the folder for this when no window answers).
+    #[must_use]
+    pub fn shared_notes(&self) -> Vec<permark_core::notes::SharedNote> {
         let ctx = self.ctx();
         let shared = ctx.read(|s| s.shared.clone());
         shared
@@ -1096,7 +1098,10 @@ impl NotesService {
     }
 
     /// The text of a shared note as it is on disk. A note that is not shared does not exist for an agent.
-    pub(crate) fn read_shared(&self, id: &str) -> Result<String, IpcError> {
+    ///
+    /// # Errors
+    /// `NotFound` (not shared | not there), unreadable.
+    pub fn read_shared(&self, id: &str) -> Result<String, IpcError> {
         let ctx = self.ctx();
         if !ctx.read(|s| s.is_shared(id)) {
             return Err(IpcError::new(ErrorKind::NotFound).subject(id));

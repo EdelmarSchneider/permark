@@ -91,6 +91,20 @@ describe("opening", () => {
     }
   });
 
+  it("a second ask for the document that is being opened waits for that open", async () => {
+    const fx = await setup();
+    const first = fx.doc.show("docs/guide.md");
+    let second = "waiting";
+    const asked = fx.doc.show("docs/guide.md").then(() => {
+      second = fx.doc.state.status;
+    });
+    expect(second).toBe("waiting");
+    await asked;
+    await first;
+    expect(second).toBe("ready");
+    expect(fx.doc.view?.path).toBe("docs/guide.md");
+  });
+
   it("a newer open wins over a slower one", async () => {
     const fx = await setup();
     const slow = vi.spyOn(fx.api, "openDocument");
