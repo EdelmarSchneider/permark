@@ -130,7 +130,17 @@ describe("plugin host", () => {
     expect(h.registry.of("command")).toHaveLength(1);
   });
 
-  it("the lazy module map is keyed by folder name", () => {
-    expect(pluginLoaders()).toEqual({});
+  it("the lazy module map is keyed by folder name: the plugins that have a UI", () => {
+    expect(Object.keys(pluginLoaders()).sort()).toEqual([
+      "frontmatter-card",
+      "highlight",
+      "json-view",
+      "math",
+      "media",
+      "mermaid",
+      "plantuml",
+      "text-view",
+      "xml-view",
+    ]);
   });
 });

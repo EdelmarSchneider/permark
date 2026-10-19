@@ -6,7 +6,10 @@ import type { BootInfo } from "./generated/BootInfo";
 import type { CommandName } from "./generated/CommandName";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
+import type { DocumentChanged } from "./generated/DocumentChanged";
+import type { DocumentView } from "./generated/DocumentView";
 import type { IpcError } from "./generated/IpcError";
+import type { LinkTarget } from "./generated/LinkTarget";
 import type { MoveOutcome } from "./generated/MoveOutcome";
 import type { MovePlan } from "./generated/MovePlan";
 import type { MoveSpec } from "./generated/MoveSpec";
@@ -34,7 +37,10 @@ export type {
   AppSettings,
   BootInfo,
   DeleteOutcome,
+  DocumentChanged,
+  DocumentView,
   IpcError,
+  LinkTarget,
   MoveOutcome,
   MovePlan,
   MoveSpec,
@@ -52,6 +58,16 @@ export type {
   WorkspaceSummary,
 };
 export type { Added } from "./generated/Added";
+export type { Block } from "./generated/Block";
+export type { Body } from "./generated/Body";
+export type { DocChange } from "./generated/DocChange";
+export type { Editability } from "./generated/Editability";
+export type { Field } from "./generated/Field";
+export type { FieldValue } from "./generated/FieldValue";
+export type { FrontMatter } from "./generated/FrontMatter";
+export type { MediaKind } from "./generated/MediaKind";
+export type { Notice } from "./generated/Notice";
+export type { OutlineItem } from "./generated/OutlineItem";
 export type { Category } from "./generated/Category";
 export type { FilterShow } from "./generated/FilterShow";
 export type { LinkUpdate } from "./generated/LinkUpdate";
@@ -98,6 +114,16 @@ export interface Commands {
   file_abs_path: { args: { path: string }; result: string };
   file_open_external: { args: { path: string; mode: OpenMode }; result: null };
   show_document: { args: { path: string | null }; result: null };
+  document_open: { args: { path: string; known: string[] }; result: DocumentView };
+  document_close: { args: Record<string, never>; result: null };
+  document_text: { args: { path: string }; result: string };
+  link_resolve: { args: { doc: string; hrefs: string[] }; result: LinkTarget[] };
+  code_refs_resolve: { args: { doc: string; written: string[] }; result: string[][] };
+  open_in_editor: {
+    args: { path: string; line: number | null; col: number | null };
+    result: null;
+  };
+  open_web: { args: { url: string }; result: null };
 }
 
 /** Contract: `Commands` has exactly the registered commands (generated from Rust). Fails to compile on drift. */
@@ -113,6 +139,7 @@ export interface Events {
   "state-recovered": StateRecovered;
   "open-failed": OpenFailed;
   "tree-changed": TreeChanged;
+  "document-changed": DocumentChanged;
 }
 export type EventName = keyof Events;
 
@@ -161,6 +188,22 @@ export interface Api {
   openExternal(path: string, mode: OpenMode): Promise<Result<null>>;
   /** This window shows this document (`null`: none). */
   showDocument(path: string | null): Promise<Result<null>>;
+  /** Reads + renders a document for this window. `known`: ids of the blocks it holds (their HTML is not sent again). */
+  openDocument(path: string, known: string[]): Promise<Result<DocumentView>>;
+  /** This window shows no document any more. */
+  closeDocument(): Promise<Result<null>>;
+  /** The text of a document as read (copy document). */
+  documentText(path: string): Promise<Result<string>>;
+  /** Where each link of a document leads. */
+  resolveLinks(doc: string, hrefs: string[]): Promise<Result<LinkTarget[]>>;
+  /** The project files each written code reference can mean. */
+  resolveCodeRefs(doc: string, written: string[]): Promise<Result<string[][]>>;
+  /** Opens a project file in the person's editor at a line. */
+  openInEditor(path: string, line: number | null, col: number | null): Promise<Result<null>>;
+  /** Opens a web link in the system browser (http | https | mailto only). */
+  openWeb(url: string): Promise<Result<null>>;
+  /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */
+  assetUrl(workspace: WorkspaceId, path: string, version: string | null): string;
   /** Listens to a backend event. Resolves to teardown. */
   on<E extends EventName>(event: E, handler: (payload: Events[E]) => void): Promise<Unlisten>;
   /** Drag + drop of files | folders onto this window. Resolves to teardown. */

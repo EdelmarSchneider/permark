@@ -3,6 +3,7 @@
   // when the workspace changes), listening while it lives.
   import { api } from "../../api";
   import type { WindowStore } from "../window.svelte";
+  import { setExplorer } from "./current";
   import ExplorerPanel from "./ExplorerPanel.svelte";
   import { ExplorerStore } from "./store.svelte";
 
@@ -14,6 +15,7 @@
     note: (text) => store.notifyNote(text),
     linkUpdate: () => store.linkUpdate,
     openProject: (path) => void store.open(path, "ask"),
+    referenceTemplate: () => store.referenceTemplate,
   });
 
   // listens while shown (teardown even when the component goes before the first load ends)
@@ -28,6 +30,12 @@
       gone = true;
       off?.();
     };
+  });
+
+  // the rest of the window can point at this tree while it lives
+  $effect(() => {
+    setExplorer(explorer);
+    return () => setExplorer(null);
   });
 
   // the open document stays in the list and comes into view

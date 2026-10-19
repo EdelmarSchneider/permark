@@ -1,7 +1,23 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import path from "node:path";
 import process from "node:process";
+import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+
+// KaTeX lists woff2, woff and ttf for every font; the webviews PerMark runs on all read woff2, so only that ships.
+function katexWoff2Only(): Plugin {
+  return {
+    name: "katex-woff2-only",
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.includes("katex") || !id.split("?")[0]?.endsWith(".css")) return null;
+      return code.replace(
+        /,url\([^)]*\.woff\) format\("woff"\),url\([^)]*\.ttf\) format\("truetype"\)/g,
+        "",
+      );
+    },
+  };
+}
 
 const host = process.env["TAURI_DEV_HOST"];
 
@@ -10,7 +26,7 @@ const toolFolder = `${process.cwd().split(path.sep).join("/")}/.claude/**`;
 
 // `vite --mode mock` (`npm run dev:mock`): browser UI against the mock backend (src/api/mock.ts).
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte(), katexWoff2Only()],
 
   // component tests mount the browser build of Svelte (jsdom), not the server one
   resolve: process.env["VITEST"] ? { conditions: ["browser"] } : undefined,
@@ -26,7 +42,9 @@ export default defineConfig({
   },
 
   // Fonts + icons ship as files (CSP font-src 'self'; no data: URLs).
-  build: { assetsInlineLimit: 0 },
+  // The diagram engines (PlantUML ~3 MB, Mermaid's layout ~1.5 MB) are chunks of their own, loaded only when a
+  // diagram comes near the screen: the size warning is about the main bundle, which stays small.
+  build: { assetsInlineLimit: 0, chunkSizeWarningLimit: 3500 },
 
   test: {
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],

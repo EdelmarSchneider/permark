@@ -2,6 +2,7 @@
 // every action on files. The backend owns the truth (tree, files, undo); this mirrors it through snapshots + deltas
 // and sends actions. UI modes are tagged unions; actions are methods called from event handlers.
 
+import { DEFAULT_REFERENCE_TEMPLATE, formatReference } from "../doc/reference";
 import {
   type Api,
   type ApiError,
@@ -64,6 +65,8 @@ export type ExplorerHost = {
   linkUpdate(): LinkUpdate;
   /** Opens a folder as a project (the window asks "this window | new window"). */
   openProject(path: string): void;
+  /** The reference template (setting); the default when the window gives none. */
+  referenceTemplate?(): string;
 };
 
 /** Reasons a name cannot be used, as the backend words them in `detail`. */
@@ -628,6 +631,24 @@ export class ExplorerStore {
     } catch {
       // the system refused the clipboard: nothing else to do
     }
+  }
+
+  /** "Copy reference": where the file lives, written with the person's template. */
+  async copyReference(path: string): Promise<void> {
+    const template = this.#host.referenceTemplate?.() ?? DEFAULT_REFERENCE_TEMPLATE;
+    try {
+      await navigator.clipboard.writeText(
+        formatReference(template, { path, section: null, line: null }),
+      );
+    } catch {
+      // the system refused the clipboard: nothing else to do
+    }
+  }
+
+  /** Opens the file in the person's editor (setting). */
+  async openInEditor(path: string): Promise<void> {
+    const result = await this.#api.openInEditor(path, null, null);
+    if (!result.ok) this.#host.fail(result.error);
   }
 
   async openExternal(path: string, mode: OpenMode): Promise<void> {

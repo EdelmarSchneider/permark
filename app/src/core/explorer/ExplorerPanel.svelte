@@ -176,6 +176,13 @@
           run: () => void store.openAsProject(node.path),
         });
       }
+      if (!isDir) {
+        entries.push({
+          kind: "item",
+          label: t("header.openExternal"),
+          run: () => void store.openInEditor(node.path),
+        });
+      }
       entries.push(
         {
           kind: "item",
@@ -192,6 +199,11 @@
           kind: "item",
           label: t("menu.copyFullPath"),
           run: () => void store.copyPath(node.path, true),
+        },
+        {
+          kind: "item",
+          label: t("header.copyReference"),
+          run: () => void store.copyReference(node.path),
         },
         { kind: "separator" },
         {

@@ -1,0 +1,49 @@
+/* highlight.js scopes mapped onto the syntax tokens. A stretch of code takes the colour of the innermost scope around
+   it that is listed here. */
+.hljs-comment,
+.hljs-quote {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-section {
+  color: var(--syn-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: var(--syn-string);
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-meta,
+.hljs-title.class_ {
+  color: var(--syn-type);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-number,
+.hljs-symbol,
+.hljs-name,
+.hljs-title,
+.hljs-title.function_,
+.hljs-params,
+.hljs-template-variable,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--syn-prop);
+}
+.hljs-deletion {
+  color: var(--git-deleted-text);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}

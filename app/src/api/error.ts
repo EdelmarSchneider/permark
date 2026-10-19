@@ -37,6 +37,8 @@ export const ERROR_KINDS = [
   "overlap",
   "trash",
   "partlyMoved",
+  "editorNotSet",
+  "editorFailed",
 ] as const satisfies readonly ErrorKind[];
 
 type MissingKinds = Exclude<ErrorKind, (typeof ERROR_KINDS)[number]>;

@@ -1,0 +1,466 @@
+/* Markdown reading styles. The article is `.md`; the blocks of the document are the children of `.md-body`.
+   Tokens only (no raw colours); both themes and every light tone are checked by eye. */
+.doc-column {
+  /* a size container: `cqw` is the pane width, with no script */
+  container-type: inline-size;
+  padding: var(--sp-6) var(--sp-5) var(--sp-8);
+}
+.md {
+  --zoom: 1;
+  --column: var(--measure);
+  max-width: calc(var(--column) * var(--zoom));
+  margin: 0 auto;
+  font: calc(var(--fs-reading) * var(--zoom)) / var(--lh-reading) var(--font-reading);
+  color: var(--text);
+}
+.md.is-wide {
+  --column: var(--measure-wide);
+}
+.md.is-full {
+  --column: 100000px;
+}
+.md-body > * {
+  margin: 0 0 1em;
+}
+
+/* Breakout: tables, diagrams, display math and lone images take the width their content needs, never below the
+   text measure and never above the pane. Top level only, centred on the column, so find highlights and the
+   scroll anchor follow the block itself. A fenced block is not one of these: it stays in the column and
+   scrolls inside itself. */
+.md-body > .table-wrap,
+.md-body > .diagram,
+.md-body > .pm-wide {
+  width: max-content;
+  min-width: 100%;
+  max-width: 100%;
+  max-width: 100cqw;
+  position: relative;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  position: relative;
+  line-height: 1.25;
+  scroll-margin-top: var(--sp-4);
+}
+.md h1 {
+  font-size: 2em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0.2em 0 0.6em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.md h2 {
+  font-size: 1.5em;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  margin: 1.8em 0 0.6em;
+}
+.md h3 {
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 1.5em 0 0.5em;
+}
+.md h4 {
+  font-size: 1.05em;
+  font-weight: 600;
+  margin: 1.4em 0 0.5em;
+}
+.md h5,
+.md h6 {
+  font-size: 0.95em;
+  font-weight: 600;
+  margin: 1.3em 0 0.4em;
+  color: var(--muted);
+}
+.md .anchor {
+  position: absolute;
+  left: -1.1em;
+  width: 1em;
+  color: var(--faint);
+  text-decoration: none;
+  font-weight: 400;
+  opacity: 0;
+  transition: opacity var(--dur-fast);
+}
+.md h1:hover .anchor,
+.md h2:hover .anchor,
+.md h3:hover .anchor,
+.md h4:hover .anchor,
+.md h5:hover .anchor,
+.md h6:hover .anchor,
+.md .anchor:focus-visible {
+  opacity: 1;
+}
+.md p {
+  margin: 0 0 1em;
+}
+.md a {
+  color: var(--accent-text);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--accent-muted);
+}
+.md a:hover {
+  text-decoration-color: var(--accent);
+}
+.md a.anchor {
+  text-decoration: none;
+}
+.md a.is-missing {
+  color: var(--git-deleted-text);
+  text-decoration-style: wavy;
+  text-decoration-color: var(--git-deleted);
+}
+.md strong {
+  font-weight: 600;
+}
+.md code {
+  font: 0.84em var(--font-code);
+  padding: 0.12em 0.38em;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+/* code references: a dotted underline in the muted colour, solid on hover */
+.md .code-ref {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--muted);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.md .code-ref:hover {
+  text-decoration-style: solid;
+  text-decoration-color: var(--text);
+}
+.md kbd {
+  font: 500 0.78em var(--font-code);
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  white-space: nowrap;
+}
+.md ul,
+.md ol {
+  padding-left: 1.5em;
+}
+.md li + li {
+  margin-top: 0.25em;
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+.md img {
+  max-width: 100%;
+  border-radius: var(--radius-card);
+  cursor: zoom-in;
+}
+.md img.is-broken {
+  cursor: default;
+  outline: 1px dashed var(--border-strong);
+  outline-offset: 2px;
+}
+/* pictures from the web are not fetched: a chip says what was there */
+.md .remote-image {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 0.5em;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.82em;
+  line-height: 1.6;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.md .remote-image:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+/* players written in the document (<video>, <audio>): the file next to the document, played in place */
+.md video,
+.md audio {
+  display: block;
+  max-width: 100%;
+}
+.md video {
+  height: auto;
+  background: var(--video-bg);
+  border-radius: var(--radius-card);
+}
+.md audio {
+  width: 100%;
+}
+.md sub,
+.md sup {
+  font-size: 0.75em;
+  line-height: 0;
+}
+.md details {
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.md details > summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.md details[open] > summary {
+  margin-bottom: 0.5em;
+}
+.md details > :last-child {
+  margin-bottom: 0;
+}
+/* prompt blocks (<context>, <instructions>, ...): a fold that names its tag */
+.md details.prompt-block {
+  border-left: 3px solid var(--accent-muted);
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+}
+.md details.prompt-block > summary {
+  font: 600 0.78em var(--font-code);
+  letter-spacing: 0.02em;
+  color: var(--accent-text);
+}
+.md details.prompt-block > summary::before {
+  content: "<";
+  opacity: 0.7;
+}
+.md details.prompt-block > summary::after {
+  content: ">";
+  opacity: 0.7;
+}
+.md details.prompt-block > summary::marker {
+  color: var(--muted);
+}
+.md .tvar {
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: 0.86em var(--font-code);
+  white-space: nowrap;
+}
+.md a.at-ref {
+  font-family: var(--font-code);
+  font-size: 0.9em;
+  text-decoration-style: dotted;
+}
+.md dl dt {
+  font-weight: 600;
+  margin-top: 0.6em;
+}
+.md dl dd {
+  margin: 0.15em 0 0 1.4em;
+  color: var(--muted);
+}
+.md .footnotes {
+  margin-top: 2.5em;
+  padding-top: 0.5em;
+  border-top: 1px solid var(--border);
+  font-size: 0.88em;
+  color: var(--muted);
+}
+.md .footnotes ol {
+  margin: 0;
+}
+.md sup a[data-footnote-ref] {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* alerts */
+.md .markdown-alert {
+  --alert: var(--accent);
+  padding: 10px 16px;
+  border-left: 3px solid var(--alert);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: color-mix(in srgb, var(--alert) 7%, transparent);
+}
+.md .markdown-alert > :last-child {
+  margin-bottom: 0;
+}
+.md .markdown-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-weight: 600;
+  font-size: 0.9em;
+  color: var(--alert);
+}
+/* the Note title is text in the accent: its darker shade keeps 4.5:1 on the tint, on white and on every soft tone */
+.md .markdown-alert-note .markdown-alert-title {
+  color: var(--accent-text);
+}
+.md .markdown-alert-title svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.md .markdown-alert-tip {
+  --alert: var(--git-added-text);
+}
+.md .markdown-alert-important {
+  --alert: var(--git-renamed-text);
+}
+.md .markdown-alert-warning {
+  --alert: var(--git-modified-text);
+}
+.md .markdown-alert-caution {
+  --alert: var(--git-deleted-text);
+}
+
+/* tables */
+.md .table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.md th,
+.md td {
+  padding: 8px 14px;
+  /* a column keeps room for about three CJK characters (they may break after each one, so without this a narrow pane
+     would squeeze a cell to one character per line); a table that needs more than the pane scrolls in its wrapper */
+  min-width: 5em;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.md th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  font-weight: 600;
+  font-size: 0.92em;
+}
+.md tbody tr:nth-child(even) {
+  background: var(--zebra);
+}
+.md tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* code (a block with no highlighter plugin, and the shape every code block shares) */
+.md .code-block {
+  position: relative;
+}
+.md pre {
+  margin: 0;
+  padding: 14px 16px;
+  /* only as wide as the column: prose wraps here; a line with nowhere to break scrolls inside the block */
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font: calc(var(--fs-code) * var(--zoom)) / 1.6 var(--font-code);
+}
+.md pre code {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+/* blockquote */
+.md blockquote {
+  margin: 0 0 1em;
+  padding: 2px 0 2px 18px;
+  border-left: 3px solid var(--accent-muted);
+  color: var(--muted);
+}
+.md blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+/* task lists */
+.md .contains-task-list {
+  list-style: none;
+  padding-left: 0.2em;
+}
+/* block layout with an absolutely placed checkbox: a flex row would split mixed content (text, links, code) into
+   separate flex items with a gap between each of them */
+.md .task-list-item {
+  position: relative;
+  padding-left: 25px;
+}
+.md .task-list-item input {
+  appearance: none;
+  position: absolute;
+  left: 0;
+  top: calc((var(--lh-reading) * 1em - 15px) / 2);
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg);
+}
+.md .task-list-item input:checked {
+  border-color: var(--accent);
+  background: var(--accent) no-repeat center/11px
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+.md .task-list-item.is-done {
+  color: var(--muted);
+}
+
+/* a section located by a link, an outline click or a search hit */
+.md .pm-located {
+  animation: pm-locate var(--dur-locate) ease-out both;
+  border-radius: var(--radius-control);
+}
+@keyframes pm-locate {
+  0%,
+  30% {
+    background: var(--mark);
+    box-shadow: 0 0 0 6px var(--mark);
+  }
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* a document deleted while it was open: its last version, dimmed */
+.md.is-tombstone {
+  opacity: 0.6;
+}
+
+/* find in page (CSS Custom Highlight API) */
+::highlight(pm-find) {
+  background-color: var(--mark);
+  color: inherit;
+}
+::highlight(pm-find-current) {
+  background-color: var(--mark-strong);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+}

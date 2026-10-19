@@ -16,6 +16,7 @@ import {
   type WindowView,
 } from "../api";
 import { conditions } from "./conditions/context.svelte";
+import { syncPlugins } from "./plugins/instance.svelte";
 import { language, parsePreference, t } from "./i18n";
 import { look } from "./look.svelte";
 
@@ -46,6 +47,10 @@ export class WindowStore {
   notices = $state.raw<readonly Notice[]>([]);
   /** Whether a move rewrites the links that point at it (the setting). */
   linkUpdate = $state<LinkUpdate>("ask");
+  /** How "copy reference" is written (setting). */
+  referenceTemplate = $state("{path}#{section}");
+  /** The command that opens a file in the person's editor (setting; empty = not set). */
+  editor = $state("");
   #nextNotice = 1;
 
   constructor(backend: Api) {
@@ -59,11 +64,13 @@ export class WindowStore {
         if (e.window === this.label) this.#showView(e.view);
       }),
       this.#api.on("context-changed", (e) => {
-        if (e.window === this.label) conditions.set(e.context);
+        if (e.window === this.label) this.#applyContext(e.context);
       }),
       this.#api.on("settings-changed", (e) => {
         look.set(e.settings);
         this.linkUpdate = e.settings.linkUpdate;
+        this.referenceTemplate = e.settings.referenceTemplate;
+        this.editor = e.settings.editor;
         void language.choose(parsePreference(e.settings.language));
       }),
       this.#api.on("open-failed", (e) => {
@@ -77,9 +84,11 @@ export class WindowStore {
     if (booted.ok) {
       const info = booted.value;
       this.label = info.window;
-      conditions.set(info.context);
+      this.#applyContext(info.context);
       look.set(info.settings);
       this.linkUpdate = info.settings.linkUpdate;
+      this.referenceTemplate = info.settings.referenceTemplate;
+      this.editor = info.settings.editor;
       await language.choose(parsePreference(info.settings.language));
       for (const notice of info.notices) this.#notify({ kind: "stateRecovered", notice });
       for (const failed of info.failures) {
@@ -92,6 +101,12 @@ export class WindowStore {
       this.boot = { status: "failed", error: booted.error };
     }
     return () => offs.forEach((off) => off());
+  }
+
+  /** The conditions changed: the UI keeps them, and the plugins that came on or went off follow. */
+  #applyContext(context: Parameters<typeof conditions.set>[0]): void {
+    conditions.set(context);
+    syncPlugins(context.plugins);
   }
 
   #showView(view: WindowView): void {

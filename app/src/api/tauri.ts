@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -19,6 +19,18 @@ export async function call<C extends CommandName>(
     if (backend) return { ok: false, error: { kind: "backend", command, error: backend } };
     return { ok: false, error: { kind: "command", command, message: errorMessage(error) } };
   }
+}
+
+/** `pm-asset` URL for a project path: `<base>/<workspace>/<path>` (the base differs per platform; Tauri knows it and
+ *  encodes the whole path once, slashes included: the backend decodes it once). */
+export function assetUrl(
+  convert: (path: string, protocol: string) => string,
+  workspace: number,
+  path: string,
+  version: string | null,
+): string {
+  const base = convert(`${workspace}/${path}`, "pm-asset");
+  return version === null ? base : `${base}?v=${encodeURIComponent(version)}`;
 }
 
 export const tauriApi: Api = {
@@ -47,6 +59,14 @@ export const tauriApi: Api = {
   absPath: (path) => call("file_abs_path", { path }),
   openExternal: (path, mode) => call("file_open_external", { path, mode }),
   showDocument: (path) => call("show_document", { path }),
+  openDocument: (path, known) => call("document_open", { path, known }),
+  closeDocument: () => call("document_close", {}),
+  documentText: (path) => call("document_text", { path }),
+  resolveLinks: (doc, hrefs) => call("link_resolve", { doc, hrefs }),
+  resolveCodeRefs: (doc, written) => call("code_refs_resolve", { doc, written }),
+  openInEditor: (path, line, col) => call("open_in_editor", { path, line, col }),
+  openWeb: (url) => call("open_web", { url }),
+  assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
   on: (event, handler) => listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
   onDrop: (handler) =>
     getCurrentWebview().onDragDropEvent((event) => {

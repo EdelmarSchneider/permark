@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
-vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke, convertFileSrc: vi.fn() }));
 const show = vi.fn();
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ show }) }));
 

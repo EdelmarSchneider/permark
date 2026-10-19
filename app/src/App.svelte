@@ -2,13 +2,15 @@
   import { onMount } from "svelte";
   import { api, type AppInfo, type WorkspaceView } from "./api";
   import { language, t } from "./core/i18n";
+  import DocumentArea from "./core/doc/DocumentArea.svelte";
+  import { documents } from "./core/doc/document.svelte";
+  import OutlinePanel from "./core/doc/OutlinePanel.svelte";
+  import { reading } from "./core/doc/reading.svelte";
   import { look } from "./core/look.svelte";
   import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import Notices from "./core/shell/Notices.svelte";
-  import ProjectView from "./core/shell/ProjectView.svelte";
   import SettingsPopover from "./core/shell/SettingsPopover.svelte";
-  import SingleFileView from "./core/shell/SingleFileView.svelte";
   import Welcome from "./core/shell/Welcome.svelte";
   import WindowChoice from "./core/shell/WindowChoice.svelte";
   import { windowTitle } from "./core/title";
@@ -71,6 +73,14 @@
 
   const title = $derived(windowTitle(store.view));
 
+  /** The outline of the document shown, when it has one and the panel is on. */
+  const outline = $derived.by(() => {
+    const view = documents.view;
+    return view?.body.kind === "markdown" && view.body.outline.length > 0
+      ? view.body.outline
+      : null;
+  });
+
   onMount(() => {
     void api.appInfo().then((result) => {
       info = result.ok ? { status: "ready", info: result.value } : { status: "failed" };
@@ -130,11 +140,15 @@
   {/if}
 {/snippet}
 
+{#snippet panel()}
+  {#if outline}
+    <OutlinePanel items={outline} />
+  {/if}
+{/snippet}
+
 {#snippet main()}
-  {#if shown?.workspace.kind === "project"}
-    <ProjectView workspace={shown.workspace} document={shown.document} />
-  {:else if shown?.workspace.kind === "singleFile"}
-    <SingleFileView workspace={shown.workspace} />
+  {#if shown?.workspace.kind === "project" || shown?.workspace.kind === "singleFile"}
+    <DocumentArea workspace={shown.workspace} document={shown.document} {store} />
   {:else}
     <Welcome {store} />
   {/if}
@@ -154,6 +168,7 @@
   <Frame
     {header}
     sidebar={shown?.workspace.kind === "project" ? sidebar : undefined}
+    panel={outline && reading.outline ? panel : undefined}
     {main}
     {status}
   />

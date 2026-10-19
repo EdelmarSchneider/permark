@@ -50,6 +50,10 @@ export function errorKey(kind: ErrorKind): MessageKey {
       return "error.trash";
     case "partlyMoved":
       return "error.partlyMoved";
+    case "editorNotSet":
+      return "error.editorNotSet";
+    case "editorFailed":
+      return "error.editorFailed";
     default:
       return kind satisfies never;
   }

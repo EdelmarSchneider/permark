@@ -5,6 +5,7 @@ import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
+import { mockAssetUrl, mockLinkTarget, mockView } from "./mockDocs";
 import { MockProject, MockRefusal } from "./mockFs";
 import type {
   Api,
@@ -36,6 +37,8 @@ function defaultSettings(): AppSettings {
     tone: "white",
     startIn: "welcome",
     linkUpdate: "ask",
+    referenceTemplate: "{path}#{section}",
+    editor: "",
     plugins: {},
   };
 }
@@ -70,6 +73,10 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       return { ...settings, startIn: change.value };
     case "linkUpdate":
       return { ...settings, linkUpdate: change.value };
+    case "referenceTemplate":
+      return { ...settings, referenceTemplate: change.value.trim() || "{path}#{section}" };
+    case "editor":
+      return { ...settings, editor: change.value };
     case "pluginEnabled": {
       const plugins = { ...settings.plugins };
       if (change.value.enabled === null) delete plugins[change.value.plugin];
@@ -87,6 +94,12 @@ type TreeView = { filter: TreeFilter; list: TreeNode[]; seq: number; keep: strin
 export type MockProbe = {
   /** Paths handed to `openExternal`, with the mode. */
   opened: { path: string; mode: string }[];
+  /** Files handed to `openInEditor`. */
+  editor: { path: string; line: number | null; col: number | null }[];
+  /** URLs handed to `openWeb`. */
+  web: string[];
+  /** The document this window shows now, and the block ids it said it holds. */
+  shown: { path: string | null; known: string[] };
   /** The project in memory. */
   project: MockProject;
 };
@@ -117,9 +130,16 @@ export function createMockApi(): Api & {
     "state-recovered": new Set(),
     "open-failed": new Set(),
     "tree-changed": new Set(),
+    "document-changed": new Set(),
   };
   const project = new MockProject();
-  const probe: MockProbe = { opened: [], project };
+  const probe: MockProbe = {
+    opened: [],
+    editor: [],
+    web: [],
+    shown: { path: null, known: [] },
+    project,
+  };
   let tree: TreeView | null = null;
 
   function emit<E extends EventName>(event: E, payload: Events[E]): void {
@@ -306,6 +326,42 @@ export function createMockApi(): Api & {
       probe.opened.push({ path, mode });
       return ok(null);
     },
+    openDocument: (path, known) => {
+      // a single file shows its own name; the mock serves the showcase for it
+      const asked =
+        view.state === "showing" && view.workspace.kind === "singleFile" ? "README.md" : path;
+      const found = mockView(asked, known, project.exists(path));
+      probe.shown = { path, known };
+      if (!found) {
+        return Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "document_open",
+            error: { kind: "notFound", subject: path, detail: null },
+          },
+        });
+      }
+      return ok({ ...found, path, name: nameOf(path) });
+    },
+    closeDocument: () => {
+      probe.shown = { path: null, known: [] };
+      return ok(null);
+    },
+    documentText: (path) => ok(`# ${path}\n`),
+    resolveLinks: (doc, hrefs) =>
+      ok(hrefs.map((href) => mockLinkTarget(doc, href, (p) => project.exists(p)))),
+    resolveCodeRefs: (_doc, written) =>
+      ok(written.map((w) => (project.exists(w.replace(/^\//, "")) ? [w.replace(/^\//, "")] : []))),
+    openInEditor: (path, line, col) => {
+      probe.editor.push({ path, line, col });
+      return ok(null);
+    },
+    openWeb: (url) => {
+      probe.web.push(url);
+      return ok(null);
+    },
+    assetUrl: (_workspace, path) => mockAssetUrl(path),
     showDocument: (path) => {
       if (view.state === "showing") {
         view = { ...view, document: path };

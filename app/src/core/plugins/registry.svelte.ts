@@ -7,9 +7,13 @@ import type { PluginId } from "../../api/generated/PluginId";
 import type { Context } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
+import type { EmbedProps, FrontMatterProps, ViewerProps } from "./props";
 
 /** Lazily loaded UI piece (heavy views load when first needed). */
-export type LazyComponent = () => Promise<{ default: Component }>;
+export type LazyComponent<Props extends Record<string, unknown> = Record<string, never>> =
+  () => Promise<{
+    default: Component<Props>;
+  }>;
 
 type Owned = { owner: PluginId; requires: Requirement };
 
@@ -30,9 +34,15 @@ export type Contribution = Owned &
     | { kind: "treeBadge"; id: string; badge: (path: string) => string | null }
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
-    | { kind: "viewer"; id: string; claims: (name: string) => boolean; view: LazyComponent }
+    | {
+        kind: "viewer";
+        id: string;
+        claims: (name: string) => boolean;
+        view: LazyComponent<ViewerProps>;
+      }
     | { kind: "editor"; id: string; claims: (name: string) => boolean; view: LazyComponent }
-    | { kind: "embed"; id: string; language: string; view: LazyComponent }
+    | { kind: "embed"; id: string; language: string; view: LazyComponent<EmbedProps> }
+    | { kind: "frontMatterCard"; id: string; view: LazyComponent<FrontMatterProps> }
   );
 
 export type ContributionKind = Contribution["kind"];
@@ -126,6 +136,11 @@ export class PluginHost {
   constructor(registry: ContributionRegistry, loaders: Record<string, Loader>) {
     this.registry = registry;
     this.#loaders = loaders;
+  }
+
+  /** Whether the UI has a module for this plugin (backend-only plugins have none). */
+  has(id: PluginId): boolean {
+    return Object.hasOwn(this.#loaders, id);
   }
 
   state(id: PluginId): PluginState["status"] {

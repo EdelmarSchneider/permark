@@ -3,6 +3,7 @@
   import type { LanguagePref, LinkUpdate, ThemePref, Tone } from "../../api";
   import { language, LOCALE_NAMES, LOCALES, t, type MessageKey } from "../i18n";
   import { look } from "../look.svelte";
+  import ReadingSettings from "./ReadingSettings.svelte";
   import type { WindowStore } from "../window.svelte";
 
   type Props = { store: WindowStore; close: () => void };
@@ -122,6 +123,8 @@
       {/each}
     </div>
   </div>
+
+  <ReadingSettings {store} />
 </div>
 
 <style>
@@ -131,6 +134,8 @@
     right: var(--sp-3);
     z-index: 40;
     width: 340px;
+    max-height: calc(100vh - var(--h-header) - var(--sp-4));
+    overflow-y: auto;
     padding: var(--sp-2) var(--sp-2) var(--sp-3);
     border: 1px solid var(--border);
     border-radius: var(--radius-card);
