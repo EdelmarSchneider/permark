@@ -179,7 +179,7 @@
           ? shown.workspace.path
           : (shown.workspace.folder ?? "")}
     >
-      {shown.workspace.name}
+      {shown.workspace.kind === "notes" ? t("notes.title") : shown.workspace.name}
     </span>
   {:else}
     <span class="title">{t("app.name")}</span>

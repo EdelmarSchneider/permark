@@ -119,6 +119,7 @@
   }
   .empty {
     margin: 0;
+    padding: 6px var(--sp-3);
     color: var(--muted);
     font-size: var(--fs-ui-sm);
   }

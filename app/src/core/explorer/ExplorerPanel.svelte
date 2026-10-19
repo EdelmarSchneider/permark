@@ -168,6 +168,27 @@
     menu = { x: e.clientX, y: e.clientY, entries: entriesFor(node) };
   }
 
+  /** A click on the empty part of the tree: what the project as a whole can do. */
+  function onbackground(e: MouseEvent): void {
+    if (!(e.target instanceof Element) || e.target.closest(".row")) return;
+    e.preventDefault();
+    const entries: MenuEntry[] = [
+      { kind: "item", label: t("newFile.newFile"), run: () => store.beginNew("file") },
+      { kind: "item", label: t("fileOps.newFolder"), run: () => store.beginNew("folder") },
+    ];
+    if (conditions.current.permark === "notInitialized") {
+      entries.push(
+        { kind: "separator" },
+        {
+          kind: "item",
+          label: t("menu.initProject"),
+          run: () => void store.askInit("", store.roots[0]?.name ?? ""),
+        },
+      );
+    }
+    menu = { x: e.clientX, y: e.clientY, entries };
+  }
+
   function entriesFor(node: TreeNode): MenuEntry[] {
     const targets = store.targets();
     const many = targets.length > 1;
@@ -454,6 +475,7 @@
       aria-multiselectable="true"
       tabindex="0"
       onscroll={(e) => (scrollTop = e.currentTarget.scrollTop)}
+      oncontextmenu={onbackground}
       {onkeydown}
     >
       {#if display.length === 0}

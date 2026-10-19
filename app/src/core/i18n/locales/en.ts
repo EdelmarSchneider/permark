@@ -1319,6 +1319,7 @@ const en = {
   "plugin.text-view.name": "Plain text",
   "plugin.text-view.about": "Opens plain text and other text files for reading.",
   "git.backend.row": "Git to use",
+  "menu.initProject": "Initialize PerMark…",
 } as const;
 
 export default en;

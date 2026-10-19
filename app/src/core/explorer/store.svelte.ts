@@ -68,6 +68,8 @@ export type ExplorerHost = {
   openProject(path: string): void;
   /** The reference template (setting); the default when the window gives none. */
   referenceTemplate?(): string;
+  /** Asks whether to initialize PerMark in a folder (`path` absolute). */
+  initProject?(path: string, name: string): void;
 };
 
 /** Reasons a name cannot be used, as the backend words them in `detail`. */
@@ -667,6 +669,16 @@ export class ExplorerStore {
       return;
     }
     this.#host.openProject(abs.value);
+  }
+
+  /** "Initialize PerMark in this folder": the window asks first, then creates `.permark/` there. */
+  async askInit(path: string, name: string): Promise<void> {
+    const abs = await this.#api.absPath(path);
+    if (!abs.ok) {
+      this.#host.fail(abs.error);
+      return;
+    }
+    this.#host.initProject?.(abs.value, name);
   }
 
   // ---- drag ------------------------------------------------------------------------------------------------------

@@ -1369,4 +1369,5 @@ export default {
   "plugin.text-view.name": "Reiner Text",
   "plugin.text-view.about": "Öffnet reinen Text und andere Textdateien zum Lesen.",
   "git.backend.row": "Zu verwendendes Git",
+  "menu.initProject": "PerMark einrichten …",
 } satisfies Messages;

@@ -1283,4 +1283,5 @@ export default {
   "plugin.text-view.name": "纯文本",
   "plugin.text-view.about": "打开纯文本和其他文本文件供阅读。",
   "git.backend.row": "使用的 Git",
+  "menu.initProject": "初始化 PerMark…",
 } satisfies Messages;

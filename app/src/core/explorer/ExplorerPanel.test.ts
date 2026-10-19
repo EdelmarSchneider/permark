@@ -16,6 +16,7 @@ type Fx = {
   registry: ContributionRegistry;
   failures: unknown[];
   notes: string[];
+  inits: { path: string; name: string }[];
   destroy: () => void;
 };
 
@@ -26,11 +27,13 @@ async function render(link: LinkUpdate = "never"): Promise<Fx> {
   await api.openPath(MOCK_FOLDER, "thisWindow");
   const failures: unknown[] = [];
   const notes: string[] = [];
+  const inits: { path: string; name: string }[] = [];
   const store = new ExplorerStore(api, {
     fail: (e) => failures.push(e),
     note: (t) => notes.push(t),
     linkUpdate: () => link,
     openProject: () => {},
+    initProject: (path, name) => inits.push({ path, name }),
   });
   const stop = await store.start();
   const registry = new ContributionRegistry();
@@ -44,7 +47,7 @@ async function render(link: LinkUpdate = "never"): Promise<Fx> {
     root.remove();
   };
   mounted.push(destroy);
-  return { api, store, root, registry, failures, notes, destroy };
+  return { api, store, root, registry, failures, notes, inits, destroy };
 }
 
 function rows(root: HTMLElement): HTMLElement[] {
@@ -394,6 +397,45 @@ describe("context menu", () => {
     const text = document.querySelector('[role="menu"]')?.textContent ?? "";
     expect(text).toContain("Delete 2 items");
     expect(text).not.toContain("Rename");
+  });
+
+  it("the empty part of the tree offers the project's own actions, and Initialize PerMark until it is", async () => {
+    const { root, inits } = await render();
+    const tree = root.querySelector('[role="tree"]');
+    const labels = (): string[] =>
+      Array.from(document.querySelectorAll('[role="menuitem"]')).map((i) => i.textContent ?? "");
+    const rightClick = async (): Promise<void> => {
+      tree?.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 10,
+          clientY: 10,
+        }),
+      );
+      await tick();
+    };
+    conditions.set({ ...neutralContext(), workspace: "project", permark: "notInitialized" });
+    await rightClick();
+    expect(labels().map((l) => l.trim())).toEqual([
+      "New Markdown file...",
+      "New folder...",
+      "Initialize PerMark…",
+    ]);
+    // asking hands the window the project's full path and name
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[2]?.click();
+    await vi.waitFor(() => expect(inits).toEqual([{ path: MOCK_FOLDER, name: "demo" }]));
+    // initialized: no such entry
+    conditions.set({ ...neutralContext(), workspace: "project", permark: "initialized" });
+    await rightClick();
+    expect(labels().map((l) => l.trim())).toEqual(["New Markdown file...", "New folder..."]);
+    document
+      .querySelector('[role="menu"]')
+      ?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+      );
+    await tick();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
   });
 });
 

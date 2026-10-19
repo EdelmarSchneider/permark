@@ -490,7 +490,7 @@ export function createMockApi(): Api & {
       if (done) refreshTree();
       return ok(done ? { kind: "move", restored: 1, skipped: [] } : null);
     },
-    absPath: (path) => ok(`${MOCK_FOLDER}/${path}`),
+    absPath: (path) => ok(path === "" ? MOCK_FOLDER : `${MOCK_FOLDER}/${path}`),
     openExternal: (path, mode) => {
       probe.opened.push({ path, mode });
       return ok(null);

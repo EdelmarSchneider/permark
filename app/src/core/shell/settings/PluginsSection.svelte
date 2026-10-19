@@ -151,30 +151,14 @@
               {/if}
             </div>
             <div class="control">
-              {#if canRemoveData(info)}
-                {#if confirming === id}
-                  <span class="confirm" role="group" aria-label={t("plugins.removeData")}>
-                    <span>{t("plugins.removeConfirm", { name: nameOf(id) })}</span>
-                    <button type="button" class="btn btn--sm" onclick={() => void removeData(info)}>
-                      {t("plugins.removeYes")}
-                    </button>
-                    <button
-                      type="button"
-                      class="btn btn--ghost btn--sm"
-                      onclick={() => (confirming = null)}
-                    >
-                      {t("common.cancel")}
-                    </button>
-                  </span>
-                {:else}
-                  <button
-                    type="button"
-                    class="btn btn--ghost btn--sm"
-                    onclick={() => (confirming = id)}
-                  >
-                    {t("plugins.removeData")}
-                  </button>
-                {/if}
+              {#if canRemoveData(info) && confirming !== id}
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  onclick={() => (confirming = id)}
+                >
+                  {t("plugins.removeData")}
+                </button>
               {/if}
               <input
                 type="checkbox"
@@ -185,6 +169,21 @@
                 onchange={(e) => void setApp(info, e.currentTarget.checked)}
               />
             </div>
+            {#if canRemoveData(info) && confirming === id}
+              <div class="confirm" role="group" aria-label={t("plugins.removeData")}>
+                <span>{t("plugins.removeConfirm", { name: nameOf(id) })}</span>
+                <button type="button" class="btn btn--sm" onclick={() => void removeData(info)}>
+                  {t("plugins.removeYes")}
+                </button>
+                <button
+                  type="button"
+                  class="btn btn--ghost btn--sm"
+                  onclick={() => (confirming = null)}
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            {/if}
           </div>
         {/each}
       </Card>
@@ -273,10 +272,15 @@
     min-height: 24px;
   }
   .confirm {
-    display: inline-flex;
+    grid-column: 1 / -1;
+    display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--sp-2);
+    margin-top: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-control);
+    background: var(--surface);
     font-size: var(--fs-ui-sm);
   }
   @media (max-width: 640px) {

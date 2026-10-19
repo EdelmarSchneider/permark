@@ -5,6 +5,7 @@
   import type { WindowStore } from "../window.svelte";
   import { setExplorer } from "./current";
   import ExplorerPanel from "./ExplorerPanel.svelte";
+  import { ui } from "../shell/ui.svelte";
   import { ExplorerStore } from "./store.svelte";
 
   type Props = { store: WindowStore; document: string | null };
@@ -16,6 +17,7 @@
     linkUpdate: () => store.linkUpdate,
     openProject: (path) => void store.open(path, "ask"),
     referenceTemplate: () => store.referenceTemplate,
+    initProject: (path, name) => ui.askInit(path, name),
   });
 
   // listens while shown (teardown even when the component goes before the first load ends)

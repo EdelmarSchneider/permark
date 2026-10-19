@@ -1359,4 +1359,5 @@ export default {
   "plugin.text-view.name": "Testo semplice",
   "plugin.text-view.about": "Apre testo semplice e altri file di testo per la lettura.",
   "git.backend.row": "Git da usare",
+  "menu.initProject": "Inizializza PerMark…",
 } satisfies Messages;
