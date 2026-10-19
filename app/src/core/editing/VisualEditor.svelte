@@ -8,6 +8,7 @@
   import { conditions } from "../conditions/context.svelte";
   import { t, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
+  import "../doc/markdown.css";
   import EditorToolbar from "./EditorToolbar.svelte";
   import { pictureFiles, pictureLink } from "./pictures";
   import { relativeLink } from "./source/complete";
@@ -207,7 +208,7 @@
             slashIndex = 0;
             if (state && core) {
               const coords = core.view.coordsAtPos(state.to);
-              const box = target.getBoundingClientRect();
+              const box = (target.parentElement ?? target).getBoundingClientRect();
               slashAt = { left: coords.left - box.left, top: coords.bottom - box.top + 4 };
             }
           },
@@ -445,8 +446,8 @@
     {#each targets as target (target)}<option value={target}></option>{/each}
   </datalist>
 
-  <div class="page">
-    <div class="host md-body" bind:this={host}></div>
+  <div class="page md">
+    <div class="host" bind:this={host}></div>
     {#if slash !== null && slashItems.length > 0}
       <div
         class="slash"

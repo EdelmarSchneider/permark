@@ -9,6 +9,7 @@
 import {
   Editor,
   editorViewCtx,
+  editorViewOptionsCtx,
   parserCtx,
   remarkCtx,
   remarkStringifyOptionsCtx,
@@ -230,6 +231,11 @@ export async function createCore(options: CoreOptions): Promise<Core> {
   const editor = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, options.host);
+      // the blocks are the children of `.md-body`: the reading styles apply as they are
+      ctx.update(editorViewOptionsCtx, (previous) => ({
+        ...previous,
+        attributes: { class: "md-body pm-editor", spellcheck: "true" },
+      }));
       ctx.update(remarkStringifyOptionsCtx, (previous) => ({ ...previous, ...STRINGIFY_OPTIONS }));
       // text typed at the edge of a link stays out of it
       ctx.update(linkSchema.key, (previous) => (c) => ({ ...previous(c), inclusive: false }));
