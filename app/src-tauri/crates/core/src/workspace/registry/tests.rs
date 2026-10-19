@@ -373,3 +373,192 @@ impl Fx {
         self.registry.env().apply_app_plugins();
     }
 }
+
+// ---- live reload of the project state (PerMark initialized while the project is open) ---------------------------------
+
+fn open_project(f: &Fx, dir: &Path) -> Arc<ProjectCore> {
+    f.registry.open("main", &project(dir), None).unwrap();
+    take(&f.log);
+    f.sink.take();
+    core_of(f, "main")
+}
+
+#[test]
+fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let core = open_project(&f, dir.path());
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    // nothing changes until the core is told: the plugins still hold the old folder
+    assert_eq!(core.state_location(), StateLocation::Profile);
+    core.reload_state(&env);
+    f.registry.refresh();
+    assert_eq!(core.state_location(), StateLocation::Project);
+    assert_eq!(
+        take(&f.log),
+        ["stop:unread", "stop:git", "start:git", "start:unread"]
+    );
+    let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
+    assert!(names.contains(&"window-changed".to_owned()), "{names:?}");
+    assert!(names.contains(&"context-changed".to_owned()), "{names:?}");
+    assert_eq!(
+        f.registry.context_of("main").unwrap().permark,
+        PermarkCondition::Initialized
+    );
+    match f.registry.window_view("main").unwrap() {
+        WindowView::Showing {
+            workspace: WorkspaceView::Project { state_location, .. },
+            ..
+        } => assert_eq!(state_location, StateLocation::Project),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn a_second_reload_with_nothing_new_still_leaves_the_project_working() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let core = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    for _ in 0..3 {
+        core.reload_state(&env);
+    }
+    let log = take(&f.log);
+    assert_eq!(log.iter().filter(|e| *e == "start:git").count(), 3);
+    assert_eq!(log.iter().filter(|e| *e == "stop:git").count(), 3);
+    assert_eq!(core.running_plugins().len(), 2);
+}
+
+#[test]
+fn a_project_setting_is_written_and_applies_at_once() {
+    use crate::settings::{ProjectSettingChange, TreeShow};
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    let core = open_project(&f, dir.path());
+    // not initialized: refused, nothing written
+    let refused = core.change_config(&ProjectSettingChange::TreeShow(Some(TreeShow::Everything)));
+    assert!(matches!(
+        refused,
+        Err(crate::settings::SettingsError::NotInitialized)
+    ));
+    assert!(!dir.path().join(".permark").exists());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    let config = core
+        .change_config(&ProjectSettingChange::TreeShow(Some(TreeShow::Everything)))
+        .unwrap();
+    assert_eq!(config.tree.show, Some(TreeShow::Everything));
+    assert_eq!(core.config().tree.show, Some(TreeShow::Everything));
+    assert_eq!(
+        core.explorer().default_filter().show,
+        crate::tree::FilterShow::Everything
+    );
+    let text = std::fs::read_to_string(dir.path().join(".permark/config.toml")).unwrap();
+    assert!(text.contains("show = \"everything\""), "{text}");
+    // the commented defaults of the file are still there
+    assert!(text.contains("# PerMark project settings."), "{text}");
+}
+
+#[test]
+fn a_window_on_the_default_filter_follows_the_new_default_and_one_with_its_own_stays() {
+    use crate::settings::{ProjectSettingChange, TreeShow};
+    use crate::tree::{FilterShow, TreeFilter};
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    std::fs::write(dir.path().join("b.json"), "{}").unwrap();
+    let core = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    core.explorer().open_view("main", None);
+    core.explorer().open_view(
+        "w-1",
+        Some(TreeFilter {
+            show: FilterShow::Documents,
+            ..TreeFilter::default()
+        }),
+    );
+    f.sink.take();
+    core.change_config(&ProjectSettingChange::TreeShow(Some(TreeShow::Everything)))
+        .unwrap();
+    let moved: Vec<_> = f
+        .sink
+        .take()
+        .into_iter()
+        .filter_map(|e| match e {
+            crate::events::CoreEvent::TreeChanged(t) => Some(t),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        moved.iter().any(|t| t.window == "main"
+            && t.delta.filter.as_ref().map(|f| f.show) == Some(FilterShow::Everything)),
+        "the window on the default is told its filter moved: {moved:?}"
+    );
+    assert!(
+        moved.iter().all(|t| t.window != "w-1"),
+        "a window with its own filter hears nothing: {moved:?}"
+    );
+}
+
+#[test]
+fn the_ignore_patterns_apply_at_once_and_back() {
+    use crate::settings::ProjectSettingChange;
+    use crate::tree::FilterShow;
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+    std::fs::write(dir.path().join("draft.md"), "# d\n").unwrap();
+    let core = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    crate::state::init_project(&env.dirs, core.root()).unwrap();
+    core.reload_state(&env);
+    let shown = |core: &ProjectCore| -> Vec<String> {
+        let snapshot = core.explorer().open_view(
+            "main",
+            Some(crate::tree::TreeFilter {
+                show: FilterShow::Everything,
+                ..crate::tree::TreeFilter::default()
+            }),
+        );
+        snapshot.nodes.iter().map(|n| n.path.clone()).collect()
+    };
+    assert!(shown(&core).contains(&"draft.md".to_owned()));
+    core.change_config(&ProjectSettingChange::Ignore(vec!["draft.md".to_owned()]))
+        .unwrap();
+    let after = shown(&core);
+    assert!(!after.contains(&"draft.md".to_owned()), "{after:?}");
+    assert!(after.contains(&"a.md".to_owned()));
+    core.change_config(&ProjectSettingChange::Ignore(Vec::new()))
+        .unwrap();
+    assert!(shown(&core).contains(&"draft.md".to_owned()));
+}
+
+#[test]
+fn a_per_project_choice_stops_and_starts_the_plugin_and_is_kept_in_the_profile() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let core = open_project(&f, dir.path());
+    let env = f.registry.env().clone();
+    let git = crate::plugins::PluginId::of("git");
+    core.set_plugin_choice(&env, &git, Some(false)).unwrap();
+    // git off in this project: its dependent (unread) goes with it
+    assert_eq!(
+        take(&f.log),
+        ["stop:unread", "stop:git"],
+        "dependents stop first"
+    );
+    assert_eq!(core.plugin_choices().get(&git), Some(&false));
+    assert!(!core.plugins_on().contains(&git));
+    // the project's own state folder is the profile one: nothing written into the folder
+    assert!(!dir.path().join(".permark").exists());
+    core.set_plugin_choice(&env, &git, None).unwrap();
+    assert_eq!(take(&f.log), ["start:git", "start:unread"]);
+    assert!(core.plugin_choices().is_empty());
+}

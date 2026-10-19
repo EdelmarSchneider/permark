@@ -2,6 +2,7 @@
 //! that key's default); written surgically via `toml_edit` (only the changed key's bytes; comments, order, unknown
 //! keys survive).
 
+mod installer;
 mod project;
 
 use std::collections::BTreeMap;
@@ -12,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use toml_edit::{DocumentMut, Item, Table, Value};
 use ts_rs::TS;
 
-pub use project::{ProjectConfig, TreeConfig, TreeShow};
+pub use installer::installer_language;
+pub use project::{
+    ProjectConfig, ProjectConfigFile, ProjectSettingChange, ProjectSettings, TreeConfig, TreeShow,
+};
 
 use crate::error::IpcError;
 use crate::fsx::write_atomic;
@@ -84,6 +88,10 @@ choice!(
 );
 
 choice!(
+    /// What opening a folder or file over a window that shows a workspace does: ask, reuse the window, or open a new one.
+    OpenIn { Ask = "ask", ThisWindow = "this", NewWindow = "new" } default Ask
+);
+choice!(
     /// Which git the git plugin uses: the one installed (`System`), the built-in one, or the first that works.
     GitBackendPref { Automatic = "automatic", System = "system", Builtin = "builtin" } default Automatic
 );
@@ -136,6 +144,8 @@ pub struct AppSettings {
     pub start_in: StartIn,
     pub link_update: LinkUpdate,
     pub edit_mode: EditModePref,
+    /// What opening something over a shown workspace does.
+    pub open_in: OpenIn,
     /// Which git the git plugin uses (`[plugins.git] backend`).
     pub git_backend: GitBackendPref,
     /// Where the notes are (`[plugins.notes] folder`; empty = the default folder).
@@ -163,6 +173,7 @@ impl Default for AppSettings {
             start_in: StartIn::default(),
             link_update: LinkUpdate::default(),
             edit_mode: EditModePref::default(),
+            open_in: OpenIn::default(),
             git_backend: GitBackendPref::default(),
             notes_folder: String::new(),
             reference_template: DEFAULT_REFERENCE_TEMPLATE.to_owned(),
@@ -185,6 +196,7 @@ pub enum SettingChange {
     StartIn(StartIn),
     LinkUpdate(LinkUpdate),
     EditMode(EditModePref),
+    OpenIn(OpenIn),
     GitBackend(GitBackendPref),
     /// An absolute folder; empty = the default folder.
     NotesFolder(String),
@@ -215,6 +227,7 @@ impl SettingChange {
             Self::StartIn(_) => "start_in".to_owned(),
             Self::LinkUpdate(_) => "link_update".to_owned(),
             Self::EditMode(_) => "edit_mode".to_owned(),
+            Self::OpenIn(_) => "open_in".to_owned(),
             Self::GitBackend(_) => "plugins.git.backend".to_owned(),
             Self::NotesFolder(_) => "plugins.notes.folder".to_owned(),
             Self::ReferenceTemplate(_) => "reference_template".to_owned(),
@@ -240,6 +253,9 @@ pub enum SettingsError {
     /// The value is not acceptable (`reason`: a word the UI can word).
     #[error("{key} is not valid: {reason}")]
     Invalid { key: String, reason: String },
+    /// A project setting was asked for in a folder PerMark is not initialized in.
+    #[error("PerMark is not initialized in this folder")]
+    NotInitialized,
 }
 
 impl From<SettingsError> for IpcError {
@@ -250,6 +266,9 @@ impl From<SettingsError> for IpcError {
                 IpcError::new(crate::error::ErrorKind::InvalidData)
                     .subject(key)
                     .detail(reason)
+            }
+            SettingsError::NotInitialized => {
+                IpcError::new(crate::error::ErrorKind::Unavailable).subject("permark")
             }
         }
     }
@@ -378,6 +397,9 @@ impl AppSettings {
             edit_mode: str_of(doc, "edit_mode")
                 .and_then(EditModePref::parse)
                 .unwrap_or_default(),
+            open_in: str_of(doc, "open_in")
+                .and_then(OpenIn::parse)
+                .unwrap_or_default(),
             git_backend: PluginId::parse("git")
                 .and_then(|git| plugin_tables.get(&git))
                 .and_then(|table| table.0.get("backend")?.as_str())
@@ -429,6 +451,7 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
         SettingChange::StartIn(v) => set_keeping_decor(root, "start_in", v.as_str().into()),
         SettingChange::LinkUpdate(v) => set_keeping_decor(root, "link_update", v.as_str().into()),
         SettingChange::EditMode(v) => set_keeping_decor(root, "edit_mode", v.as_str().into()),
+        SettingChange::OpenIn(v) => set_keeping_decor(root, "open_in", v.as_str().into()),
         SettingChange::GitBackend(v) => {
             set_plugin_key(
                 root,
@@ -566,34 +589,60 @@ impl SettingsFile {
     /// `Invalid` value; IO failure writing the file.
     pub fn apply(&self, change: &SettingChange) -> Result<AppSettings, SettingsError> {
         change.validate()?;
-        let original = std::fs::read_to_string(&self.path).unwrap_or_default();
-        let exists = std::fs::symlink_metadata(&self.path).is_ok();
-        let mut doc = if let Some(doc) = read_doc(&self.path) {
-            doc
-        } else {
-            if exists {
-                let ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map_or(0, |d| d.as_millis());
-                let backup = self
-                    .path
-                    .with_file_name(format!("settings.toml.broken-{ms}"));
-                std::fs::rename(&self.path, &backup).map_err(|source| SettingsError::Io {
-                    path: self.path.display().to_string(),
-                    source,
-                })?;
-            }
-            DocumentMut::new()
-        };
-        apply_change(&mut doc, change);
-        write_atomic(&self.path, render(&doc, &original).as_bytes()).map_err(|source| {
-            SettingsError::Io {
-                path: self.path.display().to_string(),
-                source,
-            }
-        })?;
+        let doc = edit_file(&self.path, |doc| apply_change(doc, change))?;
         Ok(AppSettings::from_doc(&doc))
     }
+
+    /// First start: the language the installer recorded becomes the `language` setting, once. Nothing happens when
+    /// the file already has a `language` key (the person's own pick, `system` included, always wins: a reinstall in
+    /// another language never replaces it) or when nothing was recorded. Returns the settings when it wrote.
+    ///
+    /// # Errors
+    /// IO failure writing the file.
+    pub fn adopt_language(
+        &self,
+        recorded: Option<LanguagePref>,
+    ) -> Result<Option<AppSettings>, SettingsError> {
+        let Some(language) = recorded else {
+            return Ok(None);
+        };
+        if read_doc(&self.path).is_some_and(|doc| doc.contains_key("language")) {
+            return Ok(None);
+        }
+        self.apply(&SettingChange::Language(language)).map(Some)
+    }
+}
+
+/// Reads a settings file fresh (hand edits kept; a file that is not TOML is moved to `<name>.broken-<ms>` first),
+/// lets `change` edit the document, writes it back atomically (line endings of an all-CRLF file kept).
+pub(crate) fn edit_file(
+    path: &Path,
+    change: impl FnOnce(&mut DocumentMut),
+) -> Result<DocumentMut, SettingsError> {
+    let io = |source: io::Error| SettingsError::Io {
+        path: path.display().to_string(),
+        source,
+    };
+    let original = std::fs::read_to_string(path).unwrap_or_default();
+    let exists = std::fs::symlink_metadata(path).is_ok();
+    let mut doc = if let Some(doc) = read_doc(path) {
+        doc
+    } else {
+        if exists {
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis());
+            let name = path
+                .file_name()
+                .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+            std::fs::rename(path, path.with_file_name(format!("{name}.broken-{ms}")))
+                .map_err(io)?;
+        }
+        DocumentMut::new()
+    };
+    change(&mut doc);
+    write_atomic(path, render(&doc, &original).as_bytes()).map_err(io)?;
+    Ok(doc)
 }
 
 #[cfg(test)]

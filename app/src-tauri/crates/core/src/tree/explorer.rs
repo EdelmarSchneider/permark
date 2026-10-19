@@ -25,6 +25,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 /// One window's view of the tree: its filter and the list it was last told.
 struct View {
     compiled: Compiled,
+    /// The person chose this filter (else the view follows the project's default).
+    own: bool,
+    /// The filter changed by itself: the next delta carries it.
+    filter_moved: bool,
     keep: Option<String>,
     list: Vec<TreeNode>,
     total: u32,
@@ -75,7 +79,7 @@ pub struct Explorer {
     kept_dirs: Mutex<HashSet<String>>,
     /// Keys of the project paths some document links to (search link index): assets shown wherever they sit.
     linked: Mutex<Arc<HashSet<String>>>,
-    default_filter: TreeFilter,
+    default_filter: Mutex<TreeFilter>,
     sink: Arc<dyn EventSink>,
 }
 
@@ -121,7 +125,7 @@ impl Explorer {
             views: Mutex::new(HashMap::new()),
             kept_dirs: Mutex::new(HashSet::new()),
             linked: Mutex::new(Arc::new(HashSet::new())),
-            default_filter: TreeFilter::from_config(&config.tree),
+            default_filter: Mutex::new(TreeFilter::from_config(&config.tree)),
             sink,
         }
     }
@@ -137,8 +141,25 @@ impl Explorer {
 
     /// The default filter of the project (`[tree]`).
     #[must_use]
-    pub fn default_filter(&self) -> &TreeFilter {
-        &self.default_filter
+    pub fn default_filter(&self) -> TreeFilter {
+        lock(&self.default_filter).clone()
+    }
+
+    /// The project's config changed: the default filter + the `ignore` patterns count from now on. Views that follow the
+    /// default move to it; the caller then publishes a rescan batch (the tree is walked again and windows are told).
+    pub fn reconfigure(&self, config: &ProjectConfig) {
+        let filter = TreeFilter::from_config(&config.tree);
+        *lock(&self.default_filter) = filter.clone();
+        for root in &self.roots {
+            root.ignorer.set_extra(&config.ignore);
+            root.ignorer.clear();
+        }
+        for view in lock(&self.views).values_mut() {
+            if !view.own && view.compiled.filter != filter {
+                view.compiled = Compiled::new(filter.clone());
+                view.filter_moved = true;
+            }
+        }
     }
 
     fn model(&self) -> MutexGuard<'_, Option<TreeModel>> {
@@ -184,8 +205,11 @@ impl Explorer {
         let mut views = lock(&self.views);
         let keep = views.get(window).and_then(|v| v.keep.clone());
         let seq = views.get(window).map_or(0, |v| v.seq + 1);
+        let own = filter.is_some();
         let mut view = View {
-            compiled: Compiled::new(filter.unwrap_or_else(|| self.default_filter.clone())),
+            compiled: Compiled::new(filter.unwrap_or_else(|| self.default_filter())),
+            own,
+            filter_moved: false,
             keep,
             list: Vec::new(),
             total: 0,
@@ -336,7 +360,8 @@ impl Explorer {
     ) {
         let (removed, added) = diff(&view.list, &visible.nodes);
         let counts_changed = view.total != visible.total_files || view.shown != visible.shown_files;
-        if removed.is_empty() && added.is_empty() && !counts_changed {
+        let filter = std::mem::take(&mut view.filter_moved).then(|| view.compiled.filter.clone());
+        if removed.is_empty() && added.is_empty() && !counts_changed && filter.is_none() {
             return;
         }
         let old_paths: HashSet<&str> = view.list.iter().map(|n| n.path.as_str()).collect();
@@ -359,6 +384,7 @@ impl Explorer {
                 total_files: view.total,
                 shown_files: view.shown,
                 bulk,
+                filter,
             },
         }));
     }

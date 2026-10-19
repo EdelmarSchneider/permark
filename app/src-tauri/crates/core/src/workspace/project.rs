@@ -20,10 +20,12 @@ use crate::plugins::{
     Services,
 };
 use crate::search::{SearchFilter, SearchIndex, SearchOptions};
-use crate::settings::{AppSettings, ProjectConfig};
+use crate::settings::{
+    AppSettings, ProjectConfig, ProjectConfigFile, ProjectSettingChange, SettingsError,
+};
 use crate::state::{AppDirs, ProjectId, StateData, StateLocation, StateStore};
 use crate::tree::Explorer;
-use crate::watch::{LiveStatus, OwnWrites, StatusHook, Subscription, WatchHub, Watcher};
+use crate::watch::{FsBatch, LiveStatus, OwnWrites, StatusHook, Subscription, WatchHub, Watcher};
 
 /// Process-wide services every workspace uses.
 pub struct CoreEnv {
@@ -252,8 +254,9 @@ pub struct ProjectCore {
     hub: Arc<WatchHub>,
     id: ProjectId,
     vault: Vault,
-    store: StateStore,
-    config: ProjectConfig,
+    /// Where the project's state lives; moves when PerMark is initialized in the folder (`reload_state`).
+    store: RwLock<StateStore>,
+    config: RwLock<ProjectConfig>,
     enablement: Mutex<BTreeMap<PluginId, Enablement>>,
     plugins: Mutex<PluginSet>,
     // what the plugins share; they outlive the plugins (stopped first in Drop)
@@ -351,8 +354,8 @@ impl ProjectCore {
             explorer,
             hub,
             id,
-            store,
-            config,
+            store: RwLock::new(store),
+            config: RwLock::new(config),
             vault,
             enablement: Mutex::new(BTreeMap::new()),
             plugins: Mutex::new(PluginSet::new(PluginScope::Project)),
@@ -475,19 +478,108 @@ impl ProjectCore {
         &self.vault
     }
 
+    /// The project's state store now (a clone: it moves when PerMark is initialized in the folder).
     #[must_use]
-    pub fn store(&self) -> &StateStore {
-        &self.store
+    pub fn store(&self) -> StateStore {
+        self.store
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
+    /// The project's shared settings now.
     #[must_use]
-    pub fn config(&self) -> &ProjectConfig {
-        &self.config
+    pub fn config(&self) -> ProjectConfig {
+        self.config
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     #[must_use]
     pub fn state_location(&self) -> StateLocation {
-        self.store.location()
+        self.store().location()
+    }
+
+    /// PerMark was initialized in this folder: the state folder and the config are read again, the file operations'
+    /// journal moves, the project plugins start over on the new state, the tree is walked again. The caller tells the
+    /// windows (`WorkspaceRegistry::refresh`).
+    pub fn reload_state(&self, env: &CoreEnv) {
+        let store = StateStore::for_project(&env.dirs, self.vault.main());
+        let config = ProjectConfig::load(self.vault.main());
+        *self.store.write().unwrap_or_else(PoisonError::into_inner) = store.clone();
+        *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
+        self.fileops.use_store(&store);
+        self.explorer.reconfigure(&config);
+        self.plugins
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stop_all();
+        self.apply_plugins(env);
+        self.rescan();
+    }
+
+    /// One setting of `.permark/config.toml` changed: written surgically, then live (the Explorer's default filter, the
+    /// ignore rules; the agent reads the file at each call).
+    ///
+    /// # Errors
+    /// `NotInitialized`, an invalid value, an IO failure.
+    pub fn change_config(
+        &self,
+        change: &ProjectSettingChange,
+    ) -> Result<ProjectConfig, SettingsError> {
+        let config = ProjectConfigFile::of(self.vault.main()).apply(change)?;
+        *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
+        self.explorer.reconfigure(&config);
+        self.rescan();
+        Ok(config)
+    }
+
+    /// Everything that keeps a picture of the disk builds it again (the rules that decide what is listed changed).
+    fn rescan(&self) {
+        self.hub.publish(&FsBatch {
+            rescan: true,
+            bulk: true,
+            ..FsBatch::default()
+        });
+    }
+
+    /// The person's own choice for plugin `id` in this project (`None`: follow the app), kept in the profile; the
+    /// project's plugins are brought to it.
+    ///
+    /// # Errors
+    /// The choices file cannot be written.
+    pub fn set_plugin_choice(
+        &self,
+        env: &CoreEnv,
+        id: &PluginId,
+        choice: Option<bool>,
+    ) -> Result<(), crate::state::StateError> {
+        let file = self
+            .store()
+            .profile_file::<ProjectPluginChoices>(PLUGIN_CHOICES_FILE);
+        let mut choices = file.load().into_value();
+        match choice {
+            Some(on) => {
+                choices.choices.insert(id.clone(), on);
+            }
+            None => {
+                choices.choices.remove(id);
+            }
+        }
+        file.save(&choices)?;
+        self.apply_plugins(env);
+        Ok(())
+    }
+
+    /// The person's per-project plugin choices.
+    #[must_use]
+    pub fn plugin_choices(&self) -> BTreeMap<PluginId, bool> {
+        self.store()
+            .profile_file::<ProjectPluginChoices>(PLUGIN_CHOICES_FILE)
+            .load()
+            .into_value()
+            .choices
     }
 
     /// Enablement with this project's overrides.
@@ -516,7 +608,7 @@ impl ProjectCore {
     /// Re-resolves enablement (settings | choices changed) and starts | stops project plugins to match.
     pub fn apply_plugins(&self, env: &CoreEnv) {
         let (enablement, on) =
-            project_enablement(env, &self.config, &self.store, self.files_only.as_ref());
+            project_enablement(env, &self.config(), &self.store(), self.files_only.as_ref());
         self.start_plugins(env, enablement, &on);
     }
 
@@ -536,6 +628,8 @@ impl ProjectCore {
         on: &BTreeSet<PluginId>,
     ) {
         let settings = env.settings();
+        let store = self.store();
+        let config = self.config();
         *self
             .enablement
             .lock()
@@ -552,21 +646,19 @@ impl ProjectCore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .apply(&env.registry, on, |id| {
-                let table = merged_table(
-                    settings.plugin_tables.get(id),
-                    self.config.plugin_tables.get(id),
-                );
+                let table =
+                    merged_table(settings.plugin_tables.get(id), config.plugin_tables.get(id));
                 let cx = PluginCx::new(
                     id.clone(),
                     CxWorkspace::Project(self.vault.clone()),
-                    self.store.plugin_dir(id),
+                    store.plugin_dir(id),
                     table,
                     context.clone(),
                     Arc::clone(&env.sink),
                 )
                 .with_watch(Arc::clone(&self.hub))
                 .with_project(self.project_services())
-                .with_store(self.store.clone());
+                .with_store(store.clone());
                 if self.files_only.is_some() {
                     cx.with_files_only()
                 } else {

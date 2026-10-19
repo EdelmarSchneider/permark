@@ -133,6 +133,8 @@ pub struct TreeDelta {
     pub shown_files: u32,
     /// Many changes at once (git operation, large move): the UI may batch its reaction.
     pub bulk: bool,
+    /// The window's filter now, when it changed by itself (the project's default moved and the window follows it).
+    pub filter: Option<TreeFilter>,
 }
 
 impl TreeDelta {

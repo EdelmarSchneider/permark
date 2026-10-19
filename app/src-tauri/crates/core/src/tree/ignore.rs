@@ -33,7 +33,8 @@ pub struct DirHints {
 #[derive(Debug)]
 pub struct Ignorer {
     root: PathBuf,
-    extra: Option<Gitignore>,
+    /// The project's own `ignore` patterns (changes while the project is open).
+    extra: Mutex<Option<Arc<Gitignore>>>,
     global: Option<Arc<Gitignore>>,
     /// Folder -> matcher of its `.gitignore` + `.ignore` (None: it has neither).
     folders: Mutex<HashMap<PathBuf, Option<Arc<Gitignore>>>>,
@@ -68,6 +69,18 @@ fn matcher_of(files: &[PathBuf], base: &Path) -> Option<Arc<Gitignore>> {
     builder.build().ok().filter(|g| !g.is_empty()).map(Arc::new)
 }
 
+/// The matcher of the project's own `ignore` patterns (None: no pattern).
+fn extra_layer(root: &Path, patterns: &[String]) -> Option<Arc<Gitignore>> {
+    if patterns.is_empty() {
+        return None;
+    }
+    let mut b = builder(root);
+    for line in patterns {
+        let _ = b.add_line(None, line);
+    }
+    b.build().ok().filter(|g| !g.is_empty()).map(Arc::new)
+}
+
 /// Verdict of one layer: `Some(true)` ignored, `Some(false)` whitelisted, `None` no opinion.
 fn verdict(layer: &Gitignore, path: &Path, is_dir: bool) -> Option<bool> {
     let found = layer.matched(path, is_dir);
@@ -84,22 +97,18 @@ impl Ignorer {
     /// `extra`: the project's `ignore` patterns; `global`: the user's global excludes (None: none).
     #[must_use]
     pub fn new(root: &Path, extra: &[String], global: Option<Gitignore>) -> Self {
-        let extra = if extra.is_empty() {
-            None
-        } else {
-            let mut b = builder(root);
-            for line in extra {
-                let _ = b.add_line(None, line);
-            }
-            b.build().ok().filter(|g| !g.is_empty())
-        };
         Self {
             root: root.to_path_buf(),
-            extra,
+            extra: Mutex::new(extra_layer(root, extra)),
             global: global.filter(|g| !g.is_empty()).map(Arc::new),
             folders: Mutex::new(HashMap::new()),
             repos: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The project's `ignore` patterns changed: the new ones count from now on (the caller walks the tree again).
+    pub fn set_extra(&self, patterns: &[String]) {
+        *lock(&self.extra) = extra_layer(&self.root, patterns);
     }
 
     /// The user's global excludes file as git reads it.
@@ -244,8 +253,7 @@ impl Ignorer {
     #[must_use]
     pub fn is_ignored(&self, frames: &Frames, path: &Path, is_dir: bool) -> bool {
         let ignored = (is_dir && path.file_name().is_some_and(|n| n == DEPENDENCY_DIR))
-            || self
-                .extra
+            || lock(&self.extra)
                 .as_ref()
                 .and_then(|g| verdict(g, path, is_dir))
                 .unwrap_or(false)

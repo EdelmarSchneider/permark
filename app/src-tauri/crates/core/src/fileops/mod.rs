@@ -276,9 +276,8 @@ pub struct FileOps {
     vault: Vault,
     explorer: Arc<Explorer>,
     own: Arc<OwnWrites>,
-    journal: StateFile<Journal>,
-    /// One journal read-modify-write at a time.
-    journal_lock: Mutex<()>,
+    /// The undo journal; locked for one read-modify-write at a time. Moves with the project's state folder.
+    journal: Mutex<StateFile<Journal>>,
     plans: Mutex<Plans>,
 }
 
@@ -300,8 +299,7 @@ impl FileOps {
             vault,
             explorer,
             own,
-            journal: store.file::<Journal>(JOURNAL_FILE),
-            journal_lock: Mutex::new(()),
+            journal: Mutex::new(store.file::<Journal>(JOURNAL_FILE)),
             plans: Mutex::new(Plans::default()),
         }
     }
@@ -310,22 +308,26 @@ impl FileOps {
         Ok(VaultPath::parse(path)?)
     }
 
+    /// The project's state folder moved (PerMark was initialized): the journal goes on in the new one.
+    pub fn use_store(&self, store: &crate::state::StateStore) {
+        *lock(&self.journal) = store.file::<Journal>(JOURNAL_FILE);
+    }
+
     fn record(&self, op: Op) {
-        let _guard = lock(&self.journal_lock);
-        let mut journal = self.journal.load().into_value();
+        let file = lock(&self.journal);
+        let mut journal = file.load().into_value();
         journal.push(Entry {
             at_ms: now_ms(),
             op,
         });
         // best effort: an operation that cannot be journaled is done all the same, just not undoable
-        let _ = self.journal.save(&journal);
+        let _ = file.save(&journal);
     }
 
     /// Entries the next undo would take back (newest first count).
     #[must_use]
     pub fn undo_depth(&self) -> usize {
-        let _guard = lock(&self.journal_lock);
-        self.journal.load().into_value().entries.len()
+        lock(&self.journal).load().into_value().entries.len()
     }
 
     // ---- move ------------------------------------------------------------------------------------------------
@@ -676,12 +678,12 @@ impl FileOps {
     /// Only when the journal cannot be written; what could not be put back is in the outcome.
     pub fn undo(&self) -> Result<Option<UndoOutcome>, FileOpError> {
         let entry = {
-            let _guard = lock(&self.journal_lock);
-            let mut journal = self.journal.load().into_value();
+            let file = lock(&self.journal);
+            let mut journal = file.load().into_value();
             let Some(entry) = journal.entries.pop() else {
                 return Ok(None);
             };
-            self.journal.save(&journal).map_err(|e| FileOpError::Io {
+            file.save(&journal).map_err(|e| FileOpError::Io {
                 path: JOURNAL_FILE.to_owned(),
                 source: io::Error::other(e.to_string()),
             })?;

@@ -548,3 +548,302 @@ fn a_notes_folder_must_be_absolute_and_sane() {
         );
     }
 }
+
+// ---- open_in, installer language, project settings writes --------------------------------------------------------------
+
+#[test]
+fn open_in_round_trips_and_an_invalid_value_reads_as_ask() {
+    for &choice in OpenIn::ALL {
+        let text = applied("", &SettingChange::OpenIn(choice));
+        assert_eq!(AppSettings::from_doc(&doc(&text)).open_in, choice);
+    }
+    assert_eq!(
+        AppSettings::from_doc(&doc("open_in = \"tabs\"\n")).open_in,
+        OpenIn::Ask
+    );
+    assert_eq!(SettingChange::OpenIn(OpenIn::NewWindow).key(), "open_in");
+}
+
+#[test]
+fn installer_codes_are_one_of_the_six_and_nothing_else() {
+    use super::installer::language_from_code;
+    assert_eq!(language_from_code("en"), Some(LanguagePref::En));
+    assert_eq!(language_from_code(" pt-BR\r\n"), Some(LanguagePref::PtBr));
+    assert_eq!(language_from_code("zh-CN"), Some(LanguagePref::ZhCn));
+    assert_eq!(
+        language_from_code("de\0"),
+        None,
+        "a stray NUL is not a code"
+    );
+    for other in ["", "system", "klingon", "EN", "pt", "zh-TW", "en,de"] {
+        assert_eq!(language_from_code(other), None, "{other:?}");
+    }
+}
+
+fn settings_file(dir: &Path) -> SettingsFile {
+    let dirs = crate::state::AppDirs::under(dir);
+    fs::create_dir_all(&dirs.profile).unwrap();
+    SettingsFile::app(&dirs)
+}
+
+#[test]
+fn the_installer_language_is_adopted_once_and_never_over_a_choice() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    // nothing recorded: nothing written
+    assert!(file.adopt_language(None).unwrap().is_none());
+    assert!(!file.path().exists());
+    // first start: written
+    let first = file
+        .adopt_language(Some(LanguagePref::De))
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.language, LanguagePref::De);
+    assert_eq!(file.load().language, LanguagePref::De);
+    // a later reinstall in another language never replaces it
+    assert!(file
+        .adopt_language(Some(LanguagePref::It))
+        .unwrap()
+        .is_none());
+    assert_eq!(file.load().language, LanguagePref::De);
+    // the person picks "system": that is a choice too
+    file.apply(&SettingChange::Language(LanguagePref::System))
+        .unwrap();
+    assert!(file
+        .adopt_language(Some(LanguagePref::En))
+        .unwrap()
+        .is_none());
+    assert_eq!(file.load().language, LanguagePref::System);
+}
+
+#[test]
+fn the_installer_language_keeps_other_keys_and_a_corrupt_file_is_set_aside() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    fs::write(file.path(), "# mine\r\ntheme = \"dark\" # night\r\n").unwrap();
+    file.adopt_language(Some(LanguagePref::Es))
+        .unwrap()
+        .unwrap();
+    let text = fs::read_to_string(file.path()).unwrap();
+    assert!(text.contains("theme = \"dark\" # night\r\n"), "{text:?}");
+    assert!(text.contains("# mine\r\n") && !text.replace("\r\n", "").contains('\n'));
+    assert_eq!(file.load().language, LanguagePref::Es);
+    // not TOML: moved aside, defaults + the language written
+    fs::write(file.path(), "language = [[[").unwrap();
+    file.adopt_language(Some(LanguagePref::It))
+        .unwrap()
+        .unwrap();
+    assert_eq!(file.load().language, LanguagePref::It);
+    let backups = fs::read_dir(file.path().parent().unwrap())
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
+        .count();
+    assert_eq!(backups, 1);
+}
+
+fn project_applied(text: &str, change: &ProjectSettingChange) -> String {
+    let mut d = doc(text);
+    project::apply_project_change(&mut d, change);
+    render(&d, text)
+}
+
+fn list(items: &[&str]) -> Vec<String> {
+    items.iter().map(|s| (*s).to_owned()).collect()
+}
+
+#[test]
+fn every_project_setting_round_trips_through_the_file() {
+    let mut text = DEFAULT_CONFIG_TOML.to_owned();
+    for change in [
+        ProjectSettingChange::TreeShow(Some(TreeShow::DocsAndAssets)),
+        ProjectSettingChange::TreeInclude(list(&["*.sql", "db/**"])),
+        ProjectSettingChange::TreeExclude(list(&["archive/**"])),
+        ProjectSettingChange::Ignore(list(&["drafts/", "*.generated.md"])),
+        ProjectSettingChange::AgentDeny(list(&["notes", "comments.resolve"])),
+        ProjectSettingChange::AgentDenyPaths(list(&["secret/**"])),
+    ] {
+        text = project_applied(&text, &change);
+    }
+    let config = ProjectConfig::from_doc(&doc(&text));
+    assert_eq!(config.tree.show, Some(TreeShow::DocsAndAssets));
+    assert_eq!(config.tree.include, list(&["*.sql", "db/**"]));
+    assert_eq!(config.tree.exclude, list(&["archive/**"]));
+    assert_eq!(config.ignore, list(&["drafts/", "*.generated.md"]));
+    assert!(config.agent_deny.contains("notes") && config.agent_deny.contains("comments.resolve"));
+    assert_eq!(config.agent_deny_paths, list(&["secret/**"]));
+    // the commented defaults are still explaining the file
+    assert!(text.contains("# PerMark project settings."));
+    assert!(text.contains("# Turn a plugin off for everyone in this project."));
+}
+
+#[test]
+fn removing_every_project_setting_gives_the_file_back_byte_for_byte() {
+    let mut text = DEFAULT_CONFIG_TOML.to_owned();
+    let changes = [
+        ProjectSettingChange::TreeShow(Some(TreeShow::Custom)),
+        ProjectSettingChange::TreeInclude(list(&["a"])),
+        ProjectSettingChange::TreeExclude(list(&["b"])),
+        ProjectSettingChange::Ignore(list(&["c"])),
+        ProjectSettingChange::AgentDeny(list(&["notes"])),
+        ProjectSettingChange::AgentDenyPaths(list(&["d"])),
+    ];
+    for change in &changes {
+        text = project_applied(&text, change);
+    }
+    assert_ne!(text, DEFAULT_CONFIG_TOML);
+    let clears = [
+        ProjectSettingChange::TreeShow(None),
+        ProjectSettingChange::TreeInclude(Vec::new()),
+        ProjectSettingChange::TreeExclude(Vec::new()),
+        ProjectSettingChange::Ignore(Vec::new()),
+        ProjectSettingChange::AgentDeny(Vec::new()),
+        ProjectSettingChange::AgentDenyPaths(Vec::new()),
+    ];
+    for change in &clears {
+        text = project_applied(&text, change);
+    }
+    assert_eq!(text, DEFAULT_CONFIG_TOML, "nothing of ours is left behind");
+}
+
+#[test]
+fn a_project_write_keeps_hand_edits_comments_unknown_keys_and_crlf() {
+    let hand = "# team file\r\nignore = [\"old/\"] # kept for CI\r\nfuture = 1\r\n\r\n[tree]\r\nshow = \"documents\" # default\r\n\r\n[plugins.word-count]\r\nenabled = false\r\n";
+    let out = project_applied(
+        hand,
+        &ProjectSettingChange::TreeShow(Some(TreeShow::Everything)),
+    );
+    assert_eq!(
+        out,
+        hand.replace("\"documents\" # default", "\"everything\" # default")
+    );
+    let out = project_applied(hand, &ProjectSettingChange::Ignore(list(&["new/"])));
+    assert!(
+        out.contains("ignore = [\"new/\"] # kept for CI\r\n"),
+        "{out:?}"
+    );
+    assert!(out.contains("future = 1") && out.contains("enabled = false"));
+    assert!(!out.replace("\r\n", "").contains('\n'), "CRLF kept");
+}
+
+#[test]
+fn project_lists_are_trimmed_and_deduplicated_and_garbage_is_refused() {
+    let out = project_applied(
+        "",
+        &ProjectSettingChange::Ignore(list(&[" a/ ", "a/", "b"])),
+    );
+    assert_eq!(
+        ProjectConfig::from_doc(&doc(&out)).ignore,
+        list(&["a/", "b"])
+    );
+    let many: Vec<String> = (0..201).map(|n| format!("p{n}")).collect();
+    let refuse = |change: ProjectSettingChange, reason: &str| match change.validate() {
+        Err(SettingsError::Invalid { reason: got, .. }) => assert_eq!(got, reason),
+        other => panic!("{other:?}"),
+    };
+    refuse(ProjectSettingChange::Ignore(many), "tooMany");
+    refuse(ProjectSettingChange::Ignore(list(&["a", "  "])), "empty");
+    refuse(
+        ProjectSettingChange::Ignore(vec!["x".repeat(301)]),
+        "tooLong",
+    );
+    refuse(ProjectSettingChange::Ignore(list(&["a\nb"])), "control");
+    refuse(ProjectSettingChange::Ignore(list(&["a\0"])), "control");
+    refuse(ProjectSettingChange::AgentDeny(list(&["Notes"])), "group");
+    refuse(ProjectSettingChange::AgentDeny(list(&["a.b.c"])), "group");
+    refuse(
+        ProjectSettingChange::AgentDeny(list(&["comments."])),
+        "group",
+    );
+    refuse(
+        ProjectSettingChange::AgentDeny(vec!["a".repeat(33)]),
+        "group",
+    );
+    assert!(
+        ProjectSettingChange::AgentDeny(list(&["comments.resolve", "show"]))
+            .validate()
+            .is_ok()
+    );
+    // exactly 200 entries of 300 characters are fine
+    let edge: Vec<String> = (0..200).map(|n| format!("{n:0>300}")).collect();
+    assert!(ProjectSettingChange::AgentDenyPaths(edge)
+        .validate()
+        .is_ok());
+}
+
+#[test]
+fn the_project_file_is_written_only_inside_a_real_permark_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let file = ProjectConfigFile::of(&root);
+    let change = ProjectSettingChange::Ignore(list(&["x/"]));
+    assert!(matches!(
+        file.apply(&change),
+        Err(SettingsError::NotInitialized)
+    ));
+    assert!(!dir.path().join(".permark").exists());
+    // `.permark` is a file: not initialized, nothing replaced
+    fs::write(dir.path().join(".permark"), "not a folder").unwrap();
+    assert!(matches!(
+        file.apply(&change),
+        Err(SettingsError::NotInitialized)
+    ));
+    assert_eq!(
+        fs::read_to_string(dir.path().join(".permark")).unwrap(),
+        "not a folder"
+    );
+    fs::remove_file(dir.path().join(".permark")).unwrap();
+    // a real folder without a config: the file is made
+    fs::create_dir(dir.path().join(".permark")).unwrap();
+    assert!(file.initialized());
+    let config = file.apply(&change).unwrap();
+    assert_eq!(config.ignore, list(&["x/"]));
+    assert_eq!(
+        ProjectConfig::load(&root).ignore,
+        list(&["x/"]),
+        "the file on disk says it"
+    );
+    // a hand-broken file is set aside, the setting is still written
+    fs::write(dir.path().join(".permark/config.toml"), "ignore = [[[").unwrap();
+    file.apply(&change).unwrap();
+    assert_eq!(ProjectConfig::load(&root).ignore, list(&["x/"]));
+    let aside = fs::read_dir(dir.path().join(".permark"))
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().contains(".broken-"))
+        .count();
+    assert_eq!(aside, 1);
+}
+
+#[test]
+fn a_project_config_over_a_unicode_and_space_path_is_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let folder = dir.path().join("meu projeto — 项目");
+    fs::create_dir_all(folder.join(".permark")).unwrap();
+    let root = Root::open(&folder).unwrap();
+    let file = ProjectConfigFile::of(&root);
+    file.apply(&ProjectSettingChange::AgentDenyPaths(list(&["ação/**"])))
+        .unwrap();
+    assert_eq!(
+        ProjectConfig::load(&root).agent_deny_paths,
+        list(&["ação/**"])
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_config_file_that_is_a_link_is_not_written_through() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    fs::create_dir(dir.path().join(".permark")).unwrap();
+    let outside = dir.path().join("outside.toml");
+    fs::write(&outside, "ignore = [\"keep/\"]\n").unwrap();
+    std::os::unix::fs::symlink(&outside, dir.path().join(".permark/config.toml")).unwrap();
+    let file = ProjectConfigFile::of(&root);
+    let refused = file.apply(&ProjectSettingChange::Ignore(list(&["x/"])));
+    assert!(matches!(refused, Err(SettingsError::Invalid { .. })));
+    assert_eq!(
+        fs::read_to_string(&outside).unwrap(),
+        "ignore = [\"keep/\"]\n"
+    );
+}
