@@ -401,7 +401,7 @@
             "comment": null,
             "end": 3,
             "line": 1,
-            "path": "L1",
+            "path": "section-1",
             "rows": [
               {
                 "comment": null,
@@ -436,7 +436,7 @@
             "comment": null,
             "end": 9,
             "line": 5,
-            "path": "L5",
+            "path": "section-5",
             "rows": [
               {
                 "comment": null,
@@ -497,7 +497,7 @@
             "comment": null,
             "end": 14,
             "line": 11,
-            "path": "L11",
+            "path": "section-11",
             "rows": [
               {
                 "comment": null,
