@@ -1,0 +1,47 @@
+{
+  "name": "permark",
+  "version": "0.5.8",
+  "description": "Read what your AI writes. Write what it reads. A free, open-source Markdown app.",
+  "license": "MIT OR Apache-2.0",
+  "author": "Edelmar Schneider",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/EdelmarSchneider/permark"
+  },
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "vite --mode mock",
+    "build": "vite build",
+    "tauri": "tauri",
+    "fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all && prettier --write .",
+    "fmt:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check && prettier --check .",
+    "lint": "cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-targets -- -D warnings && svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "test": "cargo test --manifest-path src-tauri/Cargo.toml --workspace && vitest run",
+    "check": "npm run version:check && npm run fmt:check && npm run build && npm run lint && npm run test",
+    "version:sync": "node scripts/version.mjs sync",
+    "version:check": "node scripts/version.mjs check"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "@tauri-apps/api": "^2.12.3"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tauri-apps/cli": "^2.12.2",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/node": "^24.19.2",
+    "prettier": "^3.9.10",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.57.2",
+    "svelte-check": "^4.7.6",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules
+dist
+package-lock.json
+src-tauri
+src/api/generated
+.claude
+*.md

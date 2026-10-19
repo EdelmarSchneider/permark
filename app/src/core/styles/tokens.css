@@ -1,0 +1,240 @@
+/* Design tokens (look parity with PerMark 0.5). Light = default; app sets data-theme="light|dark" on <html> after
+   resolving "system", and data-tone="white|paper|sage|gray" for the light theme. Components use tokens only. */
+
+:root {
+  /* spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+  /* radius */
+  --radius-control: 6px;
+  --radius-card: 10px;
+  /* type */
+  --font-ui:
+    "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  --font-reading:
+    "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  --font-code:
+    "JetBrains Mono Variable", "JetBrains Mono", "Cascadia Code", Consolas, "Microsoft YaHei UI",
+    "PingFang SC", "Noto Sans CJK SC", monospace;
+  --fs-ui: 13px;
+  --fs-ui-sm: 12px;
+  --fs-ui-xs: 11px;
+  --fs-reading: 16.5px;
+  --lh-reading: 1.7;
+  --fs-code: 13.5px;
+  --measure: 760px;
+  --measure-wide: 1100px;
+  /* layout */
+  --w-activity: 44px;
+  --w-sidebar: 260px;
+  --w-right: 280px;
+  --h-status: 24px;
+  --h-header: 44px;
+  /* motion */
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-panel: 150ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --dur-glow: 2.5s;
+  --dur-locate: 1.5s;
+}
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --surface: #f7f7f8;
+  --surface-2: #efeff1;
+  --border: #e6e6e9;
+  --border-strong: #d4d4d9;
+  --text: #1f2328;
+  --muted: #656d76;
+  --faint: #8b929a;
+  --accent: #4f6bed;
+  --accent-fg: #ffffff;
+  --accent-text: #4259e0; /* accent as small text: 4.9:1 even on surface-2 (the accent itself is 3.9:1 there) */
+  --accent-soft: rgb(79 107 237 / 0.1);
+  --accent-muted: rgb(79 107 237 / 0.45);
+  --live: rgb(79 107 237 / 0.18); /* live-change glow, design-system spec */
+  --hover: rgb(31 35 40 / 0.05);
+  --pressed: rgb(31 35 40 / 0.09);
+  /* git: base colors for dots, darker text variants for AA on light backgrounds */
+  --git-modified: #d29922;
+  --git-added: #3fb950;
+  --git-deleted: #f85149;
+  --git-renamed: #a371f7;
+  --git-modified-text: #9a6700;
+  --git-added-text: #1a7f37;
+  --git-deleted-text: #cf222e;
+  --review-add-bg: color-mix(in srgb, var(--git-added) 9%, transparent);
+  --review-del-bg: color-mix(in srgb, var(--git-deleted) 7%, transparent);
+  --git-renamed-text: #8250df;
+  /* tag colors (the palette a tag can wear, see tagStyle.ts): the text and icon color of a tagged chip, which sits on a
+     tint of itself (--tag-tint of it over the page). Dark enough for 4.5:1 on the tint and on every surface of every
+     light tone; tagStyle.test.ts holds them to it. Opt-in per tag, so the accent keeps its meaning elsewhere. */
+  --tag-tint: 12%;
+  --tag-gray: #515962;
+  --tag-red: #a81f26;
+  --tag-orange: #9a4108;
+  --tag-yellow: #7d5700;
+  --tag-green: #146229;
+  --tag-teal: #0a6560;
+  --tag-blue: #1a58b8;
+  --tag-purple: #6b3fc4;
+  /* find / search marks: neutral, so the accent keeps meaning "live change" */
+  --mark: #fff0a3;
+  --mark-strong: #ffd33d;
+  --zebra: #fafafb;
+  --shadow-pop: 0 10px 28px rgb(31 35 40 / 0.12), 0 1px 3px rgb(31 35 40 / 0.08);
+  --backdrop: rgb(31 35 40 / 0.28);
+  /* behind a picture with transparency (the image viewer), and behind a video */
+  --checker-a: #ffffff;
+  --checker-b: #e4e5e8;
+  --video-bg: #0b0c0e;
+  /* syntax */
+  --syn-comment: #67707a; /* 4.7:1 on the code block's surface (was 4.25) */
+  --syn-keyword: #8250df;
+  --syn-string: #0a3069;
+  --syn-type: #953800;
+  --syn-prop: #0550ae;
+}
+
+/* Soft tones of the light theme (Settings > Light tone): the page carries data-tone next to data-theme, and the plain
+   white tone is the block above. A tone only moves the surfaces, the borders and the tint of the hover shade, and
+   darkens the small text colours just enough that every text pair keeps at least 4.5:1 (UI marks 3:1), the same
+   as on white or better. Dark ignores the tone. */
+:root[data-tone="paper"]:not([data-theme="dark"]) {
+  --bg: #f6f0e1;
+  --surface: #eee7d5;
+  --surface-2: #e6decb;
+  --border: #d9cfb6;
+  --border-strong: #c5b99b;
+  --text: #26221b;
+  --muted: #5f5849;
+  --faint: #857d6b;
+  --accent-text: #3e53d2;
+  --hover: rgb(60 45 20 / 0.05);
+  --pressed: rgb(60 45 20 / 0.09);
+  --git-modified: #c38e20;
+  --git-added: #3aab4a;
+  --git-deleted: #ea4d45;
+  --git-renamed: #9a6bea;
+  --git-modified-text: #865a00;
+  --git-added-text: #177131;
+  --git-deleted-text: #c0202b;
+  --git-renamed-text: #7447c7;
+  --mark: #ffe58a;
+  --mark-strong: #ffcf3d;
+  --zebra: #f1ead9;
+  --syn-comment: #645d52;
+  --syn-keyword: #7447c7;
+}
+
+:root[data-tone="sage"]:not([data-theme="dark"]) {
+  --bg: #eaf1e3;
+  --surface: #e0e9d8;
+  --surface-2: #d7e2cd;
+  --border: #c8d6bd;
+  --border-strong: #b1c3a4;
+  --text: #1f2a21;
+  --muted: #515b52;
+  --faint: #758277;
+  --accent-text: #3d52cf;
+  --hover: rgb(27 58 31 / 0.05);
+  --pressed: rgb(27 58 31 / 0.09);
+  --git-modified: #c28d1f;
+  --git-added: #3aaa4a;
+  --git-deleted: #e94c45;
+  --git-renamed: #996ae8;
+  --git-modified-text: #865a00;
+  --git-added-text: #177131;
+  --git-deleted-text: #bf1f2b;
+  --git-renamed-text: #7447c7;
+  --mark: #fbe98e;
+  --mark-strong: #ffd33d;
+  --zebra: #e5eddd;
+  --syn-comment: #5b655c;
+  --syn-keyword: #7447c7;
+}
+
+:root[data-tone="gray"]:not([data-theme="dark"]) {
+  --bg: #efede9;
+  --surface: #e6e4df;
+  --surface-2: #dcdad4;
+  --border: #d2cfc9;
+  --border-strong: #bbb8b0;
+  --text: #25262a;
+  --muted: #575550;
+  --faint: #7e7b74;
+  --accent-text: #3c51cd;
+  --hover: rgb(42 40 35 / 0.05);
+  --pressed: rgb(42 40 35 / 0.09);
+  --git-modified: #bf8b1f;
+  --git-added: #3aa949;
+  --git-deleted: #e74b44;
+  --git-renamed: #9869e6;
+  --git-modified-text: #835700;
+  --git-added-text: #176e30;
+  --git-deleted-text: #ba1f29;
+  --git-renamed-text: #7145c1;
+  --mark: #fbe98e;
+  --mark-strong: #ffd33d;
+  --zebra: #eae8e4;
+  --syn-comment: #615f59;
+  --syn-keyword: #7145c1;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #16171a;
+  --surface: #1d1f23;
+  --surface-2: #24272c;
+  --border: #2b2e34;
+  --border-strong: #3a3e46;
+  --text: #e6e8eb;
+  --muted: #9198a1;
+  --faint: #6f7680;
+  --accent: #7b93ff;
+  --accent-fg: #0f1117;
+  --accent-text: var(--accent);
+  --accent-soft: rgb(123 147 255 / 0.13);
+  --accent-muted: rgb(123 147 255 / 0.5);
+  --live: rgb(123 147 255 / 0.18);
+  --hover: rgb(230 232 235 / 0.05);
+  --pressed: rgb(230 232 235 / 0.09);
+  --git-modified-text: #d29922;
+  --git-added-text: #3fb950;
+  --git-deleted-text: #f85149;
+  --review-add-bg: color-mix(in srgb, var(--git-added) 14%, transparent);
+  --review-del-bg: color-mix(in srgb, var(--git-deleted) 12%, transparent);
+  --git-renamed-text: #a371f7;
+  --tag-gray: #a9b1bb;
+  --tag-red: #ff8a85;
+  --tag-orange: #ffa35c;
+  --tag-yellow: #e6b84a;
+  --tag-green: #5fd47a;
+  --tag-teal: #4fd1c5;
+  --tag-blue: #79b4ff;
+  --tag-purple: #c29bff;
+  --mark: rgb(242 204 96 / 0.26);
+  --mark-strong: rgb(242 204 96 / 0.55);
+  --zebra: #1a1c1f;
+  --shadow-pop: 0 12px 32px rgb(0 0 0 / 0.5), 0 1px 3px rgb(0 0 0 / 0.35);
+  --backdrop: rgb(0 0 0 / 0.45);
+  --checker-a: #23262b;
+  --checker-b: #2e3238;
+  --video-bg: #000000;
+  --syn-comment: #8b949e;
+  --syn-keyword: #d2a8ff;
+  --syn-string: #a5d6ff;
+  --syn-type: #ffa657;
+  --syn-prop: #79c0ff;
+}
