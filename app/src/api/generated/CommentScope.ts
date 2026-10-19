@@ -3,4 +3,4 @@
 /**
  * Which comments a list holds.
  */
-export type Scope = "open" | "done" | "all";
+export type CommentScope = "open" | "done" | "all";

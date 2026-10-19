@@ -6,7 +6,9 @@
   let { badge }: Props = $props();
 </script>
 
-<span class="badge tone-{badge.tone ?? 'muted'}" title={badge.title}>{badge.text}</span>
+{#if badge.text !== ""}
+  <span class="badge tone-{badge.tone ?? 'muted'}" title={badge.title}>{badge.text}</span>
+{/if}
 
 <style>
   .badge {

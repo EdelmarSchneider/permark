@@ -120,8 +120,9 @@ export const tauriApi: Api = {
   analyze: (path, text, kind) => call("analyze", { path, text, kind }),
   searchStatus: () => call("search_status", {}),
   searchSections: (query, limit, options) => call("search_sections", { query, limit, options }),
-  searchFiles: (query, limit, folderLimit) => call("search_files", { query, limit, folderLimit }),
-  searchRecent: (opened, limit) => call("search_recent", { opened, limit }),
+  searchFiles: (query, limit, folderLimit, options) =>
+    call("search_files", { query, limit, folderLimit, options }),
+  searchRecent: (opened, limit, options) => call("search_recent", { opened, limit, options }),
   pluginCall,
   onPlugin: <E extends PluginEventName>(event: E, handler: (payload: PluginEnvelope<E>) => void) =>
     listen<PluginEnvelope<E>>(event, (e) => handler(e.payload)),

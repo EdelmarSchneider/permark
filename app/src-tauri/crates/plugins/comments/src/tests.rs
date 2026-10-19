@@ -18,7 +18,7 @@ use super::*;
 use crate::anchor::{fold, Analysis, Probe, Resolution};
 use crate::model::{Anchor, Book, MAX_COMMENTS};
 
-/// A byte copy of the person's own `.permark/local/comments.json` (0.5) when this rewrite was made.
+/// A byte copy of a real `.permark/local/comments.json` written by version 0.5.
 const REAL: &str = include_str!("fixtures/real-comments-0.5.json");
 
 fn analysis(markdown: &str) -> Analysis {

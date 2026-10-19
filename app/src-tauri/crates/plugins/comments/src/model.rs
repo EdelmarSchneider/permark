@@ -166,14 +166,14 @@ pub struct CommentView {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
-pub enum Scope {
+pub enum CommentScope {
     #[default]
     Open,
     Done,
     All,
 }
 
-impl Scope {
+impl CommentScope {
     #[must_use]
     pub fn admits(self, done: bool) -> bool {
         match self {

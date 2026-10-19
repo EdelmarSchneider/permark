@@ -7,7 +7,7 @@ use crate::normalize::{
     normalize_description, normalize_tag, normalize_tags, MAX_DESCRIPTION_CHARS, MAX_TAG_CHARS,
 };
 
-/// A byte copy of the person's own `.permark/meta.toml` (0.5, CRLF) when this rewrite was made.
+/// A byte copy of a real `.permark/meta.toml` written by version 0.5 (CRLF).
 const REAL: &str = include_str!("fixtures/real-meta-0.5.toml");
 
 fn strs(items: &[&str]) -> Vec<String> {

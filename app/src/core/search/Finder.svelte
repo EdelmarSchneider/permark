@@ -14,6 +14,7 @@
   import { iconOfCategory } from "../explorer/icons";
   import Folder from "@lucide/svelte/icons/folder";
   import Hash from "@lucide/svelte/icons/hash";
+  import TagIcon from "@lucide/svelte/icons/tag";
   import Terminal from "@lucide/svelte/icons/terminal";
   import { t, tn, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
@@ -26,6 +27,7 @@
   import PathText from "./PathText.svelte";
   import { recentFiles } from "./recent.svelte";
   import SnippetText from "./SnippetText.svelte";
+  import { searchTags } from "./tags.svelte";
 
   type Props = { preset: FinderPreset };
   let { preset }: Props = $props();
@@ -34,6 +36,15 @@
 
   const host: FinderHost = {
     api,
+    get tags() {
+      return searchTags.available
+        ? {
+            hits: (query: string) => searchTags.hits(query),
+            selected: () => searchTags.selected,
+            select: (name: string) => searchTags.add(name),
+          }
+        : undefined;
+    },
     get singleFile() {
       return documents.singleFile;
     },
@@ -72,6 +83,7 @@
     all: "finder.scope.all",
     files: "finder.scope.files",
     sections: "finder.scope.sections",
+    tags: "finder.scope.tags",
     commands: "finder.scope.commands",
   };
   const GROUP_LABEL: Record<GroupTitle, MessageKey> = {
@@ -80,8 +92,10 @@
     files: "finder.group.files",
     folders: "finder.group.folders",
     sections: "finder.group.sections",
+    tags: "finder.group.tags",
     commands: "finder.group.commands",
   };
+  const filters = $derived(contributions.visible("searchFilter", conditions.current));
   const label = $derived(
     preset === "quick"
       ? t("finder.quickLabel")
@@ -95,6 +109,8 @@
         return t("finder.placeholder.files");
       case "sections":
         return t("finder.placeholder.sections");
+      case "tags":
+        return t("finder.placeholder.tags");
       case "commands":
         return t("finder.placeholder.commands");
       case "all":
@@ -140,6 +156,8 @@
         return row.path;
       case "section":
         return row.headingPath.join(" / ");
+      case "tag":
+        return row.name;
       case "command":
         return t(row.entry.command.label);
       case "more":
@@ -148,6 +166,15 @@
         return row satisfies never;
     }
   }
+
+  // the tags the search is narrowed to changed (a chip was added | removed): ask again
+  let seenTags = searchTags.selected;
+  $effect(() => {
+    const now = searchTags.selected;
+    if (now === seenTags) return;
+    seenTags = now;
+    finder.retry();
+  });
 
   // the field has the focus while the box lives; the focus goes back to where it was
   $effect(() => {
@@ -221,6 +248,12 @@
       value={finder.query}
       oninput={(e) => finder.setQuery(e.currentTarget.value)}
     />
+    {#each filters as filter (filter.owner + filter.id)}
+      {#await filter.view() then loaded}
+        {@const Filter = loaded.default}
+        <Filter />
+      {/await}
+    {/each}
 
     <div class="list" id="finder-list" role="listbox" aria-label={label} bind:this={list}>
       {#each finder.view.groups as group (group.title)}
@@ -270,6 +303,10 @@
                   <span class="snippet"><SnippetText parts={row.snippet} /></span>
                 {/if}
               </span>
+            {:else if row.type === "tag"}
+              <TagIcon size={15} aria-hidden="true" />
+              <span class="text"><span class="strong">{row.name}</span></span>
+              <span class="aside">{tn("finder.tagFiles", row.count)}</span>
             {:else if row.type === "command"}
               <Terminal size={15} aria-hidden="true" />
               <span class="text">

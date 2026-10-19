@@ -5,16 +5,20 @@ import type { FeedItem } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { editing } from "../../core/editing/session.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
+import { silence } from "../../core/silence/silence.svelte";
 import { isDocument } from "../live-feed/store.svelte";
 
 type Entry = Extract<FeedItem, { item: "entry" }>;
 
-/** The document a batch of feed items says to follow: the newest created, changed or moved one. */
-export function followTarget(upsert: readonly FeedItem[]): string | null {
+/** The document a batch of feed items says to follow: the newest created, changed or moved one that is not silenced. */
+export function followTarget(
+  upsert: readonly FeedItem[],
+  silenced: (path: string) => boolean = (path) => silence.isSilenced(path),
+): string | null {
   let target: Entry | null = null;
   for (const item of upsert) {
     if (item.item !== "entry" || item.own || item.isDir || item.kind === "removed") continue;
-    if (!isDocument(item.path)) continue;
+    if (!isDocument(item.path) || silenced(item.path)) continue;
     if (target === null || item.atMs >= target.atMs) target = item;
   }
   return target?.path ?? null;

@@ -56,6 +56,28 @@ import type { ReviewStatus } from "./generated/ReviewStatus";
 import type { ReviewView } from "./generated/ReviewView";
 import type { SinceVisit } from "./generated/SinceVisit";
 import type { UnreadList } from "./generated/UnreadList";
+import type { BrokenDoc } from "./generated/BrokenDoc";
+import type { BrokenLink } from "./generated/BrokenLink";
+import type { BrokenReport } from "./generated/BrokenReport";
+import type { BrokenSummary } from "./generated/BrokenSummary";
+import type { By } from "./generated/By";
+import type { CommentScope } from "./generated/CommentScope";
+import type { CommentView } from "./generated/CommentView";
+import type { FileMeta } from "./generated/FileMeta";
+import type { IndexEntry } from "./generated/IndexEntry";
+import type { Interest } from "./generated/Interest";
+import type { MetaProblem } from "./generated/MetaProblem";
+import type { PassageState } from "./generated/PassageState";
+import type { QuietMarks } from "./generated/QuietMarks";
+import type { ReplyView } from "./generated/ReplyView";
+import type { TagCountView } from "./generated/TagCountView";
+import type { TagRefView } from "./generated/TagRefView";
+import type { TaggedFile } from "./generated/TaggedFile";
+import type { TagStyleView } from "./generated/TagStyleView";
+import type { TagsIndex } from "./generated/TagsIndex";
+import type { TagsLocation } from "./generated/TagsLocation";
+import type { TagsOverview } from "./generated/TagsOverview";
+import type { TagsStatus } from "./generated/TagsStatus";
 
 export type {
   AppInfo,
@@ -190,10 +212,13 @@ export interface Commands {
     result: SectionResults;
   };
   search_files: {
-    args: { query: string; limit: number; folderLimit: number };
+    args: { query: string; limit: number; folderLimit: number; options: SearchOptions };
     result: PathResults;
   };
-  search_recent: { args: { opened: string[]; limit: number }; result: Recent };
+  search_recent: {
+    args: { opened: string[]; limit: number; options: SearchOptions };
+    result: Recent;
+  };
   plugin_call: { args: { plugin: string; method: string; args: JsonValue }; result: JsonValue };
   window_close: { args: Record<string, never>; result: null };
 }
@@ -230,6 +255,40 @@ export interface PluginMethods {
   "review.restore": { args: { path: string }; result: null };
   "review.setBasis": { args: { basis: Basis }; result: null };
   "review.basis": { args: Record<string, never>; result: Basis };
+  "tags.index": { args: Record<string, never>; result: TagsIndex };
+  "tags.overview": { args: Record<string, never>; result: TagsOverview };
+  "tags.status": { args: Record<string, never>; result: TagsStatus };
+  "tags.filesWith": { args: { tags: string[]; untagged?: boolean }; result: TaggedFile[] };
+  "tags.fileMeta": { args: { path: string }; result: FileMeta };
+  "tags.setTags": { args: { path: string; tags: string[] }; result: FileMeta };
+  "tags.setDescription": { args: { path: string; description: string }; result: FileMeta };
+  "tags.setStyle": {
+    args: { tag: string; color?: string | null; icon?: string | null };
+    result: null;
+  };
+  "tags.orphans": { args: Record<string, never>; result: string[] };
+  "tags.cleanUp": { args: Record<string, never>; result: number };
+  "comments.list": {
+    args: { path?: string | null; scope?: CommentScope };
+    result: CommentView[];
+  };
+  "comments.add": {
+    args: {
+      path: string;
+      quote: string;
+      text: string;
+      headingPath: string[];
+      line: number;
+      endLine: number;
+    };
+    result: CommentView;
+  };
+  "comments.setDone": { args: { id: string; done: boolean }; result: null };
+  "comments.remove": { args: { id: string }; result: null };
+  "comments.reply": { args: { id: string; text: string }; result: null };
+  "quiet.rules": { args: Record<string, never>; result: QuietMarks };
+  "quiet.set": { args: { paths: string[]; interest: Interest }; result: QuietMarks };
+  "broken-links.list": { args: Record<string, never>; result: BrokenReport };
 }
 export type PluginMethod = keyof PluginMethods;
 
@@ -238,6 +297,10 @@ export interface PluginEvents {
   "git:snapshot": GitSnapshot | null;
   "live-feed:items": { upsert: FeedItem[] };
   "unread:changed": UnreadList;
+  "tags:changed": null;
+  "comments:changed": null;
+  "quiet:changed": QuietMarks;
+  "broken-links:changed": BrokenSummary;
 }
 export type PluginEventName = keyof PluginEvents;
 export type PluginEnvelope<E extends PluginEventName> = { root: string; data: PluginEvents[E] };
@@ -256,6 +319,30 @@ export type {
   SinceVisit,
 };
 export type { UnreadList };
+export type {
+  BrokenDoc,
+  BrokenLink,
+  BrokenReport,
+  BrokenSummary,
+  By,
+  CommentScope,
+  CommentView,
+  FileMeta,
+  IndexEntry,
+  Interest,
+  MetaProblem,
+  PassageState,
+  QuietMarks,
+  ReplyView,
+  TagCountView,
+  TagRefView,
+  TaggedFile,
+  TagStyleView,
+  TagsIndex,
+  TagsLocation,
+  TagsOverview,
+  TagsStatus,
+};
 
 /** Contract: `Commands` has exactly the registered commands (generated from Rust). Fails to compile on drift. */
 type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
@@ -360,9 +447,14 @@ export interface Api {
     options: SearchOptions,
   ): Promise<Result<SectionResults>>;
   /** Files (and folders) whose path matches the words, best first. */
-  searchFiles(query: string, limit: number, folderLimit: number): Promise<Result<PathResults>>;
+  searchFiles(
+    query: string,
+    limit: number,
+    folderLimit: number,
+    options: SearchOptions,
+  ): Promise<Result<PathResults>>;
   /** Quick open's empty box: the opened files that still exist, and the newest files. */
-  searchRecent(opened: string[], limit: number): Promise<Result<Recent>>;
+  searchRecent(opened: string[], limit: number, options: SearchOptions): Promise<Result<Recent>>;
   /** Calls a method a running plugin of this window's project serves. */
   pluginCall<M extends PluginMethod>(
     method: M,

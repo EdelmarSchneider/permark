@@ -23,7 +23,7 @@ use permark_core::plugins::{
 use permark_core::watch::Subscription;
 use serde::Deserialize;
 
-pub use model::{Comment, CommentView, PassageState, Scope};
+pub use model::{Comment, CommentScope, CommentView, PassageState};
 pub use service::{CommentsService, NewComment};
 
 const ID: PluginId = PluginId::of("comments");
@@ -53,7 +53,7 @@ struct ListArgs {
     #[serde(default)]
     path: Option<String>,
     #[serde(default)]
-    scope: Scope,
+    scope: CommentScope,
 }
 
 #[derive(Deserialize)]

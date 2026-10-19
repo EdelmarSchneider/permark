@@ -2,6 +2,8 @@
 // unread documents, and a review of `docs/guide.md`. In memory; the same shapes the real plugins serve.
 
 import type { Block } from "./generated/Block";
+import { MockPluginError, type OrganizingProbe } from "./mockOrganizing";
+import type { createMockOrganizing } from "./mockOrganizing";
 import type { ReviewChange } from "./generated/ReviewChange";
 import type {
   BaselineKind,
@@ -33,6 +35,10 @@ export type MockPluginProbe = {
   git(): GitSnapshot;
   /** Announces a snapshot as the backend would (`null`: no repository any more). */
   announceGit(snapshot: GitSnapshot | null): void;
+  /** Tags, comments, silence: what the organizing plugins hold. */
+  organizing: OrganizingProbe;
+  /** Announces a plugin event as the backend would. */
+  announce<E extends PluginEventName>(event: E, data: PluginEvents[E]): void;
 };
 
 function ghost(id: string, html: string): Block {
@@ -61,6 +67,7 @@ function startChanges(): ReviewChange[] {
 export function createMockPlugins(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
   hashOfGuide: () => string,
+  organizing: ReturnType<typeof createMockOrganizing>,
 ): {
   call<M extends PluginMethod>(
     method: M,
@@ -146,6 +153,7 @@ export function createMockPlugins(
   };
 
   const handlers: Handlers = {
+    ...organizing.handlers,
     "git.snapshot": () => snapshot(),
     "git.refresh": () => null,
     "git.setBaseline": ({ kind }) => {
@@ -221,7 +229,19 @@ export function createMockPlugins(
   return {
     call: (method, args) => {
       calls.push(method);
-      return Promise.resolve({ ok: true, value: handlers[method](args) });
+      try {
+        return Promise.resolve({ ok: true, value: handlers[method](args) });
+      } catch (error) {
+        if (!(error instanceof MockPluginError)) throw error;
+        return Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "plugin_call",
+            error: { kind: error.kind, subject: error.subject, detail: null },
+          },
+        });
+      }
     },
     probe: {
       feed: (items) => {
@@ -235,6 +255,8 @@ export function createMockPlugins(
       calls,
       git: snapshot,
       announceGit: (next) => emit("git:snapshot", next),
+      organizing: organizing.probe,
+      announce: emit,
     },
   };
 }

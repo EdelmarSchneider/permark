@@ -293,3 +293,70 @@ describe("recent files", () => {
     expect(next).not.toContain(`f${MAX_RECENT - 1}`);
   });
 });
+
+describe("the Tags scope of Search everywhere", () => {
+  const input = (
+    scope: ViewInput["scope"],
+    query: string,
+    over: Partial<ViewInput> = {},
+  ): ViewInput => ({
+    preset: "everywhere",
+    scope,
+    query,
+    data: NO_DATA,
+    commands: [],
+    outline: [],
+    singleFile: false,
+    tags: [
+      { name: "spec", count: 5 },
+      { name: "needs-review", count: 2 },
+    ],
+    ...over,
+  });
+
+  it("is offered with the tags plugin, between Sections and Commands", () => {
+    expect(scopesFor("everywhere", false, true)).toEqual([
+      "all",
+      "files",
+      "sections",
+      "tags",
+      "commands",
+    ]);
+    expect(scopesFor("everywhere", false)).toEqual(["all", "files", "sections", "commands"]);
+    expect(scopesFor("everywhere", true, true)).toEqual(["sections", "commands"]);
+    expect(scopesFor("quick", false, true)).toEqual(["files"]);
+    expect(scopesFor("commands", false, true)).toEqual(["commands"]);
+  });
+
+  it("lists the tags that match, with their counts, in its own scope and as a group in All", () => {
+    const own = buildView(input("tags", ""));
+    expect(own.groups.map((g) => g.title)).toEqual(["tags"]);
+    expect(own.rows.map((r) => (r.type === "tag" ? [r.name, r.count] : null))).toEqual([
+      ["spec", 5],
+      ["needs-review", 2],
+    ]);
+    const all = buildView(input("all", "spec"));
+    expect(all.groups.map((g) => g.title)).toEqual(["tags"]);
+    // an empty box in All shows recent files, not every tag
+    expect(buildView(input("all", "")).groups).toEqual([]);
+  });
+
+  it("keeps the rows of All in the order files, folders, sections, tags, commands", () => {
+    const data: Data = {
+      files: [{ path: "a.md", category: "markdown", positions: [0] }],
+      folders: [{ path: "docs", positions: [0] }],
+      sections: [],
+      recent: null,
+    };
+    const view = buildView(input("all", "a", { data }));
+    expect(view.groups.map((g) => g.title)).toEqual(["files", "folders", "tags"]);
+  });
+
+  it("caps the group in All and sends the rest to the scope", () => {
+    const tags = Array.from({ length: 9 }, (_, n) => ({ name: `t${n}`, count: 9 - n }));
+    const view = buildView(input("all", "t", { tags }));
+    const rows = view.groups[0]?.rows ?? [];
+    expect(rows).toHaveLength(GROUP_LIMIT.tags + 1);
+    expect(rows.at(-1)).toMatchObject({ type: "more", scope: "tags", count: 4 });
+  });
+});

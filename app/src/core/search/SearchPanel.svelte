@@ -8,6 +8,7 @@
   import X from "@lucide/svelte/icons/x";
   import { api } from "../../api";
   import { conditions } from "../conditions/context.svelte";
+  import { contributions } from "../plugins/instance.svelte";
   import { documents } from "../doc/document.svelte";
   import { apiErrorText } from "../errors";
   import { t, tn } from "../i18n";
@@ -15,6 +16,7 @@
   import PathText from "./PathText.svelte";
   import { SearchPanelStore } from "./panel.svelte";
   import SnippetText from "./SnippetText.svelte";
+  import { searchTags } from "./tags.svelte";
   import type { SectionHit } from "../../api";
 
   type Props = { root: string; store?: SearchPanelStore };
@@ -24,6 +26,16 @@
   let list: HTMLElement | undefined = $state();
 
   const quiet = $derived(conditions.current.plugins.includes("quiet"));
+  const filters = $derived(contributions.visible("searchFilter", conditions.current));
+
+  // the tags the search is narrowed to changed: ask again
+  let seenTags = searchTags.selected;
+  $effect(() => {
+    const now = searchTags.selected;
+    if (now === seenTags) return;
+    seenTags = now;
+    store.retry();
+  });
   const building = $derived(store.progress?.phase === "building");
   const activeKey = $derived(store.current?.key ?? null);
   const fileCount = $derived(store.groups.length);
@@ -127,6 +139,13 @@
       >
     {/if}
   </div>
+
+  {#each filters as filter (filter.owner + filter.id)}
+    {#await filter.view() then loaded}
+      {@const Filter = loaded.default}
+      <Filter />
+    {/await}
+  {/each}
 
   {#if quiet}
     <label class="option" title={t("search.includeQuietHint")}>

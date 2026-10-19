@@ -7,6 +7,7 @@ import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { FeedStore, TOAST_MS, isDocItem, isDocument, mergeItems } from "./store.svelte";
 import { mark } from "./glow";
+import { silence } from "../../core/silence/silence.svelte";
 import { entry } from "./testing";
 import { ago, split } from "./time";
 
@@ -66,6 +67,8 @@ describe("feed items", () => {
   });
 });
 
+afterEach(() => silence.clear());
+
 describe("the feed store", () => {
   it("lists what the backend has and what it reports, and filters", async () => {
     const { api, store, stop } = await setup();
@@ -102,6 +105,24 @@ describe("the feed store", () => {
       entry(33, "shown.md"),
     ]);
     expect(store.toast).toBeNull();
+    store.dismissToast();
+    stop();
+  });
+
+  it("says nothing of what the person silenced, and leaves it out of the list", async () => {
+    const { api, store, stop } = await setup("shown.md");
+    silence.set({ quiet: "quiet" });
+    api.probe.plugins.feed([entry(40, "quiet/a.md"), entry(41, "loud/b.md")]);
+    expect(store.toast).toMatchObject({ count: 1, path: "loud/b.md" });
+    expect(store.visible.map((i) => (i.item === "entry" ? i.path : ""))).not.toContain(
+      "quiet/a.md",
+    );
+    expect(store.items.some((i) => i.item === "entry" && i.path === "quiet/a.md")).toBe(true);
+    store.docsOnly = true;
+    expect(store.hidden).toBe(0);
+    // listening again brings it back
+    silence.set({});
+    expect(store.visible.some((i) => i.item === "entry" && i.path === "quiet/a.md")).toBe(true);
     store.dismissToast();
     stop();
   });

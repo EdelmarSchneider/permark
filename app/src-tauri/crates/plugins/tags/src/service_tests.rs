@@ -19,7 +19,7 @@ use serde_json::{json, Value};
 
 use super::*;
 
-/// A byte copy of the person's own `.permark/meta.toml` (0.5, CRLF) when this rewrite was made.
+/// A byte copy of a real `.permark/meta.toml` written by version 0.5 (CRLF).
 const REAL: &str = include_str!("fixtures/real-meta-0.5.toml");
 const REAL_PATH: &str = "orchestrator/design/2-concept/fourfold/concept.md";
 

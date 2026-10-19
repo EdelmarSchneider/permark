@@ -5,6 +5,7 @@ import type { BaselineKind, GitFile, GitSnapshot, Letter } from "../../api";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import type { BadgeTone, TreeBadge } from "../../core/plugins/registry.svelte";
 import { t, tn } from "../../core/i18n";
+import { silence } from "../../core/silence/silence.svelte";
 
 export type GitState =
   | { status: "off" }
@@ -47,7 +48,16 @@ export class GitStore {
   /** The legend popover is open. */
   legend = $state(false);
   #files = $state.raw<ReadonlyMap<string, GitFile>>(new Map());
-  #folders = $state.raw<ReadonlyMap<string, number>>(new Map());
+  /** Folders: how many changed files are below (what the person silenced does not count). */
+  #folders = $derived.by(() => {
+    const folders = new Map<string, number>();
+    for (const file of this.#files.values()) {
+      if (silence.isSilenced(file.path)) continue;
+      for (const folder of ancestors(file.path))
+        folders.set(folder, (folders.get(folder) ?? 0) + 1);
+    }
+    return folders;
+  });
   #seq = 0;
   readonly #client: PluginClient;
   readonly #root: () => string | null;
@@ -103,28 +113,20 @@ export class GitStore {
   #apply(snapshot: GitSnapshot | null): void {
     if (snapshot === null) {
       this.#files = new Map();
-      this.#folders = new Map();
       this.state = { status: "none" };
       return;
     }
     // a late announcement of an older picture is ignored
     if (this.state.status === "ready" && snapshot.seq < this.state.snapshot.seq) return;
     const files = new Map<string, GitFile>();
-    const folders = new Map<string, number>();
-    for (const file of snapshot.files) {
-      files.set(file.path, file);
-      for (const folder of ancestors(file.path))
-        folders.set(folder, (folders.get(folder) ?? 0) + 1);
-    }
+    for (const file of snapshot.files) files.set(file.path, file);
     this.#files = files;
-    this.#folders = folders;
     this.state = { status: "ready", snapshot };
     this.#seq = snapshot.seq;
   }
 
   #clear(): void {
     this.#files = new Map();
-    this.#folders = new Map();
     this.state = { status: "off" };
   }
 
@@ -149,7 +151,7 @@ export class GitStore {
 
   /** What the row of a path says: a letter on a file, a dot with the count on a folder. */
   badge(path: string, isDir: boolean): TreeBadge | null {
-    if (this.state.status !== "ready") return null;
+    if (this.state.status !== "ready" || silence.isSilenced(path)) return null;
     if (isDir) {
       const n = this.#folders.get(path) ?? 0;
       return n === 0 ? null : { text: "•", tone: "modified", title: tn("git.folderChanged", n) };

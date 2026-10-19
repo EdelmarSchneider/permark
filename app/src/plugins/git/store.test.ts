@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GitSnapshot } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
+import { silence } from "../../core/silence/silence.svelte";
 import { GitStore, letterOf } from "./store.svelte";
 
 const settle = async (): Promise<void> => {
@@ -51,6 +52,19 @@ describe("the git store", () => {
     expect(store.badge("src", true)).toBeNull();
     expect(store.changedBelow("notes")).toBe(1);
     expect(store.changed).toBe(2);
+    stop();
+  });
+
+  it("draws no letter or dot for what the person silenced, and counts only the rest", async () => {
+    const { store, stop } = await setup();
+    silence.set({ notes: "quiet" });
+    expect(store.badge("notes/ideas.md", false)).toBeNull();
+    expect(store.badge("notes", true)).toBeNull();
+    expect(store.badge("docs/guide.md", false)).toMatchObject({ text: "M" });
+    expect(store.changedBelow("notes")).toBe(0);
+    expect(store.changedBelow("docs")).toBe(1);
+    silence.clear();
+    expect(store.badge("notes/ideas.md", false)).toMatchObject({ text: "U" });
     stop();
   });
 

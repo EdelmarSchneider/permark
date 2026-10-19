@@ -299,6 +299,8 @@ describe("the Search panel", () => {
     flushSync();
     const input = target.querySelector<HTMLInputElement>("input.field");
     if (!input) throw new Error("no field");
+    conditions.set({ ...conditions.current, plugins: [] });
+    flushSync();
     expect(target.querySelector("label.option")).toBeNull();
     type(input, "qqqqzzzz");
     await until(() => target.textContent?.includes("No results for") === true, "none");

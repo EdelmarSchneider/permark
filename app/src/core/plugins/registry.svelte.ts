@@ -7,7 +7,7 @@ import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
-import type { EmbedProps, FrontMatterProps, ViewerProps } from "./props";
+import type { EmbedProps, FrontMatterProps, PageSelection, ViewerProps } from "./props";
 
 /** Lazily loaded UI piece (heavy views load when first needed). */
 export type LazyComponent<Props extends Record<string, unknown> = Record<string, never>> =
@@ -23,7 +23,17 @@ type Owned = { owner: PluginId; requires: Requirement };
 /** What a badge says about a path (a git letter, an unread dot, a count on a folder). */
 export type BadgeTone =
   "modified" | "added" | "untracked" | "deleted" | "renamed" | "conflict" | "unread" | "muted";
-export type TreeBadge = { text: string; tone?: BadgeTone; title?: string };
+/**
+ * What a plugin says about a path. `text` may be empty when the plugin only adds to the row: `dim` (the Explorer draws
+ * the row quieter) and `tip` (a line in the row's tooltip).
+ */
+export type TreeBadge = {
+  text: string;
+  tone?: BadgeTone;
+  title?: string;
+  dim?: boolean;
+  tip?: string;
+};
 
 /** Everything a plugin can add to the core UI. */
 export type Contribution = Owned &
@@ -40,7 +50,15 @@ export type Contribution = Owned &
       }
     | { kind: "paletteEntry"; id: string; label: MessageKey; command: string }
     | { kind: "shortcut"; keys: string; command: string }
-    | { kind: "panel"; id: string; side: "left" | "right"; label: MessageKey; view: LazyComponent }
+    | {
+        kind: "panel";
+        id: string;
+        side: "left" | "right";
+        label: MessageKey;
+        /** A small icon: the tab shows it alone while another tab is the open one and the strip is crowded. */
+        icon?: Component<{ size?: number }>;
+        view: LazyComponent;
+      }
     | {
         kind: "statusItem";
         id: string;
@@ -70,6 +88,15 @@ export type Contribution = Owned &
         applies: (path: string, isDir: boolean) => boolean;
         run: (paths: readonly string[]) => void;
       }
+    /** An entry of the page's context menu while text is selected (comment on the passage). */
+    | {
+        kind: "selectionMenu";
+        id: string;
+        label: MessageKey;
+        run: (selection: PageSelection) => void;
+      }
+    /** The controls a plugin puts with the search boxes (tag chips): shown in the Search panel and the finder. */
+    | { kind: "searchFilter"; id: string; view: LazyComponent }
     /** Runs on the root of the page when it exists; returns what undoes it. */
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }

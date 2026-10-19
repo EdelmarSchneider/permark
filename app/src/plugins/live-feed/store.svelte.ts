@@ -4,6 +4,7 @@
 import type { FeedItem } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
+import { silence } from "../../core/silence/silence.svelte";
 
 /** Items kept (the backend keeps as many). */
 const MAX_ITEMS = 500;
@@ -68,14 +69,21 @@ export class FeedStore {
     this.#shown = shown;
   }
 
-  /** The items the panel lists. */
+  /** The items the panel lists: what the person silenced is not among them. */
   get visible(): readonly FeedItem[] {
-    return this.docsOnly ? this.items.filter(isDocItem) : this.items;
+    const heard = this.items.filter(
+      (item) => item.item !== "entry" || !silence.isSilenced(item.path),
+    );
+    return this.docsOnly ? heard.filter(isDocItem) : heard;
   }
 
   /** How many items the "Docs only" filter hides. */
   get hidden(): number {
-    return this.items.length - this.visible.length;
+    if (!this.docsOnly) return 0;
+    return (
+      this.items.filter((i) => i.item !== "entry" || !silence.isSilenced(i.path)).length -
+      this.visible.length
+    );
   }
 
   /** Follows the project of the window until the returned teardown runs. */
@@ -120,8 +128,9 @@ export class FeedStore {
   /** Items the backend reported: listed, and the document ones that changed behind the person's back say so. */
   take(upsert: readonly FeedItem[]): void {
     this.items = mergeItems(this.items, upsert);
-    this.lastAt = Math.max(this.lastAt, ...upsert.map((i) => i.atMs));
-    const news = upsert.filter(
+    const heard = upsert.filter((i) => i.item !== "entry" || !silence.isSilenced(i.path));
+    this.lastAt = Math.max(this.lastAt, ...heard.map((i) => i.atMs));
+    const news = heard.filter(
       (i): i is Extract<FeedItem, { item: "entry" }> =>
         i.item === "entry" && !i.own && !i.isDir && isDocument(i.path) && i.path !== this.#shown(),
     );

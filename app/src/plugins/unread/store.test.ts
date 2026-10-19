@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
+import { silence } from "../../core/silence/silence.svelte";
 import { READ_MS, UnreadStore, isDocument, nextUnread } from "./store.svelte";
 
 const settle = async (): Promise<void> => {
@@ -42,6 +43,7 @@ async function setup(shown: Shown = { path: null, hash: null }) {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  silence.clear();
 });
 
 describe("next unread", () => {
@@ -85,6 +87,25 @@ describe("the unread store", () => {
     expect(store.isUnread("README.md")).toBe(true);
     await store.markFolderRead("");
     expect(store.unread).toEqual([]);
+    stop();
+  });
+
+  it("leaves what the person silenced out of the dots, counts and the list, and starts it from now when it speaks again", async () => {
+    const { store, api, stop } = await setup();
+    api.probe.plugins.unread(["docs/other.md", "notes/n.md"]);
+    silence.set({ docs: "quiet" });
+    expect(store.badge("docs/guide.md", false)).toBeNull();
+    expect(store.badge("docs", true)).toBeNull();
+    expect(store.countBelow("docs")).toBe(0);
+    expect(store.unread).toEqual(["notes/n.md"]);
+    expect(store.next(null)).toBe("notes/n.md");
+    // reading a silenced document still counts as reading it
+    expect(store.isUnread("docs/guide.md")).toBe(true);
+    // it speaks again: what changed meanwhile is marked read, not delivered at once
+    silence.set({});
+    await vi.waitFor(() => expect(store.isUnread("docs/guide.md")).toBe(false));
+    expect(store.isUnread("docs/other.md")).toBe(false);
+    expect(store.isUnread("notes/n.md")).toBe(true);
     stop();
   });
 

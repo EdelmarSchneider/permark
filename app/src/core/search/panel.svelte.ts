@@ -3,6 +3,7 @@
 
 import type { Api, ApiError, IndexPhase, SectionHit, Unlisten } from "../../api";
 import { flattenRows, groupHits, type PanelRow } from "./panelModel";
+import { searchTags } from "./tags.svelte";
 
 /** Wait after the last key before the backend is asked. */
 export const PANEL_DEBOUNCE_MS = 150;
@@ -126,7 +127,7 @@ export class SearchPanelStore {
     if (this.answer.status !== "ready") this.answer = { status: "loading" };
     const result = await this.#api.searchSections(query, LIMIT, {
       includeSilenced: this.includeSilenced,
-      tags: [],
+      tags: [...searchTags.selected],
     });
     if (seq !== this.#seq) return;
     this.answer = result.ok

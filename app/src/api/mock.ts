@@ -7,6 +7,7 @@ import type { WindowView } from "./generated/WindowView";
 import type { WorkspaceView } from "./generated/WorkspaceView";
 import { mockAssetUrl, mockLinkTarget, mockView } from "./mockDocs";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
+import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
 import { mockFiles, mockRecent, mockSections } from "./mockSearch";
@@ -59,6 +60,10 @@ const MOCK_PLUGINS = [
   "follow",
   "unread",
   "review",
+  "tags",
+  "comments",
+  "quiet",
+  "broken-links",
   "md-family",
   "prompt-blocks",
   "frontmatter-card",
@@ -182,6 +187,10 @@ export function createMockApi(): Api & {
     "git:snapshot": new Set(),
     "live-feed:items": new Set(),
     "unread:changed": new Set(),
+    "tags:changed": new Set(),
+    "comments:changed": new Set(),
+    "quiet:changed": new Set(),
+    "broken-links:changed": new Set(),
   };
   /** The folder the window shows, as the events of its plugins name it. */
   function rootNow(): string {
@@ -190,11 +199,13 @@ export function createMockApi(): Api & {
   function emitPlugin<E extends PluginEventName>(event: E, data: PluginEvents[E]): void {
     for (const handler of pluginListeners[event]) handler({ root: rootNow(), data });
   }
+  const project = new MockProject();
+  const organizing = createMockOrganizing(emitPlugin, project);
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
+    organizing,
   );
-  const project = new MockProject();
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
   const probe: MockProbe = {
     opened: [],
@@ -435,9 +446,12 @@ export function createMockApi(): Api & {
         files: project.files.size,
         sections: project.files.size,
       }),
-    searchSections: (query, limit) => ok(mockSections(project, query, limit)),
-    searchFiles: (query, limit, folderLimit) => ok(mockFiles(project, query, limit, folderLimit)),
-    searchRecent: (opened, limit) => ok(mockRecent(project, opened, limit)),
+    searchSections: (query, limit, options) =>
+      ok(mockSections(project, query, limit, organizing.allows(options))),
+    searchFiles: (query, limit, folderLimit, options) =>
+      ok(mockFiles(project, query, limit, folderLimit, organizing.allows(options))),
+    searchRecent: (opened, limit, options) =>
+      ok(mockRecent(project, opened, limit, organizing.allows(options))),
     assetUrl: (_workspace, path) => mockAssetUrl(path),
     showDocument: (path) => {
       if (view.state === "showing") {

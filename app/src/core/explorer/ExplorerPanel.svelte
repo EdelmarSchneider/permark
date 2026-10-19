@@ -119,6 +119,15 @@
     });
   }
 
+  /** The tooltip of a row: why it is shown although hidden, and what plugins add (tags, silence). */
+  function rowTitle(node: TreeNode, said: readonly TreeBadge[]): string | undefined {
+    const lines = [
+      ...(node.forced ? [t("filter.hiddenFile")] : []),
+      ...said.flatMap((b) => (b.tip === undefined ? [] : [b.tip])),
+    ];
+    return lines.length === 0 ? undefined : lines.join("\n");
+  }
+
   /** The entries plugins add to the menu of one row. */
   function pluginEntries(node: TreeNode, targets: readonly string[]): MenuEntry[] {
     const isDir = node.kind.type === "dir";
@@ -494,13 +503,14 @@
             {@const Icon = iconOf(node, row.expanded)}
             {@const isDir = node.kind.type === "dir"}
             {@const selected = store.selection.has(node.path)}
+            {@const said = badgesOf(node)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
               class={[
                 "row",
                 selected && "is-selected",
                 store.focus === node.path && "is-focused",
-                (node.hidden || node.ignored) && "is-dim",
+                (node.hidden || node.ignored || said.some((b) => b.dim)) && "is-dim",
                 node.forced && "is-forced",
                 store.drag.status === "dragging" && store.drag.over === node.path && "drop-target",
               ]}
@@ -513,7 +523,7 @@
               style:top="{top}px"
               style:height="{ROW}px"
               style:padding-left="{8 + row.depth * 14}px"
-              title={node.forced ? t("filter.hiddenFile") : undefined}
+              title={rowTitle(node, said)}
               onclick={(e) => onrowclick(e, node)}
               oncontextmenu={(e) => oncontext(e, node)}
               onpointerdown={(e) => onpointerdown(e, node)}
@@ -555,7 +565,7 @@
                 {:else if node.kind.type === "dir" && node.kind.unlisted?.type === "ignored"}
                   <span class="tag" title={t("explorer.ignoredHint")}>{t("explorer.ignored")}</span>
                 {/if}
-                {#each badgesOf(node) as badge, n (n)}
+                {#each said as badge, n (n)}
                   <Badge {badge} />
                 {/each}
               {/if}

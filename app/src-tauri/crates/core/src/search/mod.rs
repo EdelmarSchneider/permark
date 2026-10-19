@@ -1,5 +1,5 @@
 //! Search: the index of one project (file list, sections by BM25, link index), kept by a background worker, and the
-//! queries over it. See `specs/search.md`.
+//! queries over it.
 
 mod bm25;
 mod fold;

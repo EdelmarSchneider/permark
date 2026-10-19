@@ -30,6 +30,16 @@ describe("what to follow", () => {
   });
 });
 
+describe("what to follow, silenced", () => {
+  it("skips what the person silenced", () => {
+    const silenced = (path: string): boolean => path.startsWith("quiet/");
+    expect(followTarget([entry(1, "loud/a.md"), entry(2, "quiet/b.md")], silenced)).toBe(
+      "loud/a.md",
+    );
+    expect(followTarget([entry(2, "quiet/b.md")], silenced)).toBeNull();
+  });
+});
+
 describe("follow mode", () => {
   function setup(busy = false) {
     const navigate = vi.spyOn(documents, "navigate").mockImplementation(() => {});

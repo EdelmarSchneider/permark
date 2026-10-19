@@ -23,8 +23,8 @@ use permark_core::watch::{ChangeKind, FsBatch};
 
 use crate::anchor::{fold, Analysis, Placement, Probe, Resolution};
 use crate::model::{
-    Anchor, Book, By, Comment, CommentView, PassageState, Reply, ReplyView, Scope, MAX_COMMENTS,
-    MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLIES, MAX_REPLY_CHARS, VERSION,
+    Anchor, Book, By, Comment, CommentScope, CommentView, PassageState, Reply, ReplyView,
+    MAX_COMMENTS, MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLIES, MAX_REPLY_CHARS, VERSION,
 };
 
 /// Documents larger than this are not read for comments.
@@ -379,7 +379,11 @@ impl CommentsService {
     ///
     /// # Errors
     /// The file cannot be read (it may be fine a moment later).
-    pub fn list(&self, path: Option<&str>, scope: Scope) -> Result<Vec<CommentView>, IpcError> {
+    pub fn list(
+        &self,
+        path: Option<&str>,
+        scope: CommentScope,
+    ) -> Result<Vec<CommentView>, IpcError> {
         {
             let mut state = self.shared.lock();
             self.shared.refresh(&mut state);

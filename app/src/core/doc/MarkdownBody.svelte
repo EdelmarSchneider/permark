@@ -154,6 +154,11 @@
     const entries: MenuEntry[] = [];
     if (text !== "") {
       const anchor = selection?.anchorNode ?? null;
+      const endNode = selection?.focusNode ?? null;
+      const rect =
+        selection && selection.rangeCount > 0
+          ? selection.getRangeAt(0).getBoundingClientRect()
+          : null;
       entries.push(
         { kind: "item", label: t("selection.copy"), run: () => void documents.copyPlain(text) },
         {
@@ -161,6 +166,11 @@
           label: t("selection.copyWithReference"),
           run: () => void documents.copySelection(text, anchor, template),
         },
+        ...contributions.visible("selectionMenu", conditions.current).map((entry): MenuEntry => ({
+          kind: "item",
+          label: t(entry.label),
+          run: () => entry.run({ text, node: anchor, endNode, rect }),
+        })),
       );
     } else {
       entries.push(

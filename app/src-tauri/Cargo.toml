@@ -113,7 +113,7 @@ plugin-tags = ["dep:permark-plugin-tags"]
 plugin-quiet = ["dep:permark-plugin-quiet"]
 plugin-comments = ["dep:permark-plugin-comments"]
 plugin-broken-links = ["dep:permark-plugin-broken-links"]
-# Microsoft Store build (Store updates the app; distribution slice).
+# Microsoft Store build (the Store updates the app).
 store = []
 
 [build-dependencies]

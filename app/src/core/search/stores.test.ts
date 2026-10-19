@@ -115,7 +115,10 @@ describe("the Search everywhere box", () => {
     const { api, fake } = fakeApi();
     const finder = new FinderStore("quick", host(api));
     await settle();
-    expect(fake.searchRecent).toHaveBeenCalledWith(["o.md"], 16);
+    expect(fake.searchRecent).toHaveBeenCalledWith(["o.md"], 16, {
+      includeSilenced: false,
+      tags: [],
+    });
     expect(finder.view.groups.map((g) => g.title)).toEqual(["opened", "changed"]);
     expect(finder.load).toEqual({ status: "ready", partial: false });
   });
@@ -130,7 +133,10 @@ describe("the Search everywhere box", () => {
     expect(fake.searchFiles).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
     expect(fake.searchFiles).toHaveBeenCalledTimes(1);
-    expect(fake.searchFiles).toHaveBeenCalledWith("pla", 50, 0);
+    expect(fake.searchFiles).toHaveBeenCalledWith("pla", 50, 0, {
+      includeSilenced: true,
+      tags: [],
+    });
     expect(finder.view.rows).toHaveLength(1);
   });
 
@@ -365,5 +371,62 @@ describe("the Search panel", () => {
     await settle();
     expect(panel.groups.map((g) => g.path)).not.toContain("stale.md");
     panel.dispose();
+  });
+});
+
+describe("narrowing the search to tags", () => {
+  it("passes the selected tags to every question and keeps the box open when a tag is chosen", async () => {
+    const { api, fake } = fakeApi();
+    let selected: readonly string[] = ["spec"];
+    const chosen: string[] = [];
+    const finder = new FinderStore(
+      "everywhere",
+      host(api, {
+        tags: {
+          hits: () => [{ name: "design", count: 3 }],
+          selected: () => selected,
+          select: (name) => {
+            chosen.push(name);
+            selected = [...selected, name];
+          },
+        },
+      }),
+    );
+    expect(finder.scopes).toContain("tags");
+    await settle();
+    expect(fake.searchRecent).toHaveBeenCalledWith(["o.md"], 16, {
+      includeSilenced: false,
+      tags: ["spec"],
+    });
+    finder.setScope("all");
+    finder.setQuery("plan");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(fake.searchSections).toHaveBeenLastCalledWith("plan", 30, {
+      includeSilenced: false,
+      tags: ["spec"],
+    });
+    expect(fake.searchFiles).toHaveBeenLastCalledWith("plan", 6, 3, {
+      includeSilenced: true,
+      tags: ["spec"],
+    });
+    // the Tags scope asks nothing of the backend; a chosen tag narrows the search and goes back to All
+    finder.setScope("tags");
+    fake.searchFiles.mockClear();
+    expect(finder.view.rows).toMatchObject([{ type: "tag", name: "design", count: 3 }]);
+    finder.activate(finder.current);
+    expect(chosen).toEqual(["design"]);
+    expect(finder.scope).toBe("all");
+    expect(finder.query).toBe("");
+    await settle();
+    expect(fake.searchRecent).toHaveBeenLastCalledWith(["o.md"], 16, {
+      includeSilenced: false,
+      tags: ["spec", "design"],
+    });
+    expect(host(api).close).not.toHaveBeenCalled();
+  });
+
+  it("offers no Tags scope without the plugin", () => {
+    const { api } = fakeApi();
+    expect(new FinderStore("everywhere", host(api)).scopes).not.toContain("tags");
   });
 });

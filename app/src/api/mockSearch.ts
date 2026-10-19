@@ -36,14 +36,23 @@ function anchorOf(label: string): string {
     .replace(/\s+/g, "-");
 }
 
-export function mockSections(project: MockProject, query: string, limit: number): SectionResults {
+/** Which paths a search may answer with (tags and silence are the plugins' business). */
+export type Allows = (path: string) => boolean;
+const ANY: Allows = () => true;
+
+export function mockSections(
+  project: MockProject,
+  query: string,
+  limit: number,
+  allows: Allows = ANY,
+): SectionResults {
   const words = fold(query)
     .split(/\s+/)
     .filter((w) => w.length > 1);
   if (words.length === 0) return { hits: [], partial: false };
   const hits: SectionHit[] = [];
   for (const [path, text] of project.files) {
-    if (!/\.(md|markdown|txt)$/i.test(path)) continue;
+    if (!/\.(md|markdown|txt)$/i.test(path) || !allows(path)) continue;
     for (const section of sectionsOf(path, text)) {
       const heading = fold(section.headingPath.join(" "));
       const body = fold(`${section.text} ${path}`);
@@ -98,13 +107,14 @@ export function mockFiles(
   query: string,
   limit: number,
   folderLimit: number,
+  allows: Allows = ANY,
 ): PathResults {
   const q = fold(query.trim());
   if (q === "") return { files: [], folders: [], partial: false };
   const files: (FileHit & { rank: number })[] = [];
   for (const path of project.files.keys()) {
     const positions = positionsOf(q, path);
-    if (positions === null) continue;
+    if (positions === null || !allows(path)) continue;
     const name = path.slice(path.lastIndexOf("/") + 1);
     const rank = fold(name).startsWith(q) ? 0 : fold(name).includes(q) ? 1 : 2;
     files.push({ path, category: categoryOfName(name), positions, rank });
@@ -123,7 +133,12 @@ export function mockFiles(
   };
 }
 
-export function mockRecent(project: MockProject, opened: string[], limit: number): Recent {
+export function mockRecent(
+  project: MockProject,
+  opened: string[],
+  limit: number,
+  allows: Allows = ANY,
+): Recent {
   const hit = (path: string): FileHit => ({
     path,
     category: categoryOfName(path.slice(path.lastIndexOf("/") + 1)),
@@ -131,11 +146,11 @@ export function mockRecent(project: MockProject, opened: string[], limit: number
   });
   return {
     opened: opened
-      .filter((p) => project.files.has(p))
+      .filter((p) => project.files.has(p) && allows(p))
       .slice(0, limit)
       .map(hit),
     changed: [...project.files.keys()]
-      .filter((p) => /\.(md|txt)$/.test(p))
+      .filter((p) => /\.(md|txt)$/.test(p) && allows(p))
       .sort()
       .slice(0, limit)
       .map(hit),

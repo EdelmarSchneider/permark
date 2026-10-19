@@ -5,6 +5,7 @@ import type { Api, ApiError } from "../../api";
 import type { CommandEntry } from "../commands/commands";
 import { matchCommands } from "../commands/commands";
 import type { MessageKey } from "../i18n";
+import type { TagHit } from "./tags.svelte";
 import {
   RECENT_LIMIT,
   RESULT_LIMIT,
@@ -33,9 +34,20 @@ export type Load =
   | { status: "ready"; partial: boolean }
   | { status: "failed"; error: ApiError };
 
+/** The tags of the project, when the tags plugin is on: Search everywhere lists them and narrows the search. */
+export type FinderTags = {
+  /** The tags that match the words (all of them for an empty box). */
+  hits(query: string): readonly TagHit[];
+  /** The tags the search is narrowed to now. */
+  selected(): readonly string[];
+  /** Narrows the search to the files that have this tag too. */
+  select(name: string): void;
+};
+
 /** What the box needs from its window. */
 export type FinderHost = {
   api: Api;
+  tags?: FinderTags;
   singleFile: boolean;
   /** The commands of the palette, now. */
   commands(): CommandEntry[];
@@ -66,7 +78,7 @@ export class FinderStore {
   constructor(preset: Preset, host: FinderHost) {
     this.preset = preset;
     this.#host = host;
-    this.scopes = scopesFor(preset, host.singleFile);
+    this.scopes = scopesFor(preset, host.singleFile, host.tags !== undefined);
     this.scope = firstScope(this.scopes);
     this.#refresh(true);
   }
@@ -80,6 +92,7 @@ export class FinderStore {
       data: this.data,
       commands: matchCommands(this.#host.commands(), this.query, (k) => this.#host.label(k)),
       outline: this.#host.outline(),
+      tags: this.scope === "all" || this.scope === "tags" ? this.#host.tags?.hits(this.query) : [],
       singleFile: this.#host.singleFile,
     }),
   );
@@ -137,6 +150,14 @@ export class FinderStore {
         this.#host.openSection(row);
         this.#host.close();
         break;
+      case "tag":
+        // the box stays: the search goes on narrowed to the tag
+        this.#host.tags?.select(row.name);
+        this.query = "";
+        this.active = 0;
+        this.setScope(this.scopes.includes("all") ? "all" : this.scope);
+        this.#refresh(true);
+        break;
       case "command":
         if (row.entry.availability.status === "unavailable") return;
         this.#host.close();
@@ -162,7 +183,11 @@ export class FinderStore {
     if (this.#timer !== null) clearTimeout(this.#timer);
     this.#timer = null;
     const seq = ++this.#seq;
-    if (this.scope === "commands" || (this.scope === "sections" && this.#host.singleFile)) {
+    if (
+      this.scope === "commands" ||
+      this.scope === "tags" ||
+      (this.scope === "sections" && this.#host.singleFile)
+    ) {
       this.data = NO_DATA;
       this.load = { status: "ready", partial: false };
       return;
@@ -177,6 +202,7 @@ export class FinderStore {
     const query = this.query.trim();
     const scope = this.scope;
     this.load = { status: "loading" };
+    const tags = this.#host.tags?.selected() ?? [];
     const wantFiles = scope === "all" || scope === "files";
     const wantSections = (scope === "all" || scope === "sections") && query !== "";
     const [paths, recent, sections] = await Promise.all([
@@ -185,13 +211,18 @@ export class FinderStore {
             query,
             scope === "files" ? RESULT_LIMIT : 6,
             this.preset === "quick" ? 0 : 3,
+            // a name the person typed is found even if its folder is silenced
+            { includeSilenced: true, tags: [...tags] },
           )
         : null,
       wantFiles && query === ""
-        ? api.searchRecent([...this.#host.opened()], RECENT_LIMIT * 2)
+        ? api.searchRecent([...this.#host.opened()], RECENT_LIMIT * 2, {
+            includeSilenced: false,
+            tags: [...tags],
+          })
         : null,
       wantSections
-        ? api.searchSections(query, SECTION_LIMIT, { includeSilenced: false, tags: [] })
+        ? api.searchSections(query, SECTION_LIMIT, { includeSilenced: false, tags: [...tags] })
         : null,
     ]);
     if (seq !== this.#seq) return;

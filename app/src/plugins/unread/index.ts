@@ -1,6 +1,7 @@
 // Plugin `unread`: a dot on documents changed since the person read them, a count on folders, the Unread tab with
 // what changed since the last visit, Alt+U for the next one.
 
+import Mail from "@lucide/svelte/icons/mail";
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
 import { definePlugin } from "../../core/plugins/registry.svelte";
@@ -26,6 +27,7 @@ export default definePlugin({
         id: PANEL,
         side: "left",
         label: "unread.title",
+        icon: Mail,
         requires: NO_REQUIREMENT,
         view: () => import("./UnreadPanel.svelte"),
       }),

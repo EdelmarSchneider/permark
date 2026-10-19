@@ -12,6 +12,18 @@ export type EmbedProps = {
   display: boolean;
 };
 
+/** The text selected in the page, and where it is (a plugin comments on it). */
+export type PageSelection = {
+  /** The selected text as the reader shows it. */
+  text: string;
+  /** The node the selection starts in (the reference and the block lines are found from it). */
+  node: Node | null;
+  /** The node it ends in. */
+  endNode: Node | null;
+  /** Where it is on screen. */
+  rect: DOMRect | null;
+};
+
 /** A viewer shows the body of a document of its format (text, a picture, ...). */
 export type ViewerProps = {
   view: DocumentView;

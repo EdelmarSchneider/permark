@@ -12,26 +12,30 @@ import type {
 } from "../../api";
 import type { CommandEntry } from "../commands/commands";
 import { fuzzyMatch } from "./fuzzy";
+import type { TagHit } from "./tags.svelte";
 
 export type Preset = "quick" | "everywhere" | "commands";
-export type Scope = "all" | "files" | "sections" | "commands";
+export type Scope = "all" | "files" | "sections" | "tags" | "commands";
 
 /** Rows each group of All lists; the rest is behind "Show all". */
-export const GROUP_LIMIT = { files: 5, folders: 3, sections: 5, commands: 3 } as const;
+export const GROUP_LIMIT = { files: 5, folders: 3, sections: 5, tags: 5, commands: 3 } as const;
 /** Recent files of each kind an empty box lists. */
 export const RECENT_LIMIT = 8;
 /** Most rows a single scope lists. */
 export const RESULT_LIMIT = 50;
 
-/** The scopes a face of the box offers, in tab order. */
-export function scopesFor(preset: Preset, singleFile: boolean): readonly Scope[] {
+/** The scopes a face of the box offers, in tab order (`Tags` while the tags plugin is on). */
+export function scopesFor(preset: Preset, singleFile: boolean, withTags = false): readonly Scope[] {
   switch (preset) {
     case "quick":
       return ["files"];
     case "commands":
       return ["commands"];
     case "everywhere":
-      return singleFile ? ["sections", "commands"] : ["all", "files", "sections", "commands"];
+      if (singleFile) return ["sections", "commands"];
+      return withTags
+        ? ["all", "files", "sections", "tags", "commands"]
+        : ["all", "files", "sections", "commands"];
     default:
       return preset satisfies never;
   }
@@ -93,11 +97,14 @@ export type CommandRow = {
   entry: CommandEntry;
   positions: readonly number[];
 };
+/** A tag: choosing it narrows the search to the files that have it. */
+export type TagRow = { type: "tag"; key: string; name: string; count: number };
 /** "Show all (n)": the rest of a group, in its own scope. */
 export type MoreRow = { type: "more"; key: string; scope: Scope; count: number };
-export type Row = FileRow | FolderRow | SectionRow | CommandRow | MoreRow;
+export type Row = FileRow | FolderRow | SectionRow | TagRow | CommandRow | MoreRow;
 
-export type GroupTitle = "opened" | "changed" | "files" | "folders" | "sections" | "commands";
+export type GroupTitle =
+  "opened" | "changed" | "files" | "folders" | "sections" | "tags" | "commands";
 export type Group = { title: GroupTitle; rows: readonly Row[] };
 
 /** What the box has to show, besides the words. */
@@ -119,6 +126,8 @@ export type ViewInput = {
   commands: readonly { entry: CommandEntry; positions: readonly number[] }[];
   /** The headings of the open document, as rows. */
   outline: readonly SectionRow[];
+  /** The tags that match the words (the tags plugin; none while it is off). */
+  tags?: readonly TagHit[];
   /** The window shows a single file: Sections come from the open document only. */
   singleFile: boolean;
 };
@@ -188,6 +197,15 @@ export function filterOutline(rows: readonly SectionRow[], query: string): Secti
   return ranked.map((r) => r.row);
 }
 
+function tagRows(input: ViewInput): TagRow[] {
+  return (input.tags ?? []).map((hit) => ({
+    type: "tag",
+    key: `tag:${hit.name}`,
+    name: hit.name,
+    count: hit.count,
+  }));
+}
+
 function commandRows(input: ViewInput): CommandRow[] {
   return input.commands.map(({ entry, positions }) => ({
     type: "command",
@@ -237,6 +255,7 @@ export function buildView(input: ViewInput): View {
             { title: "files", rows: capped(files, GROUP_LIMIT.files, "files") },
             { title: "folders", rows: capped(folders, GROUP_LIMIT.folders, "files") },
             { title: "sections", rows: capped(sections, GROUP_LIMIT.sections, "sections") },
+            { title: "tags", rows: typed ? capped(tagRows(input), GROUP_LIMIT.tags, "tags") : [] },
             {
               title: "commands",
               rows: capped(commandRows(input), GROUP_LIMIT.commands, "commands"),
@@ -257,6 +276,9 @@ export function buildView(input: ViewInput): View {
       groups = nonEmpty([{ title: "sections", rows: rows.slice(0, RESULT_LIMIT) }]);
       break;
     }
+    case "tags":
+      groups = nonEmpty([{ title: "tags", rows: tagRows(input).slice(0, RESULT_LIMIT) }]);
+      break;
     case "commands":
       groups = nonEmpty([{ title: "commands", rows: commandRows(input) }]);
       break;

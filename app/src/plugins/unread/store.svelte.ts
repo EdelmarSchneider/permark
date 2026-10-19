@@ -6,6 +6,7 @@ import { documents } from "../../core/doc/document.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
 import { t, tn } from "../../core/i18n";
+import { silence } from "../../core/silence/silence.svelte";
 
 /** A document counts as read when it has been open and in view this long (ms). */
 export const READ_MS = 1000;
@@ -41,11 +42,19 @@ const shownDocument: ReadingPort = () => {
 };
 
 export class UnreadStore {
-  unread = $state.raw<readonly string[]>([]);
-  ready = $state(false);
   since = $state.raw<SinceVisit | null>(null);
-  #set = $state.raw<ReadonlySet<string>>(new Set());
-  #folders = $state.raw<ReadonlyMap<string, number>>(new Map());
+  /** What the backend says: every unread document, silenced ones included. */
+  #list = $state.raw<UnreadList>({ ready: false, unread: [] });
+  /** The ones that call for attention: what the person silenced is left out (the backend still keeps it unread). */
+  unread = $derived.by(() => this.#list.unread.filter((path) => !silence.isSilenced(path)));
+  #all = $derived(new Set(this.#list.unread));
+  #folders = $derived.by(() => {
+    const folders = new Map<string, number>();
+    for (const path of this.unread) {
+      for (const folder of ancestors(path)) folders.set(folder, (folders.get(folder) ?? 0) + 1);
+    }
+    return folders;
+  });
   /** The window is in front and visible: reading counts only then. */
   #focused = $state(true);
   readonly #client: PluginClient;
@@ -62,8 +71,16 @@ export class UnreadStore {
     this.#shown = shown;
   }
 
+  get ready(): boolean {
+    return this.#list.ready;
+  }
+
   /** Follows the project of the window until the returned teardown runs. */
   start(): () => void {
+    // what was silenced and now speaks starts from now: its old changes do not arrive at once
+    const offWake = silence.onWake((paths) => {
+      for (const path of paths) void this.markFolderRead(path);
+    });
     return $effect.root(() => {
       $effect(() => {
         if (this.#root() === null) {
@@ -96,7 +113,7 @@ export class UnreadStore {
       $effect(() => {
         const { path, hash } = this.#shown();
         if (path === null || hash === null) return;
-        if (!this.#set.has(path) || !this.#focused) return;
+        if (!this.#all.has(path) || !this.#focused) return;
         const timer = setTimeout(() => void this.markRead(path, hash), READ_MS);
         return () => clearTimeout(timer);
       });
@@ -115,6 +132,7 @@ export class UnreadStore {
         };
       });
       return () => {
+        offWake();
         this.#apply({ ready: false, unread: [] });
         this.since = null;
       };
@@ -122,14 +140,7 @@ export class UnreadStore {
   }
 
   #apply(list: UnreadList): void {
-    this.ready = list.ready;
-    this.unread = list.unread;
-    this.#set = new Set(list.unread);
-    const folders = new Map<string, number>();
-    for (const path of list.unread) {
-      for (const folder of ancestors(path)) folders.set(folder, (folders.get(folder) ?? 0) + 1);
-    }
-    this.#folders = folders;
+    this.#list = list;
   }
 
   async #loadSince(): Promise<void> {
@@ -137,8 +148,9 @@ export class UnreadStore {
     if (result.ok) this.since = result.value;
   }
 
+  /** Whether the backend holds the document unread (silenced or not: reading it counts). */
   isUnread(path: string): boolean {
-    return this.#set.has(path);
+    return this.#all.has(path);
   }
 
   /** Unread documents below a folder. */
@@ -154,7 +166,9 @@ export class UnreadStore {
         ? null
         : { text: String(n), tone: "unread", title: tn("unread.folderCount", n) };
     }
-    return this.#set.has(path) ? { text: "•", tone: "unread", title: t("unread.dot") } : null;
+    return this.#all.has(path) && !silence.isSilenced(path)
+      ? { text: "•", tone: "unread", title: t("unread.dot") }
+      : null;
   }
 
   next(from: string | null): string | null {

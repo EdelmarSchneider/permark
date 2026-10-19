@@ -183,6 +183,31 @@ describe("the list", () => {
     expect(row(root, "package.json").querySelector(".badge")).toBeNull();
     expect(root.querySelectorAll(".badge")).toHaveLength(1);
   });
+
+  it("a plugin can quiet a row and add a line to its tooltip without drawing a badge", async () => {
+    const { root, registry } = await render();
+    registry.register({
+      kind: "treeBadge",
+      id: "quiet",
+      owner: "quiet",
+      requires: { needs: [], prefers: [] },
+      badge: (path) => (path === "README.md" ? { text: "", dim: true, tip: "Silenced" } : null),
+    });
+    registry.register({
+      kind: "treeBadge",
+      id: "tags",
+      owner: "tags",
+      requires: { needs: [], prefers: [] },
+      badge: (path) => (path === "README.md" ? { text: "", tip: "Tags: spec" } : null),
+    });
+    await tick();
+    const readme = row(root, "README.md");
+    expect(readme.className).toContain("is-dim");
+    expect(readme.querySelector(".badge")).toBeNull();
+    expect(readme.getAttribute("title")).toBe("Silenced\nTags: spec");
+    expect(row(root, "package.json").className).not.toContain("is-dim");
+    expect(row(root, "package.json").hasAttribute("title")).toBe(false);
+  });
 });
 
 describe("keyboard", () => {

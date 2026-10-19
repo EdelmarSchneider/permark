@@ -8,6 +8,8 @@
 
   const plugins = $derived(leftPanels());
   const shown = $derived(activeSidebar());
+  /** Many tabs: the ones that are not open show their icon alone (the label is the tooltip). */
+  const crowded = $derived(plugins.length + 2 > 3);
 </script>
 
 <div class="tabs" role="tablist" aria-label={t("sidebar.views")}>
@@ -16,20 +18,24 @@
     role="tab"
     class="tab"
     aria-selected={shown === "files"}
+    aria-label={t("sidebar.files")}
+    title={t("sidebar.files")}
     onclick={() => ui.showSidebar("files")}
   >
     <FolderTree size={14} aria-hidden="true" />
-    {t("sidebar.files")}
+    {#if !crowded || shown === "files"}{t("sidebar.files")}{/if}
   </button>
   <button
     type="button"
     role="tab"
     class="tab"
     aria-selected={shown === "search"}
+    aria-label={t("sidebar.search")}
+    title={t("sidebar.search")}
     onclick={() => ui.showSidebar("search")}
   >
     <SearchIcon size={14} aria-hidden="true" />
-    {t("sidebar.search")}
+    {#if !crowded || shown === "search"}{t("sidebar.search")}{/if}
   </button>
   {#each plugins as panel (panel.owner + panel.id)}
     <button
@@ -37,9 +43,15 @@
       role="tab"
       class="tab"
       aria-selected={shown === panel.id}
+      aria-label={t(panel.label)}
+      title={t(panel.label)}
       onclick={() => ui.showSidebar(panel.id)}
     >
-      {t(panel.label)}
+      {#if panel.icon}
+        {@const Icon = panel.icon}
+        <Icon size={14} />
+      {/if}
+      {#if !panel.icon || !crowded || shown === panel.id}{t(panel.label)}{/if}
     </button>
   {/each}
 </div>
@@ -53,6 +65,7 @@
     border-bottom: 1px solid var(--border);
   }
   .tab {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 6px;
