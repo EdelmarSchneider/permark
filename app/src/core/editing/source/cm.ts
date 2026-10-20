@@ -75,6 +75,9 @@ const theme = EditorView.theme({
     color: "var(--text)",
     backgroundColor: "var(--bg)",
     fontSize: "var(--fs-code)",
+    // every character drawn as itself: no ligatures (`-->` stays three characters, not an arrow)
+    fontVariantLigatures: "none",
+    fontFeatureSettings: '"liga" 0, "calt" 0',
   },
   ".cm-content": { fontFamily: "var(--font-code)", caretColor: "var(--text)", padding: "12px 0" },
   ".cm-scroller": { fontFamily: "var(--font-code)", lineHeight: "1.6" },
