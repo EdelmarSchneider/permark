@@ -63,6 +63,9 @@
   --accent-fg: #ffffff;
   --accent-text: #4259e0; /* accent as small text: 4.9:1 even on surface-2 (the accent itself is 3.9:1 there) */
   --accent-soft: rgb(79 107 237 / 0.1);
+  --accent-drop: rgb(
+    79 107 237 / 0.2
+  ); /* the folder a drop from outside lands in (with a 2 px accent ring) */
   --accent-muted: rgb(79 107 237 / 0.45);
   --live: rgb(79 107 237 / 0.18); /* live-change glow, design-system spec */
   --hover: rgb(31 35 40 / 0.05);
@@ -208,6 +211,7 @@
   --accent-fg: #0f1117;
   --accent-text: var(--accent);
   --accent-soft: rgb(123 147 255 / 0.13);
+  --accent-drop: rgb(123 147 255 / 0.24);
   --accent-muted: rgb(123 147 255 / 0.5);
   --live: rgb(123 147 255 / 0.18);
   --hover: rgb(230 232 235 / 0.05);

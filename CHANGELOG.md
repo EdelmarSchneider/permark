@@ -7,6 +7,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Added
 - **Notes button.** A button next to Settings opens your Notes in a tab with one click, or brings you to the Notes tab if it is already open. `Ctrl+Shift+D` does the same, and `Ctrl+Shift+N` makes a new note from anywhere. <!-- f: notes, keyboard-shortcuts -->
+- **Drop files from outside, anywhere.** Drag files or folders from your file manager onto the file list and the folder under the pointer lights up; when you let go, a small question at that spot asks Copy here, Move here or Cancel, and lists names that already exist (Keep both or Skip). Drop them anywhere else in the window, the start screen included, and each one opens as a tab; more than 8 ask first. A label next to the pointer always says what the drop will do, and folders you rest on open by themselves. <!-- f: drop-files, explorer, tabs -->
 - **Hide and show the side bars.** `Ctrl+B` hides or shows the sidebar and `Ctrl+Alt+B` the right panel, as in earlier versions; a button at each end of the status bar does the same. Each project remembers which side bars you hid. <!-- f: side-panels, keyboard-shortcuts -->
 - **Move a tab to another window.** Right-click a tab and choose **Move to window** to move it into another open window; the list shows each window by the tab it is showing and how many tabs it has. Unsaved changes move with the tab. Moving a window's last tab closes the window it leaves. <!-- f: tabs, windows -->
 
@@ -14,6 +15,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - `Ctrl+B` makes text bold in the source editor too, as it already did in the visual editor. <!-- f: source-mode, keyboard-shortcuts -->
 - The outline button always shows the outline, even when another panel was open on the right. <!-- f: outline, side-panels -->
 - In the Notes tab, `Ctrl+1` to `Ctrl+9` open your pinned notes (instead of switching tabs), `Ctrl+N` makes a new note and `Ctrl+Shift+C` copies the note. Use `Ctrl+Tab` or the tabs to switch tabs from there. The keyboard shortcuts list no longer reports these keys as shared, but it does warn when a key you choose is already used where the same command could run. <!-- f: notes, keyboard-shortcuts -->
+- Dropping files no longer covers the window with a dashed frame, and the start screen takes several files at once. Files dropped on the Notes tab become loose files there; folders and other files open as tabs. Pictures dropped on a document you are editing go into it. <!-- f: drop-files, notes, start-screen, pictures-in-documents -->
 
 ### Fixed
 - Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window. <!-- f: notes, start-screen -->

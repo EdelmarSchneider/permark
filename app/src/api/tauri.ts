@@ -238,6 +238,8 @@ export const tauriApi: Api = {
       handler(mapped.event);
     });
   },
+  openDropped: (paths, scope) => call("open_dropped", { paths, scope }),
+  focusView: () => call("view_focus", {}),
   pickFolder: async (title) => {
     const picked = await open({ directory: true, multiple: false, title });
     return typeof picked === "string" ? picked : null;

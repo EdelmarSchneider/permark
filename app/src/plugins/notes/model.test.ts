@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NoteEntry } from "../../api";
 import {
+  isLooseFile,
   arrange,
   dropPinned,
   drawnOrder,
@@ -212,5 +213,23 @@ describe("marks", () => {
     });
     expect(marksOf(entry({ path: "b.md", state: "gone" })).gone).toBe(true);
     expect(marksOf(entry({ path: "b.md", state: "changedOnDisk" })).changed).toBe(true);
+  });
+});
+
+describe("a drop on the Notes tab", () => {
+  it("lists Markdown and plain text as loose files; the rest opens as tabs", () => {
+    for (const path of [
+      "C:/a.md",
+      "C:/b.MARKDOWN",
+      "/x/c.txt",
+      "d e.mdx",
+      "C:\\文档\\f.log",
+      "g.rst",
+    ]) {
+      expect(isLooseFile(path), path).toBe(true);
+    }
+    for (const path of ["C:/folder", "a.png", "b.json", "c.md.exe", "d.pdf", ""]) {
+      expect(isLooseFile(path), path).toBe(false);
+    }
   });
 });

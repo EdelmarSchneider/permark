@@ -557,20 +557,39 @@ describe("files dragged in from outside", () => {
     expect(store.dropFolderAt(50, at * 26 + 5)).toBe("docs");
   });
 
-  it("marks the folder under an outside drag like a drag inside, and the whole list for the project folder", async () => {
+  it("marks the folder under an outside drag (fill + ring, shown open), its contents as one block, the whole list for the project folder", async () => {
     const { root, store } = await render();
-    store.markDrop("docs");
+    await store.toggle("docs");
+    await tick();
+    store.outsideOver("docs", { x: 5, y: 5 });
     await tick();
     expect(row(root, "docs").className).toContain("drop-target");
+    expect(row(root, "docs").className).not.toContain("drop-block");
+    expect(row(root, "docs/guide.md").className).toContain("drop-block");
+    expect(row(root, "README.md").className).not.toContain("drop-block");
     expect(root.querySelector(".list")?.className).not.toContain("drop-root");
-    store.markDrop("");
+    store.outsideOver("", { x: 5, y: 5 });
     await tick();
     expect(row(root, "docs").className).not.toContain("drop-target");
+    expect(root.querySelectorAll(".drop-block")).toHaveLength(0);
     expect(root.querySelector(".list")?.className).toContain("drop-root");
-    store.markDrop(null);
+    store.outsideEnd(null);
     await tick();
     expect(root.querySelector(".list")?.className).not.toContain("drop-root");
-    expect(root.querySelectorAll(".drop-target")).toHaveLength(0);
+    expect(root.querySelectorAll(".drop-target, .drop-block")).toHaveLength(0);
+  });
+
+  it("a closed folder under the mark shows an open folder icon", async () => {
+    const { root, store } = await render();
+    const icon = (): string => row(root, "docs").querySelector(".icon-cell")?.innerHTML ?? "";
+    const closed = icon();
+    store.outsideOver("docs", { x: 5, y: 5 });
+    await tick();
+    expect(icon()).not.toBe(closed);
+    expect(store.isOpen("docs")).toBe(false);
+    store.outsideEnd(null);
+    await tick();
+    expect(icon()).toBe(closed);
   });
 
   it("lets go of the geometry when the panel goes away", async () => {

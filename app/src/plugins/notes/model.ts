@@ -209,3 +209,10 @@ export function timeLabel(modifiedMs: number, now: number): string {
       return "";
   }
 }
+
+/** Markdown and plain text by name: what a drop on the Notes tab lists as loose files (other files open as tabs). */
+const LOOSE = /\.(md|markdown|mdown|mkd|mdx|mdc|txt|text|rst|adoc|asciidoc|org|log)$/i;
+
+export function isLooseFile(path: string): boolean {
+  return LOOSE.test(path);
+}

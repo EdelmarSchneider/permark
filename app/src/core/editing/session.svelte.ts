@@ -310,6 +310,11 @@ export class EditingSession {
     };
   }
 
+  /** The editor on screen takes pictures (a drop of pictures over it inserts them). */
+  takesPictures(): boolean {
+    return this.#editor?.pictures !== undefined;
+  }
+
   /** Pictures dropped from the system at a point of the window go into the editor on screen. `false`: none takes them. */
   dropPictures(files: File[], point: { x: number; y: number }): boolean {
     const editor = this.#editor;

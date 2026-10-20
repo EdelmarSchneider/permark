@@ -34,7 +34,7 @@ use permark_core::workspace::{
 };
 use permark_core::{AppInfo, ErrorKind, IpcError};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Webview};
+use tauri::{AppHandle, Emitter, Manager, Webview};
 use tauri_plugin_opener::OpenerExt;
 use ts_rs::TS;
 
@@ -1050,6 +1050,45 @@ pub fn view_ready(handle: AppHandle, window: Webview) {
     crate::views::ready(&handle, window.label());
 }
 
+/// Files | folders dropped on this view open as tabs of its window (`windows.md` Drop to open; `open_in` ignored).
+#[tauri::command(async)]
+pub fn open_dropped(
+    handle: AppHandle,
+    window: Webview,
+    paths: Vec<String>,
+    scope: permark_core::open_dropped::DropScope,
+) -> Result<permark_core::open_dropped::DropOpened, IpcError> {
+    let shell = state(&handle);
+    let native = shell
+        .registry
+        .window_of(window.label())
+        .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(window.label().to_owned()))?;
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    let dropped = permark_core::open_dropped::open_dropped(&shell.registry, &native, &paths, scope);
+    for outcome in dropped.outcomes {
+        crate::open::run(&handle, outcome);
+    }
+    if let Some(forward) = &dropped.forward {
+        crate::windows::focus(&handle, forward);
+    }
+    Ok(dropped.answer)
+}
+
+/// This view's native window comes forward, then the view takes the keyboard (a drop does not activate the window;
+/// the system may refuse).
+#[tauri::command(async)]
+pub fn view_focus(handle: AppHandle, window: Webview) {
+    if let Some(native) = state(&handle)
+        .registry
+        .window_of(window.label())
+        .and_then(|label| handle.get_window(&label))
+    {
+        let _ = native.unminimize();
+        let _ = native.set_focus();
+    }
+    let _ = window.set_focus();
+}
+
 /// The native title this view wants (set while it is the view on screen).
 #[tauri::command(async)]
 pub fn view_set_title(handle: AppHandle, window: Webview, title: String) {
@@ -1294,6 +1333,8 @@ commands![
     view_ready,
     view_set_title,
     view_set_theme,
+    open_dropped,
+    view_focus,
     default_app_get,
     default_app_set,
     default_app_asked,

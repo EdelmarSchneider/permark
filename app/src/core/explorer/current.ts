@@ -19,8 +19,14 @@ type Handle = {
   undo(): Promise<void>;
   /** The folder files dropped from outside at this point land in; `null`: the point is not over the list. */
   dropFolderAt(x: number, y: number): string | null;
-  /** Marks the folder an outside drag is over (`null`: clear). */
-  markDrop(folder: string | null): void;
+  /** An outside drag is over a folder of the list (`null`: none) at a point (`null`: not over the list). */
+  outsideOver(folder: string | null, point: { x: number; y: number } | null): void;
+  /** Dropped on the list: the mark goes, folders the drag opened stay while the question is open. */
+  outsideHold(): void;
+  /** The drag is over: folders it opened close, except the one an import landed in (`kept`) and those above it. */
+  outsideEnd(kept: string | null): void;
+  /** Items an import put in place: selected, the first brought into view. */
+  placed(paths: readonly string[]): void;
 };
 
 let current: Handle | null = null;
@@ -75,10 +81,14 @@ export function treeFolderAt(x: number, y: number): string | null {
   return current?.dropFolderAt(x, y) ?? null;
 }
 
-/** The tree marks the folder files dragged in from outside would land in (`null`: no mark). */
-export function markTreeDrop(folder: string | null): void {
-  current?.markDrop(folder);
-}
+/** The tree that shows an outside drag over it, and what became of the drop. */
+export const treeDrop = {
+  over: (folder: string | null, point: { x: number; y: number } | null): void =>
+    current?.outsideOver(folder, point),
+  hold: (): void => current?.outsideHold(),
+  end: (kept: string | null): void => current?.outsideEnd(kept),
+  placed: (paths: readonly string[]): void => current?.placed(paths),
+};
 
 /** Takes the newest file operation back (the notice of an import offers it). */
 export async function undoInTree(): Promise<void> {

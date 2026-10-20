@@ -1168,7 +1168,7 @@ describe("the welcome screen", () => {
     // a folder that is gone is marked and removable, and does not open
     const gone = rows.find((r) => r.textContent?.includes("(not found)"));
     expect(gone?.querySelector("button")?.textContent).toBe("Remove");
-    expect(target.textContent).toContain("Drop a folder or a .md file anywhere to open it.");
+    expect(target.textContent).toContain("Drop folders or files here to open them.");
   });
 
   it("New project picks a folder, initializes it and opens it as a project", async () => {

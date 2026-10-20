@@ -495,6 +495,20 @@ fn dropped_items_with_one_name_keep_both_in_turn() {
     assert_eq!(read(&f, "x.md"), "1");
     assert_eq!(read(&f, "x (2).md"), "2");
     assert_eq!(read(&f, "x (3).md"), "3");
+    assert_eq!(
+        out.placed,
+        ["x.md", "x (2).md", "x (3).md"],
+        "final names, drop order"
+    );
+}
+
+#[test]
+fn placed_names_the_items_in_a_folder_and_leaves_out_skipped_ones() {
+    let f = fx(&[("docs/a.md", "old")], &[("a.md", "new"), ("b/c.md", "c")]);
+    let p = plan(&f, "docs", &["a.md", "b"]);
+    let out = apply(&f, &p, ImportMode::Copy, ConflictChoice::Skip);
+    assert_eq!(out.placed, ["docs/b"]);
+    assert_eq!(out.skipped, 1);
 }
 
 #[test]

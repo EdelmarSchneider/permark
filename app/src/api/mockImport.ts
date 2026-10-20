@@ -211,6 +211,7 @@ export function createMockImport(
           links: 0,
           leftBehind: 0,
           cancelled,
+          placed: created,
         };
         return { ok: true, value: outcome };
       },

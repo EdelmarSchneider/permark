@@ -41,6 +41,9 @@ import type {
   TabSummary,
   Unlisten,
   WindowSummary,
+  DropEvent,
+  DropOpened,
+  DropScope,
 } from "./types";
 
 export const MOCK_VERSION = "0.0.0-mock";
@@ -162,6 +165,13 @@ export type MockProbe = {
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
   pictures: string[];
+  /** Drop to open: what was asked, paths that are gone (they fail), and `fire` = a system drag event on the view. */
+  drops: {
+    opened: { paths: string[]; scope: DropScope }[];
+    missing: Set<string>;
+    focused: number;
+    fire: (event: DropEvent) => void;
+  };
   /** The tabs: moved to a new window, moved into another window (`[tab, window]`), the close prompt's answers, saves
    * reported. `refuseMove`: the next moves fail (the backend could not move the view). */
   tabs: {
@@ -385,10 +395,20 @@ export function createMockApi(): Api & {
     convert: convert.probe,
     imports: importing.probe,
     pictures: [],
+    drops: {
+      opened: [],
+      missing: new Set(),
+      focused: 0,
+      fire: (event) => {
+        for (const handler of dropHandlers) handler(event);
+      },
+    },
     remote: { asked: [], always: false },
     tabs: { moved: [], movedTo: [], answers: [], saved: [], refuseMove: false },
   };
   let tree: TreeView | null = null;
+  /** The view's drop listeners (the system's drag events, fired by tests through `probe.drops.fire`). */
+  const dropHandlers = new Set<(event: DropEvent) => void>();
 
   function emit<E extends EventName>(event: E, payload: Events[E]): void {
     for (const handler of listeners[event]) handler(payload);
@@ -461,7 +481,14 @@ export function createMockApi(): Api & {
   }
 
   /** Opens `path` in a new tab (`this`: in the active one) and shows it. */
-  function show(path: string, where: "tab" | "this" = "tab"): WindowView {
+  /** A tab for `path` listed after the others, not shown (a pending tab). */
+  function listTab(path: string): void {
+    const shown = shownOf(path);
+    tabList = [...tabList, { tab: nextTab++, view: shown }];
+    announceTabs();
+  }
+
+  function shownOf(path: string): Shown {
     const id = nextId++;
     const workspace: WorkspaceView = /\.(md|markdown|mdown|txt)$/i.test(path)
       ? {
@@ -472,7 +499,12 @@ export function createMockApi(): Api & {
           folder: path.replace(/[\\/][^\\/]*$/, ""),
         }
       : { kind: "project", id, name: nameOf(path), root: path, stateLocation: "profile" };
-    const shown: Shown = { state: "showing", workspace, document: null };
+    return { state: "showing", workspace, document: null };
+  }
+
+  function show(path: string, where: "tab" | "this" = "tab"): WindowView {
+    const shown = shownOf(path);
+    const workspace = shown.workspace;
     if (where === "tab" || activeTab === null) {
       activeTab = nextTab++;
       tabList = [...tabList, { tab: activeTab, view: shown }];
@@ -549,6 +581,41 @@ export function createMockApi(): Api & {
     listWindows: () => ok(windowsNow()),
     tabActivate: (tab) => {
       activateTab(tab);
+      return ok(null);
+    },
+    openDropped: (paths, scope) => {
+      probe.drops.opened.push({ paths: [...paths], scope });
+      const failed: DropOpened["failed"] = [];
+      const left: string[] = [];
+      let last: number | null = null;
+      let added: string | null = null;
+      for (const path of paths) {
+        if (probe.drops.missing.has(path)) {
+          failed.push({ path, error: { kind: "notFound", subject: path, detail: null } });
+          continue;
+        }
+        const open = tabOf(path);
+        if (open !== null) {
+          if (added !== null) listTab(added);
+          last = open;
+          added = null;
+          continue;
+        }
+        if (scope === "existingOnly") {
+          left.push(path);
+          continue;
+        }
+        // listed now, shown only when it is the last one (a pending tab in the app)
+        if (added !== null) listTab(added);
+        added = path;
+        last = null;
+      }
+      if (added !== null) show(added);
+      else if (last !== null) activateTab(last);
+      return ok({ failed, left });
+    },
+    focusView: () => {
+      probe.drops.focused += 1;
       return ok(null);
     },
     tabClose: (tab) => {
@@ -808,11 +875,18 @@ export function createMockApi(): Api & {
       return Promise.resolve(unlisten);
     },
     onDrop: (handler) => {
-      if (typeof window === "undefined") return Promise.resolve(() => {});
+      dropHandlers.add(handler);
+      if (typeof window === "undefined") {
+        return Promise.resolve(() => {
+          dropHandlers.delete(handler);
+        });
+      }
       const count = (e: DragEvent): number => e.dataTransfer?.items.length || 1;
       const over = (e: DragEvent): void => {
         e.preventDefault();
-        handler({ type: "over", count: count(e), paths: [], x: e.clientX, y: e.clientY });
+        // the browser hides what is dragged until the drop: the mock names the demo folder, once per item
+        const paths = Array.from({ length: count(e) }, () => MOCK_FOLDER);
+        handler({ type: "over", count: paths.length, paths, x: e.clientX, y: e.clientY });
       };
       const leave = (e: DragEvent): void => {
         if (e.relatedTarget === null) handler({ type: "leave" });
@@ -830,6 +904,7 @@ export function createMockApi(): Api & {
       window.addEventListener("dragleave", leave);
       window.addEventListener("drop", drop);
       return Promise.resolve(() => {
+        dropHandlers.delete(handler);
         window.removeEventListener("dragover", over);
         window.removeEventListener("dragleave", leave);
         window.removeEventListener("drop", drop);

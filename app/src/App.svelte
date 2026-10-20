@@ -1,17 +1,19 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, type AppInfo, type WorkspaceView } from "./api";
-  import { language, t, tn } from "./core/i18n";
+  import { language, t } from "./core/i18n";
   import DocumentArea from "./core/doc/DocumentArea.svelte";
   import { documents } from "./core/doc/document.svelte";
   import OutlinePanel from "./core/doc/OutlinePanel.svelte";
   import { reading } from "./core/doc/reading.svelte";
   import { look } from "./core/look.svelte";
   import ExplorerSidebar from "./core/explorer/ExplorerSidebar.svelte";
-  import ImportDialog from "./core/explorer/ImportDialog.svelte";
+  import ImportAsk from "./core/explorer/ImportAsk.svelte";
   import ImportProgress from "./core/explorer/ImportProgress.svelte";
-  import { folderLabel } from "./core/explorer/importModel";
   import { importFlow } from "./core/explorer/importWindow.svelte";
+  import DropBadge from "./core/shell/DropBadge.svelte";
+  import { dropFlow } from "./core/shell/dropView.svelte";
+  import OpenManyAsk from "./core/shell/OpenManyAsk.svelte";
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
@@ -179,16 +181,30 @@
   }
   $effect(() => language.watchSystem());
 
-  // a project window takes what is dropped on it into the project (or into its editor); the flow listens to the
-  // import's progress while the project is shown and forgets its question when another workspace comes
+  // files | folders dragged in from outside: this view's own system events (only the view on screen gets them)
+  $effect(() => {
+    let off: (() => void) | null = null;
+    let gone = false;
+    void api
+      .onDrop((event) => dropFlow.event(event))
+      .then((stop) => {
+        if (gone) stop();
+        else off = stop;
+      });
+    return () => {
+      gone = true;
+      off?.();
+      dropFlow.reset();
+    };
+  });
+  // the view left the screen (another tab came forward): the drag over it and its questions end
+  $effect(() => {
+    if (store.tab !== null && tabs.active !== null && tabs.active !== store.tab) dropFlow.hidden();
+  });
+  // a project's import: progress listened to while the project is shown; its question forgotten when it goes
   const projectShown = $derived(shown?.workspace.kind === "project" ? shown.workspace.id : null);
   $effect(() => {
     if (projectShown === null) return;
-    store.projectDrop = {
-      over: (x, y, paths, count) => importFlow.over(x, y, paths, count),
-      leave: () => importFlow.leave(),
-      drop: (paths, x, y) => void importFlow.drop(paths, x, y),
-    };
     let off: (() => void) | null = null;
     let gone = false;
     void importFlow.start().then((stop) => {
@@ -198,24 +214,10 @@
     return () => {
       gone = true;
       off?.();
-      store.projectDrop = null;
       importFlow.reset();
     };
   });
 
-  /** What the dashed overlay says while a drag is over the window. */
-  const dropText = $derived.by(() => {
-    const hover = importFlow.hover;
-    if (store.projectDrop === null || hover === null) {
-      return store.drag.status === "over" && store.drag.count === 1
-        ? t("welcome.dropActive")
-        : t("welcome.dropOne");
-    }
-    if (hover.pictures) return t("import.overlayPictures");
-    return tn("import.overlay", hover.count, {
-      folder: folderLabel(hover.folder, shown?.workspace.name ?? ""),
-    });
-  });
   // first run: "Open these files with PerMark?" in the first window, once (the backend says when it is due)
   $effect(() => {
     if (store.label !== "") void defaultApp.askIfDue(store.label);
@@ -353,17 +355,16 @@
   <KeymapDialog {store} />
 {/if}
 <DefaultAppDialog />
-{#if importFlow.state.status === "asking"}
+{#if importFlow.state.status === "asking" || (importFlow.state.status === "planning" && importFlow.state.slow)}
   {@const asked = importFlow.state}
-  <ImportDialog
-    plan={asked.plan}
+  <ImportAsk
+    at={asked.at}
     where={asked.where}
-    mode={asked.mode}
-    conflicts={asked.conflicts}
-    setMode={(mode) => importFlow.setMode(mode)}
+    plan={asked.status === "asking" ? asked.plan : null}
+    conflicts={asked.status === "asking" ? asked.conflicts : "keepBoth"}
     setConflicts={(choice) => importFlow.setConflicts(choice)}
-    confirm={() => void importFlow.confirm()}
-    cancel={() => importFlow.cancelAsking()}
+    confirm={(mode) => void importFlow.confirm(mode)}
+    cancel={() => importFlow.cancel()}
   />
 {:else if importFlow.state.status === "running"}
   {@const running = importFlow.state}
@@ -375,11 +376,18 @@
     stop={() => void importFlow.stop()}
   />
 {/if}
+{#if dropFlow.ask.status === "asking"}
+  {@const many = dropFlow.ask}
+  <OpenManyAsk
+    at={many.at}
+    count={many.paths.length}
+    confirm={() => void dropFlow.confirmOpen()}
+    cancel={() => dropFlow.cancelOpen()}
+  />
+{/if}
 <Notices {store} />
-{#if store.drag.status === "over"}
-  <div class="drop" aria-hidden="true">
-    {dropText}
-  </div>
+{#if dropFlow.hover !== null}
+  <DropBadge badge={dropFlow.hover.badge} at={dropFlow.hover.at} />
 {/if}
 
 <style>
@@ -431,21 +439,6 @@
     background: var(--surface);
     color: var(--muted);
     font-size: var(--fs-ui-sm);
-    animation: pm-fade var(--dur) var(--ease);
-  }
-  .drop {
-    position: fixed;
-    inset: 6px;
-    z-index: 60;
-    display: grid;
-    place-items: center;
-    border: 2px dashed var(--accent);
-    border-radius: var(--radius-card);
-    background: color-mix(in srgb, var(--bg) 82%, transparent);
-    color: var(--accent);
-    font-size: 15px;
-    font-weight: 500;
-    pointer-events: none;
     animation: pm-fade var(--dur) var(--ease);
   }
 </style>

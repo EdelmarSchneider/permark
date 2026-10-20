@@ -623,3 +623,123 @@ describe("the code offer", () => {
     expect(store.codeOffer.status).toBe("offered");
   });
 });
+
+// ---- a drag from outside -----------------------------------------------------------------------------------------------
+
+describe("a drag from outside", () => {
+  const P = { x: 1, y: 1 };
+  const remembered = async (api: Mock): Promise<unknown> => {
+    const got = await api.projectSessionGet("explorer.expanded");
+    return got.ok ? got.value : null;
+  };
+
+  it("resting 700 ms on a closed folder opens it; a pointer that moves on restarts the wait", async () => {
+    vi.useFakeTimers();
+    const { store } = await setup();
+    store.outsideOver("docs", P);
+    expect(store.outside).toBe("docs");
+    await vi.advanceTimersByTimeAsync(699);
+    expect(store.isOpen("docs")).toBe(false);
+    store.outsideOver("notes", P);
+    await vi.advanceTimersByTimeAsync(400);
+    store.outsideOver("docs", P);
+    await vi.advanceTimersByTimeAsync(699);
+    expect(store.isOpen("docs")).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(store.isOpen("docs")).toBe(true);
+    expect(store.isOpen("notes")).toBe(false);
+  });
+
+  it("repeated over events on the same folder never restart the wait", async () => {
+    vi.useFakeTimers();
+    const { store } = await setup();
+    for (let n = 0; n < 7; n++) {
+      store.outsideOver("docs", { x: n, y: n });
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    expect(store.isOpen("docs")).toBe(true);
+  });
+
+  it("an open folder, a file's folder or the project folder: no wait", async () => {
+    vi.useFakeTimers();
+    const { store } = await setup();
+    await store.toggle("docs");
+    store.outsideOver("docs", P);
+    store.outsideOver("", P);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(store.isOpen("docs")).toBe(true);
+    expect(store.expanded.size).toBe(1);
+  });
+
+  it("leave, cancel or a drop elsewhere closes what the drag opened; the session never hears of it", async () => {
+    vi.useFakeTimers();
+    const { store, api } = await setup();
+    await store.toggle("notes");
+    await vi.advanceTimersByTimeAsync(500);
+    const before = await remembered(api);
+    store.outsideOver("docs", P);
+    await vi.advanceTimersByTimeAsync(700);
+    expect(store.isOpen("docs")).toBe(true);
+    // something else writes the session meanwhile: the drag's folder is not in it
+    await store.toggle("notes");
+    await store.toggle("notes");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await remembered(api)).toEqual(before);
+    store.outsideEnd(null);
+    expect(store.isOpen("docs")).toBe(false);
+    expect(store.isOpen("notes")).toBe(true);
+    expect(store.outside).toBeNull();
+    expect(store.outsidePoint).toBeNull();
+  });
+
+  it("a drop held for the question keeps the folders, the mark goes; the timer stops", async () => {
+    vi.useFakeTimers();
+    const { store } = await setup();
+    store.outsideOver("docs", P);
+    await vi.advanceTimersByTimeAsync(700);
+    store.outsideOver("notes", P);
+    store.outsideHold();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(store.isOpen("docs")).toBe(true);
+    expect(store.isOpen("notes")).toBe(false);
+    expect(store.outside).toBeNull();
+  });
+
+  it("an import into an opened folder keeps it (and the path to it) open, selects the new items, remembers", async () => {
+    vi.useFakeTimers();
+    const { store, api } = await setup();
+    store.outsideOver("docs", P);
+    await vi.advanceTimersByTimeAsync(700);
+    store.outsideOver("docs/img", P);
+    await vi.advanceTimersByTimeAsync(700);
+    store.outsideHold();
+    api.probe.project.add("docs/img/new.md", "x");
+    api.probe.project.add("docs/img/new (2).md", "x");
+    store.outsideEnd("docs/img");
+    store.placed(["docs/img/new.md", "docs/img/new (2).md"]);
+    expect(store.isOpen("docs")).toBe(true);
+    expect(store.isOpen("docs/img")).toBe(true);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(await remembered(api)).toEqual(expect.arrayContaining(["docs", "docs/img"]));
+    expect(store.scrollTo?.path).toBe("docs/img/new.md");
+  });
+
+  it("items that reach the list after the import ended are selected when they arrive", async () => {
+    const { store, api } = await setup();
+    store.placed(["docs/late.md"]);
+    expect(store.selection.size).toBe(0);
+    api.probe.project.add("docs/late.md", "x");
+    // the backend tells the window about the new file
+    await api.newEntry("docs", "other.md", "file");
+    await vi.waitFor(() => expect(store.selection.has("docs/late.md")).toBe(true));
+  });
+
+  it("teardown stops the wait", async () => {
+    vi.useFakeTimers();
+    const { store, stop } = await setup();
+    store.outsideOver("docs", P);
+    stop();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(store.isOpen("docs")).toBe(false);
+  });
+});

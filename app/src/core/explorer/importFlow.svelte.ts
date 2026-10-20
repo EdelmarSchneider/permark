@@ -1,6 +1,6 @@
-// Drop into project, the window's side: what a drag over the window says, where a drop goes (pictures into the editor,
-// everything else into a folder), the question (Copy | Move, taken names), the running import and its end. The backend
-// owns the work and the undo; this asks, shows progress and words the result. States are tagged unions.
+// Drop from outside onto the Explorer, the view's side: the question at the drop point (Copy here | Move here, names
+// that exist, what cannot come in), the running import and its end. The backend owns the work and the undo; this asks,
+// shows progress and words the result. One import per view. States are tagged unions.
 
 import type {
   ApiError,
@@ -12,27 +12,21 @@ import type {
   Unlisten,
 } from "../../api";
 import { t } from "../i18n";
-import type { Spot } from "./dropTarget";
-import {
-  addedAnything,
-  baseName,
-  canMove,
-  folderLabel,
-  nothingText,
-  outcomeText,
-  pictureType,
-  routeDrop,
-} from "./importModel";
+import { addedAnything, canMove, folderLabel, outcomeText } from "./importModel";
+
+/** A point of the view, CSS px. */
+export type Point = { x: number; y: number };
 
 export type ImportState =
   | { status: "idle" }
-  | { status: "planning" }
+  /** The plan is on its way; after a moment (`slow`) the question shows already, saying it is checking names. */
+  | { status: "planning"; folder: string; where: string; at: Point; slow: boolean }
   | {
       status: "asking";
       plan: ImportPlan;
       /** The target folder as the person reads it. */
       where: string;
-      mode: ImportMode;
+      at: Point;
       conflicts: ConflictChoice;
     }
   | {
@@ -44,8 +38,8 @@ export type ImportState =
       cancelling: boolean;
     };
 
-/** What a drag over the window would do: where it lands, or that it puts pictures into the editor. */
-export type Hover = { folder: string; pictures: boolean; count: number };
+/** A plan slower than this shows the question before it arrives. */
+export const SLOW_PLAN_MS = 300;
 
 export type ImportHost = {
   fail(error: ApiError): void;
@@ -53,12 +47,12 @@ export type ImportHost = {
   action(text: string, ...actions: { label: string; run: () => void }[]): void;
   /** The name of the open project (what the project folder is called in sentences). */
   project(): string;
-  /** What is under a point of the window. */
-  spot(x: number, y: number): Spot;
-  /** The tree marks (or, `null`, stops marking) the folder an outside drag is over. */
-  mark(folder: string | null): void;
-  /** The editor on screen takes pictures dropped at a point; whether one did. */
-  pictures(files: File[], x: number, y: number): boolean;
+  /** The question is about to show: the view's window comes forward (a drop does not activate it). */
+  focus(): void;
+  /** The drop is over for the tree: folders the drag opened close, except `kept` (where an import landed). */
+  end(kept: string | null): void;
+  /** Items put in place (the tree selects them). */
+  placed(paths: readonly string[]): void;
   /** Takes the newest file operation back. */
   undo(): Promise<void>;
 };
@@ -67,7 +61,9 @@ export class ImportFlow {
   readonly #api: Api;
   readonly #host: ImportHost;
   state = $state.raw<ImportState>({ status: "idle" });
-  hover = $state.raw<Hover | null>(null);
+  #slow: ReturnType<typeof setTimeout> | null = null;
+  /** Tells a plan's answer whether it still matters (a newer drop or a cancel came meanwhile). */
+  #asked = 0;
 
   constructor(api: Api, host: ImportHost) {
     this.#api = api;
@@ -84,101 +80,49 @@ export class ImportFlow {
     });
   }
 
+  /** An import is running (a drop onto the Explorer waits for it to finish). */
+  get busy(): boolean {
+    return this.state.status === "running";
+  }
+
   /** The project is gone or another one is shown: nothing of this drop matters any more. */
   reset(): void {
+    this.#stopSlow();
+    this.#asked += 1;
     this.state = { status: "idle" };
-    this.#clearHover();
   }
 
-  // ---- while the drag is over the window --------------------------------------------------------------------------
-
-  over(x: number, y: number, paths: readonly string[], count: number): void {
-    const spot = this.#host.spot(x, y);
-    const pictures = routeDrop(paths, spot.editor).kind === "pictures";
-    const before = this.hover;
-    if (
-      before === null ||
-      before.folder !== spot.folder ||
-      before.pictures !== pictures ||
-      before.count !== count
-    ) {
-      this.hover = { folder: spot.folder, pictures, count };
-    }
-    if (before === null || before.folder !== spot.folder || before.pictures !== pictures) {
-      this.#host.mark(pictures ? null : spot.folder);
-    }
-  }
-
-  leave(): void {
-    this.#clearHover();
-  }
-
-  #clearHover(): void {
-    if (this.hover !== null) this.hover = null;
-    this.#host.mark(null);
-  }
-
-  // ---- the drop ---------------------------------------------------------------------------------------------------
-
-  async drop(paths: readonly string[], x: number, y: number): Promise<void> {
-    this.#clearHover();
-    if (paths.length === 0) return;
-    const spot = this.#host.spot(x, y);
-    if (routeDrop(paths, spot.editor).kind === "pictures") {
-      await this.#pictures(paths, x, y);
-      return;
-    }
-    await this.#plan(spot.folder, paths);
-  }
-
-  async #pictures(paths: readonly string[], x: number, y: number): Promise<void> {
-    const files: File[] = [];
-    for (const path of paths) {
-      const read = await this.#api.readPicture(path);
-      if (!read.ok) {
-        this.#host.fail(read.error);
-        continue;
-      }
-      files.push(new File([read.value], baseName(path), { type: pictureType(path) }));
-    }
-    if (files.length > 0) this.#host.pictures(files, x, y);
-  }
-
-  async #plan(folder: string, paths: readonly string[]): Promise<void> {
-    if (this.state.status !== "idle") {
+  /** Files | folders dropped on the Explorer at `at`, into `folder`: the question, once the plan is back. */
+  async plan(folder: string, paths: readonly string[], at: Point): Promise<void> {
+    if (this.state.status === "running") {
       this.#host.note(t("import.busy"));
+      this.#host.end(null);
       return;
     }
-    this.state = { status: "planning" };
+    this.discard();
+    const asked = ++this.#asked;
+    const where = folderLabel(folder, this.#host.project());
+    this.state = { status: "planning", folder, where, at, slow: false };
+    this.#slow = setTimeout(() => {
+      this.#slow = null;
+      const state = this.state;
+      if (state.status !== "planning" || this.#asked !== asked) return;
+      this.#host.focus();
+      this.state = { ...state, slow: true };
+    }, SLOW_PLAN_MS);
     const planned = await this.#api.planImport(folder, [...paths]);
+    if (this.#asked !== asked) return;
+    const slow = this.state.status === "planning" && this.state.slow;
+    this.#stopSlow();
     if (!planned.ok) {
       this.state = { status: "idle" };
+      this.#host.end(null);
       this.#host.fail(planned.error);
       return;
     }
-    const plan = planned.value;
-    if (plan.items.length === 0) {
-      this.state = { status: "idle" };
-      this.#host.note(nothingText(plan));
-      return;
-    }
-    this.state = {
-      status: "asking",
-      plan,
-      where: folderLabel(plan.target, this.#host.project()),
-      // Copy comes preselected, always: Enter on the dialog never takes anything away from where it is
-      mode: "copy",
-      conflicts: "keepBoth",
-    };
-  }
-
-  // ---- the question -----------------------------------------------------------------------------------------------
-
-  setMode(mode: ImportMode): void {
-    const state = this.state;
-    if (state.status === "asking" && (mode === "copy" || canMove(state.plan))) {
-      this.state = { ...state, mode };
-    }
+    if (!slow) this.#host.focus();
+    // Keep both comes preselected; Enter on the question copies (never takes anything away from where it is)
+    this.state = { status: "asking", plan: planned.value, where, at, conflicts: "keepBoth" };
   }
 
   setConflicts(conflicts: ConflictChoice): void {
@@ -186,31 +130,49 @@ export class ImportFlow {
     if (state.status === "asking") this.state = { ...state, conflicts };
   }
 
-  cancelAsking(): void {
-    if (this.state.status === "asking") this.state = { status: "idle" };
+  /** The person closed the question (Cancel | Esc | outside click | the view hidden): nothing happens. */
+  cancel(): void {
+    if (this.state.status !== "planning" && this.state.status !== "asking") return;
+    this.discard();
+    this.#host.end(null);
   }
 
-  async confirm(): Promise<void> {
+  /** A newer drop replaces the question (the tree's folders stay as the new drag left them). */
+  discard(): void {
+    if (this.state.status !== "planning" && this.state.status !== "asking") return;
+    this.#stopSlow();
+    this.#asked += 1;
+    this.state = { status: "idle" };
+  }
+
+  /** Copy here | Move here. */
+  async confirm(mode: ImportMode): Promise<void> {
     const asked = this.state;
-    if (asked.status !== "asking") return;
+    if (asked.status !== "asking" || asked.plan.items.length === 0) return;
+    if (mode === "move" && !canMove(asked.plan)) return;
     this.state = {
       status: "running",
       plan: asked.plan,
       where: asked.where,
-      mode: asked.mode,
+      mode,
       progress: null,
       cancelling: false,
     };
-    const result = await this.#api.applyImport(asked.plan.planId, asked.mode, asked.conflicts);
-    this.state = { status: "idle" };
+    const result = await this.#api.applyImport(asked.plan.planId, mode, asked.conflicts);
+    if (this.state.status === "running") this.state = { status: "idle" };
     if (!result.ok) {
+      this.#host.end(null);
       this.#host.fail(result.error);
       return;
     }
-    const text = outcomeText(result.value, asked.where);
-    if (addedAnything(result.value)) {
+    const outcome = result.value;
+    const text = outcomeText(outcome, asked.where);
+    if (addedAnything(outcome)) {
+      this.#host.end(asked.plan.target);
+      this.#host.placed(outcome.placed);
       this.#host.action(text, { label: t("fileOps.undo"), run: () => void this.#host.undo() });
     } else {
+      this.#host.end(null);
       this.#host.note(text);
     }
   }
@@ -221,5 +183,10 @@ export class ImportFlow {
     if (state.status !== "running" || state.cancelling) return;
     this.state = { ...state, cancelling: true };
     await this.#api.cancelImport(state.plan.planId);
+  }
+
+  #stopSlow(): void {
+    if (this.#slow !== null) clearTimeout(this.#slow);
+    this.#slow = null;
   }
 }

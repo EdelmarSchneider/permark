@@ -61,6 +61,8 @@ import type { ImportItem } from "./generated/ImportItem";
 import type { ImportKind } from "./generated/ImportKind";
 import type { ImportMode } from "./generated/ImportMode";
 import type { ImportOutcome } from "./generated/ImportOutcome";
+import type { DropOpened } from "./generated/DropOpened";
+import type { DropScope } from "./generated/DropScope";
 import type { ImportPhase } from "./generated/ImportPhase";
 import type { ImportPlan } from "./generated/ImportPlan";
 import type { ImportProgress } from "./generated/ImportProgress";
@@ -158,6 +160,8 @@ import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
 
 export type {
+  DropOpened,
+  DropScope,
   AppInfo,
   CloseRequested,
   OpenIn,
@@ -370,6 +374,8 @@ export interface Commands {
   view_ready: { args: Record<string, never>; result: null };
   view_set_title: { args: { title: string }; result: null };
   view_set_theme: { args: { theme: BarTheme | null }; result: null };
+  open_dropped: { args: { paths: string[]; scope: DropScope }; result: DropOpened };
+  view_focus: { args: Record<string, never>; result: null };
   default_app_get: { args: Record<string, never>; result: DefaultAppView };
   default_app_set: { args: { group: FileGroup; on: boolean }; result: DefaultAppView };
   default_app_asked: { args: Record<string, never>; result: null };
@@ -856,8 +862,13 @@ export interface Api {
   assetUrl(workspace: WorkspaceId, path: string, version: string | null): string;
   /** Listens to a backend event. Resolves to teardown. */
   on<E extends EventName>(event: E, handler: (payload: Events[E]) => void): Promise<Unlisten>;
-  /** Drag + drop of files | folders onto this window. Resolves to teardown. */
+  /** Drag + drop of files | folders onto this view (only the view on screen gets them). Resolves to teardown. */
   onDrop(handler: (event: DropEvent) => void): Promise<Unlisten>;
+  /** Paths dropped on this view open as tabs of its window (`existingOnly`: only those open somewhere come forward;
+   *  the others come back in `left`). One place; the last path's place ends active. */
+  openDropped(paths: string[], scope: DropScope): Promise<Result<DropOpened>>;
+  /** This view's window comes forward and the view takes the keyboard (before a drop question; may be refused). */
+  focusView(): Promise<Result<null>>;
   /** System folder | file picker; `null` = cancelled. */
   pickFolder(title: string): Promise<string | null>;
   /** `anyFile`: no filter on the kind of file (the Notes open any text file). */
