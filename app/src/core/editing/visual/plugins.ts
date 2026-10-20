@@ -41,15 +41,28 @@ export function slashAt(state: EditorState): SlashState | null {
   return { query: match[1] ?? "", from: $from.start(), to: $from.end() };
 }
 
-const DIGITS: Record<string, number> = {
-  Digit0: 0,
-  Digit1: 1,
-  Digit2: 2,
-  Digit3: 3,
-  Digit4: 4,
-  Digit5: 5,
-  Digit6: 6,
-};
+/** The key pressed, by place on the keyboard: 0 = paragraph, 1-6 = heading level; null for any other key. */
+function levelOfCode(code: string): number | null {
+  const match = /^(?:Digit|Numpad)([0-6])$/.exec(code);
+  return match?.[1] === undefined ? null : Number(match[1]);
+}
+
+/**
+ * The block a heading chord asks for: Ctrl+Shift+0-6 (works on every layout; the key is told by its place, not by the
+ * character it types) or Ctrl+Alt+0-6 (not when Alt is AltGr, which types characters). 0 = paragraph.
+ */
+export function headingChord(
+  event: Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey"> & {
+    getModifierState?: (name: string) => boolean;
+  },
+): number | null {
+  const level = levelOfCode(event.code);
+  if (level === null) return null;
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && !event.altKey) return level;
+  const altGr = event.getModifierState?.("AltGraph") === true;
+  if (event.ctrlKey && event.altKey && !event.shiftKey && !altGr) return level;
+  return null;
+}
 
 function keys(host: PluginHost, view: EditorView, event: KeyboardEvent): boolean {
   if (event.isComposing) return false;
@@ -89,11 +102,10 @@ function keys(host: PluginHost, view: EditorView, event: KeyboardEvent): boolean
   const go = (command: Command): boolean => run(core, command);
   if (mod && event.shiftKey && !event.altKey && key === "c") return go({ kind: "code" });
   if (mod && event.shiftKey && !event.altKey && key === "x") return go({ kind: "strike" });
-  // Ctrl+Alt+digit: headings; AltGr (Ctrl+Alt on Windows) types characters and is left alone
-  const level = DIGITS[event.code];
-  if (event.ctrlKey && event.altKey && level !== undefined && !event.getModifierState("AltGraph")) {
+  // Ctrl+Shift+digit | Ctrl+Alt+digit: paragraph and headings
+  const level = headingChord(event);
+  if (level !== null)
     return go(level === 0 ? { kind: "block", to: "paragraph" } : headingOf(level));
-  }
   // Enter in an empty nested list item: one level out
   if (event.key === "Enter" && !mod && !event.shiftKey) {
     const { $from, empty } = view.state.selection;
