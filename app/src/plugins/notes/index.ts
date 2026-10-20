@@ -1,11 +1,12 @@
-// Plugin `notes`: the Notes window. Plain Markdown notes that save themselves, grouped by time, with pins, earlier
+// Plugin `notes`: the Notes tab. Plain Markdown notes that save themselves, grouped by time, with pins, earlier
 // versions, crash recovery, loose files, sharing with agents and moving into a project. Turned off, the welcome screen
-// shows no notes and the Notes cannot be opened.
+// shows no notes, the top bar has no Notes button and the Notes cannot be opened.
 
 import { NO_REQUIREMENT, type Requirement } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { windowStore } from "../../core/window.svelte";
-import { notes } from "./store.svelte";
+import { inNotes } from "./open";
+import { notes, showInNotes } from "./store.svelte";
 
 const IN_NOTES: Requirement = { needs: [{ need: "workspace", kinds: ["notes"] }], prefers: [] };
 
@@ -43,23 +44,53 @@ export default definePlugin({
         view: () => import("./SaveStatus.svelte"),
       }),
       cx.contribute({
+        kind: "topBarItem",
+        id: "notes.button",
+        order: 10,
+        requires: NO_REQUIREMENT,
+        view: () => import("./NotesButton.svelte"),
+      }),
+      // any window: the Notes tab opens here, or comes forward where it is (one place)
+      cx.contribute({
         kind: "command",
         id: "notes.open",
         label: "cmd.notesOpen",
         requires: NO_REQUIREMENT,
-        run: () => windowStore.openNotes(),
+        run: () => windowStore.openNotes("tab"),
       }),
+      cx.contribute({
+        kind: "shortcut",
+        keys: "Mod+Shift+d",
+        command: "notes.open",
+        requires: NO_REQUIREMENT,
+      }),
+      // any window: a new note in the Notes tab (made there, once, even when it is in another window)
       cx.contribute({
         kind: "command",
         id: "notes.new",
         label: "cmd.notesNew",
+        requires: NO_REQUIREMENT,
+        run: () => (inNotes(windowStore.view) ? notes.newNote() : showInNotes({ kind: "new" })),
+      }),
+      cx.contribute({
+        kind: "shortcut",
+        keys: "Mod+Shift+n",
+        command: "notes.new",
+        requires: NO_REQUIREMENT,
+      }),
+      // in the Notes tab, Ctrl+N makes a note too (elsewhere Ctrl+N is a new file of the project)
+      cx.contribute({
+        kind: "command",
+        id: "notes.newHere",
+        label: "cmd.notesNewHere",
         requires: IN_NOTES,
+        inPalette: false,
         run: () => notes.newNote(),
       }),
       cx.contribute({
         kind: "shortcut",
         keys: "Mod+n",
-        command: "notes.new",
+        command: "notes.newHere",
         requires: IN_NOTES,
       }),
       cx.contribute({

@@ -14,6 +14,7 @@
   import { importFlow } from "./core/explorer/importWindow.svelte";
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
+  import PanelToggle from "./core/shell/PanelToggle.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
   import { defaultApp } from "./core/shell/defaultApp.svelte";
@@ -31,7 +32,9 @@
   import SidebarTabs from "./core/search/SidebarTabs.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
   import { confirmInit } from "./core/shell/initProject";
+  import { rightAvailable } from "./core/shell/layout";
   import { layout } from "./core/shell/layout.svelte";
+  import { hasSidebar, rightSide } from "./core/shell/sides";
   import { tabs } from "./core/shell/tabs.svelte";
   import { ui } from "./core/shell/ui.svelte";
   import { conditions } from "./core/conditions/context.svelte";
@@ -290,9 +293,15 @@
 {/snippet}
 
 {#snippet status()}
-  <div class="slot left"><StatusItems slot="left" /></div>
+  <div class="slot left">
+    {#if hasSidebar(store.view)}<PanelToggle side="sidebar" />{/if}
+    <StatusItems slot="left" />
+  </div>
   <div class="slot center"><StatusItems slot="center" /></div>
-  <div class="slot right"><StatusItems slot="right" /><span>{versionText}</span></div>
+  <div class="slot right">
+    <StatusItems slot="right" /><span>{versionText}</span>
+    {#if shown !== null && rightAvailable(rightSide())}<PanelToggle side="right" />{/if}
+  </div>
 {/snippet}
 
 {#if store.boot.status !== "booting"}
@@ -301,13 +310,15 @@
     rightWidth={layout.right}
     onSidebarWidth={(px) => layout.setSidebar(px)}
     onRightWidth={(px) => layout.setRight(px)}
+    sidebarHidden={layout.sidebarOff}
+    rightHidden={layout.rightOff}
     {top}
     sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
       ? sidebar
       : undefined}
     panel={rightPanel !== null || (outline && reading.outline) ? panel : undefined}
     focus={ui.focus === "on"}
-    moving={ui.focusMoving}
+    moving={ui.frameMoving}
     {main}
     {status}
   />

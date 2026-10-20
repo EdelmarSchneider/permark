@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "data": {
+    "values": {
+      "doc.open": "docs/guide.md",
+      "explorer.expanded": [
+        "docs",
+        "notes"
+      ],
+      "layout.right": 320,
+      "layout.sidebar": 300,
+      "reading.outline": true,
+      "reading.width": "wide",
+      "reading.zoom": 110
+    }
+  }
+}

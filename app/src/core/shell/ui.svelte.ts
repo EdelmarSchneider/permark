@@ -4,6 +4,7 @@
 import type { ClosingTab } from "../../api";
 import type { Overlay } from "../commands/dispatch";
 import type { Preset } from "../search/finderModel";
+import { layout } from "./layout.svelte";
 
 /** `files`, `search`, or the id of a panel a plugin put in the sidebar. */
 export type SidebarView = string;
@@ -29,15 +30,17 @@ export type InitDialog = { status: "closed" } | { status: "asking"; path: string
 
 /** Focus mode: only the page. */
 export type Focus = "off" | "on";
-/** How long the frame's tracks animate after a toggle (ms): a little over the 180 ms transition. */
+/** How long the frame's tracks animate after a toggle (focus mode, a side panel shown | hidden) (ms): a little over the
+ *  180 ms transition. */
 export const FOCUS_MOVE_MS = 260;
 
 class UiStore {
   sidebar = $state<SidebarView>("files");
   /** Focus mode of this window (not stored: a new window or a restart starts `off`). */
   focus = $state<Focus>("off");
-  /** The 260 ms after a toggle: the frame's tracks transition only then (dragging a splitter never animates). */
-  focusMoving = $state(false);
+  /** The 260 ms after a toggle (focus mode, a side panel): the frame's tracks transition only then (dragging a splitter
+   *  never animates). */
+  frameMoving = $state(false);
   #moving: ReturnType<typeof setTimeout> | null = null;
   /** The id of the plugin panel at the right of the page (`null`: none; the outline shows when it is on). */
   right = $state<string | null>(null);
@@ -83,21 +86,33 @@ class UiStore {
     if (view === "search") this.searchFocus += 1;
   }
 
-  /** Shows the plugin panel `id` at the right, or closes it when it is the one that shows. */
+  /** Shows the plugin panel `id` at the right, or closes it when it is the one that shows. The right panel hidden: it
+   *  shows again, with that panel. */
   toggleRight(id: string): void {
+    if (layout.rightHidden) {
+      this.animateFrame();
+      layout.setRightHidden(false);
+      this.right = id;
+      return;
+    }
     this.right = this.right === id ? null : id;
+  }
+
+  /** The frame's tracks transition for a moment (a toggle); never while a splitter is dragged. */
+  animateFrame(): void {
+    this.frameMoving = true;
+    if (this.#moving !== null) clearTimeout(this.#moving);
+    this.#moving = setTimeout(() => {
+      this.#moving = null;
+      this.frameMoving = false;
+    }, FOCUS_MOVE_MS);
   }
 
   /** Enters or leaves focus mode (the frame animates unless the person asked for less motion). */
   setFocus(next: Focus): void {
     if (next === this.focus) return;
     this.focus = next;
-    this.focusMoving = true;
-    if (this.#moving !== null) clearTimeout(this.#moving);
-    this.#moving = setTimeout(() => {
-      this.#moving = null;
-      this.focusMoving = false;
-    }, FOCUS_MOVE_MS);
+    this.animateFrame();
   }
 
   toggleFocus(): void {
@@ -108,7 +123,7 @@ class UiStore {
   resetFocus(): void {
     if (this.#moving !== null) clearTimeout(this.#moving);
     this.#moving = null;
-    this.focusMoving = false;
+    this.frameMoving = false;
     this.focus = "off";
   }
 

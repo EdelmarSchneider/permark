@@ -8,6 +8,7 @@ import type {
   LooseState,
   NoteEntry,
   NoteList,
+  NotesIntent,
   PluginMethod,
   PluginMethods,
   Version,
@@ -69,7 +70,10 @@ function snippetOf(text: string): string {
   return lines.slice(1).join(" ").slice(0, 160);
 }
 
-export function createMockNotes(files: Map<string, string>): {
+export function createMockNotes(
+  files: Map<string, string>,
+  announceIntent: () => void = () => {},
+): {
   handlers: NotesHandlers;
   probe: NotesProbe;
 } {
@@ -77,6 +81,8 @@ export function createMockNotes(files: Map<string, string>): {
   const hour = 3_600_000;
   const day = 24 * hour;
   const notes = new Map<string, MockNote>();
+  /** What the Notes tab shows next (the plugin's one slot). */
+  let intent: NotesIntent | null = null;
   const seed = (name: string, text: string, ago: number): void => {
     notes.set(name, { name, text, modifiedMs: now - ago });
     files.set(name, text);
@@ -367,6 +373,16 @@ export function createMockNotes(files: Map<string, string>): {
       const gone = remove([path]);
       void note;
       return { destination: `${dest}/${name}`, undoId: gone.undoId, kept: false };
+    },
+    "notes.want": ({ intent: wish }) => {
+      intent = wish;
+      announceIntent();
+      return null;
+    },
+    "notes.takeIntent": () => {
+      const taken = intent;
+      intent = null;
+      return taken;
     },
     "notes.undoMove": ({ undoId }) => {
       const gone = deleted.get(undoId);

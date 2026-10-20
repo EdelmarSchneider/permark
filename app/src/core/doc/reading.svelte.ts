@@ -84,7 +84,12 @@ class ReadingStore {
   }
 
   toggleOutline(): void {
-    this.outline = !this.outline;
+    this.setOutline(!this.outline);
+  }
+
+  setOutline(on: boolean): void {
+    if (on === this.outline) return;
+    this.outline = on;
     this.#save(KEYS.outline, this.outline);
   }
 

@@ -37,6 +37,7 @@ import { tags } from "@lezer/highlight";
 import { configLanguage } from "./configLang";
 import { fenceAround, type Fence } from "./fence";
 import { completionSources, type CompletionHost } from "./complete";
+import { toggleBold } from "./bold";
 
 export type SourceHost = CompletionHost & {
   changed(): void;
@@ -207,6 +208,15 @@ export function createSource(options: {
       preventDefault: true,
     },
     { key: "Mod-g", run: gotoLine },
+    // bold, as in the visual editor (Markdown); in other text Ctrl+B is still the editor's: it never hides the sidebar
+    // while the person types
+    {
+      key: "Mod-b",
+      run: (view) => {
+        if (options.markdown) view.dispatch(toggleBold(view.state), { userEvent: "input" });
+        return true;
+      },
+    },
     { key: "Escape", run: closeSearchPanel, scope: "editor search-panel" },
   ]);
   const view = new EditorView({

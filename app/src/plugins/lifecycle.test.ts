@@ -186,6 +186,7 @@ describe("the notes plugin", () => {
       "settingsSection",
       "shortcut",
       "statusItem",
+      "topBarItem",
       "welcomeSection",
       "workspaceView",
     ]);
