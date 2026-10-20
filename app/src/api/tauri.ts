@@ -236,6 +236,16 @@ export const tauriApi: Api = {
     });
     return typeof picked === "string" ? picked : null;
   },
+  pickPictures: async (title, filterName) => {
+    const picked = await open({
+      directory: false,
+      multiple: true,
+      title,
+      filters: [{ name: filterName, extensions: ["png", "jpg", "jpeg", "gif", "webp", "svg"] }],
+    });
+    if (picked === null) return [];
+    return Array.isArray(picked) ? picked : [picked];
+  },
   setTitle: async (title) => {
     try {
       await getCurrentWindow().setTitle(title);

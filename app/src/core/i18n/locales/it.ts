@@ -21,6 +21,7 @@ export default {
   "dialog.openFolder": "Apri cartella",
   "dialog.openFile": "Apri file",
   "dialog.filter.docs": "Documenti",
+  "dialog.filter.pictures": "Immagini",
   "dialog.windowTitle": "Dove si apre questa cartella?",
   "dialog.windowBody":
     "Questa finestra sostituisce ciò che hai aperto. Una finestra nuova lascia questa com'è.",
@@ -511,6 +512,8 @@ export default {
   "link.remove": "Rimuovi link",
   "image.path": "Percorso dell'immagine o indirizzo web",
   "image.alt": "Descrizione (testo alternativo)",
+  "image.choose": "Scegli un'immagine…",
+  "image.chooseTitle": "Scegli immagini",
   "images.bigTitle": "Immagine grande",
   "images.big": "{name} è di {size} MB. Salvarla comunque accanto al documento?",
   "images.saveAnyway": "Salvala",

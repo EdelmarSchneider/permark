@@ -385,6 +385,26 @@ describe("editing", () => {
     expect(target.querySelector(".reading")?.hasAttribute("hidden")).toBe(false);
   });
 
+  it("the picture button chooses pictures in a file dialog and puts each next to the document", async () => {
+    await import("../editing/visual/jsdomShims");
+    await show("notes/ideas.md");
+    await until(() => modeButton("Edit") !== undefined, "mode switch");
+    modeButton("Edit")?.click();
+    const button = (): HTMLButtonElement | null =>
+      target.querySelector<HTMLButtonElement>("button[aria-label=Image]");
+    await until(() => button()?.disabled === false, "picture button");
+    button()?.click();
+    await until(() => target.querySelector("form.popover") !== null, "picture popover");
+    const choose = [...target.querySelectorAll<HTMLButtonElement>("form.popover button")].find(
+      (b) => b.textContent?.trim() === "Choose a picture…",
+    );
+    expect(choose).toBeDefined();
+    choose?.click();
+    await until(() => editing.state.s === "dirty", "picture inserted");
+    expect(target.querySelector("form.popover")).toBeNull();
+    expect(editing.text).toContain("![](ideas-1.png)");
+  });
+
   it("Source shows the text editor; a text file has Source only", async () => {
     await show("README.md");
     await until(() => modeButton("Source") !== undefined, "mode switch");

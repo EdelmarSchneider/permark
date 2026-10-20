@@ -138,6 +138,7 @@
         {scroller}
         {project}
         {pictures}
+        {note}
         failed={(error) => {
           note(t("edit.visualFailed"));
           console.error(error);

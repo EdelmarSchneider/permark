@@ -21,6 +21,7 @@ export default {
   "dialog.openFolder": "Ordner öffnen",
   "dialog.openFile": "Datei öffnen",
   "dialog.filter.docs": "Dokumente",
+  "dialog.filter.pictures": "Bilder",
   "dialog.windowTitle": "Wo soll dieser Ordner aufgehen?",
   "dialog.windowBody":
     "Dieses Fenster ersetzt, was gerade offen ist. Ein neues Fenster lässt dieses, wie es ist.",
@@ -515,6 +516,8 @@ export default {
   "link.remove": "Link entfernen",
   "image.path": "Bildpfad oder Webadresse",
   "image.alt": "Beschreibung (Alternativtext)",
+  "image.choose": "Bild auswählen …",
+  "image.chooseTitle": "Bilder auswählen",
   "images.bigTitle": "Großes Bild",
   "images.big": "{name} ist {size} MB groß. Trotzdem neben dem Dokument speichern?",
   "images.saveAnyway": "Speichern",

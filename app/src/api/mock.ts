@@ -664,6 +664,7 @@ export function createMockApi(): Api & {
     },
     pickFolder: () => Promise.resolve(MOCK_FOLDER),
     pickFile: () => Promise.resolve(MOCK_FILE),
+    pickPictures: () => Promise.resolve([`${MOCK_FOLDER}/pictures/diagram.png`]),
     setWindowTheme: (theme) => {
       windowThemes.push(theme);
       return Promise.resolve();

@@ -5,6 +5,7 @@
   import { mount, unmount } from "svelte";
   import type { Node as PMNode } from "@milkdown/kit/prose/model";
   import { api } from "../../api";
+  import { apiErrorText } from "../errors";
   import { conditions } from "../conditions/context.svelte";
   import { t, type MessageKey } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
@@ -13,6 +14,7 @@
   import EditorToolbar from "./EditorToolbar.svelte";
   import { frontMatterSyntax } from "../config/frontMatter";
   import { pictureFiles, pictureLink } from "./pictures";
+  import { baseName, pictureType } from "../explorer/importModel";
   import { relativeLink } from "./source/complete";
   import type { Content, EditingSession } from "./session.svelte";
   import type { Built, Command, Composed, Core, Format, LockReason, SlashState } from "./visual";
@@ -23,10 +25,12 @@
     scroller: HTMLElement;
     project: boolean;
     pictures: (files: File[]) => Promise<string[]>;
+    /** A short message in the status area (a picture that could not be read). */
+    note: (text: string) => void;
     /** The visual editor could not be made. */
     failed: (error: unknown) => void;
   };
-  let { session, content, scroller, project, pictures, failed }: Props = $props();
+  let { session, content, scroller, project, pictures, note, failed }: Props = $props();
 
   type Module = typeof import("./visual");
 
@@ -370,6 +374,22 @@
     if (src.trim() !== "") runCommand({ kind: "image", src: src.trim(), alt });
   }
 
+  /** The picture button's file dialog: each chosen picture is copied next to the document, like a paste. */
+  async function choosePictures(): Promise<void> {
+    const paths = await api.pickPictures(t("image.chooseTitle"), t("dialog.filter.pictures"));
+    if (paths.length === 0 || !core) return;
+    const at = core.view.state.selection.from;
+    const files: File[] = [];
+    for (const path of paths) {
+      const read = await api.readPicture(path);
+      if (read.ok) files.push(new File([read.value], baseName(path), { type: pictureType(path) }));
+      else note(apiErrorText(read.error));
+    }
+    popover = { kind: "none" };
+    if (files.length > 0) await insertPictures(files, at);
+    core.view.focus();
+  }
+
   async function insertPictures(files: File[], at: number): Promise<void> {
     const saved = await pictures(pictureFiles(files));
     if (!core || !mod) return;
@@ -473,6 +493,9 @@
         oninput={(e) => (popover = { ...current, alt: e.currentTarget.value })}
       />
       <button type="submit" class="btn btn--sm btn--primary">{t("link.apply")}</button>
+      <button type="button" class="btn btn--sm" onclick={() => void choosePictures()}>
+        {t("image.choose")}
+      </button>
       <button
         type="button"
         class="btn btn--sm btn--ghost"

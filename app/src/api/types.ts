@@ -813,6 +813,8 @@ export interface Api {
   pickFolder(title: string): Promise<string | null>;
   /** `anyFile`: no filter on the kind of file (the Notes open any text file). */
   pickFile(title: string, filterName: string, anyFile?: boolean): Promise<string | null>;
+  /** Pictures chosen in the system's file dialog (PNG, JPG, GIF, WebP, SVG); absolute paths, none when cancelled. */
+  pickPictures(title: string, filterName: string): Promise<string[]>;
   setTitle(title: string): Promise<void>;
   /** The native title bar follows the theme (`null`: the system's). */
   setWindowTheme(theme: "light" | "dark" | null): Promise<void>;

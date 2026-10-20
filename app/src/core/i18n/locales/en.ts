@@ -20,6 +20,7 @@ const en = {
   "dialog.openFolder": "Open folder",
   "dialog.openFile": "Open file",
   "dialog.filter.docs": "Documents",
+  "dialog.filter.pictures": "Pictures",
   "dialog.windowTitle": "Where should this folder open?",
   "dialog.windowBody":
     "This window replaces what you have open. A new window leaves this one as it is.",
@@ -496,6 +497,8 @@ const en = {
   "link.remove": "Remove link",
   "image.path": "Picture path or web address",
   "image.alt": "Description (alt text)",
+  "image.choose": "Choose a picture…",
+  "image.chooseTitle": "Choose pictures",
   "images.bigTitle": "Large picture",
   "images.big": "{name} is {size} MB. Save it next to the document anyway?",
   "images.saveAnyway": "Save it",
