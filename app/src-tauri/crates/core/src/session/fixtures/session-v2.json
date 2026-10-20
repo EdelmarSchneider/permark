@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "data": {
+    "windows": [
+      {
+        "geometry": {
+          "x": -8,
+          "y": -8,
+          "width": 2560,
+          "height": 1369,
+          "scale": 1.25,
+          "maximized": true
+        },
+        "tabs": [
+          {
+            "kind": "project",
+            "path": "C:\\Users\\me\\Projects\\Alpha"
+          },
+          {
+            "kind": "singleFile",
+            "path": "C:\\Users\\me\\Documents\\todo.md"
+          },
+          {
+            "kind": "project",
+            "path": "D:\\Work Space\\Beta ação"
+          }
+        ],
+        "active": 2
+      },
+      {
+        "geometry": null,
+        "tabs": [],
+        "active": null
+      }
+    ],
+    "notes": {
+      "open": false,
+      "geometry": null
+    }
+  }
+}

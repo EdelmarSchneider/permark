@@ -1,4 +1,5 @@
-// Mock backend (`npm run dev:mock`, tests): same interface, no Tauri. One window ("main"), in memory.
+// Mock backend (`npm run dev:mock`, tests): same interface, no Tauri. One window ("main"), in memory; the page is the
+// view of its active tab (switching tabs shows that tab's workspace in it; the app switches between views instead).
 
 import { DEFAULT_FILTER } from "../core/explorer/filter";
 import type { Context } from "./generated/Context";
@@ -37,8 +38,9 @@ import type {
   TreeFilter,
   TreeNode,
   TreeSnapshot,
+  TabSummary,
   Unlisten,
-  WorkspaceSummary,
+  WindowSummary,
 } from "./types";
 
 export const MOCK_VERSION = "0.0.0-mock";
@@ -55,7 +57,7 @@ function defaultSettings(): AppSettings {
     startIn: "welcome",
     linkUpdate: "ask",
     editMode: "edit",
-    openIn: "ask",
+    openIn: "tab",
     gitBackend: "automatic",
     notesFolder: "",
     tokenizers: [],
@@ -160,6 +162,9 @@ export type MockProbe = {
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
   pictures: string[];
+  /** The tabs: moved to a new window, the close prompt's answers, saves reported. */
+  /** `refuseMove`: the next moves fail (the backend could not move the view). */
+  tabs: { moved: number[]; answers: string[]; saved: boolean[]; refuseMove: boolean };
   /** Web pictures asked for, by address; the per-project choice. */
   remote: { asked: string[]; always: boolean };
 };
@@ -185,14 +190,16 @@ export function createMockApi(): Api & {
   const listeners: { [E in EventName]: Set<(payload: Events[E]) => void> } = {
     "window-changed": new Set(),
     "context-changed": new Set(),
-    "workspaces-changed": new Set(),
+    "windows-changed": new Set(),
     "settings-changed": new Set(),
     "state-recovered": new Set(),
     "open-failed": new Set(),
     "tree-changed": new Set(),
     "document-changed": new Set(),
     "close-requested": new Set(),
-    "workspace-close-requested": new Set(),
+    "tab-close-requested": new Set(),
+    "save-requested": new Set(),
+    "view-moved": new Set(),
     "import-progress": new Set(),
     "plugins-changed": new Set(),
     "index-progress": new Set(),
@@ -223,55 +230,106 @@ export function createMockApi(): Api & {
     return view.state === "showing" && view.workspace.kind === "project";
   }
 
-  /** The workspace this window shows, as the process lists it. */
-  function ownSummary(): WorkspaceSummary | null {
-    if (view.state !== "showing") return null;
-    const workspace = view.workspace;
+  type Shown = Extract<WindowView, { state: "showing" }>;
+  /** The tabs of the window: what each shows (the page shows the active one's). */
+  let tabList: { tab: number; view: Shown }[] = [];
+  let activeTab: number | null = null;
+  let nextTab = 1;
+
+  function pathOfView(shown: Shown): string {
+    const workspace = shown.workspace;
     switch (workspace.kind) {
       case "project":
-        return {
-          id: workspace.id,
-          kind: "project",
-          title: workspace.name,
-          path: workspace.root,
-          windows: 1,
-        };
+        return workspace.root;
       case "singleFile":
-        return {
-          id: workspace.id,
-          kind: "singleFile",
-          title: workspace.name,
-          path: workspace.path,
-          windows: 1,
-        };
+        return workspace.path;
       case "notes":
-        return {
-          id: workspace.id,
-          kind: "notes",
-          title: "Notes",
-          path: workspace.folder ?? "",
-          windows: 1,
-        };
+        return "notes";
       default:
         return workspace satisfies never;
     }
   }
 
-  /** The list of workspaces or the plugins moved: windows hear it, as from the backend. */
-  function announceShell(): void {
-    void shell.api.listWorkspaces().then((listed) => {
-      if (listed.ok) emit("workspaces-changed", { workspaces: listed.value });
+  function summaryOf(entry: { tab: number; view: Shown }): TabSummary {
+    const workspace = entry.view.workspace;
+    return {
+      tab: entry.tab,
+      kind: workspace.kind,
+      title: workspace.kind === "notes" ? "Notes" : workspace.name,
+      path: workspace.kind === "notes" ? "" : pathOfView(entry.view),
+      loaded: true,
+      unsaved: entry.tab === activeTab && editing.probe.unsaved !== null,
+    };
+  }
+
+  function windowsNow(): WindowSummary[] {
+    const own: WindowSummary = {
+      window: "main",
+      kind: "work",
+      tabs: tabList.map(summaryOf),
+      active: activeTab,
+      focusedMs: 0,
+    };
+    return [own, ...shell.others()];
+  }
+
+  function announceTabs(): void {
+    emit("windows-changed", { windows: windowsNow() });
+  }
+
+  /** The page shows `next` (what the active tab shows), as the backend tells a view. */
+  function showView(next: WindowView): void {
+    view = next;
+    const active = tabList.find((t) => t.tab === activeTab);
+    if (active && next.state === "showing") active.view = next;
+    emit("window-changed", {
+      window: "main",
+      view,
+      tab: view.state === "welcome" ? null : activeTab,
     });
+    emit("context-changed", { window: "main", context: context() });
+  }
+
+  function activateTab(tab: number): void {
+    const entry = tabList.find((t) => t.tab === tab);
+    if (!entry || tab === activeTab) return;
+    activeTab = tab;
+    tree = null;
+    if (entry.view.workspace.kind === "project") shell.reset(entry.view.workspace.root);
+    showView(entry.view);
+    announceTabs();
+  }
+
+  function closeTab(tab: number): void {
+    const at = tabList.findIndex((t) => t.tab === tab);
+    if (at < 0) return;
+    tabList = tabList.filter((t) => t.tab !== tab);
+    if (activeTab === tab) {
+      const next = tabList[Math.min(at, tabList.length - 1)];
+      if (next) {
+        activateTab(next.tab);
+        return;
+      }
+      activeTab = null;
+      tree = null;
+      showView({ state: "welcome" });
+    }
+    announceTabs();
+  }
+
+  /** A tab already showing `path` (one place). */
+  function tabOf(path: string): number | null {
+    return tabList.find((t) => pathOfView(t.view) === path)?.tab ?? null;
+  }
+
+  /** The window list or the plugins moved: windows hear it, as from the backend. */
+  function announceShell(): void {
+    announceTabs();
     emit("plugins-changed", null);
     emit("context-changed", { window: "main", context: context() });
   }
 
-  const shell = createMockShell({
-    settings: () => settings,
-    workspace: ownSummary,
-    changed: announceShell,
-    closeOwn: () => emit("workspace-close-requested", { window: "main" }),
-  });
+  const shell = createMockShell({ settings: () => settings, changed: announceShell });
   const windowThemes: ("light" | "dark" | null)[] = [];
 
   const project = new MockProject();
@@ -319,6 +377,7 @@ export function createMockApi(): Api & {
     imports: importing.probe,
     pictures: [],
     remote: { asked: [], always: false },
+    tabs: { moved: [], answers: [], saved: [], refuseMove: false },
   };
   let tree: TreeView | null = null;
 
@@ -392,7 +451,8 @@ export function createMockApi(): Api & {
     return { ...base, workspace: kinds[view.workspace.kind], agent: condition };
   }
 
-  function show(path: string): WindowView {
+  /** Opens `path` in a new tab (`this`: in the active one) and shows it. */
+  function show(path: string, where: "tab" | "this" = "tab"): WindowView {
     const id = nextId++;
     const workspace: WorkspaceView = /\.(md|markdown|mdown|txt)$/i.test(path)
       ? {
@@ -403,7 +463,12 @@ export function createMockApi(): Api & {
           folder: path.replace(/[\\/][^\\/]*$/, ""),
         }
       : { kind: "project", id, name: nameOf(path), root: path, stateLocation: "profile" };
-    view = { state: "showing", workspace, document: null };
+    const shown: Shown = { state: "showing", workspace, document: null };
+    if (where === "tab" || activeTab === null) {
+      activeTab = nextTab++;
+      tabList = [...tabList, { tab: activeTab, view: shown }];
+    }
+    tree = null;
     if (workspace.kind === "project") shell.reset(path);
     if (workspace.kind === "project") {
       recent = [
@@ -411,8 +476,8 @@ export function createMockApi(): Api & {
         ...recent.filter((r) => r.path !== path),
       ];
     }
-    emit("window-changed", { window: "main", view });
-    emit("context-changed", { window: "main", context: context() });
+    showView(shown);
+    announceTabs();
     return view;
   }
 
@@ -423,6 +488,8 @@ export function createMockApi(): Api & {
     windowBoot: () =>
       ok({
         window: "main",
+        label: "main",
+        tab: activeTab,
         view,
         context: context(),
         settings,
@@ -431,33 +498,82 @@ export function createMockApi(): Api & {
         platform: "windows",
       }),
     openPath: (path, placement) => {
-      if (placement === "ask" && view.state === "showing") return ok({ outcome: "needsChoice" });
-      if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });
-      return ok({ outcome: "opened", view: show(path) });
-    },
-    openNotes: (placement) => {
-      if (placement === "ask" && view.state === "showing" && view.workspace.kind !== "notes") {
-        return ok({ outcome: "needsChoice" });
+      const open = tabOf(path);
+      if (open !== null) {
+        activateTab(open);
+        return ok({ outcome: "focused", window: "main", tab: open });
       }
       if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });
-      view = {
+      // this tab (the mock's page shows what it opens either way: a first tab when there is none)
+      if (placement === "thisTab") return ok({ outcome: "opened", view: show(path, "this") });
+      show(path, "tab");
+      return ok({ outcome: "newTab", tab: activeTab ?? 0 });
+    },
+    openNotes: (placement) => {
+      const open = tabOf("notes");
+      if (open !== null) {
+        activateTab(open);
+        return ok({ outcome: "focused", window: "main", tab: open });
+      }
+      if (placement === "newWindow") return ok({ outcome: "openedElsewhere", window: "w-1" });
+      const shown: Shown = {
         state: "showing",
         workspace: { kind: "notes", id: nextId++, name: "Notes", folder: MOCK_NOTES_FOLDER },
         document: null,
       };
-      emit("window-changed", { window: "main", view });
-      emit("context-changed", { window: "main", context: context() });
-      return ok({ outcome: "opened", view });
+      const here = placement === "thisTab";
+      if (!here || activeTab === null) {
+        activeTab = nextTab++;
+        tabList = [...tabList, { tab: activeTab, view: shown }];
+      }
+      tree = null;
+      showView(shown);
+      announceTabs();
+      return here
+        ? ok({ outcome: "opened", view })
+        : ok({ outcome: "newTab", tab: activeTab ?? 0 });
     },
     openInProject: (path) => {
       probe.opened.push({ path, mode: "project" });
       return ok(null);
     },
-    showWelcome: () => {
-      view = { state: "welcome" };
-      tree = null;
-      emit("window-changed", { window: "main", view });
-      emit("context-changed", { window: "main", context: context() });
+    listWindows: () => ok(windowsNow()),
+    tabActivate: (tab) => {
+      activateTab(tab);
+      return ok(null);
+    },
+    tabClose: (tab) => {
+      // unsaved edits in it: it comes forward and its view is asked first
+      if (editing.probe.unsaved !== null && tab === activeTab) {
+        emit("tab-close-requested", { window: "main" });
+        return ok(null);
+      }
+      closeTab(tab);
+      return ok(null);
+    },
+    tabCloseConfirmed: () => {
+      if (activeTab !== null) closeTab(activeTab);
+      return ok(null);
+    },
+    tabMoveNewWindow: (tab) => {
+      if (probe.tabs.refuseMove) {
+        return Promise.resolve(
+          fail<string>("tab_move_new_window", new MockRefusal("unavailable", "main")),
+        );
+      }
+      probe.tabs.moved.push(tab);
+      closeTab(tab);
+      return ok("w-1");
+    },
+    windowCloseAnswer: (answer) => {
+      probe.tabs.answers.push(answer);
+      if (answer === "saveAll") emit("save-requested", { window: "main" });
+      else if (answer === "discard") editing.probe.closed = true;
+      return ok(null);
+    },
+    viewSaved: (saved) => {
+      probe.tabs.saved.push(saved);
+      if (saved) editing.probe.closed = true;
       return ok(null);
     },
     ...shell.api,
@@ -465,9 +581,7 @@ export function createMockApi(): Api & {
     projectInit: (path) => {
       const shown = shell.initProject(path);
       if (shown && view.state === "showing" && view.workspace.kind === "project") {
-        view = { ...view, workspace: { ...view.workspace, stateLocation: "project" } };
-        emit("window-changed", { window: "main", view });
-        emit("context-changed", { window: "main", context: context() });
+        showView({ ...view, workspace: { ...view.workspace, stateLocation: "project" } });
       }
       return ok(null);
     },
@@ -626,6 +740,20 @@ export function createMockApi(): Api & {
       return ok(null);
     },
     ...editing.api,
+    windowClose: () => {
+      const unsaved = editing.probe.unsaved;
+      const active = tabList.find((t) => t.tab === activeTab);
+      if (unsaved !== null && active) {
+        const tab = summaryOf(active);
+        emit("close-requested", {
+          window: "main",
+          tabs: [{ tab: tab.tab, title: tab.title, document: unsaved }],
+        });
+        return ok(null);
+      }
+      editing.probe.closed = true;
+      return ok(null);
+    },
     ...createMockConfig((path) => editing.probe.files.get(path) ?? null),
     searchStatus: () =>
       ok({
@@ -652,10 +780,7 @@ export function createMockApi(): Api & {
       ok(mockRecent(project, opened, limit, organizing.allows(options))),
     assetUrl: (_workspace, path) => mockAssetUrl(path),
     showDocument: (path) => {
-      if (view.state === "showing") {
-        view = { ...view, document: path };
-        emit("window-changed", { window: "main", view });
-      }
+      if (view.state === "showing") showView({ ...view, document: path });
       return ok(null);
     },
     on: (event, handler) => {

@@ -5,6 +5,26 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-20
+
+### Added
+- **Tabs.** Each folder or file you open gets a tab in the bar at the top of its window, and Notes open in a tab too. Click a tab to switch to it; `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` and `Ctrl+Alt+←`) go to the next and previous tab, `Ctrl+1` to `Ctrl+8` to a tab, `Ctrl+9` to the last one, and `Ctrl+W` closes the tab. A tab with unsaved changes shows a dot. Right-click a tab to move it to a new window. When PerMark starts, your windows and tabs come back, and only the tab you see loads, so the start stays fast.
+
+### Changed
+- A folder or file opens in one place only: if it is open already, its window and tab come forward. **Settings → Editing → Open folders and files in** offers New tab (the default), This tab and New window; the old "Ask" choice now means New tab, and the question dialog is gone.
+- Opening from outside PerMark (a double-click, the command line) adds a tab to the window you used last.
+- Closing a window with unsaved changes asks once for all its tabs: Save all, Discard or Cancel.
+- The windows of 0.6.0 come back as tabs: each window keeps its folder or file as one tab, and a project that was open in two windows comes back once.
+
+### Fixed
+- Windows come back where you left them, also when PerMark starts from a file you open. A new window opens slightly offset from the current one, at the same size, and a maximized window stays maximized. The first start after 0.5 takes the window place 0.5 saved.
+- The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons.
+- The scrollbar of a document is always visible and wider, so it is easier to grab.
+- The buttons of the side bar (such as Broken links and Tags) always appear in the same order.
+
+### Known limits
+- Tabs have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned.
+
 ## [0.6.0] - 2026-10-20
 
 PerMark is now a unified document workspace: one place to read, write and organize Markdown and the files around it, and to steer AI projects through their documents. AI speeds the work. Your vision steers it. This release rebuilds the whole program: many windows in one app, small config files and TOON as clean sheets, review of code and text files, and an agent connection with 13 tools. The name, the logo, your files and your notes stay where they were.

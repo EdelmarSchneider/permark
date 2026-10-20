@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createMockApi } from "../api/mock";
 import { ERROR_KINDS } from "../api/error";
 import type { Api, Result, OpenOutcome } from "../api";
+import { setLeaveGuard } from "./editing/guard";
 import { errorKey } from "./errors";
 import en from "./i18n/locales/en";
+import { tabs } from "./shell/tabs.svelte";
 import { windowTitle } from "./title";
 import { ui } from "./shell/ui.svelte";
 import { WindowStore } from "./window.svelte";
@@ -15,27 +17,49 @@ async function started(api: Api = createMockApi()): Promise<WindowStore> {
 }
 
 describe("window open flow", () => {
-  it("boots on welcome, opens a folder here, then asks before replacing it", async () => {
-    const store = await started();
+  it("boots on welcome, opens a folder as a tab, an open one comes forward (one place)", async () => {
+    const api = createMockApi();
+    const store = await started(api);
     expect(store.boot.status).toBe("ready");
     expect(store.label).toBe("main");
+    expect(store.window).toBe("main");
     expect(store.view.state).toBe("welcome");
     await store.openFolder();
-    expect(store.view.state).toBe("showing");
-    await store.open("C:/second project", "ask");
-    expect(store.choice).toEqual({ status: "asking", path: "C:/second project" });
-    await store.answerChoice(null);
-    expect(store.choice.status).toBe("closed");
     expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
-    await store.open("C:/second project", "ask");
-    await store.answerChoice("here");
+    await store.open("C:/second project");
     expect(store.view.state === "showing" && store.view.workspace.name).toBe("second project");
+    // the first one again: its tab comes forward, no new tab
+    await store.open("C:/Users/demo/permark-docs");
+    const listed = await api.listWindows();
+    expect(listed.ok && listed.value[0]?.tabs.map((t) => t.title)).toEqual([
+      "permark-docs",
+      "second project",
+    ]);
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
   });
 
-  it("a second answer without a question does nothing", async () => {
+  it("this tab: the unsaved prompt runs first; keeping the edits opens nothing", async () => {
     const store = await started();
-    await store.answerChoice("here");
-    expect(store.view.state).toBe("welcome");
+    // the Welcome view the first tab adopted hears its tab from the backend (else this tab would skip the prompt)
+    expect(store.tab).toBeNull();
+    await store.openFolder();
+    expect(store.tab).not.toBeNull();
+    let asked = 0;
+    let answer = false;
+    const unguard = setLeaveGuard(() => {
+      asked++;
+      return Promise.resolve(answer);
+    });
+    await store.open("C:/second project", "thisTab");
+    expect(asked).toBe(1);
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
+    answer = true;
+    await store.open("C:/second project", "thisTab");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("second project");
+    // a new tab or window never asks: this tab keeps its document
+    await store.open("C:/third", "tab");
+    expect(asked).toBe(2);
+    unguard();
   });
 
   it("drop: one item opens, several are refused with a notice", async () => {
@@ -102,18 +126,20 @@ describe("window open flow", () => {
   });
 
   it("leaving a workspace ends focus mode", async () => {
-    const store = await started();
+    const api = createMockApi();
+    const store = await started(api);
+    const stop = tabs.start("main", api);
     await store.openFolder();
     ui.setFocus("on");
     expect(ui.focus).toBe("on");
-    // another project in this window
-    await store.open("C:/second project", "ask");
-    await store.answerChoice("here");
+    // another project in this tab
+    await store.open("C:/second project", "thisTab");
     expect(ui.focus).toBe("off");
     ui.setFocus("on");
     await store.closeWorkspace();
     expect(store.view.state).toBe("welcome");
     expect(ui.focus).toBe("off");
+    stop();
   });
 
   it("superseded opens stay quiet, other failures become notices (max 5)", async () => {
@@ -132,10 +158,10 @@ describe("window open flow", () => {
         }),
     };
     const store = await started(failing);
-    await store.open("x", "ask");
+    await store.open("x");
     expect(store.notices).toHaveLength(0);
     kind = "notFound";
-    for (let i = 0; i < 8; i++) await store.open(`x${i}`, "ask");
+    for (let i = 0; i < 8; i++) await store.open(`x${i}`);
     expect(store.notices).toHaveLength(5);
     const first = store.notices[0];
     if (first) store.dismiss(first.id);
@@ -191,55 +217,47 @@ describe("window title", () => {
   });
 });
 
-describe("where a folder opens, and what is remembered", () => {
-  it("with open_in = this the dialog never shows and the window is reused", async () => {
-    const store = await started();
-    await store.openFolder();
-    await store.changeSetting({ key: "openIn", value: "this" });
-    expect(store.openIn).toBe("this");
-    await store.open("C:/second project", "ask");
-    expect(store.choice.status).toBe("closed");
-    expect(store.view.state === "showing" && store.view.workspace.name).toBe("second project");
-  });
-
-  it("with open_in = new the folder goes to a new window and this one stays as it is", async () => {
-    const store = await started();
-    await store.openFolder();
-    await store.changeSetting({ key: "openIn", value: "new" });
-    await store.open("C:/second project", "ask");
-    expect(store.choice.status).toBe("closed");
-    expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
+describe("where a folder opens: the open_in setting", () => {
+  it("tab (default): a new tab; this: the active tab; window: a new window, this one as it is", async () => {
+    const api = createMockApi();
+    const store = await started(api);
+    const placements: string[] = [];
+    const seen: Api = {
+      ...api,
+      openPath: (path, placement) => {
+        placements.push(placement);
+        return api.openPath(path, placement);
+      },
+    };
+    const spy = await started(seen);
+    expect(spy.openIn).toBe("tab");
+    await spy.open("C:/a");
+    await spy.changeSetting({ key: "openIn", value: "this" });
+    expect(spy.openIn).toBe("this");
+    await spy.open("C:/b");
+    await spy.changeSetting({ key: "openIn", value: "window" });
+    await spy.open("C:/c");
+    expect(spy.view.state === "showing" && spy.view.workspace.name).toBe("b");
     // an explicit placement is never rewritten by the setting
-    await store.open("C:/third project", "thisWindow");
-    expect(store.view.state === "showing" && store.view.workspace.name).toBe("third project");
+    await spy.open("C:/d", "tab");
+    expect(placements).toEqual(["tab", "thisTab", "newWindow", "tab"]);
+    expect(store.boot.status).toBe("ready");
   });
 
-  it("the remember check keeps the answer as the setting; cancel keeps nothing", async () => {
-    const store = await started();
-    await store.openFolder();
-    await store.open("C:/second project", "ask");
-    await store.answerChoice(null, true);
-    expect(store.openIn).toBe("ask");
-    await store.open("C:/second project", "ask");
-    await store.answerChoice("here", true);
-    expect(store.openIn).toBe("this");
-    expect(store.view.state === "showing" && store.view.workspace.name).toBe("second project");
-    // the next open does not ask
-    await store.open("C:/third project", "ask");
-    expect(store.choice.status).toBe("closed");
-    expect(store.view.state === "showing" && store.view.workspace.name).toBe("third project");
-    await store.changeSetting({ key: "openIn", value: "ask" });
-    await store.open("C:/fourth", "ask");
-    await store.answerChoice("new", true);
-    expect(store.openIn).toBe("new");
-  });
-
-  it("a choice made without the check leaves the setting alone", async () => {
-    const store = await started();
-    await store.openFolder();
-    await store.open("C:/second project", "ask");
-    await store.answerChoice("new");
-    expect(store.openIn).toBe("ask");
+  it("the Notes follow the same placement", async () => {
+    const api = createMockApi();
+    const placements: string[] = [];
+    const store = await started({
+      ...api,
+      openNotes: (placement) => {
+        placements.push(placement);
+        return api.openNotes(placement);
+      },
+    });
+    await store.openNotes();
+    await store.changeSetting({ key: "openIn", value: "window" });
+    await store.openNotes();
+    expect(placements).toEqual(["tab", "newWindow"]);
   });
 });
 

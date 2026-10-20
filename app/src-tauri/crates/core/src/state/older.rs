@@ -6,11 +6,13 @@
 //!   it has none of its own yet. A mark file records that the copy was made, so data the person removes later never
 //!   comes back.
 //! - App settings (`settings.json`): see [`crate::settings::SettingsFile::adopt_older`].
+//! - Last window (`window.json`): geometry of the first window while this version's session has none.
 
 use std::path::{Path, PathBuf};
 
 use super::{AppDirs, StateLocation, StateStore};
 use crate::paths::Root;
+use crate::session::Geometry;
 
 /// 0.5's profile folder name (its app identifier).
 pub const OLDER_FOLDER: &str = "dev.permark.app";
@@ -20,12 +22,51 @@ pub const OLDER_PROJECT_FILES: [&str; 3] = ["meta.toml", "comments.json", "quiet
 const TAKEN_OVER: &str = "from-0.5";
 /// Largest file copied (a bigger one stays where it is).
 const MAX_FILE: u64 = 64 * 1024 * 1024;
+/// 0.5's last window geometry file, in its profile folder.
+pub const OLDER_WINDOW: &str = "window.json";
+/// Largest `window.json` read (a real one is ~100 bytes).
+const MAX_WINDOW_FILE: u64 = 64 * 1024;
 
 /// 0.5's profile folder, beside this version's (same data folder of the system).
 #[must_use]
 pub fn older_profile(dirs: &AppDirs) -> Option<PathBuf> {
     let older = dirs.profile.parent()?.join(OLDER_FOLDER);
     older.is_dir().then_some(older)
+}
+
+/// 0.5's last window (`window.json`), when it holds a usable one: unreadable | damaged -> none. Read only.
+#[must_use]
+pub fn older_window(dirs: &AppDirs) -> Option<Geometry> {
+    let file = older_profile(dirs)?.join(OLDER_WINDOW);
+    if !std::fs::symlink_metadata(&file).ok()?.is_file() {
+        return None;
+    }
+    parse_older_window(&crate::fsx::read_bytes(&file, MAX_WINDOW_FILE).ok()?)
+}
+
+/// 0.5's `window.json`: `{ x, y, width, height, scale?, maximized? }` (outer corner + inner size, physical px).
+/// Lenient like 0.5: unknown fields ignored; position | size missing | not an integer | out of range -> none;
+/// scale missing | outside 0.25..16 -> 1; `maximized` not a boolean -> false.
+#[must_use]
+pub fn parse_older_window(bytes: &[u8]) -> Option<Geometry> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let int = |key: &str| value.get(key)?.as_i64().and_then(|v| i32::try_from(v).ok());
+    let extent = |key: &str| value.get(key)?.as_u64().and_then(|v| u32::try_from(v).ok());
+    Geometry {
+        x: int("x")?,
+        y: int("y")?,
+        width: extent("width")?,
+        height: extent("height")?,
+        scale: value
+            .get("scale")
+            .and_then(serde_json::Value::as_f64)
+            .unwrap_or(1.0),
+        maximized: value
+            .get("maximized")
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false),
+    }
+    .sane()
 }
 
 /// 0.5's key of a project folder: xxh3 of its path with `/` separators, trailing separators dropped, lower case on
@@ -198,6 +239,93 @@ mod tests {
         let store = StateStore::for_project(&none, &root);
         take_over_project(&none, &root, &store);
         assert!(!store.dir().join("comments.json").exists());
+    }
+
+    #[test]
+    fn the_last_window_of_0_5_is_read_like_0_5_wrote_it() {
+        let g = parse_older_window(
+            br#"{"x": -1200, "y": 80, "width": 1280, "height": 800, "scale": 1.5, "maximized": true}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            g,
+            Geometry {
+                x: -1200,
+                y: 80,
+                width: 1280,
+                height: 800,
+                scale: 1.5,
+                maximized: true
+            }
+        );
+        // pretty-printed with CRLF, unknown fields, no scale | flag
+        let g = parse_older_window(
+            b"{\r\n  \"x\": 1,\r\n  \"y\": 2,\r\n  \"width\": 900,\r\n  \"height\": 600,\r\n  \"monitor\": \"D2\"\r\n}",
+        )
+        .unwrap();
+        assert_eq!((g.x, g.y, g.width, g.height), (1, 2, 900, 600));
+        assert!((g.scale - 1.0).abs() < f64::EPSILON && !g.maximized);
+        for scale in ["0", "-2", "\"big\"", "null", "1000", "0.01"] {
+            let json = format!(
+                r#"{{"x": 1, "y": 2, "width": 900, "height": 600, "scale": {scale}, "maximized": "yes"}}"#
+            );
+            let g = parse_older_window(json.as_bytes()).unwrap();
+            assert!(
+                (g.scale - 1.0).abs() < f64::EPSILON && !g.maximized,
+                "{scale}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_damaged_last_window_of_0_5_is_none() {
+        for text in [
+            "",
+            "{ not json",
+            "[]",
+            "7",
+            "null",
+            "{}",
+            r#"{"y": 20, "width": 900, "height": 600}"#,
+            r#"{"x": "10", "y": 20, "width": 900, "height": 600}"#,
+            r#"{"x": 10.5, "y": 20, "width": 900, "height": 600}"#,
+            r#"{"x": 10, "y": null, "width": 900, "height": 600}"#,
+            r#"{"x": 10, "y": 20, "width": 0, "height": 600}"#,
+            r#"{"x": 10, "y": 20, "width": 900, "height": -600}"#,
+            r#"{"x": 10, "y": 20, "width": 100001, "height": 600}"#,
+            r#"{"x": 99999999999, "y": 20, "width": 900, "height": 600}"#,
+        ] {
+            assert_eq!(parse_older_window(text.as_bytes()), None, "{text}");
+        }
+        assert_eq!(parse_older_window(&[0xff, 0xfe, 0x00]), None);
+    }
+
+    #[test]
+    fn the_last_window_of_0_5_comes_from_its_profile_folder_and_stays_there() {
+        let base = tempfile::tempdir().unwrap();
+        let data = base.path().join("Dados do usuário ção");
+        let dirs = AppDirs {
+            profile: data.join("PerMark"),
+            cache: base.path().join("cache").join("PerMark"),
+        };
+        assert_eq!(older_window(&dirs), None, "no 0.5 folder");
+        std::fs::create_dir_all(data.join(OLDER_FOLDER)).unwrap();
+        assert_eq!(older_window(&dirs), None, "no file");
+        let file = data.join(OLDER_FOLDER).join(OLDER_WINDOW);
+        let text = r#"{"x": 40, "y": 30, "width": 1400, "height": 900, "scale": 1.25, "maximized": false}"#;
+        std::fs::write(&file, text).unwrap();
+        assert_eq!(
+            older_window(&dirs).map(|g| (g.x, g.width)),
+            Some((40, 1400))
+        );
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), text, "read only");
+        std::fs::write(&file, "{ half").unwrap();
+        assert_eq!(older_window(&dirs), None, "corrupt");
+        std::fs::write(&file, vec![b' '; 70 * 1024]).unwrap();
+        assert_eq!(older_window(&dirs), None, "too large");
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        assert_eq!(older_window(&dirs), None, "a folder");
     }
 
     #[cfg(unix)]

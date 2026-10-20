@@ -22,10 +22,10 @@
   /** The entry the keyboard is on: the one picked, else the first. */
   const active = $derived(picked >= 0 && items.includes(picked) ? picked : (items[0] ?? -1));
 
-  function run(at: number): void {
+  function run(at: number, shift = false): void {
     const entry = entries[at];
     close();
-    if (entry?.kind === "item") entry.run();
+    if (entry?.kind === "item") entry.run(shift);
   }
 
   function onkeydown(e: KeyboardEvent): void {
@@ -39,7 +39,7 @@
       picked = items[(at + step + items.length) % items.length] ?? active;
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      run(active);
+      run(active, e.shiftKey);
     } else if (e.key === "Tab") {
       e.preventDefault();
     }
@@ -89,7 +89,7 @@
         role="menuitem"
         class={["item", entry.danger && "danger", active === at && "is-active"]}
         onpointerenter={() => (picked = at)}
-        onclick={() => run(at)}
+        onclick={(e) => run(at, e.shiftKey)}
       >
         {#if entry.detail}
           <span class="two" title={entry.detail}>

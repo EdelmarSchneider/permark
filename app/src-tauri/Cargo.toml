@@ -4,7 +4,7 @@ resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
 [workspace.package]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/permark"
@@ -202,7 +202,8 @@ serde_json.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 ts-rs.workspace = true
-tauri = { version = "2.12", features = [] }
+# `unstable`: child webviews (one per tab inside a native window: `Window::add_child`, `Webview::reparent`)
+tauri = { version = "2.12", features = ["unstable"] }
 tauri-plugin-dialog = "2.8.2"
 tauri-plugin-opener = "2.7"
 tauri-plugin-updater = { version = "2.13", optional = true }

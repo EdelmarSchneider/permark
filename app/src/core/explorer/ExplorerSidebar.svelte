@@ -15,7 +15,7 @@
     fail: (error) => store.notifyFileOpFailed(error),
     note: (text) => store.notifyNote(text),
     linkUpdate: () => store.linkUpdate,
-    openProject: (path) => void store.open(path, "ask"),
+    openProject: (path) => void store.open(path),
     referenceTemplate: () => store.referenceTemplate,
     initProject: (path, name) => ui.askInit(path, name),
   });

@@ -1,48 +1,58 @@
 import { describe, expect, it } from "vitest";
-import type { WindowView, WorkspaceSummary } from "../../api";
+import type { TabSummary, WindowView } from "../../api";
 import {
-  afterClose,
   canSwitch,
   chipsTight,
   hueOf,
+  last,
   neighbor,
+  nth,
   shownId,
   splitName,
 } from "./switcherModel";
 
-function w(id: number, kind: WorkspaceSummary["kind"] = "project"): WorkspaceSummary {
-  return { id, kind, title: `w${id}`, path: `/w${id}`, windows: 1 };
+function tab(id: number, kind: TabSummary["kind"] = "project"): TabSummary {
+  return { tab: id, kind, title: `t${id}`, path: `/t${id}`, loaded: true, unsaved: false };
 }
 
-describe("the switcher bar", () => {
-  it("switching needs two or more workspaces", () => {
+describe("the tab strip", () => {
+  it("switching needs two or more tabs", () => {
     expect(canSwitch([])).toBe(false);
-    expect(canSwitch([w(1)])).toBe(false);
-    expect(canSwitch([w(1), w(2)])).toBe(true);
+    expect(canSwitch([tab(1)])).toBe(false);
+    expect(canSwitch([tab(1), tab(2)])).toBe(true);
   });
 
-  it("next | previous wrap around the list", () => {
-    const list = [w(1), w(2), w(3)];
-    expect(neighbor(list, 1, 1)?.id).toBe(2);
-    expect(neighbor(list, 3, 1)?.id).toBe(1);
-    expect(neighbor(list, 1, -1)?.id).toBe(3);
-    expect(neighbor(list, 2, -1)?.id).toBe(1);
+  it("next | previous wrap around the strip", () => {
+    const list = [tab(1), tab(2), tab(3)];
+    expect(neighbor(list, 1, 1)?.tab).toBe(2);
+    expect(neighbor(list, 3, 1)?.tab).toBe(1);
+    expect(neighbor(list, 1, -1)?.tab).toBe(3);
+    expect(neighbor(list, 2, -1)?.tab).toBe(1);
   });
 
-  it("a window that shows nothing goes to the first (next) or the last (previous)", () => {
-    const list = [w(1), w(2), w(3)];
-    expect(neighbor(list, null, 1)?.id).toBe(1);
-    expect(neighbor(list, null, -1)?.id).toBe(3);
-    // a workspace that is not in the list (just closed) is the same as none
-    expect(neighbor(list, 99, 1)?.id).toBe(1);
+  it("an active tab that is not listed (just closed) goes to the first | the last", () => {
+    const list = [tab(1), tab(2), tab(3)];
+    expect(neighbor(list, null, 1)?.tab).toBe(1);
+    expect(neighbor(list, null, -1)?.tab).toBe(3);
+    expect(neighbor(list, 99, 1)?.tab).toBe(1);
   });
 
-  it("with one workspace or none there is nowhere to go", () => {
+  it("with one tab or none there is nowhere to go", () => {
     expect(neighbor([], null, 1)).toBeNull();
-    expect(neighbor([w(1)], 1, 1)).toBeNull();
+    expect(neighbor([tab(1)], 1, 1)).toBeNull();
   });
 
-  it("the workspace a window shows, also while another opens", () => {
+  it("Mod+n: tab n when there is one; Mod+9: the last", () => {
+    const list = [tab(4), tab(5), tab(6)];
+    expect(nth(list, 1)?.tab).toBe(4);
+    expect(nth(list, 3)?.tab).toBe(6);
+    expect(nth(list, 4)).toBeNull();
+    expect(nth(list, 0)).toBeNull();
+    expect(last(list)?.tab).toBe(6);
+    expect(last([])).toBeNull();
+  });
+
+  it("the workspace a view shows, also while another opens", () => {
     const project = {
       kind: "project",
       id: 5,
@@ -52,26 +62,11 @@ describe("the switcher bar", () => {
     } as const;
     const showing: WindowView = { state: "showing", workspace: project, document: null };
     expect(shownId(showing)).toBe(5);
-    const target = { kind: "notes", path: null } as const;
+    const target = { kind: "notes" } as const;
     expect(shownId({ state: "opening", target, showing: project })).toBe(5);
     expect(shownId({ state: "opening", target, showing: null })).toBeNull();
     expect(shownId({ state: "welcome" })).toBeNull();
     expect(shownId({ state: "closing" })).toBeNull();
-  });
-});
-
-describe("after closing a workspace", () => {
-  it("the next one in the list takes its place, else the one before", () => {
-    const list = [w(1), w(2), w(3)];
-    expect(afterClose(list, 1)?.id).toBe(2);
-    expect(afterClose(list, 2)?.id).toBe(3);
-    expect(afterClose(list, 3)?.id).toBe(2);
-  });
-
-  it("nothing when it was the last one; the first when it is not listed (already gone)", () => {
-    expect(afterClose([w(1)], 1)).toBeNull();
-    expect(afterClose([], 1)).toBeNull();
-    expect(afterClose([w(4), w(5)], 9)?.id).toBe(4);
   });
 });
 

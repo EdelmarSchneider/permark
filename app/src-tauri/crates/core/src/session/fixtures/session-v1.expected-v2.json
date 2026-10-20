@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "data": {
+    "windows": [
+      {
+        "geometry": {
+          "x": -8,
+          "y": -8,
+          "width": 2560,
+          "height": 1369,
+          "scale": 1.25,
+          "maximized": true
+        },
+        "tabs": [
+          {
+            "kind": "project",
+            "path": "C:\\Users\\me\\Projects\\Alpha"
+          }
+        ],
+        "active": 0
+      },
+      {
+        "geometry": {
+          "x": 300,
+          "y": 200,
+          "width": 1280,
+          "height": 800,
+          "scale": 1.0,
+          "maximized": false
+        },
+        "tabs": [
+          {
+            "kind": "singleFile",
+            "path": "C:\\Users\\me\\Documents\\todo.md"
+          }
+        ],
+        "active": 0
+      },
+      {
+        "geometry": {
+          "x": 40,
+          "y": 40,
+          "width": 0,
+          "height": 800,
+          "scale": 1.0,
+          "maximized": false
+        },
+        "tabs": [],
+        "active": null
+      },
+      {
+        "geometry": null,
+        "tabs": [
+          {
+            "kind": "project",
+            "path": "D:\\Work Space\\Beta ação"
+          }
+        ],
+        "active": 0
+      }
+    ],
+    "notes": {
+      "open": true,
+      "geometry": {
+        "x": 1700,
+        "y": 100,
+        "width": 900,
+        "height": 700,
+        "scale": 1.5,
+        "maximized": false
+      }
+    }
+  }
+}

@@ -35,7 +35,7 @@ beforeEach(async () => {
   document.body.replaceChildren();
   target = document.createElement("div");
   document.body.append(target);
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   if (!started) {
     await windowStore.start();
     started = true;

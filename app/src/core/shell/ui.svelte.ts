@@ -1,6 +1,8 @@
 // Window UI state the commands act on: which sidebar view shows, the Search everywhere box, the keyboard dialog,
 // settings, find in page. Small tagged states; components read, commands call the methods.
 
+import type { ClosingTab } from "../../api";
+import type { Overlay } from "../commands/dispatch";
 import type { Preset } from "../search/finderModel";
 
 /** `files`, `search`, or the id of a panel a plugin put in the sidebar. */
@@ -45,18 +47,26 @@ class UiStore {
   settingsPage = $state.raw<SettingsPage>({ status: "closed" });
   initDialog = $state.raw<InitDialog>({ status: "closed" });
   finding = $state(false);
+  /** The window close prompt (this view is the one on screen): the tabs with unsaved edits; `null`: not asking. */
+  closePrompt = $state.raw<readonly ClosingTab[] | null>(null);
   /** Counts the requests to put the cursor in the Search panel's box. */
   searchFocus = $state(0);
   #seed = 0;
 
-  /** An overlay owns the keyboard. */
-  get modal(): boolean {
-    return (
+  /** What owns the keyboard: the close prompt (a question: no command runs), a box, nothing. */
+  get overlay(): Overlay {
+    if (this.closePrompt !== null) return "question";
+    const box =
       this.finder.status === "open" ||
       this.keyboard ||
       this.settingsPage.status === "open" ||
-      this.initDialog.status === "asking"
-    );
+      this.initDialog.status === "asking";
+    return box ? "box" : "none";
+  }
+
+  /** An overlay owns the keyboard. */
+  get modal(): boolean {
+    return this.overlay !== "none";
   }
 
   openFinder(preset: FinderPreset): void {

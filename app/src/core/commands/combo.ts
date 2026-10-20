@@ -1,7 +1,8 @@
 // Key combos: the text form (`Mod+Shift+P`), the event -> combo mapping and how a combo is written for the person.
-// Pure. `Mod` = Ctrl on Windows | Linux, Cmd on macOS; written once for every platform.
+// Pure. `Mod` = Ctrl on Windows | Linux, Cmd on macOS; `Ctrl` = the Control key on every platform (macOS ⌃; on
+// Windows | Linux it is `Mod`: `Ctrl+Tab` there is `Mod+Tab`, one combo). Written once for every platform.
 
-export type Combo = { mod: boolean; alt: boolean; shift: boolean; key: string };
+export type Combo = { mod: boolean; ctrl: boolean; alt: boolean; shift: boolean; key: string };
 
 /** The key as the event gives it, reduced to what the grammar knows. */
 export type KeyEventLike = {
@@ -41,16 +42,17 @@ export function isKnownKey(key: string): boolean {
   return NAMED_KEYS.has(key) || SINGLE.test(key);
 }
 
-/** Parses `Mod+Alt+Shift+Key` (modifiers in any order, each at most once). `null` when it is not a combo. */
+/** Parses `Mod+Ctrl+Alt+Shift+Key` (modifiers in any order, each at most once). `null` when it is not a combo. */
 export function parseCombo(text: string): Combo | null {
   if (text === "" || text.length > 40) return null;
   // the key may itself be `+`: `Mod++` is not valid (`=` is the key of zoom in)
   const parts = text.split("+");
   const key = parts.pop();
   if (key === undefined || !isKnownKey(key)) return null;
-  const combo: Combo = { mod: false, alt: false, shift: false, key };
+  const combo: Combo = { mod: false, ctrl: false, alt: false, shift: false, key };
   for (const part of parts) {
     if (part === "Mod" && !combo.mod) combo.mod = true;
+    else if (part === "Ctrl" && !combo.ctrl) combo.ctrl = true;
     else if (part === "Alt" && !combo.alt) combo.alt = true;
     else if (part === "Shift" && !combo.shift) combo.shift = true;
     else return null;
@@ -60,13 +62,16 @@ export function parseCombo(text: string): Combo | null {
 
 /** The combo written the one way the map stores it. */
 export function writeCombo(combo: Combo): string {
-  return `${combo.mod ? "Mod+" : ""}${combo.alt ? "Alt+" : ""}${combo.shift ? "Shift+" : ""}${combo.key}`;
+  const mods = `${combo.mod ? "Mod+" : ""}${combo.ctrl ? "Ctrl+" : ""}${combo.alt ? "Alt+" : ""}`;
+  return `${mods}${combo.shift ? "Shift+" : ""}${combo.key}`;
 }
 
-/** The stored spelling of a combo, or `null` for text that is not one. */
-export function normalizeCombo(text: string): string | null {
+/** The spelling of a combo on this platform (`Ctrl` is `Mod` on Windows | Linux), or `null` for text that is not one. */
+export function normalizeCombo(text: string, mac = false): string | null {
   const combo = parseCombo(text);
-  return combo === null ? null : writeCombo(combo);
+  if (combo === null) return null;
+  if (!mac && combo.ctrl) return writeCombo({ ...combo, mod: true, ctrl: false });
+  return writeCombo(combo);
 }
 
 /** Whether an event is part of a text composition or a dead key: it never runs a shortcut. */
@@ -88,8 +93,9 @@ export function comboFromEvent(event: KeyEventLike, mac: boolean): string | null
   if (isComposition(event)) return null;
   if (event.getModifierState?.("AltGraph") === true) return null;
   const mod = mac ? event.metaKey : event.ctrlKey;
-  const foreign = mac ? event.ctrlKey : event.metaKey;
-  if (foreign) return null;
+  // macOS: the Control key is a modifier of its own; Windows | Linux: the Windows | Super key matches nothing
+  const ctrl = mac && event.ctrlKey;
+  if (!mac && event.metaKey) return null;
   let shift = event.shiftKey;
   let key = event.key === " " ? "Space" : event.key;
   if (key.length === 1) {
@@ -109,13 +115,13 @@ export function comboFromEvent(event: KeyEventLike, mac: boolean): string | null
       shift = false;
     }
   } else if (!NAMED_KEYS.has(key)) return null;
-  return writeCombo({ mod, alt: event.altKey, shift, key });
+  return writeCombo({ mod, ctrl, alt: event.altKey, shift, key });
 }
 
 /** Alt | Shift alone or with a plain key: types text, so it yields to a focused field. */
 export function isSingleKey(combo: string): boolean {
   const parsed = parseCombo(combo);
-  return parsed !== null && !parsed.mod && !parsed.alt;
+  return parsed !== null && !parsed.mod && !parsed.ctrl && !parsed.alt;
 }
 
 const WORDS: Readonly<Record<string, string>> = {
@@ -144,13 +150,21 @@ function keyText(key: string, mac: boolean): string {
   return WORDS[key] ?? (key.length === 1 ? key.toUpperCase() : key);
 }
 
-/** How the platform writes a combo: `Ctrl+Shift+P`, or `⇧⌘P` on macOS (Option, Shift, Command, then the key). */
+/**
+ * How the platform writes a combo: `Ctrl+Shift+P`, or `⇧⌘P` on macOS (Control, Option, Shift, Command, then the
+ * key).
+ */
 export function comboLabel(combo: string, mac: boolean): string {
   const parsed = parseCombo(combo);
   if (parsed === null) return combo;
   if (mac) {
-    return `${parsed.alt ? "⌥" : ""}${parsed.shift ? "⇧" : ""}${parsed.mod ? "⌘" : ""}${keyText(parsed.key, true)}`;
+    const mods = `${parsed.ctrl ? "⌃" : ""}${parsed.alt ? "⌥" : ""}${parsed.shift ? "⇧" : ""}`;
+    return `${mods}${parsed.mod ? "⌘" : ""}${keyText(parsed.key, true)}`;
   }
-  const mods = [parsed.mod ? "Ctrl" : "", parsed.alt ? "Alt" : "", parsed.shift ? "Shift" : ""];
+  const mods = [
+    parsed.mod || parsed.ctrl ? "Ctrl" : "",
+    parsed.alt ? "Alt" : "",
+    parsed.shift ? "Shift" : "",
+  ];
   return [...mods.filter((m) => m !== ""), keyText(parsed.key, false)].join("+");
 }

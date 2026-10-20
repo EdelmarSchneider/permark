@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke, convertFileSrc: vi.fn() }));
-const show = vi.fn();
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ show }) }));
 
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: vi.fn() }));
@@ -15,7 +13,6 @@ const { asIpcError, errorMessage } = await import("./error");
 
 beforeEach(() => {
   invoke.mockReset();
-  show.mockReset();
 });
 
 describe("call (typed invoke)", () => {
@@ -27,7 +24,7 @@ describe("call (typed invoke)", () => {
 
   it("keeps a backend error as its typed shape", async () => {
     invoke.mockRejectedValue({ kind: "pathEscape", subject: "../x", detail: null });
-    expect(await tauriApi.openPath("../x", "ask")).toEqual({
+    expect(await tauriApi.openPath("../x", "tab")).toEqual({
       ok: false,
       error: {
         kind: "backend",
@@ -35,7 +32,7 @@ describe("call (typed invoke)", () => {
         error: { kind: "pathEscape", subject: "../x", detail: null },
       },
     });
-    expect(invoke).toHaveBeenCalledWith("open_path", { path: "../x", placement: "ask" });
+    expect(invoke).toHaveBeenCalledWith("open_path", { path: "../x", placement: "tab" });
   });
 
   it("turns a rejection into a typed error, never a throw", async () => {
@@ -47,19 +44,24 @@ describe("call (typed invoke)", () => {
   });
 });
 
-describe("showWindow", () => {
-  it("shows the window", async () => {
-    show.mockResolvedValue(undefined);
+describe("the view tells the backend (it shows | titles the window)", () => {
+  it("first paint, title and theme go to the backend, never to the window itself", async () => {
+    invoke.mockResolvedValue(null);
     expect(await tauriApi.showWindow()).toEqual({ ok: true, value: undefined });
-    expect(show).toHaveBeenCalledOnce();
+    await tauriApi.setTitle("a.md — p — PerMark");
+    await tauriApi.setWindowTheme("dark");
+    expect(invoke.mock.calls).toEqual([
+      ["view_ready", {}],
+      ["view_set_title", { title: "a.md — p — PerMark" }],
+      ["view_set_theme", { theme: "dark" }],
+    ]);
   });
 
-  it("reports a refused permission as a window error", async () => {
-    show.mockRejectedValue(new Error("window.show not allowed"));
-    expect(await tauriApi.showWindow()).toEqual({
-      ok: false,
-      error: { kind: "window", message: "window.show not allowed" },
-    });
+  it("a failure is a typed error (title and theme: quiet)", async () => {
+    invoke.mockRejectedValue("no view");
+    const shown = await tauriApi.showWindow();
+    expect(shown.ok).toBe(false);
+    await expect(tauriApi.setTitle("x")).resolves.toBeUndefined();
   });
 });
 
@@ -70,13 +72,15 @@ describe("mock backend", () => {
     const off = await mock.on("window-changed", (e) => views.push(e.view.state));
     expect(await mock.appInfo()).toEqual({ ok: true, value: { version: MOCK_VERSION } });
     expect(await mock.showWindow()).toEqual({ ok: true, value: undefined });
-    const first = await mock.openPath("C:/a b/项目", "ask");
-    expect(first.ok && first.value.outcome).toBe("opened");
-    const again = await mock.openPath("C:/other", "ask");
-    expect(again.ok && again.value.outcome).toBe("needsChoice");
-    await mock.showWelcome();
+    const first = await mock.openPath("C:/a b/项目", "tab");
+    expect(first.ok && first.value.outcome).toBe("newTab");
+    const again = await mock.openPath("C:/a b/项目", "tab");
+    expect(again.ok && again.value.outcome).toBe("focused");
+    const listed = await mock.listWindows();
+    expect(listed.ok && listed.value[0]?.tabs.map((t) => t.title)).toEqual(["项目"]);
+    await mock.tabClose(listed.ok ? (listed.value[0]?.tabs[0]?.tab ?? 0) : 0);
     off();
-    await mock.openPath("C:/x", "thisWindow");
+    await mock.openPath("C:/x", "thisTab");
     expect(views).toEqual(["showing", "welcome"]);
     const recent = await mock.recentList();
     expect(recent.ok && recent.value.map((r) => r.path).slice(0, 2)).toEqual([

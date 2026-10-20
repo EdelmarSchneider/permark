@@ -23,8 +23,7 @@
   import TopBar from "./core/shell/TopBar.svelte";
   import { closeHere } from "./core/shell/closeWorkspace";
   import Welcome from "./core/shell/Welcome.svelte";
-  import WindowChoice from "./core/shell/WindowChoice.svelte";
-  import { confirmLeave } from "./core/editing/guard";
+  import CloseWindowDialog from "./core/shell/CloseWindowDialog.svelte";
   import { editing } from "./core/editing/session.svelte";
   import { installWindowKeys } from "./core/commands/install";
   import Finder from "./core/search/Finder.svelte";
@@ -33,8 +32,7 @@
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
   import { confirmInit } from "./core/shell/initProject";
   import { layout } from "./core/shell/layout.svelte";
-  import { switcher } from "./core/shell/workspaceList.svelte";
-  import { shownId } from "./core/shell/switcherModel";
+  import { tabs } from "./core/shell/tabs.svelte";
   import { ui } from "./core/shell/ui.svelte";
   import { conditions } from "./core/conditions/context.svelte";
   import { contributions } from "./core/plugins/instance.svelte";
@@ -130,47 +128,52 @@
   $effect(() => {
     void api.setWindowTheme(look.preference === "system" ? null : look.preference);
   });
-  // the workspaces of the process, for the top bar chips and their keys
-  $effect(() => switcher.start());
+  // this window's tabs, for the top bar chips and their keys
+  $effect(() => tabs.start(store.window));
   $effect(() => look.watchSystem());
-  // the window was asked to close with unsaved edits: the person answers, then it closes for real
+  // the backend asks this view (events for other views are theirs): the window close prompt (tabs with unsaved
+  // edits), a save before the window closes (Save all), the unsaved prompt before this tab closes
   $effect(() => {
-    let off: (() => void) | null = null;
+    const offs: (() => void)[] = [];
     let gone = false;
+    const keep = (stop: () => void): void => {
+      if (gone) stop();
+      else offs.push(stop);
+    };
     void api
       .on("close-requested", (event) => {
-        if (event.window !== store.label) return;
-        void confirmLeave({ kind: "window" }).then((ok) => {
-          if (ok) void api.windowClose();
-        });
+        if (event.window === store.label) ui.closePrompt = event.tabs;
       })
-      .then((stop) => {
-        if (gone) stop();
-        else off = stop;
-      });
+      .then(keep);
+    void api
+      .on("save-requested", (event) => {
+        if (event.window !== store.label) return;
+        void editing.saveForClose().then((saved) => api.viewSaved(saved));
+      })
+      .then(keep);
+    void api
+      .on("tab-close-requested", (event) => {
+        if (event.window === store.label) void closeHere();
+      })
+      .then(keep);
+    // this tab moved to another window: its chips are that window's tabs now
+    void api
+      .on("view-moved", (event) => {
+        if (event.window !== store.label) return;
+        store.window = event.to;
+        tabs.window = event.to;
+      })
+      .then(keep);
     return () => {
       gone = true;
-      off?.();
+      offs.forEach((off) => off());
     };
   });
 
-  // a chip, Mod+W or another window asked this window to close its workspace: the unsaved prompt runs first
-  $effect(() => {
-    let off: (() => void) | null = null;
-    let gone = false;
-    void api
-      .on("workspace-close-requested", (event) => {
-        if (event.window === store.label) void closeHere();
-      })
-      .then((stop) => {
-        if (gone) stop();
-        else off = stop;
-      });
-    return () => {
-      gone = true;
-      off?.();
-    };
-  });
+  function answerClose(answer: "saveAll" | "discard" | "cancel"): void {
+    ui.closePrompt = null;
+    void api.windowCloseAnswer(answer);
+  }
   $effect(() => language.watchSystem());
 
   // a project window takes what is dropped on it into the project (or into its editor); the flow listens to the
@@ -217,7 +220,7 @@
 </script>
 
 {#snippet top()}
-  <TopBar {store} current={shownId(store.view)} notes={notesOn} />
+  <TopBar {store} notes={notesOn} />
 {/snippet}
 
 {#snippet sidebar()}
@@ -313,8 +316,8 @@
   {/if}
 {/if}
 
-{#if store.choice.status === "asking"}
-  <WindowChoice answer={(choice, remember) => void store.answerChoice(choice, remember)} />
+{#if ui.closePrompt !== null}
+  <CloseWindowDialog tabs={ui.closePrompt} answer={answerClose} />
 {/if}
 {#if ui.settings}
   <SettingsPopover {store} close={() => ui.closeSettingsPopover()} />

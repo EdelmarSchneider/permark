@@ -1,8 +1,9 @@
 //! Workspaces: what a window shows. `Project` (a folder, shared `ProjectCore`), `SingleFile`, `Notes`.
 
-pub mod fsm;
 mod project;
 mod registry;
+pub mod view_fsm;
+pub mod window_fsm;
 
 use std::path::{Path, PathBuf};
 
@@ -10,7 +11,11 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use project::{CoreEnv, ProjectCore};
-pub use registry::{OpenError, Prepared, Ticket, WorkspaceRegistry};
+pub use registry::{
+    Attached, Begin, MoveRefused, MoveTicket, OpenError, Outcome, Prepared, SessionWindow, TabOpen,
+    Ticket, ViewChange, WorkspaceRegistry,
+};
+pub use window_fsm::{MoveTo, Resolution};
 
 use crate::conditions::WorkspaceKind;
 use crate::error::{ErrorKind, IpcError};
@@ -21,6 +26,11 @@ use crate::state::StateLocation;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
 #[ts(type = "number")]
 pub struct WorkspaceId(pub u64);
+
+/// Process-unique tab id (kept when a tab moves to another window).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
+#[ts(type = "number")]
+pub struct TabId(pub u64);
 
 /// What to show, validated.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,17 +138,74 @@ pub enum Workspace {
     Notes(std::sync::Arc<crate::notes::NotesCore>),
 }
 
-/// One workspace as windows list it (switcher bar).
+impl Workspace {
+    /// The documents the workspace's views read (unsaved guard per view).
+    #[must_use]
+    pub fn documents(&self) -> &std::sync::Arc<crate::document::Documents> {
+        match self {
+            Self::Project(core) => core.documents(),
+            Self::SingleFile(file) => &file.documents,
+            Self::Notes(core) => core.documents(),
+        }
+    }
+}
+
+/// Where a workspace lives: a window + its tab.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
-pub struct WorkspaceSummary {
-    pub id: WorkspaceId,
+pub struct Place {
+    pub window: String,
+    pub tab: TabId,
+}
+
+/// Kind of native window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum WindowKind {
+    /// Holds tabs (projects, single files).
+    Work,
+    /// The Notes window (stage B).
+    Notes,
+}
+
+/// One tab as its window's top bar shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TabSummary {
+    pub tab: TabId,
     pub kind: WorkspaceKind,
     pub title: String,
     pub path: String,
-    /// Number of windows showing it.
-    pub windows: u32,
+    /// Has its view (a restored tab is not loaded until first shown).
+    pub loaded: bool,
+    pub unsaved: bool,
+}
+
+/// One window with its tabs (`list_windows`, `windows-changed`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WindowSummary {
+    pub window: String,
+    pub kind: WindowKind,
+    pub tabs: Vec<TabSummary>,
+    pub active: Option<TabId>,
+    #[ts(type = "number")]
+    pub focused_ms: u64,
+}
+
+/// A tab listed in the window close prompt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ClosingTab {
+    pub tab: TabId,
+    pub title: String,
+    /// The document with unsaved edits (project-relative | file path).
+    pub document: String,
 }
 
 /// What a window shows, for its frontend.

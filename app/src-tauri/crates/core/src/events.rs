@@ -8,13 +8,14 @@ use crate::conditions::Context;
 use crate::document::DocumentChanged;
 use crate::settings::{AppSettings, SettingsScope};
 use crate::tree::TreeChanged;
-use crate::workspace::{WindowView, WorkspaceSummary};
+use crate::workspace::{TabId, WindowSummary, WindowView};
 
+/// Every window with its tabs (each view shows its own window's).
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
-pub struct WorkspacesChanged {
-    pub workspaces: Vec<WorkspaceSummary>,
+pub struct WindowsChanged {
+    pub windows: Vec<WindowSummary>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -23,6 +24,8 @@ pub struct WorkspacesChanged {
 pub struct WindowChanged {
     pub window: String,
     pub view: WindowView,
+    /// The tab this view belongs to now (`None`: the window's Welcome view).
+    pub tab: Option<TabId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -63,7 +66,7 @@ pub struct OpenFailed {
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CoreEvent {
-    WorkspacesChanged(WorkspacesChanged),
+    WindowsChanged(WindowsChanged),
     /// To one window.
     WindowChanged(WindowChanged),
     /// To one window.
@@ -94,7 +97,7 @@ impl CoreEvent {
     #[must_use]
     pub fn name(&self) -> &str {
         match self {
-            Self::WorkspacesChanged(_) => "workspaces-changed",
+            Self::WindowsChanged(_) => "windows-changed",
             Self::WindowChanged(_) => "window-changed",
             Self::ContextChanged(_) => "context-changed",
             Self::SettingsChanged(_) => "settings-changed",

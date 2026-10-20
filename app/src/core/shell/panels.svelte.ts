@@ -8,14 +8,31 @@ import { ui } from "./ui.svelte";
 
 type Panel = ContributionOf<"panel">;
 
-/** Tabs plugins add to the sidebar, in the order they were contributed. */
-export function leftPanels(): Panel[] {
-  return contributions.visible("panel", conditions.current).filter((p) => p.side === "left");
+/**
+ * Panels in a fixed order: by owning plugin id, then as that plugin contributed them. Plugins load in parallel, so the
+ * order they finish in (= registration order) differs between windows and launches.
+ */
+export function stableOrder(panels: readonly Panel[]): Panel[] {
+  return panels
+    .map((panel, index) => ({ panel, index }))
+    .sort((a, b) =>
+      a.panel.owner < b.panel.owner ? -1 : a.panel.owner > b.panel.owner ? 1 : a.index - b.index,
+    )
+    .map(({ panel }) => panel);
 }
 
-/** Panels plugins add at the right of the page. */
+/** Tabs plugins add to the sidebar, in a fixed order (`stableOrder`). */
+export function leftPanels(): Panel[] {
+  return stableOrder(
+    contributions.visible("panel", conditions.current).filter((p) => p.side === "left"),
+  );
+}
+
+/** Panels plugins add at the right of the page, in a fixed order (`stableOrder`). */
 export function rightPanels(): Panel[] {
-  return contributions.visible("panel", conditions.current).filter((p) => p.side === "right");
+  return stableOrder(
+    contributions.visible("panel", conditions.current).filter((p) => p.side === "right"),
+  );
 }
 
 /** The sidebar view that shows: a core one, or a plugin tab that still exists; else Files. */

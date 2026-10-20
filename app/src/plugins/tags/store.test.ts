@@ -16,7 +16,7 @@ const settle = async (): Promise<void> => {
 
 async function setup() {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   api.probe.project.add("fm.md", "---\ntitle: x\ntags: [alpha, Beta]\n---\n# T\n");
   const notes: string[] = [];
   const store = new TagsStore(

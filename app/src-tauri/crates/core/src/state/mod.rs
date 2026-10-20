@@ -143,6 +143,14 @@ impl From<StateError> for IpcError {
 /// A state file's content type: declares its format version (other version on disk -> recovered as corrupt).
 pub trait StateData: Serialize + DeserializeOwned {
     const VERSION: u32;
+
+    /// Reads data an older format version (`from` < `VERSION`) wrote; `None` = cannot (the file is moved aside).
+    /// A format change ships its upgrade + a fixture test (concept §10: saved data survives updates).
+    #[must_use]
+    fn upgrade(from: u32, data: serde_json::Value) -> Option<Self> {
+        let _ = (from, data);
+        None
+    }
 }
 
 /// Outcome of a load.
@@ -216,9 +224,16 @@ impl<T: StateData> StateFile<T> {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Loaded::Missing,
             Err(_) => return Loaded::Recovered { backup: None },
         };
-        match serde_json::from_slice::<EnvelopeIn<T>>(&bytes) {
-            Ok(envelope) if envelope.version == T::VERSION => Loaded::Found(envelope.data),
-            Ok(_) | Err(_) => Loaded::Recovered {
+        let read = serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(&bytes)
+            .ok()
+            .and_then(|envelope| match envelope.version {
+                v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
+                v if v < T::VERSION => T::upgrade(v, envelope.data),
+                _ => None,
+            });
+        match read {
+            Some(data) => Loaded::Found(data),
+            None => Loaded::Recovered {
                 backup: self.move_aside(),
             },
         }

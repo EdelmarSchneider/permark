@@ -14,7 +14,13 @@ function key(init: Partial<KeyEventLike> & { key: string }): KeyEventLike {
 
 describe("combos", () => {
   it("parses the grammar and writes one spelling", () => {
-    expect(parseCombo("Mod+Shift+p")).toEqual({ mod: true, alt: false, shift: true, key: "p" });
+    expect(parseCombo("Mod+Shift+p")).toEqual({
+      mod: true,
+      ctrl: false,
+      alt: false,
+      shift: true,
+      key: "p",
+    });
     expect(normalizeCombo("Shift+Mod+p")).toBe("Mod+Shift+p");
     expect(normalizeCombo("Alt+Mod+Shift+ArrowLeft")).toBe("Mod+Alt+Shift+ArrowLeft");
     expect(normalizeCombo("Mod+=")).toBe("Mod+=");
@@ -24,12 +30,32 @@ describe("combos", () => {
     expect(normalizeCombo("Mod+F24")).toBe("Mod+F24");
   });
 
+  it("Ctrl is the Control key: its own modifier on macOS, Mod on Windows | Linux (one combo there)", () => {
+    expect(parseCombo("Ctrl+Tab")).toEqual({
+      mod: false,
+      ctrl: true,
+      alt: false,
+      shift: false,
+      key: "Tab",
+    });
+    expect(normalizeCombo("Ctrl+Tab")).toBe("Mod+Tab");
+    expect(normalizeCombo("Shift+Ctrl+Tab")).toBe("Mod+Shift+Tab");
+    expect(normalizeCombo("Ctrl+Mod+p")).toBe("Mod+p");
+    expect(normalizeCombo("Ctrl+Tab", true)).toBe("Ctrl+Tab");
+    expect(normalizeCombo("Alt+Ctrl+Mod+Shift+Tab", true)).toBe("Mod+Ctrl+Alt+Shift+Tab");
+    expect(comboLabel("Ctrl+Shift+Tab", false)).toBe("Ctrl+Shift+Tab");
+    expect(comboLabel("Ctrl+Shift+Tab", true)).toBe("⌃⇧⇥");
+    expect(comboLabel("Mod+Ctrl+Alt+p", true)).toBe("⌃⌥⌘P");
+    expect(isSingleKey("Ctrl+Tab")).toBe(false);
+  });
+
   it("refuses what is not a combo", () => {
     for (const text of [
       "",
       "Mod+",
       "Mod++",
-      "Ctrl+p",
+      "Ctrl+Ctrl+p",
+      "Cmd+p",
       "Mod+Mod+p",
       "Mod+P",
       "Mod+pp",
@@ -60,9 +86,15 @@ describe("the combo of a key event", () => {
       comboFromEvent(key({ key: "P", ctrlKey: true, shiftKey: true, code: "KeyP" }), false),
     ).toBe("Mod+Shift+p");
     expect(comboFromEvent(key({ key: "p", metaKey: true, code: "KeyP" }), true)).toBe("Mod+p");
-    // the other platform's modifier never matches
+    // Windows | Linux: the Windows | Super key never matches; macOS: the Control key is `Ctrl`
     expect(comboFromEvent(key({ key: "p", metaKey: true }), false)).toBeNull();
-    expect(comboFromEvent(key({ key: "p", ctrlKey: true }), true)).toBeNull();
+    expect(comboFromEvent(key({ key: "p", ctrlKey: true, code: "KeyP" }), true)).toBe("Ctrl+p");
+    expect(comboFromEvent(key({ key: "Tab", ctrlKey: true, shiftKey: true }), true)).toBe(
+      "Ctrl+Shift+Tab",
+    );
+    expect(comboFromEvent(key({ key: "Tab", ctrlKey: true, shiftKey: true }), false)).toBe(
+      "Mod+Shift+Tab",
+    );
   });
 
   it("reads plus | underscore as the keys they are shifted from, and drops the Shift the character carries", () => {

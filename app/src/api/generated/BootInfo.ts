@@ -4,12 +4,25 @@ import type { Context } from "./Context";
 import type { OpenFailed } from "./OpenFailed";
 import type { Platform } from "./Platform";
 import type { StateRecovered } from "./StateRecovered";
+import type { TabId } from "./TabId";
 import type { WindowView } from "./WindowView";
 
 /**
- * What a window needs to draw its first frame.
+ * What a view (one tab, or a window's Welcome) needs to draw its first frame.
  */
-export type BootInfo = { window: string, view: WindowView, context: Context, settings: AppSettings, notices: Array<StateRecovered>, 
+export type BootInfo = { 
+/**
+ * The native window it lives in.
+ */
+window: string, 
+/**
+ * The view itself: events for it carry this label.
+ */
+label: string, 
+/**
+ * Its tab (`None`: the window's Welcome view).
+ */
+tab: TabId | null, view: WindowView, context: Context, settings: AppSettings, notices: Array<StateRecovered>, 
 /**
  * Opens from outside that failed before this window could listen.
  */

@@ -4,8 +4,9 @@ export type Range = { readonly min: number; readonly max: number; readonly def: 
 
 export const SIDEBAR: Range = { min: 200, max: 480, def: 260 };
 export const RIGHT: Range = { min: 220, max: 560, def: 280 };
-/** The page always keeps at least this much. */
-export const PAGE_MIN = 360;
+/** The page keeps at least this much while the panels can still give way: room for the document header folded
+ *  (`doc/headerFit.ts`) and a readable column, so the panels yield before the page gets cramped. */
+export const PAGE_MIN = 560;
 /** One arrow key press, and with Shift. */
 export const STEP = 16;
 export const STEP_BIG = 64;

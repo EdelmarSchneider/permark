@@ -74,7 +74,7 @@ beforeEach(async () => {
     started = true;
   }
   mock.probe.shell.forgetInit();
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   await until(() => windowStore.view.state === "showing", "the project shows");
   counting.reset();
   windowStore.notices = [];

@@ -54,7 +54,7 @@ beforeEach(async () => {
   document.body.replaceChildren();
   target = document.createElement("div");
   document.body.append(target);
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   const boot = await mock.windowBoot();
   if (
     !boot.ok ||
@@ -466,6 +466,101 @@ describe("editing", () => {
     await show("notes/todo.txt");
     await until(() => modeButton("Edit")?.disabled === true, "no visual editor for text");
     expect(modeButton("Source")?.disabled).toBe(false);
+  });
+});
+
+describe("a narrow header", () => {
+  // jsdom has no layout: the header's width is set by hand and the observer told
+  const observers: (() => void)[] = [];
+  const header = (): HTMLElement | null => target.querySelector<HTMLElement>(".doc-header");
+  const labels = (): string[] =>
+    [...(header()?.querySelectorAll<HTMLButtonElement>(":scope > button") ?? [])].map(
+      (b) => b.getAttribute("aria-label") ?? "",
+    );
+  const modeButtons = (): HTMLButtonElement[] => [
+    ...target.querySelectorAll<HTMLButtonElement>(".modes button"),
+  ];
+  function resize(px: number): void {
+    const el = header();
+    if (!el) throw new Error("no header");
+    Object.defineProperty(el, "clientWidth", { value: px, configurable: true });
+    for (const notify of observers) notify();
+    flushSync();
+  }
+
+  beforeEach(() => {
+    observers.length = 0;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(notify: () => void) {
+          observers.push(notify);
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+  });
+
+  it("folds secondary actions into the more menu, then turns the mode switch to icons; nothing is lost", async () => {
+    await show("README.md");
+    await until(() => modeButtons().length === 3, "mode switch");
+    expect(labels()).toContain("Reveal in tree");
+    resize(600);
+    expect(labels()).not.toContain("Reveal in tree");
+    expect(labels()).not.toContain("Find in page");
+    expect(labels()).toContain("More actions");
+    expect(modeButtons().map((b) => b.textContent?.trim())).toEqual(["View", "Edit", "Source"]);
+    expect(target.querySelector(".saved")).toBeNull();
+    // the folded actions lead the more menu and run from there
+    header()?.querySelector<HTMLButtonElement>("button[aria-label='More actions']")?.click();
+    flushSync();
+    const items = [...target.querySelectorAll<HTMLButtonElement>("[role=menuitem]")];
+    expect(items.map((b) => b.textContent?.trim()).slice(0, 4)).toEqual([
+      "Reveal in tree",
+      "Copy reference",
+      "Open in external editor",
+      "Find in page",
+    ]);
+    expect(target.querySelector("[role=menu] .heading")?.textContent).toMatch(/saved/);
+    items[3]?.click();
+    flushSync();
+    expect(ui.finding).toBe(true);
+    expect(target.querySelector("[role=menu]")).toBeNull();
+    // very narrow: icons with their words as labels
+    resize(200);
+    expect(modeButtons().map((b) => b.textContent?.trim())).toEqual(["", "", ""]);
+    expect(modeButtons().map((b) => b.getAttribute("aria-label"))).toEqual([
+      "View",
+      "Edit",
+      "Source",
+    ]);
+    expect(labels()).toEqual(
+      expect.arrayContaining(["Back", "Forward", "Reading width and zoom", "More actions"]),
+    );
+    // wide again: every button back in the row
+    resize(1200);
+    expect(labels()).toEqual(expect.arrayContaining(["Reveal in tree", "Find in page"]));
+    expect(modeButtons()[0]?.textContent?.trim()).toBe("View");
+  });
+
+  it("Source adds Save and the diagram toggle: the same width folds sooner than in View", async () => {
+    await show("README.md");
+    await until(() => modeButtons().length === 3, "mode switch");
+    resize(750);
+    expect(labels()).toContain("Reveal in tree");
+    await import("../editing/visual/jsdomShims");
+    modeButtons()[2]?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    flushSync();
+    expect(labels()).not.toContain("Reveal in tree");
+    expect(modeButtons()[2]?.textContent?.trim()).toBe("Source");
+    resize(500);
+    expect(modeButtons()[2]?.getAttribute("aria-label")).toBe("Source");
+    const save = [...target.querySelectorAll<HTMLButtonElement>(".doc-header .btn")].find(
+      (b) => b.getAttribute("aria-label") === "Save",
+    );
+    expect(save?.textContent?.trim()).toBe("");
   });
 });
 

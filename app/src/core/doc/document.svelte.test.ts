@@ -20,7 +20,7 @@ type Fx = {
 
 async function setup(): Promise<Fx> {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const boot = await api.windowBoot();
   if (!boot.ok || boot.value.view.state !== "showing") throw new Error("no workspace");
   const workspace = boot.value.view.workspace;

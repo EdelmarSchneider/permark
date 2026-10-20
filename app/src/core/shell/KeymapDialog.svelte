@@ -55,6 +55,7 @@
       ),
       { ...store.keymap, [command]: combo },
       entries.map((e) => e.command.id),
+      mac,
     );
     return [...heldBy(next, combo, command)];
   }

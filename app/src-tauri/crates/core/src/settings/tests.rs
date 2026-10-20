@@ -623,16 +623,77 @@ fn a_notes_folder_must_be_absolute_and_sane() {
 // ---- open_in, installer language, project settings writes --------------------------------------------------------------
 
 #[test]
-fn open_in_round_trips_and_an_invalid_value_reads_as_ask() {
+fn open_in_round_trips_and_an_invalid_value_reads_as_tab() {
     for &choice in OpenIn::ALL {
         let text = applied("", &SettingChange::OpenIn(choice));
         assert_eq!(AppSettings::from_doc(&doc(&text)).open_in, choice);
     }
     assert_eq!(
         AppSettings::from_doc(&doc("open_in = \"tabs\"\n")).open_in,
-        OpenIn::Ask
+        OpenIn::Tab
+    );
+    assert_eq!(
+        AppSettings::from_doc(&doc("open_in = 3\n")).open_in,
+        OpenIn::Tab
     );
     assert_eq!(SettingChange::OpenIn(OpenIn::NewWindow).key(), "open_in");
+}
+
+#[test]
+fn open_in_values_of_0_6_0_map_on_read_and_the_file_changes_only_when_set() {
+    for (old, now) in [
+        ("ask", OpenIn::Tab),
+        ("this", OpenIn::ThisTab),
+        ("new", OpenIn::NewWindow),
+    ] {
+        let text = format!("# mine\nopen_in = \"{old}\" # kept\ntheme = \"dark\"\n");
+        assert_eq!(AppSettings::from_doc(&doc(&text)).open_in, now, "{old}");
+        // another setting changes: the old value stays as written
+        let other = applied(&text, &SettingChange::EditMode(EditModePref::Source));
+        assert!(
+            other.contains(&format!("open_in = \"{old}\" # kept")),
+            "{other}"
+        );
+        // the person sets it: only that value is rewritten
+        let set = applied(&text, &SettingChange::OpenIn(OpenIn::NewWindow));
+        assert_eq!(
+            set,
+            text.replace(&format!("\"{old}\""), "\"window\""),
+            "{old}"
+        );
+    }
+    assert_eq!(AppSettings::from_doc(&doc("")).open_in, OpenIn::Tab);
+}
+
+#[test]
+fn keymap_entries_of_0_6_0_read_under_the_new_ids() {
+    let text = "[keymap]\n\"app.closeWorkspace\" = \"Mod+Q\"\n\"workspace.next\" = \"Mod+Alt+N\"\n\"tab.next\" = \"Mod+J\"\n";
+    let s = AppSettings::from_doc(&doc(text));
+    assert_eq!(s.keymap.get("tab.close").map(String::as_str), Some("Mod+Q"));
+    assert_eq!(
+        s.keymap.get("tab.next").map(String::as_str),
+        Some("Mod+J"),
+        "new id wins"
+    );
+    assert!(!s.keymap.contains_key("app.closeWorkspace"));
+    assert!(!s.keymap.contains_key("workspace.next"));
+    // changing it rewrites that entry under the new id; other entries untouched
+    let set = applied(
+        text,
+        &SettingChange::Keymap {
+            command: "tab.close".to_owned(),
+            combo: Some("Mod+W".to_owned()),
+        },
+    );
+    assert!(!set.contains("app.closeWorkspace"), "{set}");
+    assert!(set.contains("\"workspace.next\" = \"Mod+Alt+N\""), "{set}");
+    assert_eq!(
+        AppSettings::from_doc(&doc(&set))
+            .keymap
+            .get("tab.close")
+            .map(String::as_str),
+        Some("Mod+W")
+    );
 }
 
 #[test]

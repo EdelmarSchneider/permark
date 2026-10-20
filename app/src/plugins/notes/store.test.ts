@@ -29,7 +29,7 @@ type Notes = Extract<WorkspaceView, { kind: "notes" }>;
 
 async function setup() {
   const api = createMockApi();
-  const outcome = await api.openNotes("thisWindow");
+  const outcome = await api.openNotes("thisTab");
   if (!outcome.ok || outcome.value.outcome !== "opened") throw new Error("notes did not open");
   const view = outcome.value.view;
   if (view.state !== "showing" || view.workspace.kind !== "notes") throw new Error("not notes");

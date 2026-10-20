@@ -96,7 +96,8 @@
     min-height: 0;
     overflow: hidden;
     background: var(--surface);
-    border-bottom: 1px solid var(--border);
+    /* the bottom line is drawn inside the band, so the active tab can cover it (it joins the page below) */
+    box-shadow: inset 0 -1px 0 var(--border);
   }
   .body {
     position: relative;
@@ -128,12 +129,15 @@
   .panel {
     border-left: 1px solid var(--border);
   }
+  /* nothing of the page (a header too wide for it) ever paints over the panels beside it */
   .main {
     position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
+    overflow: clip;
     background: var(--bg);
   }
   .status {

@@ -88,9 +88,29 @@ choice!(
 );
 
 choice!(
-    /// What opening a folder or file over a window that shows a workspace does: ask, reuse the window, or open a new one.
-    OpenIn { Ask = "ask", ThisWindow = "this", NewWindow = "new" } default Ask
+    /// Where a folder or file opened from the app goes: a new tab in this window, the active tab, a new window.
+    OpenIn { Tab = "tab", ThisTab = "this", NewWindow = "window" } default Tab
 );
+
+impl OpenIn {
+    /// Read side: 0.6.0 values map on (`ask` -> `tab`, `new` -> `window`); anything else -> the default. The file
+    /// keeps its old value until the person changes the setting.
+    #[must_use]
+    pub fn read(text: &str) -> Self {
+        match text {
+            "ask" => Self::Tab,
+            "new" => Self::NewWindow,
+            other => Self::parse(other).unwrap_or_default(),
+        }
+    }
+}
+
+/// Command ids 0.6.0 used, and their names now (`[keymap]` of 0.6.0 keeps working).
+pub const RENAMED_COMMANDS: &[(&str, &str)] = &[
+    ("app.closeWorkspace", "tab.close"),
+    ("workspace.next", "tab.next"),
+    ("workspace.previous", "tab.previous"),
+];
 choice!(
     /// Which git the git plugin uses: the one installed (`System`), the built-in one, or the first that works.
     GitBackendPref { Automatic = "automatic", System = "system", Builtin = "builtin" } default Automatic
@@ -413,7 +433,7 @@ fn keymap_of(doc: &DocumentMut) -> BTreeMap<String, String> {
     let Some(table) = doc.get("keymap").and_then(Item::as_table_like) else {
         return BTreeMap::new();
     };
-    table
+    let mut map: BTreeMap<String, String> = table
         .iter()
         .filter_map(|(command, item)| {
             let combo = item.as_str()?;
@@ -421,7 +441,14 @@ fn keymap_of(doc: &DocumentMut) -> BTreeMap<String, String> {
                 .then(|| (command.to_owned(), combo.to_owned()))
         })
         .take(MAX_KEYMAP)
-        .collect()
+        .collect();
+    // a 0.6.0 id reads as its new name (the new one, when also there, wins)
+    for (old, new) in RENAMED_COMMANDS {
+        if let Some(combo) = map.remove(*old) {
+            map.entry((*new).to_owned()).or_insert(combo);
+        }
+    }
+    map
 }
 
 impl AppSettings {
@@ -453,9 +480,7 @@ impl AppSettings {
             edit_mode: str_of(doc, "edit_mode")
                 .and_then(EditModePref::parse)
                 .unwrap_or_default(),
-            open_in: str_of(doc, "open_in")
-                .and_then(OpenIn::parse)
-                .unwrap_or_default(),
+            open_in: str_of(doc, "open_in").map(OpenIn::read).unwrap_or_default(),
             git_backend: PluginId::parse("git")
                 .and_then(|git| plugin_tables.get(&git))
                 .and_then(|table| table.0.get("backend")?.as_str())
@@ -556,6 +581,12 @@ fn set_keymap(root: &mut Table, command: &str, combo: Option<&str>) {
     let Some(Item::Table(map)) = root.get_mut("keymap") else {
         return;
     };
+    // the entry under its 0.6.0 name goes when the person changes it
+    for (old, new) in RENAMED_COMMANDS {
+        if *new == command {
+            map.remove(old);
+        }
+    }
     if let Some(combo) = combo {
         set_keeping_decor(map, command, combo.into());
     } else {

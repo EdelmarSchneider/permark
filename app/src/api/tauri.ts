@@ -1,7 +1,6 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { asIpcError, errorMessage } from "./error";
 import type {
@@ -119,9 +118,12 @@ export const tauriApi: Api = {
   openPath: (path, placement) => call("open_path", { path, placement }),
   openNotes: (placement) => call("open_notes", { placement }),
   openInProject: (path) => call("open_in_project", { path }),
-  showWelcome: () => call("show_welcome", {}),
-  listWorkspaces: () => call("list_workspaces", {}),
+  listWindows: () => call("list_windows", {}),
   focusWorkspace: (id) => call("focus_workspace", { id }),
+  tabActivate: (tab) => call("tab_activate", { tab }),
+  tabClose: (tab) => call("tab_close", { tab }),
+  tabCloseConfirmed: () => call("tab_close_confirmed", {}),
+  tabMoveNewWindow: (tab) => call("tab_move_new_window", { tab }),
   recentList: () => call("recent_list", {}),
   recentRemove: (path) => call("recent_remove", { path }),
   settingsGet: () => call("settings_get", {}),
@@ -216,8 +218,9 @@ export const tauriApi: Api = {
   pluginsList: () => call("plugins_list", {}),
   pluginSetProject: (plugin, enabled) => call("plugin_set_project", { plugin, enabled }),
   pluginRemoveData: (plugin) => call("plugin_remove_data", { plugin }),
-  workspaceClose: (id) => call("workspace_close", { id }),
   windowClose: () => call("window_close", {}),
+  windowCloseAnswer: (answer) => call("window_close_answer", { answer }),
+  viewSaved: (saved) => call("view_saved", { saved }),
   defaultAppGet: () => call("default_app_get", {}),
   defaultAppSet: (group, on) => call("default_app_set", { group, on }),
   defaultAppAsked: () => call("default_app_asked", {}),
@@ -259,26 +262,15 @@ export const tauriApi: Api = {
     if (picked === null) return [];
     return Array.isArray(picked) ? picked : [picked];
   },
+  // the title only helps tell windows apart, the bar keeps the system's look: nothing depends on either
   setTitle: async (title) => {
-    try {
-      await getCurrentWindow().setTitle(title);
-    } catch {
-      // the title only helps tell windows apart; nothing depends on it
-    }
+    await call("view_set_title", { title });
   },
   setWindowTheme: async (theme) => {
-    try {
-      await getCurrentWindow().setTheme(theme);
-    } catch {
-      // the bar keeps the system's look; nothing depends on it
-    }
+    await call("view_set_theme", { theme });
   },
   showWindow: async () => {
-    try {
-      await getCurrentWindow().show();
-      return { ok: true, value: undefined };
-    } catch (error) {
-      return { ok: false, error: { kind: "window", message: errorMessage(error) } };
-    }
+    const shown = await call("view_ready", {});
+    return shown.ok ? { ok: true, value: undefined } : shown;
   },
 };

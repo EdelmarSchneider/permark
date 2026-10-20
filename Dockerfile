@@ -1,7 +1,7 @@
 FROM ubuntu:24.04
 
 ARG PERMARK_VERSION=latest
-ARG FALLBACK_VERSION=0.6.0
+ARG FALLBACK_VERSION=0.6.1
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \

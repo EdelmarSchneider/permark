@@ -18,7 +18,7 @@ const settle = async (): Promise<void> => {
 
 async function setup(root: string | null = MOCK_FOLDER) {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const store = new GitStore(new PluginClient(api, () => root), () => root);
   const stop = store.start();
   await settle();
