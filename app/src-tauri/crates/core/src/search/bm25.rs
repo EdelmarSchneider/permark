@@ -343,8 +343,12 @@ impl Bm25 {
 }
 
 /// Excerpt of `text` around the first match, matches marked; the heading text when the body has no match (the
-/// section matched by its title).
+/// section matched by its title). Secret values are hidden before the cut: an excerpt that starts between a key and
+/// its value never shows the value without its key.
 fn snippet(text: &str, heading: &str, matcher: &Matcher) -> Vec<SnippetPart> {
+    let text = crate::secrets::mask_text(text);
+    let heading = crate::secrets::mask_text(heading);
+    let (text, heading) = (text.as_ref(), heading.as_ref());
     let body = tokenize(text);
     let (source, toks) = if body.iter().any(|t| matcher.matches(t)) || heading.is_empty() {
         (text, body)
