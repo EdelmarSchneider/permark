@@ -41,6 +41,17 @@ pub struct ReviewStatus {
     pub basis: Basis,
 }
 
+/// What the changes of a review are made of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ReviewUnit {
+    /// Blocks of a Markdown document (the page draws them).
+    Blocks,
+    /// Lines of code | plain text (a code view draws them).
+    Lines,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -57,12 +68,17 @@ pub enum ReviewChangeKind {
 pub struct ReviewChange {
     pub index: u32,
     pub kind: ReviewChangeKind,
-    /// Index in the current list of blocks where the change starts (the old blocks, `ghosts`, belong right there).
+    /// Index in the current list of blocks (lines: of lines, 0-based) where the change starts (the old blocks | lines
+    /// belong right there).
     pub start: u32,
-    /// How many current blocks the change covers (0: a removal).
+    /// How many current blocks | lines the change covers (0: a removal).
     pub len: u32,
-    /// The old blocks (HTML included) that went or were replaced.
+    /// The old blocks (HTML included) that went or were replaced (blocks only).
     pub ghosts: Vec<Block>,
+    /// The old lines that went or were replaced (lines only).
+    pub old: Vec<String>,
+    /// The old and the new differ in whitespace only (lines only).
+    pub whitespace: bool,
 }
 
 /// The review of one document, drawn from one version of the file (`hash`).
@@ -77,6 +93,8 @@ pub struct ReviewView {
     pub basis: Basis,
     /// What was asked for.
     pub asked: Basis,
+    /// What the changes are made of.
+    pub unit: ReviewUnit,
     pub count: u32,
     /// Keeping needs the read version as the base (a commit cannot be moved).
     pub can_keep: bool,

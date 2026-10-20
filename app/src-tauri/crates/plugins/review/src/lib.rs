@@ -6,6 +6,9 @@
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
 mod diff;
+mod linediff;
+#[cfg(test)]
+mod lines_tests;
 mod service;
 mod splice;
 mod store;
@@ -27,10 +30,13 @@ use permark_plugin_unread::UnreadHub;
 use serde::Deserialize;
 
 pub use diff::{changes, content_of, Change, Kind};
-pub use service::{Files, HeldFile, Prefs, ReviewService};
+pub use linediff::{hunks, replace, whitespace_only, Hunk, HunkKind};
+pub use service::{Files, HeldFile, Prefs, ReviewService, SeenDoc, SeenFile};
 pub use splice::{edit_for, invert, CannotSplice, Span, Text};
 pub use store::{CopyStore, MAX_COPY_BYTES};
-pub use types::{Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewView};
+pub use types::{
+    Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewUnit, ReviewView,
+};
 
 const ID: PluginId = PluginId::of("review");
 
@@ -55,6 +61,19 @@ pub fn plugin() -> Arc<dyn Plugin> {
 #[derive(Deserialize)]
 struct PathArg {
     path: String,
+}
+
+#[derive(Deserialize)]
+struct StatusArgs {
+    path: String,
+    basis: Option<Basis>,
+}
+
+#[derive(Deserialize)]
+struct SeenArgs {
+    path: String,
+    /// The version of the file the window shows.
+    hash: String,
 }
 
 #[derive(Deserialize)]
@@ -119,13 +138,22 @@ impl Plugin for ReviewPlugin {
             Files {
                 held: cx.state_file("held.json"),
                 prefs: cx.state_file("prefs.json"),
+                seen: cx.state_file("seen.json"),
             },
         ));
         let mut registrations: Vec<RpcRegistration> = Vec::new();
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc(
             "status",
-            typed(move |args: PathArg, _| s.status(&checked(&args.path)?)),
+            typed(move |args: StatusArgs, _| s.status(&checked(&args.path)?, args.basis)),
+        ));
+        let s = Arc::clone(&service);
+        registrations.extend(cx.rpc(
+            "seen",
+            typed(move |args: SeenArgs, _| {
+                s.look(&checked(&args.path)?, &args.hash)?;
+                Ok(())
+            }),
         ));
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc(

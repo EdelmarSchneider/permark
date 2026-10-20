@@ -25,14 +25,19 @@ use permark_plugin_unread::{hash_from_hex, ReadObserver, UnreadHub};
 use serde::{Deserialize, Serialize};
 
 use crate::diff::{self, Change, Kind};
+use crate::linediff::{self, Hunk, HunkKind};
 use crate::splice::{self, Span, Text};
 use crate::store::{CopyStore, MAX_COPY_BYTES};
-use crate::types::{Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewView};
+use crate::types::{
+    Basis, ReviewChange, ReviewChangeKind, ReviewState, ReviewStatus, ReviewUnit, ReviewView,
+};
 
 /// Copies kept at most.
 const MAX_COPIES: usize = 5000;
 /// Undo steps kept per document.
 const UNDO_DEPTH: usize = 20;
+/// Documents (other than Markdown) the version last seen is remembered for.
+const MAX_SEEN: usize = 2000;
 /// Copies waiting for the copier at most (the first look at a big project waits for it: memory stays bounded).
 const QUEUE: usize = 64;
 
@@ -62,6 +67,22 @@ impl StateData for Prefs {
     const VERSION: u32 = 1;
 }
 
+/// `seen.json`: the version of each other text file the person last looked at, the oldest look first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeenFile {
+    pub docs: Vec<SeenDoc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SeenDoc {
+    pub path: String,
+    pub hash: String,
+}
+
+impl StateData for SeenFile {
+    const VERSION: u32 = 1;
+}
+
 enum Undo {
     /// A keep: the version held before it (`None`: none).
     Keep { prev: Option<u64> },
@@ -80,6 +101,13 @@ struct Held {
 pub struct Files {
     pub held: Option<StateFile<HeldFile>>,
     pub prefs: Option<StateFile<Prefs>>,
+    pub seen: Option<StateFile<SeenFile>>,
+}
+
+struct SeenEntry {
+    key: String,
+    path: String,
+    hash: u64,
 }
 
 struct Shared {
@@ -88,8 +116,19 @@ struct Shared {
     hub: Arc<UnreadHub>,
     files: Files,
     held: Mutex<BTreeMap<String, Held>>,
+    /// The version of each other text file the person last looked at (oldest look first).
+    seen: Mutex<Vec<SeenEntry>>,
     prefs: Mutex<Prefs>,
     undo: Mutex<HashMap<String, Vec<Undo>>>,
+}
+
+/// `entry` as the newest look; at most `cap` looks are kept, the oldest goes first.
+fn push_look(seen: &mut Vec<SeenEntry>, entry: SeenEntry, cap: usize) {
+    seen.retain(|e| e.key != entry.key);
+    seen.push(entry);
+    if seen.len() > cap {
+        seen.remove(0);
+    }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -117,6 +156,121 @@ struct Computed {
     current: Vec<Block>,
     old: Vec<Block>,
     changes: Vec<Change>,
+}
+
+/// What a call is drawn from: the version on disk, the base, and what differs.
+struct Drawn {
+    current: Version,
+    base: Base,
+    diff: Diff,
+}
+
+enum Diff {
+    Blocks(Computed),
+    Lines(Vec<Hunk>),
+}
+
+/// The version a change is made in.
+#[derive(Clone, Copy)]
+enum Way {
+    /// The file: the base's side goes back in.
+    Revert,
+    /// The base text: the file's side goes in (the base moves on to what the person approved).
+    Keep,
+}
+
+enum EditError {
+    Index,
+    Splice,
+}
+
+impl EditError {
+    fn detail(&self) -> &'static str {
+        match self {
+            Self::Index => "index",
+            Self::Splice => "splice",
+        }
+    }
+}
+
+impl Diff {
+    fn count(&self) -> usize {
+        match self {
+            Self::Blocks(computed) => computed.changes.len(),
+            Self::Lines(hunks) => hunks.len(),
+        }
+    }
+
+    /// Where change `index` is, in words of the journal: the heading path (blocks), `L<a>-<b>` (lines).
+    fn section(&self, index: usize, current: &str, base: &str) -> Option<String> {
+        match self {
+            Self::Blocks(computed) => {
+                let change = computed.changes.get(index)?;
+                section_of(computed, change, current, base)
+            }
+            Self::Lines(hunks) => {
+                let hunk = hunks.get(index)?;
+                Some(lines_label(&hunk.new, current.split('\n').count()))
+            }
+        }
+    }
+
+    /// The line edits that make the changes `picks` in the text `way` tells (positions of that text).
+    fn edits(
+        &self,
+        picks: &[usize],
+        base: &str,
+        current: &str,
+        way: Way,
+    ) -> Result<Vec<LineEdit>, EditError> {
+        match self {
+            Self::Blocks(computed) => {
+                let (cur_spans, old_spans) = (spans(&computed.current), spans(&computed.old));
+                let (cur, old) = (Text::new(current, &cur_spans), Text::new(base, &old_spans));
+                picks
+                    .iter()
+                    .map(|&pick| {
+                        let change = computed.changes.get(pick).ok_or(EditError::Index)?;
+                        match way {
+                            Way::Revert => splice::edit_for(&cur, &change.new, &old, &change.old),
+                            Way::Keep => splice::edit_for(&old, &change.old, &cur, &change.new),
+                        }
+                        .map_err(|_| EditError::Splice)
+                    })
+                    .collect()
+            }
+            Self::Lines(hunks) => {
+                let old: Vec<&str> = base.split('\n').collect();
+                let cur: Vec<&str> = current.split('\n').collect();
+                picks
+                    .iter()
+                    .map(|&pick| {
+                        let hunk = hunks.get(pick).ok_or(EditError::Index)?;
+                        Ok(match way {
+                            Way::Revert => linediff::replace(&hunk.new, &old, &hunk.old),
+                            Way::Keep => linediff::replace(&hunk.old, &cur, &hunk.new),
+                        })
+                    })
+                    .collect()
+            }
+        }
+    }
+}
+
+/// The hunks that turn the base into the current text (line breaks as `\n`).
+fn line_hunks(base: &str, current: &str) -> Vec<Hunk> {
+    let (old, new): (Vec<&str>, Vec<&str>) =
+        (base.split('\n').collect(), current.split('\n').collect());
+    linediff::hunks(&old, &new)
+}
+
+/// `L12-30` (one line: `L12`; a removal: the line it sits before, or the last one) for the new lines of a hunk.
+fn lines_label(new: &std::ops::Range<usize>, count: usize) -> String {
+    if new.len() > 1 {
+        format!("L{}-{}", new.start + 1, new.end)
+    } else {
+        format!("L{}", (new.start + 1).min(count.max(1)))
+    }
 }
 
 fn invalid(subject: &str, detail: &str) -> IpcError {
@@ -259,13 +413,21 @@ impl Shared {
 
     // ---- questions -------------------------------------------------------------------------------------------
 
-    fn status(&self, path: &str) -> Result<ReviewStatus, IpcError> {
-        let asked = lock(&self.prefs).basis;
+    /// Whether the file is shown as text (media is not, even when it decodes: an SVG is a picture).
+    fn reads_text(&self, path: &str) -> bool {
+        self.project
+            .formats()
+            .pick(path, &[])
+            .is_none_or(|format| format.reads_text())
+    }
+
+    fn status(&self, path: &str, asked: Basis) -> Result<ReviewStatus, IpcError> {
         let status = |state| ReviewStatus {
             state,
             basis: asked,
         };
-        if !is_markdown(path) {
+        let markdown = is_markdown(path);
+        if !markdown && !self.reads_text(path) {
             return Ok(status(ReviewState::Unsupported));
         }
         let current = match self.current(path) {
@@ -277,22 +439,28 @@ impl Shared {
             }
             Err(e) => return Err(e),
         };
-        let Some(base) = self.base(path, asked) else {
-            return Ok(ReviewStatus {
-                state: ReviewState::NoBasis,
-                basis: asked,
-            });
-        };
-        let state = if base.text == current.text {
-            ReviewState::Same
+        let base = if markdown {
+            self.base(path, asked)
         } else {
-            match self.compute(path, &current.text, &base.text) {
-                Some(computed) if computed.changes.is_empty() => ReviewState::Same,
-                Some(computed) => ReviewState::Changes {
-                    count: u32::try_from(computed.changes.len()).unwrap_or(u32::MAX),
-                },
-                None => ReviewState::Unsupported,
-            }
+            self.lines_base(path, asked)
+        };
+        let Some(base) = base else {
+            return Ok(status(ReviewState::NoBasis));
+        };
+        let count = if base.text == current.text {
+            Some(0)
+        } else if markdown {
+            self.compute(path, &current.text, &base.text)
+                .map(|computed| computed.changes.len())
+        } else {
+            Some(line_hunks(&base.text, &current.text).len())
+        };
+        let state = match count {
+            Some(0) => ReviewState::Same,
+            Some(count) => ReviewState::Changes {
+                count: u32::try_from(count).unwrap_or(u32::MAX),
+            },
+            None => ReviewState::Unsupported,
         };
         Ok(ReviewStatus {
             state,
@@ -304,24 +472,108 @@ impl Shared {
         let current = self
             .current(path)?
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path))?;
-        let base = self
-            .base(path, asked)
-            .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).subject("noBasis"))?;
-        let computed = self
-            .compute(path, &current.text, &base.text)
-            .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(path))?;
-        Ok(view_of(path, &current, &base, asked, &computed))
+        let no_basis = || IpcError::new(ErrorKind::Unavailable).subject("noBasis");
+        if is_markdown(path) {
+            let base = self.base(path, asked).ok_or_else(no_basis)?;
+            let computed = self
+                .compute(path, &current.text, &base.text)
+                .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(path))?;
+            return Ok(view_of(path, &current, &base, asked, &computed));
+        }
+        if !self.reads_text(path) {
+            return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
+        }
+        let base = self.lines_base(path, asked).ok_or_else(no_basis)?;
+        let hunks = line_hunks(&base.text, &current.text);
+        Ok(lines_view_of(path, &current, &base, asked, &hunks))
+    }
+
+    // ---- the person looks at a file that is not Markdown -----------------------------------------------------
+
+    fn seen_hash(&self, path: &str) -> Option<u64> {
+        let key = key_of(path);
+        lock(&self.seen)
+            .iter()
+            .find(|entry| entry.key == key)
+            .map(|entry| entry.hash)
+    }
+
+    fn set_seen(&self, path: &str, hash: u64) {
+        let entry = SeenEntry {
+            key: key_of(path),
+            path: path.to_owned(),
+            hash,
+        };
+        push_look(&mut lock(&self.seen), entry, MAX_SEEN);
+        self.save_seen();
+    }
+
+    fn save_seen(&self) {
+        let Some(file) = &self.files.seen else { return };
+        let docs = lock(&self.seen)
+            .iter()
+            .map(|entry| SeenDoc {
+                path: entry.path.clone(),
+                hash: fsx::ContentHash(entry.hash).hex(),
+            })
+            .collect();
+        let _ = file.save(&SeenFile { docs });
+    }
+
+    /// The window shows `path` as `seen` and the person has looked at it: that version is the one last seen. A
+    /// changed file looked at keeps the version before it for the review that is open.
+    fn look(&self, path: &str, seen: &str) -> Result<(), IpcError> {
+        if is_markdown(path) || !self.reads_text(path) {
+            return Ok(());
+        }
+        let current = match self.current(path) {
+            Ok(Some(current)) => current,
+            Ok(None) => return Ok(()),
+            Err(e) if matches!(e.kind, ErrorKind::TooLarge | ErrorKind::Unsupported) => {
+                return Ok(())
+            }
+            Err(e) => return Err(e),
+        };
+        // the file is not the version the window drew: the next look will tell
+        if fsx::ContentHash(current.hash).hex() != seen {
+            return Ok(());
+        }
+        let previous = self.seen_hash(path);
+        if previous == Some(current.hash) || !self.store.put(current.hash, &current.text) {
+            return Ok(());
+        }
+        // the person's own save is not news to the person
+        let own = self.project.documents.saved_as(path, seen);
+        if let Some(previous) = previous.filter(|_| !own) {
+            if self.held_hash(path).is_none() && self.store.has(previous) {
+                self.set_held(path, Some(previous));
+            }
+        }
+        self.set_seen(path, current.hash);
+        Ok(())
+    }
+
+    fn lines_base(&self, path: &str, asked: Basis) -> Option<Base> {
+        match asked {
+            // no version looked at: nothing to compare with (the first sight of a file is its baseline)
+            Basis::Read => {
+                let hash = self.held_hash(path).or_else(|| self.seen_hash(path))?;
+                self.store.get(hash).map(|text| Base {
+                    text,
+                    used: Basis::Read,
+                })
+            }
+            Basis::Commit => self.commit_text(path).map(|text| Base {
+                text,
+                used: Basis::Commit,
+            }),
+        }
     }
 
     // ---- changes ---------------------------------------------------------------------------------------------
 
     /// The state both sides of a call are drawn from; stale when the file is not the version the caller saw.
-    fn draw(
-        &self,
-        path: &str,
-        seen: &str,
-        asked: Basis,
-    ) -> Result<(Version, Base, Computed), IpcError> {
+    fn draw(&self, path: &str, seen: &str, asked: Basis) -> Result<Drawn, IpcError> {
         let current = self
             .current(path)?
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path))?;
@@ -330,13 +582,28 @@ impl Shared {
                 .subject(path)
                 .detail("stale"));
         }
-        let base = self
-            .base(path, asked)
-            .ok_or_else(|| IpcError::new(ErrorKind::Unavailable).subject("noBasis"))?;
-        let computed = self
-            .compute(path, &current.text, &base.text)
-            .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(path))?;
-        Ok((current, base, computed))
+        let no_basis = || IpcError::new(ErrorKind::Unavailable).subject("noBasis");
+        if is_markdown(path) {
+            let base = self.base(path, asked).ok_or_else(no_basis)?;
+            let computed = self
+                .compute(path, &current.text, &base.text)
+                .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject(path))?;
+            return Ok(Drawn {
+                current,
+                base,
+                diff: Diff::Blocks(computed),
+            });
+        }
+        if !self.reads_text(path) {
+            return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
+        }
+        let base = self.lines_base(path, asked).ok_or_else(no_basis)?;
+        let hunks = line_hunks(&base.text, &current.text);
+        Ok(Drawn {
+            current,
+            base,
+            diff: Diff::Lines(hunks),
+        })
     }
 
     fn keep(
@@ -347,45 +614,41 @@ impl Shared {
         all: bool,
         asked: Basis,
     ) -> Result<ReviewView, IpcError> {
-        let (current, base, computed) = self.draw(path, seen, asked)?;
+        let Drawn {
+            current,
+            base,
+            diff,
+        } = self.draw(path, seen, asked)?;
         if base.used != Basis::Read {
             return Err(invalid(path, "commit"));
         }
         let prev = self.held_hash(path);
         let section = (!all)
-            .then(|| computed.changes.get(index))
-            .flatten()
-            .and_then(|c| section_of(&computed, c, &current.text, &base.text));
-        let new_hash = if all {
+            .then(|| diff.section(index, &current.text, &base.text))
+            .flatten();
+        if all {
             // the version on disk is approved: it counts as read, and nothing is held any more
             let _ = self.store.put(current.hash, &current.text);
-            self.hub.mark_read(path, current.hash);
+            if is_markdown(path) {
+                self.hub.mark_read(path, current.hash);
+            } else {
+                self.set_seen(path, current.hash);
+            }
             // marking read starts a review of what was read before; this one is over
             self.set_held(path, None);
-            None
         } else {
-            let change = computed
-                .changes
-                .get(index)
-                .ok_or_else(|| invalid(path, "index"))?;
-            let (cur_spans, old_spans) = (spans(&computed.current), spans(&computed.old));
-            let edit = splice::edit_for(
-                &Text::new(&base.text, &old_spans),
-                &change.old,
-                &Text::new(&current.text, &cur_spans),
-                &change.new,
-            )
-            .map_err(|_| invalid(path, "splice"))?;
-            let text = apply(&base.text, &[edit]).map_err(|_| invalid(path, "splice"))?;
+            // the base text with this one change made in it
+            let edits = diff
+                .edits(&[index], &base.text, &current.text, Way::Keep)
+                .map_err(|e| invalid(path, e.detail()))?;
+            let text = apply(&base.text, &edits).map_err(|_| invalid(path, "splice"))?;
             let hash = fsx::hash(text.as_bytes()).0;
             if !self.store.put(hash, &text) {
                 return Err(IpcError::new(ErrorKind::TooLarge).subject(path));
             }
             self.set_held(path, Some(hash));
-            Some(hash)
-        };
+        }
         self.push_undo(path, Undo::Keep { prev });
-        let _ = new_hash;
         self.note(path, ReviewOp::Keep, section);
         self.finish(path, asked)
     }
@@ -398,34 +661,28 @@ impl Shared {
         all: bool,
         asked: Basis,
     ) -> Result<ReviewView, IpcError> {
-        let (current, base, computed) = self.draw(path, seen, asked)?;
-        let (cur_spans, old_spans) = (spans(&computed.current), spans(&computed.old));
-        let target = Text::new(&current.text, &cur_spans);
-        let source = Text::new(&base.text, &old_spans);
-        let mut edits = Vec::new();
-        let picked: Vec<&Change> = if all {
-            computed.changes.iter().collect()
+        let Drawn {
+            current,
+            base,
+            diff,
+        } = self.draw(path, seen, asked)?;
+        let picks: Vec<usize> = if all {
+            (0..diff.count()).collect()
         } else {
-            vec![computed
-                .changes
-                .get(index)
-                .ok_or_else(|| invalid(path, "index"))?]
+            vec![index]
         };
-        let section = match picked.as_slice() {
-            [one] if !all => section_of(&computed, one, &current.text, &base.text),
-            _ => None,
-        };
-        for change in picked {
-            edits.push(
-                splice::edit_for(&target, &change.new, &source, &change.old)
-                    .map_err(|_| invalid(path, "splice"))?,
-            );
-        }
+        let section = (!all)
+            .then(|| diff.section(index, &current.text, &base.text))
+            .flatten();
+        let mut edits = diff
+            .edits(&picks, &base.text, &current.text, Way::Revert)
+            .map_err(|e| invalid(path, e.detail()))?;
         edits.sort_by_key(|e| e.at);
         if edits.is_empty() {
             return self.finish(path, asked);
         }
-        let inverse = splice::invert(&edits, &target.lines);
+        let current_lines: Vec<&str> = current.text.split('\n').collect();
+        let inverse = splice::invert(&edits, &current_lines);
         let outcome = self
             .project
             .with_editor(|editor| editor.save(path, seen, &edits))?;
@@ -480,6 +737,9 @@ impl Shared {
     }
 
     fn restore(&self, path: &str) -> Result<(), IpcError> {
+        if !is_markdown(path) {
+            return Err(IpcError::new(ErrorKind::Unsupported).subject(path));
+        }
         if self.current(path)?.is_some() {
             return Err(IpcError::new(ErrorKind::Exists).subject(path));
         }
@@ -559,6 +819,8 @@ fn view_of(
             start: u32::try_from(change.new.start).unwrap_or(u32::MAX),
             len: u32::try_from(change.new.len()).unwrap_or(u32::MAX),
             ghosts: computed.old[change.old.clone()].to_vec(),
+            old: Vec::new(),
+            whitespace: false,
         })
         .collect();
     ReviewView {
@@ -566,10 +828,92 @@ fn view_of(
         hash: fsx::ContentHash(current.hash).hex(),
         basis: base.used,
         asked,
+        unit: ReviewUnit::Blocks,
         count: u32::try_from(changes.len()).unwrap_or(u32::MAX),
         can_keep: base.used == Basis::Read,
         changes,
     }
+}
+
+/// The review of a text by lines: the new lines are in the file the window shows, the old ones come along.
+fn lines_view_of(
+    path: &str,
+    current: &Version,
+    base: &Base,
+    asked: Basis,
+    hunks: &[Hunk],
+) -> ReviewView {
+    let old: Vec<&str> = base.text.split('\n').collect();
+    let new: Vec<&str> = current.text.split('\n').collect();
+    let changes: Vec<ReviewChange> = hunks
+        .iter()
+        .enumerate()
+        .map(|(index, hunk)| ReviewChange {
+            index: u32::try_from(index).unwrap_or(u32::MAX),
+            kind: match hunk.kind() {
+                HunkKind::Added => ReviewChangeKind::Added,
+                HunkKind::Removed => ReviewChangeKind::Removed,
+                HunkKind::Edited => ReviewChangeKind::Edited,
+            },
+            start: u32::try_from(hunk.new.start).unwrap_or(u32::MAX),
+            len: u32::try_from(hunk.new.len()).unwrap_or(u32::MAX),
+            ghosts: Vec::new(),
+            old: old[hunk.old.clone()]
+                .iter()
+                .map(|line| (*line).to_owned())
+                .collect(),
+            whitespace: linediff::whitespace_only(&old[hunk.old.clone()], &new[hunk.new.clone()]),
+        })
+        .collect();
+    ReviewView {
+        path: path.to_owned(),
+        hash: fsx::ContentHash(current.hash).hex(),
+        basis: base.used,
+        asked,
+        unit: ReviewUnit::Lines,
+        count: u32::try_from(changes.len()).unwrap_or(u32::MAX),
+        can_keep: base.used == Basis::Read,
+        changes,
+    }
+}
+
+/// The versions kept for the reviews that were open when the project closed.
+fn load_held(files: &Files) -> BTreeMap<String, Held> {
+    let docs = files.held.as_ref().and_then(|file| match file.load() {
+        Loaded::Found(held) => Some(held.docs),
+        Loaded::Missing | Loaded::Recovered { .. } => None,
+    });
+    docs.unwrap_or_default()
+        .into_iter()
+        .filter_map(|(path, hash)| {
+            Some((
+                key_of(&path),
+                Held {
+                    path,
+                    hash: hash_from_hex(&hash)?,
+                },
+            ))
+        })
+        .collect()
+}
+
+/// The versions last looked at, the oldest look first.
+fn load_seen(files: &Files) -> Vec<SeenEntry> {
+    let file = files
+        .seen
+        .as_ref()
+        .map(|file| file.load().into_value())
+        .unwrap_or_default();
+    file.docs
+        .into_iter()
+        .filter_map(|doc| {
+            Some(SeenEntry {
+                key: key_of(&doc.path),
+                hash: hash_from_hex(&doc.hash)?,
+                path: doc.path,
+            })
+        })
+        .collect()
 }
 
 // ---- the observer and the copier ----------------------------------------------------------------------------------
@@ -647,28 +991,8 @@ impl ReviewService {
         id: PluginId,
         files: Files,
     ) -> Self {
-        let held: BTreeMap<String, Held> = files
-            .held
-            .as_ref()
-            .and_then(|file| match file.load() {
-                Loaded::Found(held) => Some(held),
-                Loaded::Missing | Loaded::Recovered { .. } => None,
-            })
-            .map(|held| {
-                held.docs
-                    .into_iter()
-                    .filter_map(|(path, hash)| {
-                        Some((
-                            key_of(&path),
-                            Held {
-                                path,
-                                hash: hash_from_hex(&hash)?,
-                            },
-                        ))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let held = load_held(&files);
+        let seen = load_seen(&files);
         let prefs = files
             .prefs
             .as_ref()
@@ -680,6 +1004,7 @@ impl ReviewService {
             hub: Arc::clone(hub),
             files,
             held: Mutex::new(held),
+            seen: Mutex::new(seen),
             prefs: Mutex::new(prefs),
             undo: Mutex::new(HashMap::new()),
         });
@@ -719,6 +1044,7 @@ impl ReviewService {
                             cleaned = true;
                             let mut keep = shared.hub.read_hashes();
                             keep.extend(lock(&shared.held).values().map(|h| h.hash));
+                            keep.extend(lock(&shared.seen).iter().map(|e| e.hash));
                             shared.store.remove_unused(&keep);
                             kept = shared.store.count();
                         }
@@ -745,8 +1071,16 @@ impl ReviewService {
 
     /// # Errors
     /// Outside the project | unreadable.
-    pub fn status(&self, path: &str) -> Result<ReviewStatus, IpcError> {
-        self.shared.status(path)
+    pub fn status(&self, path: &str, basis: Option<Basis>) -> Result<ReviewStatus, IpcError> {
+        self.shared.status(path, self.asked(basis))
+    }
+
+    /// The person looked at `path` as `seen` (a file that is not Markdown; Markdown is followed by `unread`).
+    ///
+    /// # Errors
+    /// Outside the project | unreadable.
+    pub fn look(&self, path: &str, seen: &str) -> Result<(), IpcError> {
+        self.shared.look(path, seen)
     }
 
     /// # Errors
@@ -844,5 +1178,34 @@ impl Drop for ReviewService {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+}
+
+#[cfg(test)]
+mod looks {
+    use super::*;
+
+    fn entry(path: &str, hash: u64) -> SeenEntry {
+        SeenEntry {
+            key: key_of(path),
+            path: path.to_owned(),
+            hash,
+        }
+    }
+
+    #[test]
+    fn the_oldest_look_goes_first_and_a_new_look_of_a_file_replaces_its_old_one() {
+        let mut seen = Vec::new();
+        for (i, path) in ["a.rs", "b.rs", "c.rs"].iter().enumerate() {
+            push_look(&mut seen, entry(path, i as u64), 3);
+        }
+        // a again: it is the newest now, nothing is dropped
+        push_look(&mut seen, entry("a.rs", 9), 3);
+        let order: Vec<_> = seen.iter().map(|e| (e.path.as_str(), e.hash)).collect();
+        assert_eq!(order, [("b.rs", 1), ("c.rs", 2), ("a.rs", 9)]);
+        // a fourth file: the oldest (b) goes
+        push_look(&mut seen, entry("d.rs", 4), 3);
+        let order: Vec<_> = seen.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(order, ["c.rs", "a.rs", "d.rs"]);
     }
 }

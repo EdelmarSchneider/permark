@@ -7,14 +7,23 @@ import type { ReviewChangeKind } from "./ReviewChangeKind";
  */
 export type ReviewChange = { index: number, kind: ReviewChangeKind, 
 /**
- * Index in the current list of blocks where the change starts (the old blocks, `ghosts`, belong right there).
+ * Index in the current list of blocks (lines: of lines, 0-based) where the change starts (the old blocks | lines
+ * belong right there).
  */
 start: number, 
 /**
- * How many current blocks the change covers (0: a removal).
+ * How many current blocks | lines the change covers (0: a removal).
  */
 len: number, 
 /**
- * The old blocks (HTML included) that went or were replaced.
+ * The old blocks (HTML included) that went or were replaced (blocks only).
  */
-ghosts: Array<Block>, };
+ghosts: Array<Block>, 
+/**
+ * The old lines that went or were replaced (lines only).
+ */
+old: Array<string>, 
+/**
+ * The old and the new differ in whitespace only (lines only).
+ */
+whitespace: boolean, };

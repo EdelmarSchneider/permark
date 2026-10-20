@@ -20,15 +20,15 @@ use super::*;
 
 // ---- harness -----------------------------------------------------------------------------------------------------
 
-struct Harness {
+pub(crate) struct Harness {
     _base: tempfile::TempDir,
-    project: tempfile::TempDir,
-    env: CoreEnv,
-    core: Option<Arc<ProjectCore>>,
+    pub(crate) project: tempfile::TempDir,
+    pub(crate) env: CoreEnv,
+    pub(crate) core: Option<Arc<ProjectCore>>,
 }
 
 impl Harness {
-    fn new(with_git: bool) -> Self {
+    pub(crate) fn new(with_git: bool) -> Self {
         let base = tempfile::tempdir().unwrap();
         let mut plugins = vec![permark_plugin_unread::plugin(), plugin()];
         if with_git {
@@ -49,32 +49,32 @@ impl Harness {
         }
     }
 
-    fn root(&self) -> PathBuf {
+    pub(crate) fn root(&self) -> PathBuf {
         dunce::canonicalize(self.project.path()).unwrap()
     }
 
-    fn write(&self, rel: &str, text: &str) {
+    pub(crate) fn write(&self, rel: &str, text: &str) {
         self.write_bytes(rel, text.as_bytes());
     }
 
-    fn write_bytes(&self, rel: &str, bytes: &[u8]) {
+    pub(crate) fn write_bytes(&self, rel: &str, bytes: &[u8]) {
         let path = self.root().join(rel);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, bytes).unwrap();
     }
 
-    fn read(&self, rel: &str) -> Vec<u8> {
+    pub(crate) fn read(&self, rel: &str) -> Vec<u8> {
         std::fs::read(self.root().join(rel)).unwrap()
     }
 
-    fn open(&mut self) {
+    pub(crate) fn open(&mut self) {
         self.core = Some(ProjectCore::open(
             Root::open(&self.root()).unwrap(),
             &self.env,
         ));
     }
 
-    fn call(
+    pub(crate) fn call(
         &self,
         plugin: &str,
         method: &str,
@@ -90,28 +90,32 @@ impl Harness {
         )
     }
 
-    fn review(&self, method: &str, args: Value) -> Result<Value, permark_core::IpcError> {
+    pub(crate) fn review(
+        &self,
+        method: &str,
+        args: Value,
+    ) -> Result<Value, permark_core::IpcError> {
         self.call("review", method, args)
     }
 
-    fn state(&self, path: &str) -> Value {
+    pub(crate) fn state(&self, path: &str) -> Value {
         self.review("status", json!({"path": path}))
             .map_or(Value::Null, |v| v["state"].clone())
     }
 
-    fn hash(&self, rel: &str) -> String {
+    pub(crate) fn hash(&self, rel: &str) -> String {
         fsx::hash(&self.read(rel)).hex()
     }
 
     /// Waits until the unread plugin has looked and the review holds a copy of the document.
-    fn ready(&self, path: &str) {
+    pub(crate) fn ready(&self, path: &str) {
         wait_until("the first look and the copy", || {
             self.state(path)["state"] == "same"
         });
     }
 }
 
-fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
+pub(crate) fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
     let started = Instant::now();
     while !condition() {
         assert!(
@@ -122,7 +126,8 @@ fn wait_until(what: &str, mut condition: impl FnMut() -> bool) {
     }
 }
 
-const BASE_DOC: &str = "# Plan\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n";
+pub(crate) const BASE_DOC: &str =
+    "# Plan\n\nFirst paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n";
 
 fn kinds(view: &Value) -> Vec<String> {
     view["changes"]
@@ -354,10 +359,12 @@ fn the_states_without_a_review() {
     let mut h = Harness::new(false);
     h.write("a.md", BASE_DOC);
     h.write("notes.txt", "plain text\n");
+    h.write_bytes("blob.bin", b"\x00\x01\x02 binary \xff\x00");
     h.open();
     h.ready("a.md");
-    // not Markdown
-    assert_eq!(h.state("notes.txt")["state"], "unsupported");
+    // a text that was never looked at has nothing to compare with; binary is not compared
+    assert_eq!(h.state("notes.txt")["state"], "noBasis");
+    assert_eq!(h.state("blob.bin")["state"], "unsupported");
     // a document that appeared later has no version to compare with (and no repository)
     std::thread::sleep(Duration::from_millis(200));
     h.write("new.md", "# Fresh\n");

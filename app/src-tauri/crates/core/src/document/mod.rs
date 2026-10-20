@@ -112,7 +112,12 @@ struct Inner {
     shown: Mutex<HashMap<String, Shown>>,
     /// Window -> document with unsaved edits in it.
     unsaved: Mutex<HashMap<String, String>>,
+    /// Folded key of a project path -> the hash of the last version a window saved there.
+    saves: Mutex<HashMap<String, String>>,
 }
+
+/// How many documents the versions of saves are remembered for.
+const SAVES_KEPT: usize = 256;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -265,6 +270,7 @@ impl Documents {
                 sink,
                 shown: Mutex::new(HashMap::new()),
                 unsaved: Mutex::new(HashMap::new()),
+                saves: Mutex::new(HashMap::new()),
             }),
             _poller: None,
         })
@@ -278,6 +284,7 @@ impl Documents {
             sink,
             shown: Mutex::new(HashMap::new()),
             unsaved: Mutex::new(HashMap::new()),
+            saves: Mutex::new(HashMap::new()),
         });
         let poller = Poller::start(Arc::clone(&inner));
         Arc::new(Self {
@@ -412,11 +419,26 @@ impl Documents {
         let Ok(key) = crate::paths::VaultPath::parse(path).map(|p| p.key()) else {
             return;
         };
+        {
+            let mut saves = lock(&self.inner.saves);
+            if saves.len() >= SAVES_KEPT && !saves.contains_key(&key) {
+                saves.clear();
+            }
+            saves.insert(key.clone(), hash.to_owned());
+        }
         if let Some(entry) = lock(&self.inner.shown).get_mut(window) {
             if entry.key == key && entry.mode == Mode::Hash {
                 entry.version = Some(hash.to_owned());
             }
         }
+    }
+
+    /// Whether `hash` is the version a window of this workspace saved last at `path` (the person's own edit).
+    #[must_use]
+    pub fn saved_as(&self, path: &str, hash: &str) -> bool {
+        crate::paths::VaultPath::parse(path)
+            .map(|p| p.key())
+            .is_ok_and(|key| lock(&self.inner.saves).get(&key).is_some_and(|h| h == hash))
     }
 
     /// The window holds unsaved edits of `path` (`None`: none).
