@@ -202,7 +202,7 @@ pub fn answer(
             }
             done
         }
-        Err(error) => CallToolResult::error(vec![ContentBlock::text(render::error(&error))]),
+        Err(error) => CallToolResult::error(vec![ContentBlock::text(render::error(tool, &error))]),
     }
 }
 

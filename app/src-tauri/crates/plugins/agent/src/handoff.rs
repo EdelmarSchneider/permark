@@ -307,6 +307,7 @@ fn git_fact(tools: &Tools, journal: &Journal) -> Option<String> {
     }
     let short = |oid: &str| oid.chars().take(7).collect::<String>();
     Some(match reader.0.commits_between(&old, &now) {
+        Some(1) => format!("HEAD {}..{} (1 commit)", short(&old), short(&now)),
         Some(n) => format!("HEAD {}..{} ({n} commits)", short(&old), short(&now)),
         None => format!("HEAD {}..{}", short(&old), short(&now)),
     })

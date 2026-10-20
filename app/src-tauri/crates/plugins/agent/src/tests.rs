@@ -1234,7 +1234,7 @@ fn mcp_initialize_list_and_call_over_stdio_lines() {
             assert_eq!(escaped["result"]["isError"], true);
             assert_eq!(
                 escaped["result"]["content"][0]["text"],
-                "ERR notFound: ../outside.md -> check with map | outline | search"
+                "ERR notFound: ../outside.md -> check parts with outline, paths with map"
             );
             assert!(escaped["result"].get("structuredContent").is_none());
             let denied = exchange(&mut read, &mut write, json!({

@@ -96,9 +96,9 @@ pub fn render_at(tool: &str, data: &Value, now: u64) -> String {
     }
 }
 
-/// The one line of an error: `ERR <kind>: <reason> -> <remedy>`.
+/// The one line of an error of `tool`: `ERR <kind>: <reason> -> <remedy>`.
 #[must_use]
-pub fn error(error: &ToolError) -> String {
+pub fn error(tool: &str, error: &ToolError) -> String {
     let one = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
     match error {
         ToolError::Off => "ERR off: agent connection off for this project -> ask person to turn it on in PerMark Settings > Agent".to_owned(),
@@ -107,8 +107,14 @@ pub fn error(error: &ToolError) -> String {
             group.id()
         ),
         ToolError::NotFound(what) => format!(
-            "ERR notFound: {} -> check with map | outline | search",
-            format::value(&one(what))
+            "ERR notFound: {} -> {}",
+            format::value(&one(what)),
+            match tool {
+                "resolve_comment" => "check ids with list_comments",
+                "read_note" => "check names with list_notes",
+                "read" => "check parts with outline, paths with map",
+                _ => "check with map | outline | search",
+            }
         ),
         ToolError::Invalid(why) => format!("ERR invalid: {} -> fix the arguments", one(why)),
         ToolError::NotOpen => {
@@ -662,15 +668,22 @@ mod tests {
     #[test]
     fn errors_are_one_line_with_a_remedy() {
         let lines = [
-            error(&ToolError::Off),
-            error(&ToolError::Denied {
-                group: Group::CommentsResolve,
-                first_ask: false,
-            }),
-            error(&ToolError::NotFound("docs/my plan.md".to_owned())),
-            error(&ToolError::Invalid("limit\nis bad".to_owned())),
-            error(&ToolError::NotOpen),
-            error(&ToolError::Failed("x".to_owned())),
+            error("read", &ToolError::Off),
+            error(
+                "resolve_comment",
+                &ToolError::Denied {
+                    group: Group::CommentsResolve,
+                    first_ask: false,
+                },
+            ),
+            error(
+                "outline",
+                &ToolError::NotFound("docs/my plan.md".to_owned()),
+            ),
+            error("search", &ToolError::Invalid("limit\nis bad".to_owned())),
+            error("get_context", &ToolError::NotOpen),
+            error("map", &ToolError::Failed("x".to_owned())),
+            error("resolve_comment", &ToolError::NotFound("c9".to_owned())),
         ];
         for line in &lines {
             assert!(line.starts_with("ERR "), "{line}");
@@ -682,6 +695,7 @@ mod tests {
             "ERR denied: group comments.resolve off in this project -> ask person; NEVER retry around it"
         );
         assert!(lines[2].contains("\"docs/my plan.md\""));
+        assert_eq!(lines[6], "ERR notFound: c9 -> check ids with list_comments");
     }
 
     #[test]
