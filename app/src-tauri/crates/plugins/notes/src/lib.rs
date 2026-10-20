@@ -9,6 +9,7 @@
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
 pub mod folder;
+pub mod intent;
 pub mod journal;
 mod loose;
 mod moving;
@@ -36,6 +37,7 @@ use permark_core::settings::AppSettings;
 use serde::Deserialize;
 
 pub use folder::{FolderInfo, FolderStatus, Places};
+pub use intent::{Intents, NotesIntent};
 pub use loose::{find_renamed, folder_label, new_id, prune as prune_loose, MAX_LISTED};
 pub use names::Moment;
 pub use service::{now_ms, NotesService};
@@ -62,6 +64,11 @@ pub fn plugin() -> Arc<dyn Plugin> {
             default_enabled: true,
         },
     })
+}
+
+#[derive(Deserialize)]
+struct WantArgs {
+    intent: NotesIntent,
 }
 
 #[derive(Deserialize)]
@@ -192,10 +199,15 @@ impl Plugin for NotesPlugin {
             Arc::clone(&scope),
             Box::new(move || settings.settings().notes_folder),
         );
+        let events = cx.events().clone();
+        let intents = Arc::new(Intents::new(Box::new(move || {
+            events.emit("intent", serde_json::Value::Null);
+        })));
         let mut registrations = Vec::new();
         {
             let mut serve = |method: &str, handler| registrations.extend(cx.rpc(method, handler));
             register(&mut serve, &service);
+            register_intents(&mut serve, &intents);
         }
         let lease = app
             .services
@@ -235,6 +247,20 @@ impl Drop for NotesRunning {
 }
 
 type Serve<'a> = dyn FnMut(&str, permark_core::plugins::RpcHandler) + 'a;
+
+/// What to show in the Notes tab, asked from any view (`intent.rs`).
+fn register_intents(serve: &mut Serve<'_>, intents: &Arc<Intents>) {
+    let i = Arc::clone(intents);
+    serve(
+        "want",
+        typed(move |args: WantArgs, _| {
+            i.want(args.intent);
+            Ok(())
+        }),
+    );
+    let i = Arc::clone(intents);
+    serve("takeIntent", typed(move |_: NoArgs, _| Ok(i.take())));
+}
 
 /// Every method the window can call: a flat list, one line of meaning each.
 #[allow(clippy::too_many_lines)]

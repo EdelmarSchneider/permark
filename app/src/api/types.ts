@@ -153,6 +153,7 @@ import type { MoveUndone } from "./generated/MoveUndone";
 import type { Moved } from "./generated/Moved";
 import type { NoteEntry } from "./generated/NoteEntry";
 import type { NoteList } from "./generated/NoteList";
+import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
 
@@ -478,6 +479,9 @@ export interface PluginMethods {
     result: Moved;
   };
   "notes.undoMove": { args: { undoId: number }; result: MoveUndone };
+  /** What the Notes tab shows next (kept until it takes it; every view hears `notes:intent`). */
+  "notes.want": { args: { intent: NotesIntent }; result: null };
+  "notes.takeIntent": { args: Record<string, never>; result: NotesIntent | null };
   "agent.status": { args: Record<string, never>; result: AgentStatus };
   "agent.setEnabled": { args: { enabled: boolean }; result: AgentStatus };
   "agent.setGroup": { args: { group: string; on: boolean }; result: AgentStatus };
@@ -562,6 +566,8 @@ export interface AppPluginEvents {
   "token-count:folder": { window: string; job: FolderJob };
   /** The counted folders of a project changed (a result, a stale mark). */
   "token-count:folders": FolderBadges;
+  /** Something asked the Notes tab to show a note | a new note: the Notes tab takes it (`notes.takeIntent`). */
+  "notes:intent": null;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
@@ -613,6 +619,7 @@ export type {
   Moved,
   NoteEntry,
   NoteList,
+  NotesIntent,
   NotesSummary,
   Version,
 };

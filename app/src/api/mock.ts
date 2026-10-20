@@ -335,12 +335,15 @@ export function createMockApi(): Api & {
   const project = new MockProject();
   const organizing = createMockOrganizing(emitPlugin, project);
   const editing = createMockEditing(() => Object.keys(seedFiles()).sort());
-  const notes = createMockNotes(editing.probe.files);
+  const notes = createMockNotes(editing.probe.files, () => {
+    for (const handler of appListeners["notes:intent"]) handler(null);
+  });
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
     "updates:state": new Set(),
     "token-count:state": new Set(),
     "token-count:folder": new Set(),
     "token-count:folders": new Set(),
+    "notes:intent": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
