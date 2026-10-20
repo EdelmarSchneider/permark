@@ -1,15 +1,21 @@
 <script lang="ts">
-  // The right panel "Changes": what the disk reported, newest first. Click a row to open the file.
+  // The right panel "Changes": what the disk reported and what the person did in PerMark (with the hand-off marks),
+  // newest first; a filter shows mine | outside | all. Click a row to open the file.
   import ArrowRightLeft from "@lucide/svelte/icons/arrow-right-left";
   import FilePen from "@lucide/svelte/icons/file-pen";
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FileX from "@lucide/svelte/icons/file-x";
   import Layers from "@lucide/svelte/icons/layers";
+  import MessageSquare from "@lucide/svelte/icons/message-square";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
-  import type { FeedItem } from "../../api";
+  import Save from "@lucide/svelte/icons/save";
+  import Send from "@lucide/svelte/icons/send";
+  import Tag from "@lucide/svelte/icons/tag";
+  import type { ActivityEntry, FeedItem } from "../../api";
   import { documents } from "../../core/doc/document.svelte";
   import { t, tn } from "../../core/i18n";
   import { ui } from "../../core/shell/ui.svelte";
+  import { mineLabel, pathOf, type FeedShow } from "./mine";
   import { ACTIVE_MS, feed } from "./store.svelte";
   import { ago, split } from "./time";
 
@@ -27,6 +33,25 @@
       documents.navigate(item.path, null);
     }
   }
+
+  function openMine(entry: ActivityEntry): void {
+    const path = pathOf(entry.fact);
+    if (path !== null && !gone(entry)) documents.navigate(path, null);
+  }
+
+  /** The action left nothing to open (a delete, the undo of a new file). */
+  function gone(entry: ActivityEntry): boolean {
+    return entry.fact.kind === "file" && entry.fact.op === "delete";
+  }
+
+  const SHOWS: readonly {
+    id: FeedShow;
+    label: "feed.show.all" | "feed.show.mine" | "feed.show.outside";
+  }[] = [
+    { id: "all", label: "feed.show.all" },
+    { id: "mine", label: "feed.show.mine" },
+    { id: "outside", label: "feed.show.outside" },
+  ];
 
   const KINDS = {
     created: "feed.kind.created",
@@ -63,15 +88,74 @@
       title={t("feed.close")}
       onclick={() => ui.toggleRight("live-feed.panel")}>×</button
     >
+    <div class="show" role="radiogroup" aria-label={t("feed.show.label")}>
+      {#each SHOWS as show (show.id)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={feed.show === show.id}
+          class:on={feed.show === show.id}
+          onclick={() => (feed.show = show.id)}>{t(show.label)}</button
+        >
+      {/each}
+    </div>
     <label class="docs" title={t("live.docsOnlyHint")}>
       <input type="checkbox" bind:checked={feed.docsOnly} />
       {t("live.docsOnly")}
     </label>
   </header>
   <ul>
-    {#each feed.visible as item (item.id)}
+    {#each feed.rows as row (row.key)}
       <li>
-        {#if item.item === "entry"}
+        {#if row.kind === "mine"}
+          {@const entry = row.entry}
+          {#if entry.fact.kind === "handOff"}
+            <div class="row handoff" role="separator">
+              <span class="icon-cell"><Send size={15} /></span>
+              <span class="text"
+                ><span class="name">{tn("feed.handoff", entry.fact.rows)}</span></span
+              >
+              <span class="when">{ago(entry.at, now)}</span>
+            </div>
+          {:else}
+            {@const label = mineLabel(entry.fact)}
+            {@const where = split(pathOf(entry.fact) ?? "")}
+            <button
+              type="button"
+              class="row mine"
+              class:gone={gone(entry)}
+              title={pathOf(entry.fact) ?? ""}
+              disabled={gone(entry)}
+              onclick={() => openMine(entry)}
+            >
+              <span class="icon-cell kind-mine">
+                {#if entry.fact.kind === "save"}<Save size={15} />
+                {:else if entry.fact.kind === "comment"}<MessageSquare size={15} />
+                {:else if entry.fact.kind === "tag"}<Tag size={15} />
+                {:else if entry.fact.kind === "convert" || entry.fact.kind === "review"}<ArrowRightLeft
+                    size={15}
+                  />
+                {:else if entry.fact.kind === "file" && entry.fact.op === "delete"}<FileX
+                    size={15}
+                  />
+                {:else}<FilePlus size={15} />{/if}
+              </span>
+              <span class="text">
+                <span class="name">{where.name || t("feed.root")}</span>
+                {#if label !== null}
+                  <span class="folder"
+                    >{t(label.key, label.params)}{label.detail
+                      ? ` · ${label.detail}`
+                      : ""}{label.undone ? ` (${t("feed.mine.undone")})` : ""}</span
+                  >
+                {/if}
+              </span>
+              <span class="tag">{t("feed.you")}</span>
+              <span class="when">{ago(entry.at, now)}</span>
+            </button>
+          {/if}
+        {:else if row.item.item === "entry"}
+          {@const item = row.item}
           {@const where = split(item.path)}
           <button
             type="button"
@@ -98,7 +182,8 @@
             {#if item.saves > 1}<span class="tag">{tn("feed.saves", item.saves)}</span>{/if}
             <span class="when">{ago(item.atMs, now)}</span>
           </button>
-        {:else if item.item === "group"}
+        {:else if row.item.item === "group"}
+          {@const item = row.item}
           <div class="row group" title={item.sample.join("\n")}>
             <span class="icon-cell"><Layers size={15} /></span>
             <span class="text">
@@ -118,12 +203,12 @@
           <div class="row note">
             <span class="icon-cell"><RefreshCw size={15} /></span>
             <span class="text"><span class="name">{t("feed.bulk.resynced")}</span></span>
-            <span class="when">{ago(item.atMs, now)}</span>
+            <span class="when">{ago(row.at, now)}</span>
           </div>
         {/if}
       </li>
     {:else}
-      <li class="empty">{t("feed.empty")}</li>
+      <li class="empty">{t(feed.show === "mine" ? "feed.mine.empty" : "feed.empty")}</li>
     {/each}
   </ul>
   {#if feed.hidden > 0}
@@ -165,6 +250,30 @@
   .dot.active {
     background: var(--accent);
     opacity: 1;
+  }
+  .show {
+    display: inline-flex;
+    flex-basis: 100%;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-control);
+    background: var(--surface-2);
+  }
+  .show button {
+    flex: 1;
+    padding: 2px var(--sp-2);
+    border: 0;
+    border-radius: var(--radius-control);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--fs-ui-xs);
+    cursor: pointer;
+  }
+  .show button.on {
+    background: var(--bg);
+    color: var(--text);
+    box-shadow: 0 0 0 1px var(--border);
   }
   .docs {
     flex-basis: 100%;
@@ -245,6 +354,18 @@
   }
   .kind-renamed {
     color: var(--git-renamed-text);
+  }
+  .kind-mine {
+    color: var(--accent);
+  }
+  .handoff {
+    margin: var(--sp-1) 0;
+    border-top: 1px dashed var(--border);
+    border-bottom: 1px dashed var(--border);
+    color: var(--muted);
+  }
+  .handoff .icon-cell {
+    color: var(--accent);
   }
   .text {
     display: flex;

@@ -198,6 +198,7 @@ export function createMockApi(): Api & {
   const pluginListeners: { [E in PluginEventName]: Set<(payload: PluginEnvelope<E>) => void> } = {
     "git:snapshot": new Set(),
     "live-feed:items": new Set(),
+    "live-feed:activity": new Set(),
     "unread:changed": new Set(),
     "tags:changed": new Set(),
     "comments:changed": new Set(),

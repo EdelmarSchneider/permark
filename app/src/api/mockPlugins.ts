@@ -11,6 +11,7 @@ import type { createMockTokens } from "./mockTokens";
 import type { createMockConvert } from "./mockConvert";
 import type { ReviewChange } from "./generated/ReviewChange";
 import type {
+  ActivityEntry,
   BaselineKind,
   FeedItem,
   GitSnapshot,
@@ -32,6 +33,8 @@ type Handlers = {
 export type MockPluginProbe = {
   /** Pushes feed items as if the watch had reported them. */
   feed(items: FeedItem[]): void;
+  /** An action of the person as if the activity journal had noted it. */
+  mine(entry: ActivityEntry): void;
   /** Marks documents unread as if an agent changed them. */
   unread(paths: string[]): void;
   /** Calls the plugins got, `<plugin>.<method>`. */
@@ -114,6 +117,28 @@ export function createMockPlugins(
     truncated: false,
     worktrees: [],
   });
+  // the person's own actions (the activity journal), oldest first, with a hand-off between them
+  let mine: ActivityEntry[] = [
+    {
+      seq: 1,
+      at: Date.now() - 3_600_000,
+      by: "person",
+      fact: { kind: "tag", added: true, path: GUIDE, tag: "plan" },
+    },
+    { seq: 2, at: Date.now() - 3_000_000, by: "person", fact: { kind: "handOff", rows: 3 } },
+    {
+      seq: 3,
+      at: Date.now() - 60_000,
+      by: "person",
+      fact: { kind: "save", path: GUIDE, sections: ["Guide > Install"], blocks: 2 },
+    },
+    {
+      seq: 4,
+      at: Date.now() - 45_000,
+      by: "person",
+      fact: { kind: "comment", op: "add", path: GUIDE, id: "c9", heading: "Guide" },
+    },
+  ];
   let feed: FeedItem[] = [
     {
       item: "entry",
@@ -184,6 +209,7 @@ export function createMockPlugins(
       feed = [];
       return null;
     },
+    "live-feed.activity": () => mine,
     "unread.list": () => unreadList(),
     "unread.sinceLastVisit": () => since,
     "unread.markRead": ({ path }) => {
@@ -264,6 +290,10 @@ export function createMockPlugins(
       feed: (items) => {
         feed = [...items, ...feed];
         emit("live-feed:items", { upsert: items });
+      },
+      mine: (entry) => {
+        mine = [...mine, entry];
+        emit("live-feed:activity", { entry });
       },
       unread: (paths) => {
         for (const path of paths) unread.add(path);

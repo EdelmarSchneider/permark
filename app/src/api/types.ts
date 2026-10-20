@@ -106,6 +106,11 @@ import type { AgentSelection } from "./generated/AgentSelection";
 import type { AgentServerState } from "./generated/AgentServerState";
 import type { AgentStatus } from "./generated/AgentStatus";
 import type { AgentWindowContext } from "./generated/AgentWindowContext";
+import type { ActivityEntry } from "./generated/ActivityEntry";
+import type { ActivityFact } from "./generated/ActivityFact";
+import type { HandOffDone } from "./generated/HandOffDone";
+import type { HandOffPreview } from "./generated/HandOffPreview";
+import type { HandOffSessionView } from "./generated/HandOffSessionView";
 import type { BrokenDoc } from "./generated/BrokenDoc";
 import type { BrokenLink } from "./generated/BrokenLink";
 import type { BrokenReport } from "./generated/BrokenReport";
@@ -348,6 +353,7 @@ export interface PluginMethods {
   "git.setBaseline": { args: { kind: BaselineKind }; result: null };
   "live-feed.items": { args: Record<string, never>; result: FeedItem[] };
   "live-feed.clear": { args: Record<string, never>; result: null };
+  "live-feed.activity": { args: Record<string, never>; result: ActivityEntry[] };
   "unread.list": { args: Record<string, never>; result: UnreadList };
   "unread.sinceLastVisit": { args: Record<string, never>; result: SinceVisit };
   "unread.markRead": { args: { path: string; hash: string }; result: null };
@@ -446,6 +452,8 @@ export interface PluginMethods {
   "agent.setDefaults": { args: Record<string, never>; result: null };
   "agent.publish": { args: { context: AgentWindowContext }; result: null };
   "agent.setup": { args: Record<string, never>; result: string | null };
+  "agent.handOffPreview": { args: { checked?: number[] }; result: HandOffPreview };
+  "agent.handOffConfirm": { args: { upto: number; checked: number[] }; result: HandOffDone };
   "shell-integration.state": { args: Record<string, never>; result: ShellState };
   "shell-integration.set": { args: { entry: ShellEntry; on: boolean }; result: ShellState };
   "updates.state": { args: Record<string, never>; result: UpdateState };
@@ -487,6 +495,7 @@ export type PluginMethod = keyof PluginMethods;
 export interface PluginEvents {
   "git:snapshot": GitSnapshot | null;
   "live-feed:items": { upsert: FeedItem[] };
+  "live-feed:activity": { entry: ActivityEntry };
   "unread:changed": UnreadList;
   "tags:changed": null;
   "comments:changed": null;
@@ -538,6 +547,7 @@ export type {
   AgentStatus,
   AgentWindowContext,
 };
+export type { ActivityEntry, ActivityFact, HandOffDone, HandOffPreview, HandOffSessionView };
 export type {
   Deleted,
   EntryKind,

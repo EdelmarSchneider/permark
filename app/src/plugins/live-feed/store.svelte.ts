@@ -1,10 +1,12 @@
 // The live feed: every file the project's disk reported as created, changed, removed or renamed, newest first, and
-// the quiet toast that says documents changed while the person reads something else.
+// the quiet toast that says documents changed while the person reads something else. Beside it, the person's own
+// actions from the project's activity journal (and the hand-off marks) for the panel's mine | outside | all filter.
 
-import type { FeedItem } from "../../api";
+import type { ActivityEntry, FeedItem } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import { silence } from "../../core/silence/silence.svelte";
+import { panelRows, pathOf, type FeedShow, type PanelRow } from "./mine";
 
 /** Items kept (the backend keeps as many). */
 const MAX_ITEMS = 500;
@@ -50,6 +52,10 @@ export type Toast = {
 
 export class FeedStore {
   items = $state.raw<readonly FeedItem[]>([]);
+  /** The person's own actions and the hand-off marks, oldest first. */
+  mine = $state.raw<readonly ActivityEntry[]>([]);
+  /** Which rows the panel lists. */
+  show = $state<FeedShow>("all");
   docsOnly = $state(false);
   toast = $state.raw<Toast | null>(null);
   /** The time of the newest change (ms; 0: none yet). */
@@ -77,6 +83,17 @@ export class FeedStore {
     return this.docsOnly ? heard.filter(isDocItem) : heard;
   }
 
+  /** The panel's rows for the filter, newest first ("Docs only" applies to the person's actions too). */
+  get rows(): PanelRow[] {
+    const mine = this.docsOnly
+      ? this.mine.filter((e) => {
+          const path = pathOf(e.fact);
+          return path === null || TEXT_DOC.test(path);
+        })
+      : this.mine;
+    return panelRows(this.visible, mine, this.show);
+  }
+
   /** How many items the "Docs only" filter hides. */
   get hidden(): number {
     if (!this.docsOnly) return 0;
@@ -96,18 +113,29 @@ export class FeedStore {
         }
         let off: (() => void) | null = null;
         let gone = false;
+        let offMine: (() => void) | null = null;
         void this.#client
           .on("live-feed:items", (data) => this.take(data.upsert))
           .then((stop) => {
             if (gone) stop();
             else off = stop;
           });
+        void this.#client
+          .on("live-feed:activity", (data) => this.takeMine(data.entry))
+          .then((stop) => {
+            if (gone) stop();
+            else offMine = stop;
+          });
         void this.#client.call("live-feed.items", {}).then((result) => {
           if (!gone && result.ok) this.#set(result.value);
+        });
+        void this.#client.call("live-feed.activity", {}).then((result) => {
+          if (!gone && result.ok) this.mine = result.value.slice(-MAX_ITEMS);
         });
         return () => {
           gone = true;
           off?.();
+          offMine?.();
         };
       });
       return () => this.#reset();
@@ -121,6 +149,7 @@ export class FeedStore {
 
   #reset(): void {
     this.items = [];
+    this.mine = [];
     this.lastAt = 0;
     this.dismissToast();
   }
@@ -143,6 +172,12 @@ export class FeedStore {
       kind,
     };
     this.#arm();
+  }
+
+  /** One of the person's actions (or a hand-off) the journal just noted. */
+  takeMine(entry: ActivityEntry): void {
+    if (this.mine.some((e) => e.seq === entry.seq)) return;
+    this.mine = [...this.mine, entry].slice(-MAX_ITEMS);
   }
 
   #arm(): void {

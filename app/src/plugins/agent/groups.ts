@@ -12,4 +12,5 @@ export const GROUPS: readonly GroupRow[] = [
   { id: "comments.resolve", label: "agent.group.commentsResolve" },
   { id: "notes", label: "agent.group.notes" },
   { id: "show", label: "agent.group.show" },
+  { id: "activity", label: "agent.group.activity" },
 ];

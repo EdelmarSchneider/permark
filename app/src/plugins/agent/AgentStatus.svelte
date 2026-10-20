@@ -6,6 +6,7 @@
   import { t, type MessageKey } from "../../core/i18n";
   import { claudeCodeCommand } from "./setup";
   import { GROUPS } from "./groups";
+  import { handOff } from "./handoff.svelte";
   import { agent } from "./store.svelte";
 
   const status = $derived(agent.status);
@@ -143,6 +144,16 @@
           </ul>
         {/if}
         <div class="actions">
+          <button
+            type="button"
+            class="btn btn--sm btn--primary"
+            onclick={() => {
+              agent.popover = false;
+              void handOff.open();
+            }}
+          >
+            {t("agent.handoff.button")}
+          </button>
           <button type="button" class="btn btn--sm" onclick={() => void copySetup()}>
             {copied ? t("agent.copied") : t("agent.popover.copySetup")}
           </button>
@@ -269,6 +280,7 @@
   }
   .actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--sp-2);
     margin-top: var(--sp-3);

@@ -1,9 +1,10 @@
 // Plugin `agent`: the agent connection of a project. Dormant until the person turns it on: then a status item (who is
 // connected, what was asked), the context the window publishes, and the places an agent asks to show. The settings
-// rows are there whenever the plugin is on.
+// rows and the hand-off (palette; the status popover too while the switch is on) are there whenever the plugin is on.
 
 import type { Requirement } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
+import { handOff } from "./handoff.svelte";
 import { claudeCodeCommand } from "./setup";
 import { agent } from "./store.svelte";
 
@@ -25,6 +26,22 @@ export default definePlugin({
         order: 3,
         requires: ON,
         view: () => import("./AgentStatus.svelte"),
+      }),
+      // draws nothing in the bar: the hand-off dialog over the window while it is open
+      cx.contribute({
+        kind: "statusItem",
+        id: "agent.handOffHost",
+        slot: "right",
+        order: 96,
+        requires: PROJECT,
+        view: () => import("./HandOffHost.svelte"),
+      }),
+      cx.contribute({
+        kind: "command",
+        id: "agent.handOff",
+        label: "agent.handOff",
+        requires: PROJECT,
+        run: () => void handOff.open(),
       }),
       cx.contribute({
         kind: "settingsSection",
@@ -70,6 +87,7 @@ export default definePlugin({
     return () => {
       for (const remove of removals) remove();
       agent.popover = false;
+      handOff.close();
       stop();
     };
   },

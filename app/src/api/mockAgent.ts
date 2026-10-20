@@ -1,9 +1,11 @@
 // What the agent plugin's backend half answers in the mock backend (`dev:mock`, tests): the switch, the groups, the
 // published context and a status that a probe can fill (a connected client, requests). In memory.
 
+import type { HandOffSessionView } from "./generated/HandOffSessionView";
 import type {
   AgentRequest,
   AgentStatus,
+  HandOffPreview,
   AgentWindowContext,
   PluginEventName,
   PluginEvents,
@@ -19,6 +21,8 @@ type Handlers = Pick<
   | "agent.setDefaults"
   | "agent.publish"
   | "agent.setup"
+  | "agent.handOffPreview"
+  | "agent.handOffConfirm"
 >;
 
 export type AgentProbe = {
@@ -29,10 +33,56 @@ export type AgentProbe = {
   /** An agent asked something. */
   request(record: AgentRequest): void;
   status(): AgentStatus;
+  /** The hand-offs confirmed, as `{ upto, checked }`. */
+  handedOff: { upto: number; checked: number[] }[];
 };
 
+const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
+
+/** Two sessions of work (today, and three weeks ago: stale) and some changes made outside. */
+function sessionsNow(now: number, checked: number[] | undefined): HandOffSessionView[] {
+  const base: HandOffSessionView[] = [
+    {
+      id: 1,
+      start: now - 21 * DAY - 3 * HOUR,
+      end: now - 21 * DAY - 2 * HOUR,
+      actions: 6,
+      rows: 4,
+      tokens: 310,
+      stale: true,
+      checked: false,
+      dropped: false,
+    },
+    {
+      id: 2,
+      start: now - 4 * HOUR,
+      end: now - 2 * HOUR,
+      actions: 19,
+      rows: 12,
+      tokens: 1240,
+      stale: false,
+      checked: true,
+      dropped: false,
+    },
+  ];
+  return base.map((s) => ({
+    ...s,
+    checked: checked === undefined ? s.checked : checked.includes(s.id),
+  }));
+}
+
 const DEFAULT_OFF = new Set(["comments.resolve"]);
-const GROUPS = ["context", "changes", "find", "comments.read", "comments.resolve", "notes", "show"];
+const GROUPS = [
+  "context",
+  "changes",
+  "find",
+  "comments.read",
+  "comments.resolve",
+  "notes",
+  "show",
+  "activity",
+];
 
 export function createMockAgent(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
@@ -44,6 +94,7 @@ export function createMockAgent(
   let clients: string[] = [];
   let recent: AgentRequest[] = [];
   const published: AgentWindowContext[] = [];
+  const handedOff: { upto: number; checked: number[] }[] = [];
   const status = (): AgentStatus => ({
     enabled,
     server: enabled ? { state: "listening" } : { state: "off" },
@@ -72,6 +123,35 @@ export function createMockAgent(
       return null;
     },
     "agent.setup": () => "C:\\Program Files\\PerMark\\PerMark.exe",
+    "agent.handOffPreview": ({ checked }): HandOffPreview => {
+      if (handedOff.length > 0) return { state: "nothing" };
+      const sessions = sessionsNow(Date.now(), checked);
+      const inside = sessions.filter((s) => s.checked);
+      return {
+        state: "ready",
+        case: "stale",
+        first: false,
+        sessions,
+        outside: { files: 14, byFolder: false, git: "HEAD a1b2c3d..e4f5a6b (3 commits)" },
+        allStale: false,
+        trimmed: false,
+        upgraded: false,
+        rows: inside.reduce((n, s) => n + s.rows, 0) + 14,
+        tokens: inside.reduce((n, s) => n + s.tokens, 0) + 420,
+        upto: 42,
+      };
+    },
+    "agent.handOffConfirm": ({ upto, checked }) => {
+      handedOff.push({ upto, checked });
+      const rows = sessionsNow(Date.now(), checked)
+        .filter((s) => s.checked)
+        .reduce((n, s) => n + s.rows, 14);
+      return {
+        line: `PerMark: ${String(rows)} actions since last hand-off -> call activity since=handoff`,
+        full: `activity since=handoff n=${String(rows)}\n`,
+        rows,
+      };
+    },
   };
   return {
     handlers,
@@ -86,6 +166,7 @@ export function createMockAgent(
         announce();
       },
       status,
+      handedOff,
     },
   };
 }
