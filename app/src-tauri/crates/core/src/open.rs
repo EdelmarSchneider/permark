@@ -41,8 +41,10 @@ pub struct OpenAck {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Cli {
     Open(OpenRequest),
-    /// `permark mcp` (agent server bridge).
-    Mcp,
+    /// `permark mcp` (agent server bridge); `--structured`: answers carry `structuredContent` too.
+    Mcp {
+        structured: bool,
+    },
     /// `permark context`.
     Context,
     Help,
@@ -53,7 +55,7 @@ pub enum Cli {
 
 pub const USAGE: &str = "\
 Usage: permark [options] [path...]
-       permark mcp | context
+       permark mcp [--structured] | context
 
 Opens folders as projects and files on their own.
 
@@ -99,7 +101,11 @@ pub fn parse_args(args: &[OsString], cwd: Option<&Path>) -> Cli {
         if first && !only_paths {
             first = false;
             match text.as_str() {
-                "mcp" => return Cli::Mcp,
+                "mcp" => {
+                    return Cli::Mcp {
+                        structured: iter.any(|a| a == "--structured"),
+                    }
+                }
                 "context" => return Cli::Context,
                 _ => {}
             }
@@ -237,7 +243,14 @@ mod tests {
         };
         assert_eq!(r.paths, [cwd().join("docs"), cwd().join("my notes/a.md")]);
         assert!(r.flags.new_window);
-        assert_eq!(parse_args(&os(&["mcp"]), None), Cli::Mcp);
+        assert_eq!(
+            parse_args(&os(&["mcp"]), None),
+            Cli::Mcp { structured: false }
+        );
+        assert_eq!(
+            parse_args(&os(&["mcp", "--structured"]), None),
+            Cli::Mcp { structured: true }
+        );
         assert_eq!(parse_args(&os(&["context", "x"]), None), Cli::Context);
         // a folder named mcp after another path is a path
         let Cli::Open(r) = parse_args(&os(&["a", "mcp"]), Some(&cwd())) else {

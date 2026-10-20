@@ -185,8 +185,8 @@ impl<'a> Sizer<'a> {
         }
     }
 
-    /// Adds the sizes of lines `from..=to` (1-based) to a part's object.
-    fn add(&self, item: &mut Value, from: u32, to: u32) {
+    /// The text of lines `from..=to` (1-based) as a read returns it (secrets hidden).
+    fn shown(&self, from: u32, to: u32) -> String {
         let count = self.starts.len();
         let first = (from.max(1) as usize).min(count + 1);
         let last = (to as usize).min(count);
@@ -201,7 +201,12 @@ impl<'a> Sizer<'a> {
             };
             (begin, &self.text[begin..end])
         };
-        let shown = masked(part, base, self.spans);
+        masked(part, base, self.spans)
+    }
+
+    /// Adds the sizes of lines `from..=to` (1-based) to a part's object.
+    fn add(&self, item: &mut Value, from: u32, to: u32) {
+        let shown = self.shown(from, to);
         let Some(map) = item.as_object_mut() else {
             return;
         };
@@ -287,6 +292,58 @@ pub fn outline(
     };
     sizer.name_tokenizer(&mut answer);
     answer
+}
+
+/// The approximate tokens of reading one section (`heading_path`, as search reports it) of a file; `None`: the file
+/// has no such part (or no structure).
+#[must_use]
+pub fn section_size(
+    formats: &FormatRegistry,
+    path: &str,
+    text: &str,
+    heading_path: &[String],
+    line: u32,
+) -> Option<u64> {
+    let at = heading_path.join(" > ");
+    let config = sheet_of(formats, path, text);
+    let (from, to) = match &config {
+        Some((sheet, _)) if !at.is_empty() => sheet.range_of(&at)?,
+        None if kind_of(path) == Kind::Markdown => {
+            let parts = markdown_parts(text);
+            if at.is_empty() {
+                // the lines before the first heading
+                let end = parts
+                    .first()
+                    .map_or(line_count(text), |p| p.from.saturating_sub(1));
+                (1, end.max(1))
+            } else {
+                parts
+                    .iter()
+                    .find(|p| p.at == at && p.from <= line.max(p.from))
+                    .map(|p| (p.from, p.to))
+                    .or_else(|| find_part(&parts, &at))?
+            }
+        }
+        _ => return None,
+    };
+    let sizer = Sizer::new(
+        text,
+        config.as_ref().map(|(_, spans)| spans.as_slice()),
+        None,
+    );
+    Some(estimate(&sizer.shown(from, to)))
+}
+
+/// The approximate tokens of reading a whole file (secrets hidden).
+#[must_use]
+pub fn file_size(formats: &FormatRegistry, path: &str, text: &str) -> u64 {
+    let config = sheet_of(formats, path, text);
+    let sizer = Sizer::new(
+        text,
+        config.as_ref().map(|(_, spans)| spans.as_slice()),
+        None,
+    );
+    estimate(&sizer.shown(1, line_count(text)))
 }
 
 /// `L12` | `L12-L40` (also `12-40`).

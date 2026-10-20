@@ -1,0 +1,11 @@
+# Atlas service settings
+[server]
+host = "localhost"
+port = 8080
+
+[auth]
+token = "tok-abc-123"
+password = "hunter2"
+
+[sync]
+interval_seconds = 30

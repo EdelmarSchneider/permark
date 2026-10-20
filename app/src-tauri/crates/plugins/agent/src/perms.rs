@@ -21,10 +21,11 @@ pub enum Group {
     CommentsResolve,
     Notes,
     Show,
+    Activity,
 }
 
 impl Group {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Context,
         Self::Changes,
         Self::Find,
@@ -32,6 +33,7 @@ impl Group {
         Self::CommentsResolve,
         Self::Notes,
         Self::Show,
+        Self::Activity,
     ];
 
     #[must_use]
@@ -44,6 +46,7 @@ impl Group {
             Self::CommentsResolve => "comments.resolve",
             Self::Notes => "notes",
             Self::Show => "show",
+            Self::Activity => "activity",
         }
     }
 

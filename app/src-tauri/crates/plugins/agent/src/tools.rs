@@ -33,10 +33,16 @@ pub const MAX_READ_BYTES: u64 = 8 * 1024 * 1024;
 /// Longest text one `read` returns (characters); the answer says where to go on.
 pub const MAX_READ_CHARS: usize = 20_000;
 
+/// Smallest and largest `budget` of a search (tokens).
+pub const SEARCH_BUDGET: (u64, u64) = (200, 12_000);
+/// Links listed each way by `outline` with `links`.
+pub const MAX_LINKS: usize = 50;
+
 /// The tools, their groups, in the order agents list them.
-pub const TOOLS: [(&str, Group); 11] = [
+pub const TOOLS: [(&str, Group); 13] = [
     ("get_context", Group::Context),
     ("list_unread", Group::Changes),
+    ("map", Group::Find),
     ("search", Group::Find),
     ("list_tags", Group::Find),
     ("outline", Group::Find),
@@ -46,6 +52,7 @@ pub const TOOLS: [(&str, Group); 11] = [
     ("list_notes", Group::Notes),
     ("read_note", Group::Notes),
     ("open", Group::Show),
+    ("activity", Group::Activity),
 ];
 
 #[must_use]
@@ -63,6 +70,8 @@ pub struct Tools {
     services: ProjectServices,
     /// The window's half (`get_context`, `open`): only inside the app.
     live: Option<Arc<Live>>,
+    /// Sizes of files `map` measured: path -> (bytes, modified, size).
+    sizes: crate::map::SizeCache,
 }
 
 fn args<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, ToolError> {
@@ -104,6 +113,30 @@ struct SearchArgs {
     query: Option<String>,
     limit: Option<usize>,
     tags: Option<Vec<String>>,
+    budget: Option<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutlineArgs {
+    path: String,
+    links: Option<bool>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MapArgs {
+    path: Option<String>,
+    depth: Option<usize>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ActivityArgs {
+    since: Option<String>,
+    limit: Option<usize>,
+    by: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -111,12 +144,6 @@ struct SearchArgs {
 struct TagArgs {
     tag: Option<String>,
     limit: Option<usize>,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PathArgs {
-    path: String,
 }
 
 #[derive(Deserialize)]
@@ -178,7 +205,19 @@ impl Tools {
             store,
             services,
             live,
+            sizes: crate::map::SizeCache::default(),
         }
+    }
+
+    /// The project's services (the hand-off reads the journal and the repository through them).
+    #[must_use]
+    pub fn services(&self) -> &ProjectServices {
+        &self.services
+    }
+
+    #[must_use]
+    pub fn vault(&self) -> &Vault {
+        &self.vault
     }
 
     #[must_use]
@@ -234,9 +273,14 @@ impl Tools {
             });
         }
         let guard = self.guard(&config);
+        let changes = perms::effective(&choice.groups, &config.agent_deny)
+            .get(&Group::Changes)
+            .copied()
+            == Some(Access::On);
         match tool {
             "get_context" => self.get_context(args, &guard),
             "list_unread" => self.list_unread(args, &guard),
+            "map" => self.map(args, &guard, changes),
             "search" => self.search(args, &guard),
             "list_tags" => self.list_tags(args, &guard),
             "outline" => self.outline(args, &guard),
@@ -246,8 +290,27 @@ impl Tools {
             "list_notes" => self.list_notes(args),
             "read_note" => self.read_note(args),
             "open" => self.open(args, &guard),
+            "activity" => self.activity(args, &guard),
             other => Err(ToolError::Invalid(format!("unknown tool {other}"))),
         }
+    }
+
+    fn map(&self, raw: Value, guard: &Guard, changes: bool) -> Result<Value, ToolError> {
+        let MapArgs { path, depth, limit } = args(raw)?;
+        crate::map::map(
+            self,
+            &self.sizes,
+            guard,
+            path.as_deref(),
+            depth,
+            limit,
+            changes,
+        )
+    }
+
+    fn activity(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
+        let ActivityArgs { since, limit, by } = args(raw)?;
+        crate::handoff::activity_tool(self, guard, since.as_deref(), limit, by.as_deref())
     }
 
     fn open_comments(&self, guard: &Guard) -> usize {
@@ -352,7 +415,9 @@ impl Tools {
             query,
             limit: asked,
             tags,
+            budget,
         } = args(raw)?;
+        let budget = budget.map(|b| b.clamp(SEARCH_BUDGET.0, SEARCH_BUDGET.1));
         let query = query.unwrap_or_default();
         let tags: Vec<String> = tags
             .unwrap_or_default()
@@ -366,6 +431,7 @@ impl Tools {
             let paths = self.tagged(&tags, guard)?;
             let max = limit(asked, 20, 100);
             return Ok(json!({
+                "tags": tags,
                 "documents": paths.iter().take(max).map(|p| self.file_entry(p)).collect::<Vec<_>>(),
                 "total": paths.len(),
                 "more": paths.len().saturating_sub(max),
@@ -384,20 +450,44 @@ impl Tools {
         let index = &self.services.search;
         let ready = index.wait_ready(READY_WAIT);
         let results = index.sections(query.trim(), limit(asked, 10, 25), &filter);
+        let formats = self.services.formats();
         let hits: Vec<Value> = results
             .hits
             .into_iter()
             .map(|hit| {
                 let snippet: String = hit.snippet.iter().map(|p| p.text.as_str()).collect();
-                json!({
+                let mut item = json!({
                     "path": hit.path,
                     "headingPath": hit.heading_path,
                     "line": hit.line,
                     "snippet": mask_text(snippet.trim()),
-                })
+                });
+                // the size of reading this section next (`read at=<heading path>`)
+                let size = guard
+                    .file(&hit.path)
+                    .ok()
+                    .and_then(|(path, abs)| read_text(&abs).ok().map(|text| (path, text)))
+                    .and_then(|(path, text)| {
+                        structure::section_size(&formats, &path, &text, &hit.heading_path, hit.line)
+                    });
+                if let (Some(size), Some(map)) = (size, item.as_object_mut()) {
+                    map.insert("size_tok".to_owned(), json!(size));
+                }
+                item
             })
             .collect();
-        Ok(json!({ "hits": hits, "partial": results.partial || !ready }))
+        let mut answer = json!({
+            "query": query.trim(),
+            "hits": hits,
+            "partial": results.partial || !ready,
+        });
+        if !tags.is_empty() {
+            answer["tags"] = json!(tags);
+        }
+        if let Some(budget) = budget {
+            fit_budget(&mut answer, budget);
+        }
+        Ok(answer)
     }
 
     fn list_tags(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
@@ -484,7 +574,7 @@ impl Tools {
                 item
             })
             .collect();
-        Ok(json!({ "comments": comments }))
+        Ok(json!({ "which": which.as_deref().map_or("open", str::trim), "comments": comments }))
     }
 
     fn resolve_comment(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
@@ -540,7 +630,7 @@ impl Tools {
     }
 
     fn outline(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
-        let PathArgs { path } = args(raw)?;
+        let OutlineArgs { path, links } = args(raw)?;
         let (path, abs) = guard.file(&path)?;
         let text = read_text(&abs)?;
         // the person's tokenizer, when the token count plugin is on: the project's own choice over the app's
@@ -552,12 +642,70 @@ impl Tools {
             (Some(api), Some(config)) => api.0.primary(config, part),
             _ => None,
         };
-        Ok(structure::outline(
+        let mut answer = structure::outline(
             &self.services.formats(),
             &path,
             &text,
             api.is_some().then_some(&count as structure::Tokens<'_>),
-        ))
+        );
+        if links == Some(true) {
+            self.add_links(&mut answer, &path, &text, guard);
+        }
+        Ok(answer)
+    }
+
+    /// `links_in` (documents that link here, from the search index) and `links_out` (where this document's links
+    /// lead: a path | missing), each capped at [`MAX_LINKS`]. A hidden target is answered as missing.
+    fn add_links(&self, answer: &mut Value, path: &str, text: &str, guard: &Guard) {
+        use permark_core::links::{parse, resolve, Target};
+        let incoming: Vec<String> = self
+            .services
+            .search
+            .linking_to(path)
+            .into_iter()
+            .filter(|p| !guard.hidden(p, false) && p != path)
+            .collect();
+        let mut outgoing: Vec<(String, bool)> = Vec::new();
+        if let Ok(from) = permark_core::paths::VaultPath::parse(path) {
+            for dest in parse(text) {
+                let found = match resolve(&self.vault, &from, dest.inner(text)) {
+                    Target::Doc(p, _) | Target::Asset(p) | Target::Folder(p) => {
+                        let shown = p.as_str().to_owned();
+                        let hidden = guard.hidden(&shown, false);
+                        (shown, hidden)
+                    }
+                    Target::Missing(p) => (p, true),
+                    Target::Web(_) | Target::Anchor(_) | Target::Outside => continue,
+                };
+                if !outgoing.contains(&found) {
+                    outgoing.push(found);
+                }
+            }
+        }
+        if let Some(map) = answer.as_object_mut() {
+            map.insert(
+                "links_in".to_owned(),
+                json!({
+                    "total": incoming.len(),
+                    "paths": incoming.iter().take(MAX_LINKS).collect::<Vec<_>>(),
+                }),
+            );
+            let targets: Vec<Value> = outgoing
+                .iter()
+                .take(MAX_LINKS)
+                .map(|(p, missing)| {
+                    if *missing {
+                        json!({ "path": p, "missing": true })
+                    } else {
+                        json!({ "path": p })
+                    }
+                })
+                .collect();
+            map.insert(
+                "links_out".to_owned(),
+                json!({ "total": outgoing.len(), "targets": targets }),
+            );
+        }
     }
 
     fn read(&self, raw: Value, guard: &Guard) -> Result<Value, ToolError> {
@@ -598,7 +746,47 @@ impl Tools {
     }
 }
 
-fn read_text(abs: &Path) -> Result<String, ToolError> {
+/// Trims a search answer to `budget` tokens (the core estimator over its text): fewer hits first, then shorter
+/// snippets. The answer says it was trimmed and how many hits went.
+pub(crate) fn fit_budget(answer: &mut Value, budget: u64) {
+    let size =
+        |a: &Value| permark_core::tokens::estimate(&crate::render::render_at("search", a, 0));
+    if size(answer) <= budget {
+        return;
+    }
+    let total = answer["hits"].as_array().map_or(0, Vec::len);
+    // the marks count against the budget too
+    let mark = |answer: &mut Value| {
+        let left = answer["hits"].as_array().map_or(0, Vec::len);
+        answer["trimmed"] = json!(true);
+        answer["budget"] = json!(budget);
+        answer["dropped"] = json!(total - left);
+    };
+    mark(answer);
+    while size(answer) > budget && answer["hits"].as_array().is_some_and(|h| h.len() > 1) {
+        if let Some(hits) = answer["hits"].as_array_mut() {
+            hits.pop();
+        }
+        mark(answer);
+    }
+    for keep in [120_usize, 60, 30] {
+        if size(answer) <= budget {
+            break;
+        }
+        if let Some(hits) = answer["hits"].as_array_mut() {
+            for hit in hits {
+                if let Some(snippet) = hit["snippet"].as_str() {
+                    if snippet.chars().count() > keep {
+                        let short: String = snippet.chars().take(keep).collect();
+                        hit["snippet"] = json!(format!("{short}…"));
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn read_text(abs: &Path) -> Result<String, ToolError> {
     match fsx::read_text(abs, MAX_READ_BYTES) {
         Ok(decoded) => Ok(decoded.text),
         Err(fsx::FsxError::TooLarge { .. }) => Err(ToolError::Invalid("too large".to_owned())),

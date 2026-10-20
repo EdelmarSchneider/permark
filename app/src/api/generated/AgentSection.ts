@@ -7,4 +7,4 @@ export type AgentSection = { headingPath: Array<string>,
 /**
  * 1-based, both included.
  */
-lines: [number, number] | null, };
+lines?: [number, number] | null, };

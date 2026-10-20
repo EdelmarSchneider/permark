@@ -93,9 +93,9 @@ fn agent() -> Result<Agent, String> {
 
 /// `permark mcp`: standard output carries protocol messages only; a failure goes to standard error.
 #[must_use]
-pub fn mcp() -> ExitCode {
+pub fn mcp(structured: bool) -> ExitCode {
     let outcome = agent().and_then(|agent| {
-        permark_plugin_agent::mcp::run_stdio(Arc::new(agent)).map_err(|e| e.to_string())
+        permark_plugin_agent::mcp::run_stdio(Arc::new(agent), structured).map_err(|e| e.to_string())
     });
     match outcome {
         Ok(()) => ExitCode::SUCCESS,

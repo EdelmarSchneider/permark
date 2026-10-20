@@ -3,8 +3,8 @@
 /**
  * The text the person selected.
  */
-export type AgentSelection = { text: string, lines: [number, number] | null, 
+export type AgentSelection = { text: string, lines?: [number, number] | null, 
 /**
  * The text was longer than the limit and was cut.
  */
-cut: boolean, };
+cut?: boolean, };

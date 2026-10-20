@@ -10,4 +10,4 @@ export type AgentWindowContext = {
 /**
  * Project path of the open document.
  */
-doc: string | null, mode: AgentMode, section: AgentSection | null, selection: AgentSelection | null, unsaved: boolean, };
+doc?: string | null, mode: AgentMode, section?: AgentSection | null, selection?: AgentSelection | null, unsaved?: boolean, };

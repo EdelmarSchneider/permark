@@ -11,12 +11,20 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+#[cfg(test)]
+mod aids_tests;
+#[cfg(test)]
+mod budget_tests;
 pub mod cli;
 pub mod context;
+pub mod format;
 pub mod guard;
+pub mod handoff;
 pub mod live;
+pub mod map;
 pub mod mcp;
 pub mod perms;
+pub mod render;
 pub mod server;
 pub mod structure;
 #[cfg(test)]
@@ -163,6 +171,7 @@ impl Plugin for AgentPlugin {
         &self.manifest
     }
 
+    #[allow(clippy::too_many_lines)] // one registration per method the window calls
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let (Some(project), CxWorkspace::Project(vault), Some(store)) =
             (cx.project(), &cx.workspace, cx.store())
@@ -236,12 +245,40 @@ impl Plugin for AgentPlugin {
                 if perms::load(h.tools.store()).enabled
                     && local.location() == StateLocation::Project
                 {
-                    let shared = l.context().sanitize(&h.tools.guard_now());
-                    if let Ok(bytes) = serde_json::to_vec_pretty(&shared) {
-                        let _ = local.raw_file(CONTEXT_FILE).write(&bytes);
+                    // compact, no empty fields, versioned like the agent's text answers
+                    let guard = h.tools.guard_now();
+                    if let Ok((shared, open)) = h.tools.context(&guard) {
+                        let mut value = serde_json::to_value(&shared).unwrap_or_default();
+                        if let Some(map) = value.as_object_mut() {
+                            map.insert("v".to_owned(), serde_json::json!(1));
+                            if open > 0 {
+                                map.insert("openComments".to_owned(), serde_json::json!(open));
+                            }
+                        }
+                        if let Ok(bytes) = serde_json::to_vec(&value) {
+                            let _ = local.raw_file(CONTEXT_FILE).write(&bytes);
+                        }
                     }
                 }
                 Ok(())
+            }),
+        ));
+        // the hand-off: the dialog's content, then the confirm that freezes the package and sets the checkpoint
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "handOffPreview",
+            typed(move |args: handoff::PreviewArgs, _| {
+                let guard = h.tools.guard_now();
+                Ok(handoff::preview(&h.tools, &guard, args.checked.as_deref()))
+            }),
+        ));
+        let h = Arc::clone(&hub);
+        registrations.extend(cx.rpc(
+            "handOffConfirm",
+            typed(move |args: handoff::ConfirmArgs, _| {
+                let guard = h.tools.guard_now();
+                handoff::confirm(&h.tools, &guard, args.upto, &args.checked)
+                    .map_err(|e| IpcError::new(ErrorKind::Unavailable).detail(e.to_string()))
             }),
         ));
         // a store copy (Microsoft Store alias, snap command) is started as `permark`: its own path changes per version

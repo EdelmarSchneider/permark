@@ -35,7 +35,13 @@ pub enum Mode {
 pub struct Section {
     pub heading_path: Vec<String>,
     /// 1-based, both included.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lines: Option<(u32, u32)>,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde hands the field by reference
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// The text the person selected.
@@ -44,9 +50,10 @@ pub struct Section {
 #[ts(export, rename = "AgentSelection")]
 pub struct Selection {
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lines: Option<(u32, u32)>,
     /// The text was longer than the limit and was cut.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub cut: bool,
 }
 
@@ -56,12 +63,15 @@ pub struct Selection {
 #[ts(export, rename = "AgentWindowContext")]
 pub struct WindowContext {
     /// Project path of the open document.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doc: Option<String>,
     #[serde(default)]
     pub mode: Mode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub section: Option<Section>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<Selection>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub unsaved: bool,
 }
 
@@ -126,8 +136,8 @@ impl WindowContext {
         }
     }
 
-    /// One line for a prompt hook: `Viewing docs/plan.md › Rollout (lines 40-62), selected (lines 44-46): '...'.`
-    /// `None` when no document is open.
+    /// One line for a prompt hook: `Viewing docs/plan.md › Rollout (lines 40-62), selected (lines 44-46): "...";
+    /// 2 open comments.` (the selection as a JSON string). `None` when no document is open.
     #[must_use]
     pub fn summary(&self, open_comments: usize) -> Option<String> {
         let doc = self.doc.as_deref()?;
@@ -151,19 +161,21 @@ impl WindowContext {
                 let _ = write!(line, " (lines {a}-{b})");
             }
             let (quote, cut) = cut_chars(&one_line(&selection.text), SUMMARY_QUOTE_CHARS);
-            let _ = write!(line, ": '{quote}{}'", if cut { "…" } else { "" });
+            let quoted =
+                serde_json::Value::String(format!("{quote}{}", if cut { "…" } else { "" }));
+            let _ = write!(line, ": {quoted}");
         }
         if self.unsaved {
-            line.push_str(" (unsaved edits)");
+            line.push_str(", unsaved");
         }
-        line.push('.');
         if open_comments > 0 {
             let _ = write!(
                 line,
-                " {open_comments} open comment{} (list_comments).",
+                "; {open_comments} open comment{}",
                 if open_comments == 1 { "" } else { "s" }
             );
         }
+        line.push('.');
         Some(line)
     }
 }

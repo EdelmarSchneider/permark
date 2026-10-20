@@ -18,11 +18,11 @@ fn main() -> ExitCode {
             }
         },
         #[cfg(feature = "plugin-agent")]
-        Cli::Mcp => permark_lib::agent::mcp(),
+        Cli::Mcp { structured } => permark_lib::agent::mcp(structured),
         #[cfg(feature = "plugin-agent")]
         Cli::Context => permark_lib::agent::context(),
         #[cfg(not(feature = "plugin-agent"))]
-        Cli::Mcp | Cli::Context => {
+        Cli::Mcp { .. } | Cli::Context => {
             eprintln!("PerMark: this build has no agent connection.");
             ExitCode::from(2)
         }

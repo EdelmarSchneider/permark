@@ -112,6 +112,12 @@ impl Agent {
         self.project.as_ref().map(|p| &p.root)
     }
 
+    /// The name the client gave.
+    #[must_use]
+    pub fn client(&self) -> String {
+        lock(&self.client).clone()
+    }
+
     /// The client said who it is: open a session with the app (it shows the agent as connected) when it listens.
     pub fn hello(&self, client: &str) {
         client.clone_into(&mut lock(&self.client));
