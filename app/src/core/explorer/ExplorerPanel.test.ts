@@ -24,7 +24,7 @@ let mounted: (() => void)[] = [];
 
 async function render(link: LinkUpdate = "never", more: string[] = []): Promise<Fx> {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   for (const path of more) api.probe.project.add(path, "x");
   const failures: unknown[] = [];
   const notes: string[] = [];
@@ -123,7 +123,7 @@ describe("the list", () => {
     const api = createMockApi();
     for (let n = 0; n < 3000; n++)
       api.probe.project.add(`bulk/f${String(n).padStart(4, "0")}.md`, "x");
-    await api.openPath(MOCK_FOLDER, "thisWindow");
+    await api.openPath(MOCK_FOLDER, "thisTab");
     const store = new ExplorerStore(api, {
       fail: () => {},
       note: () => {},
@@ -605,7 +605,7 @@ describe("filter popover", () => {
 describe("states", () => {
   it("says so when there is nothing to show and when loading failed", async () => {
     const api = createMockApi();
-    await api.openPath(MOCK_FOLDER, "thisWindow");
+    await api.openPath(MOCK_FOLDER, "thisTab");
     const store = new ExplorerStore(
       {
         ...api,

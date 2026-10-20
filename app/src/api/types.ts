@@ -29,7 +29,6 @@ import type { PluginKind } from "./generated/PluginKind";
 import type { PluginInfo } from "./generated/PluginInfo";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
-import type { WorkspaceCloseRequested } from "./generated/WorkspaceCloseRequested";
 import type { DeleteOutcome } from "./generated/DeleteOutcome";
 import type { Body } from "./generated/Body";
 import type { ConfigEdit } from "./generated/ConfigEdit";
@@ -90,8 +89,15 @@ import type { TreeSnapshot } from "./generated/TreeSnapshot";
 import type { UndoOutcome } from "./generated/UndoOutcome";
 import type { WindowChanged } from "./generated/WindowChanged";
 import type { WorkspaceId } from "./generated/WorkspaceId";
-import type { WorkspacesChanged } from "./generated/WorkspacesChanged";
-import type { WorkspaceSummary } from "./generated/WorkspaceSummary";
+import type { WindowsChanged } from "./generated/WindowsChanged";
+import type { WindowSummary } from "./generated/WindowSummary";
+import type { TabSummary } from "./generated/TabSummary";
+import type { TabId } from "./generated/TabId";
+import type { ClosingTab } from "./generated/ClosingTab";
+import type { CloseAnswer } from "./generated/CloseAnswer";
+import type { BarTheme } from "./generated/BarTheme";
+import type { ViewRequest } from "./generated/ViewRequest";
+import type { ViewMoved } from "./generated/ViewMoved";
 import type { Basis } from "./generated/Basis";
 import type { BaselineKind } from "./generated/BaselineKind";
 import type { FeedItem } from "./generated/FeedItem";
@@ -159,7 +165,10 @@ export type {
   PluginKind,
   ProjectSettingChange,
   ProjectSettings,
-  WorkspaceCloseRequested,
+  ViewRequest,
+  ClosingTab,
+  CloseAnswer,
+  BarTheme,
   ConfigEdit,
   ConfigEdited,
   EditSource,
@@ -211,7 +220,9 @@ export type {
   TreeSnapshot,
   UndoOutcome,
   WorkspaceId,
-  WorkspaceSummary,
+  WindowSummary,
+  TabSummary,
+  TabId,
 };
 export type { Added } from "./generated/Added";
 export type { GitBackendPref } from "./generated/GitBackendPref";
@@ -261,9 +272,12 @@ export interface Commands {
   open_path: { args: { path: string; placement: OpenPlacement }; result: OpenOutcome };
   open_notes: { args: { placement: OpenPlacement }; result: OpenOutcome };
   open_in_project: { args: { path: string }; result: null };
-  show_welcome: { args: Record<string, never>; result: null };
-  list_workspaces: { args: Record<string, never>; result: WorkspaceSummary[] };
+  list_windows: { args: Record<string, never>; result: WindowSummary[] };
   focus_workspace: { args: { id: WorkspaceId }; result: null };
+  tab_activate: { args: { tab: TabId }; result: null };
+  tab_close: { args: { tab: TabId }; result: null };
+  tab_close_confirmed: { args: Record<string, never>; result: null };
+  tab_move_new_window: { args: { tab: TabId }; result: string };
   recent_list: { args: Record<string, never>; result: RecentFolder[] };
   recent_remove: { args: { path: string }; result: null };
   settings_get: { args: Record<string, never>; result: AppSettings };
@@ -348,8 +362,12 @@ export interface Commands {
   plugins_list: { args: Record<string, never>; result: PluginInfo[] };
   plugin_set_project: { args: { plugin: string; enabled: boolean | null }; result: null };
   plugin_remove_data: { args: { plugin: string }; result: null };
-  workspace_close: { args: { id: WorkspaceId }; result: null };
   window_close: { args: Record<string, never>; result: null };
+  window_close_answer: { args: { answer: CloseAnswer }; result: null };
+  view_saved: { args: { saved: boolean }; result: null };
+  view_ready: { args: Record<string, never>; result: null };
+  view_set_title: { args: { title: string }; result: null };
+  view_set_theme: { args: { theme: BarTheme | null }; result: null };
   default_app_get: { args: Record<string, never>; result: DefaultAppView };
   default_app_set: { args: { group: FileGroup; on: boolean }; result: DefaultAppView };
   default_app_asked: { args: Record<string, never>; result: null };
@@ -631,14 +649,16 @@ export const COMMANDS_MATCH_BACKEND: Exact<keyof Commands, CommandName> = true;
 export interface Events {
   "window-changed": WindowChanged;
   "context-changed": ContextChanged;
-  "workspaces-changed": WorkspacesChanged;
+  "windows-changed": WindowsChanged;
   "settings-changed": SettingsChanged;
   "state-recovered": StateRecovered;
   "open-failed": OpenFailed;
   "tree-changed": TreeChanged;
   "document-changed": DocumentChanged;
   "close-requested": CloseRequested;
-  "workspace-close-requested": WorkspaceCloseRequested;
+  "tab-close-requested": ViewRequest;
+  "save-requested": ViewRequest;
+  "view-moved": ViewMoved;
   "plugins-changed": null;
   "index-progress": IndexProgress;
   "import-progress": ImportProgress;
@@ -663,14 +683,22 @@ export type DropEvent =
 export interface Api {
   appInfo(): Promise<Result<AppInfo>>;
   windowBoot(): Promise<Result<BootInfo>>;
+  /** Opens a folder | file where it is already (one place), else by `placement`. */
   openPath(path: string, placement: OpenPlacement): Promise<Result<OpenOutcome>>;
-  /** Shows the Notes in this window (or a new one, or asks first). */
+  /** Opens the Notes (a tab; where they are already, else by `placement`). */
   openNotes(placement: OpenPlacement): Promise<Result<OpenOutcome>>;
-  /** Opens the project that holds a file in a window of its own, showing the file. */
+  /** Opens the project that holds a file (a new tab of this window), showing the file. */
   openInProject(path: string): Promise<Result<null>>;
-  showWelcome(): Promise<Result<null>>;
-  listWorkspaces(): Promise<Result<WorkspaceSummary[]>>;
+  /** Every window with its tabs (this view shows its own window's). */
+  listWindows(): Promise<Result<WindowSummary[]>>;
   focusWorkspace(id: WorkspaceId): Promise<Result<null>>;
+  tabActivate(tab: TabId): Promise<Result<null>>;
+  /** Closes a tab (its view asks first when it holds unsaved edits: `tab-close-requested`). */
+  tabClose(tab: TabId): Promise<Result<null>>;
+  /** The unsaved prompt of this view's tab let it go: the tab closes. */
+  tabCloseConfirmed(): Promise<Result<null>>;
+  /** Moves a tab into a new window (its label). */
+  tabMoveNewWindow(tab: TabId): Promise<Result<string>>;
   recentList(): Promise<Result<RecentFolder[]>>;
   recentRemove(path: string): Promise<Result<null>>;
   settingsGet(): Promise<Result<AppSettings>>;
@@ -808,10 +836,12 @@ export interface Api {
   pluginSetProject(plugin: string, enabled: boolean | null): Promise<Result<null>>;
   /** Deletes what a plugin keeps; refused while it is on. */
   pluginRemoveData(plugin: string): Promise<Result<null>>;
-  /** Asks every window that shows the workspace to close it. */
-  workspaceClose(id: WorkspaceId): Promise<Result<null>>;
-  /** Closes this window for real (after the unsaved prompt). */
+  /** Asks this window to close (one prompt when tabs hold unsaved edits: `close-requested`). */
   windowClose(): Promise<Result<null>>;
+  /** The answer to the window close prompt. */
+  windowCloseAnswer(answer: CloseAnswer): Promise<Result<null>>;
+  /** This view answered `save-requested`. */
+  viewSaved(saved: boolean): Promise<Result<null>>;
   /** URL the webview loads a picture | sound | video of a workspace from. `version`: changes when the file does. */
   assetUrl(workspace: WorkspaceId, path: string, version: string | null): string;
   /** Listens to a backend event. Resolves to teardown. */
@@ -824,9 +854,10 @@ export interface Api {
   pickFile(title: string, filterName: string, anyFile?: boolean): Promise<string | null>;
   /** Pictures chosen in the system's file dialog (PNG, JPG, GIF, WebP, SVG); absolute paths, none when cancelled. */
   pickPictures(title: string, filterName: string): Promise<string[]>;
+  /** The window title this view wants (set while it is the tab on screen). */
   setTitle(title: string): Promise<void>;
   /** The native title bar follows the theme (`null`: the system's). */
   setWindowTheme(theme: "light" | "dark" | null): Promise<void>;
-  /** Shows the window (created hidden: first paint already themed). */
+  /** This view painted its first frame (a window made hidden shows with it). */
   showWindow(): Promise<Result<void>>;
 }

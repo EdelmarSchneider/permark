@@ -17,7 +17,7 @@ type Fx = {
 
 async function setup(link: LinkUpdate = "ask", wrap?: (api: Mock) => Api): Promise<Fx> {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   let setting = link;
   const failures: ApiError[] = [];
   const notes: string[] = [];
@@ -78,7 +78,7 @@ describe("loading", () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     const api = createMockApi();
-    await api.openPath(MOCK_FOLDER, "thisWindow");
+    await api.openPath(MOCK_FOLDER, "thisTab");
     const slow: Api = {
       ...api,
       treeOpen: async (filter) => {
@@ -530,7 +530,7 @@ describe("the filter", () => {
 /** A project with `code` more code files than the mock's seed, in an Explorer that has not started yet. */
 async function codeProject(code: number) {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   for (let i = 0; i < code; i++) api.probe.project.add(`src/part${i}.ts`, "export {};");
   const host: ExplorerHost = {
     fail: () => {},

@@ -47,7 +47,7 @@ function page(): { view: DocumentView; text: Text; other: Text } {
 
 async function setup(shown: { path: string | null; view: DocumentView | null }) {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   vi.spyOn(documents, "path", "get").mockReturnValue(shown.path);
   vi.spyOn(documents, "view", "get").mockReturnValue(shown.view);
   const notes: string[] = [];

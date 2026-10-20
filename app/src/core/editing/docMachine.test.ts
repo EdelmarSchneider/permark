@@ -48,6 +48,7 @@ const EVENTS: DocEvent[] = [
   { e: "keepMine" },
   { e: "saveAsNew" },
   { e: "leave", leave: { kind: "document", path: "b.md" } },
+  { e: "saveAndLeave", leave: { kind: "window" } },
   { e: "discard" },
   { e: "keepEditing" },
 ];
@@ -55,6 +56,38 @@ const EVENTS: DocEvent[] = [
 const types = (effects: Effect[]) => effects.map((e) => e.type);
 
 describe("document machine", () => {
+  it("save and leave (the window prompt's Save all): saves without a prompt, never over a conflict", () => {
+    const leave = { kind: "window" } as const;
+    for (const policy of [explicit, auto]) {
+      const dirty = transition({ s: "dirty", base }, { e: "saveAndLeave", leave }, policy);
+      expect(dirty.state).toMatchObject({ s: "saving", then: leave });
+      expect(types(dirty.effects)).toContain("save");
+      const failed = transition(
+        { s: "saveError", base, error: "io" },
+        { e: "saveAndLeave", leave },
+        policy,
+      );
+      expect(failed.state).toMatchObject({ s: "saving", then: leave });
+      const conflict = transition(
+        { s: "conflict", base, disk: "h9" },
+        { e: "saveAndLeave", leave },
+        policy,
+      );
+      expect(conflict.state.s).toBe("conflict");
+      expect(conflict.effects).toEqual([]);
+      const clean = transition({ s: "clean", base }, { e: "saveAndLeave", leave }, policy);
+      expect(clean.state.s).toBe("closed");
+      expect(types(clean.effects)).toEqual(["leave"]);
+      // saved meanwhile: leaves once on disk
+      const saving = transition(
+        { s: "saving", base, then: null, editedSince: false },
+        { e: "saveAndLeave", leave },
+        policy,
+      );
+      expect(saving.state).toMatchObject({ s: "saving", then: leave });
+    }
+  });
+
   it("answers every state x event pair with a state, under both policies", () => {
     for (const policy of [explicit, auto]) {
       for (const state of STATES) {

@@ -24,9 +24,9 @@
     { value: "never", label: "settings.linkNever" },
   ];
   const OPEN_IN: { value: OpenIn; label: MessageKey }[] = [
-    { value: "ask", label: "settings.openInAsk" },
+    { value: "tab", label: "settings.openInTab" },
     { value: "this", label: "settings.openInThis" },
-    { value: "new", label: "settings.openInNew" },
+    { value: "window", label: "settings.openInNew" },
   ];
 
   let templateProblem = $state<ApiError | null>(null);

@@ -18,7 +18,7 @@ export function installWindowKeys(
     commands: contributions.of("command"),
     context: conditions.current,
     typing: isTypingTarget(event.target),
-    modal: ui.modal,
+    overlay: ui.overlay,
   }));
   return () => {
     stop();

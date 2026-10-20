@@ -1,10 +1,10 @@
-//! Window system glue: create windows, put them where they were, read their geometry, focus them.
+//! Native windows: create them (no webview of their own: each tab is a child webview, `views.rs`), put them where
+//! they were, read their geometry, focus them.
 
 use permark_core::session::{cascade, place, to_save, Geometry, Limits, Rect, Screen};
-use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder,
-};
+use permark_core::workspace::WindowKind;
+use tauri::window::WindowBuilder;
+use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Window};
 
 use crate::shell::{state, Shell};
 
@@ -12,21 +12,17 @@ pub const MAIN: &str = "main";
 /// Smallest content area (logical px).
 const MIN_SIZE: (f64, f64) = (900.0, 600.0);
 
-/// A hidden window (its frontend shows it after the first paint), in the registry; its first normal geometry is the
-/// one it got. Its web view keeps its data in PerMark's own cache folder (Windows, Linux; debug builds in the
-/// `PerMark-dev` one), never in a folder named after the app identifier: a development build and an installed
-/// PerMark never share it.
-fn build(handle: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
-    let builder = WebviewWindowBuilder::new(handle, label, WebviewUrl::App("index.html".into()))
+/// A hidden work window (shown when its first view has painted), in the registry; its first normal geometry is the
+/// one it got. Not on the main thread (its views are made with a round trip to it).
+fn build(handle: &AppHandle, label: &str) -> tauri::Result<Window> {
+    let window = WindowBuilder::new(handle, label)
         .title("PerMark")
         .inner_size(1280.0, 800.0)
         .min_inner_size(MIN_SIZE.0, MIN_SIZE.1)
-        .visible(false);
-    #[cfg(not(target_os = "macos"))]
-    let builder = builder.data_directory(state(handle).env.dirs.cache.join("webview"));
-    let window = builder.build()?;
+        .visible(false)
+        .build()?;
     let shell = state(handle);
-    shell.registry.add_window(label);
+    shell.registry.add_window(label, WindowKind::Work);
     if let Some(geometry) = current(&window) {
         shell.remember_normal(label, geometry);
     }
@@ -37,15 +33,15 @@ fn build(handle: &AppHandle, label: &str) -> tauri::Result<WebviewWindow> {
 ///
 /// # Errors
 /// Window creation failure.
-pub fn create_main(handle: &AppHandle) -> tauri::Result<()> {
-    build(handle, MAIN).map(|_| ())
+pub fn create_main(handle: &AppHandle) -> tauri::Result<Window> {
+    build(handle, MAIN)
 }
 
-/// New hidden window (shown by its frontend after first paint, like `main`), cascaded from the focused | newest one.
+/// New hidden window, cascaded from the focused | newest one.
 ///
 /// # Errors
 /// Window creation failure.
-pub fn create(handle: &AppHandle) -> tauri::Result<WebviewWindow> {
+pub fn create(handle: &AppHandle) -> tauri::Result<Window> {
     create_at(handle, None)
 }
 
@@ -54,7 +50,7 @@ pub fn create(handle: &AppHandle) -> tauri::Result<WebviewWindow> {
 ///
 /// # Errors
 /// Window creation failure.
-pub fn create_at(handle: &AppHandle, saved: Option<&Geometry>) -> tauri::Result<WebviewWindow> {
+pub fn create_at(handle: &AppHandle, saved: Option<&Geometry>) -> tauri::Result<Window> {
     let shell = state(handle);
     // read before the new window exists (it may take the focus)
     let source = saved.copied().or_else(|| cascade_source(handle, &shell));
@@ -70,25 +66,19 @@ pub fn create_at(handle: &AppHandle, saved: Option<&Geometry>) -> tauri::Result<
     Ok(window)
 }
 
-/// Geometry of the window a new one cascades from: the focused one, else the newest.
+/// Geometry of the window a new one cascades from: the focused one, else the one focused last.
 fn cascade_source(handle: &AppHandle, shell: &Shell) -> Option<Geometry> {
     let focused = handle
-        .webview_windows()
+        .windows()
         .into_values()
         .find(|w| w.is_focused().unwrap_or(false))
         .map(|w| w.label().to_owned());
-    let label = focused.or_else(|| {
-        shell
-            .registry
-            .session_windows()
-            .last()
-            .map(|(label, _)| label.clone())
-    })?;
+    let label = focused.or_else(|| shell.registry.last_focused_work())?;
     geometry(handle, &label, shell)
 }
 
 /// Screens as `place` sees them.
-fn screens(window: &WebviewWindow) -> Vec<Screen> {
+fn screens(window: &Window) -> Vec<Screen> {
     let primary = window
         .primary_monitor()
         .ok()
@@ -115,7 +105,7 @@ fn screens(window: &WebviewWindow) -> Vec<Screen> {
 }
 
 /// Window system demands of `window`: min content size, what its frame + title bar add (logical px).
-fn limits(window: &WebviewWindow) -> Limits {
+fn limits(window: &Window) -> Limits {
     let scale = window.scale_factor().unwrap_or(1.0);
     let frame = match (window.outer_size(), window.inner_size()) {
         (Ok(outer), Ok(inner)) => (
@@ -133,7 +123,7 @@ fn limits(window: &WebviewWindow) -> Limits {
 /// Puts a window where `saved` says, clamped onto today's screens (off every screen -> centered on the primary).
 /// The placed rect is its normal geometry from now on: a maximized window's own Moved | Resized events arrive after
 /// `maximize` and are skipped, so without this it would save no geometry.
-pub fn restore(window: &WebviewWindow, saved: &Geometry) {
+pub fn restore(window: &Window, saved: &Geometry) {
     let Some(saved) = saved.sane() else {
         return;
     };
@@ -148,7 +138,7 @@ pub fn restore(window: &WebviewWindow, saved: &Geometry) {
     }
 }
 
-fn current(window: &WebviewWindow) -> Option<Geometry> {
+fn current(window: &Window) -> Option<Geometry> {
     let position = window.outer_position().ok()?;
     let size = window.inner_size().ok()?;
     Some(Geometry {
@@ -163,7 +153,7 @@ fn current(window: &WebviewWindow) -> Option<Geometry> {
 
 /// Geometry to save: maximized | minimized windows keep their last normal size + position (see [`to_save`]).
 pub fn geometry(handle: &AppHandle, label: &str, shell: &Shell) -> Option<Geometry> {
-    let window = handle.get_webview_window(label)?;
+    let window = handle.get_window(label)?;
     to_save(
         window.is_maximized().unwrap_or(false),
         window.is_minimized().unwrap_or(false),
@@ -174,7 +164,7 @@ pub fn geometry(handle: &AppHandle, label: &str, shell: &Shell) -> Option<Geomet
 
 /// Moved | resized: remember the normal geometry (never a maximized | minimized one).
 pub fn remember_geometry(handle: &AppHandle, label: &str) {
-    let Some(window) = handle.get_webview_window(label) else {
+    let Some(window) = handle.get_window(label) else {
         return;
     };
     if window.is_maximized().unwrap_or(false) || window.is_minimized().unwrap_or(false) {
@@ -185,10 +175,15 @@ pub fn remember_geometry(handle: &AppHandle, label: &str) {
     }
 }
 
-/// Brings a window forward.
+/// Brings a window forward (shown, unminimized, focused) with the view on screen focused.
 pub fn focus(handle: &AppHandle, label: &str) {
-    if let Some(window) = handle.get_webview_window(label) {
+    if let Some(window) = handle.get_window(label) {
         let _ = window.unminimize();
         let _ = window.set_focus();
+    }
+    if let Some(view) = state(handle).registry.shown_view(label) {
+        if let Some(webview) = handle.get_webview(&view) {
+            let _ = webview.set_focus();
+        }
     }
 }

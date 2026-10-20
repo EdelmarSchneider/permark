@@ -15,10 +15,9 @@ import {
   type ContributionInput,
   type ContributionRegistry,
 } from "../plugins/registry.svelte";
-import { closeOwnWorkspace } from "../shell/closeWorkspace";
+import { closeOwnTab } from "../shell/closeWorkspace";
 import { askInitHere } from "../shell/initProject";
-import { switcher } from "../shell/workspaceList.svelte";
-import { shownId } from "../shell/switcherModel";
+import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { stepChange } from "./changes";
@@ -53,6 +52,27 @@ function cycleWidth(): void {
   reading.setWidth(WIDTHS[(at + 1) % WIDTHS.length] ?? "comfortable");
 }
 
+/** `tab.select1..8` (Mod+1..8): tab n of this window; none there -> nothing. */
+const TAB_KEYS: readonly Spec[] = (
+  [
+    "cmd.tab1",
+    "cmd.tab2",
+    "cmd.tab3",
+    "cmd.tab4",
+    "cmd.tab5",
+    "cmd.tab6",
+    "cmd.tab7",
+    "cmd.tab8",
+  ] as const
+).map((label, at) => ({
+  id: `tab.select${at + 1}`,
+  label,
+  keys: [`Mod+${at + 1}`],
+  inPalette: false,
+  when: () => tabs.list.length > at,
+  run: () => tabs.select(at + 1),
+}));
+
 /** In registration order: the palette lists them so. */
 const SPECS: readonly Spec[] = [
   { id: "app.openFolder", label: "cmd.openFolder", keys: ["Mod+o"], run: () => store.openFolder() },
@@ -61,18 +81,27 @@ const SPECS: readonly Spec[] = [
   { id: "app.settingsPage", label: "cmd.settingsPage", run: () => ui.openSettingsPage() },
   { id: "app.keyboard", label: "cmd.keyboard", run: () => ui.openKeyboard() },
   {
-    id: "workspace.next",
-    label: "cmd.workspaceNext",
-    keys: ["Mod+Alt+ArrowRight"],
-    when: () => switcher.canSwitch,
-    run: () => switcher.focusNeighbor(1, shownId(store.view)),
+    id: "tab.next",
+    label: "cmd.tabNext",
+    keys: ["Ctrl+Tab", "Mod+Alt+ArrowRight"],
+    when: () => tabs.canSwitch,
+    run: () => tabs.step(1),
   },
   {
-    id: "workspace.previous",
-    label: "cmd.workspacePrevious",
-    keys: ["Mod+Alt+ArrowLeft"],
-    when: () => switcher.canSwitch,
-    run: () => switcher.focusNeighbor(-1, shownId(store.view)),
+    id: "tab.previous",
+    label: "cmd.tabPrevious",
+    keys: ["Ctrl+Shift+Tab", "Mod+Alt+ArrowLeft"],
+    when: () => tabs.canSwitch,
+    run: () => tabs.step(-1),
+  },
+  ...TAB_KEYS,
+  {
+    id: "tab.selectLast",
+    label: "cmd.tabLast",
+    keys: ["Mod+9"],
+    inPalette: false,
+    when: () => tabs.list.length > 0,
+    run: () => tabs.selectLast(),
   },
   {
     id: "project.init",
@@ -82,11 +111,11 @@ const SPECS: readonly Spec[] = [
     run: () => askInitHere(),
   },
   {
-    id: "app.closeWorkspace",
-    label: "cmd.closeFolder",
+    id: "tab.close",
+    label: "cmd.tabClose",
     keys: ["Mod+w"],
-    requires: READING,
-    run: () => closeOwnWorkspace(),
+    when: () => tabs.active !== null,
+    run: () => closeOwnTab(),
   },
   {
     id: "search.quickOpen",

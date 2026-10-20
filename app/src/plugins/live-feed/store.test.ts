@@ -22,7 +22,7 @@ const settle = async (): Promise<void> => {
 
 async function setup(shown: string | null = null) {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const store = new FeedStore(
     new PluginClient(api, () => MOCK_FOLDER),
     () => MOCK_FOLDER,

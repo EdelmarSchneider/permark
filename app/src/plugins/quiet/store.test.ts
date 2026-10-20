@@ -17,7 +17,7 @@ const settle = async (): Promise<void> => {
 
 async function setup() {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const store = new QuietStore(new PluginClient(api, () => MOCK_FOLDER), () => MOCK_FOLDER);
   const stop = store.start();
   await settle();
@@ -66,7 +66,7 @@ describe("the quiet store", () => {
 
   it("reads the marks of the project when it starts and follows the backend", async () => {
     const api = createMockApi();
-    await api.openPath(MOCK_FOLDER, "thisWindow");
+    await api.openPath(MOCK_FOLDER, "thisTab");
     await api.pluginCall("quiet.set", { paths: ["notes"], interest: "quiet" });
     const store = new QuietStore(new PluginClient(api, () => MOCK_FOLDER), () => MOCK_FOLDER);
     const stop = store.start();

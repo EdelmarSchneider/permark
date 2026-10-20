@@ -14,6 +14,7 @@ mod shell;
 mod sink;
 #[cfg(feature = "plugin-updates")]
 mod updater;
+mod views;
 mod web_pictures;
 mod windows;
 
@@ -22,7 +23,7 @@ use std::time::Duration;
 use permark_core::ipc_local::{self, Endpoint, IpcLocalError, Listening};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::state::AppDirs;
-use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri::{Manager, RunEvent, WindowEvent};
 
 pub use shell::Shell;
 
@@ -123,47 +124,49 @@ pub fn run(request: OpenRequest) -> Result<(), StartError> {
 fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) {
     let shell = shell::state(handle);
     match event {
-        WindowEvent::Moved(_) | WindowEvent::Resized(_) => {
+        WindowEvent::Moved(_) => {
             windows::remember_geometry(handle, label);
             shell.saver.poke();
         }
+        WindowEvent::Resized(size) => {
+            views::fit(handle, label, *size);
+            windows::remember_geometry(handle, label);
+            shell.saver.poke();
+        }
+        WindowEvent::Focused(true) => shell.registry.focused(label, open::now_ms()),
         WindowEvent::CloseRequested { api, .. } => {
-            // unsaved edits: the window asks the person first (`window_close` closes it for real)
-            if let Some(path) = shell
-                .registry
-                .workspace_of(label)
-                .and_then(|(_, workspace)| match &workspace {
-                    permark_core::workspace::Workspace::Project(core) => {
-                        core.documents().unsaved(label)
-                    }
-                    permark_core::workspace::Workspace::SingleFile(file) => {
-                        file.documents.unsaved(label)
-                    }
-                    permark_core::workspace::Workspace::Notes(core) => {
-                        core.documents().unsaved(label)
-                    }
-                })
-            {
-                api.prevent_close();
-                let _ = handle.emit_to(
-                    label,
-                    "close-requested",
-                    commands::CloseRequested {
-                        window: label.to_owned(),
-                        path,
-                    },
-                );
+            if shell.registry.is_closing(label) {
                 return;
             }
-            // last window: the session keeps it (saved now, frozen until exit)
-            if handle.webview_windows().len() <= 1 {
-                shell.save_session_now(handle);
-                shell.saver.freeze();
+            // unsaved edits in any tab: one prompt in the view on screen (the window closes once it is answered)
+            let outcome = shell.registry.request_close(label);
+            let closes = outcome
+                .changes
+                .iter()
+                .any(|c| matches!(c, permark_core::workspace::ViewChange::CloseWindow { .. }));
+            if closes {
+                // the last window: the session keeps it (saved now, frozen until exit)
+                if shell.registry.is_last_on_screen(label) {
+                    shell.save_session_now(handle);
+                    shell.saver.freeze();
+                }
+                return;
             }
+            api.prevent_close();
+            open::run(handle, outcome);
         }
         WindowEvent::Destroyed => {
+            let views: Vec<String> = shell
+                .registry
+                .views()
+                .into_iter()
+                .filter(|v| shell.registry.window_of(v).as_deref() == Some(label))
+                .collect();
             shell.registry.forget_window(label);
-            shell.window_gone(label);
+            for view in views {
+                views::forget(handle, &view);
+            }
+            views::forget_window(handle, label);
             shell.saver.poke();
         }
         _ => {}

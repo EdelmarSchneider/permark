@@ -11,7 +11,9 @@ use permark_core::ipc_local::{Listening, Server};
 use permark_core::open::{OpenAck, OpenRequest};
 use permark_core::paths::Root;
 use permark_core::plugins::{PluginId, ServiceLease};
-use permark_core::session::{app_session_file, AppSession, Geometry, RecentStore, SavedWindow};
+use permark_core::session::{
+    app_session_file, AppSession, Geometry, RecentStore, SavedNotes, SavedWindow,
+};
 use permark_core::settings::{
     installer_language, AppSettings, SettingChange, SettingsError, SettingsFile, SettingsScope,
 };
@@ -35,6 +37,8 @@ pub struct Shell {
     pub app_store: StateStore,
     pub recent: RecentStore,
     pub saver: SessionSaver,
+    /// The tab views: what each shows on screen, titles, close prompts.
+    pub views: crate::views::Views,
     settings_file: SettingsFile,
     /// One settings write at a time (windows race).
     settings_lock: Mutex<()>,
@@ -43,7 +47,7 @@ pub struct Shell {
     normal: Mutex<HashMap<String, Geometry>>,
     /// Startup notices, handed to the first window that boots.
     notices: Mutex<Vec<StateRecovered>>,
-    /// Open failures: emitted to windows whose frontend listens, kept for the others until they boot.
+    /// Open failures: emitted to views whose frontend listens, kept for the others until they boot.
     delivery: Mutex<Delivery>,
     server: Mutex<Option<Server>>,
     /// The updater's IO, handed to the plugin `updates` for the app's whole run.
@@ -116,6 +120,7 @@ impl Shell {
             registry: WorkspaceRegistry::new_shared(&env),
             recent: RecentStore::new(&app_store),
             saver: SessionSaver::start(handle),
+            views: crate::views::Views::default(),
             app_store,
             env,
             settings_file,
@@ -188,10 +193,10 @@ impl Shell {
         delivery.pending.remove(window).unwrap_or_default()
     }
 
-    pub fn window_gone(&self, window: &str) {
+    pub fn view_gone(&self, view: &str) {
         let mut delivery = lock(&self.delivery);
-        delivery.listening.remove(window);
-        delivery.pending.remove(window);
+        delivery.listening.remove(view);
+        delivery.pending.remove(view);
     }
 
     /// Loads the saved session (corrupt -> notice).
@@ -210,19 +215,27 @@ impl Shell {
         }
     }
 
-    /// Snapshot of windows (oldest first) + their geometry.
+    /// Snapshot of the work windows (creation order): geometry, tabs (pending ones as their ref), active tab.
     #[must_use]
     pub fn session_snapshot(&self, handle: &AppHandle) -> AppSession {
         let windows = self
             .registry
             .session_windows()
             .into_iter()
-            .map(|(label, workspace)| SavedWindow {
-                workspace,
-                geometry: crate::windows::geometry(handle, &label, self),
+            .map(|saved| SavedWindow {
+                geometry: crate::windows::geometry(handle, &saved.window, self),
+                tabs: saved.tabs,
+                active: saved.active,
             })
             .collect();
-        AppSession { windows }
+        AppSession {
+            windows,
+            // stage A: the Notes are a tab; no window of their own yet
+            notes: SavedNotes {
+                open: self.registry.notes_open(),
+                geometry: None,
+            },
+        }
     }
 
     pub fn save_session_now(&self, handle: &AppHandle) {

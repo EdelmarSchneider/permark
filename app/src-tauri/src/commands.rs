@@ -30,23 +30,30 @@ use permark_core::settings::{
 };
 use permark_core::tree::{TreeFilter, TreeSnapshot};
 use permark_core::workspace::{
-    ProjectCore, WindowView, Workspace, WorkspaceId, WorkspaceRef, WorkspaceSummary,
+    ProjectCore, TabId, WindowSummary, WindowView, Workspace, WorkspaceId, WorkspaceRef,
 };
 use permark_core::{AppInfo, ErrorKind, IpcError};
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, WebviewWindow};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Webview};
 use tauri_plugin_opener::OpenerExt;
 use ts_rs::TS;
 
-use crate::open::{open_in, open_in_new_window};
+use crate::open::{open_placed, OpenOutcome};
 use crate::shell::state;
+use crate::views::{BarTheme, CloseAnswer, ViewRequest};
+use permark_core::open::OpenPlacement;
 
-/// What a window needs to draw its first frame.
+/// What a view (one tab, or a window's Welcome) needs to draw its first frame.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct BootInfo {
+    /// The native window it lives in.
     pub window: String,
+    /// The view itself: events for it carry this label.
+    pub label: String,
+    /// Its tab (`None`: the window's Welcome view).
+    pub tab: Option<TabId>,
     pub view: WindowView,
     pub context: Context,
     pub settings: AppSettings,
@@ -54,25 +61,6 @@ pub struct BootInfo {
     /// Opens from outside that failed before this window could listen.
     pub failures: Vec<OpenFailed>,
     pub platform: Platform,
-}
-
-/// Event `close-requested`: the window was asked to close while it holds unsaved edits (the close waits).
-#[derive(Debug, Clone, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub struct CloseRequested {
-    pub window: String,
-    /// The document with the unsaved edits.
-    pub path: String,
-}
-
-/// Event `workspace-close-requested`: a window that shows a workspace is asked to close it (it runs its unsaved-changes
-/// prompt, then goes to Welcome; no window is closed).
-#[derive(Debug, Clone, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub struct WorkspaceCloseRequested {
-    pub window: String,
 }
 
 /// One plugin as the Plugins page shows it, for the invoking window.
@@ -91,26 +79,6 @@ pub struct PluginInfo {
     pub project_config_off: bool,
 }
 
-/// Where an open from the UI goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub enum OpenPlacement {
-    ThisWindow,
-    NewWindow,
-    /// This window if it shows nothing, else the UI asks first (`NeedsChoice`).
-    Ask,
-}
-
-#[derive(Debug, Clone, Serialize, TS)]
-#[serde(tag = "outcome", rename_all = "camelCase")]
-#[ts(export)]
-pub enum OpenOutcome {
-    Opened { view: WindowView },
-    NeedsChoice,
-    OpenedElsewhere { window: String },
-}
-
 /// Serializes project session writes (two windows on one project).
 static PROJECT_SESSION: Mutex<()> = Mutex::new(());
 
@@ -120,11 +88,15 @@ pub fn app_info() -> AppInfo {
 }
 
 #[tauri::command(async)]
-pub fn window_boot(handle: AppHandle, window: WebviewWindow) -> BootInfo {
+pub fn window_boot(handle: AppHandle, window: Webview) -> BootInfo {
     let shell = state(&handle);
     let label = window.label().to_owned();
-    shell.registry.add_window(&label);
     BootInfo {
+        window: shell
+            .registry
+            .window_of(&label)
+            .unwrap_or_else(|| window.window().label().to_owned()),
+        tab: shell.registry.place_of_view(&label).map(|p| p.tab),
         view: shell
             .registry
             .window_view(&label)
@@ -137,76 +109,42 @@ pub fn window_boot(handle: AppHandle, window: WebviewWindow) -> BootInfo {
         notices: shell.take_notices(),
         failures: shell.window_booted(&label),
         platform: Platform::current(),
-        window: label,
+        label,
     }
 }
 
+/// Opens a folder | file: where it is already (one place), else by `placement`.
 #[tauri::command(async)]
 pub fn open_path(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     placement: OpenPlacement,
 ) -> Result<OpenOutcome, IpcError> {
-    let label = window.label().to_owned();
     let reference = WorkspaceRef::classify(&PathBuf::from(&path))?;
-    open_reference(&handle, &label, reference, placement)
+    open_placed(&handle, window.label(), &reference, None, placement)
 }
 
-/// Opens `reference` in the window `label`, in a new window, or asks which (`placement`).
-fn open_reference(
-    handle: &AppHandle,
-    label: &str,
-    reference: WorkspaceRef,
-    placement: OpenPlacement,
-) -> Result<OpenOutcome, IpcError> {
-    let shell = state(handle);
-    let shown = shell.registry.workspace_of(label);
-    let placement = match placement {
-        OpenPlacement::Ask if shown.is_some() => return Ok(OpenOutcome::NeedsChoice),
-        OpenPlacement::Ask => OpenPlacement::ThisWindow,
-        other => other,
-    };
-    if placement == OpenPlacement::NewWindow {
-        let window = open_in_new_window(handle, &reference, None)
-            .ok_or_else(|| IpcError::new(ErrorKind::Internal).subject("window"))?;
-        return Ok(OpenOutcome::OpenedElsewhere { window });
-    }
-    // a file inside this window's project is shown in it
-    if let (WorkspaceRef::SingleFile(file), Some((_, Workspace::Project(core)))) =
-        (&reference, &shown)
-    {
-        if let Some(document) = core.vault().relativize(file) {
-            shell.registry.set_document(label, Some(document));
-            return Ok(opened(&shell, label));
-        }
-    }
-    open_in(handle, label, &reference, None, false)?;
-    Ok(opened(&shell, label))
-}
-
-/// Opens the Notes in this window (or a new one, or asks first when this window shows something).
+/// Opens the Notes (stage A: a tab like any workspace, in one place).
 #[tauri::command(async)]
 pub fn open_notes(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     placement: OpenPlacement,
 ) -> Result<OpenOutcome, IpcError> {
-    let shell = state(&handle);
-    let label = window.label().to_owned();
-    // already here: nothing to do (unless a window of its own was asked for)
-    if placement != OpenPlacement::NewWindow {
-        if let Some((_, Workspace::Notes(_))) = shell.registry.workspace_of(&label) {
-            return Ok(opened(&shell, &label));
-        }
-    }
-    open_reference(&handle, &label, WorkspaceRef::Notes, placement)
+    open_placed(
+        &handle,
+        window.label(),
+        &WorkspaceRef::Notes,
+        None,
+        placement,
+    )
 }
 
-/// Opens the project that holds `path` in a window of its own, showing that file: the deepest project opened lately
-/// that contains it, else the file's folder.
+/// Opens the project that holds `path`, showing that file: the deepest project opened lately that contains it, else
+/// the file's folder (a new tab of this window, or where it is already).
 #[tauri::command(async)]
-pub fn open_in_project(handle: AppHandle, path: String) -> Result<(), IpcError> {
+pub fn open_in_project(handle: AppHandle, window: Webview, path: String) -> Result<(), IpcError> {
     let shell = state(&handle);
     let file = PathBuf::from(&path);
     if !file.is_file() {
@@ -237,42 +175,83 @@ pub fn open_in_project(handle: AppHandle, path: String) -> Result<(), IpcError> 
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(path))?;
         (root, document)
     };
-    open_in_new_window(&handle, &WorkspaceRef::Project(root), Some(document))
-        .map(|_| ())
-        .ok_or_else(|| IpcError::new(ErrorKind::Internal).subject("window"))
+    open_placed(
+        &handle,
+        window.label(),
+        &WorkspaceRef::Project(root),
+        Some(document),
+        OpenPlacement::Tab,
+    )
+    .map(|_| ())
 }
 
-fn opened(shell: &crate::Shell, label: &str) -> OpenOutcome {
-    OpenOutcome::Opened {
-        view: shell
+/// Every window with its tabs (each view shows its own window's chips).
+#[tauri::command(async)]
+pub fn list_windows(handle: AppHandle) -> Vec<WindowSummary> {
+    state(&handle).registry.list_windows()
+}
+
+/// The window holding the workspace comes forward on its tab.
+#[tauri::command(async)]
+pub fn focus_workspace(handle: AppHandle, id: WorkspaceId) -> Result<(), IpcError> {
+    let place = state(&handle)
+        .registry
+        .place_of(id)
+        .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(id.0.to_string()))?;
+    crate::open::focus_place(&handle, &place, None);
+    Ok(())
+}
+
+/// Shows a tab of a window (a pending one loads).
+#[tauri::command(async)]
+pub fn tab_activate(handle: AppHandle, tab: TabId) {
+    let outcome = state(&handle).registry.activate(tab);
+    crate::open::run(&handle, outcome);
+}
+
+/// Closes a tab: at once when nothing is unsaved in it; else it comes forward and its view asks first
+/// (`tab-close-requested`, then `tab_close_confirmed`). The last tab leaves the window on the Welcome.
+#[tauri::command(async)]
+pub fn tab_close(handle: AppHandle, tab: TabId) {
+    let shell = state(&handle);
+    let unsaved_view = shell.registry.view_of_tab(tab).filter(|view| {
+        shell
             .registry
-            .window_view(label)
-            .unwrap_or(WindowView::Welcome),
+            .workspace_of(view)
+            .is_some_and(|(_, workspace)| workspace.documents().unsaved(view).is_some())
+    });
+    if let Some(view) = unsaved_view {
+        let outcome = shell.registry.activate(tab);
+        if outcome.refused {
+            // the window asks to close: its prompt covers this tab already
+            return;
+        }
+        crate::open::run(&handle, outcome);
+        let _ = handle.emit_to(
+            view.as_str(),
+            "tab-close-requested",
+            ViewRequest {
+                window: view.clone(),
+            },
+        );
+        return;
+    }
+    crate::open::run(&handle, shell.registry.close_tab(tab));
+}
+
+/// The unsaved prompt of this view's tab let it go: the tab closes.
+#[tauri::command(async)]
+pub fn tab_close_confirmed(handle: AppHandle, window: Webview) {
+    let shell = state(&handle);
+    if let Some(place) = shell.registry.place_of_view(window.label()) {
+        crate::open::run(&handle, shell.registry.close_tab(place.tab));
     }
 }
 
+/// Moves a tab to a new window (stage A: a new window only). Returns the new window's label.
 #[tauri::command(async)]
-pub fn show_welcome(handle: AppHandle, window: WebviewWindow) {
-    let shell = state(&handle);
-    shell.registry.show_welcome(window.label());
-    shell.saver.poke();
-}
-
-#[tauri::command(async)]
-pub fn list_workspaces(handle: AppHandle) -> Vec<WorkspaceSummary> {
-    state(&handle).registry.list()
-}
-
-#[tauri::command(async)]
-pub fn focus_workspace(handle: AppHandle, id: WorkspaceId) -> Result<(), IpcError> {
-    let window = state(&handle)
-        .registry
-        .windows_of(id)
-        .into_iter()
-        .next()
-        .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(id.0.to_string()))?;
-    crate::windows::focus(&handle, &window);
-    Ok(())
+pub fn tab_move_new_window(handle: AppHandle, tab: TabId) -> Result<String, IpcError> {
+    crate::open::move_to_new_window(&handle, tab)
 }
 
 #[tauri::command(async)]
@@ -305,7 +284,7 @@ fn project_session(handle: &AppHandle, label: &str) -> Result<ProjectSession, Ip
 #[tauri::command(async)]
 pub fn project_session_get(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     key: String,
 ) -> Result<Option<serde_json::Value>, IpcError> {
     Ok(project_session(&handle, window.label())?.get(&key)?)
@@ -314,7 +293,7 @@ pub fn project_session_get(
 #[tauri::command(async)]
 pub fn project_session_set(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     key: String,
     value: Option<serde_json::Value>,
 ) -> Result<(), IpcError> {
@@ -326,7 +305,7 @@ pub fn project_session_set(
 }
 
 /// The project the invoking window shows.
-fn project_of(handle: &AppHandle, window: &WebviewWindow) -> Result<Arc<ProjectCore>, IpcError> {
+fn project_of(handle: &AppHandle, window: &Webview) -> Result<Arc<ProjectCore>, IpcError> {
     match state(handle).registry.workspace_of(window.label()) {
         Some((_, Workspace::Project(core))) => Ok(core),
         _ => Err(IpcError::new(ErrorKind::Unsupported).subject("project")),
@@ -340,7 +319,7 @@ fn project_of(handle: &AppHandle, window: &WebviewWindow) -> Result<Arc<ProjectC
 #[tauri::command(async)]
 pub fn tree_open(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     filter: Option<TreeFilter>,
 ) -> Result<TreeSnapshot, IpcError> {
     Ok(project_of(&handle, &window)?
@@ -351,7 +330,7 @@ pub fn tree_open(
 #[tauri::command(async)]
 pub fn tree_set_filter(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     filter: TreeFilter,
 ) -> Result<TreeSnapshot, IpcError> {
     Ok(project_of(&handle, &window)?
@@ -361,11 +340,7 @@ pub fn tree_set_filter(
 
 /// Lists a folder left unopened (large | ignored).
 #[tauri::command(async)]
-pub fn tree_open_folder(
-    handle: AppHandle,
-    window: WebviewWindow,
-    path: String,
-) -> Result<(), IpcError> {
+pub fn tree_open_folder(handle: AppHandle, window: Webview, path: String) -> Result<(), IpcError> {
     Ok(project_of(&handle, &window)?
         .explorer()
         .open_folder(&path)?)
@@ -373,18 +348,14 @@ pub fn tree_open_folder(
 
 /// The open document stays in the tree even when the filter hides it.
 #[tauri::command(async)]
-pub fn tree_keep(
-    handle: AppHandle,
-    window: WebviewWindow,
-    path: Option<String>,
-) -> Result<(), IpcError> {
+pub fn tree_keep(handle: AppHandle, window: Webview, path: Option<String>) -> Result<(), IpcError> {
     Ok(project_of(&handle, &window)?
         .explorer()
         .keep(window.label(), path.as_deref())?)
 }
 
 #[tauri::command(async)]
-pub fn tree_close(handle: AppHandle, window: WebviewWindow) {
+pub fn tree_close(handle: AppHandle, window: Webview) {
     if let Ok(core) = project_of(&handle, &window) {
         core.explorer().close_view(window.label());
     }
@@ -395,7 +366,7 @@ pub fn tree_close(handle: AppHandle, window: WebviewWindow) {
 #[tauri::command(async)]
 pub fn fileops_plan_move(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     moves: Vec<MoveSpec>,
     update_links: bool,
 ) -> Result<MovePlan, IpcError> {
@@ -409,7 +380,7 @@ pub fn fileops_plan_move(
 #[tauri::command(async)]
 pub fn fileops_apply_move(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     plan_id: u64,
     update_links: bool,
 ) -> Result<MoveOutcome, IpcError> {
@@ -421,7 +392,7 @@ pub fn fileops_apply_move(
 #[tauri::command(async)]
 pub fn fileops_delete(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     paths: Vec<String>,
 ) -> Result<DeleteOutcome, IpcError> {
     Ok(project_of(&handle, &window)?.fileops().delete(&paths)?)
@@ -431,7 +402,7 @@ pub fn fileops_delete(
 #[tauri::command(async)]
 pub fn fileops_new(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     dir: String,
     name: String,
     kind: NewKind,
@@ -443,10 +414,7 @@ pub fn fileops_new(
 
 /// Takes the newest operation back; `None`: nothing to undo.
 #[tauri::command(async)]
-pub fn fileops_undo(
-    handle: AppHandle,
-    window: WebviewWindow,
-) -> Result<Option<UndoOutcome>, IpcError> {
+pub fn fileops_undo(handle: AppHandle, window: Webview) -> Result<Option<UndoOutcome>, IpcError> {
     Ok(project_of(&handle, &window)?.fileops().undo()?)
 }
 
@@ -456,7 +424,7 @@ pub fn fileops_undo(
 #[tauri::command(async)]
 pub fn fileops_import_plan(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     target: String,
     sources: Vec<String>,
 ) -> Result<ImportPlan, IpcError> {
@@ -469,7 +437,7 @@ pub fn fileops_import_plan(
 #[tauri::command(async)]
 pub fn fileops_import_apply(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     plan_id: u64,
     mode: ImportMode,
     conflicts: ConflictChoice,
@@ -487,7 +455,7 @@ pub fn fileops_import_apply(
 
 /// Stops a running import; what was finished stays. `true`: there was one.
 #[tauri::command(async)]
-pub fn fileops_import_cancel(handle: AppHandle, window: WebviewWindow, plan_id: u64) -> bool {
+pub fn fileops_import_cancel(handle: AppHandle, window: Webview, plan_id: u64) -> bool {
     project_of(&handle, &window).is_ok_and(|core| core.fileops().import_cancel(plan_id))
 }
 
@@ -495,11 +463,7 @@ pub fn fileops_import_cancel(handle: AppHandle, window: WebviewWindow, plan_id: 
 
 /// Absolute place of a project path ("copy full path").
 #[tauri::command(async)]
-pub fn file_abs_path(
-    handle: AppHandle,
-    window: WebviewWindow,
-    path: String,
-) -> Result<String, IpcError> {
+pub fn file_abs_path(handle: AppHandle, window: Webview, path: String) -> Result<String, IpcError> {
     // the Notes: a note in its folder, a loose file where it is
     if let Some((_, Workspace::Notes(core))) = state(&handle).registry.workspace_of(window.label())
     {
@@ -516,7 +480,7 @@ pub fn file_abs_path(
 #[tauri::command(async)]
 pub fn file_open_external(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     mode: OpenMode,
 ) -> Result<(), IpcError> {
@@ -552,7 +516,7 @@ pub fn file_open_external(
 #[tauri::command(async)]
 pub fn show_document(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: Option<String>,
 ) -> Result<(), IpcError> {
     let core = project_of(&handle, &window)?;
@@ -573,7 +537,7 @@ pub fn show_document(
 /// The workspace the invoking window shows, with the formats its plugins give.
 fn reading_of(
     handle: &AppHandle,
-    window: &WebviewWindow,
+    window: &Webview,
 ) -> Result<(Workspace, Arc<FormatRegistry>), IpcError> {
     let shell = state(handle);
     let (_, workspace) = shell
@@ -600,7 +564,7 @@ fn documents_of(workspace: &Workspace) -> &Arc<permark_core::document::Documents
 #[tauri::command(async)]
 pub fn document_open(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     known: Vec<String>,
 ) -> Result<DocumentView, IpcError> {
@@ -618,7 +582,7 @@ pub fn document_open(
 
 /// The window shows no document any more.
 #[tauri::command(async)]
-pub fn document_close(handle: AppHandle, window: WebviewWindow) {
+pub fn document_close(handle: AppHandle, window: Webview) {
     if let Some((_, workspace)) = state(&handle).registry.workspace_of(window.label()) {
         documents_of(&workspace).close(window.label());
         if let Workspace::Project(core) = &workspace {
@@ -629,11 +593,7 @@ pub fn document_close(handle: AppHandle, window: WebviewWindow) {
 
 /// The text of a document as read ("copy document").
 #[tauri::command(async)]
-pub fn document_text(
-    handle: AppHandle,
-    window: WebviewWindow,
-    path: String,
-) -> Result<String, IpcError> {
+pub fn document_text(handle: AppHandle, window: Webview, path: String) -> Result<String, IpcError> {
     let (workspace, _) = reading_of(&handle, &window)?;
     documents_of(&workspace).text(&path)
 }
@@ -642,7 +602,7 @@ pub fn document_text(
 #[tauri::command(async)]
 pub fn document_more(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     offset: u64,
     size: u64,
@@ -656,7 +616,7 @@ pub fn document_more(
 #[tauri::command(async)]
 pub fn link_resolve(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     doc: String,
     hrefs: Vec<String>,
 ) -> Result<Vec<LinkTarget>, IpcError> {
@@ -668,7 +628,7 @@ pub fn link_resolve(
 #[tauri::command(async)]
 pub fn code_refs_resolve(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     doc: String,
     written: Vec<String>,
 ) -> Result<Vec<Vec<String>>, IpcError> {
@@ -686,7 +646,7 @@ pub fn code_refs_resolve(
 #[tauri::command(async)]
 pub fn open_in_editor(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     line: Option<u32>,
     col: Option<u32>,
@@ -729,7 +689,7 @@ fn web_url_allowed(url: &str) -> bool {
 /// The editor of the invoking window's workspace.
 pub(crate) fn with_editor<R>(
     handle: &AppHandle,
-    window: &WebviewWindow,
+    window: &Webview,
     run: impl FnOnce(&Editor<'_>, &Workspace) -> Result<R, IpcError>,
 ) -> Result<R, IpcError> {
     let (workspace, formats) = reading_of(handle, window)?;
@@ -755,7 +715,7 @@ pub(crate) fn with_editor<R>(
 #[tauri::command(async)]
 pub fn edit_source(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
 ) -> Result<EditSource, IpcError> {
     with_editor(&handle, &window, |editor, _| editor.source(&path))
@@ -765,7 +725,7 @@ pub fn edit_source(
 #[tauri::command(async)]
 pub fn edit_segments(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     text: String,
 ) -> Result<Vec<Segment>, IpcError> {
     with_editor(&handle, &window, |editor, _| Ok(editor.segments(&text)))
@@ -775,7 +735,7 @@ pub fn edit_segments(
 #[tauri::command(async)]
 pub fn edit_save(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     seen_hash: String,
     edits: Vec<LineEdit>,
@@ -796,7 +756,7 @@ pub fn edit_save(
 #[tauri::command(async)]
 pub fn edit_save_as(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     text: String,
     exact: bool,
@@ -820,7 +780,7 @@ pub fn edit_save_as(
 #[tauri::command]
 pub async fn edit_write_asset(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     request: tauri::ipc::Request<'_>,
 ) -> Result<String, IpcError> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
@@ -864,7 +824,7 @@ pub fn remote_picture(url: String) -> Result<tauri::ipc::Response, IpcError> {
 
 /// Whether web pictures load by themselves in this window's project (kept in the profile only).
 #[tauri::command(async)]
-pub fn remote_pictures_get(handle: AppHandle, window: WebviewWindow) -> Result<bool, IpcError> {
+pub fn remote_pictures_get(handle: AppHandle, window: Webview) -> Result<bool, IpcError> {
     Ok(crate::web_pictures::always(&*project_of(&handle, &window)?))
 }
 
@@ -872,7 +832,7 @@ pub fn remote_pictures_get(handle: AppHandle, window: WebviewWindow) -> Result<b
 #[tauri::command(async)]
 pub fn remote_pictures_set(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     always: bool,
 ) -> Result<(), IpcError> {
     crate::web_pictures::set_always(&*project_of(&handle, &window)?, always)
@@ -880,9 +840,12 @@ pub fn remote_pictures_set(
 
 /// This window holds unsaved edits of `path` (`None`: none): close guard, link updates.
 #[tauri::command(async)]
-pub fn edit_set_unsaved(handle: AppHandle, window: WebviewWindow, path: Option<String>) {
-    if let Some((_, workspace)) = state(&handle).registry.workspace_of(window.label()) {
+pub fn edit_set_unsaved(handle: AppHandle, window: Webview, path: Option<String>) {
+    let shell = state(&handle);
+    if let Some((_, workspace)) = shell.registry.workspace_of(window.label()) {
         documents_of(&workspace).set_unsaved(window.label(), path);
+        // the tab's chip shows the unsaved dot
+        shell.registry.refresh();
     }
 }
 
@@ -890,7 +853,7 @@ pub fn edit_set_unsaved(handle: AppHandle, window: WebviewWindow, path: Option<S
 #[tauri::command(async)]
 pub fn edit_headings(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
 ) -> Result<Vec<OutlineItem>, IpcError> {
     with_editor(&handle, &window, |editor, _| editor.headings(&path))
@@ -898,10 +861,7 @@ pub fn edit_headings(
 
 /// Files a link can point at (project: listed, not ignored; single file: none).
 #[tauri::command(async)]
-pub fn edit_link_targets(
-    handle: AppHandle,
-    window: WebviewWindow,
-) -> Result<Vec<String>, IpcError> {
+pub fn edit_link_targets(handle: AppHandle, window: Webview) -> Result<Vec<String>, IpcError> {
     let (workspace, _) = reading_of(&handle, &window)?;
     Ok(match workspace {
         Workspace::Project(core) => core.explorer().files(""),
@@ -913,7 +873,7 @@ pub fn edit_link_targets(
 #[tauri::command(async)]
 pub fn config_sheet(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     text: String,
 ) -> Result<Body, IpcError> {
@@ -926,7 +886,7 @@ pub fn config_sheet(
 #[tauri::command(async)]
 pub fn config_edit(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     text: String,
     edit: ConfigEdit,
@@ -940,7 +900,7 @@ pub fn config_edit(
 #[tauri::command(async)]
 pub fn ignore_matches(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: String,
     text: Option<String>,
 ) -> Result<IgnoreMatches, IpcError> {
@@ -953,7 +913,7 @@ pub fn ignore_matches(
 #[tauri::command(async)]
 pub fn analyze(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     path: Option<String>,
     text: Option<String>,
     kind: TextKind,
@@ -975,7 +935,7 @@ fn as_limit(limit: u32) -> usize {
 
 /// Where the project's index is (the first build, then ready).
 #[tauri::command(async)]
-pub fn search_status(handle: AppHandle, window: WebviewWindow) -> Result<IndexStatus, IpcError> {
+pub fn search_status(handle: AppHandle, window: Webview) -> Result<IndexStatus, IpcError> {
     Ok(project_of(&handle, &window)?.search().status())
 }
 
@@ -983,7 +943,7 @@ pub fn search_status(handle: AppHandle, window: WebviewWindow) -> Result<IndexSt
 #[tauri::command(async)]
 pub fn search_sections(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     query: String,
     limit: u32,
     options: SearchOptions,
@@ -997,7 +957,7 @@ pub fn search_sections(
 #[tauri::command(async)]
 pub fn search_files(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     query: String,
     limit: u32,
     folder_limit: u32,
@@ -1014,7 +974,7 @@ pub fn search_files(
 #[tauri::command(async)]
 pub fn search_recent(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     opened: Vec<String>,
     limit: u32,
     options: SearchOptions,
@@ -1031,7 +991,7 @@ pub fn search_recent(
 #[tauri::command(async)]
 pub fn plugin_call(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     plugin: String,
     method: String,
     args: serde_json::Value,
@@ -1053,15 +1013,47 @@ pub fn plugin_call(
         .call(&plugin, &method, &call)
 }
 
-/// Closes this window for real (after the unsaved prompt): the guard is let go first.
+/// Asks this view's window to close: at once when nothing is unsaved, else one prompt (`close-requested`).
 #[tauri::command(async)]
-pub fn window_close(handle: AppHandle, window: WebviewWindow) -> Result<(), IpcError> {
-    if let Some((_, workspace)) = state(&handle).registry.workspace_of(window.label()) {
-        documents_of(&workspace).set_unsaved(window.label(), None);
+pub fn window_close(handle: AppHandle, window: Webview) {
+    let shell = state(&handle);
+    let Some(native) = shell.registry.window_of(window.label()) else {
+        return;
+    };
+    let outcome = shell.registry.request_close(&native);
+    crate::open::run(&handle, outcome);
+}
+
+/// The window close prompt was answered: Save all | Discard | Cancel.
+#[tauri::command(async)]
+pub fn window_close_answer(handle: AppHandle, window: Webview, answer: CloseAnswer) {
+    if let Some(native) = state(&handle).registry.window_of(window.label()) {
+        crate::views::answer_close(&handle, &native, answer);
     }
-    window
-        .close()
-        .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))
+}
+
+/// A view answered `save-requested` (saved, or it failed: conflict | save error).
+#[tauri::command(async)]
+pub fn view_saved(handle: AppHandle, window: Webview, saved: bool) {
+    crate::views::view_saved(&handle, window.label(), saved);
+}
+
+/// The view's page painted (a hidden window shows with it).
+#[tauri::command(async)]
+pub fn view_ready(handle: AppHandle, window: Webview) {
+    crate::views::ready(&handle, window.label());
+}
+
+/// The native title this view wants (set while it is the view on screen).
+#[tauri::command(async)]
+pub fn view_set_title(handle: AppHandle, window: Webview, title: String) {
+    crate::views::set_title(&handle, window.label(), &title);
+}
+
+/// The native title bar's theme (`None`: the system's).
+#[tauri::command(async)]
+pub fn view_set_theme(handle: AppHandle, theme: Option<BarTheme>) {
+    crate::views::set_theme(&handle, theme);
 }
 
 // ---- Default app ----------------------------------------------------------------------------------------------------
@@ -1120,10 +1112,7 @@ pub fn project_init(handle: AppHandle, path: String) -> Result<(), IpcError> {
 
 /// The shared settings of the project the window shows.
 #[tauri::command(async)]
-pub fn project_config_get(
-    handle: AppHandle,
-    window: WebviewWindow,
-) -> Result<ProjectSettings, IpcError> {
+pub fn project_config_get(handle: AppHandle, window: Webview) -> Result<ProjectSettings, IpcError> {
     let core = project_of(&handle, &window)?;
     let initialized = ProjectConfigFile::of(core.root()).initialized();
     Ok(ProjectSettings::of(initialized, &core.config()))
@@ -1133,7 +1122,7 @@ pub fn project_config_get(
 #[tauri::command(async)]
 pub fn project_config_set(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     change: ProjectSettingChange,
 ) -> Result<ProjectSettings, IpcError> {
     let core = project_of(&handle, &window)?;
@@ -1143,7 +1132,7 @@ pub fn project_config_set(
 
 /// Every plugin of this build with its state for the window (the Plugins page).
 #[tauri::command(async)]
-pub fn plugins_list(handle: AppHandle, window: WebviewWindow) -> Vec<PluginInfo> {
+pub fn plugins_list(handle: AppHandle, window: Webview) -> Vec<PluginInfo> {
     let shell = state(&handle);
     let settings = shell.env.settings();
     let project = match shell.registry.workspace_of(window.label()) {
@@ -1180,7 +1169,7 @@ pub fn plugins_list(handle: AppHandle, window: WebviewWindow) -> Vec<PluginInfo>
 #[tauri::command(async)]
 pub fn plugin_set_project(
     handle: AppHandle,
-    window: WebviewWindow,
+    window: Webview,
     plugin: String,
     enabled: Option<bool>,
 ) -> Result<(), IpcError> {
@@ -1223,44 +1212,18 @@ pub fn plugin_remove_data(handle: AppHandle, plugin: String) -> Result<(), IpcEr
     Ok(())
 }
 
-/// Asks every window that shows the workspace to close it: each settles its unsaved edits first (brought to the front
-/// when it has some), then closes, or shows the Welcome when no other workspace is open.
-#[tauri::command(async)]
-pub fn workspace_close(handle: AppHandle, id: WorkspaceId) -> Result<(), IpcError> {
-    let shell = state(&handle);
-    let windows = shell.registry.windows_of(id);
-    if windows.is_empty() {
-        return Err(IpcError::new(ErrorKind::NotFound).subject(id.0.to_string()));
-    }
-    for window in windows {
-        // a window with unsaved edits asks the person: it comes to the front so the question is seen
-        let unsaved = shell
-            .registry
-            .workspace_of(&window)
-            .is_some_and(|(_, workspace)| documents_of(&workspace).unsaved(&window).is_some());
-        if unsaved {
-            crate::windows::focus(&handle, &window);
-        }
-        let _ = handle.emit_to(
-            window.as_str(),
-            "workspace-close-requested",
-            WorkspaceCloseRequested {
-                window: window.clone(),
-            },
-        );
-    }
-    Ok(())
-}
-
 commands![
     app_info,
     window_boot,
     open_path,
     open_notes,
     open_in_project,
-    show_welcome,
-    list_workspaces,
+    list_windows,
     focus_workspace,
+    tab_activate,
+    tab_close,
+    tab_close_confirmed,
+    tab_move_new_window,
     recent_list,
     recent_remove,
     settings_get,
@@ -1318,8 +1281,12 @@ commands![
     plugins_list,
     plugin_set_project,
     plugin_remove_data,
-    workspace_close,
     window_close,
+    window_close_answer,
+    view_saved,
+    view_ready,
+    view_set_title,
+    view_set_theme,
     default_app_get,
     default_app_set,
     default_app_asked,
@@ -1382,12 +1349,5 @@ mod tests {
             "https://a.com/{}",
             "x".repeat(5000)
         )));
-    }
-
-    #[test]
-    fn placement_wire_format() {
-        let p: OpenPlacement = serde_json::from_str("\"newWindow\"").unwrap();
-        assert_eq!(p, OpenPlacement::NewWindow);
-        assert!(serde_json::from_str::<OpenPlacement>("\"elsewhere\"").is_err());
     }
 }

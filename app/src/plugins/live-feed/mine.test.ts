@@ -75,7 +75,7 @@ describe("the person's actions", () => {
 
   it("come from the journal at start and as they happen; Docs only applies to them too", async () => {
     const api = createMockApi();
-    await api.openPath(MOCK_FOLDER, "thisWindow");
+    await api.openPath(MOCK_FOLDER, "thisTab");
     const store = new FeedStore(
       new PluginClient(api, () => MOCK_FOLDER),
       () => MOCK_FOLDER,

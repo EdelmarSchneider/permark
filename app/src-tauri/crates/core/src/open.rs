@@ -7,9 +7,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::paths::VaultPath;
-use crate::workspace::{WorkspaceRef, WorkspaceRegistry};
+use crate::settings::OpenIn;
+use crate::workspace::{Place, WorkspaceRef, WorkspaceRegistry};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenFlags {
@@ -165,59 +167,117 @@ pub fn create_untitled_markdown(folder: &Path) -> io::Result<PathBuf> {
     Ok(path)
 }
 
+/// Where an open from the UI goes (the frontend turns the `open_in` setting into it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum OpenPlacement {
+    /// A new tab in this window.
+    Tab,
+    /// Replaces the active tab (its unsaved prompt ran first, in the frontend).
+    ThisTab,
+    NewWindow,
+}
+
+/// What an open from the UI in `view` does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Placed {
+    /// Open already (one place): that window + tab forward; `document` = the file inside the project.
+    Focus {
+        place: Place,
+        document: Option<VaultPath>,
+    },
+    /// Opens in the view's own tab.
+    ThisTab,
+    /// A new tab in this window.
+    Tab {
+        window: String,
+    },
+    NewWindow,
+}
+
+/// Decides an open from the UI: open already anywhere (it, or a project tab holding the file) -> focus, whatever the
+/// placement; else `placement`, where this tab on a view without a tab (the Welcome) is a new tab (it adopts the
+/// view). `None`: unknown view.
+#[must_use]
+pub fn place_open(
+    registry: &WorkspaceRegistry,
+    view: &str,
+    reference: &WorkspaceRef,
+    placement: OpenPlacement,
+) -> Option<Placed> {
+    if let Some(place) = registry.find(reference) {
+        return Some(Placed::Focus {
+            place,
+            document: None,
+        });
+    }
+    if let WorkspaceRef::SingleFile(path) = reference {
+        if let Some((place, document)) = registry.find_containing(path) {
+            return Some(Placed::Focus {
+                place,
+                document: Some(document),
+            });
+        }
+    }
+    let window = registry.window_of(view)?;
+    Some(match placement {
+        OpenPlacement::NewWindow => Placed::NewWindow,
+        OpenPlacement::ThisTab if registry.place_of_view(view).is_some() => Placed::ThisTab,
+        OpenPlacement::ThisTab | OpenPlacement::Tab => Placed::Tab { window },
+    })
+}
+
 /// Where one outside path goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
-    /// Already shown: focus that window (document = file inside the project).
+    /// Already open (one place): focus that window + tab; `document` = the file inside the project.
     Focus {
-        window: String,
+        place: Place,
         document: Option<VaultPath>,
     },
-    /// Open in this window (it is on Welcome).
-    OpenIn {
-        window: String,
-        document: Option<VaultPath>,
-    },
-    NewWindow {
-        document: Option<VaultPath>,
-    },
+    /// A new tab in this work window.
+    Tab { window: String },
+    /// A new work window (later paths of the request join it: `joined`).
+    NewWindow,
 }
 
-/// Decides where `reference` goes. `claimed`: Welcome windows already used by earlier paths of the same request.
-/// A file inside an open project -> that project (with the file as document).
+/// Decides where `reference` goes. Open already (it, or a project tab holding the file) -> focus, whatever the
+/// flags; `new_window` | `open_in = window` -> the window this request made (`joined`), else a new one; else a tab
+/// in the work window focused last (none -> a new window).
 #[must_use]
 pub fn route(
     registry: &WorkspaceRegistry,
     reference: &WorkspaceRef,
-    force_new: bool,
-    claimed: &mut BTreeSet<String>,
+    new_window: bool,
+    open_in: OpenIn,
+    joined: Option<&str>,
 ) -> Route {
-    if !force_new {
-        let shown = registry.find(reference).map(|id| (id, None));
-        let inside = || match reference {
-            WorkspaceRef::SingleFile(path) => registry
-                .find_containing(path)
-                .map(|(id, rel)| (id, Some(rel))),
-            WorkspaceRef::Project(_) | WorkspaceRef::Notes => None,
+    if let Some(place) = registry.find(reference) {
+        return Route::Focus {
+            place,
+            document: None,
         };
-        if let Some((id, document)) = shown.or_else(inside) {
-            if let Some(window) = registry.windows_of(id).into_iter().next() {
-                return Route::Focus { window, document };
-            }
-        }
-        if let Some(window) = registry
-            .welcome_windows()
-            .into_iter()
-            .find(|w| !claimed.contains(w))
-        {
-            claimed.insert(window.clone());
-            return Route::OpenIn {
-                window,
-                document: None,
+    }
+    if let WorkspaceRef::SingleFile(path) = reference {
+        if let Some((place, document)) = registry.find_containing(path) {
+            return Route::Focus {
+                place,
+                document: Some(document),
             };
         }
     }
-    Route::NewWindow { document: None }
+    if let Some(window) = joined {
+        return Route::Tab {
+            window: window.to_owned(),
+        };
+    }
+    if new_window || open_in == OpenIn::NewWindow {
+        return Route::NewWindow;
+    }
+    registry
+        .last_focused_work()
+        .map_or(Route::NewWindow, |window| Route::Tab { window })
 }
 
 #[cfg(test)]
@@ -351,69 +411,198 @@ mod tests {
         (base, Arc::new(WorkspaceRegistry::new(Arc::new(env))))
     }
 
+    /// A tab open in `window` (the whole open: reserve, prepare, finish).
+    fn open_tab(registry: &WorkspaceRegistry, window: &str, reference: &WorkspaceRef) -> Place {
+        match registry.open_tab(window, reference, None).unwrap() {
+            crate::workspace::TabOpen::Opening { tab, outcome, .. } => {
+                for (ticket, reference) in outcome.loads {
+                    registry.load(ticket, &reference).unwrap();
+                }
+                Place {
+                    window: window.to_owned(),
+                    tab,
+                }
+            }
+            crate::workspace::TabOpen::Existing(place) => place,
+        }
+    }
+
+    /// Placement table: `open_in` x this view on Welcome | in a tab x open here | elsewhere | file inside an open
+    /// project.
     #[test]
-    fn routing_focuses_shown_then_uses_welcome_then_new_window() {
+    fn placement_of_opens_from_the_ui() {
+        use crate::workspace::WindowKind;
         let (_b, registry) = registry();
-        registry.add_window("main");
-        registry.add_window("w-1");
+        for window in ["main", "w-1"] {
+            registry.add_window(window, WindowKind::Work);
+        }
+        let _ = registry.show_welcome_view("main");
+        let welcome = registry.shown_view("main").unwrap();
+        let (here, elsewhere, fresh) = (
+            tempfile::tempdir().unwrap(),
+            tempfile::tempdir().unwrap(),
+            tempfile::tempdir().unwrap(),
+        );
+        std::fs::write(elsewhere.path().join("in.md"), "x").unwrap();
+        let fresh = WorkspaceRef::classify(fresh.path()).unwrap();
+        let all = [
+            OpenPlacement::Tab,
+            OpenPlacement::ThisTab,
+            OpenPlacement::NewWindow,
+        ];
+        // the Welcome view: this tab = a new tab (it becomes the window's first)
+        let on_welcome: Vec<Placed> = all
+            .iter()
+            .map(|p| place_open(&registry, &welcome, &fresh, *p).unwrap())
+            .collect();
+        let tab = Placed::Tab {
+            window: "main".into(),
+        };
+        assert_eq!(on_welcome, [tab.clone(), tab.clone(), Placed::NewWindow]);
+        // a view in a tab
+        let here_place = open_tab(
+            &registry,
+            "main",
+            &WorkspaceRef::classify(here.path()).unwrap(),
+        );
+        let view = registry.view_of_tab(here_place.tab).unwrap();
+        let in_tab: Vec<Placed> = all
+            .iter()
+            .map(|p| place_open(&registry, &view, &fresh, *p).unwrap())
+            .collect();
+        assert_eq!(in_tab, [tab, Placed::ThisTab, Placed::NewWindow]);
+        // open here | in another window | a file inside an open project: focus, whatever the placement
+        let there = open_tab(
+            &registry,
+            "w-1",
+            &WorkspaceRef::classify(elsewhere.path()).unwrap(),
+        );
+        for placement in all {
+            assert_eq!(
+                place_open(
+                    &registry,
+                    &view,
+                    &WorkspaceRef::classify(here.path()).unwrap(),
+                    placement
+                ),
+                Some(Placed::Focus {
+                    place: here_place.clone(),
+                    document: None
+                })
+            );
+            assert_eq!(
+                place_open(
+                    &registry,
+                    &view,
+                    &WorkspaceRef::classify(elsewhere.path()).unwrap(),
+                    placement
+                ),
+                Some(Placed::Focus {
+                    place: there.clone(),
+                    document: None
+                })
+            );
+            assert_eq!(
+                place_open(
+                    &registry,
+                    &view,
+                    &WorkspaceRef::classify(&elsewhere.path().join("in.md")).unwrap(),
+                    placement
+                ),
+                Some(Placed::Focus {
+                    place: there.clone(),
+                    document: Some(VaultPath::parse("in.md").unwrap())
+                })
+            );
+        }
+        assert_eq!(
+            place_open(&registry, "v-nope", &fresh, OpenPlacement::Tab),
+            None
+        );
+        // wire form
+        let p: OpenPlacement = serde_json::from_str("\"thisTab\"").unwrap();
+        assert_eq!(p, OpenPlacement::ThisTab);
+        for old in ["\"ask\"", "\"thisWindow\"", "\"elsewhere\""] {
+            assert!(serde_json::from_str::<OpenPlacement>(old).is_err(), "{old}");
+        }
+    }
+
+    #[test]
+    fn routing_focuses_what_is_open_else_the_last_focused_window_else_a_new_one() {
+        use crate::workspace::WindowKind;
+        let (_b, registry) = registry();
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir(project.path().join("docs")).unwrap();
         let file = project.path().join("docs").join("a.md");
         std::fs::write(&file, "x").unwrap();
         let reference = WorkspaceRef::classify(project.path()).unwrap();
-        let mut claimed = BTreeSet::new();
+        // no window at all -> new window
         assert_eq!(
-            route(&registry, &reference, false, &mut claimed),
-            Route::OpenIn {
-                window: "main".to_owned(),
-                document: None
+            route(&registry, &reference, false, OpenIn::Tab, None),
+            Route::NewWindow
+        );
+        registry.add_window("main", WindowKind::Work);
+        registry.add_window("w-1", WindowKind::Work);
+        registry.focused("main", 10);
+        registry.focused("w-1", 20);
+        assert_eq!(
+            route(&registry, &reference, false, OpenIn::Tab, None),
+            Route::Tab {
+                window: "w-1".to_owned()
             }
         );
-        registry.open("main", &reference, None).unwrap();
-        // same project again -> focus
-        assert_eq!(
-            route(&registry, &reference, false, &mut BTreeSet::new()),
-            Route::Focus {
-                window: "main".to_owned(),
-                document: None
-            }
-        );
-        // a file inside it -> focus with document
+        let place = open_tab(&registry, "main", &reference);
+        // open -> focus, whatever the flags
+        for (new_window, open_in) in [
+            (false, OpenIn::Tab),
+            (true, OpenIn::Tab),
+            (false, OpenIn::NewWindow),
+        ] {
+            assert_eq!(
+                route(&registry, &reference, new_window, open_in, Some("w-1")),
+                Route::Focus {
+                    place: place.clone(),
+                    document: None
+                }
+            );
+        }
+        // a file inside the open project -> that tab, file as document
         let inner = WorkspaceRef::classify(&file).unwrap();
         assert_eq!(
-            route(&registry, &inner, false, &mut BTreeSet::new()),
+            route(&registry, &inner, false, OpenIn::Tab, None),
             Route::Focus {
-                window: "main".to_owned(),
+                place,
                 document: Some(VaultPath::parse("docs/a.md").unwrap())
             }
         );
-        // two unrelated paths in one request: first takes the free welcome window, second a new window
-        let (x, y) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-        let mut claimed = BTreeSet::new();
-        let first = route(
-            &registry,
-            &WorkspaceRef::classify(x.path()).unwrap(),
-            false,
-            &mut claimed,
-        );
-        let second = route(
-            &registry,
-            &WorkspaceRef::classify(y.path()).unwrap(),
-            false,
-            &mut claimed,
+        let other = tempfile::tempdir().unwrap();
+        let other = WorkspaceRef::classify(other.path()).unwrap();
+        assert_eq!(
+            route(&registry, &other, true, OpenIn::Tab, None),
+            Route::NewWindow
         );
         assert_eq!(
-            first,
-            Route::OpenIn {
-                window: "w-1".to_owned(),
-                document: None
+            route(&registry, &other, false, OpenIn::NewWindow, None),
+            Route::NewWindow
+        );
+        // later paths of one request join the window it made
+        assert_eq!(
+            route(&registry, &other, true, OpenIn::Tab, Some("w-9")),
+            Route::Tab {
+                window: "w-9".to_owned()
             }
         );
-        assert_eq!(second, Route::NewWindow { document: None });
-        // forced new window
+        // a window asking about its close is never chosen
+        registry.focused("main", 30);
+        let open_dir = tempfile::tempdir().unwrap();
+        let unsaved_target = WorkspaceRef::classify(open_dir.path()).unwrap();
+        let _ = registry.request_close("main");
         assert_eq!(
-            route(&registry, &reference, true, &mut BTreeSet::new()),
-            Route::NewWindow { document: None }
+            route(&registry, &unsaved_target, false, OpenIn::Tab, None),
+            Route::Tab {
+                window: "w-1".to_owned()
+            },
+            "main closed (nothing unsaved): w-1 is the one left open"
         );
     }
 }

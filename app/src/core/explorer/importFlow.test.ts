@@ -53,7 +53,7 @@ let stop: () => void;
 
 beforeEach(async () => {
   s = setup();
-  await s.mock.openPath("C:/Users/demo/permark-docs", "thisWindow");
+  await s.mock.openPath("C:/Users/demo/permark-docs", "thisTab");
   stop = await s.flow.start();
 });
 

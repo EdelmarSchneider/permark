@@ -54,7 +54,7 @@ beforeEach(async () => {
   document.body.replaceChildren();
   target = document.createElement("div");
   document.body.append(target);
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   const boot = await mock.windowBoot();
   if (
     !boot.ok ||

@@ -15,21 +15,40 @@ use crate::paths::Root;
 use crate::state::{Loaded, StateData, StateError, StateFile, StateStore};
 use crate::workspace::WorkspaceRefDto;
 
-/// One window as it was.
+/// One work window as it was: its tabs in strip order (pending ones as their ref), the active one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedWindow {
-    pub workspace: Option<WorkspaceRefDto>,
+    pub geometry: Option<Geometry>,
+    pub tabs: Vec<WorkspaceRefDto>,
+    pub active: Option<u32>,
+}
+
+/// The Notes window: open at exit, where it was.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct SavedNotes {
+    pub open: bool,
     pub geometry: Option<Geometry>,
 }
 
-/// `<profile>/session.json`: the windows to bring back, oldest first.
+/// `<profile>/session.json` (v2): the work windows to bring back (creation order) + the Notes window.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct AppSession {
     pub windows: Vec<SavedWindow>,
+    #[serde(default)]
+    pub notes: SavedNotes,
 }
 
 impl StateData for AppSession {
-    const VERSION: u32 = 1;
+    const VERSION: u32 = 2;
+
+    fn upgrade(from: u32, data: serde_json::Value) -> Option<Self> {
+        match from {
+            1 => serde_json::from_value::<AppSessionV1>(data)
+                .ok()
+                .map(from_v1),
+            _ => None,
+        }
+    }
 }
 
 impl AppSession {
@@ -42,6 +61,144 @@ impl AppSession {
             .and_then(|w| w.geometry)
             .and_then(Geometry::sane)
             .or_else(|| older().and_then(Geometry::sane))
+    }
+}
+
+/// One window as 0.6.0 saved it (session v1): one workspace per window.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedWindowV1 {
+    pub workspace: Option<WorkspaceRefDto>,
+    pub geometry: Option<Geometry>,
+}
+
+/// Session v1 (0.6.0).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct AppSessionV1 {
+    pub windows: Vec<SavedWindowV1>,
+}
+
+/// Identity of a saved ref without the disk (kind + case-folded path, `/` separators, no trailing one).
+fn saved_key(dto: &WorkspaceRefDto) -> Option<(u8, String)> {
+    let path = match dto {
+        WorkspaceRefDto::Project { path } | WorkspaceRefDto::SingleFile { path } => path,
+        WorkspaceRefDto::Notes => return None,
+    };
+    let kind = u8::from(matches!(dto, WorkspaceRefDto::SingleFile { .. }));
+    let slashed = path.replace('\\', "/");
+    Some((kind, crate::paths::fold(slashed.trim_end_matches('/'))))
+}
+
+/// v1 -> v2: each window -> one tab (none for a Welcome window); a workspace a former window already shows -> that
+/// window dropped (v1 allowed one workspace in two windows); the first Notes window -> the Notes window (geometry
+/// kept), later ones dropped. Pure.
+#[must_use]
+pub fn from_v1(v1: AppSessionV1) -> AppSession {
+    let mut session = AppSession::default();
+    let mut taken = std::collections::BTreeSet::new();
+    for window in v1.windows {
+        match window.workspace {
+            None => session.windows.push(SavedWindow {
+                geometry: window.geometry,
+                tabs: Vec::new(),
+                active: None,
+            }),
+            Some(WorkspaceRefDto::Notes) => {
+                if !session.notes.open {
+                    session.notes = SavedNotes {
+                        open: true,
+                        geometry: window.geometry,
+                    };
+                }
+            }
+            Some(dto) => {
+                let Some(key) = saved_key(&dto) else {
+                    continue;
+                };
+                if taken.insert(key) {
+                    session.windows.push(SavedWindow {
+                        geometry: window.geometry,
+                        tabs: vec![dto],
+                        active: Some(0),
+                    });
+                }
+            }
+        }
+    }
+    session
+}
+
+/// One window to restore: tabs that still exist (strip order), the one to load, the paths no longer there.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlannedWindow {
+    pub geometry: Option<Geometry>,
+    pub tabs: Vec<crate::workspace::WorkspaceRef>,
+    /// `Some` iff `tabs` is not empty.
+    pub active: Option<usize>,
+    /// Saved paths not found (each -> an open failure in that window).
+    pub missing: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RestorePlan {
+    pub windows: Vec<PlannedWindow>,
+    pub notes: SavedNotes,
+}
+
+/// What comes back of a saved session. Per window: a Notes ref, a ref `resolve` cannot find (missing) and a duplicate
+/// of an earlier tab (any window) are dropped; `active` out of range | null with tabs | on a dropped tab -> nearest kept
+/// tab to its right, else left; null -> the first. A window left without tabs stays (Welcome, its geometry). Pure
+/// given `resolve` (the app: `WorkspaceRef::parse`).
+#[must_use]
+pub fn restore_plan(
+    session: &AppSession,
+    mut resolve: impl FnMut(&WorkspaceRefDto) -> Option<crate::workspace::WorkspaceRef>,
+) -> RestorePlan {
+    let mut taken = std::collections::BTreeSet::new();
+    let windows = session
+        .windows
+        .iter()
+        .map(|saved| {
+            let mut kept: Vec<(usize, crate::workspace::WorkspaceRef)> = Vec::new();
+            let mut missing = Vec::new();
+            for (at, dto) in saved.tabs.iter().enumerate() {
+                let path = match dto {
+                    WorkspaceRefDto::Notes => continue,
+                    WorkspaceRefDto::Project { path } | WorkspaceRefDto::SingleFile { path } => {
+                        path
+                    }
+                };
+                match resolve(dto) {
+                    Some(reference) => {
+                        if taken.insert(reference.key()) {
+                            kept.push((at, reference));
+                        }
+                    }
+                    None => missing.push(path.clone()),
+                }
+            }
+            let wanted = saved.active.and_then(|a| usize::try_from(a).ok());
+            let active = if kept.is_empty() {
+                None
+            } else {
+                Some(match wanted {
+                    None => 0,
+                    Some(wanted) => kept
+                        .iter()
+                        .position(|(at, _)| *at >= wanted)
+                        .unwrap_or(kept.len() - 1),
+                })
+            };
+            PlannedWindow {
+                geometry: saved.geometry,
+                tabs: kept.into_iter().map(|(_, r)| r).collect(),
+                active,
+                missing,
+            }
+        })
+        .collect();
+    RestorePlan {
+        windows,
+        notes: session.notes.clone(),
     }
 }
 
@@ -255,6 +412,9 @@ impl ProjectSession {
 }
 
 #[cfg(test)]
+mod migration_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::state::AppDirs;
@@ -276,12 +436,14 @@ mod tests {
             maximized: true,
         };
         let window = |geometry| SavedWindow {
-            workspace: None,
             geometry,
+            tabs: Vec::new(),
+            active: None,
         };
         let older = || Some(geo(5, 900));
         let session = AppSession {
             windows: vec![window(Some(geo(1, 1000))), window(Some(geo(2, 1100)))],
+            ..AppSession::default()
         };
         assert_eq!(session.first_geometry(older), Some(geo(1, 1000)));
         // 0.5's file is read only when needed
@@ -292,9 +454,11 @@ mod tests {
             AppSession::default(),
             AppSession {
                 windows: vec![window(None), window(Some(geo(2, 1100)))],
+                ..AppSession::default()
             },
             AppSession {
                 windows: vec![window(Some(geo(1, 0)))],
+                ..AppSession::default()
             },
         ] {
             assert_eq!(session.first_geometry(older), Some(geo(5, 900)));
@@ -309,9 +473,11 @@ mod tests {
         let file = app_session_file(&store);
         let session = AppSession {
             windows: vec![SavedWindow {
-                workspace: None,
                 geometry: None,
+                tabs: Vec::new(),
+                active: None,
             }],
+            ..AppSession::default()
         };
         file.save(&session).unwrap();
         assert!(matches!(file.load(), Loaded::Found(s) if s == session));
@@ -400,10 +566,12 @@ mod tests {
         let (_b, store) = app();
         let file = app_session_file(&store);
         let session = AppSession {
+            notes: SavedNotes::default(),
             windows: vec![SavedWindow {
-                workspace: Some(WorkspaceRefDto::Project {
+                tabs: vec![WorkspaceRefDto::Project {
                     path: "C:/x y/项目".to_owned(),
-                }),
+                }],
+                active: Some(0),
                 geometry: Some(Geometry {
                     x: -10,
                     y: 5,

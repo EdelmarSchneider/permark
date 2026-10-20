@@ -47,7 +47,7 @@ export default definePlugin({
         id: "notes.open",
         label: "cmd.notesOpen",
         requires: NO_REQUIREMENT,
-        run: () => windowStore.openNotes("ask"),
+        run: () => windowStore.openNotes(),
       }),
       cx.contribute({
         kind: "command",

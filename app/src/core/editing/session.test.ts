@@ -193,6 +193,38 @@ describe("editing session", () => {
     expect(api.probe.edit.saves.length).toBe(1);
   });
 
+  it("save for the window close: written without a prompt, true once on disk", async () => {
+    const { session, api } = setup();
+    expect(await session.saveForClose()).toBe(true);
+    const { editor, content } = await open(session);
+    expect(await session.saveForClose()).toBe(true);
+    expect(api.probe.edit.saves).toEqual([]);
+    editor.set(content.text + "y");
+    session.changed();
+    await settle();
+    const saved = session.saveForClose();
+    await settle();
+    expect(await saved).toBe(true);
+    expect(api.probe.edit.saves.length).toBe(1);
+    expect(session.state.s).toBe("closed");
+  });
+
+  it("save for the window close meets another version: false, the conflict shown, nothing written", async () => {
+    const { session, api } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "mine\n");
+    session.changed();
+    await settle();
+    api.probe.edit.files.set("docs/guide.md", "someone else\n");
+    const saved = session.saveForClose();
+    await settle();
+    expect(await saved).toBe(false);
+    expect(session.state.s).toBe("conflict");
+    expect(api.probe.edit.files.get("docs/guide.md")).toBe("someone else\n");
+    // a second Save all while in the conflict: false at once
+    expect(await session.saveForClose()).toBe(false);
+  });
+
   it("a clean document leaves without asking; the same document is not a leave", async () => {
     const { session } = setup();
     await open(session);
