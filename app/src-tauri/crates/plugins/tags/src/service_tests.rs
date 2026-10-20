@@ -305,7 +305,16 @@ fn changes_made_before_the_file_broke_are_parked_and_written_when_it_reads_again
     h.open();
     h.set_tags("a.md", &["mine"]);
     std::fs::write(h.meta(), "[files\n").unwrap();
-    wait_until("the problem", || !h.index()["status"]["problem"].is_null());
+    let started = Instant::now();
+    while h.index()["status"]["problem"].is_null() {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "timed out waiting for the problem: {} / file {:?}",
+            h.index()["status"],
+            h.meta_text()
+        );
+        std::thread::sleep(Duration::from_millis(15));
+    }
     assert_eq!(h.index()["status"]["parked"], 1);
     std::thread::sleep(Duration::from_millis(900));
     assert_eq!(h.meta_text(), "[files\n", "parked, not written");

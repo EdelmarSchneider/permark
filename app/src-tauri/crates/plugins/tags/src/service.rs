@@ -380,7 +380,8 @@ fn meta_loop(shared: &Shared, rx: &Receiver<MetaMsg>) {
                 shared.reload();
                 let waiting = !shared.lock().pending.is_empty();
                 if waiting && shared.lock().problem.is_none() {
-                    deadline = Some(Instant::now());
+                    // written once the file is quiet: another program may be halfway through writing it
+                    deadline = Some(Instant::now() + timing.quiet);
                 }
             }
             Ok(MetaMsg::Stop) | Err(RecvTimeoutError::Disconnected) => {
