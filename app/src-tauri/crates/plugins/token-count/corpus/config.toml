@@ -1,0 +1,96 @@
+[workspace]
+members = ["crates/core", "crates/plugins/*", "crates/shell-ext"]
+resolver = "2"
+
+# Version source = app/package.json; written here by `npm run version:sync`.
+[workspace.package]
+version = "0.5.8"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/EdelmarSchneider/permark"
+authors = ["Edelmar Schneider"]
+
+[workspace.dependencies]
+permark-core = { path = "crates/core" }
+permark-plugin-frontmatter-card = { path = "crates/plugins/frontmatter-card" }
+permark-plugin-follow = { path = "crates/plugins/follow" }
+permark-plugin-git = { path = "crates/plugins/git" }
+permark-plugin-highlight = { path = "crates/plugins/highlight" }
+permark-plugin-json-view = { path = "crates/plugins/json-view" }
+permark-plugin-live-feed = { path = "crates/plugins/live-feed" }
+permark-plugin-math = { path = "crates/plugins/math" }
+permark-plugin-md-family = { path = "crates/plugins/md-family" }
+permark-plugin-media = { path = "crates/plugins/media" }
+permark-plugin-mermaid = { path = "crates/plugins/mermaid" }
+permark-plugin-plantuml = { path = "crates/plugins/plantuml" }
+permark-plugin-review = { path = "crates/plugins/review" }
+permark-plugin-prompt-blocks = { path = "crates/plugins/prompt-blocks" }
+permark-plugin-text-view = { path = "crates/plugins/text-view" }
+permark-plugin-broken-links = { path = "crates/plugins/broken-links" }
+permark-plugin-notes = { path = "crates/plugins/notes" }
+permark-plugin-quiet = { path = "crates/plugins/quiet" }
+permark-plugin-comments = { path = "crates/plugins/comments" }
+permark-plugin-agent = { path = "crates/plugins/agent" }
+permark-plugin-tags = { path = "crates/plugins/tags" }
+permark-plugin-unread = { path = "crates/plugins/unread" }
+permark-plugin-word-count = { path = "crates/plugins/word-count" }
+permark-plugin-xml-view = { path = "crates/plugins/xml-view" }
+permark-plugin-fmt-toml = { path = "crates/plugins/fmt-toml" }
+permark-plugin-fmt-yaml = { path = "crates/plugins/fmt-yaml" }
+permark-plugin-fmt-ini = { path = "crates/plugins/fmt-ini" }
+permark-plugin-fmt-dotenv = { path = "crates/plugins/fmt-dotenv" }
+permark-plugin-fmt-properties = { path = "crates/plugins/fmt-properties" }
+permark-plugin-fmt-ignore = { path = "crates/plugins/fmt-ignore" }
+permark-plugin-shell-integration = { path = "crates/plugins/shell-integration" }
+permark-plugin-updates = { path = "crates/plugins/updates" }
+serde = { version = "1", features = ["derive"] }
+ts-rs = { version = "12.0", features = ["serde-json-impl"] }
+serde_json = "1"
+thiserror = "2.0.21"
+dunce = "1.0.5"
+unicode-normalization = "0.1.25"
+xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
+toml_edit = "0.25.17"
+dirs = "7.0.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+interprocess = "2.4.4"
+widestring = "1.2.1"
+winreg = "0.56.0"
+rustix = { version = "1.1.5", features = ["process"] }
+windows-sys = { version = "0.61.2", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
+  "Win32_System_Pipes",
+] }
+tempfile = "3.27.0"
+ignore = "0.4.33"
+notify = "8.2.0"
+trash = "5.2.9"
+comrak = { version = "0.56", default-features = false }
+ammonia = "4.2"
+git2 = { version = "0.21.0", default-features = false }
+rmcp = { version = "3.5.0", default-features = false, features = ["server", "transport-io"] }
+tokio = { version = "1", default-features = false, features = ["rt", "macros", "time", "io-util"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+# The Store package's shell extension DLL (`-p permark-shell --profile release-shell`): it unwinds so no panic crosses
+# the COM boundary (a panic setting cannot be given per package), and it is small (a system process loads it).
+[profile.release-shell]
+inherits = "release"
+panic = "unwind"

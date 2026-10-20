@@ -1,0 +1,17 @@
+[package]
+name = "permark-plugin-fmt-toml"
+description = "PerMark plugin fmt-toml."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API).
+[dependencies]
+permark-core.workspace = true
+toml_edit.workspace = true
+
+[lints]
+workspace = true

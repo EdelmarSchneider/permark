@@ -1,0 +1,8 @@
+Emoji: 😀 😃 😄 😁 🎉 🚀 🔥 ✅ ❌ ⚠️ 👍🏽 👩‍💻 👨‍👩‍👧‍👦 🇧🇷 🇯🇵 ❤️ 🧪 📦
+Marks: é ä ô ñ ç ů; Z͡a͟l͠g͆o͗ text; Hindi: क्षि; Thai tone: ก้า
+Math: ∑ ∏ ∫ √ ∞ ≈ ≠ ≤ ≥ ± × ÷ ∂ ∇ ∈ ∉ ⊂ ⊃ ∪ ∩ → ← ↔ ⇒ ⇔
+Arrows and boxes: ┌─┬─┐ │ │ │ ├─┼─┤ └─┴─┘ ▲ ▼ ◀ ▶ ● ○ ■ □
+Quotes: “curly” ‘single’ „low“ «guillemets» ‹single› 「corner」 『double』
+Dashes: hyphen-minus - en – em — minus − ellipsis … middle dot · bullet •
+Spaces: nbsp emsp thin​zero-width　ideographic
+Mixed: العربية with English words and numbers 123 inside, עברית too, then 日本語のテキスト.

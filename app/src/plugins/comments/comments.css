@@ -1,0 +1,37 @@
+/* A comment in the margin: a bar left of the blocks it touches (the page keeps room for it), a count where several
+   comments start in one block. Static, no animation. */
+.md-body > .pm-cmt {
+  position: relative;
+}
+.md-body > .pm-cmt::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(-1 * var(--sp-4));
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0.7;
+  cursor: pointer;
+}
+.md-body > .pm-cmt:hover::before {
+  opacity: 1;
+}
+.md-body > .pm-cmt-first[data-cmt-count]:not([data-cmt-count="1"])::after {
+  content: attr(data-cmt-count);
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--sp-4) - 7px);
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: 600 10px/14px var(--font-ui);
+  text-align: center;
+}
+/* the passage a comment is being written about */
+::highlight(pm-comment-draft) {
+  background: var(--mark-strong);
+}

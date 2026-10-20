@@ -1,0 +1,33 @@
+[package]
+name = "permark-shell"
+description = "The right-click \"Open with PerMark\" and \"New Markdown file\" entries of the Microsoft Store package: a COM component for File Explorer."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+# `cdylib` = the DLL File Explorer's COM surrogate loads; `rlib` = the tests use the code directly.
+name = "permark_shell"
+crate-type = ["cdylib", "rlib"]
+
+# The DLL runs in a system helper process on computers that may lack the Visual C++ runtime: it carries the part it needs.
+[build-dependencies]
+static_vcruntime = "3.0.0"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", default-features = false, features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Ole",
+    "Win32_UI_Shell",
+] }
+# `#[implement]` expands to paths in this crate.
+windows-core = "0.62.2"
+
+[lints]
+workspace = true

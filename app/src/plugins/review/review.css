@@ -1,0 +1,136 @@
+/* The review on the page: tinted blocks, ghosts of what went, a small bar for each change. Tokens only. */
+.md-body > .rv-added {
+  background: var(--review-add-bg);
+  box-shadow: -3px 0 0 var(--git-added);
+  border-radius: 3px;
+}
+.md-body > .rv-edited {
+  background: var(--review-add-bg);
+  box-shadow: -3px 0 0 var(--git-modified);
+  border-radius: 3px;
+}
+.md-body > .rv-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.md-body > .rv-ghost {
+  background: var(--review-del-bg);
+  box-shadow: -3px 0 0 var(--git-deleted);
+  border-radius: 3px;
+  opacity: 0.85;
+  user-select: none;
+}
+.md-body > .rv-ghost :is(p, li, h1, h2, h3, h4, h5, h6, td, th, code) {
+  text-decoration: line-through;
+  text-decoration-color: var(--git-deleted);
+}
+.md-body > .rv-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--muted);
+  font: 500 12px/1.6 var(--font-ui);
+}
+.md-body > .rv-bar.is-current {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.md-body > .rv-bar button {
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.md-body > .rv-bar button:hover {
+  border-color: var(--accent);
+}
+
+/* the code view in review (lines.ts): the lines of the changes, a bar for each change, the old lines above them */
+.rv-code {
+  margin: var(--sp-3) var(--sp-5) var(--sp-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--bg);
+  overflow: hidden;
+}
+.rv-code .cm-line.rv-line-added {
+  background: var(--review-add-bg);
+  box-shadow: inset 3px 0 0 var(--git-added);
+}
+.rv-code .cm-line.rv-line-edited {
+  background: var(--review-add-bg);
+  box-shadow: inset 3px 0 0 var(--git-modified);
+}
+.rv-code .cm-line.rv-line.is-current {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.rv-code .rv-hunk {
+  font: 500 12px/1.6 var(--font-ui);
+}
+.rv-code .rv-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--muted);
+}
+.rv-code .rv-code-bar.is-current {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.rv-code .rv-ws {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+}
+.rv-code .rv-code-bar .rv-actions {
+  margin-left: auto;
+}
+.rv-code .rv-code-bar button {
+  margin-left: 4px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.rv-code .rv-code-bar button:hover {
+  border-color: var(--accent);
+}
+.rv-code .rv-old {
+  background: var(--review-del-bg);
+  box-shadow: inset 3px 0 0 var(--git-deleted);
+  font: var(--fs-code) / 1.6 var(--font-code);
+}
+.rv-code .rv-old-line {
+  padding: 0 8px 0 6px;
+}
+.rv-code .rv-old-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rv-code .rv-old-more {
+  padding: 0 8px 0 6px;
+  color: var(--muted);
+  font: 12px/1.6 var(--font-ui);
+}

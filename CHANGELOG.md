@@ -5,8 +5,80 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-20
+
+PerMark is now a unified document workspace: one place to read, write and organize Markdown and the files around it, and to steer AI projects through their documents. AI speeds the work. Your vision steers it. This release rebuilds the whole program: many windows in one app, small config files and TOON as clean sheets, review of code and text files, and an agent connection with 13 tools. The name, the logo, your files and your notes stay where they were.
+
+### Upgrading from 0.5
+PerMark 0.6 never changes your files to upgrade. It reads what 0.5 saved and copies it once; 0.5's own data stays where it was.
+- **Carried over:** your notes folder and how notes are named, with the notes you pinned or shared and the files you opened in Notes; tags and descriptions; comments, including the ones you marked done; the folders you silenced; and your language and external editor. Projects that have a `.permark/` folder keep their tags, settings and comments in it, as before.
+- **Not carried over:** the text you typed into a file opened in Notes and had not saved (it stays on disk in the notes folder's `.permark/pending/`, untouched), which documents you had read or reviewed (every document starts as read), the recent folders list, window places, the earlier versions of your notes (new versions start now), the on-off switch of the agent connection (it starts off in every project: turn it on again where you want it), and the rest of the app settings (look at **Settings** once). Your files are never touched.
+- **Setting up again:** the file a script can read for the open document is now `.permark/local/agent-context.json` (it was `agent.json`).
+- **Old TrailMark folders:** 0.6 no longer renames `.trailmark/` folders. If you still have TrailMark, update to 0.5.8 first.
+- **Going back:** 0.5.8 cannot read the comments file after you mark a comment done in 0.6.
+
+### Added
+- **Many windows, one app.** A bar at the top lists the open projects, files and Notes, switches between them (`Ctrl+Alt+→` and `Ctrl+Alt+←`) and closes them with the x. The **+** menu opens a folder or a file, starts a new project, opens Notes or picks a recent folder.
+- **A full Settings page, a Plugins page and your own keys.** Turn features on and off in **Settings → Plugins**; a feature that is off leaves nothing behind. **Settings → Keyboard shortcuts** shows every command, lets you change its key and warns when two commands share one.
+- **Small config files as clean sheets.** TOML, YAML, INI, `.env`, `.properties` and ignore files (`.gitignore`, `.aiignore` and the like) open as sections, keys and values, with comments as captions. Editing a value changes only those bytes: comments, order and spacing stay. A part that cannot be edited exactly stays read-only, and Source is always there. Secret values (keys, tokens, passwords) are masked in the sheet.
+- **TOON.** `.toon` files, the compact data format made for AI, open as tables and cards and can be edited in place. A `toon` block inside Markdown draws the same way.
+- **Review code and plain text.** What an agent changed in a code file, a log or a data file shows line by line, and you keep or revert each change, as you do in Markdown. Lines that change while you watch glow. Very large text files open at once, the first part first.
+- **Next and previous change.** `F7` and `Shift+F7` go to the next or previous change of the open document: the changes you have not reviewed yet, or the passages that are glowing.
+- **Focus mode** (`Ctrl+Alt+F`) leaves only the page.
+- **Drop files into a project.** Files and folders dragged in from the file manager come into the project, into the folder under the pointer. You choose copy or move, names that already exist are listed first, and one Undo takes it all back.
+- **Source is the raw file.** Every byte as it is: nothing hidden, masked or drawn over it. It has find and replace (`Ctrl+F`, `Ctrl+H`) and go to line (`Ctrl+G`). A switch beside the modes shows a Mermaid or PlantUML drawing next to the text while you type (off until you turn it on).
+- **Web pictures on request.** A picture from a web address shows as a chip with its description; a click loads that picture. In the document menu, **Load web pictures in this project** loads them by themselves for that project.
+- **Token count** (off until you turn it on): how many tokens a document, a section or a folder takes. Exact for OpenAI's tokenizers (it asks before it downloads the small vocabulary), marked as approximate for Claude and Gemini.
+- **Converter** (off until you turn it on): turns JSON, XML, YAML, CSV and TOML into TOON or another compact format (or into a readable one), shows the estimated token saving of each choice, and never writes over the original.
+- **Markdown of the AI era is recognized** with no setup: agent files such as `AGENTS.md`, `CLAUDE.md` and `SKILL.md`, Cursor rules (`.mdc`), `llms.txt`, prompt files, and model and dataset cards (told by their front matter).
+- **A bigger agent connection.** It now has 13 tools, with short answers an agent spends few tokens on. New: `map` (the project's files with sizes, tags and descriptions), `outline` (the parts of a file before reading it, optionally with the links in and out), `read` (one part of a file), and `activity` (what you did since the last hand-off). `search` takes a token budget. Permissions are set by group, per project, and a project's `.permark/` can only narrow them. Files in `.aiignore` and private key files never reach an agent, and secret values are always masked. **Hand off to agent** copies one line for your prompt so the agent asks what you did instead of rereading the project. An agent still only reads, shows you a place and marks comments done; it never edits a file through PerMark.
+- **List indent and outdent** buttons in the Edit toolbar.
+- **Choose a picture.** The picture button in Edit opens the system file dialog; the pictures are saved next to the document.
+- **The interface speaks six languages**: English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano.
+
 ### Changed
-- **View, Edit, and Source.** The header switch is View for the rendered document, Edit for changing it, and Source for the Markdown text. The shortcuts stay `Ctrl+E` and `Ctrl+Alt+E`.
+- **One program for every window.** Opening a second project no longer starts a second copy of PerMark.
+- **View, Edit and Source.** The header switch is View for the rendered document, Edit for changing it, and Source for the file's text. The shortcuts stay `Ctrl+E` and `Ctrl+Alt+E`.
+- **Delete in the Explorer** goes to the system trash at once, without asking. `Ctrl+Z` brings it back (on macOS the app cannot take a file out of the Trash).
+- **Heading levels are easier to tell apart**, in reading and in Edit, and heading shortcuts (`Ctrl+Shift+1` to `6`) work on every keyboard layout.
+- **Git.** PerMark uses the git installed on your computer, or its own built-in git when there is none. It still only reads git: it never commits, stages or creates a repository.
+- **Choosing PerMark for Markdown files** is your decision: the installer asks (Markdown types checked, the others not), and on Windows it takes you to the Windows page where you pick the default app.
+- **Quick open** searches all files that are not ignored; hidden ones (names that start with a dot) come after the others unless the Explorer shows them. The tag filter moved to the **Tags** scope of Search everywhere.
+- **"Since your last visit"** compares the content of your documents, not file dates, and works without git.
+- **Follow mode** waits while you are editing.
+- **Notes** keep the 0.5 folder and file names. The newest 50 earlier versions of a note are kept, and a note you were typing is recovered after a crash.
+- **Updates** check once a day, and a restart to update is refused while you have unsaved files, with a list of them.
+- **Code blocks** in Edit take the language as text. Descriptions can be 160 characters.
+- **Pictures** you paste or drop are saved next to the document.
+
+### Removed
+- The setting that chose between reloading a changed file by itself or asking: a file you have not edited reloads, and one with your edits asks.
+- The Explorer's **Show only unread** filter (the **Unread** tab lists the documents), the Outline's popover and its marks for changed sections.
+- The table toolbar's **Add row above** and **Add column to the left** (below and to the right remain).
+- Follow mode's pause while you scroll.
+- The disabled **Semantic** switch in the search panel.
+- The conversion of old `.trailmark/` folders (see Upgrading).
+
+### Fixed
+- The headings of a document looked alike from level 2 on; each level now has its own look.
+- A nested list item could not be moved out a level from the toolbar.
+
+### Known limits
+- PerMark 0.6 was tested on Windows. The macOS and Linux versions are built and checked by the project's CI and have not been tested by hand yet.
+- The installers are not code-signed, so your system warns you the first time.
+- The `.msi` installer does not add the **Open with** entries and its uninstall leaves them; use the `-setup.exe`. The `.msi` stays for updating copies installed from a 0.5 `.msi`.
+- A window with a single file does not follow links to other documents.
+- Find in page misses a match that runs across two styles (`**bold**` and plain text together).
+- Edit mode does not draw pictures that are files next to the document (View and Source do).
+- When a file changes while you edit it, the conflict choice is for the whole document, not change by change.
+- The search panel does not refresh by itself when files change: search again.
+- When live updates stop working (the system ran out of watches), PerMark does not tell you.
+- A git worktree added while a project is open, and a `.permark/` folder made outside the app, show up after you reopen the project. Tags of a file renamed while PerMark was closed stay on the old name until **Clean up**.
+- Search results have no git or unread badges.
+- Config sheets show text over 256 KB or 3,000 rows as plain text, cannot add or remove list items, and show YAML flow style (`{a: 1}`, `[1, 2]`) read-only.
+- On Windows with several input languages installed, the system can keep `Ctrl+Shift+0` for itself, so the paragraph shortcut in Edit is `Ctrl+Alt+0` (`Ctrl+Shift+1` to `6` for headings are not affected).
+- The agent connection hides secret values by their key names. A secret in the middle of ordinary text, such as a private key pasted into a note, is not recognized, and an agent that searches again and again can guess a short secret from whether a search finds it. List such files in `.aiignore`.
+- Reverting a change at the very end of a file whose last line break differs, and restoring a deleted document that used Windows line endings, can leave a different line ending than the original.
 
 ## [0.5.8] - 2026-10-18
 

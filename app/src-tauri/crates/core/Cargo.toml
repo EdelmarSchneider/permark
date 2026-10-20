@@ -1,0 +1,41 @@
+[package]
+name = "permark-core"
+description = "PerMark domain: Tauri-free core services."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# NEVER depend on `tauri` here.
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+thiserror.workspace = true
+dunce.workspace = true
+unicode-normalization.workspace = true
+xxhash-rust.workspace = true
+toml_edit.workspace = true
+dirs.workspace = true
+interprocess.workspace = true
+ignore.workspace = true
+notify.workspace = true
+trash.workspace = true
+comrak.workspace = true
+ammonia.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+widestring.workspace = true
+winreg.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

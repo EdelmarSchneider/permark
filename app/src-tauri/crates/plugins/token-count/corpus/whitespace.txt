@@ -1,0 +1,18 @@
+Indented list:
+    - four spaces
+        - eight spaces
+	- a tab
+		- two tabs
+
+Trailing spaces here   
+Blank lines below
+
+
+
+after three blank lines.
+
+   
+	
+End with spaces and newlines   
+
+  

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Regenerates the logos of the Microsoft Store package (src-tauri/msstore/Assets) from src-tauri/icons/icon.png.
+  Regenerates the logos of the Microsoft Store package (app/src-tauri/msstore/Assets) from app/src-tauri/icons/icon.png.
 
 .DESCRIPTION
   The logos are committed, so building the package needs nothing from this script. Run it only when the app's icon
@@ -26,9 +26,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 
+# Repo root = parent of scripts/; the program lives in app/.
 $Root = Split-Path -Parent $PSScriptRoot
-if (-not $Source) { $Source = Join-Path $Root 'src-tauri\icons\icon.png' }
-if (-not $OutDir) { $OutDir = Join-Path $Root 'src-tauri\msstore\Assets' }
+$Tauri = Join-Path $Root 'app\src-tauri'
+if (-not $Source) { $Source = Join-Path $Tauri 'icons\icon.png' }
+if (-not $OutDir) { $OutDir = Join-Path $Tauri 'msstore\Assets' }
 
 function Save-Logo {
   param(

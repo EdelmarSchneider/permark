@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+.pnp.js
+
+# Build output
+/dist
+/build/
+*.log
+!important.log
+
+# Env files
+.env
+.env.*
+!.env.example

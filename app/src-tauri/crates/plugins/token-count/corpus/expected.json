@@ -1,0 +1,221 @@
+{
+ "tiktoken": "0.14.0",
+ "files": {
+  "ar-prose.txt": {
+   "o200k": 159,
+   "cl100k": 346,
+   "gemini": 170,
+   "chars": 476
+  },
+  "code.css": {
+   "o200k": 1044,
+   "cl100k": 1042,
+   "gemini": 1315,
+   "chars": 3424
+  },
+  "code.html": {
+   "o200k": 180,
+   "cl100k": 182,
+   "gemini": 191,
+   "chars": 553
+  },
+  "code.py": {
+   "o200k": 200,
+   "cl100k": 201,
+   "gemini": 245,
+   "chars": 751
+  },
+  "code.rs": {
+   "o200k": 1606,
+   "cl100k": 1606,
+   "gemini": 1868,
+   "chars": 6974
+  },
+  "code.sh": {
+   "o200k": 111,
+   "cl100k": 110,
+   "gemini": 118,
+   "chars": 288
+  },
+  "code.sql": {
+   "o200k": 107,
+   "cl100k": 106,
+   "gemini": 132,
+   "chars": 374
+  },
+  "code.svelte": {
+   "o200k": 1270,
+   "cl100k": 1259,
+   "gemini": 1516,
+   "chars": 4730
+  },
+  "code.ts": {
+   "o200k": 2087,
+   "cl100k": 2066,
+   "gemini": 2415,
+   "chars": 6816
+  },
+  "config.toml": {
+   "o200k": 1212,
+   "cl100k": 1208,
+   "gemini": 1404,
+   "chars": 3992
+  },
+  "config.yml": {
+   "o200k": 939,
+   "cl100k": 946,
+   "gemini": 1050,
+   "chars": 3734
+  },
+  "data.base64": {
+   "o200k": 1393,
+   "cl100k": 1451,
+   "gemini": 1394,
+   "chars": 2027
+  },
+  "data.csv": {
+   "o200k": 3392,
+   "cl100k": 3392,
+   "gemini": 5034,
+   "chars": 6795
+  },
+  "data.hex": {
+   "o200k": 2433,
+   "cl100k": 2437,
+   "gemini": 2995,
+   "chars": 3900
+  },
+  "data.json": {
+   "o200k": 844,
+   "cl100k": 856,
+   "gemini": 956,
+   "chars": 2454
+  },
+  "data.log": {
+   "o200k": 3381,
+   "cl100k": 3390,
+   "gemini": 4660,
+   "chars": 8469
+  },
+  "data.urls": {
+   "o200k": 875,
+   "cl100k": 876,
+   "gemini": 1180,
+   "chars": 2518
+  },
+  "de-novel.txt": {
+   "o200k": 1992,
+   "cl100k": 2349,
+   "gemini": 1893,
+   "chars": 7597
+  },
+  "el-prose.txt": {
+   "o200k": 153,
+   "cl100k": 364,
+   "gemini": 170,
+   "chars": 413
+  },
+  "en-markdown.md": {
+   "o200k": 2250,
+   "cl100k": 2251,
+   "gemini": 2292,
+   "chars": 8945
+  },
+  "en-novel.txt": {
+   "o200k": 2963,
+   "cl100k": 2985,
+   "gemini": 3006,
+   "chars": 11904
+  },
+  "es-novel.txt": {
+   "o200k": 2159,
+   "cl100k": 2439,
+   "gemini": 2104,
+   "chars": 7915
+  },
+  "fr-novel.txt": {
+   "o200k": 2170,
+   "cl100k": 2466,
+   "gemini": 2172,
+   "chars": 7947
+  },
+  "he-prose.txt": {
+   "o200k": 163,
+   "cl100k": 445,
+   "gemini": 182,
+   "chars": 446
+  },
+  "hi-prose.txt": {
+   "o200k": 123,
+   "cl100k": 368,
+   "gemini": 152,
+   "chars": 368
+  },
+  "it-novel.txt": {
+   "o200k": 2263,
+   "cl100k": 2483,
+   "gemini": 2138,
+   "chars": 7423
+  },
+  "ja-novel.txt": {
+   "o200k": 4297,
+   "cl100k": 5620,
+   "gemini": 3323,
+   "chars": 5001
+  },
+  "ko-prose.txt": {
+   "o200k": 168,
+   "cl100k": 286,
+   "gemini": 192,
+   "chars": 274
+  },
+  "numbers.txt": {
+   "o200k": 277,
+   "cl100k": 279,
+   "gemini": 388,
+   "chars": 466
+  },
+  "pt-novel.txt": {
+   "o200k": 2234,
+   "cl100k": 2576,
+   "gemini": 2260,
+   "chars": 7917
+  },
+  "ru-prose.txt": {
+   "o200k": 170,
+   "cl100k": 304,
+   "gemini": 159,
+   "chars": 637
+  },
+  "symbols.txt": {
+   "o200k": 276,
+   "cl100k": 316,
+   "gemini": 242,
+   "chars": 516
+  },
+  "th-prose.txt": {
+   "o200k": 135,
+   "cl100k": 290,
+   "gemini": 115,
+   "chars": 304
+  },
+  "whitespace.txt": {
+   "o200k": 47,
+   "cl100k": 48,
+   "gemini": 52,
+   "chars": 191
+  },
+  "zh-hans-text.txt": {
+   "o200k": 182,
+   "cl100k": 244,
+   "gemini": 161,
+   "chars": 247
+  },
+  "zh-hant-novel.txt": {
+   "o200k": 5197,
+   "cl100k": 7242,
+   "gemini": 4518,
+   "chars": 5001
+  }
+ }
+}

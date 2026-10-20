@@ -1,0 +1,357 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createMockApi } from "../../api/mock";
+import { mockHash } from "../../api/mockEdit";
+import { confirmLeave } from "./guard";
+import { EditingSession, type ActiveEditor, type Hooks } from "./session.svelte";
+
+/** An editor on screen whose text the test types. */
+function fakeEditor(initial: string): ActiveEditor & { set(text: string): void } {
+  let text = initial;
+  return {
+    kind: "source",
+    text: () => text,
+    changes: () => 1,
+    topLine: () => 1,
+    selection: () => "",
+    focus: () => {},
+    set: (next) => {
+      text = next;
+    },
+  };
+}
+
+function setup() {
+  const api = createMockApi();
+  const session = new EditingSession(api);
+  const notes: string[] = [];
+  const opened: string[] = [];
+  let saved = 0;
+  const hooks: Hooks = {
+    note: (text) => notes.push(text),
+    fail: (error) => notes.push(`fail ${error.kind}`),
+    saved: () => {
+      saved += 1;
+    },
+    open: (path) => opened.push(path),
+    readingLine: () => 3,
+    showReadingLine: () => {},
+    savedText: (count) => `saved ${count}`,
+  };
+  session.bind(hooks);
+  return { api, session, notes, opened, saved: () => saved };
+}
+
+async function open(session: EditingSession, path = "docs/guide.md") {
+  await session.enter("source", path, "markdown", { kind: "explicit" });
+  const content = session.content;
+  if (!content) throw new Error("no content");
+  const editor = fakeEditor(content.text);
+  session.attach(content.seq, editor);
+  return { editor, content };
+}
+
+/** Lets the change check and the effects run. */
+async function settle(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(200);
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+}
+
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("editing session", () => {
+  it("loads clean, turns dirty on an edit, saves only the changed lines, and is clean again", async () => {
+    const { api, session, saved } = setup();
+    const { editor, content } = await open(session);
+    expect(session.state.s).toBe("clean");
+    expect(content.line).toBe(3);
+    const lines = content.text.split("\n");
+    lines[0] = "# Changed title";
+    editor.set(lines.join("\n"));
+    session.changed();
+    await settle();
+    expect(session.state.s).toBe("dirty");
+    expect(api.probe.edit.unsaved).toBe("docs/guide.md");
+    session.save();
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(api.probe.edit.saves).toEqual([
+      { path: "docs/guide.md", edits: [{ at: 0, remove: 1, insert: ["# Changed title"] }] },
+    ]);
+    expect(api.probe.edit.unsaved).toBeNull();
+    expect(saved()).toBe(1);
+  });
+
+  it("typing and taking it back is no change", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "x");
+    session.changed();
+    await settle();
+    expect(session.state.s).toBe("dirty");
+    editor.set(content.text);
+    session.changed();
+    await settle();
+    expect(session.state.s).toBe("clean");
+  });
+
+  it("a disk change while dirty is a conflict; keep mine saves over the disk's version", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "mine\n");
+    session.changed();
+    await settle();
+    // an agent wrote the file meanwhile
+    const theirs = content.text.replace("Guide", "Their guide");
+    api.probe.edit.files.set("docs/guide.md", theirs);
+    session.onDocumentChanged({
+      window: "main",
+      path: "docs/guide.md",
+      change: "changed",
+      version: mockHash(theirs),
+    });
+    await settle();
+    expect(session.state.s).toBe("conflict");
+    expect(session.disk?.text).toBe(theirs);
+    session.dispatch({ e: "keepMine" });
+    await settle();
+    expect(session.state.s).toBe("clean");
+    expect(api.probe.edit.files.get("docs/guide.md")).toBe(content.text + "mine\n");
+  });
+
+  it("a save that meets another version is a conflict and nothing is written", async () => {
+    const { api, session } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "mine\n");
+    session.changed();
+    await settle();
+    api.probe.edit.files.set("docs/guide.md", "someone else\n");
+    session.save();
+    await settle();
+    expect(session.state.s).toBe("conflict");
+    expect(api.probe.edit.files.get("docs/guide.md")).toBe("someone else\n");
+    expect(api.probe.edit.saves).toEqual([]);
+  });
+
+  it("save as new opens the person's copy", async () => {
+    const { session, opened, api } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "mine\n");
+    session.changed();
+    await settle();
+    api.probe.edit.files.set("docs/guide.md", "theirs\n");
+    session.onDocumentChanged({
+      window: "main",
+      path: "docs/guide.md",
+      change: "changed",
+      version: mockHash("theirs\n"),
+    });
+    await settle();
+    session.dispatch({ e: "saveAsNew" });
+    await settle();
+    expect(opened).toEqual(["docs/guide-mine.md"]);
+    expect(api.probe.edit.files.get("docs/guide-mine.md")).toBe(content.text + "mine\n");
+    expect(session.state.s).toBe("closed");
+  });
+
+  it("asks before leaving unsaved edits: keep editing stays, discard leaves", async () => {
+    const { session, api } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "x");
+    session.changed();
+    await settle();
+    const stay = confirmLeave({ kind: "document", path: "README.md" });
+    expect(session.state.s).toBe("unsavedPrompt");
+    session.answer("keepEditing");
+    expect(await stay).toBe(false);
+    expect(session.state.s).toBe("dirty");
+    const go = confirmLeave({ kind: "document", path: "README.md" });
+    session.answer("discard");
+    expect(await go).toBe(true);
+    await settle();
+    expect(session.state.s).toBe("closed");
+    expect(api.probe.edit.saves).toEqual([]);
+    expect(api.probe.edit.unsaved).toBeNull();
+    // nothing held: leaving is free
+    expect(await confirmLeave({ kind: "window" })).toBe(true);
+  });
+
+  it("save then leave: the prompt's Save writes first", async () => {
+    const { session, api } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "y");
+    session.changed();
+    await settle();
+    const go = confirmLeave({ kind: "window" });
+    session.answer("save");
+    await settle();
+    expect(await go).toBe(true);
+    expect(api.probe.edit.saves.length).toBe(1);
+  });
+
+  it("a clean document leaves without asking; the same document is not a leave", async () => {
+    const { session } = setup();
+    await open(session);
+    expect(await confirmLeave({ kind: "document", path: "docs/guide.md" })).toBe(true);
+    expect(session.state.s).toBe("clean");
+    expect(await confirmLeave({ kind: "document", path: "README.md" })).toBe(true);
+    expect(session.state.s).toBe("closed");
+  });
+
+  it("switches Edit <-> Source keeping the text, and to View after asking", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    editor.set(content.text + "kept\n");
+    session.changed();
+    await settle();
+    await session.switchTo("edit");
+    expect(session.mode).toBe("edit");
+    expect(session.content?.text).toBe(content.text + "kept\n");
+    expect(session.content?.segments?.length).toBeGreaterThan(0);
+    expect(session.state.s).toBe("dirty");
+  });
+});
+
+describe("the journal of unsaved text", () => {
+  type Call = { path: string; baseHash: string; text: string | null };
+
+  async function typed(
+    session: EditingSession,
+    calls: Call[],
+    policy: "explicit" | "auto" = "explicit",
+  ) {
+    session.bindJournal((path, baseHash, text) => calls.push({ path, baseHash, text }));
+    await session.enter(
+      "source",
+      "docs/guide.md",
+      "markdown",
+      policy === "auto" ? { kind: "auto", delayMs: 800 } : { kind: "explicit" },
+    );
+    const content = session.content;
+    if (!content) throw new Error("no content");
+    const editor = fakeEditor(content.text);
+    session.attach(content.seq, editor);
+    return { editor, content };
+  }
+
+  it("hands the unsaved text over every two seconds and forgets it once it is on disk", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    const { editor, content } = await typed(session, calls);
+    editor.set("# Typed but not saved\n" + content.text);
+    session.changed();
+    await settle();
+    expect(calls).toEqual([]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      path: "docs/guide.md",
+      text: "# Typed but not saved\n" + content.text,
+    });
+    expect(calls[0]?.baseHash).toBe(mockHash(content.text));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toHaveLength(2);
+    session.save();
+    await settle();
+    expect(calls.at(-1)).toMatchObject({ path: "docs/guide.md", text: null });
+    const count = calls.length;
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(calls).toHaveLength(count);
+  });
+
+  it("an autosave inside the two seconds never writes the journal and takes nothing back", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    const { editor, content } = await typed(session, calls, "auto");
+    editor.set(content.text + "more\n");
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(session.state.s).toBe("clean");
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(calls).toEqual([]);
+  });
+
+  it("an entry an earlier run left is not touched by opening the document", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    await typed(session, calls);
+    await session.switchTo("view").catch(() => {});
+    expect(calls).toEqual([]);
+  });
+
+  it("letting go of the workspace keeps the entry; discarding the text takes it back", async () => {
+    const { session } = setup();
+    const calls: Call[] = [];
+    const first = await typed(session, calls);
+    first.editor.set("changed\n" + first.content.text);
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(calls).toHaveLength(1);
+    session.release();
+    expect(calls).toHaveLength(1);
+    const second = await typed(session, calls);
+    second.editor.set("again\n" + second.content.text);
+    session.changed();
+    await settle();
+    await vi.advanceTimersByTimeAsync(2000);
+    const written = calls.length;
+    void session.confirmLeave({ kind: "document", path: "other.md" });
+    await settle();
+    session.answer("discard");
+    await settle();
+    expect(calls.length).toBeGreaterThan(written);
+    expect(calls.at(-1)?.text).toBeNull();
+  });
+
+  it("hears every save", async () => {
+    const { session } = setup();
+    const heard: string[] = [];
+    const off = session.onSaved((path) => heard.push(path));
+    const { editor, content } = await open(session);
+    editor.set(content.text + "x\n");
+    session.changed();
+    await settle();
+    session.save();
+    await settle();
+    expect(heard).toEqual(["docs/guide.md"]);
+    off();
+  });
+});
+
+describe("pictures dropped from the system", () => {
+  it("go to the editor on screen, at the point of the drop", async () => {
+    const { session } = setup();
+    const { editor } = await open(session);
+    const taken: { files: File[]; x: number; y: number }[] = [];
+    editor.pictures = (files, point) => taken.push({ files, ...point });
+    const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+    expect(session.dropPictures([file], { x: 12, y: 34 })).toBe(true);
+    expect(taken).toEqual([{ files: [file], x: 12, y: 34 }]);
+  });
+
+  it("are not taken when no editor is on screen or the editor takes none", async () => {
+    const { session } = setup();
+    const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+    expect(session.dropPictures([file], { x: 1, y: 1 })).toBe(false);
+    await open(session);
+    expect(session.dropPictures([file], { x: 1, y: 1 })).toBe(false);
+  });
+
+  it("are not taken after the editor is gone", async () => {
+    const { session } = setup();
+    const { editor, content } = await open(session);
+    const taken: unknown[] = [];
+    editor.pictures = () => taken.push(1);
+    session.release();
+    void content;
+    const file = new File([new Uint8Array([1])], "a.png", { type: "image/png" });
+    expect(session.dropPictures([file], { x: 1, y: 1 })).toBe(false);
+    expect(taken).toEqual([]);
+  });
+});

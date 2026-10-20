@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Manifest of the Microsoft Store package. scripts/build-msix.ps1 fills in @VERSION@ (the app version + a fourth part, 0,
+  which the Store reserves) and @DESCRIPTION@ (bundle.shortDescription of tauri.conf.json), puts permark.exe and
+  permark_shell.dll (crates/shell-ext) in the package folder and packs it with MakeAppx. Not signed here: the Store signs.
+
+  The identity (Name, Publisher, PublisherDisplayName) is the one Partner Center reserved for the app; it never changes.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:desktop5="http://schemas.microsoft.com/appx/manifest/desktop/windows10/5"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap3 desktop desktop4 desktop5 com rescap">
+
+  <Identity
+    Name="EdelmarSchneider.TrailMark"
+    Publisher="CN=C8BB0009-0553-4E03-8EDF-1FC57AB0CCF7"
+    Version="@VERSION@"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>PerMark</DisplayName>
+    <PublisherDisplayName>Edelmar Schneider</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- 10.0.17763.0 (Windows 10 1809): the first version with app execution aliases for desktop apps. -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <!-- The languages of the app's interface; the first is the default. -->
+  <Resources>
+    <Resource Language="en-US" />
+    <Resource Language="pt-BR" />
+    <Resource Language="es" />
+    <Resource Language="de" />
+    <Resource Language="zh-CN" />
+    <Resource Language="it" />
+  </Resources>
+
+  <Applications>
+    <Application Id="PerMark" Executable="permark.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="PerMark"
+        Description="@DESCRIPTION@"
+        BackgroundColor="#1F2024"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile
+          Wide310x150Logo="Assets\Wide310x150Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!--
+          App execution alias: `permark` on the PATH (%LOCALAPPDATA%\Microsoft\WindowsApps\permark.exe). Agents start
+          `permark mcp` through it: the program's own path changes with every version of the package.
+        -->
+        <uap3:Extension Category="windows.appExecutionAlias" Executable="permark.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap3:AppExecutionAlias>
+            <desktop:ExecutionAlias Alias="permark.exe" />
+          </uap3:AppExecutionAlias>
+        </uap3:Extension>
+
+        <!--
+          The file types PerMark reads ("Open with"; the default app only once the person picks it in Windows Settings).
+          The file's path is the first argument, as `permark <path>` takes it. Same groups as the app's FileGroup.
+        -->
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarkmarkdown" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>Markdown document</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.md</uap:FileType>
+              <uap:FileType>.markdown</uap:FileType>
+              <uap:FileType>.mdown</uap:FileType>
+              <uap:FileType>.mkd</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarktext" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>Text document</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.txt</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarkjson" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>JSON file</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.json</uap:FileType>
+              <uap:FileType>.jsonl</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarkxml" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>XML file</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.xml</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarkyaml" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>YAML file</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.yaml</uap:FileType>
+              <uap:FileType>.yml</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarktoml" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>TOML file</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.toml</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarkini" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>Settings file</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.ini</uap:FileType>
+              <uap:FileType>.cfg</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
+          <uap3:FileTypeAssociation Name="permarkproperties" Parameters="&quot;%1&quot;">
+            <uap:DisplayName>Properties file</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.properties</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap3:FileTypeAssociation>
+        </uap3:Extension>
+
+        <!--
+          "Open with PerMark" and "New Markdown file" on folders and their background: COM classes implementing
+          IExplorerCommand (crates/shell-ext, permark_shell.dll beside permark.exe). Surrogate server: Windows loads the DLL
+          into its own helper process (dllhost.exe), never into Explorer. The class ids never change.
+        -->
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:SurrogateServer DisplayName="PerMark shell extension">
+              <com:Class Id="D5FFB935-7A42-4E3D-90E1-0180A7999B94" Path="permark_shell.dll" ThreadingModel="STA" />
+              <com:Class Id="C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09" Path="permark_shell.dll" ThreadingModel="STA" />
+            </com:SurrogateServer>
+          </com:ComServer>
+        </com:Extension>
+
+        <desktop4:Extension Category="windows.fileExplorerContextMenus">
+          <desktop4:FileExplorerContextMenus>
+            <desktop5:ItemType Type="Directory">
+              <desktop5:Verb Id="OpenWithPerMark" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
+              <desktop5:Verb Id="NewMarkdownWithPerMark" Clsid="C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09" />
+            </desktop5:ItemType>
+            <desktop5:ItemType Type="Directory\Background">
+              <desktop5:Verb Id="OpenWithPerMarkHere" Clsid="D5FFB935-7A42-4E3D-90E1-0180A7999B94" />
+              <desktop5:Verb Id="NewMarkdownWithPerMarkHere" Clsid="C3B7E2A1-9D54-4C18-B6F0-2E8A71D45C09" />
+            </desktop5:ItemType>
+          </desktop4:FileExplorerContextMenus>
+        </desktop4:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <!-- A desktop app that reads any folder the person opens runs with the person's rights, not in an app container. -->
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

@@ -1,0 +1,27 @@
+[package]
+name = "permark-plugin-token-count"
+description = "PerMark plugin token-count: tokens of a document or a selection by the tokenizer the person chooses (exact or approximate, always marked)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API).
+[dependencies]
+permark-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+xxhash-rust.workspace = true
+base64 = "0.22"
+sha2 = "0.10"
+# The one network call of the plugin: the vocabulary download the person confirmed. Blocking, no async runtime.
+ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

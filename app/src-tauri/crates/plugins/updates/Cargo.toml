@@ -1,0 +1,20 @@
+[package]
+name = "permark-plugin-updates"
+description = "PerMark plugin updates: signed self-updates of the direct builds (check at start and every day, download, restart)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API). The network and the installer are the
+# app's: it provides an `UpdateDriver`.
+[dependencies]
+permark-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+
+[lints]
+workspace = true
