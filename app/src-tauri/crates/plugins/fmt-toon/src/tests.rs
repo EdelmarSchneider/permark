@@ -674,3 +674,33 @@ fn the_plugin_serves_json_and_claims_toon_files() {
     assert!(p.manifest().default_enabled);
     assert_eq!(p.manifest().kind, PluginKind::Format);
 }
+
+#[test]
+fn a_new_row_takes_plain_values_where_they_need_no_quotes() {
+    let added = apply(
+        USERS,
+        ConfigEdit::AddRow {
+            table: "users".into(),
+            at: 3,
+        },
+    );
+    let filled = apply(
+        &added,
+        ConfigEdit::Set {
+            path: "users[3].role".into(),
+            value: text("math"),
+        },
+    );
+    assert!(filled.contains("  0,\"\",math,false\n"), "{filled}");
+    let quoted = apply(
+        &filled,
+        ConfigEdit::Set {
+            path: "users[3].name".into(),
+            value: text("Johnson, K"),
+        },
+    );
+    assert!(
+        quoted.contains("  0,\"Johnson, K\",math,false\n"),
+        "{quoted}"
+    );
+}

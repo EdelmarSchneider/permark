@@ -205,7 +205,7 @@
   {/if}
 {/snippet}
 
-<div class="table-wrap" bind:this={wrap}>
+<div class="sheet-table" bind:this={wrap}>
   <p class="meta">
     {tn("config.table.rows", table.rows.length)}{#if delimiter}<span class="delim">
         · {delimiter}</span
@@ -357,7 +357,7 @@
 {/if}
 
 <style>
-  .table-wrap {
+  .sheet-table {
     padding: var(--sp-2) var(--sp-3) var(--sp-3);
   }
   .meta {

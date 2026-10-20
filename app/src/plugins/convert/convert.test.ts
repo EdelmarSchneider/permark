@@ -216,7 +216,7 @@ describe("the dialog", () => {
     expect(radios[0]?.textContent).toContain("−");
     expect(radios[3]?.disabled).toBe(true);
     expect(radios[3]?.textContent).toContain("Not available: the data is not one flat table");
-    expect(radios[6]?.textContent).toContain("Not a good fit: for reading");
+    expect(radios[6]?.textContent).toContain("Does not help: for reading");
     expect(target.querySelector("pre")?.textContent).toContain("toon of");
     expect(target.textContent).toContain("~ = estimated tokens");
     radios[5]?.click();

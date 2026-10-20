@@ -185,7 +185,7 @@ describe("editing a TOON sheet", () => {
       ?.click();
     await tick();
     await tick();
-    expect(root.querySelector(".table-wrap .refusal")?.textContent).toMatch(/already used/);
+    expect(root.querySelector(".sheet-table .refusal")?.textContent).toMatch(/already used/);
   });
 
   it("a cell edit goes through the value commit", async () => {

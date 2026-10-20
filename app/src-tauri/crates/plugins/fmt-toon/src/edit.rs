@@ -104,10 +104,16 @@ impl Cx<'_> {
         let scalar = self.scan.sheet.scalar(path).ok_or(EditRefusal::NotFound)?;
         let span = scalar.span.clone().ok_or(EditRefusal::NotFound)?;
         let delim = self.scan.sites.delims.get(path).copied();
+        // an empty string was quoted only because it was empty: the new text is quoted only when it needs it
+        let quote = if scalar.text.is_empty() {
+            Quote::Plain
+        } else {
+            scalar.quote
+        };
         let root = self.scan.sites.root_primitive && path.is_empty();
         let token = match (scalar.kind, value) {
             (ScalarKind::String | ScalarKind::Null, NewValue::Text { text }) => {
-                string_token(text, scalar.quote, delim, root)
+                string_token(text, quote, delim, root)
             }
             (ScalarKind::Number | ScalarKind::Bool, NewValue::Literal { text }) => {
                 literal_token(scalar.kind, text)?
