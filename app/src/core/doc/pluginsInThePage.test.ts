@@ -153,7 +153,8 @@ describe("blocks a plugin adds", () => {
     documents.refreshBlocks();
     await until(() => target.querySelector(".extra") !== null, "the added block");
     expect(target.querySelectorAll(".md-body > *").length).toBe(before + 1);
-    expect(target.querySelector(".md-body > :first-child")?.className).toBe("extra");
+    // the added block comes first (a plugin may mark it too, e.g. a glow while it is new)
+    expect(target.querySelector(".md-body > :first-child")?.classList.contains("extra")).toBe(true);
     expect(updates.at(-1)).toEqual({ added: ["rv:test"], removed: [] });
     // the page was updated, not built again: the place stays
     expect(scroller?.scrollTop).toBe(40);

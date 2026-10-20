@@ -314,7 +314,8 @@ fn changes_made_before_the_file_broke_are_parked_and_written_when_it_reads_again
         let text = h.meta_text();
         text.contains("mine") && text.contains("theirs")
     });
-    assert_eq!(h.index()["status"]["parked"], 0);
+    // the count drops once the writer is back from the disk
+    wait_until("nothing parked", || h.index()["status"]["parked"] == 0);
 }
 
 impl Harness {
