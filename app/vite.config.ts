@@ -44,7 +44,13 @@ export default defineConfig({
   // Fonts + icons ship as files (CSP font-src 'self'; no data: URLs).
   // The diagram engines (PlantUML ~3 MB, Mermaid's layout ~1.5 MB) are chunks of their own, loaded only when a
   // diagram comes near the screen: the size warning is about the main bundle, which stays small.
-  build: { assetsInlineLimit: 0, chunkSizeWarningLimit: 3500 },
+  // The build prints how long plugin callbacks took when they are a tenth of it (the CSS transform of this many
+  // components is): a timing, not a problem.
+  build: {
+    assetsInlineLimit: 0,
+    chunkSizeWarningLimit: 3500,
+    rolldownOptions: { checks: { pluginTimings: false } },
+  },
 
   test: {
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
