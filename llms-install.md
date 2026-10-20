@@ -1,6 +1,6 @@
 # PerMark MCP Server — Automated LLM Installation Guide (`llms-install.md`)
 
-PerMark is a local-first desktop Markdown app with a built-in Model Context Protocol (MCP) server (`permark mcp`) over standard input/output (`stdio`). It requires **no API keys, no account, and no environment variables**.
+PerMark is a local-first desktop unified document workspace for Markdown and the files around it, with a built-in Model Context Protocol (MCP) server (`permark mcp`) over standard input/output (`stdio`). It requires **no API keys, no account, and no environment variables**.
 
 ## Step 1: Install the `permark` Binary
 
@@ -30,7 +30,7 @@ rm -f /tmp/permark.deb
 ```
 
 ## Step 2: Verify the Binary
-Verify that `permark` is on `PATH` (or at its standard install path):
+Verify that `permark` is on `PATH` (or at its standard install path). A direct install on Windows or macOS does not put `permark` on `PATH`: then use the full path in the `command` of Step 3.
 - **Windows:** `permark` (or `%LOCALAPPDATA%\PerMark\permark.exe`)
 - **macOS:** `permark` (or `/Applications/PerMark.app/Contents/MacOS/permark`)
 - **Linux:** `/usr/bin/permark`
@@ -51,4 +51,4 @@ Add the `permark` server entry using `stdio` transport:
 ```
 
 ## Step 4: Enable Agent Connection for the Project Folder
-In the PerMark desktop app, open the project folder and toggle **Settings → Agent Connection** to **On** (this writes `.permark/` state locally so `permark mcp` can serve `get_context`, `list_unread`, `search`, `list_tags`, `list_comments`, `resolve_comment`, `list_notes`, `read_note`, and `open` for that folder).
+The connection is off until the person turns it on, per project. In the PerMark desktop app, open the project folder and switch on **Share this project with agents** in the Settings (the choice is kept in the person's own PerMark data, never in the project, so nothing inside a project can turn it on). `permark mcp` then serves 13 tools for that folder: `get_context`, `list_unread`, `map`, `search`, `list_tags`, `outline`, `read`, `list_comments`, `resolve_comment`, `list_notes`, `read_note`, `activity` and `open`. An agent reads, shows a place and marks comments done; it never edits files through PerMark. With PerMark closed, the tools read from the project's files (`get_context` says PerMark is not open; `open` starts it).
