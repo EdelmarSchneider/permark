@@ -31,6 +31,7 @@ const { ui } = await import("./ui.svelte");
 const { windowStore } = await import("../window.svelte");
 const { tabs } = await import("./tabs.svelte");
 const { registerCoreCommands } = await import("../commands/core");
+const { installWindowKeys } = await import("../commands/install");
 const { contributions } = await import("../plugins/instance.svelte");
 const { conditions } = await import("../conditions/context.svelte");
 const { pluginsStore, projectSettings } = await import("./settings/stores.svelte");
@@ -605,6 +606,58 @@ describe("the top bar", () => {
     expect(all.map((t) => t.tabIndex)).toEqual([0, -1, -1, -1]);
     const closes = Array.from(target.querySelectorAll<HTMLElement>(".close"));
     expect(closes.map((b) => b.tabIndex)).toEqual([-1, -1, -1, -1]);
+    bar.stop();
+  });
+
+  it("tab keys switch at once, also from a focused chip, and leave no chip focused (no stray focus ring)", async () => {
+    const bar = await mountBar();
+    const stopKeys = installWindowKeys();
+    const focusedChip = (): boolean =>
+      document.activeElement instanceof HTMLElement && document.activeElement.matches("[data-tab]");
+    const nextOf = (step: 1 | -1): number => {
+      const at = tabs.list.findIndex((t) => t.tab === tabs.active);
+      return tabs.list[(at + step + tabs.list.length) % tabs.list.length]!.tab;
+    };
+    // Ctrl+Alt+Right on a focused chip switches the tab (the chip's arrow keys take plain arrows only)
+    const chip = chips().find((c) => c.tabIndex === 0)!;
+    chip.focus();
+    let want = nextOf(1);
+    press(chip, "ArrowRight", { ctrlKey: true, altKey: true });
+    await until(() => tabs.active === want, "Ctrl+Alt+Right switched");
+    flushSync();
+    expect(focusedChip()).toBe(false);
+    // Ctrl+Shift+Tab | Ctrl+Tab | Ctrl+n from the page: switched, no chip takes the focus
+    want = nextOf(-1);
+    press(window, "Tab", { ctrlKey: true, shiftKey: true });
+    await until(() => tabs.active === want, "Ctrl+Shift+Tab switched");
+    want = nextOf(1);
+    press(document.body, "Tab", { ctrlKey: true });
+    await until(() => tabs.active === want, "Ctrl+Tab switched");
+    press(document.body, "1", { ctrlKey: true });
+    await until(() => tabs.active === tabs.list[0]!.tab, "Ctrl+1 switched");
+    flushSync();
+    expect(focusedChip()).toBe(false);
+    // a chip picked with Enter lets go of the focus once its tab is the active one
+    const third = chips()[2]!;
+    third.focus();
+    third.click();
+    await until(() => tabs.active === tabs.list[2]!.tab, "picked");
+    flushSync();
+    expect(focusedChip()).toBe(false);
+    // a mouse press on a chip never takes the focus from the page
+    const down = new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 });
+    chips()[1]!.dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    // one active chip (it joins the page below): its item carries the look, its button says so
+    const current = Array.from(target.querySelectorAll(".chip.is-current"));
+    expect(current.length).toBe(1);
+    expect(current[0]?.querySelector("[data-tab]")?.getAttribute("aria-current")).toBe("page");
+    expect(current[0]?.getAttribute("data-id")).toBe(String(tabs.active));
+    // plain arrows still move between chips
+    chips()[0]!.focus();
+    press(chips()[0]!, "ArrowRight");
+    expect(document.activeElement).toBe(chips()[1]);
+    stopKeys();
     bar.stop();
   });
 

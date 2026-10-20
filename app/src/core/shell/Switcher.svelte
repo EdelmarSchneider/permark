@@ -100,6 +100,8 @@
       tabs.close(tab.tab);
       return;
     }
+    // plain arrows | Home | End only: with modifiers they are the window's (Ctrl+Alt+arrows switch the tab)
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
     const chips = Array.from(row?.querySelectorAll<HTMLElement>("[data-tab]") ?? []);
     const at = chips.indexOf(e.currentTarget as HTMLElement);
     const to =
@@ -150,6 +152,14 @@
     };
   });
 
+  // the active tab changed (keys, a click, an open): a chip holding the focus lets go of it, so no focus ring is left
+  // on it (this view hidden now, or shown again later with the focus brought back) and the keys reach the page
+  $effect(() => {
+    void current;
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && row?.contains(focused)) focused.blur();
+  });
+
   // the active chip stays in view when it changes or the list moves
   $effect(() => {
     const id = current;
@@ -189,7 +199,8 @@
           oncontextmenu={(e) => oncontextmenu(e, tab)}
           onauxclick={(e) => onauxclick(e, tab)}
           onmousedown={(e) => {
-            if (e.button === 1) e.preventDefault();
+            // a press never takes the focus from the page (the editor keeps it; no chip left focused)
+            e.preventDefault();
           }}
           onkeydown={(e) => onkeydown(e, tab)}
         >
@@ -242,10 +253,13 @@
     min-width: 0;
     height: 100%;
   }
+  /* the chips stand on the band's bottom edge: the active one runs down into the document area (one piece), the
+     others float a little above it; every chip keeps the same box, so nothing moves when the active one changes */
   .row {
     --fade: 28px;
     display: flex;
-    align-items: center;
+    align-self: stretch;
+    align-items: flex-end;
     gap: var(--sp-1);
     min-width: 0;
     margin: 0;
@@ -275,31 +289,46 @@
   }
   .chip {
     position: relative;
+    isolation: isolate;
     display: flex;
     flex: 0 1 auto;
     align-items: center;
     min-width: 96px;
     max-width: 232px;
-    height: 30px;
-    border: 1px solid transparent;
-    border-radius: 9px;
+    height: 34px;
+    padding-bottom: 4px;
     color: var(--muted);
-    transition:
-      background-color var(--dur-fast) var(--ease),
-      border-color var(--dur-fast) var(--ease),
-      color var(--dur-fast) var(--ease),
-      box-shadow var(--dur-fast) var(--ease);
+    transition: color var(--dur-fast) var(--ease);
     animation: chip-in var(--dur) var(--ease);
   }
+  /* what the chip looks like, behind its content: a quiet rounded chip, or (active) the tab joined to the page */
+  .chip::before {
+    position: absolute;
+    inset: 0 0 4px;
+    z-index: -1;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    content: "";
+    transition:
+      background-color var(--dur-fast) var(--ease),
+      border-color var(--dur-fast) var(--ease);
+  }
   .chip:hover {
-    background: var(--hover);
     color: var(--text);
   }
+  .chip:hover::before {
+    background: var(--hover);
+  }
   .chip.is-current {
-    background: var(--bg);
-    border-color: var(--border);
-    box-shadow: var(--shadow-chip);
     color: var(--text);
+  }
+  /* down to the band's bottom edge, over its border line: the page's color, no bottom edge, no seam */
+  .chip.is-current::before {
+    bottom: 0;
+    border-color: var(--border);
+    border-bottom-width: 0;
+    border-radius: 9px 9px 0 0;
+    background: var(--bg);
   }
   .pick {
     display: flex;
@@ -409,6 +438,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .chip,
+    .chip::before,
     .close {
       animation: none;
       transition: none;
