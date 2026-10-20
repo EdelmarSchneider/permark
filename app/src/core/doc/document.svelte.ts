@@ -20,6 +20,7 @@ import { enhanceBlock, type EnhanceEnv } from "./enhance";
 import { currentIndex } from "./outline";
 import { changedLines, type LineRange } from "./textDiff";
 import { reading } from "./reading.svelte";
+import { webPictures } from "./webPictures.svelte";
 import { layout } from "../shell/layout.svelte";
 import { recentFiles } from "../search/recent.svelte";
 import { formatQuote, formatReference, type Reference } from "./reference";
@@ -156,6 +157,21 @@ export class DocumentController {
     return this.#workspace?.id ?? null;
   }
 
+  /** The person clicked the chip of a web picture: that picture is fetched and shown. */
+  showWebPicture(chip: Element): void {
+    void webPictures.show(this.#api, chip, (text) => this.#hooks.note(text));
+  }
+
+  /** Kept web pictures take their chips' places; with the project's choice on, the others load. */
+  sweepWebPictures(root: Element): void {
+    webPictures.sweep(this.#api, root, (text) => this.#hooks.note(text));
+  }
+
+  /** The project's choice: web pictures load by themselves (profile only). */
+  setWebPictures(on: boolean, root: Element | null): void {
+    void webPictures.setAlways(this.#api, on, root, (text) => this.#hooks.note(text));
+  }
+
   get singleFile(): boolean {
     return this.#workspace?.kind === "singleFile";
   }
@@ -169,6 +185,7 @@ export class DocumentController {
     this.trail.clear();
     if (workspace !== null) {
       void reading.load(this.#api);
+      void webPictures.load(this.#api, workspace.kind === "project");
       void layout.load(this.#api, workspace.kind === "project");
       if (workspace.kind === "project") void recentFiles.load(this.#api);
     }

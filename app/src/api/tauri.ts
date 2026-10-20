@@ -171,6 +171,19 @@ export const tauriApi: Api = {
       return { ok: false, error: { kind: "command", command, message: errorMessage(error) } };
     }
   },
+  remotePicture: async (url) => {
+    const command = "remote_picture";
+    try {
+      const value = await invoke<ArrayBuffer>(command, { url });
+      return { ok: true, value: new Uint8Array(value) };
+    } catch (error) {
+      const backend = asIpcError(error);
+      if (backend) return { ok: false, error: { kind: "backend", command, error: backend } };
+      return { ok: false, error: { kind: "command", command, message: errorMessage(error) } };
+    }
+  },
+  remotePicturesGet: () => call("remote_pictures_get", {}),
+  remotePicturesSet: (always) => call("remote_pictures_set", { always }),
   readPicture: async (path) => {
     const command = "picture_read";
     try {

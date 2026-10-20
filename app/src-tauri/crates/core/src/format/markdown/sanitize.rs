@@ -292,6 +292,15 @@ mod tests {
         assert!(
             clean("<img src=\"https://example.com/a.png\">").contains("https://example.com/a.png")
         );
+        // authors cannot write a blob: address (the app shows fetched web pictures from blob: URLs)
+        for blob in [
+            "<img src=\"blob:https://example.com/1\">",
+            "<img src=\"BLOB:http://ipc.localhost/x\">",
+            "<video src=\"blob:x\"></video>",
+            "<a href=\"blob:x\">x</a>",
+        ] {
+            assert!(!clean(blob).to_lowercase().contains("blob:"), "{blob}");
+        }
         // authors cannot write the scheme
         assert!(!clean("<a href=\"pm-asset:docs/a.md\">x</a>").contains("pm-asset"));
         assert!(!clean("<img src=\"pm-asset:secret\">").contains("pm-asset:secret"));

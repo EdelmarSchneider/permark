@@ -188,7 +188,7 @@
   outline: 1px dashed var(--border-strong);
   outline-offset: 2px;
 }
-/* pictures from the web are not fetched: a chip says what was there */
+/* pictures from the web are not fetched until the person asks: a chip says what was there */
 .md .remote-image {
   display: inline-block;
   max-width: 100%;
@@ -204,6 +204,15 @@
 .md .remote-image:hover {
   color: var(--text);
   border-color: var(--muted);
+}
+.md .remote-image.is-loading {
+  opacity: 0.6;
+  cursor: progress;
+}
+/* a web picture the person loaded (shown from the window's memory, never from the web address itself) */
+.md img.remote-loaded {
+  max-width: 100%;
+  height: auto;
 }
 /* players written in the document (<video>, <audio>): the file next to the document, played in place */
 .md video,

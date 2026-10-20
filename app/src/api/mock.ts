@@ -160,6 +160,8 @@ export type MockProbe = {
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
   pictures: string[];
+  /** Web pictures asked for, by address; the per-project choice. */
+  remote: { asked: string[]; always: boolean };
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -316,6 +318,7 @@ export function createMockApi(): Api & {
     convert: convert.probe,
     imports: importing.probe,
     pictures: [],
+    remote: { asked: [], always: false },
   };
   let tree: TreeView | null = null;
 
@@ -538,6 +541,25 @@ export function createMockApi(): Api & {
       return ok(done ? { kind: "move", restored: 1, skipped: [] } : null);
     },
     ...importing.api,
+    remotePicture: (url) => {
+      probe.remote.asked.push(url);
+      if (!url.startsWith("https://")) {
+        return Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "remote_picture",
+            error: { kind: "unsupported", subject: null, detail: "https" },
+          },
+        });
+      }
+      return ok(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    },
+    remotePicturesGet: () => ok(probe.remote.always),
+    remotePicturesSet: (always) => {
+      probe.remote.always = always;
+      return ok(null);
+    },
     readPicture: (path) => {
       probe.pictures.push(path);
       return ok(new Uint8Array([0x89, 0x50, 0x4e, 0x47]));

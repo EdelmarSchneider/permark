@@ -4,6 +4,7 @@
 import type { WorkspaceKind } from "../../api/generated/WorkspaceKind";
 import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
+import { webPictures } from "../doc/webPictures.svelte";
 import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
 import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
@@ -186,6 +187,12 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+Alt+w"],
     requires: READING,
     run: cycleWidth,
+  },
+  {
+    id: "reading.webPictures",
+    label: "cmd.webPictures",
+    requires: PROJECT,
+    run: () => documents.setWebPictures(!webPictures.always, document.querySelector(".md-body")),
   },
   {
     id: "doc.focus",

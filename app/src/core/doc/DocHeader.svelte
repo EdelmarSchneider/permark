@@ -20,6 +20,7 @@
   import Badge from "../shell/Badge.svelte";
   import { documents } from "./document.svelte";
   import ReadingMenu from "./ReadingMenu.svelte";
+  import { webPictures } from "./webPictures.svelte";
   import { reading } from "./reading.svelte";
 
   type Props = {
@@ -117,6 +118,15 @@
     const entries: MenuEntry[] = [
       { kind: "item", label: t("cmd.copyDocument"), run: () => void documents.copyDocument() },
     ];
+    if (webPictures.project) {
+      const on = webPictures.always;
+      entries.push({
+        kind: "item",
+        label: `${on ? "✓ " : ""}${t("menu.webPictures")}`,
+        detail: t("menu.webPicturesDetail"),
+        run: () => documents.setWebPictures(!on, document.querySelector(".md-body")),
+      });
+    }
     if (canOpenSystem) {
       entries.push(
         { kind: "separator" },

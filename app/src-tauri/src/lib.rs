@@ -14,6 +14,7 @@ mod shell;
 mod sink;
 #[cfg(feature = "plugin-updates")]
 mod updater;
+mod web_pictures;
 mod windows;
 
 use std::time::Duration;

@@ -154,6 +154,37 @@ describe("the page", () => {
     expect(target.querySelector("img[src^='http']")).toBeNull();
   });
 
+  it("a click on a web picture's chip fetches that picture; Ctrl+click opens it in the browser", async () => {
+    const make = URL.createObjectURL;
+    URL.createObjectURL = () => "blob:test/1";
+    try {
+      await show("README.md");
+      await until(() => target.querySelector(".md-body p") !== null, "page");
+      // the chip the page draws for `![logo](https://...)` (enhance)
+      const drawn = document.createElement("span");
+      drawn.className = "remote-image";
+      drawn.setAttribute("data-url", "https://example.com/logo.png");
+      drawn.setAttribute("aria-label", "logo");
+      target.querySelector(".md-body p")?.append(drawn);
+      expect(mock.probe.remote.asked).toEqual([]);
+      const chip = (): HTMLElement | null => target.querySelector<HTMLElement>(".remote-image");
+      const url = chip()?.getAttribute("data-url") ?? "";
+      chip()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ctrlKey: true }),
+      );
+      expect(mock.probe.web.at(-1)).toBe(url);
+      expect(mock.probe.remote.asked).toEqual([]);
+      chip()?.dispatchEvent(
+        new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+      );
+      await until(() => target.querySelector("img.remote-loaded") !== null, "picture shown");
+      expect(mock.probe.remote.asked).toEqual([url]);
+      expect(target.querySelector("img.remote-loaded")?.getAttribute("src")).toBe("blob:test/1");
+    } finally {
+      URL.createObjectURL = make;
+    }
+  });
+
   it("marks links to missing documents and follows the ones that exist", async () => {
     await show("README.md");
     await until(() => target.querySelector("a.is-missing") !== null, "missing link marked");

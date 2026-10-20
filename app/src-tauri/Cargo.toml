@@ -206,6 +206,8 @@ tauri = { version = "2.12", features = [] }
 tauri-plugin-dialog = "2.8.2"
 tauri-plugin-opener = "2.7"
 tauri-plugin-updater = { version = "2.13", optional = true }
+# web pictures the person asks for (same client as the token count download)
+ureq = { version = "3.4", default-features = false, features = ["rustls", "platform-verifier"] }
 
 [dev-dependencies]
 tempfile.workspace = true

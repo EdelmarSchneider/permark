@@ -55,6 +55,27 @@
     );
   });
 
+  // web pictures: kept ones take their chips' places again after a block is drawn; with the project's choice on, the
+  // others load (a frame after the page changed, once)
+  $effect(() => {
+    const root = container;
+    if (!root) return;
+    let frame = 0;
+    const observer = new MutationObserver(() => {
+      if (frame !== 0) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        documents.sweepWebPictures(root);
+      });
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    documents.sweepWebPictures(root);
+    return () => {
+      observer.disconnect();
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
+  });
+
   // plugins that work on the page itself (listeners on its root) while it exists
   $effect(() => {
     const root = container;
@@ -102,8 +123,11 @@
     }
     const chip = target.closest(".remote-image");
     if (chip) {
+      // click: that picture is fetched (the person asked); Ctrl | Cmd + click: the address in the browser
       const url = chip.getAttribute("data-url");
-      if (url) void documents.openWeb(url);
+      if (event.ctrlKey || event.metaKey) {
+        if (url) void documents.openWeb(url);
+      } else documents.showWebPicture(chip);
       return;
     }
     if (target instanceof HTMLImageElement && !target.classList.contains("is-broken")) {

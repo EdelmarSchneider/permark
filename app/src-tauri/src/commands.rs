@@ -855,6 +855,29 @@ pub fn picture_read(path: String) -> Result<tauri::ipc::Response, IpcError> {
     )?))
 }
 
+/// A picture on the web the person asked for (a click on its chip, or web pictures on for the project): its bytes
+/// (raw response). `https` only, picture types the bytes confirm, at most 20 MB (`permark_core::remote`).
+#[tauri::command(async)]
+pub fn remote_picture(url: String) -> Result<tauri::ipc::Response, IpcError> {
+    Ok(tauri::ipc::Response::new(crate::web_pictures::fetch(&url)?))
+}
+
+/// Whether web pictures load by themselves in this window's project (kept in the profile only).
+#[tauri::command(async)]
+pub fn remote_pictures_get(handle: AppHandle, window: WebviewWindow) -> Result<bool, IpcError> {
+    Ok(crate::web_pictures::always(&*project_of(&handle, &window)?))
+}
+
+/// Sets that choice for this window's project.
+#[tauri::command(async)]
+pub fn remote_pictures_set(
+    handle: AppHandle,
+    window: WebviewWindow,
+    always: bool,
+) -> Result<(), IpcError> {
+    crate::web_pictures::set_always(&*project_of(&handle, &window)?, always)
+}
+
 /// This window holds unsaved edits of `path` (`None`: none): close guard, link updates.
 #[tauri::command(async)]
 pub fn edit_set_unsaved(handle: AppHandle, window: WebviewWindow, path: Option<String>) {
@@ -1274,6 +1297,9 @@ commands![
     edit_save_as,
     edit_write_asset,
     picture_read,
+    remote_picture,
+    remote_pictures_get,
+    remote_pictures_set,
     edit_set_unsaved,
     edit_headings,
     edit_link_targets,

@@ -314,6 +314,10 @@ export interface Commands {
   edit_write_asset: { args: { doc: string; ext: string; bytes: Uint8Array }; result: string };
   /** A picture dropped from the system onto an editor: the file's bytes (raw response). */
   picture_read: { args: { path: string }; result: ArrayBuffer };
+  /** A picture on the web the person asked for: its bytes (raw response). */
+  remote_picture: { args: { url: string }; result: ArrayBuffer };
+  remote_pictures_get: { args: Record<string, never>; result: boolean };
+  remote_pictures_set: { args: { always: boolean }; result: null };
   edit_set_unsaved: { args: { path: string | null }; result: null };
   edit_headings: { args: { path: string }; result: OutlineItem[] };
   edit_link_targets: { args: Record<string, never>; result: string[] };
@@ -735,6 +739,11 @@ export interface Api {
   editWriteAsset(doc: string, ext: string, bytes: Uint8Array): Promise<Result<string>>;
   /** The bytes of a picture file dropped onto an editor (absolute path). */
   readPicture(path: string): Promise<Result<Uint8Array<ArrayBuffer>>>;
+  /** A picture on the web, fetched now because the person asked (`https` only, picture types, <= 20 MB). */
+  remotePicture(url: string): Promise<Result<Uint8Array<ArrayBuffer>>>;
+  /** Web pictures load by themselves in this project (the person's choice, kept in the profile only). */
+  remotePicturesGet(): Promise<Result<boolean>>;
+  remotePicturesSet(always: boolean): Promise<Result<null>>;
   /** This window holds unsaved edits of `path` (`null`: none). */
   editSetUnsaved(path: string | null): Promise<Result<null>>;
   editHeadings(path: string): Promise<Result<OutlineItem[]>>;
