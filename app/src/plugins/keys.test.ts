@@ -14,7 +14,7 @@ const { registerCoreCommands } = await import("../core/commands/core");
 const { buildKeymap, conflicts } = await import("../core/commands/keymap");
 
 describe("every key with every plugin on", () => {
-  it("the new combos have one owner each; the only conflicts are the known Notes-vs-project ones", async () => {
+  it("the new combos have one owner each; no command fights another over a key", async () => {
     const registry = new ContributionRegistry();
     registerCoreCommands(registry);
     const host = new PluginHost(registry, pluginLoaders());
@@ -26,14 +26,13 @@ describe("every key with every plugin on", () => {
       for (const combo of ["Mod+b", "Mod+Alt+b", "Mod+Shift+d", "Mod+Shift+n"]) {
         expect(map.owners.get(combo)?.length, `${combo} mac=${mac}`).toBe(1);
       }
-      const found = conflicts(map).map((c) => `${c.combo}=${c.commands.join("|")}`);
-      console.log(`mac=${mac} conflicts:`, found);
-      // pre-existing at be65da5 (Notes-only vs tab | project commands; requirement-aware check still to come)
-      const known = /^Mod\+([1-9]|n|Shift\+c)=/;
-      expect(
-        found.filter((c) => !known.test(c)),
-        `mac=${mac}`,
-      ).toEqual([]);
+      const requiresOf = (id: string) => registry.of("command").find((c) => c.id === id)?.requires;
+      // Notes-only commands share Mod+1..9 | Mod+n | Mod+Shift+c with tab | project commands: never a conflict
+      // (narrower scope wins in the Notes tab; `search.md` Keyboard)
+      for (const combo of ["Mod+1", "Mod+9", "Mod+n", "Mod+Shift+c"]) {
+        expect(map.owners.get(combo)?.length, `${combo} mac=${mac}`).toBe(2);
+      }
+      expect(conflicts(map, requiresOf), `mac=${mac}`).toEqual([]);
     }
   });
 });

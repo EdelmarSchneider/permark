@@ -34,7 +34,12 @@
       ? entries
       : entries.filter((e) => fuzzyMatch(filter, t(e.command.label)) !== null),
   );
-  const clashes = $derived(new Set(conflicts(keys.map).flatMap((c) => c.commands)));
+  /** A command's requirement (two commands fight over a key only where both can run). */
+  const requiresOf = $derived.by(() => {
+    const byId = new Map(entries.map((e) => [e.command.id, e.command.requires]));
+    return (command: string) => byId.get(command);
+  });
+  const clashes = $derived(new Set(conflicts(keys.map, requiresOf).flatMap((c) => c.commands)));
   const overridden = $derived(Object.keys(store.keymap));
 
   function name(command: string): string {
@@ -57,7 +62,7 @@
       entries.map((e) => e.command.id),
       mac,
     );
-    return [...heldBy(next, combo, command)];
+    return [...heldBy(next, combo, command, requiresOf)];
   }
 
   function onCapture(event: KeyboardEvent): void {
@@ -186,7 +191,7 @@
           {:else if clashes.has(id) && entry.combos[0]}
             <p class="shared">
               {t("keymap.shared", {
-                others: [...heldBy(keys.map, entry.combos[0], id)].map(name).join(", "),
+                others: [...heldBy(keys.map, entry.combos[0], id, requiresOf)].map(name).join(", "),
               })}
             </p>
           {/if}
