@@ -102,6 +102,16 @@ export type Contribution = Owned &
         id: string;
         transform: (blocks: readonly Block[], view: DocumentView) => readonly Block[];
       }
+    /**
+     * Draws the body of a text | sheet document instead of its viewer while `when` holds (the review of code). Reads
+     * reactive state; the first visible contribution whose `when` is true wins.
+     */
+    | {
+        kind: "bodyOverride";
+        id: string;
+        when: (view: DocumentView) => boolean;
+        view: LazyComponent<ViewerProps>;
+      }
     /** An entry of the Explorer's context menu (a single row). */
     | {
         kind: "treeMenu";

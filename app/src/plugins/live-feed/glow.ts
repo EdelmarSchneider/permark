@@ -1,7 +1,7 @@
 // Changed passages glow while an agent writes; a removed passage leaves a thin marker where it was. Classes and
 // marker elements only; the animation is CSS (`glow.css`, opacity). Fresh documents never glow.
 
-import { documents, type BlockUpdate } from "../../core/doc/document.svelte";
+import { documents, type BlockUpdate, type TextUpdate } from "../../core/doc/document.svelte";
 import { t } from "../../core/i18n";
 import "./glow.css";
 
@@ -46,14 +46,38 @@ export function mark(
   }
 }
 
+/**
+ * The lines of a text document that changed glow (the text viewer draws what `documents.lineGlow` says), and a thin
+ * mark stays where lines went, longer. A newer update takes the place of the one on screen.
+ */
+export function markLines(update: TextUpdate, timers: Set<ReturnType<typeof setTimeout>>): void {
+  for (const timer of timers) clearTimeout(timer);
+  timers.clear();
+  const { path, added, removedAfter } = update;
+  documents.lineGlow = { path, added, removedAfter };
+  const fade = setTimeout(() => {
+    timers.delete(fade);
+    if (documents.lineGlow?.path === path) documents.lineGlow = { path, added: [], removedAfter };
+  }, GLOW_MS);
+  const clear = setTimeout(() => {
+    timers.delete(clear);
+    if (documents.lineGlow?.path === path) documents.lineGlow = null;
+  }, MARKER_MS);
+  timers.add(fade);
+  timers.add(clear);
+}
+
 /** Starts glowing for the page of this window; returns what stops it (and clears what is on screen). */
 export function startGlow(): () => void {
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const off = documents.onUpdated((update) =>
     mark(update, documents.host.container, (id) => documents.host.element(id), timers),
   );
+  const offText = documents.onTextUpdated((update) => markLines(update, timers));
   return () => {
     off();
+    offText();
+    documents.lineGlow = null;
     for (const timer of timers) clearTimeout(timer);
     timers.clear();
     const container = documents.host.container;

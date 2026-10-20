@@ -46,6 +46,8 @@
     llms: "role.llms",
     prompt: "role.prompt",
     copilot: "role.copilot",
+    "model-card": "role.model-card",
+    "dataset-card": "role.dataset-card",
   };
 
   /** The badge words for a role; an id the interface does not know shows as it is. */

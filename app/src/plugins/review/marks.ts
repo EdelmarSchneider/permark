@@ -15,7 +15,13 @@ export function paintMarks(store: ReviewStore = review): void {
   }
   const view = store.reviewing;
   const doc = documents.view;
-  if (view === null || doc === null || doc.body.kind !== "markdown" || doc.hash !== view.hash)
+  if (
+    view === null ||
+    view.unit !== "blocks" ||
+    doc === null ||
+    doc.body.kind !== "markdown" ||
+    doc.hash !== view.hash
+  )
     return;
   const blocks = doc.body.blocks;
   for (const change of view.changes) {

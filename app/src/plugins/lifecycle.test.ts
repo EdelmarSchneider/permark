@@ -56,6 +56,7 @@ describe("the following plugins", () => {
       "treeMenu",
     ]);
     expect(await kinds("review")).toEqual([
+      "bodyOverride",
       "command",
       "docBar",
       "docBlocks",

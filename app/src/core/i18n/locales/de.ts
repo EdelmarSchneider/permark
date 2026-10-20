@@ -357,12 +357,22 @@ export default {
   "role.llms": "llms.txt",
   "role.prompt": "Prompt",
   "role.copilot": "Copilot-Anweisungen",
+  "role.model-card": "Modellkarte",
+  "role.dataset-card": "Datensatzkarte",
   "structured.mode": "Ansicht",
   "structured.tree": "Baum",
   "structured.source": "Quelltext",
   "structured.invalid": "Das ist nicht gültig und wird deshalb als Text gezeigt.",
   "text.plainBecauseLong":
     "Lange Datei: als reiner Text gezeigt, nur die sichtbaren Zeilen werden gezeichnet.",
+  "text.partial":
+    "Die ersten {held} MB von {total} MB werden angezeigt. Der Rest wird beim Scrollen nachgeladen.",
+  "text.loadingMore": "Weitere Zeilen werden geladen …",
+  "text.loadFailed": "Der nächste Teil dieser Datei konnte nicht geladen werden.",
+  "text.retry": "Erneut versuchen",
+  "text.capped":
+    "Die ersten {held} MB von {total} MB werden angezeigt. Öffne die Datei mit einem anderen Programm, um den Rest zu sehen.",
+  "text.allLoaded": "Die ganze Datei ist geladen ({total} MB).",
   "tree.keys.one": "{n} Schlüssel",
   "tree.keys.other": "{n} Schlüssel",
   "tree.items.one": "{n} Element",
@@ -802,6 +812,11 @@ export default {
   "review.basis.label": "Vergleichen mit",
   "review.basis.read": "was ich gelesen habe",
   "review.basis.commit": "dem letzten Commit",
+  "review.whitespace": "nur Leerraum",
+  "review.moreOld": "… und {n} weitere alte Zeilen",
+  "review.codeLabel": "Code mit Änderungen",
+  "review.fromCommit":
+    "Seit deinem letzten Blick gibt es nichts Neues. Gezeigt wird, was sich seit dem letzten Commit geändert hat.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Tags",

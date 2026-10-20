@@ -6,7 +6,8 @@ import type { FeedItem } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { FeedStore, TOAST_MS, isDocItem, isDocument, mergeItems } from "./store.svelte";
-import { mark } from "./glow";
+import { documents } from "../../core/doc/document.svelte";
+import { mark, markLines } from "./glow";
 import { silence } from "../../core/silence/silence.svelte";
 import { entry } from "./testing";
 import { ago, split } from "./time";
@@ -163,5 +164,37 @@ describe("the glow", () => {
     expect(container.querySelectorAll(".pm-removed-mark")).toHaveLength(0);
     // no page: nothing happens
     mark({ added: ["b"], removed: [] }, null, element, timers);
+  });
+
+  it("lights the changed lines of a text for 3 s and keeps the mark where lines went for 8", () => {
+    vi.useFakeTimers();
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    markLines({ path: "a.rs", added: [{ first: 2, last: 3 }], removedAfter: [7] }, timers);
+    expect(documents.lineGlow).toEqual({
+      path: "a.rs",
+      added: [{ first: 2, last: 3 }],
+      removedAfter: [7],
+    });
+    vi.advanceTimersByTime(3100);
+    expect(documents.lineGlow).toEqual({ path: "a.rs", added: [], removedAfter: [7] });
+    vi.advanceTimersByTime(5000);
+    expect(documents.lineGlow).toBeNull();
+    expect(timers.size).toBe(0);
+  });
+
+  it("lets a newer change of a text take the place of the one on screen", () => {
+    vi.useFakeTimers();
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    markLines({ path: "a.rs", added: [{ first: 1, last: 1 }], removedAfter: [] }, timers);
+    vi.advanceTimersByTime(2000);
+    markLines({ path: "a.rs", added: [{ first: 5, last: 6 }], removedAfter: [] }, timers);
+    vi.advanceTimersByTime(2000);
+    // the first one's 3 s are over, the second one's are not
+    expect(documents.lineGlow?.added).toEqual([{ first: 5, last: 6 }]);
+    vi.advanceTimersByTime(1100);
+    expect(documents.lineGlow?.added).toEqual([]);
+    vi.advanceTimersByTime(9000);
+    expect(documents.lineGlow).toBeNull();
+    documents.lineGlow = null;
   });
 });

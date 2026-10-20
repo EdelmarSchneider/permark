@@ -347,11 +347,20 @@ const en = {
   "role.llms": "llms.txt",
   "role.prompt": "Prompt",
   "role.copilot": "Copilot instructions",
+  "role.model-card": "Model card",
+  "role.dataset-card": "Dataset card",
   "structured.mode": "View",
   "structured.tree": "Tree",
   "structured.source": "Source",
   "structured.invalid": "This isn't valid, so it is shown as text.",
   "text.plainBecauseLong": "A long file: shown as plain text, only the lines in view are drawn.",
+  "text.partial": "Showing the first {held} MB of {total} MB. The rest loads as you scroll.",
+  "text.loadingMore": "Loading more…",
+  "text.loadFailed": "Couldn't load the next part of this file.",
+  "text.retry": "Try again",
+  "text.capped":
+    "Showing the first {held} MB of {total} MB. Open the file with another program to see the rest.",
+  "text.allLoaded": "The whole file is loaded ({total} MB).",
   "tree.keys.one": "{n} key",
   "tree.keys.other": "{n} keys",
   "tree.items.one": "{n} item",
@@ -778,6 +787,11 @@ const en = {
   "review.basis.label": "Compare with",
   "review.basis.read": "what I read",
   "review.basis.commit": "the last commit",
+  "review.whitespace": "whitespace only",
+  "review.moreOld": "… and {n} more old lines",
+  "review.codeLabel": "Code with changes",
+  "review.fromCommit":
+    "Nothing new since you last looked. Showing what changed since the last commit.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Tags",

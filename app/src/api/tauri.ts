@@ -148,6 +148,8 @@ export const tauriApi: Api = {
   openDocument: (path, known) => call("document_open", { path, known }),
   closeDocument: () => call("document_close", {}),
   documentText: (path) => call("document_text", { path }),
+  documentMore: (path, offset, size, mtimeMs) =>
+    call("document_more", { path, offset, size, mtimeMs }),
   resolveLinks: (doc, hrefs) => call("link_resolve", { doc, hrefs }),
   resolveCodeRefs: (doc, written) => call("code_refs_resolve", { doc, written }),
   openInEditor: (path, line, col) => call("open_in_editor", { path, line, col }),

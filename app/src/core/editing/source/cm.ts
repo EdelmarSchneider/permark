@@ -135,7 +135,11 @@ export function fenceAround(lines: readonly string[], at: number): Fence | null 
   return null;
 }
 
-function languageFor(path: string, markdownText: boolean): Extension | Promise<Extension> {
+/** How code looks in the editors (colors from the theme tokens): the grammar's highlighting, the font, the gutter. */
+export const codeLook: Extension = [syntaxHighlighting(style), theme];
+
+/** The grammar for a file name (Markdown with its front matter and fenced code when `markdownText`); may load. */
+export function languageFor(path: string, markdownText: boolean): Extension | Promise<Extension> {
   if (markdownText) {
     return yamlFrontmatter({
       content: markdown({ base: markdownLanguage, codeLanguages: languages }),

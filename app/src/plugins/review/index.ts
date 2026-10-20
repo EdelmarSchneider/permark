@@ -45,9 +45,25 @@ export default definePlugin({
         transform: (blocks, view) => {
           const state = review.state;
           // only the version the review was drawn from; a newer one waits for the review to look again
-          if (state.status !== "reviewing" || state.view.hash !== view.hash) return blocks;
+          if (state.status !== "reviewing" || state.view.unit !== "blocks") return blocks;
+          if (state.view.hash !== view.hash) return blocks;
           return reviewBlocks(blocks, state.view, state.at);
         },
+      }),
+      cx.contribute({
+        kind: "bodyOverride",
+        id: "review.code",
+        requires: NO_REQUIREMENT,
+        // code and plain text in review: the code view instead of the text viewer
+        when: (view) => {
+          const state = review.state;
+          return (
+            state.status === "reviewing" &&
+            state.view.unit === "lines" &&
+            state.view.path === view.path
+          );
+        },
+        view: () => import("./CodeReview.svelte"),
       }),
       cx.contribute({
         kind: "docDecoration",

@@ -51,6 +51,7 @@ import type { Segment } from "./generated/Segment";
 import type { TextKind } from "./generated/TextKind";
 import type { DocumentChanged } from "./generated/DocumentChanged";
 import type { DocumentView } from "./generated/DocumentView";
+import type { TextChunk } from "./generated/TextChunk";
 import type { IndexProgress } from "./generated/IndexProgress";
 import type { IndexStatus } from "./generated/IndexStatus";
 import type { IpcError } from "./generated/IpcError";
@@ -182,6 +183,7 @@ export type {
   DeleteOutcome,
   DocumentChanged,
   DocumentView,
+  TextChunk,
   ConflictChoice,
   ImportFailure,
   ImportItem,
@@ -290,6 +292,10 @@ export interface Commands {
   document_open: { args: { path: string; known: string[] }; result: DocumentView };
   document_close: { args: Record<string, never>; result: null };
   document_text: { args: { path: string }; result: string };
+  document_more: {
+    args: { path: string; offset: number; size: number; mtimeMs: number };
+    result: TextChunk;
+  };
   link_resolve: { args: { doc: string; hrefs: string[] }; result: LinkTarget[] };
   code_refs_resolve: { args: { doc: string; written: string[] }; result: string[][] };
   open_in_editor: {
@@ -363,7 +369,8 @@ export interface PluginMethods {
   "unread.markRead": { args: { path: string; hash: string }; result: null };
   "unread.markUnread": { args: { path: string }; result: null };
   "unread.markFolderRead": { args: { folder: string }; result: null };
-  "review.status": { args: { path: string }; result: ReviewStatus };
+  "review.status": { args: { path: string; basis?: Basis }; result: ReviewStatus };
+  "review.seen": { args: { path: string; hash: string }; result: null };
   "review.open": { args: { path: string; basis?: Basis }; result: ReviewView };
   "review.keep": {
     args: { path: string; hash: string; index: number; basis?: Basis };
@@ -702,6 +709,13 @@ export interface Api {
   closeDocument(): Promise<Result<null>>;
   /** The text of a document as read (copy document). */
   documentText(path: string): Promise<Result<string>>;
+  /** The next chunk of a large text, from byte `offset`; `size` and `mtimeMs` are the ones the view was opened with. */
+  documentMore(
+    path: string,
+    offset: number,
+    size: number,
+    mtimeMs: number,
+  ): Promise<Result<TextChunk>>;
   /** Where each link of a document leads. */
   resolveLinks(doc: string, hrefs: string[]): Promise<Result<LinkTarget[]>>;
   /** The project files each written code reference can mean. */

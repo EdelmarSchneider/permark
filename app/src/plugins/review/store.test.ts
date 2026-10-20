@@ -6,7 +6,8 @@ import type { Api, PluginMethod, PluginMethods, Result } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
-import { ReviewStore } from "./store.svelte";
+import { ReviewStore, SEEN_MS, kindOf, type ReviewKind } from "./store.svelte";
+import type { DocumentView } from "../../api";
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 6; i++) {
@@ -16,10 +17,10 @@ const settle = async (): Promise<void> => {
   await tick();
 };
 
-type Shown = { path: string | null; hash: string | null; markdown: boolean };
+type Shown = { path: string | null; hash: string | null; kind: ReviewKind };
 const GUIDE = "docs/guide.md";
 
-async function setup(options: { conflictOn?: PluginMethod } = {}) {
+async function setup(options: { conflictOn?: PluginMethod; shown?: Shown } = {}) {
   const mock = createMockApi();
   await mock.openPath(MOCK_FOLDER, "thisWindow");
   const hash = await mock.pluginCall("review.open", { path: GUIDE });
@@ -41,7 +42,7 @@ async function setup(options: { conflictOn?: PluginMethod } = {}) {
       return mock.pluginCall(method, args);
     },
   };
-  const shown = new Box<Shown>({ path: GUIDE, hash: guideHash, markdown: true });
+  const shown = new Box<Shown>(options.shown ?? { path: GUIDE, hash: guideHash, kind: "blocks" });
   const notes: string[] = [];
   let repaints = 0;
   const store = new ReviewStore(
@@ -66,7 +67,7 @@ describe("the review store", () => {
   it("offers the changes of a document that has some, and nothing for one that has none", async () => {
     const { store, shown, stop } = await setup();
     expect(store.state).toMatchObject({ status: "offer", path: GUIDE, count: 2 });
-    shown.value = { path: "README.md", hash: "ff".repeat(8), markdown: true };
+    shown.value = { path: "README.md", hash: "ff".repeat(8), kind: "blocks" };
     await settle();
     expect(store.state.status).toBe("idle");
     stop();
@@ -120,7 +121,7 @@ describe("the review store", () => {
   it("lets go of a document when the person leaves it", async () => {
     const { mock, store, shown, stop } = await setup();
     await store.begin();
-    shown.value = { path: "README.md", hash: "ee".repeat(8), markdown: true };
+    shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
     await settle();
     expect(mock.probe.plugins.calls).toContain("review.release");
     expect(store.state.status).toBe("idle");
@@ -131,7 +132,7 @@ describe("the review store", () => {
     const { store, shown, stop } = await setup();
     await store.begin();
     store.go(1);
-    shown.value = { path: GUIDE, hash: "dd".repeat(8), markdown: true };
+    shown.value = { path: GUIDE, hash: "dd".repeat(8), kind: "blocks" };
     await settle();
     expect(store.state).toMatchObject({ status: "reviewing", at: 1 });
     expect(store.announcement).not.toBe("");
@@ -151,7 +152,7 @@ describe("the review store", () => {
 
   it("will not review what is not a Markdown document, and says why when asked", async () => {
     const { store, shown, notes, stop } = await setup();
-    shown.value = { path: "notes.txt", hash: "aa".repeat(8), markdown: false };
+    shown.value = { path: "notes.txt", hash: "aa".repeat(8), kind: null };
     await settle();
     expect(store.state.status).toBe("idle");
     await store.begin();
@@ -175,5 +176,94 @@ describe("the review store", () => {
     await store.begin();
     stop();
     expect(store.state.status).toBe("idle");
+  });
+});
+
+const CODE = "src/main.rs";
+const code: Shown = { path: CODE, hash: "0000000000000000", kind: "lines" };
+
+describe("the review of code and plain text", () => {
+  it("offers its changes and runs like the review of a page, by lines", async () => {
+    const { store, stop } = await setup({ shown: code });
+    expect(store.state).toMatchObject({ status: "offer", path: CODE, count: 2 });
+    await store.begin();
+    expect(store.reviewing?.unit).toBe("lines");
+    expect(store.reviewing?.changes[0]?.old).toEqual(['    println!("hi");']);
+    await store.revert();
+    expect(store.reviewing?.count).toBe(1);
+    await store.undo();
+    expect(store.reviewing?.count).toBe(2);
+    await store.keepAll();
+    expect(store.state.status).toBe("idle");
+    stop();
+  });
+
+  it("opens the review against the last commit when nothing is new since the person looked", async () => {
+    const { store, notes, mock, stop } = await setup({ shown: code });
+    // what was read is what is there
+    await mock.pluginCall("review.keepAll", { path: CODE, hash: code.hash ?? "" });
+    await store.begin();
+    expect(notes.at(-1)).toMatch(/last commit/);
+    expect(store.basis).toBe("commit");
+    expect(store.reviewing).toMatchObject({
+      unit: "lines",
+      basis: "commit",
+      canKeep: false,
+      count: 1,
+    });
+    stop();
+  });
+
+  it("tells the backend a code file was looked at after a moment in front of the person", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const { mock, shown, stop } = await setup({ shown: code });
+    await new Promise((resolve) => setTimeout(resolve, SEEN_MS + 200));
+    expect(mock.probe.plugins.calls.filter((c) => c === "review.seen")).toHaveLength(1);
+    // a Markdown page is followed by the unread plugin, and a file left before the moment is not looked at
+    shown.value = { path: GUIDE, hash: "ab".repeat(8), kind: "blocks" };
+    await new Promise((resolve) => setTimeout(resolve, SEEN_MS + 200));
+    expect(mock.probe.plugins.calls.filter((c) => c === "review.seen")).toHaveLength(1);
+    stop();
+  });
+
+  it("does not count a look while the window is not in front", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { mock, stop } = await setup({ shown: code });
+    await new Promise((resolve) => setTimeout(resolve, SEEN_MS + 200));
+    expect(mock.probe.plugins.calls).not.toContain("review.seen");
+    stop();
+  });
+});
+
+describe("what is reviewed by lines", () => {
+  const view = (body: DocumentView["body"], format = "text"): DocumentView => ({
+    path: "x",
+    name: "x",
+    format,
+    role: null,
+    body,
+    hash: "h",
+    size: 1,
+    mtimeMs: 1,
+    editable: { editable: "surgical" },
+    notes: [],
+  });
+
+  it("is text and config files, whole; a page by blocks; a file shown in parts or a picture not at all", () => {
+    expect(kindOf(view({ kind: "text", text: "a", language: null }), "a.rs")).toBe("lines");
+    expect(
+      kindOf(
+        view({ kind: "markdown", blocks: [], outline: [], frontMatter: null }, "markdown"),
+        "README.md",
+      ),
+    ).toBe("blocks");
+    expect(
+      kindOf(
+        view({ kind: "text", text: "a", language: null, partial: { loaded: 1, total: 9 } }),
+        "big.log",
+      ),
+    ).toBeNull();
+    expect(kindOf(view({ kind: "media", media: "image", mime: "image/png" }), "a.png")).toBeNull();
+    expect(kindOf(view({ kind: "notice", notice: { notice: "binary" } }), "a.bin")).toBeNull();
   });
 });

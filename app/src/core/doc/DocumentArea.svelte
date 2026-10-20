@@ -65,6 +65,9 @@
         : undefined;
     return own ?? viewers.find((v) => v.id === "text");
   });
+  // a plugin may draw the body of a text document instead (the review of code)
+  const overrides = $derived(contributions.visible("bodyOverride", conditions.current));
+  const override = $derived(view === null ? undefined : overrides.find((o) => o.when(view)));
   const outline = $derived(view?.body.kind === "markdown" ? view.body.outline : []);
   const visual = $derived(view !== null && editKindOf(view) !== "text");
   const readOnly = $derived(
@@ -290,7 +293,14 @@
         {:else if editingNow}
           <!-- the editor shows instead -->
         {:else if view.body.kind === "text" || view.body.kind === "media" || view.body.kind === "sheet"}
-          {#if viewer}
+          {#if override}
+            {#key view.path}
+              {#await override.view() then loaded}
+                {@const Override = loaded.default}
+                <Override {view} workspace={workspace.id} />
+              {/await}
+            {/key}
+          {:else if viewer}
             {#key view.path}
               {#await viewer.view() then loaded}
                 {@const Viewer = loaded.default}

@@ -21,6 +21,7 @@ const { documents } = await import("./document.svelte");
 const { WindowStore } = await import("../window.svelte");
 const { contributions } = await import("../plugins/instance.svelte");
 const { NO_REQUIREMENT } = await import("../conditions/available");
+const { Box } = await import("../testing/box.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 
@@ -201,5 +202,45 @@ describe("a listener on the page root", () => {
     if (component) await unmount(component);
     component = null;
     expect(undone).toBeGreaterThan(0);
+  });
+});
+
+describe("the body of a text document", () => {
+  it("is drawn by a plugin that asks to, for as long as it asks, and never for a page", async () => {
+    const asking = new Box(false);
+    contribute({
+      kind: "viewer",
+      id: "text",
+      owner,
+      requires: NO_REQUIREMENT,
+      claims: () => true,
+      view: () => import("../testing/TextBody.svelte"),
+    });
+    contribute({
+      kind: "bodyOverride",
+      id: "o",
+      owner,
+      requires: NO_REQUIREMENT,
+      when: () => asking.value,
+      view: () => import("../testing/OverrideBody.svelte"),
+    });
+    await show("src/main.rs");
+    // the text viewer (a plugin that is on in this window, or the one of this test)
+    const body = (): boolean => target.querySelector(".plain-body, .text") !== null;
+    await until(body, "the viewer");
+    expect(target.querySelector(".override-body")).toBeNull();
+    asking.value = true;
+    flushSync();
+    await until(() => target.querySelector(".override-body") !== null, "the override");
+    expect(target.querySelector(".override-body")?.textContent).toBe("override of src/main.rs");
+    expect(body()).toBe(false);
+    asking.value = false;
+    flushSync();
+    await until(body, "the viewer again");
+    // a page is the page's own
+    asking.value = true;
+    await show("README.md");
+    await until(() => target.querySelectorAll(".md-body > *").length > 3, "the page");
+    expect(target.querySelector(".override-body")).toBeNull();
   });
 });

@@ -1,12 +1,14 @@
 // Review: what changed in the open document since the person last read it, shown in the page with Keep | Revert for
 // each change. One small machine: `idle` (nothing to review) | `offer` (changes exist: the bar offers them) |
-// `reviewing` (the page shows them). The backend owns the truth (copies, the diff, the surgical save).
+// `reviewing` (the page shows them). The backend owns the truth (copies, the diff, the surgical save). A Markdown
+// document is reviewed by blocks (the page), code and plain text by lines (a code view).
 
 import { untrack } from "svelte";
-import type { Basis, Result, ReviewView } from "../../api";
+import type { Basis, DocumentView, Result, ReviewView } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { t, tn } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
+import { InFront } from "../../core/inFront.svelte";
 import { windowStore } from "../../core/window.svelte";
 import { kindWord } from "./blocks";
 
@@ -17,6 +19,12 @@ export type ReviewUi =
 
 const MARKDOWN = /\.(md|markdown|mdown|mkd|mdx|mdc)$/i;
 
+/** The document in front is looked at (read) when it has been shown this long. */
+export const SEEN_MS = 1000;
+
+/** What a document is reviewed by: blocks of a page, lines of a code view, or nothing. */
+export type ReviewKind = "blocks" | "lines" | null;
+
 /** The kind of change `i` in words (for screen readers). */
 function kindAt(view: ReviewView, i: number): string {
   const change = view.changes[i];
@@ -25,7 +33,7 @@ function kindAt(view: ReviewView, i: number): string {
 
 /** What the store needs of the page: the document shown (reactive), and to make the blocks again. */
 export type PagePort = {
-  shown(): { path: string | null; hash: string | null; markdown: boolean };
+  shown(): { path: string | null; hash: string | null; kind: ReviewKind };
   repaint(): void;
 };
 
@@ -37,11 +45,20 @@ const page: PagePort = {
     return {
       path,
       hash: mine ? view.hash : null,
-      markdown: mine && view.format === "markdown" && path !== null && MARKDOWN.test(path),
+      kind: mine && path !== null ? kindOf(view, path) : null,
     };
   },
   repaint: () => documents.refreshBlocks(),
 };
+
+/** How a shown document is reviewed. */
+export function kindOf(view: DocumentView, path: string): ReviewKind {
+  if (view.format === "markdown" && MARKDOWN.test(path)) return "blocks";
+  const body = view.body;
+  // text and config sheets are lines; a file shown in parts is not compared
+  if (body.kind === "sheet" || (body.kind === "text" && !body.partial)) return "lines";
+  return null;
+}
 
 export class ReviewStore {
   state = $state.raw<ReviewUi>({ status: "idle" });
@@ -58,6 +75,8 @@ export class ReviewStore {
   readonly #root: () => string | null;
   readonly #say: (text: string) => void;
   readonly #page: PagePort;
+  /** The window is in front and visible: looking counts only then. */
+  readonly #front = new InFront();
 
   constructor(
     client: PluginClient = pluginClient,
@@ -91,9 +110,21 @@ export class ReviewStore {
       });
       // the document shown (or its version) changed
       $effect(() => {
-        const { path, hash, markdown } = this.#page.shown();
-        untrack(() => void this.#sync(markdown ? path : null, hash));
+        const { path, hash, kind } = this.#page.shown();
+        untrack(() => void this.#sync(kind === null ? null : path, hash));
       });
+      // a document that is not Markdown, looked at for a moment, is the version the person last saw
+      $effect(() => {
+        const { path, hash, kind } = this.#page.shown();
+        if (kind !== "lines" || path === null || hash === null || !this.#front.value) return;
+        if (this.#root() === null) return;
+        const timer = setTimeout(
+          () => void this.#client.call("review.seen", { path, hash }),
+          SEEN_MS,
+        );
+        return () => clearTimeout(timer);
+      });
+      $effect(() => this.#front.start());
       return () => this.#reset();
     });
   }
@@ -123,7 +154,7 @@ export class ReviewStore {
       if (reviewing.hash === hash) return;
       // the file changed under an open review: look again, keep the place
       const at = this.current;
-      const result = await this.#client.call("review.open", { path });
+      const result = await this.#client.call("review.open", { path, basis: this.basis });
       if (seq !== this.#seq) return;
       if (result.ok && result.value.count > 0) {
         this.state = {
@@ -157,17 +188,28 @@ export class ReviewStore {
 
   /** Shows the changes in the page. */
   async begin(): Promise<void> {
-    const { path, markdown } = this.#page.shown();
-    if (path === null || !markdown) return;
+    const { path, kind } = this.#page.shown();
+    if (path === null || kind === null) return;
     const status = await this.#client.call("review.status", { path });
     if (!status.ok) return;
-    const state = status.value.state;
+    let state = status.value.state;
+    // nothing new since the person looked: what changed since the last commit is still worth a look
+    let basis: Basis | undefined;
+    if (status.value.basis === "read" && (state.state === "same" || state.state === "noBasis")) {
+      const commit = await this.#client.call("review.status", { path, basis: "commit" });
+      if (commit.ok && commit.value.state.state === "changes") {
+        basis = "commit";
+        state = commit.value.state;
+        this.#say(t("review.fromCommit"));
+      }
+    }
     if (state.state === "tooLarge") return this.#say(t("review.tooLarge"));
     if (state.state === "noBasis") return this.#say(t("review.noBaseline"));
     if (state.state === "same") return this.#say(t("review.allDone"));
     if (state.state === "unsupported") return;
-    const result = await this.#client.call("review.open", { path });
+    const result = await this.#client.call("review.open", { path, basis });
     if (!result.ok) return;
+    if (basis !== undefined) this.basis = basis;
     this.#held = path;
     this.undoable = 0;
     this.#show(result.value, 0);

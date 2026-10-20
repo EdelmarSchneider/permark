@@ -19,7 +19,7 @@ function change(
   kind: ReviewChange["kind"],
   ghosts: Block[],
 ): ReviewChange {
-  return { index, kind, start, len, ghosts };
+  return { index, kind, start, len, ghosts, old: [], whitespace: false };
 }
 
 function view(changes: ReviewChange[], canKeep = true): ReviewView {
@@ -28,6 +28,7 @@ function view(changes: ReviewChange[], canKeep = true): ReviewView {
     hash: "h",
     basis: "read",
     asked: "read",
+    unit: "blocks",
     count: changes.length,
     canKeep,
     changes,

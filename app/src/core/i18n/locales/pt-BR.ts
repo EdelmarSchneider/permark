@@ -351,12 +351,22 @@ export default {
   "role.llms": "llms.txt",
   "role.prompt": "Prompt",
   "role.copilot": "Instruções do Copilot",
+  "role.model-card": "Cartão do modelo",
+  "role.dataset-card": "Cartão do conjunto de dados",
   "structured.mode": "Exibição",
   "structured.tree": "Árvore",
   "structured.source": "Código-fonte",
   "structured.invalid": "Isto não é válido, por isso aparece como texto.",
   "text.plainBecauseLong":
     "Arquivo longo: mostrado como texto simples, apenas as linhas visíveis são desenhadas.",
+  "text.partial":
+    "Mostrando os primeiros {held} MB de {total} MB. O resto é carregado conforme você rola.",
+  "text.loadingMore": "Carregando mais…",
+  "text.loadFailed": "Não foi possível carregar a próxima parte deste arquivo.",
+  "text.retry": "Tentar de novo",
+  "text.capped":
+    "Mostrando os primeiros {held} MB de {total} MB. Abra o arquivo em outro programa para ver o resto.",
+  "text.allLoaded": "O arquivo inteiro foi carregado ({total} MB).",
   "tree.keys.one": "{n} chave",
   "tree.keys.other": "{n} chaves",
   "tree.items.one": "{n} item",
@@ -790,6 +800,11 @@ export default {
   "review.basis.label": "Comparar com",
   "review.basis.read": "o que li",
   "review.basis.commit": "o último commit",
+  "review.whitespace": "só espaços em branco",
+  "review.moreOld": "… e mais {n} linhas antigas",
+  "review.codeLabel": "Código com alterações",
+  "review.fromCommit":
+    "Nada de novo desde a última vez que você olhou. Mostrando o que mudou desde o último commit.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Tags",

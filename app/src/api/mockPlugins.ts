@@ -65,6 +65,8 @@ function startChanges(): ReviewChange[] {
       start: 3,
       len: 1,
       ghosts: [ghost("old-open", "Open a folder and read it.")],
+      old: [],
+      whitespace: false,
     },
     {
       index: 1,
@@ -72,9 +74,39 @@ function startChanges(): ReviewChange[] {
       start: 5,
       len: 0,
       ghosts: [ghost("old-gone", "This paragraph was removed by the agent.")],
+      old: [],
+      whitespace: false,
     },
   ];
 }
+
+const CODE = "src/main.rs";
+
+/** What an agent did to the mock code file: a line replaced, a comment taken out. */
+function startCodeChanges(): ReviewChange[] {
+  return [
+    {
+      index: 0,
+      kind: "edited",
+      start: 1,
+      len: 1,
+      ghosts: [],
+      old: ['    println!("hi");'],
+      whitespace: false,
+    },
+    {
+      index: 1,
+      kind: "removed",
+      start: 2,
+      len: 0,
+      ghosts: [],
+      old: ["    // TODO: remove"],
+      whitespace: false,
+    },
+  ];
+}
+
+type MockReview = { changes: ReviewChange[]; undo: ReviewChange[][]; unit: "blocks" | "lines" };
 
 export function createMockPlugins(
   emit: <E extends PluginEventName>(event: E, data: PluginEvents[E]) => void,
@@ -174,20 +206,41 @@ export function createMockPlugins(
     ],
     more: 0,
   };
-  let changes = startChanges();
-  const undo: ReviewChange[][] = [];
-  const reviewView = (path: string): PluginMethods["review.open"]["result"] => ({
-    path,
-    hash: hashOfGuide(),
-    basis,
-    asked: basis,
-    count: changes.length,
-    canKeep: basis === "read",
-    changes: changes.map((c, index) => ({ ...c, index })),
-  });
-  const without = (index: number): void => {
-    undo.push(changes);
-    changes = changes.filter((_, i) => i !== index);
+  const reviews = new Map<string, MockReview>([
+    [GUIDE, { changes: startChanges(), undo: [], unit: "blocks" }],
+    [CODE, { changes: startCodeChanges(), undo: [], unit: "lines" }],
+  ]);
+  /** What a document has against the last commit when there is nothing new against what was read. */
+  const againstCommit = (path: string, asked: typeof basis): ReviewChange[] => {
+    const review = reviews.get(path);
+    if (asked !== "commit" || !review || review.changes.length > 0 || path !== CODE) {
+      return review?.changes ?? [];
+    }
+    return startCodeChanges().slice(0, 1);
+  };
+  const reviewView = (
+    path: string,
+    asked: typeof basis = basis,
+  ): PluginMethods["review.open"]["result"] => {
+    const review = reviews.get(path);
+    const changes = againstCommit(path, asked);
+    return {
+      path,
+      hash: path === GUIDE ? hashOfGuide() : "0000000000000000",
+      basis: asked,
+      asked,
+      unit: review?.unit ?? "blocks",
+      count: changes.length,
+      canKeep: asked === "read",
+      changes: changes.map((c, index) => ({ ...c, index })),
+    };
+  };
+  /** Takes the changes of a review through `change` (the old ones can be put back by Undo). */
+  const alter = (path: string, change: (changes: ReviewChange[]) => ReviewChange[]): void => {
+    const review = reviews.get(path);
+    if (!review) return;
+    review.undo.push(review.changes);
+    review.changes = change(review.changes);
   };
 
   const agent = createMockAgent(emit);
@@ -229,35 +282,39 @@ export function createMockPlugins(
       announceUnread();
       return null;
     },
-    "review.status": ({ path }) => ({
-      state: !/\.md$/i.test(path)
-        ? { state: "unsupported" }
-        : path === GUIDE && changes.length > 0
-          ? { state: "changes", count: changes.length }
-          : { state: "same" },
-      basis,
-    }),
-    "review.open": ({ path }) => reviewView(path),
+    "review.seen": () => null,
+    "review.status": ({ path, basis: asked = basis }) => {
+      const review = reviews.get(path);
+      const count = againstCommit(path, asked).length;
+      const state: PluginMethods["review.status"]["result"]["state"] = review
+        ? count > 0
+          ? { state: "changes", count }
+          : { state: "same" }
+        : /\.md$/i.test(path)
+          ? { state: "same" }
+          : { state: "noBasis" };
+      return { state, basis: asked };
+    },
+    "review.open": ({ path, basis: asked }) => reviewView(path, asked),
     "review.keep": ({ path, index }) => {
-      without(index);
+      alter(path, (all) => all.filter((_, i) => i !== index));
       return reviewView(path);
     },
     "review.keepAll": ({ path }) => {
-      undo.push(changes);
-      changes = [];
+      alter(path, () => []);
       return reviewView(path);
     },
     "review.revert": ({ path, index }) => {
-      without(index);
+      alter(path, (all) => all.filter((_, i) => i !== index));
       return reviewView(path);
     },
     "review.revertAll": ({ path }) => {
-      undo.push(changes);
-      changes = [];
+      alter(path, () => []);
       return reviewView(path);
     },
     "review.undo": ({ path }) => {
-      changes = undo.pop() ?? changes;
+      const review = reviews.get(path);
+      if (review) review.changes = review.undo.pop() ?? review.changes;
       return reviewView(path);
     },
     "review.release": () => null,

@@ -18,6 +18,7 @@ import { BlockHost } from "./blocks";
 import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./decorate";
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
 import { currentIndex } from "./outline";
+import { changedLines, type LineRange } from "./textDiff";
 import { reading } from "./reading.svelte";
 import { layout } from "../shell/layout.svelte";
 import { recentFiles } from "../search/recent.svelte";
@@ -59,6 +60,21 @@ export type BlockUpdate = {
   removed: readonly { id: string; after: string | null }[];
 };
 
+/** What a reload of a text document changed: lines of the new text that are different, places where lines went. */
+export type TextUpdate = {
+  path: string;
+  added: readonly LineRange[];
+  /** After this line of the new text (0: before the first). */
+  removedAfter: readonly number[];
+};
+
+/** Lines of a text document that glow, and the places that mark where lines went (set by the live feed). */
+export type LineGlow = {
+  path: string;
+  added: readonly LineRange[];
+  removedAfter: readonly number[];
+};
+
 /** A view of the blocks to show instead of the document's own (a plugin's review). */
 export type BlockTransform = (blocks: readonly Block[], view: DocumentView) => readonly Block[];
 
@@ -97,9 +113,12 @@ export class DocumentController {
   #headings: (HTMLElement | null)[] = [];
   #painters = new Set<() => void>();
   #updaters = new Set<(update: BlockUpdate) => void>();
+  #textUpdaters = new Set<(update: TextUpdate) => void>();
   #repaint = false;
   /** Goes up when the blocks shown have to be made again (a plugin changed what it adds). */
   paintTick = $state(0);
+  /** Lines of the text shown that glow for a moment (the text viewer draws them). */
+  lineGlow = $state.raw<LineGlow | null>(null);
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
@@ -206,7 +225,8 @@ export class DocumentController {
     if (this.#pending === opening) this.#pending = null;
   }
 
-  async #open(path: string, fresh: boolean): Promise<void> {
+  /** `own`: the person's own save is what is read again (their lines do not glow). */
+  async #open(path: string, fresh: boolean, own = false): Promise<void> {
     const seq = ++this.#seq;
     if (fresh) this.state = { status: "loading", path, view: this.view };
     const known = fresh ? [] : this.host.ids();
@@ -217,7 +237,25 @@ export class DocumentController {
       return;
     }
     this.decorator.setDocument(result.value.path);
+    const before = this.view;
     this.state = { status: "ready", view: result.value, deleted: null, fresh };
+    if (!fresh && !own) this.#toldText(before, result.value);
+  }
+
+  /** A text document was read again: tells who listens which lines are different now. */
+  #toldText(before: DocumentView | null, now: DocumentView): void {
+    if (this.#textUpdaters.size === 0 || before === null || before.path !== now.path) return;
+    const [was, is] = [before.body, now.body];
+    if (was.kind !== "text" || is.kind !== "text" || was.partial || is.partial) return;
+    const change = changedLines(was.text, is.text);
+    if (change.added.length === 0 && change.removedAfter.length === 0) return;
+    for (const listener of this.#textUpdaters) listener({ path: now.path, ...change });
+  }
+
+  /** Called after a text document was read again with other lines in it. Returns what stops it. */
+  onTextUpdated(listener: (update: TextUpdate) => void): () => void {
+    this.#textUpdaters.add(listener);
+    return () => this.#textUpdaters.delete(listener);
   }
 
   /** The file changed on disk (or went away). */
@@ -372,7 +410,7 @@ export class DocumentController {
 
   /** Reads the shown document again (after a save of this window: no event comes back for it). */
   reload(): void {
-    if (this.#shown !== null) void this.#open(this.#shown, false);
+    if (this.#shown !== null) void this.#open(this.#shown, false, true);
   }
 
   /** Line (1-based) of the first block at the top of the pane (1 when unknown). */

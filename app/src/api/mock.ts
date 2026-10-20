@@ -583,6 +583,7 @@ export function createMockApi(): Api & {
       probe.shown = { path: null, known: [] };
       return ok(null);
     },
+    documentMore: () => ok({ text: "", next: null }),
     documentText: (path) =>
       ok(
         view.state === "showing" && view.workspace.kind === "notes"

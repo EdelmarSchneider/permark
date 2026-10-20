@@ -355,12 +355,22 @@ export default {
   "role.llms": "llms.txt",
   "role.prompt": "Prompt",
   "role.copilot": "Instrucciones de Copilot",
+  "role.model-card": "Ficha del modelo",
+  "role.dataset-card": "Ficha del conjunto de datos",
   "structured.mode": "Vista",
   "structured.tree": "Árbol",
   "structured.source": "Fuente",
   "structured.invalid": "Esto no es válido, así que se muestra como texto.",
   "text.plainBecauseLong":
     "Archivo largo: se muestra como texto sin formato; solo se dibujan las líneas visibles.",
+  "text.partial":
+    "Se muestran los primeros {held} MB de {total} MB. El resto se carga al desplazarse.",
+  "text.loadingMore": "Cargando más…",
+  "text.loadFailed": "No se pudo cargar la siguiente parte de este archivo.",
+  "text.retry": "Reintentar",
+  "text.capped":
+    "Se muestran los primeros {held} MB de {total} MB. Abre el archivo con otro programa para ver el resto.",
+  "text.allLoaded": "El archivo completo está cargado ({total} MB).",
   "tree.keys.one": "{n} clave",
   "tree.keys.other": "{n} claves",
   "tree.items.one": "{n} elemento",
@@ -791,6 +801,11 @@ export default {
   "review.basis.label": "Comparar con",
   "review.basis.read": "lo que leí",
   "review.basis.commit": "el último commit",
+  "review.whitespace": "solo espacios en blanco",
+  "review.moreOld": "… y {n} líneas antiguas más",
+  "review.codeLabel": "Código con cambios",
+  "review.fromCommit":
+    "Nada nuevo desde la última vez que lo miraste. Se muestra lo que cambió desde el último commit.",
 
   // ---- organizing: tags, comments, silence, broken links
   "finder.scope.tags": "Etiquetas",
