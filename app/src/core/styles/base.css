@@ -31,22 +31,27 @@ input {
 [hidden] {
   display: none !important;
 }
-/* Scrollbars: WebKit pseudo-elements (WebView2, WKWebView, WebKitGTK all support them). */
+/* Scrollbars: WebKit pseudo-elements (WebView2, WKWebView, WebKitGTK all support them). The thumb is always shown
+   (a document shows at once that it scrolls, in every mode) and darker under the pointer | while dragged; 14 px wide
+   with a 3 px clear border = an 8 px thumb, easy to catch. NEVER set `scrollbar-width` | `scrollbar-color` on a
+   scroller: in Chromium they switch these rules off. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: transparent;
+  background-color: var(--faint);
   border: 3px solid transparent;
   border-radius: 10px;
   background-clip: padding-box;
   min-height: 40px;
   min-width: 40px;
 }
-:hover::-webkit-scrollbar-thumb {
-  background-color: var(--faint);
-}
-::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
   background-color: var(--muted);
 }

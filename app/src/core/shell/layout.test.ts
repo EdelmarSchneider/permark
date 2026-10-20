@@ -27,6 +27,22 @@ describe("panel widths", () => {
     expect(fit(Number.NaN, 300, null)).toEqual({ sidebar: 300, right: null });
   });
 
+  it("narrow windows: the panels yield before the page drops under its minimum", () => {
+    // a common laptop window with both panels at their defaults: the right one gives way, the page keeps 560
+    const total = SIDEBAR.def + RIGHT.min + PAGE_MIN;
+    const laptop = fit(total, SIDEBAR.def, RIGHT.def);
+    expect(laptop).toEqual({ sidebar: SIDEBAR.def, right: RIGHT.min });
+    expect(total - (laptop.sidebar ?? 0) - (laptop.right ?? 0)).toBe(PAGE_MIN);
+    // one pixel more or less around the point where both panels sit at their minimums
+    const edge = PAGE_MIN + SIDEBAR.min + RIGHT.min;
+    expect(fit(edge, 400, 400)).toEqual({ sidebar: SIDEBAR.min, right: RIGHT.min });
+    expect(fit(edge + 1, 400, 400)).toEqual({ sidebar: SIDEBAR.min + 1, right: RIGHT.min });
+    expect(fit(edge - 1, 400, 400)).toEqual({ sidebar: SIDEBAR.min, right: RIGHT.min });
+    // only one panel: it alone gives way
+    expect(fit(PAGE_MIN + 250, null, 400)).toEqual({ sidebar: null, right: 250 });
+    expect(fit(PAGE_MIN + 250, 400, null)).toEqual({ sidebar: 250, right: null });
+  });
+
   it("keys: arrows by 16 | 64 with Shift, Home | End = limits, Enter = default, others pass", () => {
     expect(keyWidth("ArrowRight", false, 260, SIDEBAR, true)).toBe(276);
     expect(keyWidth("ArrowLeft", false, 260, SIDEBAR, true)).toBe(244);

@@ -13,6 +13,7 @@
   import DocHeader from "./DocHeader.svelte";
   import { documents } from "./document.svelte";
   import FindBar from "./FindBar.svelte";
+  import { editExtra } from "./headerFit";
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
   import ModeSwitch from "../editing/ModeSwitch.svelte";
@@ -185,8 +186,8 @@
   );
 </script>
 
-{#snippet modes()}
-  <ModeSwitch session={editing} {readOnly} {visual} choose={chooseMode} />
+{#snippet modes(compact: boolean)}
+  <ModeSwitch session={editing} {readOnly} {visual} choose={chooseMode} {compact} />
 {/snippet}
 
 <section class="area" aria-label={t("doc.region")} data-drop-page>
@@ -208,6 +209,10 @@
           onFind={() => ui.openFind()}
           canOpenSystem={workspace.kind === "project"}
           modes={view !== null && view.body.kind !== "media" ? modes : undefined}
+          extra={editExtra(
+            editing.mode !== "view" && editing.policy.kind === "explicit",
+            editing.mode === "source" && editing.kind === "markdown",
+          )}
         />
         {#each bars as bar (bar.owner + bar.id)}
           {#await bar.view() then loaded}
@@ -341,8 +346,10 @@
     min-width: 0;
     min-height: 0;
   }
+  /* one column that never grows past the area: the header folds instead of pushing over the panels */
   .chrome {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 1fr;
     transition:
       grid-template-rows var(--dur) var(--ease),
@@ -350,6 +357,7 @@
       visibility 0s;
   }
   .chrome-inner {
+    min-width: 0;
     min-height: 0;
   }
   /* while it moves or when it is folded, whatever overflows the header (menus) is cut */
@@ -385,6 +393,8 @@
     overflow-y: auto;
     overflow-x: hidden;
     overscroll-behavior: contain;
+    /* room for the scroll bar from the start: the page does not shift when a document starts to scroll */
+    scrollbar-gutter: stable;
   }
   .message {
     display: flex;
