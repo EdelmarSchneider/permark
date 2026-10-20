@@ -89,6 +89,10 @@ impl Shell {
     #[must_use]
     pub fn new(handle: AppHandle, dirs: &AppDirs) -> Self {
         let settings_file = SettingsFile::app(dirs);
+        // first start after 0.5: the choices it kept (notes folder, editor, language), read from its own folder
+        if let Some(older) = permark_core::state::older::older_profile(dirs) {
+            let _ = settings_file.adopt_older(&older.join("settings.json"));
+        }
         // first start: the language the installer recorded (a failed write leaves the system language)
         let _ = settings_file.adopt_language(installer_language());
         let settings = settings_file.load();

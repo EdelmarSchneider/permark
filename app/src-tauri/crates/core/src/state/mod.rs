@@ -1,6 +1,7 @@
 //! Where PerMark keeps its own state: the person's profile, or `.permark/local/` of a project that has `.permark/`.
 //! Versioned JSON files; corrupt -> moved aside, defaults used, caller warns. Plugins get own namespaces.
 
+pub mod older;
 mod private;
 mod raw;
 

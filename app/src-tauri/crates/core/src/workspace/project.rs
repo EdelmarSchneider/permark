@@ -299,6 +299,10 @@ impl ProjectCore {
     fn build(root: Root, env: &CoreEnv, files_only: Option<BTreeSet<PluginId>>) -> Arc<Self> {
         let id = ProjectId::of(&root);
         let store = StateStore::for_project(&env.dirs, &root);
+        if files_only.is_none() {
+            // the person's data 0.5 kept in its own profile folder, taken over once (a reader writes nothing)
+            crate::state::older::take_over_project(&env.dirs, &root, &store);
+        }
         let config = ProjectConfig::load(&root);
         // plugins that are on may offer extra roots (linked worktrees) before the project is built
         let (enablement, on) = project_enablement(env, &config, &store, files_only.as_ref());

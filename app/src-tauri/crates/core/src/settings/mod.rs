@@ -680,6 +680,52 @@ impl SettingsFile {
         }
         self.apply(&SettingChange::Language(language)).map(Some)
     }
+
+    /// First start after 0.5: the choices 0.5 kept in its `settings.json` (`older`, in its own profile folder) become
+    /// settings, once: only while this version has no settings file. Taken: the notes folder, the editor command and
+    /// the language; a value this version does not accept is skipped. 0.5's file is only read. Returns the settings
+    /// when it wrote.
+    ///
+    /// # Errors
+    /// IO failure writing the file.
+    pub fn adopt_older(&self, older: &Path) -> Result<Option<AppSettings>, SettingsError> {
+        if std::fs::symlink_metadata(&self.path).is_ok() {
+            return Ok(None);
+        }
+        let Ok(bytes) = crate::fsx::read_bytes(older, 1024 * 1024) else {
+            return Ok(None);
+        };
+        let Ok(serde_json::Value::Object(old)) = serde_json::from_slice(&bytes) else {
+            return Ok(None);
+        };
+        let text = |key: &str| {
+            old.get(key)
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .map(str::to_owned)
+        };
+        let changes: Vec<SettingChange> = [
+            text("notesFolder").map(SettingChange::NotesFolder),
+            text("editorCommand").map(SettingChange::Editor),
+            text("language")
+                .and_then(|v| LanguagePref::parse(&v))
+                .map(SettingChange::Language),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|change| change.validate().is_ok())
+        .collect();
+        if changes.is_empty() {
+            return Ok(None);
+        }
+        let doc = edit_file(&self.path, |doc| {
+            for change in &changes {
+                apply_change(doc, change);
+            }
+        })?;
+        Ok(Some(AppSettings::from_doc(&doc)))
+    }
 }
 
 /// Reads a settings file fresh (hand edits kept; a file that is not TOML is moved to `<name>.broken-<ms>` first),

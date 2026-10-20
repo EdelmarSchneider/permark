@@ -922,3 +922,55 @@ fn a_config_file_that_is_a_link_is_not_written_through() {
         "ignore = [\"keep/\"]\n"
     );
 }
+
+#[test]
+fn the_choices_0_5_kept_are_adopted_once_and_bad_values_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let notes = dir.path().join("My Notes ü");
+    let older = dir.path().join("settings.json");
+    fs::write(
+        &older,
+        serde_json::json!({
+            "notesFolder": notes.to_string_lossy(),
+            "editorCommand": "code -g {path}:{line}:{col}",
+            "language": "pt-BR",
+            "tone": "sage",
+            "other": 1
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let adopted = file.adopt_older(&older).unwrap().unwrap();
+    assert_eq!(adopted.notes_folder, notes.to_string_lossy());
+    assert_eq!(adopted.language, LanguagePref::PtBr);
+    assert_eq!(file.load().notes_folder, notes.to_string_lossy());
+    assert!(older.is_file(), "0.5's file is only read");
+    // once: this version's settings exist now
+    fs::write(&older, r#"{"language":"de"}"#).unwrap();
+    assert!(file.adopt_older(&older).unwrap().is_none());
+    assert_eq!(file.load().language, LanguagePref::PtBr);
+    // the installer's language never replaces the one 0.5 had
+    assert!(file
+        .adopt_language(Some(LanguagePref::It))
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn older_settings_that_are_missing_damaged_or_odd_write_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = settings_file(dir.path());
+    let older = dir.path().join("settings.json");
+    assert!(file.adopt_older(&older).unwrap().is_none());
+    for text in [
+        "not json",
+        "[1, 2]",
+        r#"{"notesFolder": "relative/folder", "language": "xx", "editorCommand": 5}"#,
+        r#"{"notesFolder": "   "}"#,
+    ] {
+        fs::write(&older, text).unwrap();
+        assert!(file.adopt_older(&older).unwrap().is_none(), "{text}");
+        assert!(!file.path().exists(), "{text}");
+    }
+}
