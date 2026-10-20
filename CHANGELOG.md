@@ -6,35 +6,35 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **Notes button.** A button next to Settings opens your Notes in a tab with one click, or brings you to the Notes tab if it is already open. `Ctrl+Shift+D` does the same, and `Ctrl+Shift+N` makes a new note from anywhere.
-- **Hide and show the side bars.** `Ctrl+B` hides or shows the sidebar and `Ctrl+Alt+B` the right panel, as in earlier versions; a button at each end of the status bar does the same. Each project remembers which side bars you hid.
+- **Notes button.** A button next to Settings opens your Notes in a tab with one click, or brings you to the Notes tab if it is already open. `Ctrl+Shift+D` does the same, and `Ctrl+Shift+N` makes a new note from anywhere. <!-- f: notes, keyboard-shortcuts -->
+- **Hide and show the side bars.** `Ctrl+B` hides or shows the sidebar and `Ctrl+Alt+B` the right panel, as in earlier versions; a button at each end of the status bar does the same. Each project remembers which side bars you hid. <!-- f: side-panels, keyboard-shortcuts -->
 
 ### Changed
-- `Ctrl+B` makes text bold in the source editor too, as it already did in the visual editor.
-- The outline button always shows the outline, even when another panel was open on the right.
+- `Ctrl+B` makes text bold in the source editor too, as it already did in the visual editor. <!-- f: source-mode, keyboard-shortcuts -->
+- The outline button always shows the outline, even when another panel was open on the right. <!-- f: outline, side-panels -->
 
 ### Fixed
-- Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window.
+- Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window. <!-- f: notes, start-screen -->
 
 ## [0.6.1] - 2026-10-20
 
 ### Added
-- **Tabs.** Each folder or file you open gets a tab in the bar at the top of its window, and Notes open in a tab too. Click a tab to switch to it; `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` and `Ctrl+Alt+←`) go to the next and previous tab, `Ctrl+1` to `Ctrl+8` to a tab, `Ctrl+9` to the last one, and `Ctrl+W` closes the tab. A tab with unsaved changes shows a dot. Right-click a tab to move it to a new window. When PerMark starts, your windows and tabs come back, and only the tab you see loads, so the start stays fast.
+- **Tabs.** Each folder or file you open gets a tab in the bar at the top of its window, and Notes open in a tab too. Click a tab to switch to it; `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` and `Ctrl+Alt+←`) go to the next and previous tab, `Ctrl+1` to `Ctrl+8` to a tab, `Ctrl+9` to the last one, and `Ctrl+W` closes the tab. A tab with unsaved changes shows a dot. Right-click a tab to move it to a new window. When PerMark starts, your windows and tabs come back, and only the tab you see loads, so the start stays fast. <!-- f: tabs, notes, keyboard-shortcuts, session-restore -->
 
 ### Changed
-- A folder or file opens in one place only: if it is open already, its window and tab come forward. **Settings → Editing → Open folders and files in** offers New tab (the default), This tab and New window; the old "Ask" choice now means New tab, and the question dialog is gone.
-- Opening from outside PerMark (a double-click, the command line) adds a tab to the window you used last.
-- Closing a window with unsaved changes asks once for all its tabs: Save all, Discard or Cancel.
-- The windows of 0.6.0 come back as tabs: each window keeps its folder or file as one tab, and a project that was open in two windows comes back once.
+- A folder or file opens in one place only: if it is open already, its window and tab come forward. **Settings → Editing → Open folders and files in** offers New tab (the default), This tab and New window; the old "Ask" choice now means New tab, and the question dialog is gone. <!-- f: tabs, settings -->
+- Opening from outside PerMark (a double-click, the command line) adds a tab to the window you used last. <!-- f: tabs, file-manager-integration -->
+- Closing a window with unsaved changes asks once for all its tabs: Save all, Discard or Cancel. <!-- f: tabs, save -->
+- The windows of 0.6.0 come back as tabs: each window keeps its folder or file as one tab, and a project that was open in two windows comes back once. <!-- f: tabs, session-restore -->
 
 ### Fixed
-- Windows come back where you left them, also when PerMark starts from a file you open. A new window opens slightly offset from the current one, at the same size, and a maximized window stays maximized. The first start after 0.5 takes the window place 0.5 saved.
-- The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons.
-- The scrollbar of a document is always visible and wider, so it is easier to grab.
-- The buttons of the side bar (such as Broken links and Tags) always appear in the same order.
+- Windows come back where you left them, also when PerMark starts from a file you open. A new window opens slightly offset from the current one, at the same size, and a maximized window stays maximized. The first start after 0.5 takes the window place 0.5 saved. <!-- f: windows, session-restore -->
+- The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons. <!-- f: view-mode, outline, live-feed -->
+- The scrollbar of a document is always visible and wider, so it is easier to grab. <!-- f: view-mode -->
+- The buttons of the side bar (such as Broken links and Tags) always appear in the same order. <!-- f: side-panels -->
 
 ### Known limits
-- Tabs have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned.
+- Tabs have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned. <!-- f: tabs -->
 
 ## [0.6.0] - 2026-10-20
 
