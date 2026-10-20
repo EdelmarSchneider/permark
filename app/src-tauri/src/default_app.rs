@@ -39,8 +39,9 @@ fn older_data(dirs: &AppDirs) -> bool {
         .is_some_and(|data| data.join("dev.permark.app").is_dir())
 }
 
-/// Where PerMark sets the default itself.
+/// Where PerMark sets the default itself (`Option` for the signature every platform shares).
 #[cfg(target_os = "macos")]
+#[allow(clippy::unnecessary_wraps)]
 fn handlers(handle: &AppHandle) -> Option<Box<dyn permark_core::desktop::Handlers>> {
     Some(Box::new(permark_core::desktop::macos::LaunchServices::new(
         handle.config().identifier.clone(),
