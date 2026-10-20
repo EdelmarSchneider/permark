@@ -50,6 +50,8 @@ pub(crate) struct Env<'a> {
     pub sigs: &'a SigStore,
     /// Ignore rules per root: (folded root prefix, rules); the first is the project folder.
     pub ignorers: &'a [(String, Arc<Ignorer>)],
+    /// Whether a project path was a folder before the watch knew anything under it.
+    pub was_folder: &'a dyn Fn(&str) -> bool,
 }
 
 impl Env<'_> {
@@ -208,6 +210,11 @@ impl Pass<'_> {
             self.removed.push((at, sig));
         } else if item.pending.removed && !item.pending.created {
             // existed before the watch remembered signatures: still a real removal
+            if (self.env.was_folder)(&item.path) {
+                // a folder moved away when the system does not say where (macOS): what was below it is gone too
+                self.push(&item.path, ChangeKind::Removed, true);
+                return;
+            }
             let at = self.push(&item.path, ChangeKind::Removed, false);
             let unknown = Sig {
                 len: 0,

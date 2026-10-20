@@ -281,6 +281,35 @@ impl std::fmt::Debug for ProjectCore {
     }
 }
 
+/// The project's watch, told which paths the tree holds as folders; the tree is built at once in the background.
+fn start_watcher(
+    vault: &Vault,
+    explorer: &Arc<Explorer>,
+    hub: &Arc<WatchHub>,
+    own: &Arc<OwnWrites>,
+    env: &CoreEnv,
+) -> Watcher {
+    let watcher = Watcher::start(
+        vault,
+        explorer.ignorers(),
+        Arc::clone(hub),
+        Arc::clone(own),
+        env.status_hook(),
+    );
+    watcher.knows_folders(Box::new({
+        let explorer = Arc::clone(explorer);
+        move |path| explorer.holds_folder(path)
+    }));
+    // the tree is known before anything goes away (a window would list it now anyway; a core without one too)
+    let explorer = Arc::clone(explorer);
+    let _ = std::thread::Builder::new()
+        .name("permark-tree".to_owned())
+        .spawn(move || {
+            let _ = explorer.listed("");
+        });
+    watcher
+}
+
 impl ProjectCore {
     /// Opens a project: state store, config, plugins started. Single step (no `activate`).
     #[must_use]
@@ -337,13 +366,7 @@ impl ProjectCore {
             Arc::clone(&formats),
         ));
         let search_sub = hub.subscribe(search.feeder());
-        let watcher = Watcher::start(
-            &vault,
-            explorer.ignorers(),
-            Arc::clone(&hub),
-            Arc::clone(&own),
-            env.status_hook(),
-        );
+        let watcher = start_watcher(&vault, &explorer, &hub, &own, env);
         // a reader with no window reads the journal, never writes it
         let activity = Arc::new(if files_only.is_some() {
             ActivityLog::read_only(&store, system_clock())

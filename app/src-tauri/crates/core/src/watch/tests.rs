@@ -568,6 +568,28 @@ fn a_rescan_request_is_a_bulk_batch_that_asks_to_rebuild() {
 }
 
 #[test]
+fn a_folder_gone_before_its_files_were_news_is_reported_as_a_folder() {
+    for (knows, is_dir) in [(true, true), (false, false)] {
+        let f = make(&["lib/x.md"], false);
+        if knows {
+            f.watcher.knows_folders(Box::new(|path| path == "lib"));
+        }
+        fs::remove_dir_all(f.dir.path().join("lib")).unwrap();
+        f.watcher.inject(Pending {
+            abs: f.dir.path().join("lib"),
+            created: false,
+            removed: true,
+            modified: false,
+            rename_from: None,
+            deferred: false,
+        });
+        let all = wait_for(&f.seen, "removed", |c| has(c, "lib", &ChangeKind::Removed));
+        assert_eq!(all.len(), 1, "{all:?}");
+        assert_eq!(all[0].is_dir, is_dir, "{all:?}");
+    }
+}
+
+#[test]
 fn hints_for_paths_outside_the_project_are_ignored() {
     let f = make(&["a.md"], true);
     let outside = tempfile::tempdir().unwrap();

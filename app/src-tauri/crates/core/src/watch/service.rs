@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -63,7 +63,11 @@ struct Shared {
     polled: Mutex<HashMap<String, PathBuf>>,
     hook: Option<StatusHook>,
     timing: Timing,
+    folders: OnceLock<FolderLookup>,
 }
+
+/// Whether a project path is a folder as the project's tree knows it.
+pub type FolderLookup = Box<dyn Fn(&str) -> bool + Send + Sync>;
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -234,6 +238,7 @@ impl Watcher {
             polled: Mutex::new(HashMap::new()),
             hook,
             timing,
+            folders: OnceLock::new(),
         });
         let mut natives = Vec::new();
         if native {
@@ -266,6 +271,12 @@ impl Watcher {
             natives: Mutex::new(natives),
             thread,
         }
+    }
+
+    /// Where the watch learns which paths were folders before it began: a folder that goes away without its files
+    /// ever having been news is then reported as a folder. Set once.
+    pub fn knows_folders(&self, lookup: FolderLookup) {
+        let _ = self.shared.folders.set(lookup);
     }
 
     #[must_use]
@@ -503,10 +514,12 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
             ignorer.clear();
         }
     }
+    let no_folder = |_: &str| false;
     let env = Env {
         vault: &shared.vault,
         sigs: &shared.sigs,
         ignorers: &shared.ignorers,
+        was_folder: shared.folders.get().map_or(&no_folder, |f| f.as_ref()),
     };
     let mut done = reconcile(&env, pending);
     shared.own.pair_moves(&mut done.changes);
