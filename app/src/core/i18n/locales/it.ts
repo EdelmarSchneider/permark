@@ -1767,7 +1767,7 @@ export default {
   "convert.preview": "Anteprima (prime righe)",
   "convert.lost": "Non conservato:",
   "convert.approxHint":
-    "~ = token stimati. Attiva il Conteggio token e scegli un tokenizzatore per numeri esatti.",
+    "~ = token stimati. Per numeri esatti, scegli un tokenizzatore GPT come principale nel Conteggio dei token e scarica il suo vocabolario.",
   "convert.exactHint": "Contato con il tokenizzatore indicato.",
   "convert.confirmSecrets.one": "Il risultato contiene {n} valore segreto.",
   "convert.confirmSecrets.other": "Il risultato contiene {n} valori segreti.",

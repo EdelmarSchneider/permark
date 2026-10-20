@@ -1783,7 +1783,7 @@ export default {
   "convert.preview": "Vorschau (erste Zeilen)",
   "convert.lost": "Nicht erhalten:",
   "convert.approxHint":
-    "~ = geschätzte Token. Für genaue Zahlen die Token-Zählung einschalten und einen Tokenizer wählen.",
+    "~ = geschätzte Token. Für genaue Zahlen in der Token-Zählung einen GPT-Tokenizer als Hauptwert wählen und sein Vokabular herunterladen.",
   "convert.exactHint": "Gezählt mit dem angezeigten Tokenizer.",
   "convert.confirmSecrets.one": "Das Ergebnis enthält {n} geheimen Wert.",
   "convert.confirmSecrets.other": "Das Ergebnis enthält {n} geheime Werte.",

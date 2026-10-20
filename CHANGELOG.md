@@ -11,6 +11,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - **Move a tab to another window.** Right-click a tab and choose **Move to window** to move it into another open window; the list shows each window by the tab it is showing and how many tabs it has. Unsaved changes move with the tab. Moving a window's last tab closes the window it leaves. <!-- f: tabs, windows -->
 
 ### Changed
+- Every plugin is now on from the start, Token count and the Converter included, so you no longer need to turn them on in the Plugins page. A plugin you turned off yourself stays off. Token count still asks before it downloads a tokenizer's vocabulary, and nothing is downloaded when PerMark starts. The agent connection stays off until you turn it on for a project. <!-- f: plugins, token-count, converter -->
 - `Ctrl+B` makes text bold in the source editor too, as it already did in the visual editor. <!-- f: source-mode, keyboard-shortcuts -->
 - The outline button always shows the outline, even when another panel was open on the right. <!-- f: outline, side-panels -->
 - In the Notes tab, `Ctrl+1` to `Ctrl+9` open your pinned notes (instead of switching tabs), `Ctrl+N` makes a new note and `Ctrl+Shift+C` copies the note. Use `Ctrl+Tab` or the tabs to switch tabs from there. The keyboard shortcuts list no longer reports these keys as shared, but it does warn when a key you choose is already used where the same command could run. <!-- f: notes, keyboard-shortcuts -->
