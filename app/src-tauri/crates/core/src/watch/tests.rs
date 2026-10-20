@@ -569,23 +569,36 @@ fn a_rescan_request_is_a_bulk_batch_that_asks_to_rebuild() {
 
 #[test]
 fn a_folder_gone_before_its_files_were_news_is_reported_as_a_folder() {
-    for (knows, is_dir) in [(true, true), (false, false)] {
+    // (the tree knows it, the system also flags it created, what is reported)
+    for (knows, created, reported) in [
+        (true, false, Some(true)),
+        (true, true, Some(true)),
+        (false, false, Some(false)),
+        (false, true, None),
+    ] {
         let f = make(&["lib/x.md"], false);
         if knows {
-            f.watcher.knows_folders(Box::new(|path| path == "lib"));
+            f.watcher
+                .knows_tree(Box::new(|path| (path == "lib").then_some(true)));
         }
         fs::remove_dir_all(f.dir.path().join("lib")).unwrap();
         f.watcher.inject(Pending {
             abs: f.dir.path().join("lib"),
-            created: false,
+            created,
             removed: true,
             modified: false,
             rename_from: None,
             deferred: false,
         });
-        let all = wait_for(&f.seen, "removed", |c| has(c, "lib", &ChangeKind::Removed));
-        assert_eq!(all.len(), 1, "{all:?}");
-        assert_eq!(all[0].is_dir, is_dir, "{all:?}");
+        if let Some(is_dir) = reported {
+            let all = wait_for(&f.seen, "removed", |c| has(c, "lib", &ChangeKind::Removed));
+            assert_eq!(all.len(), 1, "{all:?}");
+            assert_eq!(all[0].is_dir, is_dir, "{all:?}");
+        } else {
+            // created and gone inside one window, never known: nothing
+            let heard = quiet_for(&f.seen, 300);
+            assert!(heard.is_empty(), "{heard:?}");
+        }
     }
 }
 

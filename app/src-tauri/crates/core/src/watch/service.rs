@@ -63,11 +63,11 @@ struct Shared {
     polled: Mutex<HashMap<String, PathBuf>>,
     hook: Option<StatusHook>,
     timing: Timing,
-    folders: OnceLock<FolderLookup>,
+    tree: OnceLock<PathLookup>,
 }
 
-/// Whether a project path is a folder as the project's tree knows it.
-pub type FolderLookup = Box<dyn Fn(&str) -> bool + Send + Sync>;
+/// What the project's tree holds at a project path: `Some(is_folder)` | `None` (nothing).
+pub type PathLookup = Box<dyn Fn(&str) -> Option<bool> + Send + Sync>;
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -238,7 +238,7 @@ impl Watcher {
             polled: Mutex::new(HashMap::new()),
             hook,
             timing,
-            folders: OnceLock::new(),
+            tree: OnceLock::new(),
         });
         let mut natives = Vec::new();
         if native {
@@ -273,10 +273,10 @@ impl Watcher {
         }
     }
 
-    /// Where the watch learns which paths were folders before it began: a folder that goes away without its files
-    /// ever having been news is then reported as a folder. Set once.
-    pub fn knows_folders(&self, lookup: FolderLookup) {
-        let _ = self.shared.folders.set(lookup);
+    /// Where the watch learns what was there before it began: a file or folder that goes away without ever having
+    /// been news is then reported as what it was. Set once.
+    pub fn knows_tree(&self, lookup: PathLookup) {
+        let _ = self.shared.tree.set(lookup);
     }
 
     #[must_use]
@@ -514,14 +514,17 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
             ignorer.clear();
         }
     }
-    let was_folder = |path: &str| {
-        shared.own.moved_folder_from(path) || shared.folders.get().is_some_and(|known| known(path))
+    let known = |path: &str| {
+        shared
+            .own
+            .moved_from(path)
+            .or_else(|| shared.tree.get().and_then(|tree| tree(path)))
     };
     let env = Env {
         vault: &shared.vault,
         sigs: &shared.sigs,
         ignorers: &shared.ignorers,
-        was_folder: &was_folder,
+        known: &known,
     };
     let mut done = reconcile(&env, pending);
     shared.own.pair_moves(&mut done.changes);

@@ -532,13 +532,13 @@ impl Explorer {
         guard.as_ref()?.node(&key_of(path)).map(|n| n.kind)
     }
 
-    /// Whether the tree, when it is built, holds `path` as a folder (never walks the disk to find out).
+    /// What the tree, when it is built, holds at `path`: `Some(is_folder)` | `None` (never walks the disk to find out).
     #[must_use]
-    pub fn holds_folder(&self, path: &str) -> bool {
+    pub fn holds(&self, path: &str) -> Option<bool> {
         lock(&self.model)
             .as_ref()
             .and_then(|model| model.node(&key_of(path)))
-            .is_some_and(|n| matches!(n.kind, NodeKind::Dir { .. }))
+            .map(|n| matches!(n.kind, NodeKind::Dir { .. }))
     }
 }
 

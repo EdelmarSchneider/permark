@@ -120,18 +120,26 @@ impl OwnWrites {
         }
     }
 
-    /// Whether the app announced moving a folder away from `path` (it announced files below it). A removal whose kind
-    /// the watch cannot tell (the system names no side of a move, and the tree already shows the new place) is then a
-    /// folder's.
+    /// Whether the app announced moving `path` away: `Some(true)` when it announced files below it too (a folder). A
+    /// removal the watch knows nothing of (the system names no side of a move, and the tree already shows the new
+    /// place) is then a real one, of that kind.
     #[must_use]
-    pub fn moved_folder_from(&self, path: &str) -> bool {
+    pub fn moved_from(&self, path: &str) -> Option<bool> {
         let now = Instant::now();
-        let prefix = format!("{}/", key_of(path));
-        self.pairs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .values()
-            .any(|(from, at)| fresh(*at, now) && key_of(from).starts_with(&prefix))
+        let key = key_of(path);
+        let prefix = format!("{key}/");
+        let pairs = self.pairs.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut found = None;
+        for (from, _) in pairs.values().filter(|(_, at)| fresh(*at, now)) {
+            let from = key_of(from);
+            if from.starts_with(&prefix) {
+                return Some(true);
+            }
+            if from == key {
+                found = Some(false);
+            }
+        }
+        found
     }
 
     /// The app is about to delete these project paths.
@@ -418,10 +426,10 @@ mod tests {
             ("lib/x.md".to_owned(), "vendor/x.md".to_owned()),
             ("one.md".to_owned(), "two.md".to_owned()),
         ]);
-        assert!(own.moved_folder_from("lib"));
-        assert!(!own.moved_folder_from("li"));
-        assert!(!own.moved_folder_from("one.md"));
-        assert!(!own.moved_folder_from("vendor"));
+        assert_eq!(own.moved_from("lib"), Some(true));
+        assert_eq!(own.moved_from("li"), None);
+        assert_eq!(own.moved_from("one.md"), Some(false));
+        assert_eq!(own.moved_from("vendor"), None);
     }
 
     #[test]

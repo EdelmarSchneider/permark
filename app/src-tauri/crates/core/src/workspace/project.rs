@@ -281,7 +281,7 @@ impl std::fmt::Debug for ProjectCore {
     }
 }
 
-/// The project's watch, told which paths the tree holds as folders; the tree is built at once in the background.
+/// The project's watch, told what the tree holds; the tree is built at once in the background.
 fn start_watcher(
     vault: &Vault,
     explorer: &Arc<Explorer>,
@@ -296,9 +296,9 @@ fn start_watcher(
         Arc::clone(own),
         env.status_hook(),
     );
-    watcher.knows_folders(Box::new({
+    watcher.knows_tree(Box::new({
         let explorer = Arc::clone(explorer);
-        move |path| explorer.holds_folder(path)
+        move |path| explorer.holds(path)
     }));
     // the tree is known before anything goes away (a window would list it now anyway; a core without one too)
     let explorer = Arc::clone(explorer);

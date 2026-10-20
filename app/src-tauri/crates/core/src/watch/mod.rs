@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 pub use noise::{is_git_signal, is_news};
 pub use own::OwnWrites;
-pub use service::{FolderLookup, Timing, Watcher};
+pub use service::{PathLookup, Timing, Watcher};
 pub use types::{Change, ChangeKind, FsBatch, BULK_CHANGES};
 
 /// Whether changes of the project's files reach the app as they happen.

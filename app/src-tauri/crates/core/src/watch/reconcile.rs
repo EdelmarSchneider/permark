@@ -50,8 +50,8 @@ pub(crate) struct Env<'a> {
     pub sigs: &'a SigStore,
     /// Ignore rules per root: (folded root prefix, rules); the first is the project folder.
     pub ignorers: &'a [(String, Arc<Ignorer>)],
-    /// Whether a project path was a folder before the watch knew anything under it.
-    pub was_folder: &'a dyn Fn(&str) -> bool,
+    /// What was at a project path before the watch knew anything of it: `Some(is_folder)` | `None` (unknown).
+    pub known: &'a dyn Fn(&str) -> Option<bool>,
 }
 
 impl Env<'_> {
@@ -208,13 +208,22 @@ impl Pass<'_> {
         if let Some(sig) = self.env.sigs.remove(&key) {
             let at = self.push(&item.path, ChangeKind::Removed, false);
             self.removed.push((at, sig));
+        } else if let Some(is_dir) = (self.env.known)(&item.path) {
+            // it was there before the watch knew of it (macOS may also flag it as created: an item keeps the flags it
+            // had a moment ago); a folder takes what was below it along
+            if is_dir {
+                self.push(&item.path, ChangeKind::Removed, true);
+            } else {
+                let at = self.push(&item.path, ChangeKind::Removed, false);
+                let unknown = Sig {
+                    len: 0,
+                    mtime_ms: 0,
+                    hash: 0,
+                };
+                self.removed.push((at, unknown));
+            }
         } else if item.pending.removed && !item.pending.created {
             // existed before the watch remembered signatures: still a real removal
-            if (self.env.was_folder)(&item.path) {
-                // a folder moved away when the system does not say where (macOS): what was below it is gone too
-                self.push(&item.path, ChangeKind::Removed, true);
-                return;
-            }
             let at = self.push(&item.path, ChangeKind::Removed, false);
             let unknown = Sig {
                 len: 0,
