@@ -145,6 +145,10 @@ fn default_app_opening_is_an_allow_list_with_a_deny_list_on_top() {
         "x.EXE",
         "x.md.exe",
         "x.scr",
+        // Office files with macros
+        "book.xlsm",
+        "letter.DOCM",
+        "deck.pptm",
         // code is read in the app or opened in the editor, never by the system's program
         "main.rs",
         "app.ts",

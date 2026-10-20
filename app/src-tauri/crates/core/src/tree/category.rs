@@ -144,6 +144,8 @@ const NEVER_OPEN: &[&str] = &[
     "app", "desktop", "appimage", "run", "bin", "dll", "sys", "py", "pl", "rb", "php", "scpt",
     "workflow", "action", "apk", "deb", "rpm", "dmg", "pkg", "gadget", "inf", "ins", "isp", "mht",
     "svg", "mhtml", "chm", "swf", "svgz",
+    // Office files that carry macros (shown as Office, never handed to Office from a click)
+    "xlsm", "xltm", "xlam", "docm", "dotm", "pptm", "potm", "ppam", "ppsm", "sldm",
 ];
 
 /// Whether the system's default program may be asked to open this file name.
