@@ -137,16 +137,16 @@ jobs:
           tagName: ${{ env.TAG }}
           releaseName: "PerMark ${{ env.TAG }}"
           releaseBody: |
-            **PerMark** is a free, open-source Markdown app: read what your AI writes, write what it reads. It opens any `.md`
-            file as a clean page, keeps notes that save themselves, and turns a project folder into a place to follow, review
-            and steer what your agents write. It works with any AI tool, or none: it only relies on your files and git.
+            **PerMark** is a free, open-source unified document workspace: one place to read, write and organize Markdown and
+            the files around it, and to steer AI projects through their documents. AI speeds the work. Your vision steers it.
+            It works with any AI tool, or none: it only relies on your files and git.
 
             ${{ env.RELEASE_NOTES }}
 
             ### Install
             | Platform | Download |
             | --- | --- |
-            | Windows | the `-setup.exe` installer (or the `.msi`) |
+            | Windows | the `-setup.exe` installer (recommended). The `.msi` stays for updating copies that were installed from a 0.5 `.msi` |
             | macOS | the universal `.dmg` (Apple silicon and Intel) |
             | Linux | the `.AppImage`, `.deb` or `.rpm` |
 
