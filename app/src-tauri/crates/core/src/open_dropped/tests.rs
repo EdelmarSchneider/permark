@@ -191,7 +191,9 @@ fn new_tabs_on_a_welcome_show_one_of_them_when_the_last_path_is_open_elsewhere()
 fn the_same_path_twice_in_one_drop_opens_once() {
     let f = fx();
     let doc = f.file("a.md");
-    let (_, _, answer) = f.drop_on("main", &[doc.clone(), doc.join("."), doc]);
+    // the same file spelled another way (works on every system: `a.md/.` is an error on Unix)
+    let again = f.dir.path().join(".").join("a.md");
+    let (_, _, answer) = f.drop_on("main", &[doc.clone(), again, doc]);
     assert_eq!(answer.failed.len(), 0);
     assert_eq!(f.window("main").tabs.len(), 1);
 }
