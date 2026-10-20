@@ -108,3 +108,24 @@ pub fn set_always(core: &ProjectCore, always: bool) -> Result<(), IpcError> {
         .profile_file::<PicturesChoice>(remote::CHOICE_FILE)
         .save(&PicturesChoice { always })?)
 }
+
+#[cfg(test)]
+mod tests {
+    /// Real network, run by hand: `cargo test -p permark web_pictures -- --ignored`.
+    #[test]
+    #[ignore = "asks the real network"]
+    fn a_real_https_picture_comes_and_a_page_does_not() {
+        let png = super::fetch(
+            "https://raw.githubusercontent.com/EdelmarSchneider/permark/main/docs/assets/screenshot-light.png",
+        )
+        .unwrap();
+        assert!(png.starts_with(b"\x89PNG"));
+        let page = super::fetch("https://github.com/").unwrap_err();
+        // a web page is never shown as a picture (refused by type, or by its status for this Accept)
+        assert!(matches!(
+            page.kind,
+            permark_core::error::ErrorKind::InvalidData
+                | permark_core::error::ErrorKind::Unavailable
+        ));
+    }
+}
