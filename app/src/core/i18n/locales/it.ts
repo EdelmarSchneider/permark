@@ -1845,6 +1845,8 @@ export default {
   "switcher.label": "Schede di questa finestra",
   "switcher.menu": "Azioni della scheda",
   "switcher.moveNew": "Sposta in una nuova finestra",
+  "switcher.moveFailed":
+    "Non è stato possibile spostare questa scheda in una nuova finestra. Resta qui.",
   "switcher.unsaved": "Modifiche non salvate",
   "closeWindow.title": "Salvare le modifiche prima di chiudere?",
   "closeWindow.body.one": "Questa scheda ha modifiche non salvate:",

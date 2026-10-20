@@ -66,8 +66,10 @@ class Tabs {
     void this.#api.tabClose(tab);
   }
 
-  moveToNewWindow(tab: number): void {
-    if (this.list.length > 1) void this.#api.tabMoveNewWindow(tab);
+  /** Moves a tab to a new window; `false`: it could not move (it stays where it was). */
+  async moveToNewWindow(tab: number): Promise<boolean> {
+    if (this.list.length < 2) return false;
+    return (await this.#api.tabMoveNewWindow(tab)).ok;
   }
 
   /** The next | previous tab (wraps; nothing with fewer than two). */

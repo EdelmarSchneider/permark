@@ -676,6 +676,60 @@ fn focusing_a_pending_tab_with_a_document_opens_it_there() {
     ));
 }
 
+/// The last `window-changed` of a view.
+fn last_said(events: &[CoreEvent], view: &str) -> Option<WindowChanged> {
+    events.iter().rev().find_map(|e| match e {
+        CoreEvent::WindowChanged(changed) if changed.window == view => Some(changed.clone()),
+        _ => None,
+    })
+}
+
+/// Regression: the Welcome view adopted by the first tab must learn its tab (else "this tab" opens skip the unsaved
+/// prompt there), and lose it again when the last tab closes.
+#[test]
+fn a_view_hears_which_tab_it_belongs_to() {
+    let f = fx();
+    let welcome = f.registry.shown_view("main").unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    f.sink.take();
+    let (tab_a, view) = tab(&f, "main", &project(dir.path())).unwrap();
+    assert_eq!(view, welcome, "adopted");
+    assert_eq!(last_said(&f.sink.take(), &view).unwrap().tab, Some(tab_a));
+    let _ = f.registry.close_tab(tab_a);
+    assert_eq!(last_said(&f.sink.take(), &view).unwrap().tab, None);
+}
+
+/// Regression: while the close prompt is up, an outside open of a tab of that window must not hide the prompt (the
+/// window could not close any more); the window comes forward as it is, no document switched under the prompt.
+#[test]
+fn focusing_a_tab_while_the_window_asks_to_close_keeps_the_prompt_on_screen() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (other, other_view) = tab(&f, "main", &project(dir.path())).unwrap();
+    let (_, shown_view) = tab(&f, "main", &file(&dir.path().join("b.md"))).unwrap();
+    let (_, workspace) = f.registry.workspace_of(&shown_view).unwrap();
+    workspace
+        .documents()
+        .set_unsaved(&shown_view, Some("b.md".into()));
+    let _ = f.registry.request_close("main");
+    assert!(f.registry.is_confirming_close("main"));
+    let place = Place {
+        window: "main".into(),
+        tab: other,
+    };
+    let outcome = f
+        .registry
+        .activate_with(&place, Some(VaultPath::parse("a.md").unwrap()));
+    assert!(outcome.refused);
+    assert_eq!(outcome.changes, Vec::<ViewChange>::new());
+    assert_eq!(f.registry.shown_view("main"), Some(shown_view));
+    assert!(matches!(
+        f.registry.window_view(&other_view),
+        Some(WindowView::Showing { document: None, .. })
+    ));
+    assert!(f.registry.activate(other).refused);
+}
+
 // ---- close prompts ----------------------------------------------------------------------------------------------
 
 /// Adversarial: unsaved edits in a hidden tab -> the prompt lists it; Stay shows it; Close closes the window.
@@ -749,30 +803,95 @@ fn a_moved_tab_keeps_its_workspace_and_unsaved_flag() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
     let (_, keep_view) = tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
-    let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
+    let moving_ref = file(&dir.path().join("move.md"));
+    let (moving, view) = tab(&f, "main", &moving_ref).unwrap();
     let (id, workspace) = f.registry.workspace_of(&view).unwrap();
     workspace
         .documents()
         .set_unsaved(&view, Some("move.md".into()));
-    let (outcome, moved) = f.registry.move_out(moving, MoveTo::NewWindow);
-    assert!(matches!(
-        outcome.changes.last(),
-        Some(ViewChange::Transfer { view: Some(v), .. }) if *v == view
-    ));
-    assert_eq!(f.registry.shown_view("main"), Some(keep_view));
     f.registry.add_window("w-9", WindowKind::Work);
-    let changes = f.registry.take_in("w-9", moved.unwrap()).changes;
+    let outcome = f
+        .registry
+        .move_tab(moving, "w-9", Some(view.as_str()))
+        .unwrap();
     assert_eq!(
-        changes,
-        [ViewChange::Show {
-            window: "w-9".into(),
-            view: view.clone()
-        }]
+        outcome.changes,
+        [
+            ViewChange::Show {
+                window: "main".into(),
+                view: keep_view.clone()
+            },
+            ViewChange::Transfer {
+                from: "main".into(),
+                tab: moving,
+                view: Some(view.clone()),
+                to: MoveTo::Window("w-9".into())
+            },
+            ViewChange::Show {
+                window: "w-9".into(),
+                view: view.clone()
+            }
+        ]
     );
+    assert_eq!(f.registry.shown_view("main"), Some(keep_view));
     assert_eq!(f.registry.workspace_of(&view).unwrap().0, id);
     assert_eq!(f.registry.window_of(&view).as_deref(), Some("w-9"));
     assert!(window_of(&f, "w-9").tabs[0].unsaved);
     assert_eq!(f.registry.window_of_tab(moving).as_deref(), Some("w-9"));
+    // one place all along: the workspace is found where it went (no second tab for it)
+    assert_eq!(
+        f.registry.find(&moving_ref),
+        Some(Place {
+            window: "w-9".into(),
+            tab: moving
+        })
+    );
+    assert!(matches!(
+        f.registry.open_tab("w-1", &moving_ref, None),
+        Ok(TabOpen::Existing(_))
+    ));
+}
+
+/// Adversarial: a move that cannot happen changes nothing (target gone | closing, the tab's view not the one the
+/// shell moved, the source asking to close).
+#[test]
+fn a_refused_move_leaves_both_windows_as_they_were() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (_, keep_view) = tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
+    let before = f.registry.list_windows();
+    let refused = |to: &str, view: &str| {
+        matches!(
+            f.registry.move_tab(moving, to, Some(view)),
+            Err(MoveRefused)
+        )
+    };
+    assert!(refused("nowhere", &view));
+    assert!(refused("w-1", &keep_view), "not the view the shell moved");
+    assert!(refused("main", &view));
+    f.registry.add_window("w-9", WindowKind::Work);
+    let _ = f.registry.request_close("w-9");
+    assert!(refused("w-9", &view), "target closing");
+    f.registry.add_window("w-8", WindowKind::Work);
+    let (_, workspace) = f.registry.workspace_of(&keep_view).unwrap();
+    workspace
+        .documents()
+        .set_unsaved(&keep_view, Some("keep.md".into()));
+    let _ = f.registry.request_close("main");
+    assert!(refused("w-8", &view), "source asking to close");
+    let _ = f
+        .registry
+        .resolve_close("main", Resolution::Stay { show: None });
+    workspace.documents().set_unsaved(&keep_view, None);
+    let after: Vec<WindowSummary> = f
+        .registry
+        .list_windows()
+        .into_iter()
+        .filter(|w| w.window != "w-8")
+        .collect();
+    assert_eq!(after, before);
+    assert_eq!(f.registry.window_of(&view).as_deref(), Some("main"));
 }
 
 // ---- live reload of the project state (PerMark initialized while the project is open) ---------------------------------

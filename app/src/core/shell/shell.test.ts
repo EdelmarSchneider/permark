@@ -107,6 +107,7 @@ afterEach(async () => {
   mock.probe.shell.removed.length = 0;
   mock.probe.shell.focused.length = 0;
   mock.probe.tabs.moved.length = 0;
+  mock.probe.tabs.refuseMove = false;
   await toWelcome();
 });
 
@@ -621,6 +622,19 @@ describe("the top bar", () => {
     (document.querySelectorAll('[role="menuitem"]')[0] as HTMLElement).click();
     await until(() => chips().length === 3, "moved out");
     expect(mock.probe.tabs.moved).toEqual([bar.ids[1]]);
+    // a move that cannot happen: the tab stays, a quiet notice says so
+    mock.probe.tabs.refuseMove = true;
+    chips()[1]!.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 30 }),
+    );
+    await tick();
+    (document.querySelectorAll('[role="menuitem"]')[0] as HTMLElement).click();
+    await until(
+      () => windowStore.notices.some((n) => n.kind === "note" && n.text.includes("could not move")),
+      "move refused notice",
+    );
+    expect(chips().length).toBe(3);
+    mock.probe.tabs.refuseMove = false;
     // the keyboard way in: the Menu key
     press(chips()[0]!, "ContextMenu");
     await tick();

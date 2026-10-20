@@ -1836,6 +1836,7 @@ export default {
   "switcher.label": "Pestañas de esta ventana",
   "switcher.menu": "Acciones de la pestaña",
   "switcher.moveNew": "Mover a una ventana nueva",
+  "switcher.moveFailed": "Esta pestaña no se pudo mover a una ventana nueva. Se queda aquí.",
   "switcher.unsaved": "Cambios sin guardar",
   "closeWindow.title": "¿Guardar los cambios antes de cerrar?",
   "closeWindow.body.one": "Esta pestaña tiene cambios sin guardar:",

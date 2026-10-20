@@ -216,10 +216,6 @@ pub fn step(state: WindowState, event: WindowEvent) -> Step {
             let (strip, effects) = activate(strip, tab, spare);
             (WindowState::Open(strip), effects)
         }
-        (WindowState::ConfirmingClose(strip), E::Activate { tab, spare }) => {
-            let (strip, effects) = activate(strip, tab, spare);
-            (WindowState::ConfirmingClose(strip), effects)
-        }
         (WindowState::Open(strip), E::Close { tab, spare }) => {
             let (strip, effects) = close(strip, tab, spare);
             (WindowState::Open(strip), effects)
@@ -258,7 +254,12 @@ pub fn step(state: WindowState, event: WindowEvent) -> Step {
         }
         (
             WindowState::ConfirmingClose(strip),
-            E::Add { .. } | E::TakeIn { .. } | E::Close { .. } | E::Move { .. },
+            // the prompt is in the view on screen: no other tab comes forward while it is up (`Stay { show }` does)
+            E::Add { .. }
+            | E::TakeIn { .. }
+            | E::Activate { .. }
+            | E::Close { .. }
+            | E::Move { .. },
         ) => (WindowState::ConfirmingClose(strip), vec![Effect::Refused]),
         (WindowState::ConfirmingClose(strip), E::RequestClose { .. }) => {
             // one prompt at a time

@@ -13,9 +13,12 @@ export type KeyEnv = {
   context: Context;
   /** An editable element has the focus: plain keys are text there. */
   typing: boolean;
-  /** An overlay owns the keyboard (Search everywhere, the keyboard dialog). */
-  modal: boolean;
+  /** What owns the keyboard: nothing, a box (Search everywhere, the keyboard dialog: its own commands still run),
+   * a question to answer (the window close prompt: no command runs). */
+  overlay: Overlay;
 };
+
+export type Overlay = "none" | "box" | "question";
 
 export type KeyDecision = { kind: "run"; command: CommandItem; combo: string } | { kind: "pass" };
 
@@ -35,12 +38,13 @@ export function resolveKey(
   event: KeyEventLike & { defaultPrevented?: boolean },
   env: KeyEnv,
 ): KeyDecision {
-  if (event.defaultPrevented === true) return PASS;
+  if (event.defaultPrevented === true || env.overlay === "question") return PASS;
   const combo = comboFromEvent(event, env.mac);
   if (combo === null) return PASS;
-  if (isSingleKey(combo) && (env.typing || env.modal)) return PASS;
+  const boxed = env.overlay === "box";
+  if (isSingleKey(combo) && (env.typing || boxed)) return PASS;
   for (const id of commandsFor(env.keymap, combo)) {
-    if (env.modal && !staysWithOverlay(id)) continue;
+    if (boxed && !staysWithOverlay(id)) continue;
     const command = env.commands.find((c) => c.id === id);
     if (command && runnable(command, env.context)) return { kind: "run", command, combo };
   }

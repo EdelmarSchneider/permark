@@ -221,7 +221,12 @@ pub fn tab_close(handle: AppHandle, tab: TabId) {
             .is_some_and(|(_, workspace)| workspace.documents().unsaved(view).is_some())
     });
     if let Some(view) = unsaved_view {
-        crate::open::run(&handle, shell.registry.activate(tab));
+        let outcome = shell.registry.activate(tab);
+        if outcome.refused {
+            // the window asks to close: its prompt covers this tab already
+            return;
+        }
+        crate::open::run(&handle, outcome);
         let _ = handle.emit_to(
             view.as_str(),
             "tab-close-requested",

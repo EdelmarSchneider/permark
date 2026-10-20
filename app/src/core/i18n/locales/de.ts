@@ -1861,6 +1861,8 @@ export default {
   "switcher.label": "Tabs dieses Fensters",
   "switcher.menu": "Tab-Aktionen",
   "switcher.moveNew": "In neues Fenster verschieben",
+  "switcher.moveFailed":
+    "Dieser Tab konnte nicht in ein neues Fenster verschoben werden. Er bleibt hier.",
   "switcher.unsaved": "Ungespeicherte Änderungen",
   "closeWindow.title": "Änderungen vor dem Schließen speichern?",
   "closeWindow.body.one": "Dieser Tab hat ungespeicherte Änderungen:",

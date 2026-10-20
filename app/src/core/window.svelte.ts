@@ -101,7 +101,10 @@ export class WindowStore {
   async start(): Promise<Unlisten> {
     const offs = await Promise.all([
       this.#api.on("window-changed", (e) => {
-        if (e.window === this.label) this.#showView(e.view);
+        if (e.window !== this.label) return;
+        // the Welcome view becomes the first tab's, and the last tab's view the Welcome again
+        this.tab = e.tab;
+        this.#showView(e.view);
       }),
       this.#api.on("context-changed", (e) => {
         if (e.window === this.label) this.#applyContext(e.context);

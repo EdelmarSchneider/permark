@@ -8,7 +8,7 @@ use crate::conditions::Context;
 use crate::document::DocumentChanged;
 use crate::settings::{AppSettings, SettingsScope};
 use crate::tree::TreeChanged;
-use crate::workspace::{WindowSummary, WindowView};
+use crate::workspace::{TabId, WindowSummary, WindowView};
 
 /// Every window with its tabs (each view shows its own window's).
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]
@@ -24,6 +24,8 @@ pub struct WindowsChanged {
 pub struct WindowChanged {
     pub window: String,
     pub view: WindowView,
+    /// The tab this view belongs to now (`None`: the window's Welcome view).
+    pub tab: Option<TabId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, TS)]

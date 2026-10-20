@@ -1799,6 +1799,7 @@ const en = {
   "switcher.label": "Tabs of this window",
   "switcher.menu": "Tab actions",
   "switcher.moveNew": "Move to new window",
+  "switcher.moveFailed": "This tab could not move to a new window. It stays here.",
   "switcher.unsaved": "Unsaved changes",
   "closeWindow.title": "Save changes before closing?",
   "closeWindow.body.one": "This tab has unsaved changes:",

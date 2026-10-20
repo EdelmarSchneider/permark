@@ -46,6 +46,11 @@ impl From<OpenError> for IpcError {
     }
 }
 
+/// A tab move that cannot happen (nothing changed).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the tab cannot move there now")]
+pub struct MoveRefused;
+
 /// An open in progress: proves `begin_open` reserved the workspace; consumed by `finish_open`.
 #[derive(Debug)]
 pub struct Ticket {
@@ -177,7 +182,8 @@ struct Entry {
 #[derive(Debug, Default)]
 struct Published {
     windows: Vec<WindowSummary>,
-    views: BTreeMap<String, WindowView>,
+    /// What each view shows + the tab it belongs to.
+    views: BTreeMap<String, (WindowView, Option<TabId>)>,
     contexts: BTreeMap<String, Context>,
 }
 
@@ -557,36 +563,58 @@ impl WorkspaceRegistry {
         self.settle(inner, step)
     }
 
-    /// Takes a tab out of its window toward `to` (`Transfer` in the changes); the tab itself is added on the other
-    /// side by `take_in`.
-    pub fn move_out(&self, tab: TabId, to: MoveTo) -> (Outcome, Option<Tab>) {
+    /// Moves a tab into `to` (another work window) in one step under the lock: the workspace is never without its
+    /// place (one place holds throughout). `view`: the tab's view as the shell moved it (`None`: pending); the tab's
+    /// view changed meanwhile -> refused. Changes: the source's (`Transfer` included), then the target's.
+    ///
+    /// # Errors
+    /// `MoveRefused`: unknown tab | target, same window, target not open, source not open (closing | asking).
+    pub fn move_tab(
+        &self,
+        tab: TabId,
+        to: &str,
+        view: Option<&str>,
+    ) -> Result<Outcome, MoveRefused> {
         let mut inner = lock(&self.inner);
-        let Some(window) = inner.window_of_tab(tab) else {
-            return (Outcome::default(), None);
-        };
-        let moved = inner
+        let from = inner.window_of_tab(tab).ok_or(MoveRefused)?;
+        let source = inner.windows.get(&from).ok_or(MoveRefused)?;
+        let target_open = inner
             .windows
-            .get(&window)
-            .and_then(|w| w.fsm.strip())
-            .and_then(|s| s.tabs.iter().find(|t| t.id == tab).cloned());
+            .get(to)
+            .is_some_and(|w| matches!(w.fsm, WindowState::Open(_)));
+        let WindowState::Open(strip) = &source.fsm else {
+            return Err(MoveRefused);
+        };
+        let moved = strip
+            .tabs
+            .iter()
+            .find(|t| t.id == tab)
+            .cloned()
+            .ok_or(MoveRefused)?;
+        if from == to || !target_open || moved.view() != view {
+            return Err(MoveRefused);
+        }
         let spare = inner.new_view();
-        let step = drive(&mut inner, &window, WindowEvent::Move { tab, to, spare });
-        let outcome = self.settle(inner, step);
-        let moved = (!outcome.refused).then_some(moved).flatten();
-        (outcome, moved)
-    }
-
-    /// The other side of a move: `tab` joins `window` (its view, when live, is now that window's).
-    pub fn take_in(&self, window: &str, tab: Tab) -> Outcome {
-        let mut inner = lock(&self.inner);
-        if let Some(view) = tab.view() {
+        let (mut outcome, mut dropped) = drive(
+            &mut inner,
+            &from,
+            WindowEvent::Move {
+                tab,
+                to: MoveTo::Window(to.to_owned()),
+                spare,
+            },
+        );
+        if let Some(view) = moved.view() {
             if let Some(slot) = inner.views.get_mut(view) {
-                window.clone_into(&mut slot.window);
+                to.clone_into(&mut slot.window);
             }
         }
         let spare = inner.new_view();
-        let step = drive(&mut inner, window, WindowEvent::TakeIn { tab, spare });
-        self.settle(inner, step)
+        let (arrived, gone) = drive(&mut inner, to, WindowEvent::TakeIn { tab: moved, spare });
+        outcome.changes.extend(arrived.changes);
+        outcome.loads.extend(arrived.loads);
+        dropped.extend(gone);
+        Ok(self.settle(inner, (outcome, dropped)))
     }
 
     /// The window was asked to close: closes at once, or asks about the tabs with unsaved edits (`AskClose`).
@@ -1006,7 +1034,8 @@ impl WorkspaceRegistry {
         let mut views = BTreeMap::new();
         let mut contexts = BTreeMap::new();
         for (label, slot) in &inner.views {
-            views.insert(label.clone(), view_of(inner, slot));
+            let tab = inner.place_of_view(label).map(|p| p.tab);
+            views.insert(label.clone(), (view_of(inner, slot), tab));
             contexts.insert(label.clone(), context_of(inner, slot, &self.env, &app_on));
         }
         if windows != inner.published.windows {
@@ -1016,11 +1045,13 @@ impl WorkspaceRegistry {
                     windows: windows.clone(),
                 }));
         }
-        for (label, view) in &views {
-            if inner.published.views.get(label) != Some(view) {
+        for (label, shown) in &views {
+            if inner.published.views.get(label) != Some(shown) {
+                let (view, tab) = shown.clone();
                 self.env.sink.emit(CoreEvent::WindowChanged(WindowChanged {
                     window: label.clone(),
-                    view: view.clone(),
+                    view,
+                    tab,
                 }));
             }
         }
@@ -1222,9 +1253,9 @@ fn set_document_of_tab(
 ) -> Option<(String, VaultPath)> {
     let window = inner.window_of_tab(tab)?;
     let entry = inner.windows.get_mut(&window)?;
-    let strip = match &mut entry.fsm {
-        WindowState::Open(strip) | WindowState::ConfirmingClose(strip) => strip,
-        WindowState::Closing => return None,
+    // while the close prompt is up nothing changes under it (no document switched in a hidden tab)
+    let WindowState::Open(strip) = &mut entry.fsm else {
+        return None;
     };
     let found = strip.tabs.iter_mut().find(|t| t.id == tab)?;
     match &mut found.state {

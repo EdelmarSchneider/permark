@@ -40,8 +40,10 @@ describe("window open flow", () => {
 
   it("this tab: the unsaved prompt runs first; keeping the edits opens nothing", async () => {
     const store = await started();
+    // the Welcome view the first tab adopted hears its tab from the backend (else this tab would skip the prompt)
+    expect(store.tab).toBeNull();
     await store.openFolder();
-    store.tab = 1;
+    expect(store.tab).not.toBeNull();
     let asked = 0;
     let answer = false;
     const unguard = setLeaveGuard(() => {

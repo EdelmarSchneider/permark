@@ -12,8 +12,8 @@ use ts_rs::TS;
 
 pub use project::{CoreEnv, ProjectCore};
 pub use registry::{
-    Attached, Begin, OpenError, Outcome, Prepared, SessionWindow, TabOpen, Ticket, ViewChange,
-    WorkspaceRegistry,
+    Attached, Begin, MoveRefused, OpenError, Outcome, Prepared, SessionWindow, TabOpen, Ticket,
+    ViewChange, WorkspaceRegistry,
 };
 pub use window_fsm::{MoveTo, Resolution};
 

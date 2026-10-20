@@ -471,9 +471,11 @@ fn request_close_unsaved_asks_once() {
         },
     );
     assert_eq!(effects.len(), 0, "second request while asking: ignored");
-    // while asking: adds are refused, activation allowed
+    // while asking: adds are refused, and so is activation (the prompt lives in the view on screen: hiding it would
+    // leave the window unable to close)
     let (state, effects) = step(state, E::Add { tab: live(3) });
     assert_eq!(effects, [Effect::Refused]);
+    let asking = state.clone();
     let (state, effects) = step(
         state,
         E::Activate {
@@ -481,7 +483,8 @@ fn request_close_unsaved_asks_once() {
             spare: spare(),
         },
     );
-    assert_eq!(effects, [show(2, "v2"), hide("v1")]);
+    assert_eq!(effects, [Effect::Refused]);
+    assert_eq!(state, asking, "the view on screen stays, with its prompt");
     let (state, effects) = step(state, E::ConfirmResolved(Resolution::Close));
     assert_eq!(state, WindowState::Closing);
     assert_eq!(

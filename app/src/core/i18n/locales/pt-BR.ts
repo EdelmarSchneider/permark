@@ -1831,6 +1831,7 @@ export default {
   "switcher.label": "Abas desta janela",
   "switcher.menu": "Ações da aba",
   "switcher.moveNew": "Mover para nova janela",
+  "switcher.moveFailed": "Não foi possível mover esta aba para uma nova janela. Ela fica aqui.",
   "switcher.unsaved": "Alterações não salvas",
   "closeWindow.title": "Salvar as alterações antes de fechar?",
   "closeWindow.body.one": "Esta aba tem alterações não salvas:",

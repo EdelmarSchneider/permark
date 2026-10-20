@@ -12,7 +12,7 @@ use permark_core::session::{restore_plan, AppSession};
 use permark_core::settings::StartIn;
 use permark_core::state::older::older_window;
 use permark_core::workspace::{
-    Begin, MoveTo, OpenError, Outcome, Place, TabId, TabOpen, Ticket, WindowView, WorkspaceRef,
+    Begin, OpenError, Outcome, Place, TabId, TabOpen, Ticket, WindowView, WorkspaceRef,
 };
 use permark_core::{ErrorKind, IpcError};
 use serde::Serialize;
@@ -161,10 +161,11 @@ pub fn open_tab(
     }
 }
 
-/// A new work window with `reference` as its one tab.
+/// A new work window with `reference` as its one tab. Open already somewhere meanwhile (one place) | the open
+/// refused -> that place comes forward and the new window goes again (never an empty hidden window left behind).
 ///
 /// # Errors
-/// The window cannot be made.
+/// The window cannot be made, the open error.
 pub fn open_in_new_window(
     handle: &AppHandle,
     reference: &WorkspaceRef,
@@ -173,8 +174,21 @@ pub fn open_in_new_window(
     let window = windows::create(handle)
         .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?;
     let label = window.label().to_owned();
-    open_tab(handle, &label, reference, document)?;
-    Ok(label)
+    match open_tab(handle, &label, reference, document) {
+        Ok(OpenOutcome::Focused { window: there, .. }) => {
+            let _ = window.destroy();
+            Ok(there)
+        }
+        Ok(
+            OpenOutcome::NewTab { .. }
+            | OpenOutcome::Opened { .. }
+            | OpenOutcome::OpenedElsewhere { .. },
+        ) => Ok(label),
+        Err(error) => {
+            let _ = window.destroy();
+            Err(error)
+        }
+    }
 }
 
 /// An open from the app's own UI in `view`: where it is already (one place), else by `placement` (`place_open`).
@@ -226,32 +240,44 @@ pub fn open_placed(
 }
 
 /// Moves a tab into a new window (cascaded from its window); its view goes along, workspace + unsaved edits kept.
+/// The view is reparented first (a failure there changes nothing: the new window goes again), then the tab moves in
+/// one registry step (its workspace keeps its place throughout); a move refused there (the tab changed, a window
+/// began closing) puts the view back.
 ///
 /// # Errors
-/// Unknown tab, the window cannot be made.
+/// Unknown tab, the window cannot be made, the view cannot move (the tab stays where it was).
 pub fn move_to_new_window(handle: &AppHandle, tab: TabId) -> Result<String, IpcError> {
     let shell = state(handle);
-    let not_found = || IpcError::new(ErrorKind::NotFound).subject(tab.0.to_string());
-    let from = shell.registry.window_of_tab(tab).ok_or_else(not_found)?;
-    let target = windows::create(handle)
-        .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?;
-    let (outcome, moved) = shell.registry.move_out(tab, MoveTo::NewWindow);
-    let Some(moved) = moved else {
-        let _ = target.destroy();
-        return Err(IpcError::new(ErrorKind::Unavailable).subject(from));
-    };
-    if let Some(view) = moved.view() {
-        if let Some(webview) = handle.get_webview(view) {
-            webview
-                .reparent(&target)
-                .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?;
+    let internal = |e: tauri::Error| IpcError::new(ErrorKind::Internal).detail(e.to_string());
+    let from = shell
+        .registry
+        .window_of_tab(tab)
+        .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(tab.0.to_string()))?;
+    let target = windows::create(handle).map_err(internal)?;
+    let label = target.label().to_owned();
+    let view = shell.registry.view_of_tab(tab);
+    let webview = view.as_deref().and_then(|v| handle.get_webview(v));
+    if let Some(webview) = &webview {
+        if let Err(error) = webview.reparent(&target) {
+            let _ = target.destroy();
+            return Err(internal(error));
         }
     }
-    let label = target.label().to_owned();
-    let view = moved.view().map(str::to_owned);
-    let arrived = shell.registry.take_in(&label, moved);
+    let Ok(outcome) = shell.registry.move_tab(tab, &label, view.as_deref()) else {
+        let back = match (&webview, handle.get_window(&from)) {
+            (Some(webview), Some(source)) => webview.reparent(&source),
+            _ => Ok(()),
+        };
+        match back {
+            Ok(()) => {
+                let _ = target.destroy();
+            }
+            // the view lives in the new window now: it must not go with it
+            Err(error) => eprintln!("PerMark: tab view not put back: {error}"),
+        }
+        return Err(IpcError::new(ErrorKind::Unavailable).subject(from));
+    };
     run(handle, outcome);
-    run(handle, arrived);
     if let Some(view) = view {
         let _ = handle.emit_to(
             view.as_str(),
@@ -295,6 +321,20 @@ fn notes_on(handle: &AppHandle) -> bool {
         .contains(&permark_core::plugins::PluginId::of("notes"))
 }
 
+/// The tab a restored window opens on: its saved active one; that one not restored (open elsewhere already) -> the
+/// nearest restored one to its right, else left, else the Notes tab. `None`: no tab (the window shows its Welcome).
+/// A window with tabs always gets one, else it would never show.
+fn active_of(saved: Option<usize>, tabs: &[Option<TabId>], notes: Option<TabId>) -> Option<TabId> {
+    let at = saved.unwrap_or(0).min(tabs.len());
+    tabs[at..]
+        .iter()
+        .flatten()
+        .next()
+        .or_else(|| tabs[..at].iter().rev().flatten().next())
+        .copied()
+        .or(notes)
+}
+
 /// The windows of the last session: tabs restored as pending, each window's active tab loaded; missing paths ->
 /// a notice in that window. Nothing saved -> `main` on Welcome (or the Notes, `start_in = notes`, nothing to open).
 fn restore_session(handle: &AppHandle, session: &AppSession, nothing_asked: bool) {
@@ -328,12 +368,14 @@ fn restore_session(handle: &AppHandle, session: &AppSession, nothing_asked: bool
             .iter()
             .map(|reference| shell.registry.restore_tab(&label, reference, None))
             .collect();
-        if index == 0 && notes_tab {
-            shell
-                .registry
-                .restore_tab(&label, &WorkspaceRef::Notes, None);
-        }
-        match planned.active.and_then(|a| tabs.get(a).copied().flatten()) {
+        let notes = (index == 0 && notes_tab)
+            .then(|| {
+                shell
+                    .registry
+                    .restore_tab(&label, &WorkspaceRef::Notes, None)
+            })
+            .flatten();
+        match active_of(planned.active, &tabs, notes) {
             Some(active) => run(handle, shell.registry.activate(active)),
             None => run(handle, shell.registry.show_welcome_view(&label)),
         }
@@ -474,4 +516,24 @@ pub fn opened_urls(handle: &AppHandle, urls: &[tauri::Url]) {
     };
     let handle = handle.clone();
     std::thread::spawn(move || handle_request(&handle, &request));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression: a window whose saved active tab did not come back (open elsewhere) still opens on a tab (it
+    /// would never show otherwise).
+    #[test]
+    fn a_restored_window_with_tabs_always_opens_on_one() {
+        let (a, b, notes) = (Some(TabId(1)), Some(TabId(2)), Some(TabId(9)));
+        assert_eq!(active_of(Some(1), &[a, b], None), b);
+        assert_eq!(active_of(Some(1), &[a, None, b], None), b, "right first");
+        assert_eq!(active_of(Some(2), &[a, b, None], None), b, "then left");
+        assert_eq!(active_of(None, &[None, a], None), a);
+        assert_eq!(active_of(Some(0), &[None], notes), notes, "the Notes tab");
+        assert_eq!(active_of(None, &[], notes), notes);
+        assert_eq!(active_of(Some(7), &[], None), None, "Welcome");
+        assert_eq!(active_of(Some(7), &[a], None), a, "out of range");
+    }
 }

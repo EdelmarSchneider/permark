@@ -1750,6 +1750,7 @@ export default {
   "switcher.label": "此窗口的标签页",
   "switcher.menu": "标签页操作",
   "switcher.moveNew": "移到新窗口",
+  "switcher.moveFailed": "无法将此标签页移到新窗口，它保留在这里。",
   "switcher.unsaved": "未保存的更改",
   "closeWindow.title": "关闭前保存更改？",
   "closeWindow.body.one": "此标签页有未保存的更改：",

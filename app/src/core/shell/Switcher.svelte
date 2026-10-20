@@ -13,6 +13,7 @@
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
   import { t } from "../i18n";
+  import { windowStore } from "../window.svelte";
   import { chipsTight, hueOf, splitName } from "./switcherModel";
   import { tabs } from "./tabs.svelte";
 
@@ -52,7 +53,11 @@
         {
           kind: "item",
           label: t("switcher.moveNew"),
-          run: () => tabs.moveToNewWindow(tab.tab),
+          run: () => {
+            void tabs.moveToNewWindow(tab.tab).then((moved) => {
+              if (!moved) windowStore.notifyNote(t("switcher.moveFailed"));
+            });
+          },
         },
         { kind: "separator" },
       );

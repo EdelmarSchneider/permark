@@ -37,7 +37,7 @@ function env(
     commands,
     context,
     typing: false,
-    modal: false,
+    overlay: "none",
     ...extra,
   };
 }
@@ -86,7 +86,7 @@ describe("key -> command", () => {
     const base = env([tags, find], keys);
     expect(resolveKey(press({ key: "t" }), base).kind).toBe("run");
     expect(resolveKey(press({ key: "t" }), { ...base, typing: true }).kind).toBe("pass");
-    expect(resolveKey(press({ key: "t" }), { ...base, modal: true }).kind).toBe("pass");
+    expect(resolveKey(press({ key: "t" }), { ...base, overlay: "box" }).kind).toBe("pass");
     expect(resolveKey(press({ key: "f", ctrlKey: true }), { ...base, typing: true }).kind).toBe(
       "run",
     );
@@ -96,9 +96,21 @@ describe("key -> command", () => {
     const quick = command("search.quickOpen");
     const save = command("edit.save");
     const keys = { "search.quickOpen": "Mod+p", "edit.save": "Mod+s" };
-    const open = env([quick, save], keys, { modal: true });
+    const open = env([quick, save], keys, { overlay: "box" });
     expect(resolveKey(press({ key: "p", ctrlKey: true }), open).kind).toBe("run");
     expect(resolveKey(press({ key: "s", ctrlKey: true }), open).kind).toBe("pass");
+  });
+
+  it("while a question is up (the window close prompt) no command runs, not even the tab keys", () => {
+    const next = command("tab.next");
+    const quick = command("search.quickOpen");
+    const keys = { "tab.next": "Ctrl+Tab", "search.quickOpen": "Mod+p" };
+    const asking = env([next, quick], keys, { overlay: "question" });
+    expect(resolveKey(press({ key: "Tab", ctrlKey: true }), asking).kind).toBe("pass");
+    expect(resolveKey(press({ key: "p", ctrlKey: true }), asking).kind).toBe("pass");
+    // with a box open the tab keys still switch
+    const box = env([next, quick], keys, { overlay: "box" });
+    expect(resolveKey(press({ key: "Tab", ctrlKey: true }), box).kind).toBe("run");
   });
 
   it("skips a command whose condition is unmet or whose `when` says no, and tries the next holder", () => {

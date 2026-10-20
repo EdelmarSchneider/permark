@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { api, type AppInfo, type ClosingTab, type WorkspaceView } from "./api";
+  import { api, type AppInfo, type WorkspaceView } from "./api";
   import { language, t, tn } from "./core/i18n";
   import DocumentArea from "./core/doc/DocumentArea.svelte";
   import { documents } from "./core/doc/document.svelte";
@@ -45,8 +45,6 @@
     { status: "loading" } | { status: "ready"; info: AppInfo } | { status: "failed" };
 
   let info = $state<InfoState>({ status: "loading" });
-  /** The window close prompt (this view is the one on screen): the tabs with unsaved edits. */
-  let closing = $state.raw<readonly ClosingTab[] | null>(null);
 
   /** What the window shows now; while opening, what stays on screen. */
   const shown = $derived.by((): { workspace: WorkspaceView; document: string | null } | null => {
@@ -144,7 +142,7 @@
     };
     void api
       .on("close-requested", (event) => {
-        if (event.window === store.label) closing = event.tabs;
+        if (event.window === store.label) ui.closePrompt = event.tabs;
       })
       .then(keep);
     void api
@@ -173,7 +171,7 @@
   });
 
   function answerClose(answer: "saveAll" | "discard" | "cancel"): void {
-    closing = null;
+    ui.closePrompt = null;
     void api.windowCloseAnswer(answer);
   }
   $effect(() => language.watchSystem());
@@ -318,8 +316,8 @@
   {/if}
 {/if}
 
-{#if closing !== null}
-  <CloseWindowDialog tabs={closing} answer={answerClose} />
+{#if ui.closePrompt !== null}
+  <CloseWindowDialog tabs={ui.closePrompt} answer={answerClose} />
 {/if}
 {#if ui.settings}
   <SettingsPopover {store} close={() => ui.closeSettingsPopover()} />
