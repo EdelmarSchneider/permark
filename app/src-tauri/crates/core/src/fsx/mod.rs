@@ -191,15 +191,16 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     write_atomic_checked(path, bytes, || Ok(true)).map(|_| ())
 }
 
-/// [`write_atomic`] with `check` run after the temp is written and right before the rename: `Ok(false)` leaves the
-/// target untouched (another writer got in) and answers `Ok(false)`.
+/// [`write_atomic`] with `check` run after the temp is written and right before each rename attempt (a locked target
+/// is retried, and whatever another writer did meanwhile is seen): `Ok(false)` leaves the target untouched (another
+/// writer got in) and answers `Ok(false)`.
 ///
 /// # Errors
 /// IO failure | `check` failing; temp removed, target untouched.
 pub fn write_atomic_checked(
     path: &Path,
     bytes: &[u8],
-    check: impl FnOnce() -> io::Result<bool>,
+    mut check: impl FnMut() -> io::Result<bool>,
 ) -> io::Result<bool> {
     let dir = path.parent().unwrap_or_else(|| Path::new("."));
     std::fs::create_dir_all(dir)?;
@@ -220,10 +221,12 @@ pub fn write_atomic_checked(
                 // best effort: a file system without permissions still gets the bytes
                 let _ = std::fs::set_permissions(&tmp, meta.permissions());
             }
-            if !check()? {
-                return Ok(false);
-            }
-            retry(&RETRY_DELAYS, || rename_durably(&tmp, path)).map(|()| true)
+            retry(&RETRY_DELAYS, || {
+                if !check()? {
+                    return Ok(false);
+                }
+                rename_durably(&tmp, path).map(|()| true)
+            })
         });
     if !matches!(result, Ok(true)) {
         discard(&tmp);
@@ -270,6 +273,33 @@ fn discard(tmp: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A target held open without sharing: the rename is retried, and each attempt asks the check again.
+    #[cfg(windows)]
+    #[test]
+    fn a_locked_target_is_checked_again_before_each_rename_attempt() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.md");
+        std::fs::write(&path, "theirs").unwrap();
+        let held = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        let mut calls = 0;
+        let wrote = write_atomic_checked(&path, b"mine", || {
+            calls += 1;
+            // the other writer changed the file while it held it
+            Ok(calls == 1)
+        })
+        .unwrap();
+        drop(held);
+        assert!(!wrote);
+        assert!(calls >= 2);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "theirs");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "temp removed");
+    }
 
     fn names_in(dir: &Path) -> Vec<String> {
         let mut names: Vec<String> = std::fs::read_dir(dir)
