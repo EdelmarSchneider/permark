@@ -93,14 +93,19 @@ impl Places {
     }
 }
 
-/// Whether two paths name the same place, ignoring case where the system does and a trailing separator.
+/// Whether two paths name the same place, ignoring case where the system does and a trailing separator. A path that is
+/// there is compared as the system resolves it (links, a Windows 8.3 short name): a folder reached two ways is one.
 #[must_use]
 pub fn same_place(a: &Path, b: &Path) -> bool {
-    let key = |path: &Path| {
-        let text = path.to_string_lossy().replace('\\', "/");
-        fold(text.trim_end_matches('/'))
-    };
-    key(a) == key(b)
+    place_key(a) == place_key(b)
+}
+
+/// The comparable spelling of a path: resolved when it is there, `/` separators, no trailing one, case folded where
+/// the system ignores case.
+fn place_key(path: &Path) -> String {
+    let real = dunce::canonicalize(path).unwrap_or_else(|_| dunce::simplified(path).to_path_buf());
+    let text = real.to_string_lossy().replace('\\', "/");
+    fold(text.trim_end_matches('/'))
 }
 
 /// Whether the notes folder is there.
@@ -173,11 +178,7 @@ pub fn create(path: &Path) -> io::Result<()> {
 /// Whether `path` is the notes folder or inside it. The agent connection never serves it.
 #[must_use]
 pub fn is_inside(path: &Path, folder: &Path) -> bool {
-    let key = |p: &Path| {
-        let text = dunce::simplified(p).to_string_lossy().replace('\\', "/");
-        fold(text.trim_end_matches('/'))
-    };
-    let (path, folder) = (key(path), key(folder));
+    let (path, folder) = (place_key(path), place_key(folder));
     path == folder || path.starts_with(&format!("{folder}/"))
 }
 
@@ -256,6 +257,23 @@ mod tests {
             assert!(same_place(Path::new("/A/B"), Path::new("/a/b")));
         }
         assert!(!same_place(Path::new("/a/b"), Path::new("/a/bc")));
+    }
+
+    #[test]
+    fn a_folder_that_is_there_is_one_place_however_it_is_reached() {
+        let dir = tempfile::tempdir().unwrap();
+        let notes = dir.path().join("notes");
+        std::fs::create_dir_all(notes.join("sub")).unwrap();
+        let roundabout = notes.join("sub").join("..");
+        assert!(same_place(&roundabout, &notes));
+        assert!(same_place(&dunce::canonicalize(&notes).unwrap(), &notes));
+        std::fs::write(notes.join("a.md"), "x").unwrap();
+        assert!(is_inside(&roundabout.join("a.md"), &notes));
+        assert!(is_inside(
+            &notes.join("a.md"),
+            &dunce::canonicalize(&notes).unwrap()
+        ));
+        assert!(!is_inside(dir.path(), &notes));
     }
 
     #[test]

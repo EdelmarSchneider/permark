@@ -1323,7 +1323,8 @@ fn folder_scan(
 ) -> Result<Scan, TreeError> {
     let never = std::sync::atomic::AtomicBool::new(false);
     let path = crate::paths::VaultPath::parse(folder).unwrap();
-    let abs = f.dir.path().join(folder);
+    // under the root as it was opened, the way the app resolves it (the temp folder may be an 8.3 short name)
+    let abs = Root::open(f.dir.path()).unwrap().path().join(folder);
     f.explorer.scan_folder(&path, &abs, &never, stop)
 }
 
@@ -1367,7 +1368,13 @@ build/
     assert!(scan.files.iter().all(|x| x.abs.is_some()));
     assert_eq!(
         a.abs.as_deref(),
-        Some(f.dir.path().join("docs/a.md").as_path())
+        Some(
+            Root::open(f.dir.path())
+                .unwrap()
+                .path()
+                .join("docs/a.md")
+                .as_path()
+        )
     );
     // the project folder itself: everything the tree would list
     let all = folder_scan(&f, "", &mut |_| false).unwrap();
@@ -1406,7 +1413,7 @@ fn a_folder_scan_ends_when_the_caller_says_so_and_when_cancelled() {
     assert_eq!(seen, 7);
     let cancelled = std::sync::atomic::AtomicBool::new(true);
     let path = crate::paths::VaultPath::parse("d1").unwrap();
-    let abs = f.dir.path().join("d1");
+    let abs = Root::open(f.dir.path()).unwrap().path().join("d1");
     let scan = f
         .explorer
         .scan_folder(&path, &abs, &cancelled, &mut |_| false)

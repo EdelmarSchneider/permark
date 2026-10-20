@@ -315,9 +315,10 @@ fn a_shared_file_is_in_permark_when_the_project_has_it_else_in_the_profile() {
 
     let after = init_project(&f.dirs, &f.root()).unwrap();
     let shared = after.shared_file("meta.toml");
+    // the project as the root holds it (on Windows the temp folder may come as an 8.3 short name)
     assert_eq!(
         shared.path(),
-        f.project.path().join(".permark").join("meta.toml")
+        f.root().path().join(".permark").join("meta.toml")
     );
     // the profile's copy is the legacy one; it did not land in local/
     let legacy = after.legacy_shared_file("meta.toml").unwrap();
