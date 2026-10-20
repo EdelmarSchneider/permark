@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import type { Api, ApiError, LinkUpdate, TreeChanged } from "../../api";
+import { ImportFlow } from "./importFlow.svelte";
 import { ExplorerStore, type ExplorerHost } from "./store.svelte";
 
 type Mock = ReturnType<typeof createMockApi>;
@@ -25,6 +26,7 @@ async function setup(link: LinkUpdate = "ask", wrap?: (api: Mock) => Api): Promi
   const host: ExplorerHost = {
     fail: (error) => failures.push(error),
     note: (text) => notes.push(text),
+    view: () => "main",
     linkUpdate: () => setting,
     openProject: (path) => opened.push(path),
   };
@@ -66,6 +68,7 @@ describe("loading", () => {
     const again = new ExplorerStore(first.api, {
       fail: () => {},
       note: () => {},
+      view: () => "main",
       linkUpdate: () => "ask",
       openProject: () => {},
     });
@@ -90,6 +93,7 @@ describe("loading", () => {
     const store = new ExplorerStore(slow, {
       fail: () => {},
       note: () => {},
+      view: () => "main",
       linkUpdate: () => "never",
       openProject: () => {},
     });
@@ -159,6 +163,7 @@ describe("loading", () => {
     const store = new ExplorerStore(flaky, {
       fail: () => {},
       note: () => {},
+      view: () => "main",
       linkUpdate: () => "ask",
       openProject: () => {},
     });
@@ -535,6 +540,7 @@ async function codeProject(code: number) {
   const host: ExplorerHost = {
     fail: () => {},
     note: () => {},
+    view: () => "main",
     linkUpdate: () => "ask",
     openProject: () => {},
   };
@@ -769,4 +775,79 @@ describe("undo of exactly one operation", () => {
     expect(api.probe.project.exists("docs/x.md")).toBe(false);
     expect(api.probe.project.exists("docs/z.md")).toBe(true);
   });
+});
+
+// ---- imported items show at once (director 2026-10-20: a copied file stayed out of the tree until a reload) ------------
+
+describe("imported items in the tree", () => {
+  /** The import question wired to this Explorer, as the window does. */
+  function importer(api: Mock, store: ExplorerStore): ImportFlow {
+    return new ImportFlow(api, {
+      fail: () => {},
+      note: () => {},
+      action: () => {},
+      project: () => "permark-docs",
+      focus: () => {},
+      end: (kept) => store.outsideEnd(kept),
+      placed: (paths) => store.placed(paths),
+      undo: (id) => store.undoEntry(id),
+    });
+  }
+
+  const shown = (store: ExplorerStore, path: string): boolean =>
+    store.rows.some((r) => r.type === "node" && r.node.path === path);
+
+  it("another view's tree news is not this view's: its list and numbering stay its own", async () => {
+    const { store, api } = await setup();
+    const before = store.nodes.length;
+    // another tab's project numbers its own news: whatever our next number is, one of these has it
+    for (let seq = 1; seq <= 50; seq++) {
+      api.emit("tree-changed", {
+        window: "w-9",
+        delta: {
+          seq,
+          removed: ["README.md"],
+          added: [],
+          renamed: [],
+          totalFiles: 0,
+          shownFiles: 0,
+          bulk: false,
+          filter: null,
+        },
+      } as TreeChanged);
+    }
+    expect(store.nodes.length).toBe(before);
+    expect(store.nodes.some((n) => n.path === "README.md")).toBe(true);
+    // our own news still lands
+    const flow = importer(api, store);
+    await flow.plan("docs", ["C:/out/new.md"], { x: 1, y: 1 });
+    await flow.confirm("copy");
+    await vi.waitFor(() => expect(shown(store, "docs/new.md")).toBe(true));
+  });
+
+  for (const mode of ["copy", "move"] as const) {
+    for (const where of ["collapsed", "expanded", "auto-expanded", "root"] as const) {
+      it(`${mode} into a ${where} folder: the new item is in the list and on screen right after`, async () => {
+        vi.useFakeTimers();
+        const { store, api } = await setup();
+        const folder = where === "root" ? "" : "docs";
+        if (where === "expanded") await store.toggle("docs");
+        if (where === "auto-expanded") {
+          store.outsideOver("docs", { x: 1, y: 1 });
+          await vi.advanceTimersByTimeAsync(700);
+          expect(store.isOpen("docs")).toBe(true);
+        }
+        store.outsideHold();
+        vi.useRealTimers();
+        const flow = importer(api, store);
+        await flow.plan(folder, [`C:/out/${mode}-${where}.md`], { x: 1, y: 1 });
+        await flow.confirm(mode);
+        const path = folder === "" ? `${mode}-${where}.md` : `docs/${mode}-${where}.md`;
+        expect(store.nodes.some((n) => n.path === path)).toBe(true);
+        expect(shown(store, path)).toBe(true);
+        expect(store.selection.has(path)).toBe(true);
+        if (folder !== "") expect(store.isOpen("docs")).toBe(true);
+      });
+    }
+  }
 });

@@ -69,6 +69,8 @@ export type ExplorerHost = {
   fail(error: ApiError): void;
   /** A quiet note ("Moved ...", "Undone"). */
   note(text: string): void;
+  /** The view this Explorer lives in: tree events name their view, and every view hears every event. */
+  view(): string;
   linkUpdate(): LinkUpdate;
   /** Opens a folder as a project (the window asks "this window | new window"). */
   openProject(path: string): void;
@@ -230,6 +232,9 @@ export class ExplorerStore {
   }
 
   #onChanged(event: TreeChanged): void {
+    // another view's list (another tab's project): its numbering is not ours. Taking it would skip our next delta (a
+    // file just copied in stayed out of the list until a reload: director 2026-10-20)
+    if (event.window !== this.#host.view()) return;
     if (this.load.status !== "ready") {
       this.#early.push(event);
       return;

@@ -1248,3 +1248,160 @@ fn an_import_that_added_nothing_has_no_undo() {
     let out = apply(&f, &p, ImportMode::Copy, ConflictChoice::Skip);
     assert_eq!(out.undo, None);
 }
+
+// ---- the tree learns at once (director 2026-10-20: a copied file did not show until a refresh) -------------------------
+
+/// A project whose Explorer events are kept, with one open view "w".
+fn fx_seen(inside: &[(&str, &str)], outside: &[(&str, &str)]) -> (Fx, Arc<Recorder>) {
+    let f = fx(inside, outside);
+    let sink = Arc::new(Recorder::default());
+    let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::clone(&sink) as Arc<dyn crate::events::EventSink>,
+        None,
+    ));
+    explorer.open_view("w", Some(TreeFilter::default()));
+    let state = tempfile::tempdir().unwrap();
+    let store = StateStore::for_project(&AppDirs::under(state.path()), vault.main());
+    let ops = FileOps::new(vault, explorer, Arc::clone(&f.own), &store);
+    std::mem::forget(state);
+    (Fx { ops, ..f }, sink)
+}
+
+/// Paths the view "w" was told were added since the last look.
+fn added(sink: &Recorder) -> Vec<String> {
+    sink.take()
+        .into_iter()
+        .filter_map(|e| match e {
+            crate::events::CoreEvent::TreeChanged(c) if c.window == "w" => Some(c.delta),
+            _ => None,
+        })
+        .flat_map(|d| d.added.into_iter().map(|a| a.node.path))
+        .collect()
+}
+
+#[test]
+fn the_view_hears_of_imported_items_right_after_the_apply() {
+    for mode in [ImportMode::Copy, ImportMode::Move] {
+        let (f, sink) = fx_seen(
+            &[
+                ("docs/guide.md", "g"),
+                ("docs/deep/x.md", "x"),
+                ("top.md", "t"),
+            ],
+            &[
+                ("a.md", "a"),
+                ("b.md", "b"),
+                ("c.md", "c"),
+                ("pics/one.md", "1"),
+            ],
+        );
+        let _ = added(&sink);
+        for (target, source) in [("docs", "a.md"), ("docs/deep", "b.md"), ("", "c.md")] {
+            let p = plan(&f, target, &[source]);
+            let out = apply(&f, &p, mode, ConflictChoice::KeepBoth);
+            let shown = out.placed[0].clone();
+            assert!(
+                added(&sink).contains(&shown),
+                "{mode:?}: {shown} not told to the view"
+            );
+        }
+        let p = plan(&f, "docs", &["pics"]);
+        apply(&f, &p, mode, ConflictChoice::KeepBoth);
+        let told = added(&sink);
+        assert!(
+            told.contains(&"docs/pics".to_owned()),
+            "{mode:?}: folder {told:?}"
+        );
+        assert!(
+            told.contains(&"docs/pics/one.md".to_owned()),
+            "{mode:?}: inside {told:?}"
+        );
+    }
+}
+
+/// With the watcher running (as in the app): the view's list, built from the deltas it was sent, ends holding the
+/// imported items (the watcher's own report of them never takes them away again).
+#[test]
+fn with_the_watcher_running_the_view_keeps_the_imported_items() {
+    use crate::watch::{Timing, WatchHub, Watcher};
+    use std::collections::BTreeSet;
+    use std::time::{Duration, Instant};
+
+    for mode in [ImportMode::Copy, ImportMode::Move] {
+        let f = fx(
+            &[("docs/guide.md", "g"), ("docs/deep/x.md", "x")],
+            &[("a.md", "a"), ("pics/one.md", "1")],
+        );
+        let sink = Arc::new(Recorder::default());
+        let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+        let explorer = Arc::new(Explorer::new(
+            &vault,
+            &ProjectConfig::default(),
+            Arc::clone(&sink) as Arc<dyn crate::events::EventSink>,
+            None,
+        ));
+        let snapshot = explorer.open_view("w", Some(TreeFilter::default()));
+        let mut list: BTreeSet<String> = snapshot.nodes.into_iter().map(|n| n.path).collect();
+        let hub = WatchHub::new();
+        let _sub = hub.subscribe({
+            let explorer = Arc::clone(&explorer);
+            move |batch| explorer.apply_batch(batch)
+        });
+        let timing = Timing {
+            quiet: Duration::from_millis(30),
+            max: Duration::from_millis(250),
+            poll: Duration::from_millis(60),
+        };
+        let watcher = Watcher::start_with(
+            &vault,
+            explorer.ignorers(),
+            hub,
+            Arc::clone(&f.own),
+            None,
+            timing,
+            true,
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::for_project(&AppDirs::under(state.path()), vault.main());
+        let ops = FileOps::new(
+            vault.clone(),
+            Arc::clone(&explorer),
+            Arc::clone(&f.own),
+            &store,
+        );
+        let sources = vec![src(&f, "a.md"), src(&f, "pics")];
+        let p = ops.import_plan("docs/deep", &sources).unwrap();
+        let out = ops
+            .import_apply(p.plan_id, mode, ConflictChoice::KeepBoth, &quiet())
+            .unwrap();
+        assert_eq!(out.placed, ["docs/deep/a.md", "docs/deep/pics"]);
+        // the watcher's reports of all this come in
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_millis(1500) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for event in sink.take() {
+            if let crate::events::CoreEvent::TreeChanged(c) = event {
+                if c.window == "w" {
+                    for gone in &c.delta.removed {
+                        list.remove(gone);
+                    }
+                    for added in c.delta.added {
+                        list.insert(added.node.path);
+                    }
+                }
+            }
+        }
+        drop(watcher);
+        for path in ["docs/deep/a.md", "docs/deep/pics", "docs/deep/pics/one.md"] {
+            assert!(
+                list.contains(path),
+                "{mode:?}: {path} not in the view: {list:?}"
+            );
+        }
+    }
+}

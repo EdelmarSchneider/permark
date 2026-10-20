@@ -19,6 +19,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window. <!-- f: notes, start-screen -->
+- Files you add, copy or move in a project now appear in its file list right away, also while another open project is changing; before, they could stay out of the list until it was reloaded. <!-- f: explorer, tabs -->
 
 ## [0.6.1] - 2026-10-20
 

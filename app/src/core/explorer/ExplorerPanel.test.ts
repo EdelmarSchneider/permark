@@ -32,6 +32,7 @@ async function render(link: LinkUpdate = "never", more: string[] = []): Promise<
   const store = new ExplorerStore(api, {
     fail: (e) => failures.push(e),
     note: (t) => notes.push(t),
+    view: () => "main",
     linkUpdate: () => link,
     openProject: () => {},
     initProject: (path, name) => inits.push({ path, name }),
@@ -127,6 +128,7 @@ describe("the list", () => {
     const store = new ExplorerStore(api, {
       fail: () => {},
       note: () => {},
+      view: () => "main",
       linkUpdate: () => "never",
       openProject: () => {},
     });
@@ -634,7 +636,13 @@ describe("states", () => {
             error: { kind: "command", command: "tree_open", message: "x" },
           }),
       },
-      { fail: () => {}, note: () => {}, linkUpdate: () => "ask", openProject: () => {} },
+      {
+        fail: () => {},
+        note: () => {},
+        view: () => "main",
+        linkUpdate: () => "ask",
+        openProject: () => {},
+      },
     );
     await store.start();
     const root = document.createElement("div");
