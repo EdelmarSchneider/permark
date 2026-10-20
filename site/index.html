@@ -19,7 +19,7 @@
   <meta property="og:image" content="https://edelmarschneider.github.io/permark/assets/screenshot-light.png">
   <meta property="og:image:width" content="1440">
   <meta property="og:image:height" content="900">
-  <meta property="og:image:alt" content="PerMark in IDE mode: file explorer, a rendered Markdown document and the live changes panel.">
+  <meta property="og:image:alt" content="PerMark with a project open: file explorer, a rendered Markdown document and the live changes panel.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="PerMark: read what your AI writes, write what it reads">
   <meta name="twitter:description" content="A free Markdown app: open any .md file as a clean page, keep notes that save themselves, and follow and steer your AI agents.">
@@ -68,7 +68,7 @@
           <span class="hero__line grad">Write what it reads.</span>
         </h1>
         <p class="hero__sub">
-          PerMark opens any <code>.md</code> file as a clean page you can read, edit and keep notes beside. Open a project folder instead, and it becomes the IDE where you follow, review and steer what your AI agents write.
+          PerMark opens any <code>.md</code> file as a clean page you can read, edit and keep notes beside. Open a project folder instead, and it becomes the place where you follow, review and steer what your AI agents write.
         </p>
         <div class="hero__cta">
           <a class="btn btn--primary btn--lg" id="download-btn" href="https://github.com/EdelmarSchneider/permark/releases/latest">
@@ -119,7 +119,7 @@
             <picture>
               <source srcset="assets/screenshot-dark.png" media="(prefers-color-scheme: dark)">
               <img src="assets/screenshot-light.png" width="1440" height="900" fetchpriority="high"
-                   alt="PerMark in IDE mode: a file explorer with git badges on the left, a rendered Markdown document with its description, tag chips and a metadata card, and a paragraph that just changed on disk (highlighted, with a marker for the removed text) in the middle, and the Live changes and Since last visit panels on the right.">
+                   alt="PerMark with a project open: a file explorer with git badges on the left, a rendered Markdown document with its description, tag chips and a metadata card, and a paragraph that just changed on disk (highlighted, with a marker for the removed text) in the middle, and the Live changes and Since last visit panels on the right.">
             </picture>
           </div>
         </div>
@@ -138,7 +138,7 @@
           <li><strong>It reads like a page.</strong> Tables, checklists, highlighted code, Mermaid diagrams, math, alerts and footnotes. Light and dark themes, three reading widths and a focus mode</li>
           <li><strong>Links work.</strong> Links between documents open in the app, with back and forward, and images show where they belong</li>
           <li><strong>An outline for long documents.</strong> The headings sit in a panel beside the page: the section you are reading is marked, and a click jumps to any other</li>
-          <li><strong>Visual or Source.</strong> Edit like a word processor, with a toolbar and a <code>/</code> block menu, or in the Markdown itself. One click switches, keeping your place and your unsaved work</li>
+          <li><strong>Edit or Source.</strong> Change the document like a word processor, with a toolbar and a <code>/</code> block menu, or in the Markdown itself. One click switches, keeping your place and your unsaved work</li>
           <li><strong>Only your changes are saved.</strong> Every other byte of the file stays as it was. If something else changes the file while you edit, you choose <em>Reload theirs</em> or <em>Keep mine</em></li>
           <li><strong>Make it your .md app.</strong> PerMark is listed under <em>Open with</em> for Markdown files and never takes over: whether it becomes your app for <code>.md</code> files is up to you</li>
         </ul>
@@ -168,7 +168,7 @@
             <picture>
               <source srcset="assets/screenshot-notes-dark.png" media="(prefers-color-scheme: dark)">
               <img src="assets/screenshot-notes.png" width="1440" height="900" loading="lazy" decoding="async"
-                   alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in the Visual editor.">
+                   alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in Edit.">
             </picture>
           </div>
         </figure>
@@ -180,7 +180,7 @@
       <div class="container">
         <div class="section__head">
           <p class="eyebrow">Build with AI agents?</p>
-          <h2 id="agents-title">The IDE for directing your agents.</h2>
+          <h2 id="agents-title">The place to direct your agents.</h2>
           <p class="lead"><strong>Your agents write the docs. You still have to read them.</strong> PerMark doesn't run your agent. It's where you watch, review and steer what it writes.</p>
         </div>
         <ol class="loop">
@@ -386,7 +386,7 @@
             <h4>Then open a file or a folder</h4>
             <div class="code">
               <pre><code><span class="c-cmd">permark</span>                <span class="c-com"># welcome screen, recent projects</span>
-<span class="c-cmd">permark</span> .              <span class="c-com"># this folder, IDE mode</span>
+<span class="c-cmd">permark</span> .              <span class="c-com"># this folder, as a project</span>
 <span class="c-cmd">permark</span> docs/plan.md   <span class="c-com"># one file, simple mode</span></code></pre>
             </div>
             <p class="small">Or drag a folder or a <code>.md</code> file onto the window.</p>
@@ -435,14 +435,14 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
               <tr><td>Zoom in / out / reset</td><td><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
               <tr class="keys__group"><th scope="rowgroup" colspan="2">Editing</th></tr>
               <tr><td>Start editing</td><td><kbd>E</kbd> or <kbd>Ctrl</kbd>+<kbd>E</kbd></td></tr>
-              <tr><td>Done, back to reading</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd> or <kbd>Esc</kbd></td></tr>
-              <tr><td>Switch between Visual and Source</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td></tr>
+              <tr><td>Done, back to View</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd> or <kbd>Esc</kbd></td></tr>
+              <tr><td>Switch between Edit and Source</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td></tr>
               <tr><td>Save</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
               <tr><td>New file</td><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td></tr>
               <tr><td>Bold / italic / strikethrough</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd></td></tr>
               <tr><td>Link / inline code</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>`</kbd></td></tr>
-              <tr><td>Headings 1 to 6 / paragraph (Visual)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>6</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd></td></tr>
-              <tr><td>Block menu (Visual)</td><td><kbd>/</kbd> in an empty paragraph</td></tr>
+              <tr><td>Headings 1 to 6 / paragraph (Edit)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>6</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd></td></tr>
+              <tr><td>Block menu (Edit)</td><td><kbd>/</kbd> in an empty paragraph</td></tr>
               <tr class="keys__group"><th scope="rowgroup" colspan="2">Notes</th></tr>
               <tr><td>New note (from any PerMark window)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td></tr>
               <tr><td>Show the Notes window</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td></tr>
@@ -491,7 +491,7 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
               <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/></svg>
             </span>
             <h3>Navigate like a wiki</h3>
-            <p>Open a folder for IDE mode or a single file for a distraction-free reader. Relative links and images resolve in the app, with back and forward. Code references like <code>src/main.rs:42</code> open the file at the line, in PerMark or your editor. An <strong>outline</strong> follows you through long documents, and an Explorer filter keeps a code repository down to its docs.</p>
+            <p>Open a folder as a project or a single file for a distraction-free reader. Relative links and images resolve in the app, with back and forward. Code references like <code>src/main.rs:42</code> open the file at the line, in PerMark or your editor. An <strong>outline</strong> follows you through long documents, and an Explorer filter keeps a code repository down to its docs.</p>
           </li>
           <li class="card card--accent">
             <span class="card__icon" aria-hidden="true">
@@ -519,7 +519,7 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
               <svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
             </span>
             <h3>Edit without fear</h3>
-            <p>A visual editor and a source editor that rewrite <strong>only the blocks you changed</strong>. If an agent changes the file while you edit, you choose: reload theirs or keep mine. Images you paste land in <code>assets/</code>.</p>
+            <p>Edit and Source rewrite <strong>only the blocks you changed</strong>. If an agent changes the file while you edit, you choose: reload theirs or keep mine. Images you paste land in <code>assets/</code>.</p>
           </li>
           <li class="card">
             <span class="card__icon" aria-hidden="true">

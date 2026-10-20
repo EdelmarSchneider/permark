@@ -1,2 +1,0 @@
-# Product and platform names that appear in doc comments.
-doc-valid-idents = ["PerMark", "AppData", "AppImage", "OneDrive", ".."]

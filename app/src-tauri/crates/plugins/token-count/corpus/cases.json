@@ -1,0 +1,326 @@
+[
+ {
+  "name": "empty",
+  "text": "",
+  "o200k": 0,
+  "cl100k": 0
+ },
+ {
+  "name": "one letter",
+  "text": "a",
+  "o200k": 1,
+  "cl100k": 1
+ },
+ {
+  "name": "one space",
+  "text": " ",
+  "o200k": 1,
+  "cl100k": 1
+ },
+ {
+  "name": "hello",
+  "text": "hello world",
+  "o200k": 2,
+  "cl100k": 2
+ },
+ {
+  "name": "sentence",
+  "text": "The quick brown fox jumps over the lazy dog.",
+  "o200k": 10,
+  "cl100k": 10
+ },
+ {
+  "name": "capitals",
+  "text": "HELLO WORLD",
+  "o200k": 3,
+  "cl100k": 3
+ },
+ {
+  "name": "camel",
+  "text": "helloWorld HelloWorld HTTPServer parseXMLFile",
+  "o200k": 9,
+  "cl100k": 8
+ },
+ {
+  "name": "contractions",
+  "text": "I'm sure it's fine; they'll say we've done what you'd do, and she'S not here. DON'T. 'tis 'twas",
+  "o200k": 26,
+  "cl100k": 33
+ },
+ {
+  "name": "long s contraction",
+  "text": "it\u2019s it's it\u017f",
+  "o200k": 5,
+  "cl100k": 7
+ },
+ {
+  "name": "digits",
+  "text": "1 22 333 4444 55555 666666 7777777 1234567890123456789",
+  "o200k": 26,
+  "cl100k": 26
+ },
+ {
+  "name": "digits and letters",
+  "text": "abc123def 12ab34 3.14159 1,000,000 0xFF",
+  "o200k": 22,
+  "cl100k": 21
+ },
+ {
+  "name": "punctuation",
+  "text": "!!! ... ??? --- *** ### /// \\\\\\ ((( ))) {{{ }}} <<< >>>",
+  "o200k": 17,
+  "cl100k": 15
+ },
+ {
+  "name": "punct then newline",
+  "text": "foo(); \nbar();\n\nbaz /\n/ qux",
+  "o200k": 10,
+  "cl100k": 10
+ },
+ {
+  "name": "slash after newline",
+  "text": "end of line\n/ next",
+  "o200k": 6,
+  "cl100k": 6
+ },
+ {
+  "name": "newlines",
+  "text": "a\nb\r\nc\rd\n\n\ne\r\n\r\nf",
+  "o200k": 11,
+  "cl100k": 11
+ },
+ {
+  "name": "only newlines",
+  "text": "\n\n\n",
+  "o200k": 1,
+  "cl100k": 1
+ },
+ {
+  "name": "trailing spaces",
+  "text": "text with trailing spaces   ",
+  "o200k": 5,
+  "cl100k": 5
+ },
+ {
+  "name": "trailing newline spaces",
+  "text": "text\n  ",
+  "o200k": 3,
+  "cl100k": 3
+ },
+ {
+  "name": "leading spaces",
+  "text": "   indented",
+  "o200k": 3,
+  "cl100k": 3
+ },
+ {
+  "name": "space runs",
+  "text": "a  b   c    d     e",
+  "o200k": 9,
+  "cl100k": 9
+ },
+ {
+  "name": "tabs",
+  "text": "a\tb\t\tc\n\td",
+  "o200k": 6,
+  "cl100k": 6
+ },
+ {
+  "name": "whitespace only",
+  "text": "   \t  \n  \t ",
+  "o200k": 4,
+  "cl100k": 3
+ },
+ {
+  "name": "whitespace then text",
+  "text": "  \n  text",
+  "o200k": 3,
+  "cl100k": 3
+ },
+ {
+  "name": "whitespace middle",
+  "text": "one \n \n two",
+  "o200k": 3,
+  "cl100k": 3
+ },
+ {
+  "name": "nbsp and unicode spaces",
+  "text": "a\u00a0b\u2003c\u2009d\u3000e\u200bf\u2028g\u0085h",
+  "o200k": 16,
+  "cl100k": 19
+ },
+ {
+  "name": "emoji",
+  "text": "Hello \ud83d\ude00 world \ud83d\ude80\ud83d\udd25 \u2705 \u274c \ud83d\udc69\u200d\ud83d\udcbb \ud83c\udde7\ud83c\uddf7",
+  "o200k": 18,
+  "cl100k": 25
+ },
+ {
+  "name": "cjk",
+  "text": "\u4f60\u597d\uff0c\u4e16\u754c\u3002\u3053\u3093\u306b\u3061\u306f\u4e16\u754c\u3002\uc548\ub155\ud558\uc138\uc694",
+  "o200k": 9,
+  "cl100k": 17
+ },
+ {
+  "name": "combining marks",
+  "text": "e\u0301 a\u0308 Z\u0361a\u035fl\u0360g\u0346o\u0357 \u0915\u094d\u0937\u093f",
+  "o200k": 21,
+  "cl100k": 24
+ },
+ {
+  "name": "marks after space",
+  "text": " \u0301abc \u0301\u0301",
+  "o200k": 6,
+  "cl100k": 6
+ },
+ {
+  "name": "rtl",
+  "text": "\u0645\u0631\u062d\u0628\u0627 \u0628\u0627\u0644\u0639\u0627\u0644\u0645 \u05e9\u05dc\u05d5\u05dd \u05e2\u05d5\u05dc\u05dd hello",
+  "o200k": 7,
+  "cl100k": 21
+ },
+ {
+  "name": "cyrillic and greek",
+  "text": "\u041f\u0440\u0438\u0432\u0435\u0442, \u043c\u0438\u0440! \u0393\u03b5\u03b9\u03b1 \u03c3\u03bf\u03c5 \u03ba\u03cc\u03c3\u03bc\u03b5",
+  "o200k": 10,
+  "cl100k": 18
+ },
+ {
+  "name": "titlecase letters",
+  "text": "\u01c5 \u01c8 \u01cb \u01f2 \u1f88 \u01c5ellow",
+  "o200k": 19,
+  "cl100k": 18
+ },
+ {
+  "name": "modifier and other letters",
+  "text": "\u02b0\u02b1abc \u05d0\u05d1\u05d2 \u0e01\u0e02\u0e04 \u3042\u3044\u3046 \u30a2\u30a4\u30a6",
+  "o200k": 14,
+  "cl100k": 19
+ },
+ {
+  "name": "uppercase then lowercase",
+  "text": "ABCdef ABCDef AbCdEf \u00c9COLE \u00c9cole",
+  "o200k": 12,
+  "cl100k": 12
+ },
+ {
+  "name": "accents",
+  "text": "caf\u00e9 na\u00efve fa\u00e7ade Z\u00fcrich \u00fcber \u00d1and\u00fa",
+  "o200k": 10,
+  "cl100k": 14
+ },
+ {
+  "name": "special token text",
+  "text": "<|endoftext|> <|fim_prefix|> <|endofprompt|> <|im_start|>",
+  "o200k": 26,
+  "cl100k": 24
+ },
+ {
+  "name": "url",
+  "text": "https://example.org/a/b?c=d&e=f#g",
+  "o200k": 12,
+  "cl100k": 12
+ },
+ {
+  "name": "path",
+  "text": "C:\\Users\\name\\file.txt /usr/local/bin/tool ./relative/../path",
+  "o200k": 18,
+  "cl100k": 17
+ },
+ {
+  "name": "code",
+  "text": "fn main() {\n    let x = vec![1, 2, 3];\n    println!(\"{x:?}\");\n}\n",
+  "o200k": 25,
+  "cl100k": 25
+ },
+ {
+  "name": "json",
+  "text": "{\"a\": [1, 2, {\"b\": null}], \"c\": \"d\"}",
+  "o200k": 20,
+  "cl100k": 20
+ },
+ {
+  "name": "markdown",
+  "text": "# Title\n\n- item **bold** and `code`\n- [link](http://x.y)\n\n> quote\n\n| a | b |\n|---|---|\n| 1 | 2 |\n",
+  "o200k": 41,
+  "cl100k": 41
+ },
+ {
+  "name": "long word",
+  "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "o200k": 38,
+  "cl100k": 38
+ },
+ {
+  "name": "long digits",
+  "text": "7777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777",
+  "o200k": 34,
+  "cl100k": 34
+ },
+ {
+  "name": "long punct",
+  "text": "========================================================================================================================================================================================================",
+  "o200k": 3,
+  "cl100k": 4
+ },
+ {
+  "name": "long mixed no spaces",
+  "text": "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789",
+  "o200k": 60,
+  "cl100k": 60
+ },
+ {
+  "name": "base64",
+  "text": "VGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZyB1c2VkIGZvciBhIHRlc3QgY2FzZSBvZiB0aGUgY291bnRlcg==VGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZyB1c2VkIGZvciBhIHRlc3QgY2FzZSBvZiB0aGUgY291bnRlcg==VGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZyB1c2VkIGZvciBhIHRlc3QgY2FzZSBvZiB0aGUgY291bnRlcg==",
+  "o200k": 180,
+  "cl100k": 207
+ },
+ {
+  "name": "repeated word",
+  "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+  "o200k": 501,
+  "cl100k": 501
+ },
+ {
+  "name": "repeated pair",
+  "text": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab",
+  "o200k": 200,
+  "cl100k": 400
+ },
+ {
+  "name": "invalid utf8 stand-in",
+  "text": "\ufffd\ufffd text \ufffd",
+  "o200k": 3,
+  "cl100k": 3
+ },
+ {
+  "name": "nul and controls",
+  "text": "a\u0000b\u0001c\u001fd\u007fe",
+  "o200k": 9,
+  "cl100k": 9
+ },
+ {
+  "name": "private use",
+  "text": "\ue000\ue001 \udb80\udc00",
+  "o200k": 9,
+  "cl100k": 11
+ },
+ {
+  "name": "unassigned",
+  "text": "\u0378\u0379 \udb40\udc80",
+  "o200k": 9,
+  "cl100k": 9
+ },
+ {
+  "name": "supplementary letters",
+  "text": "\ud801\udc00\ud801\udc28 \ud835\udc00 \ud840\udc00\ud840\udc01",
+  "o200k": 18,
+  "cl100k": 18
+ },
+ {
+  "name": "numbers other",
+  "text": "\u0663\u0664 \u2460\u2461 \u00bd \u2167 \u0967\u0968\u0969\u096a",
+  "o200k": 14,
+  "cl100k": 23
+ }
+]

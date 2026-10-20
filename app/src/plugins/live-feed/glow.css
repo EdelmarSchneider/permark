@@ -1,0 +1,35 @@
+/* A passage an agent just changed glows once (opacity only: the compositor does the work). */
+.md-body > .pm-glow {
+  position: relative;
+}
+.md-body > .pm-glow::after {
+  content: "";
+  position: absolute;
+  inset: -2px -8px;
+  border-radius: 6px;
+  background: var(--live);
+  pointer-events: none;
+  animation: pm-glow-fade var(--dur-glow) ease-out forwards;
+}
+@keyframes pm-glow-fade {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+/* where a passage was removed: a thin line, clickable away */
+.md-body > .pm-removed-mark {
+  height: 3px;
+  margin: 6px 0;
+  border-radius: 2px;
+  background: var(--git-deleted);
+  opacity: 0.55;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-body > .pm-glow::after {
+    animation: none;
+  }
+}

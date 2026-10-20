@@ -1,0 +1,382 @@
+{
+  "README.md": {
+    "path": "README.md",
+    "text": "---\ntitle: Reading showcase\nstatus: draft\nowner: Ana Souza\ntags: [reading, markdown, demo]\nupdated: 2026-10-19\n---\n\n# Reading showcase\n\nA page of everything the reading view draws. It links to the [guide](docs/guide.md), to a [missing page](docs/nope.md) and to [a section](#diagrams). Code references open in your editor: `src/main.rs:12`, and plain text like src/main.rs:3 works too.\n\n## Text and lists\n\nParagraphs keep a comfortable measure at **any** zoom: *emphasis*, `inline code`, ~~strike~~, a footnote[^1] and an autolink https://example.com. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.\n\n- [x] Render Markdown\n- [x] Keep my place when the file changes\n- [ ] Review the changes\n\n1. First\n2. Second\n   - nested item\n   - another one\n\n> [!NOTE]\n> Alerts come with a title and an icon.\n\n> [!WARNING]\n> Reading is the main mode. Beautiful, clear reading is a requirement.\n\n## Code\n\n```rust\nfn main() {\n    let name = \"PerMark\";\n    println!(\"Hello, {name}!\");\n}\n```\n\n```json\n{ \"name\": \"permark\", \"private\": true, \"version\": \"0.6.0\" }\n```\n\n## Tables\n\n| Feature  | Status  | Notes                         |\n| -------- | ------- | ----------------------------- |\n| Tables   | done    | Zebra rows, sticky header     |\n| Math     | done    | KaTeX, loaded when needed     |\n| Diagrams | done    | Mermaid and PlantUML in page  |\n\n## Math\n\nInline math $E = mc^2$ sits in the text. A display formula:\n\n$$\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n$$\n\n## Diagrams\n\n```mermaid\ngraph LR\n  A[Markdown] --> B(Render)\n  B --> C{Sanitize}\n  C -->|safe| D[Page]\n  C -->|unsafe| E[Dropped]\n```\n\n## Prompt blocks\n\n<context>\nYou are reading a prompt file. The tags below fold, and **Markdown inside them** still renders.\n\n- Variables look like {{customer_name}} and are marked.\n- Files are linked: see @docs/guide.md for the guide.\n</context>\n\n<instructions>\n1. Be brief.\n2. Quote the source.\n</instructions>\n\n[^1]: Footnotes list at the end of the page, with a way back.\n",
+    "hash": "e873f21c2d5f5e0b",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": [
+      {
+        "lineStart": 1,
+        "lineEnd": 7,
+        "kind": "frontMatter",
+        "lock": "frontMatter"
+      },
+      {
+        "lineStart": 9,
+        "lineEnd": 9,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 11,
+        "lineEnd": 11,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 13,
+        "lineEnd": 13,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 15,
+        "lineEnd": 15,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 17,
+        "lineEnd": 19,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 21,
+        "lineEnd": 24,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 26,
+        "lineEnd": 27,
+        "kind": "alert",
+        "lock": "kind"
+      },
+      {
+        "lineStart": 29,
+        "lineEnd": 30,
+        "kind": "alert",
+        "lock": "kind"
+      },
+      {
+        "lineStart": 32,
+        "lineEnd": 32,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 34,
+        "lineEnd": 39,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 41,
+        "lineEnd": 43,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 45,
+        "lineEnd": 45,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 47,
+        "lineEnd": 51,
+        "kind": "table",
+        "lock": null
+      },
+      {
+        "lineStart": 53,
+        "lineEnd": 53,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 55,
+        "lineEnd": 55,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 57,
+        "lineEnd": 59,
+        "kind": "math",
+        "lock": "math"
+      },
+      {
+        "lineStart": 61,
+        "lineEnd": 61,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 63,
+        "lineEnd": 69,
+        "kind": "code",
+        "lock": "diagram"
+      },
+      {
+        "lineStart": 71,
+        "lineEnd": 71,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 73,
+        "lineEnd": 73,
+        "kind": "html",
+        "lock": "html"
+      },
+      {
+        "lineStart": 74,
+        "lineEnd": 74,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 76,
+        "lineEnd": 77,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 78,
+        "lineEnd": 78,
+        "kind": "html",
+        "lock": "html"
+      },
+      {
+        "lineStart": 80,
+        "lineEnd": 80,
+        "kind": "html",
+        "lock": "html"
+      },
+      {
+        "lineStart": 81,
+        "lineEnd": 82,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 83,
+        "lineEnd": 83,
+        "kind": "html",
+        "lock": "html"
+      },
+      {
+        "lineStart": 85,
+        "lineEnd": 85,
+        "kind": "footnote",
+        "lock": "footnote"
+      }
+    ]
+  },
+  "docs/guide.md": {
+    "path": "docs/guide.md",
+    "text": "# Guide\n\nBack to the [readme](../README.md). More ideas in [ideas](../notes/ideas.md#second-idea).\n\n## Getting started\n\nOpen a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.\n\n![PerMark logo](img/logo.png)\n\n## Shortcuts\n\n| Keys         | Action          |\n| ------------ | --------------- |\n| Ctrl+F       | Find in page    |\n| Alt+Left     | Back            |\n| Ctrl+= / Ctrl+- | Zoom         |\n",
+    "hash": "9da2cfe46f93b782",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": [
+      {
+        "lineStart": 1,
+        "lineEnd": 1,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 3,
+        "lineEnd": 3,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 5,
+        "lineEnd": 5,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 7,
+        "lineEnd": 7,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 9,
+        "lineEnd": 9,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 11,
+        "lineEnd": 11,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 13,
+        "lineEnd": 17,
+        "kind": "table",
+        "lock": null
+      }
+    ]
+  },
+  "notes/ideas.md": {
+    "path": "notes/ideas.md",
+    "text": "# Ideas\n\n## First idea\n\nShort and sweet.\n\n## Second idea\n\n- one\n- two\n",
+    "hash": "5f62a879c799aae8",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": [
+      {
+        "lineStart": 1,
+        "lineEnd": 1,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 3,
+        "lineEnd": 3,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 5,
+        "lineEnd": 5,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 7,
+        "lineEnd": 7,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 9,
+        "lineEnd": 10,
+        "kind": "list",
+        "lock": null
+      }
+    ]
+  },
+  "CLAUDE.md": {
+    "path": "CLAUDE.md",
+    "text": "---\nname: project-rules\ndescription: Rules the agent follows in this repository\n---\n\n# Project rules\n\n<instructions>\nRead @docs/guide.md first. Greet {{user}} by name.\n</instructions>\n\n<example>\nInput: a question about the **guide**.\nOutput: a short answer with a link.\n</example>\n",
+    "hash": "a84192067c0b6d86",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": [
+      {
+        "lineStart": 1,
+        "lineEnd": 4,
+        "kind": "frontMatter",
+        "lock": "frontMatter"
+      },
+      {
+        "lineStart": 6,
+        "lineEnd": 6,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 8,
+        "lineEnd": 8,
+        "kind": "html",
+        "lock": "html"
+      },
+      {
+        "lineStart": 9,
+        "lineEnd": 9,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 10,
+        "lineEnd": 10,
+        "kind": "html",
+        "lock": "html"
+      },
+      {
+        "lineStart": 12,
+        "lineEnd": 12,
+        "kind": "html",
+        "lock": "html"
+      },
+      {
+        "lineStart": 13,
+        "lineEnd": 14,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 15,
+        "lineEnd": 15,
+        "kind": "html",
+        "lock": "html"
+      }
+    ]
+  },
+  "Cargo.toml": {
+    "path": "Cargo.toml",
+    "text": "# The docs site generator.\n[package]\nname = \"docs-site\"\nversion = \"0.4.2\"\nedition = \"2021\"\ndescription = \"Builds the project documentation\"\nauthors = [\"Ana Souza\", \"Bo Chen\"]\npublish = false\n\n[dependencies]\nserde = { version = \"1\", features = [\"derive\"] }\ntokio = \"1.40\"\npulldown-cmark = \"0.12\"\n\n# Release build\n[profile.release]\nopt-level = 3\nlto = true\ncodegen-units = 1\n\n[package.metadata.deploy]\nhost = \"docs.example.org\"\napi_token = \"dp_live_4f9a1c77b2\"\nretries = 3\n",
+    "hash": "0518bf737bbf4cd5",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": null
+  },
+  "docker-compose.yml": {
+    "path": "docker-compose.yml",
+    "text": "# Local stack\nname: docs\nservices:\n  web:\n    image: nginx:1.27   # pinned\n    ports:\n      - \"8080:80\"\n      - \"8443:443\"\n    environment:\n      MODE: production\n      DEBUG: false\n      API_KEY: sk-live-9d2c41aa\n    depends_on: [db]\n  db:\n    image: 'postgres:16'\n    restart: unless-stopped\n    environment:\n      POSTGRES_USER: docs\n      POSTGRES_PASSWORD: hunter2-prod\n    healthcheck:\n      interval: 10s\n      retries: 5\n",
+    "hash": "37c4740eb8983c9b",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": null
+  },
+  ".env.example": {
+    "path": ".env.example",
+    "text": "# App\nNODE_ENV=development\nPORT=3000\nDEBUG=false\n\n# Database\nDATABASE_URL=postgres://docs:pa55w0rd@localhost:5432/docs\nDB_PASSWORD=\"s3cr3t pass\"\nexport API_KEY='sk-live-abc123'\nSECRET_KEY_BASE=\nAPP_NAME=Docs Site # shown in the header\nBASE_URL=${HOST}/api\n",
+    "hash": "c4799ed021ad6b91",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": null
+  },
+  ".editorconfig": {
+    "path": ".editorconfig",
+    "text": "# EditorConfig is awesome: https://EditorConfig.org\nroot = true\n\n[*]\nindent_style = space\nindent_size = 2\nend_of_line = lf\ncharset = utf-8\ntrim_trailing_whitespace = true\ninsert_final_newline = true\n\n# Tabs for Makefiles\n[Makefile]\nindent_style = tab\n\n[*.{js,py}]\nmax_line_length = 100\n",
+    "hash": "21db472fdd5aa623",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": null
+  },
+  "config/app.properties": {
+    "path": "config/app.properties",
+    "text": "# Server\nserver.port=8080\nserver.servlet.context-path = /api\n\n# Database\nspring.datasource.url=jdbc:postgresql://localhost:5432/docs\nspring.datasource.username: docs\nspring.datasource.password=s3cr3t-prop\nspring.jpa.show-sql true\nspring.jpa.open-in-view=false\n\napp.name=Docs Site\napp.greeting=Hello, \\u00e9\\u00e8!\n",
+    "hash": "ba06daf0bc9b8182",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": null
+  },
+  ".gitignore": {
+    "path": ".gitignore",
+    "text": "# Dependencies\nnode_modules/\n.pnp.js\n\n# Build output\n/dist\n/build/\n*.log\n!important.log\n\n# Env files\n.env\n.env.*\n!.env.example\n",
+    "hash": "d0c1d0b7d8f7fee2",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": null
+  },
+  "data/team.toon": {
+    "path": "data/team.toon",
+    "text": "# The people of the project and what they work on.\nproject:\n  name: PerMark\n  version: 0.6.0\n  # where it lives\n  url: \"https://github.com/EdelmarSchneider/permark\"\n  tags[3]: markdown,local-first,agents\nteam[3]{id,name,role,active}:\n  1,Ada Lovelace,lead,true\n  2,Alan Turing,\"review, specs\",true\n  3,Grace Hopper,build,false\naccess[2:]{token,scope}:\n  ci: sk-ci-5f2a91,read\n  bot: sk-bot-77c0de,write\n",
+    "hash": "2c2d17939e28e4f5",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": null
+  }
+}

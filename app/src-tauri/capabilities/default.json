@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "App windows: least privilege. Add a permission only with the feature that needs it.",
+  "windows": ["main", "w-*"],
+  "permissions": [
+    "core:window:allow-show",
+    "core:window:allow-set-title",
+    "core:window:allow-set-theme",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "dialog:allow-open"
+  ]
+}

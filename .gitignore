@@ -1,24 +1,29 @@
-# Rust / Tauri
-/src-tauri/target/
-/src-tauri/shell-ext/target/
-/src-tauri/gen/schemas/
-# Node
+# Agent files: local only, never pushed (app/AGENTS.md, app/CLAUDE.md, app/.claude/: working copies of the coding directives)
+AGENTS.md
+CLAUDE.md
+.claude/
+HANDOFF.md
+.playwright-mcp/
+
+# Build output
 node_modules/
-/dist/
+/app/dist/
+/app/src-tauri/target/
+/app/src-tauri/gen/schemas/
+dist-ssr/
+vite.config.ts.timestamp-*
+
 # OS / editors
 .DS_Store
 Thumbs.db
-.vscode/*
-!.vscode/extensions.json
+.vscode/
 .idea/
-# Claude local settings
-.claude/settings.local.json
-.playwright-mcp/
-# Vite / logs / env
-dist-ssr/
-*.local
+
+# Logs / env
 *.log
+!app/src-tauri/crates/plugins/token-count/corpus/*.log
+*.local
 .env
 .env.*
 !.env.example
-vite.config.ts.timestamp-*
+__pycache__/

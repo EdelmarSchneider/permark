@@ -1,0 +1,119 @@
+name: CI
+
+# The quality gate (`npm run check` in app/: version, rustfmt, prettier, build, clippy -D warnings, svelte-check,
+# cargo test, vitest)
+# on every push to the long-lived branches and on every pull request.
+
+on:
+  push:
+    branches: [develop, main, "feature/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  check:
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-latest]
+    # The program lives in app/ (npm, cargo, rust-toolchain.toml all resolve from there).
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The system libraries the Tauri crates link against on Linux.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             libwebkit2gtk-4.1-dev             libappindicator3-dev             librsvg2-dev             patchelf             libgtk-3-dev             libsoup-3.0-dev             libjavascriptcoregtk-4.1-dev
+
+      # Installs the toolchain app/rust-toolchain.toml pins (with clippy + rustfmt).
+      - name: Install Rust (pinned)
+        run: rustup toolchain install
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # Builds the frontend first (`tauri::generate_context!` embeds app/dist at compile time).
+      - name: Quality gate
+        run: npm run check
+
+      # `cargo test` regenerated the IPC types (ts-rs); committed ones must match.
+      - name: Generated IPC types are committed
+        shell: bash
+        run: git diff --exit-code -- src/api/generated
+
+  # The Microsoft Store flavor: no updater, no registry writer (`--no-default-features --features store`), the shell
+  # extension DLL (profile `release-shell`, which unwinds on a panic) and the package (MakeAppx checks the manifest).
+  # The package is not kept: the Release workflow builds the one that is uploaded.
+  store:
+    name: Store package (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (pinned)
+        run: rustup toolchain install
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # `tauri::generate_context!` embeds app/dist at compile time.
+      - name: Build the frontend
+        run: npm run build
+
+      - name: Lint the Store flavor
+        working-directory: app/src-tauri
+        run: cargo clippy -p permark --no-default-features --features store --all-targets -- -D warnings
+
+      - name: Build and pack the Store package
+        shell: pwsh
+        working-directory: .
+        run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"

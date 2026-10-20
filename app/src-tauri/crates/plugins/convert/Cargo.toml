@@ -1,0 +1,28 @@
+[package]
+name = "permark-plugin-convert"
+description = "PerMark plugin convert: JSON, XML, YAML, CSV, TOML and TOON to TOON and other compact formats and back, with a token estimate for each."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API: `fmt-toon`, its codec).
+[dependencies]
+permark-core.workspace = true
+permark-plugin-fmt-toon.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+toml_edit.workspace = true
+# Readers of the sources (quick-xml is already in the app through Tauri's plist support).
+quick-xml = "0.42"
+csv = "1.4"
+yaml-rust2 = { version = "0.13", default-features = false }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

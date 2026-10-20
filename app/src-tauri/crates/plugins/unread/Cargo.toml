@@ -1,0 +1,23 @@
+[package]
+name = "permark-plugin-unread"
+description = "PerMark plugin unread: which documents changed since the person last read them, like new mail."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API).
+[dependencies]
+permark-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+dunce.workspace = true
+
+[lints]
+workspace = true

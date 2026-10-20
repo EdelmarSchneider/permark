@@ -6,34 +6,70 @@ the final say on what gets merged. Issues, ideas and pull requests are welcome.
 ## Before you start
 - For anything bigger than a small fix, open an issue first so we can agree on the approach.
 - The product is tool-agnostic: features rely on the file system and git, never on one specific AI tool.
-- Every user-facing string goes through `src/lib/i18n/`. Code, docs and commit messages are in English.
+- Every user-facing string goes through the language tables (see [Translations](#translations)). Code, docs and commit
+  messages are in American English, written to be clear for readers who are not native speakers.
+- Please call PerMark a "Markdown app" or a "unified document workspace", never an IDE.
+
+## Build and run
+The program lives in `app/`. You need:
+- [Node.js](https://nodejs.org) 24 or newer.
+- [Rust](https://rustup.rs). Do not pick a version: `app/rust-toolchain.toml` pins one, and `rustup` installs it the first
+  time you build inside `app/`.
+- The [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your system (on Linux: the WebKitGTK and GTK
+  development packages).
+
+```bash
+cd app
+npm ci
+npm run tauri dev      # the app, with hot reload
+npm run tauri build    # installers for your system
+npm run dev:mock       # only the interface, in a browser, with a pretend backend (no Rust needed)
+```
+
+The code is in two halves that talk through typed commands and events: `app/src-tauri/` (Rust: a `core` crate, one crate
+per plugin in `crates/plugins/`, and the app that joins them) and `app/src/` (Svelte 5 and TypeScript: `core/` and
+`plugins/`). A feature that can be switched off lives in a plugin; what every window needs lives in the core.
 
 ## Workflow
 - git-flow: branch from `develop` (`feature/<name>`), and open the pull request against `develop`.
 - Conventional Commits: `feat(render): ...`, `fix(watch): ...`, `docs: ...`.
-- The quality gate must pass:
+- The quality gate must pass, with no warnings. It is the same one CI runs on Windows, macOS and Linux:
 
 ```bash
-npm run check   # rustfmt, clippy -D warnings, cargo test, svelte-check, vitest
+cd app
+npm run check   # version, rustfmt, prettier, build, clippy -D warnings, svelte-check, cargo test, vitest
+npm run fmt     # fixes formatting (rustfmt and prettier)
 ```
 
-The editor's round-trip test keeps the block ranges that the Rust parser finds in a frozen snapshot of the project's documents
-(`src/lib/editor/corpus/docs/`), so editing the README or the changelog never affects it. When you change the block parser, `npm run check` says the
-ranges in `src/lib/editor/corpus/` are stale; regenerate them with:
+- New behavior comes with tests, and so does a failure it must survive (bad input, mixed line endings, unusual paths).
+- A change to what a file looks like after saving needs a test that proves every byte the person did not touch stays the
+  same.
+- Types shared with the interface are generated from Rust when `cargo test` runs. Commit the result when it changes.
+- The version number lives in `app/package.json`. `npm run version:sync` copies it to the other files; you rarely need it.
 
-```bash
-UPDATE_CORPUS=1 npx vitest run src/lib/editor/corpus.test.ts
-UPDATE_CORPUS=1 cargo test --manifest-path src-tauri/Cargo.toml corpus
-```
+## Translations
+PerMark speaks English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano. English is the source language and
+the fallback.
 
-(In PowerShell, set the variable first: `$env:UPDATE_CORPUS = "1"`.)
-
-To refresh the snapshot on purpose (for example to cover new Markdown the project's documents now use), copy the current files over it and regenerate:
-
-```bash
-cp README.md CHANGELOG.md CONTRIBUTING.md src/lib/editor/corpus/docs/
-cp docs/design/*.md src/lib/editor/corpus/docs/design/
-```
+- **Where.** One file per language in `app/src/core/i18n/locales/`: `en.ts`, `pt-BR.ts`, `es.ts`, `de.ts`, `zh-CN.ts`,
+  `it.ts`. Each is a flat list of `"area.key": "text"` pairs. The comment at the top of a file states the tone of that
+  language (for example how buttons and hints address the reader); please follow it.
+- **Fixing a translation.** Edit the text in the language's file and run `npm run check`. Nothing else changes.
+- **Adding or renaming a string.** Add the key to `en.ts` and to all five other files in the same pull request, with a
+  real translation (not the English text). Use `t("area.key")` in the code; `t("area.key", { name })` fills a
+  `{name}` placeholder.
+- **Parity test.** `npm run check` fails when a language lacks a key or has an extra one, when a placeholder differs from
+  the English one, when a text is empty, or when `app.name` is not "PerMark". It also fails to compile when code uses a
+  key that English does not have.
+- **Plurals.** A text that depends on a number has two keys, `area.key.one` and `area.key.other`, and code calls
+  `tn("area.key", count)`; `{n}` is the count. The plural rules of the active language pick the key: "one" where the
+  language calls the count singular, "other" for every other count. Every language file has both keys (Chinese has a
+  single plural form, so its `.one` text is never shown, but it must exist and make sense). Write the number as `{n}`.
+- **Wording.** Keep product names and technical terms as they are (PerMark, Markdown, Git, MCP). Keep a text short enough
+  for a button or a status bar, and say what happens in plain words.
+- **A new language** touches more than the table: the language list in `locales.ts`, the Rust language setting, the
+  Windows installer texts (`app/src-tauri/installer/hooks.nsh` and `tauri.conf.json`) and the Store manifest
+  (`app/src-tauri/msstore/AppxManifest.xml`). Please open an issue first.
 
 ## Sign your commits (DCO)
 By contributing you certify the [Developer Certificate of Origin](https://developercertificate.org/): that you wrote

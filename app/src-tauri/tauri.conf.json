@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PerMark",
+  "version": "0.6.0",
+  "identifier": "dev.permark.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: pm-asset: http://pm-asset.localhost; media-src 'self' pm-asset: http://pm-asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; frame-ancestors 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "category": "Productivity",
+    "shortDescription": "A unified document workspace: read, write and organize Markdown and the files around it. Free and open source.",
+    "longDescription": "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it. Any Markdown file opens as a clean page you can edit, notes save themselves, and a project folder becomes a place to follow, review and steer what your AI agents write. AI speeds the work; your vision steers it. Works with any AI tool, or with none.",
+    "copyright": "Copyright (c) 2026 Edelmar Schneider",
+    "license": "MIT OR Apache-2.0",
+    "licenseFile": "../../LICENSE-MIT",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "languages": [
+          "English",
+          "PortugueseBR",
+          "SpanishInternational",
+          "German",
+          "SimpChinese",
+          "Italian"
+        ],
+        "displayLanguageSelector": true,
+        "installerHooks": "installer/hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/permark.desktop"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/permark.desktop"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU1QjVEODA3MTNDNjE4ODUKUldTRkdNWVRCOWkxNVhhRkl4OFdxOXRyempvTU16R0xKL0Z5MzJIcU9wcmh3UWFZelFNR2JQQUkK",
+      "endpoints": [
+        "https://github.com/EdelmarSchneider/permark/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

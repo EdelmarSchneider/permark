@@ -1,0 +1,5 @@
+# `unwrap_used` | `expect_used` = deny in production, allowed in tests.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+# Product + platform names in doc comments.
+doc-valid-idents = ["PerMark", "AppData", "AppImage", "OneDrive", "PlantUML", "KaTeX", ".."]

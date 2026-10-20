@@ -1,0 +1,9 @@
+{
+  "name": "atlas",
+  "version": 3,
+  "auth": { "token": "t-1" },
+  "devices": [
+    { "id": 1, "name": "laptop" },
+    { "id": 2, "name": "phone" }
+  ]
+}

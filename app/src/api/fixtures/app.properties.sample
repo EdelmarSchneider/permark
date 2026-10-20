@@ -1,0 +1,13 @@
+# Server
+server.port=8080
+server.servlet.context-path = /api
+
+# Database
+spring.datasource.url=jdbc:postgresql://localhost:5432/docs
+spring.datasource.username: docs
+spring.datasource.password=s3cr3t-prop
+spring.jpa.show-sql true
+spring.jpa.open-in-view=false
+
+app.name=Docs Site
+app.greeting=Hello, \u00e9\u00e8!

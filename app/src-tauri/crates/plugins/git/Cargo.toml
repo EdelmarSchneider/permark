@@ -1,0 +1,27 @@
+[package]
+name = "permark-plugin-git"
+description = "PerMark plugin git: read-only git awareness with two backends (installed git, built-in libgit2)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+
+# Depends on `permark-core` only (and a declared plugin dependency's public API).
+[dependencies]
+permark-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ts-rs.workspace = true
+thiserror.workspace = true
+dunce.workspace = true
+dirs.workspace = true
+git2.workspace = true
+toml_edit.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

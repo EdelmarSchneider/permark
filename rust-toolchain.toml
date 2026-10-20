@@ -1,5 +1,0 @@
-[toolchain]
-# Pinned so local checks and CI use the same compiler and lints. Bump deliberately (and fix new lints) in one commit.
-channel = "1.99.0"
-components = ["clippy", "rustfmt"]
-profile = "minimal"

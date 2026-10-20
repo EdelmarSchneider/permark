@@ -1,0 +1,4 @@
+Conformance fixtures of the TOON specification, unchanged.
+Source: https://github.com/toon-format/spec, tag v4.4.0 (commit d09c3d33e37389345a74bd96981eb96dd9be6c5e), folder tests/fixtures.
+License: MIT, see LICENSE in this folder.
+Upgrade: replace both folders with the fixtures of the new pinned tag and bump SPEC_VERSION.
