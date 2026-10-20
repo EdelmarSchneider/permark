@@ -1,7 +1,8 @@
 // Source mode: CodeMirror 6 over the edit text, the raw file: nothing hidden, masked, folded or drawn over it
 // (invisible characters made visible). Markdown (fenced code highlighted by language, loaded on demand; YAML front
 // matter) or any text by file name. Completions without AI (complete.ts), a small find, keys that never misfire under
-// IME, picture paste | drop.
+// IME, picture paste | drop. Find + replace (case, regexp, whole word) and go to line: `@codemirror/search`, its
+// panel in the theme's colors and the app's language.
 
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -14,6 +15,14 @@ import {
   syntaxHighlighting,
 } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
+import {
+  closeSearchPanel,
+  findNext,
+  findPrevious,
+  gotoLine,
+  openSearchPanel,
+  search,
+} from "@codemirror/search";
 import { Compartment, EditorSelection, EditorState, type Extension } from "@codemirror/state";
 import {
   drawSelection,
@@ -33,7 +42,6 @@ export type SourceHost = CompletionHost & {
   selected(): void;
   save(): void;
   modeKey(source: boolean): void;
-  find(): void;
   pictures(files: File[], at: number): void;
 };
 
@@ -89,7 +97,35 @@ const theme = EditorView.theme({
     backgroundColor: "var(--accent-soft)",
     color: "var(--text)",
   },
-  ".cm-find-match": { backgroundColor: "var(--mark)" },
+  ".cm-panels": {
+    backgroundColor: "var(--surface)",
+    color: "var(--text)",
+    fontFamily: "var(--font-ui)",
+    fontSize: "var(--fs-ui-sm)",
+  },
+  ".cm-panels-top": { borderBottom: "1px solid var(--border)" },
+  ".cm-panel.cm-search, .cm-panel.cm-gotoLine": { padding: "6px 28px 6px 12px" },
+  ".cm-panel input, .cm-panel button, .cm-panel label": { fontSize: "var(--fs-ui-sm)" },
+  ".cm-textfield": {
+    backgroundColor: "var(--bg)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-control)",
+    padding: "2px 6px",
+  },
+  ".cm-textfield:focus": { outline: "none", borderColor: "var(--accent)" },
+  ".cm-button": {
+    backgroundImage: "none",
+    backgroundColor: "var(--bg)",
+    color: "var(--text)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-control)",
+    padding: "2px 8px",
+  },
+  ".cm-button:hover": { backgroundColor: "var(--hover)" },
+  ".cm-panel.cm-search [name=close]": { color: "var(--muted)" },
+  ".cm-searchMatch": { backgroundColor: "var(--mark)" },
+  ".cm-searchMatch-selected": { backgroundColor: "var(--mark-strong)" },
 });
 
 /** How code looks in the editors (colors from the theme tokens): the grammar's highlighting, the font, the gutter. */
@@ -117,7 +153,6 @@ export type SourceView = {
   selection(): string;
   insert(text: string, at?: number): void;
   /** Selects the next match of `query` after the selection; false when none. */
-  findNext(query: string, backwards?: boolean): boolean;
   destroy(): void;
 };
 
@@ -127,6 +162,8 @@ export function createSource(options: {
   path: string;
   markdown: boolean;
   host: SourceHost;
+  /** The search panel's words in the app's language (CodeMirror phrase -> text). */
+  phrases?: Record<string, string>;
 }): SourceView {
   const { host } = options;
   const language = new Compartment();
@@ -153,13 +190,18 @@ export function createSource(options: {
         return true;
       },
     },
+    // find + replace in one panel (Ctrl+H as in common text editors), F3 | Shift+F3 next | previous, go to line
+    { key: "Mod-f", run: openSearchPanel, scope: "editor search-panel" },
+    { key: "Mod-h", run: openSearchPanel, scope: "editor search-panel" },
     {
-      key: "Mod-f",
-      run: () => {
-        host.find();
-        return true;
-      },
+      key: "F3",
+      run: findNext,
+      shift: findPrevious,
+      scope: "editor search-panel",
+      preventDefault: true,
     },
+    { key: "Mod-g", run: gotoLine },
+    { key: "Escape", run: closeSearchPanel, scope: "editor search-panel" },
   ]);
   const view = new EditorView({
     parent: options.parent,
@@ -167,6 +209,8 @@ export function createSource(options: {
       doc: options.text,
       extensions: [
         keys,
+        EditorState.phrases.of(options.phrases ?? {}),
+        search({ top: true }),
         lineNumbers(),
         highlightSpecialChars(),
         highlightActiveLineGutter(),
@@ -238,21 +282,6 @@ export function createSource(options: {
         selection: EditorSelection.cursor(pos + text.length),
       });
       view.focus();
-    },
-    findNext: (query, backwards = false) => {
-      if (query === "") return false;
-      const doc = view.state.doc.toString();
-      const lower = doc.toLowerCase();
-      const needle = query.toLowerCase();
-      const { from, to } = view.state.selection.main;
-      let at = backwards ? lower.lastIndexOf(needle, from - 1) : lower.indexOf(needle, to);
-      if (at < 0) at = backwards ? lower.lastIndexOf(needle) : lower.indexOf(needle);
-      if (at < 0) return false;
-      view.dispatch({
-        selection: EditorSelection.range(at, at + needle.length),
-        effects: EditorView.scrollIntoView(at, { y: "center" }),
-      });
-      return true;
     },
     destroy: () => view.destroy(),
   };

@@ -144,14 +144,14 @@
 
   // Escape leaves focus mode first, and before the editors see it (the visual editor's key map takes Escape for
   // itself). Not while something innermost is open: a field, a menu, a dialog, an overlay, the image zoom, a pop-up of
-  // an editor; the find bar closes first.
+  // an editor (completions, the Source find panel); the find bar closes first.
   $effect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (ui.focus !== "on" || event.isComposing || event.key !== "Escape") return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const inside = event.target instanceof Element ? event.target.closest(OWNS_ESCAPE) : null;
       if (inside !== null || ui.modal || documents.zoomed !== null) return;
-      if (document.querySelector(".slash, .cm-tooltip-autocomplete") !== null) return;
+      if (document.querySelector(".slash, .cm-tooltip-autocomplete, .cm-search") !== null) return;
       event.preventDefault();
       event.stopPropagation();
       if (ui.finding) ui.closeFind();

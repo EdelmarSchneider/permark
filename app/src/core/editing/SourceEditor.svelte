@@ -1,6 +1,7 @@
 <script lang="ts">
-  // Source mode: the raw file in CodeMirror (loaded on first use), a small find bar. Nothing is hidden, masked or
-  // drawn over the text: secret values show as they are, diagrams draw in View and Edit only.
+  // Source mode: the raw file in CodeMirror (loaded on first use), with its find + replace panel and go to line.
+  // Nothing is hidden, masked or drawn over the text: secret values show as they are, diagrams draw in View and Edit.
+  import { SEARCH_PHRASES } from "./source/phrases";
   import { api } from "../../api";
   import { t } from "../i18n";
   import type { Content, EditingSession } from "./session.svelte";
@@ -18,9 +19,6 @@
   let { session, content, markdown, project, pictures }: Props = $props();
 
   let host: HTMLElement | undefined = $state();
-  let finding = $state(false);
-  let query = $state("");
-  let missing = $state(false);
   let source: SourceView | null = null;
 
   // the editor: made when the content (a load, a mode switch) is new, torn down with it
@@ -37,12 +35,12 @@
         text: current.text,
         path: current.path,
         markdown,
+        phrases: Object.fromEntries(SEARCH_PHRASES.map(([phrase, key]) => [phrase, t(key)])),
         host: {
           changed: () => session.changed(),
           selected: () => session.selected(),
           save: () => session.save(),
           modeKey: (toSource) => void session.switchTo(toSource ? "source" : "view"),
-          find: () => (finding = true),
           pictures: (files, at) => void insertPictures(files, at),
           docPath: () => current.path,
           linkTargets: async () => {
@@ -100,47 +98,9 @@
     if (paths.length === 0 || !source) return;
     source.insert(paths.map((p) => `![](${p})`).join("\n"), at);
   }
-
-  function find(backwards = false): void {
-    missing = source ? !source.findNext(query, backwards) : true;
-  }
-
-  function onFindKey(event: KeyboardEvent): void {
-    if (event.isComposing) return;
-    if (event.key === "Enter") {
-      event.preventDefault();
-      find(event.shiftKey);
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      finding = false;
-      source?.view.focus();
-    }
-  }
 </script>
 
 <div class="source" data-drop-editor>
-  {#if finding}
-    <div class="find" role="search">
-      <input
-        class="field"
-        type="search"
-        placeholder={t("find.placeholder")}
-        aria-label={t("find.placeholder")}
-        bind:value={query}
-        onkeydown={onFindKey}
-        oninput={() => (missing = false)}
-      />
-      <button type="button" class="btn btn--sm" onclick={() => find(true)}
-        >{t("find.previous")}</button
-      >
-      <button type="button" class="btn btn--sm" onclick={() => find(false)}>{t("find.next")}</button
-      >
-      {#if missing}<span class="missing" role="status">{t("find.none")}</span>{/if}
-      <button type="button" class="btn btn--sm btn--ghost" onclick={() => (finding = false)}>
-        {t("common.close")}
-      </button>
-    </div>
-  {/if}
   <div class="body">
     <div class="cm" bind:this={host}></div>
   </div>
@@ -163,25 +123,5 @@
   }
   .cm :global(.cm-editor) {
     min-height: 100%;
-  }
-  .find {
-    position: sticky;
-    top: 0;
-    z-index: 4;
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-  }
-  .find .field {
-    flex: 1;
-    min-width: 0;
-    max-width: 320px;
-  }
-  .missing {
-    color: var(--muted);
-    font-size: var(--fs-ui-sm);
   }
 </style>
