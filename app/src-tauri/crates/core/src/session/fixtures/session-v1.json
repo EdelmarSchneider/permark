@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "data": {
+    "windows": [
+      {
+        "workspace": {
+          "kind": "project",
+          "path": "C:\\Users\\me\\Projects\\Alpha"
+        },
+        "geometry": {
+          "x": -8,
+          "y": -8,
+          "width": 2560,
+          "height": 1369,
+          "scale": 1.25,
+          "maximized": true
+        }
+      },
+      {
+        "workspace": {
+          "kind": "singleFile",
+          "path": "C:\\Users\\me\\Documents\\todo.md"
+        },
+        "geometry": {
+          "x": 300,
+          "y": 200,
+          "width": 1280,
+          "height": 800,
+          "scale": 1.0,
+          "maximized": false
+        }
+      },
+      {
+        "workspace": {
+          "kind": "notes"
+        },
+        "geometry": {
+          "x": 1700,
+          "y": 100,
+          "width": 900,
+          "height": 700,
+          "scale": 1.5,
+          "maximized": false
+        }
+      },
+      {
+        "workspace": null,
+        "geometry": {
+          "x": 40,
+          "y": 40,
+          "width": 0,
+          "height": 800,
+          "scale": 1.0,
+          "maximized": false
+        }
+      },
+      {
+        "workspace": {
+          "kind": "project",
+          "path": "c:\\users\\me\\projects\\alpha\\"
+        },
+        "geometry": {
+          "x": 70,
+          "y": 70,
+          "width": 1280,
+          "height": 800,
+          "scale": 1.0,
+          "maximized": false
+        }
+      },
+      {
+        "workspace": {
+          "kind": "project",
+          "path": "D:\\Work Space\\Beta ação"
+        },
+        "geometry": null
+      },
+      {
+        "workspace": {
+          "kind": "notes"
+        },
+        "geometry": {
+          "x": 10,
+          "y": 10,
+          "width": 800,
+          "height": 600,
+          "scale": 1.0,
+          "maximized": false
+        }
+      }
+    ]
+  }
+}

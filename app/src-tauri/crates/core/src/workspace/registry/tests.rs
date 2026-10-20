@@ -14,13 +14,8 @@ struct Fx {
     log: Log,
 }
 
-fn fx() -> Fx {
+fn fx_with(plugins: Vec<Arc<dyn Plugin>>, log: Log) -> Fx {
     let base = tempfile::tempdir().unwrap();
-    let log = Log::default();
-    let plugins: Vec<Arc<dyn Plugin>> = vec![
-        Arc::new(Fake::new("git", PluginScope::Project, &[]).with_log(&log)),
-        Arc::new(Fake::new("unread", PluginScope::Project, &["git"]).with_log(&log)),
-    ];
     let sink = Arc::new(Recorder::default());
     let env = CoreEnv::new(
         AppDirs::under(base.path()),
@@ -30,8 +25,10 @@ fn fx() -> Fx {
         AppSettings::default(),
     );
     let registry = Arc::new(WorkspaceRegistry::new(Arc::new(env)));
-    registry.add_window("main");
-    registry.add_window("w-1");
+    for window in ["main", "w-1"] {
+        registry.add_window(window, WindowKind::Work);
+        let _ = registry.show_welcome_view(window);
+    }
     Fx {
         _base: base,
         registry,
@@ -40,85 +37,254 @@ fn fx() -> Fx {
     }
 }
 
+fn fx() -> Fx {
+    let log = Log::default();
+    let plugins: Vec<Arc<dyn Plugin>> = vec![
+        Arc::new(Fake::new("git", PluginScope::Project, &[]).with_log(&log)),
+        Arc::new(Fake::new("unread", PluginScope::Project, &["git"]).with_log(&log)),
+    ];
+    fx_with(plugins, log)
+}
+
 fn project(dir: &Path) -> WorkspaceRef {
     WorkspaceRef::Project(Root::open(dir).unwrap())
+}
+
+fn file(path: &Path) -> WorkspaceRef {
+    std::fs::write(path, "x").unwrap();
+    WorkspaceRef::classify(path).unwrap()
 }
 
 fn take(log: &Log) -> Vec<String> {
     std::mem::take(&mut *log.lock().unwrap())
 }
 
-fn core_of(f: &Fx, label: &str) -> Arc<ProjectCore> {
-    match f.registry.workspace_of(label).unwrap().1 {
+fn starts(log: &Log) -> usize {
+    take(log).iter().filter(|e| *e == "start:git").count()
+}
+
+/// The whole open of a new tab; `Err(place)` when the workspace was open already.
+fn tab(f: &Fx, window: &str, reference: &WorkspaceRef) -> Result<(TabId, String), Place> {
+    match f.registry.open_tab(window, reference, None).unwrap() {
+        TabOpen::Opening { tab, view, outcome } => {
+            for (ticket, reference) in outcome.loads {
+                f.registry.load(ticket, &reference).unwrap();
+            }
+            Ok((tab, view))
+        }
+        TabOpen::Existing(place) => Err(place),
+    }
+}
+
+/// Runs the loads an outcome started.
+fn run(f: &Fx, outcome: Outcome) -> Vec<ViewChange> {
+    for (ticket, reference) in outcome.loads {
+        let _ = f.registry.load(ticket, &reference);
+    }
+    outcome.changes
+}
+
+fn core_of(f: &Fx, view: &str) -> Arc<ProjectCore> {
+    match f.registry.workspace_of(view).unwrap().1 {
         Workspace::Project(core) => core,
         Workspace::SingleFile(_) | Workspace::Notes(_) => panic!("not a project"),
     }
 }
 
+fn window_of(f: &Fx, window: &str) -> WindowSummary {
+    f.registry
+        .list_windows()
+        .into_iter()
+        .find(|w| w.window == window)
+        .unwrap()
+}
+
+// ---- one place per workspace ------------------------------------------------------------------------------------
+
 #[test]
-fn two_windows_on_one_root_share_one_core_until_the_last_leaves() {
+fn a_workspace_lives_in_one_tab_and_its_core_goes_with_it() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
-    let a = f.registry.open("main", &project(dir.path()), None).unwrap();
-    let b = f
-        .registry
-        .open("w-1", &project(&dir.path().join(".")), None)
-        .unwrap();
-    assert_eq!(a, b);
-    assert!(Arc::ptr_eq(&core_of(&f, "main"), &core_of(&f, "w-1")));
+    let (tab_a, view) = tab(&f, "main", &project(dir.path())).unwrap();
     assert_eq!(take(&f.log), ["start:git", "start:unread"]);
-    assert_eq!(f.registry.list()[0].windows, 2);
-    assert_eq!(f.registry.windows_of(a), ["main", "w-1"]);
-    f.registry.show_welcome("main");
-    assert_eq!(take(&f.log).len(), 0, "core alive while w-1 shows it");
-    f.registry.forget_window("w-1");
+    // the same folder, spelled another way, from another window -> where it is
+    let again = tab(&f, "w-1", &project(&dir.path().join("."))).unwrap_err();
+    assert_eq!(
+        again,
+        Place {
+            window: "main".into(),
+            tab: tab_a
+        }
+    );
+    assert_eq!(f.registry.find(&project(dir.path())), Some(again));
+    let weak = Arc::downgrade(&core_of(&f, &view));
+    let changes = f.registry.close_tab(tab_a).changes;
+    assert_eq!(
+        changes,
+        [ViewChange::Show {
+            window: "main".into(),
+            view: view.clone()
+        }],
+        "the last tab's view stays, on the Welcome"
+    );
     assert_eq!(take(&f.log), ["stop:unread", "stop:git"]);
-    assert_eq!(f.registry.list().len(), 0);
+    assert!(weak.upgrade().is_none(), "core dropped with its tab");
+    assert_eq!(f.registry.window_view(&view), Some(WindowView::Welcome));
     assert_eq!(lock(&f.registry.cores).len(), 0, "dead slots pruned");
 }
 
 #[test]
-fn concurrent_opens_of_one_root_build_one_core() {
+fn the_first_tab_adopts_the_welcome_view_and_the_next_ones_get_their_own() {
+    let f = fx();
+    let welcome = f.registry.shown_view("main").unwrap();
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let opened = f
+        .registry
+        .open_tab("main", &project(a.path()), None)
+        .unwrap();
+    let TabOpen::Opening { view, outcome, .. } = opened else {
+        panic!()
+    };
+    assert_eq!(view, welcome);
+    assert_eq!(
+        run(&f, outcome),
+        [ViewChange::Show {
+            window: "main".into(),
+            view: welcome.clone()
+        }]
+    );
+    let TabOpen::Opening {
+        view: second,
+        outcome,
+        ..
+    } = f
+        .registry
+        .open_tab("main", &project(b.path()), None)
+        .unwrap()
+    else {
+        panic!()
+    };
+    assert_ne!(second, welcome);
+    assert_eq!(
+        run(&f, outcome),
+        [
+            ViewChange::Create {
+                window: "main".into(),
+                view: second.clone()
+            },
+            ViewChange::Show {
+                window: "main".into(),
+                view: second.clone()
+            },
+            ViewChange::Hide { view: welcome }
+        ]
+    );
+    assert_eq!(f.registry.shown_view("main"), Some(second));
+}
+
+/// Adversarial: two windows + an outside open start one root at the same moment -> one ticket, one tab, one core.
+#[test]
+fn concurrent_opens_of_one_root_make_one_tab_and_one_core() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
     for n in 0..8 {
-        f.registry.add_window(&format!("w-{}", n + 2));
+        f.registry
+            .add_window(&format!("w-{}", n + 2), WindowKind::Work);
     }
-    let ids: Vec<WorkspaceId> = std::thread::scope(|s| {
+    let results: Vec<Result<(TabId, String), Place>> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..8)
             .map(|n| {
-                let registry = Arc::clone(&f.registry);
+                let f = &f;
                 let reference = project(dir.path());
-                s.spawn(move || {
-                    registry
-                        .open(&format!("w-{}", n + 2), &reference, None)
-                        .unwrap()
-                })
+                s.spawn(move || tab(f, &format!("w-{}", n + 2), &reference))
             })
             .collect();
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
-    assert!(ids.windows(2).all(|w| w[0] == w[1]));
-    let starts = take(&f.log)
+    assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+    let place = results.iter().find_map(|r| r.as_ref().ok()).unwrap().0;
+    assert!(results
         .iter()
-        .filter(|e| e.as_str() == "start:git")
-        .count();
-    assert_eq!(starts, 1);
-    assert_eq!(f.registry.list().len(), 1);
+        .filter_map(|r| r.as_ref().err())
+        .all(|p| p.tab == place));
+    assert_eq!(starts(&f.log), 1);
+    assert_eq!(f.registry.cores().len(), 1);
+    let tabs: usize = f.registry.list_windows().iter().map(|w| w.tabs.len()).sum();
+    assert_eq!(tabs, 1);
 }
+
+/// Adversarial: a file inside a project that is still loading counts as inside it.
+#[test]
+fn a_file_inside_a_project_being_opened_finds_that_tab() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("docs")).unwrap();
+    let TabOpen::Opening {
+        tab: id, outcome, ..
+    } = f
+        .registry
+        .open_tab("main", &project(dir.path()), None)
+        .unwrap()
+    else {
+        panic!()
+    };
+    // not finished yet
+    let (place, rel) = f
+        .registry
+        .find_containing(&dir.path().join("docs").join("a.md"))
+        .unwrap();
+    assert_eq!((place.tab, rel.as_str()), (id, "docs/a.md"));
+    run(&f, outcome);
+}
+
+#[test]
+fn find_containing_prefers_the_deepest_project_live_or_pending() {
+    let f = fx();
+    let outer = tempfile::tempdir().unwrap();
+    let inner = outer.path().join("sub project");
+    std::fs::create_dir_all(inner.join("docs")).unwrap();
+    tab(&f, "main", &project(outer.path())).unwrap();
+    let pending = f
+        .registry
+        .restore_tab("w-1", &project(&inner), None)
+        .unwrap();
+    let (place, rel) = f
+        .registry
+        .find_containing(&inner.join("docs").join("a.md"))
+        .unwrap();
+    assert_eq!((place.tab, rel.as_str()), (pending, "docs/a.md"));
+    assert!(f
+        .registry
+        .find_containing(tempfile::tempdir().unwrap().path())
+        .is_none());
+}
+
+// ---- opening in a view ------------------------------------------------------------------------------------------
 
 #[test]
 fn a_superseded_open_is_dropped_and_its_core_torn_down() {
     let f = fx();
-    let (one, two) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let first = f
+    let (zero, one, two) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let (_, view) = tab(&f, "main", &project(zero.path())).unwrap();
+    take(&f.log);
+    let Begin::Ticket(first) = f
         .registry
-        .begin_open("main", &project(one.path()), None)
-        .unwrap();
-    let second = f
+        .begin_open(&view, &project(one.path()), None)
+        .unwrap()
+    else {
+        panic!()
+    };
+    let Begin::Ticket(second) = f
         .registry
-        .begin_open("main", &project(two.path()), None)
-        .unwrap();
+        .begin_open(&view, &project(two.path()), None)
+        .unwrap()
+    else {
+        panic!()
+    };
     let late = f.registry.prepare(&project(one.path()));
     let won = f.registry.prepare(&project(two.path()));
     assert!(f.registry.finish_open(second, won).is_ok());
@@ -132,63 +298,117 @@ fn a_superseded_open_is_dropped_and_its_core_torn_down() {
         ["stop:unread", "stop:git"],
         "stale core dropped"
     );
-    assert_eq!(f.registry.list().len(), 1);
-    assert_eq!(core_of(&f, "main").root(), &Root::open(two.path()).unwrap());
+    assert_eq!(f.registry.cores().len(), 1);
+    assert_eq!(core_of(&f, &view).root(), &Root::open(two.path()).unwrap());
 }
 
 #[test]
 fn a_failed_open_keeps_what_was_shown() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
-    let id = f.registry.open("main", &project(dir.path()), None).unwrap();
-    let result = f.registry.open("main", &WorkspaceRef::Notes, None);
+    let (_, view) = tab(&f, "main", &project(dir.path())).unwrap();
+    let id = f.registry.workspace_of(&view).unwrap().0;
+    let result = f.registry.attach(&view, &WorkspaceRef::Notes, None);
     assert!(matches!(
         result,
         Err(OpenError::Workspace(WorkspaceError::NotesUnavailable))
     ));
-    assert_eq!(f.registry.workspace_of("main").unwrap().0, id);
+    assert_eq!(f.registry.workspace_of(&view).unwrap().0, id);
     let ipc: IpcError = OpenError::Workspace(WorkspaceError::NotesUnavailable).into();
     assert_eq!(ipc.kind, ErrorKind::Unsupported);
 }
 
 #[test]
-fn switching_a_window_releases_the_old_workspace() {
+fn this_tab_placement_releases_the_old_workspace() {
     let f = fx();
     let (one, two) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    f.registry.open("main", &project(one.path()), None).unwrap();
-    f.registry.open("main", &project(two.path()), None).unwrap();
-    assert_eq!(f.registry.list().len(), 1);
-    let file = two.path().join("ñ 文.md");
-    std::fs::write(&file, "x").unwrap();
+    let (id, view) = tab(&f, "main", &project(one.path())).unwrap();
     f.registry
-        .open("main", &WorkspaceRef::classify(&file).unwrap(), None)
+        .attach(&view, &project(two.path()), None)
         .unwrap();
-    let list = f.registry.list();
+    assert_eq!(f.registry.cores().len(), 1);
+    let named = file(&two.path().join("ñ 文.md"));
+    f.registry.attach(&view, &named, None).unwrap();
+    assert_eq!(f.registry.cores().len(), 0);
+    let tabs = window_of(&f, "main").tabs;
     assert_eq!(
-        (list.len(), list[0].kind, list[0].title.as_str()),
-        (1, WorkspaceKind::SingleFile, "ñ 文.md")
+        (
+            tabs.len(),
+            tabs[0].tab,
+            tabs[0].kind,
+            tabs[0].title.as_str()
+        ),
+        (1, id, WorkspaceKind::SingleFile, "ñ 文.md")
     );
+    // opening what this tab shows already: it is where it is
+    assert!(matches!(
+        f.registry.attach(&view, &named, None),
+        Ok(Attached::Existing(_))
+    ));
+    // a Welcome view is no tab: opening in it is refused (the shell adds a tab instead)
+    let welcome = f.registry.shown_view("w-1").unwrap();
+    let other = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        f.registry
+            .begin_open(&welcome, &project(other.path()), None),
+        Err(OpenError::UnknownView(_))
+    ));
 }
 
+/// Adversarial: the tab closes while its workspace loads -> the result is stale, the core dropped, no tab returns.
 #[test]
-fn closing_window_mid_open_makes_the_result_stale() {
+fn close_during_load_drops_the_result() {
     let f = fx();
-    let dir = tempfile::tempdir().unwrap();
-    let ticket = f
+    let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    tab(&f, "main", &project(a.path())).unwrap();
+    take(&f.log);
+    let TabOpen::Opening {
+        tab: id, outcome, ..
+    } = f
         .registry
-        .begin_open("w-1", &project(dir.path()), None)
-        .unwrap();
-    let prepared = f.registry.prepare(&project(dir.path()));
-    f.registry.forget_window("w-1");
+        .open_tab("main", &project(b.path()), None)
+        .unwrap()
+    else {
+        panic!()
+    };
+    let (ticket, reference) = outcome.loads.into_iter().next().unwrap();
+    let prepared = f.registry.prepare(&reference);
+    let _ = f.registry.close_tab(id);
     assert!(matches!(
         f.registry.finish_open(ticket, prepared),
-        Err(OpenError::UnknownWindow(_))
+        Err(OpenError::Superseded)
     ));
-    assert_eq!(f.registry.list().len(), 0);
-    assert!(matches!(
-        f.registry.begin_open("w-1", &project(dir.path()), None),
-        Err(OpenError::UnknownWindow(_))
-    ));
+    assert_eq!(
+        take(&f.log),
+        ["start:git", "start:unread", "stop:unread", "stop:git"]
+    );
+    assert_eq!(f.registry.cores().len(), 1);
+    assert_eq!(window_of(&f, "main").tabs.len(), 1);
+    assert!(f.registry.find(&project(b.path())).is_none());
+}
+
+/// Adversarial: the window asked to close while a tab loads -> no prompt for it (nothing unsaved yet).
+#[test]
+fn request_close_during_load_closes_without_a_prompt() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let TabOpen::Opening { outcome, .. } = f
+        .registry
+        .open_tab("main", &project(dir.path()), None)
+        .unwrap()
+    else {
+        panic!()
+    };
+    let changes = f.registry.request_close("main").changes;
+    assert_eq!(
+        changes,
+        [ViewChange::CloseWindow {
+            window: "main".into()
+        }]
+    );
+    run(&f, outcome);
+    f.registry.forget_window("main");
+    assert_eq!(f.registry.cores().len(), 0);
 }
 
 #[test]
@@ -196,9 +416,9 @@ fn events_only_when_something_differs() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
     f.sink.take();
-    f.registry.open("main", &project(dir.path()), None).unwrap();
+    let (_, view) = tab(&f, "main", &project(dir.path())).unwrap();
     let names: Vec<String> = f.sink.take().iter().map(|e| e.name().to_owned()).collect();
-    assert!(names.contains(&"workspaces-changed".to_owned()));
+    assert!(names.contains(&"windows-changed".to_owned()));
     assert!(names.contains(&"context-changed".to_owned()));
     assert!(names.contains(&"window-changed".to_owned()));
     f.registry.refresh();
@@ -211,183 +431,360 @@ fn events_only_when_something_differs() {
         .filter(|n| n != "index-progress")
         .collect();
     assert_eq!(rest, Vec::<String>::new());
-    let context = f.registry.context_of("main").unwrap();
+    let context = f.registry.context_of(&view).unwrap();
     assert_eq!(context.workspace, WorkspaceKind::Project);
     assert_eq!(context.permark, PermarkCondition::NotInitialized);
     assert!(context
         .plugins
         .contains(&crate::plugins::PluginId::of("unread")));
+    let welcome = f.registry.shown_view("w-1").unwrap();
     assert_eq!(
-        f.registry.context_of("w-1").unwrap().workspace,
+        f.registry.context_of(&welcome).unwrap().workspace,
         WorkspaceKind::Welcome
     );
 }
 
 #[test]
-fn find_containing_prefers_the_most_specific_project() {
+fn document_hint_shows_in_the_view_and_the_session_lists_tabs() {
     let f = fx();
-    let outer = tempfile::tempdir().unwrap();
-    let inner = outer.path().join("sub project");
-    std::fs::create_dir_all(inner.join("docs")).unwrap();
-    f.registry
-        .open("main", &project(outer.path()), None)
-        .unwrap();
-    let inner_id = f.registry.open("w-1", &project(&inner), None).unwrap();
-    let (id, rel) = f
-        .registry
-        .find_containing(&inner.join("docs").join("a.md"))
-        .unwrap();
-    assert_eq!((id, rel.as_str()), (inner_id, "docs/a.md"));
-    assert!(f
-        .registry
-        .find_containing(tempfile::tempdir().unwrap().path())
-        .is_none());
-}
-
-#[test]
-fn document_hint_shows_in_the_window_view() {
-    let f = fx();
-    let dir = tempfile::tempdir().unwrap();
+    let (dir, other) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let doc = VaultPath::parse("untitled.md").unwrap();
-    f.registry
-        .open("main", &project(dir.path()), Some(doc))
-        .unwrap();
-    let Some(WindowView::Showing { document, .. }) = f.registry.window_view("main") else {
+    let TabOpen::Opening { view, outcome, .. } = f
+        .registry
+        .open_tab("main", &project(dir.path()), Some(doc))
+        .unwrap()
+    else {
+        panic!()
+    };
+    run(&f, outcome);
+    let Some(WindowView::Showing { document, .. }) = f.registry.window_view(&view) else {
         panic!("not showing");
     };
     assert_eq!(document.as_deref(), Some("untitled.md"));
+    f.registry
+        .restore_tab("main", &project(other.path()), None)
+        .unwrap();
     let session = f.registry.session_windows();
     assert_eq!(session.len(), 2);
-    assert!(
-        matches!(&session[0], (label, Some(WorkspaceRefDto::Project { .. })) if label == "main")
-    );
+    assert_eq!(session[0].window, "main");
+    assert_eq!(session[0].tabs.len(), 2, "pending tabs saved as their ref");
+    assert_eq!(session[0].active, Some(0));
+    assert_eq!(session[1].tabs, []);
+    assert_eq!(session[1].active, None);
 }
 
 #[test]
-fn rapid_open_storm_from_one_window_ends_on_the_last() {
+fn rapid_open_storm_in_one_tab_ends_on_the_last() {
     let f = fx();
+    let first = tempfile::tempdir().unwrap();
+    let (_, view) = tab(&f, "main", &project(first.path())).unwrap();
     let dirs: Vec<tempfile::TempDir> = (0..5).map(|_| tempfile::tempdir().unwrap()).collect();
     let tickets: Vec<(Ticket, WorkspaceRef)> = (0..50)
-        .map(|n| {
+        .filter_map(|n| {
             let reference = project(dirs[n % 5].path());
-            (
-                f.registry.begin_open("main", &reference, None).unwrap(),
-                reference,
-            )
+            match f.registry.begin_open(&view, &reference, None).unwrap() {
+                Begin::Ticket(ticket) => Some((ticket, reference)),
+                // the same folder is being opened here already: one place
+                Begin::Existing(_) => None,
+            }
         })
         .collect();
     let mut ok = 0;
     for (ticket, reference) in tickets.into_iter().rev() {
-        let prepared = f.registry.prepare(&reference);
-        if f.registry.finish_open(ticket, prepared).is_ok() {
+        if f.registry.load(ticket, &reference).is_ok() {
             ok += 1;
         }
     }
     assert_eq!(ok, 1);
-    assert_eq!(f.registry.list().len(), 1);
-    assert_eq!(
-        core_of(&f, "main").root(),
-        &Root::open(dirs[49 % 5].path()).unwrap()
-    );
-    drop(f.registry);
+    assert_eq!(f.registry.cores().len(), 1);
 }
 
-fn fx_notes(plugin_on: bool) -> Fx {
-    let base = tempfile::tempdir().unwrap();
-    let log = Log::default();
-    let mut plugins: Vec<Arc<dyn Plugin>> = Vec::new();
-    if plugin_on {
-        plugins.push(Arc::new(
-            Fake::new("notes", PluginScope::App, &[]).with_log(&log),
-        ));
-    }
-    let sink = Arc::new(Recorder::default());
-    let env = CoreEnv::new(
-        AppDirs::under(base.path()),
-        Arc::new(PluginRegistry::new(plugins).unwrap()),
-        sink.clone(),
-        Distribution::Direct,
-        AppSettings::default(),
-    );
-    let registry = Arc::new(WorkspaceRegistry::new(Arc::new(env)));
-    registry.add_window("main");
-    registry.add_window("w-1");
-    Fx {
-        _base: base,
-        registry,
-        sink,
-        log,
-    }
-}
+// ---- the Notes (stage A: a tab) ---------------------------------------------------------------------------------
 
 #[test]
-fn the_notes_open_only_while_the_notes_plugin_is_on() {
-    let off = fx_notes(false);
-    let error = off
+fn the_notes_open_only_while_the_notes_plugin_is_on_and_in_one_place() {
+    let off = fx_with(Vec::new(), Log::default());
+    let TabOpen::Opening {
+        tab: id, outcome, ..
+    } = off
         .registry
-        .open("main", &WorkspaceRef::Notes, None)
-        .unwrap_err();
+        .open_tab("main", &WorkspaceRef::Notes, None)
+        .unwrap()
+    else {
+        panic!()
+    };
+    let (ticket, reference) = outcome.loads.into_iter().next().unwrap();
+    let error = off.registry.load(ticket, &reference).unwrap_err();
     assert!(matches!(
         error,
         OpenError::Workspace(WorkspaceError::NotesUnavailable)
     ));
     assert_eq!(IpcError::from(error).kind, ErrorKind::Unsupported);
-    assert!(off.registry.workspace_of("main").is_none());
+    let _ = off.registry.close_tab(id);
 
-    let on = fx_notes(true);
-    on.env_apply();
-    let id = on
-        .registry
-        .open("main", &WorkspaceRef::Notes, None)
-        .unwrap();
+    let log = Log::default();
+    let on = fx_with(
+        vec![Arc::new(
+            Fake::new("notes", PluginScope::App, &[]).with_log(&log),
+        )],
+        log,
+    );
+    on.registry.env().apply_app_plugins();
+    let (_, view) = tab(&on, "main", &WorkspaceRef::Notes).unwrap();
     assert!(matches!(
-        on.registry.workspace_of("main").unwrap().1,
+        on.registry.workspace_of(&view).unwrap().1,
         Workspace::Notes(_)
     ));
-    // one Notes workspace for the process: a second window shows the same one
-    let again = on.registry.open("w-1", &WorkspaceRef::Notes, None).unwrap();
-    assert_eq!(id, again);
-    let list = on.registry.list();
-    assert_eq!(list.len(), 1);
-    assert_eq!(list[0].title, "Notes");
-    assert_eq!(list[0].windows, 2);
-    assert!(matches!(
-        on.registry.window_view("main"),
-        Some(WindowView::Showing {
-            workspace: WorkspaceView::Notes { .. },
-            ..
-        })
-    ));
+    assert!(tab(&on, "w-1", &WorkspaceRef::Notes).is_err(), "one place");
+    assert!(on.registry.notes_open());
+    assert_eq!(window_of(&on, "main").tabs[0].title, "Notes");
     assert_eq!(
-        on.registry.context_of("main").unwrap().workspace,
+        on.registry.context_of(&view).unwrap().workspace,
         WorkspaceKind::Notes
     );
-    on.registry.show_welcome("main");
-    on.registry.show_welcome("w-1");
-    assert_eq!(on.registry.list().len(), 0);
+    // the session leaves the Notes tab out (it keeps `notes.open`)
+    assert_eq!(on.registry.session_windows()[0].tabs, []);
 }
 
-impl Fx {
-    /// Starts the app plugins the way the shell does at launch.
-    fn env_apply(&self) {
-        self.registry.env().apply_app_plugins();
+// ---- lazy restore + tab switching -------------------------------------------------------------------------------
+
+/// Pending tabs build no core; only the activated one loads.
+#[test]
+fn restore_loads_only_the_active_tab() {
+    let f = fx();
+    let dirs: Vec<tempfile::TempDir> = (0..4).map(|_| tempfile::tempdir().unwrap()).collect();
+    f.registry.add_window("w-2", WindowKind::Work);
+    let tabs: Vec<TabId> = dirs
+        .iter()
+        .map(|d| {
+            f.registry
+                .restore_tab("w-2", &project(d.path()), None)
+                .unwrap()
+        })
+        .collect();
+    // a duplicate in another window is dropped
+    assert!(f
+        .registry
+        .restore_tab("main", &project(dirs[0].path()), None)
+        .is_none());
+    assert_eq!(starts(&f.log), 0, "no core for pending tabs");
+    let changes = run(&f, f.registry.activate(tabs[2]));
+    assert_eq!(starts(&f.log), 1);
+    assert!(matches!(&changes[0], ViewChange::Create { window, .. } if window == "w-2"));
+    let summary = window_of(&f, "w-2");
+    assert_eq!(summary.active, Some(tabs[2]));
+    assert_eq!(
+        summary.tabs.iter().map(|t| t.loaded).collect::<Vec<_>>(),
+        [false, false, true, false]
+    );
+    assert!(summary.tabs.iter().all(|t| !t.unsaved));
+    assert_eq!(
+        summary.tabs[0].title,
+        Root::open(dirs[0].path()).unwrap().name()
+    );
+}
+
+/// Adversarial: 500 activations across 20 tabs (half pending) -> the last one shown, one view per visited tab, no
+/// view of a closed tab, no leaked core.
+#[test]
+fn rapid_tab_switching_keeps_one_view_per_visited_tab() {
+    let f = fx();
+    let dirs: Vec<tempfile::TempDir> = (0..20).map(|_| tempfile::tempdir().unwrap()).collect();
+    let mut tabs = Vec::new();
+    for (n, dir) in dirs.iter().enumerate() {
+        if n % 2 == 0 {
+            tabs.push(tab(&f, "main", &project(dir.path())).unwrap().0);
+        } else {
+            tabs.push(
+                f.registry
+                    .restore_tab("main", &project(dir.path()), None)
+                    .unwrap(),
+            );
+        }
     }
+    let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut visited: std::collections::BTreeSet<TabId> = tabs.iter().step_by(2).copied().collect();
+    let mut last = tabs[0];
+    for _ in 0..500 {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        last = tabs[usize::try_from(seed % 20).unwrap()];
+        visited.insert(last);
+        run(&f, f.registry.activate(last));
+    }
+    let summary = window_of(&f, "main");
+    assert_eq!(summary.active, Some(last));
+    let shown = f.registry.shown_view("main").unwrap();
+    assert_eq!(f.registry.view_of_tab(last), Some(shown));
+    let live: Vec<TabId> = summary
+        .tabs
+        .iter()
+        .filter(|t| t.loaded)
+        .map(|t| t.tab)
+        .collect();
+    assert_eq!(live.len(), visited.len());
+    assert!(live.iter().all(|t| visited.contains(t)));
+    // views: one per live tab (the Welcome view was adopted by the first tab)
+    let main_views = f
+        .registry
+        .views()
+        .into_iter()
+        .filter(|v| f.registry.window_of(v).as_deref() == Some("main"))
+        .count();
+    assert_eq!(main_views, visited.len());
+    assert_eq!(f.registry.cores().len(), visited.len());
+    for t in tabs {
+        let _ = f.registry.close_tab(t);
+    }
+    assert_eq!(f.registry.cores().len(), 0, "no leaked core");
+    let main_views = f
+        .registry
+        .views()
+        .into_iter()
+        .filter(|v| f.registry.window_of(v).as_deref() == Some("main"))
+        .count();
+    assert_eq!(main_views, 1, "the Welcome view only");
+    assert_eq!(window_of(&f, "main").tabs.len(), 0);
+}
+
+#[test]
+fn focusing_a_pending_tab_with_a_document_opens_it_there() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let pending = f
+        .registry
+        .restore_tab("main", &project(dir.path()), None)
+        .unwrap();
+    let place = Place {
+        window: "main".into(),
+        tab: pending,
+    };
+    run(
+        &f,
+        f.registry
+            .activate_with(&place, Some(VaultPath::parse("a.md").unwrap())),
+    );
+    let view = f.registry.view_of_tab(pending).unwrap();
+    assert!(matches!(
+        f.registry.window_view(&view),
+        Some(WindowView::Showing { document: Some(d), .. }) if d == "a.md"
+    ));
+}
+
+// ---- close prompts ----------------------------------------------------------------------------------------------
+
+/// Adversarial: unsaved edits in a hidden tab -> the prompt lists it; Stay shows it; Close closes the window.
+#[test]
+fn unsaved_in_a_hidden_tab_is_listed_when_the_window_closes() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (hidden, hidden_view) = tab(&f, "main", &file(&dir.path().join("a.md"))).unwrap();
+    let (shown, shown_view) = tab(&f, "main", &file(&dir.path().join("b.md"))).unwrap();
+    let (_, workspace) = f.registry.workspace_of(&hidden_view).unwrap();
+    workspace
+        .documents()
+        .set_unsaved(&hidden_view, Some("a.md".into()));
+    f.registry.refresh();
+    assert!(window_of(&f, "main").tabs[0].unsaved, "dot on its chip");
+    let changes = f.registry.request_close("main").changes;
+    let [ViewChange::AskClose { view, tabs, .. }] = changes.as_slice() else {
+        panic!("{changes:?}")
+    };
+    assert_eq!(*view, shown_view, "asked in the view on screen");
+    assert_eq!(tabs.len(), 1);
+    assert_eq!((tabs[0].tab, tabs[0].document.as_str()), (hidden, "a.md"));
+    assert!(f.registry.is_confirming_close("main"));
+    // meanwhile: outside opens go elsewhere, adds are refused here
+    assert_eq!(f.registry.last_focused_work().as_deref(), Some("w-1"));
+    let other = tempfile::tempdir().unwrap();
+    assert!(matches!(
+        f.registry.open_tab("main", &project(other.path()), None),
+        Err(OpenError::Closing)
+    ));
+    // the prompt still lists the same thing on a second request (one prompt)
+    assert_eq!(f.registry.request_close("main").changes.len(), 0);
+    // a save failed there: the window stays, that tab comes forward
+    let changes = f
+        .registry
+        .resolve_close("main", Resolution::Stay { show: Some(hidden) })
+        .changes;
+    assert_eq!(
+        changes,
+        [
+            ViewChange::Show {
+                window: "main".into(),
+                view: hidden_view.clone()
+            },
+            ViewChange::Hide { view: shown_view }
+        ]
+    );
+    assert!(!f.registry.is_confirming_close("main"));
+    let _ = shown;
+    let _ = f.registry.request_close("main");
+    let changes = f.registry.resolve_close("main", Resolution::Close).changes;
+    assert_eq!(
+        changes,
+        [ViewChange::CloseWindow {
+            window: "main".into()
+        }]
+    );
+    assert!(f.registry.is_closing("main"));
+    f.registry.forget_window("main");
+    assert!(f.registry.list_windows().iter().all(|w| w.window != "main"));
+    assert!(
+        workspace.documents().unsaved(&hidden_view).is_none(),
+        "guard released"
+    );
+}
+
+// ---- move -------------------------------------------------------------------------------------------------------
+
+#[test]
+fn a_moved_tab_keeps_its_workspace_and_unsaved_flag() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (_, keep_view) = tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
+    let (id, workspace) = f.registry.workspace_of(&view).unwrap();
+    workspace
+        .documents()
+        .set_unsaved(&view, Some("move.md".into()));
+    let (outcome, moved) = f.registry.move_out(moving, MoveTo::NewWindow);
+    assert!(matches!(
+        outcome.changes.last(),
+        Some(ViewChange::Transfer { view: Some(v), .. }) if *v == view
+    ));
+    assert_eq!(f.registry.shown_view("main"), Some(keep_view));
+    f.registry.add_window("w-9", WindowKind::Work);
+    let changes = f.registry.take_in("w-9", moved.unwrap()).changes;
+    assert_eq!(
+        changes,
+        [ViewChange::Show {
+            window: "w-9".into(),
+            view: view.clone()
+        }]
+    );
+    assert_eq!(f.registry.workspace_of(&view).unwrap().0, id);
+    assert_eq!(f.registry.window_of(&view).as_deref(), Some("w-9"));
+    assert!(window_of(&f, "w-9").tabs[0].unsaved);
+    assert_eq!(f.registry.window_of_tab(moving).as_deref(), Some("w-9"));
 }
 
 // ---- live reload of the project state (PerMark initialized while the project is open) ---------------------------------
 
-fn open_project(f: &Fx, dir: &Path) -> Arc<ProjectCore> {
-    f.registry.open("main", &project(dir), None).unwrap();
+fn open_project(f: &Fx, dir: &Path) -> (Arc<ProjectCore>, String) {
+    let (_, view) = tab(f, "main", &project(dir)).unwrap();
     take(&f.log);
     f.sink.take();
-    core_of(f, "main")
+    (core_of(f, &view), view)
 }
 
 #[test]
 fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
-    let core = open_project(&f, dir.path());
+    let (core, view) = open_project(&f, dir.path());
     assert_eq!(core.state_location(), StateLocation::Profile);
     let env = f.registry.env().clone();
     crate::state::init_project(&env.dirs, core.root()).unwrap();
@@ -404,10 +801,10 @@ fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
     assert!(names.contains(&"window-changed".to_owned()), "{names:?}");
     assert!(names.contains(&"context-changed".to_owned()), "{names:?}");
     assert_eq!(
-        f.registry.context_of("main").unwrap().permark,
+        f.registry.context_of(&view).unwrap().permark,
         PermarkCondition::Initialized
     );
-    match f.registry.window_view("main").unwrap() {
+    match f.registry.window_view(&view).unwrap() {
         WindowView::Showing {
             workspace: WorkspaceView::Project { state_location, .. },
             ..
@@ -420,7 +817,7 @@ fn initializing_an_open_project_moves_its_state_and_restarts_its_plugins() {
 fn a_second_reload_with_nothing_new_still_leaves_the_project_working() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
-    let core = open_project(&f, dir.path());
+    let (core, _) = open_project(&f, dir.path());
     let env = f.registry.env().clone();
     crate::state::init_project(&env.dirs, core.root()).unwrap();
     for _ in 0..3 {
@@ -438,7 +835,7 @@ fn a_project_setting_is_written_and_applies_at_once() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
-    let core = open_project(&f, dir.path());
+    let (core, _) = open_project(&f, dir.path());
     // not initialized: refused, nothing written
     let refused = core.change_config(&ProjectSettingChange::TreeShow(Some(TreeShow::Everything)));
     assert!(matches!(
@@ -472,7 +869,7 @@ fn a_window_on_the_default_filter_follows_the_new_default_and_one_with_its_own_s
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
     std::fs::write(dir.path().join("b.json"), "{}").unwrap();
-    let core = open_project(&f, dir.path());
+    let (core, _) = open_project(&f, dir.path());
     let env = f.registry.env().clone();
     crate::state::init_project(&env.dirs, core.root()).unwrap();
     core.reload_state(&env);
@@ -515,7 +912,7 @@ fn the_ignore_patterns_apply_at_once_and_back() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.md"), "# a\n").unwrap();
     std::fs::write(dir.path().join("draft.md"), "# d\n").unwrap();
-    let core = open_project(&f, dir.path());
+    let (core, _) = open_project(&f, dir.path());
     let env = f.registry.env().clone();
     crate::state::init_project(&env.dirs, core.root()).unwrap();
     core.reload_state(&env);
@@ -544,7 +941,7 @@ fn the_ignore_patterns_apply_at_once_and_back() {
 fn a_per_project_choice_stops_and_starts_the_plugin_and_is_kept_in_the_profile() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
-    let core = open_project(&f, dir.path());
+    let (core, _) = open_project(&f, dir.path());
     let env = f.registry.env().clone();
     let git = crate::plugins::PluginId::of("git");
     core.set_plugin_choice(&env, &git, Some(false)).unwrap();
@@ -560,5 +957,5 @@ fn a_per_project_choice_stops_and_starts_the_plugin_and_is_kept_in_the_profile()
     assert!(!dir.path().join(".permark").exists());
     core.set_plugin_choice(&env, &git, None).unwrap();
     assert_eq!(take(&f.log), ["start:git", "start:unread"]);
-    assert!(core.plugin_choices().is_empty());
+    assert_eq!(core.plugin_choices().len(), 0);
 }

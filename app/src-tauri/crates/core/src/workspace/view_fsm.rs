@@ -1,9 +1,9 @@
-//! Window lifecycle FSM: `(State, Event) -> (State, Effect)`. Pure; the registry drives it under its lock.
+//! View lifecycle FSM (one per tab view): `(State, Event) -> (State, Effect)`. Pure; the registry drives it under its lock.
 
 use super::WorkspaceId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WindowState {
+pub enum ViewState {
     Welcome,
     /// Opening `ticket`; `previous` stays on screen until the new workspace is ready (failure -> back to it).
     Opening {
@@ -17,7 +17,7 @@ pub enum WindowState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WindowEvent {
+pub enum ViewEvent {
     Open { ticket: u64 },
     Opened { ticket: u64, id: WorkspaceId },
     Failed { ticket: u64 },
@@ -38,9 +38,9 @@ pub enum Effect {
 
 /// The one transition function.
 #[must_use]
-pub fn step(state: WindowState, event: WindowEvent) -> (WindowState, Effect) {
-    use WindowEvent as E;
-    use WindowState as S;
+pub fn step(state: ViewState, event: ViewEvent) -> (ViewState, Effect) {
+    use ViewEvent as E;
+    use ViewState as S;
     match (state, event) {
         (S::Closing, E::Open { .. }) => (S::Closing, Effect::Refused),
         (S::Closing, E::Opened { .. }) => (S::Closing, Effect::Stale),
@@ -97,28 +97,26 @@ pub fn step(state: WindowState, event: WindowEvent) -> (WindowState, Effect) {
 
 /// Workspace a state keeps alive (shown | still on screen while opening).
 #[must_use]
-pub fn holds(state: WindowState) -> Option<WorkspaceId> {
+pub fn holds(state: ViewState) -> Option<WorkspaceId> {
     match state {
-        WindowState::Showing { id }
-        | WindowState::Opening {
+        ViewState::Showing { id }
+        | ViewState::Opening {
             previous: Some(id), ..
         } => Some(id),
-        WindowState::Opening { previous: None, .. }
-        | WindowState::Welcome
-        | WindowState::Closing => None,
+        ViewState::Opening { previous: None, .. } | ViewState::Welcome | ViewState::Closing => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use WindowEvent as E;
-    use WindowState as S;
+    use ViewEvent as E;
+    use ViewState as S;
 
     const A: WorkspaceId = WorkspaceId(1);
     const B: WorkspaceId = WorkspaceId(2);
 
-    fn run(events: &[WindowEvent]) -> (WindowState, Vec<Effect>) {
+    fn run(events: &[ViewEvent]) -> (ViewState, Vec<Effect>) {
         let mut state = S::Welcome;
         let mut effects = Vec::new();
         for &event in events {

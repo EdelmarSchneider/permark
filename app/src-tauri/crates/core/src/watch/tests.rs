@@ -803,24 +803,31 @@ fn live_updates_in_the_context_follow_the_watcher() {
     let sink = Arc::new(Recorder::default());
     let env = Arc::new(project_env(base.path(), &seen, sink));
     let registry = WorkspaceRegistry::new_shared(&env);
-    registry.add_window("main");
-    registry
-        .open(
+    registry.add_window("main", crate::workspace::WindowKind::Work);
+    let _ = registry.show_welcome_view("main");
+    let crate::workspace::TabOpen::Opening { tab, view, outcome } = registry
+        .open_tab(
             "main",
             &WorkspaceRef::Project(Root::open(project.path()).unwrap()),
             None,
         )
-        .unwrap();
+        .unwrap()
+    else {
+        panic!("not opened")
+    };
+    for (ticket, reference) in outcome.loads {
+        registry.load(ticket, &reference).unwrap();
+    }
     assert_eq!(
-        registry.context_of("main").unwrap().live_updates,
+        registry.context_of(&view).unwrap().live_updates,
         LiveUpdates::Available
     );
-    // the window leaving its project drops that window's tree view
+    // the tab closing drops that view's tree view
     let core = registry.cores().remove(0);
-    core.explorer().open_view("main", None);
-    registry.show_welcome("main");
+    core.explorer().open_view(&view, None);
+    let _ = registry.close_tab(tab);
     assert!(
-        core.explorer().keep("main", None).is_err(),
+        core.explorer().keep(&view, None).is_err(),
         "the view went with the workspace"
     );
 }
