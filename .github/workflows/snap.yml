@@ -1,14 +1,25 @@
 name: Snap
 
 # Builds the snap from snap/snapcraft.yaml and publishes it to the Snap Store (the Ubuntu App Center).
-# The snap packages the release's .deb, so it starts only when the Release workflow has finished (the .deb is
-# attached by then); it can also be run by hand.
-# Releases go to `stable` (the snap was tried on a desktop); set SNAP_RELEASE_CHANNEL to `edge` to hold them back.
+# The snap packages the release's .deb, downloaded from the public release, so it cannot run beside the platform builds:
+# the Release workflow calls it as soon as its `publish` job made the release public (it does not wait for the Store
+# package). It can also be run by hand.
+# Releases go to `stable` (the snap was tried on a desktop); set the `channel` default below to `edge` to hold them back.
 
 on:
-  workflow_run:
-    workflows: [Release]
-    types: [completed]
+  workflow_call:
+    inputs:
+      channel:
+        description: "Snap Store channel to release to"
+        type: string
+        default: stable
+      ref:
+        description: "The tag to build from"
+        type: string
+        required: true
+    secrets:
+      SNAPCRAFT_STORE_CREDENTIALS:
+        required: true
   workflow_dispatch:
     inputs:
       channel:
@@ -21,20 +32,17 @@ on:
 permissions:
   contents: read
 
-env:
-  SNAP_RELEASE_CHANNEL: stable
-
 jobs:
   snap:
     name: Build and publish the snap
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
+      # By hand: the branch or tag the run was started on (no `ref` input then).
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch || github.ref }}
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Build the snap
         id: build
@@ -46,4 +54,4 @@ jobs:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
           snap: ${{ steps.build.outputs.snap }}
-          release: ${{ github.event_name == 'workflow_run' && env.SNAP_RELEASE_CHANNEL || inputs.channel }}
+          release: ${{ inputs.channel }}
