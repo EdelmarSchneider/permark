@@ -70,6 +70,22 @@ fn from_v1_keeps_one_place_per_workspace_and_the_first_notes_window() {
     assert_eq!(none.notes, SavedNotes::default());
 }
 
+/// Where paths ignore case (Windows, macOS), two spellings of one folder are one workspace; on Linux two.
+#[test]
+fn from_v1_folds_case_where_the_system_does() {
+    let window = |path: &str| SavedWindowV1 {
+        workspace: Some(WorkspaceRefDto::Project {
+            path: path.to_owned(),
+        }),
+        geometry: None,
+    };
+    let v2 = from_v1(AppSessionV1 {
+        windows: vec![window(r"C:\Work\Alpha"), window(r"c:\work\alpha")],
+    });
+    let expected = if crate::paths::fold("A") == "a" { 1 } else { 2 };
+    assert_eq!(v2.windows.len(), expected);
+}
+
 #[test]
 fn a_v2_session_round_trips_byte_for_byte() {
     let (_b, store) = store();
