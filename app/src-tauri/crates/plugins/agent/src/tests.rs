@@ -479,7 +479,6 @@ fn paths_outside_hidden_or_through_links_are_not_found() {
         "private/secret.md".to_owned(),
         "PRIVATE/secret.md".to_owned(),
         "denied/x.md".to_owned(),
-        "quiet/q.md".to_owned(),
         "docs".to_owned(),
         String::new(),
         "missing.md".to_owned(),
@@ -553,7 +552,7 @@ fn hidden_files_never_reach_any_list_or_snippet() {
     let fx = fx();
     fx.on();
     let tools = fx.tools(None);
-    let hidden = ["private/", "denied/", "quiet/", ".permark", ".git"];
+    let hidden = ["private/", "denied/", ".permark", ".git"];
     let check = |value: &Value| {
         let text = value.to_string();
         for h in hidden {
@@ -584,8 +583,8 @@ fn hidden_files_never_reach_any_list_or_snippet() {
     check(&tools.call("list_unread", Value::Null).unwrap());
     let tags = tools.call("list_tags", Value::Null).unwrap();
     assert_eq!(
-        tags["tags"][0]["count"], 1,
-        "only README.md is shared: {tags}"
+        tags["tags"][0]["count"], 2,
+        "README.md + the silenced quiet/q.md are shared: {tags}"
     );
     check(&tags);
     check(&tools.call("list_tags", json!({ "tag": "plan" })).unwrap());
@@ -1346,4 +1345,25 @@ fn the_outline_sizes_every_part_and_counts_tokens_only_when_the_plugin_serves() 
         .unwrap();
     assert_eq!(marked["tokens_approx"], true);
     assert_eq!(marked["tokenizer"], "half");
+}
+
+#[test]
+fn silenced_paths_stay_visible_to_agents() {
+    // silence quiets the person's attention only; the agent sees the path like any other
+    let fx = fx();
+    fx.on();
+    let tools = fx.tools(None);
+    let read = tools.call("read", json!({ "path": "quiet/q.md" })).unwrap();
+    assert!(read["text"].as_str().unwrap().contains("launch"), "{read}");
+    assert!(tools
+        .call("outline", json!({ "path": "quiet/q.md" }))
+        .is_ok());
+    let search = tools
+        .call("search", json!({ "query": "launch", "limit": 25 }))
+        .unwrap();
+    assert!(search.to_string().contains("quiet/q.md"), "{search}");
+    let unread = tools.call("list_unread", Value::Null).unwrap();
+    assert!(unread.to_string().contains("quiet/q.md"), "{unread}");
+    let map = tools.call("map", json!({})).unwrap();
+    assert!(map.to_string().contains("quiet/"), "{map}");
 }

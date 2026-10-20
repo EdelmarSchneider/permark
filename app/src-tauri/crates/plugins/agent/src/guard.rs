@@ -1,11 +1,11 @@
 //! What an agent may see of the project: one predicate for every tool, every list and every snippet. Hidden paths are
-//! answered exactly as missing ones.
+//! answered exactly as missing ones. Silenced paths are not hidden: silence quiets the person's attention only.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
-use permark_core::organizing::{SilenceApi, SilenceLookup};
+use permark_core::organizing::SilenceLookup;
 use permark_core::paths::{fold, Root, Vault, VaultPath, CASE_INSENSITIVE, WORKTREE_PREFIX};
 
 use crate::ToolError;
@@ -22,12 +22,11 @@ pub struct Guard {
     /// The project folder only: linked worktrees live outside it.
     vault: Vault,
     rules: Option<Gitignore>,
-    silence: Option<SilenceApi>,
 }
 
 impl Guard {
     #[must_use]
-    pub fn new(root: &Root, deny_paths: &[String], silence: Option<SilenceApi>) -> Self {
+    pub fn new(root: &Root, deny_paths: &[String]) -> Self {
         let mut builder = GitignoreBuilder::new(root.path());
         builder.case_insensitive(CASE_INSENSITIVE).ok();
         let mut any = false;
@@ -44,7 +43,6 @@ impl Guard {
         Self {
             vault: Vault::new(root.clone()),
             rules,
-            silence,
         }
     }
 
@@ -58,16 +56,11 @@ impl Guard {
         if PRIVATE_FOLDERS.iter().any(|p| fold(first) == fold(p)) {
             return true;
         }
-        if self.rules.as_ref().is_some_and(|rules| {
+        self.rules.as_ref().is_some_and(|rules| {
             rules
                 .matched_path_or_any_parents(Path::new(path), is_dir)
                 .is_ignore()
-        }) {
-            return true;
-        }
-        self.silence
-            .as_ref()
-            .is_some_and(|silence| silence.0.is_silenced(path))
+        })
     }
 
     /// An existing, shared file of the project from an agent's word: `(project path, absolute path)`. Anything else

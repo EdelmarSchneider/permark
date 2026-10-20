@@ -8,7 +8,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use permark_core::fsx;
 use permark_core::notes::SharedNotesApi;
-use permark_core::organizing::{CommentFilter, CommentsApi, SilenceApi, TagsApi, UnreadApi};
+use permark_core::organizing::{CommentFilter, CommentsApi, TagsApi, UnreadApi};
 use permark_core::paths::Vault;
 use permark_core::plugins::ProjectServices;
 use permark_core::search::SearchFilter;
@@ -236,16 +236,9 @@ impl Tools {
         self.guard(&ProjectConfig::load(self.vault.main()))
     }
 
-    /// The rules of one call: `.aiignore`, `[agent] deny_paths`, silenced paths.
+    /// The rules of one call: `.aiignore`, `[agent] deny_paths` (silenced paths stay visible).
     fn guard(&self, config: &ProjectConfig) -> Arc<Guard> {
-        Arc::new(Guard::new(
-            self.vault.main(),
-            &config.agent_deny_paths,
-            self.services
-                .services
-                .get::<SilenceApi>()
-                .map(|a| (*a).clone()),
-        ))
+        Arc::new(Guard::new(self.vault.main(), &config.agent_deny_paths))
     }
 
     /// Checks the switch and the group, then runs the tool.

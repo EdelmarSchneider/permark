@@ -13,12 +13,11 @@ use permark_core::workspace::{CoreEnv, ProjectCore};
 use permark_plugin_agent::cli::{launch_app, Agent, Compose, Composed};
 use permark_plugin_agent::tools::Tools;
 
-/// The plugins a reader with no window starts: what the tools ask of (tags, silence, comments, unread, notes, the token
+/// The plugins a reader with no window starts: what the tools ask of (tags, comments, unread, notes, the token
 /// count when the person turned it on) and the config formats, so secret values are hidden by the structure of the
 /// file here too.
-const FILES_PLUGINS: [&str; 13] = [
+const FILES_PLUGINS: [&str; 12] = [
     "tags",
-    "quiet",
     "comments",
     "unread",
     "notes",
