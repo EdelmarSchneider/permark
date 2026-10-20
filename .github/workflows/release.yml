@@ -62,6 +62,7 @@ jobs:
           ref: ${{ env.TAG }}
 
       # The release notes are this version's section of CHANGELOG.md, followed by the install notes below.
+      # Feature id tags (`<!-- f: ... -->`, for Hub-D's catalog) are dropped: the in-app update chip shows the notes as plain text.
       - name: Release notes from the changelog
         shell: bash
         run: |
@@ -69,7 +70,7 @@ jobs:
           awk -v v="$version" '
             index($0, "## [" v "]") == 1 { on = 1; next }
             on && index($0, "## [") == 1 { exit }
-            on { print }
+            on { gsub(/ *<!-- f: [^>]*-->/, ""); print }
           ' CHANGELOG.md > release-notes.md
           {
             echo "RELEASE_NOTES<<__NOTES__"
