@@ -16,7 +16,12 @@ import { DEBOUNCE_MS, FinderStore, type FinderHost } from "./finderStore.svelte"
 import { PANEL_DEBOUNCE_MS, SearchPanelStore } from "./panel.svelte";
 
 const ok = <T>(value: T): Result<T> => ({ ok: true, value });
-const hit = (path: string): FileHit => ({ path, category: "markdown", positions: [0] });
+const hit = (path: string): FileHit => ({
+  path,
+  category: "markdown",
+  positions: [0],
+  hidden: path.startsWith("."),
+});
 const section = (path: string, line: number): SectionHit => ({
   path,
   headingPath: ["H"],
@@ -90,6 +95,7 @@ function host(
     label: () => "Save",
     outline: () => [],
     opened: () => ["o.md"],
+    showsHidden: () => false,
     openFile: vi.fn(),
     reveal: vi.fn(),
     openSection: vi.fn(),
@@ -118,9 +124,24 @@ describe("the Search everywhere box", () => {
     expect(fake.searchRecent).toHaveBeenCalledWith(["o.md"], 16, {
       includeSilenced: false,
       tags: [],
+      hiddenLast: false,
     });
     expect(finder.view.groups.map((g) => g.title)).toEqual(["opened", "changed"]);
     expect(finder.load).toEqual({ status: "ready", partial: false });
+  });
+
+  it("asks for hidden files after the others unless the tree shows hidden files", async () => {
+    const { api, fake } = fakeApi();
+    const quiet = new FinderStore("quick", host(api));
+    await settle();
+    quiet.setQuery("env");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(fake.searchFiles.mock.calls.at(-1)?.[3]).toMatchObject({ hiddenLast: true });
+    const shown = new FinderStore("quick", host(api, { showsHidden: () => true }));
+    await settle();
+    shown.setQuery("env");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    expect(fake.searchFiles.mock.calls.at(-1)?.[3]).toMatchObject({ hiddenLast: false });
   });
 
   it("waits for a pause in the typing and asks once", async () => {
@@ -136,6 +157,7 @@ describe("the Search everywhere box", () => {
     expect(fake.searchFiles).toHaveBeenCalledWith("pla", 50, 0, {
       includeSilenced: true,
       tags: [],
+      hiddenLast: true,
     });
     expect(finder.view.rows).toHaveLength(1);
   });
@@ -288,6 +310,7 @@ describe("the Search panel", () => {
     expect(fake.searchSections).toHaveBeenCalledWith("retry", 100, {
       includeSilenced: false,
       tags: [],
+      hiddenLast: false,
     });
     expect(panel.groups.map((g) => g.path)).toEqual(["a.md", "b.md"]);
     expect(panel.rows.map((r) => r.type)).toEqual(["file", "hit", "hit", "file", "hit"]);
@@ -351,6 +374,7 @@ describe("the Search panel", () => {
     expect(fake.searchSections).toHaveBeenLastCalledWith("x", 100, {
       includeSilenced: true,
       tags: [],
+      hiddenLast: false,
     });
   });
 
@@ -397,6 +421,7 @@ describe("narrowing the search to tags", () => {
     expect(fake.searchRecent).toHaveBeenCalledWith(["o.md"], 16, {
       includeSilenced: false,
       tags: ["spec"],
+      hiddenLast: false,
     });
     finder.setScope("all");
     finder.setQuery("plan");
@@ -404,10 +429,12 @@ describe("narrowing the search to tags", () => {
     expect(fake.searchSections).toHaveBeenLastCalledWith("plan", 30, {
       includeSilenced: false,
       tags: ["spec"],
+      hiddenLast: false,
     });
     expect(fake.searchFiles).toHaveBeenLastCalledWith("plan", 6, 3, {
       includeSilenced: true,
       tags: ["spec"],
+      hiddenLast: true,
     });
     // the Tags scope asks nothing of the backend; a chosen tag narrows the search and goes back to All
     finder.setScope("tags");
@@ -421,6 +448,7 @@ describe("narrowing the search to tags", () => {
     expect(fake.searchRecent).toHaveBeenLastCalledWith(["o.md"], 16, {
       includeSilenced: false,
       tags: ["spec", "design"],
+      hiddenLast: false,
     });
     expect(host(api).close).not.toHaveBeenCalled();
   });

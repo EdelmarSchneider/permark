@@ -585,6 +585,7 @@ export default {
   "finder.placeholder.files": "Ir al archivo...",
   "finder.showAll": "Ver todo ({n})",
   "finder.revealFolder": "Mostrar en el Explorador",
+  "finder.hidden": "oculto",
   "finder.noSections": "Ninguna sección coincide con '{query}'.",
   "finder.none": "Nada coincide con '{query}'.",
   "finder.scopes": "Buscar en",

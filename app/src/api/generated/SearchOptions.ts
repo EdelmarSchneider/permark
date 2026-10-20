@@ -3,4 +3,8 @@
 /**
  * What the person asked of a search besides the words (the silence and tags plugins answer these).
  */
-export type SearchOptions = { includeSilenced: boolean, tags: Array<string>, };
+export type SearchOptions = { includeSilenced: boolean, tags: Array<string>, 
+/**
+ * Hidden paths (dot files | folders) rank after every other match: the window's Explorer does not show them.
+ */
+hiddenLast: boolean, };

@@ -616,7 +616,16 @@ export function createMockApi(): Api & {
     searchSections: (query, limit, options) =>
       ok(mockSections(project, query, limit, organizing.allows(options))),
     searchFiles: (query, limit, folderLimit, options) =>
-      ok(mockFiles(project, query, limit, folderLimit, organizing.allows(options))),
+      ok(
+        mockFiles(
+          project,
+          query,
+          limit,
+          folderLimit,
+          organizing.allows(options),
+          options.hiddenLast,
+        ),
+      ),
     searchRecent: (opened, limit, options) =>
       ok(mockRecent(project, opened, limit, organizing.allows(options))),
     assetUrl: (_workspace, path) => mockAssetUrl(path),

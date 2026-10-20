@@ -102,12 +102,19 @@ function positionsOf(q: string, path: string): number[] | null {
   return found;
 }
 
+/** A dot file or a file inside a dot folder (the worktree prefix `@wt/<name>/` not counted). */
+export function hiddenPath(path: string): boolean {
+  const own = path.startsWith("@wt/") ? path.split("/").slice(2).join("/") : path;
+  return own.split("/").some((segment) => segment.startsWith("."));
+}
+
 export function mockFiles(
   project: MockProject,
   query: string,
   limit: number,
   folderLimit: number,
   allows: Allows = ANY,
+  hiddenLast = false,
 ): PathResults {
   const q = fold(query.trim());
   if (q === "") return { files: [], folders: [], partial: false };
@@ -117,15 +124,19 @@ export function mockFiles(
     if (positions === null || !allows(path)) continue;
     const name = path.slice(path.lastIndexOf("/") + 1);
     const rank = fold(name).startsWith(q) ? 0 : fold(name).includes(q) ? 1 : 2;
-    files.push({ path, category: categoryOfName(name), positions, rank });
+    files.push({ path, category: categoryOfName(name), positions, hidden: hiddenPath(path), rank });
   }
-  files.sort((a, b) => a.rank - b.rank || a.path.length - b.path.length);
+  // hidden paths second when the tree does not show them (as the backend)
+  const last = (path: string): number => (hiddenLast && hiddenPath(path) ? 1 : 0);
+  files.sort(
+    (a, b) => last(a.path) - last(b.path) || a.rank - b.rank || a.path.length - b.path.length,
+  );
   const folders: FolderHit[] = [];
   for (const path of project.dirs) {
     const positions = positionsOf(q, path);
-    if (positions !== null) folders.push({ path, positions });
+    if (positions !== null) folders.push({ path, positions, hidden: hiddenPath(path) });
   }
-  folders.sort((a, b) => a.path.length - b.path.length);
+  folders.sort((a, b) => last(a.path) - last(b.path) || a.path.length - b.path.length);
   return {
     files: files.slice(0, limit).map(({ rank: _rank, ...hit }) => hit),
     folders: folders.slice(0, folderLimit),
@@ -143,6 +154,7 @@ export function mockRecent(
     path,
     category: categoryOfName(path.slice(path.lastIndexOf("/") + 1)),
     positions: [],
+    hidden: hiddenPath(path),
   });
   return {
     opened: opened

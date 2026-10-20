@@ -591,6 +591,7 @@ export default {
   "finder.placeholder.files": "Zu Datei springen ...",
   "finder.showAll": "Alle anzeigen ({n})",
   "finder.revealFolder": "Im Explorer anzeigen",
+  "finder.hidden": "versteckt",
   "finder.noSections": "Kein Abschnitt passt zu „{query}“.",
   "finder.none": "Nichts passt zu „{query}“.",
   "finder.scopes": "Suchen in",

@@ -416,6 +416,11 @@ export class ExplorerStore {
     this.scrollTo = { path, n: this.#scrolls };
   }
 
+  /** The filter shows hidden files (dot files | folders). */
+  showsHidden(): boolean {
+    return this.filter.showHidden;
+  }
+
   /** Paths an action works on: the selection, else the focused row. */
   /** The one folder selected (`null`: nothing, a file, or several things). */
   selectedFolder(): string | null {

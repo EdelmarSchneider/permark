@@ -211,6 +211,24 @@ describe("Quick open and Search everywhere", () => {
     expect(ui.finder.status).toBe("closed");
   });
 
+  it("draws a hidden file dimmed with its mark, after the files that are not hidden", async () => {
+    await open();
+    ui.openFinder("quick");
+    component = mount(Finder, { target, props: { preset: "quick" } });
+    flushSync();
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    type(input, "ci");
+    await until(() => rowTexts().some((t) => t.includes("ci.yml")), "the hidden file is listed");
+    const rows = [...target.querySelectorAll<HTMLElement>("[role=option]")];
+    const hidden = rows.findIndex((r) => r.textContent?.includes("ci.yml"));
+    expect(rows[hidden]?.classList.contains("hidden-path")).toBe(true);
+    expect(rows[hidden]?.querySelector(".mark")?.textContent).toBe("hidden");
+    // every row after it is hidden too; none before it is
+    expect(rows.slice(0, hidden).some((r) => r.classList.contains("hidden-path"))).toBe(false);
+    expect(rows.slice(hidden).every((r) => r.classList.contains("hidden-path"))).toBe(true);
+  });
+
   it("lists the recently opened files first", async () => {
     await open();
     recentFiles.visit("notes/ideas.md");

@@ -56,6 +56,8 @@ export type FinderHost = {
   outline(): SectionRow[];
   /** Files opened in this project, newest first. */
   opened(): readonly string[];
+  /** The window's Explorer shows hidden files (dot files | folders): they rank as any other then. */
+  showsHidden(): boolean;
   openFile(path: string): void;
   reveal(path: string): void;
   openSection(row: SectionRow): void;
@@ -212,17 +214,22 @@ export class FinderStore {
             scope === "files" ? RESULT_LIMIT : 6,
             this.preset === "quick" ? 0 : 3,
             // a name the person typed is found even if its folder is silenced
-            { includeSilenced: true, tags: [...tags] },
+            { includeSilenced: true, tags: [...tags], hiddenLast: !this.#host.showsHidden() },
           )
         : null,
       wantFiles && query === ""
         ? api.searchRecent([...this.#host.opened()], RECENT_LIMIT * 2, {
             includeSilenced: false,
             tags: [...tags],
+            hiddenLast: false,
           })
         : null,
       wantSections
-        ? api.searchSections(query, SECTION_LIMIT, { includeSilenced: false, tags: [...tags] })
+        ? api.searchSections(query, SECTION_LIMIT, {
+            includeSilenced: false,
+            tags: [...tags],
+            hiddenLast: false,
+          })
         : null,
     ]);
     if (seq !== this.#seq) return;

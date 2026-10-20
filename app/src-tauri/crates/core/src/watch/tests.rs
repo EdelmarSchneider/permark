@@ -708,6 +708,7 @@ secondwords
     let tags = SearchOptions {
         include_silenced: false,
         tags: vec!["x".to_owned()],
+        hidden_last: false,
     };
     assert_eq!(
         core.search_filter(&tags).unwrap_err().kind,
@@ -716,6 +717,7 @@ secondwords
     let options = SearchOptions {
         include_silenced: true,
         tags: Vec::new(),
+        hidden_last: false,
     };
     let open = core.search_filter(&options).unwrap();
     assert!(open.only.is_none() && open.skip.is_empty() && open.muted.is_none());
@@ -723,6 +725,7 @@ secondwords
     let hidden = SearchOptions {
         include_silenced: false,
         tags: Vec::new(),
+        hidden_last: false,
     };
     let none = core.search_filter(&hidden).unwrap();
     assert!(none.muted.is_none());

@@ -570,6 +570,7 @@ const en = {
   "finder.placeholder.files": "Go to file...",
   "finder.showAll": "Show all ({n})",
   "finder.revealFolder": "Reveal in Explorer",
+  "finder.hidden": "hidden",
   "finder.noSections": "No section matches '{query}'.",
   "finder.none": "Nothing matches '{query}'.",
   "finder.scopes": "Search in",

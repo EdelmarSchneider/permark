@@ -467,7 +467,10 @@ impl ProjectCore {
     /// # Errors
     /// `Unsupported` (subject `tags`): tags were asked for and the tags plugin is not on.
     pub fn search_filter(&self, options: &SearchOptions) -> Result<SearchFilter, crate::IpcError> {
-        let mut filter = SearchFilter::default();
+        let mut filter = SearchFilter {
+            hidden_last: options.hidden_last,
+            ..SearchFilter::default()
+        };
         if !options.tags.is_empty() {
             let api = self.services.get::<TagsApi>().ok_or_else(|| {
                 crate::IpcError::new(crate::ErrorKind::Unsupported).subject("tags")

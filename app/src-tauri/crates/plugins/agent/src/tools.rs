@@ -439,6 +439,7 @@ impl Tools {
             only,
             skip: std::collections::HashSet::new(),
             muted: Some(guard.as_lookup()),
+            hidden_last: false,
         };
         let index = &self.services.search;
         let ready = index.wait_ready(READY_WAIT);

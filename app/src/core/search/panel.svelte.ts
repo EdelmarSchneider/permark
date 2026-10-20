@@ -128,6 +128,7 @@ export class SearchPanelStore {
     const result = await this.#api.searchSections(query, LIMIT, {
       includeSilenced: this.includeSilenced,
       tags: [...searchTags.selected],
+      hiddenLast: false,
     });
     if (seq !== this.#seq) return;
     this.answer = result.ok

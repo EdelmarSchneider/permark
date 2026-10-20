@@ -115,6 +115,8 @@ pub struct FileHit {
     pub category: Category,
     /// Indices (characters) of the matched characters in `path`.
     pub positions: Vec<u32>,
+    /// A dot file or a file inside a dot folder ([`is_hidden_path`]).
+    pub hidden: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -123,6 +125,18 @@ pub struct FileHit {
 pub struct FolderHit {
     pub path: String,
     pub positions: Vec<u32>,
+    pub hidden: bool,
+}
+
+/// Whether a project path is hidden as the Explorer's switch means it: a segment below its root starts with `.` (the
+/// `@wt/<name>/` prefix of a linked worktree is not a segment of the file's own path).
+#[must_use]
+pub fn is_hidden_path(path: &str) -> bool {
+    let own = path
+        .strip_prefix(crate::paths::WORKTREE_PREFIX)
+        .and_then(|rest| rest.split_once('/').map(|(_, inner)| inner))
+        .unwrap_or(path);
+    own.split('/').any(|segment| segment.starts_with('.'))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -150,6 +164,9 @@ pub struct Recent {
 pub struct SearchOptions {
     pub include_silenced: bool,
     pub tags: Vec<String>,
+    /// Hidden paths (dot files | folders) rank after every other match: the window's Explorer does not show them.
+    #[serde(default)]
+    pub hidden_last: bool,
 }
 
 /// Which documents may answer: the typed seam for the tags (`only`) and silence (`skip`, `muted`) plugins.
@@ -160,6 +177,8 @@ pub struct SearchFilter {
     /// The silence plugin's answer: silenced paths do not answer either (asked per path, so a folder mark covers
     /// the files that appear later).
     pub muted: Option<Arc<dyn SilenceLookup>>,
+    /// File and folder names: hidden paths after every other match.
+    pub hidden_last: bool,
 }
 
 impl std::fmt::Debug for SearchFilter {
@@ -168,6 +187,7 @@ impl std::fmt::Debug for SearchFilter {
             .field("only", &self.only)
             .field("skip", &self.skip)
             .field("muted", &self.muted.is_some())
+            .field("hidden_last", &self.hidden_last)
             .finish()
     }
 }
@@ -386,6 +406,8 @@ impl SearchIndex {
             };
         };
         let index = self.read();
+        // hidden paths second (before the limit cuts), when the person's tree does not show them
+        let last = |path: &str| filter.hidden_last && is_hidden_path(path);
         let mut found: Vec<(f32, u64, &str, &index::FileEntry, Vec<u32>)> = Vec::new();
         for (path, entry) in &index.files {
             if !filter.allows(path) {
@@ -397,7 +419,9 @@ impl SearchIndex {
             }
         }
         found.sort_by(|a, b| {
-            b.0.total_cmp(&a.0)
+            last(a.2)
+                .cmp(&last(b.2))
+                .then(b.0.total_cmp(&a.0))
                 .then(b.1.cmp(&a.1))
                 .then(a.2.len().cmp(&b.2.len()))
                 .then(a.2.cmp(b.2))
@@ -409,6 +433,7 @@ impl SearchIndex {
                 path: path.to_owned(),
                 category: entry.category,
                 positions,
+                hidden: is_hidden_path(path),
             })
             .collect();
 
@@ -421,7 +446,9 @@ impl SearchIndex {
                 }
             }
             folders.sort_by(|a, b| {
-                b.0.total_cmp(&a.0)
+                last(a.1)
+                    .cmp(&last(b.1))
+                    .then(b.0.total_cmp(&a.0))
                     .then(a.1.len().cmp(&b.1.len()))
                     .then(a.1.cmp(b.1))
             });
@@ -434,6 +461,7 @@ impl SearchIndex {
                 .map(|(_, path, positions)| FolderHit {
                     path: path.to_owned(),
                     positions,
+                    hidden: is_hidden_path(path),
                 })
                 .collect(),
             partial: self.shared.partial(),
@@ -450,6 +478,7 @@ impl SearchIndex {
             path: path.to_owned(),
             category: entry.category,
             positions: Vec::new(),
+            hidden: is_hidden_path(path),
         };
         let opened_hits: Vec<FileHit> = opened
             .iter()

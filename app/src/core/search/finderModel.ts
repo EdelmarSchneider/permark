@@ -80,8 +80,16 @@ export type FileRow = {
   path: string;
   category: Category;
   positions: readonly number[];
+  /** A dot file | inside a dot folder: drawn dimmed with a mark. */
+  hidden: boolean;
 };
-export type FolderRow = { type: "folder"; key: string; path: string; positions: readonly number[] };
+export type FolderRow = {
+  type: "folder";
+  key: string;
+  path: string;
+  positions: readonly number[];
+  hidden: boolean;
+};
 export type SectionRow = {
   type: "section";
   key: string;
@@ -149,11 +157,18 @@ export function fileRow(hit: FileHit, prefix = ""): FileRow {
     path: hit.path,
     category: hit.category,
     positions: hit.positions,
+    hidden: hit.hidden,
   };
 }
 
 function folderRow(hit: FolderHit): FolderRow {
-  return { type: "folder", key: `folder:${hit.path}`, path: hit.path, positions: hit.positions };
+  return {
+    type: "folder",
+    key: `folder:${hit.path}`,
+    path: hit.path,
+    positions: hit.positions,
+    hidden: hit.hidden,
+  };
 }
 
 export function sectionRow(hit: SectionHit): SectionRow {

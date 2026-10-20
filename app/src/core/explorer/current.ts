@@ -9,6 +9,8 @@ type Handle = {
   readonly expanded: ReadonlySet<string>;
   /** The one folder selected in the tree (`null`: none, or more than one thing). */
   selectedFolder(): string | null;
+  /** The tree's filter shows hidden files (dot files | folders). */
+  showsHidden(): boolean;
   reveal(path: string): void;
   revealActive(): void;
   beginNew(kind: NewKind): void;
@@ -48,6 +50,11 @@ export function explorerSelectedFolder(): string | null {
 }
 
 const NONE: ReadonlySet<string> = new Set();
+
+/** Whether this window's tree shows hidden files (`false` with no tree). */
+export function explorerShowsHidden(): boolean {
+  return current?.showsHidden() ?? false;
+}
 
 export function revealInTree(path: string | null): void {
   if (path === null) current?.revealActive();

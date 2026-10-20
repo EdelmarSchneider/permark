@@ -559,6 +559,7 @@ export default {
   "finder.placeholder.files": "转到文件...",
   "finder.showAll": "显示全部（{n}）",
   "finder.revealFolder": "在资源管理器中显示",
+  "finder.hidden": "隐藏",
   "finder.noSections": "没有匹配“{query}”的章节。",
   "finder.none": "没有匹配“{query}”的内容。",
   "finder.scopes": "搜索范围",

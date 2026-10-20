@@ -8,4 +8,8 @@ export type FileHit = { path: string, category: Category,
 /**
  * Indices (characters) of the matched characters in `path`.
  */
-positions: Array<number>, };
+positions: Array<number>, 
+/**
+ * A dot file or a file inside a dot folder ([`is_hidden_path`]).
+ */
+hidden: boolean, };

@@ -10,7 +10,7 @@
   import { keys } from "../commands/state.svelte";
   import { documents } from "../doc/document.svelte";
   import { confirmLeave } from "../editing/guard";
-  import { revealInTree } from "../explorer/current";
+  import { explorerShowsHidden, revealInTree } from "../explorer/current";
   import { iconOfCategory } from "../explorer/icons";
   import Folder from "@lucide/svelte/icons/folder";
   import Hash from "@lucide/svelte/icons/hash";
@@ -56,6 +56,7 @@
       return view?.body.kind === "markdown" ? outlineRows(view.path, view.body.outline) : [];
     },
     opened: () => recentFiles.list,
+    showsHidden: () => explorerShowsHidden(),
     openFile: (path) => {
       void (async () => {
         if (!(await confirmLeave({ kind: "document", path }))) return;
@@ -267,6 +268,7 @@
             class="row"
             class:active={activeKey === row.key}
             class:dim={row.type === "command" && row.entry.availability.status === "unavailable"}
+            class:hidden-path={(row.type === "file" || row.type === "folder") && row.hidden}
             role="option"
             tabindex="-1"
             aria-selected={activeKey === row.key}
@@ -283,11 +285,13 @@
               {@const Icon = iconOfCategory(row.category)}
               <Icon size={15} aria-hidden="true" />
               <span class="text"><PathText path={row.path} positions={row.positions} /></span>
+              {#if row.hidden}<span class="aside mark">{t("finder.hidden")}</span>{/if}
             {:else if row.type === "folder"}
               <Folder size={15} aria-hidden="true" />
               <span class="text"
                 ><PathText path={row.path} positions={row.positions} folderOnly={true} /></span
               >
+              {#if row.hidden}<span class="aside mark">{t("finder.hidden")}</span>{/if}
               <span class="aside">{t("finder.revealFolder")}</span>
             {:else if row.type === "section"}
               <Hash size={15} aria-hidden="true" />
@@ -471,6 +475,16 @@
   .row.dim {
     color: var(--muted);
     cursor: default;
+  }
+  /* a dot file | folder: still a choice, quieter than the others */
+  .row.hidden-path .text,
+  .row.hidden-path :global(svg) {
+    opacity: 0.6;
+  }
+  .aside.mark {
+    padding: 0 var(--sp-1);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-control);
   }
   .text {
     flex: 1;

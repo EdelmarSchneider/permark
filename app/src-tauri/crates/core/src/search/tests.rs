@@ -1034,6 +1034,7 @@ fn paths_and_recent_answer_quick_open() {
         only: None,
         skip: ["docs/alpha.md".to_owned()].into_iter().collect(),
         muted: None,
+        hidden_last: false,
     };
     assert_eq!(f.index.paths("alpha", 10, 5, &skip).files.len(), 1);
     assert_eq!(
@@ -1270,4 +1271,63 @@ fn config_files_are_found_by_their_keys_while_a_format_is_on_and_never_by_values
         "keys forgotten",
         Box::new(|| found("database_host").is_empty()),
     );
+}
+
+#[test]
+fn hidden_paths_rank_after_every_other_match_unless_the_tree_shows_them() {
+    let f = fx(&[
+        (".claude/rules/notes.md", "x\n"),
+        (".notes.md", "x\n"),
+        ("docs/project-notes-archive-old.md", "x\n"),
+        ("notes/a.md", "x\n"),
+    ]);
+    let rank = |hidden_last: bool| -> Vec<(String, bool)> {
+        let filter = SearchFilter {
+            hidden_last,
+            ..SearchFilter::default()
+        };
+        f.index
+            .paths("notes", 10, 0, &filter)
+            .files
+            .into_iter()
+            .map(|h| (h.path, h.hidden))
+            .collect()
+    };
+    let normal = rank(false);
+    // a better name match that is hidden comes first by score alone
+    assert!(normal[0].1, "{normal:?}");
+    let second = rank(true);
+    let first_hidden = second.iter().position(|(_, h)| *h).unwrap();
+    assert!(second[..first_hidden].iter().all(|(_, h)| !h), "{second:?}");
+    assert!(second[first_hidden..].iter().all(|(_, h)| *h), "{second:?}");
+    assert_eq!(
+        second.iter().filter(|(_, h)| *h).count(),
+        2,
+        "hidden ones still listed: {second:?}"
+    );
+    // a limit keeps the non-hidden ones first
+    let filter = SearchFilter {
+        hidden_last: true,
+        ..SearchFilter::default()
+    };
+    let one = f.index.paths("notes", 1, 0, &filter).files;
+    assert!(!one[0].hidden, "{one:?}");
+    // folders too
+    let folders = f.index.paths("rules", 5, 5, &filter).folders;
+    assert!(folders.iter().all(|h| h.hidden), "{folders:?}");
+}
+
+#[test]
+fn hidden_means_a_dot_segment_below_the_root() {
+    assert!(is_hidden_path(".env"));
+    assert!(is_hidden_path("a/.git/config"));
+    assert!(is_hidden_path(".claude/rules/x.md"));
+    assert!(!is_hidden_path("docs/a.md"));
+    assert!(!is_hidden_path("v1.2/notes.md"));
+    assert!(
+        !is_hidden_path("@wt/.feature/docs/a.md"),
+        "the worktree name is not a segment"
+    );
+    assert!(is_hidden_path("@wt/feature/.github/ci.yml"));
+    assert!(!is_hidden_path(""));
 }

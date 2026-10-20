@@ -63,8 +63,9 @@ const file = (path: string, positions: number[] = []): FileHit => ({
   path,
   category: "markdown",
   positions,
+  hidden: path.split("/").some((s) => s.startsWith(".")),
 });
-const folder = (path: string): FolderHit => ({ path, positions: [] });
+const folder = (path: string): FolderHit => ({ path, positions: [], hidden: false });
 const section = (path: string, line: number, heading = "H"): SectionHit => ({
   path,
   headingPath: [heading],
@@ -343,8 +344,8 @@ describe("the Tags scope of Search everywhere", () => {
 
   it("keeps the rows of All in the order files, folders, sections, tags, commands", () => {
     const data: Data = {
-      files: [{ path: "a.md", category: "markdown", positions: [0] }],
-      folders: [{ path: "docs", positions: [0] }],
+      files: [{ path: "a.md", category: "markdown", positions: [0], hidden: false }],
+      folders: [{ path: "docs", positions: [0], hidden: false }],
       sections: [],
       recent: null,
     };
