@@ -28,7 +28,8 @@ export default {
   "dialog.windowNew": "Neues Fenster",
 
   // ---- welcome
-  "welcome.tagline": "Ein einheitlicher Arbeitsplatz für Dokumente: Markdown und die Dateien drumherum.",
+  "welcome.tagline":
+    "Ein einheitlicher Arbeitsplatz für Dokumente: Markdown und die Dateien drumherum.",
   "welcome.openFolder": "Ordner öffnen ...",
   "welcome.openFile": "Datei öffnen ...",
   "welcome.recent": "Zuletzt geöffnete Ordner",
