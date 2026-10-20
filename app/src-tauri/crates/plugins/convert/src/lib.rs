@@ -594,7 +594,7 @@ pub fn plugin() -> Arc<dyn Plugin> {
             scope: PluginScope::App,
             requires: Requirement::NONE,
             depends_on: Cow::Borrowed(&DEPENDS),
-            default_enabled: false,
+            default_enabled: true,
         },
     })
 }

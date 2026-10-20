@@ -96,10 +96,12 @@ pub fn registry() -> PluginRegistry {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use permark_core::format::{Body, FormatId, FormatRegistry};
-    use permark_core::plugins::PluginId;
+    use permark_core::plugins::{resolve_enabled, EnableInputs, Enablement, OffReason, PluginId};
+    use permark_core::settings::SettingsFile;
+    use permark_core::state::AppDirs;
 
     use super::*;
 
@@ -149,6 +151,90 @@ mod tests {
             assert!(
                 ids.iter().any(|i| i == expected),
                 "{expected} missing in {ids:?}"
+            );
+        }
+    }
+
+    /// Director 2026-10-20: every plugin starts on (the agent connection's per-project switch stays off: that is the
+    /// agent plugin's own state, not its enablement).
+    #[test]
+    fn every_plugin_is_on_by_default() {
+        let registry = registry_of_all();
+        let off: Vec<_> = registry
+            .ordered()
+            .filter(|m| !m.default_enabled)
+            .map(|m| m.id.to_string())
+            .collect();
+        assert!(off.is_empty(), "off by default: {off:?}");
+        let resolved = resolve_enabled(&registry, &EnableInputs::default());
+        assert!(resolved.values().all(|state| *state == Enablement::On));
+    }
+
+    fn resolved_from(text: &str) -> BTreeMap<PluginId, Enablement> {
+        let dir = tempfile::tempdir().unwrap();
+        let dirs = AppDirs::under(dir.path());
+        std::fs::create_dir_all(&dirs.profile).unwrap();
+        let file = SettingsFile::app(&dirs);
+        std::fs::write(file.path(), text).unwrap();
+        let inputs = EnableInputs {
+            app: file.load().plugins,
+            ..EnableInputs::default()
+        };
+        resolve_enabled(&registry_of_all(), &inputs)
+    }
+
+    fn state(resolved: &BTreeMap<PluginId, Enablement>, id: &str) -> Enablement {
+        resolved[&PluginId::parse(id).unwrap()].clone()
+    }
+
+    /// Settings saved by 0.6.1 (token count and converter off by default then): what the person turned off stays off,
+    /// what they never touched takes the new default.
+    #[test]
+    fn settings_of_0_6_1_keep_the_persons_choices_and_take_the_new_defaults() {
+        let resolved = resolved_from(include_str!("fixtures/settings-0.6.1.toml"));
+        let off = Enablement::Off(OffReason::Setting);
+        assert_eq!(
+            state(&resolved, "token-count"),
+            off,
+            "turned off: stays off"
+        );
+        assert_eq!(state(&resolved, "git"), off);
+        assert_eq!(state(&resolved, "convert"), Enablement::On, "never set: on");
+        assert_eq!(state(&resolved, "mermaid"), Enablement::On);
+        assert_eq!(
+            state(&resolved, "notes"),
+            Enablement::On,
+            "a table without `enabled`"
+        );
+    }
+
+    /// Hand-edited and odd forms of 0.6.1 files: only an explicit boolean is a choice.
+    #[test]
+    fn only_an_explicit_boolean_turns_a_plugin_off() {
+        let off = Enablement::Off(OffReason::Setting);
+        // the dependency off -> the converter off with it, whatever its own default
+        let resolved = resolved_from("[plugins.fmt-toon]\r\nenabled = false\r\n");
+        assert_eq!(
+            state(&resolved, "convert"),
+            Enablement::Off(OffReason::Dependency(PluginId::parse("fmt-toon").unwrap()))
+        );
+        assert_eq!(state(&resolved, "token-count"), Enablement::On);
+        // inline table, CRLF
+        let resolved = resolved_from("[plugins]\r\nconvert = { enabled = false }\r\n");
+        assert_eq!(state(&resolved, "convert"), off);
+        // not a boolean | a table with no `enabled` | an unknown id | broken TOML -> the default (on)
+        for text in [
+            "[plugins.token-count]\nenabled = \"no\"\n",
+            "[plugins.token-count]\nenabled = 0\n",
+            "[plugins.token-count]\ntokenizers = [\"o200k\"]\n",
+            "[plugins.Token-Count]\nenabled = false\n",
+            "[plugins.token-count\nenabled = false\n",
+            "",
+        ] {
+            assert_eq!(
+                state(&resolved_from(text), "token-count"),
+                Enablement::On,
+                "{text:?}"
             );
         }
     }

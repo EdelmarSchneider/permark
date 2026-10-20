@@ -690,11 +690,11 @@ fn refusals_come_back_as_answers() {
 }
 
 #[test]
-fn the_plugin_is_off_by_default_and_needs_the_toon_format() {
+fn the_plugin_is_on_by_default_and_needs_the_toon_format() {
     let p = plugin();
     let m = p.manifest();
     assert_eq!(m.id.as_str(), "convert");
-    assert!(!m.default_enabled);
+    assert!(m.default_enabled);
     assert_eq!(m.kind, PluginKind::Feature);
     assert_eq!(m.depends_on.as_ref(), [FMT_TOON]);
 }

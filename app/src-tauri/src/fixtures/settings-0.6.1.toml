@@ -1,0 +1,25 @@
+# settings.toml as PerMark 0.6.1 wrote it: token count and converter were off by default then.
+# The person turned the token count on, chose tokenizers, then turned it off again; never touched the converter;
+# turned git off; turned the Mermaid plugin on explicitly (it was on by default already).
+language = "pt-BR"
+theme = "dark"
+tone = "paper"
+open_in = "tab"
+edit_mode = "source"
+
+[plugins.token-count]
+enabled = false
+tokenizers = ["o200k", "claude"]
+
+[plugins.git]
+enabled = false
+backend = "system"
+
+[plugins.mermaid]
+enabled = true
+
+[plugins.notes]
+folder = ""
+
+[keymap]
+"tab.close" = "Mod+W"

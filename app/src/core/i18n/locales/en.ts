@@ -1721,7 +1721,7 @@ const en = {
   "convert.preview": "Preview (first lines)",
   "convert.lost": "Not kept:",
   "convert.approxHint":
-    "~ = estimated tokens. Turn on Token count and choose a tokenizer for exact numbers.",
+    "~ = estimated tokens. For exact numbers, make a GPT tokenizer the primary one in Token count and download its vocabulary.",
   "convert.exactHint": "Counted by the tokenizer shown.",
   "convert.confirmSecrets.one": "The result contains {n} secret value.",
   "convert.confirmSecrets.other": "The result contains {n} secret values.",

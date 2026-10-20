@@ -1673,7 +1673,8 @@ export default {
   "convert.notAvailable": "不可用",
   "convert.preview": "预览（前几行）",
   "convert.lost": "未保留：",
-  "convert.approxHint": "~ = 估算的 token 数。开启 Token 计数并选择分词器可得到精确数字。",
+  "convert.approxHint":
+    "~ = 估算的 token 数。如需精确数字，请在 Token 计数中将 GPT 分词器设为主要分词器并下载其词表。",
   "convert.exactHint": "由所示分词器计数。",
   "convert.confirmSecrets.one": "结果包含 {n} 个机密值。",
   "convert.confirmSecrets.other": "结果包含 {n} 个机密值。",

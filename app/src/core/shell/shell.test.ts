@@ -270,11 +270,11 @@ describe("the plugins page", () => {
       "Checkers",
       "Blocks in Markdown",
     ]);
-    // on by default, except the specialist tools that start off
+    // every plugin starts on, the specialist tools too (director 2026-10-20)
     const off = Array.from(target.querySelectorAll<HTMLInputElement>('input[role="switch"]'))
       .filter((i) => !i.checked)
       .map((i) => i.closest(".plugin")?.querySelector(".name")?.textContent?.trim());
-    expect(off).toEqual(["Converter", "Token count"]);
+    expect(off).toEqual([]);
   });
 
   it("turning a plugin off turns its dependents off with a reason and a way back", async () => {
@@ -400,10 +400,10 @@ describe("the project settings and Initialize PerMark", () => {
     await open();
     await mock.projectInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    await until(
-      () => contributions.visible("projectSection", conditions.current).length === 1,
-      "the agent part",
-    );
+    const agentParts = () =>
+      contributions.visible("projectSection", conditions.current).filter((c) => c.owner === "agent")
+        .length;
+    await until(() => agentParts() === 1, "the agent part");
     mountPage("project");
     await until(() => projectSettings.state.status === "ready", "loaded");
     await until(
@@ -416,10 +416,7 @@ describe("the project settings and Initialize PerMark", () => {
     box.click();
     await until(() => mock.probe.shell.project().agentDeny.includes("notes"), "narrowed");
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: "agent", enabled: false } });
-    await until(
-      () => contributions.visible("projectSection", conditions.current).length === 0,
-      "gone with the plugin",
-    );
+    await until(() => agentParts() === 0, "gone with the plugin");
   });
 
   it("the question names the folder and what is created; Escape and Cancel change nothing", async () => {

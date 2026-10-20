@@ -182,7 +182,7 @@ pub fn plugin_with(fetch: Arc<dyn Fetch>, pins: [Pin; 2]) -> Arc<dyn Plugin> {
             scope: PluginScope::App,
             requires: Requirement::NONE,
             depends_on: Cow::Borrowed(&[]),
-            default_enabled: false,
+            default_enabled: true,
         },
         fetch,
         pins,
