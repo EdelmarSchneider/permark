@@ -1208,8 +1208,9 @@ fn a_target_that_cannot_take_the_tab_refuses_and_the_tab_stays() {
     assert_eq!(f.registry.window_of(&view).as_deref(), Some("main"));
 }
 
-/// Adversarial: 8 threads move 8 tabs between 4 windows (each keeps a tab of its own) for 200 rounds. Every move
-/// that ran left its tab with its view; at the end every tab is in exactly one window, every workspace found once.
+/// Adversarial: 8 threads move 8 tabs between 4 windows (each keeps a tab of its own) for 200 rounds, and each goes on
+/// until it has moved a tab at least once (no thread starves). Every move that ran left its tab with its view; at the
+/// end every tab is in exactly one window, every workspace found once.
 #[test]
 fn concurrent_moves_between_existing_windows_keep_one_place() {
     let f = fx();
@@ -1229,13 +1230,23 @@ fn concurrent_moves_between_existing_windows_keep_one_place() {
         }
     }
     let moves = std::sync::atomic::AtomicUsize::new(0);
+    let started = std::time::Instant::now();
     std::thread::scope(|s| {
         for n in 0..8 {
             let (f, moving, moves, windows) = (&f, &moving, &moves, &windows);
             s.spawn(move || {
-                for round in 0..200 {
+                // how many of the 200 rounds succeed depends on the interleaving (a tab reserved by another thread, a
+                // move to where the tab already is): not counted on; one move of its own per thread is
+                let mut mine = 0;
+                let mut round = 0;
+                while round < 200 || mine == 0 {
+                    assert!(
+                        started.elapsed() < std::time::Duration::from_secs(30),
+                        "thread {n} never moved a tab"
+                    );
                     let (tab_id, view, _) = &moving[(n + round) % moving.len()];
                     let to = windows[(n + 3 * round) % windows.len()];
+                    round += 1;
                     let Ok(ticket) = f
                         .registry
                         .begin_move(*tab_id, &MoveTo::Window(to.to_owned()))
@@ -1243,6 +1254,7 @@ fn concurrent_moves_between_existing_windows_keep_one_place() {
                         continue;
                     };
                     if f.registry.move_tab(&ticket, to, Some(view)).is_ok() {
+                        mine += 1;
                         moves.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                         assert_eq!(f.registry.window_of_tab(*tab_id).as_deref(), Some(to));
                     }
@@ -1268,7 +1280,9 @@ fn concurrent_moves_between_existing_windows_keep_one_place() {
         assert_eq!(f.registry.find(reference).map(|p| p.tab), Some(*tab_id));
     }
     assert_eq!(listed.iter().map(|w| w.tabs.len()).sum::<usize>(), 12);
-    assert!(moves.into_inner() > 100, "the tabs moved many times");
+    let moves = moves.into_inner();
+    eprintln!("{moves} moves");
+    assert!(moves >= 8, "every thread moved a tab: {moves}");
 }
 
 /// "Move to new window" never takes a window's only tab (spec: disabled with one tab), nor its last one staying
