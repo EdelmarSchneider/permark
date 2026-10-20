@@ -179,6 +179,8 @@ pub struct TabSummary {
 #[ts(export)]
 pub struct WindowSummary {
     pub window: String,
+    /// Asked to close (its prompt up, or waiting for a move into it): takes no tab ("Move to window" leaves it out).
+    pub closing: bool,
     pub tabs: Vec<TabSummary>,
     pub active: Option<TabId>,
     #[ts(type = "number")]

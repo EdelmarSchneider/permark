@@ -635,7 +635,8 @@ impl WorkspaceRegistry {
                     .windows
                     .get(window)
                     .is_some_and(|w| matches!(w.fsm, WindowState::Open(_)));
-                if *window == from || !open {
+                // a close waiting for the moves into it takes no new one (a stream of moves would hold it for ever)
+                if *window == from || !open || inner.deferred_close.contains(window) {
                     return Err(MoveRefused);
                 }
                 Some(window.clone())
@@ -722,6 +723,7 @@ impl WorkspaceRegistry {
             .any(|to| to.as_deref() == Some(window))
         {
             inner.deferred_close.insert(window.to_owned());
+            self.publish(&mut inner);
             return Outcome::default();
         }
         let unsaved: Vec<TabId> = inner
@@ -1207,7 +1209,11 @@ fn drive(inner: &mut Inner, window: &str, event: WindowEvent) -> (Outcome, Vec<E
         return (outcome, dropped);
     };
     let state = std::mem::replace(&mut entry.fsm, WindowState::Closing);
-    let before = state.strip().cloned();
+    // a window a move emptied keeps nothing for the session (its tab is saved where it went, once)
+    let before = match event {
+        WindowEvent::Move { .. } => None,
+        _ => state.strip().cloned(),
+    };
     let (state, effects) = window_fsm::step(state, event);
     if state == WindowState::Closing && entry.closed.is_none() {
         entry.closed = before;
@@ -1478,6 +1484,8 @@ fn summaries(inner: &Inner) -> Vec<WindowSummary> {
             let strip = entry.fsm.strip()?;
             Some(WindowSummary {
                 window: label.clone(),
+                closing: matches!(entry.fsm, WindowState::ConfirmingClose(_))
+                    || inner.deferred_close.contains(label),
                 tabs: strip.tabs.iter().map(|t| tab_summary(inner, t)).collect(),
                 active: strip.active,
                 focused_ms: entry.focused_ms,

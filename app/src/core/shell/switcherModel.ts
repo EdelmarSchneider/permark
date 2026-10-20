@@ -32,12 +32,14 @@ export function last(list: readonly TabSummary[]): TabSummary | null {
   return list.at(-1) ?? null;
 }
 
-/** The windows other than `mine`, focused last first (equal: list order). */
+/** The windows other than `mine` that can take a tab (not asked to close), focused last first (equal: list order). */
 export function otherWindows(
   windows: readonly WindowSummary[],
   mine: string,
 ): readonly WindowSummary[] {
-  return windows.filter((w) => w.window !== mine).toSorted((a, b) => b.focusedMs - a.focusedMs);
+  return windows
+    .filter((w) => w.window !== mine && !w.closing)
+    .toSorted((a, b) => b.focusedMs - a.focusedMs);
 }
 
 /** The tab a window is known by (its active one, else its first); `null`: no tab. */

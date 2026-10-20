@@ -14,15 +14,23 @@
     anchor?: HTMLElement;
     /** A submenu shown in place: ArrowLeft goes back to the menu it came from. */
     back?: () => void;
+    /** The entry the keyboard starts on (default: the first item), e.g. the submenu entry when coming back. */
+    start?: number;
   };
-  let { x, y, entries, close, label, anchor, back }: Props = $props();
+  let { x, y, entries, close, label, anchor, back, start }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
 
   const items = $derived(entries.flatMap((e, at) => (e.kind === "item" ? [at] : [])));
-  /** The entry the keyboard is on: the one picked, else the first. */
-  const active = $derived(picked >= 0 && items.includes(picked) ? picked : (items[0] ?? -1));
+  /** The entry the keyboard is on: the one picked, else `start`, else the first. */
+  const active = $derived(
+    picked >= 0 && items.includes(picked)
+      ? picked
+      : start !== undefined && items.includes(start)
+        ? start
+        : (items[0] ?? -1),
+  );
 
   function run(at: number, shift = false): void {
     const entry = entries[at];

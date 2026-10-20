@@ -5,4 +5,8 @@ import type { TabSummary } from "./TabSummary";
 /**
  * One window with its tabs (`list_windows`, `windows-changed`).
  */
-export type WindowSummary = { window: string, tabs: Array<TabSummary>, active: TabId | null, focusedMs: number, };
+export type WindowSummary = { window: string, 
+/**
+ * Asked to close (its prompt up, or waiting for a move into it): takes no tab ("Move to window" leaves it out).
+ */
+closing: boolean, tabs: Array<TabSummary>, active: TabId | null, focusedMs: number, };

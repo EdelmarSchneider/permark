@@ -500,6 +500,7 @@ describe("the top bar", () => {
     mock.probe.shell.setOthers([
       {
         window: "w-2",
+        closing: false,
         tabs: [
           {
             tab: 77,
@@ -722,12 +723,15 @@ describe("the top bar", () => {
     mock.probe.shell.setOthers([
       {
         window: "w-2",
+        closing: false,
         tabs: [summary(70, "older"), summary(71, "older-b")],
         active: 71,
         focusedMs: 10,
       },
-      { window: "w-3", tabs: [summary(80, "newest")], active: 80, focusedMs: 30 },
-      { window: "w-4", tabs: [], active: null, focusedMs: 20 },
+      { window: "w-3", closing: false, tabs: [summary(80, "newest")], active: 80, focusedMs: 30 },
+      { window: "w-4", closing: false, tabs: [], active: null, focusedMs: 20 },
+      // asking to close: takes no tab, not listed
+      { window: "w-5", closing: true, tabs: [summary(90, "leaving")], active: 90, focusedMs: 99 },
     ]);
     await until(() => tabs.others.length === 3, "the other windows");
     const items = () =>
@@ -756,10 +760,20 @@ describe("the top bar", () => {
     expect(document.querySelector('[role="menu"] .heading')?.textContent?.trim()).toBe(
       "Move to window",
     );
-    // ArrowLeft goes back, ArrowRight opens it again (keyboard on "Move to window ▸")
+    expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe(
+      "Move to window",
+    );
+    // ArrowLeft goes back with the keyboard on "Move to window ▸"; ArrowRight opens it again
     press(document.querySelector('[role="menu"]')!, "ArrowLeft");
     await until(() => items()[0] === "Move to new window", "back");
-    press(document.querySelector('[role="menu"]')!, "ArrowDown");
+    flushSync();
+    expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe("Tab actions");
+    expect(
+      document
+        .querySelector('[role="menuitem"].is-active')
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim(),
+    ).toBe("Move to window ▸");
     press(document.querySelector('[role="menu"]')!, "ArrowRight");
     await until(() => items()[0] === "newest 1 tab", "the submenu by key");
     // a pick moves the tab there

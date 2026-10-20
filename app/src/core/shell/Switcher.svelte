@@ -28,7 +28,10 @@
     x: number;
     y: number;
     entries: readonly MenuEntry[];
+    /** What the menu is called (the submenu: "Move to window"). */
+    label: string;
     back?: () => void;
+    start?: number;
   } | null>(null);
   /** Which edges hide chips (faded). */
   let hidden = $state<{ start: boolean; end: boolean }>({ start: false, end: false });
@@ -71,11 +74,14 @@
         label: t("switcher.moveTo"),
         opens: true,
         run: () => {
+          const at = entries.findIndex((e) => e.kind === "item" && e.opens === true);
           menu = {
             x,
             y,
             entries: windowEntries(tab),
-            back: () => openMenu(tab, x, y),
+            label: t("switcher.moveTo"),
+            // back on "Move to window ▸"
+            back: () => openMenu(tab, x, y, at),
           };
         },
       });
@@ -110,8 +116,8 @@
     ];
   }
 
-  function openMenu(tab: TabSummary, x: number, y: number): void {
-    menu = { x, y, entries: entriesFor(tab, x, y) };
+  function openMenu(tab: TabSummary, x: number, y: number, start?: number): void {
+    menu = { x, y, entries: entriesFor(tab, x, y), label: t("switcher.menu"), start };
   }
 
   function oncontextmenu(e: MouseEvent, tab: TabSummary): void {
@@ -283,8 +289,9 @@
       y={menu.y}
       entries={menu.entries}
       close={() => (menu = null)}
-      label={t("switcher.menu")}
+      label={menu.label}
       back={menu.back}
+      start={menu.start}
     />
   {/key}
 {/if}

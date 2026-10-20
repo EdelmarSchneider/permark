@@ -151,7 +151,7 @@ describe("pin order", () => {
     expect(dropPinned(order, "a", "a")).toEqual(order);
     expect(dropPinned(order, "x", "a")).toEqual(order);
   });
-  it("jumps to the nth pinned note for Ctrl+1..9", () => {
+  it("jumps to the nth pinned note for Mod+1..9", () => {
     const pinned = [entry({ path: "a" }), entry({ path: "b" })];
     expect(pinnedAt(pinned, 1)?.path).toBe("a");
     expect(pinnedAt(pinned, 2)?.path).toBe("b");

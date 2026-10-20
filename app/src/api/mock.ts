@@ -271,6 +271,7 @@ export function createMockApi(): Api & {
   function windowsNow(): WindowSummary[] {
     const own: WindowSummary = {
       window: "main",
+      closing: false,
       tabs: tabList.map(summaryOf),
       active: activeTab,
       focusedMs: 0,

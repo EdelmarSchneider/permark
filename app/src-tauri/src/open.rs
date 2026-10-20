@@ -326,9 +326,10 @@ fn move_tab(handle: &AppHandle, tab: TabId, to: &MoveTo) -> Result<String, IpcEr
     Ok(label)
 }
 
-/// A refused move: the view goes back to `from`, a new target window (`made`) away. The view cannot go back -> it
-/// stays in the target, shown (never a hidden window holding it: its edits stay reachable); the view gone meanwhile
-/// (its tab closed) -> a new target goes.
+/// A refused move: the view goes back to `from`, a new target window (`made`) away. The view cannot go back -> a new
+/// target shows with it (never a hidden window holding it: its edits stay reachable); an existing target keeps its own
+/// tab on screen: the stray view is hidden there, never laid over a tab it does not belong to (rare: a refused move
+/// whose way back fails too). The view gone meanwhile (its tab closed) -> a new target goes.
 fn put_back(
     handle: &AppHandle,
     from: &str,
@@ -349,7 +350,10 @@ fn put_back(
         Err(error) => {
             eprintln!("PerMark: tab view not put back: {error}");
             match webview.filter(|w| handle.get_webview(w.label()).is_some()) {
-                Some(webview) => crate::views::reveal(handle, target, webview),
+                Some(webview) if made => crate::views::reveal(handle, target, webview),
+                Some(webview) => {
+                    let _ = webview.hide();
+                }
                 None if made => {
                     let _ = target.destroy();
                 }

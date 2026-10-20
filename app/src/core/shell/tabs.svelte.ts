@@ -29,7 +29,7 @@ class Tabs {
     return this.mine?.active ?? null;
   }
 
-  /** The other windows (where "Move to window" can take a tab), focused last first. */
+  /** The other windows "Move to window" can take a tab to (not asked to close), focused last first. */
   get others(): readonly WindowSummary[] {
     return otherWindows(this.windows, this.window);
   }
