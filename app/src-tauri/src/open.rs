@@ -6,7 +6,9 @@ use std::path::Path;
 use permark_core::events::OpenFailed;
 use permark_core::open::{create_untitled_markdown, route, OpenRequest, Route};
 use permark_core::paths::{Root, VaultPath};
+use permark_core::session::AppSession;
 use permark_core::settings::StartIn;
+use permark_core::state::older::older_window;
 use permark_core::workspace::{OpenError, WorkspaceId, WorkspaceRef};
 use permark_core::IpcError;
 use tauri::{AppHandle, Manager};
@@ -78,20 +80,27 @@ pub fn open_in_new_window(
     Some(label)
 }
 
-/// First launch: the request's paths, else the saved session.
+/// First launch: the request's paths, else the saved session. Either way `main` comes back where the first saved
+/// window was (else where 0.5 left its window).
 pub fn first_launch(handle: &AppHandle, request: OpenRequest) {
+    let shell = state(handle);
+    let session = shell.load_session();
+    let geometry = session.first_geometry(|| older_window(&shell.env.dirs));
+    if let (Some(main), Some(geometry)) = (handle.get_webview_window(MAIN), geometry) {
+        windows::restore(&main, &geometry);
+    }
     if request.is_empty() {
-        restore_session(handle);
+        restore_session(handle, session);
     } else {
         let handle = handle.clone();
         std::thread::spawn(move || handle_request(&handle, &request));
     }
 }
 
-/// Windows of the last session come back (main = first); missing paths -> that window stays on Welcome.
-fn restore_session(handle: &AppHandle) {
+/// Windows of the last session come back (main = first, already placed); missing paths -> that window stays on
+/// Welcome.
+fn restore_session(handle: &AppHandle, session: AppSession) {
     let shell = state(handle);
-    let session = shell.load_session();
     // the person chose to start on the Notes: the first window that shows nothing opens them
     let notes_first = shell.env.settings().start_in == StartIn::Notes;
     if session.windows.is_empty() && notes_first {
@@ -105,14 +114,11 @@ fn restore_session(handle: &AppHandle) {
         let window = if index == 0 {
             handle.get_webview_window(MAIN)
         } else {
-            windows::create(handle).ok()
+            windows::create_at(handle, saved.geometry.as_ref()).ok()
         };
         let Some(window) = window else {
             continue;
         };
-        if let Some(geometry) = &saved.geometry {
-            windows::restore(&window, geometry);
-        }
         let saved_reference = saved
             .workspace
             .and_then(|dto| WorkspaceRef::parse(&dto).ok());

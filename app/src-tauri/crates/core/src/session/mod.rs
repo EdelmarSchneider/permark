@@ -8,7 +8,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-pub use place::{place, Geometry, Limits, Placement, Rect, Screen};
+pub use place::{cascade, place, to_save, Geometry, Limits, Placement, Rect, Screen};
 
 use crate::error::{ErrorKind, IpcError};
 use crate::paths::Root;
@@ -30,6 +30,19 @@ pub struct AppSession {
 
 impl StateData for AppSession {
     const VERSION: u32 = 1;
+}
+
+impl AppSession {
+    /// Geometry for the first window (`main`) at launch, with or without paths to open: the first saved window's,
+    /// else `older` (0.5's last window, read only when needed). Damaged values count as none.
+    #[must_use]
+    pub fn first_geometry(&self, older: impl FnOnce() -> Option<Geometry>) -> Option<Geometry> {
+        self.windows
+            .first()
+            .and_then(|w| w.geometry)
+            .and_then(Geometry::sane)
+            .or_else(|| older().and_then(Geometry::sane))
+    }
 }
 
 /// The app session file.
@@ -250,6 +263,58 @@ mod tests {
         let base = tempfile::tempdir().unwrap();
         let store = StateStore::app(&AppDirs::under(base.path()));
         (base, store)
+    }
+
+    #[test]
+    fn the_first_window_takes_the_saved_geometry_else_the_one_of_0_5() {
+        let geo = |x: i32, width: u32| Geometry {
+            x,
+            y: 10,
+            width,
+            height: 700,
+            scale: 1.0,
+            maximized: true,
+        };
+        let window = |geometry| SavedWindow {
+            workspace: None,
+            geometry,
+        };
+        let older = || Some(geo(5, 900));
+        let session = AppSession {
+            windows: vec![window(Some(geo(1, 1000))), window(Some(geo(2, 1100)))],
+        };
+        assert_eq!(session.first_geometry(older), Some(geo(1, 1000)));
+        // 0.5's file is read only when needed
+        let unused =
+            || -> Option<Geometry> { panic!("0.5 read although the session has a geometry") };
+        assert_eq!(session.first_geometry(unused), Some(geo(1, 1000)));
+        for session in [
+            AppSession::default(),
+            AppSession {
+                windows: vec![window(None), window(Some(geo(2, 1100)))],
+            },
+            AppSession {
+                windows: vec![window(Some(geo(1, 0)))],
+            },
+        ] {
+            assert_eq!(session.first_geometry(older), Some(geo(5, 900)));
+            assert_eq!(session.first_geometry(|| None), None);
+            assert_eq!(session.first_geometry(|| Some(geo(5, 200_000))), None);
+        }
+    }
+
+    #[test]
+    fn a_session_saved_without_geometry_still_loads() {
+        let (_b, store) = app();
+        let file = app_session_file(&store);
+        let session = AppSession {
+            windows: vec![SavedWindow {
+                workspace: None,
+                geometry: None,
+            }],
+        };
+        file.save(&session).unwrap();
+        assert!(matches!(file.load(), Loaded::Found(s) if s == session));
     }
 
     #[test]

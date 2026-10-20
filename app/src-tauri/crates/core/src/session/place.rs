@@ -9,6 +9,8 @@ const MOSTLY_VISIBLE: (i64, i64) = (1, 2);
 const TITLE_BAR: f64 = 40.0;
 /// No real window is bigger; larger = damaged data.
 const MAX_EXTENT: u32 = 100_000;
+/// Offset of a new window from the one it cascades from (logical px, right + down).
+const CASCADE: f64 = 30.0;
 
 /// Saved window geometry: outer top-left corner, inner size (restored size while maximized), display scale.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -61,14 +63,30 @@ pub struct Limits {
     pub frame: (f64, f64),
 }
 
-/// Outer top-left corner + inner size to set.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// Outer top-left corner + inner size to set, scale of the target screen.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Placement {
     pub x: i32,
     pub y: i32,
     pub width: u32,
     pub height: u32,
+    pub scale: f64,
     pub maximized: bool,
+}
+
+impl Placement {
+    /// The normal (not maximized) geometry this placement gives: what a maximized window restores to.
+    #[must_use]
+    pub fn normal(self) -> Geometry {
+        Geometry {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            scale: self.scale,
+            maximized: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -204,6 +222,7 @@ impl Fit {
             y: to_i32(y),
             width: to_u32(self.inner.0),
             height: to_u32(self.inner.1),
+            scale: self.scale,
             maximized,
         }
     }
@@ -243,6 +262,57 @@ pub fn place(saved: &Geometry, screens: &[Screen], limits: Limits) -> Option<Pla
     let x = work.left + ((work.width() - outer.width()) / 2).max(0);
     let y = work.top + ((work.height() - outer.height()) / 2).max(0);
     Some(fit.placement(x, y, saved.maximized))
+}
+
+/// Geometry of a new window cascaded from `source` (its normal rect when maximized): same size, one step right +
+/// down; a window that would leave the source's screen starts again at that screen's top-left corner. Never
+/// maximized. Final clamping onto today's screens = [`place`].
+#[must_use]
+pub fn cascade(source: &Geometry, screens: &[Screen], limits: Limits) -> Geometry {
+    let (x, y) = (i64::from(source.x), i64::from(source.y));
+    let was_on = Area::new(x, y, i64::from(source.width), i64::from(source.height));
+    let step = px(CASCADE * sane_scale(source.scale));
+    let (mut nx, mut ny) = (x.saturating_add(step), y.saturating_add(step));
+    if let Some(screen) = screen_under(was_on, screens) {
+        let scale = sane_scale(screen.scale);
+        let frame = (px(limits.frame.0 * scale), px(limits.frame.1 * scale));
+        let outer = Area::new(
+            nx,
+            ny,
+            i64::from(source.width) + frame.0,
+            i64::from(source.height) + frame.1,
+        );
+        let work = Area::from(screen.work);
+        if outer.right > work.right || outer.bottom > work.bottom {
+            (nx, ny) = (work.left, work.top);
+        }
+    }
+    Geometry {
+        x: to_i32(nx),
+        y: to_i32(ny),
+        maximized: false,
+        ..*source
+    }
+}
+
+/// Geometry to save for a window: maximized | minimized -> its last normal rect (+ the flag); maximized without a
+/// known normal rect -> its current rect (the flag keeps it maximized); minimized without one -> none (its current
+/// rect is the off-screen icon place).
+#[must_use]
+pub fn to_save(
+    maximized: bool,
+    minimized: bool,
+    normal: Option<Geometry>,
+    current: Option<Geometry>,
+) -> Option<Geometry> {
+    let rect = if minimized {
+        normal
+    } else if maximized {
+        normal.or(current)
+    } else {
+        current
+    };
+    rect.map(|g| Geometry { maximized, ..g })
 }
 
 #[cfg(test)]
@@ -363,6 +433,102 @@ mod tests {
         let b = screen(1000, 0, 2000, 1200, 1.0, false);
         let p = place(&geo(9000, 9000, 900, 600, 1.0), &[a, b], LIMITS).unwrap();
         assert!(p.x < 1000, "first screen used without a primary");
+    }
+
+    #[test]
+    fn a_placement_keeps_its_normal_rect_and_target_scale() {
+        let hidpi = screen(0, 0, 3840, 2080, 2.0, true);
+        let saved = Geometry {
+            maximized: true,
+            ..geo(100, 100, 1200, 800, 1.0)
+        };
+        let p = place(&saved, &[hidpi], LIMITS).unwrap();
+        assert!(p.maximized);
+        assert_eq!(p.normal(), geo(100, 100, 2400, 1600, 2.0));
+    }
+
+    #[test]
+    fn a_new_window_cascades_from_the_source() {
+        let g = cascade(&geo(100, 80, 1200, 800, 1.0), &[HD], LIMITS);
+        assert_eq!(g, geo(130, 110, 1200, 800, 1.0));
+        // the step is logical: 60 physical px at scale 2
+        let hidpi = screen(0, 0, 3840, 2080, 2.0, true);
+        let g = cascade(&geo(100, 80, 2400, 1600, 2.0), &[hidpi], LIMITS);
+        assert_eq!((g.x, g.y), (160, 140));
+    }
+
+    #[test]
+    fn a_maximized_source_gives_its_normal_rect_unmaximized() {
+        let source = Geometry {
+            maximized: true,
+            ..geo(100, 80, 1200, 800, 1.0)
+        };
+        let g = cascade(&source, &[HD], LIMITS);
+        assert_eq!(g, geo(130, 110, 1200, 800, 1.0));
+    }
+
+    #[test]
+    fn a_cascade_that_would_leave_the_screen_starts_at_its_corner() {
+        // right edge: x 704 + 1216 = 1920 fits; 705 + 30 does not
+        let g = cascade(&geo(674, 10, 1200, 800, 1.0), &[HD], LIMITS);
+        assert_eq!((g.x, g.y), (704, 40));
+        let g = cascade(&geo(705, 10, 1200, 800, 1.0), &[HD], LIMITS);
+        assert_eq!((g.x, g.y), (0, 0));
+        // bottom edge
+        let g = cascade(&geo(10, 200, 1200, 800, 1.0), &[HD], LIMITS);
+        assert_eq!((g.x, g.y), (0, 0));
+        // on a second screen left of the primary: its own corner, and `place` keeps it there
+        let left = screen(-1920, 0, 1920, 1040, 1.0, false);
+        let g = cascade(&geo(-1215, 10, 1200, 800, 1.0), &[HD, left], LIMITS);
+        assert_eq!((g.x, g.y), (-1920, 0));
+        let p = place(&g, &[HD, left], LIMITS).unwrap();
+        assert_eq!((p.x, p.y), (-1920, 0));
+    }
+
+    #[test]
+    fn a_cascade_from_an_offscreen_or_damaged_source_never_panics_and_place_recenters() {
+        let g = cascade(&geo(9000, 9000, 1200, 800, 1.0), &[HD], LIMITS);
+        assert_eq!((g.x, g.y), (9030, 9030));
+        let p = place(&g, &[HD], LIMITS).unwrap();
+        assert_eq!(p.x, (1920 - 1216) / 2, "centered on the primary");
+        for source in [
+            geo(i32::MAX, i32::MAX, u32::MAX, u32::MAX, f64::NAN),
+            geo(i32::MIN, i32::MIN, 1, 1, -3.0),
+            geo(0, 0, 1, 1, f64::INFINITY),
+        ] {
+            let g = cascade(&source, &[HD], LIMITS);
+            assert!(!g.maximized);
+            if let Some(p) = place(&g, &[HD], LIMITS) {
+                assert!(p.width >= 1 && p.height >= 1);
+            }
+        }
+        // no screens: just the step
+        assert_eq!(cascade(&geo(0, 0, 900, 600, 1.0), &[], LIMITS).x, 30);
+    }
+
+    #[test]
+    fn the_saved_geometry_of_a_maximized_or_minimized_window_is_its_normal_rect() {
+        let normal = geo(100, 80, 1200, 800, 1.0);
+        let full = geo(-8, -8, 1920, 1040, 1.0);
+        let icon = geo(-32000, -32000, 0, 0, 1.0);
+        let max = |g: Geometry| Geometry {
+            maximized: true,
+            ..g
+        };
+        assert_eq!(to_save(false, false, Some(normal), Some(full)), Some(full));
+        assert_eq!(
+            to_save(true, false, Some(normal), Some(full)),
+            Some(max(normal))
+        );
+        // restored maximized, never moved: no normal rect known -> still maximized next time
+        assert_eq!(to_save(true, false, None, Some(full)), Some(max(full)));
+        assert_eq!(to_save(false, true, Some(normal), Some(icon)), Some(normal));
+        assert_eq!(to_save(false, true, None, Some(icon)), None);
+        assert_eq!(
+            to_save(true, true, Some(normal), Some(icon)),
+            Some(max(normal))
+        );
+        assert_eq!(to_save(false, false, None, None), None);
     }
 
     #[test]
