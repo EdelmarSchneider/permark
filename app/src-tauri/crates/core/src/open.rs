@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::paths::VaultPath;
 use crate::settings::OpenIn;
@@ -164,6 +165,67 @@ pub fn create_untitled_markdown(folder: &Path) -> io::Result<PathBuf> {
         return Err(error);
     }
     Ok(path)
+}
+
+/// Where an open from the UI goes (the frontend turns the `open_in` setting into it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum OpenPlacement {
+    /// A new tab in this window.
+    Tab,
+    /// Replaces the active tab (its unsaved prompt ran first, in the frontend).
+    ThisTab,
+    NewWindow,
+}
+
+/// What an open from the UI in `view` does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Placed {
+    /// Open already (one place): that window + tab forward; `document` = the file inside the project.
+    Focus {
+        place: Place,
+        document: Option<VaultPath>,
+    },
+    /// Opens in the view's own tab.
+    ThisTab,
+    /// A new tab in this window.
+    Tab {
+        window: String,
+    },
+    NewWindow,
+}
+
+/// Decides an open from the UI: open already anywhere (it, or a project tab holding the file) -> focus, whatever the
+/// placement; else `placement`, where this tab on a view without a tab (the Welcome) is a new tab (it adopts the
+/// view). `None`: unknown view.
+#[must_use]
+pub fn place_open(
+    registry: &WorkspaceRegistry,
+    view: &str,
+    reference: &WorkspaceRef,
+    placement: OpenPlacement,
+) -> Option<Placed> {
+    if let Some(place) = registry.find(reference) {
+        return Some(Placed::Focus {
+            place,
+            document: None,
+        });
+    }
+    if let WorkspaceRef::SingleFile(path) = reference {
+        if let Some((place, document)) = registry.find_containing(path) {
+            return Some(Placed::Focus {
+                place,
+                document: Some(document),
+            });
+        }
+    }
+    let window = registry.window_of(view)?;
+    Some(match placement {
+        OpenPlacement::NewWindow => Placed::NewWindow,
+        OpenPlacement::ThisTab if registry.place_of_view(view).is_some() => Placed::ThisTab,
+        OpenPlacement::ThisTab | OpenPlacement::Tab => Placed::Tab { window },
+    })
 }
 
 /// Where one outside path goes.
@@ -362,6 +424,106 @@ mod tests {
                 }
             }
             crate::workspace::TabOpen::Existing(place) => place,
+        }
+    }
+
+    /// Placement table: `open_in` x this view on Welcome | in a tab x open here | elsewhere | file inside an open
+    /// project.
+    #[test]
+    fn placement_of_opens_from_the_ui() {
+        use crate::workspace::WindowKind;
+        let (_b, registry) = registry();
+        for window in ["main", "w-1"] {
+            registry.add_window(window, WindowKind::Work);
+        }
+        let _ = registry.show_welcome_view("main");
+        let welcome = registry.shown_view("main").unwrap();
+        let (here, elsewhere, fresh) = (
+            tempfile::tempdir().unwrap(),
+            tempfile::tempdir().unwrap(),
+            tempfile::tempdir().unwrap(),
+        );
+        std::fs::write(elsewhere.path().join("in.md"), "x").unwrap();
+        let fresh = WorkspaceRef::classify(fresh.path()).unwrap();
+        let all = [
+            OpenPlacement::Tab,
+            OpenPlacement::ThisTab,
+            OpenPlacement::NewWindow,
+        ];
+        // the Welcome view: this tab = a new tab (it becomes the window's first)
+        let on_welcome: Vec<Placed> = all
+            .iter()
+            .map(|p| place_open(&registry, &welcome, &fresh, *p).unwrap())
+            .collect();
+        let tab = Placed::Tab {
+            window: "main".into(),
+        };
+        assert_eq!(on_welcome, [tab.clone(), tab.clone(), Placed::NewWindow]);
+        // a view in a tab
+        let here_place = open_tab(
+            &registry,
+            "main",
+            &WorkspaceRef::classify(here.path()).unwrap(),
+        );
+        let view = registry.view_of_tab(here_place.tab).unwrap();
+        let in_tab: Vec<Placed> = all
+            .iter()
+            .map(|p| place_open(&registry, &view, &fresh, *p).unwrap())
+            .collect();
+        assert_eq!(in_tab, [tab, Placed::ThisTab, Placed::NewWindow]);
+        // open here | in another window | a file inside an open project: focus, whatever the placement
+        let there = open_tab(
+            &registry,
+            "w-1",
+            &WorkspaceRef::classify(elsewhere.path()).unwrap(),
+        );
+        for placement in all {
+            assert_eq!(
+                place_open(
+                    &registry,
+                    &view,
+                    &WorkspaceRef::classify(here.path()).unwrap(),
+                    placement
+                ),
+                Some(Placed::Focus {
+                    place: here_place.clone(),
+                    document: None
+                })
+            );
+            assert_eq!(
+                place_open(
+                    &registry,
+                    &view,
+                    &WorkspaceRef::classify(elsewhere.path()).unwrap(),
+                    placement
+                ),
+                Some(Placed::Focus {
+                    place: there.clone(),
+                    document: None
+                })
+            );
+            assert_eq!(
+                place_open(
+                    &registry,
+                    &view,
+                    &WorkspaceRef::classify(&elsewhere.path().join("in.md")).unwrap(),
+                    placement
+                ),
+                Some(Placed::Focus {
+                    place: there.clone(),
+                    document: Some(VaultPath::parse("in.md").unwrap())
+                })
+            );
+        }
+        assert_eq!(
+            place_open(&registry, "v-nope", &fresh, OpenPlacement::Tab),
+            None
+        );
+        // wire form
+        let p: OpenPlacement = serde_json::from_str("\"thisTab\"").unwrap();
+        assert_eq!(p, OpenPlacement::ThisTab);
+        for old in ["\"ask\"", "\"thisWindow\"", "\"elsewhere\""] {
+            assert!(serde_json::from_str::<OpenPlacement>(old).is_err(), "{old}");
         }
     }
 

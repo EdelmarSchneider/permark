@@ -38,9 +38,10 @@ use tauri::{AppHandle, Emitter, Webview};
 use tauri_plugin_opener::OpenerExt;
 use ts_rs::TS;
 
-use crate::open::{open_placed, OpenOutcome, OpenPlacement};
+use crate::open::{open_placed, OpenOutcome};
 use crate::shell::state;
 use crate::views::{BarTheme, CloseAnswer, ViewRequest};
+use permark_core::open::OpenPlacement;
 
 /// What a view (one tab, or a window's Welcome) needs to draw its first frame.
 #[derive(Debug, Clone, Serialize, TS)]

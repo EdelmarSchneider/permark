@@ -4,7 +4,9 @@
 use std::path::{Path, PathBuf};
 
 use permark_core::events::OpenFailed;
-use permark_core::open::{create_untitled_markdown, route, OpenRequest, Route};
+use permark_core::open::{
+    create_untitled_markdown, place_open, route, OpenPlacement, OpenRequest, Placed, Route,
+};
 use permark_core::paths::{Root, VaultPath};
 use permark_core::session::{restore_plan, AppSession};
 use permark_core::settings::StartIn;
@@ -13,24 +15,12 @@ use permark_core::workspace::{
     Begin, MoveTo, OpenError, Outcome, Place, TabId, TabOpen, Ticket, WindowView, WorkspaceRef,
 };
 use permark_core::{ErrorKind, IpcError};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use ts_rs::TS;
 
 use crate::shell::state;
 use crate::windows::{self, MAIN};
-
-/// Where an open from the UI goes (the frontend turns the `open_in` setting into it).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub enum OpenPlacement {
-    /// A new tab in this window.
-    Tab,
-    /// Replaces the active tab (its unsaved prompt ran first, in the frontend).
-    ThisTab,
-    NewWindow,
-}
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "outcome", rename_all = "camelCase")]
@@ -187,10 +177,10 @@ pub fn open_in_new_window(
     Ok(label)
 }
 
-/// An open from the app's own UI in `view`: where it is already (one place), else by `placement`.
+/// An open from the app's own UI in `view`: where it is already (one place), else by `placement` (`place_open`).
 ///
 /// # Errors
-/// The open error (this-tab opens), the window cannot be made.
+/// The open error (this-tab opens), unknown view, the window cannot be made.
 pub fn open_placed(
     handle: &AppHandle,
     view: &str,
@@ -199,49 +189,39 @@ pub fn open_placed(
     placement: OpenPlacement,
 ) -> Result<OpenOutcome, IpcError> {
     let shell = state(handle);
-    if let Some(place) = shell.registry.find(reference) {
-        focus_place(handle, &place, document);
-        return Ok(focused(&place));
-    }
-    if let WorkspaceRef::SingleFile(path) = reference {
-        if let Some((place, inside)) = shell.registry.find_containing(path) {
-            focus_place(handle, &place, Some(inside));
-            return Ok(focused(&place));
-        }
-    }
-    let window = shell
-        .registry
-        .window_of(view)
+    let placed = place_open(&shell.registry, view, reference, placement)
         .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(view.to_owned()))?;
-    match placement {
-        OpenPlacement::NewWindow => {
+    match placed {
+        Placed::Focus {
+            place,
+            document: inside,
+        } => {
+            focus_place(handle, &place, inside.or(document));
+            Ok(focused(&place))
+        }
+        Placed::NewWindow => {
             let window = open_in_new_window(handle, reference, document)?;
             Ok(OpenOutcome::OpenedElsewhere { window })
         }
-        // a view with no tab (the Welcome): the open becomes the window's first tab
-        OpenPlacement::ThisTab if shell.registry.place_of_view(view).is_some() => {
-            match shell
-                .registry
-                .begin_open(view, reference, document.clone())?
-            {
-                Begin::Existing(place) => {
-                    focus_place(handle, &place, document);
-                    Ok(focused(&place))
-                }
-                Begin::Ticket(ticket) => {
-                    load(handle, ticket, reference)?;
-                    Ok(OpenOutcome::Opened {
-                        view: shell
-                            .registry
-                            .window_view(view)
-                            .unwrap_or(WindowView::Welcome),
-                    })
-                }
+        Placed::Tab { window } => open_tab(handle, &window, reference, document),
+        Placed::ThisTab => match shell
+            .registry
+            .begin_open(view, reference, document.clone())?
+        {
+            Begin::Existing(place) => {
+                focus_place(handle, &place, document);
+                Ok(focused(&place))
             }
-        }
-        OpenPlacement::ThisTab | OpenPlacement::Tab => {
-            open_tab(handle, &window, reference, document)
-        }
+            Begin::Ticket(ticket) => {
+                load(handle, ticket, reference)?;
+                Ok(OpenOutcome::Opened {
+                    view: shell
+                        .registry
+                        .window_view(view)
+                        .unwrap_or(WindowView::Welcome),
+                })
+            }
+        },
     }
 }
 
@@ -483,18 +463,4 @@ pub fn opened_urls(handle: &AppHandle, urls: &[tauri::Url]) {
     };
     let handle = handle.clone();
     std::thread::spawn(move || handle_request(&handle, &request));
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn placement_wire_format() {
-        let p: OpenPlacement = serde_json::from_str("\"thisTab\"").unwrap();
-        assert_eq!(p, OpenPlacement::ThisTab);
-        for old in ["\"ask\"", "\"thisWindow\"", "\"elsewhere\""] {
-            assert!(serde_json::from_str::<OpenPlacement>(old).is_err(), "{old}");
-        }
-    }
 }
