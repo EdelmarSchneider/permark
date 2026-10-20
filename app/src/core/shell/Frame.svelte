@@ -128,12 +128,15 @@
   .panel {
     border-left: 1px solid var(--border);
   }
+  /* nothing of the page (a header too wide for it) ever paints over the panels beside it */
   .main {
     position: relative;
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
+    overflow: clip;
     background: var(--bg);
   }
   .status {

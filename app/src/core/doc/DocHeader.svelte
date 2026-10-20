@@ -19,6 +19,7 @@
   import { contributions } from "../plugins/instance.svelte";
   import Badge from "../shell/Badge.svelte";
   import { documents } from "./document.svelte";
+  import { headerFit } from "./headerFit";
   import ReadingMenu from "./ReadingMenu.svelte";
   import { webPictures } from "./webPictures.svelte";
   import { reading } from "./reading.svelte";
@@ -34,10 +35,22 @@
     onFind: () => void;
     /** Opens the system program: only for files of a project. */
     canOpenSystem: boolean;
-    /** The mode switch (View | Edit | Source) and Save, when the document can be edited. */
-    modes?: Snippet;
+    /** The mode switch (View | Edit | Source) and Save, when the document can be edited; `true` = icons only. */
+    modes?: Snippet<[boolean]>;
+    /** Px the edit controls add to the row now (Save, diagram toggle): the row folds that much sooner. */
+    extra?: number;
   };
-  let { path, savedMs, role, template, hasOutline, onFind, canOpenSystem, modes }: Props = $props();
+  let {
+    path,
+    savedMs,
+    role,
+    template,
+    hasOutline,
+    onFind,
+    canOpenSystem,
+    modes,
+    extra = 0,
+  }: Props = $props();
 
   const ROLES: Readonly<Record<string, MessageKey>> = {
     agents: "role.agents",
@@ -69,6 +82,25 @@
   let popup = $state.raw<Popup | null>(null);
   let viewMenu = $state(false);
   let now = $state(Date.now());
+  let bar: HTMLElement | undefined = $state();
+  let width = $state(0);
+  /** What fits the row; the rest is in the "…" menu (nothing becomes unreachable). */
+  const fit = $derived(headerFit(width, extra));
+  const folded = $derived(fit !== "full");
+  const compact = $derived(fit === "compact");
+
+  // the row's width follows the area (observer torn down with the header; none = full row, as in tests)
+  $effect(() => {
+    if (!bar || typeof ResizeObserver === "undefined") return;
+    const el = bar;
+    const measure = (): void => {
+      width = el.clientWidth;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  });
 
   // "saved 3 min ago" stays true while the window stays open
   $effect(() => {
@@ -102,20 +134,59 @@
     return { x: box.left, y: box.bottom + 4, entries };
   }
 
-  function trailMenu(event: MouseEvent): void {
-    const entries: MenuEntry[] = documents.trail.recent().map(({ index, place, current }) => ({
+  function trailEntries(): MenuEntry[] {
+    return documents.trail.recent().map(({ index, place, current }) => ({
       kind: "item",
       label: `${current ? "• " : ""}${place.path.split("/").at(-1) ?? place.path}${place.anchor ? `#${place.anchor}` : ""}`,
       hint: place.path,
       run: () => void documents.jump(index),
     }));
+  }
+
+  function trailMenu(event: MouseEvent): void {
+    const entries = trailEntries();
     if (entries.length === 0 || !(event.currentTarget instanceof Element)) return;
     popup = below(event.currentTarget, entries);
+  }
+
+  /** The row's actions that did not fit, first in the "…" menu. */
+  function foldedEntries(button: Element): MenuEntry[] {
+    if (!folded) return [];
+    const entries: MenuEntry[] = [];
+    if (compact && role) entries.push({ kind: "heading", label: roleLabel(role) });
+    if (saved) entries.push({ kind: "heading", label: saved });
+    if (documents.trail.canBack || documents.trail.canForward) {
+      entries.push({
+        kind: "item",
+        label: t("trail.all"),
+        run: () => {
+          const trail = trailEntries();
+          if (trail.length > 0) popup = below(button, trail);
+        },
+      });
+    }
+    entries.push(
+      { kind: "item", label: t("header.reveal"), run: () => revealInTree(path) },
+      {
+        kind: "item",
+        label: t("header.copyReference"),
+        run: () => void documents.copyReference(template),
+      },
+      {
+        kind: "item",
+        label: t("header.openExternal"),
+        run: () => void documents.openInEditor(),
+      },
+      { kind: "item", label: t("find.label"), run: onFind },
+      { kind: "separator" },
+    );
+    return entries;
   }
 
   function moreMenu(event: MouseEvent): void {
     if (!(event.currentTarget instanceof Element)) return;
     const entries: MenuEntry[] = [
+      ...foldedEntries(event.currentTarget),
       { kind: "item", label: t("cmd.copyDocument"), run: () => void documents.copyDocument() },
     ];
     if (webPictures.project) {
@@ -146,7 +217,7 @@
   }
 </script>
 
-<div class="doc-header" role="toolbar" aria-label={t("header.path")}>
+<div class="doc-header" role="toolbar" aria-label={t("header.path")} bind:this={bar}>
   <button
     type="button"
     class="icon-btn"
@@ -175,16 +246,18 @@
   >
     <ArrowRight size={16} />
   </button>
-  <button
-    type="button"
-    class="icon-btn"
-    title={t("trail.all")}
-    aria-label={t("trail.all")}
-    disabled={!documents.trail.canBack && !documents.trail.canForward}
-    onclick={trailMenu}
-  >
-    <History size={15} />
-  </button>
+  {#if !folded}
+    <button
+      type="button"
+      class="icon-btn"
+      title={t("trail.all")}
+      aria-label={t("trail.all")}
+      disabled={!documents.trail.canBack && !documents.trail.canForward}
+      onclick={trailMenu}
+    >
+      <History size={15} />
+    </button>
+  {/if}
 
   <nav class="crumbs" aria-label={t("header.path")} title={path}>
     {#each folders as folder, at (at)}
@@ -195,51 +268,53 @@
   {#each badges as badge, at (at)}
     <Badge {badge} />
   {/each}
-  {#if role}
+  {#if role && !compact}
     <span class="role" title={t("header.roleHint")}>{roleLabel(role)}</span>
   {/if}
   <span class="spacer"></span>
-  {#if modes}{@render modes()}{/if}
-  {#if saved}
+  {#if modes}{@render modes(compact)}{/if}
+  {#if saved && !folded}
     <span class="saved">{saved}</span>
   {/if}
 
-  <button
-    type="button"
-    class="icon-btn"
-    title={t("header.reveal")}
-    aria-label={t("header.reveal")}
-    onclick={() => revealInTree(path)}
-  >
-    <Crosshair size={16} />
-  </button>
-  <button
-    type="button"
-    class="icon-btn"
-    title={t("header.copyReference")}
-    aria-label={t("header.copyReference")}
-    onclick={() => void documents.copyReference(template)}
-  >
-    <Copy size={15} />
-  </button>
-  <button
-    type="button"
-    class="icon-btn"
-    title={t("header.openExternal")}
-    aria-label={t("header.openExternal")}
-    onclick={() => void documents.openInEditor()}
-  >
-    <SquareArrowOutUpRight size={15} />
-  </button>
-  <button
-    type="button"
-    class="icon-btn"
-    title={t("find.label")}
-    aria-label={t("find.label")}
-    onclick={onFind}
-  >
-    <Search size={16} />
-  </button>
+  {#if !folded}
+    <button
+      type="button"
+      class="icon-btn"
+      title={t("header.reveal")}
+      aria-label={t("header.reveal")}
+      onclick={() => revealInTree(path)}
+    >
+      <Crosshair size={16} />
+    </button>
+    <button
+      type="button"
+      class="icon-btn"
+      title={t("header.copyReference")}
+      aria-label={t("header.copyReference")}
+      onclick={() => void documents.copyReference(template)}
+    >
+      <Copy size={15} />
+    </button>
+    <button
+      type="button"
+      class="icon-btn"
+      title={t("header.openExternal")}
+      aria-label={t("header.openExternal")}
+      onclick={() => void documents.openInEditor()}
+    >
+      <SquareArrowOutUpRight size={15} />
+    </button>
+    <button
+      type="button"
+      class="icon-btn"
+      title={t("find.label")}
+      aria-label={t("find.label")}
+      onclick={onFind}
+    >
+      <Search size={16} />
+    </button>
+  {/if}
   <button
     type="button"
     class="icon-btn"
@@ -293,6 +368,10 @@
     padding: 0 var(--sp-2);
     border-bottom: 1px solid var(--border);
     background: var(--bg);
+  }
+  /* only the path gives way to a long name; buttons keep their size */
+  .doc-header > :global(*:not(.crumbs, .spacer)) {
+    flex-shrink: 0;
   }
   .crumbs {
     display: flex;
