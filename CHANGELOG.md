@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- Windows come back where you left them, also when PerMark starts from a file you open. A new window opens slightly offset from the current one, at the same size, and a maximized window stays maximized. The first start after 0.5 takes the window place 0.5 saved.
+- The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons.
+- The scrollbar of a document is always visible and wider, so it is easier to grab.
+
+
 ## [0.6.0] - 2026-10-20
 
 PerMark is now a unified document workspace: one place to read, write and organize Markdown and the files around it, and to steer AI projects through their documents. AI speeds the work. Your vision steers it. This release rebuilds the whole program: many windows in one app, small config files and TOON as clean sheets, review of code and text files, and an agent connection with 13 tools. The name, the logo, your files and your notes stay where they were.
