@@ -1,17 +1,17 @@
 # Token ceilings of the typical answer of each agent tool (core estimator, fixture testdata/agent-fixture).
 # More than 10 % over fails; lower them when an answer gets smaller.
 get_context	51
-list_unread	29
-map	107
-search	195
-search+budget	195
-list_tags	25
-outline	80
-outline+links	108
-read	76
-list_comments	102
-resolve_comment	8
-list_notes	47
-read_note	54
+list_unread	32
+map	119
+search	209
+search+budget	183
+list_tags	27
+outline	91
+outline+links	120
+read	78
+list_comments	110
+resolve_comment	9
+list_notes	50
+read_note	55
 open	8
-activity	182
+activity	194

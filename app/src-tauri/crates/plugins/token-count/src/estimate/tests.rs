@@ -154,3 +154,27 @@ fn the_estimates_are_near_what_they_were_fitted_to() {
     // the calibrated estimates beat the rule of thumb on this corpus
     assert!(rule > 2.0 * o200k, "rule {rule}");
 }
+
+#[test]
+fn json_of_an_answer_costs_about_what_real_tokenizers_say_over_its_tab_table() {
+    // the same 28 answers as tab table and as compact JSON; o200k (and two local models' tokenizers) count the JSON
+    // ~43 % bigger
+    let answers: BTreeMap<String, String> =
+        serde_json::from_str(include_str!("../../calibration/agent-answers.json")).unwrap();
+    let sum = |suffix: &str| -> u64 {
+        answers
+            .iter()
+            .filter(|(name, _)| name.ends_with(suffix))
+            .map(|(_, text)| permark_core::tokens::estimate(text))
+            .sum()
+    };
+    let (table, json) = (sum(".table"), sum(".json"));
+    let ratio = json as f64 / table as f64;
+    assert!((1.35..=1.55).contains(&ratio), "json / table = {ratio}");
+}
+
+#[test]
+fn a_tab_and_joined_punctuation_are_features_of_their_own() {
+    let f = permark_core::tokens::Features::of("a\tb \":\" x");
+    assert_eq!((f.tab, f.space, f.punct, f.punct_join), (1, 2, 1, 2));
+}

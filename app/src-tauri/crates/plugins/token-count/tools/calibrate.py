@@ -5,7 +5,9 @@
 
 Run it from the plugin crate folder. It prints the weights (milli-tokens per unit) and the error table. Measured
 targets: `o200k` and `cl100k` (the rank files), `gemini` (the SentencePiece model Google's SDK uses to count Gemini
-tokens locally, when a model file is given). Nothing is measured for `claude`: see `estimate.rs`.
+tokens locally, when a model file is given). Nothing is measured for `claude`: see `estimate.rs`. `generic` (the
+estimator of `permark_core::tokens`) is fitted against `o200k` on the corpus plus the answers in
+`calibration/agent-answers.json` (tab tables, JSON and TOON of the same data), which weigh as much as half the corpus.
 """
 
 import json
@@ -20,8 +22,8 @@ from tiktoken.load import load_tiktoken_bpe
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CORPUS = os.path.join(HERE, "..", "corpus")
-FEATURES = ["space", "newline", "lower", "upper", "digit", "latinExt", "cjk", "greekCyr", "letterOther", "emoji", "symbol",
-            "punct", "word", "excess"]
+FEATURES = ["space", "tab", "newline", "lower", "upper", "digit", "latinExt", "cjk", "greekCyr", "letterOther", "emoji", "symbol",
+            "punct", "punctJoin", "word", "excess"]
 
 EXCESS_FROM = 6  # characters of a word beyond this many count as "excess"
 CJK = [(0x2E80, 0x2FDF), (0x3040, 0x30FF), (0x3100, 0x312F), (0x3190, 0x31FF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF),
@@ -38,6 +40,8 @@ def in_ranges(cp, ranges):
 
 
 def class_of(cp):
+    if cp == 0x09:
+        return "tab"
     if cp in SPACE:
         return "space"
     if cp in NEWLINE:
@@ -68,9 +72,15 @@ def class_of(cp):
 def features(text):
     counts = dict.fromkeys(FEATURES, 0)
     run = 0
+    previous = None
     for ch in text:
         name = class_of(ord(ch))
-        counts[name] += 1
+        # ASCII punctuation right after ASCII punctuation (`":"`, `},{`, `();`) mostly merges into the same token
+        if name == "punct" and previous == "punct":
+            counts["punctJoin"] += 1
+        else:
+            counts[name] += 1
+        previous = name
         if name in ("lower", "upper", "digit", "latinExt"):
             if run == 0:
                 counts["word"] += 1
@@ -108,6 +118,27 @@ def chunks_of(text, target):
     return pieces
 
 
+def fit_generic(count, corpus_rows):
+    """The weights of `permark_core::tokens::GENERIC`: o200k on the corpus rows + the agent answers (half weight)."""
+    with open(os.path.join(HERE, "..", "calibration", "agent-answers.json"), encoding="utf-8") as f:
+        answers = list(json.load(f).values())
+    rows = [(r[1], r[2], 1.0 / len(corpus_rows)) for r in corpus_rows]
+    rows += [(t, features(t), 0.5 / len(answers)) for t in answers]
+    y = np.array([count(r[0]) for r in rows], dtype=float)
+    ok = y > 0
+    s = np.sqrt(np.array([r[2] for r in rows]))[ok]
+    X = np.array([r[1] for r in rows], dtype=float)[ok]
+    w, _ = nnls(X / y[ok][:, None] * s[:, None], s)
+    rel = np.abs(X @ w - y[ok]) / y[ok]
+    n = len(corpus_rows)
+    corpus_ok = ok[:n].sum()
+    return {
+        "weights_milli": {name: round(float(v) * 1000) for name, v in zip(FEATURES, w)},
+        "mean_abs_corpus_rows": float(np.mean(rel[:corpus_ok])),
+        "mean_abs_answers": float(np.mean(rel[corpus_ok:])),
+    }
+
+
 def main():
     counters = load_encodings(sys.argv[1])
     if len(sys.argv) > 2:
@@ -125,7 +156,7 @@ def main():
                 rows.append((name, chunk, features(chunk)))
         rows.append((name, text, features(text)))
     X = np.array([r[2] for r in rows], dtype=float)
-    result = {}
+    result = {"generic": fit_generic(counters["o200k"], rows)}
     for key, count in counters.items():
         y = np.array([count(r[1]) for r in rows], dtype=float)
         ok = y > 0

@@ -16,12 +16,16 @@ spec = importlib.util.spec_from_file_location("calibrate", os.path.join(HERE, "c
 calibrate = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(calibrate)
 
-O200K = {"space": 118, "newline": 387, "lower": 0, "upper": 81, "digit": 515, "latinExt": 730, "cjk": 875,
-         "greekCyr": 324, "letterOther": 403, "emoji": 2616, "symbol": 1224, "punct": 514, "word": 861, "excess": 582}
-CL100K = {"space": 124, "newline": 421, "lower": 0, "upper": 47, "digit": 521, "latinExt": 1833, "cjk": 1338,
-          "greekCyr": 639, "letterOther": 1021, "emoji": 4357, "symbol": 595, "punct": 455, "word": 900, "excess": 640}
-GEMINI = {"space": 123, "newline": 916, "lower": 30, "upper": 161, "digit": 1043, "latinExt": 532, "cjk": 757,
-          "greekCyr": 300, "letterOther": 416, "emoji": 2706, "symbol": 632, "punct": 675, "word": 714, "excess": 436}
+O200K = {"space": 118, "tab": 118, "newline": 387, "lower": 0, "upper": 81, "digit": 515, "latinExt": 730, "cjk": 875,
+         "greekCyr": 324, "letterOther": 403, "emoji": 2616, "symbol": 1224, "punct": 514, "punctJoin": 514, "word": 861, "excess": 582}
+CL100K = {"space": 124, "tab": 124, "newline": 421, "lower": 0, "upper": 47, "digit": 521, "latinExt": 1833, "cjk": 1338,
+          "greekCyr": 639, "letterOther": 1021, "emoji": 4357, "symbol": 595, "punct": 455, "punctJoin": 455, "word": 900, "excess": 640}
+GEMINI = {"space": 123, "tab": 123, "newline": 916, "lower": 30, "upper": 161, "digit": 1043, "latinExt": 532, "cjk": 757,
+          "greekCyr": 300, "letterOther": 416, "emoji": 2706, "symbol": 632, "punct": 675, "punctJoin": 675, "word": 714, "excess": 436}
+# `permark_core::tokens::GENERIC` (the `generic` family of `tools/calibrate.py`)
+GENERIC = {"space": 121, "tab": 593, "newline": 712, "lower": 0, "upper": 12, "digit": 497, "latinExt": 625, "cjk": 888,
+           "greekCyr": 317, "letterOther": 396, "emoji": 3050, "symbol": 1026, "punct": 639, "punctJoin": 182,
+           "word": 837, "excess": 568}
 # K x 1000 / 1000: chosen so the English prose sample (corpus/en-novel.txt) comes out at 3.5 characters per token.
 K_PER_MILLE = 1070
 CLAUDE = {name: round(value * K_PER_MILLE / 1000) for name, value in O200K.items()}
@@ -52,6 +56,8 @@ TEXTS = {
     "symbols": "∑ ∏ ∫ √ ∞ ≈ ≠ → ← ┌─┬─┐ “quotes” — … ©",
     "ascii punctuation": "!!! ... ??? --- *** ### /// {{{ }}} <<< >>> $%&@^~|\\`",
     "spaces": "a  b   c\t\td e f　g",
+    "tab table": "#cols path size_tok tags\nREADME.md\t~105\tplan\ndocs/a.md\t~12\n",
+    "json": "{\"files\":[{\"path\":\"README.md\",\"size_tok\":105},{\"path\":\"docs/a.md\"}]}",
     "newlines": "a\nb\r\nc\rd e\u0085f\u000bg\u000ch",
     "controls": "a\u0000b\u0001c\u007fd\u0080e\u009ff",
     "private and unassigned": " \U000f0000 ͸ \U000e0080",
@@ -81,7 +87,7 @@ def main():
     for item in items:
         t = item["text"]
         item["estimates"] = {
-            "generic": estimate(t, O200K),
+            "generic": estimate(t, GENERIC),
             "o200k": estimate(t, O200K),
             "cl100k": estimate(t, CL100K),
             "gemini": estimate(t, GEMINI),

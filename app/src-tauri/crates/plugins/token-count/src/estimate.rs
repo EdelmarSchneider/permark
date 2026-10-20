@@ -10,10 +10,30 @@ use permark_core::tokens::{Features, Weights};
 
 use crate::tokenizer::{Encoding, Tokenizer};
 
-pub const O200K_INTERIM: Weights = permark_core::tokens::GENERIC;
+/// Fitted on the corpus alone; a tab weighs as a space and joined punctuation as punctuation (the fit before those
+/// features existed, kept so the interim numbers stay what they were).
+pub const O200K_INTERIM: Weights = Weights {
+    space: 118,
+    tab: 118,
+    newline: 387,
+    lower: 0,
+    upper: 81,
+    digit: 515,
+    lat_ext: 730,
+    cjk: 875,
+    greek_cyr: 324,
+    letter_other: 403,
+    emoji: 2616,
+    symbol: 1224,
+    punct: 514,
+    punct_join: 514,
+    word: 861,
+    excess: 582,
+};
 
 pub const CL100K_INTERIM: Weights = Weights {
     space: 124,
+    tab: 124,
     newline: 421,
     lower: 0,
     upper: 47,
@@ -25,12 +45,14 @@ pub const CL100K_INTERIM: Weights = Weights {
     emoji: 4357,
     symbol: 595,
     punct: 455,
+    punct_join: 455,
     word: 900,
     excess: 640,
 };
 
 pub const GEMINI: Weights = Weights {
     space: 123,
+    tab: 123,
     newline: 916,
     lower: 30,
     upper: 161,
@@ -42,12 +64,14 @@ pub const GEMINI: Weights = Weights {
     emoji: 2706,
     symbol: 632,
     punct: 675,
+    punct_join: 675,
     word: 714,
     excess: 436,
 };
 
 pub const CLAUDE: Weights = Weights {
     space: 126,
+    tab: 126,
     newline: 414,
     lower: 0,
     upper: 87,
@@ -59,6 +83,7 @@ pub const CLAUDE: Weights = Weights {
     emoji: 2799,
     symbol: 1310,
     punct: 550,
+    punct_join: 550,
     word: 921,
     excess: 623,
 };

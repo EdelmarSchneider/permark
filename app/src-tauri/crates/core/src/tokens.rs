@@ -6,8 +6,10 @@
 //! the TypeScript copies (`plugins/token-count/estimate.ts`) agree on every text. Classes come from code point ranges
 //! only, never from Unicode property tables.
 //!
-//! [`estimate`] uses the generic weights: good enough to tell how big a part of a document is, never presented as the
-//! count of a model.
+//! [`estimate`] uses the generic weights: good enough to tell how big a part of a document | an answer for a model is,
+//! never presented as the count of a model. A tab and ASCII punctuation right after ASCII punctuation are features of
+//! their own: tab tables and JSON are made of them, and a weight shared with spaces | lone punctuation misjudged both
+//! (JSON came out ~80 % bigger than a tab table of the same data, real tokenizers say ~43 %).
 
 use std::sync::Arc;
 
@@ -17,6 +19,7 @@ use crate::settings::ProjectConfig;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
     Space,
+    Tab,
     Newline,
     Lower,
     Upper,
@@ -35,7 +38,8 @@ pub enum Class {
 pub fn class_of(c: char) -> Class {
     let cp = u32::from(c);
     match cp {
-        0x20 | 0x09 | 0xA0 | 0x1680 | 0x2000..=0x200A | 0x202F | 0x205F | 0x3000 => Class::Space,
+        0x09 => Class::Tab,
+        0x20 | 0xA0 | 0x1680 | 0x2000..=0x200A | 0x202F | 0x205F | 0x3000 => Class::Space,
         0x0A..=0x0D | 0x85 | 0x2028 | 0x2029 => Class::Newline,
         0x30..=0x39 => Class::Digit,
         0x41..=0x5A => Class::Upper,
@@ -73,6 +77,7 @@ const EXCESS_FROM: u64 = 6;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Features {
     pub space: u64,
+    pub tab: u64,
     pub newline: u64,
     pub lower: u64,
     pub upper: u64,
@@ -83,7 +88,10 @@ pub struct Features {
     pub letter_other: u64,
     pub emoji: u64,
     pub symbol: u64,
+    /// ASCII punctuation not right after ASCII punctuation.
     pub punct: u64,
+    /// ASCII punctuation right after ASCII punctuation (`":"`, `},{`): mostly merges into the token before it.
+    pub punct_join: u64,
     /// Maximal runs of digits | letters of the Latin classes.
     pub word: u64,
     pub excess: u64,
@@ -94,10 +102,12 @@ impl Features {
     pub fn of(text: &str) -> Self {
         let mut f = Self::default();
         let mut run = 0_u64;
+        let mut previous = None;
         for c in text.chars() {
             let class = class_of(c);
             match class {
                 Class::Space => f.space += 1,
+                Class::Tab => f.tab += 1,
                 Class::Newline => f.newline += 1,
                 Class::Lower => f.lower += 1,
                 Class::Upper => f.upper += 1,
@@ -108,8 +118,10 @@ impl Features {
                 Class::LetterOther => f.letter_other += 1,
                 Class::Emoji => f.emoji += 1,
                 Class::Symbol => f.symbol += 1,
+                Class::Punct if previous == Some(Class::Punct) => f.punct_join += 1,
                 Class::Punct => f.punct += 1,
             }
+            previous = Some(class);
             if matches!(
                 class,
                 Class::Lower | Class::Upper | Class::Digit | Class::LatinExt
@@ -133,6 +145,7 @@ impl Features {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Weights {
     pub space: u64,
+    pub tab: u64,
     pub newline: u64,
     pub lower: u64,
     pub upper: u64,
@@ -144,6 +157,7 @@ pub struct Weights {
     pub emoji: u64,
     pub symbol: u64,
     pub punct: u64,
+    pub punct_join: u64,
     pub word: u64,
     pub excess: u64,
 }
@@ -153,6 +167,7 @@ impl Weights {
     #[must_use]
     pub fn tokens(&self, f: &Features) -> u64 {
         let milli = self.space * f.space
+            + self.tab * f.tab
             + self.newline * f.newline
             + self.lower * f.lower
             + self.upper * f.upper
@@ -164,28 +179,32 @@ impl Weights {
             + self.emoji * f.emoji
             + self.symbol * f.symbol
             + self.punct * f.punct
+            + self.punct_join * f.punct_join
             + self.word * f.word
             + self.excess * f.excess;
         milli.div_ceil(1000)
     }
 }
 
-/// The generic weights (fitted on a mixed corpus against a current exact tokenizer).
+/// The generic weights: fitted against `o200k` on a mixed corpus (prose in many scripts, code, config, data) plus
+/// answers for models in tab-table, JSON and TOON form (`token-count` crate, `tools/calibrate.py`).
 pub const GENERIC: Weights = Weights {
-    space: 118,
-    newline: 387,
+    space: 121,
+    tab: 593,
+    newline: 712,
     lower: 0,
-    upper: 81,
-    digit: 515,
-    lat_ext: 730,
-    cjk: 875,
-    greek_cyr: 324,
-    letter_other: 403,
-    emoji: 2616,
-    symbol: 1224,
-    punct: 514,
-    word: 861,
-    excess: 582,
+    upper: 12,
+    digit: 497,
+    lat_ext: 625,
+    cjk: 888,
+    greek_cyr: 317,
+    letter_other: 396,
+    emoji: 3050,
+    symbol: 1026,
+    punct: 639,
+    punct_join: 182,
+    word: 837,
+    excess: 568,
 };
 
 /// Approximate tokens of a text with the generic weights: a size hint, not the count of any model.
@@ -221,7 +240,7 @@ mod tests {
     fn classes_by_range() {
         let cases = [
             (' ', Class::Space),
-            ('\t', Class::Space),
+            ('\t', Class::Tab),
             ('\u{a0}', Class::Space),
             ('\u{3000}', Class::Space),
             ('\n', Class::Newline),

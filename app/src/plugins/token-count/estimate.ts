@@ -6,6 +6,7 @@ import type { TokenizerId } from "./tokenizers";
 
 type Features = {
   space: number;
+  tab: number;
   newline: number;
   lower: number;
   upper: number;
@@ -16,13 +17,16 @@ type Features = {
   letterOther: number;
   emoji: number;
   symbol: number;
+  /** ASCII punctuation not right after ASCII punctuation. */
   punct: number;
+  /** ASCII punctuation right after ASCII punctuation (`":"`, `},{`). */
+  punctJoin: number;
   word: number;
   excess: number;
 };
 
 type Weights = Features;
-type Class = Exclude<keyof Features, "word" | "excess">;
+type Class = Exclude<keyof Features, "word" | "excess" | "punctJoin">;
 
 /** A word has this many characters before the rest count as `excess`. */
 const EXCESS_FROM = 6;
@@ -31,9 +35,9 @@ const between = (cp: number, from: number, to: number): boolean => cp >= from &&
 
 /** The class of a code point (first match, as in the Rust table). */
 export function classOf(cp: number): Class {
+  if (cp === 0x09) return "tab";
   if (
     cp === 0x20 ||
-    cp === 0x09 ||
     cp === 0xa0 ||
     cp === 0x1680 ||
     between(cp, 0x2000, 0x200a) ||
@@ -85,6 +89,7 @@ export function classOf(cp: number): Class {
 function featuresOf(text: string): Features {
   const f: Features = {
     space: 0,
+    tab: 0,
     newline: 0,
     lower: 0,
     upper: 0,
@@ -96,13 +101,17 @@ function featuresOf(text: string): Features {
     emoji: 0,
     symbol: 0,
     punct: 0,
+    punctJoin: 0,
     word: 0,
     excess: 0,
   };
   let run = 0;
+  let previous: Class | null = null;
   for (const ch of text) {
     const cls = classOf(ch.codePointAt(0) ?? 0);
-    f[cls] += 1;
+    if (cls === "punct" && previous === "punct") f.punctJoin += 1;
+    else f[cls] += 1;
+    previous = cls;
     if (cls === "lower" || cls === "upper" || cls === "digit" || cls === "latinExt") {
       if (run === 0) f.word += 1;
       run += 1;
@@ -116,6 +125,7 @@ function featuresOf(text: string): Features {
 
 const O200K: Weights = {
   space: 118,
+  tab: 118,
   newline: 387,
   lower: 0,
   upper: 81,
@@ -127,12 +137,14 @@ const O200K: Weights = {
   emoji: 2616,
   symbol: 1224,
   punct: 514,
+  punctJoin: 514,
   word: 861,
   excess: 582,
 };
 
 const CL100K: Weights = {
   space: 124,
+  tab: 124,
   newline: 421,
   lower: 0,
   upper: 47,
@@ -144,12 +156,14 @@ const CL100K: Weights = {
   emoji: 4357,
   symbol: 595,
   punct: 455,
+  punctJoin: 455,
   word: 900,
   excess: 640,
 };
 
 const GEMINI: Weights = {
   space: 123,
+  tab: 123,
   newline: 916,
   lower: 30,
   upper: 161,
@@ -161,12 +175,14 @@ const GEMINI: Weights = {
   emoji: 2706,
   symbol: 632,
   punct: 675,
+  punctJoin: 675,
   word: 714,
   excess: 436,
 };
 
 const CLAUDE: Weights = {
   space: 126,
+  tab: 126,
   newline: 414,
   lower: 0,
   upper: 87,
@@ -178,6 +194,7 @@ const CLAUDE: Weights = {
   emoji: 2799,
   symbol: 1310,
   punct: 550,
+  punctJoin: 550,
   word: 921,
   excess: 623,
 };
@@ -186,6 +203,7 @@ function weighted(text: string, w: Weights): number {
   const f = featuresOf(text);
   const milli =
     w.space * f.space +
+    w.tab * f.tab +
     w.newline * f.newline +
     w.lower * f.lower +
     w.upper * f.upper +
@@ -197,6 +215,7 @@ function weighted(text: string, w: Weights): number {
     w.emoji * f.emoji +
     w.symbol * f.symbol +
     w.punct * f.punct +
+    w.punctJoin * f.punctJoin +
     w.word * f.word +
     w.excess * f.excess;
   return Math.ceil(milli / 1000);
@@ -209,9 +228,29 @@ export function chars4(text: string): number {
   return Math.ceil(n / 4);
 }
 
+/** `permark_core::tokens::GENERIC`: o200k on the corpus + answers for models (tab tables, JSON, TOON). */
+const GENERIC: Weights = {
+  space: 121,
+  tab: 593,
+  newline: 712,
+  lower: 0,
+  upper: 12,
+  digit: 497,
+  latinExt: 625,
+  cjk: 888,
+  greekCyr: 317,
+  letterOther: 396,
+  emoji: 3050,
+  symbol: 1026,
+  punct: 639,
+  punctJoin: 182,
+  word: 837,
+  excess: 568,
+};
+
 /** The generic estimate (`permark_core::tokens::estimate`). */
 export function generic(text: string): number {
-  return weighted(text, O200K);
+  return weighted(text, GENERIC);
 }
 
 /** Tokens of `text` by the estimator of `id`. For an exact tokenizer this is its interim estimate. */
