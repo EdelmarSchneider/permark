@@ -12,8 +12,10 @@
     label?: string;
     /** The button that opened it: a press on it is that button's own (it toggles the menu). */
     anchor?: HTMLElement;
+    /** A submenu shown in place: ArrowLeft goes back to the menu it came from. */
+    back?: () => void;
   };
-  let { x, y, entries, close, label, anchor }: Props = $props();
+  let { x, y, entries, close, label, anchor, back }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
@@ -40,6 +42,15 @@
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       run(active, e.shiftKey);
+    } else if (e.key === "ArrowRight") {
+      const entry = entries[active];
+      if (entry?.kind === "item" && entry.opens === true) {
+        e.preventDefault();
+        run(active);
+      }
+    } else if (e.key === "ArrowLeft" && back) {
+      e.preventDefault();
+      back();
     } else if (e.key === "Tab") {
       e.preventDefault();
     }
@@ -87,6 +98,7 @@
       <button
         type="button"
         role="menuitem"
+        aria-haspopup={entry.opens === true ? "menu" : undefined}
         class={["item", entry.danger && "danger", active === at && "is-active"]}
         onpointerenter={() => (picked = at)}
         onclick={(e) => run(at, e.shiftKey)}
@@ -100,6 +112,7 @@
           <span>{entry.label}</span>
         {/if}
         {#if entry.hint}<kbd>{entry.hint}</kbd>{/if}
+        {#if entry.opens}<span class="opens" aria-hidden="true">▸</span>{/if}
       </button>
     {/if}
   {/each}
@@ -141,7 +154,8 @@
   .item.danger {
     color: var(--git-deleted-text);
   }
-  kbd {
+  kbd,
+  .opens {
     color: var(--faint);
     font: inherit;
     font-size: var(--fs-ui-xs);

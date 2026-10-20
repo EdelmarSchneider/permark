@@ -1,4 +1,4 @@
-//! Notes, core half: the workspace the Notes window shows and the seams the `notes` plugin plugs into. The notes
+//! Notes, core half: the workspace the Notes tab shows and the seams the `notes` plugin plugs into. The notes
 //! themselves (listing, versions, recovery, loose files) are the plugin's; core knows where the documents are
 //! ([`NotesScope`]) and reads | saves them like any workspace's.
 

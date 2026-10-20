@@ -159,17 +159,6 @@ pub struct Place {
     pub tab: TabId,
 }
 
-/// Kind of native window.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
-pub enum WindowKind {
-    /// Holds tabs (projects, single files).
-    Work,
-    /// The Notes window (stage B).
-    Notes,
-}
-
 /// One tab as its window's top bar shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -190,7 +179,6 @@ pub struct TabSummary {
 #[ts(export)]
 pub struct WindowSummary {
     pub window: String,
-    pub kind: WindowKind,
     pub tabs: Vec<TabSummary>,
     pub active: Option<TabId>,
     #[ts(type = "number")]
@@ -227,7 +215,7 @@ pub enum WorkspaceView {
         path: String,
         folder: String,
     },
-    /// The Notes window; `folder`: where the notes are (none until the plugin knows).
+    /// The Notes tab; `folder`: where the notes are (none until the plugin knows).
     #[serde(rename_all = "camelCase")]
     Notes {
         id: WorkspaceId,

@@ -2,7 +2,7 @@
   // This window's tabs as chips on the top bar, in strip order: a colored badge by kind, the name (cut in the middle
   // when long), the unsaved dot, a close button. Click | Enter | Space shows the tab; the arrows move between chips;
   // Delete, a middle click or the close button closes it; the context menu (right click, Menu key, Shift+F10) moves it
-  // to a new window or closes it. Too many for the width: chips shrink, then the row scrolls sideways with faded edges,
+  // to a new window or into another one (a submenu shown in place) or closes it. Too many for the width: chips shrink, then the row scrolls sideways with faded edges,
   // keeping the active chip in view.
   import FileText from "@lucide/svelte/icons/file-text";
   import Folder from "@lucide/svelte/icons/folder";
@@ -12,9 +12,9 @@
   import { keyHint } from "../commands/hint";
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
-  import { t } from "../i18n";
+  import { t, tn } from "../i18n";
   import { windowStore } from "../window.svelte";
-  import { chipsTight, hueOf, splitName } from "./switcherModel";
+  import { chipsTight, faceOf, hueOf, splitName } from "./switcherModel";
   import { tabs } from "./tabs.svelte";
 
   /** The active tab of this window. */
@@ -24,7 +24,12 @@
   const BUTTONS = 96;
 
   let row: HTMLElement | undefined = $state();
-  let menu = $state.raw<{ x: number; y: number; entries: readonly MenuEntry[] } | null>(null);
+  let menu = $state.raw<{
+    x: number;
+    y: number;
+    entries: readonly MenuEntry[];
+    back?: () => void;
+  } | null>(null);
   /** Which edges hide chips (faded). */
   let hidden = $state<{ start: boolean; end: boolean }>({ start: false, end: false });
   /** Too many for the width: names keep their start only (a cut in the middle needs room). */
@@ -45,23 +50,37 @@
     return tab.tab === current && closeKeys !== null ? `${label} (${closeKeys})` : label;
   }
 
-  function entriesFor(tab: TabSummary): MenuEntry[] {
+  function entriesFor(tab: TabSummary, x: number, y: number): MenuEntry[] {
     const entries: MenuEntry[] = [];
     // moving the only tab out would leave an empty window behind
     if (tabs.list.length > 1) {
-      entries.push(
-        {
-          kind: "item",
-          label: t("switcher.moveNew"),
-          run: () => {
-            void tabs.moveToNewWindow(tab.tab).then((result) => {
-              if (result === "refused") windowStore.notifyNote(t("switcher.moveFailed"));
-            });
-          },
+      entries.push({
+        kind: "item",
+        label: t("switcher.moveNew"),
+        run: () => {
+          void tabs.moveToNewWindow(tab.tab).then((result) => {
+            if (result === "refused") windowStore.notifyNote(t("switcher.moveFailed"));
+          });
         },
-        { kind: "separator" },
-      );
+      });
     }
+    // into another window: the only tab may go too (this window then closes)
+    if (tabs.others.length > 0) {
+      entries.push({
+        kind: "item",
+        label: t("switcher.moveTo"),
+        opens: true,
+        run: () => {
+          menu = {
+            x,
+            y,
+            entries: windowEntries(tab),
+            back: () => openMenu(tab, x, y),
+          };
+        },
+      });
+    }
+    if (entries.length > 0) entries.push({ kind: "separator" });
     entries.push({
       kind: "item",
       label: t("switcher.close"),
@@ -71,8 +90,28 @@
     return entries;
   }
 
+  /** The submenu of "Move to window": the other windows by the tab they show + their tab count, focused last first. */
+  function windowEntries(tab: TabSummary): MenuEntry[] {
+    return [
+      { kind: "heading", label: t("switcher.moveTo") },
+      ...tabs.others.map((other): MenuEntry => {
+        const face = faceOf(other);
+        return {
+          kind: "item",
+          label: face === null ? t("switcher.emptyWindow") : nameOf(face),
+          detail: tn("switcher.tabCount", other.tabs.length),
+          run: () => {
+            void tabs.moveToWindow(tab.tab, other.window).then((result) => {
+              if (result === "refused") windowStore.notifyNote(t("switcher.moveToFailed"));
+            });
+          },
+        };
+      }),
+    ];
+  }
+
   function openMenu(tab: TabSummary, x: number, y: number): void {
-    menu = { x, y, entries: entriesFor(tab) };
+    menu = { x, y, entries: entriesFor(tab, x, y) };
   }
 
   function oncontextmenu(e: MouseEvent, tab: TabSummary): void {
@@ -237,13 +276,17 @@
   </ul>
 </nav>
 {#if menu}
-  <ContextMenu
-    x={menu.x}
-    y={menu.y}
-    entries={menu.entries}
-    close={() => (menu = null)}
-    label={t("switcher.menu")}
-  />
+  <!-- a submenu replaces the menu in place: a fresh menu (keyboard on its first entry) -->
+  {#key menu}
+    <ContextMenu
+      x={menu.x}
+      y={menu.y}
+      entries={menu.entries}
+      close={() => (menu = null)}
+      label={t("switcher.menu")}
+      back={menu.back}
+    />
+  {/key}
 {/if}
 
 <style>

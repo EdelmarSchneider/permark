@@ -8,6 +8,8 @@ export type MenuEntry =
       /** A second, quieter line (a path). */
       detail?: string;
       danger?: boolean;
+      /** Opens a submenu in place (drawn with ▸; ArrowRight runs it too). */
+      opens?: boolean;
       /** `shift`: picked with Shift held (Shift+click | Shift+Enter). */
       run: (shift: boolean) => void;
     }

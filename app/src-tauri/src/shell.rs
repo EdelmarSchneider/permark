@@ -230,7 +230,7 @@ impl Shell {
             .collect();
         AppSession {
             windows,
-            // stage A: the Notes are a tab; no window of their own yet
+            // the Notes are a tab: `geometry` stays in the format (0.6.0 wrote it), unused
             notes: SavedNotes {
                 open: self.registry.notes_open(),
                 geometry: None,

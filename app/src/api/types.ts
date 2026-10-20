@@ -279,6 +279,7 @@ export interface Commands {
   tab_close: { args: { tab: TabId }; result: null };
   tab_close_confirmed: { args: Record<string, never>; result: null };
   tab_move_new_window: { args: { tab: TabId }; result: string };
+  tab_move: { args: { tab: TabId; window: string }; result: string };
   recent_list: { args: Record<string, never>; result: RecentFolder[] };
   recent_remove: { args: { path: string }; result: null };
   settings_get: { args: Record<string, never>; result: AppSettings };
@@ -706,6 +707,8 @@ export interface Api {
   tabCloseConfirmed(): Promise<Result<null>>;
   /** Moves a tab into a new window (its label). */
   tabMoveNewWindow(tab: TabId): Promise<Result<string>>;
+  /** Moves a tab into another existing work window (its label). */
+  tabMove(tab: TabId, window: string): Promise<Result<string>>;
   recentList(): Promise<Result<RecentFolder[]>>;
   recentRemove(path: string): Promise<Result<null>>;
   settingsGet(): Promise<Result<AppSettings>>;

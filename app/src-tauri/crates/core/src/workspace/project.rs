@@ -36,11 +36,11 @@ pub struct CoreEnv {
     pub distribution: Distribution,
     settings: Arc<RwLock<AppSettings>>,
     app_plugins: Mutex<PluginSet>,
-    /// What App-scope plugins serve (the Notes window and the welcome screen call it; no project needed).
+    /// What App-scope plugins serve (the Notes tab and the welcome screen call it; no project needed).
     rpc: Arc<RpcTable>,
     /// Typed APIs App-scope plugins hand to core and to each other.
     services: Arc<Services>,
-    /// Where the Notes window's documents are (the `notes` plugin fills it).
+    /// Where the Notes tab's documents are (the `notes` plugin fills it).
     notes_scope: Arc<NotesScope>,
     _notes_lease: ServiceLease,
     /// The Notes workspace, built when first opened.
@@ -100,7 +100,7 @@ impl CoreEnv {
         &self.services
     }
 
-    /// Where the Notes window's documents are.
+    /// Where the Notes tab's documents are.
     #[must_use]
     pub fn notes_scope(&self) -> &Arc<NotesScope> {
         &self.notes_scope

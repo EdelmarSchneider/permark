@@ -124,6 +124,7 @@ export const tauriApi: Api = {
   tabClose: (tab) => call("tab_close", { tab }),
   tabCloseConfirmed: () => call("tab_close_confirmed", {}),
   tabMoveNewWindow: (tab) => call("tab_move_new_window", { tab }),
+  tabMove: (tab, window) => call("tab_move", { tab, window }),
   recentList: () => call("recent_list", {}),
   recentRemove: (path) => call("recent_remove", { path }),
   settingsGet: () => call("settings_get", {}),

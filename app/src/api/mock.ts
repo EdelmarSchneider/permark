@@ -162,9 +162,15 @@ export type MockProbe = {
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
   pictures: string[];
-  /** The tabs: moved to a new window, the close prompt's answers, saves reported. */
-  /** `refuseMove`: the next moves fail (the backend could not move the view). */
-  tabs: { moved: number[]; answers: string[]; saved: boolean[]; refuseMove: boolean };
+  /** The tabs: moved to a new window, moved into another window (`[tab, window]`), the close prompt's answers, saves
+   * reported. `refuseMove`: the next moves fail (the backend could not move the view). */
+  tabs: {
+    moved: number[];
+    movedTo: [number, string][];
+    answers: string[];
+    saved: boolean[];
+    refuseMove: boolean;
+  };
   /** Web pictures asked for, by address; the per-project choice. */
   remote: { asked: string[]; always: boolean };
 };
@@ -265,7 +271,6 @@ export function createMockApi(): Api & {
   function windowsNow(): WindowSummary[] {
     const own: WindowSummary = {
       window: "main",
-      kind: "work",
       tabs: tabList.map(summaryOf),
       active: activeTab,
       focusedMs: 0,
@@ -380,7 +385,7 @@ export function createMockApi(): Api & {
     imports: importing.probe,
     pictures: [],
     remote: { asked: [], always: false },
-    tabs: { moved: [], answers: [], saved: [], refuseMove: false },
+    tabs: { moved: [], movedTo: [], answers: [], saved: [], refuseMove: false },
   };
   let tree: TreeView | null = null;
 
@@ -567,6 +572,14 @@ export function createMockApi(): Api & {
       probe.tabs.moved.push(tab);
       closeTab(tab);
       return ok("w-1");
+    },
+    tabMove: (tab, window) => {
+      if (probe.tabs.refuseMove) {
+        return Promise.resolve(fail<string>("tab_move", new MockRefusal("unavailable", "main")));
+      }
+      probe.tabs.movedTo.push([tab, window]);
+      closeTab(tab);
+      return ok(window);
     },
     windowCloseAnswer: (answer) => {
       probe.tabs.answers.push(answer);

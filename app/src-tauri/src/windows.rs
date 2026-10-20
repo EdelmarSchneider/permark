@@ -2,7 +2,6 @@
 //! they were, read their geometry, focus them.
 
 use permark_core::session::{cascade, place, to_save, Geometry, Limits, Rect, Screen};
-use permark_core::workspace::WindowKind;
 use tauri::window::WindowBuilder;
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Window};
 
@@ -22,7 +21,7 @@ fn build(handle: &AppHandle, label: &str) -> tauri::Result<Window> {
         .visible(false)
         .build()?;
     let shell = state(handle);
-    shell.registry.add_window(label, WindowKind::Work);
+    shell.registry.add_window(label);
     if let Some(geometry) = current(&window) {
         shell.remember_normal(label, geometry);
     }

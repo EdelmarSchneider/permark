@@ -1,4 +1,4 @@
-//! `NotesScope`: where the documents of the Notes window are. The notes folder (a vault: notes and the pictures
+//! `NotesScope`: where the documents of the Notes tab are. The notes folder (a vault: notes and the pictures
 //! next to them) and the loose files (any text file the person opened there, one scope each).
 //!
 //! Document paths: a note is its file name in the folder; a loose file is `@file/<id>/<name>`; anything else under
@@ -58,7 +58,7 @@ struct Inner {
     loose: BTreeMap<String, FileScope>,
 }
 
-/// The documents of the Notes window. Changed at run time (the folder is chosen, files are opened), so the state sits
+/// The documents of the Notes tab. Changed at run time (the folder is chosen, files are opened), so the state sits
 /// behind a lock; reads clone what they need.
 #[derive(Default)]
 pub struct NotesScope {
@@ -147,7 +147,7 @@ impl NotesScope {
             .map(|scope| scope.file().to_path_buf())
     }
 
-    /// Lets `observer` hear the saves of the Notes window until the lease is dropped.
+    /// Lets `observer` hear the saves of the Notes tab until the lease is dropped.
     #[must_use]
     pub fn install_observer(self: &Arc<Self>, observer: Arc<dyn SaveObserver>) -> ObserverLease {
         *self.observer.lock().unwrap_or_else(PoisonError::into_inner) = Some(observer);

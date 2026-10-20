@@ -1,6 +1,6 @@
 // The tab strip's rules, pure: which tab a key goes to, the workspace a view shows, how a chip looks (hue, name).
 
-import type { TabSummary, WindowView } from "../../api";
+import type { TabSummary, WindowSummary, WindowView } from "../../api";
 
 /** Switching (next | previous) needs another tab to switch to. */
 export function canSwitch(list: readonly TabSummary[]): boolean {
@@ -30,6 +30,19 @@ export function nth(list: readonly TabSummary[], n: number): TabSummary | null {
 /** The last tab of the strip. */
 export function last(list: readonly TabSummary[]): TabSummary | null {
   return list.at(-1) ?? null;
+}
+
+/** The windows other than `mine`, focused last first (equal: list order). */
+export function otherWindows(
+  windows: readonly WindowSummary[],
+  mine: string,
+): readonly WindowSummary[] {
+  return windows.filter((w) => w.window !== mine).toSorted((a, b) => b.focusedMs - a.focusedMs);
+}
+
+/** The tab a window is known by (its active one, else its first); `null`: no tab. */
+export function faceOf(window: WindowSummary): TabSummary | null {
+  return window.tabs.find((t) => t.tab === window.active) ?? window.tabs[0] ?? null;
 }
 
 /** The workspace a view shows (what stays on screen while another opens), `null` when it shows none. */

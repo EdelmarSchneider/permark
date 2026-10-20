@@ -53,7 +53,7 @@ fn from_v1_keeps_one_place_per_workspace_and_the_first_notes_window() {
     )
     .unwrap();
     let v2 = from_v1(v1);
-    // Alpha twice (other spelling) -> second window dropped; Notes twice -> first kept as the Notes window
+    // Alpha twice (other spelling) -> second window dropped; Notes twice -> first kept as the Notes tab
     assert_eq!(v2.windows.len(), 4);
     assert!(v2.notes.open);
     assert_eq!(v2.notes.geometry.map(|g| g.x), Some(1700));
