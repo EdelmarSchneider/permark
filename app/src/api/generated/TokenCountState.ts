@@ -4,4 +4,8 @@ import type { VocabEntries } from "./VocabEntries";
 /**
  * Everything the windows need to show: the vocabularies and the outline switch.
  */
-export type TokenCountState = { vocab: VocabEntries, outline: boolean, };
+export type TokenCountState = { vocab: VocabEntries, outline: boolean, 
+/**
+ * Folders the person opens in the Explorer are counted when they are small.
+ */
+folderTotals: boolean, };

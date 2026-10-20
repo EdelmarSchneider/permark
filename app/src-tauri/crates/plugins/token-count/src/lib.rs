@@ -12,6 +12,7 @@ mod bpe;
 mod counter;
 mod estimate;
 mod fetch;
+mod folder;
 mod tokenizer;
 mod vocab;
 
@@ -32,6 +33,10 @@ use ts_rs::TS;
 pub use counter::{line_starts, lines_of, Counter};
 pub use estimate::{chars4, estimate};
 pub use fetch::{Fetch, FetchError, UreqFetch};
+pub use folder::{
+    FolderBadge, FolderBadges, FolderFailure, FolderJob, FolderRefusal, FolderSkip, FolderSkipped,
+    FolderSummary, FolderTopFile, FolderTypeRow, Folders,
+};
 pub use tokenizer::{effective, Encoding, Tokenizer};
 pub use vocab::{Pin, Unavailable, VocabFailure, VocabState, VocabStore};
 
@@ -42,6 +47,9 @@ const ID: PluginId = PluginId::of("token-count");
 struct Prefs {
     /// Show the token column in the outline.
     outline: bool,
+    /// Count the folders the person opens in the Explorer, when they are small.
+    #[serde(default)]
+    folder_totals: bool,
 }
 
 impl StateData for Prefs {
@@ -74,6 +82,8 @@ pub struct VocabEntries {
 pub struct TokenCountState {
     pub vocab: VocabEntries,
     pub outline: bool,
+    /// Folders the person opens in the Explorer are counted when they are small.
+    pub folder_totals: bool,
 }
 
 /// The count of one tokenizer, or why there is none.
@@ -119,6 +129,12 @@ struct OutlineArgs {
     on: bool,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TotalsArgs {
+    on: bool,
+}
+
 fn invalid(what: &str) -> IpcError {
     IpcError::new(ErrorKind::InvalidData).detail(what)
 }
@@ -140,6 +156,7 @@ fn state_of(vocab: &[VocabState; 2], store: &VocabStore, prefs: &Prefs) -> Token
             cl100k: entry(Encoding::Cl100k),
         },
         outline: prefs.outline,
+        folder_totals: prefs.folder_totals,
     }
 }
 
@@ -182,13 +199,15 @@ struct Started {
     _rpc: Vec<RpcRegistration>,
     _service: ServiceLease,
     store: Arc<VocabStore>,
+    folders: Arc<Folders>,
 }
 
 impl Running for Started {}
 
 impl Drop for Started {
     fn drop(&mut self) {
-        // downloads stop and their threads are joined; the tables go with the store
+        // folder counts and downloads stop and their threads are joined; the tables go with the store
+        self.folders.shutdown();
         self.store.shutdown();
     }
 }
@@ -200,6 +219,20 @@ struct Shared {
     prefs: Mutex<Prefs>,
     prefs_file: Option<StateFile<Prefs>>,
     events: PluginEvents,
+}
+
+impl Shared {
+    fn set_pref(&self, change: impl FnOnce(&mut Prefs)) -> Result<(), IpcError> {
+        {
+            let mut prefs = self.prefs.lock().unwrap_or_else(PoisonError::into_inner);
+            change(&mut prefs);
+            if let Some(file) = &self.prefs_file {
+                file.save(&prefs)?;
+            }
+        }
+        self.announce();
+        Ok(())
+    }
 }
 
 impl Shared {
@@ -256,6 +289,66 @@ impl Shared {
     }
 }
 
+/// The calls of the plugin that work on its shared state: the vocabularies, the choices, counting a text.
+fn register(cx: &PluginCx, shared: &Arc<Shared>) -> Vec<RpcRegistration> {
+    let mut rpc = Vec::new();
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "state",
+        typed(move |_: permark_core::plugins::NoArgs, _| Ok(s.state())),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "download",
+        typed(move |args: TokenizerArgs, _| {
+            s.store.download(exact(&args)?);
+            Ok(s.state())
+        }),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "cancel",
+        typed(move |args: TokenizerArgs, _| {
+            s.store.cancel(exact(&args)?);
+            Ok(s.state())
+        }),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "removeVocab",
+        typed(move |args: TokenizerArgs, _| {
+            s.store
+                .remove(exact(&args)?)
+                .map_err(|e| IpcError::io(String::new(), &e))?;
+            Ok(s.state())
+        }),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "setOutline",
+        typed(move |args: OutlineArgs, _| {
+            s.set_pref(|prefs| prefs.outline = args.on)?;
+            Ok(s.state())
+        }),
+    ));
+    let s = Arc::clone(shared);
+    rpc.extend(cx.rpc(
+        "setFolderTotals",
+        typed(move |args: TotalsArgs, _| {
+            s.set_pref(|prefs| prefs.folder_totals = args.on)?;
+            Ok(s.state())
+        }),
+    ));
+    rpc.extend(cx.rpc(
+        "count",
+        typed({
+            let s = Arc::clone(shared);
+            move |args: CountArgs, _| s.count(&args)
+        }),
+    ));
+    rpc
+}
+
 impl Plugin for TokenCount {
     fn manifest(&self) -> &Manifest {
         &self.manifest
@@ -290,7 +383,12 @@ impl Plugin for TokenCount {
                 shared.announce();
             }
         });
-        let vocab = VocabStore::new(dir, self.pins.clone(), Arc::clone(&self.fetch), listener);
+        let vocab = VocabStore::new(
+            dir.clone(),
+            self.pins.clone(),
+            Arc::clone(&self.fetch),
+            listener,
+        );
         let counter = Counter::new(Arc::clone(&vocab));
         let shared = Arc::new(Shared {
             store: Arc::clone(&vocab),
@@ -301,55 +399,15 @@ impl Plugin for TokenCount {
         });
         *cell.lock().unwrap_or_else(PoisonError::into_inner) = Arc::downgrade(&shared);
 
-        let mut rpc = Vec::new();
-        let s = Arc::clone(&shared);
-        rpc.extend(cx.rpc(
-            "state",
-            typed(move |_: permark_core::plugins::NoArgs, _| Ok(s.state())),
-        ));
-        let s = Arc::clone(&shared);
-        rpc.extend(cx.rpc(
-            "download",
-            typed(move |args: TokenizerArgs, _| {
-                s.store.download(exact(&args)?);
-                Ok(s.state())
-            }),
-        ));
-        let s = Arc::clone(&shared);
-        rpc.extend(cx.rpc(
-            "cancel",
-            typed(move |args: TokenizerArgs, _| {
-                s.store.cancel(exact(&args)?);
-                Ok(s.state())
-            }),
-        ));
-        let s = Arc::clone(&shared);
-        rpc.extend(cx.rpc(
-            "removeVocab",
-            typed(move |args: TokenizerArgs, _| {
-                s.store
-                    .remove(exact(&args)?)
-                    .map_err(|e| IpcError::io(String::new(), &e))?;
-                Ok(s.state())
-            }),
-        ));
-        let s = Arc::clone(&shared);
-        rpc.extend(cx.rpc(
-            "setOutline",
-            typed(move |args: OutlineArgs, _| {
-                {
-                    let mut prefs = s.prefs.lock().unwrap_or_else(PoisonError::into_inner);
-                    prefs.outline = args.on;
-                    if let Some(file) = &s.prefs_file {
-                        file.save(&prefs)?;
-                    }
-                }
-                s.announce();
-                Ok(s.state())
-            }),
-        ));
-        let s = Arc::clone(&shared);
-        rpc.extend(cx.rpc("count", typed(move |args: CountArgs, _| s.count(&args))));
+        let mut rpc = register(cx, &shared);
+        let folders = Folders::new(
+            cx.events().clone(),
+            app.clone(),
+            Arc::clone(&vocab),
+            folder::Thresholds::STANDARD,
+            dir.join("folders"),
+        );
+        rpc.extend(folder::register(cx, &folders));
 
         let service = app.services.provide(Arc::new(TokenCounterApi(Arc::new(
             counter::CounterService {
@@ -361,6 +419,7 @@ impl Plugin for TokenCount {
             _rpc: rpc,
             _service: service,
             store: vocab,
+            folders,
         }))
     }
 }

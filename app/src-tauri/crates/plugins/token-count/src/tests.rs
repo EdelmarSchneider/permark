@@ -24,7 +24,7 @@ use sha2::{Digest, Sha256};
 use super::*;
 
 #[derive(Default)]
-struct Events(Mutex<Vec<(String, Value)>>);
+pub(crate) struct Events(pub(crate) Mutex<Vec<(String, Value)>>);
 
 impl EventSink for Events {
     fn emit(&self, event: CoreEvent) {
@@ -34,7 +34,7 @@ impl EventSink for Events {
     }
 }
 
-fn rank_file() -> Vec<u8> {
+pub(crate) fn rank_file() -> Vec<u8> {
     let mut tokens: Vec<Vec<u8>> = (0..=255_u8).map(|b| vec![b]).collect();
     for extra in [
         "he", "hel", "hell", "hello", " w", " wo", " wor", " worl", " world",
@@ -49,7 +49,7 @@ fn rank_file() -> Vec<u8> {
     out
 }
 
-fn pin_of(body: &[u8]) -> Pin {
+pub(crate) fn pin_of(body: &[u8]) -> Pin {
     Pin {
         url: "test://vocab".to_owned(),
         bytes: body.len() as u64,
@@ -58,9 +58,9 @@ fn pin_of(body: &[u8]) -> Pin {
 }
 
 /// Serves `body`, counting the calls.
-struct Source {
-    body: Vec<u8>,
-    calls: AtomicUsize,
+pub(crate) struct Source {
+    pub(crate) body: Vec<u8>,
+    pub(crate) calls: AtomicUsize,
 }
 
 impl Fetch for Source {
