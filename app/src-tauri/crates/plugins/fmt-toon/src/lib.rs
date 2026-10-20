@@ -102,6 +102,7 @@ impl ToonFormat {
                 text: text.to_owned(),
                 language: Some("toon".to_owned()),
                 problem,
+                partial: None,
             },
             notes: vec![note],
         }

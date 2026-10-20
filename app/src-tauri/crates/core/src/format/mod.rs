@@ -19,8 +19,8 @@ pub use config::{
     ConfigEdit, ConfigFormat, ConfigSyntax, EditRefusal, NewValue, Sheet, Span, Splice,
 };
 pub use contrib::{
-    Contributions, Field, FieldValue, FrontMatterParser, FrontMatterSyntax, MarkdownFeature,
-    MarkdownFeatures, PromptBlocks, RoleMatch, RoleRule, DEFAULT_PROMPT_TAGS,
+    Contributions, Field, FieldValue, FrontMatterParser, FrontMatterSyntax, KeyRole,
+    MarkdownFeature, MarkdownFeatures, PromptBlocks, RoleMatch, RoleRule, DEFAULT_PROMPT_TAGS,
 };
 pub use markdown::{
     sections, segments, units, LockReason, MarkdownFormat, Section, Segment, SegmentKind, TextUnit,
@@ -133,6 +133,10 @@ pub enum Body {
         #[serde(skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         problem: Option<Problem>,
+        /// Only the start of a large file is in `text` (how much, of how much).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        partial: Option<crate::document::Partial>,
     },
     Media {
         media: MediaKind,

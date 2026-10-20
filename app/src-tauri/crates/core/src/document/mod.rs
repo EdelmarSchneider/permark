@@ -7,6 +7,7 @@
 pub mod assets;
 mod code_refs;
 pub mod editor;
+mod large;
 mod scope;
 #[cfg(test)]
 mod tests;
@@ -22,6 +23,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 pub use code_refs::resolve_code_refs;
+pub use large::{Partial, TextChunk, FIRST_CHUNK, MORE_CHUNK};
 pub use scope::{DocScope, LinkTarget};
 
 use crate::error::{ErrorKind, IpcError};
@@ -317,7 +319,7 @@ impl Documents {
         }
         let known: HashSet<String> = known.iter().cloned().collect();
         let name = crate::format::name_of(path).to_owned();
-        let cx = |path| RenderCx {
+        let cx = RenderCx {
             path,
             env: scope,
             features: formats.features(),
@@ -341,19 +343,14 @@ impl Documents {
         let mut version = Some(signature(&meta));
         match formats.pick(path, &[]) {
             Some(format) if !format.reads_text() => {
-                let rendered = format.render("", &cx(path));
+                let rendered = format.render("", &cx);
                 view.format = format.id();
                 view.body = rendered.body;
                 view.editable = read_only("media");
             }
             _ => match fsx::read_bytes(&abs, MAX_TEXT_BYTES) {
                 Err(FsxError::TooLarge { .. }) => {
-                    view.body = Body::Notice {
-                        notice: Notice::TooLarge {
-                            limit: MAX_TEXT_BYTES,
-                        },
-                    };
-                    view.editable = read_only("tooLarge");
+                    large_into(&mut view, &abs)?;
                 }
                 Err(error) => return Err(error.into()),
                 Ok(bytes) => {
@@ -361,37 +358,7 @@ impl Documents {
                     let digest = fsx::hash(&bytes).hex();
                     version = Some(digest.clone());
                     view.hash = Some(digest);
-                    match fsx::decode(&bytes) {
-                        None => {
-                            view.body = Body::Notice {
-                                notice: Notice::Binary,
-                            };
-                            view.editable = read_only("binary");
-                        }
-                        Some(decoded) => {
-                            let head = &bytes[..bytes.len().min(HEAD_BYTES)];
-                            if let Some(format) = formats.pick(path, head) {
-                                let rendered = format.render(&decoded.text, &cx(path));
-                                view.format = format.id();
-                                view.role = (format.id() == crate::format::FormatId::MARKDOWN)
-                                    .then(|| formats.role_of(path))
-                                    .flatten()
-                                    .map(str::to_owned);
-                                view.body = rendered.body;
-                                view.notes
-                                    .extend(rendered.notes.iter().map(|n| (*n).to_owned()));
-                                view.editable = editability_of(&decoded);
-                            } else {
-                                view.editable = read_only("noViewer");
-                            }
-                            if matches!(decoded.encoding, Encoding::Utf16Le | Encoding::Utf16Be) {
-                                view.notes.push("utf16".to_owned());
-                            }
-                            if decoded.lossy {
-                                view.notes.push("lossy".to_owned());
-                            }
-                        }
-                    }
+                    render_into(&mut view, &bytes, formats, &cx);
                 }
             },
         }
@@ -465,6 +432,22 @@ impl Documents {
             .collect()
     }
 
+    /// The chunk of a large text from byte `offset`; `size` and `mtime_ms` are the ones the view was opened with (a
+    /// file that is not that file any more is a conflict: the viewer opens it again).
+    ///
+    /// # Errors
+    /// Outside the workspace | not found | changed | unreadable.
+    pub fn more(
+        &self,
+        path: &str,
+        offset: u64,
+        size: u64,
+        mtime_ms: u64,
+    ) -> Result<TextChunk, IpcError> {
+        let (_, abs) = self.inner.scope.resolve(path)?;
+        large::more(&abs, path, offset, size, mtime_ms)
+    }
+
     /// The text of a document as read (copy document). Same limit as the view.
     ///
     /// # Errors
@@ -506,6 +489,81 @@ impl Documents {
     #[must_use]
     pub fn resolve_links(&self, doc: &str, hrefs: &[String]) -> Vec<LinkTarget> {
         self.inner.scope.resolve_links(doc, hrefs)
+    }
+}
+
+/// The start of a file over the size limit (`Large text`), or why it is not shown.
+fn large_into(view: &mut DocumentView, abs: &std::path::Path) -> Result<(), IpcError> {
+    view.editable = read_only("tooLarge");
+    view.body = match large::first(abs, view.size)? {
+        large::Start::Text(chunk, partial) => {
+            view.format = crate::format::FormatId::TEXT;
+            Body::Text {
+                text: chunk.text,
+                language: crate::format::ext_of(&view.name),
+                problem: None,
+                partial: Some(partial),
+            }
+        }
+        large::Start::Binary => {
+            view.editable = read_only("binary");
+            Body::Notice {
+                notice: Notice::Binary,
+            }
+        }
+        large::Start::Utf16 => Body::Notice {
+            notice: Notice::TooLarge {
+                limit: MAX_TEXT_BYTES,
+            },
+        },
+    };
+    Ok(())
+}
+
+/// Decodes the bytes of a text file and renders them with the format that claims the file.
+fn render_into(view: &mut DocumentView, bytes: &[u8], formats: &FormatRegistry, cx: &RenderCx<'_>) {
+    let Some(decoded) = fsx::decode(bytes) else {
+        view.body = Body::Notice {
+            notice: Notice::Binary,
+        };
+        view.editable = read_only("binary");
+        return;
+    };
+    let head = &bytes[..bytes.len().min(HEAD_BYTES)];
+    if let Some(format) = formats.pick(cx.path, head) {
+        let rendered = format.render(&decoded.text, cx);
+        view.format = format.id();
+        let markdown = format.id() == crate::format::FormatId::MARKDOWN;
+        view.role = markdown
+            .then(|| formats.role_of(cx.path))
+            .flatten()
+            .map(str::to_owned);
+        view.body = rendered.body;
+        // a file with no name of a role may still be a card (model, dataset) by the keys of its front matter
+        if let (
+            true,
+            None,
+            Body::Markdown {
+                front_matter: Some(front_matter),
+                ..
+            },
+        ) = (markdown, &view.role, &mut view.body)
+        {
+            view.role = formats
+                .role_of_front_matter(&mut front_matter.fields)
+                .map(str::to_owned);
+        }
+        view.notes
+            .extend(rendered.notes.iter().map(|n| (*n).to_owned()));
+        view.editable = editability_of(&decoded);
+    } else {
+        view.editable = read_only("noViewer");
+    }
+    if matches!(decoded.encoding, Encoding::Utf16Le | Encoding::Utf16Be) {
+        view.notes.push("utf16".to_owned());
+    }
+    if decoded.lossy {
+        view.notes.push("lossy".to_owned());
     }
 }
 

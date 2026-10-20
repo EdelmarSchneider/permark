@@ -74,6 +74,7 @@ impl Format for TextViewer {
                 text: text.to_owned(),
                 language,
                 problem: None,
+                partial: None,
             },
             notes: Vec::new(),
         }

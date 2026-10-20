@@ -4,6 +4,7 @@ import type { FrontMatter } from "./FrontMatter";
 import type { MediaKind } from "./MediaKind";
 import type { Notice } from "./Notice";
 import type { OutlineItem } from "./OutlineItem";
+import type { Partial } from "./Partial";
 import type { Problem } from "./Problem";
 import type { Sheet } from "./Sheet";
 
@@ -14,4 +15,8 @@ export type Body = { "kind": "markdown", blocks: Array<Block>, outline: Array<Ou
 /**
  * Why the file is shown as text when its format could not read it (the line and what went wrong).
  */
-problem?: Problem, } | { "kind": "media", media: MediaKind, mime: string, } | { "kind": "sheet", sheet: Sheet, } | { "kind": "notice", notice: Notice, };
+problem?: Problem, 
+/**
+ * Only the start of a large file is in `text` (how much, of how much).
+ */
+partial?: Partial, } | { "kind": "media", media: MediaKind, mime: string, } | { "kind": "sheet", sheet: Sheet, } | { "kind": "notice", notice: Notice, };

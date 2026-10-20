@@ -3,14 +3,15 @@
 use std::sync::Arc;
 
 use super::{
-    ext_of, name_of, Claim, Contributions, Format, MarkdownFeature, MarkdownFeatures,
-    MarkdownFormat, RoleRule,
+    ext_of, name_of, Claim, Contributions, Field, Format, KeyRole, MarkdownFeature,
+    MarkdownFeatures, MarkdownFormat, RoleRule,
 };
 
 pub struct FormatRegistry {
     /// Core Markdown first, then plugin formats in plugin order.
     formats: Vec<Arc<dyn Format>>,
     roles: Vec<RoleRule>,
+    key_roles: Vec<KeyRole>,
     features: MarkdownFeatures,
     analyses: Vec<Arc<dyn super::Analysis>>,
 }
@@ -50,6 +51,7 @@ impl FormatRegistry {
         Self {
             formats,
             roles: contributions.roles.clone(),
+            key_roles: contributions.key_roles.clone(),
             features,
             analyses: contributions.analyses.clone(),
         }
@@ -73,6 +75,14 @@ impl FormatRegistry {
     #[must_use]
     pub fn role_of(&self, path: &str) -> Option<&'static str> {
         self.roles.iter().find(|r| r.applies(path)).map(|r| r.id)
+    }
+
+    /// The role the keys of a front matter give (`model-card`, ...): the first rule with one of its keys there. The
+    /// fields of the role move to the front, for the card.
+    pub fn role_of_front_matter(&self, fields: &mut [Field]) -> Option<&'static str> {
+        let rule = self.key_roles.iter().find(|r| r.applies(fields))?;
+        rule.put_first(fields);
+        Some(rule.id)
     }
 
     /// The format with the strongest claim; ties go to the earlier one. A role makes the file Markdown.

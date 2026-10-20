@@ -9,7 +9,7 @@ use super::*;
 use crate::error::ErrorKind;
 use crate::events::Recorder;
 use crate::format::{
-    Contributions, Format, FormatRegistry, MarkdownFeature, MarkdownFormat, MediaFormat,
+    Contributions, Format, FormatId, FormatRegistry, MarkdownFeature, MarkdownFormat, MediaFormat,
     PromptBlocks, RoleMatch, RoleRule, TextViewer,
 };
 use crate::paths::{FileScope, Root};
@@ -185,20 +185,266 @@ fn encodings_leave_notes() {
     assert!(p.open("w", "bom.md").unwrap().notes.is_empty());
 }
 
+/// A text of `lines` numbered lines (a bit over 12 bytes each).
+fn numbered(lines: usize) -> String {
+    (0..lines)
+        .map(|n| format!("line {n:07}\n"))
+        .collect::<Vec<_>>()
+        .concat()
+}
+
+/// Every chunk of a large view, joined with its first part.
+fn whole_text(p: &Project, path: &str) -> (DocumentView, String) {
+    let view = p.open("w", path).unwrap();
+    let Body::Text {
+        text,
+        partial: Some(partial),
+        ..
+    } = &view.body
+    else {
+        panic!("not a partial text: {:?}", view.body);
+    };
+    let mut all = text.clone();
+    let mut next = Some(partial.loaded);
+    while let Some(offset) = next {
+        let chunk = p.docs.more(path, offset, view.size, view.mtime_ms).unwrap();
+        assert!(chunk.text.len() <= MORE_CHUNK + 4);
+        assert!(
+            chunk.next.is_none() || chunk.text.ends_with('\n') || !chunk.text.contains('\n'),
+            "a chunk ends at a line break"
+        );
+        assert_ne!(chunk.next, Some(offset), "the walk goes on");
+        all.push_str(&chunk.text);
+        next = chunk.next;
+    }
+    (view, all)
+}
+
 #[test]
-fn too_large_text_is_a_notice_not_an_error() {
+fn a_large_text_shows_its_start_at_once_and_the_rest_in_chunks() {
     let p = project();
-    let big = vec![b'a'; usize::try_from(MAX_TEXT_BYTES).unwrap() + 1];
-    p.write("big.md", &big);
-    let view = p.open("w", "big.md").unwrap();
+    let text = numbered(600_000); // about 7.8 MB
+    assert!(text.len() as u64 > MAX_TEXT_BYTES);
+    p.write("big.log", text.as_bytes());
+    let started = Instant::now();
+    let view = p.open("w", "big.log").unwrap();
+    assert!(started.elapsed() < Duration::from_secs(2));
+    let Body::Text {
+        text: first,
+        partial: Some(partial),
+        language,
+        ..
+    } = &view.body
+    else {
+        panic!("{:?}", view.body);
+    };
+    assert_eq!(language.as_deref(), Some("log"));
+    assert!(first.len() <= FIRST_CHUNK && first.len() > FIRST_CHUNK / 2);
+    assert!(first.ends_with('\n') && first.starts_with("line 0000000\n"));
+    assert_eq!(partial.loaded, first.len() as u64);
+    assert_eq!(partial.total, text.len() as u64);
+    assert_eq!(view.hash, None);
+    assert_eq!(view.size, text.len() as u64);
+    assert_eq!(view.format, FormatId::TEXT);
+    assert!(matches!(
+        &view.editable,
+        Editability::ReadOnly { reason } if reason == "tooLarge"
+    ));
+    // the rest, chunk by chunk, is the rest of the file
+    let (_, all) = whole_text(&p, "big.log");
+    assert_eq!(all.len(), text.len());
+    assert_eq!(fsx::hash(all.as_bytes()), fsx::hash(text.as_bytes()));
+}
+
+#[test]
+fn a_very_long_line_is_cut_inside_no_character() {
+    let p = project();
+    // 3 MB of two-byte and four-byte characters on one line, then a short line
+    let mut text = "é😀".repeat(900_000);
+    text.push('\n');
+    text.push_str("end\n");
+    assert!(text.len() as u64 > MAX_TEXT_BYTES);
+    p.write("one-line.txt", text.as_bytes());
+    let (_, all) = whole_text(&p, "one-line.txt");
+    assert_eq!(
+        fsx::hash(all.as_bytes()),
+        fsx::hash(text.as_bytes()),
+        "the chunks join to the very text"
+    );
+}
+
+#[test]
+fn a_byte_order_mark_is_not_text_and_other_large_files_are_what_they_are() {
+    let p = project();
+    let body = numbered(500_000);
+    let mut with_bom = b"\xEF\xBB\xBF".to_vec();
+    with_bom.extend_from_slice(body.as_bytes());
+    p.write("bom.txt", &with_bom);
+    let (_, all) = whole_text(&p, "bom.txt");
+    assert_eq!(
+        fsx::hash(all.as_bytes()),
+        fsx::hash(body.as_bytes()),
+        "no mark in the text"
+    );
+    // binary
+    let mut binary = vec![b'a'; usize::try_from(MAX_TEXT_BYTES).unwrap() + 10];
+    binary[100] = 0;
+    p.write("blob.dat", &binary);
+    let view = p.open("w", "blob.dat").unwrap();
+    assert!(matches!(
+        view.body,
+        Body::Notice {
+            notice: Notice::Binary
+        }
+    ));
+    // UTF-16 is not cut into chunks
+    let mut wide = b"\xFF\xFE".to_vec();
+    wide.extend(
+        "x".repeat(usize::try_from(MAX_TEXT_BYTES).unwrap())
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes),
+    );
+    p.write("wide.txt", &wide);
+    let view = p.open("w", "wide.txt").unwrap();
     assert!(matches!(
         view.body,
         Body::Notice {
             notice: Notice::TooLarge { .. }
         }
     ));
-    assert_eq!(view.hash, None);
-    assert_eq!(view.size, MAX_TEXT_BYTES + 1);
+    // a Markdown file over the limit is plain text here
+    p.write("big.md", numbered(500_000).as_bytes());
+    let view = p.open("w", "big.md").unwrap();
+    assert_eq!(view.format, FormatId::TEXT);
+    assert!(matches!(
+        &view.body,
+        Body::Text {
+            partial: Some(_),
+            ..
+        }
+    ));
+    // the edge: exactly the limit is still read whole
+    p.write(
+        "edge.txt",
+        &vec![b'a'; usize::try_from(MAX_TEXT_BYTES).unwrap()],
+    );
+    assert!(matches!(
+        p.open("w", "edge.txt").unwrap().body,
+        Body::Text { partial: None, .. }
+    ));
+}
+
+#[test]
+fn a_chunk_of_a_file_that_is_not_the_one_opened_is_a_conflict() {
+    let p = project();
+    let text = numbered(500_000);
+    p.write("big.log", text.as_bytes());
+    let view = p.open("w", "big.log").unwrap();
+    let Body::Text {
+        partial: Some(partial),
+        ..
+    } = &view.body
+    else {
+        panic!()
+    };
+    // grown since
+    p.write("big.log", format!("{text}more\n").as_bytes());
+    let error = p
+        .docs
+        .more("big.log", partial.loaded, view.size, view.mtime_ms)
+        .unwrap_err();
+    assert_eq!(error.kind, ErrorKind::Conflict);
+    // the change is told to the window as for any file (by size and time)
+    p.batch(vec![change("big.log", ChangeKind::Modified)]);
+    assert_eq!(p.changes().len(), 1);
+    // past the end, outside the project, not there, a folder
+    let view = p.open("w", "big.log").unwrap();
+    let past = p
+        .docs
+        .more("big.log", view.size + 5, view.size, view.mtime_ms)
+        .unwrap();
+    assert!(past.text.is_empty() && past.next.is_none());
+    for path in ["../outside.txt", "nothing.log"] {
+        assert!(p.docs.more(path, 0, 1, 1).is_err(), "{path}");
+    }
+    p.write("dir/x.txt", b"x");
+    assert!(p.docs.more("dir", 0, 1, 1).is_err());
+}
+
+fn tiny_card(_syntax: crate::format::FrontMatterSyntax, raw: &str) -> Vec<crate::format::Field> {
+    raw.lines()
+        .filter_map(|line| line.split_once(": "))
+        .map(|(key, value)| crate::format::Field {
+            key: key.to_owned(),
+            value: crate::format::FieldValue::Text {
+                text: value.to_owned(),
+            },
+        })
+        .collect()
+}
+
+fn card_formats(card_on: bool) -> FormatRegistry {
+    let mut markdown = vec![];
+    if card_on {
+        markdown.push(MarkdownFeature::FrontMatterCard(tiny_card));
+    }
+    FormatRegistry::build(
+        &Contributions::default()
+            .roles(vec![RoleRule {
+                id: "agents",
+                matches: RoleMatch::Name("AGENTS.md"),
+            }])
+            .key_roles(vec![crate::format::KeyRole {
+                id: "model-card",
+                keys: &["pipeline_tag", "base_model"],
+                also: &["license"],
+            }])
+            .markdown(markdown),
+    )
+}
+
+#[test]
+fn a_card_is_known_by_the_keys_of_its_front_matter() {
+    let p = project();
+    let card = "---
+title: T
+license: mit
+pipeline_tag: text-generation
+---
+# Model
+";
+    p.write("README.md", card.as_bytes());
+    p.write("AGENTS.md", card.as_bytes());
+    p.write(
+        "plain.md",
+        b"---
+title: T
+license: mit
+---
+# Plain
+",
+    );
+    let open = |path: &str, formats: &FormatRegistry| p.docs.open("w", path, &[], formats).unwrap();
+    // the keys tell, and the card lists them first
+    let view = open("README.md", &card_formats(true));
+    assert_eq!(view.role.as_deref(), Some("model-card"));
+    let Body::Markdown {
+        front_matter: Some(front_matter),
+        ..
+    } = &view.body
+    else {
+        panic!("{:?}", view.body);
+    };
+    let keys: Vec<&str> = front_matter.fields.iter().map(|f| f.key.as_str()).collect();
+    assert_eq!(keys, ["pipeline_tag", "license", "title"]);
+    // a name that is a role wins; a front matter with no card key is no card
+    assert_eq!(
+        open("AGENTS.md", &card_formats(true)).role.as_deref(),
+        Some("agents")
+    );
+    assert_eq!(open("plain.md", &card_formats(true)).role, None);
+    // the properties card off: no fields, no role
+    assert_eq!(open("README.md", &card_formats(false)).role, None);
 }
 
 #[test]

@@ -58,6 +58,41 @@ impl RoleRule {
     }
 }
 
+/// A Markdown file used in a known way, told by the keys of its front matter (a model card, a dataset card): a badge
+/// in the header, and the card lists the keys of the role first. Facts only: key names, never prose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KeyRole {
+    pub id: &'static str,
+    /// Top-level keys of which one makes the file this role (listed first in the card, in this order).
+    pub keys: &'static [&'static str],
+    /// Keys the card lists right after those; they decide nothing alone.
+    pub also: &'static [&'static str],
+}
+
+impl KeyRole {
+    /// The place of a front matter key in the card: before the others when it belongs to the role.
+    fn rank(&self, key: &str) -> Option<usize> {
+        let top = key.split('.').next().unwrap_or(key);
+        self.keys
+            .iter()
+            .chain(self.also)
+            .position(|wanted| *wanted == top)
+    }
+
+    #[must_use]
+    pub fn applies(&self, fields: &[Field]) -> bool {
+        fields.iter().any(|field| {
+            let top = field.key.split('.').next().unwrap_or(&field.key);
+            self.keys.contains(&top)
+        })
+    }
+
+    /// Moves the fields of the role to the front (in the role's order; the others keep theirs).
+    pub fn put_first(&self, fields: &mut [Field]) {
+        fields.sort_by_key(|field| self.rank(&field.key).unwrap_or(usize::MAX));
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -111,6 +146,7 @@ pub struct MarkdownFeatures {
 pub struct Contributions {
     pub formats: Vec<Arc<dyn Format>>,
     pub roles: Vec<RoleRule>,
+    pub key_roles: Vec<KeyRole>,
     pub markdown: Vec<MarkdownFeature>,
     pub analyses: Vec<Arc<dyn Analysis>>,
 }
@@ -123,6 +159,7 @@ impl std::fmt::Debug for Contributions {
                 &self.formats.iter().map(|x| x.id()).collect::<Vec<_>>(),
             )
             .field("roles", &self.roles)
+            .field("key_roles", &self.key_roles)
             .field("markdown", &self.markdown.len())
             .field(
                 "analyses",
@@ -137,6 +174,7 @@ impl Contributions {
     pub fn extend(&mut self, other: Self) {
         self.formats.extend(other.formats);
         self.roles.extend(other.roles);
+        self.key_roles.extend(other.key_roles);
         self.markdown.extend(other.markdown);
         self.analyses.extend(other.analyses);
     }
@@ -150,6 +188,12 @@ impl Contributions {
     #[must_use]
     pub fn roles(mut self, roles: Vec<RoleRule>) -> Self {
         self.roles = roles;
+        self
+    }
+
+    #[must_use]
+    pub fn key_roles(mut self, key_roles: Vec<KeyRole>) -> Self {
+        self.key_roles = key_roles;
         self
     }
 

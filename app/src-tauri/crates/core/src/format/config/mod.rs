@@ -69,6 +69,7 @@ impl<S: ConfigSyntax> ConfigFormat<S> {
                 text: text.to_owned(),
                 language: Some(self.0.language().to_owned()),
                 problem: None,
+                partial: None,
             },
             notes: vec![note],
         }

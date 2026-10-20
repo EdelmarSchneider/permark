@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use permark_core::conditions::{Context, Platform};
-use permark_core::document::{editor, resolve_code_refs, DocumentView, LinkTarget};
+use permark_core::document::{editor, resolve_code_refs, DocumentView, LinkTarget, TextChunk};
 use permark_core::edit::{ConfigEdited, EditSource, Editor, LineEdit, SaveOutcome, SecretRange};
 use permark_core::events::{OpenFailed, StateRecovered};
 use permark_core::fileops::{
@@ -638,6 +638,20 @@ pub fn document_text(
     documents_of(&workspace).text(&path)
 }
 
+/// The next chunk of a large text (`size` and `mtime_ms`: the ones the view was opened with).
+#[tauri::command(async)]
+pub fn document_more(
+    handle: AppHandle,
+    window: WebviewWindow,
+    path: String,
+    offset: u64,
+    size: u64,
+    mtime_ms: u64,
+) -> Result<TextChunk, IpcError> {
+    let (workspace, _) = reading_of(&handle, &window)?;
+    documents_of(&workspace).more(&path, offset, size, mtime_ms)
+}
+
 /// Where each link of a document leads.
 #[tauri::command(async)]
 pub fn link_resolve(
@@ -1262,6 +1276,7 @@ commands![
     document_open,
     document_close,
     document_text,
+    document_more,
     link_resolve,
     code_refs_resolve,
     open_in_editor,
