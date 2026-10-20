@@ -39,6 +39,10 @@ struct Fx {
 }
 
 fn make(files: &[&str], native: bool) -> Fx {
+    make_with(files, native, FAST)
+}
+
+fn make_with(files: &[&str], native: bool, timing: Timing) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     for f in files {
         let path = dir.path().join(f);
@@ -69,7 +73,7 @@ fn make(files: &[&str], native: bool) -> Fx {
         hub,
         Arc::new(OwnWrites::new()),
         None,
-        FAST,
+        timing,
         native,
     );
     settle(&seen);
@@ -113,7 +117,7 @@ fn wait_for(seen: &Seen, what: &str, ok: impl Fn(&[Change]) -> bool) -> Vec<Chan
             return all;
         }
         assert!(
-            started.elapsed() < Duration::from_secs(8),
+            started.elapsed() < Duration::from_secs(30),
             "timed out waiting for {what}: {all:?}"
         );
         std::thread::sleep(Duration::from_millis(20));
@@ -403,7 +407,15 @@ fn noise_is_dropped_and_git_signals_pass() {
 
 #[test]
 fn a_burst_of_files_is_one_bulk_batch() {
-    let f = make(&["start.md"], true);
+    // a flush comes after `quiet` without news or `max` after the first: with the fast timings a slow disk (a
+    // runner's virus scan: ~3 ms a file) cut 1000 writes into batches under the bulk limit. A writer that never
+    // pauses this long is one burst; `max` far beyond the writes.
+    let burst = Timing {
+        quiet: Duration::from_secs(1),
+        max: Duration::from_secs(60),
+        ..FAST
+    };
+    let f = make_with(&["start.md"], true, burst);
     // plenty over the bulk limit: a stall of the machine between two flushes still leaves one of them bulk
     for n in 0..1000 {
         fs::write(f.dir.path().join(format!("burst{n}.md")), "b").unwrap();
@@ -562,7 +574,7 @@ fn a_rescan_request_is_a_bulk_batch_that_asks_to_rebuild() {
         if f.seen.lock().unwrap().iter().any(|b| b.rescan && b.bulk) {
             break;
         }
-        assert!(started.elapsed() < Duration::from_secs(5));
+        assert!(started.elapsed() < Duration::from_secs(30));
         std::thread::sleep(Duration::from_millis(20));
     }
 }

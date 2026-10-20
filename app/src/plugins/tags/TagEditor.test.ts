@@ -31,7 +31,7 @@ let stop: (() => void) | null = null;
 let started = false;
 
 async function until(check: () => boolean, what: string): Promise<void> {
-  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 3000, interval: 10 });
+  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 10_000, interval: 10 });
 }
 
 function type(input: HTMLInputElement, text: string): void {

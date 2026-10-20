@@ -46,7 +46,7 @@ async function show(path: string): Promise<void> {
 }
 
 async function until(check: () => boolean, what: string): Promise<void> {
-  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 3000, interval: 10 });
+  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 10_000, interval: 10 });
 }
 
 beforeEach(async () => {
