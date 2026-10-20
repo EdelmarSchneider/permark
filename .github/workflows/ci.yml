@@ -7,7 +7,7 @@ name: CI
 
 on:
   push:
-    branches: [develop, main, "feature/**", "release/**", "hotfix/**"]
+    branches: [develop, main, "feature/**", "bugfix/**", "release/**", "hotfix/**"]
   pull_request:
 
 permissions:
