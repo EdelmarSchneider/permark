@@ -29,7 +29,10 @@ fn is_key_file(name: &str) -> bool {
     if KEY_FILES.contains(&name.as_str()) {
         return true;
     }
-    if SSH_KEYS.iter().any(|k| name.starts_with(k)) && !name.ends_with(".pub") {
+    let public = Path::new(&name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("pub"));
+    if SSH_KEYS.iter().any(|k| name.starts_with(k)) && !public {
         return true;
     }
     name.rsplit_once('.')
