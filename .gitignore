@@ -21,6 +21,7 @@ Thumbs.db
 
 # Logs / env
 *.log
+!app/src-tauri/crates/plugins/token-count/corpus/*.log
 *.local
 .env
 .env.*

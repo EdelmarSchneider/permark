@@ -1,0 +1,90 @@
+2026-10-19T17:21:55.839Z DEBUG [worker-7] watcher event dropped path=/docs/carla/278.md took=46ms
+2026-10-19T11:54:43.627Z INFO [worker-6] index rebuilt path=/docs/ines/136.md took=756ms
+2026-10-19T12:59:12.797Z WARN [worker-7] request handled path=/docs/hana/132.md took=239ms
+2026-10-19T22:34:51.747Z INFO [worker-4] watcher event dropped path=/docs/ines/320.md took=748ms
+2026-10-19T10:25:22.385Z WARN [worker-8] cache miss path=/docs/farid/448.md took=25ms
+2026-10-19T12:19:50.322Z WARN [worker-7] request handled path=/docs/elena/420.md took=129ms
+2026-10-19T11:38:19.561Z DEBUG [worker-2] retrying in 250 ms path=/docs/alice/222.md took=747ms
+2026-10-19T16:13:27.274Z INFO [worker-6] connection reset by peer path=/docs/jun/182.md took=563ms
+2026-10-19T18:31:51.895Z WARN [worker-2] index rebuilt path=/docs/gustavo/464.md took=247ms
+2026-10-19T18:46:22.294Z INFO [worker-1] request handled path=/docs/bruno/323.md took=708ms
+2026-10-19T22:59:56.344Z INFO [worker-2] connection reset by peer path=/docs/carla/98.md took=386ms
+2026-10-19T21:21:57.315Z INFO [worker-6] watcher event dropped path=/docs/farid/443.md took=691ms
+2026-10-19T16:48:47.536Z INFO [worker-4] cache miss path=/docs/bruno/202.md took=804ms
+2026-10-19T17:16:37.236Z INFO [worker-6] watcher event dropped path=/docs/jun/71.md took=771ms
+2026-10-19T17:12:34.230Z INFO [worker-1] connection reset by peer path=/docs/hana/145.md took=508ms
+2026-10-19T17:41:44.433Z WARN [worker-1] watcher event dropped path=/docs/carla/263.md took=632ms
+2026-10-19T17:44:54.390Z INFO [worker-2] retrying in 250 ms path=/docs/dmitri/31.md took=38ms
+2026-10-19T20:21:49.736Z INFO [worker-5] cache miss path=/docs/bruno/106.md took=823ms
+2026-10-19T19:15:55.604Z INFO [worker-3] index rebuilt path=/docs/dmitri/150.md took=150ms
+2026-10-19T15:56:15.957Z ERROR [worker-2] saved document path=/docs/hana/392.md took=506ms
+2026-10-19T15:40:39.160Z INFO [worker-8] index rebuilt path=/docs/jun/266.md took=221ms
+2026-10-19T13:41:11.311Z INFO [worker-3] request handled path=/docs/dmitri/285.md took=375ms
+2026-10-19T12:14:26.600Z INFO [worker-6] request handled path=/docs/carla/242.md took=730ms
+2026-10-19T11:20:50.190Z ERROR [worker-8] retrying in 250 ms path=/docs/gustavo/103.md took=57ms
+2026-10-19T11:13:56.162Z INFO [worker-2] index rebuilt path=/docs/carla/247.md took=233ms
+2026-10-19T21:15:49.729Z INFO [worker-1] connection reset by peer path=/docs/ines/253.md took=335ms
+2026-10-19T22:42:19.686Z DEBUG [worker-3] index rebuilt path=/docs/hana/258.md took=804ms
+2026-10-19T17:25:55.731Z WARN [worker-1] request handled path=/docs/dmitri/402.md took=155ms
+2026-10-19T17:46:18.547Z DEBUG [worker-6] saved document path=/docs/hana/444.md took=562ms
+2026-10-19T10:50:33.223Z DEBUG [worker-1] retrying in 250 ms path=/docs/alice/187.md took=424ms
+2026-10-19T10:31:54.118Z DEBUG [worker-3] connection reset by peer path=/docs/carla/108.md took=290ms
+2026-10-19T19:40:23.300Z INFO [worker-6] connection reset by peer path=/docs/alice/234.md took=92ms
+2026-10-19T17:44:59.236Z ERROR [worker-6] retrying in 250 ms path=/docs/hana/491.md took=277ms
+2026-10-19T10:47:53.289Z WARN [worker-2] watcher event dropped path=/docs/farid/498.md took=845ms
+2026-10-19T20:21:19.599Z ERROR [worker-6] watcher event dropped path=/docs/alice/390.md took=559ms
+2026-10-19T22:48:17.302Z INFO [worker-5] connection reset by peer path=/docs/gustavo/449.md took=347ms
+2026-10-19T20:25:57.944Z WARN [worker-8] retrying in 250 ms path=/docs/elena/71.md took=163ms
+2026-10-19T20:57:33.166Z INFO [worker-5] watcher event dropped path=/docs/hana/76.md took=476ms
+2026-10-19T23:11:59.696Z DEBUG [worker-5] cache miss path=/docs/ines/38.md took=803ms
+2026-10-19T19:50:42.158Z INFO [worker-6] index rebuilt path=/docs/hana/437.md took=640ms
+2026-10-19T14:33:56.162Z INFO [worker-4] watcher event dropped path=/docs/jun/9.md took=100ms
+2026-10-19T22:45:42.821Z DEBUG [worker-5] request handled path=/docs/bruno/392.md took=355ms
+2026-10-19T18:29:13.731Z INFO [worker-7] watcher event dropped path=/docs/dmitri/185.md took=388ms
+2026-10-19T19:38:22.472Z INFO [worker-7] index rebuilt path=/docs/dmitri/431.md took=390ms
+2026-10-19T21:26:58.422Z WARN [worker-1] retrying in 250 ms path=/docs/bruno/362.md took=267ms
+2026-10-19T22:47:42.896Z INFO [worker-8] connection reset by peer path=/docs/elena/442.md took=683ms
+2026-10-19T11:21:55.774Z WARN [worker-6] retrying in 250 ms path=/docs/ines/154.md took=165ms
+2026-10-19T10:13:15.308Z INFO [worker-8] retrying in 250 ms path=/docs/carla/370.md took=423ms
+2026-10-19T13:35:32.833Z INFO [worker-7] cache miss path=/docs/gustavo/405.md took=682ms
+2026-10-19T16:45:29.765Z INFO [worker-3] watcher event dropped path=/docs/alice/38.md took=448ms
+2026-10-19T16:22:12.619Z INFO [worker-3] retrying in 250 ms path=/docs/farid/387.md took=538ms
+2026-10-19T16:11:58.727Z ERROR [worker-8] connection reset by peer path=/docs/farid/110.md took=510ms
+2026-10-19T17:36:39.631Z INFO [worker-6] index rebuilt path=/docs/ines/53.md took=541ms
+2026-10-19T10:51:58.882Z DEBUG [worker-1] request handled path=/docs/carla/211.md took=501ms
+2026-10-19T12:13:48.482Z ERROR [worker-5] watcher event dropped path=/docs/jun/49.md took=191ms
+2026-10-19T10:50:50.318Z ERROR [worker-1] request handled path=/docs/farid/16.md took=402ms
+2026-10-19T19:40:20.144Z INFO [worker-6] retrying in 250 ms path=/docs/ines/62.md took=556ms
+2026-10-19T23:29:35.276Z INFO [worker-5] saved document path=/docs/alice/126.md took=90ms
+2026-10-19T22:24:25.356Z INFO [worker-5] watcher event dropped path=/docs/hana/354.md took=82ms
+2026-10-19T14:56:25.822Z INFO [worker-6] retrying in 250 ms path=/docs/jun/319.md took=158ms
+2026-10-19T15:25:51.400Z INFO [worker-7] saved document path=/docs/ines/84.md took=17ms
+2026-10-19T22:31:45.842Z INFO [worker-3] request handled path=/docs/dmitri/317.md took=41ms
+2026-10-19T22:57:47.893Z INFO [worker-4] retrying in 250 ms path=/docs/bruno/332.md took=585ms
+2026-10-19T15:34:41.821Z INFO [worker-4] watcher event dropped path=/docs/ines/494.md took=28ms
+2026-10-19T11:29:54.132Z ERROR [worker-2] saved document path=/docs/farid/412.md took=545ms
+2026-10-19T10:32:34.629Z ERROR [worker-7] retrying in 250 ms path=/docs/farid/280.md took=111ms
+2026-10-19T13:44:38.667Z DEBUG [worker-2] watcher event dropped path=/docs/elena/53.md took=184ms
+2026-10-19T21:57:14.183Z INFO [worker-7] watcher event dropped path=/docs/dmitri/464.md took=849ms
+2026-10-19T10:26:24.636Z ERROR [worker-4] connection reset by peer path=/docs/bruno/479.md took=856ms
+2026-10-19T17:38:27.756Z INFO [worker-1] index rebuilt path=/docs/ines/175.md took=118ms
+2026-10-19T14:21:10.537Z INFO [worker-8] retrying in 250 ms path=/docs/alice/48.md took=104ms
+2026-10-19T13:35:53.115Z INFO [worker-4] retrying in 250 ms path=/docs/ines/305.md took=588ms
+2026-10-19T11:36:59.221Z DEBUG [worker-1] connection reset by peer path=/docs/bruno/9.md took=656ms
+2026-10-19T15:59:29.518Z ERROR [worker-3] request handled path=/docs/dmitri/415.md took=585ms
+2026-10-19T15:21:12.230Z INFO [worker-8] index rebuilt path=/docs/alice/388.md took=239ms
+2026-10-19T18:59:43.611Z WARN [worker-3] saved document path=/docs/farid/16.md took=30ms
+2026-10-19T17:57:18.705Z ERROR [worker-2] index rebuilt path=/docs/alice/195.md took=285ms
+2026-10-19T13:37:15.475Z WARN [worker-2] connection reset by peer path=/docs/carla/16.md took=213ms
+2026-10-19T14:14:22.975Z WARN [worker-5] cache miss path=/docs/elena/78.md took=241ms
+2026-10-19T15:31:11.173Z INFO [worker-2] connection reset by peer path=/docs/gustavo/293.md took=865ms
+2026-10-19T14:41:12.887Z INFO [worker-7] retrying in 250 ms path=/docs/farid/470.md took=530ms
+2026-10-19T16:44:38.549Z WARN [worker-2] index rebuilt path=/docs/farid/109.md took=102ms
+2026-10-19T11:53:27.440Z DEBUG [worker-2] watcher event dropped path=/docs/gustavo/64.md took=507ms
+2026-10-19T22:41:31.728Z INFO [worker-5] cache miss path=/docs/hana/462.md took=743ms
+2026-10-19T16:33:44.248Z INFO [worker-6] index rebuilt path=/docs/alice/344.md took=119ms
+2026-10-19T10:58:23.127Z INFO [worker-1] watcher event dropped path=/docs/farid/61.md took=869ms
+2026-10-19T13:45:50.679Z ERROR [worker-4] watcher event dropped path=/docs/bruno/404.md took=681ms
+2026-10-19T11:25:12.125Z INFO [worker-2] request handled path=/docs/ines/194.md took=895ms
+2026-10-19T10:29:48.790Z DEBUG [worker-7] saved document path=/docs/carla/112.md took=611ms
+2026-10-19T12:28:55.853Z WARN [worker-1] index rebuilt path=/docs/farid/161.md took=730ms
