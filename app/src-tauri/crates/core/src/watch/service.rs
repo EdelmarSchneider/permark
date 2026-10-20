@@ -488,6 +488,21 @@ fn run(shared: &Shared, rx: &Receiver<Msg>) {
 
 /// Reconciles `pending` with the disk and publishes the result. Returns paths to look at again.
 fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
+    // an ignore file that changed counts for the rest of this batch: rules read before it are stale
+    let is_ignore_file = |abs: &Path| {
+        abs.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(Ignorer::is_ignore_file)
+    };
+    if rescan
+        || pending
+            .iter()
+            .any(|p| is_ignore_file(&p.abs) || p.rename_from.as_deref().is_some_and(is_ignore_file))
+    {
+        for (_, ignorer) in &shared.ignorers {
+            ignorer.clear();
+        }
+    }
     let env = Env {
         vault: &shared.vault,
         sigs: &shared.sigs,
