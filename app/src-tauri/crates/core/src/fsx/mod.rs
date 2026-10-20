@@ -298,7 +298,11 @@ mod tests {
         assert!(!wrote);
         assert!(calls >= 2);
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "theirs");
-        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1, "temp removed");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "temp removed"
+        );
     }
 
     fn names_in(dir: &Path) -> Vec<String> {
