@@ -10,6 +10,14 @@ use crate::watch::StatusHook;
 pub trait RepoReader: Send + Sync {
     /// The file at HEAD (`path` is a project path); `None`: no repository, not committed, unreadable.
     fn blob_at_head(&self, path: &str) -> Option<Vec<u8>>;
+    /// The commit HEAD points at; `None`: no repository | no commit yet.
+    fn head(&self) -> Option<String> {
+        None
+    }
+    /// Commits from `old` to `new` (`old..new`); `None`: unknown.
+    fn commits_between(&self, _old: &str, _new: &str) -> Option<u32> {
+        None
+    }
 }
 
 /// The [`RepoReader`] as a service (`Services::get::<RepoHandle>()`).

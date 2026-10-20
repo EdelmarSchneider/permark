@@ -1,5 +1,7 @@
 //! Plugin `live-feed`: the list of everything that changed in the project, as it happens. The watch tells; this keeps
-//! the list (coalesced saves, groups for git operations and floods) and hands it to every window that asks.
+//! the list (coalesced saves, groups for git operations and floods) and hands it to every window that asks. Beside it,
+//! the person's own actions from the project's activity journal (and the hand-off marks), for the panel's
+//! mine | outside | all filter.
 
 #![cfg_attr(test, allow(clippy::assert_is_empty))]
 
@@ -9,6 +11,7 @@ use std::borrow::Cow;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use permark_core::activity::{By, Entry, Fact, Journal, Listening};
 use permark_core::conditions::Requirement;
 use permark_core::plugins::{
     typed, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
@@ -59,6 +62,16 @@ impl Plugin for LiveFeedPlugin {
         };
         let feed = Arc::new(Mutex::new(Feed::new()));
         let events = cx.events().clone();
+        // the person's actions as the journal notes them (hand-offs included, closes not)
+        let journal = cx.project().map(|p| Arc::clone(&p.activity));
+        let listening = journal.as_ref().map(|journal| {
+            let events = events.clone();
+            journal.listen(Arc::new(move |entry: &Entry| {
+                if entry.by == By::Person && entry.fact != Fact::Closed {
+                    events.emit("activity", json!({ "entry": entry }));
+                }
+            }))
+        });
         let subscription = hub.subscribe({
             let feed = Arc::clone(&feed);
             move |batch| {
@@ -82,6 +95,14 @@ impl Plugin for LiveFeedPlugin {
                     .items())
             }),
         ));
+        registrations.extend(cx.rpc(
+            "activity",
+            typed(move |_: NoArgs, _| {
+                Ok(journal
+                    .as_ref()
+                    .map_or_else(Vec::new, |j| mine(&j.snapshot())))
+            }),
+        ));
         let clearing = Arc::clone(&feed);
         registrations.extend(cx.rpc(
             "clear",
@@ -96,6 +117,7 @@ impl Plugin for LiveFeedPlugin {
         Ok(Box::new(FeedRunning {
             _subscription: subscription,
             _registrations: registrations,
+            _listening: listening,
         }))
     }
 }
@@ -104,6 +126,21 @@ impl Plugin for LiveFeedPlugin {
 struct FeedRunning {
     _subscription: Subscription,
     _registrations: Vec<RpcRegistration>,
+    _listening: Option<Listening>,
+}
+
+/// The person's latest actions (and hand-off marks), newest last, at most [`MAX_ITEMS`].
+fn mine(journal: &Journal) -> Vec<Entry> {
+    let mut items: Vec<Entry> = journal
+        .entries
+        .iter()
+        .rev()
+        .filter(|e| e.by == By::Person && e.fact != Fact::Closed)
+        .take(MAX_ITEMS)
+        .cloned()
+        .collect();
+    items.reverse();
+    items
 }
 
 impl Running for FeedRunning {}
@@ -134,6 +171,46 @@ mod tests {
             )
             .map(|v| v.as_array().cloned().unwrap_or_default())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn the_persons_actions_and_hand_offs_come_from_the_journal() {
+        let base = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let env = CoreEnv::new(
+            AppDirs::under(base.path()),
+            Arc::new(PluginRegistry::new(vec![plugin()]).unwrap()),
+            Arc::new(NoEvents),
+            Distribution::Direct,
+            AppSettings::default(),
+        );
+        let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+        let journal = core.activity();
+        journal.person(Fact::Tag {
+            added: true,
+            path: "a.md".to_owned(),
+            tag: "x".to_owned(),
+        });
+        let _ = journal.hand_off(1, None, "rows".to_owned(), 1);
+        journal.closed();
+        let mine = core
+            .rpc()
+            .call(
+                "live-feed",
+                "activity",
+                &RpcCall {
+                    window: "w".to_owned(),
+                    args: serde_json::Value::Null,
+                },
+            )
+            .unwrap();
+        let kinds: Vec<&str> = mine
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["fact"]["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["tag", "handOff"], "a close is not listed");
     }
 
     #[test]

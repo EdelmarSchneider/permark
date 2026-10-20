@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use permark_core::activity::{Fact, ReviewOp};
 use permark_core::edit::lines::apply;
 use permark_core::edit::{LineEdit, SaveOutcome};
 use permark_core::error::{ErrorKind, IpcError};
@@ -124,6 +125,22 @@ fn invalid(subject: &str, detail: &str) -> IpcError {
         .detail(detail)
 }
 
+/// The heading path of the section a change starts in (the current text, or the old one for a removal).
+fn section_of(computed: &Computed, change: &Change, current: &str, base: &str) -> Option<String> {
+    let (blocks, text, start) = if change.new.is_empty() {
+        (&computed.old, base, change.old.start)
+    } else {
+        (&computed.current, current, change.new.start)
+    };
+    let line = blocks.get(start)?.line_start;
+    permark_core::format::sections(text)
+        .into_iter()
+        .rev()
+        .find(|s| s.line <= line)
+        .filter(|s| !s.heading_path.is_empty())
+        .map(|s| s.heading_path.join(" > "))
+}
+
 fn is_markdown(path: &str) -> bool {
     permark_plugin_unread::is_tracked(path)
 }
@@ -143,6 +160,15 @@ fn ids(blocks: &[Block]) -> Vec<String> {
 }
 
 impl Shared {
+    /// The person's review choice, in the project's activity journal.
+    fn note(&self, path: &str, op: ReviewOp, section: Option<String>) {
+        self.project.activity.person(Fact::Review {
+            op,
+            path: path.to_owned(),
+            section,
+        });
+    }
+
     // ---- reading ---------------------------------------------------------------------------------------------
 
     /// The document as it is on disk. `None`: gone.
@@ -326,6 +352,10 @@ impl Shared {
             return Err(invalid(path, "commit"));
         }
         let prev = self.held_hash(path);
+        let section = (!all)
+            .then(|| computed.changes.get(index))
+            .flatten()
+            .and_then(|c| section_of(&computed, c, &current.text, &base.text));
         let new_hash = if all {
             // the version on disk is approved: it counts as read, and nothing is held any more
             let _ = self.store.put(current.hash, &current.text);
@@ -356,6 +386,7 @@ impl Shared {
         };
         self.push_undo(path, Undo::Keep { prev });
         let _ = new_hash;
+        self.note(path, ReviewOp::Keep, section);
         self.finish(path, asked)
     }
 
@@ -380,6 +411,10 @@ impl Shared {
                 .get(index)
                 .ok_or_else(|| invalid(path, "index"))?]
         };
+        let section = match picked.as_slice() {
+            [one] if !all => section_of(&computed, one, &current.text, &base.text),
+            _ => None,
+        };
         for change in picked {
             edits.push(
                 splice::edit_for(&target, &change.new, &source, &change.old)
@@ -403,6 +438,7 @@ impl Shared {
                         hash_after: hash,
                     },
                 );
+                self.note(path, ReviewOp::Revert, section);
             }
             SaveOutcome::Conflict { .. } => {
                 return Err(IpcError::new(ErrorKind::Conflict)

@@ -200,6 +200,16 @@ impl Index {
         gone.len()
     }
 
+    /// Documents whose links name the target `key`.
+    #[must_use]
+    pub fn linking_to(&self, key: &str) -> Vec<String> {
+        self.docs
+            .iter()
+            .filter(|(_, doc)| doc.links.iter().any(|k| k == key))
+            .map(|(path, _)| path.to_string())
+            .collect()
+    }
+
     /// The set of link targets when it changed since the last call.
     pub fn take_linked(&mut self) -> Option<Arc<HashSet<String>>> {
         if !self.linked_dirty {

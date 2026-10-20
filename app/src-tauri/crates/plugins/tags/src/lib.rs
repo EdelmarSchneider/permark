@@ -18,6 +18,7 @@ mod types;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use permark_core::activity::Fact;
 use permark_core::conditions::Requirement;
 use permark_core::organizing::TagsApi;
 use permark_core::plugins::{
@@ -104,6 +105,7 @@ impl Plugin for TagsPlugin {
         &self.manifest
     }
 
+    #[allow(clippy::too_many_lines)] // one registration per method the window calls
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let (Some(project), CxWorkspace::Project(_), Some(hub), Some(store)) =
             (cx.project(), &cx.workspace, cx.watch(), cx.store())
@@ -156,10 +158,39 @@ impl Plugin for TagsPlugin {
             "fileMeta",
             typed(move |args: PathArg, _| s.file_meta(&args.path)),
         ));
-        let s = Arc::clone(&service);
+        let (s, journal) = (Arc::clone(&service), Arc::clone(&project.activity));
         registrations.extend(cx.rpc(
             "setTags",
-            typed(move |args: SetTagsArgs, _| s.set_tags(&args.path, &args.tags)),
+            typed(move |args: SetTagsArgs, _| {
+                let app_tags = |meta: &FileMeta| -> Vec<String> {
+                    meta.tags
+                        .iter()
+                        .filter(|t| t.app)
+                        .map(|t| t.name.clone())
+                        .collect()
+                };
+                let before = s.file_meta(&args.path).map(|m| app_tags(&m)).ok();
+                let after = s.set_tags(&args.path, &args.tags)?;
+                // what the person added and removed, in the project's activity journal
+                if let Some(before) = before {
+                    let now = app_tags(&after);
+                    for tag in now.iter().filter(|t| !before.contains(t)) {
+                        journal.person(Fact::Tag {
+                            added: true,
+                            path: after.path.clone(),
+                            tag: tag.clone(),
+                        });
+                    }
+                    for tag in before.iter().filter(|t| !now.contains(t)) {
+                        journal.person(Fact::Tag {
+                            added: false,
+                            path: after.path.clone(),
+                            tag: tag.clone(),
+                        });
+                    }
+                }
+                Ok(after)
+            }),
         ));
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc(

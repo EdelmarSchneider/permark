@@ -278,6 +278,15 @@ impl GitOps for BuiltinGit {
         Ok(Some(blob.content().to_vec()))
     }
 
+    fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {
+        let repo = open(location).ok()?;
+        let (old, new) = (Oid::from_str(old).ok()?, Oid::from_str(new).ok()?);
+        let mut walk = repo.revwalk().ok()?;
+        walk.push(new).ok()?;
+        walk.hide(old).ok()?;
+        u32::try_from(walk.flatten().count()).ok()
+    }
+
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool {
         let Ok(repo) = open(location) else {
             return false;

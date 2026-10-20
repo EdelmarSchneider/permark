@@ -95,6 +95,8 @@ pub trait GitOps: Send + Sync {
     ) -> Result<Option<Vec<u8>>, GitError>;
     /// Whether the repository has the commit.
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool;
+    /// Commits reachable from `new` and not from `old` (`None`: a commit unknown | git failed).
+    fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32>;
 }
 
 /// `path` (relative to the working tree) below the project folder `prefix`: the part below it; `None`: outside.

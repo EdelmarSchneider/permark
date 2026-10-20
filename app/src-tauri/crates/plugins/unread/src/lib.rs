@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 use permark_core::conditions::Requirement;
 use permark_core::error::{ErrorKind, IpcError};
-use permark_core::organizing::{UnreadApi, UnreadLookup};
+use permark_core::organizing::UnreadApi;
 use permark_core::paths::{VaultPath, WORKTREE_PREFIX};
 use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
@@ -160,9 +160,9 @@ impl Plugin for UnreadPlugin {
             }),
         ));
         let lease = project.services.provide(Arc::clone(service.hub()));
-        let api = project.services.provide(Arc::new(UnreadApi(
-            Arc::clone(service.hub()) as Arc<dyn UnreadLookup>
-        )));
+        let api = project
+            .services
+            .provide(Arc::new(UnreadApi(service.lookup())));
         Ok(Box::new(UnreadRunning {
             subscription: Some(subscription),
             registrations,

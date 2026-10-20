@@ -477,6 +477,30 @@ impl SearchIndex {
         }
     }
 
+    /// The files of the project below `folder` (`""`: all), sorted by path. Ignored files are not in the index.
+    #[must_use]
+    pub fn files_under(&self, folder: &str) -> Vec<String> {
+        let index = self.read();
+        if folder.is_empty() {
+            return index.files.keys().cloned().collect();
+        }
+        let prefix = format!("{folder}/");
+        index
+            .files
+            .range(prefix.clone()..)
+            .take_while(|(p, _)| p.starts_with(&prefix))
+            .map(|(p, _)| p.clone())
+            .collect()
+    }
+
+    /// The documents that link to `path` (their own links, each document once), sorted by path.
+    #[must_use]
+    pub fn linking_to(&self, path: &str) -> Vec<String> {
+        let mut found = self.read().linking_to(&crate::tree::key_of(path));
+        found.sort();
+        found
+    }
+
     /// Link targets (keys) documents point at: tests and measurements.
     #[must_use]
     pub fn linked(&self) -> HashSet<String> {

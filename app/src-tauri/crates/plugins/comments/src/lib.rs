@@ -15,6 +15,7 @@ mod tests;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use permark_core::activity::{ActivityLog, CommentOp, Fact};
 use permark_core::conditions::Requirement;
 use permark_core::organizing::{CommentBook, CommentFilter, CommentItem, CommentsApi};
 use permark_core::plugins::{
@@ -114,36 +115,74 @@ impl Plugin for CommentsPlugin {
             move |batch| service.feed(batch)
         });
         let mut registrations = Vec::new();
+        let journal = Arc::clone(&project.activity);
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc(
             "list",
             typed(move |args: ListArgs, _| s.list(args.path.as_deref(), args.scope)),
         ));
-        let s = Arc::clone(&service);
+        let (s, j) = (Arc::clone(&service), Arc::clone(&journal));
         registrations.extend(cx.rpc(
             "add",
             typed(move |args: AddArgs, _| {
-                s.add(&NewComment {
+                let added = s.add(&NewComment {
                     path: args.path,
                     quote: args.quote,
                     text: args.text,
                     heading_path: args.heading_path,
                     line: args.line,
                     end_line: args.end_line,
-                })
+                })?;
+                note(
+                    &j,
+                    CommentOp::Add,
+                    &added.id,
+                    &added.path,
+                    &added.heading_path,
+                );
+                Ok(added)
             }),
         ));
-        let s = Arc::clone(&service);
+        let (s, j) = (Arc::clone(&service), Arc::clone(&journal));
         registrations.extend(cx.rpc(
             "setDone",
-            typed(move |args: DoneArgs, _| s.set_done(&args.id, args.done)),
+            typed(move |args: DoneArgs, _| {
+                let about = about(&s, &args.id);
+                s.set_done(&args.id, args.done)?;
+                if let Some((path, heading)) = about {
+                    let op = if args.done {
+                        CommentOp::Done
+                    } else {
+                        CommentOp::Reopen
+                    };
+                    note(&j, op, &args.id, &path, &heading);
+                }
+                Ok(())
+            }),
         ));
-        let s = Arc::clone(&service);
-        registrations.extend(cx.rpc("remove", typed(move |args: IdArgs, _| s.remove(&args.id))));
-        let s = Arc::clone(&service);
+        let (s, j) = (Arc::clone(&service), Arc::clone(&journal));
+        registrations.extend(cx.rpc(
+            "remove",
+            typed(move |args: IdArgs, _| {
+                let about = about(&s, &args.id);
+                s.remove(&args.id)?;
+                if let Some((path, heading)) = about {
+                    note(&j, CommentOp::Remove, &args.id, &path, &heading);
+                }
+                Ok(())
+            }),
+        ));
+        let (s, j) = (Arc::clone(&service), Arc::clone(&journal));
         registrations.extend(cx.rpc(
             "reply",
-            typed(move |args: ReplyArgs, _| s.reply(&args.id, &args.text)),
+            typed(move |args: ReplyArgs, _| {
+                let about = about(&s, &args.id);
+                s.reply(&args.id, &args.text)?;
+                if let Some((path, heading)) = about {
+                    note(&j, CommentOp::Reply, &args.id, &path, &heading);
+                }
+                Ok(())
+            }),
         ));
         let lease = project
             .services
@@ -213,4 +252,24 @@ impl CommentBook for Book {
     fn resolve(&self, id: &str, reply: Option<&str>) -> Result<(), IpcError> {
         self.0.resolve_by_agent(id, reply)
     }
+}
+
+/// The document and heading of a comment (before an operation changes it).
+fn about(service: &CommentsService, id: &str) -> Option<(String, Vec<String>)> {
+    service
+        .list(None, CommentScope::All)
+        .ok()?
+        .into_iter()
+        .find(|c| c.id == id)
+        .map(|c| (c.path, c.heading_path))
+}
+
+/// The person's comment action, in the project's activity journal.
+fn note(journal: &ActivityLog, op: CommentOp, id: &str, path: &str, heading: &[String]) {
+    journal.person(Fact::Comment {
+        op,
+        path: path.to_owned(),
+        id: id.to_owned(),
+        heading: (!heading.is_empty()).then(|| heading.join(" > ")),
+    });
 }

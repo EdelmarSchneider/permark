@@ -110,6 +110,10 @@ pub trait UnreadLookup: Send + Sync {
     fn unread(&self) -> UnreadNow;
     /// Waits until the first look at the disk is done; `false` when the time ran out.
     fn wait_ready(&self, timeout: Duration) -> bool;
+    /// Documents created | changed since the person's last visit; `None`: not known (yet) | the list is not complete.
+    fn changed_since_visit(&self) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// The unread service of a project.

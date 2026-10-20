@@ -416,6 +416,17 @@ impl GitOps for SystemGit {
         Ok((out.code == Some(0)).then_some(out.stdout))
     }
 
+    fn commit_count(&self, location: &RepoLocation, old: &str, new: &str) -> Option<u32> {
+        if !is_hex_oid(old) || !is_hex_oid(new) {
+            return None;
+        }
+        let range = format!("{old}..{new}");
+        let out = self
+            .call_ok(&location.workdir, &["rev-list", "--count", &range])
+            .ok()?;
+        String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+    }
+
     fn commit_exists(&self, location: &RepoLocation, oid: &str) -> bool {
         if !is_hex_oid(oid) {
             return false;

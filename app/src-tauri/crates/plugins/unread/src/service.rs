@@ -359,6 +359,48 @@ impl Drop for UnreadService {
     }
 }
 
+/// What the agent connection reads: the unread documents and what changed since the last visit.
+struct Lookup {
+    hub: Arc<UnreadHub>,
+    since: Arc<Mutex<Option<SinceVisit>>>,
+}
+
+impl permark_core::organizing::UnreadLookup for Lookup {
+    fn unread(&self) -> permark_core::organizing::UnreadNow {
+        self.hub.unread()
+    }
+
+    fn wait_ready(&self, timeout: Duration) -> bool {
+        self.hub.wait_ready(timeout)
+    }
+
+    fn changed_since_visit(&self) -> Option<Vec<String>> {
+        let since = lock(&self.since);
+        let since = since
+            .as_ref()
+            .filter(|s| s.ready && !s.first && s.more == 0)?;
+        Some(
+            since
+                .items
+                .iter()
+                .filter(|i| i.kind != VisitKind::Removed)
+                .map(|i| i.path.clone())
+                .collect(),
+        )
+    }
+}
+
+impl UnreadService {
+    /// The service the agent connection reads.
+    #[must_use]
+    pub fn lookup(&self) -> Arc<dyn permark_core::organizing::UnreadLookup> {
+        Arc::new(Lookup {
+            hub: Arc::clone(&self.hub),
+            since: Arc::clone(&self.since),
+        })
+    }
+}
+
 impl permark_core::organizing::UnreadLookup for UnreadHub {
     fn unread(&self) -> permark_core::organizing::UnreadNow {
         let list = list_of(&lock(&self.tracker));

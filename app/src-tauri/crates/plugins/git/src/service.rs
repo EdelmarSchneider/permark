@@ -288,6 +288,25 @@ impl RepoReader for Reader {
         };
         repo.backend.blob_at_head(location, rest).ok().flatten()
     }
+
+    fn head(&self) -> Option<String> {
+        self.shared
+            .snapshot
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .and_then(|s| s.head.oid.clone())
+    }
+
+    fn commits_between(&self, old: &str, new: &str) -> Option<u32> {
+        let guard = self
+            .shared
+            .repo
+            .read()
+            .unwrap_or_else(PoisonError::into_inner);
+        let repo = guard.as_ref()?;
+        repo.backend.commit_count(&repo.main, old, new)
+    }
 }
 
 /// The number of the last snapshot announced by any service of the process. One counter for all, so a service that
