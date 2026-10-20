@@ -13,7 +13,7 @@ mod tests;
 pub use matches::{ignore_matches, IgnoreMatches, PatternMatches};
 pub use model::{
     ConfigEdit, EditRefusal, Group, NewValue, Part, Quote, Row, RowValue, Scalar, ScalarKind,
-    Sheet, SheetKind, Span, Splice,
+    Sheet, SheetKind, Span, Splice, Table, TableRow,
 };
 
 use super::{Body, Claim, Editability, Format, FormatId, RenderCx, Rendered};
@@ -68,6 +68,7 @@ impl<S: ConfigSyntax> ConfigFormat<S> {
             body: Body::Text {
                 text: text.to_owned(),
                 language: Some(self.0.language().to_owned()),
+                problem: None,
             },
             notes: vec![note],
         }
@@ -140,7 +141,7 @@ impl<S: ConfigSyntax> Format for ConfigFormat<S> {
     fn searchable(&self, text: &str) -> Option<String> {
         let sheet = self.sheet(text)?;
         Some(match sheet.kind {
-            SheetKind::Config => sheet.keys_text(KEYS_LIMIT),
+            SheetKind::Config | SheetKind::Data => sheet.keys_text(KEYS_LIMIT),
             SheetKind::Ignore => sheet.patterns_text(KEYS_LIMIT),
         })
     }

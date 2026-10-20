@@ -43,6 +43,8 @@ pub enum LockReason {
     Math,
     Footnote,
     Diagram,
+    /// A data block drawn as a sheet (`toon`).
+    Data,
     Definition,
     Kind,
     Parse,
@@ -95,6 +97,8 @@ fn classify<'a>(node: &'a AstNode<'a>) -> (SegmentKind, Option<LockReason>) {
                 .any(|d| first.eq_ignore_ascii_case(d))
             {
                 (SegmentKind::Code, Some(LockReason::Diagram))
+            } else if first.eq_ignore_ascii_case("toon") {
+                (SegmentKind::Code, Some(LockReason::Data))
             } else {
                 (SegmentKind::Code, None)
             }

@@ -1,1891 +1,2257 @@
 {
-  ".editorconfig": {
-    "body": {
-      "kind": "sheet",
-      "sheet": {
-        "groups": [
-          {
-            "comment": null,
-            "end": 2,
-            "line": 1,
-            "path": "",
-            "rows": [
-              {
-                "comment": "EditorConfig is awesome: https://EditorConfig.org",
-                "end": 2,
-                "key": "root",
-                "line": 2,
-                "path": "root",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "root",
-                  "secret": false,
-                  "text": "true",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": ""
-          },
-          {
-            "comment": null,
-            "end": 10,
-            "line": 4,
-            "path": "*",
-            "rows": [
-              {
-                "comment": null,
-                "end": 5,
-                "key": "indent_style",
-                "line": 5,
-                "path": "*.indent_style",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "*.indent_style",
-                  "secret": false,
-                  "text": "space",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 6,
-                "key": "indent_size",
-                "line": 6,
-                "path": "*.indent_size",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "*.indent_size",
-                  "secret": false,
-                  "text": "2",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 7,
-                "key": "end_of_line",
-                "line": 7,
-                "path": "*.end_of_line",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "*.end_of_line",
-                  "secret": false,
-                  "text": "lf",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 8,
-                "key": "charset",
-                "line": 8,
-                "path": "*.charset",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "*.charset",
-                  "secret": false,
-                  "text": "utf-8",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 9,
-                "key": "trim_trailing_whitespace",
-                "line": 9,
-                "path": "*.trim_trailing_whitespace",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "*.trim_trailing_whitespace",
-                  "secret": false,
-                  "text": "true",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 10,
-                "key": "insert_final_newline",
-                "line": 10,
-                "path": "*.insert_final_newline",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "*.insert_final_newline",
-                  "secret": false,
-                  "text": "true",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "*"
-          },
-          {
-            "comment": "Tabs for Makefiles",
-            "end": 14,
-            "line": 13,
-            "path": "Makefile",
-            "rows": [
-              {
-                "comment": null,
-                "end": 14,
-                "key": "indent_style",
-                "line": 14,
-                "path": "Makefile.indent_style",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "Makefile.indent_style",
-                  "secret": false,
-                  "text": "tab",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "Makefile"
-          },
-          {
-            "comment": null,
-            "end": 17,
-            "line": 16,
-            "path": "\"*.{js,py}\"",
-            "rows": [
-              {
-                "comment": null,
-                "end": 17,
-                "key": "max_line_length",
-                "line": 17,
-                "path": "\"*.{js,py}\".max_line_length",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "\"*.{js,py}\".max_line_length",
-                  "secret": false,
-                  "text": "100",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "*.{js,py}"
-          }
-        ],
-        "kind": "config"
-      }
-    },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "ini",
-    "hash": "21db472fdd5aa623",
-    "mtimeMs": 0,
-    "name": ".editorconfig",
-    "notes": [],
-    "path": ".editorconfig",
-    "role": null,
-    "size": 286
-  },
-  ".env.example": {
-    "body": {
-      "kind": "sheet",
-      "sheet": {
-        "groups": [
-          {
-            "comment": null,
-            "end": 12,
-            "line": 1,
-            "path": "",
-            "rows": [
-              {
-                "comment": "App",
-                "end": 2,
-                "key": "NODE_ENV",
-                "line": 2,
-                "path": "NODE_ENV",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "NODE_ENV",
-                  "secret": false,
-                  "text": "development",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 3,
-                "key": "PORT",
-                "line": 3,
-                "path": "PORT",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "PORT",
-                  "secret": false,
-                  "text": "3000",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 4,
-                "key": "DEBUG",
-                "line": 4,
-                "path": "DEBUG",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "DEBUG",
-                  "secret": false,
-                  "text": "false",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": "Database",
-                "end": 7,
-                "key": "DATABASE_URL",
-                "line": 7,
-                "path": "DATABASE_URL",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "DATABASE_URL",
-                  "secret": true,
-                  "text": "postgres://docs:pa55w0rd@localhost:5432/docs",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 8,
-                "key": "DB_PASSWORD",
-                "line": 8,
-                "path": "DB_PASSWORD",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "DB_PASSWORD",
-                  "secret": true,
-                  "text": "s3cr3t pass",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 9,
-                "key": "API_KEY",
-                "line": 9,
-                "path": "API_KEY",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "API_KEY",
-                  "secret": true,
-                  "text": "sk-live-abc123",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 10,
-                "key": "SECRET_KEY_BASE",
-                "line": 10,
-                "path": "SECRET_KEY_BASE",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "null",
-                  "path": "SECRET_KEY_BASE",
-                  "secret": false,
-                  "text": "",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": "shown in the header",
-                "end": 11,
-                "key": "APP_NAME",
-                "line": 11,
-                "path": "APP_NAME",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "APP_NAME",
-                  "secret": false,
-                  "text": "Docs Site",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 12,
-                "key": "BASE_URL",
-                "line": 12,
-                "path": "BASE_URL",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "BASE_URL",
-                  "secret": false,
-                  "text": "${HOST}/api",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": ""
-          }
-        ],
-        "kind": "config"
-      }
-    },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "dotenv",
-    "hash": "c4799ed021ad6b91",
-    "mtimeMs": 0,
-    "name": ".env.example",
-    "notes": [],
-    "path": ".env.example",
-    "role": null,
-    "size": 256
-  },
-  ".gitignore": {
-    "body": {
-      "kind": "sheet",
-      "sheet": {
-        "groups": [
-          {
-            "comment": null,
-            "end": 3,
-            "line": 1,
-            "path": "section-1",
-            "rows": [
-              {
-                "comment": null,
-                "end": 2,
-                "key": "",
-                "line": 2,
-                "path": "L2",
-                "value": {
-                  "negated": false,
-                  "path": "L2",
-                  "text": "node_modules/",
-                  "type": "pattern"
-                }
-              },
-              {
-                "comment": null,
-                "end": 3,
-                "key": "",
-                "line": 3,
-                "path": "L3",
-                "value": {
-                  "negated": false,
-                  "path": "L3",
-                  "text": ".pnp.js",
-                  "type": "pattern"
-                }
-              }
-            ],
-            "title": "Dependencies"
-          },
-          {
-            "comment": null,
-            "end": 9,
-            "line": 5,
-            "path": "section-5",
-            "rows": [
-              {
-                "comment": null,
-                "end": 6,
-                "key": "",
-                "line": 6,
-                "path": "L6",
-                "value": {
-                  "negated": false,
-                  "path": "L6",
-                  "text": "/dist",
-                  "type": "pattern"
-                }
-              },
-              {
-                "comment": null,
-                "end": 7,
-                "key": "",
-                "line": 7,
-                "path": "L7",
-                "value": {
-                  "negated": false,
-                  "path": "L7",
-                  "text": "/build/",
-                  "type": "pattern"
-                }
-              },
-              {
-                "comment": null,
-                "end": 8,
-                "key": "",
-                "line": 8,
-                "path": "L8",
-                "value": {
-                  "negated": false,
-                  "path": "L8",
-                  "text": "*.log",
-                  "type": "pattern"
-                }
-              },
-              {
-                "comment": null,
-                "end": 9,
-                "key": "",
-                "line": 9,
-                "path": "L9",
-                "value": {
-                  "negated": true,
-                  "path": "L9",
-                  "text": "!important.log",
-                  "type": "pattern"
-                }
-              }
-            ],
-            "title": "Build output"
-          },
-          {
-            "comment": null,
-            "end": 14,
-            "line": 11,
-            "path": "section-11",
-            "rows": [
-              {
-                "comment": null,
-                "end": 12,
-                "key": "",
-                "line": 12,
-                "path": "L12",
-                "value": {
-                  "negated": false,
-                  "path": "L12",
-                  "text": ".env",
-                  "type": "pattern"
-                }
-              },
-              {
-                "comment": null,
-                "end": 13,
-                "key": "",
-                "line": 13,
-                "path": "L13",
-                "value": {
-                  "negated": false,
-                  "path": "L13",
-                  "text": ".env.*",
-                  "type": "pattern"
-                }
-              },
-              {
-                "comment": null,
-                "end": 14,
-                "key": "",
-                "line": 14,
-                "path": "L14",
-                "value": {
-                  "negated": true,
-                  "path": "L14",
-                  "text": "!.env.example",
-                  "type": "pattern"
-                }
-              }
-            ],
-            "title": "Env files"
-          }
-        ],
-        "kind": "ignore"
-      }
-    },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "ignore",
-    "hash": "d0c1d0b7d8f7fee2",
-    "mtimeMs": 0,
-    "name": ".gitignore",
-    "notes": [],
-    "path": ".gitignore",
-    "role": null,
-    "size": 127
-  },
-  "CLAUDE.md": {
-    "body": {
-      "blocks": [
-        {
-          "html": "<h1 data-b=\"93113f53a7490843\" id=\"project-rules\">Project rules</h1>",
-          "id": "93113f53a7490843",
-          "kind": "h1",
-          "lineEnd": 6,
-          "lineStart": 6
-        },
-        {
-          "html": "<details data-b=\"14edcb67d7af6899\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<p>Read <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> first. Greet <span class=\"tvar\">{{user}}</span> by name.</p>\n</details>",
-          "id": "14edcb67d7af6899",
-          "kind": "details",
-          "lineEnd": 9,
-          "lineStart": 9
-        },
-        {
-          "html": "<details data-b=\"1f1a29026f2c492c\" class=\"prompt-block\" data-tag=\"example\" open=\"\"><summary>example</summary>\n<p>Input: a question about the <strong>guide</strong>.\nOutput: a short answer with a link.</p>\n</details>",
-          "id": "1f1a29026f2c492c",
-          "kind": "details",
-          "lineEnd": 14,
-          "lineStart": 13
-        }
-      ],
-      "frontMatter": {
-        "fields": [
-          {
-            "key": "name",
-            "value": {
-              "text": "project-rules",
-              "type": "text"
-            }
-          },
-          {
-            "key": "description",
-            "value": {
-              "text": "Rules the agent follows in this repository",
-              "type": "text"
-            }
-          }
-        ],
-        "raw": "name: project-rules\ndescription: Rules the agent follows in this repository\n",
-        "syntax": "yaml"
-      },
-      "kind": "markdown",
-      "outline": [
-        {
-          "block": "93113f53a7490843",
-          "id": "project-rules",
-          "label": "Project rules",
-          "level": 1,
-          "line": 6
-        }
-      ]
-    },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "markdown",
-    "hash": "a84192067c0b6d86",
-    "mtimeMs": 0,
-    "name": "CLAUDE.md",
-    "notes": [],
-    "path": "CLAUDE.md",
-    "role": "claude",
-    "size": 281
-  },
-  "Cargo.toml": {
-    "body": {
-      "kind": "sheet",
-      "sheet": {
-        "groups": [
-          {
-            "comment": "The docs site generator.",
-            "end": 8,
-            "line": 2,
-            "path": "package",
-            "rows": [
-              {
-                "comment": null,
-                "end": 3,
-                "key": "name",
-                "line": 3,
-                "path": "package.name",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "package.name",
-                  "secret": false,
-                  "text": "docs-site",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 4,
-                "key": "version",
-                "line": 4,
-                "path": "package.version",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "package.version",
-                  "secret": false,
-                  "text": "0.4.2",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 5,
-                "key": "edition",
-                "line": 5,
-                "path": "package.edition",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "package.edition",
-                  "secret": false,
-                  "text": "2021",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 6,
-                "key": "description",
-                "line": 6,
-                "path": "package.description",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "package.description",
-                  "secret": false,
-                  "text": "Builds the project documentation",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 7,
-                "key": "authors",
-                "line": 7,
-                "path": "package.authors",
-                "value": {
-                  "items": [
-                    {
-                      "edit": {
-                        "editable": "surgical"
-                      },
-                      "kind": "string",
-                      "path": "package.authors[0]",
-                      "secret": false,
-                      "text": "Ana Souza"
-                    },
-                    {
-                      "edit": {
-                        "editable": "surgical"
-                      },
-                      "kind": "string",
-                      "path": "package.authors[1]",
-                      "secret": false,
-                      "text": "Bo Chen"
-                    }
-                  ],
-                  "type": "list"
-                }
-              },
-              {
-                "comment": null,
-                "end": 8,
-                "key": "publish",
-                "line": 8,
-                "path": "package.publish",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "package.publish",
-                  "secret": false,
-                  "text": "false",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "package"
-          },
-          {
-            "comment": null,
-            "end": 13,
-            "line": 10,
-            "path": "dependencies",
-            "rows": [
-              {
-                "comment": null,
-                "end": 11,
-                "key": "serde",
-                "line": 11,
-                "path": "dependencies.serde",
-                "value": {
-                  "reason": "inlineTable",
-                  "secret": false,
-                  "text": "{ version = \"1\", features = [\"derive\"] }",
-                  "type": "raw"
-                }
-              },
-              {
-                "comment": null,
-                "end": 12,
-                "key": "tokio",
-                "line": 12,
-                "path": "dependencies.tokio",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "dependencies.tokio",
-                  "secret": false,
-                  "text": "1.40",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 13,
-                "key": "pulldown-cmark",
-                "line": 13,
-                "path": "dependencies.pulldown-cmark",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "dependencies.pulldown-cmark",
-                  "secret": false,
-                  "text": "0.12",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "dependencies"
-          },
-          {
-            "comment": "Release build",
-            "end": 19,
-            "line": 16,
-            "path": "profile.release",
-            "rows": [
-              {
-                "comment": null,
-                "end": 17,
-                "key": "opt-level",
-                "line": 17,
-                "path": "profile.release.opt-level",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "profile.release.opt-level",
-                  "secret": false,
-                  "text": "3",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 18,
-                "key": "lto",
-                "line": 18,
-                "path": "profile.release.lto",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "profile.release.lto",
-                  "secret": false,
-                  "text": "true",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 19,
-                "key": "codegen-units",
-                "line": 19,
-                "path": "profile.release.codegen-units",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "profile.release.codegen-units",
-                  "secret": false,
-                  "text": "1",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "profile.release"
-          },
-          {
-            "comment": null,
-            "end": 24,
-            "line": 21,
-            "path": "package.metadata.deploy",
-            "rows": [
-              {
-                "comment": null,
-                "end": 22,
-                "key": "host",
-                "line": 22,
-                "path": "package.metadata.deploy.host",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "package.metadata.deploy.host",
-                  "secret": false,
-                  "text": "docs.example.org",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 23,
-                "key": "api_token",
-                "line": 23,
-                "path": "package.metadata.deploy.api_token",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "package.metadata.deploy.api_token",
-                  "secret": true,
-                  "text": "dp_live_4f9a1c77b2",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 24,
-                "key": "retries",
-                "line": 24,
-                "path": "package.metadata.deploy.retries",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "package.metadata.deploy.retries",
-                  "secret": false,
-                  "text": "3",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "package.metadata.deploy"
-          }
-        ],
-        "kind": "config"
-      }
-    },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "toml",
-    "hash": "0518bf737bbf4cd5",
-    "mtimeMs": 0,
-    "name": "Cargo.toml",
-    "notes": [],
-    "path": "Cargo.toml",
-    "role": null,
-    "size": 471
-  },
   "README.md": {
+    "path": "README.md",
+    "name": "README.md",
+    "format": "markdown",
+    "role": null,
     "body": {
+      "kind": "markdown",
       "blocks": [
         {
-          "html": "<h1 data-b=\"6e8c49c6ca01f758\" id=\"reading-showcase\">Reading showcase</h1>",
           "id": "6e8c49c6ca01f758",
           "kind": "h1",
+          "lineStart": 9,
           "lineEnd": 9,
-          "lineStart": 9
+          "html": "<h1 data-b=\"6e8c49c6ca01f758\" id=\"reading-showcase\">Reading showcase</h1>"
         },
         {
-          "html": "<p data-b=\"5321c4139258cb20\">A page of everything the reading view draws. It links to the <a href=\"docs/guide.md\">guide</a>, to a <a href=\"docs/nope.md\">missing page</a> and to <a href=\"#diagrams\">a section</a>. Code references open in your editor: <code>src/main.rs:12</code>, and plain text like src/main.rs:3 works too.</p>",
           "id": "5321c4139258cb20",
           "kind": "p",
+          "lineStart": 11,
           "lineEnd": 11,
-          "lineStart": 11
+          "html": "<p data-b=\"5321c4139258cb20\">A page of everything the reading view draws. It links to the <a href=\"docs/guide.md\">guide</a>, to a <a href=\"docs/nope.md\">missing page</a> and to <a href=\"#diagrams\">a section</a>. Code references open in your editor: <code>src/main.rs:12</code>, and plain text like src/main.rs:3 works too.</p>"
         },
         {
-          "html": "<h2 data-b=\"873c5f87daea9d00\" id=\"text-and-lists\">Text and lists</h2>",
           "id": "873c5f87daea9d00",
           "kind": "h2",
+          "lineStart": 13,
           "lineEnd": 13,
-          "lineStart": 13
+          "html": "<h2 data-b=\"873c5f87daea9d00\" id=\"text-and-lists\">Text and lists</h2>"
         },
         {
-          "html": "<p data-b=\"a5341c8c93a6c5b5\">Paragraphs keep a comfortable measure at <strong>any</strong> zoom: <em>emphasis</em>, <code>inline code</code>, <del>strike</del>, a footnote<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\" data-footnote-ref=\"\">1</a></sup> and an autolink <a href=\"https://example.com\">https://example.com</a>. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.</p>",
           "id": "a5341c8c93a6c5b5",
           "kind": "p",
+          "lineStart": 15,
           "lineEnd": 15,
-          "lineStart": 15
+          "html": "<p data-b=\"a5341c8c93a6c5b5\">Paragraphs keep a comfortable measure at <strong>any</strong> zoom: <em>emphasis</em>, <code>inline code</code>, <del>strike</del>, a footnote<sup class=\"footnote-ref\"><a href=\"#fn-1\" id=\"fnref-1\" data-footnote-ref=\"\">1</a></sup> and an autolink <a href=\"https://example.com\">https://example.com</a>. Press <kbd>Ctrl</kbd>+<kbd>F</kbd> to find in page.</p>"
         },
         {
-          "html": "<ul data-b=\"e5c2585e73eec433\" class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Render Markdown</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Keep my place when the file changes</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\"> Review the changes</li>\n</ul>",
           "id": "e5c2585e73eec433",
           "kind": "ul",
+          "lineStart": 17,
           "lineEnd": 19,
-          "lineStart": 17
+          "html": "<ul data-b=\"e5c2585e73eec433\" class=\"contains-task-list\">\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Render Markdown</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" checked=\"\" disabled=\"\"> Keep my place when the file changes</li>\n<li class=\"task-list-item\"><input type=\"checkbox\" class=\"task-list-item-checkbox\" disabled=\"\"> Review the changes</li>\n</ul>"
         },
         {
-          "html": "<ol data-b=\"15fd71eacccb3241\">\n<li>First</li>\n<li>Second\n<ul>\n<li>nested item</li>\n<li>another one</li>\n</ul>\n</li>\n</ol>",
           "id": "15fd71eacccb3241",
           "kind": "ol",
+          "lineStart": 21,
           "lineEnd": 24,
-          "lineStart": 21
+          "html": "<ol data-b=\"15fd71eacccb3241\">\n<li>First</li>\n<li>Second\n<ul>\n<li>nested item</li>\n<li>another one</li>\n</ul>\n</li>\n</ol>"
         },
         {
-          "html": "<div data-b=\"4039196382a45f77\" class=\"markdown-alert markdown-alert-note\">\n<p class=\"markdown-alert-title\">Note</p>\n<p>Alerts come with a title and an icon.</p>\n</div>",
           "id": "4039196382a45f77",
           "kind": "div",
+          "lineStart": 26,
           "lineEnd": 27,
-          "lineStart": 26
+          "html": "<div data-b=\"4039196382a45f77\" class=\"markdown-alert markdown-alert-note\">\n<p class=\"markdown-alert-title\">Note</p>\n<p>Alerts come with a title and an icon.</p>\n</div>"
         },
         {
-          "html": "<div data-b=\"473128ef3bce20dd\" class=\"markdown-alert markdown-alert-warning\">\n<p class=\"markdown-alert-title\">Warning</p>\n<p>Reading is the main mode. Beautiful, clear reading is a requirement.</p>\n</div>",
           "id": "473128ef3bce20dd",
           "kind": "div",
+          "lineStart": 29,
           "lineEnd": 30,
-          "lineStart": 29
+          "html": "<div data-b=\"473128ef3bce20dd\" class=\"markdown-alert markdown-alert-warning\">\n<p class=\"markdown-alert-title\">Warning</p>\n<p>Reading is the main mode. Beautiful, clear reading is a requirement.</p>\n</div>"
         },
         {
-          "html": "<h2 data-b=\"3c47fb4f8c38266d\" id=\"code\">Code</h2>",
           "id": "3c47fb4f8c38266d",
           "kind": "h2",
+          "lineStart": 32,
           "lineEnd": 32,
-          "lineStart": 32
+          "html": "<h2 data-b=\"3c47fb4f8c38266d\" id=\"code\">Code</h2>"
         },
         {
-          "html": "<pre data-b=\"b04254981a03178d\"><code class=\"language-rust\">fn main() {\n    let name = \"PerMark\";\n    println!(\"Hello, {name}!\");\n}\n</code></pre>",
           "id": "b04254981a03178d",
           "kind": "pre",
+          "lineStart": 34,
           "lineEnd": 39,
-          "lineStart": 34
+          "html": "<pre data-b=\"b04254981a03178d\"><code class=\"language-rust\">fn main() {\n    let name = \"PerMark\";\n    println!(\"Hello, {name}!\");\n}\n</code></pre>"
         },
         {
-          "html": "<pre data-b=\"48208e466c8d0b0e\"><code class=\"language-json\">{ \"name\": \"permark\", \"private\": true, \"version\": \"0.6.0\" }\n</code></pre>",
           "id": "48208e466c8d0b0e",
           "kind": "pre",
+          "lineStart": 41,
           "lineEnd": 43,
-          "lineStart": 41
+          "html": "<pre data-b=\"48208e466c8d0b0e\"><code class=\"language-json\">{ \"name\": \"permark\", \"private\": true, \"version\": \"0.6.0\" }\n</code></pre>"
         },
         {
-          "html": "<h2 data-b=\"f086e37712246e23\" id=\"tables\">Tables</h2>",
           "id": "f086e37712246e23",
           "kind": "h2",
+          "lineStart": 45,
           "lineEnd": 45,
-          "lineStart": 45
+          "html": "<h2 data-b=\"f086e37712246e23\" id=\"tables\">Tables</h2>"
         },
         {
-          "html": "<table data-b=\"1bef1313d773460b\">\n<thead>\n<tr>\n<th>Feature</th>\n<th>Status</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Tables</td>\n<td>done</td>\n<td>Zebra rows, sticky header</td>\n</tr>\n<tr>\n<td>Math</td>\n<td>done</td>\n<td>KaTeX, loaded when needed</td>\n</tr>\n<tr>\n<td>Diagrams</td>\n<td>done</td>\n<td>Mermaid and PlantUML in page</td>\n</tr>\n</tbody>\n</table>",
           "id": "1bef1313d773460b",
           "kind": "table",
+          "lineStart": 47,
           "lineEnd": 51,
-          "lineStart": 47
+          "html": "<table data-b=\"1bef1313d773460b\">\n<thead>\n<tr>\n<th>Feature</th>\n<th>Status</th>\n<th>Notes</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Tables</td>\n<td>done</td>\n<td>Zebra rows, sticky header</td>\n</tr>\n<tr>\n<td>Math</td>\n<td>done</td>\n<td>KaTeX, loaded when needed</td>\n</tr>\n<tr>\n<td>Diagrams</td>\n<td>done</td>\n<td>Mermaid and PlantUML in page</td>\n</tr>\n</tbody>\n</table>"
         },
         {
-          "html": "<h2 data-b=\"9d35b0bf7336ecf1\" id=\"math\">Math</h2>",
           "id": "9d35b0bf7336ecf1",
           "kind": "h2",
+          "lineStart": 53,
           "lineEnd": 53,
-          "lineStart": 53
+          "html": "<h2 data-b=\"9d35b0bf7336ecf1\" id=\"math\">Math</h2>"
         },
         {
-          "html": "<p data-b=\"8a4f9da86326315a\">Inline math <span data-math-style=\"inline\">E = mc^2</span> sits in the text. A display formula:</p>",
           "id": "8a4f9da86326315a",
           "kind": "p",
+          "lineStart": 55,
           "lineEnd": 55,
-          "lineStart": 55
+          "html": "<p data-b=\"8a4f9da86326315a\">Inline math <span data-math-style=\"inline\">E = mc^2</span> sits in the text. A display formula:</p>"
         },
         {
-          "html": "<p data-b=\"90bb95a3830c8bd8\"><span data-math-style=\"display\">\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n</span></p>",
           "id": "90bb95a3830c8bd8",
           "kind": "p",
+          "lineStart": 57,
           "lineEnd": 59,
-          "lineStart": 57
+          "html": "<p data-b=\"90bb95a3830c8bd8\"><span data-math-style=\"display\">\n\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt{\\pi}}{2}\n</span></p>"
         },
         {
-          "html": "<h2 data-b=\"c88ae3e0aaae1228\" id=\"diagrams\">Diagrams</h2>",
           "id": "c88ae3e0aaae1228",
           "kind": "h2",
+          "lineStart": 61,
           "lineEnd": 61,
-          "lineStart": 61
+          "html": "<h2 data-b=\"c88ae3e0aaae1228\" id=\"diagrams\">Diagrams</h2>"
         },
         {
-          "html": "<pre data-b=\"ae4de58cc43ef70f\"><code class=\"language-mermaid\">graph LR\n  A[Markdown] --&gt; B(Render)\n  B --&gt; C{Sanitize}\n  C --&gt;|safe| D[Page]\n  C --&gt;|unsafe| E[Dropped]\n</code></pre>",
           "id": "ae4de58cc43ef70f",
           "kind": "pre",
+          "lineStart": 63,
           "lineEnd": 69,
-          "lineStart": 63
+          "html": "<pre data-b=\"ae4de58cc43ef70f\"><code class=\"language-mermaid\">graph LR\n  A[Markdown] --&gt; B(Render)\n  B --&gt; C{Sanitize}\n  C --&gt;|safe| D[Page]\n  C --&gt;|unsafe| E[Dropped]\n</code></pre>"
         },
         {
-          "html": "<h2 data-b=\"810676eb3ab98479\" id=\"prompt-blocks\">Prompt blocks</h2>",
           "id": "810676eb3ab98479",
           "kind": "h2",
+          "lineStart": 71,
           "lineEnd": 71,
-          "lineStart": 71
+          "html": "<h2 data-b=\"810676eb3ab98479\" id=\"prompt-blocks\">Prompt blocks</h2>"
         },
         {
-          "html": "<details data-b=\"03f8544ce18765a3\" class=\"prompt-block\" data-tag=\"context\" open=\"\"><summary>context</summary>\n<p>You are reading a prompt file. The tags below fold, and <strong>Markdown inside them</strong> still renders.</p>\n<ul>\n<li>Variables look like <span class=\"tvar\">{{customer_name}}</span> and are marked.</li>\n<li>Files are linked: see <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> for the guide.</li>\n</ul>\n</details>",
           "id": "03f8544ce18765a3",
           "kind": "details",
+          "lineStart": 74,
           "lineEnd": 77,
-          "lineStart": 74
+          "html": "<details data-b=\"03f8544ce18765a3\" class=\"prompt-block\" data-tag=\"context\" open=\"\"><summary>context</summary>\n<p>You are reading a prompt file. The tags below fold, and <strong>Markdown inside them</strong> still renders.</p>\n<ul>\n<li>Variables look like <span class=\"tvar\">{{customer_name}}</span> and are marked.</li>\n<li>Files are linked: see <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> for the guide.</li>\n</ul>\n</details>"
         },
         {
-          "html": "<details data-b=\"2e3e3c7fb133d8c8\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<ol>\n<li>Be brief.</li>\n<li>Quote the source.</li>\n</ol>\n</details>",
           "id": "2e3e3c7fb133d8c8",
           "kind": "details",
+          "lineStart": 81,
           "lineEnd": 82,
-          "lineStart": 81
+          "html": "<details data-b=\"2e3e3c7fb133d8c8\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<ol>\n<li>Be brief.</li>\n<li>Quote the source.</li>\n</ol>\n</details>"
         },
         {
-          "html": "<section data-b=\"72d9896ee9d78f62\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\">\n<p>Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n</ol>\n</section>",
           "id": "72d9896ee9d78f62",
           "kind": "section",
+          "lineStart": 85,
           "lineEnd": 85,
-          "lineStart": 85
+          "html": "<section data-b=\"72d9896ee9d78f62\" class=\"footnotes\" data-footnotes=\"\">\n<ol>\n<li id=\"fn-1\">\n<p>Footnotes list at the end of the page, with a way back. <a href=\"#fnref-1\" class=\"footnote-backref\" data-footnote-backref=\"\" data-footnote-backref-idx=\"1\" aria-label=\"Back to reference 1\">↩</a></p>\n</li>\n</ol>\n</section>"
+        }
+      ],
+      "outline": [
+        {
+          "label": "Reading showcase",
+          "level": 1,
+          "id": "reading-showcase",
+          "line": 9,
+          "block": "6e8c49c6ca01f758"
+        },
+        {
+          "label": "Text and lists",
+          "level": 2,
+          "id": "text-and-lists",
+          "line": 13,
+          "block": "873c5f87daea9d00"
+        },
+        {
+          "label": "Code",
+          "level": 2,
+          "id": "code",
+          "line": 32,
+          "block": "3c47fb4f8c38266d"
+        },
+        {
+          "label": "Tables",
+          "level": 2,
+          "id": "tables",
+          "line": 45,
+          "block": "f086e37712246e23"
+        },
+        {
+          "label": "Math",
+          "level": 2,
+          "id": "math",
+          "line": 53,
+          "block": "9d35b0bf7336ecf1"
+        },
+        {
+          "label": "Diagrams",
+          "level": 2,
+          "id": "diagrams",
+          "line": 61,
+          "block": "c88ae3e0aaae1228"
+        },
+        {
+          "label": "Prompt blocks",
+          "level": 2,
+          "id": "prompt-blocks",
+          "line": 71,
+          "block": "810676eb3ab98479"
         }
       ],
       "frontMatter": {
+        "syntax": "yaml",
+        "raw": "title: Reading showcase\nstatus: draft\nowner: Ana Souza\ntags: [reading, markdown, demo]\nupdated: 2026-10-19\n",
         "fields": [
           {
             "key": "title",
             "value": {
-              "text": "Reading showcase",
-              "type": "text"
+              "type": "text",
+              "text": "Reading showcase"
             }
           },
           {
             "key": "status",
             "value": {
-              "text": "draft",
-              "type": "text"
+              "type": "text",
+              "text": "draft"
             }
           },
           {
             "key": "owner",
             "value": {
-              "text": "Ana Souza",
-              "type": "text"
+              "type": "text",
+              "text": "Ana Souza"
             }
           },
           {
             "key": "tags",
             "value": {
+              "type": "list",
               "items": [
                 "reading",
                 "markdown",
                 "demo"
-              ],
-              "type": "list"
+              ]
             }
           },
           {
             "key": "updated",
             "value": {
-              "text": "2026-10-19",
-              "type": "text"
+              "type": "text",
+              "text": "2026-10-19"
             }
           }
-        ],
-        "raw": "title: Reading showcase\nstatus: draft\nowner: Ana Souza\ntags: [reading, markdown, demo]\nupdated: 2026-10-19\n",
-        "syntax": "yaml"
-      },
-      "kind": "markdown",
-      "outline": [
-        {
-          "block": "6e8c49c6ca01f758",
-          "id": "reading-showcase",
-          "label": "Reading showcase",
-          "level": 1,
-          "line": 9
-        },
-        {
-          "block": "873c5f87daea9d00",
-          "id": "text-and-lists",
-          "label": "Text and lists",
-          "level": 2,
-          "line": 13
-        },
-        {
-          "block": "3c47fb4f8c38266d",
-          "id": "code",
-          "label": "Code",
-          "level": 2,
-          "line": 32
-        },
-        {
-          "block": "f086e37712246e23",
-          "id": "tables",
-          "label": "Tables",
-          "level": 2,
-          "line": 45
-        },
-        {
-          "block": "9d35b0bf7336ecf1",
-          "id": "math",
-          "label": "Math",
-          "level": 2,
-          "line": 53
-        },
-        {
-          "block": "c88ae3e0aaae1228",
-          "id": "diagrams",
-          "label": "Diagrams",
-          "level": 2,
-          "line": 61
-        },
-        {
-          "block": "810676eb3ab98479",
-          "id": "prompt-blocks",
-          "label": "Prompt blocks",
-          "level": 2,
-          "line": 71
-        }
-      ]
+        ]
+      }
     },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "markdown",
     "hash": "e873f21c2d5f5e0b",
+    "size": 1975,
     "mtimeMs": 0,
-    "name": "README.md",
-    "notes": [],
-    "path": "README.md",
-    "role": null,
-    "size": 1975
-  },
-  "config/app.properties": {
-    "body": {
-      "kind": "sheet",
-      "sheet": {
-        "groups": [
-          {
-            "comment": null,
-            "end": 3,
-            "line": 2,
-            "path": "server",
-            "rows": [
-              {
-                "comment": "Server",
-                "end": 2,
-                "key": "port",
-                "line": 2,
-                "path": "server.port",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "server.port",
-                  "secret": false,
-                  "text": "8080",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 3,
-                "key": "servlet.context-path",
-                "line": 3,
-                "path": "server.servlet.context-path",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "server.servlet.context-path",
-                  "secret": false,
-                  "text": "/api",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "server"
-          },
-          {
-            "comment": null,
-            "end": 10,
-            "line": 6,
-            "path": "spring",
-            "rows": [
-              {
-                "comment": "Database",
-                "end": 6,
-                "key": "datasource.url",
-                "line": 6,
-                "path": "spring.datasource.url",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "spring.datasource.url",
-                  "secret": false,
-                  "text": "jdbc:postgresql://localhost:5432/docs",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 7,
-                "key": "datasource.username",
-                "line": 7,
-                "path": "spring.datasource.username",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "spring.datasource.username",
-                  "secret": false,
-                  "text": "docs",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 8,
-                "key": "datasource.password",
-                "line": 8,
-                "path": "spring.datasource.password",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "spring.datasource.password",
-                  "secret": true,
-                  "text": "s3cr3t-prop",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 9,
-                "key": "jpa.show-sql",
-                "line": 9,
-                "path": "spring.jpa.show-sql",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "spring.jpa.show-sql",
-                  "secret": false,
-                  "text": "true",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 10,
-                "key": "jpa.open-in-view",
-                "line": 10,
-                "path": "spring.jpa.open-in-view",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "spring.jpa.open-in-view",
-                  "secret": false,
-                  "text": "false",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "spring"
-          },
-          {
-            "comment": null,
-            "end": 13,
-            "line": 12,
-            "path": "app",
-            "rows": [
-              {
-                "comment": null,
-                "end": 12,
-                "key": "name",
-                "line": 12,
-                "path": "app.name",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "app.name",
-                  "secret": false,
-                  "text": "Docs Site",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 13,
-                "key": "greeting",
-                "line": 13,
-                "path": "app.greeting",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "app.greeting",
-                  "secret": false,
-                  "text": "Hello, \\u00e9\\u00e8!",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "app"
-          }
-        ],
-        "kind": "config"
-      }
-    },
     "editable": {
       "editable": "surgical"
     },
-    "format": "properties",
-    "hash": "ba06daf0bc9b8182",
-    "mtimeMs": 0,
-    "name": "app.properties",
-    "notes": [],
-    "path": "config/app.properties",
-    "role": null,
-    "size": 314
-  },
-  "docker-compose.yml": {
-    "body": {
-      "kind": "sheet",
-      "sheet": {
-        "groups": [
-          {
-            "comment": null,
-            "end": 2,
-            "line": 1,
-            "path": "",
-            "rows": [
-              {
-                "comment": "Local stack",
-                "end": 2,
-                "key": "name",
-                "line": 2,
-                "path": "name",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "name",
-                  "secret": false,
-                  "text": "docs",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": ""
-          },
-          {
-            "comment": null,
-            "end": 13,
-            "line": 4,
-            "path": "services.web",
-            "rows": [
-              {
-                "comment": "pinned",
-                "end": 5,
-                "key": "image",
-                "line": 5,
-                "path": "services.web.image",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.web.image",
-                  "secret": false,
-                  "text": "nginx:1.27",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 8,
-                "key": "ports",
-                "line": 6,
-                "path": "services.web.ports",
-                "value": {
-                  "items": [
-                    {
-                      "edit": {
-                        "editable": "surgical"
-                      },
-                      "kind": "string",
-                      "path": "services.web.ports[0]",
-                      "secret": false,
-                      "text": "8080:80"
-                    },
-                    {
-                      "edit": {
-                        "editable": "surgical"
-                      },
-                      "kind": "string",
-                      "path": "services.web.ports[1]",
-                      "secret": false,
-                      "text": "8443:443"
-                    }
-                  ],
-                  "type": "list"
-                }
-              },
-              {
-                "comment": null,
-                "end": 13,
-                "key": "depends_on",
-                "line": 13,
-                "path": "services.web.depends_on",
-                "value": {
-                  "reason": "flow",
-                  "secret": false,
-                  "text": "[db]",
-                  "type": "raw"
-                }
-              }
-            ],
-            "title": "services.web"
-          },
-          {
-            "comment": null,
-            "end": 12,
-            "line": 9,
-            "path": "services.web.environment",
-            "rows": [
-              {
-                "comment": null,
-                "end": 10,
-                "key": "MODE",
-                "line": 10,
-                "path": "services.web.environment.MODE",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.web.environment.MODE",
-                  "secret": false,
-                  "text": "production",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 11,
-                "key": "DEBUG",
-                "line": 11,
-                "path": "services.web.environment.DEBUG",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "bool",
-                  "path": "services.web.environment.DEBUG",
-                  "secret": false,
-                  "text": "false",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 12,
-                "key": "API_KEY",
-                "line": 12,
-                "path": "services.web.environment.API_KEY",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.web.environment.API_KEY",
-                  "secret": true,
-                  "text": "sk-live-9d2c41aa",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "services.web.environment"
-          },
-          {
-            "comment": null,
-            "end": 16,
-            "line": 14,
-            "path": "services.db",
-            "rows": [
-              {
-                "comment": null,
-                "end": 15,
-                "key": "image",
-                "line": 15,
-                "path": "services.db.image",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.db.image",
-                  "secret": false,
-                  "text": "postgres:16",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 16,
-                "key": "restart",
-                "line": 16,
-                "path": "services.db.restart",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.db.restart",
-                  "secret": false,
-                  "text": "unless-stopped",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "services.db"
-          },
-          {
-            "comment": null,
-            "end": 19,
-            "line": 17,
-            "path": "services.db.environment",
-            "rows": [
-              {
-                "comment": null,
-                "end": 18,
-                "key": "POSTGRES_USER",
-                "line": 18,
-                "path": "services.db.environment.POSTGRES_USER",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.db.environment.POSTGRES_USER",
-                  "secret": false,
-                  "text": "docs",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 19,
-                "key": "POSTGRES_PASSWORD",
-                "line": 19,
-                "path": "services.db.environment.POSTGRES_PASSWORD",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.db.environment.POSTGRES_PASSWORD",
-                  "secret": true,
-                  "text": "hunter2-prod",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "services.db.environment"
-          },
-          {
-            "comment": null,
-            "end": 22,
-            "line": 20,
-            "path": "services.db.healthcheck",
-            "rows": [
-              {
-                "comment": null,
-                "end": 21,
-                "key": "interval",
-                "line": 21,
-                "path": "services.db.healthcheck.interval",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "string",
-                  "path": "services.db.healthcheck.interval",
-                  "secret": false,
-                  "text": "10s",
-                  "type": "scalar"
-                }
-              },
-              {
-                "comment": null,
-                "end": 22,
-                "key": "retries",
-                "line": 22,
-                "path": "services.db.healthcheck.retries",
-                "value": {
-                  "edit": {
-                    "editable": "surgical"
-                  },
-                  "kind": "number",
-                  "path": "services.db.healthcheck.retries",
-                  "secret": false,
-                  "text": "5",
-                  "type": "scalar"
-                }
-              }
-            ],
-            "title": "services.db.healthcheck"
-          }
-        ],
-        "kind": "config"
-      }
-    },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "yaml",
-    "hash": "37c4740eb8983c9b",
-    "mtimeMs": 0,
-    "name": "docker-compose.yml",
-    "notes": [],
-    "path": "docker-compose.yml",
-    "role": null,
-    "size": 429
+    "notes": []
   },
   "docs/guide.md": {
+    "path": "docs/guide.md",
+    "name": "guide.md",
+    "format": "markdown",
+    "role": null,
     "body": {
+      "kind": "markdown",
       "blocks": [
         {
-          "html": "<h1 data-b=\"65f4606ba1c95c40\" id=\"guide\">Guide</h1>",
           "id": "65f4606ba1c95c40",
           "kind": "h1",
+          "lineStart": 1,
           "lineEnd": 1,
-          "lineStart": 1
+          "html": "<h1 data-b=\"65f4606ba1c95c40\" id=\"guide\">Guide</h1>"
         },
         {
-          "html": "<p data-b=\"58efff504d681764\">Back to the <a href=\"../README.md\">readme</a>. More ideas in <a href=\"../notes/ideas.md#second-idea\">ideas</a>.</p>",
           "id": "58efff504d681764",
           "kind": "p",
+          "lineStart": 3,
           "lineEnd": 3,
-          "lineStart": 3
+          "html": "<p data-b=\"58efff504d681764\">Back to the <a href=\"../README.md\">readme</a>. More ideas in <a href=\"../notes/ideas.md#second-idea\">ideas</a>.</p>"
         },
         {
-          "html": "<h2 data-b=\"02dbe23f5510d144\" id=\"getting-started\">Getting started</h2>",
           "id": "02dbe23f5510d144",
           "kind": "h2",
+          "lineStart": 5,
           "lineEnd": 5,
-          "lineStart": 5
+          "html": "<h2 data-b=\"02dbe23f5510d144\" id=\"getting-started\">Getting started</h2>"
         },
         {
-          "html": "<p data-b=\"337da5e5e7be0c91\">Open a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.</p>",
           "id": "337da5e5e7be0c91",
           "kind": "p",
+          "lineStart": 7,
           "lineEnd": 7,
-          "lineStart": 7
+          "html": "<p data-b=\"337da5e5e7be0c91\">Open a folder, pick a document in the tree, read it. Links between documents work like a wiki: use Alt+Left to go back.</p>"
         },
         {
-          "html": "<p data-b=\"8fdc87e29eccc892\"><img src=\"pm-asset:docs/img/logo.png\" alt=\"PerMark logo\"></p>",
           "id": "8fdc87e29eccc892",
           "kind": "p",
+          "lineStart": 9,
           "lineEnd": 9,
-          "lineStart": 9
+          "html": "<p data-b=\"8fdc87e29eccc892\"><img src=\"pm-asset:docs/img/logo.png\" alt=\"PerMark logo\"></p>"
         },
         {
-          "html": "<h2 data-b=\"e0ebc72e9d23a1a5\" id=\"shortcuts\">Shortcuts</h2>",
           "id": "e0ebc72e9d23a1a5",
           "kind": "h2",
+          "lineStart": 11,
           "lineEnd": 11,
-          "lineStart": 11
+          "html": "<h2 data-b=\"e0ebc72e9d23a1a5\" id=\"shortcuts\">Shortcuts</h2>"
         },
         {
-          "html": "<table data-b=\"555cd2721da8a357\">\n<thead>\n<tr>\n<th>Keys</th>\n<th>Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Ctrl+F</td>\n<td>Find in page</td>\n</tr>\n<tr>\n<td>Alt+Left</td>\n<td>Back</td>\n</tr>\n<tr>\n<td>Ctrl+= / Ctrl+-</td>\n<td>Zoom</td>\n</tr>\n</tbody>\n</table>",
           "id": "555cd2721da8a357",
           "kind": "table",
+          "lineStart": 13,
           "lineEnd": 17,
-          "lineStart": 13
+          "html": "<table data-b=\"555cd2721da8a357\">\n<thead>\n<tr>\n<th>Keys</th>\n<th>Action</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Ctrl+F</td>\n<td>Find in page</td>\n</tr>\n<tr>\n<td>Alt+Left</td>\n<td>Back</td>\n</tr>\n<tr>\n<td>Ctrl+= / Ctrl+-</td>\n<td>Zoom</td>\n</tr>\n</tbody>\n</table>"
         }
       ],
-      "frontMatter": null,
-      "kind": "markdown",
       "outline": [
         {
-          "block": "65f4606ba1c95c40",
-          "id": "guide",
           "label": "Guide",
           "level": 1,
-          "line": 1
+          "id": "guide",
+          "line": 1,
+          "block": "65f4606ba1c95c40"
         },
         {
-          "block": "02dbe23f5510d144",
-          "id": "getting-started",
           "label": "Getting started",
           "level": 2,
-          "line": 5
+          "id": "getting-started",
+          "line": 5,
+          "block": "02dbe23f5510d144"
         },
         {
-          "block": "e0ebc72e9d23a1a5",
-          "id": "shortcuts",
           "label": "Shortcuts",
           "level": 2,
-          "line": 11
-        }
-      ]
-    },
-    "editable": {
-      "editable": "surgical"
-    },
-    "format": "markdown",
-    "hash": "9da2cfe46f93b782",
-    "mtimeMs": 0,
-    "name": "guide.md",
-    "notes": [],
-    "path": "docs/guide.md",
-    "role": null,
-    "size": 461
-  },
-  "notes/ideas.md": {
-    "body": {
-      "blocks": [
-        {
-          "html": "<h1 data-b=\"c421d8ac2e0b71dd\" id=\"ideas\">Ideas</h1>",
-          "id": "c421d8ac2e0b71dd",
-          "kind": "h1",
-          "lineEnd": 1,
-          "lineStart": 1
-        },
-        {
-          "html": "<h2 data-b=\"519b53b4e508df3d\" id=\"first-idea\">First idea</h2>",
-          "id": "519b53b4e508df3d",
-          "kind": "h2",
-          "lineEnd": 3,
-          "lineStart": 3
-        },
-        {
-          "html": "<p data-b=\"adab86a67eefa364\">Short and sweet.</p>",
-          "id": "adab86a67eefa364",
-          "kind": "p",
-          "lineEnd": 5,
-          "lineStart": 5
-        },
-        {
-          "html": "<h2 data-b=\"b5dbfa12b47b31dc\" id=\"second-idea\">Second idea</h2>",
-          "id": "b5dbfa12b47b31dc",
-          "kind": "h2",
-          "lineEnd": 7,
-          "lineStart": 7
-        },
-        {
-          "html": "<ul data-b=\"b23501e81f56172e\">\n<li>one</li>\n<li>two</li>\n</ul>",
-          "id": "b23501e81f56172e",
-          "kind": "ul",
-          "lineEnd": 10,
-          "lineStart": 9
+          "id": "shortcuts",
+          "line": 11,
+          "block": "e0ebc72e9d23a1a5"
         }
       ],
-      "frontMatter": null,
-      "kind": "markdown",
-      "outline": [
-        {
-          "block": "c421d8ac2e0b71dd",
-          "id": "ideas",
-          "label": "Ideas",
-          "level": 1,
-          "line": 1
-        },
-        {
-          "block": "519b53b4e508df3d",
-          "id": "first-idea",
-          "label": "First idea",
-          "level": 2,
-          "line": 3
-        },
-        {
-          "block": "b5dbfa12b47b31dc",
-          "id": "second-idea",
-          "label": "Second idea",
-          "level": 2,
-          "line": 7
-        }
-      ]
+      "frontMatter": null
     },
+    "hash": "9da2cfe46f93b782",
+    "size": 461,
+    "mtimeMs": 0,
     "editable": {
       "editable": "surgical"
     },
-    "format": "markdown",
-    "hash": "5f62a879c799aae8",
-    "mtimeMs": 0,
-    "name": "ideas.md",
-    "notes": [],
+    "notes": []
+  },
+  "notes/ideas.md": {
     "path": "notes/ideas.md",
+    "name": "ideas.md",
+    "format": "markdown",
     "role": null,
-    "size": 70
+    "body": {
+      "kind": "markdown",
+      "blocks": [
+        {
+          "id": "c421d8ac2e0b71dd",
+          "kind": "h1",
+          "lineStart": 1,
+          "lineEnd": 1,
+          "html": "<h1 data-b=\"c421d8ac2e0b71dd\" id=\"ideas\">Ideas</h1>"
+        },
+        {
+          "id": "519b53b4e508df3d",
+          "kind": "h2",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "html": "<h2 data-b=\"519b53b4e508df3d\" id=\"first-idea\">First idea</h2>"
+        },
+        {
+          "id": "adab86a67eefa364",
+          "kind": "p",
+          "lineStart": 5,
+          "lineEnd": 5,
+          "html": "<p data-b=\"adab86a67eefa364\">Short and sweet.</p>"
+        },
+        {
+          "id": "b5dbfa12b47b31dc",
+          "kind": "h2",
+          "lineStart": 7,
+          "lineEnd": 7,
+          "html": "<h2 data-b=\"b5dbfa12b47b31dc\" id=\"second-idea\">Second idea</h2>"
+        },
+        {
+          "id": "b23501e81f56172e",
+          "kind": "ul",
+          "lineStart": 9,
+          "lineEnd": 10,
+          "html": "<ul data-b=\"b23501e81f56172e\">\n<li>one</li>\n<li>two</li>\n</ul>"
+        }
+      ],
+      "outline": [
+        {
+          "label": "Ideas",
+          "level": 1,
+          "id": "ideas",
+          "line": 1,
+          "block": "c421d8ac2e0b71dd"
+        },
+        {
+          "label": "First idea",
+          "level": 2,
+          "id": "first-idea",
+          "line": 3,
+          "block": "519b53b4e508df3d"
+        },
+        {
+          "label": "Second idea",
+          "level": 2,
+          "id": "second-idea",
+          "line": 7,
+          "block": "b5dbfa12b47b31dc"
+        }
+      ],
+      "frontMatter": null
+    },
+    "hash": "5f62a879c799aae8",
+    "size": 70,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  "CLAUDE.md": {
+    "path": "CLAUDE.md",
+    "name": "CLAUDE.md",
+    "format": "markdown",
+    "role": "claude",
+    "body": {
+      "kind": "markdown",
+      "blocks": [
+        {
+          "id": "93113f53a7490843",
+          "kind": "h1",
+          "lineStart": 6,
+          "lineEnd": 6,
+          "html": "<h1 data-b=\"93113f53a7490843\" id=\"project-rules\">Project rules</h1>"
+        },
+        {
+          "id": "14edcb67d7af6899",
+          "kind": "details",
+          "lineStart": 9,
+          "lineEnd": 9,
+          "html": "<details data-b=\"14edcb67d7af6899\" class=\"prompt-block\" data-tag=\"instructions\" open=\"\"><summary>instructions</summary>\n<p>Read <a class=\"at-ref\" href=\"/docs/guide.md\">@docs/guide.md</a> first. Greet <span class=\"tvar\">{{user}}</span> by name.</p>\n</details>"
+        },
+        {
+          "id": "1f1a29026f2c492c",
+          "kind": "details",
+          "lineStart": 13,
+          "lineEnd": 14,
+          "html": "<details data-b=\"1f1a29026f2c492c\" class=\"prompt-block\" data-tag=\"example\" open=\"\"><summary>example</summary>\n<p>Input: a question about the <strong>guide</strong>.\nOutput: a short answer with a link.</p>\n</details>"
+        }
+      ],
+      "outline": [
+        {
+          "label": "Project rules",
+          "level": 1,
+          "id": "project-rules",
+          "line": 6,
+          "block": "93113f53a7490843"
+        }
+      ],
+      "frontMatter": {
+        "syntax": "yaml",
+        "raw": "name: project-rules\ndescription: Rules the agent follows in this repository\n",
+        "fields": [
+          {
+            "key": "name",
+            "value": {
+              "type": "text",
+              "text": "project-rules"
+            }
+          },
+          {
+            "key": "description",
+            "value": {
+              "type": "text",
+              "text": "Rules the agent follows in this repository"
+            }
+          }
+        ]
+      }
+    },
+    "hash": "a84192067c0b6d86",
+    "size": 281,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  "Cargo.toml": {
+    "path": "Cargo.toml",
+    "name": "Cargo.toml",
+    "format": "toml",
+    "role": null,
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "config",
+        "groups": [
+          {
+            "path": "package",
+            "title": "package",
+            "line": 2,
+            "end": 8,
+            "comment": "The docs site generator.",
+            "rows": [
+              {
+                "path": "package.name",
+                "key": "name",
+                "line": 3,
+                "end": 3,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.name",
+                  "kind": "string",
+                  "text": "docs-site",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "package.version",
+                "key": "version",
+                "line": 4,
+                "end": 4,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.version",
+                  "kind": "string",
+                  "text": "0.4.2",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "package.edition",
+                "key": "edition",
+                "line": 5,
+                "end": 5,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.edition",
+                  "kind": "string",
+                  "text": "2021",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "package.description",
+                "key": "description",
+                "line": 6,
+                "end": 6,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.description",
+                  "kind": "string",
+                  "text": "Builds the project documentation",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "package.authors",
+                "key": "authors",
+                "line": 7,
+                "end": 7,
+                "value": {
+                  "type": "list",
+                  "items": [
+                    {
+                      "path": "package.authors[0]",
+                      "kind": "string",
+                      "text": "Ana Souza",
+                      "edit": {
+                        "editable": "surgical"
+                      },
+                      "secret": false
+                    },
+                    {
+                      "path": "package.authors[1]",
+                      "kind": "string",
+                      "text": "Bo Chen",
+                      "edit": {
+                        "editable": "surgical"
+                      },
+                      "secret": false
+                    }
+                  ]
+                },
+                "comment": null
+              },
+              {
+                "path": "package.publish",
+                "key": "publish",
+                "line": 8,
+                "end": 8,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.publish",
+                  "kind": "bool",
+                  "text": "false",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "dependencies",
+            "title": "dependencies",
+            "line": 10,
+            "end": 13,
+            "comment": null,
+            "rows": [
+              {
+                "path": "dependencies.serde",
+                "key": "serde",
+                "line": 11,
+                "end": 11,
+                "value": {
+                  "type": "raw",
+                  "text": "{ version = \"1\", features = [\"derive\"] }",
+                  "reason": "inlineTable",
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "dependencies.tokio",
+                "key": "tokio",
+                "line": 12,
+                "end": 12,
+                "value": {
+                  "type": "scalar",
+                  "path": "dependencies.tokio",
+                  "kind": "string",
+                  "text": "1.40",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "dependencies.pulldown-cmark",
+                "key": "pulldown-cmark",
+                "line": 13,
+                "end": 13,
+                "value": {
+                  "type": "scalar",
+                  "path": "dependencies.pulldown-cmark",
+                  "kind": "string",
+                  "text": "0.12",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "profile.release",
+            "title": "profile.release",
+            "line": 16,
+            "end": 19,
+            "comment": "Release build",
+            "rows": [
+              {
+                "path": "profile.release.opt-level",
+                "key": "opt-level",
+                "line": 17,
+                "end": 17,
+                "value": {
+                  "type": "scalar",
+                  "path": "profile.release.opt-level",
+                  "kind": "number",
+                  "text": "3",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "profile.release.lto",
+                "key": "lto",
+                "line": 18,
+                "end": 18,
+                "value": {
+                  "type": "scalar",
+                  "path": "profile.release.lto",
+                  "kind": "bool",
+                  "text": "true",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "profile.release.codegen-units",
+                "key": "codegen-units",
+                "line": 19,
+                "end": 19,
+                "value": {
+                  "type": "scalar",
+                  "path": "profile.release.codegen-units",
+                  "kind": "number",
+                  "text": "1",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "package.metadata.deploy",
+            "title": "package.metadata.deploy",
+            "line": 21,
+            "end": 24,
+            "comment": null,
+            "rows": [
+              {
+                "path": "package.metadata.deploy.host",
+                "key": "host",
+                "line": 22,
+                "end": 22,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.metadata.deploy.host",
+                  "kind": "string",
+                  "text": "docs.example.org",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "package.metadata.deploy.api_token",
+                "key": "api_token",
+                "line": 23,
+                "end": 23,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.metadata.deploy.api_token",
+                  "kind": "string",
+                  "text": "dp_live_4f9a1c77b2",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": true
+                },
+                "comment": null
+              },
+              {
+                "path": "package.metadata.deploy.retries",
+                "key": "retries",
+                "line": 24,
+                "end": 24,
+                "value": {
+                  "type": "scalar",
+                  "path": "package.metadata.deploy.retries",
+                  "kind": "number",
+                  "text": "3",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "hash": "0518bf737bbf4cd5",
+    "size": 471,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  "docker-compose.yml": {
+    "path": "docker-compose.yml",
+    "name": "docker-compose.yml",
+    "format": "yaml",
+    "role": null,
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "config",
+        "groups": [
+          {
+            "path": "",
+            "title": "",
+            "line": 1,
+            "end": 2,
+            "comment": null,
+            "rows": [
+              {
+                "path": "name",
+                "key": "name",
+                "line": 2,
+                "end": 2,
+                "value": {
+                  "type": "scalar",
+                  "path": "name",
+                  "kind": "string",
+                  "text": "docs",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "Local stack"
+              }
+            ]
+          },
+          {
+            "path": "services.web",
+            "title": "services.web",
+            "line": 4,
+            "end": 13,
+            "comment": null,
+            "rows": [
+              {
+                "path": "services.web.image",
+                "key": "image",
+                "line": 5,
+                "end": 5,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.web.image",
+                  "kind": "string",
+                  "text": "nginx:1.27",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "pinned"
+              },
+              {
+                "path": "services.web.ports",
+                "key": "ports",
+                "line": 6,
+                "end": 8,
+                "value": {
+                  "type": "list",
+                  "items": [
+                    {
+                      "path": "services.web.ports[0]",
+                      "kind": "string",
+                      "text": "8080:80",
+                      "edit": {
+                        "editable": "surgical"
+                      },
+                      "secret": false
+                    },
+                    {
+                      "path": "services.web.ports[1]",
+                      "kind": "string",
+                      "text": "8443:443",
+                      "edit": {
+                        "editable": "surgical"
+                      },
+                      "secret": false
+                    }
+                  ]
+                },
+                "comment": null
+              },
+              {
+                "path": "services.web.depends_on",
+                "key": "depends_on",
+                "line": 13,
+                "end": 13,
+                "value": {
+                  "type": "raw",
+                  "text": "[db]",
+                  "reason": "flow",
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "services.web.environment",
+            "title": "services.web.environment",
+            "line": 9,
+            "end": 12,
+            "comment": null,
+            "rows": [
+              {
+                "path": "services.web.environment.MODE",
+                "key": "MODE",
+                "line": 10,
+                "end": 10,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.web.environment.MODE",
+                  "kind": "string",
+                  "text": "production",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "services.web.environment.DEBUG",
+                "key": "DEBUG",
+                "line": 11,
+                "end": 11,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.web.environment.DEBUG",
+                  "kind": "bool",
+                  "text": "false",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "services.web.environment.API_KEY",
+                "key": "API_KEY",
+                "line": 12,
+                "end": 12,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.web.environment.API_KEY",
+                  "kind": "string",
+                  "text": "sk-live-9d2c41aa",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": true
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "services.db",
+            "title": "services.db",
+            "line": 14,
+            "end": 16,
+            "comment": null,
+            "rows": [
+              {
+                "path": "services.db.image",
+                "key": "image",
+                "line": 15,
+                "end": 15,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.db.image",
+                  "kind": "string",
+                  "text": "postgres:16",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "services.db.restart",
+                "key": "restart",
+                "line": 16,
+                "end": 16,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.db.restart",
+                  "kind": "string",
+                  "text": "unless-stopped",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "services.db.environment",
+            "title": "services.db.environment",
+            "line": 17,
+            "end": 19,
+            "comment": null,
+            "rows": [
+              {
+                "path": "services.db.environment.POSTGRES_USER",
+                "key": "POSTGRES_USER",
+                "line": 18,
+                "end": 18,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.db.environment.POSTGRES_USER",
+                  "kind": "string",
+                  "text": "docs",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "services.db.environment.POSTGRES_PASSWORD",
+                "key": "POSTGRES_PASSWORD",
+                "line": 19,
+                "end": 19,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.db.environment.POSTGRES_PASSWORD",
+                  "kind": "string",
+                  "text": "hunter2-prod",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": true
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "services.db.healthcheck",
+            "title": "services.db.healthcheck",
+            "line": 20,
+            "end": 22,
+            "comment": null,
+            "rows": [
+              {
+                "path": "services.db.healthcheck.interval",
+                "key": "interval",
+                "line": 21,
+                "end": 21,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.db.healthcheck.interval",
+                  "kind": "string",
+                  "text": "10s",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "services.db.healthcheck.retries",
+                "key": "retries",
+                "line": 22,
+                "end": 22,
+                "value": {
+                  "type": "scalar",
+                  "path": "services.db.healthcheck.retries",
+                  "kind": "number",
+                  "text": "5",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "hash": "37c4740eb8983c9b",
+    "size": 429,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  ".env.example": {
+    "path": ".env.example",
+    "name": ".env.example",
+    "format": "dotenv",
+    "role": null,
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "config",
+        "groups": [
+          {
+            "path": "",
+            "title": "",
+            "line": 1,
+            "end": 12,
+            "comment": null,
+            "rows": [
+              {
+                "path": "NODE_ENV",
+                "key": "NODE_ENV",
+                "line": 2,
+                "end": 2,
+                "value": {
+                  "type": "scalar",
+                  "path": "NODE_ENV",
+                  "kind": "string",
+                  "text": "development",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "App"
+              },
+              {
+                "path": "PORT",
+                "key": "PORT",
+                "line": 3,
+                "end": 3,
+                "value": {
+                  "type": "scalar",
+                  "path": "PORT",
+                  "kind": "number",
+                  "text": "3000",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "DEBUG",
+                "key": "DEBUG",
+                "line": 4,
+                "end": 4,
+                "value": {
+                  "type": "scalar",
+                  "path": "DEBUG",
+                  "kind": "bool",
+                  "text": "false",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "DATABASE_URL",
+                "key": "DATABASE_URL",
+                "line": 7,
+                "end": 7,
+                "value": {
+                  "type": "scalar",
+                  "path": "DATABASE_URL",
+                  "kind": "string",
+                  "text": "postgres://docs:pa55w0rd@localhost:5432/docs",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": true
+                },
+                "comment": "Database"
+              },
+              {
+                "path": "DB_PASSWORD",
+                "key": "DB_PASSWORD",
+                "line": 8,
+                "end": 8,
+                "value": {
+                  "type": "scalar",
+                  "path": "DB_PASSWORD",
+                  "kind": "string",
+                  "text": "s3cr3t pass",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": true
+                },
+                "comment": null
+              },
+              {
+                "path": "API_KEY",
+                "key": "API_KEY",
+                "line": 9,
+                "end": 9,
+                "value": {
+                  "type": "scalar",
+                  "path": "API_KEY",
+                  "kind": "string",
+                  "text": "sk-live-abc123",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": true
+                },
+                "comment": null
+              },
+              {
+                "path": "SECRET_KEY_BASE",
+                "key": "SECRET_KEY_BASE",
+                "line": 10,
+                "end": 10,
+                "value": {
+                  "type": "scalar",
+                  "path": "SECRET_KEY_BASE",
+                  "kind": "null",
+                  "text": "",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "APP_NAME",
+                "key": "APP_NAME",
+                "line": 11,
+                "end": 11,
+                "value": {
+                  "type": "scalar",
+                  "path": "APP_NAME",
+                  "kind": "string",
+                  "text": "Docs Site",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "shown in the header"
+              },
+              {
+                "path": "BASE_URL",
+                "key": "BASE_URL",
+                "line": 12,
+                "end": 12,
+                "value": {
+                  "type": "scalar",
+                  "path": "BASE_URL",
+                  "kind": "string",
+                  "text": "${HOST}/api",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "hash": "c4799ed021ad6b91",
+    "size": 256,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  ".editorconfig": {
+    "path": ".editorconfig",
+    "name": ".editorconfig",
+    "format": "ini",
+    "role": null,
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "config",
+        "groups": [
+          {
+            "path": "",
+            "title": "",
+            "line": 1,
+            "end": 2,
+            "comment": null,
+            "rows": [
+              {
+                "path": "root",
+                "key": "root",
+                "line": 2,
+                "end": 2,
+                "value": {
+                  "type": "scalar",
+                  "path": "root",
+                  "kind": "bool",
+                  "text": "true",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "EditorConfig is awesome: https://EditorConfig.org"
+              }
+            ]
+          },
+          {
+            "path": "*",
+            "title": "*",
+            "line": 4,
+            "end": 10,
+            "comment": null,
+            "rows": [
+              {
+                "path": "*.indent_style",
+                "key": "indent_style",
+                "line": 5,
+                "end": 5,
+                "value": {
+                  "type": "scalar",
+                  "path": "*.indent_style",
+                  "kind": "string",
+                  "text": "space",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "*.indent_size",
+                "key": "indent_size",
+                "line": 6,
+                "end": 6,
+                "value": {
+                  "type": "scalar",
+                  "path": "*.indent_size",
+                  "kind": "number",
+                  "text": "2",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "*.end_of_line",
+                "key": "end_of_line",
+                "line": 7,
+                "end": 7,
+                "value": {
+                  "type": "scalar",
+                  "path": "*.end_of_line",
+                  "kind": "string",
+                  "text": "lf",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "*.charset",
+                "key": "charset",
+                "line": 8,
+                "end": 8,
+                "value": {
+                  "type": "scalar",
+                  "path": "*.charset",
+                  "kind": "string",
+                  "text": "utf-8",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "*.trim_trailing_whitespace",
+                "key": "trim_trailing_whitespace",
+                "line": 9,
+                "end": 9,
+                "value": {
+                  "type": "scalar",
+                  "path": "*.trim_trailing_whitespace",
+                  "kind": "bool",
+                  "text": "true",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "*.insert_final_newline",
+                "key": "insert_final_newline",
+                "line": 10,
+                "end": 10,
+                "value": {
+                  "type": "scalar",
+                  "path": "*.insert_final_newline",
+                  "kind": "bool",
+                  "text": "true",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "Makefile",
+            "title": "Makefile",
+            "line": 13,
+            "end": 14,
+            "comment": "Tabs for Makefiles",
+            "rows": [
+              {
+                "path": "Makefile.indent_style",
+                "key": "indent_style",
+                "line": 14,
+                "end": 14,
+                "value": {
+                  "type": "scalar",
+                  "path": "Makefile.indent_style",
+                  "kind": "string",
+                  "text": "tab",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "\"*.{js,py}\"",
+            "title": "*.{js,py}",
+            "line": 16,
+            "end": 17,
+            "comment": null,
+            "rows": [
+              {
+                "path": "\"*.{js,py}\".max_line_length",
+                "key": "max_line_length",
+                "line": 17,
+                "end": 17,
+                "value": {
+                  "type": "scalar",
+                  "path": "\"*.{js,py}\".max_line_length",
+                  "kind": "number",
+                  "text": "100",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "hash": "21db472fdd5aa623",
+    "size": 286,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  "config/app.properties": {
+    "path": "config/app.properties",
+    "name": "app.properties",
+    "format": "properties",
+    "role": null,
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "config",
+        "groups": [
+          {
+            "path": "server",
+            "title": "server",
+            "line": 2,
+            "end": 3,
+            "comment": null,
+            "rows": [
+              {
+                "path": "server.port",
+                "key": "port",
+                "line": 2,
+                "end": 2,
+                "value": {
+                  "type": "scalar",
+                  "path": "server.port",
+                  "kind": "number",
+                  "text": "8080",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "Server"
+              },
+              {
+                "path": "server.servlet.context-path",
+                "key": "servlet.context-path",
+                "line": 3,
+                "end": 3,
+                "value": {
+                  "type": "scalar",
+                  "path": "server.servlet.context-path",
+                  "kind": "string",
+                  "text": "/api",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "spring",
+            "title": "spring",
+            "line": 6,
+            "end": 10,
+            "comment": null,
+            "rows": [
+              {
+                "path": "spring.datasource.url",
+                "key": "datasource.url",
+                "line": 6,
+                "end": 6,
+                "value": {
+                  "type": "scalar",
+                  "path": "spring.datasource.url",
+                  "kind": "string",
+                  "text": "jdbc:postgresql://localhost:5432/docs",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "Database"
+              },
+              {
+                "path": "spring.datasource.username",
+                "key": "datasource.username",
+                "line": 7,
+                "end": 7,
+                "value": {
+                  "type": "scalar",
+                  "path": "spring.datasource.username",
+                  "kind": "string",
+                  "text": "docs",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "spring.datasource.password",
+                "key": "datasource.password",
+                "line": 8,
+                "end": 8,
+                "value": {
+                  "type": "scalar",
+                  "path": "spring.datasource.password",
+                  "kind": "string",
+                  "text": "s3cr3t-prop",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": true
+                },
+                "comment": null
+              },
+              {
+                "path": "spring.jpa.show-sql",
+                "key": "jpa.show-sql",
+                "line": 9,
+                "end": 9,
+                "value": {
+                  "type": "scalar",
+                  "path": "spring.jpa.show-sql",
+                  "kind": "bool",
+                  "text": "true",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "spring.jpa.open-in-view",
+                "key": "jpa.open-in-view",
+                "line": 10,
+                "end": 10,
+                "value": {
+                  "type": "scalar",
+                  "path": "spring.jpa.open-in-view",
+                  "kind": "bool",
+                  "text": "false",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "app",
+            "title": "app",
+            "line": 12,
+            "end": 13,
+            "comment": null,
+            "rows": [
+              {
+                "path": "app.name",
+                "key": "name",
+                "line": 12,
+                "end": 12,
+                "value": {
+                  "type": "scalar",
+                  "path": "app.name",
+                  "kind": "string",
+                  "text": "Docs Site",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "app.greeting",
+                "key": "greeting",
+                "line": 13,
+                "end": 13,
+                "value": {
+                  "type": "scalar",
+                  "path": "app.greeting",
+                  "kind": "string",
+                  "text": "Hello, \\u00e9\\u00e8!",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "hash": "ba06daf0bc9b8182",
+    "size": 314,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  ".gitignore": {
+    "path": ".gitignore",
+    "name": ".gitignore",
+    "format": "ignore",
+    "role": null,
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "ignore",
+        "groups": [
+          {
+            "path": "section-1",
+            "title": "Dependencies",
+            "line": 1,
+            "end": 3,
+            "comment": null,
+            "rows": [
+              {
+                "path": "L2",
+                "key": "",
+                "line": 2,
+                "end": 2,
+                "value": {
+                  "type": "pattern",
+                  "path": "L2",
+                  "text": "node_modules/",
+                  "negated": false
+                },
+                "comment": null
+              },
+              {
+                "path": "L3",
+                "key": "",
+                "line": 3,
+                "end": 3,
+                "value": {
+                  "type": "pattern",
+                  "path": "L3",
+                  "text": ".pnp.js",
+                  "negated": false
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "section-5",
+            "title": "Build output",
+            "line": 5,
+            "end": 9,
+            "comment": null,
+            "rows": [
+              {
+                "path": "L6",
+                "key": "",
+                "line": 6,
+                "end": 6,
+                "value": {
+                  "type": "pattern",
+                  "path": "L6",
+                  "text": "/dist",
+                  "negated": false
+                },
+                "comment": null
+              },
+              {
+                "path": "L7",
+                "key": "",
+                "line": 7,
+                "end": 7,
+                "value": {
+                  "type": "pattern",
+                  "path": "L7",
+                  "text": "/build/",
+                  "negated": false
+                },
+                "comment": null
+              },
+              {
+                "path": "L8",
+                "key": "",
+                "line": 8,
+                "end": 8,
+                "value": {
+                  "type": "pattern",
+                  "path": "L8",
+                  "text": "*.log",
+                  "negated": false
+                },
+                "comment": null
+              },
+              {
+                "path": "L9",
+                "key": "",
+                "line": 9,
+                "end": 9,
+                "value": {
+                  "type": "pattern",
+                  "path": "L9",
+                  "text": "!important.log",
+                  "negated": true
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "section-11",
+            "title": "Env files",
+            "line": 11,
+            "end": 14,
+            "comment": null,
+            "rows": [
+              {
+                "path": "L12",
+                "key": "",
+                "line": 12,
+                "end": 12,
+                "value": {
+                  "type": "pattern",
+                  "path": "L12",
+                  "text": ".env",
+                  "negated": false
+                },
+                "comment": null
+              },
+              {
+                "path": "L13",
+                "key": "",
+                "line": 13,
+                "end": 13,
+                "value": {
+                  "type": "pattern",
+                  "path": "L13",
+                  "text": ".env.*",
+                  "negated": false
+                },
+                "comment": null
+              },
+              {
+                "path": "L14",
+                "key": "",
+                "line": 14,
+                "end": 14,
+                "value": {
+                  "type": "pattern",
+                  "path": "L14",
+                  "text": "!.env.example",
+                  "negated": true
+                },
+                "comment": null
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "hash": "d0c1d0b7d8f7fee2",
+    "size": 127,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
+  "data/team.toon": {
+    "path": "data/team.toon",
+    "name": "team.toon",
+    "format": "toon",
+    "role": null,
+    "body": {
+      "kind": "sheet",
+      "sheet": {
+        "kind": "data",
+        "groups": [
+          {
+            "path": "project",
+            "title": "project",
+            "line": 2,
+            "end": 7,
+            "comment": "The people of the project and what they work on.",
+            "rows": [
+              {
+                "path": "project.name",
+                "key": "name",
+                "line": 3,
+                "end": 3,
+                "value": {
+                  "type": "scalar",
+                  "path": "project.name",
+                  "kind": "string",
+                  "text": "PerMark",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "project.version",
+                "key": "version",
+                "line": 4,
+                "end": 4,
+                "value": {
+                  "type": "scalar",
+                  "path": "project.version",
+                  "kind": "string",
+                  "text": "0.6.0",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": null
+              },
+              {
+                "path": "project.url",
+                "key": "url",
+                "line": 6,
+                "end": 6,
+                "value": {
+                  "type": "scalar",
+                  "path": "project.url",
+                  "kind": "string",
+                  "text": "https://github.com/EdelmarSchneider/permark",
+                  "edit": {
+                    "editable": "surgical"
+                  },
+                  "secret": false
+                },
+                "comment": "where it lives"
+              },
+              {
+                "path": "project.tags",
+                "key": "tags",
+                "line": 7,
+                "end": 7,
+                "value": {
+                  "type": "list",
+                  "items": [
+                    {
+                      "path": "project.tags[0]",
+                      "kind": "string",
+                      "text": "markdown",
+                      "edit": {
+                        "editable": "surgical"
+                      },
+                      "secret": false
+                    },
+                    {
+                      "path": "project.tags[1]",
+                      "kind": "string",
+                      "text": "local-first",
+                      "edit": {
+                        "editable": "surgical"
+                      },
+                      "secret": false
+                    },
+                    {
+                      "path": "project.tags[2]",
+                      "kind": "string",
+                      "text": "agents",
+                      "edit": {
+                        "editable": "surgical"
+                      },
+                      "secret": false
+                    }
+                  ]
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "team",
+            "title": "team",
+            "line": 8,
+            "end": 11,
+            "comment": null,
+            "rows": [
+              {
+                "path": "team",
+                "key": "team",
+                "line": 8,
+                "end": 11,
+                "value": {
+                  "type": "table",
+                  "path": "team",
+                  "fields": [
+                    "id",
+                    "name",
+                    "role",
+                    "active"
+                  ],
+                  "count": 3,
+                  "keyed": false,
+                  "delimiter": ",",
+                  "rows": [
+                    {
+                      "path": "team[0]",
+                      "line": 9,
+                      "key": null,
+                      "cells": [
+                        {
+                          "path": "team[0].id",
+                          "kind": "number",
+                          "text": "1",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[0].name",
+                          "kind": "string",
+                          "text": "Ada Lovelace",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[0].role",
+                          "kind": "string",
+                          "text": "lead",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[0].active",
+                          "kind": "bool",
+                          "text": "true",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        }
+                      ]
+                    },
+                    {
+                      "path": "team[1]",
+                      "line": 10,
+                      "key": null,
+                      "cells": [
+                        {
+                          "path": "team[1].id",
+                          "kind": "number",
+                          "text": "2",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[1].name",
+                          "kind": "string",
+                          "text": "Alan Turing",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[1].role",
+                          "kind": "string",
+                          "text": "review, specs",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[1].active",
+                          "kind": "bool",
+                          "text": "true",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        }
+                      ]
+                    },
+                    {
+                      "path": "team[2]",
+                      "line": 11,
+                      "key": null,
+                      "cells": [
+                        {
+                          "path": "team[2].id",
+                          "kind": "number",
+                          "text": "3",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[2].name",
+                          "kind": "string",
+                          "text": "Grace Hopper",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[2].role",
+                          "kind": "string",
+                          "text": "build",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        },
+                        {
+                          "path": "team[2].active",
+                          "kind": "bool",
+                          "text": "false",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        }
+                      ]
+                    }
+                  ],
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              }
+            ]
+          },
+          {
+            "path": "access",
+            "title": "access",
+            "line": 12,
+            "end": 14,
+            "comment": null,
+            "rows": [
+              {
+                "path": "access",
+                "key": "access",
+                "line": 12,
+                "end": 14,
+                "value": {
+                  "type": "table",
+                  "path": "access",
+                  "fields": [
+                    "token",
+                    "scope"
+                  ],
+                  "count": 2,
+                  "keyed": true,
+                  "delimiter": ",",
+                  "rows": [
+                    {
+                      "path": "access.ci",
+                      "line": 13,
+                      "key": "ci",
+                      "cells": [
+                        {
+                          "path": "access.ci.token",
+                          "kind": "string",
+                          "text": "sk-ci-5f2a91",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": true
+                        },
+                        {
+                          "path": "access.ci.scope",
+                          "kind": "string",
+                          "text": "read",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        }
+                      ]
+                    },
+                    {
+                      "path": "access.bot",
+                      "line": 14,
+                      "key": "bot",
+                      "cells": [
+                        {
+                          "path": "access.bot.token",
+                          "kind": "string",
+                          "text": "sk-bot-77c0de",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": true
+                        },
+                        {
+                          "path": "access.bot.scope",
+                          "kind": "string",
+                          "text": "write",
+                          "edit": {
+                            "editable": "surgical"
+                          },
+                          "secret": false
+                        }
+                      ]
+                    }
+                  ],
+                  "edit": {
+                    "editable": "surgical"
+                  }
+                },
+                "comment": null
+              }
+            ]
+          }
+        ],
+        "spec": "TOON 4.4"
+      }
+    },
+    "hash": "2c2d17939e28e4f5",
+    "size": 403,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
   }
 }

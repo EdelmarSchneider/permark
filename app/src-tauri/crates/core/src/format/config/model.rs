@@ -107,6 +107,39 @@ pub enum RowValue {
         text: String,
         negated: bool,
     },
+    /// An array of uniform objects (TOON tabular | keyed form): a header of fields and one row per element.
+    Table(Table),
+}
+
+/// Rows of uniform objects: the fields once, then one line per element (TOON `key[N]{a,b}:` | keyed `key[N:]{a,b}:`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Table {
+    pub path: String,
+    /// Leaf fields in header order (a nested group's leaves as `group.leaf`).
+    pub fields: Vec<String>,
+    /// The declared count (`[N]`).
+    pub count: u32,
+    /// Rows carry their own key (an object of uniform objects).
+    pub keyed: bool,
+    /// The active delimiter (`,` | tab | `|`).
+    pub delimiter: String,
+    pub rows: Vec<TableRow>,
+    /// Whether rows can be added, removed, duplicated and moved.
+    pub edit: Editability,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TableRow {
+    /// `table[i]` | `table.key` (keyed).
+    pub path: String,
+    pub line: u32,
+    /// The entry key of a keyed row.
+    pub key: Option<String>,
+    pub cells: Vec<Scalar>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -142,6 +175,8 @@ pub struct Group {
 pub enum SheetKind {
     Config,
     Ignore,
+    /// Structured data (TOON): keys can be renamed, added and removed; tables take rows.
+    Data,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -150,6 +185,10 @@ pub enum SheetKind {
 pub struct Sheet {
     pub kind: SheetKind,
     pub groups: Vec<Group>,
+    /// The version of the format's specification the sheet was read with (`TOON 4.4`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub spec: Option<String>,
     /// The text is not valid for its syntax (the sheet is empty; Source shows the text).
     #[serde(skip)]
     #[ts(skip)]
@@ -171,6 +210,7 @@ impl Sheet {
         Self {
             kind,
             groups: Vec::new(),
+            spec: None,
             failed: false,
         }
     }
@@ -183,9 +223,17 @@ impl Sheet {
         }
     }
 
+    /// Rows, a table counting one for itself, one per row and one per cell.
     #[must_use]
     pub fn row_count(&self) -> usize {
-        self.groups.iter().map(|g| g.rows.len()).sum()
+        self.rows()
+            .map(|(_, r)| match &r.value {
+                RowValue::Table(t) => {
+                    1 + t.rows.iter().map(|row| 1 + row.cells.len()).sum::<usize>()
+                }
+                _ => 1,
+            })
+            .sum()
     }
 
     pub fn rows(&self) -> impl Iterator<Item = (&Group, &Row)> {
@@ -200,6 +248,20 @@ impl Sheet {
         self.rows().find_map(|(_, row)| match &row.value {
             RowValue::Scalar(s) if s.path == path => Some(s),
             RowValue::List { items } => items.iter().find(|s| s.path == path),
+            RowValue::Table(t) if path.starts_with(t.path.as_str()) => t
+                .rows
+                .iter()
+                .flat_map(|r| r.cells.iter())
+                .find(|s| s.path == path),
+            _ => None,
+        })
+    }
+
+    /// The table at `path`.
+    #[must_use]
+    pub fn table(&self, path: &str) -> Option<&Table> {
+        self.rows().find_map(|(_, row)| match &row.value {
+            RowValue::Table(t) if t.path == path => Some(t),
             _ => None,
         })
     }
@@ -239,6 +301,19 @@ impl Sheet {
                             && (key_secret || mask_text(text) != text.as_str());
                     }
                     RowValue::Pattern { .. } => {}
+                    RowValue::Table(table) => {
+                        // a column is secret when its field (any part of it) is a secret key
+                        let columns: Vec<bool> = table
+                            .fields
+                            .iter()
+                            .map(|f| split_path(f).iter().any(|s| is_secret_key(s)))
+                            .collect();
+                        for row in &mut table.rows {
+                            for (cell, column) in row.cells.iter_mut().zip(&columns) {
+                                mark(cell, key_secret || *column);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -264,6 +339,13 @@ impl Sheet {
                     span: Some(span),
                     ..
                 } => spans.push(span.clone()),
+                RowValue::Table(t) => spans.extend(
+                    t.rows
+                        .iter()
+                        .flat_map(|r| r.cells.iter())
+                        .filter(|s| s.secret)
+                        .filter_map(|s| s.span.clone()),
+                ),
                 _ => {}
             }
         }
@@ -289,7 +371,7 @@ impl Sheet {
                 .collect();
         }
         let mut parts: Vec<Part> = Vec::new();
-        let mut add = |path: &str, line: u32, end: u32| {
+        let mut add = |path: &str, line: u32, end: u32, table: Option<&Table>| {
             let Some(first) = split_path(path).into_iter().next() else {
                 return;
             };
@@ -300,8 +382,14 @@ impl Sheet {
                     part.end = part.end.max(end);
                 }
                 None => parts.push(Part {
+                    // a top-level table says its shape: `users[3]{id,name}`
+                    label: match table {
+                        Some(t) if t.path == key => {
+                            format!("{first}[{}]{{{}}}", t.rows.len(), t.fields.join(","))
+                        }
+                        _ => first,
+                    },
                     path: key,
-                    label: first,
                     line,
                     end,
                 }),
@@ -309,10 +397,14 @@ impl Sheet {
         };
         for group in &self.groups {
             if !group.path.is_empty() {
-                add(&group.path, group.line, group.end);
+                let table = group.rows.iter().find_map(|r| match &r.value {
+                    RowValue::Table(t) if t.path == group.path => Some(t),
+                    _ => None,
+                });
+                add(&group.path, group.line, group.end, table);
             }
             for row in &group.rows {
-                add(&row.path, row.line, row.end);
+                add(&row.path, row.line, row.end, None);
             }
         }
         parts
@@ -338,6 +430,10 @@ impl Sheet {
             for row in &group.rows {
                 if below(&row.path) {
                     grow(row.line, row.end);
+                } else if let RowValue::Table(table) = &row.value {
+                    for r in table.rows.iter().filter(|r| below(&r.path)) {
+                        grow(r.line, r.line);
+                    }
                 }
             }
         }
@@ -360,8 +456,13 @@ impl Sheet {
                 push(last);
             }
             for row in &group.rows {
-                if self.kind == SheetKind::Config {
+                if self.kind != SheetKind::Ignore {
                     push(&row.key);
+                }
+                if let RowValue::Table(table) = &row.value {
+                    for field in &table.fields {
+                        push(field);
+                    }
                 }
             }
         }
@@ -449,6 +550,41 @@ pub enum ConfigEdit {
     Insert {
         after: Option<String>,
         text: String,
+    },
+    /// Data sheets: the key at `path` takes a new name (an object key, an array's key, an entry key).
+    Rename {
+        path: String,
+        key: String,
+    },
+    /// Data sheets: one leaf field name of a table's header.
+    RenameField {
+        table: String,
+        index: u32,
+        name: String,
+    },
+    /// Data sheets: `key: value` at the end of the object at `parent` (`""`: the root).
+    AddKey {
+        parent: String,
+        key: String,
+        value: NewValue,
+    },
+    /// Tables: a new row at `at` (0 = first; the row count = after the last), its cells empty and typed per column.
+    AddRow {
+        table: String,
+        at: u32,
+    },
+    /// Tables: the row at `path` goes.
+    RemoveRow {
+        path: String,
+    },
+    /// Tables: a copy of the row at `path` right below it.
+    DuplicateRow {
+        path: String,
+    },
+    /// Tables: the row at `path` moves to index `to` (among the rows as they are before the move).
+    MoveRow {
+        path: String,
+        to: u32,
     },
 }
 

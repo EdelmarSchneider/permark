@@ -123,6 +123,7 @@ impl ConfigSyntax for Ini {
         Sheet {
             kind: SheetKind::Config,
             groups,
+            spec: None,
             failed: false,
         }
     }

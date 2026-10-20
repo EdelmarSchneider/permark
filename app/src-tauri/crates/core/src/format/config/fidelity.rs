@@ -10,6 +10,7 @@ fn scalars(sheet: &Sheet) -> Vec<&Scalar> {
         .flat_map(|(_, row)| match &row.value {
             RowValue::Scalar(s) => vec![s],
             RowValue::List { items } => items.iter().collect(),
+            RowValue::Table(t) => t.rows.iter().flat_map(|r| r.cells.iter()).collect(),
             RowValue::Raw { .. } | RowValue::Pattern { .. } => Vec::new(),
         })
         .collect()

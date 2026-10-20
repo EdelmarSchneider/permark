@@ -457,6 +457,55 @@ fn blocks_have_kinds_and_the_ones_to_keep_say_why() {
 }
 
 #[test]
+fn a_toon_block_is_kept_as_written_data() {
+    let got = kinds("```toon\nusers[1]{id}:\n  1\n```\n\n```json\n{}\n```\n");
+    assert_eq!(
+        got,
+        [
+            (1, 4, SegmentKind::Code, Some(LockReason::Data)),
+            (6, 8, SegmentKind::Code, None),
+        ]
+    );
+}
+
+#[test]
+fn a_new_file_goes_next_to_another_and_never_over_one() {
+    let fx = Fx::new();
+    fx.write("data/users.json", b"[1]");
+    fx.write("data/users.toon", b"taken");
+    let editor = fx.editor();
+    assert_eq!(
+        editor
+            .write_beside("data/users.json", "users.toon", "[1]: 1")
+            .unwrap(),
+        "data/users (2).toon"
+    );
+    assert_eq!(
+        editor
+            .write_beside("data/users.json", "users.toon", "again")
+            .unwrap(),
+        "data/users (3).toon"
+    );
+    assert_eq!(fx.read("data/users.toon"), b"taken");
+    assert_eq!(fx.read("data/users (2).toon"), b"[1]: 1");
+    assert!(fx.is_own("data/users (3).toon"));
+    assert_eq!(
+        editor.write_beside("top.md", "über ö.yaml", "a: 1").unwrap(),
+        "über ö.yaml"
+    );
+    for bad in ["", "a/b.json", "..", "a\\b"] {
+        assert!(editor.write_beside("data/users.json", bad, "x").is_err(), "{bad:?}");
+    }
+    assert!(editor.write_beside("../out.md", "x.json", "x").is_err());
+    // a read under a cap: the size is checked first
+    assert_eq!(editor.read_capped("data/users.json", 10).unwrap(), "[1]");
+    assert_eq!(
+        editor.read_capped("data/users.json", 2).unwrap_err().kind,
+        ErrorKind::TooLarge
+    );
+}
+
+#[test]
 fn prompt_tags_are_their_own_locked_lines_and_the_inside_stays_editable() {
     let got = kinds("<context>\nInside **bold**\n</context>\n");
     assert_eq!(

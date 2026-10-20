@@ -42,11 +42,15 @@ permark-plugin-fmt-ini = { path = "crates/plugins/fmt-ini" }
 permark-plugin-fmt-dotenv = { path = "crates/plugins/fmt-dotenv" }
 permark-plugin-fmt-properties = { path = "crates/plugins/fmt-properties" }
 permark-plugin-fmt-ignore = { path = "crates/plugins/fmt-ignore" }
+permark-plugin-fmt-toon = { path = "crates/plugins/fmt-toon" }
+permark-plugin-convert = { path = "crates/plugins/convert" }
 permark-plugin-shell-integration = { path = "crates/plugins/shell-integration" }
 permark-plugin-updates = { path = "crates/plugins/updates" }
 serde = { version = "1", features = ["derive"] }
 ts-rs = { version = "12.0", features = ["serde-json-impl"] }
-serde_json = "1"
+# Objects keep their key order (TOON, conversions); floats read back exactly.
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
+toon-format = { version = "0.7.0", default-features = false }
 thiserror = "2.0.21"
 dunce = "1.0.5"
 unicode-normalization = "0.1.25"
@@ -116,7 +120,7 @@ name = "permark_lib"
 # default = the direct build; `store` = the Microsoft Store build (`--no-default-features --features store`): the
 # store updates the app and the package declares the file manager entries.
 default = ["common", "plugin-updates", "plugin-shell-integration"]
-common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore"]
+common = ["plugin-git", "plugin-live-feed", "plugin-follow", "plugin-unread", "plugin-review", "plugin-md-family", "plugin-prompt-blocks", "plugin-frontmatter-card", "plugin-highlight", "plugin-math", "plugin-mermaid", "plugin-plantuml", "plugin-media", "plugin-json-view", "plugin-xml-view", "plugin-text-view", "plugin-word-count", "plugin-token-count", "plugin-tags", "plugin-quiet", "plugin-comments", "plugin-broken-links", "plugin-notes", "plugin-agent", "plugin-fmt-toml", "plugin-fmt-yaml", "plugin-fmt-ini", "plugin-fmt-dotenv", "plugin-fmt-properties", "plugin-fmt-ignore", "plugin-fmt-toon", "plugin-convert"]
 plugin-git = ["dep:permark-plugin-git"]
 plugin-live-feed = ["dep:permark-plugin-live-feed"]
 # follow needs the feed; review needs unread (a build without the dependency has no plugin that needs it)
@@ -141,6 +145,8 @@ plugin-fmt-ini = ["dep:permark-plugin-fmt-ini"]
 plugin-fmt-dotenv = ["dep:permark-plugin-fmt-dotenv"]
 plugin-fmt-properties = ["dep:permark-plugin-fmt-properties"]
 plugin-fmt-ignore = ["dep:permark-plugin-fmt-ignore"]
+plugin-fmt-toon = ["dep:permark-plugin-fmt-toon"]
+plugin-convert = ["plugin-fmt-toon", "dep:permark-plugin-convert"]
 plugin-text-view = ["dep:permark-plugin-text-view"]
 plugin-tags = ["dep:permark-plugin-tags"]
 plugin-quiet = ["dep:permark-plugin-quiet"]
@@ -180,6 +186,8 @@ permark-plugin-fmt-ini = { workspace = true, optional = true }
 permark-plugin-fmt-dotenv = { workspace = true, optional = true }
 permark-plugin-fmt-properties = { workspace = true, optional = true }
 permark-plugin-fmt-ignore = { workspace = true, optional = true }
+permark-plugin-fmt-toon = { workspace = true, optional = true }
+permark-plugin-convert = { workspace = true, optional = true }
 permark-plugin-text-view = { workspace = true, optional = true }
 permark-plugin-tags = { workspace = true, optional = true }
 permark-plugin-quiet = { workspace = true, optional = true }

@@ -73,6 +73,7 @@ impl Format for TextViewer {
             body: Body::Text {
                 text: text.to_owned(),
                 language,
+                problem: None,
             },
             notes: Vec::new(),
         }

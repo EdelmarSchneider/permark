@@ -3,4 +3,4 @@
 /**
  * Why a block stays as written in the visual editor (backend part; the editor adds its own).
  */
-export type LockReason = "frontMatter" | "html" | "math" | "footnote" | "diagram" | "definition" | "kind" | "parse";
+export type LockReason = "frontMatter" | "html" | "math" | "footnote" | "diagram" | "data" | "definition" | "kind" | "parse";

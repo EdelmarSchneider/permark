@@ -120,6 +120,7 @@ impl ConfigSyntax for Ignore {
         Sheet {
             kind: SheetKind::Ignore,
             groups,
+            spec: None,
             failed: false,
         }
     }
@@ -211,6 +212,13 @@ impl ConfigSyntax for Ignore {
                     })
                 }
             }
+            ConfigEdit::Rename { .. }
+            | ConfigEdit::RenameField { .. }
+            | ConfigEdit::AddKey { .. }
+            | ConfigEdit::AddRow { .. }
+            | ConfigEdit::RemoveRow { .. }
+            | ConfigEdit::DuplicateRow { .. }
+            | ConfigEdit::MoveRow { .. } => Err(EditRefusal::Unsupported),
         }
     }
 }

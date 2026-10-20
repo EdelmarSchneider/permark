@@ -3,6 +3,7 @@
 
 mod enable;
 mod facts;
+mod files;
 mod registry;
 mod rpc;
 mod services;
@@ -18,6 +19,7 @@ use ts_rs::TS;
 
 pub use enable::{on_ids, resolve_enabled, EnableInputs, Enablement, OffReason};
 pub use facts::{ProjectFacts, RepoHandle, RepoReader};
+pub use files::{WindowFiles, WindowFilesApi};
 pub use registry::{PluginRegistry, RegistryError};
 pub use rpc::{typed, NoArgs, RpcCall, RpcHandler, RpcRegistration, RpcTable};
 pub use services::{ServiceLease, Services};

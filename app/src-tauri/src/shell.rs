@@ -48,6 +48,8 @@ pub struct Shell {
     server: Mutex<Option<Server>>,
     /// The updater's IO, handed to the plugin `updates` for the app's whole run.
     _updater: Option<ServiceLease>,
+    /// The files of a window's workspace, for App-scope plugins (the converter).
+    _files: ServiceLease,
 }
 
 /// The file manager entries go with their plugin (off = leaves nothing behind); quitting the app leaves them.
@@ -103,6 +105,7 @@ impl Shell {
             .then(|| crate::updater::provide(&env, &handle));
         #[cfg(not(feature = "plugin-updates"))]
         let updater = None;
+        let files = crate::files::provide(&env, &handle);
         env.apply_app_plugins();
         let app_store = StateStore::app(dirs);
         Self {
@@ -119,6 +122,7 @@ impl Shell {
             delivery: Mutex::new(Delivery::default()),
             server: Mutex::new(None),
             _updater: updater,
+            _files: files,
         }
     }
 

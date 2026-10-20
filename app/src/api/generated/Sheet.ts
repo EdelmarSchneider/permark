@@ -2,4 +2,8 @@
 import type { Group } from "./Group";
 import type { SheetKind } from "./SheetKind";
 
-export type Sheet = { kind: SheetKind, groups: Array<Group>, };
+export type Sheet = { kind: SheetKind, groups: Array<Group>, 
+/**
+ * The version of the format's specification the sheet was read with (`TOON 4.4`).
+ */
+spec?: string, };

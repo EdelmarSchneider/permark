@@ -69,6 +69,10 @@ pub fn all() -> Vec<Arc<dyn Plugin>> {
     plugins.push(permark_plugin_fmt_properties::plugin());
     #[cfg(feature = "plugin-fmt-ignore")]
     plugins.push(permark_plugin_fmt_ignore::plugin());
+    #[cfg(feature = "plugin-fmt-toon")]
+    plugins.push(permark_plugin_fmt_toon::plugin());
+    #[cfg(feature = "plugin-convert")]
+    plugins.push(permark_plugin_convert::plugin());
     #[cfg(feature = "plugin-text-view")]
     plugins.push(permark_plugin_text_view::plugin());
     #[cfg(feature = "plugin-shell-integration")]
@@ -138,6 +142,8 @@ mod tests {
             "fmt-dotenv",
             "fmt-properties",
             "fmt-ignore",
+            "fmt-toon",
+            "convert",
             "text-view",
         ] {
             assert!(
@@ -173,6 +179,7 @@ mod tests {
             ("app.properties", FormatId::PROPERTIES),
             (".gitignore", FormatId::IGNORE),
             (".aiignore", FormatId::IGNORE),
+            ("data/users.toon", FormatId::TOON),
         ] {
             assert_eq!(id(path), Some(format), "{path}");
         }
@@ -204,6 +211,7 @@ mod tests {
             ("fmt-dotenv", ".env"),
             ("fmt-properties", "a.properties"),
             ("fmt-ignore", ".gitignore"),
+            ("fmt-toon", "a.toon"),
         ] {
             assert_eq!(
                 without(off).pick(path, b"").map(|f| f.id()),
@@ -497,6 +505,7 @@ mod tests {
             (".editorconfig", "editorconfig.sample"),
             ("config/app.properties", "app.properties.sample"),
             (".gitignore", "gitignore.sample"),
+            ("data/team.toon", "team.toon.sample"),
         ];
         for (path, file) in documents {
             // the same bytes on every checkout (a Windows checkout may hold CRLF)

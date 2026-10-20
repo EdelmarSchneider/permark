@@ -399,6 +399,60 @@ impl Editor<'_> {
         Err(IpcError::new(ErrorKind::Exists).subject(doc))
     }
 
+    /// The text of a file of the workspace, refused when it has more than `cap` bytes (checked before reading).
+    ///
+    /// # Errors
+    /// Outside | missing | too large | not text.
+    pub fn read_capped(&self, path: &str, cap: u64) -> Result<String, IpcError> {
+        let (_, abs) = self.scope.resolve(path)?;
+        let size = std::fs::metadata(&abs)
+            .map_err(|e| IpcError::io(path, &e))?
+            .len();
+        if size > cap {
+            return Err(IpcError::new(ErrorKind::TooLarge).subject(path));
+        }
+        Ok(fsx::read_text(&abs, cap)?.text)
+    }
+
+    /// A new file `name` in the folder of `beside` (UTF-8, as given). A taken name becomes `stem (2).ext`,
+    /// `stem (3).ext`, ...: never over a file. Returns the new file's path.
+    ///
+    /// # Errors
+    /// A name with a separator | empty; outside; every candidate taken; the write failed.
+    pub fn write_beside(&self, beside: &str, name: &str, text: &str) -> Result<String, IpcError> {
+        if name.trim().is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+            return Err(IpcError::new(ErrorKind::InvalidData).subject(name));
+        }
+        let parsed = VaultPath::parse(beside)?;
+        let parent = parsed.parent().unwrap_or_else(VaultPath::root);
+        let (stem, ext) = split_name(name);
+        let bytes = text.as_bytes();
+        for n in 1..=999_u32 {
+            let candidate = if n == 1 {
+                name.to_owned()
+            } else {
+                format!("{stem} ({n}){ext}")
+            };
+            let target = parent.join_name(&candidate).as_str().to_owned();
+            let (_, abs) = self.scope.resolve_new(&target)?;
+            if abs.exists() {
+                continue;
+            }
+            let announced = self.announce(&target, bytes);
+            match assets::write_new(&abs, bytes) {
+                Ok(()) => return Ok(target),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    self.retract(&target, announced);
+                }
+                Err(e) => {
+                    self.retract(&target, announced);
+                    return Err(IpcError::io(target, &e));
+                }
+            }
+        }
+        Err(IpcError::new(ErrorKind::Exists).subject(name))
+    }
+
     /// The format of `path` read from the editor's `text`.
     fn config_format(
         &self,

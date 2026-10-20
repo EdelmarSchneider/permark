@@ -97,6 +97,7 @@ impl ConfigSyntax for Dotenv {
                 comment: None,
                 rows,
             }],
+            spec: None,
             failed: false,
         }
     }

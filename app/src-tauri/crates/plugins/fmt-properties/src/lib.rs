@@ -76,6 +76,7 @@ impl ConfigSyntax for Properties {
         Sheet {
             kind: SheetKind::Config,
             groups,
+            spec: None,
             failed: false,
         }
     }

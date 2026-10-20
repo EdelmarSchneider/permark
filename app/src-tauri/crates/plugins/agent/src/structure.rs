@@ -2,6 +2,7 @@
 //! config file, plain line count) and the text of one part of it (`at`: lines, a heading path, an anchor, a key path).
 //! Every text that leaves is masked: config files by their structure (the secret values of the format), all by key.
 
+use permark_core::format::config::SheetKind;
 use permark_core::format::{ext_of, sections, FormatRegistry, Sheet, Span};
 use permark_core::paths::fold;
 use permark_core::secrets::{mask_text, HIDDEN};
@@ -244,7 +245,12 @@ pub fn outline(
                 item
             })
             .collect();
-        let mut answer = json!({ "path": path, "kind": "config", "lines": lines, "items": items });
+        // a data sheet (TOON) says so, and names the version of the format it was read with
+        let kind = if sheet.kind == SheetKind::Data { "data" } else { "config" };
+        let mut answer = json!({ "path": path, "kind": kind, "lines": lines, "items": items });
+        if let Some(spec) = &sheet.spec {
+            answer["spec"] = json!(spec);
+        }
         sizer.name_tokenizer(&mut answer);
         return answer;
     }

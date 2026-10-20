@@ -713,7 +713,7 @@ fn web_url_allowed(url: &str) -> bool {
 // ---- Editing --------------------------------------------------------------------------------------------------------
 
 /// The editor of the invoking window's workspace.
-fn with_editor<R>(
+pub(crate) fn with_editor<R>(
     handle: &AppHandle,
     window: &WebviewWindow,
     run: impl FnOnce(&Editor<'_>, &Workspace) -> Result<R, IpcError>,

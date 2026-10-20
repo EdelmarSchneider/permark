@@ -1,0 +1,14 @@
+# The people of the project and what they work on.
+project:
+  name: PerMark
+  version: 0.6.0
+  # where it lives
+  url: "https://github.com/EdelmarSchneider/permark"
+  tags[3]: markdown,local-first,agents
+team[3]{id,name,role,active}:
+  1,Ada Lovelace,lead,true
+  2,Alan Turing,"review, specs",true
+  3,Grace Hopper,build,false
+access[2:]{token,scope}:
+  ci: sk-ci-5f2a91,read
+  bot: sk-bot-77c0de,write

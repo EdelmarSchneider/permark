@@ -5,6 +5,7 @@ pub mod agent;
 mod assets;
 mod commands;
 mod default_app;
+mod files;
 mod nav;
 mod open;
 mod plugins;

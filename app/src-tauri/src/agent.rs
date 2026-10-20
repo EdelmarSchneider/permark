@@ -16,7 +16,7 @@ use permark_plugin_agent::tools::Tools;
 /// The plugins a reader with no window starts: what the tools ask of (tags, silence, comments, unread, notes, the token
 /// count when the person turned it on) and the config formats, so secret values are hidden by the structure of the
 /// file here too.
-const FILES_PLUGINS: [&str; 12] = [
+const FILES_PLUGINS: [&str; 13] = [
     "tags",
     "quiet",
     "comments",
@@ -29,6 +29,7 @@ const FILES_PLUGINS: [&str; 12] = [
     "fmt-dotenv",
     "fmt-properties",
     "fmt-ignore",
+    "fmt-toon",
 ];
 
 /// Keeps the headless project alive for the tools; stops it in order (project first, then the app's plugins).
@@ -264,6 +265,14 @@ db.user=sa
                 "//registry.npmjs.org/:_authToken=npm_tok_999
 ",
             ),
+            (
+                "team.toon",
+                "# the team
+users[2]{name,token}:
+  Ada,tok-toon-1
+  Bob,tok-toon-2
+",
+            ),
         ];
         for (name, text) in files {
             std::fs::write(root_dir.join(name), text).unwrap();
@@ -291,6 +300,8 @@ db.user=sa
             "letmein",
             "pw-prop",
             "npm_tok_999",
+            "tok-toon-1",
+            "tok-toon-2",
         ];
         for (name, _) in files {
             let whole = tools.call("read", json!({ "path": name })).unwrap();
@@ -338,6 +349,18 @@ db.user=sa
             text.contains("DB_PASSWORD: <hidden>") && text.contains("MODE: prod"),
             "{text}"
         );
+        // a TOON file: its tables in the outline, a row read by its path, the secret column hidden
+        let outline = tools.call("outline", json!({ "path": "team.toon" })).unwrap();
+        assert_eq!(outline["kind"], "data", "{outline}");
+        assert_eq!(outline["spec"], "TOON 4.4", "{outline}");
+        assert_eq!(outline["items"][0]["label"], "users[2]{name,token}", "{outline}");
+        let row = tools
+            .call("read", json!({ "path": "team.toon", "at": "users[1]" }))
+            .unwrap();
+        assert_eq!(row["text"], "  Bob,<hidden>
+", "{row}");
+        let hits = tools.call("search", json!({ "query": "tok-toon-1" })).unwrap();
+        assert!(hits["hits"].as_array().unwrap().is_empty(), "{hits}");
         // search finds keys, never values
         let hits = tools.call("search", json!({ "query": "hunter2" })).unwrap();
         assert!(hits["hits"].as_array().unwrap().is_empty(), "{hits}");

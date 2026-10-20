@@ -45,6 +45,7 @@ impl FormatId {
     pub const DOTENV: Self = Self("dotenv");
     pub const PROPERTIES: Self = Self("properties");
     pub const IGNORE: Self = Self("ignore");
+    pub const TOON: Self = Self("toon");
 }
 
 /// How strongly a format claims a file (by name > by extension > by sniffing the head).
@@ -128,6 +129,10 @@ pub enum Body {
     Text {
         text: String,
         language: Option<String>,
+        /// Why the file is shown as text when its format could not read it (the line and what went wrong).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
+        problem: Option<Problem>,
     },
     Media {
         media: MediaKind,
@@ -140,6 +145,15 @@ pub enum Body {
     Notice {
         notice: Notice,
     },
+}
+
+/// Where a format's reader stopped: the line (1-based, 0 = unknown) and its message.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Problem {
+    pub line: u32,
+    pub detail: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]

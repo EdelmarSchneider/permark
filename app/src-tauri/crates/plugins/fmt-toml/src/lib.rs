@@ -60,6 +60,7 @@ impl ConfigSyntax for Toml {
         Sheet {
             kind: SheetKind::Config,
             groups,
+            spec: None,
             failed: false,
         }
     }

@@ -1188,6 +1188,7 @@ impl crate::format::Format for KeysOnly {
             body: crate::format::Body::Text {
                 text: text.to_owned(),
                 language: None,
+                problem: None,
             },
             notes: Vec::new(),
         }
