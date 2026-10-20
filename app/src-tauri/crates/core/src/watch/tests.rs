@@ -803,7 +803,7 @@ fn live_updates_in_the_context_follow_the_watcher() {
     let sink = Arc::new(Recorder::default());
     let env = Arc::new(project_env(base.path(), &seen, sink));
     let registry = WorkspaceRegistry::new_shared(&env);
-    registry.add_window("main", crate::workspace::WindowKind::Work);
+    registry.add_window("main");
     let _ = registry.show_welcome_view("main");
     let crate::workspace::TabOpen::Opening { tab, view, outcome } = registry
         .open_tab(

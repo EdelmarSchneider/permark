@@ -500,7 +500,7 @@ describe("the top bar", () => {
     mock.probe.shell.setOthers([
       {
         window: "w-2",
-        kind: "work",
+        closing: false,
         tabs: [
           {
             tab: 77,
@@ -710,6 +710,106 @@ describe("the top bar", () => {
     bar.stop();
   });
 
+  it("Move to window lists the other windows (focused last first) in place and moves the tab there", async () => {
+    const bar = await mountBar();
+    const summary = (tab: number, title: string) => ({
+      tab,
+      kind: "project" as const,
+      title,
+      path: `C:/${title}`,
+      loaded: true,
+      unsaved: false,
+    });
+    mock.probe.shell.setOthers([
+      {
+        window: "w-2",
+        closing: false,
+        tabs: [summary(70, "older"), summary(71, "older-b")],
+        active: 71,
+        focusedMs: 10,
+      },
+      { window: "w-3", closing: false, tabs: [summary(80, "newest")], active: 80, focusedMs: 30 },
+      { window: "w-4", closing: false, tabs: [], active: null, focusedMs: 20 },
+      // asking to close: takes no tab, not listed
+      { window: "w-5", closing: true, tabs: [summary(90, "leaving")], active: 90, focusedMs: 99 },
+    ]);
+    await until(() => tabs.others.length === 3, "the other windows");
+    const items = () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).map((i) =>
+        i.textContent?.replace(/\s+/g, " ").trim(),
+      );
+    const openMenu = async (chip: Element) => {
+      chip.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 40,
+          clientY: 30,
+        }),
+      );
+      await tick();
+    };
+    await openMenu(chips()[1]!);
+    expect(items()).toEqual(["Move to new window", "Move to window ▸", "Close"]);
+    const entry = document.querySelectorAll<HTMLElement>('[role="menuitem"]')[1]!;
+    expect(entry.getAttribute("aria-haspopup")).toBe("menu");
+    // the submenu, in place: the windows by the tab they show + their tab count, focused last first
+    entry.click();
+    await until(() => items()[0] === "newest 1 tab", "the submenu");
+    expect(items()).toEqual(["newest 1 tab", "Empty window 0 tabs", "older-b 2 tabs"]);
+    expect(document.querySelector('[role="menu"] .heading')?.textContent?.trim()).toBe(
+      "Move to window",
+    );
+    expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe(
+      "Move to window",
+    );
+    // ArrowLeft goes back with the keyboard on "Move to window ▸"; ArrowRight opens it again
+    press(document.querySelector('[role="menu"]')!, "ArrowLeft");
+    await until(() => items()[0] === "Move to new window", "back");
+    flushSync();
+    expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe("Tab actions");
+    expect(
+      document
+        .querySelector('[role="menuitem"].is-active')
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim(),
+    ).toBe("Move to window ▸");
+    press(document.querySelector('[role="menu"]')!, "ArrowRight");
+    await until(() => items()[0] === "newest 1 tab", "the submenu by key");
+    // a pick moves the tab there
+    const moving = tabs.list[1]!.tab;
+    mock.probe.tabs.movedTo.length = 0;
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[2]!.click();
+    await until(() => mock.probe.tabs.movedTo.length === 1, "moved");
+    expect(mock.probe.tabs.movedTo).toEqual([[moving, "w-2"]]);
+    await until(() => chips().length === 3, "gone from here");
+    // refused: the tab stays, a quiet notice says so
+    mock.probe.tabs.refuseMove = true;
+    await openMenu(chips()[1]!);
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[1]!.click();
+    await until(() => items()[0] === "newest 1 tab", "the submenu again");
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[0]!.click();
+    await until(
+      () => windowStore.notices.some((n) => n.kind === "note" && n.text.includes("to that window")),
+      "move refused notice",
+    );
+    expect(chips().length).toBe(3);
+    mock.probe.tabs.refuseMove = false;
+    // one tab left: Move to window is still offered (the window it leaves closes); no other window: not offered
+    await mock.tabClose(bar.ids[2]!);
+    await mock.tabClose(bar.ids[3]!);
+    await until(() => chips().length === 1, "one");
+    await openMenu(chips()[0]!);
+    expect(items()).toEqual(["Move to window ▸", "Close Ctrl+W"]);
+    press(document.querySelector('[role="menu"]')!, "Escape");
+    await tick();
+    mock.probe.shell.setOthers([]);
+    await until(() => tabs.others.length === 0, "alone");
+    await openMenu(chips()[0]!);
+    expect(items()).toEqual(["Close Ctrl+W"]);
+    bar.stop();
+  });
+
   it("a second move of a tab while the first is under way asks nothing (no double move)", async () => {
     const bar = await mountBar();
     const tab = bar.ids[1]!;
@@ -722,6 +822,17 @@ describe("the top bar", () => {
     mock.probe.tabs.refuseMove = true;
     expect(await tabs.moveToNewWindow(bar.ids[2]!)).toBe("refused");
     expect(await tabs.moveToNewWindow(bar.ids[2]!)).toBe("refused");
+    mock.probe.tabs.refuseMove = false;
+    // into another window: the same (one ask at a time, across both kinds of move); never into its own window
+    const other = bar.ids[3]!;
+    mock.probe.tabs.movedTo.length = 0;
+    const into = tabs.moveToWindow(other, "w-2");
+    const again = [tabs.moveToNewWindow(other), tabs.moveToWindow(other, "w-2")];
+    expect(await Promise.all(again)).toEqual(["busy", "busy"]);
+    expect(await into).toBe("moved");
+    expect(mock.probe.tabs.movedTo).toEqual([[other, "w-2"]]);
+    expect(await tabs.moveToWindow(bar.ids[2]!, "main")).toBe("refused");
+    expect(mock.probe.tabs.movedTo.length).toBe(1);
     bar.stop();
   });
 

@@ -1856,6 +1856,12 @@ export default {
   "switcher.moveNew": "Sposta in una nuova finestra",
   "switcher.moveFailed":
     "Non è stato possibile spostare questa scheda in una nuova finestra. Resta qui.",
+  "switcher.moveTo": "Sposta nella finestra",
+  "switcher.moveToFailed":
+    "Non è stato possibile spostare questa scheda in quella finestra. Resta qui.",
+  "switcher.emptyWindow": "Finestra vuota",
+  "switcher.tabCount.one": "{n} scheda",
+  "switcher.tabCount.other": "{n} schede",
   "switcher.unsaved": "Modifiche non salvate",
   "closeWindow.title": "Salvare le modifiche prima di chiudere?",
   "closeWindow.body.one": "Questa scheda ha modifiche non salvate:",

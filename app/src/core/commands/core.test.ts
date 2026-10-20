@@ -42,7 +42,8 @@ describe("the core's commands", () => {
       {},
       [...ids],
     );
-    expect(conflicts(map)).toEqual([]);
+    const requiresOf = (id: string) => commands.find((c) => c.id === id)?.requires;
+    expect(conflicts(map, requiresOf)).toEqual([]);
     // the same on macOS (Ctrl+Tab there is the Control key, its own combo)
     const mac = buildKeymap(
       shortcuts.map((s) => ({ command: s.command, keys: s.keys })),
@@ -50,7 +51,7 @@ describe("the core's commands", () => {
       [...ids],
       true,
     );
-    expect(conflicts(mac)).toEqual([]);
+    expect(conflicts(mac, requiresOf)).toEqual([]);
     expect(mac.combos.get("tab.next")).toEqual(["Ctrl+Tab", "Mod+Alt+ArrowRight"]);
     expect(map.combos.get("tab.next")).toEqual(["Mod+Tab", "Mod+Alt+ArrowRight"]);
   });

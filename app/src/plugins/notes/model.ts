@@ -116,7 +116,7 @@ export function movePinned(order: readonly string[], path: string, direction: -1
   return next;
 }
 
-/** The pinned note `Ctrl+1` to `Ctrl+9` jump to (`n` from 1), or null when there are fewer. */
+/** The pinned note `Mod+1` to `Mod+9` jump to (`n` from 1), or null when there are fewer. */
 export function pinnedAt(pinned: readonly NoteEntry[], n: number): NoteEntry | null {
   return n >= 1 && n <= 9 ? (pinned[n - 1] ?? null) : null;
 }

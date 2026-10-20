@@ -3,7 +3,7 @@
 import type { Context } from "../conditions/available";
 import { comboFromEvent, isSingleKey, type KeyEventLike } from "./combo";
 import { runnable, type CommandItem } from "./commands";
-import { commandsFor, type Keymap } from "./keymap";
+import { commandsFor, narrower, scopeOf, type Keymap } from "./keymap";
 
 export type KeyEnv = {
   mac: boolean;
@@ -32,7 +32,9 @@ function staysWithOverlay(id: string): boolean {
 /**
  * What a key press does. Passes (the browser and the widgets keep the key) when: another handler already took it,
  * it is part of a composition | dead key | AltGr, it is no combo of the grammar, it is a plain key while the person
- * types or an overlay is open, no command holds the combo, or none that holds it can run now.
+ * types or an overlay is open, no command holds the combo, or none that holds it can run now. Several can run: the
+ * narrower one (its scope inside the other's: in the Notes tab `notes.pinned1` over `tab.select1`), else the first
+ * registered.
  */
 export function resolveKey(
   event: KeyEventLike & { defaultPrevented?: boolean },
@@ -43,12 +45,15 @@ export function resolveKey(
   if (combo === null) return PASS;
   const boxed = env.overlay === "box";
   if (isSingleKey(combo) && (env.typing || boxed)) return PASS;
+  let best: CommandItem | null = null;
   for (const id of commandsFor(env.keymap, combo)) {
     if (boxed && !staysWithOverlay(id)) continue;
     const command = env.commands.find((c) => c.id === id);
-    if (command && runnable(command, env.context)) return { kind: "run", command, combo };
+    if (!command || !runnable(command, env.context)) continue;
+    if (best === null || narrower(scopeOf(command.requires), scopeOf(best.requires)))
+      best = command;
   }
-  return PASS;
+  return best === null ? PASS : { kind: "run", command: best, combo };
 }
 
 /** Whether keys typed now go into text (a field, a text area, an editor). */

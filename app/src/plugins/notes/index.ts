@@ -78,7 +78,7 @@ export default definePlugin({
         command: "notes.new",
         requires: NO_REQUIREMENT,
       }),
-      // in the Notes tab, Ctrl+N makes a note too (elsewhere Ctrl+N is a new file of the project)
+      // in the Notes tab, Mod+N makes a note too (elsewhere Mod+N is a new file of the project: the narrower command wins)
       cx.contribute({
         kind: "command",
         id: "notes.newHere",

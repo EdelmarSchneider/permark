@@ -323,7 +323,7 @@ export class NotesStore {
     if (next !== null) await this.select(next);
   }
 
-  /** Ctrl+1..9. */
+  /** Mod+1..9. */
   async openPinned(n: number): Promise<void> {
     const entry = pinnedAt(
       this.entries.filter((e) => e.pinned),

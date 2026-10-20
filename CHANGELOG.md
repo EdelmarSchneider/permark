@@ -8,10 +8,12 @@ and the project uses [Semantic Versioning](https://semver.org/).
 ### Added
 - **Notes button.** A button next to Settings opens your Notes in a tab with one click, or brings you to the Notes tab if it is already open. `Ctrl+Shift+D` does the same, and `Ctrl+Shift+N` makes a new note from anywhere. <!-- f: notes, keyboard-shortcuts -->
 - **Hide and show the side bars.** `Ctrl+B` hides or shows the sidebar and `Ctrl+Alt+B` the right panel, as in earlier versions; a button at each end of the status bar does the same. Each project remembers which side bars you hid. <!-- f: side-panels, keyboard-shortcuts -->
+- **Move a tab to another window.** Right-click a tab and choose **Move to window** to move it into another open window; the list shows each window by the tab it is showing and how many tabs it has. Unsaved changes move with the tab. Moving a window's last tab closes the window it leaves. <!-- f: tabs, windows -->
 
 ### Changed
 - `Ctrl+B` makes text bold in the source editor too, as it already did in the visual editor. <!-- f: source-mode, keyboard-shortcuts -->
 - The outline button always shows the outline, even when another panel was open on the right. <!-- f: outline, side-panels -->
+- In the Notes tab, `Ctrl+1` to `Ctrl+9` open your pinned notes (instead of switching tabs), `Ctrl+N` makes a new note and `Ctrl+Shift+C` copies the note. Use `Ctrl+Tab` or the tabs to switch tabs from there. The keyboard shortcuts list no longer reports these keys as shared, but it does warn when a key you choose is already used where the same command could run. <!-- f: notes, keyboard-shortcuts -->
 
 ### Fixed
 - Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window. <!-- f: notes, start-screen -->

@@ -248,10 +248,16 @@ pub fn tab_close_confirmed(handle: AppHandle, window: Webview) {
     }
 }
 
-/// Moves a tab to a new window (stage A: a new window only). Returns the new window's label.
+/// Moves a tab to a new window. Returns the new window's label.
 #[tauri::command(async)]
 pub fn tab_move_new_window(handle: AppHandle, tab: TabId) -> Result<String, IpcError> {
     crate::open::move_to_new_window(&handle, tab)
+}
+
+/// Moves a tab to another existing work window ("Move to window"). Returns that window's label.
+#[tauri::command(async)]
+pub fn tab_move(handle: AppHandle, tab: TabId, window: String) -> Result<String, IpcError> {
+    crate::open::move_to_window(&handle, tab, &window)
 }
 
 #[tauri::command(async)]
@@ -1000,7 +1006,7 @@ pub fn plugin_call(
         window: window.label().to_owned(),
         args,
     };
-    // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes window have no project
+    // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes tab have no project
     let shell = state(&handle);
     let app_scope = PluginId::parse(&plugin)
         .and_then(|id| shell.env.registry.manifest(&id).map(|m| m.scope))
@@ -1224,6 +1230,7 @@ commands![
     tab_close,
     tab_close_confirmed,
     tab_move_new_window,
+    tab_move,
     recent_list,
     recent_remove,
     settings_get,

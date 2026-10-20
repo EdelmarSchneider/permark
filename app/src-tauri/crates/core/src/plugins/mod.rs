@@ -211,7 +211,7 @@ impl Plugin for StaticPlugin {
     }
 }
 
-/// What an App-scope instance gets besides its own state: the app's RPC table (the Notes window and the welcome screen
+/// What an App-scope instance gets besides its own state: the app's RPC table (the Notes tab and the welcome screen
 /// call it, no project needed), the typed services plugins hand to each other, and the live app settings.
 #[derive(Clone)]
 pub struct AppServices {

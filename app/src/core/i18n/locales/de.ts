@@ -1872,6 +1872,12 @@ export default {
   "switcher.moveNew": "In neues Fenster verschieben",
   "switcher.moveFailed":
     "Dieser Tab konnte nicht in ein neues Fenster verschoben werden. Er bleibt hier.",
+  "switcher.moveTo": "In Fenster verschieben",
+  "switcher.moveToFailed":
+    "Dieser Tab konnte nicht in dieses Fenster verschoben werden. Er bleibt hier.",
+  "switcher.emptyWindow": "Leeres Fenster",
+  "switcher.tabCount.one": "{n} Tab",
+  "switcher.tabCount.other": "{n} Tabs",
   "switcher.unsaved": "Ungespeicherte Änderungen",
   "closeWindow.title": "Änderungen vor dem Schließen speichern?",
   "closeWindow.body.one": "Dieser Tab hat ungespeicherte Änderungen:",

@@ -2,7 +2,7 @@
 // (`windows-changed` carries every window's); this keeps the last one it sent and acts through it.
 
 import { api, type Api, type TabSummary, type Unlisten, type WindowSummary } from "../../api";
-import { canSwitch, last, neighbor, nth } from "./switcherModel";
+import { canSwitch, last, neighbor, nth, otherWindows } from "./switcherModel";
 
 export type MoveResult = "moved" | "refused" | "busy";
 
@@ -27,6 +27,11 @@ class Tabs {
   /** This window's active tab. */
   get active(): number | null {
     return this.mine?.active ?? null;
+  }
+
+  /** The other windows "Move to window" can take a tab to (not asked to close), focused last first. */
+  get others(): readonly WindowSummary[] {
+    return otherWindows(this.windows, this.window);
   }
 
   /** There is another tab to go to (next | previous). */
@@ -75,11 +80,21 @@ class Tabs {
    * way already (that one reports), nothing asked.
    */
   async moveToNewWindow(tab: number): Promise<MoveResult> {
+    if (this.list.length < 2 && !this.#moving.has(tab)) return "refused";
+    return this.#move(tab, () => this.#api.tabMoveNewWindow(tab));
+  }
+
+  /** Moves a tab into another window (its only tab too: this window then closes). Results as `moveToNewWindow`. */
+  moveToWindow(tab: number, window: string): Promise<MoveResult> {
+    if (window === this.window) return Promise.resolve("refused");
+    return this.#move(tab, () => this.#api.tabMove(tab, window));
+  }
+
+  async #move(tab: number, ask: () => Promise<{ ok: boolean }>): Promise<MoveResult> {
     if (this.#moving.has(tab)) return "busy";
-    if (this.list.length < 2) return "refused";
     this.#moving.add(tab);
     try {
-      return (await this.#api.tabMoveNewWindow(tab)).ok ? "moved" : "refused";
+      return (await ask()).ok ? "moved" : "refused";
     } finally {
       this.#moving.delete(tab);
     }

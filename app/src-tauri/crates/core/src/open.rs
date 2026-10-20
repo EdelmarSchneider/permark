@@ -431,10 +431,9 @@ mod tests {
     /// project.
     #[test]
     fn placement_of_opens_from_the_ui() {
-        use crate::workspace::WindowKind;
         let (_b, registry) = registry();
         for window in ["main", "w-1"] {
-            registry.add_window(window, WindowKind::Work);
+            registry.add_window(window);
         }
         let _ = registry.show_welcome_view("main");
         let welcome = registry.shown_view("main").unwrap();
@@ -529,7 +528,6 @@ mod tests {
 
     #[test]
     fn routing_focuses_what_is_open_else_the_last_focused_window_else_a_new_one() {
-        use crate::workspace::WindowKind;
         let (_b, registry) = registry();
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir(project.path().join("docs")).unwrap();
@@ -541,8 +539,8 @@ mod tests {
             route(&registry, &reference, false, OpenIn::Tab, None),
             Route::NewWindow
         );
-        registry.add_window("main", WindowKind::Work);
-        registry.add_window("w-1", WindowKind::Work);
+        registry.add_window("main");
+        registry.add_window("w-1");
         registry.focused("main", 10);
         registry.focused("w-1", 20);
         assert_eq!(

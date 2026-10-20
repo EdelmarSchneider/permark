@@ -1,4 +1,4 @@
-//! Loose files: files the person opened in the Notes window that are not in the notes folder (a Markdown file someone
+//! Loose files: files the person opened in the Notes tab that are not in the notes folder (a Markdown file someone
 //! sent, one in Downloads, a text file). They stay in the list under **Files** until they are removed from it, and
 //! removing one never touches the file.
 //!

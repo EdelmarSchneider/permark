@@ -1,4 +1,4 @@
-//! Plugin `notes`: the Notes window. Plain Markdown notes in a folder the person chooses, saved as typed with no name or
+//! Plugin `notes`: the Notes tab. Plain Markdown notes in a folder the person chooses, saved as typed with no name or
 //! folder asked; earlier versions kept and restorable; text a crash would lose kept; loose files opened next to the
 //! notes; sharing with agents note by note; moving a note into a project.
 //!
@@ -162,7 +162,7 @@ impl SharedNotes for Shared {
     }
 }
 
-/// Hears the saves of the Notes window: the text a save replaces becomes a version when one is due.
+/// Hears the saves of the Notes tab: the text a save replaces becomes a version when one is due.
 struct Observer(Arc<NotesService>);
 
 impl permark_core::edit::SaveObserver for Observer {
