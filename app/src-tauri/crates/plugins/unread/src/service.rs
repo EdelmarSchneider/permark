@@ -149,6 +149,13 @@ impl UnreadHub {
         lock(&self.tracker).read_hashes()
     }
 
+    /// Documents whose version on disk is the one last read: `(path, hash)`. An observer that subscribed while the
+    /// first look ran missed some `at_rest` calls: it catches up from this list once [`Self::ready`].
+    #[must_use]
+    pub fn at_rest(&self) -> Vec<(String, u64)> {
+        lock(&self.tracker).at_rest()
+    }
+
     /// The first look at the disk is done.
     #[must_use]
     pub fn ready(&self) -> bool {

@@ -1039,9 +1039,25 @@ impl ReviewService {
                             Ok(CopyMsg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
                             Err(RecvTimeoutError::Timeout) => {}
                         }
-                        // once the first look is done: drop the copies nobody needs any more
+                        // once the first look is done: copy what it showed before this review listened, then drop
+                        // the copies nobody needs any more
                         if !cleaned && !stop.load(Ordering::SeqCst) && shared.hub.ready() {
                             cleaned = true;
+                            for (path, hash) in shared.hub.at_rest() {
+                                if stop.load(Ordering::SeqCst) || kept >= MAX_COPIES {
+                                    break;
+                                }
+                                if shared.store.has(hash) {
+                                    continue;
+                                }
+                                // only while the disk still holds the version read
+                                if let Ok(Some(current)) = shared.current(&path) {
+                                    if current.hash == hash && shared.store.put(hash, &current.text)
+                                    {
+                                        kept += 1;
+                                    }
+                                }
+                            }
                             let mut keep = shared.hub.read_hashes();
                             keep.extend(lock(&shared.held).values().map(|h| h.hash));
                             keep.extend(lock(&shared.seen).iter().map(|e| e.hash));

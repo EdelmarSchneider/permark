@@ -440,6 +440,18 @@ impl Tracker {
         self.docs.values().filter_map(|d| d.read).collect()
     }
 
+    /// Documents whose current version is the one read: `(path, hash)`.
+    #[must_use]
+    pub fn at_rest(&self) -> Vec<(String, u64)> {
+        self.docs
+            .values()
+            .filter_map(|d| match (d.read, d.current) {
+                (Some(read), Some(current)) if read == current => Some((d.path.clone(), read)),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// Paths of the documents tracked.
     #[must_use]
     pub fn paths(&self) -> Vec<String> {
