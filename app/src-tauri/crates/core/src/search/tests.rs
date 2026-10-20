@@ -628,15 +628,15 @@ fn the_first_build_reads_documents_lists_every_file_and_reports_progress() {
     assert_eq!(status.phase, IndexPhase::Ready);
     assert_eq!(status.files, 5);
     assert_eq!(f.index.doc_count(), 3);
-    let progress: Vec<IndexProgress> = f
-        .sink
-        .take()
-        .into_iter()
-        .filter_map(|e| match e {
+    // the status turns ready a moment before the event saying so is out
+    let mut progress: Vec<IndexProgress> = Vec::new();
+    f.wait("the ready event", |f| {
+        progress.extend(f.sink.take().into_iter().filter_map(|e| match e {
             CoreEvent::IndexProgress(p) => Some(p),
             _ => None,
-        })
-        .collect();
+        }));
+        progress.iter().any(|p| p.phase == IndexPhase::Ready)
+    });
     assert_eq!(
         progress.first().map(|p| p.phase),
         Some(IndexPhase::Building)

@@ -69,47 +69,58 @@ function retype(n: number, text: string): PMNode {
   return view.state.doc;
 }
 
-describe("compose", () => {
-  it("gives every corpus document back untouched, byte for byte", async () => {
-    let documents = 0;
-    let blocks = 0;
-    for (const [name, { text, segments }] of Object.entries(corpus)) {
-      const built = await load(text, segments);
-      const composed = compose(core, built, core.view.state.doc);
-      expect(composed.text, name).toBe(text);
-      expect(composed.changed, name).toBe(0);
-      documents += 1;
-      blocks += segments.length;
-    }
-    expect(documents).toBeGreaterThanOrEqual(74);
-    expect(blocks).toBeGreaterThan(1000);
-  });
+/** Every corpus document is built in a real editor: slow machines need more than the default 5 s. */
+const CORPUS_MS = 30_000;
 
-  it("changes only the edited block of every corpus document (first editable paragraph)", async () => {
-    let edited = 0;
-    for (const [name, { text, segments }] of Object.entries(corpus)) {
-      const built = await load(text, segments);
-      let index = -1;
-      core.view.state.doc.forEach((node, _, i) => {
-        if (index < 0 && node.type.name === "paragraph" && node.textContent.length > 0) index = i;
-      });
-      if (index < 0) continue;
-      const source = built.sources[index];
-      if (!source) continue;
-      const doc = retype(index, "Changed words here");
-      const composed = compose(core, built, doc);
-      const before = text.slice(0, source.start);
-      const after = text.slice(source.end);
-      expect(composed.text.startsWith(before), name).toBe(true);
-      expect(composed.text.endsWith(after), name).toBe(true);
-      // the typed text takes the marks at the start of the paragraph (bold stays bold)
-      const middle = composed.text.slice(before.length, composed.text.length - after.length);
-      expect(middle.replace(/[*_`]/g, ""), name).toBe("Changed words here");
-      expect(composed.changed, name).toBe(1);
-      edited += 1;
-    }
-    expect(edited).toBeGreaterThan(40);
-  });
+describe("compose", () => {
+  it(
+    "gives every corpus document back untouched, byte for byte",
+    async () => {
+      let documents = 0;
+      let blocks = 0;
+      for (const [name, { text, segments }] of Object.entries(corpus)) {
+        const built = await load(text, segments);
+        const composed = compose(core, built, core.view.state.doc);
+        expect(composed.text, name).toBe(text);
+        expect(composed.changed, name).toBe(0);
+        documents += 1;
+        blocks += segments.length;
+      }
+      expect(documents).toBeGreaterThanOrEqual(74);
+      expect(blocks).toBeGreaterThan(1000);
+    },
+    CORPUS_MS,
+  );
+
+  it(
+    "changes only the edited block of every corpus document (first editable paragraph)",
+    async () => {
+      let edited = 0;
+      for (const [name, { text, segments }] of Object.entries(corpus)) {
+        const built = await load(text, segments);
+        let index = -1;
+        core.view.state.doc.forEach((node, _, i) => {
+          if (index < 0 && node.type.name === "paragraph" && node.textContent.length > 0) index = i;
+        });
+        if (index < 0) continue;
+        const source = built.sources[index];
+        if (!source) continue;
+        const doc = retype(index, "Changed words here");
+        const composed = compose(core, built, doc);
+        const before = text.slice(0, source.start);
+        const after = text.slice(source.end);
+        expect(composed.text.startsWith(before), name).toBe(true);
+        expect(composed.text.endsWith(after), name).toBe(true);
+        // the typed text takes the marks at the start of the paragraph (bold stays bold)
+        const middle = composed.text.slice(before.length, composed.text.length - after.length);
+        expect(middle.replace(/[*_`]/g, ""), name).toBe("Changed words here");
+        expect(composed.changed, name).toBe(1);
+        edited += 1;
+      }
+      expect(edited).toBeGreaterThan(40);
+    },
+    CORPUS_MS,
+  );
 
   it("locks what it must not rewrite and keeps it", async () => {
     const text = "Inline $x_1$ math\n\nA [ref][r] link\n\n[r]: http://x\n\nplain *one*\n";

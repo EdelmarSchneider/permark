@@ -88,5 +88,6 @@ describe("parseJson", () => {
     expect(parsed.ok && (parsed.root.children?.() ?? []).length).toBe(100_000);
     // linear, not quadratic: about 1 s alone; the bound leaves room for a full parallel test run
     expect(Date.now() - started).toBeLessThan(8000);
-  });
+    // the time bound above is the check; the runner's own limit must not cut in before it
+  }, 20_000);
 });
