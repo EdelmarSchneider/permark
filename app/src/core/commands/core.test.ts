@@ -55,6 +55,17 @@ describe("the core's commands", () => {
     expect(keyOf("palette.open")).toBe("Mod+Shift+p");
   });
 
+  it("move to the next and previous change with F7 and Shift+F7, and say when there is none", async () => {
+    const keyOf = (id: string): string | undefined => shortcuts.find((s) => s.command === id)?.keys;
+    expect(keyOf("doc.nextChange")).toBe("F7");
+    expect(keyOf("doc.prevChange")).toBe("Shift+F7");
+    const next = commands.find((c) => c.id === "doc.nextChange");
+    expect(next?.when?.()).toBe(false); // no plugin gives a step
+    await next?.run();
+    const { windowStore } = await import("../window.svelte");
+    expect(windowStore.notices.at(-1)).toMatchObject({ kind: "note", text: en["doc.noChange"] });
+  });
+
   it("leave nothing behind when removed", () => {
     off();
     expect(registry.items).toEqual([]);

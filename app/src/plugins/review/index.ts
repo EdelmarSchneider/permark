@@ -66,6 +66,13 @@ export default definePlugin({
         view: () => import("./CodeReview.svelte"),
       }),
       cx.contribute({
+        kind: "changeStep",
+        id: "review.step",
+        order: 10,
+        requires: NO_REQUIREMENT,
+        step: (direction) => review.step(direction),
+      }),
+      cx.contribute({
         kind: "docDecoration",
         id: "review.clicks",
         requires: NO_REQUIREMENT,

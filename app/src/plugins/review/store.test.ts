@@ -103,6 +103,40 @@ describe("the review store", () => {
     stop();
   });
 
+  it("steps to the next and previous change: an offer opens the review at the first or the last", async () => {
+    const first = await setup();
+    expect(first.store.state.status).toBe("offer");
+    expect(await first.store.step(1)).toBe(true);
+    expect(first.store.state).toMatchObject({ status: "reviewing", at: 0 });
+    expect(await first.store.step(1)).toBe(true);
+    expect(first.store.current).toBe(1);
+    expect(await first.store.step(1)).toBe(true);
+    expect(first.store.current).toBe(0);
+    expect(await first.store.step(-1)).toBe(true);
+    expect(first.store.current).toBe(1);
+    first.stop();
+
+    const last = await setup();
+    expect(await last.store.step(-1)).toBe(true);
+    expect(last.store.state).toMatchObject({ status: "reviewing", at: 1 });
+    last.stop();
+  });
+
+  it("has no step for a document with nothing to review or one the offer is not for", async () => {
+    const { store, shown, stop } = await setup();
+    shown.value = { path: "README.md", hash: "ff".repeat(8), kind: "blocks" };
+    await settle();
+    expect(store.state.status).toBe("idle");
+    expect(await store.step(1)).toBe(false);
+    expect(await store.step(-1)).toBe(false);
+    expect(store.state.status).toBe("idle");
+    stop();
+
+    const none = await setup({ shown: { path: null, hash: null, kind: null } });
+    expect(await none.store.step(1)).toBe(false);
+    none.stop();
+  });
+
   it("repaints the page when the review starts, moves, and ends", async () => {
     const { store, repaints, stop } = await setup();
     const before = repaints();

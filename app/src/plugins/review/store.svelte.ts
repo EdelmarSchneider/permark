@@ -94,6 +94,11 @@ export class ReviewStore {
     return this.state.status === "reviewing" ? this.state.view : null;
   }
 
+  /** The review on screen, read again (a call that awaited may have opened one). */
+  #started(): ReviewView | null {
+    return this.reviewing;
+  }
+
   /** The change the keys act on (index), or -1. */
   get current(): number {
     return this.state.status === "reviewing" ? this.state.at : -1;
@@ -368,6 +373,27 @@ export class ReviewStore {
       }),
     );
     this.#page.repaint();
+  }
+
+  /**
+   * F7 | Shift+F7: the next | previous change. Reviewing -> the next | previous of the review (wraps); only an offer
+   * for the shown document -> the review opens at its first (next) | last (previous) change. False when there is
+   * nothing to move to.
+   */
+  async step(direction: 1 | -1): Promise<boolean> {
+    const open = this.reviewing;
+    if (open !== null) {
+      if (open.count === 0) return false;
+      this.go(direction);
+      return true;
+    }
+    const { path, kind } = this.#page.shown();
+    if (this.state.status !== "offer" || this.state.path !== path || kind === null) return false;
+    await this.begin();
+    const started = this.#started();
+    if (started === null || started.count === 0) return false;
+    if (direction === -1) this.go(-1);
+    return true;
   }
 
   async setBasis(basis: Basis): Promise<void> {

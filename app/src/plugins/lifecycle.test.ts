@@ -45,7 +45,7 @@ describe("the following plugins", () => {
       "statusItem",
       "treeBadge",
     ]);
-    expect(await kinds("live-feed")).toEqual(["command", "panel", "statusItem"]);
+    expect(await kinds("live-feed")).toEqual(["changeStep", "command", "panel", "statusItem"]);
     expect(await kinds("follow")).toEqual(["command", "shortcut", "statusItem"]);
     expect(await kinds("unread")).toEqual([
       "command",
@@ -57,6 +57,7 @@ describe("the following plugins", () => {
     ]);
     expect(await kinds("review")).toEqual([
       "bodyOverride",
+      "changeStep",
       "command",
       "docBar",
       "docBlocks",

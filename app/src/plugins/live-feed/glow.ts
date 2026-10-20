@@ -67,6 +67,61 @@ export function markLines(update: TextUpdate, timers: Set<ReturnType<typeof setT
   timers.add(clear);
 }
 
+/** The passages that glow now: blocks, the marks of removed ones, and the rectangles + marks of a text view. */
+const GLOWING = ".pm-glow, .pm-removed-mark, .glows .glow, .glows .gone";
+/** Where a step puts the passage it moves to: this share of the pane's height below its top edge. */
+const LANDING = 0.2;
+/** A passage within this many pixels of the landing line counts as the one already there. */
+const HERE = 8;
+
+/**
+ * The passage a step moves to. `tops`: where each glowing passage starts, in page order, relative to the pane's top
+ * edge. Next = the first below the landing line, previous = the last above it; past the last (or the first) the
+ * step wraps. Null when nothing glows.
+ */
+export function pickGlow(
+  tops: readonly number[],
+  direction: 1 | -1,
+  landing: number,
+): number | null {
+  if (tops.length === 0) return null;
+  if (direction === 1) {
+    const next = tops.findIndex((top) => top > landing + HERE);
+    return next === -1 ? 0 : next;
+  }
+  const before = tops.findLastIndex((top) => top < landing - HERE);
+  return before === -1 ? tops.length - 1 : before;
+}
+
+/** The first element of each run of neighbors: a stretch of glowing blocks is one change. */
+function starts(found: readonly HTMLElement[]): HTMLElement[] {
+  const all = new Set(found);
+  return found.filter((el) => {
+    const before = el.previousElementSibling;
+    return !(before instanceof HTMLElement && all.has(before));
+  });
+}
+
+/**
+ * F7 | Shift+F7 while passages glow: scrolls the next | previous one to the landing line. False when none glows (a
+ * glow lasts seconds, so the review of what was read is the lasting way to walk the changes).
+ */
+export function stepGlow(direction: 1 | -1): boolean {
+  const pane = documents.host.scroller ?? document.querySelector<HTMLElement>("[data-scroller]");
+  if (pane === null) return false;
+  const found = starts([...pane.querySelectorAll<HTMLElement>(GLOWING)]);
+  const edge = pane.getBoundingClientRect().top;
+  const landing = LANDING * pane.clientHeight;
+  const tops = found.map((el) => el.getBoundingClientRect().top - edge);
+  const at = pickGlow(tops, direction, landing);
+  if (at === null) return false;
+  pane.scrollTo({
+    top: Math.max(0, pane.scrollTop + (tops[at] ?? 0) - landing),
+    behavior: "instant",
+  });
+  return true;
+}
+
 /** Starts glowing for the page of this window; returns what stops it (and clears what is on screen). */
 export function startGlow(): () => void {
   const timers = new Set<ReturnType<typeof setTimeout>>();

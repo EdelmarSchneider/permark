@@ -4,7 +4,7 @@
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { definePlugin } from "../../core/plugins/registry.svelte";
 import { ui } from "../../core/shell/ui.svelte";
-import { startGlow } from "./glow";
+import { startGlow, stepGlow } from "./glow";
 import { feed } from "./store.svelte";
 
 const PANEL = "live-feed.panel";
@@ -30,6 +30,13 @@ export default definePlugin({
         order: 8,
         requires: NO_REQUIREMENT,
         view: () => import("./FeedStatus.svelte"),
+      }),
+      cx.contribute({
+        kind: "changeStep",
+        id: "live-feed.step",
+        order: 20,
+        requires: NO_REQUIREMENT,
+        step: stepGlow,
       }),
       cx.contribute({
         kind: "command",

@@ -9,7 +9,7 @@ import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
 import { diagramPanel } from "../editing/diagramPanel.svelte";
 import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
-import type { MessageKey } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import {
   CORE_OWNER,
   type ContributionInput,
@@ -21,6 +21,7 @@ import { switcher } from "../shell/workspaceList.svelte";
 import { shownId } from "../shell/switcherModel";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
+import { stepChange } from "./changes";
 import { windowStore as store } from "../window.svelte";
 import { NO_REQUIREMENT, type Requirement } from "../conditions/available";
 
@@ -308,6 +309,24 @@ export function registerCoreCommands(registry: ContributionRegistry): () => void
     for (const keys of spec.keys ?? []) {
       add({ kind: "shortcut", keys, command: spec.id, requires: NO_REQUIREMENT });
     }
+  }
+  // next | previous change: offered while a plugin knows how to find one (none in a window without them)
+  const changes: readonly { id: string; label: MessageKey; keys: string; direction: 1 | -1 }[] = [
+    { id: "doc.nextChange", label: "cmd.nextChange", keys: "F7", direction: 1 },
+    { id: "doc.prevChange", label: "cmd.prevChange", keys: "Shift+F7", direction: -1 },
+  ];
+  for (const { id, label, keys, direction } of changes) {
+    add({
+      kind: "command",
+      id,
+      label,
+      requires: READING,
+      when: () => readable() && registry.of("changeStep").length > 0,
+      run: async () => {
+        if (!(await stepChange(registry, direction))) store.notifyNote(t("doc.noChange"));
+      },
+    });
+    add({ kind: "shortcut", keys, command: id, requires: NO_REQUIREMENT });
   }
   return () => offs.forEach((off) => off());
 }

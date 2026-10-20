@@ -56,6 +56,18 @@ describe("key -> command", () => {
     expect(decision).toEqual({ kind: "run", command: save, combo: "Mod+s" });
   });
 
+  it("tells F7 from Shift+F7, and leaves them to a field while the person types", () => {
+    const next = command("doc.nextChange");
+    const prev = command("doc.prevChange");
+    const e = env([next, prev], { "doc.nextChange": "F7", "doc.prevChange": "Shift+F7" });
+    expect(resolveKey(press({ key: "F7" }), e)).toMatchObject({ kind: "run", command: next });
+    expect(resolveKey(press({ key: "F7", shiftKey: true }), e)).toMatchObject({
+      kind: "run",
+      command: prev,
+    });
+    expect(resolveKey(press({ key: "F7" }), { ...e, typing: true }).kind).toBe("pass");
+  });
+
   it("passes keys nobody holds, keys another handler took and compositions", () => {
     const save = command("edit.save");
     const e = env([save], { "edit.save": "Mod+s" });

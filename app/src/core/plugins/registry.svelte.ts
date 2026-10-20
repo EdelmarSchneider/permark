@@ -112,6 +112,16 @@ export type Contribution = Owned &
         when: (view: DocumentView) => boolean;
         view: LazyComponent<ViewerProps>;
       }
+    /**
+     * Moves to the next (`1`) | previous (`-1`) change of the open document for F7 | Shift+F7. The steps run lowest
+     * `order` first; the first that returns true has moved and the rest stay quiet.
+     */
+    | {
+        kind: "changeStep";
+        id: string;
+        order: number;
+        step: (direction: 1 | -1) => boolean | Promise<boolean>;
+      }
     /** An entry of the Explorer's context menu (a single row). */
     | {
         kind: "treeMenu";
