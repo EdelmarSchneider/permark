@@ -58,7 +58,6 @@ function element(tag: string, className: string, text?: string): HTMLElement {
 /** A line of old text: its secret values are masks. */
 function oldLine(line: string, key: string, reveal: Set<string>): HTMLElement {
   const row = element("div", "rv-old-line");
-  row.append(element("span", "rv-old-mark", "−"));
   const text = element("span", "rv-old-text");
   const spans = line.length > 4000 ? [] : findCodeSecrets(line);
   let at = 0;

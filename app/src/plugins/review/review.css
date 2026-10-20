@@ -122,15 +122,7 @@
   font: var(--fs-code) / 1.6 var(--font-code);
 }
 .rv-code .rv-old-line {
-  display: flex;
-  padding: 0 8px 0 0;
-}
-.rv-code .rv-old-mark {
-  flex: none;
-  width: 2.4em;
-  text-align: center;
-  color: var(--git-deleted-text);
-  user-select: none;
+  padding: 0 8px 0 6px;
 }
 .rv-code .rv-old-text {
   min-width: 0;
@@ -138,7 +130,7 @@
   overflow-wrap: anywhere;
 }
 .rv-code .rv-old-more {
-  padding: 0 8px 0 2.4em;
+  padding: 0 8px 0 6px;
   color: var(--muted);
   font: 12px/1.6 var(--font-ui);
 }
