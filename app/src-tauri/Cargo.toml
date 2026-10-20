@@ -4,7 +4,7 @@ resolver = "2"
 
 # Version source = app/package.json; written here by `npm run version:sync`.
 [workspace.package]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/EdelmarSchneider/permark"

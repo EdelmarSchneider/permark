@@ -5,8 +5,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-20
+
 ### Added
-- **Tabs.** Each folder or file you open gets a tab in the bar at the top of its window. Click a tab to switch to it; `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` and `Ctrl+Alt+←`) go to the next and previous tab, `Ctrl+1` to `Ctrl+8` to a tab, `Ctrl+9` to the last one, and `Ctrl+W` closes the tab. A tab with unsaved changes shows a dot. Right-click a tab to move it to a new window. When PerMark starts, your windows and tabs come back, and only the tab you see loads, so the start stays fast.
+- **Tabs.** Each folder or file you open gets a tab in the bar at the top of its window, and Notes open in a tab too. Click a tab to switch to it; `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` and `Ctrl+Alt+←`) go to the next and previous tab, `Ctrl+1` to `Ctrl+8` to a tab, `Ctrl+9` to the last one, and `Ctrl+W` closes the tab. A tab with unsaved changes shows a dot. Right-click a tab to move it to a new window. When PerMark starts, your windows and tabs come back, and only the tab you see loads, so the start stays fast.
 
 ### Changed
 - A folder or file opens in one place only: if it is open already, its window and tab come forward. **Settings → Editing → Open folders and files in** offers New tab (the default), This tab and New window; the old "Ask" choice now means New tab, and the question dialog is gone.
@@ -19,6 +21,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons.
 - The scrollbar of a document is always visible and wider, so it is easier to grab.
 - The buttons of the side bar (such as Broken links and Tags) always appear in the same order.
+
+### Known limits
+- Tabs have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned.
 
 ## [0.6.0] - 2026-10-20
 
