@@ -5,16 +5,17 @@ import { contributions } from "../plugins/instance.svelte";
 import { NO_REQUIREMENT } from "../conditions/available";
 import { activeRight, activeSidebar, leftPanels, rightPanels } from "./panels.svelte";
 import { ui } from "./ui.svelte";
+import type { PluginId } from "../../api/generated/PluginId";
 
 const removals: (() => void)[] = [];
 const view = () => import("../testing/StripFirst.svelte");
 
-function panel(id: string, side: "left" | "right"): void {
+function panel(id: string, side: "left" | "right", owner = "test"): void {
   removals.push(
     contributions.register({
       kind: "panel",
       id,
-      owner: "test",
+      owner: owner as PluginId,
       side,
       label: "unread.title",
       requires: NO_REQUIREMENT,
@@ -52,5 +53,29 @@ describe("plugin panels", () => {
     expect(activeRight()).toBeNull();
     ui.right = "missing.panel";
     expect(activeRight()).toBeNull();
+  });
+
+  it("keep one order whatever order the plugins finished loading in", () => {
+    panel("unread.panel", "left", "unread");
+    panel("tags.panel", "left", "tags");
+    panel("broken.panel", "left", "broken-links");
+    panel("tags.second", "left", "tags");
+    expect(leftPanels().map((p) => p.id)).toEqual([
+      "broken.panel",
+      "tags.panel",
+      "tags.second",
+      "unread.panel",
+    ]);
+    for (const remove of removals.splice(0)) remove();
+    panel("broken.panel", "left", "broken-links");
+    panel("tags.panel", "left", "tags");
+    panel("tags.second", "left", "tags");
+    panel("unread.panel", "left", "unread");
+    expect(leftPanels().map((p) => p.id)).toEqual([
+      "broken.panel",
+      "tags.panel",
+      "tags.second",
+      "unread.panel",
+    ]);
   });
 });

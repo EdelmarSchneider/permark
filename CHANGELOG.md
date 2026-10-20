@@ -9,6 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Windows come back where you left them, also when PerMark starts from a file you open. A new window opens slightly offset from the current one, at the same size, and a maximized window stays maximized. The first start after 0.5 takes the window place 0.5 saved.
 - The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons.
 - The scrollbar of a document is always visible and wider, so it is easier to grab.
+- The buttons of the side bar (such as Broken links and Tags) always appear in the same order.
 
 ## [0.6.0] - 2026-10-20
 
