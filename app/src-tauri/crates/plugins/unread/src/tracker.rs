@@ -632,6 +632,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(any(windows, target_os = "macos"))]
     fn case_folded_paths_are_one_document() {
         let mut t = Tracker::new(saved(&[("Docs/Plan.md", 1)]));
         scanned(&mut t, &[("docs/plan.md", 1)]);

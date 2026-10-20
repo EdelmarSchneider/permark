@@ -289,10 +289,13 @@ fn resolve_never_leaves_the_project() {
         Target::Missing(_)
     ));
     let abs = outside.path().join("secret.md");
-    assert_eq!(
-        resolve(&vault, &from, &abs.display().to_string()),
-        Target::Outside
-    );
+    let plain = resolve(&vault, &from, &abs.display().to_string());
+    if cfg!(windows) {
+        assert_eq!(plain, Target::Outside);
+    } else {
+        // `/x/y.md` is a path from the project's root on Unix: looked up inside, never outside
+        assert!(matches!(plain, Target::Missing(_)), "{plain:?}");
+    }
     let url = format!("file:///{}", abs.display().to_string().replace('\\', "/"));
     assert_eq!(resolve(&vault, &from, &url), Target::Outside);
 }

@@ -659,6 +659,7 @@ pub(crate) fn scan_root(root: &RootCtx, cancel: &std::sync::atomic::AtomicBool) 
         folder: None,
     };
     scan_dir(&mut cx, &root.abs, &root.prefix, &frames, false, 0);
+    cx.out.unchecked.sort();
     cx.out
 }
 
@@ -684,6 +685,7 @@ pub(crate) fn scan_folder(
         folder: Some(stop),
     };
     scan_dir(&mut cx, abs, folder, &frames, in_ignored, 0);
+    cx.out.unchecked.sort();
     cx.out
 }
 
