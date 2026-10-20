@@ -213,6 +213,12 @@ fn moving_a_target_or_a_whole_folder_is_followed() {
     h.write("lib/deep/y.md", "y\n");
     h.open();
     assert!(h.broken().is_empty());
+    // what the watch reports, shown when the wait below fails
+    let heard: Arc<Mutex<Vec<String>>> = Arc::default();
+    let _listening = h.core().watcher().hub().subscribe({
+        let heard = Arc::clone(&heard);
+        move |batch| heard.lock().unwrap().push(format!("{batch:?}"))
+    });
     let ops = h.core().fileops();
     let plan = ops
         .plan_move(
@@ -229,7 +235,8 @@ fn moving_a_target_or_a_whole_folder_is_followed() {
     while last != ["a.md:1:lib/x.md", "a.md:1:lib/deep/y.md"] {
         assert!(
             started.elapsed() < Duration::from_secs(20),
-            "both are broken now: {last:?}"
+            "both are broken now: {last:?}; the watch said {:?}",
+            heard.lock().unwrap()
         );
         std::thread::sleep(Duration::from_millis(15));
         last = h.broken();
