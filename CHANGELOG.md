@@ -17,6 +17,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 - Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window. <!-- f: notes, start-screen -->
+- When another program saves `.permark/meta.toml` at the same moment PerMark writes your tags or descriptions there, PerMark no longer writes over that program's version: it reads it first and then adds your change. <!-- f: tags -->
 
 ## [0.6.1] - 2026-10-20
 
