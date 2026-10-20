@@ -444,6 +444,12 @@ export default {
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
   "edit.diagramNoPlugin":
     "Schalte das Mermaid- oder PlantUML-Plugin ein, um die Zeichnung zu sehen.",
+  "edit.diagramPanel": "Diagrammvorschau",
+  "edit.diagramPanelHint": "Das Diagramm an der Einfügemarke neben dem Text zeigen",
+  "edit.diagramPanelEmpty":
+    "Setze die Einfügemarke in einen mermaid- oder plantuml-Block, um hier seine Zeichnung zu sehen.",
+  "edit.diagramFailed": "Die Zeichnung konnte nicht erstellt werden.",
+  "cmd.diagramPanel": "Diagrammvorschau neben dem Quelltext (an | aus)",
   "edit.disabled.binary": "Binärdateien können nicht bearbeitet werden.",
   "edit.disabled.tooLarge": "Diese Datei ist zu groß zum Bearbeiten.",
   "edit.disabled.lossy":

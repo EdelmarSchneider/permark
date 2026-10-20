@@ -35,6 +35,7 @@ import {
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { configLanguage } from "./configLang";
+import { fenceAround, type Fence } from "./fence";
 import { completionSources, type CompletionHost } from "./complete";
 
 export type SourceHost = CompletionHost & {
@@ -43,6 +44,8 @@ export type SourceHost = CompletionHost & {
   save(): void;
   modeKey(source: boolean): void;
   pictures(files: File[], at: number): void;
+  /** The diagram fence the caret is in (`null`: none); asked only of Markdown. */
+  fence(fence: Fence | null): void;
 };
 
 const style = HighlightStyle.define([
@@ -226,7 +229,18 @@ export function createSource(options: {
         keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) host.changed();
-          if (update.docChanged || update.selectionSet) host.selected();
+          if (!update.docChanged && !update.selectionSet) return;
+          host.selected();
+          if (!options.markdown) return;
+          // a window around the caret: a long document is not split on every key
+          const doc = update.state.doc;
+          const line = doc.lineAt(update.state.selection.main.head).number;
+          const first = Math.max(1, line - 400);
+          const last = Math.min(doc.lines, line + 400);
+          const lines: string[] = [];
+          for (let n = first; n <= last; n++) lines.push(doc.line(n).text);
+          const fence = fenceAround(lines, line - first + 1);
+          host.fence(fence && { ...fence, from: fence.from + first - 1 });
         }),
         EditorView.domEventHandlers({
           paste: (event, v) => {

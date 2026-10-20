@@ -436,6 +436,25 @@ describe("editing", () => {
     expect(editing.text).toContain("![](ideas-1.png)");
   });
 
+  it("the diagram preview panel is off; its button puts it beside the editor, never over the text", async () => {
+    await show("README.md");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-editor") !== null, "source editor");
+    expect(target.querySelector(".source .preview")).toBeNull();
+    const toggle = target.querySelector<HTMLButtonElement>("button[aria-label='Diagram preview']");
+    expect(toggle?.getAttribute("aria-pressed")).toBe("false");
+    toggle?.click();
+    await until(() => target.querySelector(".source .preview") !== null, "panel");
+    // a sibling of the editor, not inside it
+    const panel = target.querySelector(".source .preview");
+    expect(panel?.closest(".cm-editor")).toBeNull();
+    expect(panel?.previousElementSibling?.classList.contains("cm")).toBe(true);
+    expect(panel?.textContent).toContain("mermaid or plantuml");
+    toggle?.click();
+    await until(() => target.querySelector(".source .preview") === null, "panel off");
+  });
+
   it("Source shows the text editor; a text file has Source only", async () => {
     await show("README.md");
     await until(() => modeButton("Source") !== undefined, "mode switch");

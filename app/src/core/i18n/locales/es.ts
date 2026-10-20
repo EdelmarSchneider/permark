@@ -440,6 +440,12 @@ export default {
   "edit.editInSource": "Editar en Fuente",
   "edit.visualForMarkdown": "El modo Editar es para archivos Markdown y de ajustes; usa Fuente.",
   "edit.diagramNoPlugin": "Activa el plugin Mermaid o PlantUML para ver el dibujo.",
+  "edit.diagramPanel": "Vista previa del diagrama",
+  "edit.diagramPanelHint": "Mostrar el diagrama donde está el cursor, junto al texto",
+  "edit.diagramPanelEmpty":
+    "Pon el cursor en un bloque mermaid o plantuml para ver aquí su dibujo.",
+  "edit.diagramFailed": "No se pudo dibujar el diagrama.",
+  "cmd.diagramPanel": "Vista previa de diagramas junto al código (sí | no)",
   "edit.disabled.binary": "Los archivos binarios no se pueden editar.",
   "edit.disabled.tooLarge": "Este archivo es demasiado grande para editarlo.",
   "edit.disabled.lossy":

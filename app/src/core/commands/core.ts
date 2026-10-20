@@ -7,6 +7,7 @@ import { reading, WIDTHS } from "../doc/reading.svelte";
 import { webPictures } from "../doc/webPictures.svelte";
 import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
+import { diagramPanel } from "../editing/diagramPanel.svelte";
 import { copyPathOf, newInTree, revealInTree } from "../explorer/current";
 import type { MessageKey } from "../i18n";
 import {
@@ -187,6 +188,13 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+Alt+w"],
     requires: READING,
     run: cycleWidth,
+  },
+  {
+    id: "edit.diagramPanel",
+    label: "cmd.diagramPanel",
+    requires: READING,
+    when: () => editing.mode === "source" && editing.kind === "markdown",
+    run: () => diagramPanel.toggle(),
   },
   {
     id: "reading.webPictures",

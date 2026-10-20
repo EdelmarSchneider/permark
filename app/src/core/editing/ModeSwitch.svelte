@@ -1,7 +1,9 @@
 <script lang="ts">
   // View | Edit | Source, Save and the unsaved dot. Edit only for Markdown; a document that cannot be edited
   // says why.
+  import Workflow from "@lucide/svelte/icons/workflow";
   import { t, type MessageKey } from "../i18n";
+  import { diagramPanel } from "./diagramPanel.svelte";
   import type { EditMode, EditingSession } from "./session.svelte";
 
   type Props = {
@@ -57,6 +59,18 @@
     {t("mode.source")}
   </button>
 </div>
+{#if session.mode === "source" && session.kind === "markdown"}
+  <button
+    type="button"
+    class="icon-btn"
+    aria-pressed={diagramPanel.on}
+    title={t("edit.diagramPanelHint")}
+    aria-label={t("edit.diagramPanel")}
+    onclick={() => diagramPanel.toggle()}
+  >
+    <Workflow size={15} />
+  </button>
+{/if}
 {#if editing && session.policy.kind === "explicit"}
   <button
     type="button"
@@ -103,5 +117,9 @@
     height: 6px;
     border-radius: 50%;
     background: currentColor;
+  }
+  .icon-btn[aria-pressed="true"] {
+    background: var(--accent-soft);
+    color: var(--accent-text);
   }
 </style>

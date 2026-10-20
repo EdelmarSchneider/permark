@@ -429,6 +429,11 @@ const en = {
   "edit.editInSource": "Edit in Source",
   "edit.visualForMarkdown": "Edit mode is for Markdown files and settings files; use Source.",
   "edit.diagramNoPlugin": "Turn on the Mermaid or PlantUML plugin to see the drawing.",
+  "edit.diagramPanel": "Diagram preview",
+  "edit.diagramPanelHint": "Show the diagram the caret is in, beside the text",
+  "edit.diagramPanelEmpty": "Put the caret in a mermaid or plantuml block to see its drawing here.",
+  "edit.diagramFailed": "The drawing could not be made.",
+  "cmd.diagramPanel": "Diagram preview beside Source (on | off)",
   "edit.disabled.binary": "Binary files can't be edited.",
   "edit.disabled.tooLarge": "This file is too large to edit.",
   "edit.disabled.lossy":

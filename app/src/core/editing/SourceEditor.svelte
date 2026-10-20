@@ -1,11 +1,15 @@
 <script lang="ts">
   // Source mode: the raw file in CodeMirror (loaded on first use), with its find + replace panel and go to line.
-  // Nothing is hidden, masked or drawn over the text: secret values show as they are, diagrams draw in View and Edit.
+  // Nothing is hidden, masked or drawn over the text: secret values show as they are. Beside the editor (never over
+  // it), an optional panel draws the diagram the caret is in (off by default, one switch per window).
   import { SEARCH_PHRASES } from "./source/phrases";
   import { api } from "../../api";
   import { t } from "../i18n";
   import type { Content, EditingSession } from "./session.svelte";
   import type { SourceView } from "./source/cm";
+  import type { Fence } from "./source/fence";
+  import DiagramPreview from "./DiagramPreview.svelte";
+  import { diagramPanel } from "./diagramPanel.svelte";
   import { pictureFiles } from "./pictures";
 
   type Props = {
@@ -20,6 +24,8 @@
 
   let host: HTMLElement | undefined = $state();
   let source: SourceView | null = null;
+  let fence = $state.raw<Fence | null>(null);
+  const panel = $derived(markdown && diagramPanel.on);
 
   // the editor: made when the content (a load, a mode switch) is new, torn down with it
   $effect(() => {
@@ -42,6 +48,7 @@
           save: () => session.save(),
           modeKey: (toSource) => void session.switchTo(toSource ? "source" : "view"),
           pictures: (files, at) => void insertPictures(files, at),
+          fence: (next) => (fence = next),
           docPath: () => current.path,
           linkTargets: async () => {
             if (!project) return [];
@@ -75,6 +82,7 @@
       detach();
       source?.destroy();
       source = null;
+      fence = null;
     };
   });
 
@@ -103,6 +111,15 @@
 <div class="source" data-drop-editor>
   <div class="body">
     <div class="cm" bind:this={host}></div>
+    {#if panel}
+      <aside class="preview" aria-label={t("edit.diagramPanel")}>
+        {#if fence}
+          <DiagramPreview language={fence.language} source={fence.code} />
+        {:else}
+          <p class="empty">{t("edit.diagramPanelEmpty")}</p>
+        {/if}
+      </aside>
+    {/if}
   </div>
 </div>
 
@@ -123,5 +140,20 @@
   }
   .cm :global(.cm-editor) {
     min-height: 100%;
+  }
+  /* beside the text, never over it */
+  .preview {
+    flex: 0 0 40%;
+    max-width: 520px;
+    border-left: 1px solid var(--border);
+    padding: var(--sp-3);
+    overflow: auto;
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+  }
+  .empty {
+    color: var(--muted);
+    font-size: var(--fs-ui-sm);
   }
 </style>

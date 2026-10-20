@@ -22,6 +22,7 @@ const host: SourceHost = {
   save: () => {},
   modeKey: () => {},
   pictures: () => {},
+  fence: () => {},
   docPath: () => "notes.txt",
   linkTargets: async () => [],
   headings: async () => [],
