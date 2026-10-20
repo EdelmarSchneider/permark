@@ -2,11 +2,14 @@
   // Status bar item beside the word count: the tokens of the document (or of the selection) by the first tokenizer
   // chosen, with its name. A click opens the popover: every tokenizer chosen, the document, the part without front
   // matter, the selection, and the choice itself. Nothing chosen: a chip that opens the choice. An estimate is always
-  // marked (`≈`, "Approximate"); a count of the model's own tokenizer is not.
+  // marked (`≈`, "Approximate"); a count of the model's own tokenizer is not. While a folder is being counted the item
+  // shows the progress instead, with a way to stop it.
   import Hash from "@lucide/svelte/icons/hash";
   import { createAnalysisText } from "../../core/doc/analysisText.svelte";
   import { language, t, tn } from "../../core/i18n";
   import { createFigures } from "./figures.svelte";
+  import { isWorking } from "./folders";
+  import { folders } from "./folders.svelte";
   import { displayOf, failureKey, formatMegabytes, percentOf, type Figure } from "./model";
   import TokenChoice from "./TokenChoice.svelte";
   import { tokens } from "./store.svelte";
@@ -20,6 +23,8 @@
   const mark = (figure: Figure): string => (figure.approx ? "≈ " : "");
 
   const primary = $derived(tokens.primary);
+  const working = $derived(isWorking(folders.job));
+  const progress = $derived(folders.progress);
   const display = $derived.by(() => {
     const whole = primary === null ? null : figures.whole(primary);
     return displayOf({
@@ -30,7 +35,9 @@
       selection: primary === null ? null : figures.selection(primary),
     });
   });
-  const shown = $derived(display.kind !== "none" && (display.kind !== "count" || hasNumber()));
+  const shown = $derived(
+    working || (display.kind !== "none" && (display.kind !== "count" || hasNumber())),
+  );
 
   function hasNumber(): boolean {
     return primary !== null && figures.whole(primary) !== null;
@@ -45,6 +52,14 @@
   }
 
   const label = $derived.by((): string => {
+    if (working) {
+      return progress === null || progress.total === 0
+        ? t("tokens.folder.scanning")
+        : t("tokens.folder.progress", {
+            done: number(progress.done),
+            total: number(progress.total),
+          });
+    }
     switch (display.kind) {
       case "none":
         return "";
@@ -67,7 +82,7 @@
   });
 
   const tooltip = $derived.by((): string => {
-    if (display.kind === "count") {
+    if (!working && display.kind === "count") {
       const kind =
         display.tokenizer.exact && !display.whole.approx ? "" : ` — ${t("tokens.approxWord")}`;
       return `${label}${kind}`;
@@ -136,26 +151,37 @@
   }
 </script>
 
-{#if source.countable}
+{#if source.countable || working}
   <span class="token" bind:this={box}>
     {#if shown}
       <button
         type="button"
         class="item"
-        class:is-chip={display.kind !== "count"}
+        class:is-chip={working || display.kind !== "count"}
         aria-haspopup="dialog"
         aria-expanded={tokens.popover}
         title={tooltip}
         onclick={toggle}
       >
-        {#if display.kind !== "count"}<Hash size={13} aria-hidden="true" />{/if}
+        {#if working || display.kind !== "count"}<Hash size={13} aria-hidden="true" />{/if}
         <span class="label">{label}</span>
       </button>
     {/if}
     {#if tokens.popover}
       <div class="popover" role="dialog" aria-label={t("tokens.popover.title")} use:above>
         <p class="title">{t("tokens.popover.title")}</p>
-        {#each tokens.chosen as info, at (info.id)}
+        {#if working}
+          <div class="job">
+            <p class="head">{label}</p>
+            {#if progress !== null && progress.total > 0}
+              <progress max={progress.total} value={progress.done}></progress>
+            {/if}
+            <button type="button" class="btn btn--sm" onclick={() => void folders.cancel()}>
+              {t("tokens.folder.stop")}
+            </button>
+          </div>
+        {/if}
+        {#each source.countable ? tokens.chosen : [] as info, at (info.id)}
           {@const state = rowState(info)}
           <div class="tokenizer">
             <p class="head">
@@ -218,6 +244,36 @@
             />
             <span>{t("tokens.outlineSwitch")}</span>
           </label>
+          <label class="switch">
+            <input
+              type="checkbox"
+              checked={tokens.state?.folderTotals ?? false}
+              onchange={(e) => void tokens.setFolderTotals(e.currentTarget.checked)}
+            />
+            <span>{t("tokens.folder.totalsSwitch")}</span>
+          </label>
+          {#if folders.counted.length > 0}
+            <p class="subtitle">{t("tokens.folder.counted")}</p>
+            <ul class="counted">
+              {#each folders.counted.slice(0, 8) as counted (counted.folder)}
+                <li>
+                  <button
+                    type="button"
+                    class="link"
+                    onclick={() => {
+                      tokens.popover = false;
+                      void folders.showSummary(counted.folder);
+                    }}
+                  >
+                    {folders.nameOf(counted.folder)}
+                  </button>
+                  <span class="faint">
+                    {counted.approx ? "≈ " : ""}{number(counted.tokens)}{counted.stale ? " *" : ""}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         {/if}
         {#if tokens.choosing || tokens.chosen.length === 0}
           <div class="choice">
@@ -288,6 +344,54 @@
     margin: 0 0 var(--sp-1);
     color: var(--muted);
     font-weight: 600;
+  }
+  .job {
+    display: grid;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-3);
+    padding-bottom: var(--sp-3);
+    border-bottom: 1px solid var(--border);
+  }
+  .job .head {
+    margin: 0;
+  }
+  .job progress {
+    width: 100%;
+    height: 6px;
+    accent-color: var(--accent);
+  }
+  .job .btn {
+    justify-self: start;
+  }
+  .counted {
+    margin: 0 0 var(--sp-3);
+    padding: 0;
+    list-style: none;
+  }
+  .counted li {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sp-3);
+  }
+  .link {
+    min-width: 0;
+    overflow: hidden;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent-text);
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .link:hover {
+    text-decoration: underline;
+  }
+  .faint {
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
   }
   .tokenizer + .tokenizer {
     margin-top: var(--sp-2);

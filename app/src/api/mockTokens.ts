@@ -5,6 +5,7 @@ import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
 import type { VocabFailure } from "./generated/VocabFailure";
 import type { VocabState } from "./generated/VocabState";
+import { createMockFolders, type FoldersProbe } from "./mockTokenFolders";
 import { MockPluginError } from "./mockOrganizing";
 import type { AppPluginEventName, AppPluginEvents, PluginMethods } from "./types";
 
@@ -15,6 +16,7 @@ type TokenMethods = Pick<
   | "token-count.cancel"
   | "token-count.removeVocab"
   | "token-count.setOutline"
+  | "token-count.setFolderTotals"
   | "token-count.count"
 >;
 
@@ -32,6 +34,8 @@ export type TokensProbe = {
   calls: string[];
   /** Texts the counter was asked about. */
   counted: string[];
+  /** The folder count: guard limits, speed, calls, stale marks. */
+  folders: FoldersProbe;
 };
 
 /** A stand-in for each tokenizer: the real counts come from the backend. */
@@ -52,12 +56,15 @@ function isEncoding(id: string): id is Encoding {
 
 export function createMockTokens(
   emit: <E extends AppPluginEventName>(event: E, payload: AppPluginEvents[E]) => void,
+  files: () => ReadonlyMap<string, string> = () => new Map(),
+  root: () => string = () => "",
 ) {
   const vocab: Record<Encoding, VocabState> = {
     o200k: { kind: "absent" },
     cl100k: { kind: "absent" },
   };
   let outline = false;
+  let folderTotals = false;
   const timers = new Map<Encoding, ReturnType<typeof setInterval>>();
   const probe: TokensProbe = {
     setVocab: (encoding, state) => {
@@ -69,7 +76,17 @@ export function createMockTokens(
     steps: 4,
     calls: [],
     counted: [],
+    folders: null as unknown as FoldersProbe,
   };
+  const folders = createMockFolders(
+    emit,
+    files,
+    root,
+    (tokenizer, text) => standIn(tokenizer, text),
+    (tokenizer) => !isEncoding(tokenizer) || vocab[tokenizer].kind === "ready",
+    isEncoding,
+  );
+  probe.folders = folders.probe;
 
   function state(): TokenCountState {
     return {
@@ -78,6 +95,7 @@ export function createMockTokens(
         cl100k: { state: vocab.cl100k, bytes: SIZES.cl100k },
       },
       outline,
+      folderTotals,
     };
   }
 
@@ -97,7 +115,9 @@ export function createMockTokens(
   }
 
   const handlers: {
-    [M in keyof TokenMethods]: (args: TokenMethods[M]["args"]) => TokenMethods[M]["result"];
+    [M in keyof TokenMethods | keyof typeof folders.handlers]: (
+      args: PluginMethods[M]["args"],
+    ) => PluginMethods[M]["result"];
   } = {
     "token-count.state": () => state(),
     "token-count.download": ({ tokenizer }) => {
@@ -153,6 +173,12 @@ export function createMockTokens(
       announce();
       return state();
     },
+    "token-count.setFolderTotals": ({ on }) => {
+      folderTotals = on;
+      announce();
+      return state();
+    },
+    ...folders.handlers,
     "token-count.count": ({ tokenizers, text, parts }) => {
       probe.counted.push(text);
       const lines = text.split("\n");

@@ -279,13 +279,19 @@ export function createMockApi(): Api & {
   const appListeners: { [E in AppPluginEventName]: Set<(payload: AppPluginEvents[E]) => void> } = {
     "updates:state": new Set(),
     "token-count:state": new Set(),
+    "token-count:folder": new Set(),
+    "token-count:folders": new Set(),
   };
   const distribution = createMockDistribution((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
   });
-  const tokens = createMockTokens((event, payload) => {
-    for (const handler of appListeners[event]) handler(payload);
-  });
+  const tokens = createMockTokens(
+    (event, payload) => {
+      for (const handler of appListeners[event]) handler(payload);
+    },
+    () => project.files,
+    rootNow,
+  );
   const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
   const plugins = createMockPlugins(
     emitPlugin,

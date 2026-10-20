@@ -1,9 +1,14 @@
 // The Explorer of the project this window shows, for the parts of the app that point at the tree (a document's header
 // "reveal in tree", a link to a folder, the commands). Set by the sidebar while it lives.
 
+import { createSubscriber } from "svelte/reactivity";
 import type { NewKind } from "../../api";
 
 type Handle = {
+  /** The folders open in the tree (reactive). */
+  readonly expanded: ReadonlySet<string>;
+  /** The one folder selected in the tree (`null`: none, or more than one thing). */
+  selectedFolder(): string | null;
   reveal(path: string): void;
   revealActive(): void;
   beginNew(kind: NewKind): void;
@@ -17,10 +22,32 @@ type Handle = {
 };
 
 let current: Handle | null = null;
+/** Tells the effects that read the handle that the tree came or went. */
+let tell: (() => void) | null = null;
+const watching = createSubscriber((update) => {
+  tell = update;
+  return () => {
+    tell = null;
+  };
+});
 
 export function setExplorer(explorer: Handle | null): void {
   current = explorer;
+  tell?.();
 }
+
+/** The folders open in the tree now (reactive, also to the tree coming and going; empty while no tree is shown). */
+export function explorerExpanded(): ReadonlySet<string> {
+  watching();
+  return current?.expanded ?? NONE;
+}
+
+/** The folder the person selected in the tree (`null`: no tree, or not exactly one folder selected). */
+export function explorerSelectedFolder(): string | null {
+  return current?.selectedFolder() ?? null;
+}
+
+const NONE: ReadonlySet<string> = new Set();
 
 export function revealInTree(path: string | null): void {
   if (path === null) current?.revealActive();

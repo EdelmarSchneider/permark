@@ -11,6 +11,10 @@ import type { ShellState } from "./generated/ShellState";
 import type { UpdateState } from "./generated/UpdateState";
 import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
+import type { FolderBadge } from "./generated/FolderBadge";
+import type { FolderBadges } from "./generated/FolderBadges";
+import type { FolderJob } from "./generated/FolderJob";
+import type { FolderSummary } from "./generated/FolderSummary";
 import type { Analysis } from "./generated/Analysis";
 import type { ConvertAnswer } from "./generated/ConvertAnswer";
 import type { TargetView } from "./generated/TargetView";
@@ -466,6 +470,20 @@ export interface PluginMethods {
   "token-count.cancel": { args: { tokenizer: string }; result: TokenCountState };
   "token-count.removeVocab": { args: { tokenizer: string }; result: TokenCountState };
   "token-count.setOutline": { args: { on: boolean }; result: TokenCountState };
+  "token-count.setFolderTotals": { args: { on: boolean }; result: TokenCountState };
+  "token-count.folderStart": {
+    args: { folder: string; tokenizer: string; auto?: boolean };
+    result: FolderJob;
+  };
+  "token-count.folderConfirm": { args: Record<string, never>; result: FolderJob };
+  "token-count.folderCancel": { args: Record<string, never>; result: FolderJob };
+  "token-count.folderDismiss": { args: Record<string, never>; result: FolderJob };
+  "token-count.folderJob": { args: Record<string, never>; result: FolderJob };
+  "token-count.folders": { args: { root: string }; result: FolderBadges };
+  "token-count.folderSummary": {
+    args: { root: string; folder: string };
+    result: FolderSummary | null;
+  };
   "token-count.count": {
     args: { tokenizers: string[]; text: string; parts?: [number, number][] };
     result: CountResult[];
@@ -512,10 +530,19 @@ export type PluginEnvelope<E extends PluginEventName> = { root: string; data: Pl
 export interface AppPluginEvents {
   "updates:state": UpdateState;
   "token-count:state": TokenCountState;
+  /** One window's folder count: what its job is doing. */
+  "token-count:folder": { window: string; job: FolderJob };
+  /** The counted folders of a project changed (a result, a stale mark). */
+  "token-count:folders": FolderBadges;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
 export type { CountResult, TokenCountState };
+export type { FolderBadge, FolderBadges, FolderJob, FolderSummary };
+export type { FolderSkipped } from "./generated/FolderSkipped";
+export type { FolderTopFile } from "./generated/FolderTopFile";
+export type { FolderTypeRow } from "./generated/FolderTypeRow";
+export type { FolderSkip } from "./generated/FolderSkip";
 export type { Analysis, ConvertAnswer, TargetView, Problem, Table, TableRow };
 export type { VocabEntry } from "./generated/VocabEntry";
 export type { VocabFailure } from "./generated/VocabFailure";

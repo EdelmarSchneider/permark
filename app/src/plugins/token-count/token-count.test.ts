@@ -110,6 +110,8 @@ describe("what the plugin adds", () => {
       "projectSection",
       "settingsSection",
       "statusItem",
+      "treeBadge",
+      "treeMenu",
     ]);
     await until(() => tokens.state !== null, "the store started with the plugin");
     expect(host.disable("token-count"), "contributions left after deactivate").toBe(0);

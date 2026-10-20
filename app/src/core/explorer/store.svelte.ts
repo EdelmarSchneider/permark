@@ -381,6 +381,14 @@ export class ExplorerStore {
   }
 
   /** Paths an action works on: the selection, else the focused row. */
+  /** The one folder selected (`null`: nothing, a file, or several things). */
+  selectedFolder(): string | null {
+    if (this.selection.size !== 1) return null;
+    const [path] = Array.from(this.selection);
+    if (path === undefined) return null;
+    return this.nodes.some((n) => n.path === path && n.kind.type === "dir") ? path : null;
+  }
+
   targets(): string[] {
     if (this.selection.size > 0) return topmost(this.selection);
     return this.focus === null ? [] : [this.focus];

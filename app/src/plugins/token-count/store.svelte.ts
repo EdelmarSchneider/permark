@@ -149,6 +149,12 @@ export class TokenStore {
     if (result.ok) this.state = result.value;
   }
 
+  /** Whether the folders the person opens show their total (small ones). */
+  async setFolderTotals(on: boolean): Promise<void> {
+    const result = await this.#client.call("token-count.setFolderTotals", { on });
+    if (result.ok) this.state = result.value;
+  }
+
   /** The popover opens on the chooser (nothing chosen yet, or the person asked to change). */
   openChooser(): void {
     this.choosing = true;
