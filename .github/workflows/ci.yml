@@ -21,8 +21,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Line tables only in dev + test builds: backtraces keep file:line, while the ~40 test binaries link faster and the
-  # cached target folder is about half the size.
+  # Line tables only in dev + test builds: backtraces keep file:line, with less debug data to write and link for the ~40
+  # test binaries (cached target folder ~10% smaller).
   CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
