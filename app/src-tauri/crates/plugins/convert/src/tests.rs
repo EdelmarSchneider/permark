@@ -243,6 +243,68 @@ fn yaml_reads_documents_anchors_and_refuses_bombs() {
 }
 
 #[test]
+fn nesting_deeper_than_the_limit_is_refused_and_never_overflows_the_stack() {
+    let deep = 5000;
+    let xml = format!("{}{}", "<a>".repeat(deep), "</a>".repeat(deep));
+    let block = format!(
+        "{}x
+",
+        "- ".repeat(deep)
+    );
+    let flow = format!("{}{}", "[".repeat(deep), "]".repeat(deep));
+    let maps = (0..deep).fold(String::new(), |mut text, i| {
+        text.push_str(&" ".repeat(i));
+        text.push_str(
+            "k:
+",
+        );
+        text
+    });
+    // each alias doubles nothing but adds a level: chained anchors cannot build past the limit
+    let mut chain = String::from(
+        "a0: &a0 [x]
+",
+    );
+    for i in 1..400 {
+        chain.push_str(&format!(
+            "a{i}: &a{i} [*a{}]
+",
+            i - 1
+        ));
+    }
+    for (source, text) in [
+        (Source::Xml, xml),
+        (Source::Yaml, block),
+        (Source::Yaml, flow),
+        (Source::Yaml, maps),
+        (Source::Yaml, chain),
+    ] {
+        // the worker threads that run conversions have 2 MiB of stack
+        let outcome = std::thread::Builder::new()
+            .stack_size(2 * 1024 * 1024)
+            .spawn(move || run(&text, source).err())
+            .unwrap()
+            .join()
+            .unwrap();
+        assert!(
+            matches!(outcome, Some(Failure::Invalid { .. })),
+            "{source:?}: {outcome:?}"
+        );
+    }
+    // deep, but within the limit
+    let (value, _) = read_as(
+        Source::Yaml,
+        &format!("{}x{}", "[".repeat(200), "]".repeat(200)),
+    );
+    assert!(value.is_array());
+    let (value, _) = read_as(
+        Source::Xml,
+        &format!("{}{}", "<a>".repeat(200), "</a>".repeat(200)),
+    );
+    assert!(value.is_object());
+}
+
+#[test]
 fn toml_and_toon_and_json_lines_read() {
     let (value, losses) = read_as(
         Source::Toml,

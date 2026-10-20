@@ -269,6 +269,10 @@ struct Element {
 
 /// Elements -> keys; repeated names -> arrays; attributes -> `@name`; text -> `#text` (an element with text only ->
 /// a string); comments, processing instructions, the DOCTYPE and whitespace between elements are dropped.
+/// Deepest nesting a source may have (XML elements, YAML sequences and maps, aliases expanded): deeper input is
+/// refused before anything recursive sees it.
+pub(crate) const MAX_DEPTH: usize = 256;
+
 fn xml(text: &str, tick: &mut Tick<'_>, losses: &mut Losses) -> Result<Value, Failure> {
     let mut reader = quick_xml::Reader::from_str(text);
     reader.config_mut().check_end_names = true;
@@ -290,7 +294,15 @@ fn xml(text: &str, tick: &mut Tick<'_>, losses: &mut Losses) -> Result<Value, Fa
                     "more than one root element",
                 ));
             }
-            XmlEvent::Start(e) => stack.push(element(&e, losses)?),
+            XmlEvent::Start(e) => {
+                if stack.len() >= MAX_DEPTH {
+                    return Err(invalid(
+                        line_at(reader.buffer_position()),
+                        "nesting too deep",
+                    ));
+                }
+                stack.push(element(&e, losses)?);
+            }
             XmlEvent::Empty(e) => {
                 let el = element(&e, losses)?;
                 close(el, &mut stack, &mut root, losses);
@@ -439,9 +451,19 @@ struct YamlBuilder<'t, 'c> {
     losses: &'t mut Losses,
     stack: Vec<Frame>,
     docs: Vec<Value>,
-    anchors: HashMap<usize, (Value, usize)>,
+    /// Anchored values with their size and depth.
+    anchors: HashMap<usize, (Value, usize, usize)>,
     budget: usize,
     failed: Option<Failure>,
+}
+
+/// Levels of arrays | objects (a scalar = 0). Only called on values already bounded by [`MAX_DEPTH`].
+fn depth(value: &Value) -> usize {
+    match value {
+        Value::Array(items) => 1 + items.iter().map(depth).max().unwrap_or(0),
+        Value::Object(map) => 1 + map.values().map(depth).max().unwrap_or(0),
+        _ => 0,
+    }
 }
 
 fn size(value: &Value) -> usize {
@@ -456,7 +478,8 @@ impl YamlBuilder<'_, '_> {
     fn insert(&mut self, value: Value, anchor: usize) {
         if anchor > 0 {
             let n = size(&value);
-            self.anchors.insert(anchor, (value.clone(), n));
+            let d = depth(&value);
+            self.anchors.insert(anchor, (value.clone(), n, d));
         }
         match self.stack.last_mut() {
             None => self.docs.push(value),
@@ -519,12 +542,16 @@ impl MarkedEventReceiver for YamlBuilder<'_, '_> {
             }
             YamlEvent::Alias(id) => {
                 self.losses.add("anchors");
-                let Some((value, n)) = self.anchors.get(&id).cloned() else {
+                let Some((value, n, d)) = self.anchors.get(&id).cloned() else {
                     self.insert(Value::Null, 0);
                     return;
                 };
                 if n > self.budget {
                     self.failed = Some(invalid(0, "aliases expand too far"));
+                    return;
+                }
+                if self.stack.len() + d > MAX_DEPTH {
+                    self.failed = Some(invalid(0, "nesting too deep"));
                     return;
                 }
                 self.budget -= n;
@@ -541,11 +568,19 @@ impl MarkedEventReceiver for YamlBuilder<'_, '_> {
                 if tag.is_some() {
                     self.losses.add("tags");
                 }
+                if self.stack.len() >= MAX_DEPTH {
+                    self.failed = Some(invalid(0, "nesting too deep"));
+                    return;
+                }
                 self.stack.push(Frame::Seq(Vec::new(), anchor));
             }
             YamlEvent::MappingStart(anchor, tag) => {
                 if tag.is_some() {
                     self.losses.add("tags");
+                }
+                if self.stack.len() >= MAX_DEPTH {
+                    self.failed = Some(invalid(0, "nesting too deep"));
+                    return;
                 }
                 self.stack.push(Frame::Map(Map::new(), None, anchor));
             }
@@ -574,10 +609,18 @@ fn yaml(text: &str, tick: &mut Tick<'_>, losses: &mut Losses) -> Result<Value, F
         budget: 1_000_000 + text.len() / 4,
         failed: None,
     };
+    // pulled event by event: the parser's own `load` recurses once per level (a deep file would overflow the stack)
     let mut parser = Parser::new_from_str(text);
-    parser
-        .load(&mut builder, true)
-        .map_err(|e| invalid(e.marker().line(), e.info().to_owned()))?;
+    loop {
+        let (event, mark) = parser
+            .next_token()
+            .map_err(|e| invalid(e.marker().line(), e.info().to_owned()))?;
+        let end = event == YamlEvent::StreamEnd;
+        builder.on_event(event, mark);
+        if end || builder.failed.is_some() {
+            break;
+        }
+    }
     if let Some(stop) = builder.failed {
         return Err(stop);
     }
