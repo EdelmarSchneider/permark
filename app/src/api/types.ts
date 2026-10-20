@@ -97,6 +97,7 @@ import type { ClosingTab } from "./generated/ClosingTab";
 import type { CloseAnswer } from "./generated/CloseAnswer";
 import type { BarTheme } from "./generated/BarTheme";
 import type { ViewRequest } from "./generated/ViewRequest";
+import type { ViewMoved } from "./generated/ViewMoved";
 import type { Basis } from "./generated/Basis";
 import type { BaselineKind } from "./generated/BaselineKind";
 import type { FeedItem } from "./generated/FeedItem";
@@ -657,6 +658,7 @@ export interface Events {
   "close-requested": CloseRequested;
   "tab-close-requested": ViewRequest;
   "save-requested": ViewRequest;
+  "view-moved": ViewMoved;
   "plugins-changed": null;
   "index-progress": IndexProgress;
   "import-progress": ImportProgress;

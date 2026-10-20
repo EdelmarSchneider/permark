@@ -46,6 +46,15 @@ pub struct ViewRequest {
     pub window: String,
 }
 
+/// Event `view-moved`: the view now lives in window `to` (its chips are that window's tabs).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ViewMoved {
+    pub window: String,
+    pub to: String,
+}
+
 /// The person's answer to the window close prompt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

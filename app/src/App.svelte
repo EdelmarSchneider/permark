@@ -158,6 +158,14 @@
         if (event.window === store.label) void closeHere();
       })
       .then(keep);
+    // this tab moved to another window: its chips are that window's tabs now
+    void api
+      .on("view-moved", (event) => {
+        if (event.window !== store.label) return;
+        store.window = event.to;
+        tabs.window = event.to;
+      })
+      .then(keep);
     return () => {
       gone = true;
       offs.forEach((off) => off());

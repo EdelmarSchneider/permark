@@ -198,6 +198,7 @@ export function createMockApi(): Api & {
     "close-requested": new Set(),
     "tab-close-requested": new Set(),
     "save-requested": new Set(),
+    "view-moved": new Set(),
     "import-progress": new Set(),
     "plugins-changed": new Set(),
     "index-progress": new Set(),

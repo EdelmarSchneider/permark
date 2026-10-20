@@ -16,7 +16,7 @@ use permark_core::workspace::{
 };
 use permark_core::{ErrorKind, IpcError};
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use ts_rs::TS;
 
 use crate::shell::state;
@@ -248,9 +248,20 @@ pub fn move_to_new_window(handle: &AppHandle, tab: TabId) -> Result<String, IpcE
         }
     }
     let label = target.label().to_owned();
+    let view = moved.view().map(str::to_owned);
     let arrived = shell.registry.take_in(&label, moved);
     run(handle, outcome);
     run(handle, arrived);
+    if let Some(view) = view {
+        let _ = handle.emit_to(
+            view.as_str(),
+            "view-moved",
+            crate::views::ViewMoved {
+                window: view.clone(),
+                to: label.clone(),
+            },
+        );
+    }
     // a moved view has painted already: the new window shows at once
     crate::views::show_window(handle, &label);
     Ok(label)
