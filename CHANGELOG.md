@@ -5,6 +5,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Notes button.** A button next to Settings opens your Notes in a tab with one click, or brings you to the Notes tab if it is already open. `Ctrl+Shift+D` does the same, and `Ctrl+Shift+N` makes a new note from anywhere.
+- **Hide and show the side bars.** `Ctrl+B` hides or shows the sidebar and `Ctrl+Alt+B` the right panel, as in earlier versions; a button at each end of the status bar does the same. Each project remembers which side bars you hid.
+
+### Changed
+- `Ctrl+B` makes text bold in the source editor too, as it already did in the visual editor.
+- The outline button always shows the outline, even when another panel was open on the right.
+
+### Fixed
+- Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window.
+
 ## [0.6.1] - 2026-10-20
 
 ### Added
