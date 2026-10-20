@@ -843,6 +843,25 @@ fn shutting_down_ends_a_running_job_and_forgets_everything() {
     assert_eq!(rig.heard("token-count:folders").len(), before);
 }
 
+#[cfg(unix)]
+#[test]
+fn a_file_swapped_for_a_link_after_the_listing_is_not_followed() {
+    let rig = Rig::new(roomy());
+    rig.put("d/keep.md", &text(8));
+    rig.put("d/swap.md", &text(8));
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("secret.md"), text(4000)).unwrap();
+    let path = rig.project.path().join("d/swap.md");
+    let target = outside.path().join("secret.md");
+    *rig.files.after_scan.lock().unwrap() = Some(Box::new(move || {
+        let _ = fs::remove_file(&path);
+        let _ = std::os::unix::fs::symlink(&target, &path);
+    }));
+    let summary = rig.count("d", "chars4");
+    assert_eq!((summary.counted, summary.skipped_unreadable), (1, 1));
+    assert_eq!(summary.tokens, 2, "nothing of the file outside was read");
+}
+
 #[test]
 fn a_file_that_vanishes_between_the_listing_and_the_read_is_skipped_as_unreadable() {
     let rig = Rig::new(roomy());

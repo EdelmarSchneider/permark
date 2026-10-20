@@ -377,6 +377,10 @@ fn count_file(mode: &Mode, cache: &Mutex<FileCache>, file: &ScanFile) -> Outcome
             return known(entry);
         }
     }
+    // a file swapped for a link since the listing is not followed
+    if !std::fs::symlink_metadata(abs).is_ok_and(|m| m.file_type().is_file()) {
+        return Outcome::Skipped(FolderSkip::Unreadable);
+    }
     let bytes = match fsx::read_bytes(abs, MAX_FILE_BYTES) {
         Ok(bytes) => bytes,
         Err(FsxError::TooLarge { .. }) => return Outcome::Skipped(FolderSkip::TooLarge),

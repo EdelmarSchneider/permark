@@ -153,8 +153,9 @@ impl Found {
     }
 }
 
-/// Microseconds a file costs apart from its bytes (open, stat, hash, bookkeeping), taken on the slow side.
-const PER_FILE_MICROS: u64 = 600;
+/// Microseconds a file costs apart from its bytes (open, stat, hash, bookkeeping): measured 40 on a warm disk, taken
+/// five times that for a cold one.
+const PER_FILE_MICROS: u64 = 200;
 /// Bytes a second an exact count gets through, taken on the slow side (measured about 4 times this).
 const EXACT_BYTES_PER_SECOND: u64 = 20_000_000;
 /// The same for an estimate.
