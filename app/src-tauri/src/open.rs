@@ -258,14 +258,14 @@ pub fn move_to_new_window(handle: &AppHandle, tab: TabId) -> Result<String, IpcE
     let view = shell.registry.view_of_tab(tab);
     let webview = view.as_deref().and_then(|v| handle.get_webview(v));
     if let Some(webview) = &webview {
-        if let Err(error) = webview.reparent(&target) {
+        if let Err(error) = crate::views::reparent(handle, webview, &target) {
             let _ = target.destroy();
             return Err(internal(error));
         }
     }
     let Ok(outcome) = shell.registry.move_tab(tab, &label, view.as_deref()) else {
         let back = match (&webview, handle.get_window(&from)) {
-            (Some(webview), Some(source)) => webview.reparent(&source),
+            (Some(webview), Some(source)) => crate::views::reparent(handle, webview, &source),
             _ => Ok(()),
         };
         match back {

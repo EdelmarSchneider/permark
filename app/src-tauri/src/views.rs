@@ -98,6 +98,30 @@ fn on_main_thread() -> bool {
     std::thread::current().name() == Some("main")
 }
 
+/// Moves `webview` into `window`, run on the main thread (waited for here). Tauri's `reparent` holds the webview's
+/// runtime lock while it waits for the main thread: called from another thread, anything the main thread does to that
+/// webview meanwhile (a window resize fitting its views) waits for that lock forever and the app freezes. On the main
+/// thread there is no wait (events it causes are queued until it returns).
+///
+/// # Errors
+/// The reparent failed, the main thread is gone.
+pub fn reparent(
+    handle: &AppHandle,
+    webview: &tauri::Webview,
+    window: &tauri::Window,
+) -> tauri::Result<()> {
+    if on_main_thread() {
+        return webview.reparent(window);
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (webview, window) = (webview.clone(), window.clone());
+    handle.run_on_main_thread(move || {
+        let _ = tx.send(webview.reparent(&window));
+    })?;
+    rx.recv()
+        .unwrap_or(Err(tauri::Error::FailedToReceiveMessage))
+}
+
 /// Applies view changes in order (off the main thread when views are to be made).
 pub fn apply(handle: &AppHandle, changes: Vec<ViewChange>) {
     if changes.is_empty() {
@@ -413,5 +437,29 @@ fn tauri_theme(theme: BarTheme) -> tauri::Theme {
     match theme {
         BarTheme::Light => tauri::Theme::Light,
         BarTheme::Dark => tauri::Theme::Dark,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Regression (move froze the app): every reparent goes through [`super::reparent`] (main thread). The freeze
+    /// itself needs the real runtime; this keeps a direct call off another thread from coming back.
+    #[test]
+    fn webviews_are_reparented_only_on_the_main_thread() {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut direct = Vec::new();
+        for entry in std::fs::read_dir(&src).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            let calls = text.matches(".reparent(").count();
+            let allowed = if path.ends_with("views.rs") { 3 } else { 0 };
+            if calls > allowed {
+                direct.push(path.display().to_string());
+            }
+        }
+        assert!(direct.is_empty(), "direct reparent in {direct:?}");
     }
 }

@@ -894,6 +894,41 @@ fn a_refused_move_leaves_both_windows_as_they_were() {
     assert_eq!(f.registry.window_of(&view).as_deref(), Some("main"));
 }
 
+/// Adversarial: a tab moved back and forth while another thread looks for its workspace and opens it again. One
+/// place throughout: always found (in one window or the other), never a second tab for it.
+#[test]
+fn a_tab_moving_back_and_forth_is_always_found_in_one_place() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    f.registry.add_window("w-9", WindowKind::Work);
+    tab(&f, "main", &file(&dir.path().join("keep-a.md"))).unwrap();
+    tab(&f, "w-9", &file(&dir.path().join("keep-b.md"))).unwrap();
+    let moving_ref = file(&dir.path().join("move.md"));
+    let (moving, view) = tab(&f, "main", &moving_ref).unwrap();
+    let tabs_before: usize = f.registry.list_windows().iter().map(|w| w.tabs.len()).sum();
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            for round in 0..200 {
+                let to = if round % 2 == 0 { "w-9" } else { "main" };
+                f.registry.move_tab(moving, to, Some(&view)).unwrap();
+            }
+        });
+        s.spawn(|| {
+            for _ in 0..2000 {
+                let place = f.registry.find(&moving_ref).expect("found while moving");
+                assert_eq!(place.tab, moving);
+                assert!(matches!(
+                    f.registry.open_tab("w-9", &moving_ref, None),
+                    Ok(TabOpen::Existing(_))
+                ));
+            }
+        });
+    });
+    let tabs_after: usize = f.registry.list_windows().iter().map(|w| w.tabs.len()).sum();
+    assert_eq!(tabs_after, tabs_before);
+    assert_eq!(f.registry.window_of(&view).as_deref(), Some("main"));
+}
+
 // ---- live reload of the project state (PerMark initialized while the project is open) ---------------------------------
 
 fn open_project(f: &Fx, dir: &Path) -> (Arc<ProjectCore>, String) {
