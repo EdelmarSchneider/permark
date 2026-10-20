@@ -682,9 +682,10 @@ fn a_single_file_workspace_reads_only_its_own_file() {
         ErrorKind::NotFound
     );
     assert!(docs.open("w", "../note.md", &[], &formats()).is_err());
+    // another spelling of its name is the file itself where the file system ignores case (Windows, macOS by default)
     assert_eq!(
         docs.open("w", "NOTE.md", &[], &formats()).is_ok(),
-        cfg!(windows)
+        dir.path().join("NOTE.md").exists()
     );
 }
 

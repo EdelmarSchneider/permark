@@ -72,14 +72,32 @@ fn make(files: &[&str], native: bool) -> Fx {
         FAST,
         native,
     );
-    // let the OS watchers settle before the test touches the folder
-    std::thread::sleep(Duration::from_millis(150));
+    settle(&seen);
     Fx {
         dir,
         watcher,
         seen,
         _sub: sub,
     }
+}
+
+/// Lets the OS watchers settle before the test touches the folder. Some systems (macOS) still report what happened
+/// just before the watch began: that news is waited out, then forgotten.
+fn settle(seen: &Seen) {
+    std::thread::sleep(Duration::from_millis(150));
+    let started = Instant::now();
+    let mut count = seen.lock().unwrap().len();
+    let mut since = Instant::now();
+    while since.elapsed() < Duration::from_millis(600) && started.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(20));
+        let now = seen.lock().unwrap().len();
+        if now != count {
+            count = now;
+            since = Instant::now();
+        }
+    }
+    seen.lock().unwrap().clear();
 }
 
 fn wait_for(seen: &Seen, what: &str, ok: impl Fn(&[Change]) -> bool) -> Vec<Change> {
@@ -240,7 +258,7 @@ fn a_save_is_one_modified_and_the_same_bytes_again_are_nothing() {
     // a first change makes the watch remember the file
     fs::write(f.dir.path().join("a.md"), "one").unwrap();
     wait_for(&f.seen, "first change", |c| {
-        has(c, "a.md", &ChangeKind::Modified)
+        c.iter().any(|c| c.path == "a.md")
     });
     f.seen.lock().unwrap().clear();
     // an atomic save of new content: one modified
@@ -270,7 +288,7 @@ fn an_own_write_is_marked_and_other_content_at_the_same_path_is_not() {
     let f = make(&["a.md"], true);
     fs::write(f.dir.path().join("a.md"), "v1").unwrap();
     wait_for(&f.seen, "first change", |c| {
-        has(c, "a.md", &ChangeKind::Modified)
+        c.iter().any(|c| c.path == "a.md")
     });
     f.seen.lock().unwrap().clear();
     let bytes = b"written by the app";
@@ -304,9 +322,7 @@ fn a_moved_file_is_one_renamed_change() {
         "content that is long enough to tell",
     )
     .unwrap();
-    wait_for(&f.seen, "seen once", |c| {
-        has(c, "a.md", &ChangeKind::Modified)
-    });
+    wait_for(&f.seen, "seen once", |c| c.iter().any(|c| c.path == "a.md"));
     f.seen.lock().unwrap().clear();
     fs::rename(f.dir.path().join("a.md"), f.dir.path().join("docs/b.md")).unwrap();
     let all = wait_for(&f.seen, "renamed", |c| {
@@ -513,7 +529,8 @@ fn without_live_updates_the_open_document_is_polled() {
     let doc = f.dir.path().join("doc.md");
     f.watcher.poll_document("w", Some(&doc));
     // untouched: silent
-    assert!(quiet_for(&f.seen, 300).is_empty(), "silent");
+    let heard = quiet_for(&f.seen, 300);
+    assert!(heard.is_empty(), "silent: {heard:?}");
     // changed: one modified; other files are not looked at
     fs::write(&doc, "changed content").unwrap();
     fs::write(f.dir.path().join("other.md"), "changed too").unwrap();
@@ -530,7 +547,8 @@ fn without_live_updates_the_open_document_is_polled() {
     f.watcher.poll_document("w", None);
     f.seen.lock().unwrap().clear();
     fs::write(&doc, "back").unwrap();
-    assert!(quiet_for(&f.seen, 300).is_empty(), "silent");
+    let heard = quiet_for(&f.seen, 300);
+    assert!(heard.is_empty(), "silent: {heard:?}");
 }
 
 #[test]
