@@ -490,11 +490,16 @@ fn a_new_file_goes_next_to_another_and_never_over_one() {
     assert_eq!(fx.read("data/users (2).toon"), b"[1]: 1");
     assert!(fx.is_own("data/users (3).toon"));
     assert_eq!(
-        editor.write_beside("top.md", "über ö.yaml", "a: 1").unwrap(),
+        editor
+            .write_beside("top.md", "über ö.yaml", "a: 1")
+            .unwrap(),
         "über ö.yaml"
     );
     for bad in ["", "a/b.json", "..", "a\\b"] {
-        assert!(editor.write_beside("data/users.json", bad, "x").is_err(), "{bad:?}");
+        assert!(
+            editor.write_beside("data/users.json", bad, "x").is_err(),
+            "{bad:?}"
+        );
     }
     assert!(editor.write_beside("../out.md", "x.json", "x").is_err());
     // a read under a cap: the size is checked first

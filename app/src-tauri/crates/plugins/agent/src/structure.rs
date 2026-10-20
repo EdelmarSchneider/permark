@@ -246,7 +246,11 @@ pub fn outline(
             })
             .collect();
         // a data sheet (TOON) says so, and names the version of the format it was read with
-        let kind = if sheet.kind == SheetKind::Data { "data" } else { "config" };
+        let kind = if sheet.kind == SheetKind::Data {
+            "data"
+        } else {
+            "config"
+        };
         let mut answer = json!({ "path": path, "kind": kind, "lines": lines, "items": items });
         if let Some(spec) = &sheet.spec {
             answer["spec"] = json!(spec);

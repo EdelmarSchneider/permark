@@ -350,16 +350,22 @@ users[2]{name,token}:
             "{text}"
         );
         // a TOON file: its tables in the outline, a row read by its path, the secret column hidden
-        let outline = tools.call("outline", json!({ "path": "team.toon" })).unwrap();
+        let outline = tools
+            .call("outline", json!({ "path": "team.toon" }))
+            .unwrap();
         assert_eq!(outline["kind"], "data", "{outline}");
         assert_eq!(outline["spec"], "TOON 4.4", "{outline}");
-        assert_eq!(outline["items"][0]["label"], "users[2]{name,token}", "{outline}");
+        assert_eq!(
+            outline["items"][0]["label"], "users[2]{name,token}",
+            "{outline}"
+        );
         let row = tools
             .call("read", json!({ "path": "team.toon", "at": "users[1]" }))
             .unwrap();
-        assert_eq!(row["text"], "  Bob,<hidden>
-", "{row}");
-        let hits = tools.call("search", json!({ "query": "tok-toon-1" })).unwrap();
+        assert_eq!(row["text"], "  Bob,<hidden>\n", "{row}");
+        let hits = tools
+            .call("search", json!({ "query": "tok-toon-1" }))
+            .unwrap();
         assert!(hits["hits"].as_array().unwrap().is_empty(), "{hits}");
         // search finds keys, never values
         let hits = tools.call("search", json!({ "query": "hunter2" })).unwrap();
