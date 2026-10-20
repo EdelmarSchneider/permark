@@ -1,5 +1,5 @@
 //! The pieces of every text PerMark writes for a model: a header line `<tool> k=v`, tables (`#cols` once, rows split
-//! by tabs, folder groups `@dir/`, sub-tables `-- name`), verbatim zones fenced so their text can never close them,
+//! by tabs, sub-tables `-- name`), verbatim zones fenced so their text can never close them,
 //! `ERR` lines, sizes and times, and the ceiling no answer passes. Pure.
 
 use std::borrow::Cow;
@@ -84,57 +84,22 @@ pub fn cell(text: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-fn parent(path: &str) -> &str {
-    let trimmed = path.strip_suffix('/').unwrap_or(path);
-    trimmed.rfind('/').map_or("", |at| &trimmed[..at])
-}
-
-/// Rows of a table under its `#cols` line. Cells are escaped here; empty trailing cells dropped. `path_col`: the
-/// column that holds a path: runs of >= 3 rows in the same folder are grouped under `@<folder>/`.
-pub fn table(out: &mut String, cols: &[&str], rows: &[Vec<String>], path_col: Option<usize>) {
+/// Rows of a table under its `#cols` line. Cells are escaped here; empty trailing cells dropped. Every row carries its
+/// full path: models drop a folder written once above its rows.
+pub fn table(out: &mut String, cols: &[&str], rows: &[Vec<String>]) {
     let _ = writeln!(out, "#cols {}", cols.join(" "));
-    rows_only(out, rows, path_col);
+    rows_only(out, rows);
 }
 
 /// The rows of a table whose `#cols` line is already written (a sub-table with the same columns).
-pub fn rows_only(out: &mut String, rows: &[Vec<String>], path_col: Option<usize>) {
-    let folders: Vec<&str> = rows
-        .iter()
-        .map(|r| path_col.and_then(|c| r.get(c)).map_or("", |p| parent(p)))
-        .collect();
-    let mut group: Option<&str> = None;
-    let mut i = 0;
-    while i < rows.len() {
-        let folder = folders[i];
-        let run = folders[i..].iter().take_while(|f| **f == folder).count();
-        let grouped = path_col.is_some() && !folder.is_empty() && run >= 3;
-        if grouped {
-            let _ = writeln!(out, "@{}/", cell(folder));
-            group = Some(folder);
-        } else if group.is_some() {
-            out.push_str("@/\n");
-            group = None;
+pub fn rows_only(out: &mut String, rows: &[Vec<String>]) {
+    for row in rows {
+        let mut cells: Vec<Cow<'_, str>> = row.iter().map(|text| cell(text)).collect();
+        while cells.last().is_some_and(|c| c.is_empty()) {
+            cells.pop();
         }
-        let take = if grouped { run } else { 1 };
-        for row in &rows[i..i + take] {
-            let mut cells: Vec<Cow<'_, str>> = row
-                .iter()
-                .enumerate()
-                .map(|(c, text)| match (grouped, path_col) {
-                    (true, Some(p)) if p == c => cell(
-                        text.strip_prefix(folder)
-                            .map_or(text.as_str(), |r| r.strip_prefix('/').unwrap_or(r)),
-                    ),
-                    _ => cell(text),
-                })
-                .collect();
-            while cells.last().is_some_and(|c| c.is_empty()) {
-                cells.pop();
-            }
-            out.push_str(&cells.join("\t"));
-            out.push('\n');
-        }
-        i += take;
+        out.push_str(&cells.join("\t"));
+        out.push('\n');
     }
 }
 
@@ -244,6 +209,13 @@ pub fn ceiling(text: String) -> String {
     for line in text.split_inclusive('\n') {
         let n = line.chars().count();
         if used + n > room {
+            // a line no answer could hold (minified JSON, a log line) is cut inside, never dropped whole; other lines
+            // stay whole (a row cut short would read as a real value)
+            let left = room - used;
+            if n > room && left > 0 {
+                let end = line.char_indices().nth(left).map_or(line.len(), |(i, _)| i);
+                out.push_str(&line[..end]);
+            }
             break;
         }
         let bare = line.trim_end_matches(['\n', '\r']);
@@ -295,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn tables_group_three_rows_of_a_folder_and_drop_trailing_empties() {
+    fn table_rows_carry_full_paths_and_drop_trailing_empties() {
         let rows: Vec<Vec<String>> = [
             ["README.md", "~200", ""],
             ["docs/a.md", "~10", "x"],
@@ -308,10 +280,10 @@ mod tests {
         .map(|r| r.iter().map(|s| (*s).to_owned()).collect())
         .collect();
         let mut out = String::new();
-        table(&mut out, &["path", "size_tok", "tags"], &rows, Some(0));
+        table(&mut out, &["path", "size_tok", "tags"], &rows);
         assert_eq!(
             out,
-            "#cols path size_tok tags\nREADME.md\t~200\n@docs/\na.md\t~10\tx\nb.md\t~20\nc.md\t~30\n@/\nsrc/d.rs\t~1\nsrc/e.rs\t~2\n"
+            "#cols path size_tok tags\nREADME.md\t~200\ndocs/a.md\t~10\tx\ndocs/b.md\t~20\ndocs/c.md\t~30\nsrc/d.rs\t~1\nsrc/e.rs\t~2\n"
         );
     }
 
@@ -321,7 +293,6 @@ mod tests {
         rows_only(
             &mut out,
             &[vec!["a".to_owned(), String::new(), "c".to_owned()]],
-            None,
         );
         assert_eq!(out, "a\t\tc\n");
     }
@@ -376,9 +347,24 @@ mod tests {
         let before = cut.lines().rev().nth(1).unwrap();
         assert!(before.starts_with("row "), "{before}");
         assert_eq!(ceiling("short\n".to_owned()), "short\n");
-        // one line longer than the ceiling: only the marker
+        // one line longer than the ceiling (minified JSON): cut inside it, never the marker alone
         let one = ceiling("x".repeat(CEILING_CHARS + 1));
-        assert_eq!(one, "…cut ceiling=48000\n");
+        assert!(one.starts_with("xxxx") && one.ends_with("x\n…cut ceiling=48000\n"));
+        assert!(one.chars().count() <= CEILING_CHARS);
+        let mut zoned = String::from("read path=min.json\n");
+        zone(&mut zoned, &"é".repeat(60_000));
+        let cut = ceiling(zoned);
+        assert!(
+            cut.starts_with("read path=min.json\n<<<\néé"),
+            "{}",
+            &cut[..40]
+        );
+        assert!(cut.ends_with("é\n>>>\n…cut ceiling=48000\n"));
+        assert!(cut.chars().count() <= CEILING_CHARS);
+        // a row that does not fit stays out whole (no row cut short)
+        let rows = format!("{}\n{}\n", "a".repeat(30_000), "b".repeat(30_000));
+        let cut = ceiling(rows);
+        assert_eq!(cut.lines().nth(1), Some("…cut ceiling=48000"));
         // a cut inside a zone closes the zone first
         let mut zoned = String::from("read path=a.md\n");
         zone(&mut zoned, &"line of text\n".repeat(5_000));

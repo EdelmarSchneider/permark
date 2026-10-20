@@ -101,7 +101,8 @@ fn map_lists_files_by_path_with_facts_and_counts_folders_past_depth() {
     );
     assert_eq!(value["more"], 2);
     assert!(text.contains("more=2"), "{text}");
-    assert!(text.contains("\n@docs/notes/\nmeeting-a.md\t"), "{text}");
+    assert!(text.contains("\ndocs/notes/meeting-a.md\t"), "{text}");
+    assert!(!text.contains("\n@"), "no folder groups: {text}");
     // hidden | outside | missing folders are not there
     for path in [
         "private",

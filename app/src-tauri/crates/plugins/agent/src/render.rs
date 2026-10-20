@@ -160,7 +160,7 @@ fn list_unread(data: &Value, now: u64) -> String {
         .map(|i| vec![s(i, "path").to_owned(), age_of(s(i, "modified"), now)])
         .collect();
     if !rows.is_empty() {
-        table(&mut out, &["path", "age"], &rows, Some(0));
+        table(&mut out, &["path", "age"], &rows);
     }
     out
 }
@@ -192,7 +192,6 @@ fn search(data: &Value) -> String {
                 &mut out,
                 &["path", "tags", "description"],
                 &file_rows(documents),
-                Some(0),
             );
         }
         return out;
@@ -225,7 +224,6 @@ fn search(data: &Value) -> String {
             &mut out,
             &["path", "line", "size_tok", "snippet", "heading"],
             &rows,
-            Some(0),
         );
     }
     if let Some(budget) = u(data, "budget").filter(|_| b(data, "trimmed")) {
@@ -248,7 +246,6 @@ fn list_tags(data: &Value) -> String {
                 &mut out,
                 &["path", "tags", "description"],
                 &file_rows(files),
-                Some(0),
             );
         }
         return out;
@@ -271,7 +268,7 @@ fn list_tags(data: &Value) -> String {
         })
         .collect();
     if !rows.is_empty() {
-        table(&mut out, &["tag", "count"], &rows, None);
+        table(&mut out, &["tag", "count"], &rows);
     }
     out
 }
@@ -334,7 +331,6 @@ fn outline(data: &Value) -> String {
                 &mut out,
                 &cols(&["at", "type", "line", "lines", "size_tok"]),
                 &rows,
-                None,
             );
         } else {
             let rows: Vec<Vec<String>> = items
@@ -349,12 +345,7 @@ fn outline(data: &Value) -> String {
                     ]
                 })
                 .collect();
-            table(
-                &mut out,
-                &cols(&["at", "line", "lines", "size_tok"]),
-                &rows,
-                None,
-            );
+            table(&mut out, &cols(&["at", "line", "lines", "size_tok"]), &rows);
         }
     }
     if let Some(links) = data.get("links_in") {
@@ -367,7 +358,7 @@ fn outline(data: &Value) -> String {
         );
         if !paths.is_empty() {
             let rows: Vec<Vec<String>> = paths.into_iter().map(|p| vec![p]).collect();
-            table(&mut out, &["path"], &rows, Some(0));
+            table(&mut out, &["path"], &rows);
         }
     }
     if let Some(links) = data.get("links_out") {
@@ -388,7 +379,7 @@ fn outline(data: &Value) -> String {
                     ]
                 })
                 .collect();
-            table(&mut out, &["path", "state"], &rows, Some(0));
+            table(&mut out, &["path", "state"], &rows);
         }
     }
     out
@@ -445,7 +436,6 @@ fn list_comments(data: &Value) -> String {
             &mut out,
             &["id", "place", "state", "quote", "text", "heading", "reply"],
             &rows,
-            Some(1),
         );
     }
     out
@@ -466,7 +456,7 @@ fn list_notes(data: &Value, now: u64) -> String {
         })
         .collect();
     if !rows.is_empty() {
-        table(&mut out, &["note", "age", "title"], &rows, None);
+        table(&mut out, &["note", "age", "title"], &rows);
     }
     out
 }
@@ -525,7 +515,6 @@ fn map(data: &Value) -> String {
             &mut out,
             &["path", "size_tok", "flags", "tags", "description"],
             &rows,
-            Some(0),
         );
     }
     if !cut.is_empty() {
@@ -540,7 +529,7 @@ fn map(data: &Value) -> String {
                 ]
             })
             .collect();
-        table(&mut out, &["path", "files", "size_tok"], &rows, Some(0));
+        table(&mut out, &["path", "files", "size_tok"], &rows);
     }
     out
 }
@@ -601,7 +590,7 @@ pub fn activity_text(data: &Value) -> String {
     let _ = writeln!(out, "#cols {}", ACTIVITY_COLS.join(" "));
     let body = |items: &[Value]| -> Vec<Vec<String>> { items.iter().map(activity_row).collect() };
     if !plain.is_empty() {
-        rows_only(&mut out, &body(plain), Some(4));
+        rows_only(&mut out, &body(plain));
     }
     for session in sessions {
         sub(
@@ -612,7 +601,7 @@ pub fn activity_text(data: &Value) -> String {
                 .kv("to", s(session, "to"))
                 .kv("rows", list(session, "rows").len()),
         );
-        rows_only(&mut out, &body(list(session, "rows")), Some(4));
+        rows_only(&mut out, &body(list(session, "rows")));
     }
     let git = s(data, "git");
     if !outside.is_empty() {
@@ -622,7 +611,7 @@ pub fn activity_text(data: &Value) -> String {
                 .kv("n", outside.len())
                 .opt("git", (!git.is_empty()).then_some(git)),
         );
-        rows_only(&mut out, &body(outside), Some(4));
+        rows_only(&mut out, &body(outside));
     }
     if !folders.is_empty() {
         sub(
@@ -649,7 +638,6 @@ pub fn activity_text(data: &Value) -> String {
             &mut out,
             &["folder", "created", "modified", "deleted"],
             &rows,
-            Some(0),
         );
     }
     if let Some(next) = u(data, "next") {
@@ -724,12 +712,12 @@ mod tests {
     fn read_cuts_say_where_to_go_on() {
         let text = render_at(
             "read",
-            &json!({ "path": "a.md", "at": "A", "lines": [1, 3], "text": "# A\nx\n", "cut": "L4-L9" }),
+            &json!({ "path": "a.md", "at": "A", "lines": [1, 3], "text": "# A\nx\n", "cut": "L4" }),
             0,
         );
         assert_eq!(
             text,
-            "read path=a.md at=A lines=1-3\n<<<\n# A\nx\n>>>\n…cut next=L4-L9\n"
+            "read path=a.md at=A lines=1-3\n<<<\n# A\nx\n>>>\n…cut next=L4\n"
         );
     }
 }

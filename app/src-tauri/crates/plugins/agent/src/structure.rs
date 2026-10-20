@@ -346,16 +346,19 @@ pub fn file_size(formats: &FormatRegistry, path: &str, text: &str) -> u64 {
     estimate(&sizer.shown(1, line_count(text)))
 }
 
-/// `L12` | `L12-L40` (also `12-40`).
-fn line_range(at: &str) -> Option<(u32, u32)> {
+/// Lines asked by `at`: `L12-L40` (also `12-40`) | `L12` (from line 12 on) | `L12:301` (from character 301 of line 12
+/// on: the cursor inside a line too long for one answer). `(from, to, column)`; `to` `None` = to the end.
+fn line_range(at: &str) -> Option<(u32, Option<u32>, usize)> {
     let number = |s: &str| s.trim().trim_start_matches(['L', 'l']).parse::<u32>().ok();
-    let (a, b) = if let Some((a, b)) = at.split_once('-') {
-        (number(a)?, number(b)?)
-    } else {
-        let n = number(at)?;
-        (n, n)
+    if let Some((a, b)) = at.split_once('-') {
+        let (a, b) = (number(a)?, number(b)?);
+        return (a >= 1 && a <= b).then_some((a, Some(b), 1));
+    }
+    let (line, column) = match at.split_once(':') {
+        Some((line, column)) => (number(line)?, column.trim().parse::<usize>().ok()?),
+        None => (number(at)?, 1),
     };
-    (a >= 1 && a <= b).then_some((a, b))
+    (line >= 1 && column >= 1).then_some((line, None, column))
 }
 
 fn same(a: &str, b: &str) -> bool {
@@ -426,10 +429,10 @@ pub fn read(
     let total = line_count(text);
     let at = at.map(str::trim).filter(|a| !a.is_empty());
     let config = sheet_of(formats, path, text);
-    let (from, to) = match at {
-        None => (1, total),
+    let (from, to, column) = match at {
+        None => (1, total, 1),
         Some(at) => match line_range(at) {
-            Some((a, b)) if a <= total => (a, b.min(total)),
+            Some((a, b, column)) if a <= total => (a, b.unwrap_or(total).min(total), column),
             Some(_) => return Err(ToolError::NotFound(at.to_owned())),
             None => {
                 let found = match kind_of(path) {
@@ -444,11 +447,14 @@ pub fn read(
                     }
                     Kind::Text => None,
                 };
-                found.ok_or_else(|| ToolError::NotFound(at.to_owned()))?
+                let (a, b) = found.ok_or_else(|| ToolError::NotFound(at.to_owned()))?;
+                (a, b, 1)
             }
         },
     };
+    let spans = config.as_ref().map(|(_, spans)| spans.as_slice());
     let mut out = String::new();
+    let mut used = 0_usize;
     let mut last = from.saturating_sub(1);
     let mut cut = None;
     let mut base = 0_usize;
@@ -460,25 +466,56 @@ pub fn read(
         if n > to {
             break;
         }
-        if out.chars().count() + line.chars().count() > MAX_READ_CHARS && n > from {
-            cut = Some(n);
+        let chars = line.chars().count();
+        if n == from && (column > 1 || chars > MAX_READ_CHARS) {
+            // a line too long for one answer (minified JSON, a log line): its masked text in pieces, the cursor
+            // naming the character the next piece starts at
+            let (piece, next) = long_line_piece(&masked(line, base, spans), column);
+            let next = match next {
+                Some(c) => Some(format!("L{n}:{c}")),
+                None => (n < to).then(|| format!("L{}", n + 1)),
+            };
+            return Ok(answer(path, at, (n, n), &piece, next));
+        }
+        if used + chars > MAX_READ_CHARS && n > from {
+            cut = Some(format!("L{n}"));
             break;
         }
         out.push_str(line);
+        used += chars;
         last = n;
     }
-    let mut answer = json!({
-        "path": path,
-        "lines": [from, last.max(from)],
-        "text": masked(&out, base, config.as_ref().map(|(_, spans)| spans.as_slice())),
-    });
-    if let (Some(map), Some(at)) = (answer.as_object_mut(), at) {
-        map.insert("at".to_owned(), json!(at));
+    let text = masked(&out, base, spans);
+    Ok(answer(path, at, (from, last.max(from)), &text, cut))
+}
+
+/// `[MAX_READ_CHARS]` characters of a long line from character `column` (1-based) on, and the column of the next
+/// piece when some of the line is left.
+fn long_line_piece(line: &str, column: usize) -> (String, Option<usize>) {
+    let piece: String = line.chars().skip(column - 1).take(MAX_READ_CHARS).collect();
+    let end = column - 1 + piece.chars().count();
+    let length = line.trim_end_matches(['\n', '\r']).chars().count();
+    (piece, (length > end).then_some(end + 1))
+}
+
+/// The answer of `read`: `cut` = the `at` that continues it (one start value).
+fn answer(
+    path: &str,
+    at: Option<&str>,
+    lines: (u32, u32),
+    text: &str,
+    cut: Option<String>,
+) -> Value {
+    let mut answer = json!({ "path": path, "lines": [lines.0, lines.1], "text": text });
+    if let Some(map) = answer.as_object_mut() {
+        if let Some(at) = at {
+            map.insert("at".to_owned(), json!(at));
+        }
+        if let Some(next) = cut {
+            map.insert("cut".to_owned(), json!(next));
+        }
     }
-    if let (Some(map), Some(next)) = (answer.as_object_mut(), cut) {
-        map.insert("cut".to_owned(), json!(format!("L{next}-L{to}")));
-    }
-    Ok(answer)
+    answer
 }
 
 /// `part` (the bytes of the file from `base` on) with the secret `spans` of the format hidden, then the key-based
@@ -587,8 +624,78 @@ mod tests {
         });
         let value = read(&FormatRegistry::core(), "big.txt", &text, None).unwrap();
         assert!(value["text"].as_str().unwrap().chars().count() <= MAX_READ_CHARS);
+        // the cursor is one start value; passed back as `at` it goes on from there
         let cut = value["cut"].as_str().unwrap();
-        assert!(cut.starts_with('L') && cut.ends_with("-L5000"), "{cut}");
+        assert!(cut.starts_with('L') && !cut.contains('-'), "{cut}");
+        let next: u32 = cut[1..].parse().unwrap();
+        let last = value["lines"][1].as_u64().unwrap();
+        assert_eq!(u64::from(next), last + 1);
+        let on = read(&FormatRegistry::core(), "big.txt", &text, Some(cut)).unwrap();
+        assert_eq!(on["lines"][0], json!(next));
+        assert!(on["text"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("line {} ", next - 1)));
+        // reading on to the end leaves no cursor
+        let mut at = cut.to_owned();
+        let mut rounds = 0;
+        loop {
+            let v = read(&FormatRegistry::core(), "big.txt", &text, Some(&at)).unwrap();
+            rounds += 1;
+            let Some(c) = v["cut"].as_str() else {
+                assert_eq!(v["lines"][1], json!(5000));
+                break;
+            };
+            at = c.to_owned();
+            assert!(rounds < 20);
+        }
+        // a range still reads just that range; a line alone reads from it on
+        let range = read(&FormatRegistry::core(), "big.txt", &text, Some("L3-L4")).unwrap();
+        assert_eq!(
+            range["text"],
+            "line 2 with some words\nline 3 with some words\n"
+        );
+        let from = read(&FormatRegistry::core(), "big.txt", &text, Some("L4999")).unwrap();
+        assert_eq!(from["lines"], json!([4999, 5000]));
+        assert!(from.get("cut").is_none());
+    }
+
+    #[test]
+    fn a_line_too_long_for_one_answer_is_read_in_pieces() {
+        // minified JSON on one line, with a secret in the second piece
+        let mut text = String::from("{\"items\":[");
+        while text.chars().count() < MAX_READ_CHARS + 500 {
+            text.push_str("{\"name\":\"é\",\"n\":1},");
+        }
+        text.push_str("{\"token\":\"sk-live-123456\"}]}\n{\"tail\":1}\n");
+        let first = read(&FormatRegistry::core(), "min.json", &text, None).unwrap();
+        let piece = first["text"].as_str().unwrap();
+        assert_eq!(piece.chars().count(), MAX_READ_CHARS);
+        assert!(piece.starts_with("{\"items\":[{\"name\""));
+        assert_eq!(first["lines"], json!([1, 1]));
+        let cut = first["cut"].as_str().unwrap();
+        assert_eq!(cut, format!("L1:{}", MAX_READ_CHARS + 1));
+        let second = read(&FormatRegistry::core(), "min.json", &text, Some(cut)).unwrap();
+        let rest = second["text"].as_str().unwrap();
+        assert!(rest.ends_with("]}\n"), "{rest}");
+        assert!(!rest.contains("sk-live"), "{rest}");
+        // the pieces join to the masked line
+        let line = &text[..=text.find('\n').unwrap()];
+        assert_eq!(format!("{piece}{rest}"), mask_text(line));
+        assert_eq!(second["cut"], "L2");
+        let tail = read(&FormatRegistry::core(), "min.json", &text, Some("L2")).unwrap();
+        assert_eq!(tail["text"], "{\"tail\":1}\n");
+        // odd cursors: past the line, zero, junk
+        let past = read(
+            &FormatRegistry::core(),
+            "min.json",
+            &text,
+            Some("L1:999999"),
+        )
+        .unwrap();
+        assert_eq!(past["text"], "");
+        assert!(read(&FormatRegistry::core(), "min.json", &text, Some("L1:0")).is_err());
+        assert!(read(&FormatRegistry::core(), "min.json", &text, Some("L1:x")).is_err());
     }
 
     #[test]
