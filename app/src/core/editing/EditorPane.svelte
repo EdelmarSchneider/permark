@@ -151,7 +151,6 @@
         {session}
         {content}
         markdown={session.kind === "markdown"}
-        config={session.kind === "sheet"}
         {project}
         {pictures}
       />

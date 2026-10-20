@@ -1,30 +1,26 @@
 <script lang="ts">
-  // Source mode: CodeMirror over the edit text (loaded on first use), a small find bar, the diagram drawn beside
-  // the fence the caret is in.
+  // Source mode: the raw file in CodeMirror (loaded on first use), a small find bar. Nothing is hidden, masked or
+  // drawn over the text: secret values show as they are, diagrams draw in View and Edit only.
   import { api } from "../../api";
   import { t } from "../i18n";
   import type { Content, EditingSession } from "./session.svelte";
-  import type { Fence, SourceView } from "./source/cm";
-  import DiagramPreview from "./DiagramPreview.svelte";
+  import type { SourceView } from "./source/cm";
   import { pictureFiles } from "./pictures";
 
   type Props = {
     session: EditingSession;
     content: Content;
     markdown: boolean;
-    /** A config file (a sheet format): its secret values are masked. */
-    config?: boolean;
     /** Single file: no project files to link to. */
     project: boolean;
     pictures: (files: File[]) => Promise<string[]>;
   };
-  let { session, content, markdown, config = false, project, pictures }: Props = $props();
+  let { session, content, markdown, project, pictures }: Props = $props();
 
   let host: HTMLElement | undefined = $state();
   let finding = $state(false);
   let query = $state("");
   let missing = $state(false);
-  let fence = $state.raw<Fence | null>(null);
   let source: SourceView | null = null;
 
   // the editor: made when the content (a load, a mode switch) is new, torn down with it
@@ -41,15 +37,6 @@
         text: current.text,
         path: current.path,
         markdown,
-        secrets: config
-          ? {
-              load: async (text) => {
-                const result = await api.configSecrets(current.path, text);
-                return result.ok ? result.value : [];
-              },
-              label: t("config.reveal"),
-            }
-          : undefined,
         host: {
           changed: () => session.changed(),
           selected: () => session.selected(),
@@ -57,7 +44,6 @@
           modeKey: (toSource) => void session.switchTo(toSource ? "source" : "view"),
           find: () => (finding = true),
           pictures: (files, at) => void insertPictures(files, at),
-          fence: (next) => (fence = next),
           docPath: () => current.path,
           linkTargets: async () => {
             if (!project) return [];
@@ -91,7 +77,6 @@
       detach();
       source?.destroy();
       source = null;
-      fence = null;
     };
   });
 
@@ -133,7 +118,7 @@
   }
 </script>
 
-<div class="source" class:with-preview={fence !== null} data-drop-editor>
+<div class="source" data-drop-editor>
   {#if finding}
     <div class="find" role="search">
       <input
@@ -158,11 +143,6 @@
   {/if}
   <div class="body">
     <div class="cm" bind:this={host}></div>
-    {#if fence}
-      <aside class="preview" aria-label={t("edit.diagramPreview")}>
-        <DiagramPreview language={fence.language} source={fence.code} />
-      </aside>
-    {/if}
   </div>
 </div>
 
@@ -183,16 +163,6 @@
   }
   .cm :global(.cm-editor) {
     min-height: 100%;
-  }
-  .preview {
-    flex: 0 0 40%;
-    max-width: 520px;
-    border-left: 1px solid var(--border);
-    padding: var(--sp-3);
-    overflow: auto;
-    position: sticky;
-    top: 0;
-    max-height: 100vh;
   }
   .find {
     position: sticky;

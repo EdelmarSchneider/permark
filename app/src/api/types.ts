@@ -319,7 +319,6 @@ export interface Commands {
   edit_link_targets: { args: Record<string, never>; result: string[] };
   config_sheet: { args: { path: string; text: string }; result: Body };
   config_edit: { args: { path: string; text: string; edit: ConfigEdit }; result: ConfigEdited };
-  config_secrets: { args: { path: string; text: string }; result: SecretRange[] };
   ignore_matches: { args: { path: string; text: string | null }; result: IgnoreMatches };
   analyze: {
     args: { path: string | null; text: string | null; kind: TextKind };
@@ -745,7 +744,6 @@ export interface Api {
   /** One value edit on the editor's text: the new text (only that value changed) and its sheet. */
   configEdit(path: string, text: string, edit: ConfigEdit): Promise<Result<ConfigEdited>>;
   /** Where the secret values of the text are (UTF-16 units). */
-  configSecrets(path: string, text: string): Promise<Result<SecretRange[]>>;
   /** How many project files each pattern of an ignore file matches (`text`: the editor's version, else the disk's). */
   ignoreMatches(path: string, text: string | null): Promise<Result<IgnoreMatches>>;
   /** Measures of the enabled analyses, of a document (`path`) or a text. */

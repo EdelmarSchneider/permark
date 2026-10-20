@@ -187,7 +187,6 @@ export const tauriApi: Api = {
   editLinkTargets: () => call("edit_link_targets", {}),
   configSheet: (path, text) => call("config_sheet", { path, text }),
   configEdit: (path, text, edit) => call("config_edit", { path, text, edit }),
-  configSecrets: (path, text) => call("config_secrets", { path, text }),
   ignoreMatches: (path, text) => call("ignore_matches", { path, text }),
   analyze: (path, text, kind) => call("analyze", { path, text, kind }),
   searchStatus: () => call("search_status", {}),

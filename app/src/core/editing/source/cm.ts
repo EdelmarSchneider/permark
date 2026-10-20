@@ -1,6 +1,7 @@
-// Source mode: CodeMirror 6 over the edit text. Markdown (fenced code highlighted by language, loaded on demand;
-// YAML front matter) or any text by file name. Completions without AI (complete.ts), a small find, keys that never
-// misfire under IME, picture paste | drop, and the fence the caret is in (diagram preview).
+// Source mode: CodeMirror 6 over the edit text, the raw file: nothing hidden, masked, folded or drawn over it
+// (invisible characters made visible). Markdown (fenced code highlighted by language, loaded on demand; YAML front
+// matter) or any text by file name. Completions without AI (complete.ts), a small find, keys that never misfire under
+// IME, picture paste | drop.
 
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -19,13 +20,13 @@ import {
   EditorView,
   highlightActiveLine,
   highlightActiveLineGutter,
+  highlightSpecialChars,
   keymap,
   lineNumbers,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { configLanguage } from "./configLang";
 import { completionSources, type CompletionHost } from "./complete";
-import { secretMask, type LoadSecrets } from "./mask";
 
 export type SourceHost = CompletionHost & {
   changed(): void;
@@ -34,12 +35,7 @@ export type SourceHost = CompletionHost & {
   modeKey(source: boolean): void;
   find(): void;
   pictures(files: File[], at: number): void;
-  /** The diagram fence the caret is in (`null`: none). */
-  fence(fence: Fence | null): void;
 };
-
-/** A fenced block the caret is in: its language and its code. */
-export type Fence = { language: string; code: string; from: number };
 
 const style = HighlightStyle.define([
   { tag: tags.heading, fontWeight: "700", color: "var(--text)" },
@@ -96,45 +92,6 @@ const theme = EditorView.theme({
   ".cm-find-match": { backgroundColor: "var(--mark)" },
 });
 
-const DIAGRAMS = new Set(["mermaid", "plantuml", "puml"]);
-const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)/;
-
-/** The fenced block around line `at` (1-based, strictly inside the fences), when its language is a diagram. */
-export function fenceAround(lines: readonly string[], at: number): Fence | null {
-  const caret = at - 1;
-  let open = -1;
-  let marker = "";
-  let language = "";
-  for (let i = 0; i < lines.length; i++) {
-    const match = FENCE.exec(lines[i] ?? "");
-    if (open < 0) {
-      if (match) {
-        open = i;
-        marker = match[1] ?? "";
-        language = (match[2] ?? "").toLowerCase();
-      }
-      if (i >= caret) return null;
-      continue;
-    }
-    const fence = match?.[1] ?? "";
-    const closes =
-      match !== null && !match[2] && fence[0] === marker[0] && fence.length >= marker.length;
-    if (closes) {
-      if (caret > open && caret < i) {
-        return DIAGRAMS.has(language)
-          ? { language, code: lines.slice(open + 1, i).join("\n"), from: open + 1 }
-          : null;
-      }
-      open = -1;
-      if (i >= caret) return null;
-    }
-  }
-  if (open >= 0 && caret > open && DIAGRAMS.has(language)) {
-    return { language, code: lines.slice(open + 1).join("\n"), from: open + 1 };
-  }
-  return null;
-}
-
 /** How code looks in the editors (colors from the theme tokens): the grammar's highlighting, the font, the gutter. */
 export const codeLook: Extension = [syntaxHighlighting(style), theme];
 
@@ -170,8 +127,6 @@ export function createSource(options: {
   path: string;
   markdown: boolean;
   host: SourceHost;
-  /** A config file: the secret values are masked (ranges from the backend). */
-  secrets?: { load: LoadSecrets; label: string };
 }): SourceView {
   const { host } = options;
   const language = new Compartment();
@@ -213,6 +168,7 @@ export function createSource(options: {
       extensions: [
         keys,
         lineNumbers(),
+        highlightSpecialChars(),
         highlightActiveLineGutter(),
         highlightActiveLine(),
         drawSelection(),
@@ -222,24 +178,11 @@ export function createSource(options: {
         language.of(loaded instanceof Promise ? [] : loaded),
         syntaxHighlighting(style),
         theme,
-        ...(options.secrets ? [secretMask(options.secrets.load, options.secrets.label)] : []),
         autocompletion({ override: completionSources(host), activateOnTyping: true }),
         keymap.of([...completionKeymap, ...defaultKeymap, ...historyKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) host.changed();
-          if (update.docChanged || update.selectionSet) {
-            host.selected();
-            if (!options.markdown) return;
-            // a window around the caret: a long document is not split on every key
-            const doc = update.state.doc;
-            const line = doc.lineAt(update.state.selection.main.head).number;
-            const first = Math.max(1, line - 400);
-            const last = Math.min(doc.lines, line + 400);
-            const lines: string[] = [];
-            for (let n = first; n <= last; n++) lines.push(doc.line(n).text);
-            const fence = fenceAround(lines, line - first + 1);
-            host.fence(fence && { ...fence, from: fence.from + first - 1 });
-          }
+          if (update.docChanged || update.selectionSet) host.selected();
         }),
         EditorView.domEventHandlers({
           paste: (event, v) => {

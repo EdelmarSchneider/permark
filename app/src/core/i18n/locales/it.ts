@@ -415,7 +415,6 @@ export default {
   "edit.editInSource": "Modifica nel sorgente",
   "edit.visualForMarkdown":
     "La modalità Modifica è per i file Markdown e di impostazioni; usa Sorgente.",
-  "edit.diagramPreview": "Anteprima del diagramma",
   "edit.diagramNoPlugin": "Attiva il plugin Mermaid o PlantUML per vedere il disegno.",
   "edit.disabled.binary": "I file binari non si possono modificare.",
   "edit.disabled.tooLarge": "Questo file è troppo grande da modificare.",

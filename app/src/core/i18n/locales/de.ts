@@ -417,7 +417,6 @@ export default {
   "edit.editInSource": "Im Quelltext bearbeiten",
   "edit.visualForMarkdown":
     "Der Bearbeitungsmodus ist für Markdown- und Einstellungsdateien; nutze Quelltext.",
-  "edit.diagramPreview": "Diagrammvorschau",
   "edit.diagramNoPlugin":
     "Schalte das Mermaid- oder PlantUML-Plugin ein, um die Zeichnung zu sehen.",
   "edit.disabled.binary": "Binärdateien können nicht bearbeitet werden.",

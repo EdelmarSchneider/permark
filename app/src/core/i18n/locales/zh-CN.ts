@@ -394,7 +394,6 @@ export default {
   "edit.keepEditing": "继续编辑",
   "edit.editInSource": "在源码中编辑",
   "edit.visualForMarkdown": "编辑模式适用于 Markdown 文件和设置文件；请使用源码。",
-  "edit.diagramPreview": "图表预览",
   "edit.diagramNoPlugin": "开启 Mermaid 或 PlantUML 插件即可查看图形。",
   "edit.disabled.binary": "二进制文件无法编辑。",
   "edit.disabled.tooLarge": "此文件太大，无法编辑。",

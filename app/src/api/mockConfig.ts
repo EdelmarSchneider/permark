@@ -11,7 +11,6 @@ import type {
   IgnoreMatches,
   Result,
   Row,
-  SecretRange,
   Sheet,
 } from "./types";
 
@@ -29,7 +28,7 @@ function refused<T>(
   });
 }
 
-export type ConfigApi = Pick<Api, "configSheet" | "configEdit" | "configSecrets" | "ignoreMatches">;
+export type ConfigApi = Pick<Api, "configSheet" | "configEdit" | "ignoreMatches">;
 
 type Token = { start: number; end: number; raw: string };
 
@@ -252,27 +251,6 @@ export function createMockConfig(textOf: (path: string) => string | null = () =>
       lines[row.line - 1] = line.slice(0, token.start) + written + line.slice(token.end);
       const next = lines.join("\n");
       return ok({ text: next, body: sheetBody(path, next) });
-    },
-    configSecrets: (path, text) => {
-      const body = sheetBody(path, text);
-      if (body.kind !== "sheet") return ok([]);
-      const lines = text.split("\n");
-      const starts: number[] = [];
-      let offset = 0;
-      for (const line of lines) {
-        starts.push(offset);
-        offset += line.length + 1;
-      }
-      const ranges: SecretRange[] = [];
-      for (const row of textRows(body.sheet)) {
-        if (row.value.type !== "scalar" || !row.value.secret) continue;
-        const token = tokenIn(lines[row.line - 1] ?? "");
-        const base = starts[row.line - 1];
-        if (token !== null && base !== undefined) {
-          ranges.push({ from: base + token.start, to: base + token.end });
-        }
-      }
-      return ok(ranges);
     },
     ignoreMatches: (path, given) => {
       const text = given ?? mockFileText(path);

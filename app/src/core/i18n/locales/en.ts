@@ -404,7 +404,6 @@ const en = {
   "edit.keepEditing": "Keep editing",
   "edit.editInSource": "Edit in Source",
   "edit.visualForMarkdown": "Edit mode is for Markdown files and settings files; use Source.",
-  "edit.diagramPreview": "Diagram preview",
   "edit.diagramNoPlugin": "Turn on the Mermaid or PlantUML plugin to see the drawing.",
   "edit.disabled.binary": "Binary files can't be edited.",
   "edit.disabled.tooLarge": "This file is too large to edit.",
