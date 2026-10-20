@@ -76,14 +76,16 @@ pub struct QuietService {
 }
 
 impl QuietService {
-    /// Reads `quiet.json` (a missing or damaged file is no marks).
+    /// Reads `quiet.json` (a missing or damaged file is no marks; a file that cannot be read now is set aside like a
+    /// damaged one before the first write, never written over).
     #[must_use]
     pub fn load(file: RawFile, announce: Arc<dyn Fn(&QuietMarks) + Send + Sync>) -> Arc<Self> {
         let (marks, damaged) = match file.read() {
             Ok(Some(bytes)) => {
                 Marks::parse(&bytes).map_or((Marks::default(), true), |m| (m, false))
             }
-            _ => (Marks::default(), false),
+            Ok(None) => (Marks::default(), false),
+            Err(_) => (Marks::default(), true),
         };
         Arc::new(Self {
             marks: RwLock::new(marks),
@@ -166,8 +168,12 @@ impl QuietService {
                 .file
                 .path()
                 .with_file_name(format!("quiet.unreadable-{ms}.json"));
-            if std::fs::rename(self.file.path(), aside).is_ok() {
-                *damaged = false;
+            match std::fs::rename(self.file.path(), aside) {
+                Ok(()) => *damaged = false,
+                // gone meanwhile: nothing to keep
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => *damaged = false,
+                // still there and not ours to replace: no write
+                Err(e) => return Err(IpcError::io("quiet.json", &e)),
             }
         }
         self.file.write(&bytes)?;
