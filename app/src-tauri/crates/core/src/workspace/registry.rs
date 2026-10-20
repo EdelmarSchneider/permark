@@ -3,7 +3,7 @@
 //! shows); publishes `windows-changed`, `window-changed`, `context-changed` (only what differs). Everything other
 //! specs key by "window" for a workspace is keyed by the view label here.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 
@@ -50,6 +50,28 @@ impl From<OpenError> for IpcError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("the tab cannot move there now")]
 pub struct MoveRefused;
+
+/// A tab move under way (`begin_move`): no second move of that tab starts until it is dropped; `move_tab` takes it.
+/// Held across the shell's whole move (view reparented, then the registry step), so two moves of one tab never
+/// interleave (the view would end in one window, the tab in the other).
+#[must_use]
+pub struct MoveTicket<'a> {
+    registry: &'a WorkspaceRegistry,
+    tab: TabId,
+}
+
+impl MoveTicket<'_> {
+    #[must_use]
+    pub fn tab(&self) -> TabId {
+        self.tab
+    }
+}
+
+impl Drop for MoveTicket<'_> {
+    fn drop(&mut self) {
+        lock(&self.registry.inner).moving.remove(&self.tab);
+    }
+}
 
 /// An open in progress: proves `begin_open` reserved the workspace; consumed by `finish_open`.
 #[derive(Debug)]
@@ -170,6 +192,8 @@ struct WindowEntry {
     focused_ms: u64,
     /// The tabs it had when it began closing: the last window closed stays in the session as it was.
     closed: Option<Strip>,
+    /// Shown on screen once (minimized still counts); `false` while being made (hidden until its first view paints).
+    shown: bool,
 }
 
 #[derive(Debug)]
@@ -197,6 +221,8 @@ struct Inner {
     next_tab: u64,
     next_ticket: u64,
     next_id: u64,
+    /// Tabs with a move under way (`MoveTicket`).
+    moving: BTreeSet<TabId>,
     published: Published,
 }
 
@@ -328,6 +354,7 @@ impl WorkspaceRegistry {
                     fsm: WindowState::Open(Strip::default()),
                     focused_ms: 0,
                     closed: None,
+                    shown: false,
                 },
             );
         }
@@ -360,6 +387,23 @@ impl WorkspaceRegistry {
         drop(inner);
         drop(dropped);
         self.prune_cores();
+    }
+
+    /// The native window is on screen (shown after being made).
+    pub fn window_shown(&self, window: &str) {
+        if let Some(entry) = lock(&self.inner).windows.get_mut(window) {
+            entry.shown = true;
+        }
+    }
+
+    /// No other window is on screen: `window` closing ends the session (it is saved as this one). Windows closing
+    /// and windows still being made (not shown yet) do not count; a minimized one does.
+    #[must_use]
+    pub fn is_last_on_screen(&self, window: &str) -> bool {
+        !lock(&self.inner)
+            .windows
+            .iter()
+            .any(|(label, w)| label != window && w.shown && !matches!(w.fsm, WindowState::Closing))
     }
 
     /// The window got the focus (`ms`: now).
@@ -563,18 +607,50 @@ impl WorkspaceRegistry {
         self.settle(inner, step)
     }
 
-    /// Moves a tab into `to` (another work window) in one step under the lock: the workspace is never without its
-    /// place (one place holds throughout). `view`: the tab's view as the shell moved it (`None`: pending); the tab's
-    /// view changed meanwhile -> refused. Changes: the source's (`Transfer` included), then the target's.
+    /// Starts a move of `tab` (held until the ticket drops). `NewWindow`: the window's only tab never moves out
+    /// (it would leave the window empty); tabs being moved out already do not count as staying.
+    ///
+    /// # Errors
+    /// `MoveRefused`: unknown tab, source not open (closing | asking), a move of it under way, only tab (`NewWindow`).
+    pub fn begin_move(&self, tab: TabId, to: &MoveTo) -> Result<MoveTicket<'_>, MoveRefused> {
+        let mut inner = lock(&self.inner);
+        let from = inner.window_of_tab(tab).ok_or(MoveRefused)?;
+        let Some(WindowState::Open(strip)) = inner.windows.get(&from).map(|w| &w.fsm) else {
+            return Err(MoveRefused);
+        };
+        let staying = strip
+            .tabs
+            .iter()
+            .filter(|t| t.id != tab && !inner.moving.contains(&t.id))
+            .count();
+        if inner.moving.contains(&tab) || (*to == MoveTo::NewWindow && staying == 0) {
+            return Err(MoveRefused);
+        }
+        inner.moving.insert(tab);
+        Ok(MoveTicket {
+            registry: self,
+            tab,
+        })
+    }
+
+    /// Moves the ticket's tab into `to` (another work window) in one step under the lock: the workspace is never
+    /// without its place (one place holds throughout). `view`: the tab's view as the shell moved it (`None`:
+    /// pending); the tab's view changed meanwhile -> refused. Changes: the source's (`Transfer` included), then the
+    /// target's.
     ///
     /// # Errors
     /// `MoveRefused`: unknown tab | target, same window, target not open, source not open (closing | asking).
     pub fn move_tab(
         &self,
-        tab: TabId,
+        ticket: &MoveTicket<'_>,
         to: &str,
         view: Option<&str>,
     ) -> Result<Outcome, MoveRefused> {
+        debug_assert!(
+            std::ptr::eq(ticket.registry, self),
+            "a ticket of this registry"
+        );
+        let tab = ticket.tab;
         let mut inner = lock(&self.inner);
         let from = inner.window_of_tab(tab).ok_or(MoveRefused)?;
         let source = inner.windows.get(&from).ok_or(MoveRefused)?;

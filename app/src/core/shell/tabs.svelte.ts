@@ -4,11 +4,15 @@
 import { api, type Api, type TabSummary, type Unlisten, type WindowSummary } from "../../api";
 import { canSwitch, last, neighbor, nth } from "./switcherModel";
 
+export type MoveResult = "moved" | "refused" | "busy";
+
 class Tabs {
   windows = $state.raw<readonly WindowSummary[]>([]);
   /** The native window this view lives in. */
   window = $state("");
   #api: Api = api;
+  /** Tabs with a move asked and not answered yet (a second click does not ask again). */
+  #moving = new Set<number>();
 
   /** This window's entry. */
   get mine(): WindowSummary | null {
@@ -66,10 +70,19 @@ class Tabs {
     void this.#api.tabClose(tab);
   }
 
-  /** Moves a tab to a new window; `false`: it could not move (it stays where it was). */
-  async moveToNewWindow(tab: number): Promise<boolean> {
-    if (this.list.length < 2) return false;
-    return (await this.#api.tabMoveNewWindow(tab)).ok;
+  /**
+   * Moves a tab to a new window. `refused`: it could not move (it stays where it was); `busy`: a move of it is under
+   * way already (that one reports), nothing asked.
+   */
+  async moveToNewWindow(tab: number): Promise<MoveResult> {
+    if (this.#moving.has(tab)) return "busy";
+    if (this.list.length < 2) return "refused";
+    this.#moving.add(tab);
+    try {
+      return (await this.#api.tabMoveNewWindow(tab)).ok ? "moved" : "refused";
+    } finally {
+      this.#moving.delete(tab);
+    }
   }
 
   /** The next | previous tab (wraps; nothing with fewer than two). */

@@ -810,10 +810,12 @@ fn a_moved_tab_keeps_its_workspace_and_unsaved_flag() {
         .documents()
         .set_unsaved(&view, Some("move.md".into()));
     f.registry.add_window("w-9", WindowKind::Work);
+    let ticket = f.registry.begin_move(moving, &MoveTo::NewWindow).unwrap();
     let outcome = f
         .registry
-        .move_tab(moving, "w-9", Some(view.as_str()))
+        .move_tab(&ticket, "w-9", Some(view.as_str()))
         .unwrap();
+    drop(ticket);
     assert_eq!(
         outcome.changes,
         [
@@ -862,10 +864,15 @@ fn a_refused_move_leaves_both_windows_as_they_were() {
     let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
     let before = f.registry.list_windows();
     let refused = |to: &str, view: &str| {
-        matches!(
-            f.registry.move_tab(moving, to, Some(view)),
-            Err(MoveRefused)
-        )
+        // a source asking to close refuses at once; the rest when the registry step runs
+        f.registry
+            .begin_move(moving, &MoveTo::NewWindow)
+            .map_or(true, |ticket| {
+                matches!(
+                    f.registry.move_tab(&ticket, to, Some(view)),
+                    Err(MoveRefused)
+                )
+            })
     };
     assert!(refused("nowhere", &view));
     assert!(refused("w-1", &keep_view), "not the view the shell moved");
@@ -910,7 +917,9 @@ fn a_tab_moving_back_and_forth_is_always_found_in_one_place() {
         s.spawn(|| {
             for round in 0..200 {
                 let to = if round % 2 == 0 { "w-9" } else { "main" };
-                f.registry.move_tab(moving, to, Some(&view)).unwrap();
+                let to_window = MoveTo::Window(to.to_owned());
+                let ticket = f.registry.begin_move(moving, &to_window).unwrap();
+                f.registry.move_tab(&ticket, to, Some(&view)).unwrap();
             }
         });
         s.spawn(|| {
@@ -927,6 +936,145 @@ fn a_tab_moving_back_and_forth_is_always_found_in_one_place() {
     let tabs_after: usize = f.registry.list_windows().iter().map(|w| w.tabs.len()).sum();
     assert_eq!(tabs_after, tabs_before);
     assert_eq!(f.registry.window_of(&view).as_deref(), Some("main"));
+}
+
+/// Adversarial: two moves of one tab at once (a double click on "Move to new window"): the second is refused while
+/// the first is under way, so the tab and its view always end in the same window; once the first is done, the tab
+/// can move again.
+#[test]
+fn a_second_move_of_a_tab_under_way_is_refused() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
+    f.registry.add_window("w-8", WindowKind::Work);
+    f.registry.add_window("w-9", WindowKind::Work);
+    let first = f.registry.begin_move(moving, &MoveTo::NewWindow).unwrap();
+    assert!(matches!(
+        f.registry.begin_move(moving, &MoveTo::NewWindow),
+        Err(MoveRefused)
+    ));
+    assert!(matches!(
+        f.registry.begin_move(moving, &MoveTo::Window("w-9".into())),
+        Err(MoveRefused)
+    ));
+    f.registry.move_tab(&first, "w-8", Some(&view)).unwrap();
+    drop(first);
+    assert_eq!(f.registry.window_of_tab(moving).as_deref(), Some("w-8"));
+    assert_eq!(f.registry.window_of(&view).as_deref(), Some("w-8"));
+    // done: the tab moves again (to a window: its only tab may go, the window it leaves closes)
+    let again = f
+        .registry
+        .begin_move(moving, &MoveTo::Window("w-9".into()))
+        .unwrap();
+    f.registry.move_tab(&again, "w-9", Some(&view)).unwrap();
+    assert_eq!(f.registry.window_of(&view).as_deref(), Some("w-9"));
+}
+
+/// Adversarial: many threads move one tab to new windows at once: at most one holds a ticket at a time, every move
+/// that ran left the tab with its view, and the tab is found exactly once.
+#[test]
+fn concurrent_moves_of_one_tab_never_split_tab_and_view() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
+    // each window keeps a tab of its own: the moving one is never the only one (it may always go on)
+    for n in 0..8 {
+        let window = format!("w-{n}");
+        f.registry.add_window(&window, WindowKind::Work);
+        tab(&f, &window, &file(&dir.path().join(format!("keep-{n}.md")))).unwrap();
+    }
+    let held = std::sync::atomic::AtomicUsize::new(0);
+    let moves = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|s| {
+        for n in 0..8 {
+            let (f, view, held, moves) = (&f, &view, &held, &moves);
+            s.spawn(move || {
+                for round in 0..200 {
+                    let Ok(ticket) = f.registry.begin_move(moving, &MoveTo::NewWindow) else {
+                        continue;
+                    };
+                    assert_eq!(held.fetch_add(1, std::sync::atomic::Ordering::SeqCst), 0);
+                    let to = format!("w-{}", (n + round) % 8);
+                    if f.registry.move_tab(&ticket, &to, Some(view)).is_ok() {
+                        moves.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    assert_eq!(f.registry.window_of_tab(moving), f.registry.window_of(view));
+                    held.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                }
+            });
+        }
+    });
+    let count: usize = f
+        .registry
+        .list_windows()
+        .iter()
+        .map(|w| w.tabs.iter().filter(|t| t.tab == moving).count())
+        .sum();
+    assert_eq!(count, 1);
+    assert_eq!(
+        f.registry.window_of_tab(moving),
+        f.registry.window_of(&view)
+    );
+    assert!(moves.into_inner() > 8, "the tab moved many times");
+}
+
+/// "Move to new window" never takes a window's only tab (spec: disabled with one tab), nor its last one staying
+/// while another is being moved out; a window that is closing | asking lets no tab move.
+#[test]
+fn the_only_tab_never_moves_to_a_new_window() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (only, _) = tab(&f, "main", &file(&dir.path().join("only.md"))).unwrap();
+    assert!(matches!(
+        f.registry.begin_move(only, &MoveTo::NewWindow),
+        Err(MoveRefused)
+    ));
+    let (second, _) = tab(&f, "main", &file(&dir.path().join("second.md"))).unwrap();
+    let first = f.registry.begin_move(only, &MoveTo::NewWindow).unwrap();
+    assert!(
+        matches!(
+            f.registry.begin_move(second, &MoveTo::NewWindow),
+            Err(MoveRefused)
+        ),
+        "the other tab is leaving: this one stays"
+    );
+    drop(first);
+    assert!(f.registry.begin_move(second, &MoveTo::NewWindow).is_ok());
+    assert!(matches!(
+        f.registry.begin_move(TabId(9999), &MoveTo::NewWindow),
+        Err(MoveRefused)
+    ));
+    let _ = f.registry.request_close("main");
+    assert!(matches!(
+        f.registry.begin_move(second, &MoveTo::NewWindow),
+        Err(MoveRefused)
+    ));
+}
+
+/// The last window on screen: windows being made (not shown yet) and closing ones do not count; a shown one does,
+/// minimized or not (the registry knows, the OS visibility is not asked).
+#[test]
+fn the_last_window_on_screen_counts_shown_windows_only() {
+    let f = fx();
+    f.registry.window_shown("main");
+    assert!(f.registry.is_last_on_screen("main"));
+    f.registry.add_window("w-1", WindowKind::Work);
+    assert!(f.registry.is_last_on_screen("main"), "w-1 still being made");
+    f.registry.window_shown("w-1");
+    assert!(!f.registry.is_last_on_screen("main"));
+    assert!(!f.registry.is_last_on_screen("w-1"));
+    let _ = f.registry.request_close("w-1");
+    assert!(f.registry.is_closing("w-1"));
+    assert!(f.registry.is_last_on_screen("main"), "w-1 closing");
+    f.registry.forget_window("w-1");
+    assert!(f.registry.is_last_on_screen("main"));
+    f.registry.window_shown("gone");
+    assert!(
+        f.registry.is_last_on_screen("main"),
+        "unknown windows are never marked"
+    );
 }
 
 // ---- live reload of the project state (PerMark initialized while the project is open) ---------------------------------

@@ -146,7 +146,7 @@ fn on_window_event(handle: &tauri::AppHandle, label: &str, event: &WindowEvent) 
                 .any(|c| matches!(c, permark_core::workspace::ViewChange::CloseWindow { .. }));
             if closes {
                 // the last window: the session keeps it (saved now, frozen until exit)
-                if windows::is_last_visible(handle, label) {
+                if shell.registry.is_last_on_screen(label) {
                     shell.save_session_now(handle);
                     shell.saver.freeze();
                 }

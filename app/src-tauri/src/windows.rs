@@ -175,15 +175,6 @@ pub fn remember_geometry(handle: &AppHandle, label: &str) {
     }
 }
 
-/// No other window is on screen: `label` closing ends the session (it is saved as this one). Hidden windows (one
-/// being made, waiting for its first view to paint) do not count.
-pub fn is_last_visible(handle: &AppHandle, label: &str) -> bool {
-    !handle
-        .windows()
-        .values()
-        .any(|w| w.label() != label && w.is_visible().unwrap_or(false))
-}
-
 /// Brings a window forward (shown, unminimized, focused) with the view on screen focused.
 pub fn focus(handle: &AppHandle, label: &str) {
     if let Some(window) = handle.get_window(label) {

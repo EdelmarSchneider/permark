@@ -54,8 +54,8 @@
           kind: "item",
           label: t("switcher.moveNew"),
           run: () => {
-            void tabs.moveToNewWindow(tab.tab).then((moved) => {
-              if (!moved) windowStore.notifyNote(t("switcher.moveFailed"));
+            void tabs.moveToNewWindow(tab.tab).then((result) => {
+              if (result === "refused") windowStore.notifyNote(t("switcher.moveFailed"));
             });
           },
         },

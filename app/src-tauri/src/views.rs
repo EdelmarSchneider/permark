@@ -204,11 +204,13 @@ pub fn ready(handle: &AppHandle, view: &str) {
     }
 }
 
-/// A window still hidden shows now, focused, its view on screen sized + focused.
+/// A window still hidden shows now, focused, its view on screen sized + focused. The registry counts it on screen
+/// from now on (minimized later or not).
 pub fn show_window(handle: &AppHandle, window: &str) {
     let Some(native) = handle.get_window(window) else {
         return;
     };
+    state(handle).registry.window_shown(window);
     if native.is_visible().unwrap_or(true) {
         return;
     }
@@ -222,6 +224,17 @@ pub fn show_window(handle: &AppHandle, window: &str) {
         fit_one(&native, &webview);
         let _ = webview.set_focus();
     }
+}
+
+/// A view that could not go back after a refused move lives in `window` (no tab of it in the registry): the window
+/// shows with it, sized + focused, so it never stays hidden holding the view.
+pub fn reveal(handle: &AppHandle, window: &tauri::Window, webview: &tauri::Webview) {
+    state(handle).registry.window_shown(window.label());
+    let _ = window.show();
+    let _ = window.set_focus();
+    fit_one(window, webview);
+    let _ = webview.show();
+    let _ = webview.set_focus();
 }
 
 /// Makes `view` the one on screen: others of the window hidden first (Linux: tabs share one box), then shown, sized to
@@ -297,7 +310,7 @@ pub fn forget_window(handle: &AppHandle, window: &str) {
 fn close_window(handle: &AppHandle, window: &str) {
     let shell = state(handle);
     // the last window: the session keeps it (saved now, frozen until exit)
-    if crate::windows::is_last_visible(handle, window) {
+    if shell.registry.is_last_on_screen(window) {
         shell.save_session_now(handle);
         shell.saver.freeze();
     }

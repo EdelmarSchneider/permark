@@ -708,6 +708,21 @@ describe("the top bar", () => {
     bar.stop();
   });
 
+  it("a second move of a tab while the first is under way asks nothing (no double move)", async () => {
+    const bar = await mountBar();
+    const tab = bar.ids[1]!;
+    const first = tabs.moveToNewWindow(tab);
+    const second = tabs.moveToNewWindow(tab);
+    expect(await second).toBe("busy");
+    expect(await first).toBe("moved");
+    expect(mock.probe.tabs.moved).toEqual([tab]);
+    // a refused move frees the tab too: asking again asks the backend again
+    mock.probe.tabs.refuseMove = true;
+    expect(await tabs.moveToNewWindow(bar.ids[2]!)).toBe("refused");
+    expect(await tabs.moveToNewWindow(bar.ids[2]!)).toBe("refused");
+    bar.stop();
+  });
+
   it("the Open menu: folder, file, new project, Notes, then the recent folders that exist", async () => {
     const bar = await mountBar();
     await mock.tabActivate(bar.ids[1]!);
