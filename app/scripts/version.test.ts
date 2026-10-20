@@ -9,6 +9,7 @@ import {
   setCargoLockVersions,
   setCargoWorkspaceVersion,
   setJsonVersions,
+  setLockfileVersions,
   TARGETS,
 } from "./version.mjs";
 
@@ -132,6 +133,27 @@ describe("setJsonVersions", () => {
         ["plugins", 1, "version"],
       ]),
     ).toThrow(/plugins\.1\.version/);
+  });
+});
+
+describe("setLockfileVersions", () => {
+  const dependency = '"node_modules/x": {\r\n      "version": "0.5.8"';
+  const lock = [
+    '{\r\n  "name": "permark",\r\n  "version": "0.5.8",\r\n  "packages": {',
+    '    "": {\r\n      "name": "permark",\r\n      "version": "0.5.8"\r\n    },',
+    `    ${dependency}\r\n    }\r\n  }\r\n}`,
+  ].join("\r\n");
+
+  it("changes the package's own two versions, never a dependency's", () => {
+    const out = setLockfileVersions(lock, "1.0.0");
+    expect(out.match(/1\.0\.0/g)).toHaveLength(2);
+    expect(out).toContain(dependency);
+  });
+
+  it("fails without the root entry", () => {
+    expect(() =>
+      setLockfileVersions('{\n  "name": "a",\n  "version": "1.0.0"\n}', "2.0.0"),
+    ).toThrow();
   });
 });
 

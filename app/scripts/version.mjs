@@ -113,8 +113,24 @@ export function setByPattern(pattern, what) {
   };
 }
 
+/**
+ * The package's own version in package-lock.json: the top-level key and the root entry under `packages`
+ * (the many dependency versions stay).
+ * @param {string} text
+ * @param {string} version
+ * @returns {string}
+ */
+export function setLockfileVersions(text, version) {
+  const top = /^(\{\r?\n\s*"name": "[^"\r\n]*",\r?\n\s*"version": ")([^"\r\n]*)(")/;
+  const root =
+    /("packages": \{\r?\n\s*"": \{\r?\n\s*"name": "[^"\r\n]*",\r?\n\s*"version": ")([^"\r\n]*)(")/;
+  if (!top.test(text) || !root.test(text)) throw new Error("no package version in the lockfile");
+  return text.replace(top, `$1${version}$3`).replace(root, `$1${version}$3`);
+}
+
 /** @type {readonly Target[]} */
 export const TARGETS = [
+  { path: "app/package-lock.json", update: setLockfileVersions },
   { path: "app/src-tauri/Cargo.toml", update: setCargoWorkspaceVersion },
   { path: "app/src-tauri/Cargo.lock", update: setCargoLockVersions },
   { path: "app/src-tauri/tauri.conf.json", update: (t, v) => setJsonVersions(t, v, [["version"]]) },

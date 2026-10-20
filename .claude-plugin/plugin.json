@@ -1,7 +1,7 @@
 {
   "name": "permark",
   "description": "Read what your AI writes. Write what it reads. Connect Claude Code to PerMark's desktop Markdown app via MCP, automatic reading-context hooks, and document review skills.",
-  "version": "0.5.8",
+  "version": "0.6.0",
   "author": {
     "name": "Edelmar Schneider",
     "url": "https://github.com/EdelmarSchneider"
