@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Official Claude Code plugin for PerMark — the desktop Markdown app for planning, reviewing, and steering AI-written specs and docs.",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "plugins": [
     {
       "name": "permark",
       "source": "./",
       "description": "Read what your AI writes. Write what it reads. Connects Claude Code to PerMark via MCP tools (get_context, search, list_tags, list_comments, resolve_comment, list_notes, read_note, list_unread, open) and automatic prompt context hooks.",
-      "version": "0.6.0",
+      "version": "0.6.1",
       "author": {
         "name": "Edelmar Schneider",
         "url": "https://github.com/EdelmarSchneider"

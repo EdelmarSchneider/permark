@@ -1,6 +1,6 @@
 {
   "name": "permark",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "A unified document workspace: read, write and organize Markdown and the files around it. Free and open source.",
   "license": "MIT OR Apache-2.0",
   "author": "Edelmar Schneider",
