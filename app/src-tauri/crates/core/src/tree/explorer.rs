@@ -92,7 +92,7 @@ impl std::fmt::Debug for Explorer {
 }
 
 impl Explorer {
-    /// `global`: the user's global excludes (None: none, as in tests).
+    /// `global`: the global excludes file of git (None: none, as in tests).
     #[must_use]
     pub fn new(
         vault: &Vault,

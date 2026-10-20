@@ -628,35 +628,35 @@ fn node_modules_is_ignored_without_any_ignore_file() {
 
 #[test]
 fn a_nested_repository_is_never_hidden_by_the_enclosing_rules() {
-    // this very project layout: the root repo ignores `hubs/`, each hub is a repo of its own
+    // a root repo that ignores `teams/`, each team folder a repo of its own
     let f = fixture(&[
         ".git/HEAD",
         ".gitignore",
-        "hubs/hub-a/.git/HEAD",
-        "hubs/hub-a/readme.md",
-        "hubs/hub-a/.gitignore",
-        "hubs/hub-a/out/x.md",
-        "hubs/plain/y.md",
+        "teams/team-a/.git/HEAD",
+        "teams/team-a/readme.md",
+        "teams/team-a/.gitignore",
+        "teams/team-a/out/x.md",
+        "teams/plain/y.md",
         "root.md",
     ]);
-    fs::write(f.dir.path().join(".gitignore"), "hubs/\nreadme.md\n").unwrap();
-    fs::write(f.dir.path().join("hubs/hub-a/.gitignore"), "out/\n").unwrap();
+    fs::write(f.dir.path().join(".gitignore"), "teams/\nreadme.md\n").unwrap();
+    fs::write(f.dir.path().join("teams/team-a/.gitignore"), "out/\n").unwrap();
     f.explorer.apply_batch(&FsBatch {
         rescan: true,
         ..FsBatch::default()
     });
     let list = shown(&f, everything());
-    assert!(list.contains(&"hubs".to_owned()), "{list:?}");
+    assert!(list.contains(&"teams".to_owned()), "{list:?}");
     assert!(
-        list.contains(&"hubs/hub-a/readme.md".to_owned()),
+        list.contains(&"teams/team-a/readme.md".to_owned()),
         "enclosing rules do not reach into the repo"
     );
     assert!(
-        !list.contains(&"hubs/hub-a/out".to_owned()),
+        !list.contains(&"teams/team-a/out".to_owned()),
         "its own rules do"
     );
     assert!(
-        !list.contains(&"hubs/plain".to_owned()),
+        !list.contains(&"teams/plain".to_owned()),
         "a folder without .git stays ignored"
     );
     assert!(list.contains(&"root.md".to_owned()));

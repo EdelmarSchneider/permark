@@ -1,4 +1,4 @@
-# Agent files: local only, never pushed (app/AGENTS.md, app/CLAUDE.md, app/.claude/ = Hub-B directives copy)
+# Agent files: local only, never pushed (app/AGENTS.md, app/CLAUDE.md, app/.claude/: working copies of the coding directives)
 AGENTS.md
 CLAUDE.md
 .claude/

@@ -4,7 +4,7 @@ PerMark is a local-first desktop Markdown app with a built-in Model Context Prot
 
 ## Step 1: Install the `permark` Binary
 
-Choose the command matching the user's operating system:
+Choose the command for the operating system in use:
 
 ### Windows
 ```powershell

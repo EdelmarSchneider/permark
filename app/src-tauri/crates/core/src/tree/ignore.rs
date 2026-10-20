@@ -1,4 +1,4 @@
-//! Ignore rules of a tree: `.gitignore` + `.ignore` per folder, `.git/info/exclude`, the user's global excludes and
+//! Ignore rules of a tree: `.gitignore` + `.ignore` per folder, `.git/info/exclude`, git's global excludes file and
 //! the project's own `ignore` list. Works without a repository. A folder with its own `.git` is a nested repository:
 //! never hidden by the enclosing rules, walked under its own.
 
@@ -94,7 +94,7 @@ fn verdict(layer: &Gitignore, path: &Path, is_dir: bool) -> Option<bool> {
 }
 
 impl Ignorer {
-    /// `extra`: the project's `ignore` patterns; `global`: the user's global excludes (None: none).
+    /// `extra`: the project's `ignore` patterns; `global`: git's global excludes file (None: none).
     #[must_use]
     pub fn new(root: &Path, extra: &[String], global: Option<Gitignore>) -> Self {
         Self {
@@ -111,7 +111,7 @@ impl Ignorer {
         *lock(&self.extra) = extra_layer(&self.root, patterns);
     }
 
-    /// The user's global excludes file as git reads it.
+    /// Git's global excludes file (`core.excludesFile`, else its default place).
     #[must_use]
     pub fn global_excludes() -> Option<Gitignore> {
         let (global, _) = Gitignore::global();

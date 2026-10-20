@@ -1,5 +1,5 @@
 # PerMark metadata: tags and descriptions added in the app.
 # Safe to commit and share. PerMark rewrites this file when you edit tags.
 
-[files."orchestrator/design/2-concept/fourfold/concept.md"]
+[files."design/2-concept/sync/concept.md"]
 tags = ["approved"]

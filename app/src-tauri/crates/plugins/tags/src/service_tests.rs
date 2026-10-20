@@ -21,7 +21,7 @@ use super::*;
 
 /// A byte copy of a real `.permark/meta.toml` written by version 0.5 (CRLF).
 const REAL: &str = include_str!("fixtures/real-meta-0.5.toml");
-const REAL_PATH: &str = "orchestrator/design/2-concept/fourfold/concept.md";
+const REAL_PATH: &str = "design/2-concept/sync/concept.md";
 
 #[derive(Default)]
 struct Sink(Mutex<Vec<String>>);

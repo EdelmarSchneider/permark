@@ -106,8 +106,8 @@ describe("a long name cut in the middle", () => {
   });
 
   it("a folder keeps its last letters; a file its extension and a few letters before it", () => {
-    expect(splitName("permark-specs-and-concepts-archive", false)).toEqual({
-      head: "permark-specs-and-concepts-a",
+    expect(splitName("product-specs-and-concepts-archive", false)).toEqual({
+      head: "product-specs-and-concepts-a",
       tail: "rchive",
     });
     expect(splitName("proposal-for-the-quarterly-budget-review.md", true)).toEqual({

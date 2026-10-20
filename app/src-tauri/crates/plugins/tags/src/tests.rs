@@ -64,7 +64,7 @@ fn the_real_0_5_file_reads_as_it_is() {
     let entries = Entries::parse(REAL).unwrap();
     assert_eq!(entries.len(), 1);
     let entry = entries
-        .get("orchestrator/design/2-concept/fourfold/concept.md")
+        .get("design/2-concept/sync/concept.md")
         .unwrap();
     assert_eq!(entry.tags, ["approved"]);
     assert_eq!(entry.description, "");
@@ -131,7 +131,7 @@ fn editing_the_real_file_touches_only_what_changed_and_keeps_crlf() {
     let e = Entries::parse(&edited).unwrap();
     assert_eq!(e.get("README.md").unwrap().description, "The start");
     assert_eq!(
-        e.get("orchestrator/design/2-concept/fourfold/concept.md")
+        e.get("design/2-concept/sync/concept.md")
             .unwrap()
             .tags,
         ["approved"]
@@ -445,7 +445,7 @@ fn removing_the_first_entry_keeps_the_comments_written_above_it() {
     let gone = edit_text(
         REAL,
         &[Op::Remove {
-            path: "orchestrator/design/2-concept/fourfold/concept.md".into(),
+            path: "design/2-concept/sync/concept.md".into(),
         }],
     )
     .unwrap();
