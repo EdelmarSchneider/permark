@@ -86,6 +86,7 @@ describe("parseJson", () => {
     const started = Date.now();
     const parsed = parseJson(big);
     expect(parsed.ok && (parsed.root.children?.() ?? []).length).toBe(100_000);
-    expect(Date.now() - started).toBeLessThan(3000);
+    // linear, not quadratic: about 1 s alone; the bound leaves room for a full parallel test run
+    expect(Date.now() - started).toBeLessThan(8000);
   });
 });
