@@ -268,6 +268,8 @@ pub struct ProjectServices {
     pub search: Arc<crate::search::SearchIndex>,
     /// The app's typed services (shared notes).
     pub app_services: Arc<Services>,
+    /// The project's activity journal (plugins append the person's actions to it).
+    pub activity: Arc<crate::activity::ActivityLog>,
     rpc: Arc<RpcTable>,
     formats: Arc<RwLock<Arc<FormatRegistry>>>,
 }
@@ -283,6 +285,7 @@ impl ProjectServices {
         services: Arc<Services>,
         search: Arc<crate::search::SearchIndex>,
         app_services: Arc<Services>,
+        activity: Arc<crate::activity::ActivityLog>,
         rpc: Arc<RpcTable>,
         formats: Arc<RwLock<Arc<FormatRegistry>>>,
     ) -> Self {
@@ -294,6 +297,7 @@ impl ProjectServices {
             services,
             search,
             app_services,
+            activity,
             rpc,
             formats,
         }

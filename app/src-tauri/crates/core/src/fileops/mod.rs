@@ -289,6 +289,8 @@ pub struct FileOps {
     plans: Mutex<Plans>,
     /// Drop-into-project plans waiting and imports running.
     imports: Mutex<import::Imports>,
+    /// The project's activity journal (what the person did, undo included).
+    activity: Option<Arc<crate::activity::ActivityLog>>,
 }
 
 impl std::fmt::Debug for FileOps {
@@ -312,6 +314,67 @@ impl FileOps {
             journal: Mutex::new(store.file::<Journal>(JOURNAL_FILE)),
             plans: Mutex::new(Plans::default()),
             imports: Mutex::new(import::Imports::default()),
+            activity: None,
+        }
+    }
+
+    /// Notes every operation (and undo) in the project's activity journal.
+    #[must_use]
+    pub fn with_activity(mut self, activity: Arc<crate::activity::ActivityLog>) -> Self {
+        self.activity = Some(activity);
+        self
+    }
+
+    /// The facts of an operation (`undo`: of taking it back) for the activity journal.
+    fn note(&self, op: &Op, undo: bool) {
+        use crate::activity::{Fact, FileOp};
+        let Some(activity) = &self.activity else {
+            return;
+        };
+        let fact = |op: FileOp, path: &str, from: Option<&str>| Fact::File {
+            op,
+            path: path.to_owned(),
+            from: from.map(str::to_owned),
+            undo,
+        };
+        let facts: Vec<Fact> = match (op, undo) {
+            (Op::Move { moves, .. }, false) => moves
+                .iter()
+                .map(|(from, to)| fact(FileOp::Move, to, Some(from)))
+                .collect(),
+            // taken back in reverse order: each item goes home
+            (Op::Move { moves, .. }, true) => moves
+                .iter()
+                .rev()
+                .map(|(from, to)| fact(FileOp::Move, from, Some(to)))
+                .collect(),
+            (Op::NewFile { path } | Op::NewFolder { path }, false) => {
+                vec![fact(FileOp::New, path, None)]
+            }
+            (Op::NewFile { path } | Op::NewFolder { path }, true) => {
+                vec![fact(FileOp::Delete, path, None)]
+            }
+            (Op::Delete { paths }, false) => paths
+                .iter()
+                .map(|p| fact(FileOp::Delete, p, None))
+                .collect(),
+            (Op::Delete { paths }, true) => paths
+                .iter()
+                .map(|p| fact(FileOp::Restore, p, None))
+                .collect(),
+            (Op::Import { copied, moved }, false) => copied
+                .iter()
+                .chain(moved.iter().map(|m| &m.to))
+                .map(|p| fact(FileOp::Import, p, None))
+                .collect(),
+            (Op::Import { copied, moved }, true) => copied
+                .iter()
+                .chain(moved.iter().map(|m| &m.to))
+                .map(|p| fact(FileOp::Delete, p, None))
+                .collect(),
+        };
+        for fact in facts {
+            activity.person(fact);
         }
     }
 
@@ -325,6 +388,7 @@ impl FileOps {
     }
 
     fn record(&self, op: Op) {
+        self.note(&op, false);
         let file = lock(&self.journal);
         let mut journal = file.load().into_value();
         journal.push(Entry {
@@ -700,6 +764,7 @@ impl FileOps {
             })?;
             entry
         };
+        self.note(&entry.op, true);
         Ok(Some(match entry.op {
             Op::Move { moves, docs } => self.undo_move(&moves, &docs),
             Op::NewFile { path } => self.undo_new(&path, UndoKind::NewFile),

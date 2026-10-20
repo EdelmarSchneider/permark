@@ -42,6 +42,15 @@ impl WindowFiles for ShellFiles {
             editor.write_beside(beside, name, text)
         })
     }
+
+    fn note(&self, window: &str, fact: permark_core::activity::Fact) {
+        let shell = crate::shell::state(&self.handle);
+        if let Some((_, permark_core::workspace::Workspace::Project(core))) =
+            shell.registry.workspace_of(window)
+        {
+            core.activity().person(fact);
+        }
+    }
 }
 
 /// Offers the service for the app's whole run.

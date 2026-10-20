@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 
 use serde::{Deserialize, Serialize};
 
+use crate::activity::{system_clock, ActivityLog};
 use crate::conditions::{Context, Distribution};
 use crate::document::{DocScope, Documents};
 use crate::events::{CoreEvent, EventSink};
@@ -245,9 +246,12 @@ pub struct ProjectCore {
     _explorer_sub: Subscription,
     _documents_sub: Subscription,
     _search_sub: Subscription,
+    _activity_sub: Option<Subscription>,
     search: Arc<SearchIndex>,
     watcher: Watcher,
     fileops: FileOps,
+    /// The person's actions + the changes made outside (one journal for every window on the folder).
+    activity: Arc<ActivityLog>,
     documents: Arc<Documents>,
     formats: Arc<RwLock<Arc<FormatRegistry>>>,
     explorer: Arc<Explorer>,
@@ -336,19 +340,34 @@ impl ProjectCore {
             Arc::clone(&own),
             env.status_hook(),
         );
+        // a reader with no window reads the journal, never writes it
+        let activity = Arc::new(if files_only.is_some() {
+            ActivityLog::read_only(&store, system_clock())
+        } else {
+            ActivityLog::open(&store, system_clock())
+        });
+        let activity_sub = files_only.is_none().then(|| {
+            hub.subscribe({
+                let activity = Arc::clone(&activity);
+                move |batch| activity.outside(batch)
+            })
+        });
         let fileops = FileOps::new(
             vault.clone(),
             Arc::clone(&explorer),
             Arc::clone(&own),
             &store,
-        );
+        )
+        .with_activity(Arc::clone(&activity));
         let core = Arc::new(Self {
             _explorer_sub: explorer_sub,
             _documents_sub: documents_sub,
             _search_sub: search_sub,
+            _activity_sub: activity_sub,
             search,
             watcher,
             fileops,
+            activity,
             documents,
             formats,
             explorer,
@@ -397,9 +416,31 @@ impl ProjectCore {
             Arc::clone(&self.services),
             Arc::clone(&self.search),
             Arc::clone(&self.app_services),
+            Arc::clone(&self.activity),
             Arc::clone(&self.rpc),
             Arc::clone(&self.formats),
         )
+    }
+
+    /// The activity journal of the project.
+    #[must_use]
+    pub fn activity(&self) -> &Arc<ActivityLog> {
+        &self.activity
+    }
+
+    /// The person saved `path` with `edits` (base lines): the journal notes the sections the change touched.
+    pub fn note_save(&self, path: &str, edits: &[crate::edit::LineEdit]) {
+        let Ok(parsed) = crate::paths::VaultPath::parse(path) else {
+            return;
+        };
+        let Ok(abs) = self.vault.resolve(&parsed) else {
+            return;
+        };
+        let text = crate::fsx::read_text(&abs, crate::activity::SAVE_READ_CAP)
+            .map(|d| d.text)
+            .unwrap_or_default();
+        self.activity
+            .person(crate::activity::save_fact(path, &text, edits));
     }
 
     /// Reads documents and tells windows when the ones they show change.
@@ -510,6 +551,7 @@ impl ProjectCore {
         *self.store.write().unwrap_or_else(PoisonError::into_inner) = store.clone();
         *self.config.write().unwrap_or_else(PoisonError::into_inner) = config.clone();
         self.fileops.use_store(&store);
+        self.activity.use_store(&store);
         self.explorer.reconfigure(&config);
         self.plugins
             .lock()
@@ -718,6 +760,8 @@ fn project_enablement(
 
 impl Drop for ProjectCore {
     fn drop(&mut self) {
+        // the next action starts a new session
+        self.activity.closed();
         // explicit: plugins stop before vault + store go (reverse dependency order inside the set)
         self.plugins
             .lock()

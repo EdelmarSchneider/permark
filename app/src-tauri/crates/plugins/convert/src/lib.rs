@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use permark_core::activity::Fact;
 use permark_core::conditions::Requirement;
 use permark_core::plugins::{
     typed, AppServices, Manifest, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
@@ -832,12 +833,27 @@ impl Plugin for Convert {
             }),
         ));
 
-        let s = Arc::clone(&shared);
+        let (s, a) = (Arc::clone(&shared), app.clone());
         rpc.extend(cx.rpc(
             "result",
             typed(move |args: ResultArgs, call| {
                 let target = Target::parse(&args.target).ok_or_else(|| bad("target"))?;
-                Ok(s.output(&call.window, args.job, target, args.confirmed)?.0)
+                let (text, path) = s.output(&call.window, args.job, target, args.confirmed)?;
+                // the person copies the result: the journal of the project notes it (a file source only)
+                if let (Some(path), Some(files)) = (
+                    path,
+                    a.as_ref().and_then(|a| a.services.get::<WindowFilesApi>()),
+                ) {
+                    files.0.note(
+                        &call.window,
+                        Fact::Convert {
+                            path,
+                            to: target.id().to_owned(),
+                            saved: None,
+                        },
+                    );
+                }
+                Ok(text)
             }),
         ));
 
@@ -853,7 +869,16 @@ impl Plugin for Convert {
                     .as_ref()
                     .and_then(|a| a.services.get::<WindowFilesApi>())
                     .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).detail("files"))?;
-                files.0.write_beside(&call.window, &beside, &name, &text)
+                let saved = files.0.write_beside(&call.window, &beside, &name, &text)?;
+                files.0.note(
+                    &call.window,
+                    Fact::Convert {
+                        path: beside,
+                        to: target.id().to_owned(),
+                        saved: Some(saved.clone()),
+                    },
+                );
+                Ok(saved)
             }),
         ));
 

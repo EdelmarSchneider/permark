@@ -401,9 +401,16 @@ impl EventSink for Quiet {
 
 /// Files of a pretend workspace: a map of paths, never overwritten.
 #[derive(Default)]
-struct FakeFiles(Mutex<BTreeMap<String, String>>);
+struct FakeFiles(
+    Mutex<BTreeMap<String, String>>,
+    Mutex<Vec<permark_core::activity::Fact>>,
+);
 
 impl WindowFiles for FakeFiles {
+    fn note(&self, _window: &str, fact: permark_core::activity::Fact) {
+        self.1.lock().unwrap().push(fact);
+    }
+
     fn read(&self, _window: &str, path: &str, cap: u64) -> Result<String, IpcError> {
         let files = self.0.lock().unwrap();
         let text = files
@@ -540,6 +547,22 @@ fn a_file_converts_and_saves_next_to_itself_never_over_a_file() {
         )
         .unwrap();
     assert_eq!(saved, "notes/today.json");
+    // the journal heard the copy and both saves, with what was converted and where it went
+    let noted = h.files.1.lock().unwrap().clone();
+    let convert =
+        |path: &str, to: &str, saved: Option<&str>| permark_core::activity::Fact::Convert {
+            path: path.to_owned(),
+            to: to.to_owned(),
+            saved: saved.map(str::to_owned),
+        };
+    assert_eq!(
+        noted,
+        [
+            convert("data/users.json", "toon", None),
+            convert("data/users.json", "toon", Some("data/users (2).toon")),
+            convert("notes/today.md", "json", Some("notes/today.json")),
+        ]
+    );
     // the earlier job of the window is gone
     assert!(h
         .call("result", json!({ "job": 1, "target": "toon" }))

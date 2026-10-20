@@ -25,6 +25,10 @@ pub trait WindowFiles: Send + Sync {
         name: &str,
         text: &str,
     ) -> Result<String, IpcError>;
+
+    /// Notes something the person did in the activity journal of the window's project (nothing for a single file
+    /// | the Notes).
+    fn note(&self, window: &str, fact: crate::activity::Fact);
 }
 
 /// The service plugins look up (`AppServices.services.get::<WindowFilesApi>()`).

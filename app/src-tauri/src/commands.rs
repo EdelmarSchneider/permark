@@ -770,6 +770,9 @@ pub fn edit_save(
         let outcome = editor.save(&path, &seen_hash, &edits)?;
         if let SaveOutcome::Saved { hash, .. } = &outcome {
             documents_of(workspace).saved(window.label(), &path, hash);
+            if let Workspace::Project(core) = workspace {
+                core.note_save(&path, &edits);
+            }
         }
         Ok(outcome)
     })
@@ -784,8 +787,17 @@ pub fn edit_save_as(
     text: String,
     exact: bool,
 ) -> Result<String, IpcError> {
-    with_editor(&handle, &window, |editor, _| {
-        editor.save_as(&path, &text, exact)
+    with_editor(&handle, &window, |editor, workspace| {
+        let saved = editor.save_as(&path, &text, exact)?;
+        if let Workspace::Project(core) = workspace {
+            core.activity().person(permark_core::activity::Fact::File {
+                op: permark_core::activity::FileOp::New,
+                path: saved.clone(),
+                from: None,
+                undo: false,
+            });
+        }
+        Ok(saved)
     })
 }
 

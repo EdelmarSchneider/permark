@@ -192,6 +192,16 @@ pub struct StateFile<T> {
     _data: PhantomData<fn() -> T>,
 }
 
+impl<T> Clone for StateFile<T> {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            guard: self.guard.clone(),
+            _data: PhantomData,
+        }
+    }
+}
+
 impl<T: StateData> StateFile<T> {
     #[must_use]
     pub fn path(&self) -> &Path {

@@ -1,5 +1,6 @@
 //! `PerMark` domain core. Tauri-free: app crate adapts these services to IPC.
 
+pub mod activity;
 pub mod app_info;
 pub mod conditions;
 pub mod desktop;
