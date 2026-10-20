@@ -8,7 +8,7 @@ use ignore::gitignore::Gitignore;
 
 use super::filter::{apply, Compiled, Visible};
 use super::ignore::Ignorer;
-use super::model::{key_of, scan_root, RootCtx, TreeModel};
+use super::model::{key_of, scan_folder, scan_root, RootCtx, TreeModel};
 use super::{
     Added, NodeKind, Renamed, RootKind, RootNode, TreeChanged, TreeDelta, TreeError, TreeFilter,
     TreeNode, TreeSnapshot,
@@ -398,6 +398,40 @@ impl Explorer {
             .iter()
             .map(|root| (root.prefix.clone(), scan_root(root, cancel)))
             .collect()
+    }
+
+    /// A fresh walk inside one folder (`folder`, a project path; `abs`, where the vault resolved it) with the tree's
+    /// ignore rules and no large-folder guard: every file that is not ignored, with its size and modified time.
+    /// `stop` sees each file and ends the walk by answering `true` (the scan is then cut off).
+    ///
+    /// # Errors
+    /// `NotAFolder`: no root holds the folder, or it is not a folder on disk.
+    pub fn scan_folder(
+        &self,
+        folder: &VaultPath,
+        abs: &std::path::Path,
+        cancel: &std::sync::atomic::AtomicBool,
+        stop: &mut dyn FnMut(&super::ScanFile) -> bool,
+    ) -> Result<super::Scan, TreeError> {
+        let not_a_folder = || TreeError::NotAFolder(folder.as_str().to_owned());
+        let root = self.root_of(folder.as_str()).ok_or_else(not_a_folder)?;
+        if !std::fs::metadata(abs).is_ok_and(|m| m.is_dir()) {
+            return Err(not_a_folder());
+        }
+        Ok(scan_folder(root, folder.as_str(), abs, cancel, stop))
+    }
+
+    /// The root a project path belongs to: a worktree by its prefix, else the project folder.
+    fn root_of(&self, path: &str) -> Option<&RootCtx> {
+        if path.starts_with(crate::paths::WORKTREE_PREFIX) {
+            let key = key_of(path);
+            self.roots.iter().skip(1).find(|r| {
+                let own = key_of(&r.prefix);
+                key == own || key.starts_with(&format!("{own}/"))
+            })
+        } else {
+            self.roots.first()
+        }
     }
 
     /// Markdown documents of the root `prefix` (`""` | `@wt/<name>`) found by a fresh walk (also the ones in folders the

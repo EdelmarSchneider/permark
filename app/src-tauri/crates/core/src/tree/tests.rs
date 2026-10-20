@@ -1244,6 +1244,144 @@ fn scan_stops_when_cancelled_and_never_follows_links_or_enters_git() {
     assert_eq!(files, ["a.md", "sub/b.md"]);
 }
 
+fn folder_scan(
+    f: &Fixture,
+    folder: &str,
+    stop: &mut dyn FnMut(&ScanFile) -> bool,
+) -> Result<Scan, TreeError> {
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let path = crate::paths::VaultPath::parse(folder).unwrap();
+    let abs = f.dir.path().join(folder);
+    f.explorer.scan_folder(&path, &abs, &never, stop)
+}
+
+fn folder_paths(scan: &Scan) -> Vec<&str> {
+    let mut paths: Vec<&str> = scan.files.iter().map(|x| x.path.as_str()).collect();
+    paths.sort_unstable();
+    paths
+}
+
+#[test]
+fn a_folder_scan_starts_inside_with_the_rules_of_the_folders_above_and_measures_files() {
+    let f = fixture(&[
+        ".gitignore",
+        "top.md",
+        "docs/a.md",
+        "docs/noise.log",
+        "docs/build/z.md",
+        "docs/sub/b.md",
+        "docs/img/p.png",
+        "node_modules/x/y.md",
+        "docs/node_modules/x/y.md",
+    ]);
+    fs::write(
+        f.dir.path().join(".gitignore"),
+        "*.log
+build/
+",
+    )
+    .unwrap();
+    fs::write(f.dir.path().join("docs/a.md"), "twelve bytes").unwrap();
+    let scan = folder_scan(&f, "docs", &mut |_| false).unwrap();
+    assert!(!scan.cut_off);
+    assert_eq!(
+        folder_paths(&scan),
+        ["docs/a.md", "docs/img/p.png", "docs/sub/b.md"]
+    );
+    let a = scan.files.iter().find(|x| x.path == "docs/a.md").unwrap();
+    assert_eq!(a.size, 12);
+    assert!(a.modified_ms > 1_500_000_000_000, "{}", a.modified_ms);
+    // every file knows where it is, whatever its kind
+    assert!(scan.files.iter().all(|x| x.abs.is_some()));
+    assert_eq!(
+        a.abs.as_deref(),
+        Some(f.dir.path().join("docs/a.md").as_path())
+    );
+    // the project folder itself: everything the tree would list
+    let all = folder_scan(&f, "", &mut |_| false).unwrap();
+    assert!(folder_paths(&all).contains(&"top.md"));
+    assert!(!folder_paths(&all).contains(&"node_modules/x/y.md"));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_folder_scan_leaves_out_links_to_files() {
+    let f = fixture(&["docs/a.md"]);
+    let outside = tempfile::tempdir().unwrap();
+    fs::write(outside.path().join("secret.md"), "outside").unwrap();
+    std::os::unix::fs::symlink(
+        outside.path().join("secret.md"),
+        f.dir.path().join("docs/link.md"),
+    )
+    .unwrap();
+    let scan = folder_scan(&f, "docs", &mut |_| false).unwrap();
+    assert_eq!(folder_paths(&scan), ["docs/a.md"]);
+}
+
+#[test]
+fn a_folder_scan_ends_when_the_caller_says_so_and_when_cancelled() {
+    let files: Vec<String> = (0..20).map(|n| format!("d{}/f{n}.md", n % 4)).collect();
+    let names: Vec<&str> = files.iter().map(String::as_str).collect();
+    let f = fixture(&names);
+    let mut seen = 0;
+    let scan = folder_scan(&f, "", &mut |_| {
+        seen += 1;
+        seen == 7
+    })
+    .unwrap();
+    assert!(scan.cut_off);
+    assert_eq!(scan.files.len(), 7, "no file after the one that ended it");
+    assert_eq!(seen, 7);
+    let cancelled = std::sync::atomic::AtomicBool::new(true);
+    let path = crate::paths::VaultPath::parse("d1").unwrap();
+    let abs = f.dir.path().join("d1");
+    let scan = f
+        .explorer
+        .scan_folder(&path, &abs, &cancelled, &mut |_| false)
+        .unwrap();
+    assert!(scan.cut_off);
+    assert_eq!(scan.files.len(), 0);
+}
+
+#[test]
+fn a_folder_scan_of_an_ignored_folder_gives_only_the_repositories_nested_in_it() {
+    let f = fixture(&[
+        ".gitignore",
+        "build/out.md",
+        "build/inner/.git/config",
+        "build/inner/x.md",
+        "build/plain/y.md",
+    ]);
+    fs::write(
+        f.dir.path().join(".gitignore"),
+        "build/
+",
+    )
+    .unwrap();
+    let scan = folder_scan(&f, "build", &mut |_| false).unwrap();
+    assert_eq!(folder_paths(&scan), ["build/inner/x.md"]);
+}
+
+#[test]
+fn a_folder_scan_refuses_what_is_no_folder_or_belongs_to_no_root() {
+    let f = fixture(&["a.md"]);
+    assert!(matches!(
+        folder_scan(&f, "a.md", &mut |_| false),
+        Err(TreeError::NotAFolder(_))
+    ));
+    assert!(matches!(
+        folder_scan(&f, "missing", &mut |_| false),
+        Err(TreeError::NotAFolder(_))
+    ));
+    let never = std::sync::atomic::AtomicBool::new(false);
+    let path = crate::paths::VaultPath::parse("@wt/none/x").unwrap();
+    assert!(matches!(
+        f.explorer
+            .scan_folder(&path, f.dir.path(), &never, &mut |_| false),
+        Err(TreeError::NotAFolder(_))
+    ));
+}
+
 #[test]
 fn linked_assets_are_shown_wherever_they_sit_and_leave_when_the_link_goes() {
     let f = fixture(&[

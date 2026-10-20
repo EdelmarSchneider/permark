@@ -1,10 +1,16 @@
 //! The files of a window's workspace for App-scope plugins (the converter): read under a cap, write a new file next
 //! to one. Each call goes through the window's own editor (its scope, its boundary, its own-write announcements).
 
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use permark_core::plugins::{ServiceLease, WindowFiles, WindowFilesApi};
-use permark_core::workspace::CoreEnv;
+use permark_core::paths::VaultPath;
+use permark_core::plugins::{
+    ChangeListener, FolderScan, ServiceLease, WindowFiles, WindowFilesApi,
+};
+use permark_core::tree::ScanFile;
+use permark_core::watch::Subscription;
+use permark_core::workspace::{CoreEnv, ProjectCore, Workspace};
 use permark_core::{ErrorKind, IpcError};
 use tauri::{AppHandle, Manager};
 
@@ -19,6 +25,17 @@ impl ShellFiles {
         self.handle
             .get_webview_window(label)
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject("window"))
+    }
+
+    /// The project the window shows.
+    fn project(&self, label: &str) -> Option<Arc<ProjectCore>> {
+        match crate::shell::state(&self.handle)
+            .registry
+            .workspace_of(label)
+        {
+            Some((_, Workspace::Project(core))) => Some(core),
+            _ => None,
+        }
     }
 }
 
@@ -44,12 +61,33 @@ impl WindowFiles for ShellFiles {
     }
 
     fn note(&self, window: &str, fact: permark_core::activity::Fact) {
-        let shell = crate::shell::state(&self.handle);
-        if let Some((_, permark_core::workspace::Workspace::Project(core))) =
-            shell.registry.workspace_of(window)
-        {
+        if let Some(core) = self.project(window) {
             core.activity().person(fact);
         }
+    }
+
+    fn scan_folder(
+        &self,
+        window: &str,
+        folder: &str,
+        cancel: &AtomicBool,
+        stop: &mut dyn FnMut(&ScanFile) -> bool,
+    ) -> Result<FolderScan, IpcError> {
+        let core = self
+            .project(window)
+            .ok_or_else(|| IpcError::new(ErrorKind::Unsupported).subject("project"))?;
+        let path = VaultPath::parse(folder)?;
+        let abs = core.vault().resolve(&path)?;
+        let scan = core.explorer().scan_folder(&path, &abs, cancel, stop)?;
+        Ok(FolderScan {
+            project: core.root().path().display().to_string(),
+            scan,
+        })
+    }
+
+    fn watch(&self, window: &str, listener: ChangeListener) -> Option<Subscription> {
+        let core = self.project(window)?;
+        Some(core.watcher().hub().subscribe(move |batch| listener(batch)))
     }
 }
 

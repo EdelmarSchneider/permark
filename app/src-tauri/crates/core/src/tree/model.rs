@@ -96,6 +96,8 @@ impl Node {
 struct Found {
     name: String,
     is_dir: bool,
+    /// Size and modified time (ms since the epoch) of a file, when the caller asked for them.
+    stat: Option<(u64, i64)>,
 }
 
 fn is_reparse_point(entry: &fs::DirEntry) -> bool {
@@ -137,7 +139,7 @@ pub(crate) fn path_always_out(path: &str) -> bool {
 
 /// Direct entries of a folder (links are never followed: a link to a folder is a leaf) + what the listing says about
 /// the folder itself. `None`: unreadable.
-fn read_entries(abs: &Path, parent_path: &str) -> Option<(Vec<Found>, DirHints)> {
+fn read_entries(abs: &Path, parent_path: &str, want_stat: bool) -> Option<(Vec<Found>, DirHints)> {
     let mut found = Vec::new();
     let mut hints = DirHints::default();
     for entry in fs::read_dir(abs).ok()?.flatten() {
@@ -157,12 +159,26 @@ fn read_entries(abs: &Path, parent_path: &str) -> Option<(Vec<Found>, DirHints)>
             continue;
         };
         let link = file_type.is_symlink() || is_reparse_point(&entry);
-        found.push(Found {
-            name,
-            is_dir: file_type.is_dir() && !link,
-        });
+        let is_dir = file_type.is_dir() && !link;
+        if want_stat && link && !is_dir {
+            // a folder scan reads files: through a link (or a cloud placeholder) it would leave the folder
+            continue;
+        }
+        let stat = (want_stat && !is_dir)
+            .then(|| entry.metadata().ok().map(|m| (m.len(), modified_ms(&m))))
+            .flatten();
+        found.push(Found { name, is_dir, stat });
     }
     Some((found, hints))
+}
+
+/// Modified time of a file in milliseconds since the epoch (0 when the system does not tell).
+pub(crate) fn modified_ms(meta: &fs::Metadata) -> i64 {
+    meta.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|d| i64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
 }
 
 fn large(entries: usize) -> NodeKind {
@@ -377,7 +393,7 @@ impl TreeModel {
         asked: bool,
     ) -> Result<(), usize> {
         let root = walk.root;
-        let Some((found, hints)) = read_entries(dir_abs, dir_path) else {
+        let Some((found, hints)) = read_entries(dir_abs, dir_path, false) else {
             return Ok(());
         };
         if depth > 0 && !asked && found.len() > LARGE_FOLDER {
@@ -595,14 +611,19 @@ impl TreeModel {
 
 // ---- scan ---------------------------------------------------------------------------------------------------
 
-/// A file found by [`scan_root`].
+/// A file found by [`scan_root`] or [`scan_folder`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScanFile {
     /// Project path.
     pub path: String,
     pub category: super::Category,
-    /// Where it is on disk; only for the categories whose content is read (Markdown | Text | Config).
+    /// Where it is on disk; a root scan gives it only for the categories whose content is read (Markdown | Text |
+    /// Config), a folder scan for every file.
     pub abs: Option<PathBuf>,
+    /// Size in bytes (a folder scan only; 0 otherwise).
+    pub size: u64,
+    /// Modified time, ms since the epoch (a folder scan only; 0 otherwise).
+    pub modified_ms: i64,
 }
 
 /// What a fresh walk of one root found.
@@ -620,6 +641,8 @@ struct ScanCx<'a> {
     cancel: &'a std::sync::atomic::AtomicBool,
     budget: usize,
     out: Scan,
+    /// A folder scan: size, modified time and absolute path of every file; its callback may end the walk.
+    folder: Option<&'a mut dyn FnMut(&ScanFile) -> bool>,
 }
 
 /// Walks `root` afresh with the tree's ignore rules and without its large-folder guard: every file that is not
@@ -633,8 +656,34 @@ pub(crate) fn scan_root(root: &RootCtx, cancel: &std::sync::atomic::AtomicBool) 
         cancel,
         budget: MAX_ENTRIES,
         out: Scan::default(),
+        folder: None,
     };
     scan_dir(&mut cx, &root.abs, &root.prefix, &frames, false, 0);
+    cx.out
+}
+
+/// [`scan_root`] started inside a folder of the root (`abs` is where `folder`, a project path, is on disk): the rules
+/// of the folders above it apply, and a folder that is itself ignored gives only the nested repositories below it.
+/// Every file comes with its size, modified time and absolute path; `stop` sees each file and ends the walk by
+/// answering `true` (the scan is then cut off).
+pub(crate) fn scan_folder(
+    root: &RootCtx,
+    folder: &str,
+    abs: &Path,
+    cancel: &std::sync::atomic::AtomicBool,
+    stop: &mut dyn FnMut(&ScanFile) -> bool,
+) -> Scan {
+    root.ignorer.clear();
+    let frames = root.ignorer.frames_at(abs);
+    let in_ignored = abs != root.abs && root.ignorer.path_ignored(abs, true);
+    let mut cx = ScanCx {
+        root,
+        cancel,
+        budget: MAX_ENTRIES,
+        out: Scan::default(),
+        folder: Some(stop),
+    };
+    scan_dir(&mut cx, abs, folder, &frames, in_ignored, 0);
     cx.out
 }
 
@@ -650,7 +699,7 @@ fn scan_dir(
         cx.out.cut_off = true;
         return;
     }
-    let Some((found, hints)) = read_entries(dir_abs, dir_path) else {
+    let Some((found, hints)) = read_entries(dir_abs, dir_path, cx.folder.is_some()) else {
         return;
     };
     let root = cx.root;
@@ -678,15 +727,27 @@ fn scan_dir(
         if !entry.is_dir {
             if !ignored {
                 let category = category_of(&entry.name);
-                let reads_content = matches!(
-                    category,
-                    super::Category::Markdown | super::Category::Text | super::Category::Config
-                );
-                cx.out.files.push(ScanFile {
+                let (size, modified_ms) = entry.stat.unwrap_or((0, 0));
+                let reads_content = cx.folder.is_some()
+                    || matches!(
+                        category,
+                        super::Category::Markdown | super::Category::Text | super::Category::Config
+                    );
+                let file = ScanFile {
                     path,
                     category,
                     abs: reads_content.then_some(abs),
-                });
+                    size,
+                    modified_ms,
+                };
+                let end = cx.folder.as_mut().is_some_and(|stop| stop(&file));
+                cx.out.files.push(file);
+                if end {
+                    // the budget at zero ends the walk in every folder above this one too
+                    cx.budget = 0;
+                    cx.out.cut_off = true;
+                    return;
+                }
             }
             continue;
         }
