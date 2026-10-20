@@ -12,7 +12,7 @@
   const crowded = $derived(plugins.length + 2 > 3);
 </script>
 
-<div class="tabs" role="tablist" aria-label={t("sidebar.views")}>
+<div class="tabs" class:crowded role="tablist" aria-label={t("sidebar.views")}>
   <button
     type="button"
     role="tab"
@@ -88,6 +88,13 @@
   .tab.icon-only {
     flex: none;
     padding-inline: var(--sp-2);
+  }
+  /* many tabs: tighter, so the open tab's label has room for long words (German, Italian); icons stay 24 px wide */
+  .crowded .tab {
+    padding-inline: var(--sp-2);
+  }
+  .crowded .tab.icon-only {
+    padding-inline: 5px;
   }
   .label {
     min-width: 0;
