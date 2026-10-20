@@ -545,6 +545,8 @@ fn without_live_updates_the_open_document_is_polled() {
     });
     // no longer polled
     f.watcher.poll_document("w", None);
+    // a poll already under way still reports what the disk says when it is done
+    quiet_for(&f.seen, 300);
     f.seen.lock().unwrap().clear();
     fs::write(&doc, "back").unwrap();
     let heard = quiet_for(&f.seen, 300);
