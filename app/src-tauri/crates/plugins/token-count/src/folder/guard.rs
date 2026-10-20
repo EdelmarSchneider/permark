@@ -119,6 +119,7 @@ pub fn skip_before_reading(file: &ScanFile) -> Option<FolderSkip> {
         | Category::Config
         | Category::Data
         | Category::Image
+        | Category::Code
         | Category::Other => (file.size > MAX_FILE_BYTES).then_some(FolderSkip::TooLarge),
     }
 }

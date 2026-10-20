@@ -14,4 +14,8 @@ seq: number,
 /**
  * Patterns of the filter that are not valid (shown in the filter popover).
  */
-invalidPatterns: Array<string>, totalFiles: number, shownFiles: number, };
+invalidPatterns: Array<string>, totalFiles: number, shownFiles: number, 
+/**
+ * `Code` files the filter hides (the code offer reads it).
+ */
+codeHidden: number, };

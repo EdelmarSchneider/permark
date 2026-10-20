@@ -234,6 +234,8 @@ pub(crate) struct Visible {
     pub nodes: Vec<TreeNode>,
     pub total_files: u32,
     pub shown_files: u32,
+    /// `Code` files that pass the hidden | ignored switches and not the filter.
+    pub code_hidden: u32,
 }
 
 /// Facts shared by one pass.
@@ -345,6 +347,9 @@ impl Pass<'_> {
                     let shown = self.file_shown(node, category, hidden_path, in_asset_folder);
                     if load_visible || shown {
                         self.out.total_files += 1;
+                    }
+                    if load_visible && !shown && category == Category::Code {
+                        self.out.code_hidden += 1;
                     }
                     if shown {
                         self.out.shown_files += 1;

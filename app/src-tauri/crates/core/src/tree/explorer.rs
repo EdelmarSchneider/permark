@@ -33,6 +33,7 @@ struct View {
     list: Vec<TreeNode>,
     total: u32,
     shown: u32,
+    code_hidden: u32,
     seq: u64,
 }
 
@@ -46,6 +47,7 @@ impl View {
             invalid_patterns: self.compiled.invalid.clone(),
             total_files: self.total,
             shown_files: self.shown,
+            code_hidden: self.code_hidden,
         }
     }
 }
@@ -214,12 +216,14 @@ impl Explorer {
             list: Vec::new(),
             total: 0,
             shown: 0,
+            code_hidden: 0,
             seq,
         };
         let visible = self.visible(model, &view);
         view.list = visible.nodes;
         view.total = visible.total_files;
         view.shown = visible.shown_files;
+        view.code_hidden = visible.code_hidden;
         let snapshot = view.snapshot(self.root_nodes());
         views.insert(window.to_owned(), view);
         snapshot
@@ -373,6 +377,7 @@ impl Explorer {
         view.seq += 1;
         view.total = visible.total_files;
         view.shown = visible.shown_files;
+        view.code_hidden = visible.code_hidden;
         view.list = visible.nodes;
         self.sink.emit(CoreEvent::TreeChanged(TreeChanged {
             window: window.to_owned(),
@@ -544,6 +549,7 @@ impl TreeSnapshot {
             invalid_patterns: Vec::new(),
             total_files: 0,
             shown_files: 0,
+            code_hidden: 0,
         }
     }
 }

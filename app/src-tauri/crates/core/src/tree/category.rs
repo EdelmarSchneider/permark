@@ -15,11 +15,13 @@ pub enum Category {
     Audio,
     Video,
     Office,
+    /// Programs and scripts.
+    Code,
     Other,
 }
 
 impl Category {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Markdown,
         Self::Text,
         Self::Config,
@@ -28,6 +30,7 @@ impl Category {
         Self::Audio,
         Self::Video,
         Self::Office,
+        Self::Code,
         Self::Other,
     ];
 
@@ -79,6 +82,11 @@ const AUDIO: &[&str] = &[
 const VIDEO: &[&str] = &[
     "mp4", "m4v", "webm", "ogv", "mov", "mkv", "avi", "wmv", "flv", "mpg", "mpeg", "3gp",
 ];
+const CODE: &[&str] = &[
+    "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "kt", "kts", "c", "h", "cc",
+    "cpp", "cxx", "hpp", "cs", "rb", "php", "swift", "scala", "lua", "r", "dart", "sh", "bash",
+    "zsh", "ps1", "bat", "cmd", "sql", "vue", "svelte", "css", "scss", "less", "html", "htm",
+];
 const OFFICE: &[&str] = &[
     "doc", "docx", "dot", "dotx", "xls", "xlsx", "xlsm", "ppt", "pptx", "odt", "ods", "odp", "rtf",
     "pdf",
@@ -117,6 +125,7 @@ pub fn category_of(name: &str) -> Category {
             (AUDIO, Category::Audio),
             (VIDEO, Category::Video),
             (OFFICE, Category::Office),
+            (CODE, Category::Code),
         ] {
             if list.contains(&ext) {
                 return category;
@@ -146,7 +155,7 @@ pub fn may_open_with_default_app(name: &str) -> bool {
     if NEVER_OPEN.contains(&ext.as_str()) {
         return false;
     }
-    !matches!(category_of(name), Category::Other)
+    !matches!(category_of(name), Category::Other | Category::Code)
 }
 
 /// `.html` | `.htm`: opened in the browser by its own action.

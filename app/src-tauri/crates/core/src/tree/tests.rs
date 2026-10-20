@@ -100,6 +100,12 @@ fn category_table() {
         ("clip.mp4", Category::Video),
         ("report.docx", Category::Office),
         ("paper.pdf", Category::Office),
+        ("main.rs", Category::Code),
+        ("App.TSX", Category::Code),
+        ("run.py", Category::Code),
+        ("build.sh", Category::Code),
+        ("style.css", Category::Code),
+        ("page.html", Category::Code),
         ("Makefile", Category::Other),
         ("a.tar.gz", Category::Other),
         ("noext.", Category::Other),
@@ -139,6 +145,10 @@ fn default_app_opening_is_an_allow_list_with_a_deny_list_on_top() {
         "x.EXE",
         "x.md.exe",
         "x.scr",
+        // code is read in the app or opened in the editor, never by the system's program
+        "main.rs",
+        "app.ts",
+        "style.css",
     ] {
         assert!(!may_open_with_default_app(no), "{no}");
     }
@@ -348,6 +358,64 @@ fn hidden_names_need_show_hidden_and_a_hidden_folder_is_listed_for_what_it_holds
     assert!(revealed.contains(&".github".to_owned()), "{revealed:?}");
     assert!(revealed.contains(&".github/workflows/ci.yml".to_owned()));
     assert!(!revealed.contains(&".cache".to_owned()));
+}
+
+#[test]
+fn code_files_the_filter_hides_are_counted_for_the_code_offer() {
+    let f = fixture(&[
+        "README.md",
+        "docs/a.md",
+        "src/main.rs",
+        "src/lib.rs",
+        "web/app.ts",
+        "build.sh",
+        "x.png",
+        "Makefile",
+        ".hidden/h.rs",
+        "node_modules/m/index.js",
+    ]);
+    // the default filter shows documents and assets: four code files are hidden (a dot folder and node_modules are
+    // out of the count: they are not on offer either way)
+    let snapshot = f.explorer.open_view("w", None);
+    assert_eq!(snapshot.code_hidden, 4);
+    assert!(!paths(&snapshot).contains(&"src/main.rs"));
+    // the preset Documents hides them the same
+    assert_eq!(
+        f.explorer
+            .open_view(
+                "d",
+                Some(TreeFilter::default().with_show(FilterShow::Documents))
+            )
+            .code_hidden,
+        4
+    );
+    // Everything shows them: none hidden
+    let all = f.explorer.open_view("e", Some(everything()));
+    assert_eq!(all.code_hidden, 0);
+    assert!(paths(&all).contains(&"src/main.rs"));
+    // Custom with the Code category on: shown, none hidden; with hidden paths on, the dot folder counts
+    let custom = TreeFilter {
+        show: FilterShow::Custom,
+        categories: vec![Category::Markdown, Category::Code],
+        ..TreeFilter::default()
+    };
+    let snapshot = f.explorer.open_view("c", Some(custom.clone()));
+    assert_eq!(snapshot.code_hidden, 0);
+    assert!(paths(&snapshot).contains(&"web/app.ts"));
+    let with_hidden = TreeFilter {
+        show: FilterShow::Documents,
+        show_hidden: true,
+        ..TreeFilter::default()
+    };
+    assert_eq!(f.explorer.open_view("h", Some(with_hidden)).code_hidden, 5);
+    // a pattern that shows one of them takes it out of the count
+    let pattern = TreeFilter {
+        show: FilterShow::Custom,
+        categories: vec![Category::Markdown, Category::Text, Category::Image],
+        patterns: "+*.sh".to_owned(),
+        ..TreeFilter::default()
+    };
+    assert_eq!(f.explorer.open_view("p", Some(pattern)).code_hidden, 3);
 }
 
 #[test]

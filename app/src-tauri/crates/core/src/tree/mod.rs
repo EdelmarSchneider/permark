@@ -96,6 +96,8 @@ pub struct TreeSnapshot {
     pub invalid_patterns: Vec<String>,
     pub total_files: u32,
     pub shown_files: u32,
+    /// `Code` files the filter hides (the code offer reads it).
+    pub code_hidden: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
