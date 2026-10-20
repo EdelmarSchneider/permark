@@ -23,7 +23,7 @@ const PASS: KeyDecision = { kind: "pass" };
 
 /** Commands that stay reachable while an overlay is open (they reopen or switch the box). */
 function staysWithOverlay(id: string): boolean {
-  return id.startsWith("search.") || id.startsWith("palette.") || id.startsWith("workspace.");
+  return id.startsWith("search.") || id.startsWith("palette.") || id.startsWith("tab.");
 }
 
 /**

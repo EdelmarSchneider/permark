@@ -1,28 +1,38 @@
-// The switcher's rules, pure: when switching makes sense, which workspace comes next, how a chip looks (hue, name).
+// The tab strip's rules, pure: which tab a key goes to, the workspace a view shows, how a chip looks (hue, name).
 
-import type { WindowView, WorkspaceSummary } from "../../api";
+import type { TabSummary, WindowView } from "../../api";
 
-/** Switching (next | previous) needs something to switch to. */
-export function canSwitch(list: readonly WorkspaceSummary[]): boolean {
+/** Switching (next | previous) needs another tab to switch to. */
+export function canSwitch(list: readonly TabSummary[]): boolean {
   return list.length >= 2;
 }
 
 /**
- * The workspace `step` places after `current` (negative = before), wrapping around; `current` = the one this window
- * shows (`null`: it shows none: next = the first, previous = the last). `null` when there is nothing to go to.
+ * The tab `step` places after `active` (negative = before), wrapping around; `null` when there is nothing to go to
+ * (fewer than two tabs). An active tab that is not in the list counts as before the first.
  */
 export function neighbor(
-  list: readonly WorkspaceSummary[],
-  current: number | null,
+  list: readonly TabSummary[],
+  active: number | null,
   step: 1 | -1,
-): WorkspaceSummary | null {
+): TabSummary | null {
   if (!canSwitch(list)) return null;
-  const at = list.findIndex((w) => w.id === current);
+  const at = list.findIndex((t) => t.tab === active);
   const to = at < 0 ? (step === 1 ? 0 : list.length - 1) : (at + step + list.length) % list.length;
   return list[to] ?? null;
 }
 
-/** The workspace a window shows (what stays on screen while another opens), `null` when it shows none. */
+/** Tab `n` (1-based) of the strip; `null` when there is none. */
+export function nth(list: readonly TabSummary[], n: number): TabSummary | null {
+  return list[n - 1] ?? null;
+}
+
+/** The last tab of the strip. */
+export function last(list: readonly TabSummary[]): TabSummary | null {
+  return list.at(-1) ?? null;
+}
+
+/** The workspace a view shows (what stays on screen while another opens), `null` when it shows none. */
 export function shownId(view: WindowView): number | null {
   switch (view.state) {
     case "showing":
@@ -37,21 +47,6 @@ export function shownId(view: WindowView): number | null {
   }
 }
 
-/**
- * The workspace a window focuses after closing `closed`: the one after it in the list, else the one before; `null`
- * when nothing else is open (the window then shows the Welcome).
- */
-export function afterClose(
-  list: readonly WorkspaceSummary[],
-  closed: number,
-): WorkspaceSummary | null {
-  const at = list.findIndex((w) => w.id === closed);
-  const rest = list.filter((w) => w.id !== closed);
-  if (rest.length === 0) return null;
-  if (at < 0) return rest[0] ?? null;
-  return rest[Math.min(at, rest.length - 1)] ?? null;
-}
-
 /** A tag palette color (tokens `--tag-<hue>`, both themes). */
 export type Hue = "blue" | "teal" | "green" | "purple" | "orange" | "gray" | "yellow";
 
@@ -59,7 +54,7 @@ export type Hue = "blue" | "teal" | "green" | "purple" | "orange" | "gray" | "ye
 const PROJECT_HUES: readonly Hue[] = ["blue", "teal", "green", "purple", "orange"];
 
 /** A workspace's color, the same in every window and every session: from its path for a project. */
-export function hueOf(workspace: Pick<WorkspaceSummary, "kind" | "path">): Hue {
+export function hueOf(workspace: Pick<TabSummary, "kind" | "path">): Hue {
   switch (workspace.kind) {
     case "notes":
       return "yellow";

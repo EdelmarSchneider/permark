@@ -233,11 +233,13 @@ pub fn tab_close(handle: AppHandle, tab: TabId) {
     crate::open::run(&handle, shell.registry.close_tab(tab));
 }
 
-/// The tab's unsaved prompt let it go.
+/// The unsaved prompt of this view's tab let it go: the tab closes.
 #[tauri::command(async)]
-pub fn tab_close_confirmed(handle: AppHandle, tab: TabId) {
-    let outcome = state(&handle).registry.close_tab(tab);
-    crate::open::run(&handle, outcome);
+pub fn tab_close_confirmed(handle: AppHandle, window: Webview) {
+    let shell = state(&handle);
+    if let Some(place) = shell.registry.place_of_view(window.label()) {
+        crate::open::run(&handle, shell.registry.close_tab(place.tab));
+    }
 }
 
 /// Moves a tab to a new window (stage A: a new window only). Returns the new window's label.

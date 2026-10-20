@@ -1,5 +1,5 @@
 // What the shell's backend half answers in the mock backend: the plugin list with its switches, the project's shared
-// settings, the other workspaces of the process. In memory; same shapes as the real commands.
+// settings, the other windows of the process. In memory; same shapes as the real commands.
 
 import type { Context } from "./generated/Context";
 import type { Manifest } from "./generated/Manifest";
@@ -7,7 +7,7 @@ import type { PluginInfo } from "./generated/PluginInfo";
 import type { PluginKind } from "./generated/PluginKind";
 import type { ProjectSettingChange } from "./generated/ProjectSettingChange";
 import type { ProjectSettings } from "./generated/ProjectSettings";
-import type { WorkspaceSummary } from "./generated/WorkspaceSummary";
+import type { WindowSummary } from "./generated/WindowSummary";
 import type { AppSettings, Result } from "./types";
 
 const PROJECT: Manifest["requires"] = {
@@ -132,25 +132,16 @@ function listProblem(change: ProjectSettingChange): string | null {
 
 export type MockShell = ReturnType<typeof createMockShell>;
 
-/**
- * `workspace`: what the window shows (so the list can name it); `changed`: tells the window the list moved;
- * `closeOwn`: asks the window to close what it shows (as the backend does for each window that shows a workspace).
- */
-export function createMockShell(deps: {
-  settings: () => AppSettings;
-  workspace: () => WorkspaceSummary | null;
-  changed: () => void;
-  closeOwn: () => void;
-}) {
+/** `changed`: tells the window the plugins | the window list moved. */
+export function createMockShell(deps: { settings: () => AppSettings; changed: () => void }) {
   let project = emptyProject();
   /** The folders PerMark was initialized in (the real thing is a `.permark/` folder on disk). */
   const initializedPaths = new Set<string>();
   let currentPath = "";
   const choices = new Map<string, boolean>();
   const removed: string[] = [];
-  let others: WorkspaceSummary[] = [];
+  let others: WindowSummary[] = [];
   const focused: number[] = [];
-  const closed: number[] = [];
 
   /** Plugins that are on for the window: settings, the project's own choices, dependencies. */
   function resolved(inProject: boolean): Map<string, Manifest> {
@@ -180,12 +171,13 @@ export function createMockShell(deps: {
     context(base: Context): Context {
       return { ...base, permark: project.initialized ? "initialized" : "notInitialized" };
     },
+    /** The other windows of the process, as the backend lists them. */
+    others: (): WindowSummary[] => others,
     probe: {
       removed,
       focused,
-      closed,
-      /** The other workspaces of the process, as the backend lists them. */
-      setOthers(list: WorkspaceSummary[]): void {
+      /** The other windows of the process (their tabs), as the backend lists them. */
+      setOthers(list: WindowSummary[]): void {
         others = list;
         deps.changed();
       },
@@ -204,17 +196,8 @@ export function createMockShell(deps: {
       return true;
     },
     api: {
-      listWorkspaces: () => {
-        const own = deps.workspace();
-        return ok(own === null ? others : [own, ...others]);
-      },
       focusWorkspace: (id: number) => {
         focused.push(id);
-        return ok(null);
-      },
-      workspaceClose: (id: number) => {
-        closed.push(id);
-        if (deps.workspace()?.id === id) deps.closeOwn();
         return ok(null);
       },
       projectConfigGet: () => ok(project),

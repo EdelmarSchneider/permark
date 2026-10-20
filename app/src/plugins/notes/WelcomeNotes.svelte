@@ -27,7 +27,7 @@
   async function openNotes(path: string | null): Promise<void> {
     if (path === null) wantNewNote();
     else wantNote(path);
-    await windowStore.openNotes("ask");
+    await windowStore.openNotes();
   }
 </script>
 

@@ -1,5 +1,6 @@
-// This window's state + the open flow: boot, open folder | file | recent | drop, "This window | New window",
-// close back to Welcome, settings changes, notices. Backend owns the truth (`window-changed`); this mirrors it.
+// This view's state (one tab of a window, or the window's Welcome) + the open flow: boot, open folder | file |
+// recent | drop by placement (new tab | this tab | new window), close this tab, settings changes, notices. Backend
+// owns the truth (`window-changed`); this mirrors it.
 
 import {
   api,
@@ -19,9 +20,11 @@ import {
   type WindowView,
 } from "../api";
 import { conditions } from "./conditions/context.svelte";
+import { confirmLeave } from "./editing/guard";
 import { restartPlugins, syncPlugins } from "./plugins/instance.svelte";
 import { language, parsePreference, t } from "./i18n";
 import { look } from "./look.svelte";
+import { tabs } from "./shell/tabs.svelte";
 import { ui } from "./shell/ui.svelte";
 
 export type NoticeAction = { label: string; run: () => void };
@@ -40,8 +43,6 @@ export type Notice =
 
 type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : never) : never;
 
-/** `path: null` = the Notes. */
-export type Choice = { status: "closed" } | { status: "asking"; path: string | null };
 export type Drag = { status: "idle" } | { status: "over"; count: number };
 
 /** A project window takes what is dragged over it and dropped on it (into the project, or into an editor). */
@@ -56,10 +57,14 @@ export type Boot =
 export class WindowStore {
   readonly #api: Api;
   boot = $state.raw<Boot>({ status: "booting" });
+  /** This view: events for it carry this label. */
   label = $state("");
+  /** The native window it lives in. */
+  window = $state("");
+  /** Its tab (`null`: the window's Welcome view). */
+  tab = $state<number | null>(null);
   view = $state.raw<WindowView>({ state: "welcome" });
   recent = $state.raw<readonly RecentFolder[]>([]);
-  choice = $state.raw<Choice>({ status: "closed" });
   drag = $state.raw<Drag>({ status: "idle" });
   notices = $state.raw<readonly Notice[]>([]);
   /** Whether a move rewrites the links that point at it (the setting). */
@@ -76,8 +81,8 @@ export class WindowStore {
   notesFolder = $state("");
   /** What the app starts on. */
   startIn = $state<StartIn>("welcome");
-  /** What opening over a shown workspace does: ask, reuse this window, open a new one. */
-  openIn = $state<OpenIn>("ask");
+  /** Where opening a folder | file goes: a new tab, this tab, a new window. */
+  openIn = $state<OpenIn>("tab");
   /** The person's keyboard map: command id -> combo (`""` = unbound). */
   keymap = $state.raw<Readonly<Record<string, string>>>({});
   /** The tokenizers the token count shows, first = primary (the app's choice; a project may have its own). */
@@ -125,7 +130,9 @@ export class WindowStore {
     const booted = await this.#api.windowBoot();
     if (booted.ok) {
       const info = booted.value;
-      this.label = info.window;
+      this.label = info.label;
+      this.window = info.window;
+      this.tab = info.tab;
       this.#applyContext(info.context);
       look.set(info.settings);
       this.linkUpdate = info.settings.linkUpdate;
@@ -191,41 +198,46 @@ export class WindowStore {
 
   async openFolder(): Promise<void> {
     const path = await this.#api.pickFolder(t("dialog.openFolder"));
-    if (path) await this.open(path, "ask");
+    if (path) await this.open(path);
   }
 
   async openFile(): Promise<void> {
     const path = await this.#api.pickFile(t("dialog.openFile"), t("dialog.filter.docs"));
-    if (path) await this.open(path, "ask");
+    if (path) await this.open(path);
   }
 
-  /** `ask` = what the `open_in` setting says (ask = the dialog when this window shows something). */
-  #placement(placement: OpenPlacement): OpenPlacement {
-    if (placement !== "ask") return placement;
+  /** No placement given: what the `open_in` setting says. */
+  #placement(placement: OpenPlacement | undefined): OpenPlacement {
+    if (placement !== undefined) return placement;
     switch (this.openIn) {
-      case "ask":
-        return "ask";
+      case "tab":
+        return "tab";
       case "this":
-        return "thisWindow";
-      case "new":
+        return "thisTab";
+      case "window":
         return "newWindow";
       default:
         return this.openIn satisfies never;
     }
   }
 
-  async open(path: string, placement: OpenPlacement): Promise<void> {
-    await this.#opened(await this.#api.openPath(path, this.#placement(placement)), {
-      kind: "path",
-      path,
-    });
+  /** Replacing what this tab shows lets go of its document first (its unsaved prompt). `false`: the person stays. */
+  async #mayReplace(placement: OpenPlacement): Promise<boolean> {
+    return placement !== "thisTab" || this.tab === null || confirmLeave({ kind: "workspace" });
   }
 
-  /** Shows the Notes in this window (asks first when the window shows something). */
-  async openNotes(placement: OpenPlacement = "ask"): Promise<void> {
-    await this.#opened(await this.#api.openNotes(this.#placement(placement)), {
-      kind: "notes",
-    });
+  /** Opens a folder | file: where it is already (one place), else by `placement` (default: the setting). */
+  async open(path: string, placement?: OpenPlacement): Promise<void> {
+    const where = this.#placement(placement);
+    if (!(await this.#mayReplace(where))) return;
+    await this.#opened(await this.#api.openPath(path, where), { kind: "path", path });
+  }
+
+  /** Opens the Notes: where they are already, else by `placement` (default: the setting). */
+  async openNotes(placement?: OpenPlacement): Promise<void> {
+    const where = this.#placement(placement);
+    if (!(await this.#mayReplace(where))) return;
+    await this.#opened(await this.#api.openNotes(where), { kind: "notes" });
   }
 
   async #opened(
@@ -247,12 +259,9 @@ export class WindowStore {
       case "opened":
         this.#showView(outcome.view);
         return;
-      case "needsChoice":
-        this.choice =
-          what.kind === "path"
-            ? { status: "asking", path: what.path }
-            : { status: "asking", path: null };
-        return;
+      // another view shows it (a new tab, the tab it was in, another window): it says so itself
+      case "newTab":
+      case "focused":
       case "openedElsewhere":
         return;
       default:
@@ -260,21 +269,10 @@ export class WindowStore {
     }
   }
 
-  /** Answer of the "This window | New window" dialog; `null` = cancelled. `remember`: keep the answer as the setting. */
-  async answerChoice(answer: "here" | "new" | null, remember = false): Promise<void> {
-    const asked = this.choice;
-    this.choice = { status: "closed" };
-    if (asked.status !== "asking" || answer === null) return;
-    if (remember) {
-      await this.changeSetting({ key: "openIn", value: answer === "here" ? "this" : "new" });
-    }
-    const placement = answer === "here" ? "thisWindow" : "newWindow";
-    if (asked.path === null) await this.openNotes(placement);
-    else await this.open(asked.path, placement);
-  }
-
+  /** Closes the active tab, the one on screen: this view's (its unsaved prompt runs first, asked by the backend). */
   async closeWorkspace(): Promise<void> {
-    await this.#api.showWelcome();
+    const tab = tabs.active ?? this.tab;
+    if (tab !== null) await this.#api.tabClose(tab);
   }
 
   /** Creates `.permark/` in a folder; a project open on it reloads at once. `true` when it worked. */
@@ -291,7 +289,7 @@ export class WindowStore {
   async newProject(): Promise<void> {
     const path = await this.#api.pickFolder(t("dialog.newProject"));
     if (path === null) return;
-    if (await this.initProject(path)) await this.open(path, "ask");
+    if (await this.initProject(path)) await this.open(path);
   }
 
   async removeRecent(path: string): Promise<void> {
@@ -358,7 +356,7 @@ export class WindowStore {
           this.#notify({ kind: "dropOne" });
           return;
         }
-        void this.open(first, "ask");
+        void this.open(first);
         return;
       }
       default:

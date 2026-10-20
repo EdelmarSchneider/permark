@@ -89,7 +89,7 @@ describe("hand-off arithmetic", () => {
 
 async function setup(connected = true) {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const copied: string[] = [];
   const said: string[] = [];
   const store = new HandOffStore(

@@ -49,7 +49,7 @@ beforeEach(async () => {
   document.body.replaceChildren();
   target = document.createElement("div");
   document.body.append(target);
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   const boot = await mock.windowBoot();
   if (!boot.ok || boot.value.view.state !== "showing") throw new Error("no project");
   const workspace = boot.value.view.workspace;

@@ -406,6 +406,10 @@ fn request_close_during_load_closes_without_a_prompt() {
             window: "main".into()
         }]
     );
+    // until it is gone, the closing window is saved as it was (the last window closed stays in the session)
+    let session = f.registry.session_windows();
+    assert_eq!(session[0].window, "main");
+    assert_eq!(session[0].tabs.len(), 1);
     run(&f, outcome);
     f.registry.forget_window("main");
     assert_eq!(f.registry.cores().len(), 0);

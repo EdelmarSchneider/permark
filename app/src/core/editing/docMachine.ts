@@ -54,6 +54,8 @@ export type DocEvent =
   | { e: "keepMine" }
   | { e: "saveAsNew" }
   | { e: "leave"; leave: Leave }
+  /** Save, then leave, with no prompt (the window close prompt's Save all). */
+  | { e: "saveAndLeave"; leave: Leave }
   | { e: "discard" }
   | { e: "keepEditing" };
 
@@ -121,6 +123,7 @@ export function transition(state: DocState, event: DocEvent, policy: SavePolicy)
             effects: [{ type: "setUnsaved", unsaved: false }],
           };
         case "leave":
+        case "saveAndLeave":
           return { state: { s: "closed" }, effects: [{ type: "leave", leave: event.leave }] };
         default:
           return stay(state);
@@ -140,6 +143,7 @@ export function transition(state: DocState, event: DocEvent, policy: SavePolicy)
         case "diskDeleted":
           return { state: { s: "closed" }, effects: [{ type: "leave", leave: { kind: "view" } }] };
         case "leave":
+        case "saveAndLeave":
           return { state: { s: "closed" }, effects: [{ type: "leave", leave: event.leave }] };
         case "loaded":
           return stay({ s: "clean", base: event.base });
@@ -163,6 +167,8 @@ export function transition(state: DocState, event: DocEvent, policy: SavePolicy)
           return event.hash === state.base.hash ? stay(state) : toConflict(state.base, event.hash);
         case "diskDeleted":
           return toConflict(state.base, null);
+        case "saveAndLeave":
+          return startSave(state.base, event.leave);
         case "leave":
           return policy.kind === "auto"
             ? startSave(state.base, event.leave)
@@ -217,6 +223,7 @@ export function transition(state: DocState, event: DocEvent, policy: SavePolicy)
         case "saveFailed":
           return stay({ s: "saveError", base: state.base, error: event.error });
         case "leave":
+        case "saveAndLeave":
           return stay({ ...state, then: event.leave });
         default:
           return stay(state);
@@ -261,6 +268,8 @@ export function transition(state: DocState, event: DocEvent, policy: SavePolicy)
         case "retry":
         case "save":
           return startSave(state.base, null);
+        case "saveAndLeave":
+          return startSave(state.base, event.leave);
         case "diskChanged":
           return event.hash === state.base.hash ? stay(state) : toConflict(state.base, event.hash);
         case "diskDeleted":
@@ -288,6 +297,10 @@ export function transition(state: DocState, event: DocEvent, policy: SavePolicy)
           return state.back.s === "conflict"
             ? stay(state)
             : startSave(state.back.base, state.leave);
+        case "saveAndLeave":
+          return state.back.s === "conflict"
+            ? stay(state)
+            : startSave(state.back.base, event.leave);
         default:
           return stay(state);
       }

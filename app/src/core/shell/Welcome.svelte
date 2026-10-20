@@ -29,8 +29,10 @@
   );
   const opening = $derived(store.view.state === "opening");
 
-  function open(recent: RecentFolder | undefined): void {
-    if (recent && !recent.missing) void store.open(recent.path, "ask");
+  /** `newWindow` (Shift+click | Shift+Enter): in a window of its own. */
+  function open(recent: RecentFolder | undefined, newWindow = false): void {
+    if (recent && !recent.missing)
+      void store.open(recent.path, newWindow ? "newWindow" : undefined);
   }
 
   function onkeydown(e: KeyboardEvent): void {
@@ -43,7 +45,7 @@
         return;
       case "Enter":
         e.preventDefault();
-        open(recents[active]);
+        open(recents[active], e.shiftKey);
         return;
       case "Delete": {
         const recent = recents[active];
@@ -147,9 +149,9 @@
                   aria-disabled={recent.missing}
                   class={["row", i === active && "is-active", recent.missing && "is-missing"]}
                   title={recent.path}
-                  onclick={() => {
+                  onclick={(e) => {
                     active = i;
-                    open(recent);
+                    open(recent, e.shiftKey);
                   }}
                   onkeydown={() => {}}
                 >

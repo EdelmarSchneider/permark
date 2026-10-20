@@ -16,7 +16,7 @@ const settle = async (): Promise<void> => {
 
 async function setup() {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const store = new BrokenLinksStore(new PluginClient(api, () => MOCK_FOLDER), () => MOCK_FOLDER);
   const stop = store.start();
   await settle();

@@ -1,23 +1,23 @@
 <script lang="ts">
-  // The open workspaces of the process as chips on the top bar, in list order: a colored badge by kind, the name (cut
-  // in the middle when long), the window count, a close button. Click | Enter focuses the window that shows it; the
-  // arrows move between chips; Delete, a middle click or the close button closes it; the context menu (right click,
-  // Menu key, Shift+F10) opens it in a new window or closes it. Too many for the width: chips shrink, then the row
-  // scrolls sideways with faded edges, keeping this window's chip in view.
+  // This window's tabs as chips on the top bar, in strip order: a colored badge by kind, the name (cut in the middle
+  // when long), the unsaved dot, a close button. Click | Enter | Space shows the tab; the arrows move between chips;
+  // Delete, a middle click or the close button closes it; the context menu (right click, Menu key, Shift+F10) moves it
+  // to a new window or closes it. Too many for the width: chips shrink, then the row scrolls sideways with faded edges,
+  // keeping the active chip in view.
   import FileText from "@lucide/svelte/icons/file-text";
   import Folder from "@lucide/svelte/icons/folder";
   import StickyNote from "@lucide/svelte/icons/sticky-note";
   import X from "@lucide/svelte/icons/x";
-  import type { WorkspaceSummary } from "../../api";
+  import type { TabSummary } from "../../api";
   import { keyHint } from "../commands/hint";
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
-  import { t, tn } from "../i18n";
+  import { t } from "../i18n";
   import { chipsTight, hueOf, splitName } from "./switcherModel";
-  import { switcher } from "./workspaceList.svelte";
+  import { tabs } from "./tabs.svelte";
 
-  type Props = { current: number | null };
-  let { current }: Props = $props();
+  /** The active tab of this window. */
+  const current = $derived(tabs.active);
 
   /** What the top bar's own buttons and padding take next to the chips (px). */
   const BUTTONS = 96;
@@ -29,64 +29,70 @@
   /** Too many for the width: names keep their start only (a cut in the middle needs room). */
   let tight = $state(false);
 
-  /** The chip the keyboard reaches with Tab: the one this window shows, else the first. */
+  /** The chip the keyboard reaches with Tab: the active one, else the first. */
   const reachable = $derived(
-    switcher.list.some((w) => w.id === current) ? current : (switcher.list[0]?.id ?? null),
+    tabs.list.some((tab) => tab.tab === current) ? current : (tabs.list[0]?.tab ?? null),
   );
-  const closeKeys = $derived(keyHint("app.closeWorkspace"));
+  const closeKeys = $derived(keyHint("tab.close"));
 
-  function nameOf(workspace: WorkspaceSummary): string {
-    return workspace.kind === "notes" ? t("notes.title") : workspace.title;
+  function nameOf(tab: TabSummary): string {
+    return tab.kind === "notes" ? t("notes.title") : tab.title;
   }
 
-  function closeLabel(workspace: WorkspaceSummary): string {
-    const label = t("switcher.closeOne", { name: nameOf(workspace) });
-    return workspace.id === current && closeKeys !== null ? `${label} (${closeKeys})` : label;
+  function closeLabel(tab: TabSummary): string {
+    const label = t("switcher.closeOne", { name: nameOf(tab) });
+    return tab.tab === current && closeKeys !== null ? `${label} (${closeKeys})` : label;
   }
 
-  function entriesFor(workspace: WorkspaceSummary): MenuEntry[] {
-    return [
-      {
-        kind: "item",
-        label: t("switcher.openNew"),
-        run: () => switcher.openInNewWindow(workspace),
-      },
-      {
-        kind: "item",
-        label: t("switcher.close"),
-        hint: workspace.id === current ? (closeKeys ?? undefined) : undefined,
-        run: () => switcher.close(workspace.id),
-      },
-    ];
+  function entriesFor(tab: TabSummary): MenuEntry[] {
+    const entries: MenuEntry[] = [];
+    // moving the only tab out would leave an empty window behind
+    if (tabs.list.length > 1) {
+      entries.push(
+        {
+          kind: "item",
+          label: t("switcher.moveNew"),
+          run: () => tabs.moveToNewWindow(tab.tab),
+        },
+        { kind: "separator" },
+      );
+    }
+    entries.push({
+      kind: "item",
+      label: t("switcher.close"),
+      hint: tab.tab === current ? (closeKeys ?? undefined) : undefined,
+      run: () => tabs.close(tab.tab),
+    });
+    return entries;
   }
 
-  function openMenu(workspace: WorkspaceSummary, x: number, y: number): void {
-    menu = { x, y, entries: entriesFor(workspace) };
+  function openMenu(tab: TabSummary, x: number, y: number): void {
+    menu = { x, y, entries: entriesFor(tab) };
   }
 
-  function oncontextmenu(e: MouseEvent, workspace: WorkspaceSummary): void {
+  function oncontextmenu(e: MouseEvent, tab: TabSummary): void {
     e.preventDefault();
-    openMenu(workspace, e.clientX, e.clientY);
+    openMenu(tab, e.clientX, e.clientY);
   }
 
-  function onauxclick(e: MouseEvent, workspace: WorkspaceSummary): void {
+  function onauxclick(e: MouseEvent, tab: TabSummary): void {
     if (e.button !== 1) return;
     e.preventDefault();
-    switcher.close(workspace.id);
+    tabs.close(tab.tab);
   }
 
-  function onkeydown(e: KeyboardEvent, workspace: WorkspaceSummary): void {
+  function onkeydown(e: KeyboardEvent, tab: TabSummary): void {
     if (e.isComposing) return;
     if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
       e.preventDefault();
       const box =
         e.currentTarget instanceof Element ? e.currentTarget.getBoundingClientRect() : null;
-      openMenu(workspace, box?.left ?? 0, box?.bottom ?? 0);
+      openMenu(tab, box?.left ?? 0, box?.bottom ?? 0);
       return;
     }
     if (e.key === "Delete" && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      switcher.close(workspace.id);
+      tabs.close(tab.tab);
       return;
     }
     const chips = Array.from(row?.querySelectorAll<HTMLElement>("[data-tab]") ?? []);
@@ -114,7 +120,7 @@
     if (start !== hidden.start || end !== hidden.end) hidden = { start, end };
     // the room is the bar's (minus its buttons), not the row's: the row's own width follows the names
     const bar = row.closest("nav")?.parentElement?.clientWidth ?? 0;
-    tight = chipsTight(bar - BUTTONS, switcher.list.length);
+    tight = chipsTight(bar - BUTTONS, tabs.list.length);
   }
 
   // the row's edges (scroll + size) and the wheel: a vertical wheel scrolls the row sideways
@@ -139,10 +145,10 @@
     };
   });
 
-  // this window's chip stays in view when it changes or the list moves
+  // the active chip stays in view when it changes or the list moves
   $effect(() => {
     const id = current;
-    void switcher.list;
+    void tabs.list;
     const chip = row?.querySelector<HTMLElement>(`[data-id="${id}"]`);
     chip?.scrollIntoView({ block: "nearest", inline: "nearest" });
     measure();
@@ -157,37 +163,35 @@
     class:fade-end={hidden.end}
     class:tight
   >
-    {#each switcher.list as workspace (workspace.id)}
-      {@const name = nameOf(workspace)}
-      {@const cut = splitName(name, workspace.kind === "singleFile")}
+    {#each tabs.list as tab (tab.tab)}
+      {@const name = nameOf(tab)}
+      {@const cut = splitName(name, tab.kind === "singleFile")}
       <li
         class="chip"
-        class:is-current={workspace.id === current}
-        data-id={workspace.id}
-        style:--hue="var(--tag-{hueOf(workspace)})"
+        class:is-current={tab.tab === current}
+        data-id={tab.tab}
+        style:--hue="var(--tag-{hueOf(tab)})"
       >
         <button
           type="button"
           class="pick"
           data-tab
-          aria-current={workspace.id === current ? "page" : undefined}
-          aria-label={workspace.windows > 1
-            ? `${name}, ${tn("switcher.windows", workspace.windows)}`
-            : name}
-          tabindex={workspace.id === reachable ? 0 : -1}
-          title={workspace.path === "" || workspace.kind === "notes" ? name : workspace.path}
-          onclick={() => switcher.focus(workspace.id)}
-          oncontextmenu={(e) => oncontextmenu(e, workspace)}
-          onauxclick={(e) => onauxclick(e, workspace)}
+          aria-current={tab.tab === current ? "page" : undefined}
+          aria-label={tab.unsaved ? `${name}, ${t("switcher.unsaved")}` : name}
+          tabindex={tab.tab === reachable ? 0 : -1}
+          title={tab.path === "" || tab.kind === "notes" ? name : tab.path}
+          onclick={() => tabs.activate(tab.tab)}
+          oncontextmenu={(e) => oncontextmenu(e, tab)}
+          onauxclick={(e) => onauxclick(e, tab)}
           onmousedown={(e) => {
             if (e.button === 1) e.preventDefault();
           }}
-          onkeydown={(e) => onkeydown(e, workspace)}
+          onkeydown={(e) => onkeydown(e, tab)}
         >
           <span class="badge" aria-hidden="true">
-            {#if workspace.kind === "project"}
+            {#if tab.kind === "project"}
               <Folder size={13} strokeWidth={2.2} />
-            {:else if workspace.kind === "notes"}
+            {:else if tab.kind === "notes"}
               <StickyNote size={13} strokeWidth={2.2} />
             {:else}
               <FileText size={13} strokeWidth={2.2} />
@@ -198,19 +202,17 @@
                 >{cut.tail}</span
               >{/if}</span
           >
-          {#if workspace.windows > 1}
-            <span class="count" aria-hidden="true" title={tn("switcher.windows", workspace.windows)}
-              >{workspace.windows}</span
-            >
+          {#if tab.unsaved}
+            <span class="dot" data-unsaved title={t("switcher.unsaved")}></span>
           {/if}
         </button>
         <button
           type="button"
           class="close"
           tabindex="-1"
-          aria-label={closeLabel(workspace)}
-          title={closeLabel(workspace)}
-          onclick={() => switcher.close(workspace.id)}
+          aria-label={closeLabel(tab)}
+          title={closeLabel(tab)}
+          onclick={() => tabs.close(tab.tab)}
         >
           <X size={13} strokeWidth={2.2} aria-hidden="true" />
         </button>
@@ -355,17 +357,12 @@
   .is-current .name {
     font-weight: 600;
   }
-  .count {
+  .dot {
     flex: none;
-    min-width: 16px;
-    padding: 0 4px;
-    border: 1px solid var(--border-strong);
-    border-radius: 5px;
-    color: var(--muted);
-    font-size: var(--fs-ui-xs);
-    font-weight: 600;
-    line-height: 14px;
-    text-align: center;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .close {
     display: grid;

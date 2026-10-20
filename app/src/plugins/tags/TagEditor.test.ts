@@ -47,7 +47,7 @@ const chips = (): string[] =>
   Array.from(target.querySelectorAll(".chips .chip .name")).map((n) => n.textContent ?? "");
 
 async function open(): Promise<void> {
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   if (!started) {
     await windowStore.start();
     started = true;

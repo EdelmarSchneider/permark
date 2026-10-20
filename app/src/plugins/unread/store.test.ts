@@ -20,7 +20,7 @@ type Shown = { path: string | null; hash: string | null };
 
 async function setup(shown: Shown = { path: null, hash: null }) {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const current = new Box<Shown>(shown);
   const store = new UnreadStore(
     new PluginClient(api, () => MOCK_FOLDER),

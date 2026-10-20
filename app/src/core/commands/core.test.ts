@@ -26,7 +26,7 @@ describe("the core's commands", () => {
     expect(new Set(commands.map((c) => c.id)).size).toBe(commands.length);
     for (const command of commands) {
       expect(command.owner).toBe(CORE_OWNER);
-      expect(command.id).toMatch(/^[a-z]+\.[A-Za-z]+$/);
+      expect(command.id).toMatch(/^[a-z]+\.[A-Za-z]+[1-8]?$/);
       expect(Object.hasOwn(en, command.label), command.id).toBe(true);
     }
   });
@@ -43,11 +43,27 @@ describe("the core's commands", () => {
       [...ids],
     );
     expect(conflicts(map)).toEqual([]);
+    // the same on macOS (Ctrl+Tab there is the Control key, its own combo)
+    const mac = buildKeymap(
+      shortcuts.map((s) => ({ command: s.command, keys: s.keys })),
+      {},
+      [...ids],
+      true,
+    );
+    expect(conflicts(mac)).toEqual([]);
+    expect(mac.combos.get("tab.next")).toEqual(["Ctrl+Tab", "Mod+Alt+ArrowRight"]);
+    expect(map.combos.get("tab.next")).toEqual(["Mod+Tab", "Mod+Alt+ArrowRight"]);
   });
 
   it("keep the box commands out of the palette and name the keys the app is known by", () => {
     const hidden = commands.filter((c) => c.inPalette === false).map((c) => c.id);
-    expect(hidden.sort()).toEqual(["palette.open", "search.everywhere", "search.quickOpen"]);
+    expect(hidden.sort()).toEqual([
+      "palette.open",
+      "search.everywhere",
+      "search.quickOpen",
+      ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `tab.select${n}`),
+      "tab.selectLast",
+    ]);
     const keyOf = (id: string): string | undefined => shortcuts.find((s) => s.command === id)?.keys;
     expect(keyOf("search.quickOpen")).toBe("Mod+p");
     expect(keyOf("search.all")).toBe("Mod+Shift+f");

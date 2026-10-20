@@ -22,7 +22,7 @@ const GUIDE = "docs/guide.md";
 
 async function setup(options: { conflictOn?: PluginMethod; shown?: Shown } = {}) {
   const mock = createMockApi();
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   const hash = await mock.pluginCall("review.open", { path: GUIDE });
   const guideHash = hash.ok ? hash.value.hash : "";
   const api: Api = {

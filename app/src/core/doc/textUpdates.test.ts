@@ -29,7 +29,7 @@ function textView(path: string, text: string, partial = false): DocumentView {
 /** A controller over a backend whose document is whatever `files` says. */
 async function setup(files: Map<string, DocumentView>) {
   const mock = createMockApi();
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   const boot = await mock.windowBoot();
   if (!boot.ok || boot.value.view.state !== "showing") throw new Error("no workspace");
   const workspace: WorkspaceView = boot.value.view.workspace;

@@ -345,7 +345,14 @@ export class EditingSession {
 
   dispatch(event: DocEvent): void {
     // a pending check first: "save" right after typing saves what was typed
-    if (event.e === "save" || event.e === "leave" || event.e === "autosaveDue") this.#flush();
+    if (
+      event.e === "save" ||
+      event.e === "leave" ||
+      event.e === "saveAndLeave" ||
+      event.e === "autosaveDue"
+    ) {
+      this.#flush();
+    }
     const step = transition(this.state, event, this.#policy);
     this.state = step.state;
     // a save on the way out that failed | met a conflict: the person stays
@@ -505,6 +512,20 @@ export class EditingSession {
     return new Promise((resolve) => {
       this.#waiting.push(resolve);
       this.dispatch({ e: "leave", leave });
+    });
+  }
+
+  /**
+   * The window closes and the person chose Save all: saves without a prompt, then lets go. `true` once saved (or
+   * nothing to save), `false` when the save met a conflict | failed (the editor shows it; a conflict is never saved
+   * over).
+   */
+  saveForClose(): Promise<boolean> {
+    if (!this.unsaved) return Promise.resolve(true);
+    if (this.state.s === "conflict") return Promise.resolve(false);
+    return new Promise((resolve) => {
+      this.#waiting.push(resolve);
+      this.dispatch({ e: "saveAndLeave", leave: { kind: "window" } });
     });
   }
 

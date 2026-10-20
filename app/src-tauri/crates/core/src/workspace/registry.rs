@@ -163,6 +163,8 @@ struct WindowEntry {
     kind: WindowKind,
     fsm: WindowState,
     focused_ms: u64,
+    /// The tabs it had when it began closing: the last window closed stays in the session as it was.
+    closed: Option<Strip>,
 }
 
 #[derive(Debug)]
@@ -319,6 +321,7 @@ impl WorkspaceRegistry {
                     kind,
                     fsm: WindowState::Open(Strip::default()),
                     focused_ms: 0,
+                    closed: None,
                 },
             );
         }
@@ -950,7 +953,7 @@ impl WorkspaceRegistry {
             .into_iter()
             .filter(|(_, w)| w.kind == WindowKind::Work)
             .filter_map(|(label, w)| {
-                let strip = w.fsm.strip()?;
+                let strip = w.fsm.strip().or(w.closed.as_ref())?;
                 let refs: Vec<(TabId, WorkspaceRef)> = strip
                     .tabs
                     .iter()
@@ -1055,7 +1058,11 @@ fn drive(inner: &mut Inner, window: &str, event: WindowEvent) -> (Outcome, Vec<E
         return (outcome, dropped);
     };
     let state = std::mem::replace(&mut entry.fsm, WindowState::Closing);
+    let before = state.strip().cloned();
     let (state, effects) = window_fsm::step(state, event);
+    if state == WindowState::Closing && entry.closed.is_none() {
+        entry.closed = before;
+    }
     entry.fsm = state;
     for effect in effects {
         apply(inner, window, effect, &mut outcome, &mut dropped);

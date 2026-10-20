@@ -8,7 +8,8 @@ export type MenuEntry =
       /** A second, quieter line (a path). */
       detail?: string;
       danger?: boolean;
-      run: () => void;
+      /** `shift`: picked with Shift held (Shift+click | Shift+Enter). */
+      run: (shift: boolean) => void;
     }
   | { kind: "heading"; label: string }
   | { kind: "separator" };

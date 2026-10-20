@@ -54,7 +54,7 @@ const rowTexts = (): string[] =>
   );
 
 async function open(): Promise<void> {
-  await mock.openPath(MOCK_FOLDER, "thisWindow");
+  await mock.openPath(MOCK_FOLDER, "thisTab");
   if (!started) {
     await store.start();
     started = true;

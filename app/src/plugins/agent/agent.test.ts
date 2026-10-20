@@ -40,7 +40,7 @@ function viewing(doc: string | null): AgentWindowContext {
 
 async function setup() {
   const api = createMockApi();
-  await api.openPath(MOCK_FOLDER, "thisWindow");
+  await api.openPath(MOCK_FOLDER, "thisTab");
   const context = new Box<AgentWindowContext>(viewing("README.md"));
   const shown: Place[] = [];
   const store = new AgentStore(

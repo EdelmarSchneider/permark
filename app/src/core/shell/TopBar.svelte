@@ -1,7 +1,7 @@
 <script lang="ts">
-  // The top of every window, one calm row: the open workspaces as chips, the Open button (folder, file, new project,
-  // Notes, recent folders), and the settings. With nothing open in the process, the app's name stands in for the
-  // chips and the Welcome page holds the actions.
+  // The top of every window, one calm row: this window's tabs as chips, the Open button (folder, file, new project,
+  // Notes, recent folders), and the settings. A window without tabs shows the app's name instead of the chips and the
+  // Welcome page holds the actions.
   import Plus from "@lucide/svelte/icons/plus";
   import Settings from "@lucide/svelte/icons/settings";
   import { keyHint } from "../commands/hint";
@@ -10,17 +10,15 @@
   import { t } from "../i18n";
   import type { WindowStore } from "../window.svelte";
   import Switcher from "./Switcher.svelte";
+  import { tabs } from "./tabs.svelte";
   import { ui } from "./ui.svelte";
-  import { switcher } from "./workspaceList.svelte";
 
   type Props = {
     store: WindowStore;
-    /** The workspace this window shows (`null`: none). */
-    current: number | null;
     /** The notes plugin is on (the Open menu offers the Notes). */
     notes: boolean;
   };
-  let { store, current, notes }: Props = $props();
+  let { store, notes }: Props = $props();
 
   /** At most this many recent folders in the Open menu (the Welcome lists them all). */
   const RECENT_IN_MENU = 6;
@@ -51,11 +49,8 @@
       list.push({
         kind: "item",
         label: t("notes.title"),
-        run: () => {
-          const open = switcher.notes;
-          if (open) switcher.focus(open.id);
-          else void store.openNotes();
-        },
+        // where they are already, else by the setting
+        run: () => void store.openNotes(),
       });
     }
     const recent = store.recent.filter((r) => !r.missing).slice(0, RECENT_IN_MENU);
@@ -66,11 +61,8 @@
           kind: "item",
           label: folder.name,
           detail: folder.path,
-          run: () => {
-            const open = switcher.findPath(folder.path);
-            if (open) switcher.focus(open.id);
-            else void store.open(folder.path, "ask");
-          },
+          // where it is already, else by the setting; Shift -> a new window
+          run: (shift) => void store.open(folder.path, shift ? "newWindow" : undefined),
         });
       }
     }
@@ -91,8 +83,8 @@
 </script>
 
 <div class="top">
-  {#if switcher.list.length > 0}
-    <Switcher {current} />
+  {#if tabs.list.length > 0}
+    <Switcher />
     <button
       bind:this={openButton}
       type="button"

@@ -16,18 +16,19 @@ export type Keymap = {
 export type Conflict = { combo: string; commands: readonly string[] };
 
 /**
- * The effective map. A command with an override has exactly that combo (`""` = unbound); an override that is not a
- * combo is ignored (the defaults stay). Commands appear in the order of `commands` (registration order), then those
+ * The effective map (combos as `mac` spells them: `Ctrl` is `Mod` elsewhere). A command with an override has exactly
+ * that combo (`""` = unbound); an override that is not a combo is ignored (the defaults stay). Commands appear in the order of `commands` (registration order), then those
  * only the overrides name.
  */
 export function buildKeymap(
   defaults: readonly DefaultKey[],
   overrides: Readonly<Record<string, string>>,
   commands: readonly string[],
+  mac = false,
 ): Keymap {
   const byDefault = new Map<string, string[]>();
   for (const { command, keys } of defaults) {
-    const combo = normalizeCombo(keys);
+    const combo = normalizeCombo(keys, mac);
     if (combo === null) continue;
     const list = byDefault.get(command) ?? [];
     if (!list.includes(combo)) list.push(combo);
@@ -41,7 +42,7 @@ export function buildKeymap(
     if (override === undefined) list = byDefault.get(command) ?? [];
     else if (override === "") list = [];
     else {
-      const combo = normalizeCombo(override);
+      const combo = normalizeCombo(override, mac);
       list = combo === null ? (byDefault.get(command) ?? []) : [combo];
     }
     if (list.length > 0) combos.set(command, list);
