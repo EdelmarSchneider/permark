@@ -14,8 +14,27 @@ use crate::ToolError;
 pub const AI_IGNORE: &str = ".aiignore";
 /// Largest `.aiignore` read (a bigger one is read up to this size).
 const MAX_IGNORE_BYTES: u64 = 1024 * 1024;
-/// Folders of the project's own machinery, never shared.
+/// Folders of the project's own machinery (at any depth: a nested repository has its own), never shared.
 const PRIVATE_FOLDERS: [&str; 2] = [".permark", ".git"];
+/// Files that hold keys whole (no `key = value` for masking to find), never shared: exact names (folded).
+const KEY_FILES: [&str; 4] = [".netrc", "_netrc", ".pgpass", ".git-credentials"];
+/// Extensions of key files (folded).
+const KEY_EXTENSIONS: [&str; 5] = ["pem", "key", "p12", "pfx", "keystore"];
+/// Name starts of SSH private keys (folded; `id_rsa.pub` is public and stays visible).
+const SSH_KEYS: [&str; 4] = ["id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"];
+
+/// A file name that holds a private key or credentials whole.
+fn is_key_file(name: &str) -> bool {
+    let name = name.to_lowercase();
+    if KEY_FILES.contains(&name.as_str()) {
+        return true;
+    }
+    if SSH_KEYS.iter().any(|k| name.starts_with(k)) && !name.ends_with(".pub") {
+        return true;
+    }
+    name.rsplit_once('.')
+        .is_some_and(|(stem, ext)| !stem.is_empty() && KEY_EXTENSIONS.contains(&ext))
+}
 
 /// The rules of one call (read fresh: `.aiignore` and `.permark/config.toml` can change while an agent runs).
 pub struct Guard {
@@ -52,8 +71,13 @@ impl Guard {
         if path.starts_with(WORKTREE_PREFIX) {
             return true;
         }
-        let first = path.split('/').next().unwrap_or_default();
-        if PRIVATE_FOLDERS.iter().any(|p| fold(first) == fold(p)) {
+        if path
+            .split('/')
+            .any(|segment| PRIVATE_FOLDERS.iter().any(|p| fold(segment) == fold(p)))
+        {
+            return true;
+        }
+        if !is_dir && is_key_file(path.rsplit('/').next().unwrap_or_default()) {
             return true;
         }
         self.rules.as_ref().is_some_and(|rules| {
@@ -98,5 +122,49 @@ struct Lookup(Arc<Guard>);
 impl SilenceLookup for Lookup {
     fn is_silenced(&self, path: &str) -> bool {
         self.0.hidden(path, false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn machinery_folders_at_any_depth_and_key_files_are_hidden() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = Root::open(dir.path()).unwrap();
+        let guard = Guard::new(&root, &[]);
+        for path in [
+            ".git/config",
+            "sub/.git/config",
+            "sub/.GIT/FETCH_HEAD",
+            "a/b/.permark/local/comments.json",
+            "sub/.git",
+            "deploy/id_ed25519",
+            "id_rsa",
+            "certs/server.key",
+            "certs/chain.PEM",
+            "store.p12",
+            "home/.netrc",
+            ".git-credentials",
+        ] {
+            assert!(guard.hidden(path, false), "{path}");
+        }
+        assert!(guard.hidden("sub/.git", true));
+        for path in [
+            "docs/plan.md",
+            "deploy/id_ed25519.pub",
+            "keys/readme.md",
+            "a.gitignore",
+            ".github/workflows/ci.yml",
+            ".pem",
+            "monkey.md",
+        ] {
+            assert!(!guard.hidden(path, false), "{path}");
+        }
+        assert!(
+            !guard.hidden("certs.key", true),
+            "a folder is not a key file"
+        );
     }
 }

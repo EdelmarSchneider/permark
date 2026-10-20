@@ -4,7 +4,6 @@
 
 use permark_core::format::config::SheetKind;
 use permark_core::format::{ext_of, sections, FormatRegistry, Sheet, Span};
-use permark_core::paths::fold;
 use permark_core::secrets::{mask_text, HIDDEN};
 use permark_core::tokens::{estimate, Counted};
 use serde_json::{json, Value};
@@ -361,8 +360,9 @@ fn line_range(at: &str) -> Option<(u32, Option<u32>, usize)> {
     (line >= 1 && column >= 1).then_some((line, None, column))
 }
 
+/// Heading text compared ignoring case on every system (not the file system's rule).
 fn same(a: &str, b: &str) -> bool {
-    fold(a.trim()) == fold(b.trim())
+    a.trim().to_lowercase() == b.trim().to_lowercase()
 }
 
 /// Normalizes `A>B`, `A › B`, `A / B`-free heading paths to `A > B` parts.
