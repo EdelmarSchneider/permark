@@ -97,8 +97,8 @@ impl ConfigSyntax for Ini {
             }
             if let Some(inner) = t.strip_prefix('[') {
                 let name = inner.split(']').next().unwrap_or(inner).trim();
+                // a section written twice continues its keys' numbering (its rows never take the first one's paths)
                 let path = section_path(name);
-                seen.clear();
                 groups.push(Group {
                     path,
                     title: name.to_owned(),

@@ -85,7 +85,23 @@ fn edits_keep_the_quote_kind() {
             .apply(EXAMPLE)
     };
     assert!(edit("NODE_ENV", "production").contains("NODE_ENV=production\n"));
-    assert!(edit("NODE_ENV", "with space").contains("NODE_ENV=with space\n"));
+    assert!(edit("NODE_ENV", "with space").contains("NODE_ENV=\"with space\"\n"));
+    // a shell that sources the file never runs what a value holds
+    assert!(edit("API_KEY", "a b;rm x $(id)").contains("export API_KEY='a b;rm x $(id)'\n"));
+    assert!(edit("NODE_ENV", "a;b").contains("NODE_ENV=\"a;b\"\n"));
+    assert!(edit("NODE_ENV", "$HOME").contains("NODE_ENV='$HOME'\n"));
+    assert!(edit("NODE_ENV", "`id`").contains("NODE_ENV='`id`'\n"));
+    assert!(format()
+        .edit(
+            EXAMPLE,
+            &ConfigEdit::Set {
+                path: "NODE_ENV".to_owned(),
+                value: NewValue::Text {
+                    text: "it's $(id)".to_owned(),
+                },
+            },
+        )
+        .is_err());
     assert!(edit("NODE_ENV", "has # hash").contains("NODE_ENV=\"has # hash\"\n"));
     assert!(edit("API_KEY", "new-key").contains("export API_KEY='new-key'\n"));
     assert!(edit("API_KEY", "it's").contains("export API_KEY=\"it's\"\n"));

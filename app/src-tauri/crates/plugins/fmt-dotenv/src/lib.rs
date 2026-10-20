@@ -105,7 +105,7 @@ impl ConfigSyntax for Dotenv {
     fn token(&self, old: &Scalar, new: &NewValue) -> Result<String, EditRefusal> {
         match (old.kind, new) {
             (ScalarKind::String | ScalarKind::Null, NewValue::Text { text }) => {
-                Ok(string_token(old.quote, text))
+                string_token(old.quote, text)
             }
             (ScalarKind::Bool, NewValue::Literal { text }) if text == "true" || text == "false" => {
                 Ok(text.clone())
@@ -116,18 +116,25 @@ impl ConfigSyntax for Dotenv {
     }
 }
 
-/// A string as the file writes it: the quote kind it had when the text fits, else double quotes.
-fn string_token(quote: Quote, text: &str) -> String {
+/// A string as the file writes it: the quote kind it had when the text fits, else double quotes. A file of this kind
+/// is often read by a shell (`source .env`, `export KEY=value`): a plain value never holds spaces or shell signs, and
+/// a value with `$` or a backquote goes in single quotes (no expansion there), or is refused when it cannot.
+fn string_token(quote: Quote, text: &str) -> Result<String, EditRefusal> {
     let control = text.chars().any(|c| c.is_control() && c != '\t');
+    let expands = text.contains(['$', '`']);
     let plain_ok = !control
-        && text.trim() == text
-        && !text.contains(['"', '\'', '\\', '`'])
-        && !text.contains(" #")
-        && !text.starts_with('#');
+        && !text.contains(char::is_whitespace)
+        && !text.contains([
+            '"', '\'', '\\', '`', '$', ';', '|', '&', '(', ')', '<', '>', '#', '*', '?', '[', ']',
+            '{', '}', '!', '~',
+        ]);
+    let single_ok = !control && !text.contains('\'');
     match quote {
-        Quote::Plain if plain_ok => text.to_owned(),
-        Quote::Single if !control && !text.contains('\'') => format!("'{text}'"),
-        _ => format!("\"{}\"", escape_double(text)),
+        Quote::Plain if plain_ok => Ok(text.to_owned()),
+        Quote::Single if single_ok => Ok(format!("'{text}'")),
+        _ if expands && single_ok => Ok(format!("'{text}'")),
+        _ if expands => Err(EditRefusal::Invalid("notRepresentable")),
+        _ => Ok(format!("\"{}\"", escape_double(text))),
     }
 }
 

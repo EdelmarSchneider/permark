@@ -65,6 +65,60 @@ fn an_editorconfig_reads_as_cards_with_captions() {
 }
 
 #[test]
+fn a_section_written_twice_edits_the_row_that_was_chosen() {
+    let text = "[remote \"o\"]
+url = A
+[core]
+x = 1
+[remote \"o\"]
+url = B
+";
+    let sheet = format().sheet(text).expect("parses");
+    assert_eq!(
+        sheet.scalar("remote.o.url").map(|s| s.text.as_str()),
+        Some("A")
+    );
+    assert_eq!(
+        sheet.scalar("remote.o.url[1]").map(|s| s.text.as_str()),
+        Some("B")
+    );
+    let set = |path: &str| {
+        format()
+            .edit(
+                text,
+                &ConfigEdit::Set {
+                    path: path.to_owned(),
+                    value: NewValue::Text {
+                        text: "Z".to_owned(),
+                    },
+                },
+            )
+            .expect("edit")
+            .apply(text)
+    };
+    assert_eq!(
+        set("remote.o.url[1]"),
+        "[remote \"o\"]
+url = A
+[core]
+x = 1
+[remote \"o\"]
+url = Z
+"
+    );
+    assert_eq!(
+        set("remote.o.url"),
+        "[remote \"o\"]
+url = Z
+[core]
+x = 1
+[remote \"o\"]
+url = B
+"
+    );
+}
+
+#[test]
 fn git_subsections_and_repeated_keys_have_their_own_paths() {
     let sheet = format().sheet(GITCONFIG).expect("parses");
     assert_eq!(
