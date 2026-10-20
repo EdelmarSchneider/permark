@@ -538,6 +538,7 @@ impl Shared {
         if fsx::ContentHash(current.hash).hex() != seen {
             return Ok(());
         }
+        let _held = self.store.hold();
         let previous = self.seen_hash(path);
         if previous == Some(current.hash) || !self.store.put(current.hash, &current.text) {
             return Ok(());
@@ -626,29 +627,36 @@ impl Shared {
         let section = (!all)
             .then(|| diff.section(index, &current.text, &base.text))
             .flatten();
-        if all {
-            // the version on disk is approved: it counts as read, and nothing is held any more
+        if all && is_markdown(path) {
+            // the version on disk is approved: it counts as read (readers are told outside the hold; a copy missing by
+            // then is asked for again)
             let _ = self.store.put(current.hash, &current.text);
-            if is_markdown(path) {
-                self.hub.mark_read(path, current.hash);
-            } else {
-                self.set_seen(path, current.hash);
-            }
-            // marking read starts a review of what was read before; this one is over
-            self.set_held(path, None);
-        } else {
-            // the base text with this one change made in it
-            let edits = diff
-                .edits(&[index], &base.text, &current.text, Way::Keep)
-                .map_err(|e| invalid(path, e.detail()))?;
-            let text = apply(&base.text, &edits).map_err(|_| invalid(path, "splice"))?;
-            let hash = fsx::hash(text.as_bytes()).0;
-            if !self.store.put(hash, &text) {
-                return Err(IpcError::new(ErrorKind::TooLarge).subject(path));
-            }
-            self.set_held(path, Some(hash));
+            self.hub.mark_read(path, current.hash);
         }
-        self.push_undo(path, Undo::Keep { prev });
+        {
+            let _held = self.store.hold();
+            if all {
+                if !is_markdown(path) {
+                    let _ = self.store.put(current.hash, &current.text);
+                    self.set_seen(path, current.hash);
+                }
+                // marking read starts a review of what was read before; this one is over
+                self.set_held(path, None);
+            } else {
+                // the base text with this one change made in it
+                let edits = diff
+                    .edits(&[index], &base.text, &current.text, Way::Keep)
+                    .map_err(|e| invalid(path, e.detail()))?;
+                let text = apply(&base.text, &edits).map_err(|_| invalid(path, "splice"))?;
+                let hash = fsx::hash(text.as_bytes()).0;
+                if !self.store.put(hash, &text) {
+                    return Err(IpcError::new(ErrorKind::TooLarge).subject(path));
+                }
+                self.set_held(path, Some(hash));
+            }
+            // the version held before stays kept while the keep can be undone
+            self.push_undo(path, Undo::Keep { prev });
+        }
         self.note(path, ReviewOp::Keep, section);
         self.finish(path, asked)
     }
@@ -1058,9 +1066,16 @@ impl ReviewService {
                                     }
                                 }
                             }
+                            let _held = shared.store.hold();
                             let mut keep = shared.hub.read_hashes();
                             keep.extend(lock(&shared.held).values().map(|h| h.hash));
                             keep.extend(lock(&shared.seen).iter().map(|e| e.hash));
+                            keep.extend(lock(&shared.undo).values().flatten().filter_map(|step| {
+                                match step {
+                                    Undo::Keep { prev } => *prev,
+                                    Undo::Revert { .. } => None,
+                                }
+                            }));
                             shared.store.remove_unused(&keep);
                             kept = shared.store.count();
                         }

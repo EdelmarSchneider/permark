@@ -4,6 +4,7 @@
 
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use permark_core::fsx;
 use permark_core::plugins::PluginId;
@@ -32,12 +33,24 @@ fn check_of(text: &str) -> String {
 pub struct CopyStore {
     store: StateStore,
     id: PluginId,
+    /// See [`CopyStore::hold`].
+    busy: Arc<Mutex<()>>,
 }
 
 impl CopyStore {
     #[must_use]
     pub fn new(store: StateStore, id: PluginId) -> Self {
-        Self { store, id }
+        Self {
+            store,
+            id,
+            busy: Arc::default(),
+        }
+    }
+
+    /// Held from putting a copy until the version that needs it is recorded, and from listing the copies still needed
+    /// until the others are deleted: a copy is never deleted in between.
+    pub fn hold(&self) -> MutexGuard<'_, ()> {
+        self.busy.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn file(&self, hash: u64) -> StateFile<CopyFile> {
