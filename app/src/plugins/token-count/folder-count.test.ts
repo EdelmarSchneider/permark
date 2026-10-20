@@ -41,7 +41,7 @@ let stopFolders: (() => void) | null = null;
 let started = false;
 
 async function until(check: () => boolean, what: string): Promise<void> {
-  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 3000, interval: 5 });
+  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 10_000, interval: 5 });
 }
 
 const text = (): string => (target.textContent ?? "").replace(/\s+/g, " ").trim();

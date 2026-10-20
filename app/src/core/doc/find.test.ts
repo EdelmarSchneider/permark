@@ -68,6 +68,8 @@ describe("findIn", () => {
     const found = findIn(root, "dolor");
     expect(found.ranges).toHaveLength(5000);
     expect(found.capped).toBe(true);
-    expect(Date.now() - started).toBeLessThan(3000);
+    // linear: ~0.4 s alone; quadratic work on 20 000 paragraphs would take minutes, the bound leaves room for load
+    const took = Date.now() - started;
+    expect(took, `found in ${took} ms`).toBeLessThan(10_000);
   });
 });

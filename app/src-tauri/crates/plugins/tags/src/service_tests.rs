@@ -295,16 +295,24 @@ fn a_file_that_cannot_be_read_is_never_written_over_and_changes_wait() {
 
 #[test]
 fn changes_made_before_the_file_broke_are_parked_and_written_when_it_reads_again() {
-    // a slow writer: the change is still waiting when the file breaks
+    // a slow writer: the change is still waiting when the file breaks. `quiet` is the room the test has between the
+    // edit and the break: a loaded machine pausing the test thread longer lets the writer go first (seen at 600 ms).
+    let quiet = Duration::from_secs(2);
     let mut h = Harness::shared_with(Timing {
-        quiet: Duration::from_millis(600),
-        max_wait: Duration::from_secs(2),
+        quiet,
+        max_wait: Duration::from_secs(5),
         retry: [Duration::from_millis(50); 3],
     });
     h.write("a.md", "a\n");
     h.open();
+    let edited = Instant::now();
     h.set_tags("a.md", &["mine"]);
     std::fs::write(h.meta(), "[files\n").unwrap();
+    assert!(
+        edited.elapsed() < quiet,
+        "the test thread stalled {:?}: the writer may have gone first",
+        edited.elapsed()
+    );
     let started = Instant::now();
     while h.index()["status"]["problem"].is_null() {
         assert!(
@@ -316,7 +324,10 @@ fn changes_made_before_the_file_broke_are_parked_and_written_when_it_reads_again
         std::thread::sleep(Duration::from_millis(15));
     }
     assert_eq!(h.index()["status"]["parked"], 1);
-    std::thread::sleep(Duration::from_millis(900));
+    // past the moment the writer would have written
+    std::thread::sleep(
+        (edited + quiet + Duration::from_millis(300)).saturating_duration_since(Instant::now()),
+    );
     assert_eq!(h.meta_text(), "[files\n", "parked, not written");
     std::fs::write(h.meta(), "[files.\"z.md\"]\ntags = [\"theirs\"]\n").unwrap();
     wait_until("both", || {

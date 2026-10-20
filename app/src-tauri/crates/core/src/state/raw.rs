@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::{private, Guard, StateError};
-use crate::fsx::{retry, write_atomic};
+use crate::fsx::{retry, write_atomic, write_atomic_checked};
 
 /// Pauses before a transient read error (an antivirus scan, a sync client) is believed.
 const READ_RETRY: [Duration; 2] = [Duration::from_millis(50), Duration::from_millis(150)];
@@ -65,6 +65,27 @@ impl RawFile {
     /// # Errors
     /// The refusal, or the IO failure.
     pub fn write(&self, bytes: &[u8]) -> Result<(), StateError> {
+        self.guarded()?;
+        write_atomic(&self.path, bytes).map_err(|e| StateError::io(&self.path, e))
+    }
+
+    /// [`RawFile::write`] only while the file still holds `expected` (`None`: no file), checked right before the
+    /// rename: another program that wrote it since it was read is never written over (`Ok(false)`, file untouched).
+    ///
+    /// # Errors
+    /// The refusal, or the IO failure.
+    pub fn write_over(&self, expected: Option<&[u8]>, bytes: &[u8]) -> Result<bool, StateError> {
+        self.guarded()?;
+        write_atomic_checked(&self.path, bytes, || match std::fs::read(&self.path) {
+            Ok(now) => Ok(expected == Some(now.as_slice())),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(expected.is_none()),
+            Err(error) => Err(error),
+        })
+        .map_err(|e| StateError::io(&self.path, e))
+    }
+
+    /// Refuses a write when a link stands in place of `.permark/` or its state folder.
+    fn guarded(&self) -> Result<(), StateError> {
         let fail = |e| StateError::io(&self.path, e);
         match &self.guard {
             Guarded::No => {}
@@ -82,7 +103,7 @@ impl RawFile {
                 }
             }
         }
-        write_atomic(&self.path, bytes).map_err(fail)
+        Ok(())
     }
 
     /// Deletes the file (a missing one is done).

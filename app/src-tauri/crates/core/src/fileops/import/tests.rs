@@ -1037,11 +1037,21 @@ fn ten_thousand_files_come_in_with_exact_totals() {
             fs::write(dir.join(format!("f{n:03}.txt")), format!("{d}-{n}")).unwrap();
         }
     }
+    // Windows: the first open of a just-written file waits for the virus scan (~2 ms each, 20-60 s for all on a
+    // runner); read them once here so the bound below times the copy, not the scanner
+    for d in 0..100 {
+        for n in 0..100 {
+            let path = f.outside.path().join(format!("big/d{d:03}/f{n:03}.txt"));
+            fs::read(path).unwrap();
+        }
+    }
     let started = std::time::Instant::now();
     let out = copy_all(&f, "", &["big"]);
     let took = started.elapsed();
+    eprintln!("10 000 files copied in {took:?}");
     assert_eq!((out.copied, out.files, out.failed.len()), (1, 10_000, 0));
     assert_eq!(read(&f, "big/d042/f007.txt"), "42-7");
+    // linear: ~2 s on a desktop; a per-file cost that grows with the count would take minutes
     assert!(took.as_secs() < 60, "{took:?}");
     no_temps(f.dir.path());
 }

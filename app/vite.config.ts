@@ -55,5 +55,8 @@ export default defineConfig({
   test: {
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     environment: "node",
+    // under a full parallel run (CI, a busy machine) a component test's first mount + lazy imports can pass the 5 s
+    // default; the tests' own waits (10 s) and time bounds decide, the runner's limit must not cut in first
+    testTimeout: 30_000,
   },
 });

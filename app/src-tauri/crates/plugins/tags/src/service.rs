@@ -130,6 +130,8 @@ enum Flush {
     Parked,
     /// Writing failed: try again later.
     Failed,
+    /// Another program wrote the file while this write was being made: nothing written; read it again first.
+    Raced,
 }
 
 fn bump(shared: &Shared) {
@@ -271,11 +273,16 @@ impl Shared {
             if let Some(path) = &self.watched {
                 self.own.expect_write(path, hash);
             }
-            if let Err(error) = self.file.write(&out) {
+            let written = self.file.write_over(bytes.as_deref(), &out);
+            if !matches!(written, Ok(true)) {
                 if let Some(path) = &self.watched {
                     self.own.retract_write(path, hash);
                 }
-                return fail(error.to_string());
+            }
+            match written {
+                Ok(true) => {}
+                Ok(false) => return Flush::Raced,
+                Err(error) => return fail(error.to_string()),
             }
         }
         let entries = Entries::parse(&new_text).unwrap_or_default();
@@ -386,7 +393,10 @@ fn meta_loop(shared: &Shared, rx: &Receiver<MetaMsg>) {
             }
             Ok(MetaMsg::Stop) | Err(RecvTimeoutError::Disconnected) => {
                 // what was changed is written before the service goes
-                let _ = shared.flush();
+                if matches!(shared.flush(), Flush::Raced) {
+                    shared.reload();
+                    let _ = shared.flush();
+                }
                 return;
             }
             Err(RecvTimeoutError::Timeout) => match shared.flush() {
@@ -398,6 +408,15 @@ fn meta_loop(shared: &Shared, rx: &Receiver<MetaMsg>) {
                 Flush::Parked => {
                     first = None;
                     deadline = None;
+                }
+                Flush::Raced => {
+                    // the other program's version is read first, then what is waiting goes on top of it
+                    shared.reload();
+                    first = None;
+                    let inner = shared.lock();
+                    let waiting = !inner.pending.is_empty() && inner.problem.is_none();
+                    drop(inner);
+                    deadline = waiting.then(|| Instant::now() + timing.quiet);
                 }
                 Flush::Failed => {
                     let pause = timing.retry[failures.min(timing.retry.len() - 1)];

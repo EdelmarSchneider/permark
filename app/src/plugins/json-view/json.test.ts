@@ -86,8 +86,10 @@ describe("parseJson", () => {
     const started = Date.now();
     const parsed = parseJson(big);
     expect(parsed.ok && (parsed.root.children?.() ?? []).length).toBe(100_000);
-    // linear, not quadratic: about 1 s alone; the bound leaves room for a full parallel test run
-    expect(Date.now() - started).toBeLessThan(8000);
+    // linear, not quadratic: about 1 s alone, 8 s seen on a loaded Windows runner; quadratic work on 100 000 items
+    // would take minutes, so the bound keeps its meaning with room for a full parallel test run
+    const took = Date.now() - started;
+    expect(took, `parsed in ${took} ms`).toBeLessThan(30_000);
     // the time bound above is the check; the runner's own limit must not cut in before it
-  }, 20_000);
+  }, 60_000);
 });

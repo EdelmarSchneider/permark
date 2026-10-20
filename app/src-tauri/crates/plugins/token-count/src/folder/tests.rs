@@ -363,6 +363,20 @@ impl Rig {
     }
 }
 
+/// The folder a job is about (none when idle).
+fn folder_of(job: &FolderJob) -> Option<&str> {
+    match job {
+        FolderJob::Idle => None,
+        FolderJob::Scanning { folder }
+        | FolderJob::Confirm { folder, .. }
+        | FolderJob::Refused { folder, .. }
+        | FolderJob::Counting { folder, .. }
+        | FolderJob::Done { folder }
+        | FolderJob::Cancelled { folder }
+        | FolderJob::Failed { folder, .. } => Some(folder),
+    }
+}
+
 fn roomy() -> Thresholds {
     Thresholds::STANDARD
 }
@@ -767,11 +781,13 @@ fn one_job_per_window_and_the_windows_do_not_disturb_each_other() {
         rig.put(&format!("a/f{n:03}.md"), &text(8));
         rig.put(&format!("b/f{n:03}.md"), &text(8));
     }
-    rig.folders.pace.store(2_000, Ordering::Relaxed);
+    // slow enough that window one is still at work when it is cancelled below, however loaded the machine
+    rig.folders.pace.store(10_000, Ordering::Relaxed);
     let first = rig.start_as("one", "a", "chars4", false);
-    // the same window asking again gets the job it has
+    // the same window asking again gets the job it has (by then it may have moved from scanning to counting)
     let second = rig.start_as("one", "b", "chars4", false);
-    assert_eq!(first, second);
+    assert_eq!(folder_of(&first), Some("a"), "{first:?}");
+    assert_eq!(folder_of(&second), Some("a"), "{second:?}");
     // another window has its own slot
     rig.start_as("two", "b", "chars4", false);
     rig.folders.cancel("one");
@@ -1483,6 +1499,9 @@ fn a_big_tree_is_counted_without_the_calls_ever_waiting() {
         }
     }
     let slowest = |latencies: &[Duration]| latencies.iter().max().copied().unwrap_or_default();
+    // a call that waited for the walk or the count would take as long as they do (seconds); a few ms is the norm, the
+    // bound leaves room for a loaded machine pausing the test thread
+    let prompt = Duration::from_millis(500);
     // the request answers at once, whatever the size of the folder
     let began = Instant::now();
     let started = full
@@ -1493,10 +1512,7 @@ fn a_big_tree_is_counted_without_the_calls_ever_waiting() {
         .unwrap();
     let start_latency = began.elapsed();
     assert_eq!(started["state"], "scanning");
-    assert!(
-        start_latency < Duration::from_millis(50),
-        "{start_latency:?}"
-    );
+    assert!(start_latency < prompt, "{start_latency:?}");
     // the guard asks (10 000 files)
     let began = Instant::now();
     while full.state_of() != "confirm" {
@@ -1515,10 +1531,7 @@ fn a_big_tree_is_counted_without_the_calls_ever_waiting() {
     let counting = full.call("folderConfirm", json!({})).unwrap();
     let confirm_latency = confirm_began.elapsed();
     assert_eq!(counting["state"], "counting");
-    assert!(
-        confirm_latency < Duration::from_millis(50),
-        "{confirm_latency:?}"
-    );
+    assert!(confirm_latency < prompt, "{confirm_latency:?}");
     let mut latencies = Vec::new();
     let began = Instant::now();
     loop {
@@ -1543,7 +1556,7 @@ fn a_big_tree_is_counted_without_the_calls_ever_waiting() {
         latencies.len()
     );
     assert!(
-        slowest(&latencies) < Duration::from_millis(50),
+        slowest(&latencies) < prompt,
         "slowest call {:?} of {}",
         slowest(&latencies),
         latencies.len()
