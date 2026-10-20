@@ -21,7 +21,9 @@ export function sanitizeSvg(svg: string): string | null {
   const root = doc.documentElement;
   if (root.localName !== "svg" || doc.querySelector("parsererror")) return null;
   root
-    .querySelectorAll("script, foreignObject, iframe, object, embed, style[src]")
+    .querySelectorAll(
+      "script, foreignObject, iframe, object, embed, style[src], set, animate, animateMotion, animateTransform, discard",
+    )
     .forEach((el) => el.remove());
   for (const el of root.querySelectorAll("*")) {
     for (const attr of [...el.attributes]) {
@@ -29,7 +31,8 @@ export function sanitizeSvg(svg: string): string | null {
     }
     const href = el.getAttribute("href") ?? el.getAttribute("xlink:href");
     if (href === null) continue;
-    const value = href.trim();
+    // `java\tscript:` is still a script address to a browser: spaces and control characters do not count
+    const value = href.replace(/[\u0000-\u0020]/g, "");
     const link = el.localName === "a";
     if (link ? REMOTE_LINK.test(value) : REMOTE_ASSET.test(value)) {
       if (link) {

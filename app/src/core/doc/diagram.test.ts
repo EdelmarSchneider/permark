@@ -41,6 +41,18 @@ describe("sanitizeSvg", () => {
     expect(clean).toContain("<text>l</text>");
   });
 
+  it("drops animations that could set a link and script addresses written with spaces", () => {
+    const clean = sanitizeSvg(
+      svg(
+        '<a><set attributeName="href" to="javascript:alert(1)"/><animate attributeName="href" values="javascript:x"/><text>s</text></a><a href="java\tscript:alert(2)"><text>t</text></a><a href=" javascript:alert(3)"><text>u</text></a>',
+      ),
+    );
+    expect(clean).not.toContain("<set");
+    expect(clean).not.toContain("<animate");
+    expect(clean).not.toContain("script:");
+    expect(clean).toContain("<text>t</text>");
+  });
+
   it("refuses what is not SVG or not well-formed", () => {
     expect(sanitizeSvg("<html><body>x</body></html>")).toBeNull();
     expect(sanitizeSvg("not xml")).toBeNull();

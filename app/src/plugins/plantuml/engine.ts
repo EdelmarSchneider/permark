@@ -26,7 +26,7 @@ let engine: Promise<RenderToString> | null = null;
 
 /** Refuses every standard-library bundle, so the engine never inserts a script tag or opens the network. */
 function installStdlibLoader(): void {
-  if (Reflect.has(globalThis, "PLANTUML_STDLIB_LOADER")) return;
+  // always set: an element with that id in a document is also a global name, and must not stand in for the loader
   Reflect.set(
     globalThis,
     "PLANTUML_STDLIB_LOADER",
