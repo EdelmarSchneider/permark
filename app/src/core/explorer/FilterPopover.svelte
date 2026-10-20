@@ -172,7 +172,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    width: calc(var(--w-sidebar) + 60px);
+    /* inside the sidebar: the frame clips what passes its edge */
+    width: calc(100% - 2 * var(--sp-2));
     max-height: calc(100vh - 120px);
     overflow: auto;
     padding: var(--sp-2) var(--sp-3) var(--sp-3);
