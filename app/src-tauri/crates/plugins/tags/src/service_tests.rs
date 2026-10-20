@@ -255,6 +255,7 @@ fn files_get_tags_in_front_matter_and_in_the_app_and_are_found_by_both() {
         .search_filter(&SearchOptions {
             include_silenced: true,
             tags: vec!["asset".to_owned()],
+            hidden_last: false,
         })
         .unwrap()
         .only
@@ -551,6 +552,7 @@ fn off_leaves_nothing_and_on_again_reads_the_same_file() {
         .search_filter(&SearchOptions {
             include_silenced: true,
             tags: vec!["x".to_owned()],
+            hidden_last: false,
         })
         .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unsupported);
