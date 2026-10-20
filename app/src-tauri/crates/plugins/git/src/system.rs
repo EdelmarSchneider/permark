@@ -225,6 +225,27 @@ impl SystemGit {
         run(&self.exe, dir, &args, TIMEOUT, MAX_OUTPUT)
     }
 
+    /// `-c` options that switch off the filter drivers the repository's own config sets (see [`repo_filter_drivers`]).
+    /// A config that cannot be read -> error (the call that needs it is not made).
+    fn repo_filters_off(&self, dir: &Path) -> Result<Vec<String>, GitError> {
+        let out = self.call(
+            dir,
+            &[
+                "config",
+                "--show-scope",
+                "-z",
+                "--get-regexp",
+                r"^filter\..*\.(clean|smudge|process)$",
+            ],
+        )?;
+        match out.code {
+            Some(0) => Ok(filters_off(&repo_filter_drivers(&out.stdout))),
+            // no filter driver set anywhere
+            Some(1) => Ok(Vec::new()),
+            _ => Err(GitError::Failed(first_line(&out.stderr))),
+        }
+    }
+
     fn call_ok(&self, dir: &Path, args: &[&str]) -> Result<Output, GitError> {
         let out = self.call(dir, args)?;
         if out.code == Some(0) {
@@ -252,6 +273,43 @@ impl SystemGit {
             oid,
         })
     }
+}
+
+/// Names of the filter drivers (`filter.<name>.clean | smudge | process`) set by the repository's own config (`local`
+/// | `worktree` scope) in `git config --show-scope -z --get-regexp` output. A folder that came with its `.git/`
+/// decides these commands, and `status` | `diff` would run them: they are switched off for every such call.
+pub(crate) fn repo_filter_drivers(stdout: &[u8]) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut fields = stdout.split(|b| *b == 0);
+    while let (Some(scope), Some(entry)) = (fields.next(), fields.next()) {
+        if scope != b"local" && scope != b"worktree" {
+            continue;
+        }
+        let entry = String::from_utf8_lossy(entry);
+        let key = entry.split('\n').next().unwrap_or_default();
+        let Some(rest) = key.strip_prefix("filter.") else {
+            continue;
+        };
+        let Some((name, _)) = rest.rsplit_once('.') else {
+            continue;
+        };
+        if !name.is_empty() && !names.iter().any(|n| n == name) {
+            names.push(name.to_owned());
+        }
+    }
+    names
+}
+
+/// `-c filter.<name>.clean=` (and smudge, process, required=false) for each driver of [`repo_filter_drivers`].
+fn filters_off(names: &[String]) -> Vec<String> {
+    names
+        .iter()
+        .flat_map(|name| {
+            ["clean=", "smudge=", "process=", "required=false"]
+                .into_iter()
+                .flat_map(move |rest| ["-c".to_owned(), format!("filter.{name}.{rest}")])
+        })
+        .collect()
 }
 
 fn first_line(text: &str) -> String {
@@ -339,16 +397,22 @@ impl GitOps for SystemGit {
     fn status(&self, location: &RepoLocation, baseline: &Baseline) -> Result<RawStatus, GitError> {
         let spec = pathspec(&location.prefix);
         let dir = &location.workdir;
+        // the repository's own filter commands never run; submodules are compared by commit only (their work trees
+        // would run their own config's commands)
+        let off = self.repo_filters_off(dir)?;
+        let off: Vec<&str> = off.iter().map(String::as_str).collect();
         match baseline {
             Baseline::Head => {
-                let mut args = vec![
+                let mut args = off.clone();
+                args.extend([
                     "status",
                     "--porcelain=v2",
                     "-z",
                     "--branch",
                     "--untracked-files=all",
+                    "--ignore-submodules=dirty",
                     "--",
-                ];
+                ]);
                 if let Some(spec) = &spec {
                     args.push(spec);
                 }
@@ -366,16 +430,18 @@ impl GitOps for SystemGit {
                     return Err(GitError::Failed("not a commit id".to_owned()));
                 }
                 let head = self.head_info(location)?;
-                let mut diff = vec![
+                let mut diff = off.clone();
+                diff.extend([
                     "diff",
                     "--name-status",
                     "-z",
                     "--no-renames",
                     "--no-ext-diff",
                     "--no-textconv",
+                    "--ignore-submodules=dirty",
                     oid.as_str(),
                     "--",
-                ];
+                ]);
                 let mut others = vec!["ls-files", "--others", "--exclude-standard", "-z", "--"];
                 if let Some(spec) = &spec {
                     diff.push(spec);

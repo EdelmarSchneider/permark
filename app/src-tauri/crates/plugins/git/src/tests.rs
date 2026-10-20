@@ -569,6 +569,45 @@ fn a_slow_git_is_killed_and_a_flood_of_output_is_cut() {
     assert!(SystemGit::at(fx.root.join("no-such-git")).is_none());
 }
 
+#[test]
+fn only_the_repository_own_filter_drivers_are_named() {
+    let out = b"system\0filter.lfs.clean\ngit-lfs clean -- %f\0global\0filter.lfs.process\ngit-lfs filter-process\0local\0filter.x.clean\nsh -c 'evil'\0local\0filter.x.smudge\ncat\0worktree\0filter.a.b.process\nrun\0command\0filter.c.clean\nok\0local\0broken";
+    assert_eq!(system::repo_filter_drivers(out), ["x", "a.b"]);
+    assert!(system::repo_filter_drivers(b"").is_empty());
+}
+
+#[test]
+fn a_filter_command_from_the_repository_config_never_runs() {
+    let Some(git) = SystemGit::find() else {
+        eprintln!("SKIPPED: no git executable on PATH");
+        return;
+    };
+    let fx = Fixture::new();
+    fx.write(".gitattributes", "* filter=x\n");
+    fx.write("a.md", "a\n");
+    fx.commit("first");
+    let marker = fx.dir.path().join("ran.txt");
+    let marker_text = marker.to_string_lossy().replace('\\', "/");
+    let mut config = fx.repo.config().unwrap();
+    config
+        .set_str(
+            "filter.x.clean",
+            &format!("sh -c 'echo ran > \"{marker_text}\"; cat'"),
+        )
+        .unwrap();
+    config.set_bool("filter.x.required", true).unwrap();
+    // a fresh copy: every file must be looked at again
+    std::thread::sleep(Duration::from_millis(1100));
+    fx.write("a.md", "a\n");
+    let at = location(&git, &fx.root);
+    let status = git.status(&at, &Baseline::Head).unwrap();
+    assert!(!marker.exists(), "the repository's filter ran");
+    let head = fx.repo.head().unwrap().target().unwrap().to_string();
+    git.status(&at, &Baseline::Commit(head)).unwrap();
+    assert!(!marker.exists(), "the repository's filter ran on diff");
+    assert!(status.files.iter().all(|f| f.path != ".gitattributes"));
+}
+
 // ---- the worker ------------------------------------------------------------------------------------------------------
 
 type Announced = Arc<Mutex<Vec<Option<GitSnapshot>>>>;
