@@ -49,7 +49,8 @@ function levelOfCode(code: string): number | null {
 
 /**
  * The block a heading chord asks for: Ctrl+Shift+0-6 (works on every layout; the key is told by its place, not by the
- * character it types) or Ctrl+Alt+0-6 (not when Alt is AltGr, which types characters). 0 = paragraph.
+ * character it types) or Ctrl+Alt+0-6 (not when Alt is AltGr, which types characters). 0 = paragraph. Windows can keep
+ * Ctrl+Shift+0 for itself (input-language hotkeys): the page never sees that key, so Ctrl+Alt+0 stays the sure one.
  */
 export function headingChord(
   event: Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey"> & {

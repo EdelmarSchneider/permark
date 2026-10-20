@@ -502,7 +502,8 @@ Every shortcut can be changed in **Settings → Keyboard shortcuts**.
 | New file | `Ctrl+N` |
 | Bold / italic / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
 | Link / inline code | `Ctrl+K` / `Ctrl+Shift+C` |
-| Headings 1 to 6 / paragraph (Edit) | `Ctrl+Shift+1` … `6` / `Ctrl+Shift+0` |
+| Headings 1 to 6 (Edit) | `Ctrl+Shift+1` … `6` |
+| Paragraph (Edit) | `Ctrl+Alt+0`, or `Ctrl+Shift+0` where Windows lets it through |
 | Block menu (Edit) | `/` in an empty paragraph |
 | Find / replace / go to line (Source) | `Ctrl+F` / `Ctrl+H` / `Ctrl+G` |
 

@@ -76,6 +76,7 @@ PerMark 0.6 never changes your files to upgrade. It reads what 0.5 saved and cop
 - A git worktree added while a project is open, and a `.permark/` folder made outside the app, show up after you reopen the project. Tags of a file renamed while PerMark was closed stay on the old name until **Clean up**.
 - Search results have no git or unread badges.
 - Config sheets show text over 256 KB or 3,000 rows as plain text, cannot add or remove list items, and show YAML flow style (`{a: 1}`, `[1, 2]`) read-only.
+- On Windows with several input languages installed, the system can keep `Ctrl+Shift+0` for itself, so the paragraph shortcut in Edit is `Ctrl+Alt+0` (`Ctrl+Shift+1` to `6` for headings are not affected).
 - The agent connection hides secret values by their key names. A secret in the middle of ordinary text, such as a private key pasted into a note, is not recognized, and an agent that searches again and again can guess a short secret from whether a search finds it. List such files in `.aiignore`.
 - Reverting a change at the very end of a file whose last line break differs, and restoring a deleted document that used Windows line endings, can leave a different line ending than the original.
 
