@@ -23,6 +23,8 @@ pub const VERSION: u32 = 1;
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum By {
+    /// The person (0.5 wrote `person`).
+    #[serde(alias = "person")]
     User,
     Agent,
 }

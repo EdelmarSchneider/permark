@@ -170,6 +170,41 @@ fn the_real_0_5_file_reads_and_writes_back_byte_for_byte() {
 }
 
 #[test]
+fn a_comment_the_person_marked_done_in_0_5_reads() {
+    let text = r#"{
+  "version": 1,
+  "comments": [
+    {
+      "id": "c1",
+      "path": "a.md",
+      "text": "done by me",
+      "anchor": { "quote": "q", "before": "", "after": "", "headingPath": [], "line": 1, "endLine": 1 },
+      "createdMs": 1,
+      "done": { "atMs": 2, "by": "person", "reply": null }
+    },
+    {
+      "id": "c2",
+      "path": "a.md",
+      "text": "done by the agent",
+      "anchor": { "quote": "q", "line": 1, "endLine": 1 },
+      "createdMs": 3,
+      "done": { "atMs": 4, "by": "agent" }
+    }
+  ]
+}"#;
+    let book: Book = serde_json::from_str(text).unwrap();
+    assert_eq!(book.comments.len(), 2);
+    assert_eq!(
+        book.comments[0].done.as_ref().unwrap().by,
+        crate::model::By::User
+    );
+    assert_eq!(
+        book.comments[1].done.as_ref().unwrap().by,
+        crate::model::By::Agent
+    );
+}
+
+#[test]
 fn a_file_with_comments_keeps_every_field_including_the_unknown_ones() {
     let text = r#"{
   "version": 1,
