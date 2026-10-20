@@ -19,14 +19,24 @@ pub const MAX_REPLIES: usize = 200;
 /// The version of the file's layout. A file written by a newer version is set aside rather than rewritten.
 pub const VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum By {
-    /// The person (0.5 wrote `person`).
-    #[serde(alias = "person")]
     User,
     Agent,
+}
+
+/// Reads `user` | `agent`, and `person` (what 0.5 wrote for the person).
+impl<'de> Deserialize<'de> for By {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let word = String::deserialize(deserializer)?;
+        match word.as_str() {
+            "user" | "person" => Ok(Self::User),
+            "agent" => Ok(Self::Agent),
+            other => Err(serde::de::Error::unknown_variant(other, &["user", "agent"])),
+        }
+    }
 }
 
 /// A comment that was marked done.
