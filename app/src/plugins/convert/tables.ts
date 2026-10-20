@@ -33,10 +33,18 @@ export function decorateTables(root: HTMLElement, open: (csv: string) => void): 
     // the tables of the document, not the ones a plugin draws inside it (a TOON block)
     if (table instanceof HTMLTableElement && !table.closest(".sheet")) {
       if (table !== current) place(table);
+    } else if (current !== null) {
+      // over the page but off the table: the button goes
+      hide();
     }
   };
   const onLeave = (event: PointerEvent): void => {
     if (event.relatedTarget !== button) hide();
+  };
+  /** Off the button: it stays only when the pointer goes back to its table. */
+  const onButtonLeave = (event: PointerEvent): void => {
+    const to = event.relatedTarget;
+    if (!(to instanceof Node) || current === null || !current.contains(to)) hide();
   };
   const onClick = (): void => {
     const table = current;
@@ -46,6 +54,7 @@ export function decorateTables(root: HTMLElement, open: (csv: string) => void): 
     if (rows.length > 1) open(tableAsCsv(rows));
   };
   button.addEventListener("click", onClick);
+  button.addEventListener("pointerleave", onButtonLeave);
   root.addEventListener("pointerover", onOver);
   root.addEventListener("pointerleave", onLeave);
   window.addEventListener("scroll", hide, true);
@@ -55,6 +64,7 @@ export function decorateTables(root: HTMLElement, open: (csv: string) => void): 
     root.removeEventListener("pointerleave", onLeave);
     window.removeEventListener("scroll", hide, true);
     button.removeEventListener("click", onClick);
+    button.removeEventListener("pointerleave", onButtonLeave);
     button.remove();
   };
 }

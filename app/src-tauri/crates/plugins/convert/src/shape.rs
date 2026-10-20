@@ -1,7 +1,7 @@
 //! What the data looks like (one flat table? how deep? how much of it sits in uniform arrays?) and where its secret
 //! values are.
 
-use permark_core::secrets::{is_secret_key, url_password};
+use permark_core::secrets::{is_count, is_secret_key, url_password};
 use serde_json::{Map, Value};
 
 /// The shape of a value, for judging targets: facts measured once, not states.
@@ -126,7 +126,11 @@ pub fn count_secrets(value: &Value) -> usize {
             Value::Array(items) => items.iter().map(|v| walk(v, secret)).sum(),
             Value::Object(map) => map
                 .iter()
-                .map(|(k, v)| walk(v, secret || is_secret_key(k)))
+                .map(|(k, v)| match v {
+                    // a number under a count key (`tokens: 1200`) is a size
+                    Value::Number(n) if is_count(k, &n.to_string()) => 0,
+                    _ => walk(v, secret || is_secret_key(k)),
+                })
                 .sum(),
             other => usize::from(is_secret_value(other, secret)),
         }
@@ -142,7 +146,10 @@ pub fn mask_secrets(value: &Value) -> Value {
             Value::Array(items) => Value::Array(items.iter().map(|v| walk(v, secret)).collect()),
             Value::Object(map) => Value::Object(
                 map.iter()
-                    .map(|(k, v)| (k.clone(), walk(v, secret || is_secret_key(k))))
+                    .map(|(k, v)| match v {
+                        Value::Number(n) if is_count(k, &n.to_string()) => (k.clone(), v.clone()),
+                        _ => (k.clone(), walk(v, secret || is_secret_key(k))),
+                    })
                     .collect::<Map<String, Value>>(),
             ),
             other if is_secret_value(other, secret) => Value::String("••••••".to_owned()),

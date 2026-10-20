@@ -19,6 +19,21 @@ describe("secret keys", () => {
       expect(isSecretKey(key), key).toBe(false);
     }
   });
+
+  it("does not take counts of tokens for tokens", () => {
+    for (const key of [
+      "token_count",
+      "tokens_used",
+      "tokenUsage",
+      "input_tokens",
+      "total-tokens",
+    ]) {
+      expect(isSecretKey(key), key).toBe(false);
+    }
+    for (const key of ["token", "api_token", "access_token", "api_tokens", "refresh-token"]) {
+      expect(isSecretKey(key), key).toBe(true);
+    }
+  });
 });
 
 describe("secrets in a loose text", () => {
@@ -76,5 +91,14 @@ describe("secrets in a loose text", () => {
 
   it("has a fixed mask", () => {
     expect(MASK).toBe("••••••");
+  });
+});
+
+describe("counts of tokens", () => {
+  it("leaves a number under `tokens` and hides a token", () => {
+    expect(findCodeSecrets("tokens: 1200\n")).toEqual([]);
+    expect(findCodeSecrets('"tokens": 3400,')).toEqual([]);
+    expect(findCodeSecrets("tokens: abc")).toHaveLength(1);
+    expect(findCodeSecrets("api_tokens: 12")).toHaveLength(1);
   });
 });

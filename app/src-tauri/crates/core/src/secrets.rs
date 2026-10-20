@@ -21,7 +21,7 @@ const SECRET_WORDS: [&str; 9] = [
 ];
 
 /// Words that contain a secret word and are not secrets (compared with separators removed).
-const HARMLESS: [&str; 10] = [
+const HARMLESS: [&str; 24] = [
     "author",
     "keyword",
     "keyboard",
@@ -32,7 +32,40 @@ const HARMLESS: [&str; 10] = [
     "monkey",
     "turkey",
     "donkey",
+    // counts of tokens (sizes of a prompt, a reply, a file), not tokens
+    "tokencount",
+    "tokenscount",
+    "tokensused",
+    "tokenused",
+    "tokenusage",
+    "tokensusage",
+    "tokenlimit",
+    "tokenbudget",
+    "inputtokens",
+    "outputtokens",
+    "totaltokens",
+    "prompttokens",
+    "completiontokens",
+    "cachedtokens",
 ];
+
+/// Keys that hold a count when their value is a number (`tokens: 1200`), and tokens when it is not
+/// (`tokens: [a, b]`); `api_tokens` is never one.
+const COUNT_KEYS: [&str; 2] = ["tokens", "ntokens"];
+
+/// A number under a count key (`tokens: 1200`, `"tokens": 3400`): a size, not a secret.
+#[must_use]
+pub fn is_count(key: &str, value: &str) -> bool {
+    let flat: String = key
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let value = value.trim();
+    COUNT_KEYS.contains(&flat.as_str())
+        && !value.is_empty()
+        && value.parse::<f64>().is_ok_and(f64::is_finite)
+}
 
 /// Whether a key names a secret (`API_KEY`, `client-secret`, `authToken`, `db.password`). Separators are ignored
 /// (`pass_word` counts) and a few harmless words are set aside (`authors`, `keywords`, `max_tokens`).
@@ -209,7 +242,10 @@ fn mask_pairs(line: &str) -> Cow<'_, str> {
             let to = chars.get(end).map_or(line.len(), |(b, _)| *b);
             (value_start, to, end)
         };
-        if value_to > value_from && line[value_from..value_to] != *HIDDEN {
+        if value_to > value_from
+            && line[value_from..value_to] != *HIDDEN
+            && !is_count(key, &line[value_from..value_to])
+        {
             out.push_str(&line[copied..value_from]);
             out.push_str(HIDDEN);
             copied = value_to;
@@ -285,9 +321,35 @@ mod tests {
             "keyboard",
             "name",
             "version",
+            "token_count",
+            "tokens_used",
+            "tokenUsage",
+            "input_tokens",
+            "output-tokens",
+            "total_tokens",
+            "prompt_tokens",
+            "completion_tokens",
         ] {
             assert!(!is_secret_key(key), "{key}");
         }
+        // real secrets stay secret
+        for key in [
+            "token",
+            "api_token",
+            "access_token",
+            "api_tokens",
+            "refresh-token",
+            "TOKEN",
+        ] {
+            assert!(is_secret_key(key), "{key}");
+        }
+        assert_eq!(mask_text("tokens: 1200"), "tokens: 1200");
+        assert_eq!(mask_text("\"tokens\": 3400,"), "\"tokens\": 3400,");
+        assert!(is_count("tokens", "1200") && is_count("Tokens", " 3.5 "));
+        assert!(
+            !is_count("tokens", "abc") && !is_count("api_tokens", "12") && !is_count("token", "12")
+        );
+        assert_eq!(mask_text("token: abc"), "token: <hidden>");
         for key in [
             "API_KEY",
             "pass_word",

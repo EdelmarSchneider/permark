@@ -704,3 +704,11 @@ fn a_new_row_takes_plain_values_where_they_need_no_quotes() {
         "{quoted}"
     );
 }
+
+#[test]
+fn a_tokens_column_of_counts_is_shown_and_a_token_column_is_masked() {
+    let text = "files[2]{path,tokens}:\n  plan.md,1200\n  spec.md,3400\nkeys[1]{name,token}:\n  ci,sk-123\nusage:\n  tokens: 99\n  api_token: abc\n";
+    let masked = fidelity::masked(&ToonFormat, text);
+    assert!(masked.contains("1200") && masked.contains("3400") && masked.contains("tokens: 99"));
+    assert!(!masked.contains("sk-123") && !masked.contains("abc"));
+}

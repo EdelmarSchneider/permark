@@ -268,3 +268,36 @@ describe("long tables", () => {
     expect(VIRTUAL_FROM).toBe(200);
   });
 });
+
+describe("dragging a row by its grip", () => {
+  it("follows the pointer and moves the row where it is let go", async () => {
+    const edits: ConfigEdit[] = [];
+    const root = await show(team(), {
+      editable: true,
+      edit: (change) => {
+        edits.push(change);
+        return Promise.resolve(null);
+      },
+    });
+    const rows = Array.from(root.querySelectorAll("table")[0]?.querySelectorAll("tbody tr") ?? []);
+    const target = rows[2];
+    // jsdom draws nothing: the point is over the third row
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => target?.querySelector("td") ?? null,
+    });
+    const grip = rows[0]?.querySelector(".grip");
+    const pointer = (type: string): void => {
+      grip?.dispatchEvent(
+        new MouseEvent(type, { bubbles: true, button: 0, clientX: 10, clientY: 90 }),
+      );
+    };
+    pointer("pointerdown");
+    pointer("pointermove");
+    flushSync();
+    expect(target?.classList.contains("drop")).toBe(true);
+    pointer("pointerup");
+    await tick();
+    expect(edits).toEqual([{ op: "moveRow", path: "team[0]", to: 2 }]);
+  });
+});

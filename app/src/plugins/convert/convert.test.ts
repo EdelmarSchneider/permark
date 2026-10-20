@@ -269,3 +269,29 @@ describe("the code block button", () => {
     }
   });
 });
+
+describe("the table button", () => {
+  it("shows over a table of the page, goes off it, and sends the table as CSV", async () => {
+    const { decorateTables } = await import("./tables");
+    const root = document.createElement("div");
+    root.innerHTML =
+      "<p>text</p><table><tr><th>a</th><th>b</th></tr><tr><td>1</td><td>x, y</td></tr></table>";
+    document.body.append(root);
+    const opened: string[] = [];
+    const stop = decorateTables(root, (csv) => opened.push(csv));
+    const button = document.querySelector<HTMLButtonElement>(".pm-convert-table");
+    const over = (el: Element | null): void => {
+      el?.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    };
+    expect(button?.hidden).toBe(true);
+    over(root.querySelector("td"));
+    expect(button?.hidden).toBe(false);
+    over(root.querySelector("p"));
+    expect(button?.hidden).toBe(true);
+    over(root.querySelector("td"));
+    button?.click();
+    expect(opened).toEqual(['a,b\n1,"x, y"\n']);
+    stop();
+    expect(document.querySelector(".pm-convert-table")).toBeNull();
+  });
+});

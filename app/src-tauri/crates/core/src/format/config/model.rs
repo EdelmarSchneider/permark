@@ -9,7 +9,7 @@ use ts_rs::TS;
 
 use super::util::split_path;
 use crate::format::Editability;
-use crate::secrets::{is_secret_key, mask_text, url_password};
+use crate::secrets::{is_count, is_secret_key, mask_text, url_password};
 
 /// Bytes of a text.
 pub type Span = Range<usize>;
@@ -287,6 +287,8 @@ impl Sheet {
                 let value_of_named =
                     named_secret && matches!(row.key.as_str(), "value" | "val" | "default");
                 match &mut row.value {
+                    // a number under a count key (`tokens: 1200`) is a size
+                    RowValue::Scalar(s) if is_count(&row.key, &s.text) => s.secret = false,
                     RowValue::Scalar(s) => mark(s, key_secret || value_of_named),
                     RowValue::List { items } => {
                         for s in items {
@@ -309,8 +311,15 @@ impl Sheet {
                             .map(|f| split_path(f).iter().any(|s| is_secret_key(s)))
                             .collect();
                         for row in &mut table.rows {
-                            for (cell, column) in row.cells.iter_mut().zip(&columns) {
+                            for ((cell, column), field) in
+                                row.cells.iter_mut().zip(&columns).zip(&table.fields)
+                            {
                                 mark(cell, key_secret || *column);
+                                // a number in a count column (`tokens`) is a size
+                                let leaf = field.rsplit('.').next().unwrap_or(field);
+                                if cell.secret && is_count(leaf, &cell.text) {
+                                    cell.secret = false;
+                                }
                             }
                         }
                     }

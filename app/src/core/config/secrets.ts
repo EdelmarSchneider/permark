@@ -27,7 +27,31 @@ const HARMLESS = [
   "monkey",
   "turkey",
   "donkey",
+  // counts of tokens (sizes of a prompt, a reply, a file), not tokens
+  "tokencount",
+  "tokenscount",
+  "tokensused",
+  "tokenused",
+  "tokenusage",
+  "tokensusage",
+  "tokenlimit",
+  "tokenbudget",
+  "inputtokens",
+  "outputtokens",
+  "totaltokens",
+  "prompttokens",
+  "completiontokens",
+  "cachedtokens",
 ];
+/** Keys that hold a count when their value is a number (`tokens: 1200`); `api_tokens` is never one. */
+const COUNT_KEYS = ["tokens", "ntokens"];
+
+/** A number under a count key (`tokens: 1200`): a size, not a secret. */
+export function isCount(key: string, value: string): boolean {
+  const flat = key.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+  const v = value.trim();
+  return COUNT_KEYS.includes(flat) && v !== "" && Number.isFinite(Number(v));
+}
 
 /** Whether a key names a secret (`API_KEY`, `client-secret`, `authToken`, `db.password`); `authors` does not. */
 export function isSecretKey(key: string): boolean {
@@ -63,7 +87,7 @@ export function findCodeSecrets(text: string): Span[] {
   for (const match of text.matchAll(PAIR)) {
     const [whole, key, , , gap, value] = match;
     if (key === undefined || value === undefined || gap === undefined) continue;
-    if (!isSecretKey(key) || value.startsWith("{")) continue;
+    if (!isSecretKey(key) || value.startsWith("{") || isCount(key, value)) continue;
     const start = match.index + whole.length - value.length;
     let from = start;
     let to = start + value.length;

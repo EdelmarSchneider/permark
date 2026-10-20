@@ -1,7 +1,7 @@
 <script lang="ts">
   // Rows of uniform objects (a TOON table): the fields once as a header, one row per element, the entry key first in a
   // keyed table. Long tables draw only the rows near the screen (fixed row height). In Edit mode cells take typing,
-  // fields and entry keys take new names, and rows can be added, duplicated, moved (drag or the row menu) and
+  // fields and entry keys take new names, and rows can be added, duplicated, moved (the grip, the row menu, Alt+arrows) and
   // deleted: each change is one edit the backend makes in place.
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import GripVertical from "@lucide/svelte/icons/grip-vertical";
@@ -158,6 +158,43 @@
     void run({ op: "moveRow", path: row.path, to: index });
   }
 
+  /** The row index under a point of the screen (`null`: not a row of this table). */
+  function rowAt(x: number, y: number): number | null {
+    const hit = document.elementFromPoint(x, y)?.closest("tr[data-index]");
+    if (!(hit instanceof HTMLElement) || !wrap?.contains(hit)) return null;
+    const index = Number(hit.dataset["index"]);
+    return Number.isNaN(index) ? null : index;
+  }
+
+  // Dragging by the grip follows the pointer (pointer capture), not HTML drag and drop: the window takes OS drops
+  // (files from outside), which keeps drag events from reaching the page.
+  function startDrag(event: PointerEvent, index: number): void {
+    if (!editable || event.button !== 0) return;
+    event.preventDefault();
+    const grip = event.currentTarget;
+    try {
+      if (grip instanceof Element) grip.setPointerCapture(event.pointerId);
+    } catch {
+      // no capture (the pointer is gone): the row still follows while it is over the table
+    }
+    dragFrom = index;
+    dropAt = index;
+  }
+
+  function moveDrag(event: PointerEvent): void {
+    if (dragFrom === null) return;
+    dropAt = rowAt(event.clientX, event.clientY) ?? dropAt;
+  }
+
+  function endDrag(event: PointerEvent): void {
+    if (dragFrom === null) return;
+    const at = rowAt(event.clientX, event.clientY) ?? dropAt;
+    if (at === null) {
+      dragFrom = null;
+      dropAt = null;
+    } else onDrop(at);
+  }
+
   async function finishName(): Promise<void> {
     const current = naming;
     if (current === null) return;
@@ -250,28 +287,23 @@
           <tr
             class:drop={dropAt === index && dragFrom !== null && dragFrom !== index}
             class:dragging={dragFrom === index}
-            draggable={editable}
-            ondragstart={(e) => {
-              dragFrom = index;
-              e.dataTransfer?.setData("text/plain", row.path);
-            }}
-            ondragover={(e) => {
-              if (dragFrom === null) return;
-              e.preventDefault();
-              dropAt = index;
-            }}
-            ondragend={() => {
-              dragFrom = null;
-              dropAt = null;
-            }}
-            ondrop={(e) => {
-              e.preventDefault();
-              onDrop(index);
-            }}
+            data-index={index}
             onkeydown={(e) => onRowKey(e, index)}
           >
             {#if editable}
-              <td class="grip" title={t("config.table.drag")}><GripVertical size={13} /></td>
+              <td
+                class="grip"
+                title={t("config.table.drag")}
+                onpointerdown={(e) => startDrag(e, index)}
+                onpointermove={moveDrag}
+                onpointerup={endDrag}
+                onpointercancel={() => {
+                  dragFrom = null;
+                  dropAt = null;
+                }}
+              >
+                <GripVertical size={13} />
+              </td>
             {/if}
             {#if table.keyed}
               <td class="entry">
@@ -412,6 +444,7 @@
     padding: 0 2px;
     color: var(--faint);
     cursor: grab;
+    touch-action: none;
   }
   .tools {
     width: 30px;
