@@ -24,6 +24,8 @@ const { api } = await import("../../api");
 const { default: SettingsPage } = await import("./settings/SettingsPage.svelte");
 const { default: InitDialog } = await import("./InitDialog.svelte");
 const { default: TopBar } = await import("./TopBar.svelte");
+const { default: PanelToggle } = await import("./PanelToggle.svelte");
+const { layout } = await import("./layout.svelte");
 const { closeHere } = await import("./closeWorkspace");
 const { default: CloseWindowDialog } = await import("./CloseWindowDialog.svelte");
 const { default: Welcome } = await import("./Welcome.svelte");
@@ -768,6 +770,46 @@ describe("the top bar", () => {
     bar.stop();
   });
 
+  it("the Notes button sits left of Settings: one click opens | brings forward the Notes tab; gone with the plugin", async () => {
+    const bar = await mountBar();
+    const find = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>("button.icon-btn.notes");
+    await until(() => find() !== null, "the button");
+    const notesButton = find()!;
+    const settings = target.querySelector<HTMLElement>("[data-settings-trigger]")!;
+    // left of Settings, after the flexible space
+    expect(notesButton.nextElementSibling).toBe(settings);
+    expect(notesButton.getAttribute("aria-label")).toBe("Notes");
+    expect(notesButton.getAttribute("title")).toBe("Notes (Ctrl+Shift+D)");
+    expect(notesButton.getAttribute("aria-pressed")).toBe("false");
+    const openNotes = vi.spyOn(store, "openNotes");
+    notesButton.click();
+    expect(openNotes).toHaveBeenCalledWith("tab");
+    await until(
+      () => store.view.state === "showing" && store.view.workspace.kind === "notes",
+      "the Notes tab forward",
+    );
+    // one place: the Notes tab that was there comes forward, no second one
+    expect(tabs.list).toHaveLength(4);
+    await until(() => find()?.getAttribute("aria-pressed") === "true", "pressed in the Notes tab");
+    const keys = contributions
+      .of("shortcut")
+      .filter((k) => k.command.startsWith("notes."))
+      .map((k) => [k.command, k.keys]);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        ["notes.open", "Mod+Shift+d"],
+        ["notes.new", "Mod+Shift+n"],
+        ["notes.newHere", "Mod+n"],
+      ]),
+    );
+    // the plugin off: no button, no keys
+    await store.changeSetting({ key: "pluginEnabled", value: { plugin: "notes", enabled: false } });
+    await until(() => find() === null, "gone");
+    expect(contributions.of("shortcut").some((k) => k.command.startsWith("notes."))).toBe(false);
+    bar.stop();
+  });
+
   it("the Open menu leaves the Notes out while their plugin is off", async () => {
     const bar = await mountBar(false);
     target.querySelector<HTMLElement>("button.open")!.click();
@@ -840,6 +882,64 @@ describe("the top bar", () => {
     expect(command("tab.next").when?.()).toBe(false);
     expect(command("tab.previous").when?.()).toBe(false);
     stop();
+  });
+});
+
+describe("the side panels", () => {
+  afterEach(() => {
+    layout.setSidebarHidden(false);
+    layout.setRightHidden(false);
+  });
+
+  it("Ctrl+B and the status bar toggle hide | show the sidebar; a focused control in it lets go", async () => {
+    await open();
+    const stopKeys = installWindowKeys();
+    component = mount(PanelToggle, { target, props: { side: "sidebar" } });
+    flushSync();
+    const toggle = target.querySelector<HTMLElement>("button.toggle")!;
+    expect(toggle.getAttribute("aria-label")).toBe("Sidebar");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.getAttribute("title")).toBe("Hide sidebar (Ctrl+B)");
+    // something in the sidebar holds the focus
+    const region = document.createElement("div");
+    region.dataset.region = "sidebar";
+    const inside = document.createElement("button");
+    region.append(inside);
+    document.body.append(region);
+    inside.focus();
+    press(window, "b", { ctrlKey: true });
+    expect(layout.sidebarHidden).toBe(true);
+    expect(ui.frameMoving).toBe(true);
+    expect(document.activeElement).not.toBe(inside);
+    flushSync();
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.getAttribute("title")).toBe("Show sidebar (Ctrl+B)");
+    toggle.click();
+    expect(layout.sidebarHidden).toBe(false);
+    region.remove();
+    stopKeys();
+  });
+
+  it("an editor that takes Ctrl+B itself (bold) keeps it; a single file has no sidebar to hide", async () => {
+    await open();
+    const stopKeys = installWindowKeys();
+    const editor = document.createElement("div");
+    editor.addEventListener("keydown", (e) => e.preventDefault());
+    document.body.append(editor);
+    press(editor, "b", { ctrlKey: true });
+    expect(layout.sidebarHidden).toBe(false);
+    editor.remove();
+    await mock.openPath("C:/p/one-file.md", "thisTab");
+    await until(
+      () => store.view.state === "showing" && store.view.workspace.kind === "singleFile",
+      "the file shows",
+    );
+    press(window, "b", { ctrlKey: true });
+    expect(layout.sidebarHidden).toBe(false);
+    const command = contributions.of("command").find((c) => c.id === "panel.toggle")!;
+    // nothing at the right it could show (no outline, no panel): not offered
+    expect(command.when?.()).toBe(false);
+    stopKeys();
   });
 });
 

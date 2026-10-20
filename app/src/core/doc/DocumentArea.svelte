@@ -196,7 +196,7 @@
     <div
       class="chrome"
       class:folded={ui.focus === "on"}
-      class:clip={ui.focusMoving}
+      class:clip={ui.frameMoving}
       inert={ui.focus === "on"}
     >
       <div class="chrome-inner">

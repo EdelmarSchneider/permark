@@ -1,4 +1,5 @@
-// Panel widths: limits, clamping and fitting into the window. Pure; the store is `layout.svelte.ts`.
+// Panel widths: limits, clamping and fitting into the window; what a show | hide toggle of a side panel does. Pure; the
+// store is `layout.svelte.ts`.
 
 export type Range = { readonly min: number; readonly max: number; readonly def: number };
 
@@ -65,4 +66,43 @@ export function keyWidth(
     default:
       return null;
   }
+}
+
+/** What decides the right region: the plugin panel chosen (if any), the document's outline, the person's choices. */
+export type RightSide = {
+  /** The plugin panel chosen at the right (`null`: none). */
+  panel: string | null;
+  /** The document shown has an outline. */
+  hasOutline: boolean;
+  /** The outline is on (`reading.outline`). */
+  outlineOn: boolean;
+  /** The person hid the right panel. */
+  hidden: boolean;
+};
+
+/** The right region has something it could show (a toggle there would change the screen). */
+export function rightAvailable(side: RightSide): boolean {
+  return side.panel !== null || side.hasOutline;
+}
+
+/** The right region is on screen: not hidden, with a plugin panel, else the outline when on. */
+export function rightShown(side: RightSide): boolean {
+  return !side.hidden && (side.panel !== null || (side.hasOutline && side.outlineOn));
+}
+
+/** The person's choices after a step. */
+export type RightChoice = { hidden: boolean; outlineOn: boolean };
+
+/** The right-panel toggle: shown -> hidden; not shown -> shown (with nothing on, the outline turns on); nothing it
+ *  could show -> no change. */
+export function toggleRight(side: RightSide): RightChoice {
+  if (rightShown(side)) return { hidden: true, outlineOn: side.outlineOn };
+  if (!rightAvailable(side)) return { hidden: side.hidden, outlineOn: side.outlineOn };
+  return { hidden: false, outlineOn: side.panel === null ? true : side.outlineOn };
+}
+
+/** The outline toggle: the right panel hidden -> it shows again with the outline on; else the outline flips. */
+export function toggleOutline(side: RightSide): RightChoice {
+  if (side.hidden) return { hidden: false, outlineOn: true };
+  return { hidden: false, outlineOn: !side.outlineOn };
 }

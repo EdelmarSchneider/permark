@@ -18,6 +18,8 @@
   import { conditions } from "../conditions/context.svelte";
   import { contributions } from "../plugins/instance.svelte";
   import Badge from "../shell/Badge.svelte";
+  import { layout } from "../shell/layout.svelte";
+  import { toggleOutlinePanel } from "../shell/sides";
   import { documents } from "./document.svelte";
   import { headerFit } from "./headerFit";
   import ReadingMenu from "./ReadingMenu.svelte";
@@ -332,8 +334,8 @@
       class="icon-btn"
       title={t("outline.label")}
       aria-label={t("outline.label")}
-      aria-pressed={reading.outline}
-      onclick={() => reading.toggleOutline()}
+      aria-pressed={reading.outline && !layout.rightHidden}
+      onclick={() => toggleOutlinePanel()}
     >
       <AlignLeft size={16} />
     </button>
