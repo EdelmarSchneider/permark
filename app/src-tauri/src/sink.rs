@@ -18,7 +18,7 @@ impl EventSink for TauriSink {
         let name = event.name().to_owned();
         let target = event.target().map(str::to_owned);
         let payload = match event {
-            CoreEvent::WorkspacesChanged(e) => serde_json::to_value(e),
+            CoreEvent::WindowsChanged(e) => serde_json::to_value(e),
             CoreEvent::WindowChanged(e) => serde_json::to_value(e),
             CoreEvent::ContextChanged(e) => serde_json::to_value(e),
             CoreEvent::SettingsChanged(e) => serde_json::to_value(e),

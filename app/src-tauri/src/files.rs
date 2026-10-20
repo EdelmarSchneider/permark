@@ -21,9 +21,9 @@ struct ShellFiles {
 }
 
 impl ShellFiles {
-    fn window(&self, label: &str) -> Result<tauri::WebviewWindow, IpcError> {
+    fn window(&self, label: &str) -> Result<tauri::Webview, IpcError> {
         self.handle
-            .get_webview_window(label)
+            .get_webview(label)
             .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject("window"))
     }
 

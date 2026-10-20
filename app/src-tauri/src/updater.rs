@@ -7,9 +7,9 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
 use permark_core::plugins::ServiceLease;
-use permark_core::workspace::{CoreEnv, Workspace};
+use permark_core::workspace::CoreEnv;
 use permark_plugin_updates::{DriverService, Found, UpdateDriver};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::shell;
@@ -85,16 +85,11 @@ impl UpdateDriver for Driver {
     fn unsaved(&self) -> Vec<String> {
         let shell = shell::state(&self.handle);
         let mut paths = Vec::new();
-        for label in self.handle.webview_windows().into_keys() {
+        for label in shell.registry.views() {
             let Some((_, workspace)) = shell.registry.workspace_of(&label) else {
                 continue;
             };
-            let unsaved = match &workspace {
-                Workspace::Project(core) => core.documents().unsaved(&label),
-                Workspace::SingleFile(file) => file.documents.unsaved(&label),
-                Workspace::Notes(core) => core.documents().unsaved(&label),
-            };
-            paths.extend(unsaved);
+            paths.extend(workspace.documents().unsaved(&label));
         }
         paths
     }

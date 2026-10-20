@@ -15,6 +15,7 @@ pub use registry::{
     Attached, Begin, OpenError, Outcome, Prepared, SessionWindow, TabOpen, Ticket, ViewChange,
     WorkspaceRegistry,
 };
+pub use window_fsm::{MoveTo, Resolution};
 
 use crate::conditions::WorkspaceKind;
 use crate::error::{ErrorKind, IpcError};
