@@ -1,7 +1,7 @@
 {
   "name": "permark",
   "version": "0.5.8",
-  "description": "Read what your AI writes. Write what it reads. A free, open-source Markdown app.",
+  "description": "A unified document workspace: read, write and organize Markdown and the files around it. Free and open source.",
   "license": "MIT OR Apache-2.0",
   "author": "Edelmar Schneider",
   "repository": {

@@ -27,7 +27,7 @@ const en = {
   "dialog.windowNew": "New window",
 
   // ---- welcome
-  "welcome.tagline": "Read, navigate and follow your Markdown docs.",
+  "welcome.tagline": "A unified document workspace for Markdown and the files around it.",
   "welcome.openFolder": "Open folder...",
   "welcome.openFile": "Open file...",
   "welcome.recent": "Recent folders",

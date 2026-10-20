@@ -2,20 +2,20 @@ name: permark
 title: PerMark
 base: core24
 adopt-info: permark
-summary: Read what your AI writes. Write what it reads. A Markdown app for AI docs.
+summary: A unified document workspace for Markdown and the files around it
 description: |
-  PerMark is a working environment for documents: one place to read, write and organize Markdown and the files that go with it, and to steer AI projects through their documents (plans, specs, notes) with Markdown as the shared language of people and agents.
+  PerMark is a unified document workspace: one place to read, write and organize Markdown and the files that go with it, and to steer AI projects through their documents (plans, specs, notes, agent instructions). AI speeds the work; your vision steers it.
 
   Got a .md file?
-  - Open any standalone .md file as a clean, well-typeset page—Mermaid diagrams, LaTeX math, tables, and ~190 syntax-highlighted languages.
-  - Edit in place visually (WYSIWYG) or in source mode with YAML frontmatter validation.
-  - Keep a self-saving scratchpad (Notes) with zero save dialogs.
+  - Open it as a clean page: tables, task lists, footnotes, alerts, highlighted code, Mermaid and PlantUML diagrams, math.
+  - Edit it visually or as raw source; saving rewrites only what you changed.
+  - Keep quick notes that save themselves, with earlier versions kept.
 
   Build with AI agents?
-  - Open a project folder as a live workspace that watches what your AI agents write across branches and git worktrees.
-  - See what changed since you last read (Unread view) with block-level diffs (Added, Rewritten, Removed).
-  - Leave inline comments on any passage and let your agent read and resolve them via PerMark's built-in MCP server (permark mcp) or CLI hook (permark context).
-  - Works with any AI tool (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, Cline, Aider, Hermes Agent, OpenClaw...) or none.
+  - Open a project folder to follow what your agents write: a live feed of changed files, unread markers and a review of each change you can keep or revert.
+  - Comment on passages, tag files, search down to the section; config files (TOML, YAML, INI, .env) read as clean sheets.
+  - Optional agent connection (MCP), off by default and per project: your agent sees where you are, your comments and the notes you share; it never edits files through PerMark.
+  - Works with any AI tool, or with none. No account, nothing collected.
 license: MIT OR Apache-2.0
 icon: app/src-tauri/icons/128x128@2x.png
 website: https://edelmarschneider.github.io/permark/

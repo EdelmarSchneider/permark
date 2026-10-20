@@ -37,12 +37,12 @@
 
 ; ---- Words (Windows language ids: 1033 en, 1046 pt-BR, 3082 es, 1031 de, 2052 zh-CN, 1040 it) ----------------------
 
-LangString PermarkWelcome 1033 "Setup will install PerMark for you. No administrator rights are needed.$\r$\n$\r$\nFor the file types you check below, Windows asks you to confirm in its Settings after the installation."
-LangString PermarkWelcome 1046 "O instalador vai instalar o PerMark para você. Não é preciso ser administrador.$\r$\n$\r$\nPara os tipos de arquivo marcados abaixo, o Windows pede sua confirmação nas Configurações depois da instalação."
-LangString PermarkWelcome 3082 "El instalador instalará PerMark para usted. No se necesitan permisos de administrador.$\r$\n$\r$\nPara los tipos de archivo que marque abajo, Windows le pedirá que lo confirme en Configuración después de la instalación."
-LangString PermarkWelcome 1031 "Das Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig.$\r$\n$\r$\nFür die unten angehakten Dateitypen bittet Windows Sie nach der Installation um Bestätigung in den Einstellungen."
-LangString PermarkWelcome 2052 "安装程序将为您安装 PerMark，无需管理员权限。$\r$\n$\r$\n对于下面勾选的文件类型，安装后 Windows 会请您在“设置”中确认。"
-LangString PermarkWelcome 1040 "Il programma di installazione installerà PerMark per te. Non servono i permessi di amministratore.$\r$\n$\r$\nPer i tipi di file selezionati qui sotto, dopo l'installazione Windows ti chiederà di confermare nelle Impostazioni."
+LangString PermarkWelcome 1033 "PerMark is a unified document workspace: one place to read, write and organize Markdown and the files around it.$\r$\n$\r$\nSetup will install PerMark for you. No administrator rights are needed.$\r$\n$\r$\nFor the file types you check below, Windows asks you to confirm in its Settings after the installation."
+LangString PermarkWelcome 1046 "O PerMark é um espaço de trabalho unificado para documentos: um só lugar para ler, escrever e organizar Markdown e os arquivos ao redor.$\r$\n$\r$\nO instalador vai instalar o PerMark para você. Não é preciso ser administrador.$\r$\n$\r$\nPara os tipos de arquivo marcados abaixo, o Windows pede sua confirmação nas Configurações depois da instalação."
+LangString PermarkWelcome 3082 "PerMark es un espacio de trabajo unificado para documentos: un solo lugar para leer, escribir y organizar Markdown y los archivos que lo rodean.$\r$\n$\r$\nEl instalador instalará PerMark para usted. No se necesitan permisos de administrador.$\r$\n$\r$\nPara los tipos de archivo que marque abajo, Windows le pedirá que lo confirme en Configuración después de la instalación."
+LangString PermarkWelcome 1031 "PerMark ist ein einheitlicher Arbeitsplatz für Dokumente: ein Ort zum Lesen, Schreiben und Ordnen von Markdown und den Dateien drumherum.$\r$\n$\r$\nDas Setup installiert PerMark für Sie. Administratorrechte sind nicht nötig.$\r$\n$\r$\nFür die unten angehakten Dateitypen bittet Windows Sie nach der Installation um Bestätigung in den Einstellungen."
+LangString PermarkWelcome 2052 "PerMark 是统一文档工作区：在一个地方阅读、编写和整理 Markdown 及其周边文件。$\r$\n$\r$\n安装程序将为您安装 PerMark，无需管理员权限。$\r$\n$\r$\n对于下面勾选的文件类型，安装后 Windows 会请您在“设置”中确认。"
+LangString PermarkWelcome 1040 "PerMark è uno spazio di lavoro unificato per i documenti: un unico posto per leggere, scrivere e organizzare Markdown e i file che lo circondano.$\r$\n$\r$\nIl programma di installazione installerà PerMark per te. Non servono i permessi di amministratore.$\r$\n$\r$\nPer i tipi di file selezionati qui sotto, dopo l'installazione Windows ti chiederà di confermare nelle Impostazioni."
 
 LangString PermarkTypesTitle 1033 "Open these files with PerMark:"
 LangString PermarkTypesTitle 1046 "Abrir estes arquivos com o PerMark:"

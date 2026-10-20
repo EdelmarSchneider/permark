@@ -27,7 +27,7 @@ export default {
   "dialog.windowNew": "新窗口",
 
   // ---- welcome
-  "welcome.tagline": "阅读、浏览并跟随你的 Markdown 文档。",
+  "welcome.tagline": "统一文档工作区：Markdown 及其周边文件。",
   "welcome.openFolder": "打开文件夹...",
   "welcome.openFile": "打开文件...",
   "welcome.recent": "最近的文件夹",

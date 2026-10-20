@@ -27,7 +27,7 @@ export default {
   "dialog.windowNew": "Janela nova",
 
   // ---- welcome
-  "welcome.tagline": "Leia, navegue e acompanhe seus documentos Markdown.",
+  "welcome.tagline": "Um espaço de trabalho unificado para documentos: Markdown e os arquivos ao redor.",
   "welcome.openFolder": "Abrir pasta...",
   "welcome.openFile": "Abrir arquivo...",
   "welcome.recent": "Pastas recentes",

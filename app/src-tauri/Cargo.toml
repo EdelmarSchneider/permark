@@ -104,7 +104,7 @@ opt-level = "s"
 # App crate: Tauri shell (windows, IPC commands, events, OS integration). Thin: commands adapt core services.
 [package]
 name = "permark"
-description = "A local-first working environment for documents: Markdown and the files around it."
+description = "A local-first unified document workspace: Markdown and the files around it."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

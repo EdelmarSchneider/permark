@@ -28,7 +28,7 @@ export default {
   "dialog.windowNew": "Finestra nuova",
 
   // ---- welcome
-  "welcome.tagline": "Leggi, naviga e segui i tuoi documenti Markdown.",
+  "welcome.tagline": "Uno spazio di lavoro unificato per i documenti: Markdown e i file che lo circondano.",
   "welcome.openFolder": "Apri cartella...",
   "welcome.openFile": "Apri file...",
   "welcome.recent": "Cartelle recenti",
