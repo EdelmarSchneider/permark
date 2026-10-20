@@ -120,6 +120,20 @@ impl OwnWrites {
         }
     }
 
+    /// Whether the app announced moving a folder away from `path` (it announced files below it). A removal whose kind
+    /// the watch cannot tell (the system names no side of a move, and the tree already shows the new place) is then a
+    /// folder's.
+    #[must_use]
+    pub fn moved_folder_from(&self, path: &str) -> bool {
+        let now = Instant::now();
+        let prefix = format!("{}/", key_of(path));
+        self.pairs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .values()
+            .any(|(from, at)| fresh(*at, now) && key_of(from).starts_with(&prefix))
+    }
+
     /// The app is about to delete these project paths.
     pub fn expect_removals(&self, paths: &[String]) {
         let now = Instant::now();
@@ -394,6 +408,20 @@ mod tests {
             }
         );
         assert_eq!(changes[1].path, "new/a.md");
+    }
+
+    #[test]
+    fn a_folder_move_is_known_by_the_files_announced_below_it() {
+        let own = OwnWrites::new();
+        own.expect_moves(&[
+            ("lib".to_owned(), "vendor".to_owned()),
+            ("lib/x.md".to_owned(), "vendor/x.md".to_owned()),
+            ("one.md".to_owned(), "two.md".to_owned()),
+        ]);
+        assert!(own.moved_folder_from("lib"));
+        assert!(!own.moved_folder_from("li"));
+        assert!(!own.moved_folder_from("one.md"));
+        assert!(!own.moved_folder_from("vendor"));
     }
 
     #[test]

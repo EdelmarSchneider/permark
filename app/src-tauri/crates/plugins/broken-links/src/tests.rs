@@ -224,9 +224,16 @@ fn moving_a_target_or_a_whole_folder_is_followed() {
         )
         .unwrap();
     ops.apply_move(plan.plan_id, false).unwrap();
-    wait_until("both are broken now", || {
-        h.broken() == ["a.md:1:lib/x.md", "a.md:1:lib/deep/y.md"]
-    });
+    let mut last = Vec::new();
+    let started = Instant::now();
+    while last != ["a.md:1:lib/x.md", "a.md:1:lib/deep/y.md"] {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "both are broken now: {last:?}"
+        );
+        std::thread::sleep(Duration::from_millis(15));
+        last = h.broken();
+    }
     // moved documents are checked at their new place
     h.write("vendor/z.md", "[up](../missing-up.md)\n");
     wait_until("z checked", || h.broken().len() == 3);

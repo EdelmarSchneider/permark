@@ -514,12 +514,14 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
             ignorer.clear();
         }
     }
-    let no_folder = |_: &str| false;
+    let was_folder = |path: &str| {
+        shared.own.moved_folder_from(path) || shared.folders.get().is_some_and(|known| known(path))
+    };
     let env = Env {
         vault: &shared.vault,
         sigs: &shared.sigs,
         ignorers: &shared.ignorers,
-        was_folder: shared.folders.get().map_or(&no_folder, |f| f.as_ref()),
+        was_folder: &was_folder,
     };
     let mut done = reconcile(&env, pending);
     shared.own.pair_moves(&mut done.changes);
