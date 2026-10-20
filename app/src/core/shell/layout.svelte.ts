@@ -19,7 +19,10 @@ export class LayoutStore {
   sidebarHidden = $state(false);
   /** The person hid the right panel. */
   rightHidden = $state(false);
+  /** A project's session is being read: the panels stay off until it says (no flash of a panel it hides). */
+  reading = $state(false);
   #api: Api | null = null;
+  #seq = 0;
   #timer: ReturnType<typeof setTimeout> | null = null;
   /** A project window writes its layout; others only keep it. */
   #persist = false;
@@ -33,6 +36,8 @@ export class LayoutStore {
     this.right = RIGHT.def;
     this.sidebarHidden = false;
     this.rightHidden = false;
+    const seq = ++this.#seq;
+    this.reading = project;
     if (!project) return;
     const [sidebar, right, sidebarHidden, rightHidden] = await Promise.all([
       api.projectSessionGet(KEYS.sidebar),
@@ -40,7 +45,8 @@ export class LayoutStore {
       api.projectSessionGet(KEYS.sidebarHidden),
       api.projectSessionGet(KEYS.rightHidden),
     ]);
-    if (api !== this.#api) return;
+    if (seq !== this.#seq) return;
+    this.reading = false;
     if (sidebar.ok && typeof sidebar.value === "number") {
       this.sidebar = clampWidth(SIDEBAR, sidebar.value);
     }
@@ -48,6 +54,15 @@ export class LayoutStore {
     // only a boolean counts: anything else (a damaged file, a value of a newer app) = shown
     if (sidebarHidden.ok && sidebarHidden.value === true) this.sidebarHidden = true;
     if (rightHidden.ok && rightHidden.value === true) this.rightHidden = true;
+  }
+
+  /** The sidebar is off screen: hidden by the person, or its project's session not read yet. */
+  get sidebarOff(): boolean {
+    return this.sidebarHidden || this.reading;
+  }
+
+  get rightOff(): boolean {
+    return this.rightHidden || this.reading;
   }
 
   setSidebar(px: number): void {

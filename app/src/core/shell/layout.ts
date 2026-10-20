@@ -90,19 +90,32 @@ export function rightShown(side: RightSide): boolean {
   return !side.hidden && (side.panel !== null || (side.hasOutline && side.outlineOn));
 }
 
-/** The person's choices after a step. */
-export type RightChoice = { hidden: boolean; outlineOn: boolean };
+/** The outline is what the right region shows now. */
+export function outlineShown(side: RightSide): boolean {
+  return rightShown(side) && side.panel === null && side.hasOutline && side.outlineOn;
+}
+
+/** The person's choices after a step; `closePanel`: the chosen plugin panel lets go (the outline shows instead). */
+export type RightChoice = { hidden: boolean; outlineOn: boolean; closePanel: boolean };
 
 /** The right-panel toggle: shown -> hidden; not shown -> shown (with nothing on, the outline turns on); nothing it
  *  could show -> no change. */
 export function toggleRight(side: RightSide): RightChoice {
-  if (rightShown(side)) return { hidden: true, outlineOn: side.outlineOn };
-  if (!rightAvailable(side)) return { hidden: side.hidden, outlineOn: side.outlineOn };
-  return { hidden: false, outlineOn: side.panel === null ? true : side.outlineOn };
+  if (rightShown(side)) return { hidden: true, outlineOn: side.outlineOn, closePanel: false };
+  if (!rightAvailable(side)) {
+    return { hidden: side.hidden, outlineOn: side.outlineOn, closePanel: false };
+  }
+  return {
+    hidden: false,
+    outlineOn: side.panel === null ? true : side.outlineOn,
+    closePanel: false,
+  };
 }
 
-/** The outline toggle: the right panel hidden -> it shows again with the outline on; else the outline flips. */
+/** The outline toggle = "show me the outline" unless it shows: it shows (a hidden right panel shows again, a chosen
+ *  plugin panel lets go); shown -> off. */
 export function toggleOutline(side: RightSide): RightChoice {
-  if (side.hidden) return { hidden: false, outlineOn: true };
-  return { hidden: false, outlineOn: !side.outlineOn };
+  if (outlineShown(side)) return { hidden: false, outlineOn: false, closePanel: false };
+  // any panel choice lets go (also one whose plugin went: it would come back over the outline)
+  return { hidden: false, outlineOn: true, closePanel: true };
 }

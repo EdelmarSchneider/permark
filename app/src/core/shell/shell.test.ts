@@ -781,7 +781,8 @@ describe("the top bar", () => {
     expect(notesButton.nextElementSibling).toBe(settings);
     expect(notesButton.getAttribute("aria-label")).toBe("Notes");
     expect(notesButton.getAttribute("title")).toBe("Notes (Ctrl+Shift+D)");
-    expect(notesButton.getAttribute("aria-pressed")).toBe("false");
+    expect(notesButton.hasAttribute("aria-current")).toBe(false);
+    expect(notesButton.hasAttribute("aria-pressed")).toBe(false);
     const openNotes = vi.spyOn(store, "openNotes");
     notesButton.click();
     expect(openNotes).toHaveBeenCalledWith("tab");
@@ -791,7 +792,7 @@ describe("the top bar", () => {
     );
     // one place: the Notes tab that was there comes forward, no second one
     expect(tabs.list).toHaveLength(4);
-    await until(() => find()?.getAttribute("aria-pressed") === "true", "pressed in the Notes tab");
+    await until(() => find()?.getAttribute("aria-current") === "page", "current in the Notes tab");
     const keys = contributions
       .of("shortcut")
       .filter((k) => k.command.startsWith("notes."))
@@ -891,7 +892,7 @@ describe("the side panels", () => {
     layout.setRightHidden(false);
   });
 
-  it("Ctrl+B and the status bar toggle hide | show the sidebar; a focused control in it lets go", async () => {
+  it("Ctrl+B and the status bar toggle hide | show the sidebar; the focus in it moves to the page", async () => {
     await open();
     const stopKeys = installWindowKeys();
     component = mount(PanelToggle, { target, props: { side: "sidebar" } });
@@ -905,18 +906,25 @@ describe("the side panels", () => {
     region.dataset.region = "sidebar";
     const inside = document.createElement("button");
     region.append(inside);
-    document.body.append(region);
+    const page = document.createElement("main");
+    page.dataset.region = "page";
+    const scroller = document.createElement("div");
+    scroller.dataset.scroller = "";
+    scroller.tabIndex = -1;
+    page.append(scroller);
+    document.body.append(region, page);
     inside.focus();
     press(window, "b", { ctrlKey: true });
     expect(layout.sidebarHidden).toBe(true);
     expect(ui.frameMoving).toBe(true);
-    expect(document.activeElement).not.toBe(inside);
+    expect(document.activeElement, "the page's scroller has the focus").toBe(scroller);
     flushSync();
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     expect(toggle.getAttribute("title")).toBe("Show sidebar (Ctrl+B)");
     toggle.click();
     expect(layout.sidebarHidden).toBe(false);
     region.remove();
+    page.remove();
     stopKeys();
   });
 

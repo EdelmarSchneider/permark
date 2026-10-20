@@ -225,7 +225,8 @@
   {/if}
 
   <div class="pane">
-    <div class="scroller" data-scroller bind:this={scroller}>
+    <!-- focusable by script only (never a Tab stop): a hidden side panel hands the keyboard focus to the page -->
+    <div class="scroller" data-scroller tabindex="-1" bind:this={scroller}>
       {#if doc.status === "loading"}
         <div class="loading" role="progressbar" aria-label={t("doc.loading")}></div>
       {/if}
@@ -386,6 +387,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .scroller:focus {
+    outline: none;
   }
   .scroller {
     flex: 1;

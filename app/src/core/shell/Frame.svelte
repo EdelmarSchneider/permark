@@ -74,7 +74,7 @@
         {@render sidebar()}
       </aside>
     {/if}
-    <main class="main">{@render main()}</main>
+    <main class="main" data-region="page" tabindex="-1">{@render main()}</main>
     {#if panel}
       <aside class="panel" class:gone={!rightOpen} data-region="right" inert={!rightOpen}>
         {@render panel()}
@@ -156,6 +156,9 @@
     overflow: clip;
     background: var(--bg);
   }
+  .main:focus {
+    outline: none;
+  }
   .status {
     display: flex;
     min-height: 0;
@@ -167,7 +170,8 @@
     font-size: var(--fs-ui-xs);
     color: var(--muted);
     background: var(--surface);
-    border-top: 1px solid var(--border);
+    /* the top line is drawn inside the band: the full 24 px stay for the controls (24 px targets) */
+    box-shadow: inset 0 1px 0 var(--border);
   }
 
   /* Focus mode: every region but the page collapses and fades; a side panel the person hid does the same. After the

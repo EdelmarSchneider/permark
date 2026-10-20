@@ -236,6 +236,10 @@ export class NotesStore {
     }
   }
 
+  #listed(path: string): boolean {
+    return this.entries.some((e) => e.path === path);
+  }
+
   /** Takes the wish the backend keeps (once: no other view gets it) and does it. `null`: there was none. */
   async #takeIntent(): Promise<NotesIntent | null> {
     const taken = await this.#client.call("notes.takeIntent", {});
@@ -246,7 +250,9 @@ export class NotesStore {
         await this.newNote();
         break;
       case "open":
-        await this.select(asked.path);
+        // only a document of the list (a note | a loose file); one made a moment ago elsewhere: read the list again
+        if (!this.#listed(asked.path)) await this.refresh();
+        if (this.#listed(asked.path)) await this.select(asked.path);
         break;
       default:
         asked satisfies never;

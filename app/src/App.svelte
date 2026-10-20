@@ -310,8 +310,8 @@
     rightWidth={layout.right}
     onSidebarWidth={(px) => layout.setSidebar(px)}
     onRightWidth={(px) => layout.setRight(px)}
-    sidebarHidden={layout.sidebarHidden}
-    rightHidden={layout.rightHidden}
+    sidebarHidden={layout.sidebarOff}
+    rightHidden={layout.rightOff}
     {top}
     sidebar={shown?.workspace.kind === "project" || shown?.workspace.kind === "notes"
       ? sidebar

@@ -4,6 +4,7 @@ import {
   clampWidth,
   fit,
   keyWidth,
+  outlineShown,
   PAGE_MIN,
   RIGHT,
   rightAvailable,
@@ -145,37 +146,66 @@ describe("showing | hiding the right panel", () => {
   });
 
   it("the toggle hides what shows, shows what is hidden, and never does nothing visible", () => {
-    expect(toggleRight(side())).toEqual({ hidden: true, outlineOn: true });
-    expect(toggleRight(side({ hidden: true }))).toEqual({ hidden: false, outlineOn: true });
+    const keep = { closePanel: false };
+    expect(toggleRight(side())).toEqual({ hidden: true, outlineOn: true, ...keep });
+    expect(toggleRight(side({ hidden: true }))).toEqual({
+      hidden: false,
+      outlineOn: true,
+      ...keep,
+    });
     // shown again with nothing on: the outline turns on
-    expect(toggleRight(side({ outlineOn: false }))).toEqual({ hidden: false, outlineOn: true });
+    expect(toggleRight(side({ outlineOn: false }))).toEqual({
+      hidden: false,
+      outlineOn: true,
+      ...keep,
+    });
     expect(toggleRight(side({ hidden: true, outlineOn: false }))).toEqual({
       hidden: false,
       outlineOn: true,
+      ...keep,
     });
     // a plugin panel chosen: it shows again, the outline choice stays
     expect(toggleRight(side({ hidden: true, outlineOn: false, panel: "p" }))).toEqual({
       hidden: false,
       outlineOn: false,
+      ...keep,
     });
     // nothing it could show: no change
     expect(toggleRight(side({ hasOutline: false, hidden: true }))).toEqual({
       hidden: true,
       outlineOn: true,
+      ...keep,
     });
   });
 
-  it("the outline toggle shows a hidden right panel with the outline, else flips the outline", () => {
+  it("the outline toggle shows the outline unless it shows (a hidden panel comes back, a plugin panel lets go)", () => {
+    expect(outlineShown(side())).toBe(true);
+    expect(outlineShown(side({ panel: "p" }))).toBe(false);
+    expect(outlineShown(side({ hidden: true }))).toBe(false);
+    expect(toggleOutline(side())).toEqual({ hidden: false, outlineOn: false, closePanel: false });
     expect(toggleOutline(side({ hidden: true, outlineOn: false }))).toEqual({
       hidden: false,
       outlineOn: true,
+      closePanel: true,
     });
     expect(toggleOutline(side({ hidden: true, outlineOn: true }))).toEqual({
       hidden: false,
       outlineOn: true,
+      closePanel: true,
     });
-    expect(toggleOutline(side())).toEqual({ hidden: false, outlineOn: false });
-    expect(toggleOutline(side({ outlineOn: false }))).toEqual({ hidden: false, outlineOn: true });
+    expect(toggleOutline(side({ outlineOn: false }))).toEqual({
+      hidden: false,
+      outlineOn: true,
+      closePanel: true,
+    });
+    // a plugin panel shows (hidden or not): the outline replaces it
+    for (const hidden of [false, true]) {
+      expect(toggleOutline(side({ panel: "live-feed.panel", hidden }))).toEqual({
+        hidden: false,
+        outlineOn: true,
+        closePanel: true,
+      });
+    }
   });
 
   it("rapid toggles alternate and end where an even | odd count says", () => {
@@ -205,6 +235,20 @@ describe("the hidden panels in the project session", () => {
     await store.load(api, true);
     expect([store.sidebarHidden, store.rightHidden]).toEqual([false, false]);
     expect([store.sidebar, store.right]).toEqual([300, 320]);
+  });
+
+  it("panels stay off while the project's session is read (no flash of a panel it hides)", async () => {
+    const api = createMockApi();
+    await api.projectSessionSet("layout.sidebar-hidden", true);
+    const store = new LayoutStore();
+    const loading = store.load(api, true);
+    expect([store.sidebarOff, store.rightOff]).toEqual([true, true]);
+    await loading;
+    expect([store.sidebarOff, store.rightOff]).toEqual([true, false]);
+    // a single file | the Notes: nothing to read
+    const plain = store.load(api, false);
+    expect([store.sidebarOff, store.rightOff]).toEqual([false, false]);
+    await plain;
   });
 
   it("a hidden panel stays hidden in the project, written a moment after the last change", async () => {

@@ -483,3 +483,31 @@ describe("wishes from other views (the Notes tab open elsewhere)", () => {
     expect(order).toEqual(["notes.want", "open:tab"]);
   });
 });
+
+describe("adversarial: intents (verifier)", () => {
+  it("an intent for a note that is gone: list only (notes.md Intents), nothing recorded as open", async () => {
+    const { api, store } = await setup({ kind: "open", path: "gone 1999.md" });
+    expect(store.list.status).toBe("ready");
+    expect(store.current).toBeNull();
+    void api;
+  });
+
+  it("ten New wishes from other views in a burst while the tab is live: ten notes, slot empty", async () => {
+    const { api, store } = await setup();
+    const before = store.entries.length;
+    for (let i = 0; i < 10; i++) await api.pluginCall("notes.want", { intent: { kind: "new" } });
+    await settle();
+    await settle();
+    const taken = await api.pluginCall("notes.takeIntent", {});
+    expect(taken.ok && taken.value).toBeNull();
+    // each wish announced and taken before the next: one note each
+    expect(store.entries.length - before, "notes made").toBe(10);
+  });
+
+  it("an Open wish with a path outside the notes (traversal | absolute) does not escape the Notes", async () => {
+    const { store, documents } = await setup({ kind: "open", path: "../../secret.md" });
+    // nothing shown (the backend scope decides; the intent adds no new path into it)
+    expect(documents.shown).toBeNull();
+    expect(store.current, "list only for a name not in the list").toBeNull();
+  });
+});

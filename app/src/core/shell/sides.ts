@@ -37,21 +37,34 @@ export function rightSide(): RightSide {
   };
 }
 
-/** A region about to hide gives up the keyboard focus (it goes inert). */
+/** A region about to hide gives the keyboard focus to the page (it goes inert): the editor when one is open, else
+ *  the document's scroller (arrows | Page keys scroll it), else the page region. */
 function letGo(region: "sidebar" | "right"): void {
   if (typeof document === "undefined") return;
   const active = document.activeElement;
-  if (active instanceof HTMLElement && active.closest(`[data-region="${region}"]`) !== null) {
-    active.blur();
+  if (!(active instanceof HTMLElement) || active.closest(`[data-region="${region}"]`) === null) {
+    return;
   }
+  const page = document.querySelector<HTMLElement>('[data-region="page"]');
+  const target =
+    page?.querySelector<HTMLElement>("[contenteditable='true'], .cm-content") ??
+    page?.querySelector<HTMLElement>("[data-scroller]") ??
+    page;
+  if (target) target.focus({ preventScroll: true });
+  else active.blur();
 }
 
 function apply(choice: RightChoice): void {
-  if (choice.hidden === layout.rightHidden && choice.outlineOn === reading.outline) return;
-  ui.animateFrame();
+  const same =
+    choice.hidden === layout.rightHidden &&
+    choice.outlineOn === reading.outline &&
+    !(choice.closePanel && ui.right !== null);
+  if (same) return;
+  if (choice.hidden !== layout.rightHidden) ui.animateFrame();
   if (choice.hidden) letGo("right");
   layout.setRightHidden(choice.hidden);
   reading.setOutline(choice.outlineOn);
+  if (choice.closePanel) ui.right = null;
 }
 
 /** Mod+B: the sidebar hides | shows (only where there is one). */

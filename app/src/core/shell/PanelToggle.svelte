@@ -38,8 +38,9 @@
 <style>
   .toggle {
     flex: none;
-    width: 22px;
-    height: 22px;
+    /* a 24 px target: the status bar's full height */
+    width: 24px;
+    height: 24px;
   }
   /* on screen is the usual state: quiet, no accent (the panel itself says it is there) */
   .toggle[aria-pressed="true"] {
