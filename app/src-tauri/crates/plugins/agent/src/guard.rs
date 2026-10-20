@@ -140,7 +140,6 @@ mod tests {
         for path in [
             ".git/config",
             "sub/.git/config",
-            "sub/.GIT/FETCH_HEAD",
             "a/b/.permark/local/comments.json",
             "sub/.git",
             "deploy/id_ed25519",
@@ -154,6 +153,8 @@ mod tests {
             assert!(guard.hidden(path, false), "{path}");
         }
         assert!(guard.hidden("sub/.git", true));
+        // the file system's own case rule: `.GIT` is git's folder only where case is ignored
+        assert_eq!(guard.hidden("sub/.GIT/FETCH_HEAD", false), CASE_INSENSITIVE);
         for path in [
             "docs/plan.md",
             "deploy/id_ed25519.pub",
