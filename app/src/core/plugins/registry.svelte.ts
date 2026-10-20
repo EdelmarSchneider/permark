@@ -76,6 +76,8 @@ export type Contribution = Owned &
         order: number;
         view: LazyComponent;
       }
+    /** A button in the top bar, between the flexible space and Settings (the Notes); lowest `order` first. */
+    | { kind: "topBarItem"; id: string; order: number; view: LazyComponent }
     /** A badge on a row of the Explorer and in the document header. Reads reactive state: the row follows it. */
     | {
         kind: "treeBadge";

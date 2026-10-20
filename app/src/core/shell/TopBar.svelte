@@ -1,10 +1,12 @@
 <script lang="ts">
   // The top of every window, one calm row: this window's tabs as chips, the Open button (folder, file, new project,
-  // Notes, recent folders), and the settings. A window without tabs shows the app's name instead of the chips and the
+  // Notes, recent folders), the buttons plugins add (the Notes) and the settings. A window without tabs shows the app's name instead of the chips and the
   // Welcome page holds the actions.
   import Plus from "@lucide/svelte/icons/plus";
   import Settings from "@lucide/svelte/icons/settings";
   import { keyHint } from "../commands/hint";
+  import { conditions } from "../conditions/context.svelte";
+  import { contributions } from "../plugins/instance.svelte";
   import ContextMenu from "../explorer/ContextMenu.svelte";
   import type { MenuEntry } from "../explorer/menu";
   import { t } from "../i18n";
@@ -27,6 +29,10 @@
   let menu = $state.raw<{ x: number; y: number } | null>(null);
 
   const settingsKeys = $derived(keyHint("app.settings"));
+  /** Buttons plugins put left of Settings (the Notes); a plugin off: gone. */
+  const items = $derived(
+    contributions.visible("topBarItem", conditions.current).sort((a, b) => a.order - b.order),
+  );
 
   const entries = $derived.by((): MenuEntry[] => {
     const hint = (id: string): string | undefined => keyHint(id) ?? undefined;
@@ -101,6 +107,12 @@
     <span class="brand">{t("app.name")}</span>
   {/if}
   <span class="spacer"></span>
+  {#each items as item (item.owner + item.id)}
+    {#await item.view() then loaded}
+      {@const Item = loaded.default}
+      <Item />
+    {/await}
+  {/each}
   <button
     type="button"
     class="icon"
