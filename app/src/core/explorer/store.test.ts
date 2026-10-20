@@ -743,3 +743,30 @@ describe("a drag from outside", () => {
     expect(store.isOpen("docs")).toBe(false);
   });
 });
+
+describe("undo of exactly one operation", () => {
+  it("an import's Undo after a newer touching operation explains and changes nothing", async () => {
+    const { store, api, notes } = await setup();
+    const id = api.probe.project.recordImport(["docs/x.md"]);
+    api.probe.project.add("docs/x.md", "x");
+    // a newer operation on that very path
+    api.probe.project.recordImport(["docs/x.md"]);
+    await store.undoEntry(id);
+    expect(notes.at(-1)).toBe(
+      "This import can't be undone any more: its files were changed since.",
+    );
+    expect(api.probe.project.exists("docs/x.md")).toBe(true);
+  });
+
+  it("an untouched one is taken back, not the newest", async () => {
+    const { store, api, notes } = await setup();
+    api.probe.project.add("docs/x.md", "x");
+    api.probe.project.add("docs/z.md", "z");
+    const id = api.probe.project.recordImport(["docs/x.md"]);
+    api.probe.project.recordImport(["docs/z.md"]);
+    await store.undoEntry(id);
+    expect(notes.at(-1)).toBe("Undone.");
+    expect(api.probe.project.exists("docs/x.md")).toBe(false);
+    expect(api.probe.project.exists("docs/z.md")).toBe(true);
+  });
+});

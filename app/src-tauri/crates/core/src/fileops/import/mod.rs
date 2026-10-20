@@ -182,6 +182,9 @@ pub struct ImportOutcome {
     pub cancelled: bool,
     /// Project paths of the items put in place, in drop order (the Explorer selects them).
     pub placed: Vec<String>,
+    /// The journal entry that takes this import back (`fileops_undo_entry`); `None`: nothing came in, or not journaled.
+    #[ts(type = "number | null")]
+    pub undo: Option<u64>,
 }
 
 // ---- service state -----------------------------------------------------------------------------------------------
@@ -549,7 +552,7 @@ impl FileOps {
         }
         run.emit(true);
         if !result.copied.is_empty() || !result.moved.is_empty() {
-            self.record(Op::Import {
+            result.undo = self.record(Op::Import {
                 copied: result.copied.clone(),
                 moved: result.moved.clone(),
             });
@@ -744,6 +747,7 @@ struct Applied {
     copied: Vec<String>,
     moved: Vec<ImportMoved>,
     placed: Vec<String>,
+    undo: Option<u64>,
     skipped: u32,
     failed: Vec<ImportFailure>,
     left_behind: u32,
@@ -757,6 +761,7 @@ impl Applied {
             copied: Vec::new(),
             moved: Vec::new(),
             placed: Vec::new(),
+            undo: None,
             skipped: 0,
             failed: Vec::new(),
             left_behind: 0,
@@ -799,6 +804,7 @@ impl Applied {
             left_behind: self.left_behind,
             cancelled: self.cancelled,
             placed: self.placed,
+            undo: self.undo,
         }
     }
 }

@@ -106,7 +106,8 @@ describe("the question at the drop point", () => {
     expect(text()).toContain("7 names already exist here:");
     expect(text()).toContain("a.md, b.md, c.md, d.md and 3 more");
     const group = target.querySelector("[role=radiogroup]");
-    expect(group?.getAttribute("aria-label")).toBe("If a name already exists");
+    const label = document.getElementById(group?.getAttribute("aria-labelledby") ?? "");
+    expect(label?.textContent).toBe("If a name already exists:");
     expect(
       [...(group?.querySelectorAll("[role=radio]") ?? [])].map((r) =>
         r.getAttribute("aria-checked"),

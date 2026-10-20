@@ -49,13 +49,14 @@
     return () => window.removeEventListener("pointerdown", outside, true);
   });
 
+  /** Esc closes it wherever the keyboard is (also while it checks names and nothing inside can take the keyboard). */
+  function onwindowkey(e: KeyboardEvent): void {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    close();
+  }
+
   function onkeydown(e: KeyboardEvent): void {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-      return;
-    }
     if (e.key !== "Tab" || !box) return;
     const focusable = Array.from(
       box.querySelectorAll<HTMLElement>("button:not(:disabled):not([tabindex='-1'])"),
@@ -71,6 +72,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={onwindowkey} />
 
 <div
   bind:this={box}

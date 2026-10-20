@@ -17,6 +17,8 @@ type Handle = {
   copyPath(path: string, full: boolean): Promise<void>;
   /** Takes the newest file operation back. */
   undo(): Promise<void>;
+  /** Takes back exactly the file operation `id`. */
+  undoEntry(id: number): Promise<void>;
   /** The folder files dropped from outside at this point land in; `null`: the point is not over the list. */
   dropFolderAt(x: number, y: number): string | null;
   /** An outside drag is over a folder of the list (`null`: none) at a point (`null`: not over the list). */
@@ -90,7 +92,12 @@ export const treeDrop = {
   placed: (paths: readonly string[]): void => current?.placed(paths),
 };
 
-/** Takes the newest file operation back (the notice of an import offers it). */
+/** Takes the newest file operation back. */
 export async function undoInTree(): Promise<void> {
   await current?.undo();
+}
+
+/** Takes back exactly the file operation `id` (the notice of an import offers it). */
+export async function undoEntryInTree(id: number): Promise<void> {
+  await current?.undoEntry(id);
 }

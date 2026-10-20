@@ -2,6 +2,7 @@
 // view of its active tab (switching tabs shows that tab's workspace in it; the app switches between views instead).
 
 import { DEFAULT_FILTER } from "../core/explorer/filter";
+import { opensAsText } from "../core/explorer/importModel";
 import type { Context } from "./generated/Context";
 import type { ErrorKind } from "./generated/ErrorKind";
 import type { WindowView } from "./generated/WindowView";
@@ -165,10 +166,12 @@ export type MockProbe = {
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
   pictures: string[];
-  /** Drop to open: what was asked, paths that are gone (they fail), and `fire` = a system drag event on the view. */
+  /** Drop to open: what was asked, paths that are gone (they fail), paths that are folders (else files, text by
+   * name), and `fire` = a system drag event on the view. */
   drops: {
     opened: { paths: string[]; scope: DropScope }[];
     missing: Set<string>;
+    folders: Set<string>;
     focused: number;
     fire: (event: DropEvent) => void;
   };
@@ -398,6 +401,7 @@ export function createMockApi(): Api & {
     drops: {
       opened: [],
       missing: new Set(),
+      folders: new Set(),
       focused: 0,
       fire: (event) => {
         for (const handler of dropHandlers) handler(event);
@@ -586,7 +590,7 @@ export function createMockApi(): Api & {
     openDropped: (paths, scope) => {
       probe.drops.opened.push({ paths: [...paths], scope });
       const failed: DropOpened["failed"] = [];
-      const left: string[] = [];
+      const left: DropOpened["left"] = [];
       let last: number | null = null;
       let added: string | null = null;
       for (const path of paths) {
@@ -602,7 +606,7 @@ export function createMockApi(): Api & {
           continue;
         }
         if (scope === "existingOnly") {
-          left.push(path);
+          left.push({ path, text: !probe.drops.folders.has(path) && opensAsText(path) });
           continue;
         }
         // listed now, shown only when it is the last one (a pending tab in the app)
@@ -737,6 +741,11 @@ export function createMockApi(): Api & {
       const done = project.undo();
       if (done) refreshTree();
       return ok(done ? { kind: "move", restored: 1, skipped: [] } : null);
+    },
+    undoFileOpEntry: (id) => {
+      const done = project.undoEntry(id);
+      if (done) refreshTree();
+      return ok(done ? { kind: "import", restored: 1, skipped: [] } : null);
     },
     ...importing.api,
     remotePicture: (url) => {

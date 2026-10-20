@@ -21,9 +21,48 @@ use crate::workspace::{Outcome, Place, TabId, WorkspaceRef, WorkspaceRegistry};
 pub enum DropScope {
     /// Every path: where it is open, else a new tab here.
     Tabs,
-    /// Only paths open somewhere already (that place comes forward); the rest are handed back in `left` untouched
-    /// (the Notes list them as loose files).
+    /// Only paths open somewhere already (that place comes forward); the rest are handed back in `left` untouched,
+    /// each with whether PerMark opens it as text (the Notes list those as loose files; the rest open as tabs).
     ExistingOnly,
+}
+
+/// A path `ExistingOnly` left alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LeftPath {
+    pub path: String,
+    /// A file PerMark opens as text (never a folder).
+    pub text: bool,
+}
+
+/// Bytes read to tell a file without a known extension (`README`, `.npmrc`) from a binary one.
+const SNIFF: usize = 8 * 1024;
+
+/// Whether PerMark opens a file as text: Markdown, plain text, config and data by name; a name without a known
+/// category (no extension, a dotfile) when its first bytes hold no NUL. Folders and everything else: no.
+#[must_use]
+pub fn opens_as_text(path: &Path) -> bool {
+    use std::io::Read;
+
+    use crate::tree::{category_of, extension_of, Category};
+    if !path.is_file() {
+        return false;
+    }
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    match category_of(&name) {
+        Category::Markdown | Category::Text | Category::Config | Category::Data => true,
+        Category::Other if extension_of(&name).is_none() => {
+            let mut head = Vec::with_capacity(SNIFF);
+            std::fs::File::open(path)
+                .and_then(|file| file.take(SNIFF as u64).read_to_end(&mut head))
+                .is_ok_and(|_| !head.contains(&0))
+        }
+        _ => false,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -42,7 +81,7 @@ pub struct DropOpened {
     /// Paths that could not be opened (one notice for the drop).
     pub failed: Vec<DropFailure>,
     /// `ExistingOnly`: paths open nowhere, left alone.
-    pub left: Vec<String>,
+    pub left: Vec<LeftPath>,
 }
 
 /// Registry steps done; what the shell does next.
@@ -101,7 +140,10 @@ pub fn open_dropped(
         match route(registry, &reference, false, OpenIn::Tab, Some(window)) {
             Route::Focus { place, document } => last = Some(Last::Open(place, document)),
             Route::Tab { .. } | Route::NewWindow if scope == DropScope::ExistingOnly => {
-                out.answer.left.push(path.display().to_string());
+                out.answer.left.push(LeftPath {
+                    path: path.display().to_string(),
+                    text: matches!(reference, WorkspaceRef::SingleFile(_)) && opens_as_text(path),
+                });
             }
             Route::Tab { .. } | Route::NewWindow => {
                 match registry.restore_tab(window, &reference, None) {

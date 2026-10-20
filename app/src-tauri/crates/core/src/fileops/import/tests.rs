@@ -1146,3 +1146,105 @@ fn the_cancel_flag_of_a_finished_import_is_gone() {
     assert!(!f.ops.import_cancel(p.plan_id));
     let _: PathBuf = f.dir.path().to_path_buf();
 }
+
+// ---- verifier (adversarial) -----------------------------------------------------------------------------------------
+
+/// The project folder spelled another way (other case, verbatim `\?\` prefix, trailing `.`) still holds the target:
+/// copying it would copy into itself without end.
+#[cfg(windows)]
+#[test]
+fn verifier_a_folder_spelled_another_way_still_cannot_go_into_itself() {
+    let f = fx(&[("docs/inner/a.md", "")], &[]);
+    let here = f.dir.path().display().to_string();
+    let upper = here.to_uppercase();
+    let verbatim = format!(r"\\?\{here}");
+    let dotted = format!(r"{here}\.");
+    let p = f
+        .ops
+        .import_plan("docs/inner", &[upper, verbatim, dotted])
+        .unwrap();
+    assert_eq!(p.items.len(), 0, "items: {:?}", p.items);
+    assert!(
+        p.refused
+            .iter()
+            .all(|r| r.reason == ImportRefusal::IntoItself),
+        "refused: {:?}",
+        p.refused
+    );
+}
+
+/// The same outside file named twice in other spellings is one item (no `a (2).md` copy of itself).
+#[cfg(windows)]
+#[test]
+fn verifier_one_file_dropped_in_two_spellings_is_one_item() {
+    let f = fx(&[("docs/", "")], &[("a.md", "x")]);
+    let one = src(&f, "a.md");
+    let two = one.to_uppercase();
+    let p = f.ops.import_plan("docs", &[one, two]).unwrap();
+    assert_eq!(p.items.len(), 1, "items: {:?}", p.items);
+}
+
+/// A Move whose numbered name was taken after the plan: the next free number, nothing overwritten.
+#[test]
+fn verifier_move_of_a_file_already_in_place_twice_never_overwrites() {
+    let f = fx(&[("docs/a.md", "mine")], &[("a.md", "theirs")]);
+    let p = plan(&f, "docs", &["a.md"]);
+    // the name is taken again (and by a different file) after the plan
+    fs::write(f.dir.path().join("docs/a (2).md"), "also mine").unwrap();
+    let out = apply(&f, &p, ImportMode::Move, ConflictChoice::KeepBoth);
+    assert_eq!(read(&f, "docs/a.md"), "mine");
+    assert_eq!(read(&f, "docs/a (2).md"), "also mine");
+    assert_eq!(read(&f, "docs/a (3).md"), "theirs");
+    assert_eq!(out.placed, ["docs/a (3).md"]);
+}
+
+// ---- undo of exactly this import (the notice's Undo) -------------------------------------------------------------------
+
+#[test]
+fn the_undo_of_an_import_takes_back_that_import_not_the_newest_operation() {
+    let f = fx(&[("docs/", "")], &[("a.md", "a"), ("b.md", "b")]);
+    let first = copy_all(&f, "docs", &["a.md"]);
+    let second = copy_all(&f, "", &["b.md"]);
+    let (one, two) = (first.undo.unwrap(), second.undo.unwrap());
+    assert_ne!(one, two);
+    let out = f.ops.undo_entry(one).unwrap().unwrap();
+    assert_eq!(out.kind, UndoKind::Import);
+    assert!(
+        !f.dir.path().join("docs/a.md").exists(),
+        "the first import went"
+    );
+    assert_eq!(read(&f, "b.md"), "b", "the newer one stays");
+    assert!(f.ops.undo_entry(one).unwrap().is_none(), "once only");
+    assert!(f.ops.undo_entry(two).unwrap().is_some());
+}
+
+#[test]
+fn an_import_touched_since_is_not_taken_back_by_its_notice() {
+    let f = fx(&[("docs/", "")], &[("a.md", "a")]);
+    let out = copy_all(&f, "docs", &["a.md"]);
+    f.ops
+        .apply_move(
+            f.ops
+                .plan_move(
+                    &[crate::fileops::MoveSpec {
+                        from: "docs/a.md".to_owned(),
+                        to: "a.md".to_owned(),
+                    }],
+                    false,
+                )
+                .unwrap()
+                .plan_id,
+            false,
+        )
+        .unwrap();
+    assert!(f.ops.undo_entry(out.undo.unwrap()).unwrap().is_none());
+    assert_eq!(read(&f, "a.md"), "a", "nothing taken away");
+}
+
+#[test]
+fn an_import_that_added_nothing_has_no_undo() {
+    let f = fx(&[("docs/a.md", "x")], &[("a.md", "y")]);
+    let p = plan(&f, "docs", &["a.md"]);
+    let out = apply(&f, &p, ImportMode::Copy, ConflictChoice::Skip);
+    assert_eq!(out.undo, None);
+}

@@ -672,13 +672,21 @@ export class ExplorerStore {
   }
 
   async undo(): Promise<void> {
-    const result = await this.#api.undoFileOp();
+    this.#undone(await this.#api.undoFileOp(), t("fileOps.nothingToUndo"));
+  }
+
+  /** Takes back exactly the operation `id` (an import's notice): not the newest one, whatever came after. */
+  async undoEntry(id: number): Promise<void> {
+    this.#undone(await this.#api.undoFileOpEntry(id), t("import.undoGone"));
+  }
+
+  #undone(result: Awaited<ReturnType<Api["undoFileOp"]>>, none: string): void {
     if (!result.ok) {
       this.#host.fail(result.error);
       return;
     }
     if (result.value === null) {
-      this.#host.note(t("fileOps.nothingToUndo"));
+      this.#host.note(none);
       return;
     }
     const left = result.value.skipped.length;

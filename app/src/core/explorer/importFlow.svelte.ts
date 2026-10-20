@@ -53,8 +53,8 @@ export type ImportHost = {
   end(kept: string | null): void;
   /** Items put in place (the tree selects them). */
   placed(paths: readonly string[]): void;
-  /** Takes the newest file operation back. */
-  undo(): Promise<void>;
+  /** Takes back exactly the journal entry `id` (this import), not the newest operation. */
+  undo(id: number): Promise<void>;
 };
 
 export class ImportFlow {
@@ -83,6 +83,11 @@ export class ImportFlow {
   /** An import is running (a drop onto the Explorer waits for it to finish). */
   get busy(): boolean {
     return this.state.status === "running";
+  }
+
+  /** The question is open or on its way (the tree keeps the folders it is about). */
+  get waiting(): boolean {
+    return this.state.status === "planning" || this.state.status === "asking";
   }
 
   /** The project is gone or another one is shown: nothing of this drop matters any more. */
@@ -170,7 +175,14 @@ export class ImportFlow {
     if (addedAnything(outcome)) {
       this.#host.end(asked.plan.target);
       this.#host.placed(outcome.placed);
-      this.#host.action(text, { label: t("fileOps.undo"), run: () => void this.#host.undo() });
+      const entry = outcome.undo;
+      // not journaled (the state folder could not be written): nothing to offer
+      if (entry === null) this.#host.note(text);
+      else
+        this.#host.action(text, {
+          label: t("fileOps.undo"),
+          run: () => void this.#host.undo(entry),
+        });
     } else {
       this.#host.end(null);
       this.#host.note(text);

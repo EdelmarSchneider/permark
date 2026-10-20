@@ -27,6 +27,37 @@ export function pictureType(path: string): string {
   return MIME[ext] ?? "";
 }
 
+/** Extensions PerMark opens as text: Markdown, plain text, config, data (the backend's category table). */
+const TEXT_EXTENSIONS = new Set([
+  ...["md", "markdown", "mdown", "mkd", "mdx", "mdc"],
+  ...["txt", "text", "rst", "adoc", "asciidoc", "org", "log"],
+  ...["toml", "yaml", "yml", "ini", "cfg", "conf", "properties", "env", "editorconfig"],
+  ...[
+    "json",
+    "jsonc",
+    "json5",
+    "jsonl",
+    "ndjson",
+    "csv",
+    "tsv",
+    "xml",
+    "xsd",
+    "xsl",
+    "xslt",
+    "rss",
+    "atom",
+  ],
+]);
+
+/** Whether a dropped path looks like a file PerMark opens as text, by its name: a text extension, or no extension at
+ *  all (`README`, `.npmrc`). A guess for what the badge says; the backend has the last word (it looks at the file). */
+export function opensAsText(path: string): boolean {
+  const name = baseName(path);
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0 || dot === name.length - 1) return name !== "" && !/[\\/]$/.test(path);
+  return TEXT_EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
+}
+
 /** The file name of an absolute path, either separator. */
 export function baseName(path: string): string {
   const parts = path.split(/[\\/]/).filter((p) => p !== "");

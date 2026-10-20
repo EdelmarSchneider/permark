@@ -41,6 +41,7 @@ const outcome = (patch: Partial<ImportOutcome> = {}): ImportOutcome => ({
   leftBehind: 0,
   cancelled: false,
   placed: [],
+  undo: null,
   ...patch,
 });
 

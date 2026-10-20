@@ -35,6 +35,8 @@ export type NotesDrop = {
 /** The import question of the view (`importFlow`). */
 export type Imports = {
   readonly busy: boolean;
+  /** Its question is open or on its way (the tree keeps the folders it is about). */
+  readonly waiting: boolean;
   plan(folder: string, paths: readonly string[], at: Point): Promise<void>;
   cancel(): void;
   discard(): void;
@@ -139,10 +141,13 @@ export class DropFlow {
     else this.#host.tree.over(null, null);
   }
 
+  /** The drag left the view without a drop. While an import question waits, only the mark goes: the folders it is
+   *  about stay open (they close when the question does). */
   leave(): void {
     this.#stopFrame();
     this.hover = null;
-    this.#host.tree.end(null);
+    if (this.#host.imports.waiting) this.#host.tree.over(null, null);
+    else this.#host.tree.end(null);
   }
 
   #stopFrame(): void {
@@ -181,7 +186,7 @@ export class DropFlow {
         return;
       case "notes":
         this.#host.tree.end(null);
-        await this.#notes(route.loose, route.open, at);
+        await this.#notes([...paths], at);
         return;
       case "open":
         this.#host.tree.end(null);
@@ -205,19 +210,27 @@ export class DropFlow {
     if (files.length > 0) this.#host.pictures(files, at);
   }
 
-  /** Loose files: where they are open already, else into the Notes; the others open as tabs. */
-  async #notes(loose: string[], open: string[], at: Point): Promise<void> {
+  /** The Notes tab: paths open somewhere come forward (one place); files PerMark opens as text become loose files
+   *  (the backend looks at each file: never a folder); folders and other files open as tabs. */
+  async #notes(paths: string[], at: Point): Promise<void> {
     const notes = this.notes;
-    if (loose.length > 0 && notes !== null) {
-      const placed = await this.#api.openDropped(loose, "existingOnly");
-      if (!placed.ok) {
-        this.#host.fail(placed.error);
-      } else {
-        this.#failed(placed.value.failed);
-        if (placed.value.left.length > 0) await notes.open(placed.value.left);
-      }
+    if (notes === null) {
+      await this.#open(paths, at);
+      return;
     }
-    await this.#open(open, at);
+    const placed = await this.#api.openDropped(paths, "existingOnly");
+    if (!placed.ok) {
+      this.#host.fail(placed.error);
+      return;
+    }
+    this.#failed(placed.value.failed);
+    const left = placed.value.left;
+    const text = left.filter((l) => l.text).map((l) => l.path);
+    if (text.length > 0) await notes.open(text);
+    await this.#open(
+      left.filter((l) => !l.text).map((l) => l.path),
+      at,
+    );
   }
 
   async #open(paths: string[], at: Point): Promise<void> {

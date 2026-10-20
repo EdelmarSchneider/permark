@@ -241,9 +241,44 @@ fn existing_only_brings_open_places_forward_and_hands_the_rest_back() {
         DropScope::ExistingOnly,
     );
     let (_, forward, answer) = f.run(dropped);
-    assert_eq!(answer.left, [new.display().to_string()]);
+    assert_eq!(
+        answer.left,
+        [LeftPath {
+            path: new.display().to_string(),
+            text: true
+        }]
+    );
     assert_eq!(forward.as_deref(), Some("w-1"));
     assert!(f.window("main").tabs.is_empty(), "nothing opened here");
+}
+
+#[test]
+fn existing_only_says_which_paths_open_as_text_never_folders() {
+    let f = fx();
+    let readme = f.dir.path().join("README");
+    std::fs::write(&readme, "plain words").unwrap();
+    let blob = f.dir.path().join("blob");
+    std::fs::write(&blob, [1u8, 0, 2]).unwrap();
+    let picture = f.file("p.png");
+    let folder = f.folder("notes.md");
+    let paths = [
+        f.file("a.md"),
+        f.file("c.yaml"),
+        f.file("d.json"),
+        f.file(".npmrc"),
+        readme,
+        blob,
+        picture,
+        folder,
+        f.file("e.pdf"),
+    ];
+    let dropped = open_dropped(&f.registry, "main", &paths, DropScope::ExistingOnly);
+    let (_, _, answer) = f.run(dropped);
+    let text: Vec<bool> = answer.left.iter().map(|l| l.text).collect();
+    assert_eq!(
+        text,
+        [true, true, true, true, true, false, false, false, false]
+    );
 }
 
 // ---- adversarial --------------------------------------------------------------------------------------------------
@@ -279,4 +314,54 @@ fn the_scope_reads_as_the_frontend_writes_it() {
     let tabs: DropScope = serde_json::from_str("\"tabs\"").unwrap();
     let existing: DropScope = serde_json::from_str("\"existingOnly\"").unwrap();
     assert_eq!((tabs, existing), (DropScope::Tabs, DropScope::ExistingOnly));
+}
+
+// ---- verifier (adversarial) -----------------------------------------------------------------------------------------
+
+/// One place: a file dropped in another spelling (verbatim prefix, other case) while it is open goes to its tab.
+#[cfg(windows)]
+#[test]
+fn verifier_another_spelling_of_an_open_file_goes_to_its_place() {
+    let f = fx();
+    let doc = f.file("a.md");
+    let there = f.open("w-1", &doc);
+    let verbatim = PathBuf::from(format!(r"\\?\{}", doc.display()));
+    let upper = PathBuf::from(doc.display().to_string().to_uppercase());
+    let (_, forward, answer) = f.drop_on("main", &[verbatim, upper]);
+    assert_eq!(answer.failed.len(), 0, "{:?}", answer.failed);
+    assert_eq!(forward.as_deref(), Some("w-1"));
+    assert_eq!(f.window("main").tabs.len(), 0, "no second tab");
+    assert_eq!(f.window("w-1").active, Some(there));
+}
+
+/// Hostile paths from the frontend: empty, NUL, drive-relative -> failures, never a panic or a tab.
+#[test]
+fn verifier_hostile_paths_fail_one_by_one() {
+    let f = fx();
+    let paths = [
+        PathBuf::from(""),
+        PathBuf::from("a\0b.md"),
+        PathBuf::from("C:a.md"),
+    ];
+    let (_, forward, answer) = f.drop_on("main", &paths);
+    assert_eq!(answer.failed.len(), paths.len(), "{:?}", answer.failed);
+    assert_eq!(forward, None);
+    assert_eq!(f.window("main").tabs.len(), 0);
+}
+
+/// A folder dropped together with a file inside it: the project tab opens; the file goes to that project (one place),
+/// not to a single-file tab beside it.
+#[test]
+fn verifier_a_folder_and_a_file_inside_it_make_one_tab() {
+    let f = fx();
+    let project = f.folder("proj");
+    let inside = f.file("proj/a.md");
+    let (_, _, answer) = f.drop_on("main", &[project, inside]);
+    assert_eq!(answer.failed.len(), 0);
+    assert_eq!(
+        f.window("main").tabs.len(),
+        1,
+        "{:?}",
+        f.window("main").tabs
+    );
 }

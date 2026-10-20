@@ -17,6 +17,7 @@ function setup(patch: (mock: ReturnType<typeof createMockApi>) => Partial<Api> =
   const pictures: { names: string[]; at: Point }[] = [];
   const imports = {
     busy: false,
+    waiting: false,
     planned: [] as { folder: string; paths: string[]; at: Point }[],
     plan(folder: string, paths: readonly string[], at: Point): Promise<void> {
       this.planned.push({ folder, paths: [...paths], at });
@@ -103,6 +104,13 @@ describe("while dragging", () => {
     s.flush();
     expect(s.flow.hover?.at).toEqual({ x: 999, y: 999 });
     expect(s.log).toEqual(["tree.over docs point"]);
+  });
+
+  it("leave while an import question waits: only the mark goes, its folders stay open", () => {
+    s.imports.waiting = true;
+    s.flow.over(1, 1, ["C:/a.md"]);
+    s.flow.leave();
+    expect(s.log).toEqual(["tree.over null -"]);
   });
 
   it("leave clears the badge, the pending frame and the tree's mark (folders it opened close)", () => {
@@ -259,9 +267,11 @@ describe("the drop", () => {
 });
 
 describe("the Notes tab", () => {
-  it("loose files: open elsewhere come forward, the rest into the Notes; folders open as tabs", async () => {
+  it("open elsewhere come forward; text files into the Notes; folders and other files open as tabs", async () => {
     s.show("notes");
     await s.mock.openPath("C:/open.md", "tab");
+    s.mock.probe.drops.folders.add("C:/folder");
+    s.mock.probe.drops.folders.add("C:/odd.md");
     const loose: string[][] = [];
     s.flow.notes = {
       takes: (p) => p.endsWith(".md"),
@@ -270,12 +280,31 @@ describe("the Notes tab", () => {
         return Promise.resolve();
       },
     };
-    await s.flow.drop(["C:/new.md", "C:/open.md", "C:/folder"], 1, 1);
+    const paths = [
+      "C:/new.md",
+      "C:/open.md",
+      "C:/folder",
+      "C:/odd.md",
+      "C:/c.yaml",
+      "C:/README",
+      "C:/p.zip",
+    ];
+    await s.flow.drop(paths, 1, 1);
     expect(s.mock.probe.drops.opened).toEqual([
-      { paths: ["C:/new.md", "C:/open.md"], scope: "existingOnly" },
-      { paths: ["C:/folder"], scope: "tabs" },
+      { paths, scope: "existingOnly" },
+      { paths: ["C:/folder", "C:/odd.md", "C:/p.zip"], scope: "tabs" },
     ]);
-    expect(loose).toEqual([["C:/new.md"]]);
+    expect(loose).toEqual([["C:/new.md", "C:/c.yaml", "C:/README"]]);
+  });
+
+  it("more than 8 tabs from a Notes drop ask first; the loose files went in already", async () => {
+    s.show("notes");
+    const loose: string[][] = [];
+    s.flow.notes = { takes: () => false, open: (p) => (loose.push(p), Promise.resolve()) };
+    const zips = Array.from({ length: 9 }, (_, n) => `C:/z/${n}.zip`);
+    await s.flow.drop(["C:/a.md", ...zips], 1, 1);
+    expect(loose).toEqual([["C:/a.md"]]);
+    expect(s.flow.ask).toMatchObject({ status: "asking", paths: zips });
   });
 
   it("pictures over the note's editor go into the note", async () => {

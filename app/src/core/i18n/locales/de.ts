@@ -1543,7 +1543,7 @@ export default {
   "import.taken.other": "{n} Namen sind hier schon vergeben:",
   "import.more.one": "und {n} weitere",
   "import.more.other": "und {n} weitere",
-  "import.takenLabel": "Wenn ein Name schon vergeben ist",
+  "import.takenLabel": "Wenn ein Name schon vergeben ist:",
   "import.keepBoth": "Beide behalten",
   "import.skip": "Überspringen",
   "import.keepBothHint": "Der neue bekommt eine Nummer, etwa Name (2).",
@@ -1589,6 +1589,8 @@ export default {
   "cmd.focus": "Fokusmodus",
   "focus.leave": "Fokusmodus beenden",
   "import.cancelledNone": "Angehalten. Es wurde nichts hinzugefügt.",
+  "import.undoGone":
+    "Dieser Import lässt sich nicht mehr rückgängig machen: Seine Dateien wurden inzwischen geändert.",
   "drop.badge.add.one": "{n} Element zu „{folder}“ hinzufügen",
   "drop.badge.add.other": "{n} Elemente zu „{folder}“ hinzufügen",
   "drop.badge.open.one": "In neuem Tab öffnen",

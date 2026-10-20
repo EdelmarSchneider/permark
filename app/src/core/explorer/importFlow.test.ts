@@ -13,6 +13,7 @@ function setup(api?: (mock: ReturnType<typeof createMockApi>) => Api) {
   const ends: (string | null)[] = [];
   const placed: string[][] = [];
   const counts = { undone: 0, focused: 0 };
+  const undoneIds: number[] = [];
   const host: ImportHost = {
     fail: (e) => failures.push(e),
     note: (text) => notes.push(text),
@@ -22,13 +23,14 @@ function setup(api?: (mock: ReturnType<typeof createMockApi>) => Api) {
     focus: () => (counts.focused += 1),
     end: (kept) => ends.push(kept),
     placed: (paths) => placed.push([...paths]),
-    undo: () => {
+    undo: (id) => {
       counts.undone += 1;
+      undoneIds.push(id);
       return Promise.resolve();
     },
   };
   const flow = new ImportFlow(api ? api(mock) : mock, host);
-  return { mock, flow, notes, actions, failures, ends, placed, counts };
+  return { mock, flow, notes, actions, failures, ends, placed, counts, undoneIds };
 }
 
 let s: Setup;
@@ -196,6 +198,39 @@ describe("the import", () => {
     expect(s.actions[0]?.labels).toEqual(["Undo"]);
     s.actions[0]?.run[0]?.();
     expect(s.counts.undone).toBe(1);
+  });
+
+  it("the notice's Undo names this import, so a newer operation is not what it takes back", async () => {
+    await dropped(["C:/out/a.md"]);
+    await s.flow.confirm("copy");
+    await dropped(["C:/out/b.md"]);
+    await s.flow.confirm("copy");
+    s.actions[0]?.run[0]?.();
+    s.actions[1]?.run[0]?.();
+    expect(s.undoneIds).toHaveLength(2);
+    expect(s.undoneIds[0]).not.toBe(s.undoneIds[1]);
+    // the mock takes back exactly the first one
+    const first = s.undoneIds[0] ?? 0;
+    expect((await s.mock.undoFileOpEntry(first)).ok).toBe(true);
+    expect(s.mock.probe.project.exists("docs/a.md")).toBe(false);
+    expect(s.mock.probe.project.exists("docs/b.md")).toBe(true);
+    // asked again: gone
+    const again = await s.mock.undoFileOpEntry(first);
+    expect(again.ok && again.value).toBeNull();
+  });
+
+  it("an import that could not be journaled says what happened, with no Undo", async () => {
+    s = setup((mock) => ({
+      ...mock,
+      applyImport: async (...args: Parameters<typeof mock.applyImport>) => {
+        const result = await mock.applyImport(...args);
+        return result.ok ? { ok: true, value: { ...result.value, undo: null } } : result;
+      },
+    }));
+    await s.flow.plan("docs", ["C:/out/a.md"], AT);
+    await s.flow.confirm("copy");
+    expect(s.actions).toHaveLength(0);
+    expect(s.notes.at(-1)).toBe("Copied 1 item to “docs”.");
   });
 
   it("moves when the person says Move here", async () => {

@@ -2,7 +2,7 @@
 
 import { api } from "../../api";
 import { windowStore } from "../window.svelte";
-import { treeDrop, undoInTree } from "./current";
+import { treeDrop, undoEntryInTree } from "./current";
 import { ImportFlow } from "./importFlow.svelte";
 
 export const importFlow = new ImportFlow(api, {
@@ -16,5 +16,5 @@ export const importFlow = new ImportFlow(api, {
   focus: () => void api.focusView(),
   end: treeDrop.end,
   placed: treeDrop.placed,
-  undo: undoInTree,
+  undo: undoEntryInTree,
 });

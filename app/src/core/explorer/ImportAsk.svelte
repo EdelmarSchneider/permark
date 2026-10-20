@@ -54,11 +54,11 @@
     <section class="block" aria-labelledby="import-ask-taken">
       <p id="import-ask-taken" class="line">{tn("import.taken", taken.length)}</p>
       <p class="line names">{firstOf(taken, SHOWN_NAMES)}</p>
-      <p class="line">{t("import.takenLabel")}:</p>
+      <p id="import-ask-choice" class="line">{t("import.takenLabel")}</p>
       <Segments
         options={choices}
         value={conflicts}
-        label={t("import.takenLabel")}
+        labelledby="import-ask-choice"
         onchange={setConflicts}
       />
       <p class="line muted hint">
@@ -69,7 +69,7 @@
 
   {#if plan !== null && plan.refused.length > 0}
     <section class="block muted" aria-labelledby="import-ask-refused">
-      <p id="import-ask-refused" class="line">{tn("import.refused", plan.refused.length)}:</p>
+      <p id="import-ask-refused" class="line">{tn("import.refused", plan.refused.length)}</p>
       <ul>
         {#each plan.refused.slice(0, SHOWN_REFUSED) as item (item.source)}
           <li title={item.source}>{item.name} {refusalText(item.reason)}</li>

@@ -217,7 +217,7 @@ describe("marks", () => {
 });
 
 describe("a drop on the Notes tab", () => {
-  it("lists Markdown and plain text as loose files; the rest opens as tabs", () => {
+  it("guesses by name: text formats and names without extension are loose files; the rest opens as tabs", () => {
     for (const path of [
       "C:/a.md",
       "C:/b.MARKDOWN",
@@ -225,10 +225,17 @@ describe("a drop on the Notes tab", () => {
       "d e.mdx",
       "C:\\文档\\f.log",
       "g.rst",
+      "h.yaml",
+      "i.json",
+      "j.CSV",
+      ".env",
+      ".gitignore",
+      "README",
+      "C:/x/LICENSE",
     ]) {
       expect(isLooseFile(path), path).toBe(true);
     }
-    for (const path of ["C:/folder", "a.png", "b.json", "c.md.exe", "d.pdf", ""]) {
+    for (const path of ["a.png", "c.md.exe", "d.pdf", "e.zip", "", "C:/dir/"]) {
       expect(isLooseFile(path), path).toBe(false);
     }
   });

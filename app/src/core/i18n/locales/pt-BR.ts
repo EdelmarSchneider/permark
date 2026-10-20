@@ -1519,7 +1519,7 @@ export default {
   "import.taken.other": "{n} nomes já existem aqui:",
   "import.more.one": "e mais {n}",
   "import.more.other": "e mais {n}",
-  "import.takenLabel": "Se um nome já existir",
+  "import.takenLabel": "Se um nome já existir:",
   "import.keepBoth": "Manter os dois",
   "import.skip": "Pular",
   "import.keepBothHint": "O novo recebe um número, como nome (2).",
@@ -1564,6 +1564,8 @@ export default {
   "cmd.focus": "Modo de foco",
   "focus.leave": "Sair do modo de foco",
   "import.cancelledNone": "Interrompido. Nada foi adicionado.",
+  "import.undoGone":
+    "Esta importação não pode mais ser desfeita: os arquivos dela mudaram desde então.",
   "drop.badge.add.one": "Adicionar {n} item a “{folder}”",
   "drop.badge.add.other": "Adicionar {n} itens a “{folder}”",
   "drop.badge.open.one": "Abrir em uma nova aba",

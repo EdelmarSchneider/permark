@@ -387,16 +387,14 @@ impl FileOps {
         *lock(&self.journal) = store.file::<Journal>(JOURNAL_FILE);
     }
 
-    fn record(&self, op: Op) {
+    /// Journals an operation; its id. `None`: the journal could not be written (best effort: the operation is done all
+    /// the same, just not undoable).
+    fn record(&self, op: Op) -> Option<u64> {
         self.note(&op, false);
         let file = lock(&self.journal);
         let mut journal = file.load().into_value();
-        journal.push(Entry {
-            at_ms: now_ms(),
-            op,
-        });
-        // best effort: an operation that cannot be journaled is done all the same, just not undoable
-        let _ = file.save(&journal);
+        let id = journal.push(now_ms(), op);
+        file.save(&journal).ok().map(|()| id)
     }
 
     /// Entries the next undo would take back (newest first count).
@@ -752,10 +750,26 @@ impl FileOps {
     /// # Errors
     /// Only when the journal cannot be written; what could not be put back is in the outcome.
     pub fn undo(&self) -> Result<Option<UndoOutcome>, FileOpError> {
+        self.undo_with(|journal| journal.entries.pop())
+    }
+
+    /// Takes back exactly the operation `id` (a notice's Undo), also when newer ones followed, unless one of them
+    /// touched its paths. `None`: gone (undone, dropped from the journal) or no longer safe to take back.
+    ///
+    /// # Errors
+    /// Only when the journal cannot be written; what could not be put back is in the outcome.
+    pub fn undo_entry(&self, id: u64) -> Result<Option<UndoOutcome>, FileOpError> {
+        self.undo_with(|journal| journal.take(id))
+    }
+
+    fn undo_with(
+        &self,
+        pick: impl FnOnce(&mut Journal) -> Option<Entry>,
+    ) -> Result<Option<UndoOutcome>, FileOpError> {
         let entry = {
             let file = lock(&self.journal);
             let mut journal = file.load().into_value();
-            let Some(entry) = journal.entries.pop() else {
+            let Some(entry) = pick(&mut journal) else {
                 return Ok(None);
             };
             file.save(&journal).map_err(|e| FileOpError::Io {

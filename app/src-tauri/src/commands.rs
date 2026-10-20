@@ -424,6 +424,16 @@ pub fn fileops_undo(handle: AppHandle, window: Webview) -> Result<Option<UndoOut
     Ok(project_of(&handle, &window)?.fileops().undo()?)
 }
 
+/// Takes back exactly the operation `id` (an import notice's Undo); `None`: gone, or touched by a newer operation.
+#[tauri::command(async)]
+pub fn fileops_undo_entry(
+    handle: AppHandle,
+    window: Webview,
+    id: u64,
+) -> Result<Option<UndoOutcome>, IpcError> {
+    Ok(project_of(&handle, &window)?.fileops().undo_entry(id)?)
+}
+
 // ---- Explorer: files dropped in from outside --------------------------------------------------------------------------
 
 /// What dropping files | folders from the system onto a folder of the project would do. Nothing is touched.
@@ -1286,6 +1296,7 @@ commands![
     fileops_delete,
     fileops_new,
     fileops_undo,
+    fileops_undo_entry,
     fileops_import_plan,
     fileops_import_apply,
     fileops_import_cancel,

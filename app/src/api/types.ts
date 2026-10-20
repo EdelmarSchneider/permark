@@ -300,6 +300,7 @@ export interface Commands {
   fileops_delete: { args: { paths: string[] }; result: DeleteOutcome };
   fileops_new: { args: { dir: string; name: string; kind: NewKind }; result: string };
   fileops_undo: { args: Record<string, never>; result: UndoOutcome | null };
+  fileops_undo_entry: { args: { id: number }; result: UndoOutcome | null };
   fileops_import_plan: { args: { target: string; sources: string[] }; result: ImportPlan };
   fileops_import_apply: {
     args: { planId: number; mode: ImportMode; conflicts: ConflictChoice };
@@ -736,6 +737,8 @@ export interface Api {
   newEntry(dir: string, name: string, kind: NewKind): Promise<Result<string>>;
   /** Takes the newest file operation back; `null` = nothing to undo. */
   undoFileOp(): Promise<Result<UndoOutcome | null>>;
+  /** Takes back exactly the operation `id` (an import notice's Undo); `null`: gone, or a newer operation touched it. */
+  undoFileOpEntry(id: number): Promise<Result<UndoOutcome | null>>;
   /** What dropping files | folders from outside onto `target` (a project folder) would do. Touches nothing. */
   planImport(target: string, sources: string[]): Promise<Result<ImportPlan>>;
   /** Does what the plan listed; resolves when done (progress arrives as `import-progress`). */

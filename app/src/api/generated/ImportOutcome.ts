@@ -25,4 +25,8 @@ leftBehind: number, cancelled: boolean,
 /**
  * Project paths of the items put in place, in drop order (the Explorer selects them).
  */
-placed: Array<string>, };
+placed: Array<string>, 
+/**
+ * The journal entry that takes this import back (`fileops_undo_entry`); `None`: nothing came in, or not journaled.
+ */
+undo: number | null, };
