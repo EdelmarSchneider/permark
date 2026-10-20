@@ -63,6 +63,8 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("fmt-dotenv", "format", "app"),
   manifest("fmt-properties", "format", "app"),
   manifest("fmt-ignore", "format", "app"),
+  manifest("fmt-toon", "format", "app"),
+  { ...manifest("convert", "feature", "app", ["fmt-toon"]), defaultEnabled: false },
   manifest("text-view", "format", "app"),
   {
     ...manifest("shell-integration", "feature", "app"),

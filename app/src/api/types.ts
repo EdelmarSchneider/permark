@@ -11,6 +11,12 @@ import type { ShellState } from "./generated/ShellState";
 import type { UpdateState } from "./generated/UpdateState";
 import type { CountResult } from "./generated/CountResult";
 import type { TokenCountState } from "./generated/TokenCountState";
+import type { Analysis } from "./generated/Analysis";
+import type { ConvertAnswer } from "./generated/ConvertAnswer";
+import type { TargetView } from "./generated/TargetView";
+import type { Problem } from "./generated/Problem";
+import type { Table } from "./generated/Table";
+import type { TableRow } from "./generated/TableRow";
 import type { ContextChanged } from "./generated/ContextChanged";
 import type { CloseRequested } from "./generated/CloseRequested";
 import type { OpenIn } from "./generated/OpenIn";
@@ -456,7 +462,25 @@ export interface PluginMethods {
     args: { tokenizers: string[]; text: string; parts?: [number, number][] };
     result: CountResult[];
   };
+  "fmt-toon.toJson": { args: { text: string }; result: string };
+  "convert.analyze": {
+    args: { job: number; source: ConvertSource; from?: string };
+    result: ConvertAnswer;
+  };
+  "convert.result": {
+    args: { job: number; target: string; confirmed?: boolean };
+    result: string;
+  };
+  "convert.save": {
+    args: { job: number; target: string; confirmed?: boolean; beside?: string };
+    result: string;
+  };
+  "convert.cancel": { args: { job: number }; result: null };
+  "convert.close": { args: { job: number }; result: null };
 }
+
+/** What the converter reads: a file of the workspace, or a text from the page. */
+export type ConvertSource = { kind: "file"; path: string } | { kind: "text"; text: string };
 export type PluginMethod = keyof PluginMethods;
 
 /** Events of project plugins: `{ root, data }` (the folder they are about; a window keeps its own). */
@@ -483,6 +507,7 @@ export interface AppPluginEvents {
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
 export type { CountResult, TokenCountState };
+export type { Analysis, ConvertAnswer, TargetView, Problem, Table, TableRow };
 export type { VocabEntry } from "./generated/VocabEntry";
 export type { VocabFailure } from "./generated/VocabFailure";
 export type { VocabState } from "./generated/VocabState";

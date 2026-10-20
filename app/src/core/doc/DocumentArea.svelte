@@ -246,12 +246,16 @@
         {#if view.notes.length > 0}
           <p class="notes">
             {#each view.notes as note, at (note)}{at > 0 ? " · " : ""}{t(
-                note === "utf16"
-                  ? "note.utf16"
-                  : note === "lossy"
-                    ? "note.lossy"
-                    : "note.deepNesting",
+                NOTES[note] ?? "note.parseError",
               )}{/each}
+            {#if view.body.kind === "text" && view.body.problem}
+              {@const problem = view.body.problem}
+              <span class="problem">
+                ·
+                {problem.line > 0 ? t("note.problemAt", { line: problem.line }) : ""}
+                <code>{problem.detail}</code>
+              </span>
+            {/if}
           </p>
         {/if}
 
@@ -397,6 +401,10 @@
     padding: 0 var(--sp-5);
     color: var(--muted);
     font-size: var(--fs-ui-sm);
+  }
+  .problem code {
+    font-family: var(--font-code);
+    overflow-wrap: anywhere;
   }
   .banner {
     display: flex;

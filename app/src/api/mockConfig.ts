@@ -211,6 +211,15 @@ function editLines(
       lines.splice(Math.min(after + 1, last), 0, edit.text);
       break;
     }
+    // the data edits (keys, fields, rows) are the TOON format's: the backend makes them
+    case "rename":
+    case "renameField":
+    case "addKey":
+    case "addRow":
+    case "removeRow":
+    case "duplicateRow":
+    case "moveRow":
+      return refused("config_edit", path, "unsupported", "unsupported");
     default:
       return edit satisfies never;
   }

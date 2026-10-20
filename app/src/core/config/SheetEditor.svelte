@@ -91,6 +91,7 @@
   const remove = (path: string): Promise<string | null> => apply({ op: "remove", path });
   const add = (after: string | null, line: string): Promise<string | null> =>
     apply({ op: "insert", after, text: line });
+  const edit = (change: ConfigEdit): Promise<string | null> => apply(change);
 </script>
 
 {#if sheet}
@@ -100,6 +101,7 @@
     {commit}
     {remove}
     {add}
+    {edit}
     source={(line) => void session.switchTo("source", line)}
     matches={sheet.kind === "ignore" ? matches.counts : null}
     capped={matches.capped}

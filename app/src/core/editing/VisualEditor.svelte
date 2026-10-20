@@ -54,6 +54,7 @@
     math: "edit.locked.math",
     footnote: "edit.locked.footnote",
     diagram: "edit.locked.diagram",
+    data: "edit.locked.data",
     definition: "edit.locked.definition",
     kind: "edit.locked.kind",
     parse: "edit.locked.parse",

@@ -49,6 +49,7 @@ export type LockReason =
   | "math"
   | "footnote"
   | "diagram"
+  | "data"
   | "definition"
   | "kind"
   | "parse"

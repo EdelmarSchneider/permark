@@ -4,6 +4,7 @@
   import Check from "@lucide/svelte/icons/check";
   import Copy from "@lucide/svelte/icons/copy";
   import { findCodeSecrets, MASK } from "../../core/config/secrets";
+  import CodeActions from "../../core/doc/CodeActions.svelte";
   import { t } from "../../core/i18n";
   import type { EmbedProps } from "../../core/plugins/props";
   import { highlightFence, type CodeOutcome } from "./highlighter";
@@ -91,32 +92,42 @@
 <pre onclick={reveal}><code
     >{#if html !== null}{@html html}{:else}{source}{/if}</code
   ></pre>
-{#if outcome.label}
-  <span
-    class="lang"
-    title={outcome.label.auto ? t("doc.codeAutoHint") : undefined}
-    class:is-guess={outcome.label.auto}
+<div class="corner">
+  {#if outcome.label}
+    <span
+      class="lang"
+      title={outcome.label.auto ? t("doc.codeAutoHint") : undefined}
+      class:is-guess={outcome.label.auto}
+    >
+      {outcome.label.auto ? t("doc.codeAuto", { name: outcome.label.name }) : outcome.label.name}
+    </span>
+  {/if}
+  {#if info !== ""}<CodeActions {source} language={info} />{/if}
+  <button
+    type="button"
+    class="icon-btn icon-btn--sm copy"
+    class:is-done={copied}
+    aria-label={t("doc.copyCode")}
+    title={t("doc.copyCode")}
+    onclick={() => void copy()}
   >
-    {outcome.label.auto ? t("doc.codeAuto", { name: outcome.label.name }) : outcome.label.name}
-  </span>
-{/if}
-<button
-  type="button"
-  class="icon-btn icon-btn--sm copy"
-  class:is-done={copied}
-  aria-label={t("doc.copyCode")}
-  title={t("doc.copyCode")}
-  onclick={() => void copy()}
->
-  {#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
-</button>
+    {#if copied}<Check size={14} />{:else}<Copy size={14} />{/if}
+  </button>
+</div>
 
 <style>
-  /* the language in the corner, left of the copy button; muted (not faint) so it keeps AA contrast on the surface */
-  .lang {
+  /* the language, the plugins' buttons and Copy in the corner */
+  .corner {
     position: absolute;
     top: 3px;
-    right: 42px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+  /* muted (not faint) so it keeps AA contrast on the surface */
+  .lang {
+    margin-right: 6px;
     padding: 0 4px;
     border-radius: 4px;
     background: var(--surface);
@@ -129,14 +140,14 @@
     pointer-events: auto;
     cursor: help;
   }
-  .copy {
-    position: absolute;
-    top: 5px;
-    right: 6px;
+  .copy,
+  .corner :global(.code-action) {
     opacity: 0;
     transition: opacity var(--dur-fast);
   }
   :global(.code-block:hover) .copy,
+  :global(.code-block:hover) .corner :global(.code-action),
+  .corner :global(.code-action:focus-visible),
   .copy:focus-visible,
   .copy.is-done {
     opacity: 1;

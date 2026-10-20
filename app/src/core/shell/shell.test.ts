@@ -238,7 +238,7 @@ describe("the plugins page", () => {
 
   it("every plugin is listed once, grouped by kind, with its switch on", async () => {
     await pluginsPage();
-    expect(target.querySelectorAll(".plugin")).toHaveLength(32);
+    expect(target.querySelectorAll(".plugin")).toHaveLength(34);
     const groups = Array.from(target.querySelectorAll("section.group h3")).map(
       (h) => h.textContent,
     );
@@ -250,11 +250,11 @@ describe("the plugins page", () => {
       "Checkers",
       "Blocks in Markdown",
     ]);
-    // on by default, except the specialist tool that starts off
+    // on by default, except the specialist tools that start off
     const off = Array.from(target.querySelectorAll<HTMLInputElement>('input[role="switch"]'))
       .filter((i) => !i.checked)
       .map((i) => i.closest(".plugin")?.querySelector(".name")?.textContent?.trim());
-    expect(off).toEqual(["Token count"]);
+    expect(off).toEqual(["Converter", "Token count"]);
   });
 
   it("turning a plugin off turns its dependents off with a reason and a way back", async () => {

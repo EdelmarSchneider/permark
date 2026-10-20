@@ -7,4 +7,5 @@ export const SHEET_FORMATS: ReadonlySet<string> = new Set([
   "dotenv",
   "properties",
   "ignore",
+  "toon",
 ]);

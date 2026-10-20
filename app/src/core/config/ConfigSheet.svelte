@@ -1,8 +1,8 @@
 <script lang="ts">
   // A small configuration file as a sheet: a card per table | mapping | section, a row per key with its value and
   // the comment that sits with it. Secret values are masked; a part that cannot be edited exactly says why. In Edit
-  // mode values take typing; an ignore file also takes new lines and deleted lines. "Edit in Source" jumps to the
-  // line.
+  // mode values take typing; an ignore file also takes new lines and deleted lines; a data file (TOON) also takes
+  // new key names, new and removed keys, and its tables take rows. "Edit in Source" jumps to the line.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import CodeXml from "@lucide/svelte/icons/code-xml";
@@ -11,10 +11,11 @@
   import Lock from "@lucide/svelte/icons/lock";
   import Plus from "@lucide/svelte/icons/plus";
   import Trash from "@lucide/svelte/icons/trash";
-  import type { Group, NewValue, Row, Scalar, Sheet } from "../../api";
+  import type { ConfigEdit, Group, NewValue, Row, Scalar, Sheet, Table } from "../../api";
   import { t, tn } from "../i18n";
   import { reasonKey, refusalKey } from "./reasons";
   import { MASK } from "./secrets";
+  import SheetTable from "./SheetTable.svelte";
   import SheetValue from "./SheetValue.svelte";
 
   type Props = {
@@ -26,6 +27,8 @@
     remove?: (path: string) => Promise<string | null>;
     /** Ignore files: adds a pattern after a row (`null`: at the end). */
     add?: (after: string | null, text: string) => Promise<string | null>;
+    /** Data sheets: any other edit (a key name, a new | removed key, table rows). */
+    edit?: (edit: ConfigEdit) => Promise<string | null>;
     /** Puts the person in Source at a line (`null`: the document cannot be edited). */
     source: ((line: number) => void) | null;
     /** Ignore files: how many project files each pattern matches, by line. */
@@ -38,6 +41,7 @@
     commit = () => Promise.resolve("unsupported"),
     remove = () => Promise.resolve("unsupported"),
     add = () => Promise.resolve("unsupported"),
+    edit = () => Promise.resolve("unsupported"),
     source,
     matches = null,
     capped = false,
@@ -51,6 +55,14 @@
   let addRefusal = $state<string | null>(null);
 
   const ignore = $derived(sheet.kind === "ignore");
+  const data = $derived(sheet.kind === "data");
+  /** A key being renamed (by row path), a key being added (by object path), and what was typed. */
+  let renaming = $state<string | null>(null);
+  let renameText = $state("");
+  let addingKey = $state<string | null>(null);
+  let newKey = $state("");
+  let newValue = $state("");
+  let dataRefusal = $state<{ at: string; word: string } | null>(null);
   const headed = $derived(sheet.groups.length > 1 || sheet.groups.some((g) => g.title !== ""));
 
   function toggle(set: ReadonlySet<string>, key: string): ReadonlySet<string> {
@@ -113,7 +125,124 @@
   const reveal = (path: string): void => {
     revealed = toggle(revealed, path);
   };
+
+  /** The table a card holds alone (a TOON table is its own card). */
+  function tableOf(group: Group): Table | null {
+    const only = group.rows.length === 1 ? group.rows[0] : undefined;
+    return only?.value.type === "table" && only.path === group.path ? only.value : null;
+  }
+
+  /** An item of a list (`[2]`): it has no key of its own to rename or remove. */
+  const isItem = (row: Row): boolean => /^\[\d+\]$/.test(row.key) && row.path.endsWith(row.key);
+
+  /** Whether a card is an object that takes new keys (not a table, not a list). */
+  const takesKeys = (group: Group): boolean =>
+    tableOf(group) === null && !group.rows.some((r) => isItem(r));
+
+  async function runData(at: string, change: ConfigEdit): Promise<boolean> {
+    const word = await edit(change);
+    dataRefusal = word === null ? null : { at, word };
+    return word === null;
+  }
+
+  async function finishRename(row: Row): Promise<void> {
+    renaming = null;
+    const text = renameText.trim();
+    if (text === "" || text === row.key) return;
+    await runData(row.path, { op: "rename", path: row.path, key: text });
+  }
+
+  /** A typed value: a number, `true | false | null` as written; anything else is text. */
+  function typed(text: string): NewValue {
+    return /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?$/.test(text) ||
+      ["true", "false", "null"].includes(text)
+      ? { type: "literal", text }
+      : { type: "text", text };
+  }
+
+  async function submitKey(): Promise<void> {
+    const parent = addingKey;
+    if (parent === null) return;
+    const key = newKey.trim();
+    if (key === "") {
+      addingKey = null;
+      return;
+    }
+    const done = await runData(`add:${parent}`, {
+      op: "addKey",
+      parent,
+      key,
+      value: typed(newValue),
+    });
+    if (done) addingKey = null;
+  }
+
+  function onKeyField(event: KeyboardEvent, finish: () => void, cancel: () => void): void {
+    if (event.isComposing) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      cancel();
+    }
+  }
 </script>
+
+{#snippet addKeyForm(parent: string)}
+  {#if addingKey === parent}
+    <div class="add-key">
+      <input
+        class="field"
+        placeholder={t("config.data.keyPlaceholder")}
+        aria-label={t("config.data.newKey")}
+        spellcheck="false"
+        bind:value={newKey}
+        onkeydown={(e) =>
+          onKeyField(
+            e,
+            () => void submitKey(),
+            () => (addingKey = null),
+          )}
+        use:focusOnMount
+      />
+      <input
+        class="field"
+        placeholder={t("config.data.valuePlaceholder")}
+        aria-label={t("config.data.newValue")}
+        spellcheck="false"
+        bind:value={newValue}
+        onkeydown={(e) =>
+          onKeyField(
+            e,
+            () => void submitKey(),
+            () => (addingKey = null),
+          )}
+      />
+      <button type="button" class="btn btn--sm" onclick={() => void submitKey()}>
+        {t("config.data.add")}
+      </button>
+    </div>
+  {:else}
+    <button
+      type="button"
+      class="btn btn--sm add-key-btn"
+      onclick={() => {
+        addingKey = parent;
+        newKey = "";
+        newValue = "";
+        dataRefusal = null;
+      }}
+    >
+      <Plus size={14} />
+      {t("config.data.addKey")}
+    </button>
+  {/if}
+  {#if dataRefusal?.at === `add:${parent}`}
+    <p class="refusal" role="alert">{t(refusalKey(dataRefusal.word))}</p>
+  {/if}
+{/snippet}
 
 {#snippet sourceButton(line: number)}
   {#if source}
@@ -133,6 +262,7 @@
   {#each sheet.groups as group (groupKey(group))}
     {@const open = !folded.has(groupKey(group))}
     {@const [parent, last] = split(group.title)}
+    {@const table = tableOf(group)}
     <section class="card">
       {#if headed}
         <header>
@@ -157,7 +287,9 @@
           {#if group.comment}<p class="caption">{group.comment}</p>{/if}
         </header>
       {/if}
-      {#if open}
+      {#if open && table}
+        <SheetTable {table} {editable} {revealed} {reveal} {commit} {edit} />
+      {:else if open}
         <div class="rows">
           {#each group.rows as row (row.path + "@" + row.line)}
             {@const value = row.value}
@@ -222,7 +354,37 @@
                   {@render sourceButton(row.line)}
                 </span>
               {:else}
-                <span class="key" title={row.path}>{row.key === "" ? "—" : row.key}</span>
+                {#if renaming === row.path}
+                  <input
+                    class="field key-field"
+                    aria-label={t("config.data.renameKey", { key: row.key })}
+                    spellcheck="false"
+                    bind:value={renameText}
+                    onkeydown={(e) =>
+                      onKeyField(
+                        e,
+                        () => void finishRename(row),
+                        () => (renaming = null),
+                      )}
+                    onblur={() => void finishRename(row)}
+                    use:focusOnMount
+                  />
+                {:else if data && editable && row.key !== "" && !isItem(row) && value.type !== "raw"}
+                  <button
+                    type="button"
+                    class="key key-btn"
+                    title={t("config.data.renameKey", { key: row.key })}
+                    onclick={() => {
+                      renaming = row.path;
+                      renameText = row.key;
+                      dataRefusal = null;
+                    }}
+                  >
+                    {row.key}
+                  </button>
+                {:else}
+                  <span class="key" title={row.path}>{row.key === "" ? "—" : row.key}</span>
+                {/if}
                 <div class="body">
                   {#if value.type === "scalar"}
                     <SheetValue
@@ -248,6 +410,8 @@
                         </span>
                       {/each}
                     </span>
+                  {:else if value.type === "table"}
+                    <SheetTable table={value} {editable} {revealed} {reveal} {commit} {edit} />
                   {:else}
                     {@const masked = value.secret && !revealed.has(row.path)}
                     <span class="rawbox">
@@ -270,8 +434,24 @@
                     </span>
                   {/if}
                   {#if row.comment}<p class="note">{row.comment}</p>{/if}
+                  {#if dataRefusal?.at === row.path}
+                    <p class="refusal" role="alert">{t(refusalKey(dataRefusal.word))}</p>
+                  {/if}
                 </div>
-                <span class="tools">{@render sourceButton(row.line)}</span>
+                <span class="tools">
+                  {#if data && editable && !isItem(row) && (value.type === "scalar" || value.type === "list")}
+                    <button
+                      type="button"
+                      class="icon-btn icon-btn--sm"
+                      title={t("config.data.removeKey", { key: row.key })}
+                      aria-label={t("config.data.removeKey", { key: row.key })}
+                      onclick={() => void runData(row.path, { op: "remove", path: row.path })}
+                    >
+                      <Trash size={14} />
+                    </button>
+                  {/if}
+                  {@render sourceButton(row.line)}
+                </span>
               {/if}
             </div>
             {#if adding === row.path}
@@ -294,10 +474,16 @@
               </div>
             {/if}
           {/each}
+          {#if data && editable && takesKeys(group)}
+            <div class="row end-row">{@render addKeyForm(group.path)}</div>
+          {/if}
         </div>
       {/if}
     </section>
   {/each}
+  {#if data && editable && !sheet.groups.some((g) => g.path === "")}
+    <div class="end">{@render addKeyForm("")}</div>
+  {/if}
   {#if ignore && editable}
     <div class="end">
       {#if adding === ""}
@@ -329,6 +515,9 @@
   {/if}
   {#if sheet.groups.length === 0}
     <p class="blank">{t("config.nothing")}</p>
+  {/if}
+  {#if sheet.spec}
+    <p class="spec" title={t("config.data.specHint")}>{sheet.spec}</p>
   {/if}
 </div>
 
@@ -493,6 +682,48 @@
     margin: var(--sp-6) 0;
     color: var(--muted);
     text-align: center;
+  }
+  .spec {
+    align-self: flex-end;
+    margin: 0;
+    color: var(--faint);
+    font: var(--fs-ui-xs) / 1.4 var(--font-code);
+  }
+  .key-btn {
+    justify-self: start;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: text;
+    border-radius: 3px;
+  }
+  .key-btn:hover {
+    background: var(--hover);
+  }
+  .key-btn:focus-visible {
+    outline: 2px solid var(--accent);
+  }
+  .key-field {
+    min-width: 0;
+    font-family: var(--font-code);
+  }
+  .end-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .add-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    align-items: center;
+  }
+  .add-key .field {
+    flex: 1 1 10em;
+    min-width: 0;
+    font-family: var(--font-code);
+  }
+  .add-key-btn {
+    justify-self: start;
   }
   @media (max-width: 560px) {
     .row {

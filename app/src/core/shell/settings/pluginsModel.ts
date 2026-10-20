@@ -35,6 +35,8 @@ export const KNOWN_PLUGINS = [
   "fmt-dotenv",
   "fmt-properties",
   "fmt-ignore",
+  "fmt-toon",
+  "convert",
   "text-view",
   "shell-integration",
   "updates",

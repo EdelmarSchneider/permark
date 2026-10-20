@@ -8,6 +8,7 @@ import type { createMockOrganizing } from "./mockOrganizing";
 import type { createMockNotes, NotesProbe } from "./mockNotes";
 import type { createMockDistribution } from "./mockDistribution";
 import type { createMockTokens } from "./mockTokens";
+import type { createMockConvert } from "./mockConvert";
 import type { ReviewChange } from "./generated/ReviewChange";
 import type {
   BaselineKind,
@@ -78,7 +79,8 @@ export function createMockPlugins(
   organizing: ReturnType<typeof createMockOrganizing>,
   notes: ReturnType<typeof createMockNotes>,
   distribution: ReturnType<typeof createMockDistribution>["handlers"] &
-    ReturnType<typeof createMockTokens>["handlers"],
+    ReturnType<typeof createMockTokens>["handlers"] &
+    ReturnType<typeof createMockConvert>["handlers"],
 ): {
   call<M extends PluginMethod>(
     method: M,

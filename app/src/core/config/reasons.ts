@@ -18,6 +18,7 @@ const REASONS: Readonly<Record<string, MessageKey>> = {
   noValue: "config.reason.noValue",
   empty: "config.reason.empty",
   unterminated: "config.reason.unterminated",
+  firstField: "config.reason.firstField",
 };
 
 const REFUSALS: Readonly<Record<string, MessageKey>> = {
@@ -33,6 +34,7 @@ const REFUSALS: Readonly<Record<string, MessageKey>> = {
   continuation: "config.refused.continuation",
   notFound: "config.refused.notFound",
   unsupported: "config.refused.unsupported",
+  duplicate: "config.refused.duplicate",
 };
 
 /** Why a part is read only. */

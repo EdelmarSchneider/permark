@@ -141,6 +141,15 @@ export type Contribution = Owned &
       }
     | { kind: "editor"; id: string; claims: (name: string) => boolean; view: LazyComponent }
     | { kind: "embed"; id: string; language: string; view: LazyComponent<EmbedProps> }
+    /** A button next to Copy on a fenced code block whose language it takes (convert the block). */
+    | {
+        kind: "codeAction";
+        id: string;
+        label: MessageKey;
+        icon: Component<{ size?: number }>;
+        applies: (language: string) => boolean;
+        run: (source: string, language: string) => void;
+      }
     | { kind: "frontMatterCard"; id: string; view: LazyComponent<FrontMatterProps> }
   );
 

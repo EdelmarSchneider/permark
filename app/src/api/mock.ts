@@ -9,6 +9,7 @@ import { mockAssetUrl, mockLinkTarget, mockNoteView, mockView } from "./mockDocs
 import { createMockConfig } from "./mockConfig";
 import { createMockDistribution, type DistributionProbe } from "./mockDistribution";
 import { createMockTokens, type TokensProbe } from "./mockTokens";
+import { createMockConvert, type ConvertProbe } from "./mockConvert";
 import { createMockEditing, type MockEditProbe } from "./mockEdit";
 import { createMockImport, type ImportProbe } from "./mockImport";
 import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
@@ -153,6 +154,8 @@ export type MockProbe = {
   distribution: DistributionProbe;
   /** The token count plugin: vocabularies, what it was asked to count. */
   tokens: TokensProbe;
+  /** The converter: the next answer, calls, saved files. */
+  convert: ConvertProbe;
   /** Drop into project: what lies outside, the plans and applies, a hold to keep one running. */
   imports: ImportProbe;
   /** Picture files read for a drop on an editor, by path. */
@@ -282,12 +285,13 @@ export function createMockApi(): Api & {
   const tokens = createMockTokens((event, payload) => {
     for (const handler of appListeners[event]) handler(payload);
   });
+  const convert = createMockConvert((path) => editing.probe.files.get(path) ?? null);
   const plugins = createMockPlugins(
     emitPlugin,
     () => mockView("docs/guide.md", [], true)?.hash ?? "0",
     organizing,
     notes,
-    { ...distribution.handlers, ...tokens.handlers },
+    { ...distribution.handlers, ...tokens.handlers, ...convert.handlers },
   );
   const importing = createMockImport(project, emit, () => refreshTree());
   const probe: MockProbe = {
@@ -302,6 +306,7 @@ export function createMockApi(): Api & {
     windowThemes,
     distribution: distribution.probe,
     tokens: tokens.probe,
+    convert: convert.probe,
     imports: importing.probe,
     pictures: [],
   };
