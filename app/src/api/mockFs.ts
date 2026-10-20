@@ -30,6 +30,13 @@ const EXTENSIONS: Record<string, Category> = {
   mp4: "video",
   docx: "office",
   pdf: "office",
+  rs: "code",
+  ts: "code",
+  js: "code",
+  py: "code",
+  sh: "code",
+  css: "code",
+  html: "code",
 };
 
 export function categoryOfName(name: string): Category {
@@ -41,7 +48,18 @@ export function categoryOfName(name: string): Category {
 const PRESETS: Record<string, readonly Category[]> = {
   documents: ["markdown", "text"],
   "docs-and-assets": ["markdown", "text", "config", "data", "image", "audio", "video"],
-  everything: ["markdown", "text", "config", "data", "image", "audio", "video", "office", "other"],
+  everything: [
+    "markdown",
+    "text",
+    "config",
+    "data",
+    "image",
+    "audio",
+    "video",
+    "office",
+    "code",
+    "other",
+  ],
 };
 
 export function seedFiles(): Record<string, string> {
@@ -140,12 +158,17 @@ export class MockProject {
     return out;
   }
 
-  counts(filter: TreeFilter): { total: number; shown: number } {
-    const shown = this.list(filter).filter((n) => n.kind.type === "file").length;
-    const total = [...this.files.keys()].filter(
+  counts(filter: TreeFilter): { total: number; shown: number; codeHidden: number } {
+    const list = this.list(filter);
+    const shown = list.filter((n) => n.kind.type === "file").length;
+    const visible = [...this.files.keys()].filter(
       (p) => filter.showHidden || !p.split("/").some((s) => s.startsWith(".")),
+    );
+    const listed = new Set(list.map((n) => n.path));
+    const codeHidden = visible.filter(
+      (p) => categoryOfName(nameOf(p)) === "code" && !listed.has(p),
     ).length;
-    return { total, shown };
+    return { total: visible.length, shown, codeHidden };
   }
 
   // ---- operations ----------------------------------------------------------------------------------------------

@@ -524,3 +524,102 @@ describe("the filter", () => {
     expect(f.store.filter.show).toBe("docs-and-assets");
   });
 });
+
+// ---- the code offer ----------------------------------------------------------------------------------------------------
+
+/** A project with `code` more code files than the mock's seed, in an Explorer that has not started yet. */
+async function codeProject(code: number) {
+  const api = createMockApi();
+  await api.openPath(MOCK_FOLDER, "thisWindow");
+  for (let i = 0; i < code; i++) api.probe.project.add(`src/part${i}.ts`, "export {};");
+  const host: ExplorerHost = {
+    fail: () => {},
+    note: () => {},
+    linkUpdate: () => "ask",
+    openProject: () => {},
+  };
+  const start = async () => {
+    const store = new ExplorerStore(api, host);
+    const stop = await store.start();
+    return { store, stop };
+  };
+  return { api, start };
+}
+
+describe("the code offer", () => {
+  it("is made once a project holds many code files the filter hides", async () => {
+    const { start } = await codeProject(6);
+    const { store } = await start();
+    expect(store.filter.show).toBe("docs-and-assets");
+    expect(paths(store)).not.toContain("src/part0.ts");
+    // the seed's own src/main.rs and the six more
+    expect(store.codeOffer).toEqual({ status: "offered", hidden: 7 });
+  });
+
+  it("is not made for a project with a few scripts", async () => {
+    const { start } = await codeProject(1);
+    const { store } = await start();
+    expect(store.codeOffer).toEqual({ status: "none" });
+  });
+
+  it("'Show code files' shows them, remembers it for the project and never asks again", async () => {
+    vi.useFakeTimers();
+    const { start } = await codeProject(6);
+    const first = await start();
+    await first.store.acceptCodeOffer();
+    expect(first.store.codeOffer).toEqual({ status: "none" });
+    expect(first.store.filter.show).toBe("custom");
+    expect(first.store.filter.categories).toContain("code");
+    expect(paths(first.store)).toContain("src/part0.ts");
+    expect(paths(first.store)).toContain("README.md");
+    await vi.advanceTimersByTimeAsync(500);
+    // the project opened again: code is shown and nobody asks
+    const again = await start();
+    expect(again.store.filter.categories).toContain("code");
+    expect(paths(again.store)).toContain("src/part0.ts");
+    expect(again.store.codeOffer).toEqual({ status: "none" });
+    // hiding it by hand later does not bring the offer back
+    await again.store.setFilter({ ...again.store.filter, show: "docs-and-assets" });
+    expect(again.store.codeOffer).toEqual({ status: "none" });
+    await again.store.resetFilter();
+    expect(again.store.codeOffer).toEqual({ status: "none" });
+  });
+
+  it("'No thanks' keeps the default and never asks again for that project", async () => {
+    const { api, start } = await codeProject(6);
+    const first = await start();
+    await first.store.declineCodeOffer();
+    expect(first.store.codeOffer).toEqual({ status: "none" });
+    expect(first.store.filter.show).toBe("docs-and-assets");
+    expect(paths(first.store)).not.toContain("src/part0.ts");
+    expect(await api.projectSessionGet("explorer.code-offer")).toEqual({
+      ok: true,
+      value: "declined",
+    });
+    const again = await start();
+    expect(again.store.codeOffer).toEqual({ status: "none" });
+    expect(again.store.filter.show).toBe("docs-and-assets");
+  });
+
+  it("is not made over a filter the person made", async () => {
+    vi.useFakeTimers();
+    const { start } = await codeProject(6);
+    const first = await start();
+    await first.store.setFilter({
+      ...first.store.filter,
+      show: "custom",
+      categories: ["markdown"],
+    });
+    expect(first.store.codeOffer).toEqual({ status: "none" });
+    await vi.advanceTimersByTimeAsync(500);
+    const again = await start();
+    expect(again.store.codeOffer).toEqual({ status: "none" });
+  });
+
+  it("ignores an answer it does not know in the session", async () => {
+    const { api, start } = await codeProject(6);
+    await api.projectSessionSet("explorer.code-offer", { surprise: true });
+    const { store } = await start();
+    expect(store.codeOffer.status).toBe("offered");
+  });
+});

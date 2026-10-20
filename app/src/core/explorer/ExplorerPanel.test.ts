@@ -22,9 +22,10 @@ type Fx = {
 
 let mounted: (() => void)[] = [];
 
-async function render(link: LinkUpdate = "never"): Promise<Fx> {
+async function render(link: LinkUpdate = "never", more: string[] = []): Promise<Fx> {
   const api = createMockApi();
   await api.openPath(MOCK_FOLDER, "thisWindow");
+  for (const path of more) api.probe.project.add(path, "x");
   const failures: unknown[] = [];
   const notes: string[] = [];
   const inits: { path: string; name: string }[] = [];
@@ -630,5 +631,51 @@ describe("states", () => {
     await tick();
     expect(root.textContent).toContain("Couldn't load the files.");
     expect(root.querySelector('[role="tree"]')).toBeNull();
+  });
+});
+
+describe("the code offer", () => {
+  const code = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "src/e.ts"];
+  const strip = (root: HTMLElement): HTMLElement | null =>
+    root.querySelector<HTMLElement>(".code-offer");
+  const button = (root: HTMLElement, label: string): HTMLButtonElement | undefined =>
+    Array.from(root.querySelectorAll<HTMLButtonElement>(".code-offer button")).find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  it("is a quiet strip above the counts, with two ways to answer", async () => {
+    const { root } = await render("never", code);
+    expect(strip(root)?.textContent).toContain("6 code files are hidden.");
+    expect(strip(root)?.getAttribute("role")).toBe("region");
+    expect(button(root, "Show code files")).toBeDefined();
+    expect(button(root, "No thanks")).toBeDefined();
+    // above the counts line, inside the panel
+    const foot = root.querySelector(".foot");
+    expect(foot && strip(root)?.compareDocumentPosition(foot)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    // the tree itself is as it was: no code yet
+    expect(rows(root).some((r) => r.dataset["path"] === "src")).toBe(false);
+  });
+
+  it("is not there for a project with a few scripts", async () => {
+    const { root } = await render();
+    expect(strip(root)).toBeNull();
+  });
+
+  it("'Show code files' shows the code in the tree and the strip goes", async () => {
+    const { root } = await render("never", code);
+    button(root, "Show code files")?.click();
+    await tick();
+    await vi.waitFor(() => expect(strip(root)).toBeNull());
+    await vi.waitFor(() => expect(rows(root).some((r) => r.dataset["path"] === "src")).toBe(true));
+  });
+
+  it("'No thanks' takes the strip away and leaves the tree as it was", async () => {
+    const { root } = await render("never", code);
+    button(root, "No thanks")?.click();
+    await tick();
+    await vi.waitFor(() => expect(strip(root)).toBeNull());
+    expect(rows(root).some((r) => r.dataset["path"] === "src")).toBe(false);
   });
 });

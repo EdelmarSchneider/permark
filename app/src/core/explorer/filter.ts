@@ -19,6 +19,7 @@ export const CATEGORIES: readonly Category[] = [
   "audio",
   "video",
   "office",
+  "code",
   "other",
 ];
 

@@ -371,6 +371,7 @@ export function createMockApi(): Api & {
       invalidPatterns: [],
       totalFiles: counts.total,
       shownFiles: counts.shown,
+      codeHidden: counts.codeHidden,
     };
   }
 

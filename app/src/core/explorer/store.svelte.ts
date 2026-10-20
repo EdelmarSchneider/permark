@@ -20,6 +20,7 @@ import {
   type Unlisten,
 } from "../../api";
 import { t, tn } from "../i18n";
+import { CODE_OFFER_KEY, isAnswer, shouldOfferCode, withCode, type Answer } from "./codeOffer";
 import { DEFAULT_FILTER, filterToJson, normalizeFilter } from "./filter";
 import {
   ancestorsOf,
@@ -41,6 +42,9 @@ const SESSION_FILTER = "explorer.filter";
 const SESSION_EXPANDED = "explorer.expanded";
 /** Folders remembered open (a project with thousands of open folders is not a state worth keeping). */
 const MAX_REMEMBERED = 500;
+
+/** The quiet offer to show the code files the filter hides (`codeOffer.ts`). */
+export type CodeOffer = { status: "none" } | { status: "offered"; hidden: number };
 
 export type Load =
   { status: "loading" } | { status: "ready" } | { status: "failed"; error: ApiError };
@@ -111,6 +115,8 @@ export class ExplorerStore {
   invalidPatterns = $state.raw<readonly string[]>([]);
   totalFiles = $state(0);
   shownFiles = $state(0);
+  /** Asked once per project whether to show its code files. */
+  codeOffer = $state.raw<CodeOffer>({ status: "none" });
   expanded = $state.raw<ReadonlySet<string>>(new Set());
   collapsedRoots = $state.raw<ReadonlySet<string>>(new Set());
   selection = $state.raw<ReadonlySet<string>>(new Set());
@@ -135,6 +141,8 @@ export class ExplorerStore {
   #early: TreeChanged[] = [];
   #timer: ReturnType<typeof setTimeout> | null = null;
   #active: string | null = null;
+  /** What the person answered to the code offer, for this project (`null`: not yet). */
+  #answered: Answer | null = null;
 
   constructor(api: Api, host: ExplorerHost) {
     this.#api = api;
@@ -159,6 +167,8 @@ export class ExplorerStore {
     this.load = { status: "loading" };
     const remembered = await this.#api.projectSessionGet(SESSION_FILTER);
     const filter = remembered.ok ? normalizeFilter(remembered.value) : null;
+    const answer = await this.#api.projectSessionGet(CODE_OFFER_KEY);
+    this.#answered = answer.ok && isAnswer(answer.value) ? answer.value : null;
     const open = await this.#api.projectSessionGet(SESSION_EXPANDED);
     if (open.ok && Array.isArray(open.value)) {
       this.expanded = new Set(open.value.filter((v): v is string => typeof v === "string"));
@@ -185,6 +195,7 @@ export class ExplorerStore {
     invalidPatterns: readonly string[];
     totalFiles: number;
     shownFiles: number;
+    codeHidden: number;
   }): void {
     this.roots = snapshot.roots;
     this.nodes = snapshot.nodes;
@@ -192,6 +203,14 @@ export class ExplorerStore {
     this.invalidPatterns = snapshot.invalidPatterns;
     this.totalFiles = snapshot.totalFiles;
     this.shownFiles = snapshot.shownFiles;
+    this.codeOffer = shouldOfferCode({
+      codeHidden: snapshot.codeHidden,
+      totalFiles: snapshot.totalFiles,
+      filter: snapshot.filter,
+      answered: this.#answered,
+    })
+      ? { status: "offered", hidden: snapshot.codeHidden }
+      : { status: "none" };
     this.#seq = snapshot.seq;
     const alive = new Set(snapshot.nodes.map((n) => n.path));
     this.selection = new Set(Array.from(this.selection).filter((p) => alive.has(p)));
@@ -259,6 +278,23 @@ export class ExplorerStore {
     this.#take(result.value);
     this.#remember();
     if (this.#active !== null) await this.#follow(this.#active);
+  }
+
+  /** "Show code files": the filter shows them from now on, and the project is not asked again. */
+  async acceptCodeOffer(): Promise<void> {
+    await this.#answer("shown");
+    await this.setFilter(withCode(this.filter));
+  }
+
+  /** "No thanks": the project is not asked again. */
+  async declineCodeOffer(): Promise<void> {
+    await this.#answer("declined");
+  }
+
+  async #answer(answer: Answer): Promise<void> {
+    this.#answered = answer;
+    this.codeOffer = { status: "none" };
+    await this.#api.projectSessionSet(CODE_OFFER_KEY, answer);
   }
 
   /** Back to the project's default filter. */

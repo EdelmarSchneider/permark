@@ -3,6 +3,7 @@
 import AudioLines from "@lucide/svelte/icons/audio-lines";
 import File from "@lucide/svelte/icons/file";
 import FileBraces from "@lucide/svelte/icons/file-braces";
+import FileCode from "@lucide/svelte/icons/file-code";
 import FileCog from "@lucide/svelte/icons/file-cog";
 import FileSpreadsheet from "@lucide/svelte/icons/file-spreadsheet";
 import FileText from "@lucide/svelte/icons/file-text";
@@ -37,6 +38,8 @@ export function iconOfCategory(category: Category): Icon {
       return Video;
     case "office":
       return FileSpreadsheet;
+    case "code":
+      return FileCode;
     default:
       return category satisfies never;
   }

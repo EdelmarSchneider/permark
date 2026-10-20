@@ -25,6 +25,7 @@
     audio: "filter.category.audio",
     video: "filter.category.video",
     office: "filter.category.office",
+    code: "filter.category.code",
     other: "filter.category.other",
   };
 

@@ -200,6 +200,7 @@
         !isDir &&
         category !== null &&
         category !== "other" &&
+        category !== "code" &&
         !node.name.toLowerCase().endsWith(".svg")
       ) {
         entries.push({
@@ -625,6 +626,17 @@
         {/each}
       </div>
     </div>
+    {#if store.codeOffer.status === "offered"}
+      <div class="code-offer" role="region" aria-label={t("explorer.code.label")}>
+        <span>{tn("explorer.code.offer", store.codeOffer.hidden)}</span>
+        <button type="button" class="btn btn--sm" onclick={() => void store.acceptCodeOffer()}>
+          {t("explorer.code.show")}
+        </button>
+        <button type="button" class="link" onclick={() => void store.declineCodeOffer()}>
+          {t("explorer.code.decline")}
+        </button>
+      </div>
+    {/if}
     <div class="foot" role="status">
       <span class="count">{countText}</span>
       {#if store.shownFiles !== store.totalFiles}
@@ -782,6 +794,16 @@
     padding: var(--sp-3) var(--sp-4);
     color: var(--muted);
     font-size: var(--fs-ui-sm);
+  }
+  .code-offer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    padding: 6px var(--sp-3);
+    border-top: 1px solid var(--border);
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
   }
   .foot {
     display: flex;
