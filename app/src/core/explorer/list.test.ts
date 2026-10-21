@@ -15,6 +15,8 @@ import {
   canDrop,
   depthOf,
   diffLists,
+  dropBlock,
+  edgeSpeed,
   movesInto,
   nameOf,
   parentOf,
@@ -342,5 +344,65 @@ describe("hostile input", () => {
       delta({ removed: ["ghost"], added: [{ node: node("late.md"), after: "ghost" }] }),
     );
     expect(next.map((n) => n.path)).toEqual(["a.md"]);
+  });
+});
+
+// ---- drag from outside -------------------------------------------------------------------------------------------------
+
+describe("dropBlock", () => {
+  const wt: RootNode = { name: "feature", kind: "worktree", path: "@wt/feature" };
+  const nodes = [
+    node("docs", dir),
+    node("docs/deep", dir),
+    node("docs/deep/x.md"),
+    node("docs/a.md"),
+    node("README.md"),
+    node("@wt/feature/b.md"),
+  ];
+  const rows = rowsOf([wt], nodes, new Set(["docs", "docs/deep"]), new Set());
+  const keys = (range: { first: number; last: number } | null): string[] =>
+    range === null
+      ? []
+      : rows
+          .slice(range.first, range.last + 1)
+          .map((r) => (r.type === "root" ? r.root.path : r.node.path));
+
+  it("a folder: its visible contents, deeper rows only", () => {
+    expect(keys(dropBlock(rows, "docs"))).toEqual(["docs/deep", "docs/deep/x.md", "docs/a.md"]);
+    expect(keys(dropBlock(rows, "docs/deep"))).toEqual(["docs/deep/x.md"]);
+  });
+
+  it("a worktree root: its rows", () => {
+    expect(keys(dropBlock(rows, "@wt/feature"))).toEqual(["@wt/feature/b.md"]);
+  });
+
+  it("nothing to block: a closed folder, the project folder, no target, a path not shown", () => {
+    const closed = rowsOf([], nodes, new Set(), new Set());
+    expect(dropBlock(closed, "docs")).toBeNull();
+    expect(dropBlock(rows, "")).toBeNull();
+    expect(dropBlock(rows, null)).toBeNull();
+    expect(dropBlock(rows, "gone")).toBeNull();
+    expect(dropBlock([], "docs")).toBeNull();
+  });
+});
+
+describe("edgeSpeed", () => {
+  it("scrolls near the edges, faster closer to them, never in the middle or outside", () => {
+    expect(edgeSpeed(100, 0, 400)).toBe(0);
+    expect(edgeSpeed(0, 0, 400)).toBe(-14);
+    expect(edgeSpeed(27, 0, 400)).toBe(-2);
+    expect(edgeSpeed(14, 0, 400)).toBe(-8);
+    expect(edgeSpeed(400, 0, 400)).toBe(14);
+    expect(edgeSpeed(373, 0, 400)).toBe(2);
+    expect(edgeSpeed(28, 0, 400)).toBe(0);
+    expect(edgeSpeed(-5, 0, 400)).toBe(0);
+    expect(edgeSpeed(401, 0, 400)).toBe(0);
+  });
+
+  it("a list smaller than both zones splits it in halves; an empty one never scrolls", () => {
+    expect(edgeSpeed(5, 0, 20)).toBeLessThan(0);
+    expect(edgeSpeed(15, 0, 20)).toBeGreaterThan(0);
+    expect(edgeSpeed(0, 10, 10)).toBe(0);
+    expect(edgeSpeed(Number.NaN, 0, 400)).toBe(0);
   });
 });

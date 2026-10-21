@@ -14,6 +14,7 @@
   const explorer = new ExplorerStore(api, {
     fail: (error) => store.notifyFileOpFailed(error),
     note: (text) => store.notifyNote(text),
+    view: () => store.label,
     linkUpdate: () => store.linkUpdate,
     openProject: (path) => void store.open(path),
     referenceTemplate: () => store.referenceTemplate,

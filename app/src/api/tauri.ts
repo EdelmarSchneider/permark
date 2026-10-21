@@ -141,6 +141,7 @@ export const tauriApi: Api = {
   deleteFiles: (paths) => call("fileops_delete", { paths }),
   newEntry: (dir, name, kind) => call("fileops_new", { dir, name, kind }),
   undoFileOp: () => call("fileops_undo", {}),
+  undoFileOpEntry: (id) => call("fileops_undo_entry", { id }),
   planImport: (target, sources) => call("fileops_import_plan", { target, sources }),
   applyImport: (planId, mode, conflicts) =>
     call("fileops_import_apply", { planId, mode, conflicts }),
@@ -238,6 +239,8 @@ export const tauriApi: Api = {
       handler(mapped.event);
     });
   },
+  openDropped: (paths, scope) => call("open_dropped", { paths, scope }),
+  focusView: () => call("view_focus", {}),
   pickFolder: async (title) => {
     const picked = await open({ directory: true, multiple: false, title });
     return typeof picked === "string" ? picked : null;

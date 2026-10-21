@@ -17,7 +17,8 @@
   import ContextMenu from "./ContextMenu.svelte";
   import FilterPopover from "./FilterPopover.svelte";
   import { WorktreeIcon, iconOf } from "./icons";
-  import { nameOf, parentOf, topmost, type Row } from "./list";
+  import { EdgeScroll } from "./edgeScroll";
+  import { dropBlock, nameOf, parentOf, rowKey, topmost, type Row } from "./list";
   import type { MenuEntry } from "./menu";
   import MovePlanDialog from "./MovePlanDialog.svelte";
   import NameField from "./NameField.svelte";
@@ -37,7 +38,6 @@
   const OVERSCAN = 8;
   /** Pointer travel (px) before a press becomes a drag. */
   const DRAG_START = 4;
-  const EDGE = 28;
 
   type Display = Row | { type: "new"; depth: number; dir: string };
   type Press = { x: number; y: number; paths: readonly string[] };
@@ -53,6 +53,14 @@
   let handledScroll = 0;
 
   const badges = $derived(registry.visible("treeBadge", conditions.current));
+
+  /** The rows that read as one block with the folder an outside drag is over (its visible contents). */
+  const block = $derived.by((): ReadonlySet<string> => {
+    const range = dropBlock(store.rows, store.outside);
+    return range === null
+      ? new Set()
+      : new Set(store.rows.slice(range.first, range.last + 1).map(rowKey));
+  });
 
   /** The rows, with the name field of a new entry right after its folder. */
   const display = $derived.by((): Display[] => {
@@ -95,6 +103,23 @@
 
   // a drag in progress ends with the panel
   $effect(() => () => stopPress?.());
+
+  // near the top | bottom edge a drag scrolls the list (the frame loop goes with the list)
+  let edge: EdgeScroll | null = null;
+  $effect(() => {
+    if (!list) return;
+    const scroller = new EdgeScroll(list);
+    edge = scroller;
+    return () => {
+      scroller.stop();
+      if (edge === scroller) edge = null;
+    };
+  });
+  // a drag from outside: its pointer
+  $effect(() => {
+    const point = store.outsidePoint;
+    if (store.drag.status !== "dragging") edge?.point(point?.y ?? null);
+  });
 
   // a request to bring a row into view (reveal, keyboard moves, a new field)
   $effect(() => {
@@ -356,6 +381,7 @@
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", cancel);
     stopPress = () => {
+      edge?.point(null);
       window.removeEventListener("pointermove", onpointermove);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", cancel);
@@ -416,10 +442,7 @@
       suppressClick = true;
     }
     store.dragOver(targetAt(e.clientX, e.clientY));
-    // near an edge the list scrolls
-    const box = list.getBoundingClientRect();
-    if (e.clientY < box.top + EDGE) list.scrollTop -= 12;
-    else if (e.clientY > box.bottom - EDGE) list.scrollTop += 12;
+    edge?.point(e.clientY);
   }
 </script>
 
@@ -515,7 +538,11 @@
           {#if row.type === "root"}
             <button
               type="button"
-              class={["row root", store.outside === row.root.path && "drop-target"]}
+              class={[
+                "row root",
+                store.outside === row.root.path && "drop-target",
+                block.has(row.root.path) && "drop-block",
+              ]}
               style:top="{top}px"
               style:height="{ROW}px"
               aria-expanded={row.expanded}
@@ -550,7 +577,7 @@
             </div>
           {:else}
             {@const node = row.node}
-            {@const Icon = iconOf(node, row.expanded)}
+            {@const Icon = iconOf(node, row.expanded || store.outside === node.path)}
             {@const isDir = node.kind.type === "dir"}
             {@const selected = store.selection.has(node.path)}
             {@const said = badgesOf(node)}
@@ -565,6 +592,7 @@
                 ((store.drag.status === "dragging" && store.drag.over === node.path) ||
                   store.outside === node.path) &&
                   "drop-target",
+                block.has(node.path) && "drop-block",
               ]}
               role="treeitem"
               tabindex="-1"
@@ -711,6 +739,7 @@
   }
   .list.drop-root {
     background: var(--accent-soft);
+    box-shadow: inset 0 0 0 2px var(--accent);
   }
   .space {
     position: relative;
@@ -753,9 +782,14 @@
   .row.is-forced .name {
     font-style: italic;
   }
+  /* the folder a drop lands in: fill + ring (selection has no ring, keyboard focus a thin one); its contents read as
+     one block with it. No transition: the mark follows the pointer. */
   .row.drop-target {
+    background: var(--accent-drop);
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+  .row.drop-block {
     background: var(--accent-soft);
-    box-shadow: inset 0 0 0 1px var(--accent);
   }
   .chev {
     display: grid;

@@ -88,7 +88,8 @@ export class MockProject {
   readonly dirs = new Set<string>();
   /** Folders made in the Explorer: shown while empty. */
   readonly kept = new Set<string>();
-  readonly #undo: Op[] = [];
+  readonly #undo: (Op & { id: number })[] = [];
+  #nextUndo = 1;
   readonly #plans = new Map<number, MoveSpec[]>();
   #nextPlan = 1;
 
@@ -239,7 +240,7 @@ export class MockProject {
       }
     }
     for (const m of moves) this.#rename(m.from, m.to);
-    this.#undo.push({ kind: "move", moves, before });
+    this.#push({ kind: "move", moves, before });
     return { moved: moves.length, links, documents: touched.size, skipped: [] };
   }
 
@@ -271,12 +272,50 @@ export class MockProject {
       for (const d of [...this.dirs])
         if (d === path || d.startsWith(`${path}/`)) this.dirs.delete(d);
     }
-    this.#undo.push({ kind: "delete", paths, files });
+    this.#push({ kind: "delete", paths, files });
   }
 
-  /** Items an import put in place (project paths): one undo step takes them out again. */
-  recordImport(paths: string[]): void {
-    this.#undo.push({ kind: "import", paths });
+  /** Items an import put in place (project paths): one undo step takes them out again. Returns its journal id. */
+  recordImport(paths: string[]): number {
+    return this.#push({ kind: "import", paths });
+  }
+
+  #push(op: Op): number {
+    const id = this.#nextUndo++;
+    this.#undo.push({ ...op, id });
+    return id;
+  }
+
+  /** Paths an operation touched (a newer one on them makes an older one unsafe to take back out of order). */
+  static #paths(op: Op): string[] {
+    switch (op.kind) {
+      case "move":
+        return op.moves.flatMap((m) => [m.from, m.to]);
+      case "new":
+        return [op.path];
+      case "delete":
+      case "import":
+        return op.paths;
+      default:
+        return op satisfies never;
+    }
+  }
+
+  /** Takes back exactly the operation `id` unless gone or touched by a newer one; whether it did. */
+  undoEntry(id: number): boolean {
+    const at = this.#undo.findIndex((op) => op.id === id);
+    const op = this.#undo[at];
+    if (op === undefined) return false;
+    const mine = MockProject.#paths(op);
+    const near = (a: string, b: string): boolean =>
+      a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+    const touched = this.#undo
+      .slice(at + 1)
+      .some((later) => MockProject.#paths(later).some((p) => mine.some((m) => near(p, m))));
+    if (touched) return false;
+    this.#undo.splice(at, 1);
+    this.#takeBack(op);
+    return true;
   }
 
   create(dir: string, name: string, kind: NewKind): string {
@@ -289,7 +328,7 @@ export class MockProject {
       this.dirs.add(path);
       this.kept.add(path);
     }
-    this.#undo.push({ kind: "new", path });
+    this.#push({ kind: "new", path });
     return path;
   }
 
@@ -297,18 +336,23 @@ export class MockProject {
   undo(): boolean {
     const op = this.#undo.pop();
     if (!op) return false;
+    this.#takeBack(op);
+    return true;
+  }
+
+  #takeBack(op: Op): void {
     switch (op.kind) {
       case "move":
         for (const m of [...op.moves].reverse()) this.#rename(m.to, m.from);
         for (const [path, text] of op.before) if (this.files.has(path)) this.files.set(path, text);
-        return true;
+        return;
       case "new":
         this.files.delete(op.path);
         this.dirs.delete(op.path);
-        return true;
+        return;
       case "delete":
         for (const [path, text] of op.files) this.add(path, text);
-        return true;
+        return;
       case "import":
         for (const path of op.paths) {
           for (const p of [...this.files.keys()]) {
@@ -317,9 +361,9 @@ export class MockProject {
           for (const d of [...this.dirs])
             if (d === path || d.startsWith(`${path}/`)) this.dirs.delete(d);
         }
-        return true;
+        return;
       default:
-        return op satisfies never;
+        op satisfies never;
     }
   }
 

@@ -3,10 +3,12 @@
   // editor, and the dialogs. The window follows the Notes workspace for as long as this page exists.
   import DocumentArea from "../../core/doc/DocumentArea.svelte";
   import { t } from "../../core/i18n";
+  import { dropFlow } from "../../core/shell/dropView.svelte";
   import type { WorkspaceViewProps } from "../../core/plugins/props";
   import { windowStore } from "../../core/window.svelte";
   import CompareDialog from "./CompareDialog.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { isLooseFile } from "./model";
   import MoveDialog from "./MoveDialog.svelte";
   import NoteBars from "./NoteBars.svelte";
   import { notes as store } from "./store.svelte";
@@ -14,16 +16,14 @@
 
   let { workspace }: WorkspaceViewProps = $props();
 
-  // the window follows the Notes: the list, the polling, the editor's journal; a dropped file becomes a loose file
+  // the window follows the Notes: the list, the polling, the editor's journal; a dropped text file becomes a loose
+  // file (pictures over the editor go into the note, folders and other files open as tabs)
   $effect(() => {
     const stop = store.attach(workspace);
-    windowStore.dropHook = (paths) => {
-      void store.openFiles(paths);
-      return true;
-    };
+    dropFlow.notes = { takes: isLooseFile, open: (paths) => store.openFiles(paths) };
     return () => {
       stop();
-      windowStore.dropHook = null;
+      dropFlow.notes = null;
     };
   });
 </script>

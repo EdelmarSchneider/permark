@@ -15,6 +15,7 @@ pub mod ipc_local;
 pub mod links;
 pub mod notes;
 pub mod open;
+pub mod open_dropped;
 pub mod organizing;
 pub mod paths;
 pub mod plugins;

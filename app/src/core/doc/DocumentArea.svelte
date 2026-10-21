@@ -190,7 +190,7 @@
   <ModeSwitch session={editing} {readOnly} {visual} choose={chooseMode} {compact} />
 {/snippet}
 
-<section class="area" aria-label={t("doc.region")} data-drop-page>
+<section class="area" aria-label={t("doc.region")}>
   {#if doc.status !== "empty" && documents.path !== null}
     <!-- focus mode folds the header and the strips away; they stay mounted (menus, strips keep their state) -->
     <div

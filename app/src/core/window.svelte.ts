@@ -1,12 +1,11 @@
 // This view's state (one tab of a window, or the window's Welcome) + the open flow: boot, open folder | file |
-// recent | drop by placement (new tab | this tab | new window), close this tab, settings changes, notices. Backend
+// recent by placement (new tab | this tab | new window), close this tab, settings changes, notices. Backend
 // owns the truth (`window-changed`); this mirrors it.
 
 import {
   api,
   type Api,
   type ApiError,
-  type DropEvent,
   type GitBackendPref,
   type IpcError,
   type LinkUpdate,
@@ -32,7 +31,6 @@ export type NoticeAction = { label: string; run: () => void };
 export type Notice =
   | { id: number; kind: "openFailed"; path: string; error: IpcError }
   | { id: number; kind: "apiFailed"; path: string | null; error: ApiError }
-  | { id: number; kind: "dropOne" }
   | { id: number; kind: "stateRecovered"; notice: StateRecovered }
   | { id: number; kind: "settingNotSaved"; error: ApiError }
   | { id: number; kind: "initFailed"; path: string; error: ApiError }
@@ -43,14 +41,6 @@ export type Notice =
 
 type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : never) : never;
 
-export type Drag = { status: "idle" } | { status: "over"; count: number };
-
-/** A project window takes what is dragged over it and dropped on it (into the project, or into an editor). */
-export type ProjectDrop = {
-  over(x: number, y: number, paths: readonly string[], count: number): void;
-  leave(): void;
-  drop(paths: readonly string[], x: number, y: number): void;
-};
 export type Boot =
   { status: "booting" } | { status: "ready" } | { status: "failed"; error: ApiError };
 
@@ -65,7 +55,6 @@ export class WindowStore {
   tab = $state<number | null>(null);
   view = $state.raw<WindowView>({ state: "welcome" });
   recent = $state.raw<readonly RecentFolder[]>([]);
-  drag = $state.raw<Drag>({ status: "idle" });
   notices = $state.raw<readonly Notice[]>([]);
   /** Whether a move rewrites the links that point at it (the setting). */
   linkUpdate = $state<LinkUpdate>("ask");
@@ -88,10 +77,6 @@ export class WindowStore {
   /** The tokenizers the token count shows, first = primary (the app's choice; a project may have its own). */
   tokenizers = $state.raw<readonly string[]>([]);
   #nextNotice = 1;
-  /** A window page that takes dropped files itself (the Notes): returns whether it did. */
-  dropHook: ((paths: readonly string[]) => boolean) | null = null;
-  /** The project this window shows takes dropped files itself (they come into the project). */
-  projectDrop: ProjectDrop | null = null;
 
   constructor(backend: Api) {
     this.#api = backend;
@@ -128,7 +113,6 @@ export class WindowStore {
           this.#notify({ kind: "openFailed", path: e.path, error: e.error });
       }),
       this.#api.on("state-recovered", (e) => this.#notify({ kind: "stateRecovered", notice: e })),
-      this.#api.onDrop((e) => this.#onDrop(e)),
     ]);
     const booted = await this.#api.windowBoot();
     if (booted.ok) {
@@ -335,36 +319,6 @@ export class WindowStore {
     const notice = { ...body, id: this.#nextNotice++ };
     // newest last; at most 5 on screen
     this.notices = [...this.notices, notice].slice(-5);
-  }
-
-  #onDrop(event: DropEvent): void {
-    switch (event.type) {
-      case "over":
-        this.drag = { status: "over", count: event.count };
-        this.projectDrop?.over(event.x, event.y, event.paths, event.count);
-        return;
-      case "leave":
-        this.drag = { status: "idle" };
-        this.projectDrop?.leave();
-        return;
-      case "drop": {
-        this.drag = { status: "idle" };
-        if (this.dropHook?.(event.paths)) return;
-        if (this.projectDrop) {
-          this.projectDrop.drop(event.paths, event.x, event.y);
-          return;
-        }
-        const [first, ...rest] = event.paths;
-        if (first === undefined || rest.length > 0) {
-          this.#notify({ kind: "dropOne" });
-          return;
-        }
-        void this.open(first);
-        return;
-      }
-      default:
-        event satisfies never;
-    }
   }
 }
 

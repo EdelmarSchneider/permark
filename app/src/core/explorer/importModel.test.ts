@@ -3,16 +3,22 @@ import type { ImportOutcome, ImportPlan } from "../../api";
 import { language } from "../i18n";
 import {
   addedAnything,
+  badgeOf,
   baseName,
   canMove,
   conflictNames,
+  countsText,
+  firstOf,
   folderLabel,
   isPicturePath,
-  nothingText,
+  middle,
+  openFailedText,
   outcomeText,
   pictureType,
   refusalText,
   routeDrop,
+  type DropContext,
+  type DropSpot,
 } from "./importModel";
 
 const plan = (patch: Partial<ImportPlan> = {}): ImportPlan => ({
@@ -34,6 +40,8 @@ const outcome = (patch: Partial<ImportOutcome> = {}): ImportOutcome => ({
   links: 0,
   leftBehind: 0,
   cancelled: false,
+  placed: [],
+  undo: null,
   ...patch,
 });
 
@@ -62,12 +70,113 @@ describe("pictures", () => {
   });
 });
 
+const ctx = (
+  workspace: DropContext["workspace"],
+  notesTake: DropContext["notesTake"] = null,
+): DropContext => ({ workspace, notesTake });
+const explorer = (folder: string): DropSpot => ({ area: "explorer", folder });
+const editor = (pictures = true): DropSpot => ({ area: "editor", pictures });
+const other: DropSpot = { area: "other" };
+
 describe("routeDrop", () => {
-  it("puts pictures into an editor that is being edited and imports everything else", () => {
-    expect(routeDrop(["a.png", "b.JPG"], true)).toEqual({ kind: "pictures" });
-    expect(routeDrop(["a.png", "b.JPG"], false)).toEqual({ kind: "import" });
-    expect(routeDrop(["a.png", "notes.md"], true)).toEqual({ kind: "import" });
-    expect(routeDrop([], true)).toEqual({ kind: "import" });
+  it("pictures only, over an editor that takes them: inserted, in every kind of view", () => {
+    for (const workspace of ["project", "singleFile", "notes"] as const) {
+      expect(routeDrop(editor(), ["a.png", "b.JPG"], ctx(workspace))).toEqual({
+        kind: "pictures",
+      });
+    }
+  });
+
+  it("anything but pictures over an editor: not inserted (opens, or the Notes take it)", () => {
+    expect(routeDrop(editor(), ["a.png", "notes.md"], ctx("project"))).toEqual({ kind: "open" });
+    expect(routeDrop(editor(false), ["a.png"], ctx("singleFile"))).toEqual({ kind: "open" });
+    expect(routeDrop(editor(), [], ctx("project"))).toEqual({ kind: "open" });
+  });
+
+  it("the Explorer list of a project: into the folder under the pointer", () => {
+    expect(routeDrop(explorer("docs"), ["C:/a.md"], ctx("project"))).toEqual({
+      kind: "import",
+      folder: "docs",
+    });
+    expect(routeDrop(explorer(""), ["C:/a.png"], ctx("project"))).toEqual({
+      kind: "import",
+      folder: "",
+    });
+  });
+
+  it("the Notes tab: loose files for the Notes, the rest as tabs", () => {
+    const take = (p: string): boolean => p.endsWith(".md");
+    expect(routeDrop(other, ["C:/a.md", "C:/dir", "C:/b.md"], ctx("notes", take))).toEqual({
+      kind: "notes",
+      loose: ["C:/a.md", "C:/b.md"],
+      open: ["C:/dir"],
+    });
+    // no Notes hook (the plugin's page not there yet): everything opens
+    expect(routeDrop(other, ["C:/a.md"], ctx("notes"))).toEqual({
+      kind: "notes",
+      loose: [],
+      open: ["C:/a.md"],
+    });
+  });
+
+  it("anywhere else opens: Welcome, single file, a project outside its list, the Search view", () => {
+    expect(routeDrop(other, ["C:/a"], ctx("welcome"))).toEqual({ kind: "open" });
+    expect(routeDrop(other, ["C:/a"], ctx("singleFile"))).toEqual({ kind: "open" });
+    expect(routeDrop(other, ["C:/a", "C:/b"], ctx("project"))).toEqual({ kind: "open" });
+    // the Explorer only counts in a project (a stale spot elsewhere never imports)
+    expect(routeDrop(explorer("docs"), ["C:/a"], ctx("singleFile"))).toEqual({ kind: "open" });
+  });
+});
+
+describe("the badge", () => {
+  it("says what a drop does, by route and count", () => {
+    expect(badgeOf({ kind: "import", folder: "docs" }, 3, "docs", false)).toEqual({
+      icon: "import",
+      text: "Add 3 items to “docs”",
+    });
+    expect(badgeOf({ kind: "import", folder: "" }, 1, "my project", false).text).toBe(
+      "Add 1 item to “my project”",
+    );
+    expect(badgeOf({ kind: "open" }, 1, "", false)).toEqual({
+      icon: "open",
+      text: "Open in a new tab",
+    });
+    expect(badgeOf({ kind: "open" }, 3, "", false).text).toBe("Open 3 items in new tabs");
+    expect(badgeOf({ kind: "pictures" }, 2, "", false)).toEqual({
+      icon: "pictures",
+      text: "Insert 2 pictures here",
+    });
+    expect(badgeOf({ kind: "notes", loose: ["a"], open: [] }, 1, "", false)).toEqual({
+      icon: "notes",
+      text: "Open in Notes",
+    });
+    expect(badgeOf({ kind: "notes", loose: ["a", "b", "c"], open: [] }, 3, "", false).text).toBe(
+      "Open 3 items in Notes",
+    );
+    expect(badgeOf({ kind: "notes", loose: ["a"], open: ["b", "c"] }, 3, "", false).text).toBe(
+      "Open 3 items",
+    );
+    expect(badgeOf({ kind: "notes", loose: [], open: ["d"] }, 1, "", false)).toEqual({
+      icon: "open",
+      text: "Open in a new tab",
+    });
+  });
+
+  it("says to wait while an import runs (over the Explorer only)", () => {
+    expect(badgeOf({ kind: "import", folder: "docs" }, 2, "docs", true).text).toBe(
+      "Wait for the current import to finish.",
+    );
+    expect(badgeOf({ kind: "open" }, 2, "", true).text).toBe("Open 2 items in new tabs");
+  });
+
+  it("shortens a long folder name in the middle, quotes kept", () => {
+    const long = "a-very-long-folder-name-that-goes-on-and-on-文档-end";
+    const text = badgeOf({ kind: "import", folder: long }, 1, long, false).text;
+    expect(text.startsWith("Add 1 item to “a-very")).toBe(true);
+    expect(text.endsWith("end”")).toBe(true);
+    expect(text).toContain("…");
+    expect(Array.from(middle(long)).length).toBe(32);
+    expect(middle("short")).toBe("short");
   });
 });
 
@@ -113,16 +222,35 @@ describe("the plan", () => {
     }
   });
 
-  it("words a drop where nothing could come in, three reasons at most", () => {
-    const refused = ["a", "b", "c", "d"].map((name) => ({
-      source: `C:/x/${name}`,
-      name,
-      reason: "missing" as const,
-    }));
-    const text = nothingText(plan({ refused }));
-    expect(text).toContain("a isn't there any more");
-    expect(text).toContain("c isn't there any more");
-    expect(text).not.toContain("d isn't");
+  it("counts files and folders that can come in", () => {
+    expect(countsText(plan({ items: [item("a.md", false)] }))).toBe("1 file");
+    expect(countsText(plan({ items: [item("a.md", false), item("b.md", false)] }))).toBe("2 files");
+    expect(countsText(plan({ items: [item("x", false, "folder")] }))).toBe("1 folder");
+    expect(
+      countsText(
+        plan({ items: [item("a.md", false), item("b.md", true), item("x", false, "folder")] }),
+      ),
+    ).toBe("2 files and 1 folder");
+  });
+
+  it("lists the first names, then how many more", () => {
+    expect(firstOf(["a", "b"], 4)).toBe("a, b");
+    expect(firstOf(["a", "b", "c", "d", "e", "f"], 4)).toBe("a, b, c, d and 2 more");
+    expect(firstOf([], 4)).toBe("");
+  });
+});
+
+describe("a drop that opened", () => {
+  it("words the failures in one notice, the first one named", () => {
+    expect(openFailedText([])).toBeNull();
+    const error = { kind: "notFound" as const, subject: "C:/x/a.zip", detail: null };
+    expect(openFailedText([{ path: "C:/x/a.zip", error }])).toBe("“a.zip” couldn't be opened.");
+    const many = openFailedText([
+      { path: "C:\\x\\a b.zip", error },
+      { path: "C:/y", error },
+      { path: "C:/z", error },
+    ]);
+    expect(many?.startsWith("3 items couldn't be opened. The first was “a b.zip”: ")).toBe(true);
   });
 });
 

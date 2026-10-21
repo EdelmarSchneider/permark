@@ -15,8 +15,6 @@
         return notice.path === null
           ? apiErrorText(notice.error)
           : t("welcome.openFailed", { path: notice.path, message: apiErrorText(notice.error) });
-      case "dropOne":
-        return t("welcome.dropOne");
       case "stateRecovered":
         return t("notice.stateRecovered", { file: notice.notice.file });
       case "settingNotSaved":

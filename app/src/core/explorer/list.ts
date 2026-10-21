@@ -231,3 +231,40 @@ export function stemLength(name: string): number {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? dot : name.length;
 }
+
+/** The edge zone (px) of the list where a drag scrolls it. */
+export const EDGE_ZONE = 28;
+const EDGE_SLOW = 2;
+const EDGE_FAST = 14;
+
+/** Pixels per frame a drag at height `y` scrolls a list spanning `top`..`bottom`: negative up, positive down, 0
+ *  outside the edge zones (or outside the list). Faster closer to the edge. */
+export function edgeSpeed(y: number, top: number, bottom: number): number {
+  if (!(y >= top && y <= bottom) || bottom - top <= 0) return 0;
+  const zone = Math.min(EDGE_ZONE, (bottom - top) / 2);
+  const speed = (distance: number): number =>
+    Math.round(EDGE_SLOW + (EDGE_FAST - EDGE_SLOW) * (1 - distance / zone));
+  if (y < top + zone) return -speed(y - top);
+  if (y > bottom - zone) return speed(bottom - y);
+  return 0;
+}
+
+/** The rows that read as one block with an outside drop's target folder: its visible descendants (the rows right
+ *  below it, deeper than it; for a worktree root, its rows). `null`: no target row, or nothing below it. */
+export function dropBlock(
+  rows: readonly Row[],
+  target: string | null,
+): { first: number; last: number } | null {
+  if (target === null || target === "") return null;
+  const at = rows.findIndex((r) => rowKey(r) === target);
+  const row = rows[at];
+  if (row === undefined) return null;
+  let last = at;
+  for (let i = at + 1; i < rows.length; i += 1) {
+    const next = rows[i];
+    if (next === undefined || next.type === "root") break;
+    if (row.type === "node" && next.depth <= row.depth) break;
+    last = i;
+  }
+  return last === at ? null : { first: at + 1, last };
+}

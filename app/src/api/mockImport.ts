@@ -197,7 +197,7 @@ export function createMockImport(
           created.push(path);
           emitProgress(at + 1, item.name);
         }
-        if (created.length > 0) project.recordImport(created);
+        const undo = created.length > 0 ? project.recordImport(created) : null;
         refresh();
         cancel.delete(planId);
         const outcome: ImportOutcome = {
@@ -211,6 +211,8 @@ export function createMockImport(
           links: 0,
           leftBehind: 0,
           cancelled,
+          placed: created,
+          undo,
         };
         return { ok: true, value: outcome };
       },
