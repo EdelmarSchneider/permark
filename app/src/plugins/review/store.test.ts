@@ -20,7 +20,9 @@ const settle = async (): Promise<void> => {
 type Shown = { path: string | null; hash: string | null; kind: ReviewKind };
 const GUIDE = "docs/guide.md";
 
-async function setup(options: { conflictOn?: PluginMethod; shown?: Shown } = {}) {
+async function setup(
+  options: { conflictOn?: PluginMethod; shown?: Shown; onScreen?: () => boolean } = {},
+) {
   const mock = createMockApi();
   await mock.openPath(MOCK_FOLDER, "thisTab");
   const hash = await mock.pluginCall("review.open", { path: GUIDE });
@@ -55,6 +57,7 @@ async function setup(options: { conflictOn?: PluginMethod; shown?: Shown } = {})
         repaints += 1;
       },
     },
+    options.onScreen ?? (() => true),
   );
   const stop = store.start();
   await settle();
@@ -265,6 +268,22 @@ describe("the review of code and plain text", () => {
     const { mock, stop } = await setup({ shown: code });
     await new Promise((resolve) => setTimeout(resolve, SEEN_MS + 200));
     expect(mock.probe.plugins.calls).not.toContain("review.seen");
+    stop();
+  });
+
+  it("does not count a look in a tab that is not on screen, even with the focus", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    const onScreen = new Box(false);
+    const { mock, shown, stop } = await setup({ shown: code, onScreen: () => onScreen.value });
+    await new Promise((resolve) => setTimeout(resolve, SEEN_MS + 200));
+    // an agent rewrites the file in the hidden tab: the baseline does not move
+    shown.value = { ...code, hash: "9".repeat(16) };
+    await new Promise((resolve) => setTimeout(resolve, SEEN_MS + 200));
+    expect(mock.probe.plugins.calls).not.toContain("review.seen");
+    // the person comes to the tab
+    onScreen.value = true;
+    await new Promise((resolve) => setTimeout(resolve, SEEN_MS + 200));
+    expect(mock.probe.plugins.calls.filter((c) => c === "review.seen")).toHaveLength(1);
     stop();
   });
 });

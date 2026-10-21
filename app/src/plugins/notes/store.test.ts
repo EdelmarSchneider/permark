@@ -10,7 +10,7 @@ import { EditingSession } from "../../core/editing/session.svelte";
 import { PluginClient } from "../../core/plugins/client";
 import { WindowStore } from "../../core/window.svelte";
 import type { NotesIntent } from "../../api";
-import { NotesStore, showInNotes } from "./store.svelte";
+import { NotesStore, POLL_MS, showInNotes } from "./store.svelte";
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 8; i++) {
@@ -28,7 +28,7 @@ afterEach(() => {
 
 type Notes = Extract<WorkspaceView, { kind: "notes" }>;
 
-async function setup(asked?: NotesIntent) {
+async function setup(asked?: NotesIntent, onScreen?: () => boolean) {
   const api = createMockApi();
   if (asked !== undefined) await api.pluginCall("notes.want", { intent: asked });
   const outcome = await api.openNotes("thisTab");
@@ -40,7 +40,7 @@ async function setup(asked?: NotesIntent) {
   const editing = new EditingSession(api);
   const window = new WindowStore(api);
   const client = new PluginClient(api);
-  const store = new NotesStore({ api, client, documents, editing, window });
+  const store = new NotesStore({ api, client, documents, editing, window, onScreen });
   const off = store.attach(workspace);
   offs.push(off, () => editing.release());
   await settle();
@@ -50,6 +50,26 @@ async function setup(asked?: NotesIntent) {
 const FIRST = "2026-10-19 0907.md";
 
 describe("the list", () => {
+  it("is read again every few seconds only while the Notes tab is on screen", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      let shown = false;
+      const { api } = await setup(undefined, () => shown);
+      const reads = (): number => api.probe.plugins.calls.filter((c) => c === "notes.list").length;
+      const first = reads();
+      // a tab behind another stays "visible" (child webviews): it must not poll forever
+      vi.advanceTimersByTime(POLL_MS * 5);
+      await settle();
+      expect(reads()).toBe(first);
+      shown = true;
+      vi.advanceTimersByTime(POLL_MS);
+      await settle();
+      expect(reads()).toBe(first + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("is read when the window attaches: pinned first, then the newest", async () => {
     const { store } = await setup();
     expect(store.list.status).toBe("ready");
