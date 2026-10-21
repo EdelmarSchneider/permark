@@ -21,7 +21,6 @@ function flowOn(workspace: "project" | "notes", area: "other" | "explorer" = "ot
       // the stub's question stays open once asked (its plan never ends it)
       waiting: true,
       plan: () => Promise.resolve(),
-      cancel: () => log.push("imports.cancel"),
       discard: () => log.push("imports.discard"),
     },
     pictures: () => true,

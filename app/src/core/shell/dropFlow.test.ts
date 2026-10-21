@@ -24,7 +24,6 @@ function setup(patch: (mock: ReturnType<typeof createMockApi>) => Partial<Api> =
       this.planned.push({ folder, paths: [...paths], at });
       return Promise.resolve();
     },
-    cancel: () => log.push("imports.cancel"),
     discard: () => log.push("imports.discard"),
   };
   const queued: (() => void)[] = [];
@@ -346,7 +345,7 @@ describe("the Notes tab", () => {
 });
 
 describe("the view goes", () => {
-  it("hidden (a tab switch mid-drag): the badge, the frame, the questions and the tree's mark end", async () => {
+  it("hidden (a tab switch mid-drag): the badge, the frame and the tree's mark end; the question waits", async () => {
     const paths = Array.from({ length: 9 }, (_, n) => `C:/many/${n}.md`);
     await s.flow.drop(paths, 1, 1);
     s.flow.over(1, 1, ["C:/a.md"]);
@@ -354,8 +353,8 @@ describe("the view goes", () => {
     s.flow.hidden();
     expect(s.flow.hover).toBeNull();
     expect(s.queued).toHaveLength(0);
-    expect(s.flow.ask.status).toBe("none");
-    expect(s.log).toEqual(["tree.end null", "imports.cancel"]);
+    expect(s.flow.ask).toEqual({ status: "asking", paths, at: { x: 1, y: 1 } });
+    expect(s.log).toEqual(["tree.end null"]);
     // the drop that comes after (it went to another view) finds nothing pending
     s.flush();
     expect(s.flow.hover).toBeNull();
