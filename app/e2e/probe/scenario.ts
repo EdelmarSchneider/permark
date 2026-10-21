@@ -41,6 +41,9 @@ export type Step = Common &
     | { do: "probe" }
     | { do: "sweep"; target: string; max?: number }
     | { do: "viewport"; width: number; height: number }
+    /** Files from outside dragged over the center of `target` (`drag`: held there; `drop`: let go there), through
+     *  the app's own drop flow (badge, Explorer mark, question, toast), as the system's drag events would. */
+    | { do: "drag" | "drop"; target: string; paths: string[] }
   );
 
 export type Scenario = {
@@ -55,6 +58,9 @@ export type Scenario = {
 };
 
 export const DEFAULT_VIEWPORT = { width: 1280, height: 800 } as const;
+/** What a `drag` | `drop` carries when it does not say: one Markdown file from outside the project. */
+export const DEFAULT_DROP_PATHS: readonly string[] = ["C:/Users/demo/Downloads/dropped-note.md"];
+const MAX_DROP_PATHS = 50;
 const MAX_WITHIN = 10_000;
 const MAX_WAIT = 5_000;
 
@@ -139,6 +145,19 @@ export function parseStep(raw: unknown, at: number): Step {
       if (raw["max"] !== undefined) step.max = size(raw["max"], `step ${at} max`, 1, 50);
       return step;
     }
+    case "drag":
+    case "drop": {
+      const paths = raw["paths"] ?? [...DEFAULT_DROP_PATHS];
+      if (
+        !Array.isArray(paths) ||
+        paths.length === 0 ||
+        paths.length > MAX_DROP_PATHS ||
+        !paths.every((p) => typeof p === "string" && p.trim() !== "")
+      ) {
+        throw new ScenarioError(`step ${at} paths: 1..${MAX_DROP_PATHS} paths (text) expected`);
+      }
+      return { ...base, do: kind, target: text(raw["target"], `step ${at} target`), paths };
+    }
     case "viewport":
       return {
         ...base,
@@ -212,7 +231,7 @@ function argValue(v: string): unknown {
   return v;
 }
 
-/** Inline steps (CLI): `seed project; seed doc README.md; click role=button[name='Review']; press Escape; probe`. */
+/** Inline steps (CLI): `seed project; seed doc README.md; press PageDown; drop [data-path='docs']; probe`. */
 export function parseInline(line: string): Step[] {
   const parts = line
     .split(";")
@@ -244,6 +263,16 @@ export function parseInline(line: string): Step[] {
         return parseStep({ do: verb, target: rest }, at);
       case "press":
         return parseStep({ do: "press", key: rest }, at);
+      case "drag":
+      case "drop": {
+        // `drop <target> [paths=["C:/a.md","C:/b.png"]]`
+        const cut = rest.indexOf(" paths=");
+        if (cut < 0) return parseStep({ do: verb, target: rest }, at);
+        return parseStep(
+          { do: verb, target: rest.slice(0, cut).trim(), paths: argValue(rest.slice(cut + 7)) },
+          at,
+        );
+      }
       case "type":
         return parseStep({ do: "type", text: rest }, at);
       case "wait":

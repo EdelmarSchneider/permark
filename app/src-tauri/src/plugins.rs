@@ -583,6 +583,7 @@ mod tests {
         let documents = [
             ("README.md", "README.md"),
             ("docs/guide.md", "guide.md"),
+            ("docs/handbook.md", "handbook.md"),
             ("notes/ideas.md", "ideas.md"),
             ("CLAUDE.md", "claude-rules.md"),
             ("Cargo.toml", "cargo.toml.sample"),

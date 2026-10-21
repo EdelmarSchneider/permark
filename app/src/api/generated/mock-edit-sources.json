@@ -227,6 +227,891 @@
       }
     ]
   },
+  "docs/handbook.md": {
+    "path": "docs/handbook.md",
+    "text": "# Handbook\n\nA long document to read: chapters, sections, lists, a table and code. Scroll it, use the outline, jump between sections.\n\n## Getting started\n\nThis chapter is about getting started. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.\n\n### Install the app\n\nThis section explains install the app. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.\n\nA short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.\n\n### Open a folder\n\nThis section explains open a folder. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.\n\nLong documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.\n\n### Open a single file\n\nThis section explains open a single file. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.\n\nThe page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.\n\n### Find your way around\n\nThis section explains find your way around. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.\n\nThe same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\n- Links between documents work like a wiki: Alt+Left goes back.\n- Your choice is remembered for the next time you open the folder.\n- Every step below works with the mouse and with the keyboard.\n\n## Reading\n\nThis chapter is about reading. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.\n\n### Themes and tones\n\nThis section explains themes and tones. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.\n\nSettings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.\n\n### Reading width\n\nThis section explains reading width. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\nLinks between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.\n\n```text\nopen the folder\npick a document\nread it\n```\n\n### Zoom\n\nThis section explains zoom. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.\n\nYou can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.\n\n### Focus mode\n\nThis section explains focus mode. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.\n\nAgents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.\n\n- Your choice is remembered for the next time you open the folder.\n- Every step below works with the mouse and with the keyboard.\n- Nothing here changes your files until you ask for it.\n\n### The outline\n\nThis section explains the outline. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.\n\nA short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.\n\n## Writing\n\nThis chapter is about writing. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.\n\n### The visual editor\n\nThis section explains the visual editor. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.\n\nYour choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.\n\n### The source editor\n\nThis section explains the source editor. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.\n\nA short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.\n\n### Saving\n\nThis section explains saving. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.\n\nLong documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.\n\n- Every step below works with the mouse and with the keyboard.\n- Nothing here changes your files until you ask for it.\n- The page keeps your place when you come back to it.\n\n```text\nopen the folder\npick a document\nread it\n```\n\n### Undo and redo\n\nThis section explains undo and redo. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.\n\nSettings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.\n\n### Pictures in documents\n\nThis section explains pictures in documents. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\nLinks between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.\n\n## Organizing files\n\nThis chapter is about organizing files. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.\n\n### New files and folders\n\nThis section explains new files and folders. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.\n\nSettings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.\n\n### Rename and move\n\nThis section explains rename and move. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\nLinks between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.\n\n- Nothing here changes your files until you ask for it.\n- The page keeps your place when you come back to it.\n- You can undo the last change with Ctrl+Z.\n\n### Delete and restore\n\nThis section explains delete and restore. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.\n\nIf something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.\n\n### Drop files from outside\n\nThis section explains drop files from outside. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.\n\nYour choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.\n\n```text\nopen the folder\npick a document\nread it\n```\n\n## Search\n\nThis chapter is about search. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.\n\n### Quick open\n\nThis section explains quick open. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.\n\nIf something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.\n\n### Search everywhere\n\nThis section explains search everywhere. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.\n\nYour choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.\n\n- The page keeps your place when you come back to it.\n- You can undo the last change with Ctrl+Z.\n- A short note at the bottom of the window tells you when something is done.\n\n### Find in the page\n\nThis section explains find in the page. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.\n\nThe same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\n### Tags\n\nThis section explains tags. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.\n\nEvery step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.\n\n## Following changes\n\nThis chapter is about following changes. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.\n\n### Unread documents\n\nThis section explains unread documents. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.\n\nThe same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\n### The live feed\n\nThis section explains the live feed. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.\n\nEvery step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.\n\n- You can undo the last change with Ctrl+Z.\n- A short note at the bottom of the window tells you when something is done.\n- Settings for this live in the Settings page, under the section with the same name.\n\n```text\nopen the folder\npick a document\nread it\n```\n\n### Review changes\n\nThis section explains review changes. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.\n\nAgents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.\n\n### Compare with the last commit\n\nThis section explains compare with the last commit. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.\n\nNothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.\n\n## Notes\n\nThis chapter is about notes. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.\n\n### A new note\n\nThis section explains a new note. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.\n\nAgents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.\n\n### Pinned notes\n\nThis section explains pinned notes. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.\n\nNothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.\n\n- A short note at the bottom of the window tells you when something is done.\n- Settings for this live in the Settings page, under the section with the same name.\n- If something does not look right, close the document and open it again.\n\n### Versions of a note\n\nThis section explains versions of a note. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.\n\nLong documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.\n\n## Settings\n\nThis chapter is about settings. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.\n\n### Language\n\nThis section explains language. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.\n\nA short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.\n\n```text\nopen the folder\npick a document\nread it\n```\n\n### Keyboard shortcuts\n\nThis section explains keyboard shortcuts. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.\n\nLong documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.\n\n### Plugins\n\nThis section explains plugins. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.\n\nThe page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.\n\n- Settings for this live in the Settings page, under the section with the same name.\n- If something does not look right, close the document and open it again.\n- The same works in a single file and in a project folder.\n\n### Default app\n\nThis section explains default app. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\nLinks between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.\n\n## Troubleshooting\n\nThis chapter is about troubleshooting. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.\n\n### The app does not start\n\nThis section explains the app does not start. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.\n\nSettings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.\n\n### A file does not open\n\nThis section explains a file does not open. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.\n\nLinks between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.\n\n### Git is not found\n\nThis section explains git is not found. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.\n\nYou can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.\n\n- If something does not look right, close the document and open it again.\n- The same works in a single file and in a project folder.\n- Agents can read the result, but they never change it through the app.\n\n```text\nopen the folder\npick a document\nread it\n```\n\n## Reference\n\n| Key | What it does |\n|---|---|\n| Ctrl+P | Quick open |\n| Ctrl+Shift+F | Search everywhere |\n| Ctrl+E | Edit |\n| Ctrl+Alt+E | Source |\n\nThe end of the handbook.\n",
+    "hash": "22e47985cb9a86e7",
+    "lineEnding": "lf",
+    "encoding": "utf8",
+    "segments": [
+      {
+        "lineStart": 1,
+        "lineEnd": 1,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 3,
+        "lineEnd": 3,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 5,
+        "lineEnd": 5,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 7,
+        "lineEnd": 7,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 9,
+        "lineEnd": 9,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 11,
+        "lineEnd": 11,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 13,
+        "lineEnd": 13,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 15,
+        "lineEnd": 15,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 17,
+        "lineEnd": 17,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 19,
+        "lineEnd": 19,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 21,
+        "lineEnd": 21,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 23,
+        "lineEnd": 23,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 25,
+        "lineEnd": 25,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 27,
+        "lineEnd": 27,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 29,
+        "lineEnd": 29,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 31,
+        "lineEnd": 31,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 33,
+        "lineEnd": 35,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 37,
+        "lineEnd": 37,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 39,
+        "lineEnd": 39,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 41,
+        "lineEnd": 41,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 43,
+        "lineEnd": 43,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 45,
+        "lineEnd": 45,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 47,
+        "lineEnd": 47,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 49,
+        "lineEnd": 49,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 51,
+        "lineEnd": 51,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 53,
+        "lineEnd": 57,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 59,
+        "lineEnd": 59,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 61,
+        "lineEnd": 61,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 63,
+        "lineEnd": 63,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 65,
+        "lineEnd": 65,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 67,
+        "lineEnd": 67,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 69,
+        "lineEnd": 69,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 71,
+        "lineEnd": 73,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 75,
+        "lineEnd": 75,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 77,
+        "lineEnd": 77,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 79,
+        "lineEnd": 79,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 81,
+        "lineEnd": 81,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 83,
+        "lineEnd": 83,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 85,
+        "lineEnd": 85,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 87,
+        "lineEnd": 87,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 89,
+        "lineEnd": 89,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 91,
+        "lineEnd": 91,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 93,
+        "lineEnd": 93,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 95,
+        "lineEnd": 95,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 97,
+        "lineEnd": 97,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 99,
+        "lineEnd": 99,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 101,
+        "lineEnd": 101,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 103,
+        "lineEnd": 105,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 107,
+        "lineEnd": 111,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 113,
+        "lineEnd": 113,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 115,
+        "lineEnd": 115,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 117,
+        "lineEnd": 117,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 119,
+        "lineEnd": 119,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 121,
+        "lineEnd": 121,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 123,
+        "lineEnd": 123,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 125,
+        "lineEnd": 125,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 127,
+        "lineEnd": 127,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 129,
+        "lineEnd": 129,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 131,
+        "lineEnd": 131,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 133,
+        "lineEnd": 133,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 135,
+        "lineEnd": 135,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 137,
+        "lineEnd": 137,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 139,
+        "lineEnd": 139,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 141,
+        "lineEnd": 143,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 145,
+        "lineEnd": 145,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 147,
+        "lineEnd": 147,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 149,
+        "lineEnd": 149,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 151,
+        "lineEnd": 151,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 153,
+        "lineEnd": 153,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 155,
+        "lineEnd": 155,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 157,
+        "lineEnd": 161,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 163,
+        "lineEnd": 163,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 165,
+        "lineEnd": 165,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 167,
+        "lineEnd": 167,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 169,
+        "lineEnd": 169,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 171,
+        "lineEnd": 171,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 173,
+        "lineEnd": 173,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 175,
+        "lineEnd": 175,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 177,
+        "lineEnd": 177,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 179,
+        "lineEnd": 181,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 183,
+        "lineEnd": 183,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 185,
+        "lineEnd": 185,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 187,
+        "lineEnd": 187,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 189,
+        "lineEnd": 189,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 191,
+        "lineEnd": 191,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 193,
+        "lineEnd": 193,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 195,
+        "lineEnd": 195,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 197,
+        "lineEnd": 197,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 199,
+        "lineEnd": 199,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 201,
+        "lineEnd": 201,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 203,
+        "lineEnd": 203,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 205,
+        "lineEnd": 205,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 207,
+        "lineEnd": 207,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 209,
+        "lineEnd": 209,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 211,
+        "lineEnd": 213,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 215,
+        "lineEnd": 219,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 221,
+        "lineEnd": 221,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 223,
+        "lineEnd": 223,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 225,
+        "lineEnd": 225,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 227,
+        "lineEnd": 227,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 229,
+        "lineEnd": 229,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 231,
+        "lineEnd": 231,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 233,
+        "lineEnd": 233,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 235,
+        "lineEnd": 235,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 237,
+        "lineEnd": 237,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 239,
+        "lineEnd": 239,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 241,
+        "lineEnd": 241,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 243,
+        "lineEnd": 243,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 245,
+        "lineEnd": 245,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 247,
+        "lineEnd": 247,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 249,
+        "lineEnd": 251,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 253,
+        "lineEnd": 253,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 255,
+        "lineEnd": 255,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 257,
+        "lineEnd": 257,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 259,
+        "lineEnd": 259,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 261,
+        "lineEnd": 261,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 263,
+        "lineEnd": 263,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 265,
+        "lineEnd": 265,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 267,
+        "lineEnd": 267,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 269,
+        "lineEnd": 273,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 275,
+        "lineEnd": 275,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 277,
+        "lineEnd": 277,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 279,
+        "lineEnd": 279,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 281,
+        "lineEnd": 281,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 283,
+        "lineEnd": 283,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 285,
+        "lineEnd": 285,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 287,
+        "lineEnd": 289,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 291,
+        "lineEnd": 291,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 293,
+        "lineEnd": 293,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 295,
+        "lineEnd": 295,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 297,
+        "lineEnd": 297,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 299,
+        "lineEnd": 299,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 301,
+        "lineEnd": 301,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 303,
+        "lineEnd": 303,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 305,
+        "lineEnd": 305,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 307,
+        "lineEnd": 307,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 309,
+        "lineEnd": 309,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 311,
+        "lineEnd": 311,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 313,
+        "lineEnd": 313,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 315,
+        "lineEnd": 315,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 317,
+        "lineEnd": 317,
+        "kind": "paragraph",
+        "lock": null
+      },
+      {
+        "lineStart": 319,
+        "lineEnd": 321,
+        "kind": "list",
+        "lock": null
+      },
+      {
+        "lineStart": 323,
+        "lineEnd": 327,
+        "kind": "code",
+        "lock": null
+      },
+      {
+        "lineStart": 329,
+        "lineEnd": 329,
+        "kind": "heading",
+        "lock": null
+      },
+      {
+        "lineStart": 331,
+        "lineEnd": 336,
+        "kind": "table",
+        "lock": null
+      },
+      {
+        "lineStart": 338,
+        "lineEnd": 338,
+        "kind": "paragraph",
+        "lock": null
+      }
+    ]
+  },
   "notes/ideas.md": {
     "path": "notes/ideas.md",
     "text": "# Ideas\n\n## First idea\n\nShort and sweet.\n\n## Second idea\n\n- one\n- two\n",

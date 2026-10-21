@@ -68,6 +68,7 @@ export function seedFiles(): Record<string, string> {
     "README.md": "# Demo\n\nSee [the guide](docs/guide.md) and [notes](notes/ideas.md).\n",
     "docs/guide.md":
       "# Guide\n\nBack to the [readme](../README.md). Ideas: [i](../notes/ideas.md).\n",
+    "docs/handbook.md": "# Handbook\n\nA long document to read.\n",
     "docs/img/logo.png": "png",
     "notes/ideas.md": "# Ideas\n\n- one\n",
     "notes/todo.txt": "todo",

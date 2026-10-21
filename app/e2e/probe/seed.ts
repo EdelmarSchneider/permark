@@ -57,8 +57,12 @@ type MockApi = {
   ): Promise<{ ok: boolean; value?: { planId: number } }>;
   applyImport(planId: number, mode: string, conflicts: string): Promise<{ ok: boolean }>;
   emit(event: string, payload: unknown): void;
+  /** The system's drag events for the view (`api.onDrop`), as Tauri's would arrive (CSS pixels). */
   pluginCall: (method: string, args: Record<string, unknown>) => Promise<unknown>;
-  probe: { project: { add(path: string, text: string): void; files: Map<string, string> } };
+  probe: {
+    project: { add(path: string, text: string): void; files: Map<string, string> };
+    drops: { fire(event: unknown): void };
+  };
 };
 
 function str(args: Record<string, unknown>, key: string, def?: string): string {
@@ -69,6 +73,16 @@ function str(args: Record<string, unknown>, key: string, def?: string): string {
 
 const rowOf = (page: Page, path: string) =>
   page.locator(`[role="treeitem"][data-path="${path.replace(/"/g, '\\"')}"]`);
+
+/** One system drag event (`over` | `drop`) for the view, at a point in CSS pixels. */
+export async function fireDrop(
+  page: Page,
+  event:
+    | { type: "over"; count: number; paths: string[]; x: number; y: number }
+    | { type: "drop"; paths: string[]; x: number; y: number },
+): Promise<void> {
+  await withMock(page, (m, e) => m.mockApi.probe.drops.fire(e), event);
+}
 
 /** Applies one seed. */
 export async function seed(page: Page, use: SeedUse, args: Record<string, unknown>): Promise<void> {
