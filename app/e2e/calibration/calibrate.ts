@@ -1,6 +1,6 @@
-// `npm run ux:calibrate -- [--at now|before|after|all] [--only <id>] [--engine ...] [--out <dir>]` (spec: probe.md §9).
-// Runs each fixture's scenario at the commit asked (a temporary git worktree for before | after) and checks the
-// expected flags. Exit 1 when any expectation is not met.
+// `npm run ux:calibrate -- [--at all|now|before|after] [--only <id>] [--engine ...] [--out <dir>]` (spec: probe.md §9).
+// Runs each fixture's scenario at the commits asked (default all: before + after + now; a temporary git worktree for
+// before | after) and checks the expected flags. Exit 1 when any expectation is not met, 2 on usage | setup errors.
 
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from "node:fs";
@@ -8,7 +8,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { unmet } from "../probe/facts.ts";
-import { runScenario } from "../probe/run.ts";
 import { oneOf, type Engine } from "../probe/scenario.ts";
 import { commitAt, parseFixture, type At, type Fixture } from "./fixture.ts";
 
@@ -75,7 +74,7 @@ type Args = { at: At[]; only: string | null; engine: Engine | null; out: string 
 
 function parseArgs(argv: string[]): Args {
   const args: Args = {
-    at: ["now"],
+    at: ["before", "after", "now"],
     only: null,
     engine: null,
     out: path.join(
@@ -126,8 +125,17 @@ async function main(): Promise<number> {
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
     console.error(
-      "usage: npm run ux:calibrate -- [--at now|before|after|all] [--only <id>] [--engine chromium|msedge|webkit] [--out <dir>]",
+      "usage: npm run ux:calibrate -- [--at all|now|before|after] [--only <id>] [--engine chromium|msedge|webkit] [--out <dir>]",
     );
+    return 2;
+  }
+  // the browser half needs the dev dependencies (Playwright, axe): missing -> say how to get them
+  let runScenario: typeof import("../probe/run.ts").runScenario;
+  try {
+    ({ runScenario } = await import("../probe/run.ts"));
+  } catch (e) {
+    console.error(`probe dependencies missing (${e instanceof Error ? e.message : String(e)})`);
+    console.error("run `npm ci` in app/ first");
     return 2;
   }
   mkdirSync(args.out, { recursive: true });

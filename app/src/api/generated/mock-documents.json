@@ -358,6 +358,1378 @@
     },
     "notes": []
   },
+  "docs/handbook.md": {
+    "path": "docs/handbook.md",
+    "name": "handbook.md",
+    "format": "markdown",
+    "role": null,
+    "body": {
+      "kind": "markdown",
+      "blocks": [
+        {
+          "id": "3de9dfeed3398693",
+          "kind": "h1",
+          "lineStart": 1,
+          "lineEnd": 1,
+          "html": "<h1 data-b=\"3de9dfeed3398693\" id=\"handbook\">Handbook</h1>"
+        },
+        {
+          "id": "d3ef1e178bb8d05e",
+          "kind": "p",
+          "lineStart": 3,
+          "lineEnd": 3,
+          "html": "<p data-b=\"d3ef1e178bb8d05e\">A long document to read: chapters, sections, lists, a table and code. Scroll it, use the outline, jump between sections.</p>"
+        },
+        {
+          "id": "02dbe23f5510d144",
+          "kind": "h2",
+          "lineStart": 5,
+          "lineEnd": 5,
+          "html": "<h2 data-b=\"02dbe23f5510d144\" id=\"getting-started\">Getting started</h2>"
+        },
+        {
+          "id": "b10a50da453bc48d",
+          "kind": "p",
+          "lineStart": 7,
+          "lineEnd": 7,
+          "html": "<p data-b=\"b10a50da453bc48d\">This chapter is about getting started. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+        },
+        {
+          "id": "5be153ea6ef451ff",
+          "kind": "h3",
+          "lineStart": 9,
+          "lineEnd": 9,
+          "html": "<h3 data-b=\"5be153ea6ef451ff\" id=\"install-the-app\">Install the app</h3>"
+        },
+        {
+          "id": "0ccdce525639ff9f",
+          "kind": "p",
+          "lineStart": 11,
+          "lineEnd": 11,
+          "html": "<p data-b=\"0ccdce525639ff9f\">This section explains install the app. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+        },
+        {
+          "id": "7dce59ff5cab2de4",
+          "kind": "p",
+          "lineStart": 13,
+          "lineEnd": 13,
+          "html": "<p data-b=\"7dce59ff5cab2de4\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+        },
+        {
+          "id": "9edff938b574431d",
+          "kind": "h3",
+          "lineStart": 15,
+          "lineEnd": 15,
+          "html": "<h3 data-b=\"9edff938b574431d\" id=\"open-a-folder\">Open a folder</h3>"
+        },
+        {
+          "id": "7671dcbcefe6c23e",
+          "kind": "p",
+          "lineStart": 17,
+          "lineEnd": 17,
+          "html": "<p data-b=\"7671dcbcefe6c23e\">This section explains open a folder. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+        },
+        {
+          "id": "d22d7d2a445d809c",
+          "kind": "p",
+          "lineStart": 19,
+          "lineEnd": 19,
+          "html": "<p data-b=\"d22d7d2a445d809c\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+        },
+        {
+          "id": "23789e6d99b7baa6",
+          "kind": "h3",
+          "lineStart": 21,
+          "lineEnd": 21,
+          "html": "<h3 data-b=\"23789e6d99b7baa6\" id=\"open-a-single-file\">Open a single file</h3>"
+        },
+        {
+          "id": "82840cee2933dd99",
+          "kind": "p",
+          "lineStart": 23,
+          "lineEnd": 23,
+          "html": "<p data-b=\"82840cee2933dd99\">This section explains open a single file. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+        },
+        {
+          "id": "355ef907c26513a9",
+          "kind": "p",
+          "lineStart": 25,
+          "lineEnd": 25,
+          "html": "<p data-b=\"355ef907c26513a9\">The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+        },
+        {
+          "id": "e97b0edcc0d82263",
+          "kind": "h3",
+          "lineStart": 27,
+          "lineEnd": 27,
+          "html": "<h3 data-b=\"e97b0edcc0d82263\" id=\"find-your-way-around\">Find your way around</h3>"
+        },
+        {
+          "id": "d71774ad0c8e858c",
+          "kind": "p",
+          "lineStart": 29,
+          "lineEnd": 29,
+          "html": "<p data-b=\"d71774ad0c8e858c\">This section explains find your way around. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+        },
+        {
+          "id": "e0cbc2c06f3b489c",
+          "kind": "p",
+          "lineStart": 31,
+          "lineEnd": 31,
+          "html": "<p data-b=\"e0cbc2c06f3b489c\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "9a185d8c20c4aede",
+          "kind": "ul",
+          "lineStart": 33,
+          "lineEnd": 35,
+          "html": "<ul data-b=\"9a185d8c20c4aede\">\n<li>Links between documents work like a wiki: Alt+Left goes back.</li>\n<li>Your choice is remembered for the next time you open the folder.</li>\n<li>Every step below works with the mouse and with the keyboard.</li>\n</ul>"
+        },
+        {
+          "id": "3500c38a6270e6d3",
+          "kind": "h2",
+          "lineStart": 37,
+          "lineEnd": 37,
+          "html": "<h2 data-b=\"3500c38a6270e6d3\" id=\"reading\">Reading</h2>"
+        },
+        {
+          "id": "e9c91658faf4655b",
+          "kind": "p",
+          "lineStart": 39,
+          "lineEnd": 39,
+          "html": "<p data-b=\"e9c91658faf4655b\">This chapter is about reading. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+        },
+        {
+          "id": "21d9682530ea4c4e",
+          "kind": "h3",
+          "lineStart": 41,
+          "lineEnd": 41,
+          "html": "<h3 data-b=\"21d9682530ea4c4e\" id=\"themes-and-tones\">Themes and tones</h3>"
+        },
+        {
+          "id": "66e9ea436ae2c78c",
+          "kind": "p",
+          "lineStart": 43,
+          "lineEnd": 43,
+          "html": "<p data-b=\"66e9ea436ae2c78c\">This section explains themes and tones. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+        },
+        {
+          "id": "a08f321a7a738666",
+          "kind": "p",
+          "lineStart": 45,
+          "lineEnd": 45,
+          "html": "<p data-b=\"a08f321a7a738666\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+        },
+        {
+          "id": "e485f6b8a56b5816",
+          "kind": "h3",
+          "lineStart": 47,
+          "lineEnd": 47,
+          "html": "<h3 data-b=\"e485f6b8a56b5816\" id=\"reading-width\">Reading width</h3>"
+        },
+        {
+          "id": "311a4719362bb263",
+          "kind": "p",
+          "lineStart": 49,
+          "lineEnd": 49,
+          "html": "<p data-b=\"311a4719362bb263\">This section explains reading width. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "87cffa90ffb3d241",
+          "kind": "p",
+          "lineStart": 51,
+          "lineEnd": 51,
+          "html": "<p data-b=\"87cffa90ffb3d241\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+        },
+        {
+          "id": "8ef2c78143000b25",
+          "kind": "pre",
+          "lineStart": 53,
+          "lineEnd": 57,
+          "html": "<pre data-b=\"8ef2c78143000b25\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
+        },
+        {
+          "id": "172de342ad69da4f",
+          "kind": "h3",
+          "lineStart": 59,
+          "lineEnd": 59,
+          "html": "<h3 data-b=\"172de342ad69da4f\" id=\"zoom\">Zoom</h3>"
+        },
+        {
+          "id": "2b65a257839ff2c1",
+          "kind": "p",
+          "lineStart": 61,
+          "lineEnd": 61,
+          "html": "<p data-b=\"2b65a257839ff2c1\">This section explains zoom. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+        },
+        {
+          "id": "c88c7e428702ee00",
+          "kind": "p",
+          "lineStart": 63,
+          "lineEnd": 63,
+          "html": "<p data-b=\"c88c7e428702ee00\">You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+        },
+        {
+          "id": "c09014637091bd1e",
+          "kind": "h3",
+          "lineStart": 65,
+          "lineEnd": 65,
+          "html": "<h3 data-b=\"c09014637091bd1e\" id=\"focus-mode\">Focus mode</h3>"
+        },
+        {
+          "id": "7d125de418e84c83",
+          "kind": "p",
+          "lineStart": 67,
+          "lineEnd": 67,
+          "html": "<p data-b=\"7d125de418e84c83\">This section explains focus mode. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+        },
+        {
+          "id": "387fbc63fa8ac88c",
+          "kind": "p",
+          "lineStart": 69,
+          "lineEnd": 69,
+          "html": "<p data-b=\"387fbc63fa8ac88c\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+        },
+        {
+          "id": "c2e71147b1f4d121",
+          "kind": "ul",
+          "lineStart": 71,
+          "lineEnd": 73,
+          "html": "<ul data-b=\"c2e71147b1f4d121\">\n<li>Your choice is remembered for the next time you open the folder.</li>\n<li>Every step below works with the mouse and with the keyboard.</li>\n<li>Nothing here changes your files until you ask for it.</li>\n</ul>"
+        },
+        {
+          "id": "a5eb37f12f1cb7c7",
+          "kind": "h3",
+          "lineStart": 75,
+          "lineEnd": 75,
+          "html": "<h3 data-b=\"a5eb37f12f1cb7c7\" id=\"the-outline\">The outline</h3>"
+        },
+        {
+          "id": "b319c6b67fa73186",
+          "kind": "p",
+          "lineStart": 77,
+          "lineEnd": 77,
+          "html": "<p data-b=\"b319c6b67fa73186\">This section explains the outline. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+        },
+        {
+          "id": "7dce59ff5cab2de4-1",
+          "kind": "p",
+          "lineStart": 79,
+          "lineEnd": 79,
+          "html": "<p data-b=\"7dce59ff5cab2de4-1\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+        },
+        {
+          "id": "2f9bf0dcc8807a6a",
+          "kind": "h2",
+          "lineStart": 81,
+          "lineEnd": 81,
+          "html": "<h2 data-b=\"2f9bf0dcc8807a6a\" id=\"writing\">Writing</h2>"
+        },
+        {
+          "id": "7f6843a22d94abb7",
+          "kind": "p",
+          "lineStart": 83,
+          "lineEnd": 83,
+          "html": "<p data-b=\"7f6843a22d94abb7\">This chapter is about writing. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+        },
+        {
+          "id": "4fb1f28d557fb5d5",
+          "kind": "h3",
+          "lineStart": 85,
+          "lineEnd": 85,
+          "html": "<h3 data-b=\"4fb1f28d557fb5d5\" id=\"the-visual-editor\">The visual editor</h3>"
+        },
+        {
+          "id": "c494707d447589f9",
+          "kind": "p",
+          "lineStart": 87,
+          "lineEnd": 87,
+          "html": "<p data-b=\"c494707d447589f9\">This section explains the visual editor. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+        },
+        {
+          "id": "0b566c71d0e2fbf7",
+          "kind": "p",
+          "lineStart": 89,
+          "lineEnd": 89,
+          "html": "<p data-b=\"0b566c71d0e2fbf7\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+        },
+        {
+          "id": "23bf814dd61da007",
+          "kind": "h3",
+          "lineStart": 91,
+          "lineEnd": 91,
+          "html": "<h3 data-b=\"23bf814dd61da007\" id=\"the-source-editor\">The source editor</h3>"
+        },
+        {
+          "id": "7bce54e5bcb98834",
+          "kind": "p",
+          "lineStart": 93,
+          "lineEnd": 93,
+          "html": "<p data-b=\"7bce54e5bcb98834\">This section explains the source editor. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+        },
+        {
+          "id": "7dce59ff5cab2de4-2",
+          "kind": "p",
+          "lineStart": 95,
+          "lineEnd": 95,
+          "html": "<p data-b=\"7dce59ff5cab2de4-2\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+        },
+        {
+          "id": "9d555ee39b349773",
+          "kind": "h3",
+          "lineStart": 97,
+          "lineEnd": 97,
+          "html": "<h3 data-b=\"9d555ee39b349773\" id=\"saving\">Saving</h3>"
+        },
+        {
+          "id": "a87d6d08325ef3e5",
+          "kind": "p",
+          "lineStart": 99,
+          "lineEnd": 99,
+          "html": "<p data-b=\"a87d6d08325ef3e5\">This section explains saving. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+        },
+        {
+          "id": "d22d7d2a445d809c-1",
+          "kind": "p",
+          "lineStart": 101,
+          "lineEnd": 101,
+          "html": "<p data-b=\"d22d7d2a445d809c-1\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+        },
+        {
+          "id": "13e2cc5fcba09392",
+          "kind": "ul",
+          "lineStart": 103,
+          "lineEnd": 105,
+          "html": "<ul data-b=\"13e2cc5fcba09392\">\n<li>Every step below works with the mouse and with the keyboard.</li>\n<li>Nothing here changes your files until you ask for it.</li>\n<li>The page keeps your place when you come back to it.</li>\n</ul>"
+        },
+        {
+          "id": "8ef2c78143000b25-1",
+          "kind": "pre",
+          "lineStart": 107,
+          "lineEnd": 111,
+          "html": "<pre data-b=\"8ef2c78143000b25-1\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
+        },
+        {
+          "id": "0d589218964d5b70",
+          "kind": "h3",
+          "lineStart": 113,
+          "lineEnd": 113,
+          "html": "<h3 data-b=\"0d589218964d5b70\" id=\"undo-and-redo\">Undo and redo</h3>"
+        },
+        {
+          "id": "24d123d1ee51cd7d",
+          "kind": "p",
+          "lineStart": 115,
+          "lineEnd": 115,
+          "html": "<p data-b=\"24d123d1ee51cd7d\">This section explains undo and redo. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+        },
+        {
+          "id": "a08f321a7a738666-1",
+          "kind": "p",
+          "lineStart": 117,
+          "lineEnd": 117,
+          "html": "<p data-b=\"a08f321a7a738666-1\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+        },
+        {
+          "id": "f504f05b6853a087",
+          "kind": "h3",
+          "lineStart": 119,
+          "lineEnd": 119,
+          "html": "<h3 data-b=\"f504f05b6853a087\" id=\"pictures-in-documents\">Pictures in documents</h3>"
+        },
+        {
+          "id": "024c79d15ccfebf2",
+          "kind": "p",
+          "lineStart": 121,
+          "lineEnd": 121,
+          "html": "<p data-b=\"024c79d15ccfebf2\">This section explains pictures in documents. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "87cffa90ffb3d241-1",
+          "kind": "p",
+          "lineStart": 123,
+          "lineEnd": 123,
+          "html": "<p data-b=\"87cffa90ffb3d241-1\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+        },
+        {
+          "id": "7f07efc388a63e84",
+          "kind": "h2",
+          "lineStart": 125,
+          "lineEnd": 125,
+          "html": "<h2 data-b=\"7f07efc388a63e84\" id=\"organizing-files\">Organizing files</h2>"
+        },
+        {
+          "id": "21b0a9a9122815a5",
+          "kind": "p",
+          "lineStart": 127,
+          "lineEnd": 127,
+          "html": "<p data-b=\"21b0a9a9122815a5\">This chapter is about organizing files. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+        },
+        {
+          "id": "f023770d17a3e192",
+          "kind": "h3",
+          "lineStart": 129,
+          "lineEnd": 129,
+          "html": "<h3 data-b=\"f023770d17a3e192\" id=\"new-files-and-folders\">New files and folders</h3>"
+        },
+        {
+          "id": "45ea077c6eb7e9c2",
+          "kind": "p",
+          "lineStart": 131,
+          "lineEnd": 131,
+          "html": "<p data-b=\"45ea077c6eb7e9c2\">This section explains new files and folders. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+        },
+        {
+          "id": "a08f321a7a738666-2",
+          "kind": "p",
+          "lineStart": 133,
+          "lineEnd": 133,
+          "html": "<p data-b=\"a08f321a7a738666-2\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+        },
+        {
+          "id": "d3bf2f60658bf0e3",
+          "kind": "h3",
+          "lineStart": 135,
+          "lineEnd": 135,
+          "html": "<h3 data-b=\"d3bf2f60658bf0e3\" id=\"rename-and-move\">Rename and move</h3>"
+        },
+        {
+          "id": "f4aaf2f427d104f3",
+          "kind": "p",
+          "lineStart": 137,
+          "lineEnd": 137,
+          "html": "<p data-b=\"f4aaf2f427d104f3\">This section explains rename and move. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "87cffa90ffb3d241-2",
+          "kind": "p",
+          "lineStart": 139,
+          "lineEnd": 139,
+          "html": "<p data-b=\"87cffa90ffb3d241-2\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+        },
+        {
+          "id": "1c9d5facb92b6dcd",
+          "kind": "ul",
+          "lineStart": 141,
+          "lineEnd": 143,
+          "html": "<ul data-b=\"1c9d5facb92b6dcd\">\n<li>Nothing here changes your files until you ask for it.</li>\n<li>The page keeps your place when you come back to it.</li>\n<li>You can undo the last change with Ctrl+Z.</li>\n</ul>"
+        },
+        {
+          "id": "8b3ed034bf420fe4",
+          "kind": "h3",
+          "lineStart": 145,
+          "lineEnd": 145,
+          "html": "<h3 data-b=\"8b3ed034bf420fe4\" id=\"delete-and-restore\">Delete and restore</h3>"
+        },
+        {
+          "id": "f1da5ebc10d2998c",
+          "kind": "p",
+          "lineStart": 147,
+          "lineEnd": 147,
+          "html": "<p data-b=\"f1da5ebc10d2998c\">This section explains delete and restore. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+        },
+        {
+          "id": "111c39fdbdf2340d",
+          "kind": "p",
+          "lineStart": 149,
+          "lineEnd": 149,
+          "html": "<p data-b=\"111c39fdbdf2340d\">If something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+        },
+        {
+          "id": "2c6d1b438b18db9b",
+          "kind": "h3",
+          "lineStart": 151,
+          "lineEnd": 151,
+          "html": "<h3 data-b=\"2c6d1b438b18db9b\" id=\"drop-files-from-outside\">Drop files from outside</h3>"
+        },
+        {
+          "id": "02ffae0462c4b4e3",
+          "kind": "p",
+          "lineStart": 153,
+          "lineEnd": 153,
+          "html": "<p data-b=\"02ffae0462c4b4e3\">This section explains drop files from outside. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+        },
+        {
+          "id": "0b566c71d0e2fbf7-1",
+          "kind": "p",
+          "lineStart": 155,
+          "lineEnd": 155,
+          "html": "<p data-b=\"0b566c71d0e2fbf7-1\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+        },
+        {
+          "id": "8ef2c78143000b25-2",
+          "kind": "pre",
+          "lineStart": 157,
+          "lineEnd": 161,
+          "html": "<pre data-b=\"8ef2c78143000b25-2\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
+        },
+        {
+          "id": "1e9137e18ce4471c",
+          "kind": "h2",
+          "lineStart": 163,
+          "lineEnd": 163,
+          "html": "<h2 data-b=\"1e9137e18ce4471c\" id=\"search\">Search</h2>"
+        },
+        {
+          "id": "b4f3672286d083de",
+          "kind": "p",
+          "lineStart": 165,
+          "lineEnd": 165,
+          "html": "<p data-b=\"b4f3672286d083de\">This chapter is about search. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+        },
+        {
+          "id": "5200ada67db2e43f",
+          "kind": "h3",
+          "lineStart": 167,
+          "lineEnd": 167,
+          "html": "<h3 data-b=\"5200ada67db2e43f\" id=\"quick-open\">Quick open</h3>"
+        },
+        {
+          "id": "0324a91e85f92740",
+          "kind": "p",
+          "lineStart": 169,
+          "lineEnd": 169,
+          "html": "<p data-b=\"0324a91e85f92740\">This section explains quick open. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+        },
+        {
+          "id": "111c39fdbdf2340d-1",
+          "kind": "p",
+          "lineStart": 171,
+          "lineEnd": 171,
+          "html": "<p data-b=\"111c39fdbdf2340d-1\">If something does not look right, close the document and open it again. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+        },
+        {
+          "id": "8d415b79327571fa",
+          "kind": "h3",
+          "lineStart": 173,
+          "lineEnd": 173,
+          "html": "<h3 data-b=\"8d415b79327571fa\" id=\"search-everywhere\">Search everywhere</h3>"
+        },
+        {
+          "id": "72dd64b6a074f10d",
+          "kind": "p",
+          "lineStart": 175,
+          "lineEnd": 175,
+          "html": "<p data-b=\"72dd64b6a074f10d\">This section explains search everywhere. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+        },
+        {
+          "id": "0b566c71d0e2fbf7-2",
+          "kind": "p",
+          "lineStart": 177,
+          "lineEnd": 177,
+          "html": "<p data-b=\"0b566c71d0e2fbf7-2\">Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+        },
+        {
+          "id": "82945cb698a84cc7",
+          "kind": "ul",
+          "lineStart": 179,
+          "lineEnd": 181,
+          "html": "<ul data-b=\"82945cb698a84cc7\">\n<li>The page keeps your place when you come back to it.</li>\n<li>You can undo the last change with Ctrl+Z.</li>\n<li>A short note at the bottom of the window tells you when something is done.</li>\n</ul>"
+        },
+        {
+          "id": "f0868af7f8a0d2a5",
+          "kind": "h3",
+          "lineStart": 183,
+          "lineEnd": 183,
+          "html": "<h3 data-b=\"f0868af7f8a0d2a5\" id=\"find-in-the-page\">Find in the page</h3>"
+        },
+        {
+          "id": "de743cc485eba646",
+          "kind": "p",
+          "lineStart": 185,
+          "lineEnd": 185,
+          "html": "<p data-b=\"de743cc485eba646\">This section explains find in the page. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+        },
+        {
+          "id": "e0cbc2c06f3b489c-1",
+          "kind": "p",
+          "lineStart": 187,
+          "lineEnd": 187,
+          "html": "<p data-b=\"e0cbc2c06f3b489c-1\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "3cff7c6ccbc618db",
+          "kind": "h3",
+          "lineStart": 189,
+          "lineEnd": 189,
+          "html": "<h3 data-b=\"3cff7c6ccbc618db\" id=\"tags\">Tags</h3>"
+        },
+        {
+          "id": "4fe533d6b9fb5d1e",
+          "kind": "p",
+          "lineStart": 191,
+          "lineEnd": 191,
+          "html": "<p data-b=\"4fe533d6b9fb5d1e\">This section explains tags. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+        },
+        {
+          "id": "ae15089248788160",
+          "kind": "p",
+          "lineStart": 193,
+          "lineEnd": 193,
+          "html": "<p data-b=\"ae15089248788160\">Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+        },
+        {
+          "id": "867b3a271e309850",
+          "kind": "h2",
+          "lineStart": 195,
+          "lineEnd": 195,
+          "html": "<h2 data-b=\"867b3a271e309850\" id=\"following-changes\">Following changes</h2>"
+        },
+        {
+          "id": "42a74eeb59a44e51",
+          "kind": "p",
+          "lineStart": 197,
+          "lineEnd": 197,
+          "html": "<p data-b=\"42a74eeb59a44e51\">This chapter is about following changes. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+        },
+        {
+          "id": "9261fc26a61920f5",
+          "kind": "h3",
+          "lineStart": 199,
+          "lineEnd": 199,
+          "html": "<h3 data-b=\"9261fc26a61920f5\" id=\"unread-documents\">Unread documents</h3>"
+        },
+        {
+          "id": "735ca66cf8b54d35",
+          "kind": "p",
+          "lineStart": 201,
+          "lineEnd": 201,
+          "html": "<p data-b=\"735ca66cf8b54d35\">This section explains unread documents. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+        },
+        {
+          "id": "e0cbc2c06f3b489c-2",
+          "kind": "p",
+          "lineStart": 203,
+          "lineEnd": 203,
+          "html": "<p data-b=\"e0cbc2c06f3b489c-2\">The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "c6d151d6dabb36a2",
+          "kind": "h3",
+          "lineStart": 205,
+          "lineEnd": 205,
+          "html": "<h3 data-b=\"c6d151d6dabb36a2\" id=\"the-live-feed\">The live feed</h3>"
+        },
+        {
+          "id": "4b2dfe2593222696",
+          "kind": "p",
+          "lineStart": 207,
+          "lineEnd": 207,
+          "html": "<p data-b=\"4b2dfe2593222696\">This section explains the live feed. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+        },
+        {
+          "id": "ae15089248788160-1",
+          "kind": "p",
+          "lineStart": 209,
+          "lineEnd": 209,
+          "html": "<p data-b=\"ae15089248788160-1\">Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+        },
+        {
+          "id": "b23b08ae7a7cac97",
+          "kind": "ul",
+          "lineStart": 211,
+          "lineEnd": 213,
+          "html": "<ul data-b=\"b23b08ae7a7cac97\">\n<li>You can undo the last change with Ctrl+Z.</li>\n<li>A short note at the bottom of the window tells you when something is done.</li>\n<li>Settings for this live in the Settings page, under the section with the same name.</li>\n</ul>"
+        },
+        {
+          "id": "8ef2c78143000b25-3",
+          "kind": "pre",
+          "lineStart": 215,
+          "lineEnd": 219,
+          "html": "<pre data-b=\"8ef2c78143000b25-3\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
+        },
+        {
+          "id": "dbd437eace645e7d",
+          "kind": "h3",
+          "lineStart": 221,
+          "lineEnd": 221,
+          "html": "<h3 data-b=\"dbd437eace645e7d\" id=\"review-changes\">Review changes</h3>"
+        },
+        {
+          "id": "bc291f08145d8797",
+          "kind": "p",
+          "lineStart": 223,
+          "lineEnd": 223,
+          "html": "<p data-b=\"bc291f08145d8797\">This section explains review changes. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+        },
+        {
+          "id": "387fbc63fa8ac88c-1",
+          "kind": "p",
+          "lineStart": 225,
+          "lineEnd": 225,
+          "html": "<p data-b=\"387fbc63fa8ac88c-1\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+        },
+        {
+          "id": "024d3204d08d8ee5",
+          "kind": "h3",
+          "lineStart": 227,
+          "lineEnd": 227,
+          "html": "<h3 data-b=\"024d3204d08d8ee5\" id=\"compare-with-the-last-commit\">Compare with the last commit</h3>"
+        },
+        {
+          "id": "38fa711a931f6e98",
+          "kind": "p",
+          "lineStart": 229,
+          "lineEnd": 229,
+          "html": "<p data-b=\"38fa711a931f6e98\">This section explains compare with the last commit. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+        },
+        {
+          "id": "4c3fb8f0b47baffd",
+          "kind": "p",
+          "lineStart": 231,
+          "lineEnd": 231,
+          "html": "<p data-b=\"4c3fb8f0b47baffd\">Nothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+        },
+        {
+          "id": "b454c74e8fbcc9f1",
+          "kind": "h2",
+          "lineStart": 233,
+          "lineEnd": 233,
+          "html": "<h2 data-b=\"b454c74e8fbcc9f1\" id=\"notes\">Notes</h2>"
+        },
+        {
+          "id": "687a5d5a6c33e18a",
+          "kind": "p",
+          "lineStart": 235,
+          "lineEnd": 235,
+          "html": "<p data-b=\"687a5d5a6c33e18a\">This chapter is about notes. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+        },
+        {
+          "id": "2aab2e22f283fafd",
+          "kind": "h3",
+          "lineStart": 237,
+          "lineEnd": 237,
+          "html": "<h3 data-b=\"2aab2e22f283fafd\" id=\"a-new-note\">A new note</h3>"
+        },
+        {
+          "id": "206f1bedd71bdc84",
+          "kind": "p",
+          "lineStart": 239,
+          "lineEnd": 239,
+          "html": "<p data-b=\"206f1bedd71bdc84\">This section explains a new note. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+        },
+        {
+          "id": "387fbc63fa8ac88c-2",
+          "kind": "p",
+          "lineStart": 241,
+          "lineEnd": 241,
+          "html": "<p data-b=\"387fbc63fa8ac88c-2\">Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back.</p>"
+        },
+        {
+          "id": "fdc5b5a528df0cb6",
+          "kind": "h3",
+          "lineStart": 243,
+          "lineEnd": 243,
+          "html": "<h3 data-b=\"fdc5b5a528df0cb6\" id=\"pinned-notes\">Pinned notes</h3>"
+        },
+        {
+          "id": "9501d600293e57cd",
+          "kind": "p",
+          "lineStart": 245,
+          "lineEnd": 245,
+          "html": "<p data-b=\"9501d600293e57cd\">This section explains pinned notes. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+        },
+        {
+          "id": "4c3fb8f0b47baffd-1",
+          "kind": "p",
+          "lineStart": 247,
+          "lineEnd": 247,
+          "html": "<p data-b=\"4c3fb8f0b47baffd-1\">Nothing here changes your files until you ask for it. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+        },
+        {
+          "id": "eb7af82e33e62ff8",
+          "kind": "ul",
+          "lineStart": 249,
+          "lineEnd": 251,
+          "html": "<ul data-b=\"eb7af82e33e62ff8\">\n<li>A short note at the bottom of the window tells you when something is done.</li>\n<li>Settings for this live in the Settings page, under the section with the same name.</li>\n<li>If something does not look right, close the document and open it again.</li>\n</ul>"
+        },
+        {
+          "id": "ac0bc3b9c38edc08",
+          "kind": "h3",
+          "lineStart": 253,
+          "lineEnd": 253,
+          "html": "<h3 data-b=\"ac0bc3b9c38edc08\" id=\"versions-of-a-note\">Versions of a note</h3>"
+        },
+        {
+          "id": "3fcbee5a3dafa78f",
+          "kind": "p",
+          "lineStart": 255,
+          "lineEnd": 255,
+          "html": "<p data-b=\"3fcbee5a3dafa78f\">This section explains versions of a note. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+        },
+        {
+          "id": "d22d7d2a445d809c-2",
+          "kind": "p",
+          "lineStart": 257,
+          "lineEnd": 257,
+          "html": "<p data-b=\"d22d7d2a445d809c-2\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+        },
+        {
+          "id": "13e66aa8603e9614",
+          "kind": "h2",
+          "lineStart": 259,
+          "lineEnd": 259,
+          "html": "<h2 data-b=\"13e66aa8603e9614\" id=\"settings\">Settings</h2>"
+        },
+        {
+          "id": "e8dfc0372bf2e87d",
+          "kind": "p",
+          "lineStart": 261,
+          "lineEnd": 261,
+          "html": "<p data-b=\"e8dfc0372bf2e87d\">This chapter is about settings. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+        },
+        {
+          "id": "8b0e173fc6385dbd",
+          "kind": "h3",
+          "lineStart": 263,
+          "lineEnd": 263,
+          "html": "<h3 data-b=\"8b0e173fc6385dbd\" id=\"language\">Language</h3>"
+        },
+        {
+          "id": "ee0cc5701b722f92",
+          "kind": "p",
+          "lineStart": 265,
+          "lineEnd": 265,
+          "html": "<p data-b=\"ee0cc5701b722f92\">This section explains language. The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z.</p>"
+        },
+        {
+          "id": "7dce59ff5cab2de4-3",
+          "kind": "p",
+          "lineStart": 267,
+          "lineEnd": 267,
+          "html": "<p data-b=\"7dce59ff5cab2de4-3\">A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again.</p>"
+        },
+        {
+          "id": "8ef2c78143000b25-4",
+          "kind": "pre",
+          "lineStart": 269,
+          "lineEnd": 273,
+          "html": "<pre data-b=\"8ef2c78143000b25-4\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
+        },
+        {
+          "id": "cfa8d70ee7a069be",
+          "kind": "h3",
+          "lineStart": 275,
+          "lineEnd": 275,
+          "html": "<h3 data-b=\"cfa8d70ee7a069be\" id=\"keyboard-shortcuts\">Keyboard shortcuts</h3>"
+        },
+        {
+          "id": "397e09e9ade29ea6",
+          "kind": "p",
+          "lineStart": 277,
+          "lineEnd": 277,
+          "html": "<p data-b=\"397e09e9ade29ea6\">This section explains keyboard shortcuts. The same works in a single file and in a project folder. Agents can read the result, but they never change it through the app.</p>"
+        },
+        {
+          "id": "d22d7d2a445d809c-3",
+          "kind": "p",
+          "lineStart": 279,
+          "lineEnd": 279,
+          "html": "<p data-b=\"d22d7d2a445d809c-3\">Long documents open at once; the rest loads while you read. Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder.</p>"
+        },
+        {
+          "id": "ae286ab79919d1cd",
+          "kind": "h3",
+          "lineStart": 281,
+          "lineEnd": 281,
+          "html": "<h3 data-b=\"ae286ab79919d1cd\" id=\"plugins\">Plugins</h3>"
+        },
+        {
+          "id": "f34c21c3b9170a9b",
+          "kind": "p",
+          "lineStart": 283,
+          "lineEnd": 283,
+          "html": "<p data-b=\"f34c21c3b9170a9b\">This section explains plugins. Every step below works with the mouse and with the keyboard. Nothing here changes your files until you ask for it.</p>"
+        },
+        {
+          "id": "355ef907c26513a9-1",
+          "kind": "p",
+          "lineStart": 285,
+          "lineEnd": 285,
+          "html": "<p data-b=\"355ef907c26513a9-1\">The page keeps your place when you come back to it. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+        },
+        {
+          "id": "af01627343b863b2",
+          "kind": "ul",
+          "lineStart": 287,
+          "lineEnd": 289,
+          "html": "<ul data-b=\"af01627343b863b2\">\n<li>Settings for this live in the Settings page, under the section with the same name.</li>\n<li>If something does not look right, close the document and open it again.</li>\n<li>The same works in a single file and in a project folder.</li>\n</ul>"
+        },
+        {
+          "id": "b0b88cb5b579e906",
+          "kind": "h3",
+          "lineStart": 291,
+          "lineEnd": 291,
+          "html": "<h3 data-b=\"b0b88cb5b579e906\" id=\"default-app\">Default app</h3>"
+        },
+        {
+          "id": "d8bfe09f58fba0c0",
+          "kind": "p",
+          "lineStart": 293,
+          "lineEnd": 293,
+          "html": "<p data-b=\"d8bfe09f58fba0c0\">This section explains default app. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "87cffa90ffb3d241-3",
+          "kind": "p",
+          "lineStart": 295,
+          "lineEnd": 295,
+          "html": "<p data-b=\"87cffa90ffb3d241-3\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+        },
+        {
+          "id": "23bfa1f79cf8db2c",
+          "kind": "h2",
+          "lineStart": 297,
+          "lineEnd": 297,
+          "html": "<h2 data-b=\"23bfa1f79cf8db2c\" id=\"troubleshooting\">Troubleshooting</h2>"
+        },
+        {
+          "id": "238053a64057b6ed",
+          "kind": "p",
+          "lineStart": 299,
+          "lineEnd": 299,
+          "html": "<p data-b=\"238053a64057b6ed\">This chapter is about troubleshooting. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+        },
+        {
+          "id": "13b5dbb15f67ca9f",
+          "kind": "h3",
+          "lineStart": 301,
+          "lineEnd": 301,
+          "html": "<h3 data-b=\"13b5dbb15f67ca9f\" id=\"the-app-does-not-start\">The app does not start</h3>"
+        },
+        {
+          "id": "88855e0bd1670046",
+          "kind": "p",
+          "lineStart": 303,
+          "lineEnd": 303,
+          "html": "<p data-b=\"88855e0bd1670046\">This section explains the app does not start. You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done.</p>"
+        },
+        {
+          "id": "a08f321a7a738666-3",
+          "kind": "p",
+          "lineStart": 305,
+          "lineEnd": 305,
+          "html": "<p data-b=\"a08f321a7a738666-3\">Settings for this live in the Settings page, under the section with the same name. If something does not look right, close the document and open it again. The same works in a single file and in a project folder.</p>"
+        },
+        {
+          "id": "e070f53d06f984a9",
+          "kind": "h3",
+          "lineStart": 307,
+          "lineEnd": 307,
+          "html": "<h3 data-b=\"e070f53d06f984a9\" id=\"a-file-does-not-open\">A file does not open</h3>"
+        },
+        {
+          "id": "bd8e208483fd2c3d",
+          "kind": "p",
+          "lineStart": 309,
+          "lineEnd": 309,
+          "html": "<p data-b=\"bd8e208483fd2c3d\">This section explains a file does not open. Agents can read the result, but they never change it through the app. Long documents open at once; the rest loads while you read.</p>"
+        },
+        {
+          "id": "87cffa90ffb3d241-4",
+          "kind": "p",
+          "lineStart": 311,
+          "lineEnd": 311,
+          "html": "<p data-b=\"87cffa90ffb3d241-4\">Links between documents work like a wiki: Alt+Left goes back. Your choice is remembered for the next time you open the folder. Every step below works with the mouse and with the keyboard.</p>"
+        },
+        {
+          "id": "5c6ae611cadb8f8c",
+          "kind": "h3",
+          "lineStart": 313,
+          "lineEnd": 313,
+          "html": "<h3 data-b=\"5c6ae611cadb8f8c\" id=\"git-is-not-found\">Git is not found</h3>"
+        },
+        {
+          "id": "d33f5c0469e87f97",
+          "kind": "p",
+          "lineStart": 315,
+          "lineEnd": 315,
+          "html": "<p data-b=\"d33f5c0469e87f97\">This section explains git is not found. Nothing here changes your files until you ask for it. The page keeps your place when you come back to it.</p>"
+        },
+        {
+          "id": "c88c7e428702ee00-1",
+          "kind": "p",
+          "lineStart": 317,
+          "lineEnd": 317,
+          "html": "<p data-b=\"c88c7e428702ee00-1\">You can undo the last change with Ctrl+Z. A short note at the bottom of the window tells you when something is done. Settings for this live in the Settings page, under the section with the same name.</p>"
+        },
+        {
+          "id": "fd0a9586457d524f",
+          "kind": "ul",
+          "lineStart": 319,
+          "lineEnd": 321,
+          "html": "<ul data-b=\"fd0a9586457d524f\">\n<li>If something does not look right, close the document and open it again.</li>\n<li>The same works in a single file and in a project folder.</li>\n<li>Agents can read the result, but they never change it through the app.</li>\n</ul>"
+        },
+        {
+          "id": "8ef2c78143000b25-5",
+          "kind": "pre",
+          "lineStart": 323,
+          "lineEnd": 327,
+          "html": "<pre data-b=\"8ef2c78143000b25-5\"><code class=\"language-text\">open the folder\npick a document\nread it\n</code></pre>"
+        },
+        {
+          "id": "2fc67ba9a66d4983",
+          "kind": "h2",
+          "lineStart": 329,
+          "lineEnd": 329,
+          "html": "<h2 data-b=\"2fc67ba9a66d4983\" id=\"reference\">Reference</h2>"
+        },
+        {
+          "id": "31ea9ebfd3c06887",
+          "kind": "table",
+          "lineStart": 331,
+          "lineEnd": 336,
+          "html": "<table data-b=\"31ea9ebfd3c06887\">\n<thead>\n<tr>\n<th>Key</th>\n<th>What it does</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>Ctrl+P</td>\n<td>Quick open</td>\n</tr>\n<tr>\n<td>Ctrl+Shift+F</td>\n<td>Search everywhere</td>\n</tr>\n<tr>\n<td>Ctrl+E</td>\n<td>Edit</td>\n</tr>\n<tr>\n<td>Ctrl+Alt+E</td>\n<td>Source</td>\n</tr>\n</tbody>\n</table>"
+        },
+        {
+          "id": "92c28b714942abc6",
+          "kind": "p",
+          "lineStart": 338,
+          "lineEnd": 338,
+          "html": "<p data-b=\"92c28b714942abc6\">The end of the handbook.</p>"
+        }
+      ],
+      "outline": [
+        {
+          "label": "Handbook",
+          "level": 1,
+          "id": "handbook",
+          "line": 1,
+          "block": "3de9dfeed3398693"
+        },
+        {
+          "label": "Getting started",
+          "level": 2,
+          "id": "getting-started",
+          "line": 5,
+          "block": "02dbe23f5510d144"
+        },
+        {
+          "label": "Install the app",
+          "level": 3,
+          "id": "install-the-app",
+          "line": 9,
+          "block": "5be153ea6ef451ff"
+        },
+        {
+          "label": "Open a folder",
+          "level": 3,
+          "id": "open-a-folder",
+          "line": 15,
+          "block": "9edff938b574431d"
+        },
+        {
+          "label": "Open a single file",
+          "level": 3,
+          "id": "open-a-single-file",
+          "line": 21,
+          "block": "23789e6d99b7baa6"
+        },
+        {
+          "label": "Find your way around",
+          "level": 3,
+          "id": "find-your-way-around",
+          "line": 27,
+          "block": "e97b0edcc0d82263"
+        },
+        {
+          "label": "Reading",
+          "level": 2,
+          "id": "reading",
+          "line": 37,
+          "block": "3500c38a6270e6d3"
+        },
+        {
+          "label": "Themes and tones",
+          "level": 3,
+          "id": "themes-and-tones",
+          "line": 41,
+          "block": "21d9682530ea4c4e"
+        },
+        {
+          "label": "Reading width",
+          "level": 3,
+          "id": "reading-width",
+          "line": 47,
+          "block": "e485f6b8a56b5816"
+        },
+        {
+          "label": "Zoom",
+          "level": 3,
+          "id": "zoom",
+          "line": 59,
+          "block": "172de342ad69da4f"
+        },
+        {
+          "label": "Focus mode",
+          "level": 3,
+          "id": "focus-mode",
+          "line": 65,
+          "block": "c09014637091bd1e"
+        },
+        {
+          "label": "The outline",
+          "level": 3,
+          "id": "the-outline",
+          "line": 75,
+          "block": "a5eb37f12f1cb7c7"
+        },
+        {
+          "label": "Writing",
+          "level": 2,
+          "id": "writing",
+          "line": 81,
+          "block": "2f9bf0dcc8807a6a"
+        },
+        {
+          "label": "The visual editor",
+          "level": 3,
+          "id": "the-visual-editor",
+          "line": 85,
+          "block": "4fb1f28d557fb5d5"
+        },
+        {
+          "label": "The source editor",
+          "level": 3,
+          "id": "the-source-editor",
+          "line": 91,
+          "block": "23bf814dd61da007"
+        },
+        {
+          "label": "Saving",
+          "level": 3,
+          "id": "saving",
+          "line": 97,
+          "block": "9d555ee39b349773"
+        },
+        {
+          "label": "Undo and redo",
+          "level": 3,
+          "id": "undo-and-redo",
+          "line": 113,
+          "block": "0d589218964d5b70"
+        },
+        {
+          "label": "Pictures in documents",
+          "level": 3,
+          "id": "pictures-in-documents",
+          "line": 119,
+          "block": "f504f05b6853a087"
+        },
+        {
+          "label": "Organizing files",
+          "level": 2,
+          "id": "organizing-files",
+          "line": 125,
+          "block": "7f07efc388a63e84"
+        },
+        {
+          "label": "New files and folders",
+          "level": 3,
+          "id": "new-files-and-folders",
+          "line": 129,
+          "block": "f023770d17a3e192"
+        },
+        {
+          "label": "Rename and move",
+          "level": 3,
+          "id": "rename-and-move",
+          "line": 135,
+          "block": "d3bf2f60658bf0e3"
+        },
+        {
+          "label": "Delete and restore",
+          "level": 3,
+          "id": "delete-and-restore",
+          "line": 145,
+          "block": "8b3ed034bf420fe4"
+        },
+        {
+          "label": "Drop files from outside",
+          "level": 3,
+          "id": "drop-files-from-outside",
+          "line": 151,
+          "block": "2c6d1b438b18db9b"
+        },
+        {
+          "label": "Search",
+          "level": 2,
+          "id": "search",
+          "line": 163,
+          "block": "1e9137e18ce4471c"
+        },
+        {
+          "label": "Quick open",
+          "level": 3,
+          "id": "quick-open",
+          "line": 167,
+          "block": "5200ada67db2e43f"
+        },
+        {
+          "label": "Search everywhere",
+          "level": 3,
+          "id": "search-everywhere",
+          "line": 173,
+          "block": "8d415b79327571fa"
+        },
+        {
+          "label": "Find in the page",
+          "level": 3,
+          "id": "find-in-the-page",
+          "line": 183,
+          "block": "f0868af7f8a0d2a5"
+        },
+        {
+          "label": "Tags",
+          "level": 3,
+          "id": "tags",
+          "line": 189,
+          "block": "3cff7c6ccbc618db"
+        },
+        {
+          "label": "Following changes",
+          "level": 2,
+          "id": "following-changes",
+          "line": 195,
+          "block": "867b3a271e309850"
+        },
+        {
+          "label": "Unread documents",
+          "level": 3,
+          "id": "unread-documents",
+          "line": 199,
+          "block": "9261fc26a61920f5"
+        },
+        {
+          "label": "The live feed",
+          "level": 3,
+          "id": "the-live-feed",
+          "line": 205,
+          "block": "c6d151d6dabb36a2"
+        },
+        {
+          "label": "Review changes",
+          "level": 3,
+          "id": "review-changes",
+          "line": 221,
+          "block": "dbd437eace645e7d"
+        },
+        {
+          "label": "Compare with the last commit",
+          "level": 3,
+          "id": "compare-with-the-last-commit",
+          "line": 227,
+          "block": "024d3204d08d8ee5"
+        },
+        {
+          "label": "Notes",
+          "level": 2,
+          "id": "notes",
+          "line": 233,
+          "block": "b454c74e8fbcc9f1"
+        },
+        {
+          "label": "A new note",
+          "level": 3,
+          "id": "a-new-note",
+          "line": 237,
+          "block": "2aab2e22f283fafd"
+        },
+        {
+          "label": "Pinned notes",
+          "level": 3,
+          "id": "pinned-notes",
+          "line": 243,
+          "block": "fdc5b5a528df0cb6"
+        },
+        {
+          "label": "Versions of a note",
+          "level": 3,
+          "id": "versions-of-a-note",
+          "line": 253,
+          "block": "ac0bc3b9c38edc08"
+        },
+        {
+          "label": "Settings",
+          "level": 2,
+          "id": "settings",
+          "line": 259,
+          "block": "13e66aa8603e9614"
+        },
+        {
+          "label": "Language",
+          "level": 3,
+          "id": "language",
+          "line": 263,
+          "block": "8b0e173fc6385dbd"
+        },
+        {
+          "label": "Keyboard shortcuts",
+          "level": 3,
+          "id": "keyboard-shortcuts",
+          "line": 275,
+          "block": "cfa8d70ee7a069be"
+        },
+        {
+          "label": "Plugins",
+          "level": 3,
+          "id": "plugins",
+          "line": 281,
+          "block": "ae286ab79919d1cd"
+        },
+        {
+          "label": "Default app",
+          "level": 3,
+          "id": "default-app",
+          "line": 291,
+          "block": "b0b88cb5b579e906"
+        },
+        {
+          "label": "Troubleshooting",
+          "level": 2,
+          "id": "troubleshooting",
+          "line": 297,
+          "block": "23bfa1f79cf8db2c"
+        },
+        {
+          "label": "The app does not start",
+          "level": 3,
+          "id": "the-app-does-not-start",
+          "line": 301,
+          "block": "13b5dbb15f67ca9f"
+        },
+        {
+          "label": "A file does not open",
+          "level": 3,
+          "id": "a-file-does-not-open",
+          "line": 307,
+          "block": "e070f53d06f984a9"
+        },
+        {
+          "label": "Git is not found",
+          "level": 3,
+          "id": "git-is-not-found",
+          "line": 313,
+          "block": "5c6ae611cadb8f8c"
+        },
+        {
+          "label": "Reference",
+          "level": 2,
+          "id": "reference",
+          "line": 329,
+          "block": "2fc67ba9a66d4983"
+        }
+      ],
+      "frontMatter": null
+    },
+    "hash": "22e47985cb9a86e7",
+    "size": 17487,
+    "mtimeMs": 0,
+    "editable": {
+      "editable": "surgical"
+    },
+    "notes": []
+  },
   "notes/ideas.md": {
     "path": "notes/ideas.md",
     "name": "ideas.md",

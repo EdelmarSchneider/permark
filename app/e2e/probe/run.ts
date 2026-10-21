@@ -24,7 +24,7 @@ import {
 } from "./page.ts";
 import { thumbs } from "./pixels.ts";
 import { probed, stepName, type Engine, type Scenario, type Step } from "./scenario.ts";
-import { seed, settle } from "./seed.ts";
+import { fireDrop, seed, settle } from "./seed.ts";
 import { startMock } from "./server.ts";
 
 export const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -153,7 +153,14 @@ async function drain(page: Page): Promise<void> {
 
 /** The element an action works on (focused element for keys). */
 async function targetOf(page: Page, step: Step): Promise<ElementHandle<Element> | null> {
-  if (step.do === "click" || step.do === "dblclick" || step.do === "hover" || step.do === "focus") {
+  if (
+    step.do === "click" ||
+    step.do === "dblclick" ||
+    step.do === "hover" ||
+    step.do === "focus" ||
+    step.do === "drag" ||
+    step.do === "drop"
+  ) {
     const loc = page.locator(step.target).first();
     await loc.waitFor({ state: "visible", timeout: ACTION_WAIT });
     return loc.elementHandle();
@@ -188,6 +195,18 @@ async function perform(page: Page, step: Step): Promise<void> {
       return page.keyboard.press(step.key);
     case "type":
       return page.keyboard.type(step.text);
+    case "drag":
+    case "drop": {
+      const box = await page.locator(step.target).first().boundingBox({ timeout: ACTION_WAIT });
+      if (box === null) throw new Error(`${step.do}: ${step.target} not on screen`);
+      const at = { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };
+      const paths = [...step.paths];
+      await fireDrop(page, { type: "over", count: paths.length, paths, ...at });
+      if (step.do === "drag") return;
+      // the system lets go a moment after the last move
+      await page.waitForTimeout(50);
+      return fireDrop(page, { type: "drop", paths, ...at });
+    }
     case "wait":
       if (step.target !== undefined) {
         await page.locator(step.target).first().waitFor({ state: "visible", timeout: ACTION_WAIT });

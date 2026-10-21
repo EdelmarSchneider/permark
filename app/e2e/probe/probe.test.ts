@@ -155,6 +155,35 @@ describe("scenario", () => {
     expect(steps[8]).toMatchObject({ name: "end" });
   });
 
+  it("drags and drops files from outside: default one file, or the paths given; probed", () => {
+    const steps = parseScenario({
+      steps: [
+        { do: "drag", target: "[role=treeitem][data-path='docs']" },
+        { do: "drop", target: "[data-path='docs']", paths: ["C:/a b/x.md", "C:/y.png"] },
+      ],
+    }).steps;
+    expect(steps[0]).toMatchObject({
+      do: "drag",
+      paths: ["C:/Users/demo/Downloads/dropped-note.md"],
+    });
+    expect(steps[1]).toMatchObject({ do: "drop", paths: ["C:/a b/x.md", "C:/y.png"] });
+    expect(steps.every(probed)).toBe(true);
+    const inline = parseInline(
+      `drag [data-path='docs']; drop [data-path='notes'] paths=["C:/Users/demo/z.md"]`,
+    );
+    expect(inline[0]).toMatchObject({ do: "drag", target: "[data-path='docs']" });
+    expect(inline[1]).toMatchObject({
+      do: "drop",
+      target: "[data-path='notes']",
+      paths: ["C:/Users/demo/z.md"],
+    });
+    expect(() => parseScenario({ steps: [{ do: "drop" }] })).toThrow(/step 1 target/);
+    for (const paths of [[], [""], "C:/x.md", [1], Array.from({ length: 51 }, (_, i) => `C:/${i}`)])
+      expect(() => parseScenario({ steps: [{ do: "drop", target: "body", paths }] })).toThrow(
+        /paths/,
+      );
+  });
+
   it("refuses bad inline steps", () => {
     expect(() => parseInline("  ;  ")).toThrow(/no steps/);
     expect(() => parseInline("jump high")).toThrow(/unknown verb/);

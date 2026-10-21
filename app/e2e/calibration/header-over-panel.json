@@ -27,28 +27,27 @@
         "use": "rightPanel"
       },
       {
-        "do": "probe",
-        "name": "narrow"
+        "do": "probe"
       }
     ]
   },
   "expect": {
     "before": [
       {
-        "step": "narrow",
+        "step": "step-4",
         "flag": "paints-over-region"
       }
     ],
     "after": [
       {
-        "step": "narrow",
+        "step": "step-4",
         "flag": "paints-over-region",
         "absent": true
       }
     ],
     "now": [
       {
-        "step": "narrow",
+        "step": "step-4",
         "flag": "paints-over-region",
         "absent": true
       }

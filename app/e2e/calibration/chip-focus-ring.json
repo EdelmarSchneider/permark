@@ -25,28 +25,27 @@
       },
       {
         "do": "press",
-        "key": "Control+Tab",
-        "name": "switch"
+        "key": "Control+Tab"
       }
     ]
   },
   "expect": {
     "before": [
       {
-        "step": "switch",
+        "step": "step-4",
         "flag": "focus-stale-in-group"
       }
     ],
     "after": [
       {
-        "step": "switch",
+        "step": "step-4",
         "flag": "focus-stale-in-group",
         "absent": true
       }
     ],
     "now": [
       {
-        "step": "switch",
+        "step": "step-4",
         "flag": "focus-stale-in-group",
         "absent": true
       }

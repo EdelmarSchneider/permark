@@ -23,28 +23,27 @@
         "path": "README.md"
       },
       {
-        "do": "probe",
-        "name": "reading"
+        "do": "probe"
       }
     ]
   },
   "expect": {
     "before": [
       {
-        "step": "reading",
+        "step": "step-3",
         "flag": "scrollbar-invisible"
       }
     ],
     "after": [
       {
-        "step": "reading",
+        "step": "step-3",
         "flag": "scrollbar-invisible",
         "absent": true
       }
     ],
     "now": [
       {
-        "step": "reading",
+        "step": "step-3",
         "flag": "scrollbar-invisible",
         "absent": true
       }

@@ -22,7 +22,6 @@
         "use": "importFiles",
         "target": "",
         "sources": ["C:/Users/demo/Downloads/copied-note.md"],
-        "name": "copy",
         "probe": true,
         "axe": false,
         "watch": "[role='tree']",
@@ -33,20 +32,20 @@
   "expect": {
     "before": [
       {
-        "step": "copy",
+        "step": "step-3",
         "flag": "no-change"
       }
     ],
     "after": [
       {
-        "step": "copy",
+        "step": "step-3",
         "flag": "no-change",
         "absent": true
       }
     ],
     "now": [
       {
-        "step": "copy",
+        "step": "step-3",
         "flag": "no-change",
         "absent": true
       }

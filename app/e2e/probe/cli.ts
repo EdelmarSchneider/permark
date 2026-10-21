@@ -5,7 +5,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { runScenario } from "./run.ts";
 import { parseOptions, scenarioFrom, UsageError } from "./options.ts";
 
 const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -13,7 +12,8 @@ const APP = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..
 const USAGE = `usage: npm run ux:probe -- <scenario.json | "inline steps"> [--engine chromium|msedge|webkit]
   [--theme light|dark] [--width N] [--height N] [--motion reduce|full] [--locale en-US] [--no-axe]
   [--out <dir>] [--app <app dir>] [--url <running mock url>]
-inline: "seed project; seed doc README.md; click role=button[name='Review']; press Escape; probe"`;
+inline: "seed project; seed doc README.md; press PageDown; drop [data-path='docs']; probe"
+  (drag | drop <target> [paths=["C:/x.md"]]: files from outside over | onto the target, through the app's drop flow)`;
 
 function stamp(): string {
   return new Date().toISOString().replace(/[-:]/g, "").replace("T", "-").slice(0, 15);
@@ -33,6 +33,15 @@ async function main(): Promise<number> {
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
     console.error(USAGE);
+    return 2;
+  }
+  // the browser half needs the dev dependencies (Playwright, axe): missing -> say how to get them
+  let runScenario: typeof import("./run.ts").runScenario;
+  try {
+    ({ runScenario } = await import("./run.ts"));
+  } catch (e) {
+    console.error(`probe dependencies missing (${e instanceof Error ? e.message : String(e)})`);
+    console.error("run `npm ci` in app/ first");
     return 2;
   }
   const out = options.out ?? path.join(tmpdir(), "permark-ux-probe", `${stamp()}-${scenario.name}`);
