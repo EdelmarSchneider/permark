@@ -12,8 +12,8 @@ Runs: `npm run ux:calibrate` (default `--at all`: before + after + now). Status 
 | `header-over-panel` | doc header over outline \| live feed, narrow window | 71f2fb8 | `paints-over-region` | absent |
 | `scrollbar-invisible` | thin \| invisible scroll bar | 71f2fb8 | `scrollbar-invisible` | thumb 8 px |
 | `copy-not-in-tree` | copied file not in tree until reload | 92b6f85 | `no-change` | file listed at once |
-| `review-last-commit` | "the last commit" without git does nothing | open on develop (fix on `bugfix/ux-small`) | - | `no-effect-beyond-control` now |
-| `review-esc` | Done tooltip says Esc; Esc does nothing | open on develop (fix on `bugfix/ux-small`) | - | `dead-key-promised` now |
+| `review-last-commit` | "the last commit" without git does nothing | 72dec97 | `no-effect-beyond-control` | absent (choice explained inline) |
+| `review-esc` | Done tooltip says Esc; Esc does nothing | 72dec97 | `dead-key-promised` | absent |
 
 ## Simulated, not literal (fixture `reproduction`)
 
