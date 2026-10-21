@@ -2,7 +2,10 @@
   // A small question at the point where files were dropped (not modal: nothing else is blocked). Stays inside the
   // view and does not move once shown; Esc | a click outside closes it; Tab | Shift+Tab stay inside; the element
   // marked `data-autofocus` takes the keyboard when it opens, and the keyboard goes back where it was when it closes.
+  // A tab switch is no answer: the question waits in its tab (the view is hidden, its state kept) and takes the
+  // keyboard again when the tab comes back.
   import { tick, type Snippet } from "svelte";
+  import { onScreen } from "../inFront.svelte";
   import { popoverPlace } from "./dropPlace";
 
   type Props = {
@@ -35,9 +38,10 @@
     return () => before?.focus({ preventScroll: true });
   });
   // after the placed box is drawn (hidden until placed: focus() on it before would do nothing); while it checks names
-  // the box itself holds the keyboard (Esc, Tab stay with it), then its first answer
+  // the box itself holds the keyboard (Esc, Tab stay with it), then its first answer. Only while the view is on screen
+  // (a hidden tab never takes the keyboard); again when it comes back.
   $effect(() => {
-    if (place === null) return;
+    if (place === null || !onScreen()) return;
     const want = ready;
     let live = true;
     void tick().then(() => {
@@ -53,10 +57,13 @@
     };
   });
 
-  // a press anywhere else closes it (before that press does its own work)
+  // a press anywhere else closes it (before that press does its own work); a press on another tab's chip is a tab
+  // switch, not an answer
   $effect(() => {
     const outside = (e: PointerEvent): void => {
-      if (box && e.target instanceof Node && !box.contains(e.target)) close();
+      if (!box || !(e.target instanceof Node) || box.contains(e.target)) return;
+      if (e.target instanceof Element && e.target.closest("[data-tab]:not([aria-current])")) return;
+      close();
     };
     window.addEventListener("pointerdown", outside, true);
     return () => window.removeEventListener("pointerdown", outside, true);
@@ -64,13 +71,14 @@
 
   /** Esc closes it wherever the keyboard is (also while it checks names and nothing inside can take the keyboard). */
   function onwindowkey(e: KeyboardEvent): void {
-    if (e.key !== "Escape") return;
+    if (e.key !== "Escape" || !onScreen()) return;
     e.preventDefault();
     close();
   }
 
   function onkeydown(e: KeyboardEvent): void {
-    if (e.key !== "Tab" || !box) return;
+    // Ctrl | Cmd | Alt + Tab switch tabs | windows: never kept inside
+    if (e.key !== "Tab" || e.ctrlKey || e.metaKey || e.altKey || !box) return;
     const focusable = Array.from(
       box.querySelectorAll<HTMLElement>("button:not(:disabled):not([tabindex='-1'])"),
     );

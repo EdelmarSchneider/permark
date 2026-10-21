@@ -1549,6 +1549,8 @@ export default {
   "import.reason.protected": "è riservato a git o a PerMark",
   "import.reason.intoItself": "contiene la cartella di destinazione",
   "import.busy": "Attendi la fine dell'importazione in corso.",
+  "import.dropCancelled":
+    "Il rilascio in «{folder}» è stato annullato. Non è stato aggiunto nulla.",
   "import.progressLabel": "Aggiunta di file al progetto",
   "import.counting": "Esame dei file…",
   "import.copying": "Copia in «{folder}»…",

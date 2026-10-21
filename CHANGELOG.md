@@ -12,6 +12,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The `Ctrl+Alt+E` command is now called "Open Source mode" in the command list and the keyboard shortcuts, which is what it does. It was called "Switch between Edit and Source". <!-- f: source-mode, keyboard-shortcuts -->
 - Screen readers now read each checklist box in a document together with its task, not only "checkbox, checked". <!-- f: view-mode -->
 - After you drop files onto the file list, the question that asks Copy here or Move here now takes the keyboard, so `Enter` copies at once. <!-- f: drop-files -->
+- When you switch to another tab while the question about files you dropped on the file list is open, the question now waits in its own tab until you answer it, also when you click another tab. Before, it closed without a word and nothing was copied. If the question can no longer be answered, for example because another project opened in that tab, a notice says that nothing was added. <!-- f: drop-files, tabs -->
 - Small gray text is easier to read in the light and dark themes: the "EXPLORER" heading, the time a document was saved, the names of a document's properties, the outline heading and the app name. <!-- f: themes, explorer, outline, frontmatter-card -->
 
 ## [0.6.3] - 2026-10-21

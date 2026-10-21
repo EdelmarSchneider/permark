@@ -171,6 +171,38 @@ describe("the question at the drop point", () => {
     expect(spies.cancel).toHaveBeenCalledTimes(2);
   });
 
+  it("a press on another tab's chip is a tab switch, not an answer; on the current chip it closes", () => {
+    const strip = document.createElement("div");
+    strip.innerHTML =
+      '<button data-tab aria-current="page"><span>this</span></button><button data-tab><span>other</span></button>';
+    document.body.append(strip);
+    const spies = open(plan());
+    const [current, other] = [...strip.querySelectorAll("span")];
+    other?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(spies.cancel).not.toHaveBeenCalled();
+    current?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    expect(spies.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("Ctrl | Cmd | Alt + Tab are never kept inside (they switch tabs | windows)", async () => {
+    open(plan());
+    await tick();
+    flushSync();
+    named("Copy here")?.focus();
+    for (const init of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+      const event = new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+        ...init,
+      });
+      document.activeElement?.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(named("Copy here"));
+    }
+  });
+
   it("Tab and Shift+Tab stay inside", async () => {
     open(plan());
     await tick();

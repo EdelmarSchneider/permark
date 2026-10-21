@@ -1,7 +1,8 @@
 // Drop from outside, the view's side (`explorer.md` Drop from outside): what a drag over the view would do (the badge
 // near the pointer, the Explorer's mark), and where a drop goes: pictures into the editor, into the project (the
 // import question), loose files of the Notes, or tabs. Nothing covers the view while dragging. States are tagged
-// unions; every timer | frame is torn down on leave | drop | the view hidden | teardown.
+// unions; every timer | frame is torn down on leave | drop | the view hidden | teardown. A question (import, many
+// tabs) outlives a tab switch: it waits in its tab until answered.
 
 import type { Api, ApiError, DropEvent } from "../../api";
 import { t } from "../i18n";
@@ -38,7 +39,6 @@ export type Imports = {
   /** Its question is open or on its way (the tree keeps the folders it is about). */
   readonly waiting: boolean;
   plan(folder: string, paths: readonly string[], at: Point): Promise<void>;
-  cancel(): void;
   discard(): void;
 };
 
@@ -274,11 +274,10 @@ export class DropFlow {
 
   // ---- the view goes ---------------------------------------------------------------------------------------------------
 
-  /** The view is no longer on screen (a tab switch): the drag and every question end. */
+  /** The view is no longer on screen (a tab switch): the drag over it ends; its questions wait in the tab (the view is
+   *  hidden, not gone) until the person answers them. */
   hidden(): void {
     this.leave();
-    this.ask = { status: "none" };
-    this.#host.imports.cancel();
   }
 
   /** Teardown: nothing keeps running. */

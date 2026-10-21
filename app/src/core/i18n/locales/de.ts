@@ -1560,6 +1560,8 @@ export default {
   "import.reason.protected": "ist für Git oder PerMark reserviert",
   "import.reason.intoItself": "enthält den Zielordner",
   "import.busy": "Warten Sie, bis der laufende Import fertig ist.",
+  "import.dropCancelled":
+    "Das Ablegen in „{folder}“ wurde abgebrochen. Es wurde nichts hinzugefügt.",
   "import.progressLabel": "Dateien werden zum Projekt hinzugefügt",
   "import.counting": "Dateien werden angesehen …",
   "import.copying": "Kopiere nach „{folder}“ …",

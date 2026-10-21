@@ -96,11 +96,15 @@ export class ImportFlow {
     return this.state.status === "planning" || this.state.status === "asking";
   }
 
-  /** The project is gone or another one is shown: nothing of this drop matters any more. */
+  /** The project is gone or another one is shown: nothing of this drop matters any more. A question that was open
+   *  or on its way is said to be cancelled (it never vanishes unexplained). */
   reset(): void {
+    const state = this.state;
     this.#stopSlow();
     this.#asked += 1;
     this.state = { status: "idle" };
+    if (state.status === "planning" || state.status === "asking")
+      this.#host.note(t("import.dropCancelled", { folder: state.where }));
   }
 
   /** Files | folders dropped on the Explorer at `at`, into `folder`: the question, once the plan is back. */
@@ -141,7 +145,7 @@ export class ImportFlow {
     if (state.status === "asking") this.state = { ...state, conflicts };
   }
 
-  /** The person closed the question (Cancel | Esc | outside click | the view hidden): nothing happens. */
+  /** The person closed the question (Cancel | Esc | outside click): nothing happens. A tab switch is no answer. */
   cancel(): void {
     if (this.state.status !== "planning" && this.state.status !== "asking") return;
     this.discard();

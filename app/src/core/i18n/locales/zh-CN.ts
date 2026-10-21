@@ -1459,6 +1459,7 @@ export default {
   "import.reason.protected": "为 git 或 PerMark 保留",
   "import.reason.intoItself": "包含目标文件夹",
   "import.busy": "请等待当前的导入完成。",
+  "import.dropCancelled": "拖放到“{folder}”已取消。没有添加任何内容。",
   "import.progressLabel": "正在向项目添加文件",
   "import.counting": "正在查看文件…",
   "import.copying": "正在复制到“{folder}”…",

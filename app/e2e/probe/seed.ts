@@ -57,6 +57,10 @@ type MockApi = {
   ): Promise<{ ok: boolean; value?: { planId: number } }>;
   applyImport(planId: number, mode: string, conflicts: string): Promise<{ ok: boolean }>;
   emit(event: string, payload: unknown): void;
+  listWindows(): Promise<{
+    ok: boolean;
+    value?: { tabs: { tab: number }[]; active: number | null }[];
+  }>;
   /** The system's drag events for the view (`api.onDrop`), as Tauri's would arrive (CSS pixels). */
   pluginCall: (method: string, args: Record<string, unknown>) => Promise<unknown>;
   probe: {
@@ -251,6 +255,30 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
           target: typeof args["target"] === "string" ? args["target"] : "",
           sources: sources as string[],
         },
+      );
+      break;
+    }
+    case "tabShown": {
+      // what the backend tells a view whose tab another one replaced on screen (`other`: hidden, state kept) | that
+      // comes back (`this`); the mock's page stays this view (one page for all tabs)
+      const which = str(args, "tab");
+      if (which !== "other" && which !== "this")
+        throw new Error('seed tabShown: "tab" other | this expected');
+      await withMock(
+        page,
+        async (m, w) => {
+          const listed = await m.mockApi.listWindows();
+          const own = listed.ok && listed.value ? listed.value[0] : undefined;
+          if (!listed.value || !own) throw new Error("seed tabShown: no window");
+          const other = own.tabs.find((t) => t.tab !== own.active);
+          if (w === "other" && !other)
+            throw new Error("seed tabShown: needs a second tab (seed tab)");
+          const active = w === "other" && other ? other.tab : own.active;
+          m.mockApi.emit("windows-changed", {
+            windows: [{ ...own, active }, ...listed.value.slice(1)],
+          });
+        },
+        which,
       );
       break;
     }
