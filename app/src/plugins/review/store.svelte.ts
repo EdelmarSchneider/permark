@@ -8,7 +8,7 @@ import type { Basis, DocumentView, Result, ReviewView } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { t, tn } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
-import { InFront } from "../../core/inFront.svelte";
+import { InFront, onScreen } from "../../core/inFront.svelte";
 import { windowStore } from "../../core/window.svelte";
 import { kindWord } from "./blocks";
 
@@ -75,19 +75,21 @@ export class ReviewStore {
   readonly #root: () => string | null;
   readonly #say: (text: string) => void;
   readonly #page: PagePort;
-  /** The window is in front and visible: looking counts only then. */
-  readonly #front = new InFront();
+  /** The window is in front and visible, and this view is its tab on screen: looking counts only then. */
+  readonly #front: InFront;
 
   constructor(
     client: PluginClient = pluginClient,
     root: () => string | null = workspaceRoot,
     say: (text: string) => void = (text) => windowStore.notifyNote(text),
     port: PagePort = page,
+    shown: () => boolean = onScreen,
   ) {
     this.#client = client;
     this.#root = root;
     this.#say = say;
     this.#page = port;
+    this.#front = new InFront(shown);
   }
 
   get reviewing(): ReviewView | null {

@@ -144,15 +144,18 @@ export function createMockImport(
         const total = plan.items.length;
         const emitProgress = (done: number, item: string): void =>
           emit("import-progress", {
-            planId,
-            phase: "copying",
-            itemsDone: done,
-            itemsTotal: total,
-            filesDone: files,
-            filesTotal: total,
-            bytesDone: files * 1000,
-            bytesTotal: total * 1000,
-            item,
+            window: "main",
+            progress: {
+              planId,
+              phase: "copying",
+              itemsDone: done,
+              itemsTotal: total,
+              filesDone: files,
+              filesTotal: total,
+              bytesDone: files * 1000,
+              bytesTotal: total * 1000,
+              item,
+            },
           });
         emitProgress(0, plan.items[0]?.name ?? "");
         if (probe.hold) await probe.hold;

@@ -22,10 +22,13 @@ async function setup(shown: Shown = { path: null, hash: null }) {
   const api = createMockApi();
   await api.openPath(MOCK_FOLDER, "thisTab");
   const current = new Box<Shown>(shown);
+  /** This view is its window's active tab. */
+  const onScreen = new Box(true);
   const store = new UnreadStore(
     new PluginClient(api, () => MOCK_FOLDER),
     () => MOCK_FOLDER,
     () => current.value,
+    () => onScreen.value,
   );
   const stop = store.start();
   await settle();
@@ -35,6 +38,11 @@ async function setup(shown: Shown = { path: null, hash: null }) {
     stop,
     show(next: Shown) {
       current.value = next;
+      flushSync();
+    },
+    /** The person switches to another tab of the window (`false`) or back (`true`). */
+    tab(on: boolean) {
+      onScreen.value = on;
       flushSync();
     },
   };
@@ -147,6 +155,49 @@ describe("the unread store", () => {
     // jsdom's document has no focus: the store sees a window that is not in front
     show({ path: "docs/guide.md", hash: "ab".repeat(8) });
     vi.advanceTimersByTime(READ_MS * 3);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.isUnread("docs/guide.md")).toBe(true);
+    stop();
+  });
+
+  // a tab behind another stays "visible" and may keep the focus (child webviews): only the tab list tells
+  it("never counts reading in a tab that is not on screen, even with the focus", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const { store, api, stop, show, tab } = await setup();
+    vi.useFakeTimers();
+    show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+    vi.advanceTimersByTime(READ_MS - 100);
+    // the person switches tabs while the moment runs
+    tab(false);
+    vi.advanceTimersByTime(READ_MS * 3);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.isUnread("docs/guide.md")).toBe(true);
+    // an agent rewrites the document while its tab is hidden: the view reloads, still nobody reads it
+    show({ path: "docs/guide.md", hash: "ef".repeat(8) });
+    vi.advanceTimersByTime(READ_MS * 3);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(api.probe.plugins.calls).not.toContain("unread.markRead");
+    expect(store.isUnread("docs/guide.md")).toBe(true);
+    // back on the tab, and staying: now it is read
+    tab(true);
+    vi.advanceTimersByTime(READ_MS + 10);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.isUnread("docs/guide.md")).toBe(false);
+    stop();
+  });
+
+  it("a rapid back and forth between tabs restarts the moment: a sum of glimpses is not a read", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const { store, stop, show, tab } = await setup();
+    vi.useFakeTimers();
+    show({ path: "docs/guide.md", hash: "ab".repeat(8) });
+    for (let i = 0; i < 5; i++) {
+      vi.advanceTimersByTime(READ_MS / 2);
+      tab(false);
+      tab(true);
+    }
     await vi.advanceTimersByTimeAsync(0);
     expect(store.isUnread("docs/guide.md")).toBe(true);
     stop();

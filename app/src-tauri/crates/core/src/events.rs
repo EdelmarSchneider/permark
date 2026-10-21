@@ -45,7 +45,7 @@ pub struct SettingsChanged {
     pub settings: AppSettings,
 }
 
-/// A state file was unreadable and moved aside; the UI shows a quiet notice.
+/// A state file was unreadable and moved aside; the view shows a quiet notice (handed over by `window_boot`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -72,7 +72,6 @@ pub enum CoreEvent {
     /// To one window.
     ContextChanged(ContextChanged),
     SettingsChanged(SettingsChanged),
-    StateRecovered(StateRecovered),
     /// To one window.
     OpenFailed(OpenFailed),
     /// To one window: its Explorer list changed.
@@ -101,7 +100,6 @@ impl CoreEvent {
             Self::WindowChanged(_) => "window-changed",
             Self::ContextChanged(_) => "context-changed",
             Self::SettingsChanged(_) => "settings-changed",
-            Self::StateRecovered(_) => "state-recovered",
             Self::OpenFailed(_) => "open-failed",
             Self::TreeChanged(_) => "tree-changed",
             Self::DocumentChanged(_) => "document-changed",

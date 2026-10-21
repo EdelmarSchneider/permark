@@ -47,8 +47,13 @@ export type ImportHost = {
   action(text: string, ...actions: { label: string; run: () => void }[]): void;
   /** The name of the open project (what the project folder is called in sentences). */
   project(): string;
+  /** This view's label: its progress events carry it (plan ids count per project, so another view may run the same
+   *  id). */
+  view(): string;
   /** The question is about to show: the view's window comes forward (a drop does not activate it). */
   focus(): void;
+  /** This view is its window's tab on screen (the person may switch tabs while the plan is on its way). */
+  shown(): boolean;
   /** The drop is over for the tree: folders the drag opened close, except `kept` (where an import landed). */
   end(kept: string | null): void;
   /** Items put in place (the tree selects them). */
@@ -72,10 +77,11 @@ export class ImportFlow {
 
   /** Listens to the progress of the running import. Returns the teardown. */
   start(): Promise<Unlisten> {
-    return this.#api.on("import-progress", (progress) => {
+    return this.#api.on("import-progress", (e) => {
       const state = this.state;
-      if (state.status === "running" && state.plan.planId === progress.planId) {
-        this.state = { ...state, progress };
+      if (e.window !== this.#host.view()) return;
+      if (state.status === "running" && state.plan.planId === e.progress.planId) {
+        this.state = { ...state, progress: e.progress };
       }
     });
   }
@@ -112,7 +118,7 @@ export class ImportFlow {
       this.#slow = null;
       const state = this.state;
       if (state.status !== "planning" || this.#asked !== asked) return;
-      this.#host.focus();
+      this.#focus();
       this.state = { ...state, slow: true };
     }, SLOW_PLAN_MS);
     const planned = await this.#api.planImport(folder, [...paths]);
@@ -125,7 +131,7 @@ export class ImportFlow {
       this.#host.fail(planned.error);
       return;
     }
-    if (!slow) this.#host.focus();
+    if (!slow) this.#focus();
     // Keep both comes preselected; Enter on the question copies (never takes anything away from where it is)
     this.state = { status: "asking", plan: planned.value, where, at, conflicts: "keepBoth" };
   }
@@ -195,6 +201,11 @@ export class ImportFlow {
     if (state.status !== "running" || state.cancelling) return;
     this.state = { ...state, cancelling: true };
     await this.#api.cancelImport(state.plan.planId);
+  }
+
+  /** Forward only while on screen: a hidden tab never takes the keyboard (its question waits for the person). */
+  #focus(): void {
+    if (this.#host.shown()) this.#host.focus();
   }
 
   #stopSlow(): void {

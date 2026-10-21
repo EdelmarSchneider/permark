@@ -11,6 +11,7 @@ function setup(patch: (mock: ReturnType<typeof createMockApi>) => Partial<Api> =
   const mock = createMockApi();
   let workspace: DropContext["workspace"] = "project";
   let spot: DropSpot = { area: "other" };
+  let shown = true;
   const log: string[] = [];
   const notes: string[] = [];
   const failures: ApiError[] = [];
@@ -50,6 +51,7 @@ function setup(patch: (mock: ReturnType<typeof createMockApi>) => Partial<Api> =
     },
     fail: (e) => failures.push(e),
     note: (text) => notes.push(text),
+    shown: () => shown,
   };
   const api: Api = { ...mock, ...patch(mock) };
   const flow = new DropFlow(api, host, frames);
@@ -66,6 +68,8 @@ function setup(patch: (mock: ReturnType<typeof createMockApi>) => Partial<Api> =
       for (const run of queued.splice(0)) run();
     },
     show: (next: DropContext["workspace"]) => (workspace = next),
+    /** The person switches to another tab (`false`) or back. */
+    onScreen: (next: boolean) => (shown = next),
     under: (next: DropSpot) => (spot = next),
   };
 }
@@ -200,6 +204,23 @@ describe("the drop", () => {
     await s.mock.openPath("C:/out/a.md", "tab");
     await s.flow.drop(["C:/out/a.md", "C:/out/b.md"], 1, 1);
     expect(await tabs()).toEqual(["C:/out/a.md", "C:/out/b.md"]);
+  });
+
+  it("many paths dropped on the Notes, then a tab switch before they are sorted: the question waits, no focus to the hidden view", async () => {
+    s = setup((mock) => ({
+      openDropped: async (paths, scope) => {
+        // the person switches tabs while the backend sorts the drop
+        s.onScreen(false);
+        return mock.openDropped(paths, scope);
+      },
+    }));
+    // the Notes tab sorts a drop in the backend first (loose files | tabs), then asks
+    s.show("notes");
+    s.flow.notes = { takes: () => false, open: () => Promise.resolve() };
+    const paths = Array.from({ length: 9 }, (_, n) => `C:/many/${n}.zip`);
+    await s.flow.drop(paths, 12, 34);
+    expect(s.flow.ask.status).toBe("asking");
+    expect(s.mock.probe.drops.focused).toBe(0);
   });
 
   it("failures make one notice for the drop, the rest opens", async () => {
