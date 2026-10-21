@@ -24,6 +24,8 @@ pub mod live;
 pub mod map;
 pub mod mcp;
 pub mod perms;
+#[cfg(test)]
+mod projects_tests;
 pub mod render;
 pub mod server;
 pub mod structure;
@@ -65,6 +67,9 @@ pub enum ToolError {
         /// The first time resolving was asked for while off: the person is offered it.
         first_ask: bool,
     },
+    /// A project inside the folder takes the group away below it (its `[agent] deny`).
+    #[error("not allowed below {member}: {}", group.id())]
+    DeniedBelow { group: Group, member: String },
     #[error("not found: {0}")]
     NotFound(String),
     #[error("invalid: {0}")]
@@ -80,7 +85,7 @@ impl ToolError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Off => "off",
-            Self::Denied { .. } => "denied",
+            Self::Denied { .. } | Self::DeniedBelow { .. } => "denied",
             Self::NotFound(_) => "notFound",
             Self::Invalid(_) => "invalid",
             Self::NotOpen => "notOpen",

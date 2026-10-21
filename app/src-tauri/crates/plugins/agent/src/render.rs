@@ -106,6 +106,11 @@ pub fn error(tool: &str, error: &ToolError) -> String {
             "ERR denied: group {} off in this project -> ask person; NEVER retry around it",
             group.id()
         ),
+        ToolError::DeniedBelow { group, member } => format!(
+            "ERR denied: group {} off below {} -> ask person",
+            group.id(),
+            format::value(&one(member))
+        ),
         ToolError::NotFound(what) => format!(
             "ERR notFound: {} -> {}",
             format::value(&one(what)),

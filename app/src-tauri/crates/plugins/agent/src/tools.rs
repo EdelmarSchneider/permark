@@ -233,12 +233,17 @@ impl Tools {
     /// The rules of a call made now (for `permark context` and the published context file).
     #[must_use]
     pub fn guard_now(&self) -> Arc<Guard> {
-        self.guard(&ProjectConfig::load(self.vault.main()))
+        self.guard(&ProjectConfig::load(self.vault.main()), None)
     }
 
-    /// The rules of one call: `.aiignore`, `[agent] deny_paths` (silenced paths stay visible).
-    fn guard(&self, config: &ProjectConfig) -> Arc<Guard> {
-        Arc::new(Guard::new(self.vault.main(), &config.agent_deny_paths))
+    /// The rules of one call: `.aiignore`, `[agent] deny_paths`, the projects inside the folder (silenced paths stay
+    /// visible).
+    fn guard(&self, config: &ProjectConfig, group: Option<Group>) -> Arc<Guard> {
+        let guard = Guard::new(self.vault.main(), &config.agent_deny_paths);
+        Arc::new(match self.services.projects() {
+            Some(projects) => guard.with_projects(projects.snapshot(), group),
+            None => guard,
+        })
     }
 
     /// Checks the switch and the group, then runs the tool.
@@ -265,7 +270,7 @@ impl Tools {
                     && !choice.resolve_asked,
             });
         }
-        let guard = self.guard(&config);
+        let guard = self.guard(&config, Some(group));
         let changes = perms::effective(&choice.groups, &config.agent_deny)
             .get(&Group::Changes)
             .copied()
@@ -440,6 +445,7 @@ impl Tools {
             skip: std::collections::HashSet::new(),
             muted: Some(guard.as_lookup()),
             hidden_last: false,
+            within: None,
         };
         let index = &self.services.search;
         let ready = index.wait_ready(READY_WAIT);
