@@ -1,8 +1,9 @@
 //! Ignore rules of a tree: `.gitignore` + `.ignore` per folder, `.git/info/exclude`, git's global excludes file and
 //! the project's own `ignore` list. Works without a repository. A folder with its own `.git` (folder | file) is a nested
-//! repository: never hidden by the enclosing rules, walked under its own rules only. A `.permark` folder never un-hides
-//! (it can ship inside third-party content; `.git` cannot be committed). An ignored folder with a nested repository
-//! below is a container. One decision for the walk ([`Ignorer::classify`]) and for single paths ([`Ignorer::locate`],
+//! repository: un-hides from ignore files (`.gitignore` | `.ignore` | `exclude` | global), walked under its own rules
+//! only; never from the person's own `ignore` list or `node_modules` (hard rules). A `.permark` folder never un-hides (it
+//! can ship inside third-party content; `.git` cannot be committed). An ignored folder with a nested repository below
+//! is a container. One decision for the walk ([`Ignorer::classify`]) and for single paths ([`Ignorer::locate`],
 //! the watch).
 
 use std::collections::{HashMap, HashSet};
@@ -219,7 +220,9 @@ impl Ignorer {
             return *found;
         }
         let mut budget = PROJECT_SEARCH_ENTRIES;
-        let found = plain_dir(dir) && holds_repo(dir, PROJECT_SEARCH_DEPTH, &mut budget);
+        let extra = lock(&self.extra).clone();
+        let found =
+            plain_dir(dir) && holds_repo(dir, PROJECT_SEARCH_DEPTH, &mut budget, extra.as_deref());
         lock(&self.containers).insert(dir.to_path_buf(), found);
         found
     }
@@ -371,13 +374,14 @@ impl Ignorer {
         frames
     }
 
+    /// Whether the person's own `ignore` list or `node_modules` hide `path`: no nested repository un-hides these.
+    fn hard_hidden(&self, path: &Path, is_dir: bool) -> bool {
+        hard_hidden_by(lock(&self.extra).as_deref(), path, is_dir)
+    }
+
     /// Whether the rules of `frames` (+ the project's list, `node_modules`) hide `path`, a child of their folder.
     fn rules_hide(&self, frames: &Frames, path: &Path, is_dir: bool) -> bool {
-        (is_dir && path.file_name().is_some_and(|n| n == DEPENDENCY_DIR))
-            || lock(&self.extra)
-                .as_ref()
-                .and_then(|g| verdict(g, path, is_dir))
-                .unwrap_or(false)
+        self.hard_hidden(path, is_dir)
             || frames
                 .layers
                 .iter()
@@ -400,7 +404,7 @@ impl Ignorer {
         // `.git` marks are looked at only for what the rules hide
         if !(in_ignored || self.rules_hide(frames, path, is_dir)) {
             Entry::Shown
-        } else if !is_dir {
+        } else if !is_dir || self.hard_hidden(path, true) {
             Entry::Ignored
         } else if self.is_nested_repo(path) {
             Entry::Project
@@ -471,9 +475,18 @@ impl Ignorer {
     }
 }
 
+/// [`Ignorer::hard_hidden`] with the person's list at hand.
+fn hard_hidden_by(extra: Option<&Gitignore>, path: &Path, is_dir: bool) -> bool {
+    (is_dir && path.file_name().is_some_and(|n| n == DEPENDENCY_DIR))
+        || extra
+            .and_then(|g| verdict(g, path, is_dir))
+            .unwrap_or(false)
+}
+
 /// Whether a nested repository (a folder with its own `.git`) sits somewhere below `dir`, at most `depth` levels down,
-/// within `budget` entries. Links are never followed.
-fn holds_repo(dir: &Path, depth: usize, budget: &mut usize) -> bool {
+/// within `budget` entries; folders the person's list (`extra`) or `node_modules` hide are skipped. Links are never
+/// followed.
+fn holds_repo(dir: &Path, depth: usize, budget: &mut usize, extra: Option<&Gitignore>) -> bool {
     if depth == 0 {
         return false;
     }
@@ -492,11 +505,14 @@ fn holds_repo(dir: &Path, depth: usize, budget: &mut usize) -> bool {
         }
         let plain_folder =
             entry.file_type().is_ok_and(|t| t.is_dir()) && !super::model::is_reparse_point(&entry);
-        if plain_folder && name != DEPENDENCY_DIR {
-            folders.push(entry.path());
+        if plain_folder {
+            let path = entry.path();
+            if !hard_hidden_by(extra, &path, true) {
+                folders.push(path);
+            }
         }
     }
     folders
         .iter()
-        .any(|folder| holds_repo(folder, depth - 1, budget))
+        .any(|folder| holds_repo(folder, depth - 1, budget, extra))
 }

@@ -1870,29 +1870,122 @@ fn a_shipped_permark_folder_never_unhides_what_the_person_ignored() {
     }
 }
 
-/// The person's ignore list hides `vendor/`, but a real repository inside it (`.git` cannot be committed, so third-party
-/// content cannot plant one) still shows, under its own rules; the rest of `vendor` stays out.
+/// Hard rules (director 2026-10-21): the person's own `ignore` list and `node_modules` hide a real repository too; only
+/// ignore files (`.gitignore` | `.ignore` | `exclude`) let a nested repository through.
 #[test]
-fn a_real_repository_below_a_person_ignored_folder_still_shows() {
+fn a_real_repository_never_unhides_from_the_person_list_or_node_modules() {
     let config = ProjectConfig {
-        ignore: vec!["vendor/".to_owned()],
+        ignore: vec!["vendor/".to_owned(), "hubs/private/".to_owned()],
         ..ProjectConfig::default()
     };
     let f = fixture_with(
         &[
+            ".gitignore",
             "root.md",
             "vendor/lib/.git/HEAD",
             "vendor/lib/doc.md",
-            "vendor/other/x.md",
+            "node_modules/pkg/.git/HEAD",
+            "node_modules/pkg/README.md",
+            "hubs/a/.git/HEAD",
+            "hubs/a/a.md",
+            "hubs/a/node_modules/dep/.git/HEAD",
+            "hubs/a/node_modules/dep/d.md",
+            "hubs/node_modules/x/.git/HEAD",
+            "hubs/node_modules/x/x.md",
+            "hubs/private/r/.git/HEAD",
+            "hubs/private/r/r.md",
+            "only/private/.git/HEAD",
+            "only/private/p.md",
         ],
         &config,
     );
+    fs::write(
+        f.dir.path().join(".gitignore"),
+        "hubs/
+only/
+",
+    )
+    .unwrap();
+    f.explorer.apply_batch(&FsBatch {
+        rescan: true,
+        ..FsBatch::default()
+    });
     let files = verify_scanned(&f);
-    assert!(files.contains(&"vendor/lib/doc.md".to_owned()), "{files:?}");
-    assert!(
-        !files.contains(&"vendor/other/x.md".to_owned()),
-        "{files:?}"
+    // a `.gitignore`-hidden folder still leads to its repository
+    assert!(files.contains(&"hubs/a/a.md".to_owned()), "{files:?}");
+    for never in [
+        "vendor/lib/doc.md",
+        "node_modules/pkg/README.md",
+        "hubs/a/node_modules/dep/d.md",
+        "hubs/node_modules/x/x.md",
+        "hubs/private/r/r.md",
+    ] {
+        assert!(!files.contains(&never.to_owned()), "{never}: {files:?}");
+    }
+    // `only/private` is a repo below a `.gitignore`-hidden folder: shown
+    assert!(files.contains(&"only/private/p.md".to_owned()), "{files:?}");
+    let nodes = all_nodes(&f);
+    let state = |p: &str| nodes.iter().find(|n| n.path == p).map(|n| n.ignored);
+    assert_eq!(state("vendor"), Some(true));
+    assert_eq!(
+        state("vendor/lib"),
+        None,
+        "no container below the person's list"
     );
+    assert_eq!(state("node_modules"), Some(true));
+    assert_eq!(
+        state("node_modules/pkg"),
+        None,
+        "no container in node_modules"
+    );
+    assert_eq!(state("hubs"), Some(false), "container");
+    assert_eq!(state("hubs/private"), Some(true));
+    assert_eq!(state("hubs/private/r"), None);
+    assert_eq!(state("hubs/node_modules"), Some(true));
+    walk_and_watch_agree(&f);
+    let ignorer = Arc::clone(&f.explorer.ignorers()[0].1);
+    for path in [
+        "vendor/lib/doc.md",
+        "node_modules/pkg/README.md",
+        "hubs/private/r/r.md",
+        "hubs/node_modules/x/x.md",
+        "hubs/a/node_modules/dep/d.md",
+    ] {
+        assert!(ignorer.rel_ignored(path, false), "{path}");
+    }
+    assert!(!ignorer.rel_ignored("hubs/a/a.md", false));
+}
+
+/// A folder holding a repository only below the person's list is no container: it stays an unopened ignored folder.
+#[test]
+fn a_repository_only_below_the_person_list_makes_no_container() {
+    let config = ProjectConfig {
+        ignore: vec!["hubs/private/".to_owned()],
+        ..ProjectConfig::default()
+    };
+    let f = fixture_with(
+        &[
+            ".gitignore",
+            "hubs/private/r/.git/HEAD",
+            "hubs/private/r/r.md",
+            "hubs/n.md",
+        ],
+        &config,
+    );
+    fs::write(
+        f.dir.path().join(".gitignore"),
+        "hubs/
+",
+    )
+    .unwrap();
+    f.explorer.apply_batch(&FsBatch {
+        rescan: true,
+        ..FsBatch::default()
+    });
+    let nodes = all_nodes(&f);
+    let state = |p: &str| nodes.iter().find(|n| n.path == p).map(|n| n.ignored);
+    assert_eq!(state("hubs"), Some(true));
+    assert_eq!(state("hubs/private"), None);
     walk_and_watch_agree(&f);
 }
 
