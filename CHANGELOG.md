@@ -22,6 +22,10 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window. <!-- f: notes, start-screen -->
 - When another program saves `.permark/meta.toml` at the same moment PerMark writes your tags or descriptions there, PerMark no longer writes over that program's version: it reads it first and then adds your change. <!-- f: tags -->
 - Files you add, copy or move in a project now appear in its file list right away, also while another open project is changing; before, they could stay out of the list until it was reloaded. <!-- f: explorer, tabs -->
+- When two projects copy files in at the same time, each progress card now shows only its own project's copy; before, the cards could mix both. <!-- f: drop-files, tabs -->
+- A document that changes in a tab you are not looking at stays unread, and its changes stay offered for review, until you go to that tab and read it. Before, it could be marked as read while it was hidden behind another tab. <!-- f: unread, review-changes, tabs -->
+- When you switch tabs while PerMark is still preparing the question for files you dropped, your keys stay in the tab you switched to; the question waits in its own tab. <!-- f: drop-files, tabs -->
+- A Notes tab behind another tab no longer checks for new notes every few seconds; it looks again when you come back to it. <!-- f: notes, tabs -->
 
 ## [0.6.1] - 2026-10-20
 

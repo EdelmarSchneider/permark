@@ -27,6 +27,7 @@ function flowOn(workspace: "project" | "notes", area: "other" | "explorer" = "ot
     pictures: () => true,
     fail: () => undefined,
     note: () => undefined,
+    shown: () => true,
   };
   const flow = new DropFlow(mock, host, (run) => {
     run();

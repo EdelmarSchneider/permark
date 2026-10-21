@@ -6,6 +6,7 @@ import { treeDrop, treeFolderAt } from "../explorer/current";
 import { spotAt } from "../explorer/dropTarget";
 import { folderLabel } from "../explorer/importModel";
 import { importFlow } from "../explorer/importWindow.svelte";
+import { onScreen } from "../inFront.svelte";
 import { windowStore } from "../window.svelte";
 import { DropFlow } from "./dropFlow.svelte";
 
@@ -35,4 +36,5 @@ export const dropFlow = new DropFlow(api, {
   pictures: (files, at) => editing.dropPictures(files, at),
   fail: (error) => windowStore.notifyFileOpFailed(error),
   note: (text) => windowStore.notifyNote(text),
+  shown: onScreen,
 });

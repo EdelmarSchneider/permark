@@ -211,7 +211,6 @@ export function createMockApi(): Api & {
     "context-changed": new Set(),
     "windows-changed": new Set(),
     "settings-changed": new Set(),
-    "state-recovered": new Set(),
     "open-failed": new Set(),
     "tree-changed": new Set(),
     "document-changed": new Set(),

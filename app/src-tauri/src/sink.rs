@@ -22,7 +22,6 @@ impl EventSink for TauriSink {
             CoreEvent::WindowChanged(e) => serde_json::to_value(e),
             CoreEvent::ContextChanged(e) => serde_json::to_value(e),
             CoreEvent::SettingsChanged(e) => serde_json::to_value(e),
-            CoreEvent::StateRecovered(e) => serde_json::to_value(e),
             CoreEvent::OpenFailed(e) => serde_json::to_value(e),
             CoreEvent::TreeChanged(e) => serde_json::to_value(e),
             CoreEvent::DocumentChanged(e) => serde_json::to_value(e),

@@ -62,6 +62,8 @@ export type DropHost = {
   pictures(files: File[], at: Point): boolean;
   fail(error: ApiError): void;
   note(text: string): void;
+  /** This view is its window's tab on screen (the person may switch tabs while a drop is worked on). */
+  shown(): boolean;
 };
 
 /** Runs `run` on the next frame; returns its cancel. */
@@ -236,7 +238,8 @@ export class DropFlow {
   async #open(paths: string[], at: Point): Promise<void> {
     if (paths.length === 0) return;
     if (paths.length > OPEN_ASK_ABOVE) {
-      void this.#api.focusView();
+      // a hidden tab never takes the keyboard: its question waits for the person
+      if (this.#host.shown()) void this.#api.focusView();
       this.ask = { status: "asking", paths, at };
       return;
     }

@@ -1,5 +1,4 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { asIpcError, errorMessage } from "./error";
@@ -14,6 +13,12 @@ import type {
   PluginMethods,
   Result,
 } from "./types";
+
+/** Listens for `event` in this view only. Tauri's plain `listen` targets Any, which hears every `emit_to` of every
+ *  view; the webview target takes this view's own events and every broadcast (`emit`). */
+function listenHere<T>(event: string, handler: (payload: T) => void): Promise<() => void> {
+  return getCurrentWebview().listen<T>(event, (e) => handler(e.payload));
+}
 
 /** A point the system reports in physical pixels, as CSS pixels of the window. */
 export function cssPoint(
@@ -213,7 +218,7 @@ export const tauriApi: Api = {
   searchRecent: (opened, limit, options) => call("search_recent", { opened, limit, options }),
   pluginCall,
   onPlugin: <E extends PluginEventName>(event: E, handler: (payload: PluginEnvelope<E>) => void) =>
-    listen<PluginEnvelope<E>>(event, (e) => handler(e.payload)),
+    listenHere<PluginEnvelope<E>>(event, handler),
   projectInit: (path) => call("project_init", { path }),
   projectConfigGet: () => call("project_config_get", {}),
   projectConfigSet: (change) => call("project_config_set", { change }),
@@ -227,10 +232,9 @@ export const tauriApi: Api = {
   defaultAppSet: (group, on) => call("default_app_set", { group, on }),
   defaultAppAsked: () => call("default_app_asked", {}),
   defaultAppHandoff: () => call("default_app_handoff", {}),
-  onAppPlugin: (event, handler) =>
-    listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
+  onAppPlugin: (event, handler) => listenHere<Parameters<typeof handler>[0]>(event, handler),
   assetUrl: (workspace, path, version) => assetUrl(convertFileSrc, workspace, path, version),
-  on: (event, handler) => listen<Parameters<typeof handler>[0]>(event, (e) => handler(e.payload)),
+  on: (event, handler) => listenHere<Parameters<typeof handler>[0]>(event, handler),
   onDrop: (handler) => {
     let held: readonly string[] = [];
     return getCurrentWebview().onDragDropEvent((event) => {

@@ -112,7 +112,6 @@ export class WindowStore {
         if (e.window === this.label)
           this.#notify({ kind: "openFailed", path: e.path, error: e.error });
       }),
-      this.#api.on("state-recovered", (e) => this.#notify({ kind: "stateRecovered", notice: e })),
     ]);
     const booted = await this.#api.windowBoot();
     if (booted.ok) {
