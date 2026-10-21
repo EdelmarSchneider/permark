@@ -2,7 +2,7 @@
   // A small question at the point where files were dropped (not modal: nothing else is blocked). Stays inside the
   // view and does not move once shown; Esc | a click outside closes it; Tab | Shift+Tab stay inside; the element
   // marked `data-autofocus` takes the keyboard when it opens, and the keyboard goes back where it was when it closes.
-  import type { Snippet } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import { popoverPlace } from "./dropPlace";
 
   type Props = {
@@ -34,10 +34,23 @@
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     return () => before?.focus({ preventScroll: true });
   });
+  // after the placed box is drawn (hidden until placed: focus() on it before would do nothing); while it checks names
+  // the box itself holds the keyboard (Esc, Tab stay with it), then its first answer
   $effect(() => {
-    if (place === null || !ready) return;
-    const target = box?.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)");
-    if (target && !box?.contains(document.activeElement)) target.focus({ preventScroll: true });
+    if (place === null) return;
+    const want = ready;
+    let live = true;
+    void tick().then(() => {
+      if (!live || !box) return;
+      const target = want ? box.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)") : box;
+      if (!target || target === document.activeElement) return;
+      if (target !== box && box.contains(document.activeElement) && document.activeElement !== box)
+        return;
+      target.focus({ preventScroll: true });
+    });
+    return () => {
+      live = false;
+    };
   });
 
   // a press anywhere else closes it (before that press does its own work)

@@ -5,6 +5,9 @@
 
 import { untrack } from "svelte";
 import type { Basis, DocumentView, Result, ReviewView } from "../../api";
+import type { Reason, Requirement } from "../../core/conditions/available";
+import { conditions } from "../../core/conditions/context.svelte";
+import { reasonKey } from "../../core/conditions/guidance";
 import { documents } from "../../core/doc/document.svelte";
 import { t, tn } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
@@ -18,6 +21,18 @@ export type ReviewUi =
   | { status: "reviewing"; view: ReviewView; at: number };
 
 const MARKDOWN = /\.(md|markdown|mdown|mkd|mdx|mdc)$/i;
+
+/** Comparing with the last commit needs git and a repository (`conditions.md`). */
+export const COMMIT_BASIS: Requirement = {
+  needs: [{ need: "gitAvailable" }, { need: "gitRepo" }],
+  prefers: [],
+};
+
+/** Why the last commit cannot be compared with here, or null when it can. */
+function commitBlocked(): Reason | null {
+  const availability = conditions.available(COMMIT_BASIS);
+  return availability.status === "unavailable" ? availability.reason : null;
+}
 
 /** The document in front is looked at (read) when it has been shown this long. */
 export const SEEN_MS = 1000;
@@ -66,6 +81,8 @@ export class ReviewStore {
   basis = $state<Basis>("read");
   /** Keeps and reverts of this review that Undo can take back. */
   undoable = $state(0);
+  /** Why the last choice of what to compare with did not take (shown next to the choice), or null. */
+  basisNote = $state<string | null>(null);
   /** The latest thing said for screen readers (a live region in the bar). */
   announcement = $state("");
   #seq = 0;
@@ -77,6 +94,7 @@ export class ReviewStore {
   readonly #page: PagePort;
   /** The window is in front and visible, and this view is its tab on screen: looking counts only then. */
   readonly #front: InFront;
+  readonly #commitBlocked: () => Reason | null;
 
   constructor(
     client: PluginClient = pluginClient,
@@ -84,12 +102,20 @@ export class ReviewStore {
     say: (text: string) => void = (text) => windowStore.notifyNote(text),
     port: PagePort = page,
     shown: () => boolean = onScreen,
+    commit: () => Reason | null = commitBlocked,
   ) {
     this.#client = client;
     this.#root = root;
     this.#say = say;
     this.#page = port;
     this.#front = new InFront(shown);
+    this.#commitBlocked = commit;
+  }
+
+  /** Why "the last commit" cannot be chosen here (no git, no repository), in one sentence; null when it can. */
+  get commitUnavailable(): string | null {
+    const reason = this.#commitBlocked();
+    return reason === null ? null : t(reasonKey(reason));
   }
 
   get reviewing(): ReviewView | null {
@@ -141,6 +167,7 @@ export class ReviewStore {
     this.#held = null;
     this.state = { status: "idle" };
     this.undoable = 0;
+    this.basisNote = null;
   }
 
   async #sync(path: string | null, hash: string | null): Promise<void> {
@@ -202,7 +229,11 @@ export class ReviewStore {
     let state = status.value.state;
     // nothing new since the person looked: what changed since the last commit is still worth a look
     let basis: Basis | undefined;
-    if (status.value.basis === "read" && (state.state === "same" || state.state === "noBasis")) {
+    if (
+      status.value.basis === "read" &&
+      (state.state === "same" || state.state === "noBasis") &&
+      this.#commitBlocked() === null
+    ) {
       const commit = await this.#client.call("review.status", { path, basis: "commit" });
       if (commit.ok && commit.value.state.state === "changes") {
         basis = "commit";
@@ -219,6 +250,7 @@ export class ReviewStore {
     if (basis !== undefined) this.basis = basis;
     this.#held = path;
     this.undoable = 0;
+    this.basisNote = null;
     this.#show(result.value, 0);
     this.announce(tn("review.sr.opened", result.value.count, { kind: kindAt(result.value, 0) }));
   }
@@ -239,6 +271,7 @@ export class ReviewStore {
     this.state = { status: "idle" };
     this.undoable = 0;
     this.#held = null;
+    this.basisNote = null;
     this.#page.repaint();
     if (path !== null) await this.#client.call("review.release", { path });
   }
@@ -398,14 +431,33 @@ export class ReviewStore {
     return true;
   }
 
+  /** Compares with `basis` from now on. The last commit where it cannot be had (no git, no repository, no commit
+   *  of the file): the choice stays as it was and a note next to it says why (`basisNote`), never a silent switch. */
   async setBasis(basis: Basis): Promise<void> {
     if (basis === this.basis) return;
+    const blocked = basis === "commit" ? this.commitUnavailable : null;
+    if (blocked !== null) {
+      this.basisNote = blocked;
+      return;
+    }
+    const before = this.basis;
+    const view = this.reviewing;
+    if (view !== null) {
+      const result = await this.#client.call("review.open", { path: view.path, basis });
+      if (!result.ok) {
+        this.basisNote = t("review.basisFailed");
+        return;
+      }
+      if (this.basis !== before) return;
+      this.basisNote = null;
+      this.basis = basis;
+      await this.#client.call("review.setBasis", { basis });
+      this.#show(result.value, 0);
+      return;
+    }
+    this.basisNote = null;
     this.basis = basis;
     await this.#client.call("review.setBasis", { basis });
-    const view = this.reviewing;
-    if (view === null) return;
-    const result = await this.#client.call("review.open", { path: view.path, basis });
-    if (result.ok) this.#show(result.value, 0);
   }
 
   /** Writes a deleted document back as it was last read. */
