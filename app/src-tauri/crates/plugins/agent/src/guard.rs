@@ -95,10 +95,11 @@ impl Scope {
                 matcher(&base, &m.agent).map(|g| (m.key.clone(), m.path.segments().count(), g))
             })
             .collect();
+        // a member the agent may not see (off, or inside a closed one) never names itself in a denial
         let denying = map
             .members()
             .iter()
-            .filter(|m| denies(&m.agent))
+            .filter(|m| denies(&m.agent) && !map.closed_to_agent(m.path.as_str()))
             .map(|m| (m.key.clone(), m.path.as_str().to_owned()))
             .collect();
         let ancestors = map
@@ -116,7 +117,18 @@ impl Scope {
         }
     }
 
+    /// Hidden by the projects of the folder, a member's group denial included.
     fn hides(&self, path: &str, is_dir: bool) -> bool {
+        self.hides_absent(path, is_dir)
+            || self
+                .denied
+                .iter()
+                .any(|(member, _)| within(&key_of(path), member))
+    }
+
+    /// Hidden as if absent (answered `not found`): closed projects, rules along the chain, an ancestor's denial; not a
+    /// visible member's group denial (that one answers `denied below <member>`).
+    fn hides_absent(&self, path: &str, is_dir: bool) -> bool {
         if self.ancestor_denied || self.map.closed_to_agent(path) {
             return true;
         }
@@ -131,7 +143,6 @@ impl Scope {
             }
         });
         member_rule
-            || self.denied.iter().any(|(member, _)| within(&key, member))
             || self.ancestors.iter().any(|(rel, rules)| {
                 rules
                     .matched_path_or_any_parents(Path::new(&format!("{rel}/{path}")), is_dir)
@@ -187,6 +198,12 @@ impl Guard {
     /// Whether a project path (as the app stores it: `/` separators) is kept from agents.
     #[must_use]
     pub fn hidden(&self, path: &str, is_dir: bool) -> bool {
+        self.hidden_as(path, is_dir, true)
+    }
+
+    /// [`Guard::hidden`]; `denied`: a visible member's group denial counts too (lists), else only what answers as
+    /// absent (a direct call then names the denial).
+    fn hidden_as(&self, path: &str, is_dir: bool, denied: bool) -> bool {
         if path.starts_with(WORKTREE_PREFIX) {
             return true;
         }
@@ -199,7 +216,13 @@ impl Guard {
         if !is_dir && is_key_file(path.rsplit('/').next().unwrap_or_default()) {
             return true;
         }
-        if self.scope.as_ref().is_some_and(|s| s.hides(path, is_dir)) {
+        if self.scope.as_ref().is_some_and(|s| {
+            if denied {
+                s.hides(path, is_dir)
+            } else {
+                s.hides_absent(path, is_dir)
+            }
+        }) {
             return true;
         }
         self.rules.as_ref().is_some_and(|rules| {
@@ -217,6 +240,10 @@ impl Guard {
     pub fn file(&self, raw: &str) -> Result<(String, PathBuf), ToolError> {
         let missing = || ToolError::NotFound(raw.trim().to_owned());
         let path = VaultPath::parse(raw.trim()).map_err(|_| missing())?;
+        // what the agent may not see answers as missing first: a denial would name a hidden project
+        if path.is_root() || self.hidden_as(path.as_str(), false, false) {
+            return Err(missing());
+        }
         if let Some((scope, group)) = self.scope.as_ref().zip(self.group) {
             if let Some(member) = scope.denied_at(path.as_str()) {
                 return Err(ToolError::DeniedBelow {
@@ -224,9 +251,6 @@ impl Guard {
                     member: member.to_owned(),
                 });
             }
-        }
-        if path.is_root() || self.hidden(path.as_str(), false) {
-            return Err(missing());
         }
         let abs = self.vault.resolve(&path).map_err(|_| missing())?;
         if !abs.is_file() {

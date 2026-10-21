@@ -183,6 +183,9 @@ pub enum ProjectEvent {
     Back { name: String, path: String },
     /// The record was changed outside PerMark.
     ListChanged,
+    /// The record (changed outside PerMark) now lists a project the person said no to: it stays left out
+    /// (`projects.md` §2.1, D28); Settings > Projects can include it.
+    KeptOut { name: String, path: String },
 }
 
 /// `projects-changed`: the window showing `root` reads `projects_view` again.

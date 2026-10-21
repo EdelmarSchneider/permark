@@ -731,3 +731,265 @@ fn case_twins_and_a_long_root_path() {
     assert!(view.rows.iter().all(|r| r.state == MemberState::Included));
     assert_eq!(core.projects().held_members(), want);
 }
+
+/// Spec §13 perf (counting test): a plain folder costs the projects service nothing after open. Open = one record probe
+/// and one stat per ancestor level (opened-alone rules, <= 32); discovery after the walk, rescans and folder batches
+/// touch the disk 0 times (the walk finds markers by name, no extra syscall).
+#[test]
+fn a_plain_folder_costs_no_disk_touch_after_open() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..20 {
+        mkdirs(dir.path(), &format!("docs/d{i}"));
+        fs::write(dir.path().join(format!("docs/d{i}/a.md")), "# a").unwrap();
+    }
+    let root = Root::open(dir.path()).unwrap();
+    let levels = root.path().ancestors().count() as u64;
+    let config = ProjectConfig::load(&root);
+    let sink: Arc<dyn EventSink> = Arc::new(crate::events::NoEvents);
+    let explorer = Arc::new(Explorer::new(
+        &crate::paths::Vault::new(root.clone()),
+        &config,
+        Arc::clone(&sink),
+        None,
+    ));
+    let before = probe::count();
+    let projects = Projects::open(
+        &root,
+        &AppDirs::under(base.path()),
+        Arc::clone(&explorer),
+        Arc::new(OwnWrites::new()),
+        WatchHub::new(),
+        sink,
+        false,
+        &config.ignore,
+    );
+    let at_open = probe::count() - before;
+    assert!(
+        at_open <= 1 + levels.min(MAX_ANCESTORS as u64),
+        "open: {at_open} touches for {levels} levels"
+    );
+    let markers = explorer.markers();
+    let before = probe::count();
+    projects.discover(&Hint::default(), true, &markers);
+    projects.on_hint(
+        &Hint {
+            rescan: true,
+            folders: true,
+            ..Hint::default()
+        },
+        &markers,
+    );
+    assert_eq!(probe::count() - before, 0, "no disk touch after open");
+    let map = projects.snapshot();
+    assert!(map.ready && map.is_plain());
+}
+
+/// Concept §2b + spec §5.2 (S1): opened alone, every chain level's rules apply and a change of any of them (record,
+/// `.aiignore`, config) shows at the next read once the 5 s cache is old.
+#[test]
+fn opened_alone_rules_follow_every_chain_level() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let r = dunce::canonicalize(dir.path()).unwrap();
+    let r = r.as_path();
+    permark(r, "");
+    fs::write(
+        r.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"hubs/a\"\n",
+    )
+    .unwrap();
+    git(r, "hubs/a");
+    mkdirs(r, "hubs/a/sub/docs");
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(&r.join("hubs/a/sub/docs")).unwrap(), &env);
+    ready(&core);
+    let projects = core.projects();
+    let bases = |p: &Projects| -> Vec<(String, String)> {
+        let map = p.agent_map(Duration::from_secs(5)).unwrap();
+        let mut out: Vec<(String, String)> = map
+            .ancestors
+            .iter()
+            .map(|a| {
+                (
+                    a.base
+                        .strip_prefix(r)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/"),
+                    a.rel.clone(),
+                )
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    // a folder below a listed project: the root + the listed project on the chain
+    assert_eq!(
+        bases(projects),
+        vec![
+            (String::new(), "hubs/a/sub/docs".to_owned()),
+            ("hubs/a".to_owned(), "sub/docs".to_owned())
+        ]
+    );
+    let stale = |p: &Projects| {
+        lock(&p.inner).ancestors.1 =
+            Instant::now().checked_sub(ANCESTORS_TTL + Duration::from_secs(1));
+    };
+    let rules_of = |p: &Projects, rel: &str| {
+        let want = if rel.is_empty() {
+            r.to_path_buf()
+        } else {
+            r.join(rel)
+        };
+        p.snapshot()
+            .ancestors
+            .iter()
+            .find(|a| a.base == want)
+            .map(|a| a.rules.clone())
+            .unwrap()
+    };
+    // a middle level's `.aiignore` changes: seen once the cache is old, not before
+    fs::write(r.join("hubs/a/.aiignore"), "notes/\n").unwrap();
+    let _ = projects.agent_map(Duration::ZERO);
+    assert!(rules_of(projects, "hubs/a").aiignore.is_empty(), "cached");
+    stale(projects);
+    let _ = projects.agent_map(Duration::ZERO);
+    assert_eq!(
+        rules_of(projects, "hubs/a").aiignore,
+        vec!["notes/".to_owned()]
+    );
+    // the root's config changes
+    fs::write(
+        r.join(".permark/config.toml"),
+        "[agent]\ndeny_paths = [\"drafts/\"]\n",
+    )
+    .unwrap();
+    stale(projects);
+    let _ = projects.agent_map(Duration::ZERO);
+    assert_eq!(
+        rules_of(projects, "").deny_paths,
+        vec!["drafts/".to_owned()]
+    );
+    // the record drops the project: no rules any more
+    fs::write(r.join(".permark/projects.toml"), "version = 1\n").unwrap();
+    stale(projects);
+    assert_eq!(bases(projects), Vec::<(String, String)>::new());
+}
+
+/// D28 (S3): the person's "No thanks" beats an entry written later; the Changes panel says so; including it in
+/// Settings uses the entry as written; undo puts the refusal back and keeps the entry.
+#[test]
+fn a_refused_project_listed_later_stays_out_until_included() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, "hubs/x");
+    permark(root, "");
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    ready(&core);
+    let news = Arc::new(Mutex::new(Vec::new()));
+    let _sub = core.projects().subscribe({
+        let news = Arc::clone(&news);
+        move |e| news.lock().unwrap().push(e.clone())
+    });
+    core.projects().decline(&ProjectPick::All).unwrap();
+    let record = "version = 1\n\n[[project]]\nid = \"xxxxxxxxxx\"\npath = \"hubs/x\"\n";
+    fs::write(root.join(".permark/projects.toml"), record).unwrap();
+    wait("kept out news", || {
+        news.lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, ProjectEvent::KeptOut { path, .. } if path == "hubs/x"))
+    });
+    let view = core.projects_view();
+    let found = row(&view, "hubs/x").unwrap();
+    assert_eq!(found.state, MemberState::Declined);
+    assert_eq!(
+        found.uid.as_ref().map(ProjectUid::as_str),
+        Some("xxxxxxxxxx")
+    );
+    assert!(core.projects().snapshot().closed_to_agent("hubs/x/doc.md"));
+    assert_eq!(core.projects().held_members(), 0);
+    // included in Settings: the entry as written, no record write
+    let (outcome, _) = core.projects_include(&env, &paths(&["hubs/x"])).unwrap();
+    assert_eq!(outcome.included, 1);
+    assert_eq!(
+        fs::read_to_string(root.join(".permark/projects.toml")).unwrap(),
+        record
+    );
+    assert_eq!(
+        state(&core.projects_view(), "hubs/x"),
+        Some(MemberState::Included)
+    );
+    assert!(!core.projects().snapshot().closed_to_agent("hubs/x/doc.md"));
+    // undo: refused again, the entry stays
+    core.projects_undo(&env, outcome.undo.unwrap()).unwrap();
+    assert_eq!(
+        state(&core.projects_view(), "hubs/x"),
+        Some(MemberState::Declined)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join(".permark/projects.toml")).unwrap(),
+        record
+    );
+}
+
+/// N2: a record path whose segment becomes a junction after the record was read counts as gone at use (nothing read
+/// from beyond it).
+#[cfg(windows)]
+#[test]
+fn a_segment_turned_into_a_junction_later_makes_the_member_gone() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    git(root, "hubs/a");
+    permark(root, "");
+    fs::write(
+        root.join(".permark/projects.toml"),
+        "version = 1\n\n[[project]]\nid = \"aaaaaaaaaa\"\npath = \"hubs/a\"\n",
+    )
+    .unwrap();
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(root).unwrap(), &env);
+    let view = ready(&core);
+    assert_eq!(state(&view, "hubs/a"), Some(MemberState::Included));
+    fs::rename(root.join("hubs"), root.join("real-hubs")).unwrap();
+    if !junction(&root.join("hubs"), &root.join("real-hubs")) {
+        eprintln!("junction could not be made here; skipped");
+        return;
+    }
+    wait("member gone through the junction", || {
+        state(&core.projects_view(), "hubs/a") == Some(MemberState::Missing)
+    });
+    assert_eq!(core.projects().held_members(), 0);
+}
+
+/// N3: closing the tab while the first walk runs stops the worker: it holds nothing of the service while it waits.
+#[test]
+fn closing_during_the_walk_lets_the_service_go_at_once() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    for i in 0..200 {
+        mkdirs(dir.path(), &format!("bulk/d{i}"));
+        for j in 0..50 {
+            fs::write(dir.path().join(format!("bulk/d{i}/f{j}.md")), "x").unwrap();
+        }
+    }
+    let (env, _sink) = env(base.path());
+    let core = ProjectCore::open(Root::open(dir.path()).unwrap(), &env);
+    let explorer = Arc::clone(core.explorer());
+    let weak = Arc::downgrade(core.projects());
+    let started = Instant::now();
+    drop(core);
+    let walking = explorer.walking();
+    assert!(
+        weak.upgrade().is_none(),
+        "service released (walk running: {walking})"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "close never waits for the walk"
+    );
+}

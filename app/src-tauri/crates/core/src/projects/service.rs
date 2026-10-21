@@ -5,9 +5,9 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, Weak};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -40,8 +40,32 @@ const MAX_AI_IGNORE: u64 = 1024 * 1024;
 const MAX_ANCESTORS: usize = 32;
 /// How long closing waits for the worker before leaving it to end on its own.
 const STOP_WAIT: Duration = Duration::from_millis(200);
-/// Ancestor rules are read again after this long.
+/// Ancestor rules are read again after this long (on an agent call).
 const ANCESTORS_TTL: Duration = Duration::from_secs(5);
+/// How long the worker waits for the first walk between looks at `stopped` (it never waits inside the walk).
+const WALK_POLL: Duration = Duration::from_millis(20);
+/// The worker walks itself when no walk started after this long (the tree thread could not start).
+const WALK_START_WAIT: Duration = Duration::from_secs(1);
+
+/// Disk touches of the projects service, counted per thread in tests (`projects.md` §13: a plain folder costs nothing
+/// more after open).
+pub(crate) mod probe {
+    #[cfg(test)]
+    thread_local! {
+        static COUNT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    }
+
+    #[inline]
+    pub fn hit() {
+        #[cfg(test)]
+        COUNT.with(|c| c.set(c.get() + 1));
+    }
+
+    #[cfg(test)]
+    pub fn count() -> u64 {
+        COUNT.with(std::cell::Cell::get)
+    }
+}
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -52,7 +76,13 @@ fn is_link(meta: &std::fs::Metadata) -> bool {
 }
 
 fn real_dir(path: &Path) -> bool {
+    probe::hit();
     std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && !is_link(&m))
+}
+
+fn read_record(dir: &Path) -> RecordRead {
+    probe::hit();
+    record::read(dir)
 }
 
 fn abs_of(root: &Path, path: &VaultPath) -> PathBuf {
@@ -80,6 +110,7 @@ struct MemberRes {
 
 /// Reads what a member brings from its folder (cheap: a few small files).
 fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
+    probe::hit();
     let config = Root::open(abs)
         .map(|root| ProjectConfig::load(&root))
         .unwrap_or_default();
@@ -94,7 +125,7 @@ fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
     let (card, place) = card::file_of(dirs, abs).map_or((Card::default(), None), |file| {
         (file.read(), Some(file.place()))
     });
-    let read = record::read(abs);
+    let read = read_record(abs);
     let inner = read
         .record()
         .map(|r| {
@@ -123,19 +154,37 @@ fn marker_at(abs: &Path) -> Option<ProjectMarker> {
     if !real_dir(abs) {
         return None;
     }
+    probe::hit();
     let git = std::fs::symlink_metadata(abs.join(".git")).is_ok();
     ProjectMarker::of(git, real_dir(&abs.join(PERMARK_DIR)))
 }
 
 /// Whether a segment of `path` below `root` is a link | junction (existing segments only).
 fn through_link(root: &Path, path: &VaultPath) -> bool {
+    through_link_memo(root, path, &mut HashMap::new())
+}
+
+/// [`through_link`] remembering the answer per folder for one pass (entries share their parents).
+fn through_link_memo(root: &Path, path: &VaultPath, seen: &mut HashMap<PathBuf, bool>) -> bool {
     let mut abs = root.to_path_buf();
     for segment in path.segments() {
         abs.push(segment);
-        match std::fs::symlink_metadata(&abs) {
-            Ok(meta) if is_link(&meta) => return true,
-            Ok(_) => {}
-            Err(_) => return false,
+        let link = if let Some(link) = seen.get(&abs) {
+            *link
+        } else {
+            probe::hit();
+            let (link, exists) = match std::fs::symlink_metadata(&abs) {
+                Ok(meta) => (is_link(&meta), true),
+                Err(_) => (false, false),
+            };
+            seen.insert(abs.clone(), link);
+            if !exists {
+                return false;
+            }
+            link
+        };
+        if link {
+            return true;
         }
     }
     false
@@ -224,6 +273,8 @@ struct Inner {
     rejected: HashSet<(ProjectUid, String)>,
     ask: Option<MoveAsk>,
     ancestors: (Vec<AncestorRules>, Option<Instant>),
+    /// The root's own `ignore` list (`.permark/config.toml`), read at open and when that file changes.
+    root_ignore: Vec<String>,
     /// Uids whose 0.6 state was copied (round 4; kept as read).
     migrated: Vec<String>,
     other: serde_json::Map<String, serde_json::Value>,
@@ -270,8 +321,11 @@ pub struct Projects {
     next: AtomicU64,
     tx: Mutex<Option<Sender<Msg>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
-    /// The core is closing: the worker does nothing more.
-    stopped: std::sync::atomic::AtomicBool,
+    /// The core is closing: the worker does nothing more (shared with the worker, which holds no `Projects` while it
+    /// waits for the walk).
+    stopped: Arc<AtomicBool>,
+    /// Signalled when the map becomes ready | the core closes (agent calls wait on `inner`).
+    ready_cv: Condvar,
 }
 
 impl std::fmt::Debug for Projects {
@@ -315,7 +369,7 @@ impl Projects {
         let store = StateStore::for_project(dirs, root);
         let membership = store.profile_file::<Membership>(MEMBERSHIP_FILE);
         let kept = membership.load().into_value();
-        let read = record::read(root.path());
+        let read = read_record(root.path());
         let inputs = Inputs {
             answer: kept.answer,
             declined: kept.declined.clone(),
@@ -350,6 +404,7 @@ impl Projects {
                 rejected: HashSet::new(),
                 ask: None,
                 ancestors: (Vec::new(), None),
+                root_ignore: root_ignore.to_vec(),
                 migrated: kept.migrated,
                 other: kept.other,
             }),
@@ -358,12 +413,13 @@ impl Projects {
             next: AtomicU64::new(0),
             tx: Mutex::new(None),
             worker: Mutex::new(None),
-            stopped: std::sync::atomic::AtomicBool::new(false),
+            stopped: Arc::new(AtomicBool::new(false)),
+            ready_cv: Condvar::new(),
         });
         {
             let mut inner = lock(&projects.inner);
             projects.entries_from_record(&mut inner);
-            projects.presence(&mut inner, root_ignore);
+            projects.presence(&mut inner);
             let set = member_set(&inner);
             if set != inner.member_set {
                 projects.explorer.set_members(&set);
@@ -375,21 +431,30 @@ impl Projects {
         projects
     }
 
-    /// Starts the projects worker: it waits for the walk, then knows the found set (and follows the watch).
+    /// Starts the projects worker: it waits for the walk, then knows the found set (and follows the watch). While it
+    /// waits it holds neither the service nor the walk: closing the tab stops it at once.
     pub fn start(self: &Arc<Self>) {
         let (tx, rx) = channel::<Msg>();
         let weak = Arc::downgrade(self);
+        let explorer = Arc::clone(&self.explorer);
+        let stopped = Arc::clone(&self.stopped);
         let handle = std::thread::Builder::new()
             .name("permark-projects".to_owned())
             .spawn(move || {
                 while let Ok(msg) = rx.recv() {
+                    if matches!(msg, Msg::Stop) {
+                        return;
+                    }
+                    let Some(markers) = wait_walk(&explorer, &stopped) else {
+                        return;
+                    };
                     let Some(projects) = weak.upgrade() else {
                         return;
                     };
                     match msg {
                         Msg::Stop => return,
-                        Msg::Walk => projects.discover(&Hint::default(), true),
-                        Msg::Batch(hint) => projects.on_hint(&hint),
+                        Msg::Walk => projects.discover(&Hint::default(), true, &markers),
+                        Msg::Batch(hint) => projects.on_hint(&hint, &markers),
                     }
                 }
             })
@@ -399,15 +464,15 @@ impl Projects {
         *lock(&self.worker) = handle;
     }
 
-    /// Stops the worker (core drop); releases every member.
+    /// Stops the worker (core drop); releases every member; agent calls waiting for the map give up.
     pub fn stop(&self) {
         self.stopped.store(true, Ordering::Relaxed);
+        self.ready_cv.notify_all();
         if let Some(tx) = lock(&self.tx).take() {
             let _ = tx.send(Msg::Stop);
         }
         if let Some(handle) = lock(&self.worker).take() {
-            // joined once idle; a worker still waiting for a long first walk ends on its own right after it (it holds no
-            // file, no lock, nothing of a member): closing a tab never waits for the walk
+            // a worker waiting for the walk sees `stopped` within one poll; one busy with a batch ends right after it
             let until = Instant::now() + STOP_WAIT;
             while !handle.is_finished() && Instant::now() < until {
                 std::thread::sleep(Duration::from_millis(2));
@@ -467,10 +532,37 @@ impl Projects {
         }
     }
 
-    /// The snapshot readers use.
+    /// The snapshot readers use (not ready before the first walk ended: see [`ProjectMap::ready`]).
     #[must_use]
     pub fn snapshot(&self) -> Arc<ProjectMap> {
         Arc::clone(&self.map.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// Waits up to `timeout` for the first walk to end (the found set known). `false`: still walking, or closing.
+    pub fn wait_ready(&self, timeout: Duration) -> bool {
+        let inner = lock(&self.inner);
+        let (inner, _) = self
+            .ready_cv
+            .wait_timeout_while(inner, timeout, |i| {
+                !i.ready && !self.stopped.load(Ordering::Relaxed)
+            })
+            .unwrap_or_else(PoisonError::into_inner);
+        inner.ready
+    }
+
+    /// The map an agent call uses (`projects.md` §5.2): waits up to `timeout` for the walk (fail closed: `None` while
+    /// the found set is unknown); ancestor rules (opened alone) read again when older than 5 s.
+    #[must_use]
+    pub fn agent_map(&self, timeout: Duration) -> Option<Arc<ProjectMap>> {
+        if !self.wait_ready(timeout) {
+            return None;
+        }
+        let mut inner = lock(&self.inner);
+        if self.refresh_ancestors(&mut inner, false) {
+            self.rebuild_map(&inner);
+        }
+        drop(inner);
+        Some(self.snapshot())
     }
 
     /// Listens to project news (Changes panel rows) until the subscription goes.
@@ -500,11 +592,12 @@ impl Projects {
             return;
         };
         inner.disk_skipped.clear();
+        let mut seen = HashMap::new();
         inner.inputs.entries = record
             .entries
             .iter()
             .filter(|e| {
-                if through_link(self.root.path(), &e.path) {
+                if through_link_memo(self.root.path(), &e.path, &mut seen) {
                     inner.disk_skipped.push(SkippedEntry {
                         line: e.line,
                         reason: RecordSkip::Link,
@@ -523,25 +616,37 @@ impl Projects {
     }
 
     /// Presence of every entry, outer first (an outer member's `ignore` list may hide an inner one); members that
-    /// start load what they bring, members that stop release it.
-    fn presence(&self, inner: &mut Inner, root_ignore: &[String]) {
+    /// start load what they bring, members that stop release it. A path that leads through a link | junction now (made
+    /// one after the record was read) counts as gone: nothing is read from beyond it.
+    fn presence(&self, inner: &mut Inner) {
         let mut entries = inner.inputs.entries.clone();
         entries.sort_by_key(|e| e.path.segments().count());
         let mut hard = Hard {
-            root: gitignore_of(self.root.path(), root_ignore),
+            root: gitignore_of(self.root.path(), &inner.root_ignore),
             members: Vec::new(),
         };
         let mut presence = BTreeMap::new();
+        let mut seen = HashMap::new();
+        let all_out = inner.inputs.answer == RootAnswer::DeclinedAll;
+        let declined: HashSet<String> = inner.inputs.declined.iter().cloned().collect();
         for entry in &entries {
             let state = if hard.hides(&entry.path) {
                 Presence::Ignored
+            } else if entry
+                .path
+                .parent()
+                .is_some_and(|up| through_link_memo(self.root.path(), &up, &mut seen))
+            {
+                // the folder itself: `marker_at` refuses a link
+                Presence::Gone
             } else {
                 match marker_at(&abs_of(self.root.path(), &entry.path)) {
                     Some(marker) => Presence::Here(marker),
                     None => Presence::Gone,
                 }
             };
-            if let Presence::Here(_) = state {
+            let refused = all_out || declined.contains(&entry.path.key());
+            if matches!(state, Presence::Here(_)) && !refused {
                 let res = inner.res.entry(entry.uid.clone()).or_insert_with(|| {
                     load_member(&self.dirs, &abs_of(self.root.path(), &entry.path))
                 });
@@ -559,54 +664,29 @@ impl Projects {
         inner.res.retain(|uid, _| here.contains(uid));
     }
 
-    /// The opened folder's ancestors whose record lists it (opened alone: their agent rules narrow).
-    fn refresh_ancestors(&self, inner: &mut Inner, force: bool) {
+    /// Opened alone (`projects.md` §5.2): every ancestor (<= 32 levels up) whose record lists this folder or a folder
+    /// containing it adds its own agent rules + those of every listed project on this folder's chain between it and
+    /// this folder (as its tab would). Read when older than [`ANCESTORS_TTL`] (`force`: now); any change of a record,
+    /// `.aiignore` or config on the chain shows at the next read. Returns whether the rules changed.
+    fn refresh_ancestors(&self, inner: &mut Inner, force: bool) -> bool {
         if !force
             && inner
                 .ancestors
                 .1
                 .is_some_and(|at| at.elapsed() < ANCESTORS_TTL)
         {
-            return;
+            return false;
         }
-        let mut found = Vec::new();
-        let mut rel: Vec<String> = Vec::new();
-        let mut dir = self.root.path().to_path_buf();
-        for _ in 0..MAX_ANCESTORS {
-            let Some(name) = dir.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
-                break;
-            };
-            rel.insert(0, name);
-            let Some(parent) = dir.parent().map(Path::to_path_buf) else {
-                break;
-            };
-            dir = parent;
-            if !record::record_path(&dir).is_file() {
-                continue;
-            }
-            let joined = rel.join("/");
-            let Ok(path) = VaultPath::parse(&joined) else {
-                continue;
-            };
-            let listed = record::read(&dir)
-                .record()
-                .is_some_and(|r| r.entries.iter().any(|e| e.path.key() == path.key()));
-            if listed {
-                let res = load_member(&self.dirs, &dir);
-                found.push(AncestorRules {
-                    base: dir.clone(),
-                    rel: joined,
-                    rules: res.agent,
-                });
-            }
-        }
+        let found = ancestor_rules(&self.dirs, self.root.path());
+        let changed = found != inner.ancestors.0;
         inner.ancestors = (found, Some(Instant::now()));
+        changed
     }
 
     /// The found set from the walk's markers + projects the dormant records of found projects list.
-    fn found_now(&self, inner: &Inner) -> BTreeMap<String, Found> {
+    fn found_now(&self, inner: &Inner, markers: &[crate::tree::Marker]) -> BTreeMap<String, Found> {
         let mut found = BTreeMap::new();
-        for marker in self.explorer.markers() {
+        for marker in markers {
             let Ok(path) = VaultPath::parse(&marker.path) else {
                 continue;
             };
@@ -636,7 +716,7 @@ impl Projects {
                 .and_then(|e| inner.res.get(&e.uid))
                 .map_or_else(
                     || {
-                        record::read(&abs_of(self.root.path(), &f.path))
+                        read_record(&abs_of(self.root.path(), &f.path))
                             .record()
                             .map(|r| {
                                 r.entries
@@ -657,7 +737,7 @@ impl Projects {
             }
         }
         let hard = Hard {
-            root: gitignore_of(self.root.path(), &self.root_ignore()),
+            root: gitignore_of(self.root.path(), &inner.root_ignore),
             members: Vec::new(),
         };
         for (path, uid) in inner_offers {
@@ -682,12 +762,13 @@ impl Projects {
     }
 
     fn root_ignore(&self) -> Vec<String> {
+        probe::hit();
         ProjectConfig::load(&self.root).ignore
     }
 
     // ---- worker --------------------------------------------------------------------------------------------------
 
-    fn on_hint(&self, hint: &Hint) {
+    fn on_hint(&self, hint: &Hint, markers: &[crate::tree::Marker]) {
         if self.stopped.load(Ordering::Relaxed) {
             return;
         }
@@ -695,11 +776,23 @@ impl Projects {
         {
             let mut inner = lock(&self.inner);
             if hint.record {
-                let read = record::read(self.root.path());
+                let read = read_record(self.root.path());
                 if read != inner.record {
+                    let before: HashSet<String> =
+                        inner.inputs.entries.iter().map(|e| e.path.key()).collect();
                     inner.record = read;
                     self.entries_from_record(&mut inner);
                     after.news.push(ProjectEvent::ListChanged);
+                    // listed now, refused by the person: it stays out; the Changes panel says so
+                    for entry in &inner.inputs.entries {
+                        let key = entry.path.key();
+                        if !before.contains(&key) && inner.inputs.refused(&key) {
+                            after.news.push(ProjectEvent::KeptOut {
+                                name: folder_name(entry.path.as_str()),
+                                path: entry.path.as_str().to_owned(),
+                            });
+                        }
+                    }
                     after.changed = true;
                 }
             }
@@ -708,7 +801,7 @@ impl Projects {
             }
         }
         if hint.rescan || hint.folders || hint.record || after.changed {
-            self.discover(hint, false);
+            self.discover(hint, false, markers);
         }
         self.finish(&after);
     }
@@ -716,6 +809,12 @@ impl Projects {
     /// A card | config | `.aiignore` | inner record changed: the member (or the root card) reads its files again.
     fn reload_files_at(&self, inner: &mut Inner, path: &str) -> bool {
         let key = crate::paths::key_of(path);
+        if key == crate::paths::key_of(".permark/config.toml") {
+            let ignore = self.root_ignore();
+            let changed = ignore != inner.root_ignore;
+            inner.root_ignore = ignore;
+            return changed;
+        }
         if key == crate::paths::key_of(".permark/project.toml") {
             if let Some(file) = card::file_of(&self.dirs, self.root.path()) {
                 inner.root_card = Some((file.read(), file.place()));
@@ -738,9 +837,7 @@ impl Projects {
     }
 
     /// Looks at the disk again: found set, presence, re-attach of moved | missing projects, members started | stopped.
-    fn discover(&self, hint: &Hint, first: bool) {
-        // the walk is waited for here (worker thread), outside the lock
-        let _ = self.explorer.markers();
+    fn discover(&self, hint: &Hint, first: bool, markers: &[crate::tree::Marker]) {
         if self.stopped.load(Ordering::Relaxed) {
             return;
         }
@@ -749,12 +846,12 @@ impl Projects {
             let mut inner = lock(&self.inner);
             let old = inner.inputs.clone();
             let was_ready = inner.ready;
-            let found = self.found_now(&inner);
+            let found = self.found_now(&inner, markers);
             inner.inputs.found = found;
-            self.presence(&mut inner, &self.root_ignore());
+            self.presence(&mut inner);
             self.reattach(&mut inner, hint, &mut after);
-            self.refresh_ancestors(&mut inner, false);
             inner.ready = true;
+            self.ready_cv.notify_all();
             if was_ready && !first {
                 Self::news_between(&mut inner, &old, &mut after);
             }
@@ -843,6 +940,7 @@ impl Projects {
             .entries
             .iter()
             .filter(|e| inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone))
+            .filter(|e| !inner.inputs.refused(&e.path.key()))
             .cloned()
             .collect();
         if missing.is_empty() {
@@ -923,8 +1021,8 @@ impl Projects {
                         path: path.as_str().to_owned(),
                     }
                 });
-                inner.record = record::read(self.root.path());
-                self.presence(inner, &self.root_ignore());
+                inner.record = read_record(self.root.path());
+                self.presence(inner);
                 after.changed = true;
             }
         }
@@ -935,6 +1033,7 @@ impl Projects {
             .entries
             .iter()
             .filter(|e| inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone))
+            .filter(|e| !inner.inputs.refused(&e.path.key()))
             .collect();
         let states = inner.inputs.derive();
         for entry in &gone {
@@ -1099,7 +1198,7 @@ impl Projects {
         }
         if !ops.is_empty() {
             self.write_record(&ops, create)?;
-            inner.record = record::read(self.root.path());
+            inner.record = read_record(self.root.path());
         }
         for op in &ops {
             if let RecordOp::Remove { uid } = op {
@@ -1111,7 +1210,7 @@ impl Projects {
             self.save_membership(inner)?;
         }
         self.entries_from_record(inner);
-        self.presence(inner, &self.root_ignore());
+        self.presence(inner);
         let set = member_set(inner);
         if set != inner.member_set {
             self.explorer.set_members(&set);
@@ -1194,14 +1293,31 @@ impl Projects {
         let record_existed = record::record_path(self.root.path()).is_file();
         let answer_before = inner.inputs.answer;
         let declined_before = inner.inputs.declined.clone();
+        // listed already (refused before): included by lifting the refusal; undo puts the refusal back, never the entry
+        let listed: HashSet<String> = picks
+            .iter()
+            .filter(|(k, _)| inner.inputs.entry_by_key(k).is_some())
+            .map(|(k, _)| k.clone())
+            .collect();
         let mut after = self.apply_event(&mut inner, &Event::Include(picks.clone()), true)?;
+        let now = inner.inputs.derive();
+        let included = picks
+            .iter()
+            .filter(|(k, _)| {
+                matches!(
+                    now.get(k),
+                    Some(Candidate::Included { .. } | Candidate::Missing { .. })
+                )
+            })
+            .count();
         let uids: Vec<ProjectUid> = picks
             .into_iter()
+            .filter(|(k, _)| !listed.contains(k))
             .map(|(_, u)| u)
             .filter(|u| inner.inputs.entry(u).is_some())
             .collect();
         let token = inner.seq;
-        let included = u32::try_from(uids.len()).unwrap_or(u32::MAX);
+        let included = u32::try_from(included).unwrap_or(u32::MAX);
         inner.undo = (included > 0).then_some(IncludeUndo {
             token,
             uids,
@@ -1229,6 +1345,10 @@ impl Projects {
                 || picked.iter().any(|(_, p)| p == u)
                 || inner.removed.contains(u)
         };
+        if let Some(entry) = inner.inputs.entry_by_key(key) {
+            // listed already (refused before): its own id
+            return entry.uid.clone();
+        }
         let Some(found) = inner.inputs.found.get(key) else {
             return ProjectUid::draw(key, &used);
         };
@@ -1264,7 +1384,7 @@ impl Projects {
         if !ops.is_empty() {
             self.write_record(&ops, false)?;
         }
-        inner.record = record::read(self.root.path());
+        inner.record = read_record(self.root.path());
         let empty = inner
             .record
             .record()
@@ -1284,7 +1404,7 @@ impl Projects {
         }
         self.save_membership(&inner)?;
         self.entries_from_record(&mut inner);
-        self.presence(&mut inner, &self.root_ignore());
+        self.presence(&mut inner);
         let mut after = After {
             changed: true,
             ..After::default()
@@ -1608,12 +1728,91 @@ impl Projects {
     }
 }
 
+/// Waits for the first walk without walking (the tree thread does) and without holding the service: `None` when the
+/// core closes meanwhile. Walks itself only when no walk started within [`WALK_START_WAIT`]. Once built, the markers
+/// are read at once (a rescan running holds the worker, never the service).
+fn wait_walk(explorer: &Explorer, stopped: &AtomicBool) -> Option<Vec<crate::tree::Marker>> {
+    let start = Instant::now();
+    while !explorer.wait_built(WALK_POLL) {
+        if stopped.load(Ordering::Relaxed) {
+            return None;
+        }
+        if start.elapsed() > WALK_START_WAIT && !explorer.walking() {
+            break;
+        }
+    }
+    if stopped.load(Ordering::Relaxed) {
+        return None;
+    }
+    Some(explorer.markers())
+}
+
+/// The agent rules of the folders above `root` that govern it (`projects.md` §5.2 opened alone): for each ancestor
+/// whose record lists `root` or a folder containing it, the ancestor's own rules + the rules of each listed folder on
+/// the chain (strictly above `root`). One stat per level; records + rule files read only where a record exists.
+fn ancestor_rules(dirs: &AppDirs, root: &Path) -> Vec<AncestorRules> {
+    let mut found: Vec<AncestorRules> = Vec::new();
+    let mut rel: Vec<String> = Vec::new();
+    let mut dir = root.to_path_buf();
+    let push = |found: &mut Vec<AncestorRules>, base: PathBuf, rel: String| {
+        if found.iter().any(|a| a.base == base) {
+            return;
+        }
+        let rules = load_member(dirs, &base).agent;
+        found.push(AncestorRules { base, rel, rules });
+    };
+    for _ in 0..MAX_ANCESTORS {
+        let Some(name) = dir.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
+            break;
+        };
+        rel.insert(0, name);
+        let Some(parent) = dir.parent().map(Path::to_path_buf) else {
+            break;
+        };
+        dir = parent;
+        probe::hit();
+        if !record::record_path(&dir).is_file() {
+            continue;
+        }
+        let joined = rel.join("/");
+        let Ok(path) = VaultPath::parse(&joined) else {
+            continue;
+        };
+        let key = path.key();
+        let read = read_record(&dir);
+        let Some(record) = read.record() else {
+            continue;
+        };
+        let chain: Vec<&VaultPath> = record
+            .entries
+            .iter()
+            .map(|e| &e.path)
+            .filter(|p| within(&key, &p.key()))
+            .collect();
+        if chain.is_empty() {
+            continue;
+        }
+        push(&mut found, dir.clone(), joined.clone());
+        for member in chain {
+            let depth = member.segments().count();
+            let below: Vec<&str> = joined.split('/').skip(depth).collect();
+            if below.is_empty() {
+                // the opened folder itself: its own rules hold already
+                continue;
+            }
+            push(&mut found, abs_of(&dir, member), below.join("/"));
+        }
+    }
+    found
+}
+
 /// The member set the ignore rules need, from the included members.
 fn member_set(inner: &Inner) -> MemberSet {
     let mut members: Vec<(String, MemberRule)> = inner
         .inputs
         .entries
         .iter()
+        .filter(|e| !inner.inputs.refused(&e.path.key()))
         .filter_map(|e| match inner.inputs.presence.get(&e.uid) {
             Some(Presence::Here(marker)) => Some((
                 // the disk spelling when the walk saw it (the member's own ignore list is matched under it)

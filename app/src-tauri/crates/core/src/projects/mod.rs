@@ -5,6 +5,8 @@ pub mod card;
 pub mod fsm;
 pub mod map;
 pub mod record;
+#[cfg(test)]
+mod record_concurrency_tests;
 mod service;
 pub mod uid;
 pub mod view;

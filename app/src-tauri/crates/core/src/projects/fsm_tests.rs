@@ -216,14 +216,21 @@ impl Rng {
 
 fn check(inputs: &Inputs) {
     let derived = inputs.derive();
-    // record entries == Included ∪ Missing
+    // record entries == Included ∪ Missing ∪ refused (Declined)
     let mut keys = BTreeSet::new();
+    let included = inputs.included();
     for e in &inputs.entries {
         assert!(keys.insert(e.path.key()), "one entry per key");
-        assert!(matches!(
-            derived.get(&e.path.key()),
-            Some(Candidate::Included { .. } | Candidate::Missing { .. })
-        ));
+        let state = derived.get(&e.path.key());
+        if inputs.refused(&e.path.key()) {
+            assert_eq!(state, Some(&Candidate::Declined), "refused entry stays out");
+            assert!(!included.contains(&e.uid), "refused entry never starts");
+        } else {
+            assert!(matches!(
+                state,
+                Some(Candidate::Included { .. } | Candidate::Missing { .. })
+            ));
+        }
     }
     let uids: BTreeSet<_> = inputs.entries.iter().map(|e| e.uid.clone()).collect();
     assert_eq!(uids.len(), inputs.entries.len(), "one entry per uid");
@@ -249,7 +256,31 @@ fn random_walks_keep_the_invariants() {
     for _ in 0..10_000 {
         let path = paths[rng.below(paths.len())];
         let key = vp(path).key();
-        let event = match rng.below(9) {
+        let event = match rng.below(10) {
+            9 => {
+                // outside write (pull | agent | editor) lists the path: valid as written unless refused
+                if inputs.entry_by_key(&key).is_none() {
+                    next_uid = next_uid.wrapping_add(1);
+                    if inputs.entry(&uid(next_uid)).is_none() {
+                        inputs.entries.push(RecEntry {
+                            uid: uid(next_uid),
+                            path: vp(path),
+                            hidden: HiddenRule::Own,
+                        });
+                        let here = inputs.found.contains_key(&key);
+                        inputs.presence.insert(
+                            uid(next_uid),
+                            if here {
+                                Presence::Here(ProjectMarker::Git)
+                            } else {
+                                Presence::Gone
+                            },
+                        );
+                    }
+                }
+                check(&inputs);
+                continue;
+            }
             0 => {
                 // disk: found | lost
                 if rng.below(2) == 0 {
@@ -308,4 +339,73 @@ fn membership_file_keeps_unknown_fields() {
     assert!(m.migrated.is_empty() && m.agent_off.is_empty());
     let back = serde_json::to_string(&m).unwrap();
     assert!(back.contains("\"future\":{\"x\":1}"));
+}
+
+/// The person's "No thanks" | decline beats an entry a pull | agent | editor writes later (`projects.md` §2.1, D28);
+/// entries the person never answered stay valid as written; including it again lifts the refusal only.
+#[test]
+fn a_refused_path_stays_out_when_the_record_lists_it_later() {
+    // No thanks to the first question, then a pull lists `c`
+    let mut fresh = Inputs::default();
+    fresh.found = [
+        found("c", ProjectMarker::Git),
+        found("e", ProjectMarker::Git),
+    ]
+    .into_iter()
+    .collect();
+    let (mut no, _) = step(&fresh, &Event::DeclineAll);
+    for (n, path) in [(2, "c"), (4, "e")] {
+        no.entries.push(RecEntry {
+            uid: uid(n),
+            path: vp(path),
+            hidden: HiddenRule::Own,
+        });
+        no.presence
+            .insert(uid(n), Presence::Here(ProjectMarker::Git));
+    }
+    assert_eq!(state(&no, "c"), Some(Candidate::Declined));
+    assert!(no.included().is_empty(), "nothing starts");
+    assert_eq!(no.effective_answer(), RootAnswer::DeclinedAll);
+    // the person includes `c` in Settings: the entry is used as written (no record write); `e` stays refused
+    let (yes, effects) = step(&no, &Event::Include(vec![("c".into(), uid(2))]));
+    assert!(matches!(state(&yes, "c"), Some(Candidate::Included { .. })));
+    assert_eq!(state(&yes, "e"), Some(Candidate::Declined));
+    assert_eq!(yes.answer, RootAnswer::Answered);
+    assert!(effects.iter().all(|e| !matches!(e, Effect::Record(_))));
+    assert_eq!(changes(&no, &yes).started, vec![uid(2)]);
+    // a path declined one by one: a later entry stays out; never-answered entries are valid as written
+    let mut s = sample();
+    for (n, path) in [(3, "d"), (2, "c")] {
+        s.entries.push(RecEntry {
+            uid: uid(n),
+            path: vp(path),
+            hidden: HiddenRule::Own,
+        });
+        s.presence
+            .insert(uid(n), Presence::Here(ProjectMarker::Both));
+    }
+    assert_eq!(
+        state(&s, "d"),
+        Some(Candidate::Declined),
+        "declined beats the entry"
+    );
+    assert!(
+        matches!(state(&s, "c"), Some(Candidate::Included { .. })),
+        "never answered"
+    );
+    // left out, then listed again by a pull: stays out
+    let (out, _) = step(&s, &Event::LeaveOut(vec![uid(0)]));
+    let mut again = out.clone();
+    again.entries.push(RecEntry {
+        uid: uid(0),
+        path: vp("a"),
+        hidden: HiddenRule::Own,
+    });
+    again
+        .presence
+        .insert(uid(0), Presence::Here(ProjectMarker::Git));
+    assert_eq!(state(&again, "a"), Some(Candidate::Declined));
+    // a refused entry that moves stays refused
+    let (moved, _) = step(&s, &Event::SetPath(uid(3), vp("elsewhere/d")));
+    assert!(moved.refused(&vp("elsewhere/d").key()));
 }

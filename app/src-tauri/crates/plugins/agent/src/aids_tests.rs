@@ -266,7 +266,7 @@ fn save(path: &str, sections: &[&str]) -> Fact {
 
 fn confirm(fx: &Budget) -> handoff::HandOffDone {
     let tools = fx.tools();
-    let guard = tools.guard_now();
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
     let HandOffPreview::Ready { upto, sessions, .. } = handoff::preview(&tools, &guard, None)
     else {
         panic!("a preview");
@@ -283,7 +283,7 @@ fn confirm(fx: &Budget) -> handoff::HandOffDone {
 fn the_hand_off_freezes_what_the_person_did_and_activity_answers_it() {
     let fx = Budget::new();
     let tools = fx.tools();
-    let guard = tools.guard_now();
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
     // S5: nothing yet
     assert_eq!(
         handoff::preview(&tools, &guard, None),
@@ -432,7 +432,7 @@ fn changes_made_outside_are_listed_then_counted_per_folder_when_many() {
         ],
     );
     let tools = fx.tools();
-    let guard = tools.guard_now();
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
     let HandOffPreview::Ready {
         case,
         outside: seen,

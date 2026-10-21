@@ -105,10 +105,11 @@ impl ProjectMap {
         }
     }
 
-    /// No member, nothing closed, no ancestor rules: a plain folder.
+    /// Known (the walk ended) and no member, nothing closed, no ancestor rules: a plain folder. A map that is not
+    /// ready is never plain (the found set is unknown).
     #[must_use]
     pub fn is_plain(&self) -> bool {
-        self.members.is_empty() && self.closed.is_empty() && self.ancestors.is_empty()
+        self.ready && self.members.is_empty() && self.closed.is_empty() && self.ancestors.is_empty()
     }
 
     #[must_use]
@@ -161,9 +162,13 @@ impl ProjectMap {
     }
 
     /// Whether the agent may not see `path`: inside a found project that is not included, a missing one, or a member
-    /// switched off (any on its chain).
+    /// switched off (any on its chain). Before the walk ended every path is closed (fail closed: the found set is
+    /// unknown).
     #[must_use]
     pub fn closed_to_agent(&self, path: &str) -> bool {
+        if !self.ready {
+            return true;
+        }
         if self.is_plain() {
             return false;
         }
@@ -244,6 +249,12 @@ mod tests {
         assert!(m.closed_to_agent("hubs/a/sub/x.md"), "off on the chain");
         assert!(m.closed_to_agent("hubs/a/README.md"));
         assert!(!m.closed_to_agent("README.md"));
-        assert!(!ProjectMap::default().closed_to_agent("x"));
+        assert!(
+            ProjectMap::default().closed_to_agent("x"),
+            "not ready: closed"
+        );
+        assert!(!ProjectMap::default().is_plain(), "not ready: not plain");
+        let plain = ProjectMap::new(1, true, Vec::new(), Vec::new(), Vec::new());
+        assert!(plain.is_plain() && !plain.closed_to_agent("x"));
     }
 }

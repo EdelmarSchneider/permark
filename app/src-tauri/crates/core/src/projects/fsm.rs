@@ -1,7 +1,8 @@
 //! Membership (`projects.md` §4): the person's answers (profile `membership.json` v1) + the pure state machine.
 //! The state of every candidate is derived from the inputs (record entries, disk presence, found set, declined list,
 //! root answer); `step` changes the inputs for one event and names the effects; `changes` compares two inputs and
-//! names the members that start | stop. One state per key by construction: record entries are Included | Missing,
+//! names the members that start | stop. One state per key by construction: record entries are Included | Missing
+//! (Declined when the person said no to that path: their answer beats an entry written later, `projects.md` §2.1),
 //! found folders outside the record are Offered | Declined.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -175,11 +176,33 @@ impl Inputs {
         self.entries.iter().find(|e| e.path.key() == key)
     }
 
-    /// Every candidate by key: record entries first (Included | Missing), then found folders outside the record.
+    /// Keys the person said no to: "No thanks" to the first question (`all`) | the declined list.
+    fn refusals(&self) -> (bool, BTreeSet<&str>) {
+        (
+            self.answer == RootAnswer::DeclinedAll,
+            self.declined.iter().map(String::as_str).collect(),
+        )
+    }
+
+    /// Whether the person said no to the project at `key`: a record entry there stays out (not included, hidden from
+    /// the agent) until they include it (`projects.md` §2.1, director Q4 + §14 D28).
+    #[must_use]
+    pub fn refused(&self, key: &str) -> bool {
+        self.answer == RootAnswer::DeclinedAll || self.declined.iter().any(|d| d == key)
+    }
+
+    /// Every candidate by key: record entries first (Included | Missing | Declined when refused), then found folders
+    /// outside the record.
     #[must_use]
     pub fn derive(&self) -> BTreeMap<String, Candidate> {
         let mut out = BTreeMap::new();
+        let (all_out, declined) = self.refusals();
         for entry in &self.entries {
+            let key = entry.path.key();
+            if all_out || declined.contains(key.as_str()) {
+                out.insert(key, Candidate::Declined);
+                continue;
+            }
             let state = match self.presence.get(&entry.uid) {
                 Some(Presence::Here(marker)) => Candidate::Included {
                     uid: entry.uid.clone(),
@@ -194,15 +217,13 @@ impl Inputs {
                     reason: MissingReason::Gone,
                 },
             };
-            out.insert(entry.path.key(), state);
+            out.insert(key, state);
         }
-        let declined_all = self.effective_answer() == RootAnswer::DeclinedAll;
-        let declined: BTreeSet<&str> = self.declined.iter().map(String::as_str).collect();
         for key in self.found.keys() {
             if out.contains_key(key) {
                 continue;
             }
-            let state = if declined_all || declined.contains(key.as_str()) {
+            let state = if all_out || declined.contains(key.as_str()) {
                 Candidate::Declined
             } else {
                 Candidate::Offered
@@ -212,12 +233,17 @@ impl Inputs {
         out
     }
 
-    /// Uids of the Included members.
+    /// Uids of the Included members (here on disk, not refused).
     #[must_use]
     pub fn included(&self) -> BTreeSet<ProjectUid> {
+        let (all_out, declined) = self.refusals();
+        if all_out {
+            return BTreeSet::new();
+        }
         self.entries
             .iter()
             .filter(|e| matches!(self.presence.get(&e.uid), Some(Presence::Here(_))))
+            .filter(|e| !declined.contains(e.path.key().as_str()))
             .map(|e| e.uid.clone())
             .collect()
     }
@@ -259,11 +285,19 @@ pub fn step(inputs: &Inputs, event: &Event) -> (Inputs, Vec<Effect>) {
     match event {
         Event::Include(picks) => {
             let mut any = false;
+            let mut kept: Vec<&str> = Vec::new();
             for (key, uid) in picks {
                 let open = matches!(
                     states.get(key),
                     Some(Candidate::Offered | Candidate::Declined)
                 );
+                if open && inputs.entry_by_key(key).is_some() {
+                    // listed already, refused by the person: their answer goes, the entry stays as written
+                    next.declined.retain(|d| d != key);
+                    kept.push(key);
+                    any = true;
+                    continue;
+                }
                 let fresh = next.entry(uid).is_none() && next.entry_by_key(key).is_none();
                 let Some(found) = inputs.found.get(key).filter(|_| open && fresh) else {
                     continue;
@@ -284,6 +318,16 @@ pub fn step(inputs: &Inputs, event: &Event) -> (Inputs, Vec<Effect>) {
                 any = true;
             }
             if any {
+                if inputs.answer == RootAnswer::DeclinedAll {
+                    // the other listed projects "No thanks" kept out stay out: their keys become explicit answers
+                    for entry in &inputs.entries {
+                        let key = entry.path.key();
+                        if !kept.contains(&key.as_str()) && !next.declined.contains(&key) {
+                            next.declined.push(key);
+                        }
+                    }
+                    trim(&mut next.declined);
+                }
                 next.answer = RootAnswer::Answered;
                 effects.push(Effect::SaveMembership);
                 effects.push(Effect::Rules);
@@ -388,8 +432,19 @@ pub fn step(inputs: &Inputs, event: &Event) -> (Inputs, Vec<Effect>) {
             if !taken {
                 if let Some(entry) = next.entries.iter_mut().find(|e| &e.uid == uid) {
                     if entry.path != *path {
+                        let old = entry.path.key();
                         entry.path = path.clone();
-                        next.declined.retain(|d| *d != key);
+                        if next.declined.contains(&old) {
+                            // a refused entry that moves stays refused
+                            let mut seen = BTreeSet::new();
+                            next.declined = std::mem::take(&mut next.declined)
+                                .into_iter()
+                                .map(|d| if d == old { key.clone() } else { d })
+                                .filter(|d| seen.insert(d.clone()))
+                                .collect();
+                        } else {
+                            next.declined.retain(|d| *d != key);
+                        }
                         effects.push(Effect::Record(RecordOp::SetPath {
                             uid: uid.clone(),
                             path: path.clone(),
