@@ -309,7 +309,7 @@ export class ProjectsStore {
     return moved;
   }
 
-  /** "Include shown": the not-included rows the filter shows. */
+  /** "Include the projects listed": the not-included rows the filter shows. */
   async includeShown(rows: readonly ProjectRow[]): Promise<void> {
     const paths = rows
       .filter((r) => r.state === "offered" || r.state === "declined")
@@ -317,7 +317,7 @@ export class ProjectsStore {
     if (paths.length > 0) await this.#include({ kind: "paths", paths });
   }
 
-  /** "Leave out shown": the included rows the filter shows. */
+  /** "Leave out the projects listed": the included rows the filter shows. */
   async leaveOutShown(rows: readonly ProjectRow[]): Promise<void> {
     const uids = rows.flatMap((r) => (r.state === "included" && r.uid !== null ? [r.uid] : []));
     if (uids.length > 0) await this.#run(this.#api.projectsLeaveOut(uids));

@@ -143,6 +143,7 @@
         class="btn btn--ghost btn--sm rules"
         aria-expanded={expanded}
         aria-controls="{id}-rules"
+        aria-label={t("projects.row.rulesFor", { name: row.name })}
         onclick={toggle}
       >
         {#if expanded}<ChevronDown size={13} aria-hidden="true" />{:else}<ChevronRight

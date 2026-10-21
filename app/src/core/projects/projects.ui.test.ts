@@ -311,8 +311,8 @@ describe("Settings > Projects", () => {
     )!;
     same.click();
     await until(() => projects.memberAt("tools/notes-app")?.agent === "same", "agent saved");
-    // "Leave out shown" acts on what the filter shows only
-    button("Leave out shown")!.click();
+    // "Leave out the projects listed" acts on what the filter shows only
+    button("Leave out the projects listed")!.click();
     await until(() => projects.memberAt("tools/notes-app") === null, "left out");
     expect(projects.memberAt("hubs/hub-b")).not.toBeNull();
   });
@@ -669,5 +669,163 @@ describe("UX review round 2: focus, words, places", () => {
     );
     expect(warn.mock.calls.some((c) => String(c[0]).includes("derived_inert"))).toBe(false);
     warn.mockRestore();
+  });
+});
+
+describe("UX review states S2: say where, name each, keep the row still", () => {
+  const bulk = (): HTMLButtonElement[] =>
+    ["Include the projects listed", "Leave out the projects listed"].map((t) => button(t)!);
+
+  it("the strip says which file the answer writes before it is given (S2-1)", async () => {
+    await openFolder(MOCK_PROJECTS_FRESH);
+    await explorer();
+    expect(strip()?.textContent).toContain(
+      "PerMark creates .permark/projects.toml in this folder.",
+    );
+    for (const clean of cleanups.splice(0).reverse()) clean();
+    target.replaceChildren();
+    await openFolder(MOCK_PROJECTS_LISTED);
+    await explorer();
+    expect(strip()?.textContent).toContain(
+      "PerMark saves this list in this folder (.permark/projects.toml).",
+    );
+  });
+
+  it("the Choose page says it too, before Include checked (S2-1)", async () => {
+    await openFolder(MOCK_PROJECTS_FRESH);
+    projects.beginChoose();
+    section();
+    const line = Array.from(target.querySelectorAll("p")).find(
+      (p) => p.textContent?.trim() === "PerMark creates .permark/projects.toml in this folder.",
+    );
+    expect(line).toBeDefined();
+    const confirm = button("Include checked")!;
+    expect(line!.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // the page's normal footnote is not there twice
+    expect(target.textContent).not.toContain("The list is saved in this folder");
+  });
+
+  it("a project's card fields say where they are saved, above them, and point to it (S2-1)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    projects.openSettings(projects.memberAt("hubs/hub-b"));
+    section();
+    await until(() => target.querySelector('input[id$="-name"]') !== null, "row opened by ask");
+    const name = target.querySelector<HTMLInputElement>('input[id$="-name"]')!;
+    const hint = document.getElementById(name.getAttribute("aria-describedby") ?? "");
+    expect(hint?.textContent?.trim()).toBe("Saved in this project's own .permark/project.toml.");
+    expect(hint!.compareDocumentPosition(name) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const fields = target.querySelectorAll<HTMLInputElement>('.fields input[type="text"]');
+    expect(fields).toHaveLength(4);
+    expect(Array.from(fields).every((f) => f.getAttribute("aria-describedby") === hint!.id)).toBe(
+      true,
+    );
+  });
+
+  it("each Details and rules button names its project (S2-4)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    section();
+    const names = Array.from(
+      target.querySelectorAll<HTMLButtonElement>("button[aria-expanded]"),
+    ).map((b) => b.getAttribute("aria-label"));
+    expect(names).toHaveLength(3);
+    expect(new Set(names).size).toBe(3);
+    expect(names).toContain("Details and rules for PerMark software");
+    // the visible words stay in the name (label in name)
+    expect(names.every((n) => n?.startsWith("Details and rules for "))).toBe(true);
+  });
+
+  it("the search box says what it searches: the whole folder | this project (S2-5)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    const store = new SearchPanelStore(api, () => projects.ownerOf(documents.path)?.uid ?? null);
+    const app = mount(SearchPanel, { target, props: { root: MOCK_PROJECTS_LISTED, store } });
+    flushSync();
+    cleanups.push(() => {
+      void unmount(app);
+      store.dispose();
+    });
+    const box = target.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(box.placeholder).toBe("Search the whole folder");
+    expect(box.getAttribute("aria-label")).toBe("Search the whole folder");
+    await documents.show("hubs/hub-b/README.md");
+    cleanups.push(() => void documents.show(null));
+    await until(() => projects.ownerOf(documents.path) !== null, "document in hub-b");
+    flushSync();
+    store.setScope("this");
+    flushSync();
+    expect(box.placeholder).toBe("Search this project (hub-b)");
+    expect(box.getAttribute("aria-label")).toBe("Search this project (hub-b)");
+    store.setScope("all");
+    flushSync();
+    expect(box.placeholder).toBe("Search the whole folder");
+  });
+
+  it("a plain folder's search box reads as before (A0)", async () => {
+    await openFolder(MOCK_FOLDER);
+    const store = new SearchPanelStore(api, () => null);
+    const app = mount(SearchPanel, { target, props: { root: MOCK_FOLDER, store } });
+    flushSync();
+    cleanups.push(() => {
+      void unmount(app);
+      store.dispose();
+    });
+    const box = target.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(box.placeholder).toBe("Search all docs");
+    expect(box.getAttribute("aria-label")).toBe("Search all docs");
+  });
+
+  it("both bulk buttons stay in place; off with the reason when there is nothing to do (S2-9, S2-10)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    section();
+    const filter = target.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const type = (text: string): void => {
+      filter.value = text;
+      filter.dispatchEvent(new Event("input", { bubbles: true }));
+      flushSync();
+    };
+    expect(bulk().map((b) => b.disabled)).toEqual([false, false]);
+    // only included rows listed: nothing to include
+    type("notes");
+    let [include, leaveOut] = bulk();
+    expect(include!.disabled).toBe(true);
+    expect(include!.title).toBe("All the projects listed are included.");
+    expect(leaveOut!.disabled).toBe(false);
+    // only a not-included row listed: nothing to leave out
+    type("vendor");
+    [include, leaveOut] = bulk();
+    expect(include!.disabled).toBe(false);
+    expect(leaveOut!.disabled).toBe(true);
+    expect(leaveOut!.title).toBe("None of the projects listed is included.");
+    // nothing listed: both off, same place
+    type("zzz-none");
+    expect(bulk().map((b) => [b.disabled, b.title])).toEqual([
+      [true, "No project matches."],
+      [true, "No project matches."],
+    ]);
+  });
+
+  it("consent mode: all checked -> Include the projects listed is off and says why (S2-9)", async () => {
+    await openFolder(MOCK_PROJECTS_FRESH);
+    projects.beginChoose();
+    section();
+    let [include, leaveOut] = bulk();
+    expect(include!.disabled).toBe(true);
+    expect(include!.title).toBe("All the projects listed are checked.");
+    expect(leaveOut!.disabled).toBe(false);
+    leaveOut!.click();
+    flushSync();
+    [include, leaveOut] = bulk();
+    expect(include!.disabled).toBe(false);
+    expect(leaveOut!.disabled).toBe(true);
+    expect(leaveOut!.title).toBe("None of the projects listed is checked.");
+  });
+
+  it("a list that can't be read: both bulk buttons off with that reason (S2-9)", async () => {
+    await openFolder(MOCK_PROJECTS_BROKEN);
+    section();
+    await until(() => button("Include the projects listed") !== undefined, "bulk shown");
+    for (const b of bulk()) {
+      expect(b.disabled).toBe(true);
+      expect(b.title).toBe("The project list can't be changed until it can be read.");
+    }
   });
 });

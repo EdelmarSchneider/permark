@@ -27,6 +27,16 @@ export function readOnly(view: ProjectsView): boolean {
   return view.record.status === "unreadable" || view.record.status === "newer";
 }
 
+/** Where an answer to the offer is saved, said before the person answers: a list that exists is updated, else
+ *  PerMark creates it (S2-1). */
+export function recordPlace(
+  view: ProjectsView | null,
+): "projects.record.saves" | "projects.record.creates" {
+  return view === null || view.record.status === "absent"
+    ? "projects.record.creates"
+    : "projects.record.saves";
+}
+
 /** The strip for a view. An unreadable list says so (a pull | an editor broke it: nothing else would show it). Else
  *  nothing while the walk runs, in a plain folder, or while the list is newer than this PerMark (Settings says why).
  *  The move question comes first, then the first question | new projects. */

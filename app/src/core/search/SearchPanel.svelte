@@ -50,6 +50,14 @@
     if (uid === null) store.setScope("all");
     else store.retry();
   });
+  /** What the box searches, in its words (S2-5): plain folder -> as before; with projects -> the chosen scope. */
+  const boxLabel = $derived(
+    !scoped
+      ? t("search.placeholder")
+      : owner !== null && store.scope === "this"
+        ? t("search.placeholderProject", { short: owner.short })
+        : t("search.placeholderFolder"),
+  );
   const filters = $derived(contributions.visible("searchFilter", conditions.current));
 
   // the tags the search is narrowed to changed: ask again
@@ -144,8 +152,8 @@
       autocomplete="off"
       autocapitalize="off"
       spellcheck="false"
-      placeholder={t("search.placeholder")}
-      aria-label={t("search.label")}
+      placeholder={boxLabel}
+      aria-label={scoped ? boxLabel : t("search.label")}
       value={store.query}
       oninput={(e) => store.setQuery(e.currentTarget.value)}
       {onkeydown}

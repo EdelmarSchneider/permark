@@ -13,6 +13,7 @@ import {
   middleCut,
   offeredPaths,
   ownerOf,
+  recordPlace,
   relativeTo,
   stripOf,
 } from "./model";
@@ -251,6 +252,18 @@ describe("words and colors", () => {
     const r = row("hubs/hub-b");
     expect(hueOfMember("C:\\Users\\me\\root\\", r)).toBe(
       hueOf({ kind: "project", path: "C:/Users/me/root/hubs/hub-b" }),
+    );
+  });
+});
+
+describe("recordPlace: where an answer is saved, said before it is given (S2-1)", () => {
+  it("no list yet -> PerMark creates it; a list (also broken | newer) -> PerMark saves in it", () => {
+    expect(recordPlace(null)).toBe("projects.record.creates");
+    expect(recordPlace(view({ record: { status: "absent" } }))).toBe("projects.record.creates");
+    expect(recordPlace(view({ record: { status: "ok" } }))).toBe("projects.record.saves");
+    expect(recordPlace(view({ record: { status: "newer" } }))).toBe("projects.record.saves");
+    expect(recordPlace(view({ record: { status: "unreadable", line: 2, message: "x" } }))).toBe(
+      "projects.record.saves",
     );
   });
 });

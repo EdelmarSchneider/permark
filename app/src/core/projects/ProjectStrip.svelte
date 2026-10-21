@@ -5,7 +5,7 @@
   import { tick } from "svelte";
   import { language, t, tn } from "../i18n";
   import { projects } from "./instance.svelte";
-  import { joinNames, newWhere } from "./model";
+  import { joinNames, newWhere, recordPlace } from "./model";
 
   const strip = $derived(projects.strip);
   let busy = $state(false);
@@ -84,6 +84,8 @@
       {#each strip.inner as line (line.name)}
         <p>{tn("projects.strip.inner", line.count, { name: line.name })}</p>
       {/each}
+      <!-- before the answer: where it is saved (a file in this folder) -->
+      <p class="place">{t(recordPlace(projects.view))}</p>
       <div class="buttons">
         <button
           type="button"
@@ -125,6 +127,9 @@
   p {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+  .place {
+    color: var(--muted);
   }
   .buttons {
     display: flex;

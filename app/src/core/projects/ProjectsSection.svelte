@@ -10,7 +10,7 @@
   import { ui } from "../shell/ui.svelte";
   import Card from "../shell/settings/Card.svelte";
   import { projects } from "./instance.svelte";
-  import { depthOf, groupsOf, matches } from "./model";
+  import { depthOf, groupsOf, matches, recordPlace } from "./model";
   import ProjectRowView from "./ProjectRowView.svelte";
 
   const RECORD = ".permark/projects.toml";
@@ -44,6 +44,25 @@
     choosing
       ? offered.some((r) => projects.choosing?.has(r.path) ?? false)
       : groups.included.length > 0,
+  );
+  /** Why a bulk button is off (it stays in place, S2-9): the list can't be changed | nothing listed | nothing to do. */
+  const includeWhy = $derived(
+    projects.readOnly && !choosing
+      ? t("projects.record.locked")
+      : shown.length === 0
+        ? t("projects.settings.noMatch")
+        : canInclude
+          ? undefined
+          : t(choosing ? "projects.choose.allChecked" : "projects.settings.allIncluded"),
+  );
+  const leaveOutWhy = $derived(
+    projects.readOnly && !choosing
+      ? t("projects.record.locked")
+      : shown.length === 0
+        ? t("projects.settings.noMatch")
+        : canLeaveOut
+          ? undefined
+          : t(choosing ? "projects.choose.noneChecked" : "projects.settings.noneIncluded"),
   );
   const problems = $derived.by((): string[] => {
     if (!view) return [];
@@ -227,24 +246,20 @@
         bind:this={filterInput}
       />
       <span class="spacer"></span>
-      {#if canInclude}
-        <button
-          type="button"
-          class="btn btn--sm"
-          disabled={projects.readOnly && !choosing}
-          title={projects.readOnly && !choosing ? t("projects.record.locked") : undefined}
-          onclick={includeShown}>{t("projects.settings.includeShown")}</button
-        >
-      {/if}
-      {#if canLeaveOut}
-        <button
-          type="button"
-          class="btn btn--sm"
-          disabled={projects.readOnly && !choosing}
-          title={projects.readOnly && !choosing ? t("projects.record.locked") : undefined}
-          onclick={leaveOutShown}>{t("projects.settings.leaveOutShown")}</button
-        >
-      {/if}
+      <button
+        type="button"
+        class="btn btn--sm"
+        disabled={includeWhy !== undefined}
+        title={includeWhy}
+        onclick={includeShown}>{t("projects.settings.includeShown")}</button
+      >
+      <button
+        type="button"
+        class="btn btn--sm"
+        disabled={leaveOutWhy !== undefined}
+        title={leaveOutWhy}
+        onclick={leaveOutShown}>{t("projects.settings.leaveOutShown")}</button
+      >
     </div>
 
     {#if shown.length === 0}
@@ -267,6 +282,8 @@
     {/if}
 
     {#if choosing}
+      <!-- before the answer: where it is saved (a file in this folder) -->
+      <p class="quiet saved">{t(recordPlace(view))}</p>
       <div class="footer">
         <button type="button" class="btn btn--primary" onclick={() => void confirm()}>
           {t("projects.choose.confirm")}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // The card of a project (or of the opened folder): name, short name, description, category. Enter | leaving a field
-  // saves it at once; an empty field goes back to the default (the folder name). Where it is saved says below.
+  // saves it at once; an empty field goes back to the default (the folder name). Where it is saved shows above the
+  // fields, before any typing (S2-1), and each field points to it.
   import type { CardField, CardPlace, CardTarget } from "../../api";
   import { t, type MessageKey } from "../i18n";
   import { projects } from "./instance.svelte";
@@ -51,6 +52,9 @@
 </script>
 
 <div class="fields">
+  <p class="place" id="{id}-place">
+    {t(place === "project" ? "projects.card.savedProject" : "projects.card.savedProfile")}
+  </p>
   {#each FIELDS as f (f.field)}
     <label class="field" for="{id}-{f.field}">{t(f.label)}</label>
     <input
@@ -60,14 +64,12 @@
       maxlength={f.max}
       autocomplete="off"
       spellcheck="false"
+      aria-describedby="{id}-place"
       value={values[f.field]}
       onkeydown={(e) => onkeydown(e, f.field)}
       onblur={(e) => void save(f.field, e.currentTarget)}
     />
   {/each}
-  <p class="place">
-    {t(place === "project" ? "projects.card.savedProject" : "projects.card.savedProfile")}
-  </p>
 </div>
 
 <style>

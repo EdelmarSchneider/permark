@@ -582,6 +582,8 @@ export default {
   "search.noneYet":
     "Aún no hay resultados. El índice todavía se está creando; los resultados pueden ser parciales.",
   "search.placeholder": "Buscar en todos los docs",
+  "search.placeholderFolder": "Buscar en toda la carpeta",
+  "search.placeholderProject": "Buscar en este proyecto ({short})",
   "search.results": "Resultados de la búsqueda",
   "search.retry": "Reintentar",
   "search.searching": "Buscando...",
@@ -1895,8 +1897,10 @@ export default {
   "projects.settings.intro":
     "Los proyectos son carpetas dentro de {root} con su propio historial de git o su propia configuración de PerMark. Los proyectos incluidos se siguen desde aquí: sus cambios y documentos sin leer aparecen en esta carpeta.",
   "projects.settings.filter": "Filtrar proyectos",
-  "projects.settings.includeShown": "Incluir los mostrados",
-  "projects.settings.leaveOutShown": "Dejar fuera los mostrados",
+  "projects.settings.includeShown": "Incluir los proyectos de la lista",
+  "projects.settings.leaveOutShown": "Dejar fuera los proyectos de la lista",
+  "projects.settings.allIncluded": "Todos los proyectos de la lista están incluidos.",
+  "projects.settings.noneIncluded": "Ninguno de los proyectos de la lista está incluido.",
   "projects.settings.savedIn":
     "La lista se guarda en esta carpeta (.permark/projects.toml) y viaja con ella.",
   "projects.settings.looking": "Buscando proyectos…",
@@ -1910,6 +1914,7 @@ export default {
   "projects.row.locate": "Ubicar…",
   "projects.row.remove": "Quitar de la lista",
   "projects.row.rules": "Detalles y reglas",
+  "projects.row.rulesFor": "Detalles y reglas de {name}",
   "projects.row.agentSees": "Agente: lo ve",
   "projects.row.agentOff": "Agente: desactivado",
   "projects.rules.hidden": "Archivos ocultos",
@@ -1929,7 +1934,7 @@ export default {
   "projects.card.short": "Nombre corto",
   "projects.card.description": "Descripción",
   "projects.card.category": "Categoría",
-  "projects.card.savedProject": "Guardado en .permark/project.toml de este proyecto",
+  "projects.card.savedProject": "Guardado en el propio .permark/project.toml de este proyecto.",
   "projects.card.savedProfile": "Guardado en tu perfil",
   "projects.card.dialog": "Detalles de {name}",
   "projects.card.agentSees": "Agente: ve este proyecto",
@@ -1939,6 +1944,10 @@ export default {
   "projects.card.openTab": "Abrir en una pestaña nueva",
   "projects.choose.title": "Elige los proyectos que incluir",
   "projects.choose.confirm": "Incluir los marcados",
+  "projects.choose.allChecked": "Todos los proyectos de la lista están marcados.",
+  "projects.choose.noneChecked": "Ninguno de los proyectos de la lista está marcado.",
+  "projects.record.saves": "PerMark guarda esta lista en esta carpeta (.permark/projects.toml).",
+  "projects.record.creates": "PerMark crea .permark/projects.toml en esta carpeta.",
   "projects.record.unreadable":
     "La lista de proyectos de esta carpeta no se puede leer (línea {line}). PerMark no la cambiará hasta que se corrija.",
   "projects.record.newer":
