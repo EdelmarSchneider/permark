@@ -1881,6 +1881,7 @@ export default {
   "projects.feed.gone": "项目 {name} 已不在这里",
   "projects.feed.back": "在 {path} 重新找到项目 {name}",
   "projects.feed.listChanged": "此文件夹的项目列表已更改",
+  "projects.feed.keptOut": "项目 {name} 已加入项目列表，但按你的选择仍不包含",
   "projects.feed.label": "{short} · {folder}",
   "projects.palette.settings": "此文件夹中的项目…",
   "search.scope.label": "搜索范围",

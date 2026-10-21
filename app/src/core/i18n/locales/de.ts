@@ -2004,6 +2004,8 @@ export default {
   "projects.feed.gone": "Projekt {name} ist nicht mehr hier",
   "projects.feed.back": "Projekt {name} wieder gefunden unter {path}",
   "projects.feed.listChanged": "Die Projektliste dieses Ordners hat sich geändert",
+  "projects.feed.keptOut":
+    "Projekt {name} wurde zur Projektliste hinzugefügt, bleibt aber wie gewünscht außen vor",
   "projects.feed.label": "{short} · {folder}",
   "projects.palette.settings": "Projekte in diesem Ordner…",
   "search.scope.label": "Suchen in",

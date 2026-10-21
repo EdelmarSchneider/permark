@@ -1986,6 +1986,8 @@ export default {
   "projects.feed.gone": "Il progetto {name} non è più qui",
   "projects.feed.back": "Il progetto {name} è stato ritrovato in {path}",
   "projects.feed.listChanged": "L'elenco dei progetti di questa cartella è cambiato",
+  "projects.feed.keptOut":
+    "Il progetto {name} è stato aggiunto all'elenco dei progetti, ma resta escluso, come hai scelto",
   "projects.feed.label": "{short} · {folder}",
   "projects.palette.settings": "Progetti in questa cartella…",
   "search.scope.label": "Cerca in",

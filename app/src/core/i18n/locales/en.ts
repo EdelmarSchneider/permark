@@ -1936,6 +1936,8 @@ const en = {
   "projects.feed.gone": "Project {name} is no longer here",
   "projects.feed.back": "Project {name} found again at {path}",
   "projects.feed.listChanged": "The project list of this folder changed",
+  "projects.feed.keptOut":
+    "Project {name} was added to the project list but stays left out, as you chose",
   "projects.feed.label": "{short} · {folder}",
   "projects.palette.settings": "Projects in this folder…",
   "search.scope.label": "Search in",

@@ -1970,6 +1970,8 @@ export default {
   "projects.feed.gone": "O projeto {name} não está mais aqui",
   "projects.feed.back": "O projeto {name} foi encontrado de novo em {path}",
   "projects.feed.listChanged": "A lista de projetos desta pasta mudou",
+  "projects.feed.keptOut":
+    "O projeto {name} foi adicionado à lista de projetos, mas continua de fora, como você escolheu",
   "projects.feed.label": "{short} · {folder}",
   "projects.palette.settings": "Projetos nesta pasta…",
   "search.scope.label": "Buscar em",

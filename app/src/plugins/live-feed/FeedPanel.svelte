@@ -77,17 +77,21 @@
         return t("projects.feed.back", { name: event.name, path: path(event.path) });
       case "listChanged":
         return t("projects.feed.listChanged");
+      case "keptOut":
+        return t("projects.feed.keptOut", { name: event.name });
       default:
         return event satisfies never;
     }
   }
 
   /** What a project row does (`null`: nothing): a project not found now -> its row in Settings (Locate… | Remove from
-   *  list); the list changed -> Settings > Projects inside; else the folder shown in the Explorer. */
+   *  list) | kept out by the person's no (Include there); the list changed -> Settings > Projects inside; else the
+   *  folder shown in the Explorer. */
   function projectAction(event: ProjectEvent): (() => void) | null {
     if (event.kind === "listChanged") return () => projects.openSettings();
     const row = projects.rowAt(event.path);
-    if (row?.state === "missing") return () => projects.openSettings(row);
+    if (row?.state === "missing" || event.kind === "keptOut")
+      return () => projects.openSettings(row);
     if (event.kind === "gone" && row === null) return null;
     return () => revealInTree(event.path);
   }
