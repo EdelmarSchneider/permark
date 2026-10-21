@@ -1,11 +1,11 @@
 {
   "id": "review-esc",
   "bug": "Review bar: the Done button's tooltip says Esc closes the review; Esc does nothing",
-  "found": "director; open on develop 2026-10-21",
+  "found": "director; fixed 2026-10-21",
   "persona": "K",
   "severityMin": "minor",
   "reproduction": "Direct.",
-  "fix": null,
+  "fix": "72dec97",
   "scenario": {
     "name": "review-esc",
     "steps": [
@@ -31,14 +31,40 @@
     ]
   },
   "expect": {
-    "now": [
+    "before": [
       {
         "step": "esc",
         "flag": "dead-key-promised"
       }
+    ],
+    "after": [
+      {
+        "step": "esc",
+        "flag": "dead-key-promised",
+        "absent": true
+      },
+      {
+        "step": "esc",
+        "flag": "dead-key",
+        "absent": true
+      }
+    ],
+    "now": [
+      {
+        "step": "esc",
+        "flag": "dead-key-promised",
+        "absent": true
+      },
+      {
+        "step": "esc",
+        "flag": "dead-key",
+        "absent": true
+      }
     ]
   },
   "observed": {
-    "now": "develop 25b260e: dead-key + dead-key-promised (Done button title \"(Esc)\"); 0 net DOM changes after Esc (Chromium, WebKit)"
+    "before": "90512c5 (72dec97^): dead-key + dead-key-promised (Done button title \"(Esc)\"); 0 net DOM changes after Esc (msedge)",
+    "after": "72dec97: Esc closes the review (bar gone, page drawn without changes); focus on the document scroller with a visible ring; no flags (msedge)",
+    "now": "bugfix/ux-small 72dec97: same as after"
   }
 }
