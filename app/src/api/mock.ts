@@ -18,6 +18,7 @@ import { createMockNotes, MOCK_NOTES_FOLDER } from "./mockNotes";
 import { createMockOrganizing } from "./mockOrganizing";
 import { createMockPlugins, type MockPluginProbe } from "./mockPlugins";
 import { MockProject, MockRefusal, seedFiles } from "./mockFs";
+import { createMockProjects, type ProjectsProbe } from "./mockProjects";
 import { mockFiles, mockRecent, mockSections } from "./mockSearch";
 import { createMockShell, MOCK_MANIFESTS, type MockShell } from "./mockShell";
 import type {
@@ -186,6 +187,8 @@ export type MockProbe = {
   };
   /** Web pictures asked for, by address; the per-project choice. */
   remote: { asked: string[]; always: boolean };
+  /** Projects inside the folder: the fixture per folder, what was asked, news for the Changes panel. */
+  projects: ProjectsProbe;
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -221,6 +224,7 @@ export function createMockApi(): Api & {
     "import-progress": new Set(),
     "plugins-changed": new Set(),
     "index-progress": new Set(),
+    "projects-changed": new Set(),
   };
   const pluginListeners: { [E in PluginEventName]: Set<(payload: PluginEnvelope<E>) => void> } = {
     "git:snapshot": new Set(),
@@ -382,6 +386,17 @@ export function createMockApi(): Api & {
     { ...distribution.handlers, ...tokens.handlers, ...convert.handlers },
   );
   const importing = createMockImport(project, emit, () => refreshTree());
+  const projects = createMockProjects({
+    root: rootNow,
+    emit,
+    feed: (item) => emitPlugin("live-feed:items", { upsert: [item] }),
+    addFiles: (files) => {
+      for (const [path, text] of Object.entries(files)) {
+        if (!project.files.has(path)) project.add(path, text);
+      }
+      refreshTree();
+    },
+  });
   const probe: MockProbe = {
     opened: [],
     editor: [],
@@ -408,6 +423,7 @@ export function createMockApi(): Api & {
     },
     remote: { asked: [], always: false },
     tabs: { moved: [], movedTo: [], answers: [], saved: [], refuseMove: false },
+    projects: projects.probe,
   };
   let tree: TreeView | null = null;
   /** The view's drop listeners (the system's drag events, fired by tests through `probe.drops.fire`). */
@@ -847,6 +863,7 @@ export function createMockApi(): Api & {
       return ok(null);
     },
     ...createMockConfig((path) => editing.probe.files.get(path) ?? null),
+    ...projects.handlers,
     searchStatus: () =>
       ok({
         phase: "ready",

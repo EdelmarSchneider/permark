@@ -29,6 +29,7 @@ export function isDocItem(item: FeedItem): boolean {
       return !item.isDir && TEXT_DOC.test(item.path);
     case "group":
     case "resync":
+    case "project":
       return true;
     default:
       return item satisfies never;

@@ -52,6 +52,33 @@ import type { DocumentChanged } from "./generated/DocumentChanged";
 import type { DocumentView } from "./generated/DocumentView";
 import type { TextChunk } from "./generated/TextChunk";
 import type { IndexProgress } from "./generated/IndexProgress";
+import type { AgentChoice } from "./generated/AgentChoice";
+import type { CardChange } from "./generated/CardChange";
+import type { CardDto } from "./generated/CardDto";
+import type { CardField } from "./generated/CardField";
+import type { CardPlace } from "./generated/CardPlace";
+import type { CardTarget } from "./generated/CardTarget";
+import type { CardWarning } from "./generated/CardWarning";
+import type { HiddenRule } from "./generated/HiddenRule";
+import type { IncludeOutcome } from "./generated/IncludeOutcome";
+import type { InnerLine } from "./generated/InnerLine";
+import type { LocateRefusal } from "./generated/LocateRefusal";
+import type { MemberState } from "./generated/MemberState";
+import type { MissingReason } from "./generated/MissingReason";
+import type { MoveAsk } from "./generated/MoveAsk";
+import type { OfferSummary } from "./generated/OfferSummary";
+import type { ProjectPick } from "./generated/ProjectPick";
+import type { ProjectEvent } from "./generated/ProjectEvent";
+import type { ProjectMarker } from "./generated/ProjectMarker";
+import type { ProjectRow } from "./generated/ProjectRow";
+import type { ProjectUid } from "./generated/ProjectUid";
+import type { ProjectsChanged } from "./generated/ProjectsChanged";
+import type { ProjectsUndone } from "./generated/ProjectsUndone";
+import type { ProjectsView } from "./generated/ProjectsView";
+import type { RecordSkip } from "./generated/RecordSkip";
+import type { RecordStatus } from "./generated/RecordStatus";
+import type { RootAnswer } from "./generated/RootAnswer";
+import type { SkippedEntry } from "./generated/SkippedEntry";
 import type { IndexStatus } from "./generated/IndexStatus";
 import type { IpcError } from "./generated/IpcError";
 import type { LinkTarget } from "./generated/LinkTarget";
@@ -267,6 +294,36 @@ export type { TreeDelta } from "./generated/TreeDelta";
 export type { TreeNode } from "./generated/TreeNode";
 export type { Unlisted } from "./generated/Unlisted";
 export type { UndoKind } from "./generated/UndoKind";
+/** Projects inside the folder (`projects.md`). */
+export type {
+  AgentChoice,
+  CardChange,
+  CardDto,
+  CardField,
+  CardPlace,
+  CardTarget,
+  CardWarning,
+  HiddenRule,
+  IncludeOutcome,
+  InnerLine,
+  LocateRefusal,
+  MemberState,
+  MissingReason,
+  MoveAsk,
+  OfferSummary,
+  ProjectEvent,
+  ProjectPick,
+  ProjectMarker,
+  ProjectRow,
+  ProjectUid,
+  ProjectsChanged,
+  ProjectsUndone,
+  ProjectsView,
+  RecordSkip,
+  RecordStatus,
+  RootAnswer,
+  SkippedEntry,
+};
 
 /** JSON value as the backend stores it (project session values). */
 export type JsonValue =
@@ -297,6 +354,17 @@ export interface Commands {
   tree_open_folder: { args: { path: string }; result: null };
   tree_keep: { args: { path: string | null }; result: null };
   tree_close: { args: Record<string, never>; result: null };
+  projects_view: { args: Record<string, never>; result: ProjectsView };
+  projects_include: { args: { pick: ProjectPick }; result: IncludeOutcome };
+  projects_decline: { args: { pick: ProjectPick }; result: null };
+  projects_undo: { args: { token: number }; result: ProjectsUndone };
+  projects_leave_out: { args: { uids: ProjectUid[] }; result: null };
+  projects_set_hidden: { args: { uid: ProjectUid; rule: HiddenRule }; result: null };
+  projects_set_agent: { args: { uid: ProjectUid; choice: AgentChoice }; result: null };
+  projects_locate: { args: { uid: ProjectUid; path: string }; result: LocateRefusal | null };
+  projects_remove: { args: { uids: ProjectUid[] }; result: null };
+  projects_answer_move: { args: { uid: ProjectUid; path: string; same: boolean }; result: null };
+  projects_card_set: { args: { target: CardTarget; change: CardChange }; result: CardDto };
   fileops_plan_move: { args: { moves: MoveSpec[]; updateLinks: boolean }; result: MovePlan };
   fileops_apply_move: { args: { planId: number; updateLinks: boolean }; result: MoveOutcome };
   fileops_delete: { args: { paths: string[] }; result: DeleteOutcome };
@@ -677,6 +745,8 @@ export interface Events {
   "view-moved": ViewMoved;
   "plugins-changed": null;
   "index-progress": IndexProgress;
+  /** The projects of a folder changed: the window showing `root` reads `projectsView` again. */
+  "projects-changed": ProjectsChanged;
   "import-progress": ImportProgressEvent;
 }
 export type EventName = keyof Events;
@@ -731,6 +801,25 @@ export interface Api {
   /** The open document stays in the list even when the filter hides it. */
   treeKeep(path: string | null): Promise<Result<null>>;
   treeClose(): Promise<Result<null>>;
+  /** Projects inside this window's folder: Settings > Projects + the strip. Changes arrive as `projects-changed`. */
+  projectsView(): Promise<Result<ProjectsView>>;
+  /** Includes projects (`all` = every offered one); a folder without `.permark/` is initialized first. */
+  projectsInclude(pick: ProjectPick): Promise<Result<IncludeOutcome>>;
+  /** "No thanks": `all` on the first question declines for this folder; paths decline those (profile only). */
+  projectsDecline(pick: ProjectPick): Promise<Result<null>>;
+  /** Takes back the last include (its `undo` token). */
+  projectsUndo(token: number): Promise<Result<ProjectsUndone>>;
+  projectsLeaveOut(uids: ProjectUid[]): Promise<Result<null>>;
+  projectsSetHidden(uid: ProjectUid, rule: HiddenRule): Promise<Result<null>>;
+  projectsSetAgent(uid: ProjectUid, choice: AgentChoice): Promise<Result<null>>;
+  /** Locate… of a missing project: `path` = the folder picked (absolute). `null` = done, else why not. */
+  projectsLocate(uid: ProjectUid, path: string): Promise<Result<LocateRefusal | null>>;
+  /** Missing projects taken off the list. */
+  projectsRemove(uids: ProjectUid[]): Promise<Result<null>>;
+  /** The move question: `same` = the project at `path` is the missing one. */
+  projectsAnswerMove(uid: ProjectUid, path: string, same: boolean): Promise<Result<null>>;
+  /** One field of a card (the folder's own | an included project's); an empty value removes the field. */
+  projectsCardSet(target: CardTarget, change: CardChange): Promise<Result<CardDto>>;
   planMove(moves: MoveSpec[], updateLinks: boolean): Promise<Result<MovePlan>>;
   applyMove(planId: number, updateLinks: boolean): Promise<Result<MoveOutcome>>;
   deleteFiles(paths: string[]): Promise<Result<DeleteOutcome>>;

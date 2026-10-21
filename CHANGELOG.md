@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- When a folder you share with an agent holds other projects (folders with their own git repository or their own PerMark settings), the agent no longer sees the files inside them until you include those projects in the folder; this holds for projects in visible folders too. For a project you include, the private files of its own `.aiignore` and `[agent]` settings are hidden from the agent as well as the folder's, and you can turn the agent off for that project alone. A project you open on its own keeps the files its outer folder hides from agents hidden. <!-- f: projects, agent-connection -->
+
 ### Fixed
 - `Esc` now closes the review of changes, as the Done button's tooltip says. It still closes a menu, a dialog or a text field first when one of them is open. <!-- f: review-changes, keyboard-shortcuts -->
 - In a folder without git, "Compare with: the last commit" in the review is now shown as unavailable, and choosing it says why next to it. Before, it seemed to switch but kept showing the same changes. <!-- f: review-changes, git-status -->

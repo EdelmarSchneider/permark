@@ -110,6 +110,7 @@ function own(item: FeedItem): boolean {
     case "group":
       return item.own;
     case "resync":
+    case "project":
       return false;
     default:
       return item satisfies never;
@@ -126,6 +127,8 @@ export function panelRows(
   const rows: PanelRow[] = [];
   if (show !== "mine") {
     for (const item of feed) {
+      // project rows (`projects.md` §12.5) get their own look in the panel (nested projects, part B): not drawn yet
+      if (item.item === "project") continue;
       if (!own(item)) rows.push({ kind: "feed", key: `f${String(item.id)}`, at: item.atMs, item });
     }
   }
