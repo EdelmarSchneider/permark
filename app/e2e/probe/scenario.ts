@@ -17,6 +17,7 @@ export const SEEDS = [
   "failPlugin",
   "importFiles",
   "tabShown",
+  "projectNews",
 ] as const;
 export type SeedUse = (typeof SEEDS)[number];
 

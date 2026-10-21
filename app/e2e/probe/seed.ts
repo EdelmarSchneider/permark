@@ -66,6 +66,7 @@ type MockApi = {
   probe: {
     project: { add(path: string, text: string): void; files: Map<string, string> };
     drops: { fire(event: unknown): void };
+    projects: { news(event: unknown): void };
   };
 };
 
@@ -256,6 +257,21 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
           sources: sources as string[],
         },
       );
+      break;
+    }
+    case "projectNews": {
+      // a row of the project list's own news in the Changes panel (as the live feed sends it)
+      const kind = str(args, "kind");
+      const event =
+        kind === "listChanged"
+          ? { kind }
+          : {
+              kind,
+              // `name` is the step label: the project name comes as `project`
+              name: str(args, "project"),
+              path: typeof args["path"] === "string" ? args["path"] : "",
+            };
+      await withMock(page, (m, e) => m.mockApi.probe.projects.news(e), event);
       break;
     }
     case "tabShown": {
