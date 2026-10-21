@@ -1,7 +1,7 @@
 {
   "id": "scrollbar-invisible",
   "bug": "A long document shows no scroll bar until the pointer is over it (thin, transparent thumb)",
-  "found": "director; fixed 2026-10-20",
+  "found": "manual test; fixed 2026-10-20",
   "persona": "A1",
   "severityMin": "major",
   "reproduction": "Direct: Chromium | Edge draw the ::-webkit-scrollbar styles headless once --hide-scrollbars is dropped; thumb read from the lane's pixels. WebKit on Windows draws its own bars: fact differs by engine.",

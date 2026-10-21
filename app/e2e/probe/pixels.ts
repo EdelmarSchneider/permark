@@ -1,5 +1,5 @@
 // Scroll bar thumbs, by their pixels: the scroll bar's lane is cut out of a screenshot and read in a blank page (the
-// app's own page is never touched). Spec: probe.md §7 `scrollers`.
+// app's own page is never touched). Spec: ux-probe.md §7 `scrollers`.
 
 import type { BrowserContext, Page } from "@playwright/test";
 import type { Thumb } from "./facts.ts";

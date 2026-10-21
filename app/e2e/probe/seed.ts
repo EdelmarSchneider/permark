@@ -1,4 +1,4 @@
-// Seeds: the mock app's state for a scenario (spec: probe.md §6). They reach the app's OWN mock backend through the dev
+// Seeds: the mock app's state for a scenario (spec: ux-probe.md §6). They reach the app's OWN mock backend through the dev
 // server (`/src/api/mock.ts` is the module instance the app uses), or drive the UI where the app has a stable route
 // (tree rows by `data-path`). Fixture documents only.
 

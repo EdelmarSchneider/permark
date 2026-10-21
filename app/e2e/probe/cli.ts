@@ -1,4 +1,4 @@
-// `npm run ux:probe -- <scenario.json | "inline steps"> [options]` (spec: probe.md §8). Exit 0 = ran (flags are facts),
+// `npm run ux:probe -- <scenario.json | "inline steps"> [options]` (spec: ux-probe.md §8). Exit 0 = ran (flags are facts),
 // 2 = usage | setup error.
 
 import { existsSync, readFileSync } from "node:fs";

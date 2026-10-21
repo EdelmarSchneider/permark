@@ -1,4 +1,4 @@
-// In-page collectors (spec: probe.md §7). Each exported function is serialized into the page by Playwright: it MUST be
+// In-page collectors (spec: ux-probe.md §7). Each exported function is serialized into the page by Playwright: it MUST be
 // self-contained (no imports, no outer names at run time; types only).
 
 export type Box = { x: number; y: number; w: number; h: number };

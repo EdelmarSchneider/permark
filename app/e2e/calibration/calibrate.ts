@@ -1,4 +1,4 @@
-// `npm run ux:calibrate -- [--at all|now|before|after] [--only <id>] [--engine ...] [--out <dir>]` (spec: probe.md §9).
+// `npm run ux:calibrate -- [--at all|now|before|after] [--only <id>] [--engine ...] [--out <dir>]` (spec: ux-probe.md §9).
 // Runs each fixture's scenario at the commits asked (default all: before + after + now; a temporary git worktree for
 // before | after) and checks the expected flags. Exit 1 when any expectation is not met, 2 on usage | setup errors.
 

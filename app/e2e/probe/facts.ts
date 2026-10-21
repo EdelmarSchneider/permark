@@ -1,5 +1,5 @@
 // Pure: from two snapshots (before | after an action) + what the page recorded, the step's facts and flags
-// (spec: probe.md §7). No browser here; tested by facts.test.ts.
+// (spec: ux-probe.md §7). No browser here; tested by facts.test.ts.
 
 import type { FocusFact, Observed, Snapshot } from "./page.ts";
 
@@ -146,7 +146,7 @@ function focusFlags(before: FocusFact, after: FocusFact, observed: Observed): Fl
   return flags;
 }
 
-/** Every flag of one probed step (spec: probe.md §7 Flags). */
+/** Every flag of one probed step (spec: ux-probe.md §7 Flags). */
 export function flagsOf(input: {
   action: ActionKind;
   key?: string;

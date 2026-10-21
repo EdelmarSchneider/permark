@@ -1,7 +1,7 @@
 {
   "id": "review-last-commit",
   "bug": "Review bar in a folder without git: choosing \"the last commit\" only moves the switch; the changes shown stay the same and nothing says why",
-  "found": "director; fixed 2026-10-21",
+  "found": "manual test; fixed 2026-10-21",
   "persona": "A1",
   "severityMin": "major",
   "reproduction": "Mock context has no repository (git noRepo, as a folder without git); seed failPlugin also answers review.open basis=commit like the backend without git (review service.rs draw: unavailable noBasis). The fixed build marks the choice aria-disabled; the probe clicks it anyway, as a person can.",

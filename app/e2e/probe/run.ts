@@ -1,4 +1,4 @@
-// Runs a scenario in a headless browser against the mock app and writes the report (spec: probe.md §5, §7). Facts and
+// Runs a scenario in a headless browser against the mock app and writes the report (spec: ux-probe.md §5, §7). Facts and
 // flags, never judgments: the skill `permark-ux-review` judges.
 
 import AxeBuilder from "@axe-core/playwright";

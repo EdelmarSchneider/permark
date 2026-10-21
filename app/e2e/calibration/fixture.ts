@@ -1,4 +1,4 @@
-// Calibration fixture (spec: probe.md §9): one director-found UX bug, the scenario that shows it, the flags expected at
+// Calibration fixture (spec: ux-probe.md): one UX bug found by hand, the scenario that shows it, the flags expected at
 // the commit before its fix, at the fix, and now. Pure; tested.
 
 import type { Expectation } from "../probe/facts.ts";

@@ -1,7 +1,7 @@
 {
   "id": "review-esc",
   "bug": "Review bar: the Done button's tooltip says Esc closes the review; Esc does nothing",
-  "found": "director; fixed 2026-10-21",
+  "found": "manual test; fixed 2026-10-21",
   "persona": "K",
   "severityMin": "minor",
   "reproduction": "Direct.",

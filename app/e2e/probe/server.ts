@@ -1,4 +1,4 @@
-// The app in mock mode (`vite --mode mock`) on a free loopback port, for one probe run (spec: probe.md §4). Started and
+// The app in mock mode (`vite --mode mock`) on a free loopback port, for one probe run (spec: ux-probe.md §4). Started and
 // stopped by the runner: whatever starts here is stopped in `stop` (teardown symmetry).
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";

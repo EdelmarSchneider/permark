@@ -1,4 +1,4 @@
-// Scenario = what the probe does in the mock app, step by step (spec: ux-capability-specs/probe.md §5). Pure: parsed and
+// Scenario = what the probe does in the mock app, step by step (spec: ux-probe.md). Pure: parsed and
 // checked here, run by run.ts.
 
 export type Engine = "chromium" | "msedge" | "webkit";

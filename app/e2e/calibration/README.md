@@ -1,6 +1,6 @@
 # Calibration fixtures (organizer-only)
 
-Reviewers (`user-advocate`, `ui-ux-designer`, `verifier`) never open this folder before writing their findings: it names the bugs the calibration hides. Format, runner and rules: `ux-capability-specs/probe.md` §9. Steps stay unnamed (`step-<n>`), so a scenario handed to a reviewer says nothing about the bug.
+Reviewers never open this folder before writing their findings: it names the bugs the calibration hides. Format, runner and rules: spec `ux-probe.md`. Steps stay unnamed (`step-<n>`), so a scenario handed to a reviewer says nothing about the bug.
 
 ## Cases
 

@@ -1,7 +1,7 @@
 {
   "id": "chip-focus-ring",
   "bug": "Tab bar: after switching tabs with the keyboard, the focus ring stays on a chip that is no longer the active tab",
-  "found": "director; fixed 2026-10-20",
+  "found": "manual test; fixed 2026-10-20",
   "persona": "K",
   "severityMin": "major",
   "reproduction": "Mock = one page for all tabs (the real app: one webview per tab, the ring showed when the view came back). Same cause shows: the chip keeps focus after the active tab changes. Ctrl+Tab from the focused active chip.",
