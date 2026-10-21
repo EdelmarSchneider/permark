@@ -505,10 +505,14 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
             .and_then(|name| name.to_str())
             .is_some_and(Ignorer::is_ignore_file)
     };
-    if rescan
-        || pending
-            .iter()
-            .any(|p| is_ignore_file(&p.abs) || p.rename_from.as_deref().is_some_and(is_ignore_file))
+    if rescan {
+        // events were lost: projects may have come or gone unseen
+        for (_, ignorer) in &shared.ignorers {
+            ignorer.forget_projects();
+        }
+    } else if pending
+        .iter()
+        .any(|p| is_ignore_file(&p.abs) || p.rename_from.as_deref().is_some_and(is_ignore_file))
     {
         for (_, ignorer) in &shared.ignorers {
             ignorer.clear();
@@ -527,6 +531,15 @@ fn flush(shared: &Shared, pending: Vec<Pending>, rescan: bool) -> Vec<Pending> {
         known: &known,
     };
     let mut done = reconcile(&env, pending);
+    // a nested project came, went or moved: the changes above were decided with what was known before (a project
+    // that went still reports its files); from now on the new layout counts, and everything that keeps a picture of
+    // the disk builds it again (tree, index, unread)
+    let rescan = rescan || done.projects_moved;
+    if done.projects_moved {
+        for (_, ignorer) in &shared.ignorers {
+            ignorer.forget_projects();
+        }
+    }
     shared.own.pair_moves(&mut done.changes);
     shared.own.mark(&mut done.changes, |path| {
         shared.sigs.get(&key_of(path)).map(|s| s.hash)
