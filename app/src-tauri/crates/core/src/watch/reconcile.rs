@@ -78,9 +78,9 @@ impl Env<'_> {
             .is_some_and(|ignorer| ignorer.rel_ignored(rel, is_dir))
     }
 
-    /// Whether this hint may change which folders are nested projects (own `.git` | `.permark` came or went, a
-    /// project folder appeared, went or moved): then the ignore decisions read so far are stale. Plain saves never
-    /// count; a file that appeared costs no look at the disk.
+    /// Whether this hint may change which folders are nested repositories (own `.git` came or went, a repository
+    /// folder appeared, went or moved; `.permark` changes no decision): then the ignore decisions read so far are
+    /// stale. Plain saves never count; a file that appeared costs no look at the disk.
     fn moves_projects(&self, p: &Pending, path: &str, meta: Option<&Metadata>) -> bool {
         if !(p.created || p.removed || p.rename_from.is_some()) {
             return false;
@@ -90,7 +90,7 @@ impl Env<'_> {
         };
         let rel = below_root(path);
         let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
-        if matches!(name, ".git" | ".permark") {
+        if Ignorer::is_git_name(name) {
             return ignorer.project_changed(&ignorer.abs_of(parent));
         }
         if is_git_signal(path) || !is_news(path) {

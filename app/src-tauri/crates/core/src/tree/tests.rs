@@ -1543,8 +1543,8 @@ fn all_nodes(f: &Fixture) -> Vec<TreeNode> {
         .nodes
 }
 
-/// A master folder whose repo ignores `hubs/`, projects nested 3 levels deep, a `.permark` folder inside and outside
-/// the ignored part.
+/// A master folder whose repo ignores `hubs/`, repositories nested 3 levels deep, a `.permark`-only folder inside and
+/// outside the ignored part.
 fn nested_layout() -> Fixture {
     let f = fixture(&[
         ".git/HEAD",
@@ -1601,10 +1601,10 @@ fn nested_projects_below_ignored_folders_are_shown_under_their_own_rules() {
         ("hubs/hub-a/projects/p1/p.md", Some(false)),
         ("hubs/hub-a/projects/p1/inner/stray.md", Some(true)),
         ("hubs/hub-a/projects/p1/inner/q/q.md", Some(false)),
-        ("hubs/notes/n.md", Some(false)),
-        ("hubs/notes/n.log", Some(false)),
-        ("hubs/notes/.permark/config.toml", Some(false)),
-        ("hubs/notes/.permark/local", None),
+        // a `.permark` folder never un-hides: below the hidden `hubs` it stays an unopened ignored folder
+        ("hubs/notes", Some(true)),
+        ("hubs/notes/n.md", None),
+        ("hubs/notes/.permark/config.toml", None),
         ("hubs/plain", Some(true)),
         ("hubs/plain/z.md", None),
         // a `.permark` folder the master does not hide stays under the master's rules
@@ -1634,7 +1634,13 @@ fn the_watch_judges_every_path_as_the_walk_listed_it() {
             );
         }
         // below folders the walk did not enter
-        for path in ["hubs/plain/z.md", "target/out.md", "hubs/hub-a/out/y.md"] {
+        for path in [
+            "hubs/plain/z.md",
+            "target/out.md",
+            "hubs/hub-a/out/y.md",
+            "hubs/notes/n.md",
+            "hubs/notes/.permark/config.toml",
+        ] {
             assert!(ignorer.rel_ignored(path, false), "{when}: {path}");
         }
     };
@@ -1687,8 +1693,6 @@ fn a_folder_scan_inside_a_container_follows_the_same_rules() {
         "hubs/hub-a/x.log",
         "hubs/hub-a/projects/p1/p.md",
         "hubs/hub-a/projects/p1/inner/q/q.md",
-        "hubs/notes/n.md",
-        "hubs/notes/n.log",
     ] {
         assert!(found.contains(&want), "{want}: {found:?}");
     }
@@ -1698,11 +1702,14 @@ fn a_folder_scan_inside_a_container_follows_the_same_rules() {
         "hubs/hub-a/out/y.md",
         "hubs/hub-a/projects/p1/inner/stray.md",
         "hubs/notes/.permark/local/read.json",
+        // a `.permark`-only folder below the hidden `hubs` stays hidden
+        "hubs/notes/n.md",
+        "hubs/notes/n.log",
     ] {
         assert!(!found.contains(&never), "{never}: {found:?}");
     }
     let scan = folder_scan(&f, "hubs/notes", &mut |_| false).unwrap();
-    assert!(folder_paths(&scan).contains(&"hubs/notes/n.log"));
+    assert!(!folder_paths(&scan).contains(&"hubs/notes/n.log"));
 }
 
 /// Walk cost of a master folder with many nested repositories (numbers for the work report):
@@ -1827,10 +1834,10 @@ fn walk_and_watch_agree(f: &Fixture) {
     }
 }
 
-/// FINDING (person in control): a `.permark` folder that came with third-party content (vendored repo, npm package)
-/// un-hides a folder the person's own ignore list (`.permark/config.toml` `ignore`) and `node_modules` keep out.
+/// Person in control (verify M1): a `.permark` folder that came with third-party content (vendored repo, npm package)
+/// never un-hides what the person's own ignore list (`.permark/config.toml` `ignore`) or `node_modules` keep out.
 #[test]
-fn verify_a_shipped_permark_folder_unhides_what_the_person_ignored() {
+fn a_shipped_permark_folder_never_unhides_what_the_person_ignored() {
     let config = ProjectConfig {
         ignore: vec!["vendor/".to_owned()],
         ..ProjectConfig::default()
@@ -1848,21 +1855,51 @@ fn verify_a_shipped_permark_folder_unhides_what_the_person_ignored() {
         &config,
     );
     let files = verify_scanned(&f);
-    // observed: both shipped `.permark` folders are walked, indexed (and so in agent `map` | `search`) and watched
+    assert_eq!(files, ["root.md"]);
+    let nodes = all_nodes(&f);
+    let state = |p: &str| nodes.iter().find(|n| n.path == p).map(|n| n.ignored);
+    // both stay unopened ignored folders: no container, nothing below listed
+    assert_eq!(state("vendor"), Some(true));
+    assert_eq!(state("vendor/lib"), None);
+    assert_eq!(state("node_modules"), Some(true));
+    assert_eq!(state("node_modules/pkg"), None);
+    walk_and_watch_agree(&f);
+    let ignorer = Arc::clone(&f.explorer.ignorers()[0].1);
+    for path in ["vendor/lib/doc.md", "node_modules/pkg/README.md"] {
+        assert!(ignorer.rel_ignored(path, false), "{path}");
+    }
+}
+
+/// The person's ignore list hides `vendor/`, but a real repository inside it (`.git` cannot be committed, so third-party
+/// content cannot plant one) still shows, under its own rules; the rest of `vendor` stays out.
+#[test]
+fn a_real_repository_below_a_person_ignored_folder_still_shows() {
+    let config = ProjectConfig {
+        ignore: vec!["vendor/".to_owned()],
+        ..ProjectConfig::default()
+    };
+    let f = fixture_with(
+        &[
+            "root.md",
+            "vendor/lib/.git/HEAD",
+            "vendor/lib/doc.md",
+            "vendor/other/x.md",
+        ],
+        &config,
+    );
+    let files = verify_scanned(&f);
     assert!(files.contains(&"vendor/lib/doc.md".to_owned()), "{files:?}");
     assert!(
-        files.contains(&"node_modules/pkg/README.md".to_owned()),
+        !files.contains(&"vendor/other/x.md".to_owned()),
         "{files:?}"
     );
-    assert!(!files.contains(&"vendor/other/x.md".to_owned()));
-    assert!(!files.contains(&"node_modules/plain/index.md".to_owned()));
     walk_and_watch_agree(&f);
 }
 
-/// FINDING (secrets): a `.permark` folder inside a folder the master hides by `secrets/` + `*.env` puts the folder
-/// under its own rules only: `*.env` no longer applies there.
+/// Secrets (verify m1): a `.permark` folder inside a folder the master hides by `secrets/` + `*.env` changes nothing:
+/// the folder stays hidden, `*.env` still applies.
 #[test]
-fn verify_a_permark_folder_inside_a_hidden_secrets_folder_drops_the_masters_env_rule() {
+fn a_permark_folder_inside_a_hidden_secrets_folder_keeps_the_masters_rules() {
     let f = fixture(&[
         ".gitignore",
         "secrets/.permark/config.toml",
@@ -1877,11 +1914,98 @@ fn verify_a_permark_folder_inside_a_hidden_secrets_folder_drops_the_masters_env_
         ..FsBatch::default()
     });
     let files = verify_scanned(&f);
-    assert!(files.contains(&"secrets/prod.env".to_owned()), "{files:?}");
-    assert!(files.contains(&"secrets/keys.md".to_owned()), "{files:?}");
+    assert!(
+        !files.iter().any(|p| p.starts_with("secrets/")),
+        "{files:?}"
+    );
     // a `.permark` folder the master does not hide keeps the master's rules
     assert!(!files.contains(&"app/x.env".to_owned()), "{files:?}");
+    assert!(
+        files.contains(&"app/.permark/config.toml".to_owned()),
+        "{files:?}"
+    );
     walk_and_watch_agree(&f);
+    let ignorer = Arc::clone(&f.explorer.ignorers()[0].1);
+    for path in ["secrets/prod.env", "secrets/keys.md", "app/x.env"] {
+        assert!(ignorer.rel_ignored(path, false), "{path}");
+    }
+}
+
+/// `.git` matched by one case rule in listings, probes and the container search: on Windows | macOS a `.GIT` folder
+/// makes a repository (as for git there), elsewhere it is a plain folder. Walk and watch agree either way.
+#[test]
+fn a_git_folder_in_other_case_is_one_decision() {
+    let f = fixture(&[".gitignore", "hubs/a/.GIT/HEAD", "hubs/a/doc.md"]);
+    fs::write(
+        f.dir.path().join(".gitignore"),
+        "hubs/
+",
+    )
+    .unwrap();
+    f.explorer.apply_batch(&FsBatch {
+        rescan: true,
+        ..FsBatch::default()
+    });
+    let files = verify_scanned(&f);
+    assert_eq!(
+        files.contains(&"hubs/a/doc.md".to_owned()),
+        crate::paths::CASE_INSENSITIVE,
+        "{files:?}"
+    );
+    // git's own folder is never in the model, whatever its case
+    assert!(!files.iter().any(|p| p.contains(".GIT")), "{files:?}");
+    walk_and_watch_agree(&f);
+    let ignorer = Arc::clone(&f.explorer.ignorers()[0].1);
+    ignorer.forget_projects();
+    walk_and_watch_agree(&f);
+}
+
+/// A nested repository's `.git/info/exclude` and the project folder's frames are cached: decisions follow an edit
+/// after [`Ignorer::clear`] (the watch calls it when an ignore file changes).
+#[test]
+fn exclude_and_root_rules_follow_an_edit_after_clear() {
+    let f = fixture(&[
+        ".gitignore",
+        "a.md",
+        "b.tmpl",
+        "hubs/a/.git/info/exclude",
+        "hubs/a/doc.md",
+        "hubs/a/draft.md",
+    ]);
+    fs::write(
+        f.dir.path().join(".gitignore"),
+        "hubs/
+",
+    )
+    .unwrap();
+    fs::write(f.dir.path().join("hubs/a/.git/info/exclude"), "").unwrap();
+    f.explorer.apply_batch(&FsBatch {
+        rescan: true,
+        ..FsBatch::default()
+    });
+    let ignorer = Arc::clone(&f.explorer.ignorers()[0].1);
+    assert!(!ignorer.rel_ignored("hubs/a/draft.md", false));
+    assert!(!ignorer.rel_ignored("b.tmpl", false));
+    fs::write(
+        f.dir.path().join("hubs/a/.git/info/exclude"),
+        "draft.md
+",
+    )
+    .unwrap();
+    fs::write(
+        f.dir.path().join(".gitignore"),
+        "hubs/
+*.tmpl
+",
+    )
+    .unwrap();
+    // cached until told
+    assert!(!ignorer.rel_ignored("hubs/a/draft.md", false));
+    ignorer.clear();
+    assert!(ignorer.rel_ignored("hubs/a/draft.md", false));
+    assert!(!ignorer.rel_ignored("hubs/a/doc.md", false));
+    assert!(ignorer.rel_ignored("b.tmpl", false));
+    assert!(!ignorer.rel_ignored("a.md", false));
 }
 
 /// A linked worktree inside an ignored folder: `.git` is a FILE (gitfile). Walk + watch agree; its files are shown.
@@ -1907,11 +2031,11 @@ fn verify_a_gitfile_worktree_below_an_ignored_folder_is_one_decision() {
         ..FsBatch::default()
     });
     let nodes = all_nodes(&f);
-    let ignored = |p: &str| nodes.iter().find(|n| n.path == p).map(|n| n.ignored);
-    assert_eq!(ignored("worktrees/w1/doc.md"), Some(false));
-    assert_eq!(ignored("worktrees/w1/build"), Some(true));
-    assert_eq!(ignored("worktrees/loose.md"), Some(true));
-    assert_eq!(ignored("worktrees/w1/.git"), None, "gitfile is always out");
+    let state = |p: &str| nodes.iter().find(|n| n.path == p).map(|n| n.ignored);
+    assert_eq!(state("worktrees/w1/doc.md"), Some(false));
+    assert_eq!(state("worktrees/w1/build"), Some(true));
+    assert_eq!(state("worktrees/loose.md"), Some(true));
+    assert_eq!(state("worktrees/w1/.git"), None, "gitfile is always out");
     walk_and_watch_agree(&f);
     let ignorer = Arc::clone(&f.explorer.ignorers()[0].1);
     ignorer.forget_projects();

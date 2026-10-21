@@ -1117,8 +1117,7 @@ fn nested_projects_coming_and_going_while_open_update_tree_index_and_watch() {
 // ---- verifier: rescan storms -----------------------------------------------------------------------------------------
 
 #[test]
-fn verify_checkout_and_install_churn_inside_a_nested_repo_never_rescans_but_a_shipped_marker_does()
-{
+fn checkout_and_install_churn_inside_a_nested_repo_and_a_shipped_permark_folder_never_rescan() {
     let dir = tempfile::tempdir().unwrap();
     for f in NESTED {
         let path = dir.path().join(f);
@@ -1181,14 +1180,81 @@ fn verify_checkout_and_install_churn_inside_a_nested_repo_never_rescans_but_a_sh
     let _ = quiet_for(&seen, 600);
     let rescans = seen.lock().unwrap().iter().filter(|b| b.rescan).count();
     assert_eq!(rescans, 0, "churn without markers rebuilds nothing");
-    // an npm package that ships its `.permark` folder: the layout counts it as a project -> one rescan
+    // an npm package that ships its `.permark` folder: no project, no rescan, nothing below it is news
     seen.lock().unwrap().clear();
     let staging = tempfile::tempdir_in(base.parent().unwrap()).unwrap();
     fs::create_dir_all(staging.path().join("pkg/.permark")).unwrap();
     fs::write(staging.path().join("pkg/.permark/config.toml"), "").unwrap();
     fs::write(staging.path().join("pkg/README.md"), "# pkg").unwrap();
     fs::rename(staging.path().join("pkg"), a.join("node_modules/pkg")).unwrap();
-    let _ = quiet_for(&seen, 1500);
+    // a `.permark` folder made inside the ignored `out/` of the nested repo: same
+    fs::create_dir_all(a.join("out/.permark")).unwrap();
+    fs::write(a.join("out/.permark/config.toml"), "").unwrap();
+    fs::write(a.join("out/o.md"), "# o").unwrap();
+    let heard = quiet_for(&seen, 1500);
     let rescans = seen.lock().unwrap().iter().filter(|b| b.rescan).count();
-    eprintln!("verify: rescans after a package with .permark moved into node_modules: {rescans}");
+    assert_eq!(rescans, 0, "a `.permark` folder changes no decision");
+    assert!(
+        !heard
+            .iter()
+            .any(|c| c.path.contains("node_modules/pkg") || c.path.starts_with("hubs/a/out")),
+        "{heard:?}"
+    );
+}
+
+/// The watch caches a nested repo's `.git/info/exclude`: an edit of it is seen (the batch clears the cache) and counts
+/// for the next decisions.
+#[test]
+fn an_edited_exclude_file_of_a_nested_repo_counts_at_once() {
+    let dir = tempfile::tempdir().unwrap();
+    for f in NESTED {
+        let path = dir.path().join(f);
+        if f.ends_with('/') {
+            fs::create_dir_all(&path).unwrap();
+        } else {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "x").unwrap();
+        }
+    }
+    nested_rules(dir.path());
+    fs::create_dir_all(dir.path().join("hubs/a/.git/info")).unwrap();
+    fs::write(dir.path().join("hubs/a/.git/info/exclude"), "").unwrap();
+    let root = Root::open(dir.path()).unwrap();
+    let base = root.path().to_path_buf();
+    let vault = Vault::new(root);
+    let explorer = Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    );
+    let hub = WatchHub::new();
+    let seen: Seen = Arc::default();
+    let _sub = hub.subscribe({
+        let seen = Arc::clone(&seen);
+        move |batch| seen.lock().unwrap().push(batch.clone())
+    });
+    let _watcher = Watcher::start_with(
+        &vault,
+        explorer.ignorers(),
+        hub,
+        Arc::new(OwnWrites::new()),
+        None,
+        FAST,
+        true,
+    );
+    settle(&seen);
+    fs::write(base.join("hubs/a/draft.md"), "1").unwrap();
+    wait_for(&seen, "draft is news first", |c| {
+        wrote(c, "hubs/a/draft.md")
+    });
+    let _ = quiet_for(&seen, 400);
+    fs::write(base.join("hubs/a/.git/info/exclude"), "draft.md\n").unwrap();
+    let _ = quiet_for(&seen, 600);
+    seen.lock().unwrap().clear();
+    fs::write(base.join("hubs/a/draft.md"), "2").unwrap();
+    fs::write(base.join("hubs/a/doc.md"), "an agent wrote").unwrap();
+    wait_for(&seen, "doc", |c| wrote(c, "hubs/a/doc.md"));
+    let all = quiet_for(&seen, 400);
+    assert!(!all.iter().any(|c| c.path == "hubs/a/draft.md"), "{all:?}");
 }

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use unicode_normalization::UnicodeNormalization;
 
-use super::ignore::{Entry, Frames, Ignorer};
+use super::ignore::{named, Entry, Frames, Ignorer};
 use super::{category_of, NodeKind, RootKind, Unlisted, LARGE_FOLDER};
 use crate::fsx::is_scratch_name;
 use crate::paths::{fold, WORKTREE_PREFIX};
@@ -133,7 +133,7 @@ pub(super) fn is_link(meta: &fs::Metadata) -> bool {
 /// Whether the model never holds this entry: git's folder, the app's private state folders (a nested project's too),
 /// scratch files.
 pub(crate) fn always_out(parent_path: &str, name: &str) -> bool {
-    name == ".git"
+    Ignorer::is_git_name(name)
         || (parent_path.rsplit('/').next() == Some(".permark") && matches!(name, "local" | "cache"))
         || is_scratch_name(name)
 }
@@ -166,12 +166,12 @@ fn read_entries(
         let Ok(name) = entry.file_name().into_string() else {
             continue; // a name that is not text cannot be a project path
         };
-        match name.as_str() {
-            ".gitignore" => hints.gitignore = true,
-            ".ignore" => hints.ignore = true,
-            ".git" => hints.git = true,
-            ".permark" => hints.permark = true,
-            _ => {}
+        if named(&name, ".gitignore") {
+            hints.gitignore = true;
+        } else if named(&name, ".ignore") {
+            hints.ignore = true;
+        } else if Ignorer::is_git_name(&name) {
+            hints.git = true;
         }
         if always_out(parent_path, &name) {
             continue;
