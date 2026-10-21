@@ -254,6 +254,8 @@ pub struct ProjectCore {
     activity: Arc<ActivityLog>,
     documents: Arc<Documents>,
     formats: Arc<RwLock<Arc<FormatRegistry>>>,
+    /// The plugins `formats` was built from: the index reads config files again only when this set changes.
+    formats_on: Mutex<BTreeSet<PluginId>>,
     explorer: Arc<Explorer>,
     hub: Arc<WatchHub>,
     id: ProjectId,
@@ -356,8 +358,12 @@ impl ProjectCore {
             let documents = Arc::clone(&documents);
             move |batch| documents.on_batch(batch)
         });
-        // the index walks the project at once and follows the watch from the first batch on
-        let formats = Arc::new(RwLock::new(Arc::new(FormatRegistry::core())));
+        // the index walks the project at once and follows the watch from the first batch on; it starts with the
+        // formats of the plugins that are on, so config keys are in the first build (no window where the index says
+        // ready and config files are still unread)
+        let formats = Arc::new(RwLock::new(Arc::new(FormatRegistry::build(
+            &env.registry.contributions(&on),
+        ))));
         let search = Arc::new(SearchIndex::start_with(
             vault.clone(),
             Arc::clone(&explorer),
@@ -397,6 +403,7 @@ impl ProjectCore {
             activity,
             documents,
             formats,
+            formats_on: Mutex::new(on.clone()),
             explorer,
             hub,
             id,
@@ -706,10 +713,19 @@ impl ProjectCore {
             .enablement
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = enablement;
-        *self.formats.write().unwrap_or_else(PoisonError::into_inner) =
-            Arc::new(FormatRegistry::build(&env.registry.contributions(on)));
-        // config files are searched by their keys while a config format is on
-        self.search.formats_changed();
+        // config files are searched by their keys while a config format is on: read again only when the plugins change
+        {
+            let mut formats_on = self
+                .formats_on
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if *formats_on != *on {
+                *self.formats.write().unwrap_or_else(PoisonError::into_inner) =
+                    Arc::new(FormatRegistry::build(&env.registry.contributions(on)));
+                formats_on.clone_from(on);
+                self.search.formats_changed();
+            }
+        }
         let mut context = Context::welcome(env.distribution);
         context.workspace = crate::conditions::WorkspaceKind::Project;
         context.plugins.clone_from(on);

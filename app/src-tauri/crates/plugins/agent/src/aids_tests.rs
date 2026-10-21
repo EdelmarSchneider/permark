@@ -537,7 +537,12 @@ fn secrets_never_leave_in_any_answer() {
         ("map", json!({ "depth": 6 })),
         ("activity", json!({ "since": "0" })),
     ] {
-        texts.push(call(&fx, tool, args).unwrap().1);
+        let (value, text) = call(&fx, tool, args).unwrap();
+        if tool == "search" {
+            // a search that finds nothing proves nothing: the lines holding the secrets must be hits
+            assert!(!value["hits"].as_array().unwrap().is_empty(), "{value}");
+        }
+        texts.push(text);
     }
     for text in &texts {
         for secret in ["sk-live-123456", "hunter2", "tok-abc-123", "t-1\""] {
