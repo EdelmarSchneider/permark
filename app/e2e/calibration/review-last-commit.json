@@ -37,38 +37,37 @@
       },
       {
         "do": "click",
-        "target": "role=radio[name='the last commit']",
-        "name": "last-commit"
+        "target": "role=radio[name='the last commit']"
       }
     ]
   },
   "expect": {
     "before": [
       {
-        "step": "last-commit",
+        "step": "step-5",
         "flag": "no-effect-beyond-control"
       }
     ],
     "after": [
       {
-        "step": "last-commit",
+        "step": "step-5",
         "flag": "no-effect-beyond-control",
         "absent": true
       },
       {
-        "step": "last-commit",
+        "step": "step-5",
         "flag": "no-change",
         "absent": true
       }
     ],
     "now": [
       {
-        "step": "last-commit",
+        "step": "step-5",
         "flag": "no-effect-beyond-control",
         "absent": true
       },
       {
-        "step": "last-commit",
+        "step": "step-5",
         "flag": "no-change",
         "absent": true
       }

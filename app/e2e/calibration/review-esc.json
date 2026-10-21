@@ -25,38 +25,37 @@
       },
       {
         "do": "press",
-        "key": "Escape",
-        "name": "esc"
+        "key": "Escape"
       }
     ]
   },
   "expect": {
     "before": [
       {
-        "step": "esc",
+        "step": "step-4",
         "flag": "dead-key-promised"
       }
     ],
     "after": [
       {
-        "step": "esc",
+        "step": "step-4",
         "flag": "dead-key-promised",
         "absent": true
       },
       {
-        "step": "esc",
+        "step": "step-4",
         "flag": "dead-key",
         "absent": true
       }
     ],
     "now": [
       {
-        "step": "esc",
+        "step": "step-4",
         "flag": "dead-key-promised",
         "absent": true
       },
       {
-        "step": "esc",
+        "step": "step-4",
         "flag": "dead-key",
         "absent": true
       }
