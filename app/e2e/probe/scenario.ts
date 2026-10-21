@@ -16,6 +16,7 @@ export const SEEDS = [
   "foreignTreeNews",
   "failPlugin",
   "importFiles",
+  "tabShown",
 ] as const;
 export type SeedUse = (typeof SEEDS)[number];
 

@@ -1,0 +1,39 @@
+{
+  "id": "drop-question-tab-switch",
+  "bug": "Files dropped on the file list: the Copy here | Move here question vanishes after switching to another tab and back; nothing copied, nothing said",
+  "found": "director real test 2026-10-21 (release build of develop 7dc47fa, Windows); fixed 2026-10-21",
+  "persona": "A1",
+  "severityMin": "major",
+  "reproduction": "Mock = one page for all tabs (the real app: one webview per tab, hidden while another tab shows). A key | click tab switch in mock swaps the page's project, so seed tabShown sends what the backend tells the hidden view instead (windows-changed: active = the other tab, then back); the page stays this view. Drop through the UI drop step; Enter = the person answering after coming back.",
+  "fix": "bc6aea3",
+  "scenario": {
+    "name": "drop-question-tab-switch",
+    "steps": [
+      { "do": "seed", "use": "project" },
+      { "do": "seed", "use": "tab", "path": "C:/Users/demo/other-docs" },
+      { "do": "drop", "target": "[role='tree']" },
+      { "do": "seed", "use": "tabShown", "tab": "other" },
+      { "do": "seed", "use": "tabShown", "tab": "this" },
+      { "do": "press", "key": "Enter", "watch": "[role='tree']", "expectChange": true }
+    ]
+  },
+  "expect": {
+    "before": [
+      { "step": "step-6", "flag": "no-change" },
+      { "step": "step-6", "flag": "dead-key" }
+    ],
+    "after": [
+      { "step": "step-6", "flag": "no-change", "absent": true },
+      { "step": "step-6", "flag": "dead-key", "absent": true }
+    ],
+    "now": [
+      { "step": "step-6", "flag": "no-change", "absent": true },
+      { "step": "step-6", "flag": "dead-key", "absent": true }
+    ]
+  },
+  "observed": {
+    "before": "7dc47fa (bc6aea3^): step-6 dead-key + no-change: question gone after the switch, Enter does nothing, tree unchanged",
+    "after": "bc6aea3: question still there, focus on Copy here; Enter copies, dropped-note.md listed (textAdded)",
+    "now": "bugfix/drop-question-tab-switch bc6aea3: same as after"
+  }
+}

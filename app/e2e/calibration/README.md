@@ -14,12 +14,14 @@ Runs: `npm run ux:calibrate` (default `--at all`: before + after + now). Status 
 | `copy-not-in-tree` | copied file not in tree until reload | 92b6f85 | `no-change` | file listed at once |
 | `review-last-commit` | "the last commit" without git does nothing | 72dec97 | `no-effect-beyond-control` | absent (choice explained inline) |
 | `review-esc` | Done tooltip says Esc; Esc does nothing | 72dec97 | `dead-key-promised` | absent |
+| `drop-question-tab-switch` | drop question gone after tab switch + back; nothing copied, nothing said | bc6aea3 | `no-change` + `dead-key` | absent (Enter copies) |
 
 ## Simulated, not literal (fixture `reproduction`)
 
 - `chip-focus-ring`: mock = one page for all tabs; the real app has one webview per tab.
 - `copy-not-in-tree`: the second tab's tree news is sent by seed `foreignTreeNews` (what the backend broadcasts for another tab's project); the copy itself is seed `importFiles` (backend copy, as a drop does).
 - `review-last-commit`: seed `failPlugin` answers `review.open` basis `commit` like the backend without git (`unavailable` `noBasis`).
+- `drop-question-tab-switch`: mock = one page for all tabs, and a key | click tab switch swaps the page's project; seed `tabShown` sends what the backend tells the hidden view (`windows-changed`, active = the other tab, then back) while the page stays this view.
 - Not reproducible in mock: none so far; a future case -> `not-reproducible.json` (`id`, `bug`, `reason`).
 
 ## Flag -> bug class it was made for
