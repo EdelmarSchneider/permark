@@ -7,6 +7,8 @@ pub mod map;
 pub mod record;
 mod service;
 pub mod uid;
+#[cfg(test)]
+mod verify_tests;
 pub mod view;
 
 pub use card::{CardChange, CardDto, CardField, CardPlace, CardWarning};

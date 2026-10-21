@@ -32,6 +32,8 @@ pub mod structure;
 #[cfg(test)]
 mod tests;
 pub mod tools;
+#[cfg(test)]
+mod verify_projects_tests;
 
 use std::borrow::Cow;
 use std::sync::Arc;
