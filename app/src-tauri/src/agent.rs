@@ -362,17 +362,48 @@ users[2]{name,token}:
             .call("read", json!({ "path": "team.toon", "at": "users[1]" }))
             .unwrap();
         assert_eq!(row["text"], "  Bob,<hidden>\n", "{row}");
-        let hits = tools
-            .call("search", json!({ "query": "tok-toon-1" }))
-            .unwrap();
-        assert!(hits["hits"].as_array().unwrap().is_empty(), "{hits}");
-        // search finds keys, never values
-        let hits = tools.call("search", json!({ "query": "hunter2" })).unwrap();
-        assert!(hits["hits"].as_array().unwrap().is_empty(), "{hits}");
-        let hits = tools
-            .call("search", json!({ "query": "DB_PASSWORD" }))
-            .unwrap();
-        assert!(!hits["hits"].as_array().unwrap().is_empty(), "{hits}");
-        assert!(!hits.to_string().contains("hunter2"), "{hits}");
+        // search finds keys, never values; first the index must hold the config files, else "no hit" proves nothing
+        let found = |query: &str| -> Vec<String> {
+            let answer = tools.call("search", json!({ "query": query })).unwrap();
+            assert_eq!(answer["partial"], false, "index ready: {answer}");
+            assert!(
+                !answer["hits"].to_string().contains("hunter2"),
+                "{query}: {answer}"
+            );
+            answer["hits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|h| h["path"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        wait_index_ready(tools);
+        // not polled: once the index says ready, config keys are in it (a later pass would leave a window where an
+        // agent's search misses them while `partial` says false)
+        assert!(
+            found("DB_PASSWORD").contains(&"stack.yml".to_owned()),
+            "config keys indexed once the index is ready"
+        );
+        assert!(found("api_token").contains(&"deploy.toml".to_owned()));
+        for secret in secrets {
+            let hits = found(secret);
+            assert!(hits.is_empty(), "{secret} found in {hits:?}");
+        }
+    }
+
+    /// Waits until a search answers complete (`partial: false`): the first build of the index ended.
+    fn wait_index_ready(tools: &Tools) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(30);
+        loop {
+            let answer = tools.call("search", json!({ "query": "ready" })).unwrap();
+            if answer["partial"] == false {
+                return;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "search index not ready after 30 s: {answer}"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 }
