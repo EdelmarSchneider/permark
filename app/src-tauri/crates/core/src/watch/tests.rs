@@ -137,6 +137,13 @@ fn has(changes: &[Change], path: &str, kind: &ChangeKind) -> bool {
     changes.iter().any(|c| c.path == path && &c.kind == kind)
 }
 
+/// A file someone wrote is news (macOS may report a file the watch never read as created).
+fn wrote(changes: &[Change], path: &str) -> bool {
+    changes
+        .iter()
+        .any(|c| c.path == path && matches!(c.kind, ChangeKind::Modified | ChangeKind::Created))
+}
+
 // ---- hints -----------------------------------------------------------------------------------------------------------
 
 fn event(kind: EventKind, paths: &[&str]) -> Event {
@@ -909,7 +916,7 @@ fn changes_inside_a_nested_repo_below_an_ignored_folder_are_news_under_its_own_r
     .unwrap();
     fs::write(base.join("hubs/a/doc.md"), "an agent wrote").unwrap();
     let all = wait_for(&seen, "doc and log", |c| {
-        has(c, "hubs/a/doc.md", &ChangeKind::Modified) && c.iter().any(|c| c.path == "hubs/a/x.log")
+        wrote(c, "hubs/a/doc.md") && wrote(c, "hubs/a/x.log")
     });
     for never in ["hubs/a/out/y.md", "hubs/own.md"] {
         assert!(!all.iter().any(|c| c.path == never), "{never}: {all:?}");
@@ -1039,12 +1046,12 @@ fn nested_projects_coming_and_going_while_open_update_tree_index_and_watch() {
     assert_eq!(found("alphaword"), ["hubs/a/doc.md"]);
     assert!(found("gammaword").is_empty(), "a plain ignored folder");
     assert!(listed("hubs/a/doc.md") && !listed("hubs/plain/n.md"));
-    std::thread::sleep(Duration::from_millis(200));
+    settle(&seen);
 
     // an agent writes inside the nested repo: the plugins hear it, the index follows
     put("hubs/a/doc.md", "# A\n\nbetaword\n");
     wait_for(&seen, "the plugin hears the nested change", |c| {
-        has(c, "hubs/a/doc.md", &ChangeKind::Modified)
+        wrote(c, "hubs/a/doc.md")
     });
     until("the index follows", &|| {
         found("betaword") == ["hubs/a/doc.md"]
@@ -1056,9 +1063,7 @@ fn nested_projects_coming_and_going_while_open_update_tree_index_and_watch() {
     until("and indexed", &|| found("gammaword") == ["hubs/plain/n.md"]);
     seen.lock().unwrap().clear();
     put("hubs/plain/n.md", "# N\n\nepsilonword\n");
-    wait_for(&seen, "and watched", |c| {
-        has(c, "hubs/plain/n.md", &ChangeKind::Modified)
-    });
+    wait_for(&seen, "and watched", |c| wrote(c, "hubs/plain/n.md"));
 
     // a project folder renamed while open
     fs::rename(base.join("hubs/a"), base.join("hubs/b")).unwrap();

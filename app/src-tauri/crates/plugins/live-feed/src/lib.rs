@@ -241,7 +241,10 @@ mod tests {
         let started = std::time::Instant::now();
         while !items_of(&core)
             .iter()
-            .any(|i| i["path"] == "hubs/a/plan.md" && i["kind"] == "modified")
+            // macOS may report a file the watch never read as created
+            .any(|i| {
+                i["path"] == "hubs/a/plan.md" && (i["kind"] == "modified" || i["kind"] == "created")
+            })
         {
             assert!(
                 started.elapsed() < Duration::from_secs(20),
