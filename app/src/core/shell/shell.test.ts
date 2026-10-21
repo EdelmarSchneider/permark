@@ -115,7 +115,7 @@ afterEach(async () => {
 });
 
 describe("the settings page", () => {
-  it("lists Reading, Editing, Integration, Plugins - Project only while a project is shown", async () => {
+  it("lists Reading, Editing, Integration, Plugins - This folder only while a project is shown", async () => {
     await store.start().catch(() => {});
     started = true;
     await toWelcome();
@@ -131,7 +131,7 @@ describe("the settings page", () => {
     await open();
     mountPage("reading");
     await tick();
-    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "Project"]);
+    expect(names()).toEqual(["Reading", "Editing", "Integration", "Plugins", "This folder"]);
   });
 
   it("Escape closes it and a section the person cannot reach falls back to Reading", async () => {
@@ -157,7 +157,7 @@ describe("the settings page", () => {
     press(document.activeElement!, "ArrowUp");
     press(document.activeElement!, "ArrowUp");
     await tick();
-    expect(target.querySelector("h3.title")?.textContent).toBe("Project");
+    expect(target.querySelector("h3.title")?.textContent).toBe("This folder");
   });
 
   it("Editing: a refused editor command is said in words, a good one is kept with its preview", async () => {

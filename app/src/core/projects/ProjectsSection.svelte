@@ -1,8 +1,9 @@
 <script lang="ts">
-  // Settings > Projects: the projects inside the opened folder in three groups (Included | Not included | Not found),
-  // a filter with bulk actions on the rows it shows, each included project's rules and card. Consent mode (strip
-  // "Choose…"): the offered projects, all checked; nothing is saved until "Include checked".
-  import { tick } from "svelte";
+  // Settings > Projects inside: the projects inside the opened folder in three groups (Included | Not included | Not
+  // found), a filter with bulk actions on the rows it shows, each included project's details and rules. Consent mode
+  // (strip "Choose…"): the offered projects, all checked; nothing is saved until "Include checked". A row that moves
+  // to another group (or goes) hands the focus to the next row of its group.
+  import { tick, untrack } from "svelte";
   import type { ProjectRow } from "../../api";
   import { documents } from "../doc/document.svelte";
   import { t, tn, type MessageKey } from "../i18n";
@@ -17,6 +18,8 @@
   let filter = $state("");
   let open = $state.raw<ReadonlySet<string>>(new Set());
   let section: HTMLElement | undefined = $state();
+  let filterInput: HTMLInputElement | undefined = $state();
+  let problem: HTMLElement | undefined = $state();
 
   const view = $derived(projects.view);
   const choosing = $derived(projects.choosing !== null);
@@ -62,6 +65,60 @@
     return lines;
   });
 
+  /** The row the focus goes to when `row` leaves its group: the next one, else the one before (`null`: none left). */
+  function neighbor(row: ProjectRow): ProjectRow | null {
+    const group =
+      row.state === "included"
+        ? groups.included
+        : row.state === "missing"
+          ? groups.notFound
+          : groups.notIncluded;
+    const at = group.findIndex((r) => r.key === row.key);
+    if (at < 0) return null;
+    return group[at + 1] ?? group[at - 1] ?? null;
+  }
+
+  function rowElement(path: string): HTMLElement | null {
+    return section?.querySelector<HTMLElement>(`[data-project="${CSS.escape(path)}"]`) ?? null;
+  }
+
+  /** Focus on a row's control: its checkbox (`box`) | its first action button (missing rows) | its first rule. */
+  function focusRow(path: string, what: "box" | "action" | "rule"): boolean {
+    const row = rowElement(path);
+    if (!row) return false;
+    const selector =
+      what === "box"
+        ? 'input[type="checkbox"]'
+        : what === "rule"
+          ? '.rules-body [role="radio"][tabindex="0"]'
+          : ".actions button:not([disabled])";
+    const target =
+      row.querySelector<HTMLElement>(selector) ??
+      row.querySelector<HTMLElement>("button:not([disabled]), input:not([disabled])");
+    if (!target) return false;
+    row.scrollIntoView({ block: "nearest" });
+    target.focus();
+    return true;
+  }
+
+  /** The checkbox of a row: it moves to the other group; focus to the next row of the group it left (none left:
+   *  the moved row, in its new group). */
+  async function include(row: ProjectRow, on: boolean): Promise<void> {
+    const next = neighbor(row);
+    const moved = await projects.setIncluded(row, on);
+    if (!moved) return;
+    await tick();
+    if (next === null || !focusRow(next.path, "box")) focusRow(row.path, "box");
+  }
+
+  /** "Remove from list": the row goes (Undo in the notice); focus to the next missing row, else the filter. */
+  async function remove(row: ProjectRow): Promise<void> {
+    const next = neighbor(row);
+    projects.remove(row);
+    await tick();
+    if (next === null || !focusRow(next.path, "action")) filterInput?.focus();
+  }
+
   function toggle(row: ProjectRow): void {
     const next = new Set(open);
     if (!next.delete(row.key)) next.add(row.key);
@@ -90,20 +147,33 @@
     document.querySelector<HTMLElement>('[role="tree"]')?.focus();
   }
 
-  // "Project settings…" of a node: that row opens, comes into view, focus on its first rule
+  // what the page was opened for: "Project settings…" of a node | card, a Changes row, an undone removal (that row
+  // opens, comes into view, focus on its first rule | action), the broken list strip (focus on the problem); consent
+  // mode: the heading. After the page's own focus (it runs first).
   $effect(() => {
-    const ask = projects.focusRow;
-    if (ask === null || !section) return;
-    projects.focusRow = null;
+    const ask = projects.ask;
+    if (!section || !view || ask === null) return;
+    projects.ask = null;
+    if (ask.kind === "problem") {
+      void tick().then(() => problem?.focus());
+      return;
+    }
+    const row = projects.rowByKey(ask.key);
+    if (row === null) return;
     filter = "";
-    open = new Set([...open, ask.key]);
+    if (row.state === "included") open = new Set([...open, ask.key]);
     void tick().then(() => {
-      const row = section?.querySelector<HTMLElement>(
-        `[data-project="${CSS.escape(projects.rowByKey(ask.key)?.path ?? "")}"]`,
+      focusRow(
+        row.path,
+        row.state === "included" ? "rule" : row.state === "missing" ? "action" : "box",
       );
-      row?.scrollIntoView({ block: "nearest" });
-      row?.querySelector<HTMLElement>('.rules-body [role="radio"][tabindex="0"]')?.focus();
     });
+  });
+
+  // consent mode: focus on its heading once the section shows (it loads after the page took the focus)
+  $effect(() => {
+    if (untrack(() => projects.choosing === null)) return;
+    void tick().then(() => section?.querySelector<HTMLElement>("[data-autofocus]")?.focus());
   });
 
   // leaving the page in consent mode (Close, Esc) saves nothing
@@ -122,6 +192,8 @@
         depth={depthOf(row, byKey)}
         expanded={open.has(row.key)}
         toggle={() => toggle(row)}
+        include={(on) => include(row, on)}
+        remove={() => remove(row)}
       />
     {/each}
   </Card>
@@ -134,7 +206,7 @@
   <p class="intro">{t("projects.settings.intro", { root: rootName })}</p>
 
   {#if problems.length > 0}
-    <div class="error-card" role="alert">
+    <div class="error-card" role="alert" tabindex="-1" bind:this={problem}>
       {#each problems as line (line)}<p>{line}</p>{/each}
       <button type="button" class="btn btn--sm" onclick={showRecord}>
         {t("projects.record.show")}
@@ -152,6 +224,7 @@
         placeholder={t("projects.settings.filter")}
         aria-label={t("projects.settings.filter")}
         bind:value={filter}
+        bind:this={filterInput}
       />
       <span class="spacer"></span>
       {#if canInclude}
@@ -242,6 +315,10 @@
   }
   .error-card p {
     margin: 0;
+  }
+  .error-card:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
   .tools {
     display: flex;

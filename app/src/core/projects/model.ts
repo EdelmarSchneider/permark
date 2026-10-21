@@ -9,20 +9,31 @@ export type Strip =
   | { kind: "none" }
   /** First question for this folder (nothing answered yet). */
   | { kind: "first"; count: number; names: readonly string[]; inner: readonly InnerLine[] }
-  /** Projects found after the folder was answered. */
-  | { kind: "new"; count: number; names: readonly string[]; inner: readonly InnerLine[] }
+  /** Projects found after the folder was answered: where they are (`paths`: offered ones, path order). */
+  | {
+      kind: "new";
+      count: number;
+      names: readonly string[];
+      paths: readonly string[];
+      inner: readonly InnerLine[];
+    }
   /** Is this found project the missing one? */
-  | { kind: "move"; ask: MoveAsk };
+  | { kind: "move"; ask: MoveAsk }
+  /** The project list can't be read: the Explorer says so (Settings shows the problem). */
+  | { kind: "broken" };
 
 /** The project list can't be written now (unreadable | written by a newer PerMark). */
 export function readOnly(view: ProjectsView): boolean {
   return view.record.status === "unreadable" || view.record.status === "newer";
 }
 
-/** The strip for a view. Nothing while the walk runs, in a plain folder, or while the list can't be written (Settings
- *  shows why). The move question comes first, then the first question | new projects. */
+/** The strip for a view. An unreadable list says so (a pull | an editor broke it: nothing else would show it). Else
+ *  nothing while the walk runs, in a plain folder, or while the list is newer than this PerMark (Settings says why).
+ *  The move question comes first, then the first question | new projects. */
 export function stripOf(view: ProjectsView | null): Strip {
-  if (view === null || !view.present || !view.ready || readOnly(view)) return { kind: "none" };
+  if (view === null) return { kind: "none" };
+  if (view.record.status === "unreadable") return { kind: "broken" };
+  if (!view.present || !view.ready || readOnly(view)) return { kind: "none" };
   if (view.ask !== null) return { kind: "move", ask: view.ask };
   const { count, names, inner } = view.offered;
   if (count === 0) return { kind: "none" };
@@ -30,7 +41,7 @@ export function stripOf(view: ProjectsView | null): Strip {
     case "unanswered":
       return { kind: "first", count, names, inner };
     case "answered":
-      return { kind: "new", count, names, inner };
+      return { kind: "new", count, names, paths: offeredPaths(view), inner };
     case "declinedAll":
       return { kind: "none" };
     default:
@@ -155,4 +166,45 @@ export function offeredPaths(view: ProjectsView | null): string[] {
     .filter((r) => r.state === "offered")
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
     .map((r) => r.path);
+}
+
+/** Where new projects are, as the strip says it: one path | up to 3 paths | a count in the folder holding most of them
+ *  and how many other folders (`folder` `""`: the opened folder itself). */
+export type NewWhere =
+  | { kind: "one"; path: string }
+  | { kind: "few"; paths: readonly string[] }
+  | { kind: "many"; count: number; folder: string; others: number };
+
+export function newWhere(paths: readonly string[], count: number): NewWhere {
+  if (count === 1 && paths.length === 1) return { kind: "one", path: paths[0] ?? "" };
+  if (count <= 3 && paths.length === count) return { kind: "few", paths };
+  const folders = new Map<string, number>();
+  for (const path of paths) {
+    const cut = path.lastIndexOf("/");
+    const folder = cut < 0 ? "" : path.slice(0, cut);
+    folders.set(folder, (folders.get(folder) ?? 0) + 1);
+  }
+  let folder = "";
+  let most = -1;
+  for (const [name, n] of folders) {
+    // most projects first; a tie goes to the first in path order (the map keeps it)
+    if (n > most) {
+      folder = name;
+      most = n;
+    }
+  }
+  return { kind: "many", count, folder, others: Math.max(0, folders.size - 1) };
+}
+
+/** The folder name of a path (its last segment). */
+export function folderName(path: string): string {
+  const parts = path.replaceAll("\\", "/").split("/").filter(Boolean);
+  return parts.at(-1) ?? path;
+}
+
+/** The short name a project node shows after its folder name: only when it says something else. */
+export function aliasOf(row: Pick<ProjectRow, "path" | "short">): string | null {
+  const folder = folderName(row.path);
+  const short = row.short.trim();
+  return short === "" || keyOf(short) === keyOf(folder) ? null : short;
 }

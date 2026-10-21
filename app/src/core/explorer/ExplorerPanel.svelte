@@ -15,8 +15,7 @@
   import { contributions } from "../plugins/instance.svelte";
   import type { ContributionRegistry, TreeBadge } from "../plugins/registry.svelte";
   import { projects } from "../projects/instance.svelte";
-  import { hueOfMember } from "../projects/model";
-  import ProjectCard from "../projects/ProjectCard.svelte";
+  import { aliasOf, hueOfMember } from "../projects/model";
   import ProjectStrip from "../projects/ProjectStrip.svelte";
   import Badge from "../shell/Badge.svelte";
   import ContextMenu from "./ContextMenu.svelte";
@@ -164,10 +163,15 @@
     return lines.length === 0 ? undefined : lines.join("\n");
   }
 
-  /** What a screen reader hears for a project node: name, "project", what plugins say (changed files, unread). */
-  function projectName(member: ProjectRow, said: readonly TreeBadge[]): string {
+  /** What a screen reader hears for a project node: folder name, "project" (+ its short name when that differs),
+   *  what plugins say (changed files, unread). */
+  function projectName(node: TreeNode, member: ProjectRow, said: readonly TreeBadge[]): string {
+    const alias = aliasOf(member);
+    const folder = nameOf(node.path);
     return [
-      t("projects.node.sr", { name: member.name }),
+      alias === null
+        ? t("projects.node.sr", { folder })
+        : t("projects.node.srNamed", { folder, short: alias }),
       ...said.flatMap((b) => (b.title === undefined || b.text === "" ? [] : [b.title])),
     ].join(", ");
   }
@@ -229,6 +233,23 @@
     clearCardTimers();
     const el = rowElement(path);
     if (el) projects.openCard({ path, from: "menu", anchor: el.getBoundingClientRect() });
+  }
+
+  const projectCard = (): Promise<typeof import("../projects/ProjectCard.svelte")> =>
+    import("../projects/ProjectCard.svelte");
+
+  /** The card's "Open in new tab": what it is about is read before it closes. */
+  function cardOpenTab(): void {
+    const path = projects.card?.path ?? null;
+    closeCard(false);
+    if (path !== null) void store.openAsProject(path);
+  }
+
+  /** The card's "Project settings…": that project's row in Settings, opened and focused. */
+  function cardSettings(): void {
+    const row = cardRow;
+    closeCard(false);
+    if (row !== null) projects.openSettings(row);
   }
 
   function closeCard(refocus: boolean): void {
@@ -329,14 +350,15 @@
           run: () => void store.openExternal(node.path, "browser"),
         });
       }
+      const member = isDir ? projects.memberAt(node.path) : null;
       if (isDir && node.kind.type === "dir" && node.kind.unlisted === null) {
         entries.push({
           kind: "item",
-          label: t("menu.openAsProject"),
+          // a project: the same words as its card's button (one name per action)
+          label: member === null ? t("menu.openAsProject") : t("projects.card.openTab"),
           run: () => void store.openAsProject(node.path),
         });
       }
-      const member = isDir ? projects.memberAt(node.path) : null;
       if (member !== null) {
         entries.push(
           { kind: "item", label: t("projects.menu.details"), run: () => showCard(node.path) },
@@ -721,7 +743,7 @@
               aria-selected={selected}
               aria-level={row.depth + 1}
               aria-expanded={isDir ? row.expanded : undefined}
-              aria-label={member === null ? undefined : projectName(member, said)}
+              aria-label={member === null ? undefined : projectName(node, member, said)}
               data-path={node.path}
               data-project={member === null ? undefined : ""}
               style:top="{top}px"
@@ -771,7 +793,17 @@
                   cancel={() => store.cancelEdit()}
                 />
               {:else}
-                <span class="name">{member?.name ?? nameOf(node.path)}</span>
+                {@const alias = member === null ? null : aliasOf(member)}
+                {#if alias === null}
+                  <span class="name">{nameOf(node.path)}</span>
+                {:else}
+                  <!-- the folder name first (what paths say); the project's short name after it, muted, cut first -->
+                  <span class="name named"
+                    ><span class="folder">{nameOf(node.path)}</span><span class="alias"
+                      >{alias}</span
+                    ></span
+                  >
+                {/if}
                 {#if node.kind.type === "dir" && node.kind.unlisted?.type === "large"}
                   <span class="tag" title={t("tree.largeFolderTitle", { n: 5000 })}>
                     {t("tree.largeFolder")}
@@ -820,23 +852,20 @@
   <ContextMenu x={menu.x} y={menu.y} entries={menu.entries} close={() => (menu = null)} />
 {/if}
 {#if projects.card !== null && cardRow !== null}
+  <!-- the card's code loads the first time a card shows (a plain folder never needs it) -->
   {@const open = projects.card}
   {@const about = cardRow}
-  <ProjectCard
-    row={about}
-    anchor={open?.anchor ?? new DOMRect()}
-    from={open?.from ?? "hover"}
-    close={closeCard}
-    hovering={cardHovering}
-    openTab={() => {
-      closeCard(false);
-      if (open) void store.openAsProject(open.path);
-    }}
-    openSettings={() => {
-      closeCard(false);
-      projects.openSettings(about);
-    }}
-  />
+  {#await projectCard() then loaded}
+    <loaded.default
+      row={about}
+      anchor={open?.anchor ?? new DOMRect()}
+      from={open?.from ?? "hover"}
+      close={closeCard}
+      hovering={cardHovering}
+      openTab={cardOpenTab}
+      openSettings={cardSettings}
+    />
+  {/await}
 {/if}
 {#if store.dialog.status === "asking"}
   <MovePlanDialog plan={store.dialog.plan} answer={(choice) => void store.answerDialog(choice)} />
@@ -972,6 +1001,25 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .name.named {
+    display: flex;
+    gap: var(--sp-2);
+  }
+  /* the folder name shrinks only after the short name is cut to nothing */
+  .named .folder {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .named .alias {
+    flex: 0 100000 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: var(--fs-ui-sm);
+    text-overflow: ellipsis;
   }
   .tag {
     flex: none;

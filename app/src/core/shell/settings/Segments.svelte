@@ -3,7 +3,8 @@
   // radio group.
   import { tick } from "svelte";
 
-  type Option = { value: V; label: string; title?: string };
+  /** `title`: tooltip; `why`: why the choice is off (tooltip + its accessible description). */
+  type Option = { value: V; label: string; title?: string; why?: string };
   type Props = {
     options: readonly Option[];
     value: V;
@@ -26,6 +27,7 @@
   }: Props = $props();
 
   let group: HTMLElement | undefined = $state();
+  const uid = $props.id();
 
   function onkeydown(e: KeyboardEvent): void {
     const step =
@@ -66,7 +68,8 @@
       aria-checked={option.value === value}
       aria-disabled={disabledValues.includes(option.value) ? "true" : undefined}
       tabindex={option.value === value ? 0 : -1}
-      title={option.title}
+      title={option.why ?? option.title}
+      aria-describedby={option.why === undefined ? undefined : `${uid}-why-${option.value}`}
       {disabled}
       {onkeydown}
       onclick={() => {
@@ -75,6 +78,11 @@
     >
       {option.label}
     </button>
+  {/each}
+  {#each options as option (option.value)}
+    {#if option.why !== undefined}
+      <span class="sr-only" id="{uid}-why-{option.value}">{option.why}</span>
+    {/if}
   {/each}
 </div>
 

@@ -181,7 +181,15 @@
           {
             value: "this",
             label: t("search.scope.thisProject", { short: owner?.short ?? "…" }),
-            ...(owner === null ? { title: t("search.scope.notInProject") } : {}),
+            // why it is off, as things are now: no document open | the open one is in no project
+            ...(owner === null
+              ? {
+                  why:
+                    documents.path === null
+                      ? t("search.scope.noDocument")
+                      : t("search.scope.notInProject"),
+                }
+              : {}),
           },
         ]}
         disabledValues={owner === null ? ["this"] : []}

@@ -19,7 +19,7 @@
   import { revealInTree } from "../../core/explorer/current";
   import { t, tn } from "../../core/i18n";
   import { projects } from "../../core/projects/instance.svelte";
-  import { relativeTo } from "../../core/projects/model";
+  import { middleCut, relativeTo } from "../../core/projects/model";
   import { ui } from "../../core/shell/ui.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
   import { ACTIVE_MS, feed } from "./store.svelte";
@@ -60,20 +60,21 @@
       : t("projects.feed.label", { short: owner.short, folder: inner });
   }
 
-  /** The words of a project row. */
-  function projectText(event: ProjectEvent): string {
+  /** The words of a project row; `cut`: long paths cut in the middle (the row), else whole (its tooltip). */
+  function projectText(event: ProjectEvent, cut = false): string {
+    const path = (p: string): string => (cut ? middleCut(p, 40) : p);
     switch (event.kind) {
       case "appeared":
         return t("projects.feed.appeared", {
           name: event.name,
-          folder: event.path === "" ? (projects.view?.rootCard.name ?? "") : event.path,
+          folder: event.path === "" ? (projects.view?.rootCard.name ?? "") : path(event.path),
         });
       case "moved":
-        return t("projects.feed.moved", { name: event.name, path: event.path });
+        return t("projects.feed.moved", { name: event.name, path: path(event.path) });
       case "gone":
         return t("projects.feed.gone", { name: event.name });
       case "back":
-        return t("projects.feed.back", { name: event.name, path: event.path });
+        return t("projects.feed.back", { name: event.name, path: path(event.path) });
       case "listChanged":
         return t("projects.feed.listChanged");
       default:
@@ -81,9 +82,14 @@
     }
   }
 
-  /** The folder a project row reveals in the Explorer (`null`: nothing to show). */
-  function projectTarget(event: ProjectEvent): string | null {
-    return event.kind === "listChanged" || event.kind === "gone" ? null : event.path;
+  /** What a project row does (`null`: nothing): a project not found now -> its row in Settings (Locate… | Remove from
+   *  list); the list changed -> Settings > Projects inside; else the folder shown in the Explorer. */
+  function projectAction(event: ProjectEvent): (() => void) | null {
+    if (event.kind === "listChanged") return () => projects.openSettings();
+    const row = projects.rowAt(event.path);
+    if (row?.state === "missing") return () => projects.openSettings(row);
+    if (event.kind === "gone" && row === null) return null;
+    return () => revealInTree(event.path);
   }
 
   function projectIsRepo(event: ProjectEvent): boolean {
@@ -251,18 +257,19 @@
           </div>
         {:else if row.item.item === "project"}
           {@const event = row.item.event}
-          {@const target = projectTarget(event)}
+          {@const act = projectAction(event)}
           <button
             type="button"
             class="row"
             title={projectText(event)}
-            disabled={target === null}
-            onclick={() => revealInTree(target)}
+            disabled={act === null}
+            onclick={() => act?.()}
           >
             <span class="icon-cell">
               {#if projectIsRepo(event)}<FolderGit2 size={15} />{:else}<FolderDot size={15} />{/if}
             </span>
-            <span class="text"><span class="name">{projectText(event)}</span></span>
+            <!-- the whole sentence stays readable (the path cut in its middle, the line wraps) -->
+            <span class="text"><span class="name wraps">{projectText(event, true)}</span></span>
             <span class="when">{ago(row.at, now)}</span>
           </button>
         {:else}
@@ -398,6 +405,10 @@
   }
   button.row:disabled {
     cursor: default;
+  }
+  .name.wraps {
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .gone .name {
     text-decoration: line-through;

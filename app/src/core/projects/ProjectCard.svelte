@@ -102,8 +102,9 @@
   <div class="buttons">
     <button type="button" class="btn btn--sm" onclick={openTab}>{t("projects.card.openTab")}</button
     >
+    <!-- the same words as the node menu (one name per action) -->
     <button type="button" class="btn btn--sm" onclick={openSettings}
-      >{t("projects.card.settings")}</button
+      >{t("projects.menu.settings")}</button
     >
   </div>
 </div>

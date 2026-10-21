@@ -1,6 +1,7 @@
 <script lang="ts">
-  // One row of Settings > Projects: include checkbox, name + path, what plugins say about the folder (unread), the
-  // agent line (while the folder shares with an agent), and the Rules of an included project (each kept at once).
+  // One row of Settings > Projects inside: include checkbox, name + path, what plugins say about the folder (unread),
+  // the agent line (while the folder shares with an agent), and the details and rules of an included project (each
+  // kept at once).
   // A project not found: where it was + Locate… | Remove from list. Consent mode: only the checkbox.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
@@ -24,9 +25,13 @@
     mode: "normal" | "choose";
     expanded: boolean;
     toggle: () => void;
+    /** The checkbox (normal mode): the page includes | leaves out and moves the focus. */
+    include: (on: boolean) => Promise<void>;
+    /** "Remove from list" (missing rows): the page removes and moves the focus. */
+    remove: () => Promise<void>;
     rootName: string;
   };
-  let { row, depth, mode, expanded, toggle, rootName }: Props = $props();
+  let { row, depth, mode, expanded, toggle, include, remove, rootName }: Props = $props();
 
   const id = $derived(`prow-${row.key.replace(/[^a-z0-9]/gi, "_")}`);
   const agentOn = $derived(conditions.current.agent.status !== "off");
@@ -61,7 +66,7 @@
 
   function onCheck(on: boolean): void {
     if (mode === "choose") projects.setChosen(row.path, on);
-    else void act(() => projects.setIncluded(row, on));
+    else void act(() => include(on));
   }
 
   async function locate(): Promise<void> {
@@ -129,7 +134,7 @@
           class="btn btn--sm"
           disabled={locked}
           title={locked ? t("projects.record.locked") : undefined}
-          onclick={() => void act(() => projects.remove(row))}>{t("projects.row.remove")}</button
+          onclick={() => void act(remove)}>{t("projects.row.remove")}</button
         >
       </div>
     {:else if included && mode === "normal"}

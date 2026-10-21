@@ -37,7 +37,30 @@ export type Notice =
   | { id: number; kind: "fileOpFailed"; error: ApiError }
   | { id: number; kind: "note"; text: string }
   /** A quiet line with buttons (Undo, Open in project). */
-  | { id: number; kind: "action"; text: string; actions: readonly NoticeAction[] };
+  | { id: number; kind: "action"; text: string; actions: readonly NoticeAction[] }
+  /** A quiet line (buttons optional) that closes by itself after `closeAfterMs`, paused while held (pointer | focus
+   *  on it); `onGone` hears how it went. */
+  | {
+      id: number;
+      kind: "timed";
+      text: string;
+      actions: readonly NoticeAction[];
+      closeAfterMs: number;
+      onGone?: (how: NoticeGone) => void;
+    };
+
+/** How a notice went: its button ran, it was dismissed | timed out | pushed out by newer ones. */
+export type NoticeGone = "action" | "dismissed" | "timeout" | "pushedOut";
+/** Why a timed notice waits: the pointer | the focus is on it. */
+export type NoticeHold = "pointer" | "focus";
+
+/** The clock of a timed notice: time left, running since (`null`: held), who holds it. */
+type NoticeClock = {
+  left: number;
+  since: number | null;
+  handle: ReturnType<typeof setTimeout> | null;
+  holds: Set<NoticeHold>;
+};
 
 type NoticeBody = Notice extends infer N ? (N extends Notice ? Omit<N, "id"> : never) : never;
 
@@ -77,6 +100,7 @@ export class WindowStore {
   /** The tokenizers the token count shows, first = primary (the app's choice; a project may have its own). */
   tokenizers = $state.raw<readonly string[]>([]);
   #nextNotice = 1;
+  readonly #clocks = new Map<number, NoticeClock>();
 
   constructor(backend: Api) {
     this.#api = backend;
@@ -310,14 +334,68 @@ export class WindowStore {
     this.#notify({ kind: "action", text, actions });
   }
 
-  dismiss(id: number): void {
+  /** A quiet line that closes by itself (paused while held); `onGone` hears how it went. */
+  notifyTimed(body: Omit<Extract<Notice, { kind: "timed" }>, "id" | "kind">): void {
+    this.#notify({ kind: "timed", ...body });
+  }
+
+  /** A notice goes (`how`: its button | Dismiss | its time ran out). */
+  dismiss(id: number, how: NoticeGone = "dismissed"): void {
+    const gone = this.notices.find((n) => n.id === id);
+    if (!gone) return;
     this.notices = this.notices.filter((n) => n.id !== id);
+    this.#gone(gone, how);
+  }
+
+  /** The pointer | the focus is on a timed notice: its clock waits. */
+  holdNotice(id: number, hold: NoticeHold): void {
+    const clock = this.#clocks.get(id);
+    if (!clock) return;
+    clock.holds.add(hold);
+    if (clock.since === null) return;
+    if (clock.handle !== null) clearTimeout(clock.handle);
+    clock.left = Math.max(0, clock.left - (Date.now() - clock.since));
+    clock.since = null;
+    clock.handle = null;
+  }
+
+  /** The pointer | the focus left a timed notice: its clock runs on when nothing holds it. */
+  releaseNotice(id: number, hold: NoticeHold): void {
+    const clock = this.#clocks.get(id);
+    if (!clock) return;
+    clock.holds.delete(hold);
+    if (clock.holds.size === 0 && clock.since === null) this.#run(id, clock);
+  }
+
+  #run(id: number, clock: NoticeClock): void {
+    clock.since = Date.now();
+    clock.handle = setTimeout(() => this.dismiss(id, "timeout"), clock.left);
+  }
+
+  #gone(notice: Notice, how: NoticeGone): void {
+    const clock = this.#clocks.get(notice.id);
+    if (clock?.handle) clearTimeout(clock.handle);
+    this.#clocks.delete(notice.id);
+    if (notice.kind === "timed") notice.onGone?.(how);
   }
 
   #notify(body: NoticeBody): void {
-    const notice = { ...body, id: this.#nextNotice++ };
+    const notice = { ...body, id: this.#nextNotice++ } as Notice;
     // newest last; at most 5 on screen
-    this.notices = [...this.notices, notice].slice(-5);
+    const all = [...this.notices, notice];
+    const out = all.slice(0, Math.max(0, all.length - 5));
+    this.notices = all.slice(-5);
+    for (const old of out) this.#gone(old, "pushedOut");
+    if (notice.kind === "timed") {
+      const clock: NoticeClock = {
+        left: notice.closeAfterMs,
+        since: null,
+        handle: null,
+        holds: new Set(),
+      };
+      this.#clocks.set(notice.id, clock);
+      this.#run(notice.id, clock);
+    }
   }
 }
 

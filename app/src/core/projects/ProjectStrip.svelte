@@ -1,11 +1,11 @@
 <script lang="ts">
   // The quiet question under the Explorer list (the code offer's place) about projects in this folder: the first
-  // question, new projects, or "is this the missing one?". Never a dialog, never announced; after an answer the focus
-  // goes back to the list.
+  // question, new projects (where they are), "is this the missing one?", or that the project list can't be read.
+  // Never a dialog, never announced; after an answer the focus goes back to the list.
   import { tick } from "svelte";
   import { language, t, tn } from "../i18n";
   import { projects } from "./instance.svelte";
-  import { joinNames } from "./model";
+  import { joinNames, newWhere } from "./model";
 
   const strip = $derived(projects.strip);
   let busy = $state(false);
@@ -27,11 +27,37 @@
       ? tn("projects.strip.foundNamed", count, { names: joinNames(names, language.locale) })
       : t("projects.strip.foundCount", { n: count });
   }
+
+  /** Where the new projects are: their paths (up to 3), else a count in the folder holding most of them. */
+  function where(count: number, paths: readonly string[]): string {
+    const at = newWhere(paths, count);
+    switch (at.kind) {
+      case "one":
+        return t("projects.strip.newOne", { path: at.path });
+      case "few":
+        return t("projects.strip.newFew", { paths: joinNames(at.paths, language.locale) });
+      case "many": {
+        const folder = at.folder === "" ? t("projects.strip.thisFolder") : `${at.folder}/`;
+        return at.others === 0
+          ? t("projects.strip.newIn", { n: at.count, folder })
+          : tn("projects.strip.newInMore", at.others, { n: at.count, k: at.others, folder });
+      }
+      default:
+        return at satisfies never;
+    }
+  }
 </script>
 
 {#if strip.kind !== "none"}
-  <div class="strip" role="region" aria-label={t("projects.strip.label")}>
-    {#if strip.kind === "move"}
+  <div class="strip" role="region" aria-label={t("projects.strip.label")} data-projects-strip>
+    {#if strip.kind === "broken"}
+      <p>{t("projects.strip.broken")}</p>
+      <div class="buttons">
+        <button type="button" class="btn" onclick={() => projects.showProblem()}
+          >{t("projects.strip.showProblem")}</button
+        >
+      </div>
+    {:else if strip.kind === "move"}
       <p>{t("projects.strip.isMoved", { name: strip.ask.name, path: strip.ask.was })}</p>
       <div class="buttons">
         <button
@@ -51,11 +77,9 @@
       </div>
     {:else}
       {#if strip.kind === "first"}
-        <p>{found(strip.count, strip.names)} {t("projects.strip.why")}</p>
+        <p>{found(strip.count, strip.names)} {tn("projects.strip.why", strip.count)}</p>
       {:else}
-        <p>
-          {tn("projects.strip.new", strip.count, { name: strip.names[0] ?? "" })}
-        </p>
+        <p>{where(strip.count, strip.paths)}</p>
       {/if}
       {#each strip.inner as line (line.name)}
         <p>{tn("projects.strip.inner", line.count, { name: line.name })}</p>
@@ -67,11 +91,9 @@
           disabled={busy}
           onclick={() => void answer(() => projects.includeAll())}
         >
-          {strip.kind === "new" && strip.count === 1
-            ? t("projects.strip.include")
-            : t("projects.strip.includeAll")}
+          {strip.count === 1 ? t("projects.strip.include") : t("projects.strip.includeAll")}
         </button>
-        {#if strip.kind === "first" || strip.count > 1}
+        {#if strip.count > 1}
           <button type="button" class="btn" disabled={busy} onclick={() => projects.beginChoose()}
             >{t("projects.strip.choose")}</button
           >

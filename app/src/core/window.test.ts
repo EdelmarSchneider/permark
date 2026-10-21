@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createMockApi } from "../api/mock";
 import { ERROR_KINDS } from "../api/error";
 import type { Api, Result, OpenOutcome } from "../api";
@@ -250,5 +250,76 @@ describe("initializing a folder", () => {
 describe("errors in words", () => {
   it("every backend error kind has a message key", () => {
     for (const kind of ERROR_KINDS) expect(Object.keys(en)).toContain(errorKey(kind));
+  });
+});
+
+describe("timed notices", () => {
+  it("close by themselves; pointer or focus on one pauses its clock, leaving resumes it (F2)", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new WindowStore(createMockApi());
+      const gone: string[] = [];
+      store.notifyTimed({
+        text: "3 projects included.",
+        actions: [],
+        closeAfterMs: 8000,
+        onGone: (how) => gone.push(how),
+      });
+      const id = store.notices[0]!.id;
+      vi.advanceTimersByTime(5000);
+      store.holdNotice(id, "pointer");
+      store.holdNotice(id, "focus");
+      vi.advanceTimersByTime(60_000);
+      expect(store.notices).toHaveLength(1);
+      // the pointer leaves, the focus is still there: it waits
+      store.releaseNotice(id, "pointer");
+      vi.advanceTimersByTime(60_000);
+      expect(store.notices).toHaveLength(1);
+      store.releaseNotice(id, "focus");
+      vi.advanceTimersByTime(2999);
+      expect(store.notices).toHaveLength(1);
+      vi.advanceTimersByTime(1);
+      expect(store.notices).toHaveLength(0);
+      expect(gone).toEqual(["timeout"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // adversarial: dismissed, button, pushed out by newer ones, held after it went
+  it("say how they went, once; a gone notice holds nothing", () => {
+    vi.useFakeTimers();
+    try {
+      const store = new WindowStore(createMockApi());
+      const gone: string[] = [];
+      for (let n = 0; n < 7; n += 1) {
+        store.notifyTimed({
+          text: `n${n}`,
+          actions: [],
+          closeAfterMs: 8000,
+          onGone: (how) => gone.push(`${n}:${how}`),
+        });
+      }
+      expect(store.notices).toHaveLength(5);
+      expect(gone).toEqual(["0:pushedOut", "1:pushedOut"]);
+      const [a, b] = store.notices;
+      store.dismiss(a!.id);
+      store.dismiss(b!.id, "action");
+      store.dismiss(b!.id, "action");
+      store.holdNotice(a!.id, "pointer");
+      vi.advanceTimersByTime(8000);
+      expect(gone).toEqual([
+        "0:pushedOut",
+        "1:pushedOut",
+        "2:dismissed",
+        "3:action",
+        "4:timeout",
+        "5:timeout",
+        "6:timeout",
+      ]);
+      expect(store.notices).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

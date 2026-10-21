@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectRow, ProjectsView } from "../../api";
 import {
+  aliasOf,
   depthOf,
+  folderName,
+  newWhere,
   groupsOf,
   hueOfMember,
   joinNames,
@@ -82,14 +85,69 @@ describe("strip", () => {
     expect(strip).toEqual({ kind: "move", ask });
   });
 
-  // adversarial: nothing before the walk ends, in a plain folder, or while the list can't be written
-  it("stays quiet while loading, in a plain folder and while the list is unreadable | newer", () => {
+  // adversarial: nothing before the walk ends, in a plain folder, or while the list is newer
+  it("stays quiet while loading, in a plain folder and while the list is newer", () => {
     expect(stripOf(null).kind).toBe("none");
     expect(stripOf(view({ ready: false, offered: offered(2) })).kind).toBe("none");
     expect(stripOf(view({ present: false, offered: offered(2) })).kind).toBe("none");
-    const unreadable = { status: "unreadable" as const, line: 3, message: "x" };
-    expect(stripOf(view({ record: unreadable, offered: offered(2) })).kind).toBe("none");
     expect(stripOf(view({ record: { status: "newer" }, offered: offered(2) })).kind).toBe("none");
+  });
+
+  it("an unreadable list says so, before anything else (also while the walk runs) (F7)", () => {
+    const unreadable = { status: "unreadable" as const, line: 3, message: "x" };
+    expect(stripOf(view({ record: unreadable, offered: offered(2) })).kind).toBe("broken");
+    expect(stripOf(view({ record: unreadable, ready: false })).kind).toBe("broken");
+  });
+
+  it("new projects carry their paths (where they are) (F8)", () => {
+    const v = view({
+      answer: "answered",
+      offered: offered(2),
+      rows: [row("b/two"), row("a/one"), row("c/kept", { state: "included" })],
+    });
+    expect(stripOf(v)).toMatchObject({ kind: "new", paths: ["a/one", "b/two"] });
+  });
+});
+
+describe("where new projects are (F8)", () => {
+  it("one | up to 3 paths | a count in the folder holding most and how many others", () => {
+    expect(newWhere(["tools/new-app"], 1)).toEqual({ kind: "one", path: "tools/new-app" });
+    expect(newWhere(["a/x", "b/y"], 2)).toEqual({ kind: "few", paths: ["a/x", "b/y"] });
+    expect(newWhere(["a/x", "incoming/1", "incoming/2", "z/q", "incoming/3"], 5)).toEqual({
+      kind: "many",
+      count: 5,
+      folder: "incoming",
+      others: 2,
+    });
+    expect(newWhere(["incoming/1", "incoming/2", "incoming/3", "incoming/4"], 4)).toEqual({
+      kind: "many",
+      count: 4,
+      folder: "incoming",
+      others: 0,
+    });
+  });
+
+  // adversarial: projects at the top of the folder; a tie; fewer paths than the count says
+  it("top-level projects, ties and a short list", () => {
+    expect(newWhere(["a", "b", "c", "d"], 4)).toEqual({
+      kind: "many",
+      count: 4,
+      folder: "",
+      others: 0,
+    });
+    expect(newWhere(["x/1", "y/1", "x/2", "y/2"], 4)).toMatchObject({ folder: "x", others: 1 });
+    expect(newWhere(["x/1"], 3)).toEqual({ kind: "many", count: 3, folder: "x", others: 0 });
+  });
+});
+
+describe("project node label (F1)", () => {
+  it("the short name only when it says something else than the folder name", () => {
+    expect(aliasOf({ path: "hubs/hub-b", short: "hub-b" })).toBeNull();
+    expect(aliasOf({ path: "hubs/hub-b", short: "Hub-B" })).toBeNull();
+    expect(aliasOf({ path: "hubs/hub-b", short: "PerMark" })).toBe("PerMark");
+    expect(aliasOf({ path: "repos/Café NFD", short: "Café NFD" })).toBeNull();
+    expect(aliasOf({ path: "x/y", short: "  " })).toBeNull();
+    expect(folderName("a/b/c")).toBe("c");
   });
 });
 

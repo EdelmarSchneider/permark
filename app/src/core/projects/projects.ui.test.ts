@@ -10,6 +10,7 @@ import {
   MOCK_PROJECTS_FRESH,
   MOCK_PROJECTS_LISTED,
   MOCK_PROJECTS_MANY,
+  MOCK_PROJECTS_ONE,
 } from "../../api/mockProjects";
 
 vi.mock("../../api", async () => {
@@ -54,6 +55,8 @@ const { conditions, neutralContext } = await import("../conditions/context.svelt
 const { documents } = await import("../doc/document.svelte");
 const { ui } = await import("../shell/ui.svelte");
 const { projects } = await import("./instance.svelte");
+const { default: Notices } = await import("../shell/Notices.svelte");
+const { windowStore } = await import("../window.svelte");
 
 let target: HTMLElement;
 let cleanups: (() => void)[] = [];
@@ -176,7 +179,8 @@ describe("Explorer: the strip and the project node", () => {
     await openFolder(MOCK_PROJECTS_LISTED);
     await explorer();
     const region = strip();
-    expect(region?.textContent).toContain("New project here: new-app.");
+    // F8: where it is
+    expect(region?.textContent).toContain("New project: tools/new-app.");
     expect(button("Include", region!)).toBeDefined();
     expect(button("Choose…", region!)).toBeUndefined();
     // included projects wear their card name and an icon; not included ones stay plain folders
@@ -199,13 +203,17 @@ describe("Explorer: the strip and the project node", () => {
     const menu = document.querySelector('[role="menu"]');
     expect(menu?.textContent).toContain("Project details");
     expect(menu?.textContent).toContain("Project settings…");
+    // F17: the card's words for the same action
+    expect(menu?.textContent).toContain("Open in new tab");
+    expect(menu?.textContent).not.toContain("Open as project");
     const details = Array.from(menu!.querySelectorAll<HTMLElement>('[role="menuitem"]')).find((m) =>
       m.textContent?.includes("Project details"),
     );
     details!.click();
     flushSync();
-    await tick();
+    await until(() => document.querySelector('[role="dialog"]') !== null, "card loaded");
     const card = document.querySelector<HTMLElement>('[role="dialog"]');
+    expect(button("Project settings…", card!)).toBeDefined();
     expect(card?.getAttribute("aria-label")).toBe("notes-app details");
     expect(card?.textContent).toContain("tools/notes-app");
     await until(() => document.activeElement === button("Open in new tab", card!), "focus in card");
@@ -221,6 +229,8 @@ describe("Explorer: the strip and the project node", () => {
     await store.toggle("tools");
     flushSync();
     await until(() => target.querySelector('[data-path="tools/notes-app"]') !== null, "row");
+    // the card's code is loaded once (as after a first card)
+    await import("./ProjectCard.svelte");
     vi.useFakeTimers();
     try {
       const row = target.querySelector<HTMLElement>('[data-path="tools/notes-app"]')!;
@@ -229,6 +239,8 @@ describe("Explorer: the strip and the project node", () => {
       flushSync();
       expect(document.querySelector('[role="dialog"]')).toBeNull();
       vi.advanceTimersByTime(1);
+      flushSync();
+      await vi.dynamicImportSettled();
       flushSync();
       const card = document.querySelector<HTMLElement>('[role="dialog"]')!;
       expect(card).not.toBeNull();
@@ -247,10 +259,22 @@ describe("Explorer: the strip and the project node", () => {
     }
   });
 
-  it("an unreadable list asks nothing in the Explorer", async () => {
+  it("an unreadable list: the Explorer says so; Show the problem opens Settings on it, focused (F7)", async () => {
     await openFolder(MOCK_PROJECTS_BROKEN);
     await explorer();
-    expect(strip()).toBeNull();
+    const region = strip();
+    expect(region?.textContent).toContain("This folder's project list can't be read.");
+    expect(["Include all", "No thanks"].map((t) => button(t, region!))).toEqual([
+      undefined,
+      undefined,
+    ]);
+    button("Show the problem", region!)!.click();
+    flushSync();
+    expect(ui.settingsPage).toEqual({ status: "open", section: "projects" });
+    section();
+    const alert = target.querySelector<HTMLElement>('[role="alert"]');
+    await until(() => document.activeElement === alert, "focus on the problem");
+    expect(projects.ask).toBeNull();
   });
 });
 
@@ -269,13 +293,16 @@ describe("Settings > Projects", () => {
     filter.dispatchEvent(new Event("input", { bubbles: true }));
     flushSync();
     expect(target.querySelectorAll("[data-project]")).toHaveLength(1);
-    const rules = button("Rules")!;
+    const rules = button("Details and rules")!;
     expect(rules.getAttribute("aria-expanded")).toBe("false");
     rules.click();
     flushSync();
     expect(rules.getAttribute("aria-expanded")).toBe("true");
     expect(target.textContent).toContain("Hidden files");
-    expect(target.textContent).toContain("Files workspace-listed keeps private stay hidden");
+    // F16: the folder name reads as a name
+    expect(target.textContent).toContain(
+      "Files that “workspace-listed” keeps private stay hidden either way.",
+    );
     expect(target.textContent).toContain("Saved in your profile");
     // the agent connection of the folder is off: the choice says so, and still works
     expect(target.textContent).toContain("The agent connection of workspace-listed is off.");
@@ -390,8 +417,46 @@ describe("Changes panel and search", () => {
       Array.from(target.querySelectorAll<HTMLButtonElement>("button.row")).find(
         (b) => b.querySelector(".name")?.textContent === text,
       );
-    expect(row("Project hub-x is no longer here")?.disabled).toBe(true);
     expect(row("Project notes-app moved to tools/notes-app")?.disabled).toBe(false);
+    // F18: the sentence wraps instead of losing its end
+    expect(
+      row("Project notes-app moved to tools/notes-app")?.querySelector(".name.wraps"),
+    ).not.toBeNull();
+    // F6: a project not found now leads to its row in Settings (Locate… | Remove from list)
+    const gone = row("Project hub-x is no longer here")!;
+    expect(gone.disabled).toBe(false);
+    gone.click();
+    flushSync();
+    expect(ui.settingsPage).toEqual({ status: "open", section: "projects" });
+    expect(projects.ask).toMatchObject({ kind: "row", key: "hubs/hub-x" });
+    section();
+    await until(
+      () => (document.activeElement as HTMLElement | null)?.textContent?.trim() === "Locate…",
+      "focus on Locate…",
+    );
+  });
+
+  it("a long destination is cut in its middle, the full one in the tooltip (F18)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    feed.items = [];
+    const far = "deep/folders/that/go/on/and/on/for/a/while/notes-app";
+    feed.take([
+      {
+        item: "project",
+        id: 5,
+        atMs: 5000,
+        event: { kind: "moved", name: "notes-app", path: far },
+      },
+    ]);
+    const app = mount(FeedPanel, { target });
+    flushSync();
+    cleanups.push(() => {
+      void unmount(app);
+      feed.items = [];
+    });
+    const shown = target.querySelector<HTMLButtonElement>("button.row")!;
+    expect(shown.title).toBe(`Project notes-app moved to ${far}`);
+    expect(shown.querySelector(".name")?.textContent).toContain("…/notes-app");
   });
 
   it("search scope: only with projects; This project needs a document inside one", async () => {
@@ -406,12 +471,19 @@ describe("Changes panel and search", () => {
     });
     const radios = (): HTMLElement[] =>
       Array.from(target.querySelectorAll<HTMLElement>('[role="radiogroup"] [role="radio"]'));
+    // F14: what "all" covers
     expect(radios().map((r) => r.textContent?.trim())).toEqual([
-      "All projects",
+      "Whole folder",
       "This project (…)",
     ]);
-    expect(radios()[1]?.getAttribute("aria-disabled")).toBe("true");
-    expect(radios()[1]?.title).toBe("The open document is not inside a project.");
+    // F12: the reason fits the moment (no document open), also for a screen reader
+    const off = radios()[1]!;
+    expect(off.getAttribute("aria-disabled")).toBe("true");
+    const why = "Open a document inside a project to search only that project.";
+    expect(off.title).toBe(why);
+    expect(document.getElementById(off.getAttribute("aria-describedby") ?? "")?.textContent).toBe(
+      why,
+    );
     radios()[1]!.click();
     flushSync();
     expect(store.scope).toBe("all");
@@ -434,5 +506,168 @@ describe("Changes panel and search", () => {
     expect(spy.mock.calls.at(-1)?.[2].project).toBe("k7m2q7xd2a");
     spy.mockRestore();
     store.dispose();
+  });
+});
+
+describe("UX review round 2: focus, words, places", () => {
+  /** The window's notices, mounted (where Undo lives). */
+  function notices(): void {
+    windowStore.notices = [];
+    const app = mount(Notices, { target, props: { store: windowStore } });
+    flushSync();
+    cleanups.push(() => {
+      void unmount(app);
+      for (const n of windowStore.notices) windowStore.dismiss(n.id);
+    });
+  }
+
+  const noticeButton = (text: string): HTMLButtonElement | undefined =>
+    button(text, target.querySelector(".notices") ?? target);
+
+  it("a project node shows its folder name; the short name follows, muted, only when it differs (F1)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    const { store } = await explorer();
+    await store.toggle("hubs");
+    flushSync();
+    await until(() => target.querySelector('[data-path="hubs/hub-b"]') !== null, "row");
+    const hub = target.querySelector<HTMLElement>('[data-path="hubs/hub-b"]');
+    // card name "PerMark software", short "hub-b" = folder name: the folder name alone
+    expect(hub?.querySelector(".name")?.textContent).toBe("hub-b");
+    expect(hub?.getAttribute("aria-label")).toBe("hub-b, project");
+    await projects.setCard(
+      { kind: "member", uid: "k7m2q7xd2a" },
+      { field: "short", value: "PerMark" },
+    );
+    flushSync();
+    await until(() => hub?.querySelector(".alias") !== null, "alias shown");
+    expect(hub?.querySelector(".folder")?.textContent).toBe("hub-b");
+    expect(hub?.querySelector(".alias")?.textContent).toBe("PerMark");
+    expect(hub?.getAttribute("aria-label")).toBe("hub-b, project PerMark");
+  });
+
+  it("one project: singular words, Include | No thanks, no Choose (F15)", async () => {
+    await openFolder(MOCK_PROJECTS_ONE);
+    await explorer();
+    const region = strip()!;
+    expect(region.textContent).toContain(
+      "This folder holds 1 project: template-app. Include it to follow its changes and unread documents from here.",
+    );
+    expect(["Include", "Choose…", "No thanks"].map((t) => button(t, region) !== undefined)).toEqual(
+      [true, false, true],
+    );
+  });
+
+  it("No thanks says where to change the mind (F9)", async () => {
+    await openFolder(MOCK_PROJECTS_FRESH);
+    await explorer();
+    notices();
+    button("No thanks", strip()!)!.click();
+    await until(() => strip() === null, "answered");
+    await until(
+      () =>
+        target.querySelector(".notices")?.textContent?.includes("Settings > Projects inside") ===
+        true,
+      "notice",
+    );
+    expect(target.querySelector(".notices")?.textContent).toContain(
+      "You can include projects later in Settings > Projects inside.",
+    );
+  });
+
+  it("Undo of Include all: the question is back, focus on it, the reader hears it (F3)", async () => {
+    await openFolder(MOCK_PROJECTS_FRESH);
+    await explorer();
+    notices();
+    button("Include all", strip()!)!.click();
+    await until(() => noticeButton("Undo") !== undefined, "notice with Undo");
+    const undo = noticeButton("Undo")!;
+    undo.focus();
+    undo.click();
+    flushSync();
+    await until(() => strip() !== null, "asked again");
+    await until(
+      () => document.activeElement === button("Include all", strip()!),
+      "focus on the strip",
+    );
+    await until(() => projects.announcement !== "", "announced");
+    expect(projects.announcement).toBe("Undone: 4 projects are no longer included.");
+  });
+
+  it("leaving a project out: focus to the next row of its group, the move is said (F4)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    section();
+    const box = (name: string): HTMLInputElement | null =>
+      target.querySelector<HTMLInputElement>(`input[aria-label="Include ${name}"]`);
+    box("notes-app")!.focus();
+    box("notes-app")!.click();
+    await until(() => projects.memberAt("tools/notes-app") === null, "left out");
+    // notes-app was the last included row: the one before it takes the focus
+    await until(() => document.activeElement === box("spec"), "focus on the next row");
+    await until(() => projects.announcement !== "", "announced");
+    expect(projects.announcement).toBe("notes-app moved to Not included.");
+    expect(target.textContent).toContain("Included (2)");
+  });
+
+  it("Remove from list: focus stays in the page, Undo brings the entry back as it was (F5)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    ui.openSettingsPage("projects");
+    section();
+    notices();
+    const before = projects.view!.rows.find((r) => r.state === "missing")!;
+    const remove = button("Remove from list")!;
+    remove.focus();
+    remove.click();
+    flushSync();
+    await until(() => !(target.textContent ?? "").includes("was at hubs/hub-x"), "row gone");
+    // no other missing row: focus on the filter
+    await until(
+      () => document.activeElement === target.querySelector('input[type="search"]'),
+      "focus on the filter",
+    );
+    expect(target.querySelector(".notices")?.textContent).toContain("hub-x removed from the list.");
+    noticeButton("Undo")!.click();
+    flushSync();
+    await until(() => (target.textContent ?? "").includes("was at hubs/hub-x"), "row back");
+    expect(projects.view!.rows.find((r) => r.uid === before.uid)).toEqual(before);
+    await until(
+      () => (document.activeElement as HTMLElement | null)?.textContent?.trim() === "Locate…",
+      "focus on the row again",
+    );
+    await until(() => projects.announcement !== "", "announced");
+    expect(projects.announcement).toBe("hub-x is back in the list.");
+    expect(mock.probe.projects.calls.some((c) => c.startsWith("projects_remove"))).toBe(false);
+  });
+
+  it("the card's Project settings… opens that project's row, focused on its first rule; no stale read (F11, F19)", async () => {
+    const warn = vi.spyOn(console, "warn");
+    await openFolder(MOCK_PROJECTS_LISTED);
+    const { store } = await explorer();
+    await store.toggle("tools");
+    flushSync();
+    await until(() => target.querySelector('[data-path="tools/notes-app"]') !== null, "row");
+    const list = target.querySelector<HTMLElement>('[role="tree"]')!;
+    list.focus();
+    store.select("tools/notes-app", "single");
+    store.focus = "tools/notes-app";
+    flushSync();
+    press(list, "F10", { shiftKey: true });
+    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((m) => m.textContent?.includes("Project details"))!
+      .click();
+    flushSync();
+    await until(() => document.querySelector('[role="dialog"]') !== null, "card");
+    button("Project settings…", document.querySelector('[role="dialog"]')!)!.click();
+    flushSync();
+    expect(ui.settingsPage).toEqual({ status: "open", section: "projects" });
+    section();
+    const row = target.querySelector<HTMLElement>('[data-project="tools/notes-app"]')!;
+    await until(() => row.querySelector(".rules-body") !== null, "row opened");
+    await until(
+      () =>
+        document.activeElement?.closest('[data-project="tools/notes-app"] .rules-body') !== null,
+      "focus on its first rule",
+    );
+    expect(warn.mock.calls.some((c) => String(c[0]).includes("derived_inert"))).toBe(false);
+    warn.mockRestore();
   });
 });

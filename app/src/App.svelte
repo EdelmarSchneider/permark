@@ -355,6 +355,9 @@
 {/if}
 {#if ui.settingsPage.status === "open"}
   <SettingsPage {store} />
+{:else}
+  <!-- what a projects action did (an include undone, a removal kept), for screen readers -->
+  <p class="sr-only" aria-live="polite">{projects.announcement}</p>
 {/if}
 {#if ui.initDialog.status === "asking"}
   {@const asked = ui.initDialog}
