@@ -150,7 +150,7 @@
   }
   .brand {
     padding: 0 var(--sp-2);
-    color: var(--faint);
+    color: var(--muted);
     font-weight: 600;
     letter-spacing: 0.01em;
   }

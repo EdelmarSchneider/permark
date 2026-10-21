@@ -322,7 +322,7 @@ const SPECS: readonly Spec[] = [
   },
   {
     id: "edit.source",
-    label: "cmd.toggleEditMode",
+    label: "cmd.openSource",
     keys: ["Mod+Alt+e"],
     requires: READING,
     when: canEdit,

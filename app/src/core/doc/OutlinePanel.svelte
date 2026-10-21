@@ -80,7 +80,7 @@
     gap: var(--sp-2);
     margin: 0;
     padding: var(--sp-3) var(--sp-3) var(--sp-2);
-    color: var(--faint);
+    color: var(--muted);
     font-size: var(--fs-ui-xs);
     font-weight: 600;
     letter-spacing: 0.05em;

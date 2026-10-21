@@ -5,6 +5,15 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- `Esc` now closes the review of changes, as the Done button's tooltip says. It still closes a menu, a dialog or a text field first when one of them is open. <!-- f: review-changes, keyboard-shortcuts -->
+- In a folder without git, "Compare with: the last commit" in the review is now shown as unavailable, and choosing it says why next to it. Before, it seemed to switch but kept showing the same changes. <!-- f: review-changes, git-status -->
+- When you open the review with the keyboard, your keys now go to the review's own buttons; when you close it, they go back to the page, which shows a focus frame. Before, they were lost and the next `Tab` skipped the review's buttons. <!-- f: review-changes -->
+- The `Ctrl+Alt+E` command is now called "Open Source mode" in the command list and the keyboard shortcuts, which is what it does. It was called "Switch between Edit and Source". <!-- f: source-mode, keyboard-shortcuts -->
+- Screen readers now read each checklist box in a document together with its task, not only "checkbox, checked". <!-- f: view-mode -->
+- After you drop files onto the file list, the question that asks Copy here or Move here now takes the keyboard, so `Enter` copies at once. <!-- f: drop-files -->
+- Small gray text is easier to read in the light and dark themes: the "EXPLORER" heading, the time a document was saved, the names of a document's properties, the outline heading and the app name. <!-- f: themes, explorer, outline, frontmatter-card -->
+
 ## [0.6.3] - 2026-10-21
 
 ### Fixed

@@ -170,8 +170,12 @@ async function perform(page: Page, step: Step): Promise<void> {
   switch (step.do) {
     case "seed":
       return seed(page, step.use, step.args);
-    case "click":
-      return page.locator(step.target).first().click({ timeout: ACTION_WAIT });
+    case "click": {
+      // a control that is off but still says why (`aria-disabled`, focusable) can be clicked by a person: so here too
+      const loc = page.locator(step.target).first();
+      const off = (await loc.getAttribute("aria-disabled", { timeout: ACTION_WAIT })) === "true";
+      return loc.click({ timeout: ACTION_WAIT, force: off });
+    }
     case "dblclick":
       return page.locator(step.target).first().dblclick({ timeout: ACTION_WAIT });
     case "hover":

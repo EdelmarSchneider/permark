@@ -133,6 +133,20 @@ function hideCodeSecrets(pre: HTMLElement, wrapper: HTMLElement): void {
   code.replaceChildren(...nodes);
 }
 
+/** Longest accessible name of a task checkbox (a long item is cut; the item itself is read next anyway). */
+const TASK_NAME_MAX = 120;
+
+/** The text of a task item without its nested lists, on one line. */
+export function taskName(item: Element): string {
+  let text = "";
+  for (const node of item.childNodes) {
+    if (node instanceof Element && (node.localName === "ul" || node.localName === "ol")) continue;
+    text += node.textContent ?? "";
+  }
+  const line = text.replace(/\s+/g, " ").trim();
+  return line.length > TASK_NAME_MAX ? `${line.slice(0, TASK_NAME_MAX - 1).trimEnd()}…` : line;
+}
+
 function enhanceOne(element: HTMLElement, env: EnhanceEnv): HTMLElement {
   let result = element;
   switch (element.localName) {
@@ -203,6 +217,9 @@ function enhanceOne(element: HTMLElement, env: EnhanceEnv): HTMLElement {
       if (item) {
         item.classList.add("task-list-item");
         item.classList.toggle("is-done", element instanceof HTMLInputElement && element.checked);
+        // a checkbox is named by its task (screen readers say "checkbox, checked, Write the spec")
+        const name = taskName(item);
+        if (name !== "") element.setAttribute("aria-label", name);
       }
       break;
     }

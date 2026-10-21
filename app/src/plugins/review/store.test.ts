@@ -8,6 +8,7 @@ import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
 import { ReviewStore, SEEN_MS, kindOf, type ReviewKind } from "./store.svelte";
 import type { DocumentView } from "../../api";
+import type { Reason } from "../../core/conditions/available";
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 6; i++) {
@@ -21,7 +22,13 @@ type Shown = { path: string | null; hash: string | null; kind: ReviewKind };
 const GUIDE = "docs/guide.md";
 
 async function setup(
-  options: { conflictOn?: PluginMethod; shown?: Shown; onScreen?: () => boolean } = {},
+  options: {
+    conflictOn?: PluginMethod;
+    failOn?: { method: PluginMethod; basis: string };
+    shown?: Shown;
+    onScreen?: () => boolean;
+    commitBlocked?: () => Reason | null;
+  } = {},
 ) {
   const mock = createMockApi();
   await mock.openPath(MOCK_FOLDER, "thisTab");
@@ -37,6 +44,22 @@ async function setup(
             kind: "backend",
             command: "plugin_call",
             error: { kind: "conflict", subject: GUIDE, detail: "stale" },
+          },
+        };
+        return failure;
+      }
+      const failOn = options.failOn;
+      if (
+        failOn !== undefined &&
+        method === failOn.method &&
+        (args as { basis?: string }).basis === failOn.basis
+      ) {
+        const failure: Result<PluginMethods[M]["result"]> = {
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "plugin_call",
+            error: { kind: "unavailable", subject: "noBasis", detail: null },
           },
         };
         return failure;
@@ -58,6 +81,7 @@ async function setup(
       },
     },
     options.onScreen ?? (() => true),
+    options.commitBlocked ?? (() => null),
   );
   const stop = store.start();
   await settle();
@@ -208,6 +232,55 @@ describe("the review store", () => {
     stop();
   });
 
+  it("without a repository the last commit is not chosen: the choice stays, a note says why", async () => {
+    const noRepo: Reason = { need: "gitRepo", remedy: null };
+    const { store, mock, notes, stop } = await setup({ commitBlocked: () => noRepo });
+    expect(store.commitUnavailable).toBe("This folder isn't a git repository.");
+    await store.begin();
+    const before = store.reviewing;
+    await store.setBasis("commit");
+    expect(store.basis).toBe("read");
+    expect(store.reviewing).toBe(before);
+    expect(store.basisNote).toBe("This folder isn't a git repository.");
+    expect(notes).toHaveLength(0);
+    expect(mock.probe.plugins.calls).not.toContain("review.setBasis");
+    // the note goes with the review
+    await store.done();
+    expect(store.basisNote).toBeNull();
+    stop();
+  });
+
+  it("git missing says so (before the repository)", async () => {
+    const { store, stop } = await setup({
+      commitBlocked: () => ({ need: "gitAvailable", remedy: "settings.git" }),
+    });
+    expect(store.commitUnavailable).toBe("Git isn't available on this computer.");
+    stop();
+  });
+
+  it("a basis the backend cannot draw keeps the review as it was and says so", async () => {
+    const { store, mock, notes, stop } = await setup({
+      failOn: { method: "review.open", basis: "commit" },
+    });
+    await store.begin();
+    const before = store.reviewing;
+    await store.setBasis("commit");
+    expect(store.basis).toBe("read");
+    expect(store.reviewing).toBe(before);
+    expect(store.basisNote).toBe("This file can't be compared with that version.");
+    expect(notes).toHaveLength(0);
+    expect(mock.probe.plugins.calls).not.toContain("review.setBasis");
+    stop();
+  });
+
+  it("rapid basis switches end on the last choice", async () => {
+    const { store, stop } = await setup();
+    await store.begin();
+    await Promise.all([store.setBasis("commit"), store.setBasis("read"), store.setBasis("commit")]);
+    expect(store.basis).toBe(store.reviewing?.basis);
+    stop();
+  });
+
   it("teardown leaves it idle", async () => {
     const { store, stop } = await setup();
     await store.begin();
@@ -248,6 +321,19 @@ describe("the review of code and plain text", () => {
       canKeep: false,
       count: 1,
     });
+    stop();
+  });
+
+  it("without a repository the review does not fall back to the last commit", async () => {
+    const { store, notes, mock, stop } = await setup({
+      shown: code,
+      commitBlocked: () => ({ need: "gitRepo", remedy: null }),
+    });
+    await mock.pluginCall("review.keepAll", { path: CODE, hash: code.hash ?? "" });
+    await store.begin();
+    expect(store.reviewing).toBeNull();
+    expect(store.basis).toBe("read");
+    expect(notes.at(-1)).not.toMatch(/last commit/);
     stop();
   });
 

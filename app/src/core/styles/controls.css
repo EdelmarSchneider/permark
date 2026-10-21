@@ -50,7 +50,7 @@
 }
 .menu-label {
   padding: 6px 10px 4px;
-  color: var(--faint);
+  color: var(--muted);
   font-size: var(--fs-ui-xs);
   font-weight: 600;
   letter-spacing: 0.05em;

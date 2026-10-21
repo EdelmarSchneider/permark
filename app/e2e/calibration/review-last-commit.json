@@ -1,11 +1,11 @@
 {
   "id": "review-last-commit",
   "bug": "Review bar in a folder without git: choosing \"the last commit\" only moves the switch; the changes shown stay the same and nothing says why",
-  "found": "director; open on develop 2026-10-21",
+  "found": "director; fixed 2026-10-21",
   "persona": "A1",
   "severityMin": "major",
-  "reproduction": "Mock always has a commit to compare with: seed failPlugin answers review.open basis=commit like the backend without git (review service.rs draw: unavailable noBasis).",
-  "fix": null,
+  "reproduction": "Mock context has no repository (git noRepo, as a folder without git); seed failPlugin also answers review.open basis=commit like the backend without git (review service.rs draw: unavailable noBasis). The fixed build marks the choice aria-disabled; the probe clicks it anyway, as a person can.",
+  "fix": "72dec97",
   "scenario": {
     "name": "review-last-commit",
     "steps": [
@@ -37,20 +37,45 @@
       },
       {
         "do": "click",
-        "target": "role=radio[name='the last commit']",
-        "name": "last-commit"
+        "target": "role=radio[name='the last commit']"
       }
     ]
   },
   "expect": {
+    "before": [
+      {
+        "step": "step-5",
+        "flag": "no-effect-beyond-control"
+      }
+    ],
+    "after": [
+      {
+        "step": "step-5",
+        "flag": "no-effect-beyond-control",
+        "absent": true
+      },
+      {
+        "step": "step-5",
+        "flag": "no-change",
+        "absent": true
+      }
+    ],
     "now": [
       {
-        "step": "last-commit",
-        "flag": "no-effect-beyond-control"
+        "step": "step-5",
+        "flag": "no-effect-beyond-control",
+        "absent": true
+      },
+      {
+        "step": "step-5",
+        "flag": "no-change",
+        "absent": true
       }
     ]
   },
   "observed": {
-    "now": "develop 25b260e: no-effect-beyond-control: only the Compare-with radio group changed (aria-checked); no message (Chromium, WebKit)"
+    "before": "90512c5 (72dec97^): no-effect-beyond-control: only the Compare-with radio group changed (aria-checked); no message (msedge)",
+    "after": "72dec97: \"the last commit\" aria-disabled with the reason as title; click -> choice stays, inline role=status \"This folder isn't a git repository.\" next to it (explained); no flags (msedge)",
+    "now": "bugfix/ux-small 72dec97: same as after"
   }
 }

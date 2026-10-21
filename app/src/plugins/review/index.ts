@@ -1,11 +1,15 @@
 // Plugin `review`: what an agent changed since the person last read a document, shown in the page; Keep or Revert each
-// change (K | R), all of them, Undo, previous | next (P | N). Needs `unread` (it follows what was read).
+// change (K | R), all of them, Undo, previous | next (P | N), Esc closes it. Needs `unread` (it follows what was read).
 
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";
+import { overlayShown } from "../../core/doc/escape";
+import { editing } from "../../core/editing/session.svelte";
 import type { MessageKey } from "../../core/i18n";
 import { definePlugin } from "../../core/plugins/registry.svelte";
+import { ui } from "../../core/shell/ui.svelte";
 import { reviewBlocks } from "./blocks";
+import { closesReview } from "./keys";
 import { listen, startMarks } from "./marks";
 import { review } from "./store.svelte";
 import "./review.css";
@@ -30,7 +34,22 @@ export default definePlugin({
         ? []
         : [cx.contribute({ kind: "shortcut", keys, command: id, requires: NO_REQUIREMENT })]),
     ];
+    const onEscape = (event: KeyboardEvent): void => {
+      const env = {
+        reviewing: reviewing(),
+        editing: editing.mode !== "view" && editing.path === documents.path,
+        modal: ui.modal,
+        zoomed: documents.zoomed !== null,
+        finding: ui.finding,
+        overlay: event.key === "Escape" && overlayShown(),
+      };
+      if (!closesReview(event, env)) return;
+      event.preventDefault();
+      void review.done();
+    };
+    window.addEventListener("keydown", onEscape);
     const removals = [
+      () => window.removeEventListener("keydown", onEscape),
       cx.contribute({
         kind: "docBar",
         id: "review.bar",

@@ -13,6 +13,7 @@
   import DocHeader from "./DocHeader.svelte";
   import { documents } from "./document.svelte";
   import FindBar from "./FindBar.svelte";
+  import { ownedByTarget } from "./escape";
   import { editExtra } from "./headerFit";
   import ImageZoom from "./ImageZoom.svelte";
   import MarkdownBody from "./MarkdownBody.svelte";
@@ -140,9 +141,6 @@
     };
   });
 
-  /** What may keep an Escape for itself: a field, a menu, a dialog, the editors' pop-ups. */
-  const OWNS_ESCAPE = "input, select, textarea, form, [role=dialog], [role=listbox], [role=menu]";
-
   // Escape leaves focus mode first, and before the editors see it (the visual editor's key map takes Escape for
   // itself). Not while something innermost is open: a field, a menu, a dialog, an overlay, the image zoom, a pop-up of
   // an editor (completions, the Source find panel); the find bar closes first.
@@ -150,8 +148,7 @@
     const onKey = (event: KeyboardEvent): void => {
       if (ui.focus !== "on" || event.isComposing || event.key !== "Escape") return;
       if (event.ctrlKey || event.metaKey || event.altKey) return;
-      const inside = event.target instanceof Element ? event.target.closest(OWNS_ESCAPE) : null;
-      if (inside !== null || ui.modal || documents.zoomed !== null) return;
+      if (ownedByTarget(event.target) || ui.modal || documents.zoomed !== null) return;
       if (document.querySelector(".slash, .cm-tooltip-autocomplete, .cm-search") !== null) return;
       event.preventDefault();
       event.stopPropagation();
@@ -169,8 +166,7 @@
       if (event.isComposing || event.defaultPrevented) return;
       if (event.key !== "Escape" || !editingNow || event.ctrlKey || event.metaKey || event.altKey)
         return;
-      const inside = event.target instanceof Element ? event.target.closest(OWNS_ESCAPE) : null;
-      if (inside === null) {
+      if (!ownedByTarget(event.target)) {
         event.preventDefault();
         chooseMode("view");
       }
@@ -390,6 +386,11 @@
   }
   .scroller:focus {
     outline: none;
+  }
+  /* the keyboard sent here (a review closed, a side hidden): the page shows it holds the keyboard */
+  .scroller:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
   }
   .scroller {
     flex: 1;

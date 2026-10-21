@@ -62,7 +62,7 @@
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
-    color: var(--faint);
+    color: var(--muted);
   }
   dd {
     margin: 2px 0 0;
