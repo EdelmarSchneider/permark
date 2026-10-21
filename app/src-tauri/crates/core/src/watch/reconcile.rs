@@ -10,11 +10,11 @@ use std::fs::{self, Metadata};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::noise::is_news;
+use super::noise::{is_git_signal, is_news};
 use super::sigs::{sig_of, stat_sig, Sig, SigStore};
 use super::types::{Change, ChangeKind};
 use crate::paths::Vault;
-use crate::tree::{key_of, Ignorer};
+use crate::tree::{below_root, key_of, Ignorer};
 
 /// A created folder is expanded into its files up to this many.
 const MAX_EXPANDED: usize = 500;
@@ -69,13 +69,44 @@ impl Env<'_> {
         if !is_news(path) {
             return true;
         }
-        let rel = crate::tree::below_root(path);
+        let rel = below_root(path);
         // git signals are not files of the project tree
         if rel.starts_with(".git/") || rel.contains("/.git/") {
             return false;
         }
         self.ignorer_for(&key_of(path))
             .is_some_and(|ignorer| ignorer.rel_ignored(rel, is_dir))
+    }
+
+    /// Whether this hint may change which folders are nested projects (own `.git` | `.permark` came or went, a
+    /// project folder appeared, went or moved): then the ignore decisions read so far are stale. Plain saves never
+    /// count; a file that appeared costs no look at the disk.
+    fn moves_projects(&self, p: &Pending, path: &str, meta: Option<&Metadata>) -> bool {
+        if !(p.created || p.removed || p.rename_from.is_some()) {
+            return false;
+        }
+        let Some(ignorer) = self.ignorer_for(&key_of(path)) else {
+            return false;
+        };
+        let rel = below_root(path);
+        let (parent, name) = rel.rsplit_once('/').unwrap_or(("", rel));
+        if matches!(name, ".git" | ".permark") {
+            return ignorer.project_changed(&ignorer.abs_of(parent));
+        }
+        if is_git_signal(path) || !is_news(path) {
+            return false;
+        }
+        let here = match meta {
+            Some(meta) if meta.is_dir() => ignorer.project_changed(&ignorer.abs_of(rel)),
+            Some(_) => false,
+            None => ignorer.held_project(&ignorer.abs_of(rel)),
+        };
+        here || p.rename_from.as_ref().is_some_and(|from| {
+            self.vault.relativize(from).is_some_and(|vp| {
+                fs::symlink_metadata(from).is_err()
+                    && ignorer.held_project(&ignorer.abs_of(below_root(vp.as_str())))
+            })
+        })
     }
 }
 
@@ -86,6 +117,8 @@ pub(crate) struct Reconciled {
     pub deferred: Vec<Pending>,
     /// A folder had more files than were listed.
     pub truncated: bool,
+    /// Nested projects came, went or moved (decided against what was read before this batch).
+    pub projects_moved: bool,
 }
 
 struct Item {
@@ -107,6 +140,7 @@ struct Pass<'a> {
 /// Decides what really changed. `pending` is in arrival order; the result keeps that order.
 pub(crate) fn reconcile(env: &Env<'_>, pending: Vec<Pending>) -> Reconciled {
     let mut items: Vec<Item> = Vec::new();
+    let mut projects_moved = false;
     for p in pending {
         let Some(vp) = env.vault.relativize(&p.abs) else {
             continue;
@@ -117,6 +151,8 @@ pub(crate) fn reconcile(env: &Env<'_>, pending: Vec<Pending>) -> Reconciled {
         }
         let meta = fs::symlink_metadata(&p.abs).ok();
         let is_dir = meta.as_ref().is_some_and(Metadata::is_dir);
+        // before any skip: the marks read so far are what decided the items of this batch
+        projects_moved = projects_moved || env.moves_projects(&p, &path, meta.as_ref());
         if env.skip(&path, is_dir) {
             continue;
         }
@@ -128,7 +164,10 @@ pub(crate) fn reconcile(env: &Env<'_>, pending: Vec<Pending>) -> Reconciled {
     }
     let mut pass = Pass {
         env,
-        out: Reconciled::default(),
+        out: Reconciled {
+            projects_moved,
+            ..Reconciled::default()
+        },
         created: Vec::new(),
         removed: Vec::new(),
         expanded: 0,

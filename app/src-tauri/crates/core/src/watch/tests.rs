@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -842,4 +842,269 @@ fn live_updates_in_the_context_follow_the_watcher() {
         core.explorer().keep(&view, None).is_err(),
         "the view went with the workspace"
     );
+}
+
+// ---- nested projects below an ignored folder -----------------------------------------------------------------------
+
+/// A master folder whose repo ignores `hubs/`; `hubs/a` is a repo of its own.
+const NESTED: &[&str] = &[
+    ".git/HEAD",
+    ".gitignore",
+    "hubs/own.md",
+    "hubs/a/.git/HEAD",
+    "hubs/a/.gitignore",
+    "hubs/a/doc.md",
+    "hubs/a/out/",
+];
+
+fn nested_rules(base: &Path) {
+    fs::write(base.join(".gitignore"), "hubs/\n*.log\n").unwrap();
+    fs::write(base.join("hubs/a/.gitignore"), "out/\n").unwrap();
+}
+
+#[test]
+fn changes_inside_a_nested_repo_below_an_ignored_folder_are_news_under_its_own_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    for f in NESTED {
+        let path = dir.path().join(f);
+        if f.ends_with('/') {
+            fs::create_dir_all(&path).unwrap();
+        } else {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "x").unwrap();
+        }
+    }
+    nested_rules(dir.path());
+    let root = Root::open(dir.path()).unwrap();
+    let base = root.path().to_path_buf();
+    let vault = Vault::new(root);
+    let explorer = Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    );
+    let hub = WatchHub::new();
+    let seen: Seen = Arc::default();
+    let _sub = hub.subscribe({
+        let seen = Arc::clone(&seen);
+        move |batch| seen.lock().unwrap().push(batch.clone())
+    });
+    let _watcher = Watcher::start_with(
+        &vault,
+        explorer.ignorers(),
+        hub,
+        Arc::new(OwnWrites::new()),
+        None,
+        FAST,
+        true,
+    );
+    settle(&seen);
+    fs::write(base.join("hubs/a/out/y.md"), "its own rules hide it").unwrap();
+    fs::write(base.join("hubs/own.md"), "the container's own file").unwrap();
+    fs::write(
+        base.join("hubs/a/x.log"),
+        "the master's rule does not reach here",
+    )
+    .unwrap();
+    fs::write(base.join("hubs/a/doc.md"), "an agent wrote").unwrap();
+    let all = wait_for(&seen, "doc and log", |c| {
+        has(c, "hubs/a/doc.md", &ChangeKind::Modified) && c.iter().any(|c| c.path == "hubs/a/x.log")
+    });
+    for never in ["hubs/a/out/y.md", "hubs/own.md"] {
+        assert!(!all.iter().any(|c| c.path == never), "{never}: {all:?}");
+    }
+    assert!(
+        seen.lock().unwrap().iter().all(|b| !b.rescan),
+        "plain saves rebuild nothing"
+    );
+}
+
+#[test]
+fn a_nested_change_is_news_whatever_the_spelling_of_its_path() {
+    let dir = tempfile::tempdir().unwrap();
+    for f in NESTED {
+        let path = dir.path().join(f);
+        fs::create_dir_all(if f.ends_with('/') {
+            path.clone()
+        } else {
+            path.parent().unwrap().to_path_buf()
+        })
+        .unwrap();
+        if !f.ends_with('/') {
+            fs::write(path, "x").unwrap();
+        }
+    }
+    nested_rules(dir.path());
+    let root = Root::open(dir.path()).unwrap();
+    let base = root.path().to_path_buf();
+    let vault = Vault::new(root);
+    let explorer = Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    );
+    let hub = WatchHub::new();
+    let seen: Seen = Arc::default();
+    let _sub = hub.subscribe({
+        let seen = Arc::clone(&seen);
+        move |batch| seen.lock().unwrap().push(batch.clone())
+    });
+    let watcher = Watcher::start_with(
+        &vault,
+        explorer.ignorers(),
+        hub,
+        Arc::new(OwnWrites::new()),
+        None,
+        FAST,
+        false,
+    );
+    let doc = base.join("hubs").join("a").join("doc.md");
+    let mut spellings = vec![doc.clone()];
+    if cfg!(windows) {
+        spellings.push(PathBuf::from(format!(r"\\?\{}", doc.display())));
+        spellings.push(PathBuf::from(doc.to_string_lossy().to_uppercase()));
+        spellings.push(PathBuf::from(
+            doc.to_string_lossy()
+                .replace("hubs", "HUBS")
+                .replace("doc.md", "Doc.MD"),
+        ));
+    }
+    for (n, spelling) in spellings.into_iter().enumerate() {
+        seen.lock().unwrap().clear();
+        fs::write(&doc, format!("version {n}")).unwrap();
+        watcher.inject(Pending {
+            abs: spelling.clone(),
+            created: false,
+            removed: false,
+            modified: true,
+            rename_from: None,
+            deferred: false,
+        });
+        let all = wait_for(&seen, &format!("{}", spelling.display()), |c| !c.is_empty());
+        assert_eq!(all.len(), 1, "{}: {all:?}", spelling.display());
+        assert_eq!(
+            crate::tree::key_of(&all[0].path),
+            crate::tree::key_of("hubs/a/doc.md"),
+            "{}",
+            spelling.display()
+        );
+        assert_eq!(all[0].kind, ChangeKind::Modified);
+    }
+}
+
+#[test]
+fn nested_projects_coming_and_going_while_open_update_tree_index_and_watch() {
+    use crate::search::SearchFilter;
+    let base_dir = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let root = Root::open(project.path()).unwrap();
+    let base = root.path().to_path_buf();
+    let put = |rel: &str, text: &str| {
+        let path = base.join(rel);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, text).unwrap();
+    };
+    put(".git/HEAD", "ref: refs/heads/main\n");
+    put(".gitignore", "hubs/\n");
+    put("hubs/a/.git/HEAD", "ref: refs/heads/main\n");
+    put("hubs/a/doc.md", "# A\n\nalphaword\n");
+    put("hubs/c/.git/HEAD", "ref: refs/heads/main\n");
+    put("hubs/c/c.md", "# C\n\ncharlieword\n");
+    put("hubs/plain/n.md", "# N\n\ngammaword\n");
+    let seen: Seen = Arc::default();
+    let env = project_env(base_dir.path(), &seen, Arc::new(Recorder::default()));
+    let core = ProjectCore::open(root, &env);
+    assert!(core.search().wait_ready(Duration::from_secs(30)));
+    let found = |q: &str| -> Vec<String> {
+        core.search()
+            .sections(q, 10, &SearchFilter::default())
+            .hits
+            .into_iter()
+            .map(|h| h.path)
+            .collect()
+    };
+    let listed = |path: &str| core.explorer().listed(path).is_some();
+    let until = |what: &str, ok: &dyn Fn() -> bool| {
+        let started = Instant::now();
+        while !ok() {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "timed out: {what}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    assert_eq!(found("alphaword"), ["hubs/a/doc.md"]);
+    assert!(found("gammaword").is_empty(), "a plain ignored folder");
+    assert!(listed("hubs/a/doc.md") && !listed("hubs/plain/n.md"));
+    std::thread::sleep(Duration::from_millis(200));
+
+    // an agent writes inside the nested repo: the plugins hear it, the index follows
+    put("hubs/a/doc.md", "# A\n\nbetaword\n");
+    wait_for(&seen, "the plugin hears the nested change", |c| {
+        has(c, "hubs/a/doc.md", &ChangeKind::Modified)
+    });
+    until("the index follows", &|| {
+        found("betaword") == ["hubs/a/doc.md"]
+    });
+
+    // `git init` inside the plain folder: it becomes a project, without reopening
+    put("hubs/plain/.git/HEAD", "ref: refs/heads/main\n");
+    until("the new repo is listed", &|| listed("hubs/plain/n.md"));
+    until("and indexed", &|| found("gammaword") == ["hubs/plain/n.md"]);
+    seen.lock().unwrap().clear();
+    put("hubs/plain/n.md", "# N\n\nepsilonword\n");
+    wait_for(&seen, "and watched", |c| {
+        has(c, "hubs/plain/n.md", &ChangeKind::Modified)
+    });
+
+    // a project folder renamed while open
+    fs::rename(base.join("hubs/a"), base.join("hubs/b")).unwrap();
+    until("the renamed project is listed", &|| {
+        listed("hubs/b/doc.md") && !listed("hubs/a/doc.md")
+    });
+    seen.lock().unwrap().clear();
+    put("hubs/b/doc.md", "# B\n\ndeltaword\n");
+    until("and watched under its new name", &|| {
+        found("deltaword") == ["hubs/b/doc.md"]
+    });
+    assert!(found("betaword").is_empty(), "nothing left at the old name");
+
+    // a project moved out of the folder (the system tells only of the folder)
+    let outside = tempfile::tempdir_in(base.parent().unwrap()).unwrap();
+    fs::rename(base.join("hubs/c"), outside.path().join("c")).unwrap();
+    until("the moved-out project is gone", &|| {
+        !listed("hubs/c") && found("charlieword").is_empty()
+    });
+
+    // its `.git` deleted: the folder is plain and ignored again
+    fs::remove_dir_all(base.join("hubs/plain/.git")).unwrap();
+    until("the former repo is ignored", &|| {
+        !listed("hubs/plain/n.md") && found("epsilonword").is_empty()
+    });
+
+    // the last project deleted: `hubs` is a plain ignored folder; a folder made there again is not news
+    fs::remove_dir_all(base.join("hubs/b")).unwrap();
+    until("the deleted project is gone", &|| {
+        !listed("hubs/b") && found("deltaword").is_empty()
+    });
+    until("hubs is no container any more", &|| {
+        matches!(
+            core.explorer().listed("hubs"),
+            Some(crate::tree::NodeKind::Dir {
+                unlisted: Some(crate::tree::Unlisted::Ignored)
+            })
+        )
+    });
+    std::thread::sleep(Duration::from_millis(200));
+    seen.lock().unwrap().clear();
+    put("hubs/b/z.md", "# Z\n\nzetaword\n");
+    let heard = quiet_for(&seen, 600);
+    assert!(
+        !heard.iter().any(|c| c.path.starts_with("hubs/b")),
+        "{heard:?}"
+    );
+    assert!(!listed("hubs/b/z.md"));
 }

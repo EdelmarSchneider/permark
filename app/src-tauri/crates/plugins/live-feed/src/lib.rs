@@ -214,6 +214,49 @@ mod tests {
     }
 
     #[test]
+    fn the_feed_follows_a_nested_repo_below_an_ignored_folder() {
+        let base = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let put = |rel: &str, text: &str| {
+            let path = project.path().join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, text).unwrap();
+        };
+        // the master repo ignores `hubs/`; `hubs/a` is a repo of its own
+        put(".git/HEAD", "ref: refs/heads/main\n");
+        put(".gitignore", "hubs/\n");
+        put("hubs/a/.git/HEAD", "ref: refs/heads/main\n");
+        put("hubs/a/plan.md", "plan");
+        let env = CoreEnv::new(
+            AppDirs::under(base.path()),
+            Arc::new(PluginRegistry::new(vec![plugin()]).unwrap()),
+            Arc::new(NoEvents),
+            Distribution::Direct,
+            AppSettings::default(),
+        );
+        let core = ProjectCore::open(Root::open(project.path()).unwrap(), &env);
+        std::thread::sleep(Duration::from_millis(250));
+        put("hubs/loose.md", "the container's own file");
+        put("hubs/a/plan.md", "plan written by an agent");
+        let started = std::time::Instant::now();
+        while !items_of(&core)
+            .iter()
+            .any(|i| i["path"] == "hubs/a/plan.md" && i["kind"] == "modified")
+        {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "the feed heard nothing: {:?}",
+                items_of(&core)
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !items_of(&core).iter().any(|i| i["path"] == "hubs/loose.md"),
+            "the container's own files stay ignored"
+        );
+    }
+
+    #[test]
     fn a_project_feed_hears_the_disk_answers_its_windows_and_goes_away_when_off() {
         let base = tempfile::tempdir().unwrap();
         let project = tempfile::tempdir().unwrap();

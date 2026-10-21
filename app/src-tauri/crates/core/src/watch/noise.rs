@@ -27,17 +27,13 @@ pub fn is_news(path: &str) -> bool {
     if rel == ".git" || rel.ends_with("/.git") {
         return false;
     }
-    for private in [".permark/local", ".permark/cache"] {
-        if rel == private
-            || rel
-                .strip_prefix(private)
-                .is_some_and(|r| r.starts_with('/'))
-        {
+    // the app's private state folders, the project's own and a nested project's
+    let mut above = "";
+    for part in rel.split('/') {
+        if is_scratch_name(part) || (above == ".permark" && matches!(part, "local" | "cache")) {
             return false;
         }
-    }
-    if rel.split('/').any(is_scratch_name) {
-        return false;
+        above = part;
     }
     true
 }
@@ -75,6 +71,10 @@ mod tests {
         assert!(!is_news(".permark/local/session.json"));
         assert!(!is_news(".permark/cache/x"));
         assert!(!is_news("@wt/w/.permark/local/x"));
+        assert!(!is_news("hubs/a/.permark/local/read.json"));
+        assert!(!is_news("hubs/a/.permark/cache"));
+        assert!(is_news("hubs/a/.permark/config.toml"));
+        assert!(is_news("local/cache.md"));
         assert!(is_news(".permark/config.toml"));
         assert!(is_news(".permark/meta.toml"));
     }

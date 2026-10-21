@@ -1,8 +1,10 @@
 //! Ignore rules of a tree: `.gitignore` + `.ignore` per folder, `.git/info/exclude`, git's global excludes file and
-//! the project's own `ignore` list. Works without a repository. A folder with its own `.git` is a nested repository:
-//! never hidden by the enclosing rules, walked under its own.
+//! the project's own `ignore` list. Works without a repository. A folder with its own `.git` | `.permark` is a nested
+//! project: never hidden by the enclosing rules; a repository is walked under its own rules, a `.permark` folder under
+//! its own when the enclosing ones hide it. An ignored folder with a nested project below is a container. One
+//! decision for the walk ([`Ignorer::classify`]) and for single paths ([`Ignorer::locate`], the watch).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -14,6 +16,10 @@ use crate::paths::CASE_INSENSITIVE;
 const DEPENDENCY_DIR: &str = "node_modules";
 /// Levels above the project folder searched for the enclosing repository.
 const MAX_ANCESTORS: usize = 32;
+/// Folders searched for a nested project below an ignored folder.
+const PROJECT_SEARCH_DEPTH: usize = 4;
+/// Entries one such search looks at.
+const PROJECT_SEARCH_ENTRIES: usize = 3000;
 
 /// Ignore layers in force inside one folder: folder files (shallowest first) + repository-wide ones (lowest priority).
 #[derive(Debug, Clone, Default)]
@@ -23,11 +29,53 @@ pub struct Frames {
 }
 
 /// What a folder listing already told about the folder: saves a look at the disk per folder.
+#[allow(clippy::struct_excessive_bools)] // independent facts of one folder listing
 #[derive(Debug, Clone, Copy, Default)]
 pub struct DirHints {
     pub gitignore: bool,
     pub ignore: bool,
     pub git: bool,
+    pub permark: bool,
+}
+
+/// What makes a folder a project of its own: its own `.git` (folder | file) and | or `.permark`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct Marks {
+    git: bool,
+    permark: bool,
+}
+
+/// Whether `dir` is a folder of its own, not a link to one (a walk never follows links; neither do its probes).
+fn plain_dir(dir: &Path) -> bool {
+    std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_dir() && !super::model::is_link(&m))
+}
+
+impl Marks {
+    fn on_disk(dir: &Path) -> Self {
+        if !plain_dir(dir) {
+            return Self::default();
+        }
+        Self {
+            git: dir.join(".git").exists(),
+            permark: dir.join(".permark").exists(),
+        }
+    }
+
+    fn any(self) -> bool {
+        self.git || self.permark
+    }
+}
+
+/// What a walk makes of one entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Entry {
+    /// Listed under the rules in force.
+    Shown,
+    /// Hidden by the enclosing rules, but a nested project: shown, walked under its own rules only.
+    Project,
+    /// Ignored folder with a nested project below: shown and entered; its own files are ignored.
+    Container,
+    Ignored,
 }
 
 #[derive(Debug)]
@@ -38,8 +86,13 @@ pub struct Ignorer {
     global: Option<Arc<Gitignore>>,
     /// Folder -> matcher of its `.gitignore` + `.ignore` (None: it has neither).
     folders: Mutex<HashMap<PathBuf, Option<Arc<Gitignore>>>>,
-    /// Folder -> has its own `.git`.
-    repos: Mutex<HashMap<PathBuf, bool>>,
+    /// Folder -> its project marks as last read. Kept across [`Ignorer::clear`]: the watch compares them with the disk
+    /// to see projects come and go ([`Ignorer::project_changed`]).
+    marks: Mutex<HashMap<PathBuf, Marks>>,
+    /// Folders among `marks` with a mark.
+    projects: Mutex<HashSet<PathBuf>>,
+    /// Ignored folder -> holds a nested project below.
+    containers: Mutex<HashMap<PathBuf, bool>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -102,7 +155,9 @@ impl Ignorer {
             extra: Mutex::new(extra_layer(root, extra)),
             global: global.filter(|g| !g.is_empty()).map(Arc::new),
             folders: Mutex::new(HashMap::new()),
-            repos: Mutex::new(HashMap::new()),
+            marks: Mutex::new(HashMap::new()),
+            projects: Mutex::new(HashSet::new()),
+            containers: Mutex::new(HashMap::new()),
         }
     }
 
@@ -118,26 +173,82 @@ impl Ignorer {
         (!global.is_empty()).then_some(global)
     }
 
-    /// Forgets what was read from ignore files (one changed).
+    /// Forgets what was read from ignore files (one changed) and which ignored folders hold projects.
     pub fn clear(&self) {
         lock(&self.folders).clear();
-        lock(&self.repos).clear();
+        lock(&self.containers).clear();
     }
 
-    fn is_repo(&self, dir: &Path) -> bool {
-        if let Some(found) = lock(&self.repos).get(dir) {
+    /// Forgets everything read from the disk, project marks too (projects came or went, or events were lost).
+    pub fn forget_projects(&self) {
+        self.clear();
+        lock(&self.marks).clear();
+        lock(&self.projects).clear();
+    }
+
+    fn set_marks(&self, dir: &Path, marks: Marks) {
+        lock(&self.marks).insert(dir.to_path_buf(), marks);
+        let mut projects = lock(&self.projects);
+        if marks.any() {
+            projects.insert(dir.to_path_buf());
+        } else {
+            projects.remove(dir);
+        }
+    }
+
+    fn marks(&self, dir: &Path) -> Marks {
+        if let Some(found) = lock(&self.marks).get(dir) {
             return *found;
         }
         // disk read outside the lock
-        let found = dir.join(".git").exists();
-        lock(&self.repos).insert(dir.to_path_buf(), found);
+        let found = Marks::on_disk(dir);
+        self.set_marks(dir, found);
         found
     }
 
+    fn is_repo(&self, dir: &Path) -> bool {
+        self.marks(dir).git
+    }
+
     /// Folder is the root of a repository nested in the project (not the project folder itself).
-    #[must_use]
-    pub fn is_nested_repo(&self, dir: &Path) -> bool {
+    fn is_nested_repo(&self, dir: &Path) -> bool {
         dir != self.root && self.is_repo(dir)
+    }
+
+    /// Folder is a project nested in the project folder: own `.git` | `.permark`.
+    fn is_nested_project(&self, dir: &Path) -> bool {
+        dir != self.root && self.marks(dir).any()
+    }
+
+    /// Ignored folder `dir` leads to a nested project (searched [`PROJECT_SEARCH_DEPTH`] levels down within
+    /// [`PROJECT_SEARCH_ENTRIES`] entries, `node_modules` skipped): the way to it is not cut (the root repo may ignore
+    /// `hubs/` while every hub is a repo of its own).
+    fn is_container(&self, dir: &Path) -> bool {
+        if let Some(found) = lock(&self.containers).get(dir) {
+            return *found;
+        }
+        let mut budget = PROJECT_SEARCH_ENTRIES;
+        let found = plain_dir(dir) && holds_project(dir, PROJECT_SEARCH_DEPTH, &mut budget);
+        lock(&self.containers).insert(dir.to_path_buf(), found);
+        found
+    }
+
+    /// Whether `dir`'s project marks on disk differ from the ones last read (a project came, went or changed kind); a
+    /// folder never looked at counts when it has a mark. Then what was read about projects is stale.
+    #[must_use]
+    pub fn project_changed(&self, dir: &Path) -> bool {
+        if !dir.starts_with(&self.root) {
+            return false;
+        }
+        let known = lock(&self.marks).get(dir).copied();
+        let now = Marks::on_disk(dir);
+        known.map_or(now.any(), |known| known != now)
+    }
+
+    /// Whether a nested project was known at or below `dir` (a folder that went: projects may have gone with it).
+    #[must_use]
+    pub fn held_project(&self, dir: &Path) -> bool {
+        dir != self.root.as_path() && lock(&self.projects).iter().any(|p| p.starts_with(dir))
     }
 
     fn folder_layer(&self, dir: &Path) -> Option<Arc<Gitignore>> {
@@ -196,6 +307,23 @@ impl Ignorer {
         frames
     }
 
+    /// Frames a nested project hidden by the enclosing rules starts from: none of theirs, git's global excludes only.
+    fn fresh(&self) -> Frames {
+        Frames {
+            layers: Vec::new(),
+            tail: self.repo_tail(None),
+        }
+    }
+
+    /// Frames a walk hands to a folder it classified `entry` (inside `frames`); its own layers come on entering it.
+    pub(crate) fn base_for(&self, entry: Entry, frames: &Frames) -> Frames {
+        if entry == Entry::Project {
+            self.fresh()
+        } else {
+            frames.clone()
+        }
+    }
+
     /// Frames inside `dir`, a child folder of the folder `parent` describes.
     #[must_use]
     pub fn enter(&self, parent: &Frames, dir: &Path) -> Frames {
@@ -213,24 +341,16 @@ impl Ignorer {
         frames
     }
 
-    /// Frames inside `dir` (a folder below the project folder), entered from the top.
-    #[must_use]
-    pub fn frames_at(&self, dir: &Path) -> Frames {
-        let mut frames = self.root_frames();
-        let mut current = self.root.clone();
-        if let Ok(rest) = dir.strip_prefix(&self.root) {
-            for part in rest.components() {
-                current.push(part);
-                frames = self.enter(&frames, &current);
-            }
-        }
-        frames
-    }
-
     /// [`Ignorer::enter`] for a folder whose listing is at hand: no look at the disk.
     #[must_use]
     pub fn enter_hinted(&self, parent: &Frames, dir: &Path, hints: DirHints) -> Frames {
-        lock(&self.repos).insert(dir.to_path_buf(), hints.git);
+        self.set_marks(
+            dir,
+            Marks {
+                git: hints.git,
+                permark: hints.permark,
+            },
+        );
         let mut frames = if dir != self.root && hints.git {
             Frames {
                 layers: Vec::new(),
@@ -249,10 +369,9 @@ impl Ignorer {
         frames
     }
 
-    /// Whether `path` (child of the folder `frames` describes) is ignored there. Nested repositories never are.
-    #[must_use]
-    pub fn is_ignored(&self, frames: &Frames, path: &Path, is_dir: bool) -> bool {
-        let ignored = (is_dir && path.file_name().is_some_and(|n| n == DEPENDENCY_DIR))
+    /// Whether the rules of `frames` (+ the project's list, `node_modules`) hide `path`, a child of their folder.
+    fn rules_hide(&self, frames: &Frames, path: &Path, is_dir: bool) -> bool {
+        (is_dir && path.file_name().is_some_and(|n| n == DEPENDENCY_DIR))
             || lock(&self.extra)
                 .as_ref()
                 .and_then(|g| verdict(g, path, is_dir))
@@ -263,40 +382,78 @@ impl Ignorer {
                 .rev()
                 .chain(frames.tail.iter())
                 .find_map(|layer| verdict(layer, path, is_dir))
-                .unwrap_or(false);
-        // a folder with its own `.git` is never hidden by the enclosing rules (looked at only when they hide it)
-        ignored && !(is_dir && self.is_nested_repo(path))
+                .unwrap_or(false)
     }
 
-    /// Whether `abs` (inside the project folder) or one of its folders is ignored: for watch events.
-    #[must_use]
-    pub fn path_ignored(&self, abs: &Path, is_dir: bool) -> bool {
-        let Ok(rest) = abs.strip_prefix(&self.root) else {
-            return false;
-        };
+    /// What a walk makes of `path`, a child of the folder `frames` describes. `in_ignored`: that folder is a container
+    /// (its own entries are ignored). `may_contain: false` makes no container (a walk at its limits).
+    pub(crate) fn classify(
+        &self,
+        frames: &Frames,
+        path: &Path,
+        is_dir: bool,
+        in_ignored: bool,
+        may_contain: bool,
+    ) -> Entry {
+        // project marks are looked at only for what the rules hide
+        if !(in_ignored || self.rules_hide(frames, path, is_dir)) {
+            Entry::Shown
+        } else if !is_dir {
+            Entry::Ignored
+        } else if self.is_nested_project(path) {
+            Entry::Project
+        } else if may_contain && self.is_container(path) {
+            Entry::Container
+        } else {
+            Entry::Ignored
+        }
+    }
+
+    /// Follows `abs` (below the project folder) down from the top as a walk reaches it: what it is there + the frames
+    /// a walk hands to it ([`Ignorer::base_for`]). `None`: the project folder itself, or outside it.
+    pub(crate) fn locate(&self, abs: &Path, is_dir: bool) -> Option<(Entry, Frames)> {
+        let rest = abs.strip_prefix(&self.root).ok()?;
         let parts: Vec<_> = rest.components().collect();
+        let (last, above) = parts.split_last()?;
         let mut frames = self.root_frames();
+        let mut in_ignored = false;
         let mut current = self.root.clone();
-        for (at, part) in parts.iter().enumerate() {
+        for part in above {
             current.push(part);
-            let last = at + 1 == parts.len();
-            let dir = !last || is_dir;
-            if self.is_ignored(&frames, &current, dir) {
-                return true;
-            }
-            if dir && !last {
-                frames = self.enter(&frames, &current);
+            match self.classify(&frames, &current, true, in_ignored, true) {
+                Entry::Ignored => return Some((Entry::Ignored, frames)),
+                // inside a container only nested projects count: its frames are not needed
+                Entry::Container => in_ignored = true,
+                entry @ (Entry::Shown | Entry::Project) => {
+                    frames = self.enter(&self.base_for(entry, &frames), &current);
+                    in_ignored = false;
+                }
             }
         }
-        false
+        current.push(last);
+        let entry = self.classify(&frames, &current, is_dir, in_ignored, true);
+        Some((entry, self.base_for(entry, &frames)))
+    }
+
+    /// Whether `abs` (inside the project folder) is ignored as the walk decides it (containers and nested projects are
+    /// not): for watch events.
+    #[must_use]
+    pub fn path_ignored(&self, abs: &Path, is_dir: bool) -> bool {
+        matches!(self.locate(abs, is_dir), Some((Entry::Ignored, _)))
     }
 
     /// [`Ignorer::path_ignored`] for a path given below the root (`a/b/c.md`).
     #[must_use]
     pub fn rel_ignored(&self, rel: &str, is_dir: bool) -> bool {
+        self.path_ignored(&self.abs_of(rel), is_dir)
+    }
+
+    /// Where a path given below the root (`a/b/c.md`) is on disk.
+    #[must_use]
+    pub fn abs_of(&self, rel: &str) -> PathBuf {
         let mut abs = self.root.clone();
         abs.extend(rel.split('/').filter(|s| !s.is_empty()));
-        self.path_ignored(&abs, is_dir)
+        abs
     }
 
     /// Name of a file that, when it changes, makes everything read from ignore files stale.
@@ -304,4 +461,34 @@ impl Ignorer {
     pub fn is_ignore_file(name: &str) -> bool {
         matches!(name, ".gitignore" | ".ignore" | "exclude")
     }
+}
+
+/// Whether a nested project (a folder with its own `.git` | `.permark`) sits somewhere below `dir`, at most `depth`
+/// levels down, within `budget` entries. Links are never followed.
+fn holds_project(dir: &Path, depth: usize, budget: &mut usize) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    let mut folders = Vec::new();
+    for entry in entries.flatten() {
+        *budget = budget.saturating_sub(1);
+        if *budget == 0 {
+            return false;
+        }
+        let name = entry.file_name();
+        if name == ".git" || name == ".permark" {
+            return true;
+        }
+        let plain_folder =
+            entry.file_type().is_ok_and(|t| t.is_dir()) && !super::model::is_reparse_point(&entry);
+        if plain_folder && name != DEPENDENCY_DIR {
+            folders.push(entry.path());
+        }
+    }
+    folders
+        .iter()
+        .any(|folder| holds_project(folder, depth - 1, budget))
 }

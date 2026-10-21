@@ -450,3 +450,23 @@ fn a_damaged_read_file_is_a_project_with_no_read_state() {
     );
     wait_until("the state is written again", || Path::new(&path).exists());
 }
+
+#[test]
+fn a_document_in_a_nested_repo_below_an_ignored_folder_becomes_unread_when_an_agent_writes() {
+    let mut h = Harness::new();
+    // the master repo ignores `hubs/`; `hubs/a` is a repo of its own
+    h.write(".git/HEAD", "ref: refs/heads/main\n");
+    h.write(".gitignore", "hubs/\n");
+    h.write("hubs/a/.git/HEAD", "ref: refs/heads/main\n");
+    h.write("hubs/a/plan.md", "plan\n");
+    h.write("hubs/loose.md", "the container's own file\n");
+    h.open();
+    wait_until("the first look", || h.ready());
+    assert_eq!(h.unread(), Vec::<String>::new());
+    std::thread::sleep(Duration::from_millis(250));
+    h.write("hubs/loose.md", "changed, still ignored\n");
+    h.write("hubs/a/plan.md", "plan changed by an agent\n");
+    wait_until("the nested document is unread", || {
+        h.unread() == ["hubs/a/plan.md"]
+    });
+}
