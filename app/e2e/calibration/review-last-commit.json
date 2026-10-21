@@ -1,0 +1,56 @@
+{
+  "id": "review-last-commit",
+  "bug": "Review bar in a folder without git: choosing \"the last commit\" only moves the switch; the changes shown stay the same and nothing says why",
+  "found": "director; open on develop 2026-10-21",
+  "persona": "A1",
+  "severityMin": "major",
+  "reproduction": "Mock always has a commit to compare with: seed failPlugin answers review.open basis=commit like the backend without git (review service.rs draw: unavailable noBasis).",
+  "fix": null,
+  "scenario": {
+    "name": "review-last-commit",
+    "steps": [
+      {
+        "do": "seed",
+        "use": "project"
+      },
+      {
+        "do": "seed",
+        "use": "doc",
+        "path": "docs/guide.md"
+      },
+      {
+        "do": "click",
+        "target": "role=button[name='Review']",
+        "probe": false
+      },
+      {
+        "do": "seed",
+        "use": "failPlugin",
+        "method": "review.open",
+        "match": {
+          "basis": "commit"
+        },
+        "error": {
+          "kind": "unavailable",
+          "subject": "noBasis"
+        }
+      },
+      {
+        "do": "click",
+        "target": "role=radio[name='the last commit']",
+        "name": "last-commit"
+      }
+    ]
+  },
+  "expect": {
+    "now": [
+      {
+        "step": "last-commit",
+        "flag": "no-effect-beyond-control"
+      }
+    ]
+  },
+  "observed": {
+    "now": "develop 25b260e: no-effect-beyond-control: only the Compare-with radio group changed (aria-checked); no message (Chromium, WebKit)"
+  }
+}

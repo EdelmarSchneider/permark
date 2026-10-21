@@ -1,0 +1,60 @@
+{
+  "id": "chip-focus-ring",
+  "bug": "Tab bar: after switching tabs with the keyboard, the focus ring stays on a chip that is no longer the active tab",
+  "found": "director; fixed 2026-10-20",
+  "persona": "K",
+  "severityMin": "major",
+  "reproduction": "Mock = one page for all tabs (the real app: one webview per tab, the ring showed when the view came back). Same cause shows: the chip keeps focus after the active tab changes. Ctrl+Tab from the focused active chip.",
+  "fix": "563aaa9",
+  "scenario": {
+    "name": "chip-focus-ring",
+    "steps": [
+      {
+        "do": "seed",
+        "use": "project"
+      },
+      {
+        "do": "seed",
+        "use": "tab",
+        "path": "C:/Users/demo/other-docs"
+      },
+      {
+        "do": "focus",
+        "target": "[data-tab][aria-current='page']",
+        "probe": false
+      },
+      {
+        "do": "press",
+        "key": "Control+Tab",
+        "name": "switch"
+      }
+    ]
+  },
+  "expect": {
+    "before": [
+      {
+        "step": "switch",
+        "flag": "focus-stale-in-group"
+      }
+    ],
+    "after": [
+      {
+        "step": "switch",
+        "flag": "focus-stale-in-group",
+        "absent": true
+      }
+    ],
+    "now": [
+      {
+        "step": "switch",
+        "flag": "focus-stale-in-group",
+        "absent": true
+      }
+    ]
+  },
+  "observed": {
+    "before": "9bae199 (563aaa9^): focus-stale-in-group: current moved other-docs -> permark-docs, focus + ring stay on chip other-docs",
+    "after": "563aaa9: no focus-stale-in-group; focus-lost (chip lets go by design, keys reach the page)",
+    "now": "develop 25b260e: same as after (Chromium, WebKit)"
+  }
+}
