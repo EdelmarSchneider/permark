@@ -27,19 +27,22 @@
   type Props = { store: WindowStore };
   let { store }: Props = $props();
 
-  // the list is read when the section shows and again whenever the plugins or this window's conditions change
+  // the list is read when the section shows and again whenever the plugins or this view's conditions change (another
+  // view's conditions are not this list's)
   $effect(() => {
     void pluginsStore.load();
     const offs: (() => void)[] = [];
     let gone = false;
-    for (const event of ["plugins-changed", "context-changed"] as const) {
-      void api
-        .on(event, () => void pluginsStore.load())
-        .then((off) => {
-          if (gone) off();
-          else offs.push(off);
-        });
-    }
+    const keep = (off: () => void): void => {
+      if (gone) off();
+      else offs.push(off);
+    };
+    void api.on("plugins-changed", () => void pluginsStore.load()).then(keep);
+    void api
+      .on("context-changed", (e) => {
+        if (e.window === store.label) void pluginsStore.load();
+      })
+      .then(keep);
     return () => {
       gone = true;
       for (const off of offs) off();

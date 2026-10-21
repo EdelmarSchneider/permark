@@ -13,11 +13,13 @@ import {
   type Version,
   type WorkspaceView,
 } from "../../api";
+import { untrack } from "svelte";
 import { documents as defaultDocuments } from "../../core/doc/document.svelte";
 import { confirmLeave } from "../../core/editing/guard";
 import { editing as defaultEditing } from "../../core/editing/session.svelte";
 import { apiErrorText } from "../../core/errors";
 import { t, tn } from "../../core/i18n";
+import { onScreen as defaultOnScreen } from "../../core/inFront.svelte";
 import { PluginClient, pluginClient } from "../../core/plugins/client";
 import { windowStore as defaultWindow, type WindowStore } from "../../core/window.svelte";
 import {
@@ -72,7 +74,7 @@ export type ConfirmState =
 export type CompareState =
   { status: "closed" } | { status: "open"; path: string; mine: string; theirs: string };
 
-/** The polling of the list while the window is visible. */
+/** The polling of the list while the Notes tab is on screen. */
 export const POLL_MS = 3000;
 /** Saves in a burst refresh the list once. */
 export const SAVED_REFRESH_MS = 400;
@@ -118,6 +120,8 @@ export class NotesStore {
   readonly #documents: typeof defaultDocuments;
   readonly #editing: typeof defaultEditing;
   readonly #window: WindowStore;
+  /** The Notes tab is the one its window draws (a hidden tab keeps `visibilityState` "visible"). */
+  readonly #onScreen: () => boolean;
   #workspace: Extract<WorkspaceView, { kind: "notes" }> | null = null;
   #seq = 0;
   #restored = false;
@@ -135,6 +139,7 @@ export class NotesStore {
       documents?: typeof defaultDocuments;
       editing?: typeof defaultEditing;
       window?: WindowStore;
+      onScreen?: () => boolean;
     } = {},
   ) {
     this.#api = deps.api ?? defaultApi;
@@ -142,6 +147,7 @@ export class NotesStore {
     this.#documents = deps.documents ?? defaultDocuments;
     this.#editing = deps.editing ?? defaultEditing;
     this.#window = deps.window ?? defaultWindow;
+    this.#onScreen = deps.onScreen ?? defaultOnScreen;
   }
 
   /** The list as drawn (filtered, grouped). `now`: the clock. */
@@ -165,10 +171,22 @@ export class NotesStore {
     });
     const offSaved = this.#editing.onSaved(() => this.#refreshSoon());
     const timer = setInterval(() => {
-      if (typeof document === "undefined" || document.visibilityState !== "hidden") {
+      // a hidden tab waits: coming back on screen reads the list (below)
+      const visible = typeof document === "undefined" || document.visibilityState !== "hidden";
+      if (visible && this.#onScreen()) {
         void this.refresh();
       }
     }, POLL_MS);
+    // the tab comes back on screen: the list is read again at once (its hidden time did not poll; the window focus
+    // may not move on a tab switch)
+    let wasShown = untrack(() => this.#onScreen());
+    const offShown = $effect.root(() => {
+      $effect(() => {
+        const shown = this.#onScreen();
+        if (shown && !wasShown) untrack(() => void this.refresh());
+        wasShown = shown;
+      });
+    });
     const onFocus = (): void => void this.refresh();
     const onBlur = (): void => this.#editing.dispatch({ e: "autosaveDue" });
     window.addEventListener("focus", onFocus);
@@ -190,6 +208,7 @@ export class NotesStore {
       gone = true;
       offIntent?.();
       clearInterval(timer);
+      offShown();
       if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);
       this.#refreshTimer = null;
       window.removeEventListener("focus", onFocus);

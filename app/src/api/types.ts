@@ -66,6 +66,7 @@ import type { DropScope } from "./generated/DropScope";
 import type { ImportPhase } from "./generated/ImportPhase";
 import type { ImportPlan } from "./generated/ImportPlan";
 import type { ImportProgress } from "./generated/ImportProgress";
+import type { ImportProgressEvent } from "./generated/ImportProgressEvent";
 import type { ImportRefusal } from "./generated/ImportRefusal";
 import type { ImportRefused } from "./generated/ImportRefused";
 import type { MoveOutcome } from "./generated/MoveOutcome";
@@ -207,6 +208,7 @@ export type {
   ImportPhase,
   ImportPlan,
   ImportProgress,
+  ImportProgressEvent,
   ImportRefusal,
   ImportRefused,
   IpcError,
@@ -666,7 +668,6 @@ export interface Events {
   "context-changed": ContextChanged;
   "windows-changed": WindowsChanged;
   "settings-changed": SettingsChanged;
-  "state-recovered": StateRecovered;
   "open-failed": OpenFailed;
   "tree-changed": TreeChanged;
   "document-changed": DocumentChanged;
@@ -676,7 +677,7 @@ export interface Events {
   "view-moved": ViewMoved;
   "plugins-changed": null;
   "index-progress": IndexProgress;
-  "import-progress": ImportProgress;
+  "import-progress": ImportProgressEvent;
 }
 export type EventName = keyof Events;
 

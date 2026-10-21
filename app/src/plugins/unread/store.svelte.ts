@@ -3,6 +3,7 @@
 
 import type { SinceVisit, UnreadList } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
+import { InFront, onScreen } from "../../core/inFront.svelte";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
 import { t, tn } from "../../core/i18n";
@@ -55,8 +56,8 @@ export class UnreadStore {
     }
     return folders;
   });
-  /** The window is in front and visible: reading counts only then. */
-  #focused = $state(true);
+  /** The window is in front and visible, and this view is its tab on screen: reading counts only then. */
+  readonly #front: InFront;
   readonly #client: PluginClient;
   readonly #root: () => string | null;
   readonly #shown: ReadingPort;
@@ -65,10 +66,12 @@ export class UnreadStore {
     client: PluginClient = pluginClient,
     root: () => string | null = workspaceRoot,
     shown: ReadingPort = shownDocument,
+    onScreenNow: () => boolean = onScreen,
   ) {
     this.#client = client;
     this.#root = root;
     this.#shown = shown;
+    this.#front = new InFront(onScreenNow);
   }
 
   get ready(): boolean {
@@ -113,24 +116,11 @@ export class UnreadStore {
       $effect(() => {
         const { path, hash } = this.#shown();
         if (path === null || hash === null) return;
-        if (!this.#all.has(path) || !this.#focused) return;
+        if (!this.#all.has(path) || !this.#front.value) return;
         const timer = setTimeout(() => void this.markRead(path, hash), READ_MS);
         return () => clearTimeout(timer);
       });
-      $effect(() => {
-        const sync = (): void => {
-          this.#focused = document.visibilityState === "visible" && document.hasFocus();
-        };
-        sync();
-        window.addEventListener("focus", sync);
-        window.addEventListener("blur", sync);
-        document.addEventListener("visibilitychange", sync);
-        return () => {
-          window.removeEventListener("focus", sync);
-          window.removeEventListener("blur", sync);
-          document.removeEventListener("visibilitychange", sync);
-        };
-      });
+      $effect(() => this.#front.start());
       return () => {
         offWake();
         this.#apply({ ready: false, unread: [] });

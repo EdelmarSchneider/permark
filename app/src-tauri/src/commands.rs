@@ -449,7 +449,16 @@ pub fn fileops_import_plan(
         .import_plan(&target, &sources)?)
 }
 
-/// Copies | moves what a plan listed. Returns when done; the window hears `import-progress` meanwhile.
+/// Event `import-progress`: to the view that asked (plan ids count per project, so two views can run plan 1).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ImportProgressEvent {
+    pub window: String,
+    pub progress: permark_core::fileops::ImportProgress,
+}
+
+/// Copies | moves what a plan listed. Returns when done; the view hears `import-progress` meanwhile.
 #[tauri::command(async)]
 pub fn fileops_import_apply(
     handle: AppHandle,
@@ -462,7 +471,11 @@ pub fn fileops_import_apply(
     let label = window.label().to_owned();
     // a progress event nobody hears (window gone) is not an error
     let report = |progress: &permark_core::fileops::ImportProgress| {
-        let _ = handle.emit_to(label.as_str(), "import-progress", progress);
+        let event = ImportProgressEvent {
+            window: label.clone(),
+            progress: progress.clone(),
+        };
+        let _ = handle.emit_to(label.as_str(), "import-progress", event);
     };
     Ok(core
         .fileops()
@@ -1084,15 +1097,24 @@ pub fn open_dropped(
     Ok(dropped.answer)
 }
 
+/// Whether `view` may take the keyboard: only while it is the view its window draws (`shown`). The person may switch
+/// tabs while the view waited (a plan, a drop being sorted); a hidden view's question waits in its tab.
+fn may_focus(view: &str, shown: Option<&str>) -> bool {
+    shown == Some(view)
+}
+
 /// This view's native window comes forward, then the view takes the keyboard (a drop does not activate the window;
-/// the system may refuse).
+/// the system may refuse). Nothing when the view is not the one on screen.
 #[tauri::command(async)]
 pub fn view_focus(handle: AppHandle, window: Webview) {
-    if let Some(native) = state(&handle)
-        .registry
-        .window_of(window.label())
-        .and_then(|label| handle.get_window(&label))
-    {
+    let registry = &state(&handle).registry;
+    let Some(label) = registry.window_of(window.label()) else {
+        return;
+    };
+    if !may_focus(window.label(), registry.shown_view(&label).as_deref()) {
+        return;
+    }
+    if let Some(native) = handle.get_window(&label) {
         let _ = native.unminimize();
         let _ = native.set_focus();
     }
@@ -1380,6 +1402,16 @@ mod tests {
         }
         let unique: std::collections::BTreeSet<_> = NAMES.iter().collect();
         assert_eq!(unique.len(), NAMES.len(), "duplicate command");
+    }
+
+    #[test]
+    fn only_the_view_on_screen_takes_the_keyboard() {
+        assert!(may_focus("view-2", Some("view-2")));
+        // the person switched to another tab while the view waited
+        assert!(!may_focus("view-2", Some("view-3")));
+        // the window shows nothing known (closing, view gone)
+        assert!(!may_focus("view-2", None));
+        assert!(!may_focus("", Some("view-2")));
     }
 
     #[test]

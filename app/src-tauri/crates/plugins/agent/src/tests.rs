@@ -622,6 +622,10 @@ fn secrets_are_masked_in_every_text() {
     );
     let search = tools.call("search", json!({ "query": "hello" })).unwrap();
     let all = search.to_string();
+    assert!(
+        all.contains("README.md"),
+        "the line with the secret is a hit: {all}"
+    );
     assert!(!all.contains("sekret123"), "{all}");
     live.publish(WindowContext {
         doc: Some("README.md".to_owned()),
@@ -650,6 +654,10 @@ fn secrets_are_masked_in_every_text() {
     let comments = tools.call("list_comments", Value::Null).unwrap();
     assert!(!comments.to_string().contains("sekret123"), "{comments}");
     let tags = tools.call("search", json!({ "tags": ["plan"] })).unwrap();
+    assert!(
+        tags.to_string().contains("README.md"),
+        "the document with the secret description is listed: {tags}"
+    );
     assert!(!tags.to_string().contains("token=abc"), "{tags}");
     assert!(not_found(
         tools.call("read_note", json!({ "note": "other.md" }))

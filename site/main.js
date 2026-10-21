@@ -1,39 +1,38 @@
 // PerMark landing page: progressive enhancements only. The page works fully without JS.
 (function () {
-  // 1. OS-aware hero button: the Microsoft Store on Windows, the latest release elsewhere.
-  var label = document.getElementById("download-label");
-  var button = document.getElementById("download-btn");
-  if (label && button) {
-    var ua =
-      (navigator.userAgentData && navigator.userAgentData.platform) ||
-      navigator.platform ||
-      navigator.userAgent ||
-      "";
-    var os = /win/i.test(ua)
-      ? "Windows"
-      : /mac|iphone|ipad/i.test(ua)
-        ? "macOS"
-        : /linux|x11/i.test(ua) && !/android/i.test(navigator.userAgent)
-          ? "Linux"
-          : "";
-    if (os === "Windows") {
-      label.textContent = "Get it from the Microsoft Store";
-      button.setAttribute("href", "https://apps.microsoft.com/detail/9NVV5GVZMGGX");
-    } else if (os) {
-      label.textContent = "Download for " + os;
+  // Store link with the campaign ID (cid): Partner Center counts the visits and installs that came from this site.
+  // The same link is in index.html (Install, Windows). Replace "landing-page" in both when the campaign exists.
+  var STORE = "https://apps.microsoft.com/detail/9NVV5GVZMGGX?cid=landing-page";
+  var RELEASES = "https://github.com/EdelmarSchneider/permark/releases/latest";
+
+  // The visitor's system: "Windows", "macOS", "Linux", or "" when unknown (phones, tablets, anything else).
+  function detectOS(nav) {
+    var ua = nav.userAgent || "";
+    if (/android|iphone|ipad|ipod/i.test(ua)) return "";
+    var platform = (nav.userAgentData && nav.userAgentData.platform) || nav.platform || ua;
+    if (/mac/i.test(platform)) return nav.maxTouchPoints > 1 ? "" : "macOS"; // iPadOS reports a Mac
+    if (/win/i.test(platform)) return "Windows";
+    if (/linux|x11/i.test(platform)) return "Linux";
+    return "";
+  }
+
+  // 1. Download buttons (all of them): the Microsoft Store on Windows, the latest release on macOS and Linux.
+  //    The code-signing note shows only where the GitHub downloads apply. Unknown system: the plain link to #install stays.
+  var os = detectOS(navigator);
+  if (os) {
+    document.querySelectorAll("[data-download]").forEach(function (link) {
+      var label = link.querySelector("[data-download-label]");
+      link.setAttribute("href", os === "Windows" ? STORE : RELEASES);
+      if (label) label.textContent = os === "Windows" ? "Get it from the Microsoft Store" : "Download for " + os;
+    });
+    if (os !== "Windows") {
+      document.querySelectorAll("[data-download-note]").forEach(function (note) {
+        note.hidden = false;
+      });
     }
   }
 
-  // 2. The loop video stays on its poster for people who ask the system for less motion.
-  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    document.querySelectorAll("video[autoplay]").forEach(function (video) {
-      video.removeAttribute("autoplay");
-      video.pause();
-      video.controls = true;
-    });
-  }
-
-  // 3. Copy buttons on code blocks.
+  // 2. Copy buttons on code blocks.
   document.querySelectorAll("[data-copy]").forEach(function (btn) {
     if (!navigator.clipboard) {
       btn.hidden = true;

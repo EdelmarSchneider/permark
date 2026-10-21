@@ -13,6 +13,8 @@ function setup(api?: (mock: ReturnType<typeof createMockApi>) => Api) {
   const ends: (string | null)[] = [];
   const placed: string[][] = [];
   const counts = { undone: 0, focused: 0 };
+  /** This view is its window's tab on screen (the person may switch away while a plan is on its way). */
+  const tab = { shown: true };
   const undoneIds: number[] = [];
   const host: ImportHost = {
     fail: (e) => failures.push(e),
@@ -20,6 +22,8 @@ function setup(api?: (mock: ReturnType<typeof createMockApi>) => Api) {
     action: (text, ...list) =>
       actions.push({ text, labels: list.map((a) => a.label), run: list.map((a) => a.run) }),
     project: () => "demo",
+    view: () => "main",
+    shown: () => tab.shown,
     focus: () => (counts.focused += 1),
     end: (kept) => ends.push(kept),
     placed: (paths) => placed.push([...paths]),
@@ -30,7 +34,7 @@ function setup(api?: (mock: ReturnType<typeof createMockApi>) => Api) {
     },
   };
   const flow = new ImportFlow(api ? api(mock) : mock, host);
-  return { mock, flow, notes, actions, failures, ends, placed, counts, undoneIds };
+  return { mock, flow, notes, actions, failures, ends, placed, counts, undoneIds, tab };
 }
 
 let s: Setup;
@@ -144,6 +148,38 @@ describe("a slow plan", () => {
     await planning;
     expect(asked().at).toEqual(AT);
     expect(s.counts.focused).toBe(1);
+  });
+
+  it("a tab switch while the plan is on its way: the hidden view never takes the keyboard, its question waits", async () => {
+    vi.useFakeTimers();
+    let answer: (plan: Result<ImportPlan>) => void = () => {};
+    s = setup((mock) => ({
+      ...mock,
+      planImport: () => new Promise<Result<ImportPlan>>((resolve) => (answer = resolve)),
+    }));
+    const planning = s.flow.plan("docs", ["C:/out/a.md"], AT);
+    // Ctrl+Tab to another tab before the slow moment and before the answer
+    s.tab.shown = false;
+    vi.advanceTimersByTime(SLOW_PLAN_MS * 2);
+    expect(s.flow.state).toMatchObject({ status: "planning", slow: true });
+    answer({ ok: true, value: { planId: 9, target: "docs", items: [], refused: [] } });
+    await planning;
+    expect(asked().at).toEqual(AT);
+    expect(s.counts.focused).toBe(0);
+  });
+
+  it("a tab switch before a fast plan answers: no focus either", async () => {
+    let answer: (plan: Result<ImportPlan>) => void = () => {};
+    s = setup((mock) => ({
+      ...mock,
+      planImport: () => new Promise<Result<ImportPlan>>((resolve) => (answer = resolve)),
+    }));
+    const planning = s.flow.plan("docs", ["C:/out/a.md"], AT);
+    s.tab.shown = false;
+    answer({ ok: true, value: { planId: 9, target: "docs", items: [], refused: [] } });
+    await planning;
+    expect(s.flow.state.status).toBe("asking");
+    expect(s.counts.focused).toBe(0);
   });
 
   it("a fast plan never shows the checking state", async () => {
