@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Explorer: toolbar, a virtualized list of the project tree, the filter popover, the context menu and the move
-  // dialog. All state and actions are in the store; this draws it and turns events into store calls.
+  // dialog. All state and actions are in the store; this draws it and turns events into store calls. Included projects
+  // inside the folder get their own look, a detail card and menu entries; their question sits under the list.
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import ChevronsDownUp from "@lucide/svelte/icons/chevrons-down-up";
@@ -8,15 +9,19 @@
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import ListFilter from "@lucide/svelte/icons/list-filter";
-  import type { TreeNode } from "../../api";
+  import type { ProjectRow, TreeNode } from "../../api";
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import type { ContributionRegistry, TreeBadge } from "../plugins/registry.svelte";
+  import { projects } from "../projects/instance.svelte";
+  import { hueOfMember } from "../projects/model";
+  import ProjectCard from "../projects/ProjectCard.svelte";
+  import ProjectStrip from "../projects/ProjectStrip.svelte";
   import Badge from "../shell/Badge.svelte";
   import ContextMenu from "./ContextMenu.svelte";
   import FilterPopover from "./FilterPopover.svelte";
-  import { WorktreeIcon, iconOf } from "./icons";
+  import { WorktreeIcon, iconOf, projectIcon } from "./icons";
   import { EdgeScroll } from "./edgeScroll";
   import { dropBlock, nameOf, parentOf, rowKey, topmost, type Row } from "./list";
   import type { MenuEntry } from "./menu";
@@ -38,6 +43,10 @@
   const OVERSCAN = 8;
   /** Pointer travel (px) before a press becomes a drag. */
   const DRAG_START = 4;
+  /** A pointer resting this long on a project node shows its card. */
+  const CARD_HOVER_MS = 500;
+  /** Grace after the pointer leaves the node | the card before the card goes (time to move into it). */
+  const CARD_LEAVE_MS = 300;
 
   type Display = Row | { type: "new"; depth: number; dir: string };
   type Press = { x: number; y: number; paths: readonly string[] };
@@ -53,6 +62,8 @@
   let handledScroll = 0;
 
   const badges = $derived(registry.visible("treeBadge", conditions.current));
+  /** The project the detail card is about (gone with the project). */
+  const cardRow = $derived(projects.card === null ? null : projects.memberAt(projects.card.path));
 
   /** The rows that read as one block with the folder an outside drag is over (its visible contents). */
   const block = $derived.by((): ReadonlySet<string> => {
@@ -153,6 +164,83 @@
     return lines.length === 0 ? undefined : lines.join("\n");
   }
 
+  /** What a screen reader hears for a project node: name, "project", what plugins say (changed files, unread). */
+  function projectName(member: ProjectRow, said: readonly TreeBadge[]): string {
+    return [
+      t("projects.node.sr", { name: member.name }),
+      ...said.flatMap((b) => (b.title === undefined || b.text === "" ? [] : [b.title])),
+    ].join(", ");
+  }
+
+  // ---- the detail card of a project node ---------------------------------------------------------------------------
+
+  let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+  let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearCardTimers(): void {
+    if (hoverTimer !== null) clearTimeout(hoverTimer);
+    if (leaveTimer !== null) clearTimeout(leaveTimer);
+    hoverTimer = null;
+    leaveTimer = null;
+  }
+  // timers and the card go with the panel
+  $effect(() => () => {
+    clearCardTimers();
+    projects.closeCard();
+  });
+
+  function rowElement(path: string): HTMLElement | null {
+    return list?.querySelector<HTMLElement>(`[data-path="${CSS.escape(path)}"]`) ?? null;
+  }
+
+  function onrowenter(node: TreeNode, member: ProjectRow | null): void {
+    if (member === null || store.drag.status === "dragging") return;
+    if (leaveTimer !== null) clearTimeout(leaveTimer);
+    leaveTimer = null;
+    if (projects.card?.path === node.path) return;
+    if (hoverTimer !== null) clearTimeout(hoverTimer);
+    hoverTimer = setTimeout(() => {
+      hoverTimer = null;
+      const el = rowElement(node.path);
+      if (el && menu === null) {
+        projects.openCard({ path: node.path, from: "hover", anchor: el.getBoundingClientRect() });
+      }
+    }, CARD_HOVER_MS);
+  }
+
+  function onrowleave(): void {
+    if (hoverTimer !== null) clearTimeout(hoverTimer);
+    hoverTimer = null;
+    cardHovering(false);
+  }
+
+  /** The pointer is over the card (it stays) | left it (it goes after a moment; a card opened from the menu stays). */
+  function cardHovering(inside: boolean): void {
+    if (leaveTimer !== null) clearTimeout(leaveTimer);
+    leaveTimer = null;
+    if (inside || projects.card?.from !== "hover") return;
+    leaveTimer = setTimeout(() => {
+      leaveTimer = null;
+      if (projects.card?.from === "hover") projects.closeCard();
+    }, CARD_LEAVE_MS);
+  }
+
+  function showCard(path: string): void {
+    clearCardTimers();
+    const el = rowElement(path);
+    if (el) projects.openCard({ path, from: "menu", anchor: el.getBoundingClientRect() });
+  }
+
+  function closeCard(refocus: boolean): void {
+    clearCardTimers();
+    const path = projects.card?.path ?? null;
+    projects.closeCard();
+    if (refocus && path !== null) {
+      store.focus = path;
+      list?.focus();
+    }
+  }
+
   /** The entries plugins add to the menu of one row. */
   function pluginEntries(node: TreeNode, targets: readonly string[]): MenuEntry[] {
     const isDir = node.kind.type === "dir";
@@ -247,6 +335,17 @@
           label: t("menu.openAsProject"),
           run: () => void store.openAsProject(node.path),
         });
+      }
+      const member = isDir ? projects.memberAt(node.path) : null;
+      if (member !== null) {
+        entries.push(
+          { kind: "item", label: t("projects.menu.details"), run: () => showCard(node.path) },
+          {
+            kind: "item",
+            label: t("projects.menu.settings"),
+            run: () => projects.openSettings(member),
+          },
+        );
       }
       if (!isDir) {
         entries.push({
@@ -346,6 +445,13 @@
       case "Delete":
         void store.remove();
         break;
+      case "ContextMenu":
+        openMenuAtFocus();
+        break;
+      case "F10":
+        if (e.shiftKey) openMenuAtFocus();
+        else handled = false;
+        break;
       case "Escape":
         if (store.drag.status === "dragging") store.cancelDrag();
         else handled = false;
@@ -359,6 +465,18 @@
         handled = false;
     }
     if (handled) e.preventDefault();
+  }
+
+  /** The Menu key | Shift+F10: the menu of the row the keyboard is on, at that row. */
+  function openMenuAtFocus(): void {
+    const path = store.focus;
+    if (path === null) return;
+    const node = store.nodes.find((n) => n.path === path);
+    const el = rowElement(path);
+    if (!node || !el) return;
+    if (!store.selection.has(path)) store.select(path, "single");
+    const box = el.getBoundingClientRect();
+    menu = { x: box.left + 24, y: box.bottom, entries: entriesFor(node) };
   }
 
   // ---- drag ------------------------------------------------------------------------------------------------------------
@@ -577,8 +695,12 @@
             </div>
           {:else}
             {@const node = row.node}
-            {@const Icon = iconOf(node, row.expanded || store.outside === node.path)}
             {@const isDir = node.kind.type === "dir"}
+            {@const member = isDir ? projects.memberAt(node.path) : null}
+            {@const Icon =
+              member === null
+                ? iconOf(node, row.expanded || store.outside === node.path)
+                : projectIcon(member.marker)}
             {@const selected = store.selection.has(node.path)}
             {@const said = badgesOf(node)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -599,14 +721,18 @@
               aria-selected={selected}
               aria-level={row.depth + 1}
               aria-expanded={isDir ? row.expanded : undefined}
+              aria-label={member === null ? undefined : projectName(member, said)}
               data-path={node.path}
+              data-project={member === null ? undefined : ""}
               style:top="{top}px"
               style:height="{ROW}px"
               style:padding-left="{8 + row.depth * 14}px"
-              title={rowTitle(node, said)}
+              title={member === null ? rowTitle(node, said) : undefined}
               onclick={(e) => onrowclick(e, node)}
               oncontextmenu={(e) => oncontext(e, node)}
               onpointerdown={(e) => onpointerdown(e, node)}
+              onpointerenter={() => onrowenter(node, member)}
+              onpointerleave={onrowleave}
             >
               {#if isDir}
                 <button
@@ -625,7 +751,15 @@
               {:else}
                 <span class="chev"></span>
               {/if}
-              <span class="icon-cell"><Icon size={15} /></span>
+              {#if member === null}
+                <span class="icon-cell"><Icon size={15} /></span>
+              {:else}
+                <span
+                  class="icon-cell project"
+                  style:--hue="var(--tag-{hueOfMember(projects.root ?? '', member)})"
+                  ><Icon size={15} /></span
+                >
+              {/if}
               {#if store.edit.mode === "rename" && store.edit.path === node.path}
                 <NameField
                   value={store.edit.value}
@@ -637,7 +771,7 @@
                   cancel={() => store.cancelEdit()}
                 />
               {:else}
-                <span class="name">{nameOf(node.path)}</span>
+                <span class="name">{member?.name ?? nameOf(node.path)}</span>
                 {#if node.kind.type === "dir" && node.kind.unlisted?.type === "large"}
                   <span class="tag" title={t("tree.largeFolderTitle", { n: 5000 })}>
                     {t("tree.largeFolder")}
@@ -654,7 +788,9 @@
         {/each}
       </div>
     </div>
-    {#if store.codeOffer.status === "offered"}
+    {#if projects.strip.kind !== "none"}
+      <ProjectStrip />
+    {:else if store.codeOffer.status === "offered" && !projects.askedThisOpen}
       <div class="code-offer" role="region" aria-label={t("explorer.code.label")}>
         <span>{tn("explorer.code.offer", store.codeOffer.hidden)}</span>
         <button type="button" class="btn btn--sm" onclick={() => void store.acceptCodeOffer()}>
@@ -682,6 +818,25 @@
 
 {#if menu}
   <ContextMenu x={menu.x} y={menu.y} entries={menu.entries} close={() => (menu = null)} />
+{/if}
+{#if projects.card !== null && cardRow !== null}
+  {@const open = projects.card}
+  {@const about = cardRow}
+  <ProjectCard
+    row={about}
+    anchor={open?.anchor ?? new DOMRect()}
+    from={open?.from ?? "hover"}
+    close={closeCard}
+    hovering={cardHovering}
+    openTab={() => {
+      closeCard(false);
+      if (open) void store.openAsProject(open.path);
+    }}
+    openSettings={() => {
+      closeCard(false);
+      projects.openSettings(about);
+    }}
+  />
 {/if}
 {#if store.dialog.status === "asking"}
   <MovePlanDialog plan={store.dialog.plan} answer={(choice) => void store.answerDialog(choice)} />
@@ -807,6 +962,9 @@
     place-items: center;
     flex: none;
     color: var(--muted);
+  }
+  .icon-cell.project {
+    color: var(--hue);
   }
   .name {
     flex: 1;

@@ -45,6 +45,7 @@
   import StatusItems from "./core/shell/StatusItems.svelte";
   import { activeRight, activeSidebar, leftPanels, rightPanels } from "./core/shell/panels.svelte";
   import { windowStore as store } from "./core/window.svelte";
+  import { projects } from "./core/projects/instance.svelte";
 
   type InfoState =
     { status: "loading" } | { status: "ready"; info: AppInfo } | { status: "failed" };
@@ -215,6 +216,23 @@
       gone = true;
       off?.();
       importFlow.reset();
+    };
+  });
+
+  // projects inside the shown folder: followed while it shows (`projects.md` §12)
+  const projectRoot = $derived(shown?.workspace.kind === "project" ? shown.workspace.root : null);
+  $effect(() => {
+    const root = projectRoot;
+    if (root === null) return;
+    let off: (() => void) | null = null;
+    let gone = false;
+    void projects.start(root).then((stop) => {
+      if (gone) stop();
+      else off = stop;
+    });
+    return () => {
+      gone = true;
+      off?.();
     };
   });
 

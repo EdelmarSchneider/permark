@@ -16,6 +16,7 @@ import {
   type ContributionRegistry,
 } from "../plugins/registry.svelte";
 import { closeOwnTab } from "../shell/closeWorkspace";
+import { projects } from "../projects/instance.svelte";
 import { askInitHere } from "../shell/initProject";
 import { rightAvailable } from "../shell/layout";
 import { rightSide, toggleOutlinePanel, toggleRightPanel, toggleSidebar } from "../shell/sides";
@@ -113,6 +114,13 @@ const SPECS: readonly Spec[] = [
     requires: PROJECT,
     when: () => conditions.current.permark === "notInitialized",
     run: () => askInitHere(),
+  },
+  {
+    id: "projects.settings",
+    label: "projects.palette.settings",
+    requires: PROJECT,
+    when: () => projects.present,
+    run: () => projects.openSettings(),
   },
   {
     id: "tab.close",

@@ -25,6 +25,19 @@ export const MOCK_PROJECTS_LISTED = "C:/Users/demo/workspace-listed";
 export const MOCK_PROJECTS_BROKEN = "C:/Users/demo/workspace-broken";
 /** A plain folder holding one cloned repository (A14). */
 export const MOCK_PROJECTS_ONE = "C:/Users/demo/template";
+/** A large folder (like a monorepo of repos): 36 included (long + Unicode names), 3 new, 1 missing. */
+export const MOCK_PROJECTS_MANY = "C:/Users/demo/workspace-many";
+
+/** Folder names of the large fixture: plain, long, Unicode (CJK, accents, NFD), spaces. */
+const MANY_NAMES: readonly string[] = [
+  ...Array.from({ length: 30 }, (_, n) => `repo-${String(n + 1).padStart(2, "0")}`),
+  "a-very-long-project-folder-name-that-keeps-going-past-the-sidebar-width-and-then-some-more",
+  "数据分析项目",
+  "Ünïcödé café",
+  "Café NFD",
+  "space name here",
+  "émoji-✨-notes",
+];
 
 type Fixture = {
   files: Record<string, string>;
@@ -178,6 +191,39 @@ const FIXTURES: Record<string, Fixture> = {
         answer: "answered",
       }),
   },
+  [MOCK_PROJECTS_MANY]: {
+    files: {
+      "README.md": "# Many projects\n",
+      ...Object.fromEntries(MANY_NAMES.map((name) => [`repos/${name}/README.md`, `# ${name}\n`])),
+      "incoming/new-1/README.md": "# New 1\n",
+      "incoming/new-2/README.md": "# New 2\n",
+      "incoming/new-3/README.md": "# New 3\n",
+    },
+    view: () =>
+      view(
+        MOCK_PROJECTS_MANY,
+        [
+          ...MANY_NAMES.map((name, n) =>
+            row(`repos/${name}`, {
+              uid: mockUid(500 + n),
+              state: "included",
+              marker: n % 6 === 5 ? "permark" : "git",
+              cardPlace: "profile",
+            }),
+          ),
+          row("incoming/new-1"),
+          row("incoming/new-2", { marker: "permark" }),
+          row("incoming/new-3"),
+          row("repos/old-gone", {
+            uid: "oldgone2ab",
+            state: "missing",
+            missing: "gone",
+            marker: null,
+          }),
+        ],
+        { answer: "answered", record: { status: "ok" } },
+      ),
+  },
   [MOCK_PROJECTS_ONE]: {
     files: { "README.md": "# Template\n", "template-app/README.md": "# Template app\n" },
     view: () => view(MOCK_PROJECTS_ONE, [row("template-app")]),
@@ -192,6 +238,8 @@ export type ProjectsProbe = {
   news(event: ProjectEvent): void;
   /** The view of a folder now (`null`: plain). */
   viewOf(root: string): ProjectsView | null;
+  /** Every folder back to its fixture (tests sharing one mock). */
+  reset(): void;
 };
 
 type Deps = {
@@ -470,6 +518,11 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
     },
     viewOf: (root) =>
       views.get(root) ?? (FIXTURES[root] ? summarized(FIXTURES[root].view()) : null),
+    reset: () => {
+      views.clear();
+      undos.clear();
+      calls.length = 0;
+    },
   };
   return { handlers, probe };
 }

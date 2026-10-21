@@ -1,10 +1,12 @@
 <script lang="ts">
-  // The full settings: a left list of sections (Reading, Editing, Integration, Plugins, Project) and the shown one at
-  // the right, each a card of rows. Covers the window below the top bar; Escape or Close goes back to where the
-  // person was.
+  // The full settings: a left list of sections (Reading, Editing, Integration, Plugins, Projects, Project) and the
+  // shown one at the right, each a card of rows; Projects only where the folder holds projects (`projects.md` §12.2).
+  // Covers the window below the top bar; Escape or Close goes back to where the person was.
   import X from "@lucide/svelte/icons/x";
   import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
+  import { projects } from "../../projects/instance.svelte";
+  import ProjectsSection from "../../projects/ProjectsSection.svelte";
   import type { WindowStore } from "../../window.svelte";
   import { SETTINGS_SECTIONS, ui, type SettingsSection } from "../ui.svelte";
   import Card from "./Card.svelte";
@@ -22,12 +24,18 @@
     editing: "settings.section.editing",
     integration: "settings.section.integration",
     plugins: "settings.section.plugins",
+    projects: "settings.section.projects",
     project: "settings.section.project",
   };
 
   const inProject = $derived(conditions.current.workspace === "project");
-  /** Sections the person can reach here: Project only while a project is shown. */
-  const sections = $derived(SETTINGS_SECTIONS.filter((s) => s !== "project" || inProject));
+  /** Sections the person can reach here: Project only while a project is shown, Projects only where it holds some. */
+  const sections = $derived(
+    SETTINGS_SECTIONS.filter(
+      (s) =>
+        (s !== "project" || inProject) && (s !== "projects" || (inProject && projects.present)),
+    ),
+  );
   const wanted = $derived(ui.settingsPage.status === "open" ? ui.settingsPage.section : "reading");
   const section = $derived(sections.includes(wanted) ? wanted : "reading");
 
@@ -36,7 +44,9 @@
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault();
-      ui.closeSettingsPage();
+      // consent mode: Esc = Cancel (back to the Explorer, the strip still asks)
+      if (projects.choosing !== null) projects.cancelChoose();
+      else ui.closeSettingsPage();
       return;
     }
     if (e.key !== "Tab" || !page) return;
@@ -73,10 +83,14 @@
     }
   }
 
-  // focus enters the page on the section list; it goes back where it was when the page closes
+  // focus enters the page on the section list (or on what the section asks for: the Choose heading); it goes back
+  // where it was when the page closes
   $effect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    page?.querySelector<HTMLElement>('[aria-current="page"]')?.focus();
+    (
+      page?.querySelector<HTMLElement>("[data-autofocus]") ??
+      page?.querySelector<HTMLElement>('[aria-current="page"]')
+    )?.focus();
     return () => before?.focus();
   });
 </script>
@@ -126,6 +140,8 @@
             <IntegrationSection />
           {:else if section === "plugins"}
             <PluginsSection {store} />
+          {:else if section === "projects"}
+            <ProjectsSection />
           {:else}
             <ProjectSection />
           {/if}

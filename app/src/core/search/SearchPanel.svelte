@@ -10,6 +10,8 @@
   import { conditions } from "../conditions/context.svelte";
   import { contributions } from "../plugins/instance.svelte";
   import { documents } from "../doc/document.svelte";
+  import { projects } from "../projects/instance.svelte";
+  import Segments from "../shell/settings/Segments.svelte";
   import { apiErrorText } from "../errors";
   import { t, tn } from "../i18n";
   import { ui } from "../shell/ui.svelte";
@@ -20,12 +22,34 @@
   import type { SectionHit } from "../../api";
 
   type Props = { root: string; store?: SearchPanelStore };
-  let { root, store = new SearchPanelStore(api) }: Props = $props();
+  let {
+    root,
+    store = new SearchPanelStore(api, () => projects.ownerOf(documents.path)?.uid ?? null),
+  }: Props = $props();
 
   let input: HTMLInputElement | undefined = $state();
   let list: HTMLElement | undefined = $state();
 
   const quiet = $derived(conditions.current.plugins.includes("quiet"));
+  /** The scope choice shows only where the folder includes projects. */
+  const scoped = $derived(projects.members.size > 0);
+  /** The project the open document belongs to ("This project"). */
+  const owner = $derived.by(() => {
+    // `path` follows the person's navigation (also to a document that failed to show); `state` changes with it
+    void documents.state;
+    return projects.ownerOf(documents.path);
+  });
+
+  // "This project" follows the open document: another project's document asks again; none -> everywhere
+  let seenOwner: string | null = null;
+  $effect(() => {
+    const uid = owner?.uid ?? null;
+    if (uid === seenOwner) return;
+    seenOwner = uid;
+    if (store.scope !== "this") return;
+    if (uid === null) store.setScope("all");
+    else store.retry();
+  });
   const filters = $derived(contributions.visible("searchFilter", conditions.current));
 
   // the tags the search is narrowed to changed: ask again
@@ -146,6 +170,25 @@
       <Filter />
     {/await}
   {/each}
+
+  {#if scoped}
+    <div class="scope">
+      <Segments
+        label={t("search.scope.label")}
+        value={owner === null ? "all" : store.scope}
+        options={[
+          { value: "all", label: t("search.scope.allProjects") },
+          {
+            value: "this",
+            label: t("search.scope.thisProject", { short: owner?.short ?? "…" }),
+            ...(owner === null ? { title: t("search.scope.notInProject") } : {}),
+          },
+        ]}
+        disabledValues={owner === null ? ["this"] : []}
+        onchange={(scope) => store.setScope(scope)}
+      />
+    </div>
+  {/if}
 
   {#if quiet}
     <label class="option" title={t("search.includeQuietHint")}>
@@ -274,6 +317,9 @@
   }
   .clear:hover {
     background: var(--hover);
+  }
+  .scope {
+    padding: 0 var(--sp-2) var(--sp-2);
   }
   .option {
     display: flex;

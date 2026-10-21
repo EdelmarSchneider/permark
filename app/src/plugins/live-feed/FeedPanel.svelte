@@ -1,19 +1,25 @@
 <script lang="ts">
   // The right panel "Changes": what the disk reported and what the person did in PerMark (with the hand-off marks),
-  // newest first; a filter shows mine | outside | all. Click a row to open the file.
+  // newest first; a filter shows mine | outside | all. Click a row to open the file. Paths inside an included project
+  // say which one ("{short} · {folder}"); the project list's own news (appeared, moved, gone) are rows too.
   import ArrowRightLeft from "@lucide/svelte/icons/arrow-right-left";
   import FilePen from "@lucide/svelte/icons/file-pen";
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FileX from "@lucide/svelte/icons/file-x";
+  import FolderDot from "@lucide/svelte/icons/folder-dot";
+  import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
   import Layers from "@lucide/svelte/icons/layers";
   import MessageSquare from "@lucide/svelte/icons/message-square";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Save from "@lucide/svelte/icons/save";
   import Send from "@lucide/svelte/icons/send";
   import Tag from "@lucide/svelte/icons/tag";
-  import type { ActivityEntry, FeedItem } from "../../api";
+  import type { ActivityEntry, FeedItem, ProjectEvent } from "../../api";
   import { documents } from "../../core/doc/document.svelte";
+  import { revealInTree } from "../../core/explorer/current";
   import { t, tn } from "../../core/i18n";
+  import { projects } from "../../core/projects/instance.svelte";
+  import { relativeTo } from "../../core/projects/model";
   import { ui } from "../../core/shell/ui.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
   import { ACTIVE_MS, feed } from "./store.svelte";
@@ -42,6 +48,48 @@
   /** The action left nothing to open (a delete, the undo of a new file). */
   function gone(entry: ActivityEntry): boolean {
     return entry.fact.kind === "file" && entry.fact.op === "delete";
+  }
+
+  /** The folder line of a path: inside an included project "{short} · {folder in it}", else the folder as is. */
+  function folderLine(path: string, folder: string): string {
+    const owner = projects.ownerOf(path);
+    if (owner === null) return folder;
+    const inner = split(relativeTo(owner, path)).folder;
+    return inner === ""
+      ? owner.short
+      : t("projects.feed.label", { short: owner.short, folder: inner });
+  }
+
+  /** The words of a project row. */
+  function projectText(event: ProjectEvent): string {
+    switch (event.kind) {
+      case "appeared":
+        return t("projects.feed.appeared", {
+          name: event.name,
+          folder: event.path === "" ? (projects.view?.rootCard.name ?? "") : event.path,
+        });
+      case "moved":
+        return t("projects.feed.moved", { name: event.name, path: event.path });
+      case "gone":
+        return t("projects.feed.gone", { name: event.name });
+      case "back":
+        return t("projects.feed.back", { name: event.name, path: event.path });
+      case "listChanged":
+        return t("projects.feed.listChanged");
+      default:
+        return event satisfies never;
+    }
+  }
+
+  /** The folder a project row reveals in the Explorer (`null`: nothing to show). */
+  function projectTarget(event: ProjectEvent): string | null {
+    return event.kind === "listChanged" || event.kind === "gone" ? null : event.path;
+  }
+
+  function projectIsRepo(event: ProjectEvent): boolean {
+    if (event.kind === "listChanged") return true;
+    const row = projects.view?.rows.find((r) => r.path === event.path);
+    return row?.marker !== "permark";
   }
 
   const SHOWS: readonly {
@@ -173,7 +221,9 @@
             </span>
             <span class="text">
               <span class="name">{where.name || t("feed.root")}</span>
-              {#if where.folder}<span class="folder">{where.folder}</span>{/if}
+              {#if where.folder || projects.ownerOf(item.path) !== null}<span class="folder"
+                  >{folderLine(item.path, where.folder)}</span
+                >{/if}
               {#if item.kind === "renamed"}
                 <span class="folder">{t("feed.renamedFrom", { name: split(item.from).name })}</span>
               {/if}
@@ -199,6 +249,22 @@
             </span>
             <span class="when">{ago(item.atMs, now)}</span>
           </div>
+        {:else if row.item.item === "project"}
+          {@const event = row.item.event}
+          {@const target = projectTarget(event)}
+          <button
+            type="button"
+            class="row"
+            title={projectText(event)}
+            disabled={target === null}
+            onclick={() => revealInTree(target)}
+          >
+            <span class="icon-cell">
+              {#if projectIsRepo(event)}<FolderGit2 size={15} />{:else}<FolderDot size={15} />{/if}
+            </span>
+            <span class="text"><span class="name">{projectText(event)}</span></span>
+            <span class="when">{ago(row.at, now)}</span>
+          </button>
         {:else}
           <div class="row note">
             <span class="icon-cell"><RefreshCw size={15} /></span>

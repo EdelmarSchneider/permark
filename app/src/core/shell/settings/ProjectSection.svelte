@@ -6,6 +6,8 @@
   import { conditions } from "../../conditions/context.svelte";
   import { t, type MessageKey } from "../../i18n";
   import { contributions } from "../../plugins/instance.svelte";
+  import CardFields from "../../projects/CardFields.svelte";
+  import { projects } from "../../projects/instance.svelte";
   import { askInitHere } from "../initProject";
   import Card from "./Card.svelte";
   import ListEditor from "./ListEditor.svelte";
@@ -37,6 +39,28 @@
   ];
 </script>
 
+{#if projects.present && projects.view}
+  {@const card = projects.view.rootCard}
+  <!-- the opened folder's own card (it holds projects: its name shows where they are listed) -->
+  <section class="group root-card" aria-labelledby="proj-card">
+    <h3 id="proj-card">{t("projects.card.title")}</h3>
+    <Card>
+      <div class="card-body">
+        <CardFields
+          id="root-card"
+          target={{ kind: "root" }}
+          place={card.place}
+          values={{
+            name: card.name,
+            short: card.short,
+            description: card.description ?? "",
+            category: card.category ?? "",
+          }}
+        />
+      </div>
+    </Card>
+  </section>
+{/if}
 {#if !initialized}
   <Card>
     <SettingRow label={t("project.notInitialized")} hint={t("project.notInitializedHint")}>
@@ -134,6 +158,12 @@
   }
   .group + .group {
     margin-top: var(--sp-5);
+  }
+  .root-card {
+    margin-bottom: var(--sp-5);
+  }
+  .card-body {
+    padding: var(--sp-3) var(--sp-4);
   }
   h3 {
     margin: 0 0 var(--sp-2);

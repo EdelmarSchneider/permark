@@ -16,12 +16,14 @@ export type Finder =
   | { status: "open"; preset: FinderPreset; seed: number };
 
 /** The sections of the settings page. */
-export type SettingsSection = "reading" | "editing" | "integration" | "plugins" | "project";
+export type SettingsSection =
+  "reading" | "editing" | "integration" | "plugins" | "projects" | "project";
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "reading",
   "editing",
   "integration",
   "plugins",
+  "projects",
   "project",
 ];
 export type SettingsPage = { status: "closed" } | { status: "open"; section: SettingsSection };
