@@ -13,7 +13,8 @@
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,
-    "moduleDetection": "force"
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src/**/*.ts",
@@ -21,6 +22,7 @@
     "src/**/*.svelte",
     "scripts/**/*.mjs",
     "scripts/**/*.ts",
+    "e2e/**/*.ts",
     "vite.config.ts",
     "svelte.config.js"
   ]
