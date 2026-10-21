@@ -495,6 +495,20 @@ fn dropped_items_with_one_name_keep_both_in_turn() {
     assert_eq!(read(&f, "x.md"), "1");
     assert_eq!(read(&f, "x (2).md"), "2");
     assert_eq!(read(&f, "x (3).md"), "3");
+    assert_eq!(
+        out.placed,
+        ["x.md", "x (2).md", "x (3).md"],
+        "final names, drop order"
+    );
+}
+
+#[test]
+fn placed_names_the_items_in_a_folder_and_leaves_out_skipped_ones() {
+    let f = fx(&[("docs/a.md", "old")], &[("a.md", "new"), ("b/c.md", "c")]);
+    let p = plan(&f, "docs", &["a.md", "b"]);
+    let out = apply(&f, &p, ImportMode::Copy, ConflictChoice::Skip);
+    assert_eq!(out.placed, ["docs/b"]);
+    assert_eq!(out.skipped, 1);
 }
 
 #[test]
@@ -1037,11 +1051,21 @@ fn ten_thousand_files_come_in_with_exact_totals() {
             fs::write(dir.join(format!("f{n:03}.txt")), format!("{d}-{n}")).unwrap();
         }
     }
+    // Windows: the first open of a just-written file waits for the virus scan (~2 ms each, 20-60 s for all on a
+    // runner); read them once here so the bound below times the copy, not the scanner
+    for d in 0..100 {
+        for n in 0..100 {
+            let path = f.outside.path().join(format!("big/d{d:03}/f{n:03}.txt"));
+            fs::read(path).unwrap();
+        }
+    }
     let started = std::time::Instant::now();
     let out = copy_all(&f, "", &["big"]);
     let took = started.elapsed();
+    eprintln!("10 000 files copied in {took:?}");
     assert_eq!((out.copied, out.files, out.failed.len()), (1, 10_000, 0));
     assert_eq!(read(&f, "big/d042/f007.txt"), "42-7");
+    // linear: ~2 s on a desktop; a per-file cost that grows with the count would take minutes
     assert!(took.as_secs() < 60, "{took:?}");
     no_temps(f.dir.path());
 }
@@ -1131,4 +1155,263 @@ fn the_cancel_flag_of_a_finished_import_is_gone() {
     apply(&f, &p, ImportMode::Copy, ConflictChoice::Skip);
     assert!(!f.ops.import_cancel(p.plan_id));
     let _: PathBuf = f.dir.path().to_path_buf();
+}
+
+// ---- verifier (adversarial) -----------------------------------------------------------------------------------------
+
+/// The project folder spelled another way (other case, verbatim `\?\` prefix, trailing `.`) still holds the target:
+/// copying it would copy into itself without end.
+#[cfg(windows)]
+#[test]
+fn verifier_a_folder_spelled_another_way_still_cannot_go_into_itself() {
+    let f = fx(&[("docs/inner/a.md", "")], &[]);
+    let here = f.dir.path().display().to_string();
+    let upper = here.to_uppercase();
+    let verbatim = format!(r"\\?\{here}");
+    let dotted = format!(r"{here}\.");
+    let p = f
+        .ops
+        .import_plan("docs/inner", &[upper, verbatim, dotted])
+        .unwrap();
+    assert_eq!(p.items.len(), 0, "items: {:?}", p.items);
+    assert!(
+        p.refused
+            .iter()
+            .all(|r| r.reason == ImportRefusal::IntoItself),
+        "refused: {:?}",
+        p.refused
+    );
+}
+
+/// The same outside file named twice in other spellings is one item (no `a (2).md` copy of itself).
+#[cfg(windows)]
+#[test]
+fn verifier_one_file_dropped_in_two_spellings_is_one_item() {
+    let f = fx(&[("docs/", "")], &[("a.md", "x")]);
+    let one = src(&f, "a.md");
+    let two = one.to_uppercase();
+    let p = f.ops.import_plan("docs", &[one, two]).unwrap();
+    assert_eq!(p.items.len(), 1, "items: {:?}", p.items);
+}
+
+/// A Move whose numbered name was taken after the plan: the next free number, nothing overwritten.
+#[test]
+fn verifier_move_of_a_file_already_in_place_twice_never_overwrites() {
+    let f = fx(&[("docs/a.md", "mine")], &[("a.md", "theirs")]);
+    let p = plan(&f, "docs", &["a.md"]);
+    // the name is taken again (and by a different file) after the plan
+    fs::write(f.dir.path().join("docs/a (2).md"), "also mine").unwrap();
+    let out = apply(&f, &p, ImportMode::Move, ConflictChoice::KeepBoth);
+    assert_eq!(read(&f, "docs/a.md"), "mine");
+    assert_eq!(read(&f, "docs/a (2).md"), "also mine");
+    assert_eq!(read(&f, "docs/a (3).md"), "theirs");
+    assert_eq!(out.placed, ["docs/a (3).md"]);
+}
+
+// ---- undo of exactly this import (the notice's Undo) -------------------------------------------------------------------
+
+#[test]
+fn the_undo_of_an_import_takes_back_that_import_not_the_newest_operation() {
+    let f = fx(&[("docs/", "")], &[("a.md", "a"), ("b.md", "b")]);
+    let first = copy_all(&f, "docs", &["a.md"]);
+    let second = copy_all(&f, "", &["b.md"]);
+    let (one, two) = (first.undo.unwrap(), second.undo.unwrap());
+    assert_ne!(one, two);
+    let out = f.ops.undo_entry(one).unwrap().unwrap();
+    assert_eq!(out.kind, UndoKind::Import);
+    assert!(
+        !f.dir.path().join("docs/a.md").exists(),
+        "the first import went"
+    );
+    assert_eq!(read(&f, "b.md"), "b", "the newer one stays");
+    assert!(f.ops.undo_entry(one).unwrap().is_none(), "once only");
+    assert!(f.ops.undo_entry(two).unwrap().is_some());
+}
+
+#[test]
+fn an_import_touched_since_is_not_taken_back_by_its_notice() {
+    let f = fx(&[("docs/", "")], &[("a.md", "a")]);
+    let out = copy_all(&f, "docs", &["a.md"]);
+    f.ops
+        .apply_move(
+            f.ops
+                .plan_move(
+                    &[crate::fileops::MoveSpec {
+                        from: "docs/a.md".to_owned(),
+                        to: "a.md".to_owned(),
+                    }],
+                    false,
+                )
+                .unwrap()
+                .plan_id,
+            false,
+        )
+        .unwrap();
+    assert!(f.ops.undo_entry(out.undo.unwrap()).unwrap().is_none());
+    assert_eq!(read(&f, "a.md"), "a", "nothing taken away");
+}
+
+#[test]
+fn an_import_that_added_nothing_has_no_undo() {
+    let f = fx(&[("docs/a.md", "x")], &[("a.md", "y")]);
+    let p = plan(&f, "docs", &["a.md"]);
+    let out = apply(&f, &p, ImportMode::Copy, ConflictChoice::Skip);
+    assert_eq!(out.undo, None);
+}
+
+// ---- the tree learns at once (director 2026-10-20: a copied file did not show until a refresh) -------------------------
+
+/// A project whose Explorer events are kept, with one open view "w".
+fn fx_seen(inside: &[(&str, &str)], outside: &[(&str, &str)]) -> (Fx, Arc<Recorder>) {
+    let f = fx(inside, outside);
+    let sink = Arc::new(Recorder::default());
+    let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::clone(&sink) as Arc<dyn crate::events::EventSink>,
+        None,
+    ));
+    explorer.open_view("w", Some(TreeFilter::default()));
+    let state = tempfile::tempdir().unwrap();
+    let store = StateStore::for_project(&AppDirs::under(state.path()), vault.main());
+    let ops = FileOps::new(vault, explorer, Arc::clone(&f.own), &store);
+    std::mem::forget(state);
+    (Fx { ops, ..f }, sink)
+}
+
+/// Paths the view "w" was told were added since the last look.
+fn added(sink: &Recorder) -> Vec<String> {
+    sink.take()
+        .into_iter()
+        .filter_map(|e| match e {
+            crate::events::CoreEvent::TreeChanged(c) if c.window == "w" => Some(c.delta),
+            _ => None,
+        })
+        .flat_map(|d| d.added.into_iter().map(|a| a.node.path))
+        .collect()
+}
+
+#[test]
+fn the_view_hears_of_imported_items_right_after_the_apply() {
+    for mode in [ImportMode::Copy, ImportMode::Move] {
+        let (f, sink) = fx_seen(
+            &[
+                ("docs/guide.md", "g"),
+                ("docs/deep/x.md", "x"),
+                ("top.md", "t"),
+            ],
+            &[
+                ("a.md", "a"),
+                ("b.md", "b"),
+                ("c.md", "c"),
+                ("pics/one.md", "1"),
+            ],
+        );
+        let _ = added(&sink);
+        for (target, source) in [("docs", "a.md"), ("docs/deep", "b.md"), ("", "c.md")] {
+            let p = plan(&f, target, &[source]);
+            let out = apply(&f, &p, mode, ConflictChoice::KeepBoth);
+            let shown = out.placed[0].clone();
+            assert!(
+                added(&sink).contains(&shown),
+                "{mode:?}: {shown} not told to the view"
+            );
+        }
+        let p = plan(&f, "docs", &["pics"]);
+        apply(&f, &p, mode, ConflictChoice::KeepBoth);
+        let told = added(&sink);
+        assert!(
+            told.contains(&"docs/pics".to_owned()),
+            "{mode:?}: folder {told:?}"
+        );
+        assert!(
+            told.contains(&"docs/pics/one.md".to_owned()),
+            "{mode:?}: inside {told:?}"
+        );
+    }
+}
+
+/// With the watcher running (as in the app): the view's list, built from the deltas it was sent, ends holding the
+/// imported items (the watcher's own report of them never takes them away again).
+#[test]
+fn with_the_watcher_running_the_view_keeps_the_imported_items() {
+    use crate::watch::{Timing, WatchHub, Watcher};
+    use std::collections::BTreeSet;
+    use std::time::{Duration, Instant};
+
+    for mode in [ImportMode::Copy, ImportMode::Move] {
+        let f = fx(
+            &[("docs/guide.md", "g"), ("docs/deep/x.md", "x")],
+            &[("a.md", "a"), ("pics/one.md", "1")],
+        );
+        let sink = Arc::new(Recorder::default());
+        let vault = Vault::new(Root::open(f.dir.path()).unwrap());
+        let explorer = Arc::new(Explorer::new(
+            &vault,
+            &ProjectConfig::default(),
+            Arc::clone(&sink) as Arc<dyn crate::events::EventSink>,
+            None,
+        ));
+        let snapshot = explorer.open_view("w", Some(TreeFilter::default()));
+        let mut list: BTreeSet<String> = snapshot.nodes.into_iter().map(|n| n.path).collect();
+        let hub = WatchHub::new();
+        let _sub = hub.subscribe({
+            let explorer = Arc::clone(&explorer);
+            move |batch| explorer.apply_batch(batch)
+        });
+        let timing = Timing {
+            quiet: Duration::from_millis(30),
+            max: Duration::from_millis(250),
+            poll: Duration::from_millis(60),
+        };
+        let watcher = Watcher::start_with(
+            &vault,
+            explorer.ignorers(),
+            hub,
+            Arc::clone(&f.own),
+            None,
+            timing,
+            true,
+        );
+        std::thread::sleep(Duration::from_millis(300));
+        let state = tempfile::tempdir().unwrap();
+        let store = StateStore::for_project(&AppDirs::under(state.path()), vault.main());
+        let ops = FileOps::new(
+            vault.clone(),
+            Arc::clone(&explorer),
+            Arc::clone(&f.own),
+            &store,
+        );
+        let sources = vec![src(&f, "a.md"), src(&f, "pics")];
+        let p = ops.import_plan("docs/deep", &sources).unwrap();
+        let out = ops
+            .import_apply(p.plan_id, mode, ConflictChoice::KeepBoth, &quiet())
+            .unwrap();
+        assert_eq!(out.placed, ["docs/deep/a.md", "docs/deep/pics"]);
+        // the watcher's reports of all this come in
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_millis(1500) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for event in sink.take() {
+            if let crate::events::CoreEvent::TreeChanged(c) = event {
+                if c.window == "w" {
+                    for gone in &c.delta.removed {
+                        list.remove(gone);
+                    }
+                    for added in c.delta.added {
+                        list.insert(added.node.path);
+                    }
+                }
+            }
+        }
+        drop(watcher);
+        for path in ["docs/deep/a.md", "docs/deep/pics", "docs/deep/pics/one.md"] {
+            assert!(
+                list.contains(path),
+                "{mode:?}: {path} not in the view: {list:?}"
+            );
+        }
+    }
 }

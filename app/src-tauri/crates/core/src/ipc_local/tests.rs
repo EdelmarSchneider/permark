@@ -69,7 +69,21 @@ fn second_listener_is_refused_and_endpoint_reusable_after_drop() {
         "second listener must not steal the endpoint"
     );
     drop(server);
-    let _again = echo_server(&endpoint);
+    // Unix: a child process another test starts at this moment holds a copy of the lock + socket descriptors from
+    // its fork until its exec closes them, so the endpoint frees up a moment later, not at once
+    let started = std::time::Instant::now();
+    let listening = loop {
+        match endpoint.listen() {
+            Err(IpcLocalError::InUse(_)) if started.elapsed() < Duration::from_secs(10) => {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            other => break other.unwrap(),
+        }
+    };
+    let _again = Server::spawn(listening, |ping: Ping| Ping {
+        text: format!("{}!", ping.text),
+    })
+    .unwrap();
     let answer: Ping = request(
         &endpoint,
         &Ping {

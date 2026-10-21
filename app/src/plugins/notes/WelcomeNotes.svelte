@@ -1,13 +1,12 @@
 <script lang="ts">
-  // The Notes on the welcome screen: a new note, the pinned ones and the latest five. Clicking opens the Notes with
-  // that note shown.
+  // The Notes on the welcome screen: a new note, the pinned ones and the latest five. Clicking opens the Notes tab (or
+  // brings it forward where it is) with that note shown.
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import type { NotesSummary } from "../../api";
   import { t } from "../../core/i18n";
   import { pluginClient } from "../../core/plugins/client";
-  import { windowStore } from "../../core/window.svelte";
   import { shownName, timeLabel } from "./model";
-  import { wantNewNote, wantNote } from "./store.svelte";
+  import { showInNotes } from "./store.svelte";
 
   let summary = $state.raw<NotesSummary | null>(null);
 
@@ -24,10 +23,8 @@
 
   const now = Date.now();
 
-  async function openNotes(path: string | null): Promise<void> {
-    if (path === null) wantNewNote();
-    else wantNote(path);
-    await windowStore.openNotes();
+  function openNotes(path: string | null): Promise<void> {
+    return showInNotes(path === null ? { kind: "new" } : { kind: "open", path });
   }
 </script>
 

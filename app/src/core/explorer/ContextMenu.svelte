@@ -12,15 +12,25 @@
     label?: string;
     /** The button that opened it: a press on it is that button's own (it toggles the menu). */
     anchor?: HTMLElement;
+    /** A submenu shown in place: ArrowLeft goes back to the menu it came from. */
+    back?: () => void;
+    /** The entry the keyboard starts on (default: the first item), e.g. the submenu entry when coming back. */
+    start?: number;
   };
-  let { x, y, entries, close, label, anchor }: Props = $props();
+  let { x, y, entries, close, label, anchor, back, start }: Props = $props();
 
   let menu: HTMLElement | undefined = $state();
   let picked = $state(-1);
 
   const items = $derived(entries.flatMap((e, at) => (e.kind === "item" ? [at] : [])));
-  /** The entry the keyboard is on: the one picked, else the first. */
-  const active = $derived(picked >= 0 && items.includes(picked) ? picked : (items[0] ?? -1));
+  /** The entry the keyboard is on: the one picked, else `start`, else the first. */
+  const active = $derived(
+    picked >= 0 && items.includes(picked)
+      ? picked
+      : start !== undefined && items.includes(start)
+        ? start
+        : (items[0] ?? -1),
+  );
 
   function run(at: number, shift = false): void {
     const entry = entries[at];
@@ -40,6 +50,15 @@
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       run(active, e.shiftKey);
+    } else if (e.key === "ArrowRight") {
+      const entry = entries[active];
+      if (entry?.kind === "item" && entry.opens === true) {
+        e.preventDefault();
+        run(active);
+      }
+    } else if (e.key === "ArrowLeft" && back) {
+      e.preventDefault();
+      back();
     } else if (e.key === "Tab") {
       e.preventDefault();
     }
@@ -87,6 +106,7 @@
       <button
         type="button"
         role="menuitem"
+        aria-haspopup={entry.opens === true ? "menu" : undefined}
         class={["item", entry.danger && "danger", active === at && "is-active"]}
         onpointerenter={() => (picked = at)}
         onclick={(e) => run(at, e.shiftKey)}
@@ -100,6 +120,7 @@
           <span>{entry.label}</span>
         {/if}
         {#if entry.hint}<kbd>{entry.hint}</kbd>{/if}
+        {#if entry.opens}<span class="opens" aria-hidden="true">▸</span>{/if}
       </button>
     {/if}
   {/each}
@@ -141,7 +162,8 @@
   .item.danger {
     color: var(--git-deleted-text);
   }
-  kbd {
+  kbd,
+  .opens {
     color: var(--faint);
     font: inherit;
     font-size: var(--fs-ui-xs);

@@ -62,69 +62,6 @@ describe("window open flow", () => {
     unguard();
   });
 
-  it("drop: one item opens, several are refused with a notice", async () => {
-    const api = createMockApi();
-    let drop: ((e: Parameters<Parameters<Api["onDrop"]>[0]>[0]) => void) | null = null;
-    const store = await started({
-      ...api,
-      onDrop: (handler) => {
-        drop = handler;
-        return Promise.resolve(() => {});
-      },
-    });
-    drop!({ type: "over", count: 2, paths: [], x: 10, y: 10 });
-    expect(store.drag).toEqual({ status: "over", count: 2 });
-    drop!({ type: "drop", paths: ["C:/a", "C:/b"], x: 10, y: 10 });
-    expect(store.drag.status).toBe("idle");
-    expect(store.notices.map((n) => n.kind)).toEqual(["dropOne"]);
-    drop!({ type: "drop", paths: [], x: 10, y: 10 });
-    expect(store.notices).toHaveLength(2);
-    drop!({ type: "drop", paths: ["C:/文档 x"], x: 10, y: 10 });
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(store.view.state).toBe("showing");
-  });
-
-  it("a project window hands drags and drops to the project; other windows keep opening", async () => {
-    const api = createMockApi();
-    let drop: ((e: Parameters<Parameters<Api["onDrop"]>[0]>[0]) => void) | null = null;
-    const store = await started({
-      ...api,
-      onDrop: (handler) => {
-        drop = handler;
-        return Promise.resolve(() => {});
-      },
-    });
-    const seen: string[] = [];
-    store.projectDrop = {
-      over: (x, y, paths, count) => seen.push(`over ${x},${y} ${paths.join("|")} ${count}`),
-      leave: () => seen.push("leave"),
-      drop: (paths, x, y) => seen.push(`drop ${paths.join("|")} ${x},${y}`),
-    };
-    drop!({ type: "over", count: 2, paths: ["C:/a", "C:/b"], x: 5, y: 6 });
-    expect(store.drag).toEqual({ status: "over", count: 2 });
-    drop!({ type: "leave" });
-    drop!({ type: "drop", paths: ["C:/a", "C:/b"], x: 7, y: 8 });
-    expect(seen).toEqual(["over 5,6 C:/a|C:/b 2", "leave", "drop C:/a|C:/b 7,8"]);
-    // several files are no "drop one" refusal there, and nothing is opened
-    expect(store.notices).toEqual([]);
-    expect(store.view.state).toBe("welcome");
-    // the Notes' own hook still comes first
-    const notes: string[][] = [];
-    store.dropHook = (paths) => {
-      notes.push([...paths]);
-      return true;
-    };
-    drop!({ type: "drop", paths: ["C:/n.md"], x: 1, y: 1 });
-    expect(notes).toEqual([["C:/n.md"]]);
-    expect(seen).toHaveLength(3);
-    // no project: the old rule
-    store.dropHook = null;
-    store.projectDrop = null;
-    drop!({ type: "drop", paths: ["C:/a", "C:/b"], x: 1, y: 1 });
-    expect(store.notices.map((n) => n.kind)).toEqual(["dropOne"]);
-  });
-
   it("leaving a workspace ends focus mode", async () => {
     const api = createMockApi();
     const store = await started(api);

@@ -12,8 +12,8 @@ use super::window_fsm::{self, MoveTo, Resolution, Strip, Tab, TabState, WindowEv
 use crate::document::{DocScope, Documents};
 
 use super::{
-    ClosingTab, CoreEnv, FileSession, Place, ProjectCore, TabId, TabSummary, WindowKind,
-    WindowSummary, WindowView, Workspace, WorkspaceError, WorkspaceId, WorkspaceKey, WorkspaceRef,
+    ClosingTab, CoreEnv, FileSession, Place, ProjectCore, TabId, TabSummary, WindowSummary,
+    WindowView, Workspace, WorkspaceError, WorkspaceId, WorkspaceKey, WorkspaceRef,
     WorkspaceRefDto, WorkspaceView,
 };
 use crate::conditions::{Context, LiveUpdates, PermarkCondition, WorkspaceKind};
@@ -187,7 +187,6 @@ struct Slot {
 #[derive(Debug)]
 struct WindowEntry {
     created: u64,
-    kind: WindowKind,
     fsm: WindowState,
     focused_ms: u64,
     /// The tabs it had when it began closing: the last window closed stays in the session as it was.
@@ -221,8 +220,10 @@ struct Inner {
     next_tab: u64,
     next_ticket: u64,
     next_id: u64,
-    /// Tabs with a move under way (`MoveTicket`).
-    moving: BTreeSet<TabId>,
+    /// Tabs with a move under way (`MoveTicket`) -> the existing window they go to (`None`: a new one).
+    moving: BTreeMap<TabId, Option<String>>,
+    /// Windows asked to close while a move into them was under way: asked again once it is done.
+    deferred_close: BTreeSet<String>,
     published: Published,
 }
 
@@ -341,7 +342,7 @@ impl WorkspaceRegistry {
     // ---- windows -----------------------------------------------------------------------------------------------
 
     /// A native window was created (no tab, no view yet). Known label -> no change.
-    pub fn add_window(&self, window: &str, kind: WindowKind) {
+    pub fn add_window(&self, window: &str) {
         let mut inner = lock(&self.inner);
         if !inner.windows.contains_key(window) {
             inner.next_window += 1;
@@ -350,7 +351,6 @@ impl WorkspaceRegistry {
                 window.to_owned(),
                 WindowEntry {
                     created,
-                    kind,
                     fsm: WindowState::Open(Strip::default()),
                     focused_ms: 0,
                     closed: None,
@@ -373,6 +373,7 @@ impl WorkspaceRegistry {
     pub fn forget_window(&self, window: &str) {
         let mut inner = lock(&self.inner);
         inner.windows.remove(window);
+        inner.deferred_close.remove(window);
         let views: Vec<String> = inner
             .views
             .iter()
@@ -422,7 +423,7 @@ impl WorkspaceRegistry {
         inner
             .windows
             .iter()
-            .filter(|(_, w)| w.kind == WindowKind::Work && matches!(w.fsm, WindowState::Open(_)))
+            .filter(|(_, w)| matches!(w.fsm, WindowState::Open(_)))
             .max_by_key(|(_, w)| (w.focused_ms, w.created))
             .map(|(label, _)| label.clone())
     }
@@ -608,10 +609,13 @@ impl WorkspaceRegistry {
     }
 
     /// Starts a move of `tab` (held until the ticket drops). `NewWindow`: the window's only tab never moves out
-    /// (it would leave the window empty); tabs being moved out already do not count as staying.
+    /// (it would leave the window empty); tabs being moved out already do not count as staying. `Window(to)`: the
+    /// only tab may go (the window it leaves closes); `to` stays open while the ticket lives (its close asked
+    /// meanwhile waits: [`Self::take_deferred_close`]).
     ///
     /// # Errors
-    /// `MoveRefused`: unknown tab, source not open (closing | asking), a move of it under way, only tab (`NewWindow`).
+    /// `MoveRefused`: unknown tab, source not open (closing | asking), a move of it under way, only tab (`NewWindow`),
+    /// `to` unknown | the source | not open (closing | asking).
     pub fn begin_move(&self, tab: TabId, to: &MoveTo) -> Result<MoveTicket<'_>, MoveRefused> {
         let mut inner = lock(&self.inner);
         let from = inner.window_of_tab(tab).ok_or(MoveRefused)?;
@@ -621,12 +625,27 @@ impl WorkspaceRegistry {
         let staying = strip
             .tabs
             .iter()
-            .filter(|t| t.id != tab && !inner.moving.contains(&t.id))
+            .filter(|t| t.id != tab && !inner.moving.contains_key(&t.id))
             .count();
-        if inner.moving.contains(&tab) || (*to == MoveTo::NewWindow && staying == 0) {
+        let target = match to {
+            MoveTo::NewWindow if staying == 0 => return Err(MoveRefused),
+            MoveTo::NewWindow => None,
+            MoveTo::Window(window) => {
+                let open = inner
+                    .windows
+                    .get(window)
+                    .is_some_and(|w| matches!(w.fsm, WindowState::Open(_)));
+                // a close waiting for the moves into it takes no new one (a stream of moves would hold it for ever)
+                if *window == from || !open || inner.deferred_close.contains(window) {
+                    return Err(MoveRefused);
+                }
+                Some(window.clone())
+            }
+        };
+        if inner.moving.contains_key(&tab) {
             return Err(MoveRefused);
         }
-        inner.moving.insert(tab);
+        inner.moving.insert(tab, target);
         Ok(MoveTicket {
             registry: self,
             tab,
@@ -693,9 +712,20 @@ impl WorkspaceRegistry {
         Ok(self.settle(inner, (outcome, dropped)))
     }
 
-    /// The window was asked to close: closes at once, or asks about the tabs with unsaved edits (`AskClose`).
+    /// The window was asked to close: closes at once, or asks about the tabs with unsaved edits (`AskClose`). A tab
+    /// moving into it -> nothing yet (the native close is held back): asked again once the move is done
+    /// ([`Self::take_deferred_close`]), the moved tab then counted.
     pub fn request_close(&self, window: &str) -> Outcome {
         let mut inner = lock(&self.inner);
+        if inner
+            .moving
+            .values()
+            .any(|to| to.as_deref() == Some(window))
+        {
+            inner.deferred_close.insert(window.to_owned());
+            self.publish(&mut inner);
+            return Outcome::default();
+        }
         let unsaved: Vec<TabId> = inner
             .windows
             .get(window)
@@ -711,6 +741,21 @@ impl WorkspaceRegistry {
             .unwrap_or_default();
         let step = drive(&mut inner, window, WindowEvent::RequestClose { unsaved });
         self.settle(inner, step)
+    }
+
+    /// The window's close was asked during a move into it and no move into it is under way now: true once (the
+    /// shell asks the close again).
+    #[must_use]
+    pub fn take_deferred_close(&self, window: &str) -> bool {
+        let mut inner = lock(&self.inner);
+        if inner
+            .moving
+            .values()
+            .any(|to| to.as_deref() == Some(window))
+        {
+            return false;
+        }
+        inner.deferred_close.remove(window)
     }
 
     /// The close prompt was answered.
@@ -1055,7 +1100,6 @@ impl WorkspaceRegistry {
         inner
             .ordered_windows()
             .into_iter()
-            .filter(|(_, w)| w.kind == WindowKind::Work)
             .filter_map(|(label, w)| {
                 let strip = w.fsm.strip().or(w.closed.as_ref())?;
                 let refs: Vec<(TabId, WorkspaceRef)> = strip
@@ -1165,7 +1209,11 @@ fn drive(inner: &mut Inner, window: &str, event: WindowEvent) -> (Outcome, Vec<E
         return (outcome, dropped);
     };
     let state = std::mem::replace(&mut entry.fsm, WindowState::Closing);
-    let before = state.strip().cloned();
+    // a window a move emptied keeps nothing for the session (its tab is saved where it went, once)
+    let before = match event {
+        WindowEvent::Move { .. } => None,
+        _ => state.strip().cloned(),
+    };
     let (state, effects) = window_fsm::step(state, event);
     if state == WindowState::Closing && entry.closed.is_none() {
         entry.closed = before;
@@ -1436,7 +1484,8 @@ fn summaries(inner: &Inner) -> Vec<WindowSummary> {
             let strip = entry.fsm.strip()?;
             Some(WindowSummary {
                 window: label.clone(),
-                kind: entry.kind,
+                closing: matches!(entry.fsm, WindowState::ConfirmingClose(_))
+                    || inner.deferred_close.contains(label),
                 tabs: strip.tabs.iter().map(|t| tab_summary(inner, t)).collect(),
                 active: strip.active,
                 focused_ms: entry.focused_ms,

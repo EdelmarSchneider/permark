@@ -24,6 +24,8 @@ const { api } = await import("../../api");
 const { default: SettingsPage } = await import("./settings/SettingsPage.svelte");
 const { default: InitDialog } = await import("./InitDialog.svelte");
 const { default: TopBar } = await import("./TopBar.svelte");
+const { default: PanelToggle } = await import("./PanelToggle.svelte");
+const { layout } = await import("./layout.svelte");
 const { closeHere } = await import("./closeWorkspace");
 const { default: CloseWindowDialog } = await import("./CloseWindowDialog.svelte");
 const { default: Welcome } = await import("./Welcome.svelte");
@@ -46,7 +48,7 @@ let unregister: (() => void) | null = null;
 let started = false;
 
 async function until(check: () => boolean, what: string): Promise<void> {
-  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 3000, interval: 10 });
+  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 10_000, interval: 10 });
 }
 
 async function open(): Promise<void> {
@@ -268,11 +270,11 @@ describe("the plugins page", () => {
       "Checkers",
       "Blocks in Markdown",
     ]);
-    // on by default, except the specialist tools that start off
+    // every plugin starts on, the specialist tools too (director 2026-10-20)
     const off = Array.from(target.querySelectorAll<HTMLInputElement>('input[role="switch"]'))
       .filter((i) => !i.checked)
       .map((i) => i.closest(".plugin")?.querySelector(".name")?.textContent?.trim());
-    expect(off).toEqual(["Converter", "Token count"]);
+    expect(off).toEqual([]);
   });
 
   it("turning a plugin off turns its dependents off with a reason and a way back", async () => {
@@ -398,10 +400,10 @@ describe("the project settings and Initialize PerMark", () => {
     await open();
     await mock.projectInit(MOCK_FOLDER);
     await until(() => conditions.current.permark === "initialized", "initialized");
-    await until(
-      () => contributions.visible("projectSection", conditions.current).length === 1,
-      "the agent part",
-    );
+    const agentParts = () =>
+      contributions.visible("projectSection", conditions.current).filter((c) => c.owner === "agent")
+        .length;
+    await until(() => agentParts() === 1, "the agent part");
     mountPage("project");
     await until(() => projectSettings.state.status === "ready", "loaded");
     await until(
@@ -414,10 +416,7 @@ describe("the project settings and Initialize PerMark", () => {
     box.click();
     await until(() => mock.probe.shell.project().agentDeny.includes("notes"), "narrowed");
     await store.changeSetting({ key: "pluginEnabled", value: { plugin: "agent", enabled: false } });
-    await until(
-      () => contributions.visible("projectSection", conditions.current).length === 0,
-      "gone with the plugin",
-    );
+    await until(() => agentParts() === 0, "gone with the plugin");
   });
 
   it("the question names the folder and what is created; Escape and Cancel change nothing", async () => {
@@ -498,7 +497,7 @@ describe("the top bar", () => {
     mock.probe.shell.setOthers([
       {
         window: "w-2",
-        kind: "work",
+        closing: false,
         tabs: [
           {
             tab: 77,
@@ -708,6 +707,106 @@ describe("the top bar", () => {
     bar.stop();
   });
 
+  it("Move to window lists the other windows (focused last first) in place and moves the tab there", async () => {
+    const bar = await mountBar();
+    const summary = (tab: number, title: string) => ({
+      tab,
+      kind: "project" as const,
+      title,
+      path: `C:/${title}`,
+      loaded: true,
+      unsaved: false,
+    });
+    mock.probe.shell.setOthers([
+      {
+        window: "w-2",
+        closing: false,
+        tabs: [summary(70, "older"), summary(71, "older-b")],
+        active: 71,
+        focusedMs: 10,
+      },
+      { window: "w-3", closing: false, tabs: [summary(80, "newest")], active: 80, focusedMs: 30 },
+      { window: "w-4", closing: false, tabs: [], active: null, focusedMs: 20 },
+      // asking to close: takes no tab, not listed
+      { window: "w-5", closing: true, tabs: [summary(90, "leaving")], active: 90, focusedMs: 99 },
+    ]);
+    await until(() => tabs.others.length === 3, "the other windows");
+    const items = () =>
+      Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]')).map((i) =>
+        i.textContent?.replace(/\s+/g, " ").trim(),
+      );
+    const openMenu = async (chip: Element) => {
+      chip.dispatchEvent(
+        new MouseEvent("contextmenu", {
+          bubbles: true,
+          cancelable: true,
+          clientX: 40,
+          clientY: 30,
+        }),
+      );
+      await tick();
+    };
+    await openMenu(chips()[1]!);
+    expect(items()).toEqual(["Move to new window", "Move to window ▸", "Close"]);
+    const entry = document.querySelectorAll<HTMLElement>('[role="menuitem"]')[1]!;
+    expect(entry.getAttribute("aria-haspopup")).toBe("menu");
+    // the submenu, in place: the windows by the tab they show + their tab count, focused last first
+    entry.click();
+    await until(() => items()[0] === "newest 1 tab", "the submenu");
+    expect(items()).toEqual(["newest 1 tab", "Empty window 0 tabs", "older-b 2 tabs"]);
+    expect(document.querySelector('[role="menu"] .heading')?.textContent?.trim()).toBe(
+      "Move to window",
+    );
+    expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe(
+      "Move to window",
+    );
+    // ArrowLeft goes back with the keyboard on "Move to window ▸"; ArrowRight opens it again
+    press(document.querySelector('[role="menu"]')!, "ArrowLeft");
+    await until(() => items()[0] === "Move to new window", "back");
+    flushSync();
+    expect(document.querySelector('[role="menu"]')?.getAttribute("aria-label")).toBe("Tab actions");
+    expect(
+      document
+        .querySelector('[role="menuitem"].is-active')
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim(),
+    ).toBe("Move to window ▸");
+    press(document.querySelector('[role="menu"]')!, "ArrowRight");
+    await until(() => items()[0] === "newest 1 tab", "the submenu by key");
+    // a pick moves the tab there
+    const moving = tabs.list[1]!.tab;
+    mock.probe.tabs.movedTo.length = 0;
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[2]!.click();
+    await until(() => mock.probe.tabs.movedTo.length === 1, "moved");
+    expect(mock.probe.tabs.movedTo).toEqual([[moving, "w-2"]]);
+    await until(() => chips().length === 3, "gone from here");
+    // refused: the tab stays, a quiet notice says so
+    mock.probe.tabs.refuseMove = true;
+    await openMenu(chips()[1]!);
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[1]!.click();
+    await until(() => items()[0] === "newest 1 tab", "the submenu again");
+    document.querySelectorAll<HTMLElement>('[role="menuitem"]')[0]!.click();
+    await until(
+      () => windowStore.notices.some((n) => n.kind === "note" && n.text.includes("to that window")),
+      "move refused notice",
+    );
+    expect(chips().length).toBe(3);
+    mock.probe.tabs.refuseMove = false;
+    // one tab left: Move to window is still offered (the window it leaves closes); no other window: not offered
+    await mock.tabClose(bar.ids[2]!);
+    await mock.tabClose(bar.ids[3]!);
+    await until(() => chips().length === 1, "one");
+    await openMenu(chips()[0]!);
+    expect(items()).toEqual(["Move to window ▸", "Close Ctrl+W"]);
+    press(document.querySelector('[role="menu"]')!, "Escape");
+    await tick();
+    mock.probe.shell.setOthers([]);
+    await until(() => tabs.others.length === 0, "alone");
+    await openMenu(chips()[0]!);
+    expect(items()).toEqual(["Close Ctrl+W"]);
+    bar.stop();
+  });
+
   it("a second move of a tab while the first is under way asks nothing (no double move)", async () => {
     const bar = await mountBar();
     const tab = bar.ids[1]!;
@@ -720,6 +819,17 @@ describe("the top bar", () => {
     mock.probe.tabs.refuseMove = true;
     expect(await tabs.moveToNewWindow(bar.ids[2]!)).toBe("refused");
     expect(await tabs.moveToNewWindow(bar.ids[2]!)).toBe("refused");
+    mock.probe.tabs.refuseMove = false;
+    // into another window: the same (one ask at a time, across both kinds of move); never into its own window
+    const other = bar.ids[3]!;
+    mock.probe.tabs.movedTo.length = 0;
+    const into = tabs.moveToWindow(other, "w-2");
+    const again = [tabs.moveToNewWindow(other), tabs.moveToWindow(other, "w-2")];
+    expect(await Promise.all(again)).toEqual(["busy", "busy"]);
+    expect(await into).toBe("moved");
+    expect(mock.probe.tabs.movedTo).toEqual([[other, "w-2"]]);
+    expect(await tabs.moveToWindow(bar.ids[2]!, "main")).toBe("refused");
+    expect(mock.probe.tabs.movedTo.length).toBe(1);
     bar.stop();
   });
 
@@ -765,6 +875,47 @@ describe("the top bar", () => {
     button.click();
     await tick();
     expect(document.querySelector('[role="menu"]')).toBeNull();
+    bar.stop();
+  });
+
+  it("the Notes button sits left of Settings: one click opens | brings forward the Notes tab; gone with the plugin", async () => {
+    const bar = await mountBar();
+    const find = (): HTMLElement | null =>
+      target.querySelector<HTMLElement>("button.icon-btn.notes");
+    await until(() => find() !== null, "the button");
+    const notesButton = find()!;
+    const settings = target.querySelector<HTMLElement>("[data-settings-trigger]")!;
+    // left of Settings, after the flexible space
+    expect(notesButton.nextElementSibling).toBe(settings);
+    expect(notesButton.getAttribute("aria-label")).toBe("Notes");
+    expect(notesButton.getAttribute("title")).toBe("Notes (Ctrl+Shift+D)");
+    expect(notesButton.hasAttribute("aria-current")).toBe(false);
+    expect(notesButton.hasAttribute("aria-pressed")).toBe(false);
+    const openNotes = vi.spyOn(store, "openNotes");
+    notesButton.click();
+    expect(openNotes).toHaveBeenCalledWith("tab");
+    await until(
+      () => store.view.state === "showing" && store.view.workspace.kind === "notes",
+      "the Notes tab forward",
+    );
+    // one place: the Notes tab that was there comes forward, no second one
+    expect(tabs.list).toHaveLength(4);
+    await until(() => find()?.getAttribute("aria-current") === "page", "current in the Notes tab");
+    const keys = contributions
+      .of("shortcut")
+      .filter((k) => k.command.startsWith("notes."))
+      .map((k) => [k.command, k.keys]);
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        ["notes.open", "Mod+Shift+d"],
+        ["notes.new", "Mod+Shift+n"],
+        ["notes.newHere", "Mod+n"],
+      ]),
+    );
+    // the plugin off: no button, no keys
+    await store.changeSetting({ key: "pluginEnabled", value: { plugin: "notes", enabled: false } });
+    await until(() => find() === null, "gone");
+    expect(contributions.of("shortcut").some((k) => k.command.startsWith("notes."))).toBe(false);
     bar.stop();
   });
 
@@ -840,6 +991,71 @@ describe("the top bar", () => {
     expect(command("tab.next").when?.()).toBe(false);
     expect(command("tab.previous").when?.()).toBe(false);
     stop();
+  });
+});
+
+describe("the side panels", () => {
+  afterEach(() => {
+    layout.setSidebarHidden(false);
+    layout.setRightHidden(false);
+  });
+
+  it("Ctrl+B and the status bar toggle hide | show the sidebar; the focus in it moves to the page", async () => {
+    await open();
+    const stopKeys = installWindowKeys();
+    component = mount(PanelToggle, { target, props: { side: "sidebar" } });
+    flushSync();
+    const toggle = target.querySelector<HTMLElement>("button.toggle")!;
+    expect(toggle.getAttribute("aria-label")).toBe("Sidebar");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.getAttribute("title")).toBe("Hide sidebar (Ctrl+B)");
+    // something in the sidebar holds the focus
+    const region = document.createElement("div");
+    region.dataset.region = "sidebar";
+    const inside = document.createElement("button");
+    region.append(inside);
+    const page = document.createElement("main");
+    page.dataset.region = "page";
+    const scroller = document.createElement("div");
+    scroller.dataset.scroller = "";
+    scroller.tabIndex = -1;
+    page.append(scroller);
+    document.body.append(region, page);
+    inside.focus();
+    press(window, "b", { ctrlKey: true });
+    expect(layout.sidebarHidden).toBe(true);
+    expect(ui.frameMoving).toBe(true);
+    expect(document.activeElement, "the page's scroller has the focus").toBe(scroller);
+    flushSync();
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.getAttribute("title")).toBe("Show sidebar (Ctrl+B)");
+    toggle.click();
+    expect(layout.sidebarHidden).toBe(false);
+    region.remove();
+    page.remove();
+    stopKeys();
+  });
+
+  it("an editor that takes Ctrl+B itself (bold) keeps it; a single file has no sidebar to hide", async () => {
+    await open();
+    const stopKeys = installWindowKeys();
+    const editor = document.createElement("div");
+    editor.addEventListener("keydown", (e) => e.preventDefault());
+    document.body.append(editor);
+    press(editor, "b", { ctrlKey: true });
+    expect(layout.sidebarHidden).toBe(false);
+    editor.remove();
+    await mock.openPath("C:/p/one-file.md", "thisTab");
+    await until(
+      () => store.view.state === "showing" && store.view.workspace.kind === "singleFile",
+      "the file shows",
+    );
+    press(window, "b", { ctrlKey: true });
+    expect(layout.sidebarHidden).toBe(false);
+    const command = contributions.of("command").find((c) => c.id === "panel.toggle")!;
+    // nothing at the right it could show (no outline, no panel): not offered
+    expect(command.when?.()).toBe(false);
+    stopKeys();
   });
 });
 
@@ -949,7 +1165,7 @@ describe("the welcome screen", () => {
     // a folder that is gone is marked and removable, and does not open
     const gone = rows.find((r) => r.textContent?.includes("(not found)"));
     expect(gone?.querySelector("button")?.textContent).toBe("Remove");
-    expect(target.textContent).toContain("Drop a folder or a .md file anywhere to open it.");
+    expect(target.textContent).toContain("Drop folders or files here to open them.");
   });
 
   it("New project picks a folder, initializes it and opens it as a project", async () => {

@@ -240,40 +240,67 @@ pub fn open_placed(
     }
 }
 
-/// Moves a tab into a new window (cascaded from its window); its view goes along, workspace + unsaved edits kept.
-/// One move of a tab at a time (a second one meanwhile is refused: the ticket is held to the end), never the
-/// window's only tab. The view is reparented first (a failure there changes nothing: the new window goes again), then
-/// the tab moves in one registry step (its workspace keeps its place throughout); a move refused there (the tab
-/// changed, a window began closing) puts the view back. The new window shows before a source the move emptied
-/// closes (that close never ends the session).
+/// Moves a tab into a new window (cascaded from its window); never the window's only tab. See [`move_tab`].
 ///
 /// # Errors
-/// Unknown tab, a move of it under way, its window's only tab, the window cannot be made, the view cannot move (the
-/// tab stays where it was).
+/// As [`move_tab`]; also its window's only tab, the window cannot be made.
 pub fn move_to_new_window(handle: &AppHandle, tab: TabId) -> Result<String, IpcError> {
+    move_tab(handle, tab, &MoveTo::NewWindow)
+}
+
+/// Moves a tab into the existing work window `window` (its only tab too: the window it leaves closes). A close of
+/// `window` asked during the move waited for it (the registry holds it back): asked again now, the moved tab counted.
+///
+/// # Errors
+/// As [`move_tab`]; also `window` gone | closing | asking to close | the tab's own.
+pub fn move_to_window(handle: &AppHandle, tab: TabId, window: &str) -> Result<String, IpcError> {
+    let moved = move_tab(handle, tab, &MoveTo::Window(window.to_owned()));
+    let shell = state(handle);
+    if shell.registry.take_deferred_close(window) {
+        run(handle, shell.registry.request_close(window));
+    }
+    moved
+}
+
+/// Moves a tab into `to`; its view goes along, workspace + unsaved edits kept. One move of a tab at a time (a second
+/// one meanwhile is refused: the ticket is held to the end). The view is reparented first (a failure there changes
+/// nothing: a new window goes again), then the tab moves in one registry step (its workspace keeps its place
+/// throughout); a move refused there (the tab changed, a window began closing) puts the view back. The target shows +
+/// comes forward (the tab active there) before a source the move emptied closes (that close never ends the session).
+/// Returns the target window's label.
+///
+/// # Errors
+/// Unknown tab, the move refused (`Unavailable`), the view cannot move (the tab stays where it was).
+fn move_tab(handle: &AppHandle, tab: TabId, to: &MoveTo) -> Result<String, IpcError> {
     let shell = state(handle);
     let internal = |e: tauri::Error| IpcError::new(ErrorKind::Internal).detail(e.to_string());
     let from = shell
         .registry
         .window_of_tab(tab)
         .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(tab.0.to_string()))?;
+    let refused = || IpcError::new(ErrorKind::Unavailable).subject(from.clone());
     let ticket = shell
         .registry
-        .begin_move(tab, &MoveTo::NewWindow)
-        .map_err(|MoveRefused| IpcError::new(ErrorKind::Unavailable).subject(from.clone()))?;
-    let target = windows::create(handle).map_err(internal)?;
+        .begin_move(tab, to)
+        .map_err(|MoveRefused| refused())?;
+    let (target, made) = match to {
+        MoveTo::NewWindow => (windows::create(handle).map_err(internal)?, true),
+        MoveTo::Window(label) => (handle.get_window(label).ok_or_else(refused)?, false),
+    };
     let label = target.label().to_owned();
     let view = shell.registry.view_of_tab(tab);
     let webview = view.as_deref().and_then(|v| handle.get_webview(v));
     if let Some(webview) = &webview {
         if let Err(error) = crate::views::reparent(handle, webview, &target) {
-            let _ = target.destroy();
+            if made {
+                let _ = target.destroy();
+            }
             return Err(internal(error));
         }
     }
     let Ok(outcome) = shell.registry.move_tab(&ticket, &label, view.as_deref()) else {
-        put_back(handle, &from, &target, webview.as_ref());
-        return Err(IpcError::new(ErrorKind::Unavailable).subject(from));
+        put_back(handle, &from, &target, webview.as_ref(), made);
+        return Err(refused());
     };
     let (closes, changes): (Vec<ViewChange>, Vec<ViewChange>) = outcome
         .changes
@@ -290,21 +317,25 @@ pub fn move_to_new_window(handle: &AppHandle, tab: TabId) -> Result<String, IpcE
             },
         );
     }
-    // a moved view has painted already: the new window shows at once, before a source emptied by the move closes
+    // a moved view has painted already: a new window shows at once; either way the target comes forward before a
+    // source emptied by the move closes
     crate::views::show_window(handle, &label);
+    windows::focus(handle, &label);
     crate::views::apply(handle, closes);
     drop(ticket);
     Ok(label)
 }
 
-/// A refused move: the view goes back to `from` and the new window away. The view cannot go back -> it stays in the
-/// new window, shown (never a hidden window holding it: its edits stay reachable); the view gone meanwhile (its tab
-/// closed) -> the new window goes.
+/// A refused move: the view goes back to `from`, a new target window (`made`) away. The view cannot go back -> a new
+/// target shows with it (never a hidden window holding it: its edits stay reachable); an existing target keeps its own
+/// tab on screen: the stray view is hidden there, never laid over a tab it does not belong to (rare: a refused move
+/// whose way back fails too). The view gone meanwhile (its tab closed) -> a new target goes.
 fn put_back(
     handle: &AppHandle,
     from: &str,
     target: &tauri::Window,
     webview: Option<&tauri::Webview>,
+    made: bool,
 ) {
     let back = match (webview, handle.get_window(from)) {
         (Some(webview), Some(source)) => crate::views::reparent(handle, webview, &source),
@@ -312,15 +343,21 @@ fn put_back(
     };
     match back {
         Ok(()) => {
-            let _ = target.destroy();
+            if made {
+                let _ = target.destroy();
+            }
         }
         Err(error) => {
             eprintln!("PerMark: tab view not put back: {error}");
             match webview.filter(|w| handle.get_webview(w.label()).is_some()) {
-                Some(webview) => crate::views::reveal(handle, target, webview),
-                None => {
+                Some(webview) if made => crate::views::reveal(handle, target, webview),
+                Some(webview) => {
+                    let _ = webview.hide();
+                }
+                None if made => {
                     let _ = target.destroy();
                 }
+                None => {}
             }
         }
     }
@@ -373,7 +410,7 @@ fn active_of(saved: Option<usize>, tabs: &[Option<TabId>], notes: Option<TabId>)
 fn restore_session(handle: &AppHandle, session: &AppSession, nothing_asked: bool) {
     let shell = state(handle);
     let plan = restore_plan(session, |dto| WorkspaceRef::parse(dto).ok());
-    // stage A: the Notes are a tab (of the first window)
+    // the Notes are a tab (of the first window)
     let notes_tab = notes_on(handle)
         && (session.notes.open
             || (plan.windows.is_empty()

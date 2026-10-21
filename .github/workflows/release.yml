@@ -1,8 +1,16 @@
 name: Release
 
-# Pushing a `v*` tag (made by `git flow release finish`) builds the installers for Windows,
-# macOS (universal) and Linux, signs the updater artifacts and publishes the GitHub release together with
-# `latest.json`, the manifest the in-app updater reads.
+# Pushing a `v*` tag (made by `git flow release finish`) builds the installers for Windows, macOS (universal) and Linux,
+# signs the updater artifacts and publishes the GitHub release together with `latest.json`, the manifest the in-app
+# updater reads.
+#
+# Flow: `draft` makes the release (a draft, invisible to the updater) -> the three `release` jobs build and upload their
+# installers + `.sig` files in parallel -> `publish` writes `latest.json` once, from all the `.sig` files
+# (app/scripts/updater-json.mjs; same shape as tauri-action's), and publishes the release. Installed copies only ever
+# see a complete release; a failed platform leaves a draft (re-run the failed jobs, `publish` then runs).
+#
+# No Rust cache here: a tag run can restore only caches of its own tag or of develop, and develop has no release-profile
+# build, so it never hit (and its saves crowded develop's caches out of the 10 GB budget).
 #
 # The same tag also builds the Microsoft Store package (the `msix` job, see docs/msstore.md). It is a workflow artifact,
 # never a release asset: the package is unsigned (the Store signs it), so nobody can install it by hand.
@@ -30,20 +38,109 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
+  # The release of the tag: found (a rebuild, or a re-run after a failure) or made as a draft with the notes.
+  draft:
+    name: Draft the release
+    if: github.event_name == 'push' || inputs.platforms != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      id: ${{ steps.release.outputs.id }}
+    steps:
+      # Fails when the tag does not exist, so no release can make a new tag.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      # The release notes are this version's section of CHANGELOG.md, followed by the install notes below.
+      # Feature id tags (`<!-- f: ... -->`, for Hub-D's catalog) are dropped: the in-app update chip shows the notes as plain text.
+      - name: Release notes from the changelog
+        shell: bash
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && index($0, "## [") == 1 { exit }
+            on { gsub(/ *<!-- f: [^>]*-->/, ""); print }
+          ' CHANGELOG.md > release-notes.md
+          {
+            echo "RELEASE_NOTES<<__NOTES__"
+            cat release-notes.md
+            echo "__NOTES__"
+          } >> "$GITHUB_ENV"
+
+      # `$(printf ...)` drops the trailing newline, as tauri-action did with its `releaseBody` input up to 0.6.1.
+      - name: Find or draft the release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: |
+            **PerMark** is a free, open-source unified document workspace: one place to read, write and organize Markdown and
+            the files around it, and to steer AI projects through their documents. AI speeds the work. Your vision steers it.
+            It works with any AI tool, or none: it only relies on your files and git.
+
+            ${{ env.RELEASE_NOTES }}
+
+            ### Install
+            | Platform | Download |
+            | --- | --- |
+            | Windows | the `-setup.exe` installer (recommended). The `.msi` stays for updating copies that were installed from a 0.5 `.msi` |
+            | macOS | the universal `.dmg` (Apple silicon and Intel) |
+            | Linux | the `.AppImage`, `.deb` or `.rpm` |
+
+            PerMark updates itself: when a new version is out, it offers a one-click "Restart to update".
+
+            ### The app is not code-signed yet
+            The installers are unsigned, so your system warns you the first time. They are built by GitHub Actions
+            from the tagged commit, and the in-app updates are verified with a signature.
+
+            **Windows (SmartScreen).** If you see "Windows protected your PC", click **More info**, then **Run anyway**.
+
+            **macOS (Gatekeeper).** If macOS says it can't verify PerMark, open **System Settings, Privacy & Security**,
+            scroll to the Security section and click **Open Anyway**. On older macOS versions you can right-click the
+            app and choose **Open** instead. From a terminal: `xattr -dr com.apple.quarantine /Applications/PerMark.app`.
+
+            **Linux.** Make the AppImage executable (`chmod +x PerMark_*.AppImage`) and run it, or install the `.deb` / `.rpm`.
+        run: |
+          # Drafts too (the by-tag endpoint skips them).
+          id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" |
+            jq -r --arg tag "$TAG" '.[] | select(.tag_name == $tag) | .id')
+          if ! [[ "$id" =~ ^[0-9]*$ ]]; then
+            echo "More than one release has the tag $TAG: $id"
+            exit 1
+          fi
+          if [ -z "$id" ]; then
+            id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$TAG" -f name="PerMark $TAG" -f body="$(printf '%s' "$BODY")" \
+              -F draft=true -F prerelease=false --jq .id)
+            echo "Drafted release $id for $TAG."
+          else
+            echo "Found release $id for $TAG."
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   release:
     name: Release (${{ matrix.platform }})
+    needs: draft
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 60
+    permissions:
+      contents: write
     env:
-      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
       RUN_THIS: ${{ github.event_name != 'workflow_dispatch' || inputs.platforms == 'all' || contains(inputs.platforms, matrix.platform) }}
     strategy:
       fail-fast: false
-      # One job at a time: each job merges its entry into the release's latest.json; parallel uploads could drop a platform.
-      max-parallel: 1
+      # In parallel: each job uploads only its own assets; `publish` writes latest.json once, after all of them.
       matrix:
         include:
           - platform: windows-latest
@@ -88,29 +185,6 @@ jobs:
         shell: bash
         run: rustup target add $(echo "${{ matrix.rust-targets }}" | tr ',' ' ')
 
-      # The release notes are this version's section of CHANGELOG.md, followed by the install notes below.
-      - name: Release notes from the changelog
-        if: env.RUN_THIS == 'true'
-        shell: bash
-        run: |
-          version="${TAG#v}"
-          awk -v v="$version" '
-            index($0, "## [" v "]") == 1 { on = 1; next }
-            on && index($0, "## [") == 1 { exit }
-            on { print }
-          ' CHANGELOG.md > release-notes.md
-          {
-            echo "RELEASE_NOTES<<__NOTES__"
-            cat release-notes.md
-            echo "__NOTES__"
-          } >> "$GITHUB_ENV"
-
-      - name: Cache Rust build
-        if: env.RUN_THIS == 'true'
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app/src-tauri
-
       - name: Set up Node
         if: env.RUN_THIS == 'true'
         uses: actions/setup-node@v4
@@ -124,7 +198,9 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Build and publish the release
+      # Builds, signs the updater artifacts and uploads installers + `.sig` files to the release (asset names as before:
+      # tauri-action names them). `latest.json` is written by `publish`.
+      - name: Build and upload the installers
         if: env.RUN_THIS == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
@@ -134,39 +210,78 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           projectPath: app
-          tagName: ${{ env.TAG }}
-          releaseName: "PerMark ${{ env.TAG }}"
-          releaseBody: |
-            **PerMark** is a free, open-source unified document workspace: one place to read, write and organize Markdown and
-            the files around it, and to steer AI projects through their documents. AI speeds the work. Your vision steers it.
-            It works with any AI tool, or none: it only relies on your files and git.
-
-            ${{ env.RELEASE_NOTES }}
-
-            ### Install
-            | Platform | Download |
-            | --- | --- |
-            | Windows | the `-setup.exe` installer (recommended). The `.msi` stays for updating copies that were installed from a 0.5 `.msi` |
-            | macOS | the universal `.dmg` (Apple silicon and Intel) |
-            | Linux | the `.AppImage`, `.deb` or `.rpm` |
-
-            PerMark updates itself: when a new version is out, it offers a one-click "Restart to update".
-
-            ### The app is not code-signed yet
-            The installers are unsigned, so your system warns you the first time. They are built by GitHub Actions
-            from the tagged commit, and the in-app updates are verified with a signature.
-
-            **Windows (SmartScreen).** If you see "Windows protected your PC", click **More info**, then **Run anyway**.
-
-            **macOS (Gatekeeper).** If macOS says it can't verify PerMark, open **System Settings, Privacy & Security**,
-            scroll to the Security section and click **Open Anyway**. On older macOS versions you can right-click the
-            app and choose **Open** instead. From a terminal: `xattr -dr com.apple.quarantine /Applications/PerMark.app`.
-
-            **Linux.** Make the AppImage executable (`chmod +x PerMark_*.AppImage`) and run it, or install the `.deb` / `.rpm`.
-          releaseDraft: false
-          prerelease: false
-          includeUpdaterJson: true
+          releaseId: ${{ needs.draft.outputs.id }}
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+  # `latest.json` from every `.sig` of the release (all platforms, also after a rebuild of some), then the release goes
+  # public. The script refuses a release with a platform missing, so the draft stays a draft.
+  publish:
+    name: Publish the release
+    needs: [draft, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ID: ${{ needs.draft.outputs.id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Download the updater signatures
+        shell: bash
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/$ID" > "$RUNNER_TEMP/release.json"
+          mkdir -p "$RUNNER_TEMP/sigs"
+          jq -r '.assets[] | select(.name | endswith(".sig")) | "\(.id) \(.name)"' "$RUNNER_TEMP/release.json" |
+            while read -r asset name; do
+              case "$name" in */* | *\\*) echo "unexpected asset name: $name"; exit 1 ;; esac
+              gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$asset" \
+                > "$RUNNER_TEMP/sigs/$name"
+            done
+
+      - name: Write latest.json
+        run: node app/scripts/updater-json.mjs "$RUNNER_TEMP/release.json" "$RUNNER_TEMP/sigs" "$GITHUB_REPOSITORY" "$RUNNER_TEMP/latest.json"
+
+      - name: Upload latest.json
+        shell: bash
+        run: |
+          old=$(jq -r '.assets[] | select(.name == "latest.json") | .id' "$RUNNER_TEMP/release.json")
+          if [ -n "$old" ]; then gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old"; fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/json" \
+            --data-binary "@$RUNNER_TEMP/latest.json" \
+            "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$ID/assets?name=latest.json" |
+            jq -r .browser_download_url
+
+      # A rebuild of an already public release leaves it as it is (it may not be the latest one).
+      - name: Publish the release
+        shell: bash
+        run: |
+          if [ "$(jq -r .draft "$RUNNER_TEMP/release.json")" = "true" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/releases/$ID" -F draft=false -f make_latest=true --jq .html_url
+          else
+            echo "Already public."
+          fi
+
+  # The snap repacks the public .deb (snap.yml), so it starts right after `publish`; not when no Linux build ran.
+  snap:
+    name: Snap
+    needs: publish
+    if: github.event_name == 'push' || inputs.platforms == 'all' || contains(inputs.platforms, 'ubuntu-22.04')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/snap.yml
+    with:
+      ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    secrets:
+      SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
 
   # The Microsoft Store package: the Store flavor of the program, packed as an unsigned .msix by scripts/build-msix.ps1.
   # It goes up as an artifact of this run, which is where the person who submits to the Store downloads it (the Store
@@ -177,6 +292,8 @@ jobs:
     if: github.event_name == 'push' || inputs.msix
     runs-on: windows-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
     env:
       REF: ${{ github.event_name == 'workflow_dispatch' && (inputs.msix_ref || inputs.tag) || github.ref_name }}
     steps:
@@ -188,11 +305,6 @@ jobs:
       - name: Install Rust (pinned)
         working-directory: app
         run: rustup toolchain install
-
-      - name: Cache Rust build
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: app/src-tauri
 
       - name: Set up Node
         uses: actions/setup-node@v4

@@ -9,7 +9,8 @@ import { setLeaveGuard } from "../../core/editing/guard";
 import { EditingSession } from "../../core/editing/session.svelte";
 import { PluginClient } from "../../core/plugins/client";
 import { WindowStore } from "../../core/window.svelte";
-import { NotesStore, wantNewNote, wantNote } from "./store.svelte";
+import type { NotesIntent } from "../../api";
+import { NotesStore, showInNotes } from "./store.svelte";
 
 const settle = async (): Promise<void> => {
   for (let i = 0; i < 8; i++) {
@@ -27,8 +28,9 @@ afterEach(() => {
 
 type Notes = Extract<WorkspaceView, { kind: "notes" }>;
 
-async function setup() {
+async function setup(asked?: NotesIntent) {
   const api = createMockApi();
+  if (asked !== undefined) await api.pluginCall("notes.want", { intent: asked });
   const outcome = await api.openNotes("thisTab");
   if (!outcome.ok || outcome.value.outcome !== "opened") throw new Error("notes did not open");
   const view = outcome.value.view;
@@ -132,11 +134,11 @@ describe("the note shown", () => {
   });
 
   it("opens the note the welcome screen asked for, or a new one", async () => {
-    wantNote(FIRST);
-    const asked = await setup();
+    const asked = await setup({ kind: "open", path: FIRST });
     expect(asked.store.current).toBe(FIRST);
-    wantNewNote();
-    const fresh = await setup();
+    const taken = await asked.api.pluginCall("notes.takeIntent", {});
+    expect(taken.ok && taken.value).toBe(null);
+    const fresh = await setup({ kind: "new" });
     expect(fresh.store.current).not.toBeNull();
     expect(fresh.store.current).not.toBe(FIRST);
   });
@@ -412,5 +414,100 @@ describe("the window API stays typed", () => {
       const result = await api.pluginCall(method, {});
       expect(result.ok, method).toBe(true);
     }
+  });
+});
+
+describe("wishes from other views (the Notes tab open elsewhere)", () => {
+  it("an open Notes tab shows the note another view asks for, once", async () => {
+    const { api, store } = await setup();
+    const before = store.entries.length;
+    await api.pluginCall("notes.want", { intent: { kind: "open", path: "2026-10-19 0815.md" } });
+    await settle();
+    expect(store.current).toBe("2026-10-19 0815.md");
+    await api.pluginCall("notes.want", { intent: { kind: "new" } });
+    await settle();
+    expect(store.entries.length).toBe(before + 1);
+    expect(store.current).not.toBe("2026-10-19 0815.md");
+    const taken = await api.pluginCall("notes.takeIntent", {});
+    expect(taken.ok && taken.value).toBe(null);
+  });
+
+  it("a wish heard while the first read runs is done once", async () => {
+    const api = createMockApi();
+    const outcome = await api.openNotes("thisTab");
+    if (!outcome.ok || outcome.value.outcome !== "opened") throw new Error("notes did not open");
+    const view = outcome.value.view;
+    if (view.state !== "showing" || view.workspace.kind !== "notes") throw new Error("not notes");
+    const client = new PluginClient(api);
+    const create = vi.spyOn(api, "pluginCall");
+    const editing = new EditingSession(api);
+    const store = new NotesStore({
+      api,
+      client,
+      documents: new DocumentController(api),
+      editing,
+      window: new WindowStore(api),
+    });
+    const off = store.attach(view.workspace);
+    offs.push(off, () => editing.release());
+    // the wish lands before the list is read: the read takes it, the event finds the slot empty
+    await api.pluginCall("notes.want", { intent: { kind: "new" } });
+    await settle();
+    const made = create.mock.calls.filter(([method]) => method === "notes.create");
+    expect(made).toHaveLength(1);
+    expect(store.current).not.toBeNull();
+  });
+
+  it("a Notes tab that went away takes nothing (the wish waits for the next one)", async () => {
+    const { api } = await setup();
+    for (const off of offs.splice(0)) off();
+    await api.pluginCall("notes.want", { intent: { kind: "open", path: FIRST } });
+    await settle();
+    const taken = await api.pluginCall("notes.takeIntent", {});
+    expect(taken.ok && taken.value).toEqual({ kind: "open", path: FIRST });
+  });
+
+  it("asking from any view stores the wish first, then opens or brings forward the Notes tab", async () => {
+    const api = createMockApi();
+    const order: string[] = [];
+    const client = new PluginClient(api);
+    const window = new WindowStore(api);
+    vi.spyOn(client, "call").mockImplementation(async (method) => {
+      order.push(method);
+      return { ok: true, value: null } as never;
+    });
+    vi.spyOn(window, "openNotes").mockImplementation(async (placement) => {
+      order.push(`open:${placement}`);
+    });
+    await showInNotes({ kind: "new" }, { client, window });
+    expect(order).toEqual(["notes.want", "open:tab"]);
+  });
+});
+
+describe("adversarial: intents (verifier)", () => {
+  it("an intent for a note that is gone: list only (notes.md Intents), nothing recorded as open", async () => {
+    const { api, store } = await setup({ kind: "open", path: "gone 1999.md" });
+    expect(store.list.status).toBe("ready");
+    expect(store.current).toBeNull();
+    void api;
+  });
+
+  it("ten New wishes from other views in a burst while the tab is live: ten notes, slot empty", async () => {
+    const { api, store } = await setup();
+    const before = store.entries.length;
+    for (let i = 0; i < 10; i++) await api.pluginCall("notes.want", { intent: { kind: "new" } });
+    await settle();
+    await settle();
+    const taken = await api.pluginCall("notes.takeIntent", {});
+    expect(taken.ok && taken.value).toBeNull();
+    // each wish announced and taken before the next: one note each
+    expect(store.entries.length - before, "notes made").toBe(10);
+  });
+
+  it("an Open wish with a path outside the notes (traversal | absolute) does not escape the Notes", async () => {
+    const { store, documents } = await setup({ kind: "open", path: "../../secret.md" });
+    // nothing shown (the backend scope decides; the intent adds no new path into it)
+    expect(documents.shown).toBeNull();
+    expect(store.current, "list only for a name not in the list").toBeNull();
   });
 });

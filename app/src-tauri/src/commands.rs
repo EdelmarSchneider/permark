@@ -34,7 +34,7 @@ use permark_core::workspace::{
 };
 use permark_core::{AppInfo, ErrorKind, IpcError};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Webview};
+use tauri::{AppHandle, Emitter, Manager, Webview};
 use tauri_plugin_opener::OpenerExt;
 use ts_rs::TS;
 
@@ -248,10 +248,16 @@ pub fn tab_close_confirmed(handle: AppHandle, window: Webview) {
     }
 }
 
-/// Moves a tab to a new window (stage A: a new window only). Returns the new window's label.
+/// Moves a tab to a new window. Returns the new window's label.
 #[tauri::command(async)]
 pub fn tab_move_new_window(handle: AppHandle, tab: TabId) -> Result<String, IpcError> {
     crate::open::move_to_new_window(&handle, tab)
+}
+
+/// Moves a tab to another existing work window ("Move to window"). Returns that window's label.
+#[tauri::command(async)]
+pub fn tab_move(handle: AppHandle, tab: TabId, window: String) -> Result<String, IpcError> {
+    crate::open::move_to_window(&handle, tab, &window)
 }
 
 #[tauri::command(async)]
@@ -416,6 +422,16 @@ pub fn fileops_new(
 #[tauri::command(async)]
 pub fn fileops_undo(handle: AppHandle, window: Webview) -> Result<Option<UndoOutcome>, IpcError> {
     Ok(project_of(&handle, &window)?.fileops().undo()?)
+}
+
+/// Takes back exactly the operation `id` (an import notice's Undo); `None`: gone, or touched by a newer operation.
+#[tauri::command(async)]
+pub fn fileops_undo_entry(
+    handle: AppHandle,
+    window: Webview,
+    id: u64,
+) -> Result<Option<UndoOutcome>, IpcError> {
+    Ok(project_of(&handle, &window)?.fileops().undo_entry(id)?)
 }
 
 // ---- Explorer: files dropped in from outside --------------------------------------------------------------------------
@@ -1000,7 +1016,7 @@ pub fn plugin_call(
         window: window.label().to_owned(),
         args,
     };
-    // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes window have no project
+    // an app plugin (the notes) answers from anywhere: the welcome screen and the Notes tab have no project
     let shell = state(&handle);
     let app_scope = PluginId::parse(&plugin)
         .and_then(|id| shell.env.registry.manifest(&id).map(|m| m.scope))
@@ -1042,6 +1058,45 @@ pub fn view_saved(handle: AppHandle, window: Webview, saved: bool) {
 #[tauri::command(async)]
 pub fn view_ready(handle: AppHandle, window: Webview) {
     crate::views::ready(&handle, window.label());
+}
+
+/// Files | folders dropped on this view open as tabs of its window (`windows.md` Drop to open; `open_in` ignored).
+#[tauri::command(async)]
+pub fn open_dropped(
+    handle: AppHandle,
+    window: Webview,
+    paths: Vec<String>,
+    scope: permark_core::open_dropped::DropScope,
+) -> Result<permark_core::open_dropped::DropOpened, IpcError> {
+    let shell = state(&handle);
+    let native = shell
+        .registry
+        .window_of(window.label())
+        .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject(window.label().to_owned()))?;
+    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+    let dropped = permark_core::open_dropped::open_dropped(&shell.registry, &native, &paths, scope);
+    for outcome in dropped.outcomes {
+        crate::open::run(&handle, outcome);
+    }
+    if let Some(forward) = &dropped.forward {
+        crate::windows::focus(&handle, forward);
+    }
+    Ok(dropped.answer)
+}
+
+/// This view's native window comes forward, then the view takes the keyboard (a drop does not activate the window;
+/// the system may refuse).
+#[tauri::command(async)]
+pub fn view_focus(handle: AppHandle, window: Webview) {
+    if let Some(native) = state(&handle)
+        .registry
+        .window_of(window.label())
+        .and_then(|label| handle.get_window(&label))
+    {
+        let _ = native.unminimize();
+        let _ = native.set_focus();
+    }
+    let _ = window.set_focus();
 }
 
 /// The native title this view wants (set while it is the view on screen).
@@ -1224,6 +1279,7 @@ commands![
     tab_close,
     tab_close_confirmed,
     tab_move_new_window,
+    tab_move,
     recent_list,
     recent_remove,
     settings_get,
@@ -1240,6 +1296,7 @@ commands![
     fileops_delete,
     fileops_new,
     fileops_undo,
+    fileops_undo_entry,
     fileops_import_plan,
     fileops_import_apply,
     fileops_import_cancel,
@@ -1287,6 +1344,8 @@ commands![
     view_ready,
     view_set_title,
     view_set_theme,
+    open_dropped,
+    view_focus,
     default_app_get,
     default_app_set,
     default_app_asked,

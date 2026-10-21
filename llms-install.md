@@ -24,7 +24,7 @@ brew install --cask permark
 
 ### Linux (Debian / Ubuntu / Mint / Pop!_OS — `x86_64`)
 ```bash
-curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.6.1_amd64.deb -o /tmp/permark.deb
+curl -fsSL https://github.com/EdelmarSchneider/permark/releases/latest/download/PerMark_0.6.2_amd64.deb -o /tmp/permark.deb
 sudo apt-get update && sudo apt-get install -y /tmp/permark.deb
 rm -f /tmp/permark.deb
 ```

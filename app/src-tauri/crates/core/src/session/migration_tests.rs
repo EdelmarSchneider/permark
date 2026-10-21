@@ -53,7 +53,7 @@ fn from_v1_keeps_one_place_per_workspace_and_the_first_notes_window() {
     )
     .unwrap();
     let v2 = from_v1(v1);
-    // Alpha twice (other spelling) -> second window dropped; Notes twice -> first kept as the Notes window
+    // Alpha twice (other spelling) -> second window dropped; Notes twice -> first kept as the Notes tab
     assert_eq!(v2.windows.len(), 4);
     assert!(v2.notes.open);
     assert_eq!(v2.notes.geometry.map(|g| g.x), Some(1700));
@@ -274,4 +274,30 @@ fn restore_takes_a_drive_root() {
         notes: SavedNotes::default(),
     });
     assert_eq!(plan.windows[0].tabs.len(), 1);
+}
+
+/// A project session written by 0.6.1: the panels' hidden state (added later) reads as absent (= shown) and is added
+/// beside the old keys, which stay as they were.
+#[test]
+fn a_0_6_1_project_session_takes_the_hidden_panels_beside_its_keys() {
+    const OLD: &str = include_str!("fixtures/project-session-0.6.1.json");
+    let (_base, store) = store();
+    std::fs::write(store.dir().join("session.json"), OLD).unwrap();
+    let session = ProjectSession::new(&store);
+    assert_eq!(session.get("layout.sidebar-hidden").unwrap(), None);
+    assert_eq!(session.get("layout.right-hidden").unwrap(), None);
+    assert_eq!(
+        session.get("layout.sidebar").unwrap(),
+        Some(serde_json::json!(300))
+    );
+    session
+        .set("layout.sidebar-hidden", Some(serde_json::json!(true)))
+        .unwrap();
+    let old: serde_json::Value = serde_json::from_str(OLD).unwrap();
+    let now: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(store.dir().join("session.json")).unwrap()).unwrap();
+    assert_eq!(now["version"], old["version"], "same format version");
+    let mut expected = old["data"]["values"].clone();
+    expected["layout.sidebar-hidden"] = serde_json::json!(true);
+    assert_eq!(now["data"]["values"], expected, "old keys untouched");
 }

@@ -2,11 +2,12 @@ name: CI
 
 # The quality gate (`npm run check` in app/: version, rustfmt, prettier, build, clippy -D warnings, svelte-check,
 # cargo test, vitest)
-# on every push to the long-lived branches and on every pull request.
+# on every push to the long-lived branches, to feature, release and hotfix branches (the release flow needs no pull
+# request), and on every pull request.
 
 on:
   push:
-    branches: [develop, main, "feature/**"]
+    branches: [develop, main, "feature/**", "bugfix/**", "release/**", "hotfix/**"]
   pull_request:
 
 permissions:
@@ -20,6 +21,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Line tables only in dev + test builds: backtraces keep file:line, with less debug data to write and link for the ~40
+  # test binaries (cached target folder ~10% smaller).
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
 
 jobs:
   check:
@@ -49,10 +53,13 @@ jobs:
       - name: Install Rust (pinned)
         run: rustup toolchain install
 
+      # Saved from develop only: every branch, pull request and tag can restore develop's caches, but nothing else can
+      # restore theirs, and the repository's 10 GB cache budget evicts the useful ones first when everything saves.
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -107,10 +114,13 @@ jobs:
       - name: Install Rust (pinned)
         run: rustup toolchain install
 
+      # Saved from develop only: every branch, pull request and tag can restore develop's caches, but nothing else can
+      # restore theirs, and the repository's 10 GB cache budget evicts the useful ones first when everything saves.
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
+          save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Node
         uses: actions/setup-node@v4

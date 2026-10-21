@@ -23,14 +23,15 @@ pub struct SavedWindow {
     pub active: Option<u32>,
 }
 
-/// The Notes window: open at exit, where it was.
+/// The Notes tab: open at exit. `geometry` = where 0.6.0's Notes window was: kept in the format (read, written
+/// `null` by now), unused since the Notes became a tab.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct SavedNotes {
     pub open: bool,
     pub geometry: Option<Geometry>,
 }
 
-/// `<profile>/session.json` (v2): the work windows to bring back (creation order) + the Notes window.
+/// `<profile>/session.json` (v2): the work windows to bring back (creation order) + the Notes tab.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct AppSession {
     pub windows: Vec<SavedWindow>,
@@ -89,8 +90,8 @@ fn saved_key(dto: &WorkspaceRefDto) -> Option<(u8, String)> {
 }
 
 /// v1 -> v2: each window -> one tab (none for a Welcome window); a workspace a former window already shows -> that
-/// window dropped (v1 allowed one workspace in two windows); the first Notes window -> the Notes window (geometry
-/// kept), later ones dropped. Pure.
+/// window dropped (v1 allowed one workspace in two windows); the first Notes window -> the Notes tab open (its
+/// geometry kept in `notes.geometry`), later ones dropped. Pure.
 #[must_use]
 pub fn from_v1(v1: AppSessionV1) -> AppSession {
     let mut session = AppSession::default();

@@ -61,6 +61,8 @@ import type { ImportItem } from "./generated/ImportItem";
 import type { ImportKind } from "./generated/ImportKind";
 import type { ImportMode } from "./generated/ImportMode";
 import type { ImportOutcome } from "./generated/ImportOutcome";
+import type { DropOpened } from "./generated/DropOpened";
+import type { DropScope } from "./generated/DropScope";
 import type { ImportPhase } from "./generated/ImportPhase";
 import type { ImportPlan } from "./generated/ImportPlan";
 import type { ImportProgress } from "./generated/ImportProgress";
@@ -153,10 +155,13 @@ import type { MoveUndone } from "./generated/MoveUndone";
 import type { Moved } from "./generated/Moved";
 import type { NoteEntry } from "./generated/NoteEntry";
 import type { NoteList } from "./generated/NoteList";
+import type { NotesIntent } from "./generated/NotesIntent";
 import type { NotesSummary } from "./generated/NotesSummary";
 import type { Version } from "./generated/Version";
 
 export type {
+  DropOpened,
+  DropScope,
   AppInfo,
   CloseRequested,
   OpenIn,
@@ -278,6 +283,7 @@ export interface Commands {
   tab_close: { args: { tab: TabId }; result: null };
   tab_close_confirmed: { args: Record<string, never>; result: null };
   tab_move_new_window: { args: { tab: TabId }; result: string };
+  tab_move: { args: { tab: TabId; window: string }; result: string };
   recent_list: { args: Record<string, never>; result: RecentFolder[] };
   recent_remove: { args: { path: string }; result: null };
   settings_get: { args: Record<string, never>; result: AppSettings };
@@ -294,6 +300,7 @@ export interface Commands {
   fileops_delete: { args: { paths: string[] }; result: DeleteOutcome };
   fileops_new: { args: { dir: string; name: string; kind: NewKind }; result: string };
   fileops_undo: { args: Record<string, never>; result: UndoOutcome | null };
+  fileops_undo_entry: { args: { id: number }; result: UndoOutcome | null };
   fileops_import_plan: { args: { target: string; sources: string[] }; result: ImportPlan };
   fileops_import_apply: {
     args: { planId: number; mode: ImportMode; conflicts: ConflictChoice };
@@ -368,6 +375,8 @@ export interface Commands {
   view_ready: { args: Record<string, never>; result: null };
   view_set_title: { args: { title: string }; result: null };
   view_set_theme: { args: { theme: BarTheme | null }; result: null };
+  open_dropped: { args: { paths: string[]; scope: DropScope }; result: DropOpened };
+  view_focus: { args: Record<string, never>; result: null };
   default_app_get: { args: Record<string, never>; result: DefaultAppView };
   default_app_set: { args: { group: FileGroup; on: boolean }; result: DefaultAppView };
   default_app_asked: { args: Record<string, never>; result: null };
@@ -478,6 +487,9 @@ export interface PluginMethods {
     result: Moved;
   };
   "notes.undoMove": { args: { undoId: number }; result: MoveUndone };
+  /** What the Notes tab shows next (kept until it takes it; every view hears `notes:intent`). */
+  "notes.want": { args: { intent: NotesIntent }; result: null };
+  "notes.takeIntent": { args: Record<string, never>; result: NotesIntent | null };
   "agent.status": { args: Record<string, never>; result: AgentStatus };
   "agent.setEnabled": { args: { enabled: boolean }; result: AgentStatus };
   "agent.setGroup": { args: { group: string; on: boolean }; result: AgentStatus };
@@ -562,6 +574,8 @@ export interface AppPluginEvents {
   "token-count:folder": { window: string; job: FolderJob };
   /** The counted folders of a project changed (a result, a stale mark). */
   "token-count:folders": FolderBadges;
+  /** Something asked the Notes tab to show a note | a new note: the Notes tab takes it (`notes.takeIntent`). */
+  "notes:intent": null;
 }
 export type AppPluginEventName = keyof AppPluginEvents;
 export type { DefaultAppView, FileGroup, ShellEntry, ShellState, UpdateState };
@@ -613,6 +627,7 @@ export type {
   Moved,
   NoteEntry,
   NoteList,
+  NotesIntent,
   NotesSummary,
   Version,
 };
@@ -699,6 +714,8 @@ export interface Api {
   tabCloseConfirmed(): Promise<Result<null>>;
   /** Moves a tab into a new window (its label). */
   tabMoveNewWindow(tab: TabId): Promise<Result<string>>;
+  /** Moves a tab into another existing work window (its label). */
+  tabMove(tab: TabId, window: string): Promise<Result<string>>;
   recentList(): Promise<Result<RecentFolder[]>>;
   recentRemove(path: string): Promise<Result<null>>;
   settingsGet(): Promise<Result<AppSettings>>;
@@ -720,6 +737,8 @@ export interface Api {
   newEntry(dir: string, name: string, kind: NewKind): Promise<Result<string>>;
   /** Takes the newest file operation back; `null` = nothing to undo. */
   undoFileOp(): Promise<Result<UndoOutcome | null>>;
+  /** Takes back exactly the operation `id` (an import notice's Undo); `null`: gone, or a newer operation touched it. */
+  undoFileOpEntry(id: number): Promise<Result<UndoOutcome | null>>;
   /** What dropping files | folders from outside onto `target` (a project folder) would do. Touches nothing. */
   planImport(target: string, sources: string[]): Promise<Result<ImportPlan>>;
   /** Does what the plan listed; resolves when done (progress arrives as `import-progress`). */
@@ -846,8 +865,13 @@ export interface Api {
   assetUrl(workspace: WorkspaceId, path: string, version: string | null): string;
   /** Listens to a backend event. Resolves to teardown. */
   on<E extends EventName>(event: E, handler: (payload: Events[E]) => void): Promise<Unlisten>;
-  /** Drag + drop of files | folders onto this window. Resolves to teardown. */
+  /** Drag + drop of files | folders onto this view (only the view on screen gets them). Resolves to teardown. */
   onDrop(handler: (event: DropEvent) => void): Promise<Unlisten>;
+  /** Paths dropped on this view open as tabs of its window (`existingOnly`: only those open somewhere come forward;
+   *  the others come back in `left`). One place; the last path's place ends active. */
+  openDropped(paths: string[], scope: DropScope): Promise<Result<DropOpened>>;
+  /** This view's window comes forward and the view takes the keyboard (before a drop question; may be refused). */
+  focusView(): Promise<Result<null>>;
   /** System folder | file picker; `null` = cancelled. */
   pickFolder(title: string): Promise<string | null>;
   /** `anyFile`: no filter on the kind of file (the Notes open any text file). */

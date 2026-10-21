@@ -4,87 +4,66 @@ import { spotAt, type SpotEnv } from "./dropTarget";
 
 afterEach(() => document.body.replaceChildren());
 
-/** A window with an Explorer, a document page with an editor, a top bar. */
-function window_(): {
-  explorer: HTMLElement;
-  page: HTMLElement;
-  editor: HTMLElement;
-  top: HTMLElement;
-} {
+/** A view with an Explorer, a document page with an editor, a top bar. */
+function view(): { row: HTMLElement; page: HTMLElement; editor: HTMLElement; top: HTMLElement } {
   document.body.innerHTML = `
     <header id="top"></header>
-    <aside><div data-drop-explorer id="explorer"><div id="row"></div></div></aside>
-    <section data-drop-page id="page"><p id="text"></p><div data-drop-editor id="editor"><div id="line"></div></div></section>`;
+    <aside><div data-drop-explorer><div id="row"></div></div></aside>
+    <section id="page"><p id="text"></p><div data-drop-editor><div id="line"></div></div></section>`;
   const byId = (id: string): HTMLElement => document.getElementById(id) as HTMLElement;
-  return { explorer: byId("row"), page: byId("text"), editor: byId("line"), top: byId("top") };
+  return { row: byId("row"), page: byId("text"), editor: byId("line"), top: byId("top") };
 }
 
 function env(element: Element | null, patch: Partial<SpotEnv> = {}): SpotEnv {
   return {
     at: () => element,
     treeFolder: () => "docs/sub",
-    document: () => "notes/deep/a.md",
+    editorTakesPictures: () => true,
     ...patch,
   };
 }
 
-describe("where a drop lands", () => {
-  it("in the Explorer: the folder the list says", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.explorer))).toEqual({ folder: "docs/sub", editor: false });
-  });
-
-  it("in the Explorer but off the rows (header, empty space): the project folder", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.explorer, { treeFolder: () => null }))).toEqual({
+describe("what is under a drag from outside", () => {
+  it("the Explorer list: the folder the list says (the project folder too)", () => {
+    const v = view();
+    expect(spotAt(5, 5, env(v.row))).toEqual({ area: "explorer", folder: "docs/sub" });
+    expect(spotAt(5, 5, env(v.row, { treeFolder: () => "" }))).toEqual({
+      area: "explorer",
       folder: "",
-      editor: false,
     });
   });
 
-  it("on the page of the open document: that document's folder", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.page))).toEqual({ folder: "notes/deep", editor: false });
+  it("the Explorer off its list (its header): not the Explorer", () => {
+    const v = view();
+    expect(spotAt(5, 5, env(v.row, { treeFolder: () => null }))).toEqual({ area: "other" });
   });
 
-  it("on the page with no document: the project folder", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.page, { document: () => null }))).toEqual({
-      folder: "",
-      editor: false,
+  it("an editor being edited: whether it takes pictures", () => {
+    const v = view();
+    expect(spotAt(5, 5, env(v.editor))).toEqual({ area: "editor", pictures: true });
+    expect(spotAt(5, 5, env(v.editor, { editorTakesPictures: () => false }))).toEqual({
+      area: "editor",
+      pictures: false,
     });
   });
 
-  it("on an editor: the document's folder, and it says so", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.editor))).toEqual({ folder: "notes/deep", editor: true });
+  it("the page in View, the top bar, nothing at all: anywhere else", () => {
+    const v = view();
+    expect(spotAt(5, 5, env(v.page))).toEqual({ area: "other" });
+    expect(spotAt(5, 5, env(v.top))).toEqual({ area: "other" });
+    expect(spotAt(5, 5, env(null))).toEqual({ area: "other" });
   });
 
-  it("a document at the top of the project lands in the project folder", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.page, { document: () => "README.md" })).folder).toBe("");
-  });
-
-  it("a worktree document lands in its worktree", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.page, { document: () => "@wt/feature/a.md" })).folder).toBe(
-      "@wt/feature",
-    );
-  });
-
-  it("anywhere else (top bar, nothing under the pointer): the project folder", () => {
-    const w = window_();
-    expect(spotAt(5, 5, env(w.top))).toEqual({ folder: "", editor: false });
-    expect(spotAt(5, 5, env(null))).toEqual({ folder: "", editor: false });
-  });
-
-  it("asks the document for the element when none is given", () => {
-    window_();
-    // jsdom has no hit testing: elementFromPoint answers null, so the project folder
-    document.elementFromPoint = () => null;
-    expect(spotAt(1, 1, { treeFolder: () => "x", document: () => "a/b.md" })).toEqual({
-      folder: "",
-      editor: false,
-    });
+  it("asks the document for the element under the point by default", () => {
+    const v = view();
+    const before = document.elementFromPoint;
+    document.elementFromPoint = (): Element => v.editor;
+    try {
+      expect(spotAt(1, 2, { treeFolder: () => null, editorTakesPictures: () => true }).area).toBe(
+        "editor",
+      );
+    } finally {
+      document.elementFromPoint = before;
+    }
   });
 });

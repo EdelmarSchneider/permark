@@ -190,13 +190,13 @@
   <ModeSwitch session={editing} {readOnly} {visual} choose={chooseMode} {compact} />
 {/snippet}
 
-<section class="area" aria-label={t("doc.region")} data-drop-page>
+<section class="area" aria-label={t("doc.region")}>
   {#if doc.status !== "empty" && documents.path !== null}
     <!-- focus mode folds the header and the strips away; they stay mounted (menus, strips keep their state) -->
     <div
       class="chrome"
       class:folded={ui.focus === "on"}
-      class:clip={ui.focusMoving}
+      class:clip={ui.frameMoving}
       inert={ui.focus === "on"}
     >
       <div class="chrome-inner">
@@ -225,7 +225,8 @@
   {/if}
 
   <div class="pane">
-    <div class="scroller" data-scroller bind:this={scroller}>
+    <!-- focusable by script only (never a Tab stop): a hidden side panel hands the keyboard focus to the page -->
+    <div class="scroller" data-scroller tabindex="-1" bind:this={scroller}>
       {#if doc.status === "loading"}
         <div class="loading" role="progressbar" aria-label={t("doc.loading")}></div>
       {/if}
@@ -386,6 +387,9 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
+  }
+  .scroller:focus {
+    outline: none;
   }
   .scroller {
     flex: 1;

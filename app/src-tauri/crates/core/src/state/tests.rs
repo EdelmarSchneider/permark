@@ -385,3 +385,35 @@ fn a_raw_file_reads_bytes_exactly_and_tells_a_change_by_its_stamp() {
     raw.write(b"{}").unwrap();
     assert_ne!(raw.stamp().unwrap().0, stamp.0);
 }
+
+#[test]
+fn a_checked_write_never_lands_over_what_another_program_wrote_since_the_read() {
+    let f = fx();
+    fs::create_dir(f.project.path().join(".permark")).unwrap();
+    let shared = f.store().shared_file("meta.toml");
+    let path = f.project.path().join(".permark/meta.toml");
+    // no file yet, none expected: written
+    assert!(shared.write_over(None, b"a = 1\n").unwrap());
+    // the file as read: written
+    assert!(shared.write_over(Some(b"a = 1\n"), b"a = 2\n").unwrap());
+    assert_eq!(fs::read(&path).unwrap(), b"a = 2\n");
+    // another program wrote it since: untouched, and no temp left behind
+    fs::write(&path, "theirs = 1\n").unwrap();
+    assert!(!shared.write_over(Some(b"a = 2\n"), b"a = 3\n").unwrap());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "theirs = 1\n");
+    // ... or deleted it, or made it where there was none
+    fs::remove_file(&path).unwrap();
+    assert!(!shared
+        .write_over(Some(b"theirs = 1\n"), b"a = 4\n")
+        .unwrap());
+    assert!(!path.exists());
+    fs::write(&path, "new = 1\n").unwrap();
+    assert!(!shared.write_over(None, b"a = 5\n").unwrap());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "new = 1\n");
+    let left: Vec<_> = fs::read_dir(f.project.path().join(".permark"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert_eq!(left, ["meta.toml"]);
+}

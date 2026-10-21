@@ -160,13 +160,68 @@ impl Harness {
 }
 
 #[test]
-fn the_manifest_is_an_analysis_that_starts_off() {
+fn the_manifest_is_an_analysis_that_starts_on() {
     let manifest = plugin().manifest().clone();
     assert_eq!(manifest.id.as_str(), "token-count");
     assert_eq!(manifest.kind, PluginKind::Analysis);
     assert_eq!(manifest.scope, PluginScope::App);
-    assert!(!manifest.default_enabled);
+    assert!(manifest.default_enabled);
     assert!(manifest.depends_on.is_empty());
+}
+
+/// On by default: starting (and stopping, and starting again, as the app does when settings change) asks the network
+/// for nothing and writes no file. The download stays the person's own act.
+#[test]
+fn starting_fetches_nothing_and_writes_nothing() {
+    fn files_under(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        entries
+            .flatten()
+            .flat_map(|e| {
+                let path = e.path();
+                if path.is_dir() {
+                    files_under(&path)
+                } else {
+                    vec![path]
+                }
+            })
+            .collect()
+    }
+    let mut h = Harness::start();
+    h.call("state", json!({})).unwrap();
+    h.stop();
+    h.running = Some(
+        plugin_with(
+            Arc::clone(&h.source) as Arc<dyn Fetch>,
+            [pin_of(b"x"), pin_of(b"x")],
+        )
+        .start(
+            &PluginCx::new(
+                ID,
+                CxWorkspace::App,
+                StateStore::app(&h.dirs).plugin_dir(&ID),
+                None,
+                Context::welcome(Distribution::Direct),
+                Arc::clone(&h.events) as Arc<dyn EventSink>,
+            )
+            .with_store(StateStore::app(&h.dirs))
+            .with_app(AppServices::new(
+                Arc::clone(&h.rpc),
+                Arc::clone(&h.services),
+                Arc::clone(&h.settings),
+            )),
+        )
+        .unwrap(),
+    );
+    h.stop();
+    assert_eq!(h.source.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        files_under(&h.dirs.profile),
+        Vec::<std::path::PathBuf>::new()
+    );
+    assert_eq!(files_under(&h.dirs.cache), Vec::<std::path::PathBuf>::new());
 }
 
 #[test]

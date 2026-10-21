@@ -47,7 +47,7 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("agent", "feature", "project"),
   manifest("md-family", "role", "app"),
   manifest("word-count", "analysis", "app"),
-  { ...manifest("token-count", "analysis", "app"), defaultEnabled: false },
+  manifest("token-count", "analysis", "app"),
   manifest("prompt-blocks", "embed", "app"),
   manifest("frontmatter-card", "embed", "app"),
   manifest("highlight", "embed", "app"),
@@ -64,7 +64,7 @@ export const MOCK_MANIFESTS: readonly Manifest[] = [
   manifest("fmt-properties", "format", "app"),
   manifest("fmt-ignore", "format", "app"),
   manifest("fmt-toon", "format", "app"),
-  { ...manifest("convert", "feature", "app", ["fmt-toon"]), defaultEnabled: false },
+  manifest("convert", "feature", "app", ["fmt-toon"]),
   manifest("text-view", "format", "app"),
   {
     ...manifest("shell-integration", "feature", "app"),

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { NoteEntry } from "../../api";
 import {
+  isLooseFile,
   arrange,
   dropPinned,
   drawnOrder,
@@ -151,7 +152,7 @@ describe("pin order", () => {
     expect(dropPinned(order, "a", "a")).toEqual(order);
     expect(dropPinned(order, "x", "a")).toEqual(order);
   });
-  it("jumps to the nth pinned note for Ctrl+1..9", () => {
+  it("jumps to the nth pinned note for Mod+1..9", () => {
     const pinned = [entry({ path: "a" }), entry({ path: "b" })];
     expect(pinnedAt(pinned, 1)?.path).toBe("a");
     expect(pinnedAt(pinned, 2)?.path).toBe("b");
@@ -212,5 +213,30 @@ describe("marks", () => {
     });
     expect(marksOf(entry({ path: "b.md", state: "gone" })).gone).toBe(true);
     expect(marksOf(entry({ path: "b.md", state: "changedOnDisk" })).changed).toBe(true);
+  });
+});
+
+describe("a drop on the Notes tab", () => {
+  it("guesses by name: text formats and names without extension are loose files; the rest opens as tabs", () => {
+    for (const path of [
+      "C:/a.md",
+      "C:/b.MARKDOWN",
+      "/x/c.txt",
+      "d e.mdx",
+      "C:\\文档\\f.log",
+      "g.rst",
+      "h.yaml",
+      "i.json",
+      "j.CSV",
+      ".env",
+      ".gitignore",
+      "README",
+      "C:/x/LICENSE",
+    ]) {
+      expect(isLooseFile(path), path).toBe(true);
+    }
+    for (const path of ["a.png", "c.md.exe", "d.pdf", "e.zip", "", "C:/dir/"]) {
+      expect(isLooseFile(path), path).toBe(false);
+    }
   });
 });

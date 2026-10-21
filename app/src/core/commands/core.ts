@@ -17,6 +17,8 @@ import {
 } from "../plugins/registry.svelte";
 import { closeOwnTab } from "../shell/closeWorkspace";
 import { askInitHere } from "../shell/initProject";
+import { rightAvailable } from "../shell/layout";
+import { rightSide, toggleOutlinePanel, toggleRightPanel, toggleSidebar } from "../shell/sides";
 import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
@@ -32,6 +34,8 @@ const PROJECT = workspace("project");
 const DOCUMENTS = workspace("project", "singleFile");
 /** What shows a document: a project, a single file, the Notes. */
 const READING = workspace("project", "singleFile", "notes");
+/** What has a sidebar: a project, the Notes. */
+const SIDEBAR = workspace("project", "notes");
 
 type Spec = {
   id: string;
@@ -155,6 +159,21 @@ const SPECS: readonly Spec[] = [
     run: () => ui.showSidebar("files"),
   },
   {
+    id: "sidebar.toggle",
+    label: "cmd.toggleSidebar",
+    keys: ["Mod+b"],
+    requires: SIDEBAR,
+    run: () => toggleSidebar(),
+  },
+  {
+    id: "panel.toggle",
+    label: "cmd.toggleRight",
+    keys: ["Mod+Alt+b"],
+    requires: READING,
+    when: () => rightAvailable(rightSide()),
+    run: () => toggleRightPanel(),
+  },
+  {
     id: "file.new",
     label: "cmd.newFile",
     keys: ["Mod+n"],
@@ -247,7 +266,7 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+Alt+o"],
     requires: READING,
     when: () => documents.view?.body.kind === "markdown",
-    run: () => reading.toggleOutline(),
+    run: () => toggleOutlinePanel(),
   },
   {
     id: "doc.copyReference",

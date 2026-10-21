@@ -39,6 +39,8 @@ import {
 } from "./list";
 
 const SESSION_FILTER = "explorer.filter";
+/** An outside drag resting this long on a closed folder opens it. */
+export const AUTO_EXPAND_MS = 700;
 const SESSION_EXPANDED = "explorer.expanded";
 /** Folders remembered open (a project with thousands of open folders is not a state worth keeping). */
 const MAX_REMEMBERED = 500;
@@ -67,6 +69,8 @@ export type ExplorerHost = {
   fail(error: ApiError): void;
   /** A quiet note ("Moved ...", "Undone"). */
   note(text: string): void;
+  /** The view this Explorer lives in: tree events name their view, and every view hears every event. */
+  view(): string;
   linkUpdate(): LinkUpdate;
   /** Opens a folder as a project (the window asks "this window | new window"). */
   openProject(path: string): void;
@@ -127,6 +131,8 @@ export class ExplorerStore {
   drag = $state.raw<Drag>({ status: "idle" });
   /** The folder files dragged in from outside would land in (`""` = the project folder; `null`: no such drag). */
   outside = $state<string | null>(null);
+  /** Where an outside drag over the list is (the list scrolls near its edges); `null`: none. */
+  outsidePoint = $state.raw<{ x: number; y: number } | null>(null);
   /** The list's geometry: the folder a point on screen belongs to (`null`: outside the list). Set by the panel. */
   geometry: ((x: number, y: number) => string | null) | null = null;
   /** A request to bring a row into view (`n` makes repeated requests for one path distinct). */
@@ -143,6 +149,13 @@ export class ExplorerStore {
   #active: string | null = null;
   /** What the person answered to the code offer, for this project (`null`: not yet). */
   #answered: Answer | null = null;
+  /** Folders (and worktree roots) an outside drag opened by resting on them: closed again unless a drop lands there. */
+  #autoOpened = new Set<string>();
+  #autoTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The closed folder the auto-open timer waits on. */
+  #autoFor: string | null = null;
+  /** Paths to select once they reach the list (items an import put in place). */
+  #toSelect = new Set<string>();
 
   constructor(api: Api, host: ExplorerHost) {
     this.#api = api;
@@ -159,6 +172,7 @@ export class ExplorerStore {
       off();
       if (this.#timer !== null) clearTimeout(this.#timer);
       this.#timer = null;
+      this.#clearAuto();
       void this.#api.treeClose();
     };
   }
@@ -218,6 +232,9 @@ export class ExplorerStore {
   }
 
   #onChanged(event: TreeChanged): void {
+    // another view's list (another tab's project): its numbering is not ours. Taking it would skip our next delta (a
+    // file just copied in stayed out of the list until a reload: director 2026-10-20)
+    if (event.window !== this.#host.view()) return;
     if (this.load.status !== "ready") {
       this.#early.push(event);
       return;
@@ -249,6 +266,7 @@ export class ExplorerStore {
       this.selection = new Set(Array.from(this.selection).filter((p) => alive.has(p)));
     }
     if (this.focus !== null && !alive.has(this.focus)) this.focus = null;
+    this.#selectArrived(alive);
   }
 
   async retry(): Promise<void> {
@@ -260,9 +278,12 @@ export class ExplorerStore {
     this.#timer = setTimeout(() => {
       this.#timer = null;
       void this.#api.projectSessionSet(SESSION_FILTER, filterToJson(this.filter));
+      // folders a passing drag opened are not the person's choice (yet)
       void this.#api.projectSessionSet(
         SESSION_EXPANDED,
-        Array.from(this.expanded).slice(0, MAX_REMEMBERED),
+        Array.from(this.expanded)
+          .filter((p) => !this.#autoOpened.has(p))
+          .slice(0, MAX_REMEMBERED),
       );
     }, 400);
   }
@@ -656,13 +677,21 @@ export class ExplorerStore {
   }
 
   async undo(): Promise<void> {
-    const result = await this.#api.undoFileOp();
+    this.#undone(await this.#api.undoFileOp(), t("fileOps.nothingToUndo"));
+  }
+
+  /** Takes back exactly the operation `id` (an import's notice): not the newest one, whatever came after. */
+  async undoEntry(id: number): Promise<void> {
+    this.#undone(await this.#api.undoFileOpEntry(id), t("import.undoGone"));
+  }
+
+  #undone(result: Awaited<ReturnType<Api["undoFileOp"]>>, none: string): void {
     if (!result.ok) {
       this.#host.fail(result.error);
       return;
     }
     if (result.value === null) {
-      this.#host.note(t("fileOps.nothingToUndo"));
+      this.#host.note(none);
       return;
     }
     const left = result.value.skipped.length;
@@ -741,9 +770,104 @@ export class ExplorerStore {
     return this.geometry?.(x, y) ?? null;
   }
 
-  /** Marks (or clears, `null`) the folder an outside drag is over. */
-  markDrop(folder: string | null): void {
-    this.outside = folder;
+  // ---- drag from outside -------------------------------------------------------------------------------------------
+
+  /** An outside drag is over `folder` (`null`: over no folder of the list, or the drop cannot land here now) at
+   *  `point` (`null`: not over the list). Resting on a closed folder opens it after a while. */
+  outsideOver(folder: string | null, point: { x: number; y: number } | null): void {
+    if (this.outside !== folder) this.outside = folder;
+    this.outsidePoint = point;
+    const wait = folder !== null && this.#isClosed(folder) ? folder : null;
+    if (wait === this.#autoFor) return;
+    this.#clearAuto();
+    if (wait === null) return;
+    this.#autoFor = wait;
+    this.#autoTimer = setTimeout(() => {
+      this.#autoTimer = null;
+      this.#autoFor = null;
+      void this.#autoOpen(wait);
+    }, AUTO_EXPAND_MS);
+  }
+
+  /** The drag was dropped on the list: the mark goes, the folders it opened stay while the question is open. */
+  outsideHold(): void {
+    this.#clearAuto();
+    this.outside = null;
+    this.outsidePoint = null;
+  }
+
+  /** The drag is over: folders it opened close again, except `kept` (an import landed there) and those above it. */
+  outsideEnd(kept: string | null): void {
+    this.outsideHold();
+    if (this.#autoOpened.size === 0) return;
+    const expanded = new Set(this.expanded);
+    const roots = new Set(this.collapsedRoots);
+    for (const path of this.#autoOpened) {
+      if (kept !== null && (kept === path || kept.startsWith(`${path}/`))) continue;
+      if (this.roots.some((r) => r.path === path)) roots.add(path);
+      else expanded.delete(path);
+    }
+    this.#autoOpened = new Set();
+    this.expanded = expanded;
+    this.collapsedRoots = roots;
+  }
+
+  /** Items an import put in place: their folders open, they are selected, the first comes into view (the keyboard
+   *  focus stays where it is), and the open folders are remembered now. */
+  placed(paths: readonly string[]): void {
+    const first = paths[0];
+    if (first === undefined) return;
+    const expanded = new Set(this.expanded);
+    for (const path of paths) for (const folder of ancestorsOf(path)) expanded.add(folder);
+    this.expanded = expanded;
+    const alive = new Set(this.nodes.map((n) => n.path));
+    this.selection = new Set(paths.filter((p) => alive.has(p)));
+    this.#toSelect = new Set(paths.filter((p) => !alive.has(p)));
+    this.#anchor = first;
+    this.#reveal(first);
+    this.#remember();
+  }
+
+  /** Items that were placed before the list knew them join the selection when they arrive. */
+  #selectArrived(alive: ReadonlySet<string>): void {
+    if (this.#toSelect.size === 0) return;
+    const arrived = Array.from(this.#toSelect).filter((p) => alive.has(p));
+    if (arrived.length === 0) return;
+    for (const path of arrived) this.#toSelect.delete(path);
+    this.selection = new Set([...this.selection, ...arrived]);
+  }
+
+  /** A folder row that is closed now (a worktree root collapsed, or a folder not open). */
+  #isClosed(path: string): boolean {
+    if (path === "") return false;
+    if (this.roots.some((r) => r.path === path)) return this.collapsedRoots.has(path);
+    const node = this.nodes.find((n) => n.path === path);
+    return node?.kind.type === "dir" && !this.expanded.has(path);
+  }
+
+  async #autoOpen(path: string): Promise<void> {
+    if (!this.#isClosed(path)) return;
+    this.#autoOpened.add(path);
+    if (this.roots.some((r) => r.path === path)) {
+      const roots = new Set(this.collapsedRoots);
+      roots.delete(path);
+      this.collapsedRoots = roots;
+      return;
+    }
+    const next = new Set(this.expanded);
+    next.add(path);
+    this.expanded = next;
+    const node = this.nodes.find((n) => n.path === path);
+    if (node?.kind.type === "dir" && node.kind.unlisted !== null) {
+      const result = await this.#api.treeOpenFolder(path);
+      if (!result.ok) this.#host.fail(result.error);
+    }
+  }
+
+  #clearAuto(): void {
+    if (this.#autoTimer !== null) clearTimeout(this.#autoTimer);
+    this.#autoTimer = null;
+    this.#autoFor = null;
   }
 
   beginDrag(paths: readonly string[]): void {

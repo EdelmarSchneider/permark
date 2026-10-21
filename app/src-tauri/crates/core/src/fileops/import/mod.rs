@@ -180,6 +180,11 @@ pub struct ImportOutcome {
     /// Originals a move could not delete (locked, changed since, or links that stay).
     pub left_behind: u32,
     pub cancelled: bool,
+    /// Project paths of the items put in place, in drop order (the Explorer selects them).
+    pub placed: Vec<String>,
+    /// The journal entry that takes this import back (`fileops_undo_entry`); `None`: nothing came in, or not journaled.
+    #[ts(type = "number | null")]
+    pub undo: Option<u64>,
 }
 
 // ---- service state -----------------------------------------------------------------------------------------------
@@ -547,7 +552,7 @@ impl FileOps {
         }
         run.emit(true);
         if !result.copied.is_empty() || !result.moved.is_empty() {
-            self.record(Op::Import {
+            result.undo = self.record(Op::Import {
                 copied: result.copied.clone(),
                 moved: result.moved.clone(),
             });
@@ -741,6 +746,8 @@ struct Applied {
     target: String,
     copied: Vec<String>,
     moved: Vec<ImportMoved>,
+    placed: Vec<String>,
+    undo: Option<u64>,
     skipped: u32,
     failed: Vec<ImportFailure>,
     left_behind: u32,
@@ -753,6 +760,8 @@ impl Applied {
             target,
             copied: Vec::new(),
             moved: Vec::new(),
+            placed: Vec::new(),
+            undo: None,
             skipped: 0,
             failed: Vec::new(),
             left_behind: 0,
@@ -763,6 +772,7 @@ impl Applied {
     fn add(&mut self, item: &StoredItem, target: &VaultPath, name: &str, placed: Placed) {
         let shown = target.join_name(name).to_string();
         let from = item.source.display().to_string();
+        self.placed.push(shown.clone());
         match placed {
             Placed::Renamed => self.moved.push(ImportMoved { from, to: shown }),
             Placed::Copied => self.copied.push(shown),
@@ -793,6 +803,8 @@ impl Applied {
             links: run.links,
             left_behind: self.left_behind,
             cancelled: self.cancelled,
+            placed: self.placed,
+            undo: self.undo,
         }
     }
 }

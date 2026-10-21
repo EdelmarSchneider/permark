@@ -1,4 +1,4 @@
-// The Notes window's state: the list the backend keeps (the notes folder, pins, marks), the note shown, the dialogs
+// The Notes tab's state: the list the backend keeps (the notes folder, pins, marks), the note shown, the dialogs
 // (versions, move, delete, compare) and the actions on them. The backend owns the truth; this mirrors it, asks it to
 // change, and keeps the editor of the window on the right note.
 
@@ -8,6 +8,7 @@ import {
   type ApiError,
   type NoteEntry,
   type NoteList,
+  type NotesIntent,
   type RecentFolder,
   type Version,
   type WorkspaceView,
@@ -172,8 +173,22 @@ export class NotesStore {
     const onBlur = (): void => this.#editing.dispatch({ e: "autosaveDue" });
     window.addEventListener("focus", onFocus);
     window.addEventListener("blur", onBlur);
+    // a wish from another view (the Welcome of another window, a project tab) while this tab is open already; before
+    // the first read, that read takes it
+    let offIntent: (() => void) | null = null;
+    let gone = false;
+    void this.#api
+      .onAppPlugin("notes:intent", () => {
+        if (this.#restored && this.#workspace !== null) void this.#takeIntent();
+      })
+      .then((off) => {
+        if (gone) off();
+        else offIntent = off;
+      });
     void this.refresh();
     return () => {
+      gone = true;
+      offIntent?.();
       clearInterval(timer);
       if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);
       this.#refreshTimer = null;
@@ -213,12 +228,36 @@ export class NotesStore {
     this.list = { status: "ready", list: result.value };
     if (!this.#restored) {
       this.#restored = true;
-      // the welcome screen asked for a note (or a new one); else the note that was open last time
-      const asked = takeIntent();
-      if (asked?.kind === "new") await this.newNote();
-      else if (asked?.kind === "open") await this.select(asked.path);
-      else if (result.value.open !== null) await this.select(result.value.open);
+      // a note (or a new one) was asked for; else the note that was open last time
+      const asked = await this.#takeIntent();
+      if (asked === null && this.#workspace !== null && result.value.open !== null) {
+        await this.select(result.value.open);
+      }
     }
+  }
+
+  #listed(path: string): boolean {
+    return this.entries.some((e) => e.path === path);
+  }
+
+  /** Takes the wish the backend keeps (once: no other view gets it) and does it. `null`: there was none. */
+  async #takeIntent(): Promise<NotesIntent | null> {
+    const taken = await this.#client.call("notes.takeIntent", {});
+    if (!taken.ok || taken.value === null || this.#workspace === null) return null;
+    const asked = taken.value;
+    switch (asked.kind) {
+      case "new":
+        await this.newNote();
+        break;
+      case "open":
+        // only a document of the list (a note | a loose file); one made a moment ago elsewhere: read the list again
+        if (!this.#listed(asked.path)) await this.refresh();
+        if (this.#listed(asked.path)) await this.select(asked.path);
+        break;
+      default:
+        asked satisfies never;
+    }
+    return asked;
   }
 
   /** The folder the notes are in is back or changed: read everything again. */
@@ -284,7 +323,7 @@ export class NotesStore {
     if (next !== null) await this.select(next);
   }
 
-  /** Ctrl+1..9. */
+  /** Mod+1..9. */
   async openPinned(n: number): Promise<void> {
     const entry = pinnedAt(
       this.entries.filter((e) => e.pinned),
@@ -881,25 +920,20 @@ function lastSegment(path: string): string {
   return parts.at(-1) ?? path;
 }
 
-// ---- what the person asked for before the Notes opened ("New note" on the welcome screen) ---------------------------------
+// ---- asking from any view -------------------------------------------------------------------------------------------
 
-type Intent = { kind: "new" } | { kind: "open"; path: string };
-let intent: Intent | null = null;
-
-/** The welcome screen opens the Notes and wants a new note in them. */
-export function wantNewNote(): void {
-  intent = { kind: "new" };
-}
-
-/** The welcome screen opens the Notes on this note. */
-export function wantNote(path: string): void {
-  intent = { kind: "open", path };
-}
-
-function takeIntent(): Intent | null {
-  const asked = intent;
-  intent = null;
-  return asked;
+/**
+ * Shows a note | a new note in the Notes tab, wherever it is: the wish goes to the backend first (the Notes tab takes it
+ * once, even in another tab or window, even while it loads), then the Notes tab opens here or comes forward.
+ */
+export async function showInNotes(
+  intent: NotesIntent,
+  deps: { client?: PluginClient; window?: WindowStore } = {},
+): Promise<void> {
+  const client = deps.client ?? pluginClient;
+  const window = deps.window ?? defaultWindow;
+  await client.call("notes.want", { intent });
+  await window.openNotes("tab");
 }
 
 export const notes = new NotesStore();

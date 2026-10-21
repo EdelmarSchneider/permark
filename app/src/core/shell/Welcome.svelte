@@ -12,6 +12,7 @@
   import { contributions } from "../plugins/instance.svelte";
   import { relativeTime } from "../time";
   import type { WindowStore } from "../window.svelte";
+  import { dropFlow } from "./dropView.svelte";
 
   type Props = { store: WindowStore };
   let { store }: Props = $props();
@@ -194,7 +195,7 @@
       {/if}
     </div>
 
-    <div class="drop-zone">
+    <div class="drop-zone" class:active={dropFlow.hover !== null}>
       <Import size={16} aria-hidden="true" />
       <span>{t("welcome.dropHint")}</span>
     </div>
@@ -353,5 +354,8 @@
     color: var(--muted);
     font-size: var(--fs-ui-sm);
     text-align: center;
+  }
+  .drop-zone.active {
+    color: var(--accent-text);
   }
 </style>

@@ -3,6 +3,7 @@
   // person reads something else. Quiet: no sound, goes away by itself.
   import { documents } from "../../core/doc/document.svelte";
   import { t, tn } from "../../core/i18n";
+  import { layout } from "../../core/shell/layout.svelte";
   import { ui } from "../../core/shell/ui.svelte";
   import { ACTIVE_MS, feed } from "./store.svelte";
   import { split } from "./time";
@@ -30,7 +31,7 @@
 <button
   type="button"
   class="chip"
-  aria-pressed={ui.right === "live-feed.panel"}
+  aria-pressed={ui.right === "live-feed.panel" && !layout.rightHidden}
   title={t("live.label")}
   onclick={() => ui.toggleRight("live-feed.panel")}
 >

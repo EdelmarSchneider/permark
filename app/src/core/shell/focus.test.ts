@@ -58,23 +58,23 @@ describe("the focus state of a window", () => {
   it("moves for a moment after a toggle, then rests", () => {
     vi.useFakeTimers();
     ui.setFocus("on");
-    expect(ui.focusMoving).toBe(true);
+    expect(ui.frameMoving).toBe(true);
     vi.advanceTimersByTime(FOCUS_MOVE_MS - 1);
-    expect(ui.focusMoving).toBe(true);
+    expect(ui.frameMoving).toBe(true);
     vi.advanceTimersByTime(2);
-    expect(ui.focusMoving).toBe(false);
+    expect(ui.frameMoving).toBe(false);
     // the same state again moves nothing
     ui.setFocus("on");
-    expect(ui.focusMoving).toBe(false);
+    expect(ui.frameMoving).toBe(false);
   });
 
   it("a storm of toggles ends in the last state with no timer left", () => {
     vi.useFakeTimers();
     for (let n = 0; n < 101; n++) ui.toggleFocus();
     expect(ui.focus).toBe("on");
-    expect(ui.focusMoving).toBe(true);
+    expect(ui.frameMoving).toBe(true);
     vi.advanceTimersByTime(FOCUS_MOVE_MS + 1);
-    expect(ui.focusMoving).toBe(false);
+    expect(ui.frameMoving).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
 
@@ -83,7 +83,7 @@ describe("the focus state of a window", () => {
     ui.setFocus("on");
     ui.resetFocus();
     expect(ui.focus).toBe("off");
-    expect(ui.focusMoving).toBe(false);
+    expect(ui.frameMoving).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
 });
@@ -162,6 +162,30 @@ describe("the frame", () => {
     expect(target.querySelectorAll("[role=separator]")).toHaveLength(0);
   });
 
+  it("a side panel the person hid: inert, still mounted, no splitter, no room; the other one stays", () => {
+    component = mount(FrameHost, { target, props: { sidebarHidden: true } });
+    flushSync();
+    const body = region(".body")!;
+    expect(region(".sidebar")?.inert).toBe(true);
+    expect(region(".sidebar")?.classList.contains("gone")).toBe(true);
+    expect(region("#side-button")).not.toBeNull();
+    expect(body.style.getPropertyValue("--w-sidebar")).toBe("0px");
+    expect(region(".panel")?.inert).toBe(false);
+    expect(body.style.getPropertyValue("--w-right")).not.toBe("0px");
+    expect(target.querySelectorAll("[role=separator]")).toHaveLength(1);
+    expect(region(".top")?.inert).toBe(false);
+  });
+
+  it("both hidden: only the page between the bars; focus mode on top keeps them hidden", async () => {
+    component = mount(FrameHost, { target, props: { sidebarHidden: true, rightHidden: true } });
+    flushSync();
+    expect(region(".sidebar")?.inert).toBe(true);
+    expect(region(".panel")?.inert).toBe(true);
+    expect(region(".body")!.style.getPropertyValue("--w-right")).toBe("0px");
+    expect(target.querySelectorAll("[role=separator]")).toHaveLength(0);
+    expect(region(".status")?.inert).toBe(false);
+  });
+
   it("the tracks transition only while moving", () => {
     component = mount(FrameHost, { target, props: { focus: true, moving: true } });
     flushSync();
@@ -179,7 +203,12 @@ describe("the frame", () => {
   it("respects the wish for less motion: every transition of the regions is off then", () => {
     const css = source("core/shell/Frame.svelte");
     const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
-    for (const selector of [".frame.focus .top", ".frame.focus .sidebar", ".frame.moving .body"]) {
+    for (const selector of [
+      ".frame.focus .top",
+      ".sidebar.gone",
+      ".panel.gone",
+      ".frame.moving .body",
+    ]) {
       expect(reduced, selector).toContain(selector);
     }
     expect(reduced).toContain("transition: none");

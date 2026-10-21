@@ -127,6 +127,66 @@ describe("key -> command", () => {
     expect(second.kind === "run" && second.command.id).toBe("a.git");
   });
 
+  it("in the Notes tab the Notes' own keys win over the wider ones; elsewhere the wider ones run", () => {
+    const NOTES: Requirement = { needs: [{ need: "workspace", kinds: ["notes"] }], prefers: [] };
+    const READING: Requirement = {
+      needs: [{ need: "workspace", kinds: ["project", "singleFile", "notes"] }],
+      prefers: [],
+    };
+    // registration order: the core's first (as in the app), the plugin's after
+    const tab1 = command("tab.select1");
+    const last = command("tab.selectLast");
+    const fileNew = command("file.new", { requires: PROJECT });
+    const copyDoc = command("doc.copyDocument", { requires: READING });
+    const pinned1 = command("notes.pinned1", { requires: NOTES });
+    const pinned9 = command("notes.pinned9", { requires: NOTES });
+    const newHere = command("notes.newHere", { requires: NOTES });
+    const copyNote = command("notes.copy", { requires: NOTES });
+    const all = [tab1, last, fileNew, copyDoc, pinned1, pinned9, newHere, copyNote];
+    const keys = {
+      "tab.select1": "Mod+1",
+      "tab.selectLast": "Mod+9",
+      "file.new": "Mod+n",
+      "doc.copyDocument": "Mod+Shift+c",
+      "notes.pinned1": "Mod+1",
+      "notes.pinned9": "Mod+9",
+      "notes.newHere": "Mod+n",
+      "notes.copy": "Mod+Shift+c",
+    };
+    const at = (workspace: Context["workspace"]): KeyEnv => ({
+      ...env(all, keys),
+      context: { ...neutralContext(), workspace },
+    });
+    const run = (e: KeyEnv, init: Partial<KeyboardEventInit> & { key: string }) => {
+      const decision = resolveKey(press({ ctrlKey: true, ...init }), e);
+      return decision.kind === "run" ? decision.command.id : null;
+    };
+    const notes = at("notes");
+    expect(run(notes, { key: "1" })).toBe("notes.pinned1");
+    expect(run(notes, { key: "9" })).toBe("notes.pinned9");
+    expect(run(notes, { key: "n" })).toBe("notes.newHere");
+    expect(run(notes, { key: "C", shiftKey: true })).toBe("notes.copy");
+    const project = at("project");
+    expect(run(project, { key: "1" })).toBe("tab.select1");
+    expect(run(project, { key: "9" })).toBe("tab.selectLast");
+    expect(run(project, { key: "n" })).toBe("file.new");
+    expect(run(project, { key: "C", shiftKey: true })).toBe("doc.copyDocument");
+    // the narrower one cannot run now (its `when` says no): the wider one still does
+    const hidden = { ...copyNote, when: () => false };
+    const fallback: KeyEnv = {
+      ...env([tab1, last, fileNew, copyDoc, pinned1, pinned9, newHere, hidden], keys),
+      context: { ...neutralContext(), workspace: "notes" },
+    };
+    expect(run(fallback, { key: "C", shiftKey: true })).toBe("doc.copyDocument");
+    // registered the other way round: the same choice (narrower, not first)
+    const reversed: KeyEnv = {
+      ...env([...all].reverse(), keys),
+      context: { ...neutralContext(), workspace: "notes" },
+    };
+    expect(run(reversed, { key: "1" })).toBe("notes.pinned1");
+    expect(run(at("singleFile"), { key: "C", shiftKey: true })).toBe("doc.copyDocument");
+  });
+
   it("uses Cmd on macOS", () => {
     const save = command("edit.save");
     const e = env([save], { "edit.save": "Mod+s" }, { mac: true });

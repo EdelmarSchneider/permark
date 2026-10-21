@@ -1,9 +1,23 @@
 <script lang="ts">
-  // A frame with plain content in every region, for the tests of focus mode.
+  // A frame with plain content in every region, for the tests of focus mode and of hidden side panels.
   import Frame from "../shell/Frame.svelte";
 
-  type Props = { focus?: boolean; moving?: boolean; sidebar?: boolean; panel?: boolean };
-  let { focus = false, moving = false, sidebar = true, panel = true }: Props = $props();
+  type Props = {
+    focus?: boolean;
+    moving?: boolean;
+    sidebar?: boolean;
+    panel?: boolean;
+    sidebarHidden?: boolean;
+    rightHidden?: boolean;
+  };
+  let {
+    focus = false,
+    moving = false,
+    sidebar = true,
+    panel = true,
+    sidebarHidden = false,
+    rightHidden = false,
+  }: Props = $props();
 </script>
 
 {#snippet top()}<span id="top-text">top</span>{/snippet}
@@ -18,6 +32,8 @@
   main={page}
   panel={panel ? right : undefined}
   {status}
+  {sidebarHidden}
+  {rightHidden}
   {focus}
   {moving}
 />

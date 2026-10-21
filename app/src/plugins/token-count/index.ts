@@ -1,7 +1,7 @@
 // Plugin `token-count`: tokens of the document, the selection and each section by the tokenizer the person chooses.
 // Exact where the tokenizer is public (the vocabulary is downloaded once, when the person asks), approximate where it
 // is not; an approximate number is always marked. A folder can be counted from the Explorer (a guard asks first when
-// it is big; the count never blocks the app). Off by default; off, it leaves nothing on screen.
+// it is big; the count never blocks the app). On by default (director 2026-10-20); off, it leaves nothing on screen.
 
 import { NO_REQUIREMENT } from "../../core/conditions/available";
 import { documents } from "../../core/doc/document.svelte";

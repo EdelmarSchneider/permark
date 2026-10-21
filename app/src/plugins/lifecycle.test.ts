@@ -186,6 +186,7 @@ describe("the notes plugin", () => {
       "settingsSection",
       "shortcut",
       "statusItem",
+      "topBarItem",
       "welcomeSection",
       "workspaceView",
     ]);
@@ -202,7 +203,7 @@ describe("the notes plugin", () => {
     expect(new Set(ids).size).toBe(ids.length);
     const keys = registry.of("shortcut");
     for (const shortcut of keys) expect(ids, shortcut.command).toContain(shortcut.command);
-    // Ctrl+1..9 open the pinned notes
+    // Mod+1..9 open the pinned notes
     expect(keys.filter((k) => /^Mod\+[1-9]$/.test(k.keys))).toHaveLength(9);
     host.disable("notes");
   });

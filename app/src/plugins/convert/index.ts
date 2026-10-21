@@ -1,4 +1,4 @@
-// Plugin `convert` (off by default: a specialist tool): data from JSON, JSON Lines, YAML, XML, CSV | TSV, TOML and TOON
+// Plugin `convert` (on by default): data from JSON, JSON Lines, YAML, XML, CSV | TSV, TOML and TOON
 // turned into TOON and other compact formats and back, with the tokens each choice takes. Reached from the Explorer
 // menu, the palette, a selection of the page, a fenced code block and a table of the page.
 

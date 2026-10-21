@@ -26,7 +26,7 @@ fn fx_with(plugins: Vec<Arc<dyn Plugin>>, log: Log) -> Fx {
     );
     let registry = Arc::new(WorkspaceRegistry::new(Arc::new(env)));
     for window in ["main", "w-1"] {
-        registry.add_window(window, WindowKind::Work);
+        registry.add_window(window);
         let _ = registry.show_welcome_view(window);
     }
     Fx {
@@ -188,8 +188,7 @@ fn concurrent_opens_of_one_root_make_one_tab_and_one_core() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
     for n in 0..8 {
-        f.registry
-            .add_window(&format!("w-{}", n + 2), WindowKind::Work);
+        f.registry.add_window(&format!("w-{}", n + 2));
     }
     let results: Vec<Result<(TabId, String), Place>> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..8)
@@ -557,7 +556,7 @@ fn the_notes_open_only_while_the_notes_plugin_is_on_and_in_one_place() {
 fn restore_loads_only_the_active_tab() {
     let f = fx();
     let dirs: Vec<tempfile::TempDir> = (0..4).map(|_| tempfile::tempdir().unwrap()).collect();
-    f.registry.add_window("w-2", WindowKind::Work);
+    f.registry.add_window("w-2");
     let tabs: Vec<TabId> = dirs
         .iter()
         .map(|d| {
@@ -809,7 +808,7 @@ fn a_moved_tab_keeps_its_workspace_and_unsaved_flag() {
     workspace
         .documents()
         .set_unsaved(&view, Some("move.md".into()));
-    f.registry.add_window("w-9", WindowKind::Work);
+    f.registry.add_window("w-9");
     let ticket = f.registry.begin_move(moving, &MoveTo::NewWindow).unwrap();
     let outcome = f
         .registry
@@ -877,10 +876,10 @@ fn a_refused_move_leaves_both_windows_as_they_were() {
     assert!(refused("nowhere", &view));
     assert!(refused("w-1", &keep_view), "not the view the shell moved");
     assert!(refused("main", &view));
-    f.registry.add_window("w-9", WindowKind::Work);
+    f.registry.add_window("w-9");
     let _ = f.registry.request_close("w-9");
     assert!(refused("w-9", &view), "target closing");
-    f.registry.add_window("w-8", WindowKind::Work);
+    f.registry.add_window("w-8");
     let (_, workspace) = f.registry.workspace_of(&keep_view).unwrap();
     workspace
         .documents()
@@ -907,7 +906,7 @@ fn a_refused_move_leaves_both_windows_as_they_were() {
 fn a_tab_moving_back_and_forth_is_always_found_in_one_place() {
     let f = fx();
     let dir = tempfile::tempdir().unwrap();
-    f.registry.add_window("w-9", WindowKind::Work);
+    f.registry.add_window("w-9");
     tab(&f, "main", &file(&dir.path().join("keep-a.md"))).unwrap();
     tab(&f, "w-9", &file(&dir.path().join("keep-b.md"))).unwrap();
     let moving_ref = file(&dir.path().join("move.md"));
@@ -947,8 +946,8 @@ fn a_second_move_of_a_tab_under_way_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
     let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
-    f.registry.add_window("w-8", WindowKind::Work);
-    f.registry.add_window("w-9", WindowKind::Work);
+    f.registry.add_window("w-8");
+    f.registry.add_window("w-9");
     let first = f.registry.begin_move(moving, &MoveTo::NewWindow).unwrap();
     assert!(matches!(
         f.registry.begin_move(moving, &MoveTo::NewWindow),
@@ -982,7 +981,7 @@ fn concurrent_moves_of_one_tab_never_split_tab_and_view() {
     // each window keeps a tab of its own: the moving one is never the only one (it may always go on)
     for n in 0..8 {
         let window = format!("w-{n}");
-        f.registry.add_window(&window, WindowKind::Work);
+        f.registry.add_window(&window);
         tab(&f, &window, &file(&dir.path().join(format!("keep-{n}.md")))).unwrap();
     }
     let held = std::sync::atomic::AtomicUsize::new(0);
@@ -1018,6 +1017,272 @@ fn concurrent_moves_of_one_tab_never_split_tab_and_view() {
         f.registry.window_of(&view)
     );
     assert!(moves.into_inner() > 8, "the tab moved many times");
+}
+
+// ---- move to an existing window ("Move to window") ---------------------------------------------------------------
+
+/// The tab goes into a window that has tabs of its own: it is the active one there, its workspace keeps its id and
+/// its one place; the window it left shows its other tab.
+#[test]
+fn a_tab_moved_into_an_existing_window_is_active_there() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let (_, keep_view) = tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let moving_ref = file(&dir.path().join("move.md"));
+    let (moving, view) = tab(&f, "main", &moving_ref).unwrap();
+    let (theirs, their_view) = tab(&f, "w-1", &file(&dir.path().join("theirs.md"))).unwrap();
+    let id = f.registry.workspace_of(&view).unwrap().0;
+    let to = MoveTo::Window("w-1".into());
+    let ticket = f.registry.begin_move(moving, &to).unwrap();
+    let changes = run(
+        &f,
+        f.registry.move_tab(&ticket, "w-1", Some(&view)).unwrap(),
+    );
+    drop(ticket);
+    assert!(changes.contains(&ViewChange::Show {
+        window: "w-1".into(),
+        view: view.clone()
+    }));
+    assert!(
+        !changes
+            .iter()
+            .any(|c| matches!(c, ViewChange::CloseWindow { .. })),
+        "main keeps a tab: it stays"
+    );
+    let target = window_of(&f, "w-1");
+    assert_eq!(
+        target.tabs.iter().map(|t| t.tab).collect::<Vec<_>>(),
+        [theirs, moving]
+    );
+    assert_eq!(target.active, Some(moving));
+    assert_eq!(f.registry.shown_view("w-1"), Some(view.clone()));
+    assert_eq!(f.registry.shown_view("main"), Some(keep_view));
+    assert_eq!(f.registry.window_of(&their_view).as_deref(), Some("w-1"));
+    assert_eq!(f.registry.workspace_of(&view).unwrap().0, id);
+    assert_eq!(
+        f.registry.find(&moving_ref),
+        Some(Place {
+            window: "w-1".into(),
+            tab: moving
+        })
+    );
+}
+
+/// "Move to window" takes a window's only tab too: the window it leaves closes (after the target shows: the shell
+/// applies `CloseWindow` last). A pending tab moves as its ref and loads where it lands.
+#[test]
+fn the_only_tab_may_move_into_another_window_and_its_window_closes() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    f.registry.add_window("w-2");
+    let _ = f.registry.show_welcome_view("w-2");
+    let (only, view) = tab(&f, "w-2", &file(&dir.path().join("only.md"))).unwrap();
+    let ticket = f
+        .registry
+        .begin_move(only, &MoveTo::Window("main".into()))
+        .unwrap();
+    let changes = run(
+        &f,
+        f.registry.move_tab(&ticket, "main", Some(&view)).unwrap(),
+    );
+    drop(ticket);
+    assert!(changes.contains(&ViewChange::CloseWindow {
+        window: "w-2".into()
+    }));
+    assert_eq!(window_of(&f, "main").active, Some(only));
+    // a pending tab (restored, never shown) moves as its ref
+    let pending_ref = file(&dir.path().join("pending.md"));
+    let pending = f.registry.restore_tab("w-1", &pending_ref, None).unwrap();
+    let _ = f
+        .registry
+        .restore_tab("w-1", &file(&dir.path().join("stays.md")), None);
+    let ticket = f
+        .registry
+        .begin_move(pending, &MoveTo::Window("main".into()))
+        .unwrap();
+    let outcome = f.registry.move_tab(&ticket, "main", None).unwrap();
+    // it loads where it lands (activated there); the tab left in w-1 becomes active there and loads too
+    assert_eq!(outcome.loads.len(), 2);
+    assert!(outcome.loads.iter().any(|(ticket, reference)| {
+        *reference == pending_ref && f.registry.window_of(ticket.view()).as_deref() == Some("main")
+    }));
+    run(&f, outcome);
+    drop(ticket);
+    assert_eq!(window_of(&f, "main").active, Some(pending));
+    assert_eq!(
+        f.registry.find(&pending_ref).map(|p| p.window).as_deref(),
+        Some("main")
+    );
+}
+
+/// Adversarial: the target is asked to close while a tab is moving into it (the person closes it at that moment).
+/// The close waits (nothing changes: the view sits in that native window already and would go with it), then is
+/// asked again once the move is done: the moved tab's unsaved edits are in the prompt, never lost.
+#[test]
+fn a_window_asked_to_close_during_a_move_into_it_waits_for_the_move() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
+    tab(&f, "w-1", &file(&dir.path().join("theirs.md"))).unwrap();
+    let (_, workspace) = f.registry.workspace_of(&view).unwrap();
+    workspace
+        .documents()
+        .set_unsaved(&view, Some("move.md".into()));
+    let ticket = f
+        .registry
+        .begin_move(moving, &MoveTo::Window("w-1".into()))
+        .unwrap();
+    let held = f.registry.request_close("w-1");
+    assert!(held.changes.is_empty() && held.loads.is_empty());
+    assert!(!f.registry.is_closing("w-1") && !f.registry.is_confirming_close("w-1"));
+    assert!(
+        !f.registry.take_deferred_close("w-1"),
+        "the move is still under way"
+    );
+    // a second ask meanwhile is held the same way
+    assert_eq!(f.registry.request_close("w-1").changes, []);
+    f.registry.move_tab(&ticket, "w-1", Some(&view)).unwrap();
+    assert!(!f.registry.take_deferred_close("w-1"), "ticket still held");
+    drop(ticket);
+    assert!(f.registry.take_deferred_close("w-1"));
+    assert!(!f.registry.take_deferred_close("w-1"), "once");
+    let changes = f.registry.request_close("w-1").changes;
+    let [ViewChange::AskClose { tabs, .. }] = changes.as_slice() else {
+        panic!("one prompt: {changes:?}");
+    };
+    assert_eq!(tabs.iter().map(|t| t.tab).collect::<Vec<_>>(), [moving]);
+    // a window not asked meanwhile has nothing waiting; a window asking to close lets no tab move out
+    assert!(!f.registry.take_deferred_close("main"));
+    assert!(f
+        .registry
+        .begin_move(moving, &MoveTo::Window("main".into()))
+        .is_err());
+}
+
+/// Adversarial: a target that cannot take the tab refuses at `begin_move` (nothing made, nothing moved): unknown,
+/// the tab's own window, closing, asking to close. A target gone between `begin_move` and `move_tab` refuses there;
+/// the tab stays with its view. A wait for a window that is then forgotten is dropped with it.
+#[test]
+fn a_target_that_cannot_take_the_tab_refuses_and_the_tab_stays() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (moving, view) = tab(&f, "main", &file(&dir.path().join("move.md"))).unwrap();
+    let refused = |to: &str| {
+        matches!(
+            f.registry
+                .begin_move(moving, &MoveTo::Window(to.to_owned())),
+            Err(MoveRefused)
+        )
+    };
+    assert!(refused("nowhere"));
+    assert!(refused("main"), "its own window");
+    f.registry.add_window("w-7");
+    let _ = f.registry.request_close("w-7");
+    assert!(f.registry.is_closing("w-7"));
+    assert!(refused("w-7"), "closing");
+    let (_, asking_view) = tab(&f, "w-1", &file(&dir.path().join("asking.md"))).unwrap();
+    let (_, asking) = f.registry.workspace_of(&asking_view).unwrap();
+    asking
+        .documents()
+        .set_unsaved(&asking_view, Some("asking.md".into()));
+    let _ = f.registry.request_close("w-1");
+    assert!(f.registry.is_confirming_close("w-1"));
+    assert!(refused("w-1"), "asking to close");
+    // gone between the two steps (its native window destroyed)
+    f.registry.add_window("w-8");
+    let ticket = f
+        .registry
+        .begin_move(moving, &MoveTo::Window("w-8".into()))
+        .unwrap();
+    let _ = f.registry.request_close("w-8");
+    f.registry.forget_window("w-8");
+    assert!(matches!(
+        f.registry.move_tab(&ticket, "w-8", Some(&view)),
+        Err(MoveRefused)
+    ));
+    drop(ticket);
+    assert!(!f.registry.take_deferred_close("w-8"), "forgotten with it");
+    assert_eq!(f.registry.window_of_tab(moving).as_deref(), Some("main"));
+    assert_eq!(f.registry.window_of(&view).as_deref(), Some("main"));
+}
+
+/// Adversarial: 8 threads move 8 tabs between 4 windows (each keeps a tab of its own) for 200 rounds, and each goes on
+/// until it has moved a tab at least once (no thread starves). Every move that ran left its tab with its view; at the
+/// end every tab is in exactly one window, every workspace found once.
+#[test]
+fn concurrent_moves_between_existing_windows_keep_one_place() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let windows = ["main", "w-1", "w-2", "w-3"];
+    for window in &windows[2..] {
+        f.registry.add_window(window);
+        let _ = f.registry.show_welcome_view(window);
+    }
+    let mut moving = Vec::new();
+    for (n, window) in windows.iter().enumerate() {
+        tab(&f, window, &file(&dir.path().join(format!("keep-{n}.md")))).unwrap();
+        for k in 0..2 {
+            let reference = file(&dir.path().join(format!("move-{n}-{k}.md")));
+            let (id, view) = tab(&f, window, &reference).unwrap();
+            moving.push((id, view, reference));
+        }
+    }
+    let moves = std::sync::atomic::AtomicUsize::new(0);
+    let started = std::time::Instant::now();
+    std::thread::scope(|s| {
+        for n in 0..8 {
+            let (f, moving, moves, windows) = (&f, &moving, &moves, &windows);
+            s.spawn(move || {
+                // how many of the 200 rounds succeed depends on the interleaving (a tab reserved by another thread, a
+                // move to where the tab already is): not counted on; one move of its own per thread is
+                let mut mine = 0;
+                let mut round = 0;
+                while round < 200 || mine == 0 {
+                    assert!(
+                        started.elapsed() < std::time::Duration::from_secs(30),
+                        "thread {n} never moved a tab"
+                    );
+                    let (tab_id, view, _) = &moving[(n + round) % moving.len()];
+                    let to = windows[(n + 3 * round) % windows.len()];
+                    round += 1;
+                    let Ok(ticket) = f
+                        .registry
+                        .begin_move(*tab_id, &MoveTo::Window(to.to_owned()))
+                    else {
+                        continue;
+                    };
+                    if f.registry.move_tab(&ticket, to, Some(view)).is_ok() {
+                        mine += 1;
+                        moves.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        assert_eq!(f.registry.window_of_tab(*tab_id).as_deref(), Some(to));
+                    }
+                    assert_eq!(
+                        f.registry.window_of_tab(*tab_id),
+                        f.registry.window_of(view)
+                    );
+                }
+            });
+        }
+    });
+    let listed = f.registry.list_windows();
+    for (tab_id, view, reference) in &moving {
+        let count: usize = listed
+            .iter()
+            .map(|w| w.tabs.iter().filter(|t| t.tab == *tab_id).count())
+            .sum();
+        assert_eq!(count, 1);
+        assert_eq!(
+            f.registry.window_of_tab(*tab_id),
+            f.registry.window_of(view)
+        );
+        assert_eq!(f.registry.find(reference).map(|p| p.tab), Some(*tab_id));
+    }
+    assert_eq!(listed.iter().map(|w| w.tabs.len()).sum::<usize>(), 12);
+    let moves = moves.into_inner();
+    eprintln!("{moves} moves");
+    assert!(moves >= 8, "every thread moved a tab: {moves}");
 }
 
 /// "Move to new window" never takes a window's only tab (spec: disabled with one tab), nor its last one staying
@@ -1060,7 +1325,7 @@ fn the_last_window_on_screen_counts_shown_windows_only() {
     let f = fx();
     f.registry.window_shown("main");
     assert!(f.registry.is_last_on_screen("main"));
-    f.registry.add_window("w-1", WindowKind::Work);
+    f.registry.add_window("w-1");
     assert!(f.registry.is_last_on_screen("main"), "w-1 still being made");
     f.registry.window_shown("w-1");
     assert!(!f.registry.is_last_on_screen("main"));
@@ -1264,4 +1529,159 @@ fn a_per_project_choice_stops_and_starts_the_plugin_and_is_kept_in_the_profile()
     core.set_plugin_choice(&env, &git, None).unwrap();
     assert_eq!(take(&f.log), ["start:git", "start:unread"]);
     assert_eq!(core.plugin_choices().len(), 0);
+}
+// ---- move to window: adversarial (verifier) ---------------------------------------------------------------------
+
+fn saved_count(f: &Fx, reference: &WorkspaceRef) -> usize {
+    let dto = reference.to_dto();
+    f.registry
+        .session_windows()
+        .iter()
+        .map(|w| w.tabs.iter().filter(|t| **t == dto).count())
+        .sum()
+}
+
+/// Adversarial: the only tab of an older window moves into a newer one; the emptied source is Closing until its
+/// native window is destroyed. A session saved in that gap (saver tick | the target's deferred close, which is then
+/// the last on screen) must list the moved tab once, in the target; else restore (creation order, first wins)
+/// brings back the source window holding it.
+#[test]
+fn only_tab_move_is_saved_once_in_the_target() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    f.registry.window_shown("main");
+    f.registry.window_shown("w-1");
+    let moving_ref = file(&dir.path().join("only.md"));
+    let (only, view) = tab(&f, "main", &moving_ref).unwrap();
+    tab(&f, "w-1", &file(&dir.path().join("theirs.md"))).unwrap();
+    let ticket = f
+        .registry
+        .begin_move(only, &MoveTo::Window("w-1".into()))
+        .unwrap();
+    // the person closes the target meanwhile: deferred
+    assert_eq!(f.registry.request_close("w-1").changes, []);
+    let changes = run(
+        &f,
+        f.registry.move_tab(&ticket, "w-1", Some(&view)).unwrap(),
+    );
+    drop(ticket);
+    assert!(changes.contains(&ViewChange::CloseWindow {
+        window: "main".into()
+    }));
+    // main is Closing, not yet forgotten (Destroyed comes later on the main thread)
+    assert!(f.registry.take_deferred_close("w-1"));
+    let close = f.registry.request_close("w-1").changes;
+    assert!(close.contains(&ViewChange::CloseWindow {
+        window: "w-1".into()
+    }));
+    assert!(
+        f.registry.is_last_on_screen("w-1"),
+        "shell saves the session now"
+    );
+    let session = f.registry.session_windows();
+    assert_eq!(saved_count(&f, &moving_ref), 1, "moved tab saved once");
+    assert!(
+        !session.iter().any(|w| w.window == "main"),
+        "the window the move emptied is not brought back"
+    );
+}
+
+/// Adversarial: rapid back-and-forth "Move to window" of an only tab between two windows that each close when
+/// emptied: the second move finds its source Closing -> refused, never a tab lost.
+#[test]
+fn only_tab_cannot_move_out_of_a_window_that_closed() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    let moving_ref = file(&dir.path().join("only.md"));
+    let (only, view) = tab(&f, "main", &moving_ref).unwrap();
+    let t = f
+        .registry
+        .begin_move(only, &MoveTo::Window("w-1".into()))
+        .unwrap();
+    run(&f, f.registry.move_tab(&t, "w-1", Some(&view)).unwrap());
+    drop(t);
+    // back into main (Closing now): refused at begin_move
+    assert!(f
+        .registry
+        .begin_move(only, &MoveTo::Window("main".into()))
+        .is_err());
+    assert_eq!(f.registry.window_of_tab(only).as_deref(), Some("w-1"));
+    assert_eq!(
+        f.registry.find(&moving_ref).map(|p| p.window).as_deref(),
+        Some("w-1")
+    );
+}
+
+/// Adversarial: two moves into one target, close asked between them: the close waits for both, fires once.
+#[test]
+fn deferred_close_waits_for_every_move_into_the_target() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (a, va) = tab(&f, "main", &file(&dir.path().join("a.md"))).unwrap();
+    let (b, vb) = tab(&f, "main", &file(&dir.path().join("b.md"))).unwrap();
+    let ta = f
+        .registry
+        .begin_move(a, &MoveTo::Window("w-1".into()))
+        .unwrap();
+    let tb = f
+        .registry
+        .begin_move(b, &MoveTo::Window("w-1".into()))
+        .unwrap();
+    assert_eq!(f.registry.request_close("w-1").changes, []);
+    f.registry.move_tab(&ta, "w-1", Some(&va)).unwrap();
+    drop(ta);
+    assert!(!f.registry.take_deferred_close("w-1"), "b still moving");
+    f.registry.move_tab(&tb, "w-1", Some(&vb)).unwrap();
+    drop(tb);
+    assert!(f.registry.take_deferred_close("w-1"));
+    assert!(!f.registry.take_deferred_close("w-1"));
+    assert!(f
+        .registry
+        .request_close("w-1")
+        .changes
+        .contains(&ViewChange::CloseWindow {
+            window: "w-1".into()
+        }));
+}
+
+/// Adversarial: a window whose close waits for a move into it takes no new move (else a stream of moves would hold
+/// its close for ever); it is listed as closing (the "Move to window" menu leaves it out) until the close is asked
+/// again; a window asking to close (prompt up) is listed so too.
+#[test]
+fn a_window_waiting_to_close_takes_no_new_move_and_is_listed_as_closing() {
+    let f = fx();
+    let dir = tempfile::tempdir().unwrap();
+    tab(&f, "main", &file(&dir.path().join("keep.md"))).unwrap();
+    let (a, va) = tab(&f, "main", &file(&dir.path().join("a.md"))).unwrap();
+    let (b, _) = tab(&f, "main", &file(&dir.path().join("b.md"))).unwrap();
+    tab(&f, "w-1", &file(&dir.path().join("theirs.md"))).unwrap();
+    assert!(!window_of(&f, "w-1").closing);
+    let ta = f
+        .registry
+        .begin_move(a, &MoveTo::Window("w-1".into()))
+        .unwrap();
+    assert_eq!(f.registry.request_close("w-1").changes, []);
+    assert!(window_of(&f, "w-1").closing, "published at once");
+    assert!(matches!(
+        f.registry.begin_move(b, &MoveTo::Window("w-1".into())),
+        Err(MoveRefused)
+    ));
+    f.registry.move_tab(&ta, "w-1", Some(&va)).unwrap();
+    drop(ta);
+    assert!(f.registry.take_deferred_close("w-1"));
+    // asked again: the moved tab has unsaved edits -> prompt up, still closing
+    let (_, workspace) = f.registry.workspace_of(&va).unwrap();
+    workspace.documents().set_unsaved(&va, Some("a.md".into()));
+    let _ = f.registry.request_close("w-1");
+    assert!(f.registry.is_confirming_close("w-1"));
+    assert!(window_of(&f, "w-1").closing);
+    let _ = f
+        .registry
+        .resolve_close("w-1", Resolution::Stay { show: None });
+    assert!(!window_of(&f, "w-1").closing);
+    assert!(f
+        .registry
+        .begin_move(b, &MoveTo::Window("w-1".into()))
+        .is_ok());
 }

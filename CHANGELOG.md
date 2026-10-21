@@ -5,25 +5,47 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-20
+
+### Added
+- **Notes button.** A button next to Settings opens your Notes in a tab with one click, or brings you to the Notes tab if it is already open. `Ctrl+Shift+D` does the same, and `Ctrl+Shift+N` makes a new note from anywhere. <!-- f: notes, keyboard-shortcuts -->
+- **Drop files from outside, anywhere.** Drag files or folders from your file manager onto the file list and the folder under the pointer lights up; when you let go, a small question at that spot asks Copy here, Move here or Cancel, and lists names that already exist (Keep both or Skip). Drop them anywhere else in the window, the start screen included, and each one opens as a tab; more than 8 ask first. Text files dropped on the Notes tab (Markdown, plain text, settings and data files such as YAML, JSON or CSV, and files like README) become loose files there, and pictures dropped on a document you are editing go into it. A label next to the pointer always says what the drop will do, in place of the dashed frame that covered the window, and folders you rest on open by themselves. Undo in the notice takes back exactly that drop, even after other changes, as long as those files were not touched since. <!-- f: drop-files, explorer, tabs, notes, start-screen, pictures-in-documents -->
+- **Hide and show the side bars.** `Ctrl+B` hides or shows the sidebar and `Ctrl+Alt+B` the right panel, as in earlier versions; a button at each end of the status bar does the same. Each project remembers which side bars you hid. <!-- f: side-panels, keyboard-shortcuts -->
+- **Move a tab to another window.** Right-click a tab and choose **Move to window** to move it into another open window; the list shows each window by the tab it is showing and how many tabs it has. Unsaved changes move with the tab. Moving a window's last tab closes the window it leaves. <!-- f: tabs, windows -->
+
+### Changed
+- Every plugin is now on from the start, Token count and the Converter included, so you no longer need to turn them on in the Plugins page. A plugin you turned off yourself stays off. Token count still asks before it downloads a tokenizer's vocabulary, and nothing is downloaded when PerMark starts. The agent connection stays off until you turn it on for a project. <!-- f: plugins, token-count, converter -->
+- `Ctrl+B` makes text bold in the source editor too, as it already did in the visual editor. <!-- f: source-mode, keyboard-shortcuts -->
+- The outline button always shows the outline, even when another panel was open on the right. <!-- f: outline, side-panels -->
+- In the Notes tab, `Ctrl+1` to `Ctrl+9` open your pinned notes (instead of switching tabs), `Ctrl+N` makes a new note and `Ctrl+Shift+C` copies the note. Use `Ctrl+Tab` or the tabs to switch tabs from there. The keyboard shortcuts list no longer reports these keys as shared, but it does warn when a key you choose is already used where the same command could run. <!-- f: notes, keyboard-shortcuts -->
+
+### Fixed
+- Clicking a note on the start screen, or "New note", now reaches the Notes tab even when it is open in another window. <!-- f: notes, start-screen -->
+- When another program saves `.permark/meta.toml` at the same moment PerMark writes your tags or descriptions there, PerMark no longer writes over that program's version: it reads it first and then adds your change. <!-- f: tags -->
+- Files you add, copy or move in a project now appear in its file list right away, also while another open project is changing; before, they could stay out of the list until it was reloaded. <!-- f: explorer, tabs -->
+
+### Known limits
+- Tabs, moving a tab to another window and dropping files have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned. <!-- f: tabs, windows, drop-files -->
+
 ## [0.6.1] - 2026-10-20
 
 ### Added
-- **Tabs.** Each folder or file you open gets a tab in the bar at the top of its window, and Notes open in a tab too. Click a tab to switch to it; `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` and `Ctrl+Alt+←`) go to the next and previous tab, `Ctrl+1` to `Ctrl+8` to a tab, `Ctrl+9` to the last one, and `Ctrl+W` closes the tab. A tab with unsaved changes shows a dot. Right-click a tab to move it to a new window. When PerMark starts, your windows and tabs come back, and only the tab you see loads, so the start stays fast.
+- **Tabs.** Each folder or file you open gets a tab in the bar at the top of its window, and Notes open in a tab too. Click a tab to switch to it; `Ctrl+Tab` and `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` and `Ctrl+Alt+←`) go to the next and previous tab, `Ctrl+1` to `Ctrl+8` to a tab, `Ctrl+9` to the last one, and `Ctrl+W` closes the tab. A tab with unsaved changes shows a dot. Right-click a tab to move it to a new window. When PerMark starts, your windows and tabs come back, and only the tab you see loads, so the start stays fast. <!-- f: tabs, notes, keyboard-shortcuts, session-restore -->
 
 ### Changed
-- A folder or file opens in one place only: if it is open already, its window and tab come forward. **Settings → Editing → Open folders and files in** offers New tab (the default), This tab and New window; the old "Ask" choice now means New tab, and the question dialog is gone.
-- Opening from outside PerMark (a double-click, the command line) adds a tab to the window you used last.
-- Closing a window with unsaved changes asks once for all its tabs: Save all, Discard or Cancel.
-- The windows of 0.6.0 come back as tabs: each window keeps its folder or file as one tab, and a project that was open in two windows comes back once.
+- A folder or file opens in one place only: if it is open already, its window and tab come forward. **Settings → Editing → Open folders and files in** offers New tab (the default), This tab and New window; the old "Ask" choice now means New tab, and the question dialog is gone. <!-- f: tabs, settings -->
+- Opening from outside PerMark (a double-click, the command line) adds a tab to the window you used last. <!-- f: tabs, file-manager-integration -->
+- Closing a window with unsaved changes asks once for all its tabs: Save all, Discard or Cancel. <!-- f: tabs, save -->
+- The windows of 0.6.0 come back as tabs: each window keeps its folder or file as one tab, and a project that was open in two windows comes back once. <!-- f: tabs, session-restore -->
 
 ### Fixed
-- Windows come back where you left them, also when PerMark starts from a file you open. A new window opens slightly offset from the current one, at the same size, and a maximized window stays maximized. The first start after 0.5 takes the window place 0.5 saved.
-- The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons.
-- The scrollbar of a document is always visible and wider, so it is easier to grab.
-- The buttons of the side bar (such as Broken links and Tags) always appear in the same order.
+- Windows come back where you left them, also when PerMark starts from a file you open. A new window opens slightly offset from the current one, at the same size, and a maximized window stays maximized. The first start after 0.5 takes the window place 0.5 saved. <!-- f: windows, session-restore -->
+- The document header no longer covers the outline or the live feed in a narrow window. When space runs short, less used buttons move into the "…" menu, and in a very narrow window the mode buttons show as icons. <!-- f: view-mode, outline, live-feed -->
+- The scrollbar of a document is always visible and wider, so it is easier to grab. <!-- f: view-mode -->
+- The buttons of the side bar (such as Broken links and Tags) always appear in the same order. <!-- f: side-panels -->
 
 ### Known limits
-- Tabs have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned.
+- Tabs have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned. <!-- f: tabs -->
 
 ## [0.6.0] - 2026-10-20
 
@@ -52,6 +74,9 @@ PerMark 0.6 never changes your files to upgrade. It reads what 0.5 saved and cop
 - **Converter** (off until you turn it on): turns JSON, XML, YAML, CSV and TOML into TOON or another compact format (or into a readable one), shows the estimated token saving of each choice, and never writes over the original.
 - **Markdown of the AI era is recognized** with no setup: agent files such as `AGENTS.md`, `CLAUDE.md` and `SKILL.md`, Cursor rules (`.mdc`), `llms.txt`, prompt files, and model and dataset cards (told by their front matter).
 - **A bigger agent connection.** It now has 13 tools, with short answers an agent spends few tokens on. New: `map` (the project's files with sizes, tags and descriptions), `outline` (the parts of a file before reading it, optionally with the links in and out), `read` (one part of a file), and `activity` (what you did since the last hand-off). `search` takes a token budget. Permissions are set by group, per project, and a project's `.permark/` can only narrow them. Files in `.aiignore` and private key files never reach an agent, and secret values are always masked. **Hand off to agent** copies one line for your prompt so the agent asks what you did instead of rereading the project. An agent still only reads, shows you a place and marks comments done; it never edits a file through PerMark.
+- **Prompt blocks.** XML-like prompt tags such as `<context>`, `<instructions>` and `<example>` fold as blocks, and the Markdown inside them still renders; `{{name}}` template variables are marked and `@path` references link to the file. <!-- f: prompt-blocks -->
+- **Word count** in the status bar: words, characters and reading time of the document or of the selection. <!-- f: word-count -->
+- **Front matter you can edit.** In Edit, the front matter shows as properties you can change without breaking the file; in View it stays a read-only card. <!-- f: frontmatter-card -->
 - **List indent and outdent** buttons in the Edit toolbar.
 - **Choose a picture.** The picture button in Edit opens the system file dialog; the pictures are saved next to the document.
 - **The interface speaks six languages**: English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano.

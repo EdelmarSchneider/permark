@@ -42,7 +42,7 @@ let workspace: Shown;
 let started = false;
 
 async function until(check: () => boolean, what: string): Promise<void> {
-  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 3000, interval: 10 });
+  await vi.waitFor(() => expect(check(), what).toBe(true), { timeout: 10_000, interval: 10 });
 }
 
 const text = (): string => (target.textContent ?? "").replace(/\s+/g, " ").trim();

@@ -216,7 +216,9 @@ fn status_letters_for_every_kind_of_change() {
         );
         fx.write("ñ ü/日本.md", "x\n");
         fx.commit("first");
-        fx.write("edited.md", "two\n");
+        // a new size: an edit of the same size inside the timestamp tick of the commit is "racily clean" to git (the
+        // index's size + time still match), a git limit, not what this test is about
+        fx.write("edited.md", "two, longer\n");
         fx.remove("gone.md");
         fx.write("added.md", "new\n");
         fx.stage("added.md");

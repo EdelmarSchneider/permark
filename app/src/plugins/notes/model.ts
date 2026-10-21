@@ -2,6 +2,7 @@
 // edited, which ones a filter keeps, and how the pinned ones are reordered. The window draws what these return.
 
 import type { NoteEntry } from "../../api";
+import { opensAsText } from "../../core/explorer/importModel";
 
 /** The groups the notes that are not pinned fall into, in the order the list shows them. */
 export const GROUP_ORDER = ["today", "yesterday", "week", "month", "older"] as const;
@@ -116,7 +117,7 @@ export function movePinned(order: readonly string[], path: string, direction: -1
   return next;
 }
 
-/** The pinned note `Ctrl+1` to `Ctrl+9` jump to (`n` from 1), or null when there are fewer. */
+/** The pinned note `Mod+1` to `Mod+9` jump to (`n` from 1), or null when there are fewer. */
 export function pinnedAt(pinned: readonly NoteEntry[], n: number): NoteEntry | null {
   return n >= 1 && n <= 9 ? (pinned[n - 1] ?? null) : null;
 }
@@ -208,4 +209,10 @@ export function timeLabel(modifiedMs: number, now: number): string {
     default:
       return "";
   }
+}
+
+/** What a drop on the Notes tab lists as loose files: files PerMark opens as text (by name, for the badge; the backend
+ *  checks the file itself). Folders and other files open as tabs. */
+export function isLooseFile(path: string): boolean {
+  return opensAsText(path);
 }
