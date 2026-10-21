@@ -2,7 +2,8 @@
 //! the deltas sent to them.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use ignore::gitignore::Gitignore;
 
@@ -83,6 +84,9 @@ pub struct Explorer {
     linked: Mutex<Arc<HashSet<String>>>,
     default_filter: Mutex<TreeFilter>,
     sink: Arc<dyn EventSink>,
+    /// The first walk ended (set once, never reset: the model is never dropped).
+    built: Mutex<bool>,
+    built_cv: Condvar,
 }
 
 impl std::fmt::Debug for Explorer {
@@ -129,6 +133,8 @@ impl Explorer {
             linked: Mutex::new(Arc::new(HashSet::new())),
             default_filter: Mutex::new(TreeFilter::from_config(&config.tree)),
             sink,
+            built: Mutex::new(false),
+            built_cv: Condvar::new(),
         }
     }
 
@@ -170,8 +176,20 @@ impl Explorer {
             let mut model = TreeModel::new(self.roots.clone());
             model.rebuild();
             *guard = Some(model);
+            *lock(&self.built) = true;
+            self.built_cv.notify_all();
         }
         guard
+    }
+
+    /// Waits up to `timeout` for the first walk to end (never walks). `true`: the tree is built.
+    pub fn wait_built(&self, timeout: Duration) -> bool {
+        let built = lock(&self.built);
+        let (built, _) = self
+            .built_cv
+            .wait_timeout_while(built, timeout, |b| !*b)
+            .unwrap_or_else(PoisonError::into_inner);
+        *built
     }
 
     fn root_nodes(&self) -> Vec<RootNode> {
@@ -530,6 +548,30 @@ impl Explorer {
     pub fn listed(&self, path: &str) -> Option<NodeKind> {
         let guard = self.model();
         guard.as_ref()?.node(&key_of(path)).map(|n| n.kind)
+    }
+
+    /// Folders of the project folder holding a project marker (`.git` | a real `.permark`), as the walk saw them; the
+    /// tree is built first when it is not yet (`projects.md` §1.1).
+    #[must_use]
+    pub fn markers(&self) -> Vec<super::Marker> {
+        let guard = self.model();
+        guard.as_ref().map_or_else(Vec::new, TreeModel::markers)
+    }
+
+    /// Whether the model is in use now (a walk runs, or a short change).
+    #[must_use]
+    pub fn walking(&self) -> bool {
+        matches!(
+            self.model.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        )
+    }
+
+    /// The included projects of the project folder count from now on (the caller publishes a rescan).
+    pub fn set_members(&self, set: &super::MemberSet) {
+        if let Some(main) = self.roots.first() {
+            main.ignorer.set_members(set);
+        }
     }
 
     /// What the tree, when it is built, holds at `path`: `Some(is_folder)` | `None` (never walks the disk to find out).

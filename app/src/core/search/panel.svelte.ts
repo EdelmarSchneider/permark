@@ -1,7 +1,7 @@
 // State of the Search panel (one per project window): the words, the answer, the folded documents, the row the
 // keyboard is on and how far the first index build is.
 
-import type { Api, ApiError, IndexPhase, SectionHit, Unlisten } from "../../api";
+import type { Api, ApiError, IndexPhase, ProjectUid, SectionHit, Unlisten } from "../../api";
 import { flattenRows, groupHits, type PanelRow } from "./panelModel";
 import { searchTags } from "./tags.svelte";
 
@@ -17,6 +17,9 @@ export type Answer =
 
 export type Progress = { phase: IndexPhase; done: number; total: number };
 
+/** Where a search looks: everywhere, or only in the project the open document belongs to (`projects.md` §12.6). */
+export type Scope = "all" | "this";
+
 export class SearchPanelStore {
   query = $state("");
   answer = $state.raw<Answer>({ status: "idle" });
@@ -25,12 +28,16 @@ export class SearchPanelStore {
   active = $state(0);
   /** Also search what the person silenced (only offered when the silence plugin is on). */
   includeSilenced = $state(false);
+  scope = $state<Scope>("all");
   readonly #api: Api;
+  /** The included project "This project" means now (`null`: the open document is not inside one). */
+  readonly #project: () => ProjectUid | null;
   #seq = 0;
   #timer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(api: Api) {
+  constructor(api: Api, project: () => ProjectUid | null = () => null) {
     this.#api = api;
+    this.#project = project;
   }
 
   groups = $derived(this.answer.status === "ready" ? groupHits(this.answer.hits) : []);
@@ -68,6 +75,12 @@ export class SearchPanelStore {
     this.query = text;
     this.active = 0;
     this.#schedule(PANEL_DEBOUNCE_MS);
+  }
+
+  setScope(scope: Scope): void {
+    if (scope === this.scope) return;
+    this.scope = scope;
+    this.#schedule(0);
   }
 
   setIncludeSilenced(on: boolean): void {
@@ -125,10 +138,12 @@ export class SearchPanelStore {
   async #run(seq: number): Promise<void> {
     const query = this.query.trim();
     if (this.answer.status !== "ready") this.answer = { status: "loading" };
+    const project = this.scope === "this" ? this.#project() : null;
     const result = await this.#api.searchSections(query, LIMIT, {
       includeSilenced: this.includeSilenced,
       tags: [...searchTags.selected],
       hiddenLast: false,
+      ...(project !== null ? { project } : {}),
     });
     if (seq !== this.#seq) return;
     this.answer = result.ok

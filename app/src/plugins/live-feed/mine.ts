@@ -110,6 +110,7 @@ function own(item: FeedItem): boolean {
     case "group":
       return item.own;
     case "resync":
+    case "project":
       return false;
     default:
       return item satisfies never;

@@ -167,6 +167,10 @@ pub struct SearchOptions {
     /// Hidden paths (dot files | folders) rank after every other match: the window's Explorer does not show them.
     #[serde(default)]
     pub hidden_last: bool,
+    /// "This project": only paths inside this included project (its subtree, projects inside it included).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub project: Option<crate::projects::ProjectUid>,
 }
 
 /// Which documents may answer: the typed seam for the tags (`only`) and silence (`skip`, `muted`) plugins.
@@ -179,6 +183,8 @@ pub struct SearchFilter {
     pub muted: Option<Arc<dyn SilenceLookup>>,
     /// File and folder names: hidden paths after every other match.
     pub hidden_last: bool,
+    /// Only paths at | below this key (a project's subtree).
+    pub within: Option<String>,
 }
 
 impl std::fmt::Debug for SearchFilter {
@@ -188,13 +194,17 @@ impl std::fmt::Debug for SearchFilter {
             .field("skip", &self.skip)
             .field("muted", &self.muted.is_some())
             .field("hidden_last", &self.hidden_last)
+            .field("within", &self.within)
             .finish()
     }
 }
 
 impl SearchFilter {
     fn allows(&self, path: &str) -> bool {
-        self.only.as_ref().is_none_or(|only| only.contains(path))
+        self.within
+            .as_ref()
+            .is_none_or(|base| crate::projects::map::within(&crate::paths::key_of(path), base))
+            && self.only.as_ref().is_none_or(|only| only.contains(path))
             && !self.skip.contains(path)
             && !self.muted.as_ref().is_some_and(|m| m.is_silenced(path))
     }

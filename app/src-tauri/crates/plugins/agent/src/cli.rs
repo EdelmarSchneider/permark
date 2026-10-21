@@ -120,11 +120,18 @@ impl Agent {
 
     /// The client said who it is: open a session with the app (it shows the agent as connected) when it listens.
     pub fn hello(&self, client: &str) {
-        client.clone_into(&mut lock(&self.client));
+        self.name_client(client);
         self.ensure_session();
     }
 
-    fn ensure_session(&self) {
+    /// Records the client's name only (no I/O). Call it where the name is decided, in order: two writers on blocking
+    /// threads finish in any order.
+    pub fn name_client(&self, client: &str) {
+        client.clone_into(&mut lock(&self.client));
+    }
+
+    /// Opens the session with the app when it listens and none is held (blocking I/O).
+    pub fn ensure_session(&self) {
         let Some(Ok(endpoint)) = self.project.as_ref().map(|p| p.endpoint.as_ref()) else {
             return;
         };

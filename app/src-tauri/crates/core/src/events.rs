@@ -80,6 +80,8 @@ pub enum CoreEvent {
     DocumentChanged(DocumentChanged),
     /// The search index of a project made progress (all windows; the payload names the project).
     IndexProgress(crate::search::IndexProgress),
+    /// The projects of a folder changed (all windows; the payload names the folder): read `projects_view` again.
+    ProjectsChanged(crate::projects::ProjectsChanged),
     PluginsChanged,
     PluginFailed {
         message: String,
@@ -104,6 +106,7 @@ impl CoreEvent {
             Self::TreeChanged(_) => "tree-changed",
             Self::DocumentChanged(_) => "document-changed",
             Self::IndexProgress(_) => "index-progress",
+            Self::ProjectsChanged(_) => "projects-changed",
             Self::PluginsChanged => "plugins-changed",
             Self::PluginFailed { .. } => "plugin-failed",
             Self::Plugin { name, .. } => name,

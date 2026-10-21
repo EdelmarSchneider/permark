@@ -23,6 +23,10 @@ use permark_core::format::{
 };
 use permark_core::paths::VaultPath;
 use permark_core::plugins::{Enablement, Manifest, PluginId, PluginScope, RpcCall};
+use permark_core::projects::{
+    AgentChoice, CardChange, CardDto, CardTarget, HiddenRule, IncludeOutcome, LocateRefusal,
+    ProjectPick, ProjectUid, ProjectsUndone, ProjectsView,
+};
 use permark_core::search::{IndexStatus, PathResults, Recent, SearchOptions, SectionResults};
 use permark_core::session::{ProjectSession, RecentFolder};
 use permark_core::settings::{
@@ -365,6 +369,137 @@ pub fn tree_close(handle: AppHandle, window: Webview) {
     if let Ok(core) = project_of(&handle, &window) {
         core.explorer().close_view(window.label());
     }
+}
+
+// ---- Projects inside the folder (`projects.md`) ---------------------------------------------------------------------------
+
+/// Settings > Projects + the strip of the window's folder. Changes arrive as `projects-changed { root, seq }`.
+#[tauri::command(async)]
+pub fn projects_view(handle: AppHandle, window: Webview) -> Result<ProjectsView, IpcError> {
+    Ok(project_of(&handle, &window)?.projects_view())
+}
+
+/// Includes projects (`all` = every offered one). A folder without `.permark/` is initialized first; its windows are
+/// told.
+#[tauri::command(async)]
+pub fn projects_include(
+    handle: AppHandle,
+    window: Webview,
+    pick: ProjectPick,
+) -> Result<IncludeOutcome, IpcError> {
+    let shell = state(&handle);
+    let core = project_of(&handle, &window)?;
+    let (outcome, initialized) = core.projects_include(&shell.env, &pick)?;
+    if initialized {
+        shell.registry.refresh();
+    }
+    Ok(outcome)
+}
+
+/// "No thanks": `all` on the first question declines for this folder; paths decline those projects (profile only).
+#[tauri::command(async)]
+pub fn projects_decline(
+    handle: AppHandle,
+    window: Webview,
+    pick: ProjectPick,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?.projects().decline(&pick)
+}
+
+/// Takes back the last include (its token); a `.permark/` it made goes when untouched.
+#[tauri::command(async)]
+pub fn projects_undo(
+    handle: AppHandle,
+    window: Webview,
+    token: u64,
+) -> Result<ProjectsUndone, IpcError> {
+    let shell = state(&handle);
+    let core = project_of(&handle, &window)?;
+    let (outcome, moved) = core.projects_undo(&shell.env, token)?;
+    if moved {
+        shell.registry.refresh();
+    }
+    Ok(outcome)
+}
+
+#[tauri::command(async)]
+pub fn projects_leave_out(
+    handle: AppHandle,
+    window: Webview,
+    uids: Vec<ProjectUid>,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?.projects().leave_out(&uids)
+}
+
+#[tauri::command(async)]
+pub fn projects_set_hidden(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    rule: HiddenRule,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .set_hidden(&uid, rule)
+}
+
+/// Agent sharing of one project (profile only).
+#[tauri::command(async)]
+pub fn projects_set_agent(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    choice: AgentChoice,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .set_agent(&uid, choice)
+}
+
+/// Locate… of a missing project: `path` = the folder the person picked (absolute). `null` = done, else why not.
+#[tauri::command(async)]
+pub fn projects_locate(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    path: String,
+) -> Result<Option<LocateRefusal>, IpcError> {
+    project_of(&handle, &window)?.projects_locate(&uid, std::path::Path::new(&path))
+}
+
+/// Missing projects taken off the list.
+#[tauri::command(async)]
+pub fn projects_remove(
+    handle: AppHandle,
+    window: Webview,
+    uids: Vec<ProjectUid>,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?.projects().remove(&uids)
+}
+
+/// The move question: `same` = the project at `path` is the missing one.
+#[tauri::command(async)]
+pub fn projects_answer_move(
+    handle: AppHandle,
+    window: Webview,
+    uid: ProjectUid,
+    path: String,
+    same: bool,
+) -> Result<(), IpcError> {
+    project_of(&handle, &window)?
+        .projects()
+        .answer_move(&uid, &path, same)
+}
+
+/// One field of a card (the folder's own | an included project's).
+#[tauri::command(async)]
+pub fn projects_card_set(
+    handle: AppHandle,
+    window: Webview,
+    target: CardTarget,
+    change: CardChange,
+) -> Result<CardDto, IpcError> {
+    project_of(&handle, &window)?.projects_card_set(&target, &change)
 }
 
 // ---- Explorer: file operations -------------------------------------------------------------------------------------------
@@ -1313,6 +1448,17 @@ commands![
     tree_open_folder,
     tree_keep,
     tree_close,
+    projects_view,
+    projects_include,
+    projects_decline,
+    projects_undo,
+    projects_leave_out,
+    projects_set_hidden,
+    projects_set_agent,
+    projects_locate,
+    projects_remove,
+    projects_answer_move,
+    projects_card_set,
     fileops_plan_move,
     fileops_apply_move,
     fileops_delete,

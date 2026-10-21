@@ -36,6 +36,18 @@ pub(crate) fn below_root(path: &str) -> &str {
     }
 }
 
+/// PerMark's folder in a project: a real one marks a project (`projects.md` §1.1).
+const PERMARK: &str = ".permark";
+
+/// A folder the walk saw holding a project marker (`.git` | a real `.permark`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Marker {
+    /// Project path (disk spelling).
+    pub path: String,
+    pub git: bool,
+    pub permark: bool,
+}
+
 /// One root of the vault with what the model needs to walk it.
 #[derive(Debug, Clone)]
 pub(crate) struct RootCtx {
@@ -116,7 +128,7 @@ pub(super) fn is_reparse_point(entry: &fs::DirEntry) -> bool {
 }
 
 /// Whether an entry (its own metadata, not followed) is a link: symlink | junction | other reparse point.
-pub(super) fn is_link(meta: &fs::Metadata) -> bool {
+pub(crate) fn is_link(meta: &fs::Metadata) -> bool {
     meta.file_type().is_symlink() || {
         #[cfg(windows)]
         {
@@ -181,6 +193,9 @@ fn read_entries(
         };
         let link = file_type.is_symlink() || is_reparse_point(&entry);
         let is_dir = file_type.is_dir() && !link;
+        if is_dir && named(&name, PERMARK) {
+            hints.permark = true;
+        }
         if want_stat && link && !is_dir {
             // a folder scan reads files: through a link (or a cloud placeholder) it would leave the folder
             continue;
@@ -222,6 +237,8 @@ pub(crate) struct TreeModel {
     nodes: HashMap<String, Node>,
     /// Folder key -> child keys, sorted (folders first, then by name).
     children: HashMap<String, Vec<String>>,
+    /// Folder key -> its project marker, for the folders of the main root the walk listed (not the root itself).
+    markers: HashMap<String, Marker>,
 }
 
 impl TreeModel {
@@ -230,7 +247,44 @@ impl TreeModel {
             roots,
             nodes: HashMap::new(),
             children: HashMap::new(),
+            markers: HashMap::new(),
         }
+    }
+
+    /// Folders holding a project marker (main root, the root itself left out).
+    pub(crate) fn markers(&self) -> Vec<Marker> {
+        let mut out: Vec<Marker> = self.markers.values().cloned().collect();
+        out.sort_by(|a, b| a.path.cmp(&b.path));
+        out
+    }
+
+    /// Notes what a folder listing said about the folder's marker.
+    fn note_marker(&mut self, dir_path: &str, git: bool, permark: bool) {
+        if dir_path.is_empty() || dir_path.starts_with(WORKTREE_PREFIX) {
+            return;
+        }
+        let key = key_of(dir_path);
+        if git || permark {
+            self.markers.insert(
+                key,
+                Marker {
+                    path: dir_path.to_owned(),
+                    git,
+                    permark,
+                },
+            );
+        } else {
+            self.markers.remove(&key);
+        }
+    }
+
+    /// A `.permark` folder of `parent_path` came (`true`) or went.
+    fn note_permark(&mut self, parent_path: &str, here: bool) {
+        let git = self
+            .markers
+            .get(&key_of(parent_path))
+            .is_some_and(|m| m.git);
+        self.note_marker(parent_path, git, here);
     }
 
     pub(crate) fn node(&self, key: &str) -> Option<&Node> {
@@ -328,6 +382,15 @@ impl TreeModel {
         if let Some(list) = self.children.get_mut(&node.parent) {
             list.retain(|k| k != key);
         }
+        if !self.markers.is_empty() {
+            let below = format!("{key}/");
+            self.markers
+                .retain(|k, _| k != key && !k.starts_with(below.as_str()));
+            if node.is_dir() && named(&node.name, PERMARK) {
+                let parent = parent_of(&node.path).to_owned();
+                self.note_permark(&parent, false);
+            }
+        }
         1 + self.drop_below(key)
     }
 
@@ -349,6 +412,7 @@ impl TreeModel {
     pub(crate) fn rebuild(&mut self) {
         self.nodes.clear();
         self.children.clear();
+        self.markers.clear();
         let mut budget = MAX_ENTRIES;
         for index in 0..self.roots.len() {
             let root = self.roots[index].clone();
@@ -382,12 +446,18 @@ impl TreeModel {
         let Some((found, hints)) = read_entries(dir_abs, dir_path, false) else {
             return Ok(());
         };
+        if root.prefix.is_empty() && (hints.git || hints.permark) {
+            self.note_marker(dir_path, hints.git, hints.permark);
+        }
         if depth > 0 && !asked && found.len() > LARGE_FOLDER {
             return Err(found.len());
         }
-        // inside a container only nested projects count: its own rules are not needed
-        let frames = if depth == 0 || in_ignored {
+        // inside a container only nested projects count: its own rules are needed only on the way to an included one
+        let frames = if depth == 0 {
             parent_frames.clone()
+        } else if in_ignored {
+            root.ignorer
+                .container_frames(parent_frames, dir_abs, Some(hints))
         } else {
             root.ignorer.enter_hinted(parent_frames, dir_abs, hints)
         };
@@ -445,7 +515,7 @@ impl TreeModel {
             );
             self.push(dir_node);
             // a nested project hidden by the rules around it is walked under its own
-            let base = root.ignorer.base_for(place, &frames);
+            let base = root.ignorer.base_for(place, &frames, &abs);
             if let Err(entries) = self.list_dir(walk, &abs, &path, &base, false, depth + 1, false) {
                 self.push(Node::new(path, entry.name, large(entries), false));
             }
@@ -509,6 +579,14 @@ impl TreeModel {
         let Ok(meta) = fs::symlink_metadata(&abs) else {
             return self.remove_subtree(&key) > 0;
         };
+        if root.prefix.is_empty() && named(name, PERMARK) {
+            // a project marker came (a real folder) or became something else
+            let real = meta.is_dir() && !is_link(&meta);
+            let parent = parent_of(path).to_owned();
+            if !below_root(&parent).is_empty() {
+                self.note_permark(&parent, real);
+            }
+        }
         // parents first: a folder that appeared with its files
         let parent_path = parent_of(path);
         let parent_key = key_of(parent_path);
@@ -658,7 +736,8 @@ pub(crate) fn scan_folder(
     let (in_ignored, frames) = match root.ignorer.locate(abs, true) {
         None => (false, root.ignorer.root_frames()),
         Some((Entry::Shown | Entry::Project, base)) => (false, root.ignorer.enter(&base, abs)),
-        Some((Entry::Container | Entry::Ignored, base)) => (true, base),
+        Some((Entry::Container, base)) => (true, root.ignorer.container_frames(&base, abs, None)),
+        Some((Entry::Ignored, base)) => (true, base),
     };
     let mut cx = ScanCx {
         root,
@@ -688,8 +767,11 @@ fn scan_dir(
         return;
     };
     let root = cx.root;
-    let frames = if depth == 0 || in_ignored {
+    let frames = if depth == 0 {
         parent_frames.clone()
+    } else if in_ignored {
+        root.ignorer
+            .container_frames(parent_frames, dir_abs, Some(hints))
     } else {
         root.ignorer.enter_hinted(parent_frames, dir_abs, hints)
     };
@@ -745,7 +827,7 @@ fn scan_dir(
             Entry::Container => scan_dir(cx, &abs, &path, &frames, true, depth + 1),
             Entry::Ignored => cx.out.unchecked.push(path),
             Entry::Shown | Entry::Project => {
-                let base = root.ignorer.base_for(place, &frames);
+                let base = root.ignorer.base_for(place, &frames, &abs);
                 scan_dir(cx, &abs, &path, &base, false, depth + 1);
             }
         }

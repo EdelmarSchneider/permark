@@ -558,6 +558,98 @@ pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateErro
     Ok(after)
 }
 
+/// Takes back what [`init_project`] made, when it is untouched (`projects.md` §2.4, undo of a first include):
+/// `.permark/` holds only `config.toml` + `.gitignore` with the bytes init wrote, `local/`, `cache/`, no link anywhere.
+/// The project's private state (`local/`, the live state since init) is carried back into the profile (newer wins),
+/// then `.permark/` is removed in one step: renamed away first (a temp name the tree and the watch never show), then
+/// deleted; a file held open (antivirus, editor) makes the rename fail and leaves `.permark/` whole, never half
+/// removed. The caller stopped the plugins before (their files flushed) and reloads the state after.
+/// `Ok(false)`: changed since init, left as it is.
+///
+/// # Errors
+/// IO failure while carrying back | renaming (`.permark/` then stays whole).
+pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
+    let permark = root.path().join(PERMARK_DIR);
+    if !private::is_real_folder(&permark) {
+        return Ok(false);
+    }
+    let fail = |p: &Path| {
+        let p = p.to_path_buf();
+        move |e| StateError::io(&p, e)
+    };
+    let names: Vec<String> = std::fs::read_dir(&permark)
+        .map_err(fail(&permark))?
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    let allowed = ["config.toml", ".gitignore", "local", "cache"];
+    if names.iter().any(|n| !allowed.contains(&n.as_str())) {
+        return Ok(false);
+    }
+    let same = |name: &str, want: &str| {
+        std::fs::read(permark.join(name)).is_ok_and(|bytes| bytes == want.as_bytes())
+    };
+    if !same("config.toml", DEFAULT_CONFIG_TOML) || !same(".gitignore", PROJECT_GITIGNORE) {
+        return Ok(false);
+    }
+    for sub in ["local", "cache"] {
+        if holds_link(&permark.join(sub)) {
+            return Ok(false);
+        }
+    }
+    let profile = dirs
+        .profile
+        .join("projects")
+        .join(ProjectId::of(root).as_str());
+    let local = permark.join("local");
+    if private::is_real_folder(&local) {
+        std::fs::create_dir_all(&profile).map_err(fail(&profile))?;
+        copy_over(&local, &profile).map_err(fail(&local))?;
+    }
+    // one step for everyone looking: `.permark/` is there whole or gone; the leftover temp folder is best effort
+    let gone = root.path().join(format!(
+        ".permark-undo-{}-{:x}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
+    std::fs::rename(&permark, &gone).map_err(fail(&permark))?;
+    let _ = std::fs::remove_dir_all(&gone);
+    Ok(true)
+}
+
+/// Whether a folder tree holds a link (symlink | junction) anywhere (the folder itself included).
+fn holds_link(dir: &Path) -> bool {
+    match private::entry(dir) {
+        private::Entry::Missing => false,
+        private::Entry::Other => true,
+        private::Entry::Folder => std::fs::read_dir(dir).map_or(true, |entries| {
+            entries.flatten().any(|e| {
+                let path = e.path();
+                crate::tree::is_link_meta_of(&path)
+                    || e.file_type()
+                        .map_or(true, |t| t.is_dir() && holds_link(&path))
+            })
+        }),
+    }
+}
+
+/// Copies files + folders of `from` into `to`, the copy winning over what `to` holds (links never followed).
+fn copy_over(from: &Path, to: &Path) -> io::Result<()> {
+    for entry in std::fs::read_dir(from)?.flatten() {
+        let target = to.join(entry.file_name());
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            std::fs::create_dir_all(&target)?;
+            copy_over(&entry.path(), &target)?;
+        } else if kind.is_file() {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
 /// Copies files + folders of `from` into `to`, never over an existing entry (links not followed or copied).
 fn copy_missing(from: &Path, to: &Path, top: bool) -> io::Result<()> {
     let Ok(entries) = std::fs::read_dir(from) else {

@@ -272,6 +272,9 @@ pub struct ProjectServices {
     pub activity: Arc<crate::activity::ActivityLog>,
     rpc: Arc<RpcTable>,
     formats: Arc<RwLock<Arc<FormatRegistry>>>,
+    /// Projects inside the folder (`projects.md` §1.3): owner of a path, the agent scope, project news. `None` in
+    /// compositions made without a core (tests).
+    projects: Option<Arc<crate::projects::Projects>>,
 }
 
 impl ProjectServices {
@@ -300,7 +303,21 @@ impl ProjectServices {
             activity,
             rpc,
             formats,
+            projects: None,
         }
+    }
+
+    /// The composition with the folder's projects service.
+    #[must_use]
+    pub fn with_projects(mut self, projects: Arc<crate::projects::Projects>) -> Self {
+        self.projects = Some(projects);
+        self
+    }
+
+    /// Projects inside the folder (owner of a path, members, agent scope, project news).
+    #[must_use]
+    pub fn projects(&self) -> Option<&Arc<crate::projects::Projects>> {
+        self.projects.as_ref()
     }
 
     /// The formats of the plugins that are on for the project, now.

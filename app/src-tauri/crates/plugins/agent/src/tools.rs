@@ -28,6 +28,8 @@ use crate::ToolError;
 
 /// How long a tool waits for a first look at the project (index, tags, unread) before answering partially.
 pub const READY_WAIT: Duration = Duration::from_secs(10);
+/// How long a call waits for the projects inside the folder to be known before answering `busy`.
+pub const PROJECTS_WAIT: Duration = Duration::from_secs(5);
 /// Largest file `outline` | `read` open.
 pub const MAX_READ_BYTES: u64 = 8 * 1024 * 1024;
 /// Longest text one `read` returns (characters); the answer says where to go on.
@@ -230,15 +232,31 @@ impl Tools {
         self.vault.main()
     }
 
-    /// The rules of a call made now (for `permark context` and the published context file).
-    #[must_use]
-    pub fn guard_now(&self) -> Arc<Guard> {
-        self.guard(&ProjectConfig::load(self.vault.main()))
+    /// The rules of a call made now (the published context file, the hand-off), waiting up to `wait` for the
+    /// projects inside the folder.
+    ///
+    /// # Errors
+    /// `Busy` while they are not known yet.
+    pub fn guard_now(&self, wait: Duration) -> Result<Arc<Guard>, ToolError> {
+        self.guard(&ProjectConfig::load(self.vault.main()), None, wait)
     }
 
-    /// The rules of one call: `.aiignore`, `[agent] deny_paths` (silenced paths stay visible).
-    fn guard(&self, config: &ProjectConfig) -> Arc<Guard> {
-        Arc::new(Guard::new(self.vault.main(), &config.agent_deny_paths))
+    /// The rules of one call: `.aiignore`, `[agent] deny_paths`, the projects inside the folder (silenced paths stay
+    /// visible). Fails closed: `Busy` until the projects inside are known.
+    fn guard(
+        &self,
+        config: &ProjectConfig,
+        group: Option<Group>,
+        wait: Duration,
+    ) -> Result<Arc<Guard>, ToolError> {
+        let guard = Guard::new(self.vault.main(), &config.agent_deny_paths);
+        Ok(Arc::new(match self.services.projects() {
+            Some(projects) => {
+                let map = projects.agent_map(wait).ok_or(ToolError::Busy)?;
+                guard.with_projects(map, group)
+            }
+            None => guard,
+        }))
     }
 
     /// Checks the switch and the group, then runs the tool.
@@ -265,7 +283,7 @@ impl Tools {
                     && !choice.resolve_asked,
             });
         }
-        let guard = self.guard(&config);
+        let guard = self.guard(&config, Some(group), PROJECTS_WAIT)?;
         let changes = perms::effective(&choice.groups, &config.agent_deny)
             .get(&Group::Changes)
             .copied()
@@ -440,6 +458,7 @@ impl Tools {
             skip: std::collections::HashSet::new(),
             muted: Some(guard.as_lookup()),
             hidden_last: false,
+            within: None,
         };
         let index = &self.services.search;
         let ready = index.wait_ready(READY_WAIT);

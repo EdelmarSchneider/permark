@@ -103,3 +103,18 @@ describe("the person's actions", () => {
     stop();
   });
 });
+
+describe("project rows", () => {
+  it("are news from outside: listed in all + outside, never in mine", () => {
+    const news = {
+      item: "project" as const,
+      id: 7,
+      atMs: 9000,
+      event: { kind: "appeared" as const, name: "notes-app", path: "tools" },
+    };
+    const feed = [entry(1, "a.md"), news];
+    expect(panelRows(feed, [], "all").map((r) => r.key)).toEqual(["f7", "f1"]);
+    expect(panelRows(feed, [], "outside").map((r) => r.key)).toEqual(["f7", "f1"]);
+    expect(panelRows(feed, [], "mine")).toEqual([]);
+  });
+});
