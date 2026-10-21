@@ -5,12 +5,17 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-21
+
 ### Fixed
 - Right after a project opens, an agent's search now finds the keys of configuration files too; before, it could miss them for a moment while saying the answer was complete. <!-- f: agent-connection, search, config-sheets -->
 - When two projects copy files in at the same time, each progress card now shows only its own project's copy; before, the cards could mix both. <!-- f: drop-files, tabs -->
 - A document that changes in a tab you are not looking at stays unread, and its changes stay offered for review, until you go to that tab and read it. Before, it could be marked as read while it was hidden behind another tab. <!-- f: unread, review-changes, tabs -->
 - When you switch tabs while PerMark is still preparing the question for files you dropped, your keys stay in the tab you switched to; the question waits in its own tab. <!-- f: drop-files, tabs -->
 - A Notes tab behind another tab no longer checks for new notes every few seconds; it looks again when you come back to it. <!-- f: notes, tabs -->
+
+### Known limits
+- Tabs, moving a tab to another window and dropping files have not been tested on macOS yet. There, the arrow keys in text fields may not work as expected; a fix is planned. <!-- f: tabs, windows, drop-files -->
 
 ## [0.6.2] - 2026-10-20
 
