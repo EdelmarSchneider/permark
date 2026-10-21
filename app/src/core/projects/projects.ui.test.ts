@@ -101,6 +101,12 @@ async function explorer(): Promise<{ store: InstanceType<typeof ExplorerStore> }
   return { store };
 }
 
+/** Opens a folder of the tree. The Explorer remembers open folders per project (saved 400 ms after a toggle), so a
+ * slow earlier test can leave it open: a plain toggle would close it. */
+async function expand(store: InstanceType<typeof ExplorerStore>, path: string): Promise<void> {
+  if (!store.isOpen(path)) await store.toggle(path);
+}
+
 function section(): void {
   const app = mount(ProjectsSection, { target });
   flushSync();
@@ -191,7 +197,7 @@ describe("Explorer: the strip and the project node", () => {
   it("the menu by keyboard (Shift+F10) offers the card; the card takes focus, Esc gives it back (A6)", async () => {
     await openFolder(MOCK_PROJECTS_LISTED);
     const { store } = await explorer();
-    await store.toggle("tools");
+    await expand(store, "tools");
     flushSync();
     await until(() => target.querySelector('[data-path="tools/notes-app"]') !== null, "row");
     const list = target.querySelector<HTMLElement>('[role="tree"]')!;
@@ -226,7 +232,7 @@ describe("Explorer: the strip and the project node", () => {
   it("hovering a project node 500 ms shows the card; it stays while the pointer is inside, then goes", async () => {
     await openFolder(MOCK_PROJECTS_LISTED);
     const { store } = await explorer();
-    await store.toggle("tools");
+    await expand(store, "tools");
     flushSync();
     await until(() => target.querySelector('[data-path="tools/notes-app"]') !== null, "row");
     // the card's code is loaded once (as after a first card)
@@ -527,7 +533,7 @@ describe("UX review round 2: focus, words, places", () => {
   it("a project node shows its folder name; the short name follows, muted, only when it differs (F1)", async () => {
     await openFolder(MOCK_PROJECTS_LISTED);
     const { store } = await explorer();
-    await store.toggle("hubs");
+    await expand(store, "hubs");
     flushSync();
     await until(() => target.querySelector('[data-path="hubs/hub-b"]') !== null, "row");
     const hub = target.querySelector<HTMLElement>('[data-path="hubs/hub-b"]');
@@ -642,7 +648,7 @@ describe("UX review round 2: focus, words, places", () => {
     const warn = vi.spyOn(console, "warn");
     await openFolder(MOCK_PROJECTS_LISTED);
     const { store } = await explorer();
-    await store.toggle("tools");
+    await expand(store, "tools");
     flushSync();
     await until(() => target.querySelector('[data-path="tools/notes-app"]') !== null, "row");
     const list = target.querySelector<HTMLElement>('[role="tree"]')!;
