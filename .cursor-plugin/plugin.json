@@ -1,7 +1,7 @@
 {
   "name": "PerMark",
   "description": "Read what your AI writes. Write what it reads. The desktop Markdown app and local MCP server for planning, reviewing specs, tracking live agent changes, and resolving inline comments.",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "logo": "docs/assets/logo.png",
   "homepage": "https://edelmarschneider.github.io/permark/",
   "license": "MIT OR Apache-2.0",
