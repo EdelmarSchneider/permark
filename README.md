@@ -6,309 +6,232 @@
 
 **AI speeds the work. Your vision steers it.**
 
-PerMark is a free, open-source unified document workspace (UDW) for Windows, macOS and Linux: one place to read, write and
-organize Markdown and the files around it, and to steer AI projects through their documents. It opens any `.md` file as a
-clean page, keeps notes that save themselves, and turns a project folder into a place where you follow, review and steer what
-your AI agents write: read what your AI writes, write what it reads. It works with any AI tool, or with none.
+A Markdown app to read and review what your AI agents write, and steer the work through its documents.<br>
+It opens every Markdown file as a clean page, shows what your agents change while they write, and lets you keep or revert each change.
 
 Created and maintained by [Edelmar Schneider](https://github.com/EdelmarSchneider).
 
+[![Latest release](https://img.shields.io/github/v/release/EdelmarSchneider/permark)](https://github.com/EdelmarSchneider/permark/releases/latest)
+[![License: MIT or Apache-2.0](https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-blue)](#license)
+[![CI](https://img.shields.io/github/actions/workflow/status/EdelmarSchneider/permark/ci.yml?branch=main&label=CI)](https://github.com/EdelmarSchneider/permark/actions/workflows/ci.yml)
+
 **Get PerMark:** [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX) (Windows) · [GitHub Releases](https://github.com/EdelmarSchneider/permark/releases/latest) (Windows, macOS, Linux)
 
-[Features](#features) · [Install](#install) · [Usage](#usage) · [Shortcuts](#keyboard-shortcuts) · [Roadmap](#roadmap) · [Contributing](#contributing)
+[Where to start](#where-to-start) · [Try it](#try-it-in-a-minute) · [Install](#install) · [Use with an AI agent](#use-with-an-ai-agent) · [Shortcuts](#keyboard-shortcuts) · [What's new](#whats-new-and-ideas-being-explored) · [Contributing](#contributing)
 
-<img src="docs/assets/loop.gif" width="880" alt="An agent rewrites a paragraph of a spec and the passage glows in PerMark, a removed paragraph leaves a marker; the reader selects the paragraph, presses C and comments 'too long, cut to two sentences'; the agent reads the comment over the agent connection, rewrites the passage, which glows again, and marks the comment done with a reply">
+<img src="docs/assets/hero.gif" width="880" alt="A spec page with a table, a diagram and a properties card open in PerMark while an agent edits it: the changed passage glows, another document gets an unread dot, and the reader keeps one change and reverts another">
+
+Free and open source (MIT or Apache-2.0) · No account, no telemetry · Windows, macOS and Linux (tested by hand on Windows)
 
 </div>
-
-> [!NOTE]
-> **TrailMark is now PerMark** (since 0.5.6). The command is `permark` (`permark mcp`, `permark context`); if an AI agent is
-> set up with the old `trailmark` command, run the setup lines from **Settings → Agent connection** again. PerMark 0.6 no longer
-> renames old `.trailmark/` project folders: if you still have TrailMark, update to 0.5.8 first, then to 0.6.
 
 ---
 
 ## Where to start
 
-### Build with AI agents?
+<table>
+<tr><th width="50%">Build with AI agents?</th><th width="50%">Got a .md file?</th></tr>
+<tr>
+<td valign="top">
+<p>Your agents write the plans, specs and reports. Your job is to read them, judge them and steer.
+Open the project folder in PerMark and keep it next to your terminal.</p>
+<ul>
+<li><b>Watch.</b> Changed passages glow while your agent writes, and dots mark what changed since you last read it. <a href="#-see-what-your-ai-writes">See what your AI writes</a></li>
+<li><b>Decide.</b> Keep or revert each change, and leave comments an agent can mark done. <a href="#-decide-what-stays">Decide what stays</a></li>
+<li><b>Connect.</b> Any MCP agent can see where you are, per project, and only when you turn it on. <a href="#use-with-an-ai-agent">Use with an AI agent</a></li>
+</ul>
+</td>
+<td valign="top">
+<p>Your AI, a colleague or a download gives you a <code>.md</code> file.
+Open it with PerMark and read it as a page, not a wall of symbols.</p>
+<ul>
+<li><b>Read it.</b> Tables, diagrams, math and properties on a clean page. Fix it as it looks, and keep notes that save themselves. <a href="#-beautiful-to-read-easy-to-edit">Beautiful to read, easy to edit</a></li>
+<li><b>Open what is around it.</b> Config files as sheets, data, pictures, audio and video. <a href="#-markdown-at-the-center-not-alone">Markdown at the center</a></li>
+<li><b>Get it.</b> From the Microsoft Store or GitHub, for Windows, macOS and Linux. <a href="#install">Install</a></li>
+</ul>
+</td>
+</tr>
+</table>
 
-Your agents write the plans, specs and reports. Your job is to read them, judge them and steer. PerMark is the working environment for that
-job: open the project folder and keep it next to your terminal. It doesn't run your agent; it shows you what your agent writes.
+Either way, PerMark works with any AI tool, or with none. It follows changes whatever program writes the files: an AI agent,
+an editor or git. It is a unified document workspace (UDW): Markdown at the center, with the config, data and code files around it.
 
-- **Watch.** Changed passages glow as your agent writes, removed ones leave a marker, and a live feed lists every file it
-  touches, across git worktrees too. A reload keeps your place.
-- **Review.** Unread dots mark every document that changed since you last read it, like new mail. Git badges and a "since your
-  last visit" view still work after the agent has committed.
-- **Find.** One search for every file, section, tag and command, and code references like `src/main.rs:42` that open at the
-  line in the editor you choose.
-- **Steer.** Select a passage, press `C` and write a comment. With the optional [agent connection](#use-with-an-ai-agent) (MCP),
-  your agent reads your open comments, marks them done with a reply, and knows which document, section and words you mean when
-  you say "rewrite this".
-- **Edit next to it, safely.** Only the blocks you change are rewritten, and if your agent changes a file while you edit it, you
-  choose **Reload theirs** or **Keep mine**.
+## Try it in a minute
 
-More in [Follow your agents live](#-follow-your-agents-live) and [Use with an AI agent](#use-with-an-ai-agent).
+1. **Install.** Get PerMark from the [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX) or from
+   [GitHub Releases](https://github.com/EdelmarSchneider/permark/releases/latest).
+2. **Open.** Choose a folder as a project (`Ctrl+O`), or a single `.md` file (`Ctrl+Shift+O`). It opens in View, as a clean page.
+3. **Watch.** Let your agent write in that folder. Changed passages glow. Press `Ctrl+Shift+L` for Follow mode, and PerMark opens
+   each document while the agent writes it.
 
-### Got a .md file?
+## 📖 Beautiful to read, easy to edit
 
-Your AI, a colleague or a download gives you a `.md` file. Open it with PerMark and read it as a page, not a wall of symbols.
+Every Markdown file opens as a clean page, with its tables, diagrams, math and properties. Edit it as it looks, and keep notes
+that save themselves.
 
-- **It reads like a page.** Tables, checklists, highlighted code, Mermaid diagrams, math, alerts and footnotes, in light or dark,
-  with three reading widths and a focus mode.
-- **Links work.** Relative links and anchors open in the app, with back and forward and an outline of the headings.
-- **You can fix it.** Edit visually, with a toolbar, or in Source. Only the blocks you changed are saved, and the rest of the file
-  stays exactly as it was.
-- **Notes that save themselves.** Open Notes and type. No name to choose, no folder to pick, and closing
-  never asks. Pin the notes you keep, bring back an earlier version, and copy a drafted prompt to your AI as clean Markdown.
-- **Your files are safe.** A file you open is listed next to your notes and written only when you press `Ctrl+S`. PerMark is
-  listed under **Open with** for Markdown files. It becomes your default app only if you choose so, at install or on first run:
-  that choice stays yours.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/showcase-dark.png">
+  <img src="docs/assets/showcase.png" alt="A document in View with its properties card, a table and a Mermaid diagram, and the outline on the right">
+</picture>
 
-More in [Reading that feels like a book](#-reading-that-feels-like-a-book) and [Notes](#-notes).
+- **A clean page.** GitHub-flavored Markdown with tables, task lists, footnotes, alerts and description lists. Code blocks are
+  highlighted for about 190 languages. In a project, links open inside the app, with Back and Forward, like a wiki.
+- **Diagrams and math, written as text.** Mermaid and PlantUML diagrams are drawn inside PerMark, with no Java and no server.
+  Math shows as formulas.
+- **Front matter as a properties card.** View shows it as a clean card. In Edit, you change its values one by one, and the rest
+  of the file stays as it is.
+- **Made for long reading.** A light, dark or system theme, with softer light tones (Paper, Sage, Gray). Three reading widths, an
+  outline to jump between sections, and Focus mode (`Ctrl+Alt+F`), which leaves only the page.
+- **View, Edit, Source.** One switch in the header. **View** is for reading. **Edit** changes the page as it looks, with a toolbar
+  and a `/` block menu. **Source** shows the raw file, every byte, with find and replace and go to line. A switch beside the modes
+  draws a Mermaid or PlantUML diagram next to its text while you type (off until you turn it on).
+- **Honest about Edit.** Edit keeps math, diagrams, HTML and footnotes as written: **Edit in Source** opens them. Edit does not draw
+  pictures that are files next to the document; View and Source do.
+- **Notes that save themselves.** Click **Notes**, next to Settings, or press `Ctrl+Shift+N` for a new note from anywhere in PerMark, and type. No name to choose, no folder to pick, no save prompt.
+  Notes are plain Markdown files you own, and **Copy** puts a drafted prompt on the clipboard as exact Markdown.
 
-Either way, PerMark only relies on your **filesystem and git**. It works the same with Claude Code, opencode, Cursor, Aider,
-Codex or Gemini CLI, or with none.
+## ⚡ See what your AI writes
+
+See what your AI writes while it writes, and what changed since you last looked.
+
+- **Changed passages glow.** The open document reloads while an agent writes, and keeps your place. Changed blocks glow, and
+  removed blocks leave a marker you can expand.
+- **Live changes.** A feed lists every file that changed, one entry per file. Show all changes, only yours, or only those from outside.
+- **Follow mode** (`Ctrl+Shift+L`) opens the Markdown document being written. It waits while you edit.
+- **Unread dots, like mail.** A dot marks each Markdown document that changed since you last read it, and folders count them.
+  `Alt+U` opens the next one.
+- **Since last visit.** One list of what changed while the project was closed: Changed, New or Removed. It compares the content of
+  your documents, so it works without git, and it still shows the changes after the agent has committed.
+- **Worktrees too.** Linked git worktrees are found and watched, so agents working in parallel branches show up as well.
+
+PerMark sees the changes in your folder, whatever program makes them. It tells you whether a change came from you or from outside.
+
+## ✅ Decide what stays
+
+You decide what stays: keep or revert each change, comment on any passage, and share a project with an agent only when you turn it on.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/review-dark.png">
+  <img src="docs/assets/review.png" alt="Review open on a document: each change shown in place, the old text struck through above the new one, with Keep and Revert for each">
+</picture>
+
+- **Review, change by change.** When a document changed since you last read it, a quiet bar says how many changes there are.
+  **Review** shows each one in place: block by block in Markdown, line by line in code, logs, data and config files. Choose
+  **Keep** or **Revert** for each (`K`, `R`), or for all at once. Compare with what you last read, or with the last commit.
+- **Comments an agent can mark done.** Select a passage and press `C`. With the agent connection on, your agent reads your open
+  comments and marks them done with a reply. **Send to agent** copies them as a prompt for any agent chat. Comments are yours alone.
+- **Only what you changed is saved.** Edit and Source rewrite only the blocks you changed. Every other byte stays as its author,
+  or agent, wrote it.
+- **Reload theirs or Keep mine (overwrite).** If an agent changes a file while you edit it, you choose, for the whole document.
+- **Git in plain words.** Letter badges, with a legend that says what each letter means. Compare with your last visit or with
+  the last commit. PerMark only reads git: it never commits, stages or creates a repository.
+- **Find anything, to the section.** **Search everywhere** (`Ctrl+T`) finds files, sections, tags and commands in one box. Give any
+  file tags and a one-line description; the ones you add in the app never touch your files.
+- **Links follow your files.** Move or rename a file, and PerMark shows each link it will update before it changes them.
+  `Ctrl+Z` in the Explorer takes it back.
+
+## 🧩 Markdown at the center, not alone
+
+Markdown leads, and many files around it open too: config files as clean sheets, data and code, pictures, audio and video.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/config-sheet-dark.png">
+  <img src="docs/assets/config-sheet.png" alt="A TOML config file open as a clean sheet: sections, keys and values, with comments as captions and a secret value masked">
+</picture>
+
+- **Config files as clean sheets.** TOML, YAML, INI, `.env`, `.properties` and ignore files open as sections, keys and values,
+  with comments as captions. Change a value, and only those bytes change. Secret values are masked in the sheet.
+  Sheets edit values, not keys. YAML flow style is read-only, and a file over 256 KB or 3,000 rows shows as plain text.
+- **TOON.** `.toon` files, the compact data format made for AI, open as tables and cards and can be edited in place. The
+  **Converter** turns JSON, XML, YAML, CSV and TOML into TOON or another format, shows the estimated token saving of each choice,
+  and never writes over the original.
+- **AI files, recognized.** `AGENTS.md`, `CLAUDE.md`, `SKILL.md`, Cursor rules (`.mdc`), `llms.txt`, prompt files, and model and
+  dataset cards open with no setup.
+- **Prompt blocks.** XML-like prompt tags such as `<context>` and `<instructions>` fold as blocks, and the Markdown inside still renders.
+  `{{name}}` variables are marked, and `@path` references link to the file.
+- **JSON, XML, code and plain text** open with highlighting. A very large text file opens at once.
+- **Pictures, audio and video** open in the app (not every audio or video format plays). Other files open with the program your
+  system has for them. Programs and scripts are never run from a click.
+- **Token count**: how many tokens a document, a section or a folder takes. Exact for OpenAI's tokenizers,
+  marked as approximate for Claude and Gemini. It asks before it downloads a tokenizer's vocabulary.
+- **Your editor, at the line.** A path like `src/main.rs:42` that names a file of the project is a link: it opens your own
+  editor at that line.
+
+Many features are plugins, and every plugin is on from the start. Turn off what you do not need in **Settings → Plugins**; a plugin that is off leaves nothing behind.
+
+## Questions people ask
+
+**"Git diff already shows me the changes."**<br>
+Git diff compares with the last commit. PerMark also shows what changed since you last read each document, even after the agent
+has committed, and you keep or revert each change.
+
+**"Does it replace my code editor?"**<br>
+No. PerMark is for the documents around the code. **Open in external editor** takes you to your own editor at the place you are reading.
+
+**"What does the agent get, and how do I stop it?"**<br>
+Sharing is off in every project until you turn it on. The agent reads, shows you a place and marks comments done. It never edits
+through PerMark. Details in [Use with an AI agent](#use-with-an-ai-agent).
+
+**"Does it go online?"**<br>
+No account, no telemetry, no tracking. PerMark goes online only to check for its own updates (installer versions; the Store and
+snap update it instead), and when you ask: a picture from the web, or the optional token-count vocabulary. Your documents never
+leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.
+The Windows installers may also download Microsoft's WebView2 component while they install, if your computer does not have it.
+
+## What PerMark is not
+
+- **Not a code editor.** No completion, refactoring, build, run or debug. Real code work opens in your own editor.
+- **Not an agent.** It does not run, host or replace your AI. It shows what your AI writes, and you decide what stays.
+- **Not tested by hand on macOS or Linux.** PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically.
 
 ## Why Markdown
 
-**Markdown was made for readers. So is PerMark.** It was designed in 2004 so that plain text reads well as it is. Twenty years
-later, AI adopted it for the same reason: it is structured enough for a machine and clear enough for a person. PerMark is the
-reader's tool for it.
+**Markdown was made for readers. So is PerMark.** It was designed in 2004 so that plain text reads well as it is. Today, AI
+tools write it too, for the same reason: it is structured enough for a machine and clear enough for a person.
 
 It is also an opinion: many documents that live in Word or PDF today would be better as Markdown. They would be smaller,
 comparable line by line in git, readable by any AI, and never locked inside one app.
 
-## Features
-
-### 📖 Reading that feels like a book
-- GitHub-flavored Markdown: tables, task lists, footnotes, alerts (`> [!NOTE]`), description lists
-- **Mermaid** diagrams, **KaTeX** math, syntax-highlighted code with copy buttons
-- **Code blocks are highlighted for about 190 languages.** Name the language after the opening backticks, for example `` ```python ``, and
-  the block is colored and labelled in its corner. The usual short names work (`js`, `ts`, `py`, `sh`, `ps1`, `c#`, `c++`, `yml`, `rs`...),
-  and so do fences with attributes (`` ```rust title="main.rs" ``). A block with no language is colored only when its language is
-  unmistakable, and is then labelled *auto*; otherwise it stays plain. Edit and Source color the code too while you edit
-- Frontmatter shown as a clean metadata card
-- Light and dark themes (with a softer paper, sage or gray tone for the light one), adjustable zoom, and a focus mode (`Ctrl+Alt+F`) that leaves only the page
-- Three **reading widths**: Comfortable (a book-like column), Wide and Full. Wide tables, diagrams and images take the room
-  they need while the text stays at a comfortable measure
-- JSON, XML and plain text, and small config files (TOML, YAML, INI, `.env`, `.properties`, ignore files) and `.toon` files as
-  clean sheets, with secret values masked
-
-### 🧭 Navigate like a wiki
-- Open a **folder** as a project (tree, search, live feed) or a **single file** for a distraction-free reader
-- Relative links, anchors and images resolve inside the app, with back and forward history. **Right-click (or press and hold) Back or
-  Forward** to list the documents on that side and jump straight to one, like in a browser; **Go to a recent place...** in the command
-  palette (`Ctrl+Shift+P`) lists your whole trail
-- An **Outline** of the open document's headings (`Ctrl+Alt+O`): the section you're reading is marked, click a heading to jump,
-  collapse sections you don't need. It keeps working while you edit
-- A **filter** for the Explorer (Documents, Docs and assets, Everything, or your own patterns) keeps a code repository's tree to the
-  documents that matter, and tells you how many files it hides
-- Workspaces that collect several repositories show each one, even when the parent's `.gitignore` leaves it out. Hidden
-  files and files ignored by git have their own switches in the filter, off by default
-- Each window opens where you left it, and its title names the document and the project, so several windows are easy to tell
-  apart in the taskbar and `Alt+Tab`
-- The Explorer **follows the file you open**, however you got there: quick open, a link, search, the feed, back and forward
-- Quick open (`Ctrl+P`), find in page (`Ctrl+F`), session restore and recent projects
-- **Code references are links.** `src/main.rs:42`, `lib.rs#L10-L20` or `` `docs/plan.md` `` in a document opens the file at the line:
-  Markdown in PerMark, anything else in your editor (VS Code, Cursor, Zed, Sublime Text, JetBrains IDEs or a command of your own,
-  in **Settings → External editor**). Only names of files the project really has become links
-- One app, many windows: open several projects side by side. A bar at the top lists them and switches between them
-  (`Ctrl+Alt+→` / `Ctrl+Alt+←`). From a terminal: `permark ~/code/my-project`
-
-### 🖼️ Pictures, sound and video
-- **Images open in the pane.** PNG, JPEG, GIF (animated), WebP, AVIF, BMP, ICO and SVG. A picture is fitted to the window; click it, or use the
-  button, to see it at 100%, and `Ctrl+=`, `Ctrl+-` and `Ctrl+0` zoom it the way they zoom text (`Ctrl+0` fits it again). A checkerboard
-  shows through transparency, in light and dark. The header gives the size in pixels and on disk. A picture that changes on disk
-  (an agent regenerating a screenshot) reloads by itself. An SVG is drawn as an image, never inline, so nothing in it can run.
-- **Audio and video play in the pane**, in the window's own player: MP3, WAV, OGG, Opus, FLAC, M4A, AAC and WebM audio; MP4, M4V, WebM,
-  OGV and MOV video. A long file is read in parts as it plays, so it starts at once, seeks freely and is never loaded whole. A format or
-  codec the window cannot play (MKV, AVI, WMV and the like) says so, and offers the program your system has for it.
-- **Documents can use them.** `<video>` and `<audio>` tags play in place, next to the document, and a link to a media file opens it in the
-  pane. Nothing starts by itself: `autoplay` is dropped, and a player only reads the length of its file until you press play.
-- **Open with default app** hands a file the pane cannot show to the program your system has for its type: a button in the pane, an item
-  in the Explorer's right-click menu, and a command (`Ctrl+Shift+P`). Programs and scripts (`.exe`, `.bat`, `.ps1`, `.sh`, `.app`,
-  `.lnk`, installers, Office documents that can hold macros such as `.docm`, `.doc` and `.xls`, and the like) are never opened from a click; PerMark says which kind of file it refused and offers
-  to show it in the file manager. Files outside the open folder are never served, and a link that leaves it is not followed.
-- **Open in browser** for `.html` and `.htm` files: in the Explorer's right-click menu, in the **...** menu of the open page, and in the
-  command palette. The page opens in the application your system uses for web pages (your browser, on almost every computer); PerMark
-  does not draw web pages itself.
-- **The Explorer filter has Audio and Video file types.** *Docs and assets* shows them by the same rules as images: next to a document, in
-  a folder named like `assets`, `images`, `video`, `audio` or `clips`, or when a document links to them. Quick open and Search everywhere
-  find pictures, sound and video by name whatever the filter hides, and list **folders** too: pick one to reveal it in the Explorer.
-
-### ⚡ Follow your agents live
-- Documents reload **without losing your scroll position**
-- **Changed blocks glow** and fade; **removed blocks leave a marker** you can expand
-- **Live changes** feed: one entry per file, bursts grouped, `git checkout` storms collapsed into one line
-- **Follow mode** automatically opens the doc the agent is writing (it never jumps while you are editing)
-- Git worktrees are discovered automatically, so changes made by agents working in parallel branches show up too
-- **Unread markers**, like mail: a dot on every document that changed since you last read it, in the tree, search and the feed.
-  Reading it (a second in front of you) clears the dot, `Alt+U` takes you to the next one, and the **Unread** tab lists what you
-  haven't seen
-
-![Unread markers: dots on five documents and their folders in the Explorer and in Since last visit, and a document whose code references are links, one hovered with "Open in editor at line 42"](docs/assets/screenshot-unread.png)
-
-### 🔍 Find anything, to the section
-- **Search everywhere** (`Ctrl+T`): files, sections, tags and commands in one box. `Tab` moves between scopes, `>` jumps to
-  commands and `#` to sections; `Ctrl+Shift+P` opens the command list with every action of the app and its shortcut
-- Section-level full-text search (`Ctrl+Shift+F`): results show `file › heading › snippet` and jump to the exact spot
-- Accent- and case-insensitive, with light stemming, and incremental updates as files change
-- Filter by tag: pick a tag in the search box (the Tags scope), then type your words
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-everywhere-dark.png">
-  <img src="docs/assets/screenshot-everywhere.png" alt="Search everywhere with the query reference: a file, three sections with highlighted snippets, a tag and the Copy reference command with its shortcut, each in its own group">
-</picture>
-
-![Section search with a tag filter: "lanterns" in the files tagged needs-review, each file with its description, and the match highlighted in the open document](docs/assets/screenshot-search.png)
-
-### 🏷️ Tags and descriptions
-- Give any file a **one-line description** and **tags** ("needs-review", "character sheets"). Tags in a document's frontmatter
-  are read automatically; the ones you add in the app **never touch your files**
-- Added tags live in `.permark/meta.toml` once the project is initialized (plain text you can commit, so teammates and agents
-  can read it), or in the app's own storage before that. Renaming or moving a file keeps its tags
-- A **Tags** view lists every tag with its number of files. Pick one, or `Ctrl+click` several to narrow the list
-- Descriptions and tags show up where you look for files: tree tooltips, quick open, search results
-- Give a tag a **color** and an **icon** (right-click it in the Tags view) to see at a glance what kind of document you are in front of
-- Your agent uses them too, to find the right documents in a large project without reading hundreds of search hits: it asks which tags
-  there are (`list_tags`), narrows a search to the documents that carry them, and reads only the few that fit
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-tags-dark.png">
-  <img src="docs/assets/screenshot-tags.png" alt="The Tags view: every tag with its file count, the needs-review tag selected, and the three files that carry it, each with its description and git badge, next to an open document with its description and tag chips">
-</picture>
-
-### ✏️ Edit without fear
-- One switch in the header, **View | Edit | Source**, goes to any mode in one click and keeps your place and your unsaved work. **View** is the
-  rendered document. **Edit** is a WYSIWYG editor with a toolbar, a `/` block menu, tables, task lists and code blocks (with a language
-  field); **Source** shows the file exactly as it is, nothing hidden, masked or drawn over it, with highlighting (also inside code fences),
-  line numbers, find and replace (`Ctrl+F`, `Ctrl+H`) and go to line (`Ctrl+G`). `Ctrl+E` toggles View and the editor you used last, `Ctrl+Alt+E` toggles Edit and Source. Both editors are loaded only
-  when you start editing
-- **Only the blocks you changed are rewritten.** Every other byte of the file stays as its author (or agent) wrote it, including line
-  endings and a byte-order mark. A block you edited carries a bar in the margin until you save, and the status bar counts them
-- Blocks Edit can't write back faithfully (front matter, raw HTML, math, diagrams, footnotes) stay as they are,
-  with an **Edit in Source** button that opens the Markdown at that block
-- **Agents and you can share a file safely.** If something changes the file while you edit, a clean buffer reloads in place, and
-  one with your edits asks: **Reload theirs** or **Keep mine**. A save never overwrites a version you haven't seen
-- Unsaved work is never lost quietly: a mark in the header and the tree, a `*` in the window title, and a Save / Discard / Keep editing
-  prompt before you leave
-- **New file** (`Ctrl+N`): type a name in the tree, and it opens for editing with the caret after the title
-- **Pictures** pasted, dropped or picked are saved next to the document and linked with a relative path
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-editor-dark.png">
-  <img src="docs/assets/screenshot-editor.png" alt="Edit: a toolbar with bold active, a table and a paragraph with one block marked as unsaved, a Mermaid diagram shown as a locked block with an Edit in Source button, and the Outline tab on the right">
-</picture>
-
-### 🔗 File operations that keep your links working
-- **Rename** (`F2`), **move** (drag and drop), **delete** (`Del`: to the system trash, and `Ctrl+Z` brings it back; on macOS an undo
-  cannot take a file out of the Trash) and **New folder**, from the keyboard or the context menu. Select several files with
-  `Ctrl+click` or `Shift+click`
-- **Drop files in from outside.** With a project open, files and folders dragged onto it from the file manager come into the project, into the
-  folder under the pointer. You choose **Copy** or **Move**; names that already exist are listed first (keep both, or skip them); a big
-  folder shows its progress and can be stopped; and one **Undo** takes it all back
-- **Links are updated for you.** Moving or renaming a file or folder rewrites the links and images that point to it, and the
-  relative links inside the files that move. "Update 7 links in 4 files?" shows every change first: **Apply**, **Move without
-  updating** or **Cancel**. Only the destination changes; code is never touched
-- **Undo** (`Ctrl+Z` in the Explorer, or the toast's Undo button) puts back the files and every rewritten link. It is conservative:
-  a document that changed since is not overwritten, and you're told what couldn't be restored
-- Tags follow the files, and the live feed shows the whole operation as one row
-
-### 🌿 Git-aware
-- Badges for modified, added and untracked files, with folder roll-up and a legend that says what each letter means
-- Baseline **"since your last visit"** (default) or **"since HEAD"**: useful when agents commit every few minutes
-- Banner for rebase or merge in progress; clear messages when git can't read a repo
-
-### 🔁 Close the loop with your AI
-- **Copy reference** (`@docs/plan.md`) and **copy selection with reference**: a quoted excerpt plus path and section,
-  ready to paste into any AI chat or CLI
-- Configurable reference template
-- **Comments**: select a passage, press `C` and write a comment; your agent can read the open ones and mark them done
-  (see [Use with an AI agent](#use-with-an-ai-agent)), and **Send to agent** copies them as a prompt, ready to paste into any agent chat
-
-### 📝 Notes
-Open PerMark, type, close: nothing to name, nothing to save, no folder to pick.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-notes-dark.png">
-  <img src="docs/assets/screenshot-notes.png" alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in Edit">
-</picture>
-
-- **A notes window of its own**: open it from **Notes** on the welcome screen, from the **+** menu at the top, or with the **Open the
-  Notes** command (`Ctrl+Shift+P`). `Ctrl+N` starts a new note, in Edit with the caret ready. A note is a plain Markdown file in
-  `Documents/PerMark Notes` (change it in **Settings → Notes**); PerMark makes the default folder by itself the first time. A note's name
-  is the date and time (`2026-10-15 1432.md`) and its title is its first line, until then "Untitled note"
-- **A new note is there at once**, and `+` (or `Ctrl+N`) always makes another, even when the note on screen is still empty. Empty notes
-  stay in the list, also after a restart, until you delete them: nothing is removed for you
-- **Saved as you type**, a moment after you stop. Switching notes, leaving the window or closing it saves too, and closing
-  never asks. Each note remembers its mode and where you were. PerMark writes nothing inside a note's text, and never overwrites a version
-  it has not seen: if something else changed the file, you choose **Reload theirs**, **Keep mine** or **Save as new file**
-- **Pinned notes first, then Today, Yesterday, This week, This month and Older.** A note moves up when you leave it, not while you type.
-  Pin a note and drag it where you want it; `Ctrl+1` … `9` jump to the pinned ones. The filter box and
-  `Ctrl+P`, `Ctrl+T` and `Ctrl+Shift+F` search the notes
-- **Copy** (`Ctrl+Shift+C`) puts the exact Markdown of the note on the clipboard and marks it, with a **Delete note** button right in the toast,
-  for the prompts and snippets you write only to paste. **Delete copied notes** clears the marked ones and keeps the pinned. In a project,
-  `Ctrl+Shift+C` copies the whole open document
-- **Deleting is gentle**: the note goes to the system trash, the toast has **Undo**, and a pinned note asks first. **Show earlier versions** restores
-  an earlier text of the note (one is kept at the first save after you open a note and about every 10 minutes after; the newest 50 stay)
-- **Files from anywhere** join the list under **Files**: open a Markdown or text file with "Open with PerMark", with `Ctrl+Shift+O`, or by
-  dropping it on the Notes window (a file inside the project you have open still opens in that project). A file is never written on its own: it
-  opens in Read, `E` edits it, and `Ctrl+S` saves it. What you type before you save is kept apart from the file and comes back after a
-  restart, with an "unsaved" mark; closing the window asks nothing. If the file changes on disk while it is open, what you see stays until you
-  choose **Reload** (your typed text is kept as a note first) or **Keep mine** (the next save asks once more before it replaces the version on
-  disk). A file that is not found stays in the list, dimmed, with **Locate...** and **Remove from list**, and a rename in its folder is followed.
-  Text files (`.txt`) are edited in Source. Removing a file from the list never touches the file
-- **Move to project...** is for a note that grew into a document: the Save dialog opens in the project you used last, with a name made
-  from the title; the note is written there exactly as it is, goes to the system trash, and its row moves to **Files**. The toast has
-  **Open in project** and **Undo** (which brings the note back, and takes the copy away unless you changed it since)
-- **Share with agents** marks a note that an AI agent connected to any of your projects may read (see
-  [What an agent can do](#what-an-agent-can-do)); a small mark shows it in the list and in the header. Notes you did not share stay private
-- **Rename** (`F2`) gives a note a real file name, and **Open notes folder** shows it in your file manager. Notes are ordinary files: edit them
-  with any tool, and PerMark picks the change up
-- **A notes folder you chose that goes missing** (an unplugged drive, a renamed folder) is reported, with **Locate...** and **Create it**: PerMark
-  never makes an empty one in its place by itself, which would split your notes in two
-- **On start** (Settings → Notes) can open the Notes window instead of the welcome screen
-
-### 🗂️ Zero footprint by default
-PerMark keeps its state in your user profile. If you want settings and tags to travel with the project, run
-**Initialize PerMark in this project** to create a `.permark/` folder (shared `config.toml` and `meta.toml`; caches are gitignored automatically).
-
-### 🖱️ Open with PerMark
-**Windows**: right-click a folder, the background of a folder or a Markdown file and choose **Open with PerMark** (under *Show more options* on
-Windows 11). The same menu offers **New Markdown file with PerMark**, which makes `untitled.md` in that folder and opens it.
-You can also list PerMark in the **Open with** menu of `.md` files. Both are optional: pick them in the installer or later in
-**Settings → File manager**, which adds and removes them at once. PerMark never takes over a file type on its own: the installer asks (Markdown types checked, others not), and **Choose in Windows Settings** takes you to the
-Windows page where you pick the default app. Nothing needs administrator rights, and uninstalling removes every entry.
-The **Microsoft Store** version has the same entries on folders and on the background of a folder, and on Windows 11 they are in the main
-right-click menu, not under *Show more options*. The package provides it (and the **Open with** entry for Markdown files), so
-there are no switches for it in Settings, and uninstalling the app removes it.
-
-**macOS**: PerMark is listed in Finder's **Open With** for Markdown files, without becoming the default, and a folder dropped on its
-Dock icon opens as a project. **Linux**: the `.deb` and `.rpm` list PerMark under **Open With** for Markdown files.
-
-### 🌍 Your language
-PerMark speaks **English, Português (Brasil), Español, Deutsch, 简体中文 and Italiano**. It follows your system's language, and **Settings → Language**
-switches it at once, no restart. The Windows installer asks for a language too.
-
 ## Install
 
-Prebuilt installers for Windows, macOS and Linux are published on the [Releases](../../releases) page:
+Windows, macOS and Linux. PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically.
+Installers are not code-signed, so your system shows a warning the first time you install or open it.
 
-| System | Download |
-| --- | --- |
-| Windows | the `-setup.exe` installer (recommended). The `.msi` stays for updating copies that were installed from a 0.5 `.msi` |
-| macOS | the universal `.dmg` (Apple silicon and Intel) |
-| Linux | the `.AppImage`, `.deb` or `.rpm` |
+| System | Get it |
+|---|---|
+| Windows | The [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps PerMark up to date. Or the `-setup.exe` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest); the `.msi` is only for updating copies installed from a 0.5 `.msi` |
+| macOS | The universal `.dmg` (Apple silicon and Intel) from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest) |
+| Linux | The `.AppImage`, `.deb` or `.rpm` from [Releases](https://github.com/EdelmarSchneider/permark/releases/latest), or the snap (64-bit Intel and AMD): `sudo snap install permark` |
 
-On Windows you can also get it from the [Microsoft Store](https://apps.microsoft.com/detail/9NVV5GVZMGGX), which keeps it up to date.
-The other copies update themselves: when a new version is out, you'll be offered a one-click restart to update. The installers
-are not code-signed yet, so your system warns you the first time; the release notes say how to continue.
+Copies from GitHub check for updates when they start and once a day, and offer to download and restart. The Microsoft Store and the snap update their copies themselves.
+PerMark becomes your default app for Markdown only if you choose it: it asks once, with Markdown files checked and other types
+unchecked. On Windows, you confirm the choice in Windows Settings.
 
-PerMark 0.6 was tested on Windows. The macOS and Linux versions are built by the project's CI and have not been tested by hand yet.
+**Coming from TrailMark?** The command is now `permark`. If an agent is set up with the old `trailmark` command, run the setup
+lines from **Settings → Integration → Agent connection** again. PerMark 0.6 no longer renames old `.trailmark/` folders: update
+to 0.5.8 before you update to 0.6.
 
-**Build from source** (requires [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 24 and the
-[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/); the program lives in `app/`, and `app/rust-toolchain.toml` pins
-the Rust version, which `rustup` installs for you):
+<details>
+<summary><b>Command line</b></summary>
+
+```bash
+permark                  # start PerMark: your last windows and tabs come back
+permark .                # open the current folder as a project
+permark docs/plan.md     # open a single file
+permark --notes          # open the Notes
+```
+
+On Windows and macOS, `permark` is not on your `PATH` after an install from GitHub, so use the full path of the program, or add
+it yourself. The Microsoft Store and snap versions put `permark` on your `PATH`.
+
+</details>
+
+<details>
+<summary><b>Build from source</b></summary>
+
+You need [Rust](https://rustup.rs), [Node.js](https://nodejs.org) 24 and the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/). The program lives in `app/`, and `app/rust-toolchain.toml` pins
+the Rust version, which `rustup` installs for you.
 
 ```bash
 git clone https://github.com/EdelmarSchneider/permark.git
@@ -317,108 +240,78 @@ npm ci
 npm run tauri build   # or: npm run tauri dev
 ```
 
-## Usage
-
-```bash
-permark                  # welcome screen with recent projects
-permark .                # open the current folder as a project
-permark docs/plan.md     # open a single file
-permark --notes          # open the Notes
-```
-
-You can also drag and drop a folder or a `.md` file onto the window.
+</details>
 
 ## Use with an AI agent
 
-PerMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this
-paragraph" or "go through my comments" and the agent knows which document, which section and which words you mean. It talks to
-PerMark through the [Model Context Protocol](https://modelcontextprotocol.io) (MCP), so it works with any tool that supports MCP
-(Claude Code, Cursor, opencode, Codex, Gemini CLI, Claude Desktop and others), and without one of them nothing changes.
+PerMark can tell an AI agent what you are looking at, the way a code editor tells it the open file. Say "rewrite this paragraph"
+or "go through my comments", and the agent knows which document, which section and which words you mean. It works with any tool
+that speaks the [Model Context Protocol](https://modelcontextprotocol.io) (MCP).
 
-**It is off by default, per project, and local.** PerMark shares nothing until you turn on **Share this project with agents** in **Settings → Agent connection** (or
-**Agent connection: turn on** in the command palette), and it only talks to programs on your computer: it has no server and sends
-nothing over the network. The agent you connect is another matter. It may send what it reads (your selection, your comments, search
-results) to its AI service, as it would anything else you show it. The switch is yours alone: it is kept in PerMark's own data
-folder, so nothing inside a project, such as a cloned repository, can turn it on. While it is on, the status bar shows **Agent**, with
-a dot that fills while an agent is connected. Click it to see what is shared and what was asked lately, and to turn it off in one click.
+**What it shares, and how it stays in your hands:**
+
+- **Off until you turn it on, per project.** Choose **Share this project with agents** in **Settings → Integration → Agent connection**,
+  or run **Agent connection: turn on** from the command palette. Nothing inside a project can turn it on.
+- **Local.** It talks only to programs on your computer and opens no network port.
+- **Read, never edit.** The agent sees where you are, what you selected, what changed, your comments and the notes you shared one
+  by one. It reads, shows you a place and marks comments done. It never edits a file through PerMark.
+- **Your limits.** You choose what it may do, group by group. Files in `.aiignore` never reach an agent. Secret values are hidden
+  by their key names; a secret inside ordinary text is not recognized, so list such files in `.aiignore`.
+- **Visible.** While the connection is on, the status bar shows **Agent**. Click it to see what is shared and the latest requests.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-agent-dark.png">
-  <img src="docs/assets/screenshot-agent.png" alt="The Agent popover open from the status bar: an agent is connected, what it can see, and its latest requests (a search, reading and resolving comments, the unread documents, what you are looking at)">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/agent-dark.png">
+  <img src="docs/assets/agent.png" alt="The Agent popover in the status bar: a connected agent, what it can see, and its latest requests">
 </picture>
 
-### Connect an agent
+**Connect in two lines.** Turn the connection on, then add PerMark to your agent as an MCP server. **Settings → Integration →
+Agent connection** shows these lines with the right path for your copy, and a Copy button.
 
-Turn the connection on, then add PerMark to your agent as an MCP server. **Settings → Agent connection** shows the lines below with
-the right path filled in, and a Copy button for each.
+```bash
+# Claude Code
+claude mcp add permark -- "<path to PerMark>" mcp
+```
 
-- **Claude Code**
+```json
+{ "mcpServers": { "permark": { "command": "<path to PerMark>", "args": ["mcp"] } } }
+```
 
-  ```bash
-  claude mcp add permark -- "<path to PerMark>" mcp
-  ```
+The second form fits any other MCP client. With the connection on, **Hand off to agent** copies one line for your prompt, so the
+agent asks PerMark what you did instead of rereading the project.
 
-- **Any other MCP client** (Cursor, Claude Desktop, ...): add this to its MCP servers configuration.
-
-  ```json
-  {
-    "mcpServers": {
-      "permark": { "command": "<path to PerMark>", "args": ["mcp"] }
-    }
-  }
-  ```
-
-`<path to PerMark>` is the full path of the program, which Settings shows for the copy you are running: the program the
-installer put on your machine, the one inside `PerMark.app` on macOS, or the AppImage file. **Use the full path:** on Windows and
-macOS `permark` is not on your `PATH` after an install, so the bare name only works where you put it there yourself. (The Microsoft
-Store version on Windows is the exception: it puts `permark` on your `PATH`, so there Settings shows the short lines, such as
-`claude mcp add permark -- permark mcp`.) Quote the path when it has spaces. The agent runs in your project's folder, and PerMark finds the project from it, so one
-configuration serves every project you have opened in PerMark. Before it sends anything, `permark mcp` checks that what answers
-is PerMark running as you, and not another program that took the name.
-
-### What an agent can do
+<details>
+<summary><b>What an agent can do: the 13 tools</b></summary>
 
 | Tool | What it answers or does |
 |---|---|
-| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 2,000 characters), whether there are unsaved edits, and how many of your comments are open (call `list_comments` when it is not 0) |
-| `list_unread` | The documents that changed since you last read them, newest first |
+| `get_context` | The open document, whether you are reading or editing, the section on screen, your selection (up to 2,000 characters), whether there are unsaved edits, and how many of your comments are open |
+| `list_unread` | The documents that changed since you last read them, the newest at the top |
 | `map` | The files below a folder, by path: approximate size in tokens, flags (unread, changed), and the tags and descriptions you gave them. The place to start in a large project |
-| `search` | "Where is X described?": ranked sections with path, line, size, snippet and heading, from the same index as Search everywhere. `tags` narrows the search to the documents that have all of them, and `budget` caps the size of the answer |
-| `list_tags` | The tags in use, with how many documents have each, plus how many documents have no tag; or, for one tag, the documents that have it with their descriptions |
-| `outline` | The parts of one file (headings, JSON keys, parts of a config file) with line ranges and sizes, so an agent reads only the part it needs; optionally the documents that link to it and where its links lead |
+| `search` | "Where is X described?": ranked sections with path, line, size, snippet and heading, from the same index as Search everywhere. `tags` narrows the search, and `budget` caps the size of the answer |
+| `list_tags` | The tags in use, with how many documents have each; or, for one tag, the documents that have it with their descriptions |
+| `outline` | The parts of one file (headings, JSON keys, parts of a config file) with line ranges and sizes, so an agent reads only the part it needs; optionally the links in and out |
 | `read` | The text of one part of a file: a heading, an anchor, a key path or a range of lines. Long parts continue with a cursor |
-| `list_comments` | Your [comments](#comments): the open ones, each with the quoted passage, its section and line, and your text |
+| `list_comments` | Your open comments, each with the quoted passage, its section and line, and your text |
 | `resolve_comment` | Marks a comment done, with an optional short reply that you read under the comment |
-| `list_notes` | The [notes](#-notes) you chose to share with agents, each with its title, when it changed and its size |
+| `list_notes` | The notes you chose to share with agents, each with its title, when it changed and its size |
 | `read_note` | The text of one shared note, by the name `list_notes` gave |
 | `activity` | What you did in PerMark since you last pressed **Hand off to agent** (checked against the disk), plus the changes made outside PerMark |
 | `open` | Shows you a place (a document, a line or a heading) without taking the focus from the agent's terminal, and offers a way back |
 
-Answers are short on purpose: a header line, then tab-separated rows, so an agent spends few tokens. **Hand off to agent** (from the
-Agent item in the status bar, or the command palette) copies one line for your prompt, such as
-`PerMark: 7 actions since last hand-off -> call activity since=handoff`, so the agent asks PerMark what you did instead of
-rereading the project.
+Answers are short on purpose: a header line, then tab-separated rows, so an agent spends few tokens. A project's `.permark/` folder
+can narrow what an agent may do, never widen it. When PerMark is closed, the other tools still work from the files, and `open`
+starts it. With the connection off, every tool says so and explains how to turn it on.
 
-The agent only reads, shows you a place, and checks off comments you wrote. It cannot create comments and it cannot edit a document through
-PerMark. It sees the project you opened and nothing else: no other project, no file outside the project folder, no file your `.aiignore` lists, and
-no secret values (keys, tokens and passwords are masked in everything an agent receives). In **Settings → Agent connection** you choose what
-it may do, group by group (where you are, what changed, searching and reading, reading comments, resolving comments, notes, showing a
-place, your activity); a project's `.permark/` can narrow that, never widen it. Your notes are private:
-the agent sees only the notes you shared one by one (**Share with agents** in a note's menu, **Stop sharing** takes it back at once), through
-`list_notes` and `read_note`, in any project whose connection is on; it cannot list the notes folder, read a note you did not share, or change
-one, and a notes folder that lies inside a project is not part of that project's search. When PerMark is
-closed, the other tools still work from the files, `get_context` says that
-PerMark is not open, and `open` starts it. With the connection off, every tool says so and explains how to turn it on.
+</details>
 
-### Add what you are reading to every prompt
+<details>
+<summary><b>Add what you are reading to every prompt: <code>permark context</code></b></summary>
 
 `permark context` prints where you are as one short line and exits, for tools that can run a command before each prompt:
 
 ```text
 Viewing docs/plan.md › Plan › Rollout (lines 40-62), selected (lines 44-46): 'ship it on Friday', 2 comments open.
 ```
-
-When no comment is open, the line stops at the period and says nothing about comments.
 
 In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your user settings) adds it to every prompt:
 
@@ -432,157 +325,120 @@ In Claude Code, a `UserPromptSubmit` hook in `.claude/settings.json` (or your us
 }
 ```
 
-Other tools can do the same from their own hooks. When there is nothing to say (the connection is off, or PerMark is not open), the
-command prints nothing, so a hook never adds noise to a prompt. A project that keeps its settings in `.permark/` also has
-`.permark/local/agent-context.json` while the connection is on: the same answer as a file, for a script or a tool without MCP. **It holds
-the open document, the section on screen and your selected text, and any program running as you can read it, as can a folder-sync tool
-that watches the project.** It stays out of git (`local/` ignores itself) and is deleted when the connection is turned off.
+When there is nothing to say (the connection is off, or PerMark is not open), the command prints nothing, so a hook never adds
+noise to a prompt. A project with a `.permark/` folder also has `.permark/local/agent-context.json` while the connection is on:
+the same answer as a file, for a script or a tool without MCP. **It holds the open document, the section on screen and your
+selected text, and any program running as you can read it, as can a folder-sync tool that watches the project.** It stays out of git and is deleted when the connection is turned off.
 
-### Comments
-
-Select a passage while you read and press `C` (or choose **Comment** in the selection toolbar), type a comment and press `Enter`. A thin
-bar marks the passage in the margin, and the **Comments** tab of the right panel lists the open comments by document, with the ones you
-finished folded away. A click on a comment goes to its passage. Check a comment off yourself, or press **Send to agent** on a comment
-(or **Send all** at the top of the tab) and paste the copied prompt into any agent chat. You can also ask your agent to "go through my comments":
-it reads them with `list_comments`, and when it marks one done its reply appears under the comment.
-
-Comments follow their passage when the document changes: they are found again by their words, then by their section, then by their
-line. A comment whose passage was rewritten stays in the list marked **Passage changed**. Comments are yours, kept next to the other local
-state (`.permark/local/comments.json` once you initialize PerMark in the project, otherwise in your user profile), never committed (the folder ignores itself),
-and they work without the agent connection.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screenshot-comments-dark.png">
-  <img src="docs/assets/screenshot-comments.png" alt="A document with comment bars in the margin, and the Comments tab listing the open comments by document, with one done comment showing the agent's reply">
-</picture>
+</details>
 
 ## Keyboard shortcuts
 
-On macOS, use `Cmd` where this table says `Ctrl`.
+The ten that matter most. On macOS, use `Cmd` where this README says `Ctrl` (except `Ctrl+Tab` and `Ctrl+Shift+Tab`).
+
+| Action | Shortcut |
+|---|---|
+| Search everywhere (files, sections, tags, commands) | `Ctrl+T` |
+| Quick open a file | `Ctrl+P` |
+| Every command | `Ctrl+Shift+P` |
+| Next unread document | `Alt+U` |
+| Follow mode | `Ctrl+Shift+L` |
+| Next / previous change | `F7` / `Shift+F7` |
+| While you review: keep / revert | `K` / `R` |
+| Comment on the selected passage | `C` |
+| Edit, and back to View | `Ctrl+E` |
+| Focus mode: only the page | `Ctrl+Alt+F` |
+
+All of them, and you can change them, in **Settings → Keyboard shortcuts**.
+
+<details>
+<summary><b>All default shortcuts</b></summary>
 
 **Reading and navigating**
 
 | Action | Shortcut |
 |---|---|
-| Search everywhere (files, sections, tags, commands) | `Ctrl+T` |
-| Quick open file | `Ctrl+P` |
-| Commands | `Ctrl+Shift+P` |
 | Search all docs (by section) | `Ctrl+Shift+F` |
 | Find in page | `Ctrl+F` |
-| Show the Explorer | `Ctrl+Shift+X` |
-| Show / hide the Outline | `Ctrl+Alt+O` |
+| Show / hide the outline | `Ctrl+Alt+O` |
+| Show / hide the sidebar (when you are not editing) / the right panel | `Ctrl+B` / `Ctrl+Alt+B` |
 | Cycle the reading width | `Ctrl+Alt+W` |
-| Focus mode: only the page (`Esc` or the same keys leave it) | `Ctrl+Alt+F` |
-| Next / previous change | `F7` / `Shift+F7` |
-| Next unread document | `Alt+U` |
-| Follow mode | `Ctrl+Shift+L` |
 | Back / forward | `Alt+←` / `Alt+→` |
 | Copy reference (or selection with reference) | `Ctrl+Alt+C` |
-| Copy the whole document | `Ctrl+Shift+C` |
-| Open in your editor | `Ctrl+Shift+E` |
-| Edit tags and description | `T` |
-| Leave a comment on the selected passage | `C` |
-| Zoom in / out / reset (on a picture: zoom it, or fit it to the window) | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+| Copy the whole document (View and Source) | `Ctrl+Shift+C` |
+| Open in your external editor | `Ctrl+Shift+E` |
+| Zoom in / out / reset | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
 | Open a folder / a file | `Ctrl+O` / `Ctrl+Shift+O` |
 | Settings | `Ctrl+,` |
-| Close the folder | `Ctrl+W` |
-| Next / previous open project | `Ctrl+Alt+→` / `Ctrl+Alt+←` |
+| Edit the open document's tags and description | `T` |
 
-While you review what changed in a document: `K` keep, `R` revert, `N` / `P` next / previous change, `Shift+K` / `Shift+R` keep / revert all.
-Every shortcut can be changed in **Settings → Keyboard shortcuts**.
+**Tabs**
+
+| Action | Shortcut |
+|---|---|
+| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` (or `Ctrl+Alt+→` / `Ctrl+Alt+←`) |
+| Go to tab 1 to 8 / the last tab | `Ctrl+1` … `Ctrl+8` / `Ctrl+9` |
+| Close the tab | `Ctrl+W` |
+
+**Review**
+
+| Action | Shortcut |
+|---|---|
+| Keep / revert this change | `K` / `R` |
+| Next / previous change | `N` / `P` |
+| Keep all / revert all | `Shift+K` / `Shift+R` |
 
 **Editing**
 
 | Action | Shortcut |
 |---|---|
-| Start editing, in the editor you used last | `Ctrl+E` |
-| Done (back to View) | `Ctrl+E` or `Esc` |
-| Switch between Edit and Source (from View: the editor you did not use last) | `Ctrl+Alt+E` |
+| Switch between Edit and Source | `Ctrl+Alt+E` |
+| Back to View | `Ctrl+E` or `Esc` |
 | Save | `Ctrl+S` |
 | New file | `Ctrl+N` |
-| Bold / italic / strikethrough | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
-| Link / inline code | `Ctrl+K` / `Ctrl+Shift+C` |
+| Bold / italic / strikethrough (Edit) | `Ctrl+B` / `Ctrl+I` / `Ctrl+Shift+X` |
+| Bold (Source, in Markdown files) | `Ctrl+B` |
+| Link / inline code (Edit) | `Ctrl+K` / `Ctrl+Shift+C` |
 | Headings 1 to 6 (Edit) | `Ctrl+Shift+1` … `6` |
-| Paragraph (Edit) | `Ctrl+Alt+0`, or `Ctrl+Shift+0` where Windows lets it through |
+| Paragraph (Edit) | `Ctrl+Alt+0` |
 | Block menu (Edit) | `/` in an empty paragraph |
 | Find / replace / go to line (Source) | `Ctrl+F` / `Ctrl+H` / `Ctrl+G` |
 
-**Notes**
+**Notes and the Explorer**
 
 | Action | Shortcut |
 |---|---|
-| New note | `Ctrl+N` |
-| Copy the note's text (in a project: the open document) | `Ctrl+Shift+C` |
-| Open a pinned note | `Ctrl+1` … `9` |
-| Open a file (listed under Files) | `Ctrl+Shift+O` |
-| Save a file you opened (a note saves itself) | `Ctrl+S` |
-| Next / previous note | `Ctrl+Alt+↓` / `Ctrl+Alt+↑` |
-| Rename the note / delete it | `F2` / `Del` |
+| Open the Notes | `Ctrl+Shift+D` |
+| New note, from anywhere in PerMark | `Ctrl+Shift+N` |
+| New note (in Notes) | `Ctrl+N` |
+| Copy the note's text (in Notes) | `Ctrl+Shift+C` |
+| Open a pinned note (in Notes) | `Ctrl+1` … `Ctrl+9` |
+| Rename / delete (to the system trash) | `F2` / `Del` |
+| Take back the last file operation (on macOS, a deleted file stays in the Trash) | `Ctrl+Z` |
 
-**In the Explorer**
+</details>
 
-| Action | Shortcut |
-|---|---|
-| Rename | `F2` |
-| Delete (to the system trash) | `Del` |
-| Select several files | `Ctrl+click` / `Shift+click` |
-| Undo the last file operation | `Ctrl+Z` |
+## What's new and ideas being explored
 
-## Roadmap
+**PerMark 0.6** rebuilt the whole program. Every release is in the [CHANGELOG](CHANGELOG.md).
 
-**v0.2: organize, edit and reorganize** (released)
-- Tags and descriptions, the Explorer filter, reading widths, an Explorer that follows the open file, and the Outline
-- A visual and a source editor with block-preserving saves, safe sharing of a file with agents, new files and images
-- File operations (rename, move, delete) that update links and can be undone
+- **0.6.2:** a Notes button next to Settings, keys to hide and show the side bars, files dropped from your file manager copy into the project or open as
+  tabs, **Move to window** for a tab, and every plugin on from the start.
+- **0.6.1:** every folder, file and Notes gets a tab, and your windows and tabs come back when PerMark starts.
+- **0.6.0:** many windows in one app, a full Settings page, a Plugins page and keys you can change.
+- Config files and TOON as clean sheets, AI files recognized with no setup, and prompt blocks.
+- Review of code and text files, line by line, with keep or revert.
+- An agent connection with 13 tools, permission groups, `.aiignore` and **Hand off to agent**.
 
-**v0.2.1: your language** (released)
-- Português (Brasil), Español and Deutsch, "Open with PerMark" in the Windows file manager, one Read | Visual | Source switch,
-  a window that remembers its place, and an Explorer for workspaces of several repositories
-
-**v0.3** (released)
-- Search everywhere (`Ctrl+T`): files, sections, tags and commands in one box
-- Unread markers ("changed since I last read it") and clickable code references (`src/main.rs:42`)
-- "Open with PerMark" in the macOS and Linux file managers (Windows has it already)
-
-**v0.4: your agent sees what you see** (released)
-- An optional, local connection (MCP, plus a plain file for tools without it) that lets any coding agent know which document and
-  section you are reading and what you selected, so "rewrite this paragraph" just works
-- Comments: leave them on passages while you read, and your agent picks up the open ones
-- Your agent can ask PerMark "where is X described?" and point you to a section, and it knows what you have not read yet.
-  Off by default, per project, and read-only: an agent can show you a document, never edit through it
-
-**v0.5: Notes** (released)
-- Open PerMark, type, close: notes save themselves, with no name to choose and no folder to pick. Keep a sticky note for
-  months, draft a prompt and copy it to your agent, and open loose Markdown files from anywhere, with changes on disk detected
-- v0.5.2: pictures, audio and video open in the pane, code blocks are highlighted for about 190 languages, and folders
-  show up in Quick open
-- v0.5.8: PlantUML diagrams, a new Markdown or text file from a folder, a note's path, heading shortcuts that work with AltGr, and wide blocks that stay in the pane
-- v0.5.7: review what changed since you last read (Keep or Revert), send comments to your agent, silence a folder, repair broken links, complete as you type, a Mermaid preview while you edit, and a Projects menu
-- v0.5.6: TrailMark is now PerMark: a new name, the same app, and nothing lost on the way
-- v0.5.5: tags with colors and icons, tags as your agent's index (`list_tags`, tag filter in `search`), a folder switcher, the navigation trail, and Open in browser for web pages
-- v0.5.4: the interface in Italiano (Italian), soft light tones (Paper, Sage, Gray), and the Git letters explained in plain words
-- v0.5.3: the interface in 简体中文 (Simplified Chinese), and search that finds Chinese and Japanese words inside sentences
-
-**v0.6: a workspace for documents and the files around them** (released)
-- One app with many windows and a bar of open projects, a Plugins page and a full Settings page with an editable keyboard map
-- Small config files (TOML, YAML, INI, `.env`, `.properties`, ignore files) and TOON as clean sheets you can edit without disturbing
-  the rest of the file; optional token counts and a converter to compact formats (off until you turn them on)
-- Review code and text files line by line, with changed lines that glow; very large text files open at once
-- The agent connection grows to 13 tools, with short answers, permission groups, `.aiignore` and a hand-off button
-- Focus mode, and dropping files into a project (copy or move, with undo)
-
-**Later**, no promises
-- Spec-driven workflows
-- Semantic search with a local, offline, multilingual model, so "retry policy" finds the section that describes it whatever words
-  it uses
-- Richer JSON and XML views, backlinks, and installer extras (`permark` on the `PATH`)
+**Ideas being explored, no promises:** a home for structured work with AI, such as spec-driven development, for the projects that
+want it; ready-made ways of working to adopt, such as Spec Kit templates; and a shared place where people and always-on agents
+follow and review the work together, with the person in charge.
 
 ## Tech
 
-PerMark is a [Tauri 2](https://v2.tauri.app) app. The core is written in **Rust**: rendering (comrak + ammonia), file watching
-(notify), git (the one on your computer, or a built-in libgit2 when there is none), the search index and the block-preserving saves. The UI is **Svelte 5** + TypeScript running in the system
-webview, with **CodeMirror 6** (Source) and **Milkdown** (Edit). That keeps the installer small and memory use
-low compared to Electron apps.
+PerMark is a [Tauri 2](https://v2.tauri.app) app. The core is written in **Rust**: rendering (comrak and ammonia), file watching
+(notify), git (the one on your computer, or a built-in libgit2 when there is none), the search index and the block-preserving saves.
+The interface is **Svelte 5** and TypeScript in the system webview, with **CodeMirror 6** (Source) and **Milkdown** (Edit).
 
 ## Contributing
 
