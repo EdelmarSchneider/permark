@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Privacy policy | PerMark</title>
-  <meta name="description" content="PerMark has no account and collects no data. Your documents, tags, comments and settings stay on your computer. This is what the app does with the network, and what it does not.">
+  <meta name="description" content="PerMark has no account and no telemetry. This page lists every time the app goes online, what the agent connection shares, and what this website does.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
@@ -13,9 +13,6 @@
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -27,7 +24,7 @@
         <img src="assets/logo.svg" width="28" height="28" alt="">
         <span>PerMark</span>
       </a>
-      <a class="btn btn--ghost btn--sm" href="index.html">Back to the home page</a>
+      <a class="btn btn--ghost btn--sm nav__end" href="index.html">Back to the home page</a>
     </div>
   </header>
 
@@ -36,31 +33,117 @@
       <div class="container">
         <div class="legal__body">
           <h1>Privacy policy</h1>
-          <p class="legal__updated">Last updated October 15, 2026. This applies to PerMark, the desktop app, on every platform it runs on, including the version in the Microsoft Store.</p>
+          <p class="legal__updated">Last updated October 20, 2026. This page covers PerMark, the desktop app, in every build: the versions from GitHub, the Microsoft Store and the snap. It also covers this website.</p>
 
           <h2>In short</h2>
-          <p>PerMark has no account and no sign-in, and it collects no data about you or about how you use it. It has no analytics and no tracking. The developer receives nothing from the app.</p>
+          <p>PerMark has no account, no telemetry and no tracking. It goes online only to check for its own updates (in the versions you download from GitHub; the Microsoft Store and the snap update PerMark for it), and when you ask: a picture from the web, or the optional vocabulary of the Token count plugin. Your documents do not leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
+
+          <h2>What PerMark does not do</h2>
+          <ul>
+            <li>It has no account and no sign-in.</li>
+            <li>It has no telemetry, no analytics and no crash reporting.</li>
+            <li>It does not send your documents over the internet. When you turn on the agent connection, it gives parts of them only to an agent on your own computer.</li>
+          </ul>
 
           <h2>What stays on your computer</h2>
-          <p>Everything you work with stays on your computer:</p>
           <ul>
-            <li>Your documents. PerMark reads the folders you open, and changes a file only when you save an edit or ask it to rename, move or delete one.</li>
-            <li>Your tags, descriptions and comments, and which documents you have read. They are kept in PerMark's data folder on your computer, or in the project's <code>.permark</code> folder if you chose to keep them there.</li>
-            <li>Your settings, your recent folders and the position of the window.</li>
+            <li><strong>Your documents.</strong> PerMark reads the folders and files you open. It changes them only when you act in it: for example, when you save an edit, revert a change in Review, add a picture, or create, rename, move or delete a file (and, if you agree, the links to it in other documents). Notes save themselves as you type, as plain Markdown files in a folder you can see.</li>
+            <li><strong>What you add in PerMark.</strong> Your tags, descriptions and comments, and which documents you have read. PerMark keeps them in its data folder in your user profile, or in the project's <code>.permark</code> folder if you chose to keep them there.</li>
+            <li><strong>Your settings</strong>, your recent folders, and your windows and tabs.</li>
           </ul>
-          <p>None of it is sent anywhere by PerMark.</p>
+          <p>PerMark sends none of this over the internet.</p>
 
-          <h2>What PerMark does with the network</h2>
+          <h2>Every time PerMark goes online</h2>
+          <p>This is the full list for PerMark 0.6.2 and its Windows installers.</p>
+          <div class="table-wrap">
+            <table class="data-table" role="table">
+              <caption class="sr-only">Every time PerMark goes online</caption>
+              <thead role="rowgroup">
+                <tr role="row">
+                  <th scope="col" role="columnheader">What</th>
+                  <th scope="col" role="columnheader">When</th>
+                  <th scope="col" role="columnheader">Where it goes</th>
+                  <th scope="col" role="columnheader">Which builds</th>
+                  <th scope="col" role="columnheader">Does it ask you?</th>
+                </tr>
+              </thead>
+              <tbody role="rowgroup">
+                <tr role="row">
+                  <td role="cell" data-label="What">Update check: PerMark reads a small file that names the latest version</td>
+                  <td role="cell" data-label="When">A few seconds after PerMark starts, then every 24 hours while it runs. Also when you click <strong>Check now</strong> in <strong>Settings → Integration → Updates</strong></td>
+                  <td role="cell" data-label="Where it goes"><code>github.com</code>, the PerMark releases page (GitHub sends the request on to its file host)</td>
+                  <td role="cell" data-label="Which builds">Versions downloaded from GitHub: Windows (setup <code>.exe</code> and <code>.msi</code>), macOS, Linux (<code>.deb</code>, <code>.rpm</code>, AppImage). Not the Microsoft Store, not the snap</td>
+                  <td role="cell" data-label="Does it ask you?">No. It runs on its own. To stop it, turn off the <strong>Updates</strong> plugin in <strong>Settings → Plugins</strong>; then PerMark makes no update check at all, automatic or manual</td>
+                </tr>
+                <tr role="row">
+                  <td role="cell" data-label="What">Update download</td>
+                  <td role="cell" data-label="When">When you click <strong>Download and install</strong>. PerMark restarts only when you click <strong>Restart to update</strong>. If files are unsaved, PerMark does not restart: it lists them and asks you to save them</td>
+                  <td role="cell" data-label="Where it goes">The GitHub release file named in the update check</td>
+                  <td role="cell" data-label="Which builds">Same as the update check</td>
+                  <td role="cell" data-label="Does it ask you?">Yes. Nothing downloads until you click</td>
+                </tr>
+                <tr role="row">
+                  <td role="cell" data-label="What">Token count vocabulary: the word list a tokenizer needs</td>
+                  <td role="cell" data-label="When">Only when you ask for it: in the <strong>Token count</strong> plugin, you click Download for a tokenizer (the button shows the size). The plugin is on from the start, and nothing downloads when PerMark starts</td>
+                  <td role="cell" data-label="Where it goes"><code>openaipublic.<wbr>blob.<wbr>core.<wbr>windows.<wbr>net</code> (3.6 MB or 1.7 MB, depending on the tokenizer)</td>
+                  <td role="cell" data-label="Which builds">All builds</td>
+                  <td role="cell" data-label="Does it ask you?">Yes. Nothing downloads until you click. Each vocabulary downloads once and is kept</td>
+                </tr>
+                <tr role="row">
+                  <td role="cell" data-label="What">A picture from the web</td>
+                  <td role="cell" data-label="When">When you click a web picture in a document, or when you turn on <strong>Load web pictures in this project</strong> for a project</td>
+                  <td role="cell" data-label="Where it goes">The web server named in the picture's address in the document (<code>https</code> only)</td>
+                  <td role="cell" data-label="Which builds">All builds</td>
+                  <td role="cell" data-label="Does it ask you?">Yes. One click per picture, or your choice per project</td>
+                </tr>
+                <tr role="row">
+                  <td role="cell" data-label="What">WebView2 installer (the Windows part PerMark uses to show its pages)</td>
+                  <td role="cell" data-label="When">Once, while you install PerMark, and only if your computer does not have WebView2</td>
+                  <td role="cell" data-label="Where it goes">Microsoft, which provides the WebView2 installer</td>
+                  <td role="cell" data-label="Which builds">Both Windows installers (<code>-setup.exe</code> and <code>.msi</code>). Not the Microsoft Store package, which uses the WebView2 already on your system</td>
+                  <td role="cell" data-label="Does it ask you?">No. It is part of the installation, not of PerMark itself. Nothing downloads when WebView2 is already there. This follows the documented behavior of Tauri, the framework PerMark is built on; it has not been tested on a computer without WebView2</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>What these requests carry:</p>
           <ul>
-            <li><strong>Update check.</strong> The installers of PerMark that are not from the Microsoft Store check for a new version a few seconds after the app starts, then once a day while it runs, and when you ask it to. To do that the app requests a small file named <code>latest.json</code> from GitHub Releases, and, if you choose to update, downloads the update from there. The request carries nothing about you or your documents. GitHub receives it the way any web server receives a visit, under <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>. <strong>The Microsoft Store and Snap versions do not do this at all</strong>: the store updates them, and the app makes no update requests.</li>
-            <li><strong>Images from the web, when you ask.</strong> If a document shows an image from a web address, PerMark shows a placeholder with its description and loads the image only when you click it, or when you choose to load web pictures for that project. The image then comes from that address, as in a web browser. Links you click open in your default browser.</li>
-            <li><strong>Token count vocabularies, when you ask.</strong> To count tokens exactly the way OpenAI's models do, the token count asks you first and then downloads that tokenizer's vocabulary file from OpenAI's public file server (<code>openaipublic.blob.core.windows.net</code>). It is downloaded once and kept on your computer; counting itself never uses the network.</li>
+            <li>The update check and the update download name only the update library and its version. They do not carry your PerMark version.</li>
+            <li>Like any web request, each one shows your IP address to the server it reaches.</li>
+            <li>The vocabulary and picture requests send no cookies.</li>
+            <li>A web picture tells its web server your IP address and that the picture was viewed.</li>
+            <li>PerMark checks each update against its signature before it installs it, and checks each vocabulary file against a fixed fingerprint (SHA-256).</li>
           </ul>
-          <p>That is all: PerMark itself does not contact any other server. Diagrams, math and fonts are drawn on your computer, and PerMark never runs <code>git fetch</code>, <code>pull</code> or <code>push</code> for you.</p>
+
+          <h2>What is not a network call</h2>
+          <ul>
+            <li><strong>Diagrams and math.</strong> Mermaid, PlantUML and KaTeX run inside PerMark. PerMark uses no PlantUML server, and it refuses PlantUML lines that would fetch files.</li>
+            <li><strong>Fonts and styles.</strong> They come with PerMark. It loads nothing from the web for its own look.</li>
+            <li><strong>Links.</strong> A web or email link opens in your browser or mail app. That program goes online, not PerMark.</li>
+            <li><strong>Git.</strong> PerMark never runs <code>fetch</code>, <code>pull</code>, <code>push</code> or <code>clone</code>. Its built-in git cannot go online.</li>
+            <li><strong>The agent connection.</strong> It talks only to programs on your own computer, and it opens no network port.</li>
+          </ul>
+
+          <h2>Outside PerMark's control</h2>
+          <ul>
+            <li>PerMark shows its pages through a part of your system: WebView2 on Windows, WKWebView on macOS, WebKitGTK on Linux. These parts have their own services, such as Microsoft Edge updates, which PerMark does not control.</li>
+            <li>In a partial git clone, the git on your computer may download a missing file from the repository's own server when PerMark shows an old version. This has not been verified.</li>
+          </ul>
 
           <h2>The agent connection</h2>
-          <p>PerMark can tell an AI agent what you are looking at, so that you can say "rewrite this paragraph" and the agent knows which one. This connection is <strong>off by default</strong> and you turn it on for one project at a time, in <strong>Settings, Agent connection</strong>. It is local only: PerMark talks to programs on your computer and has no server that listens on the network.</p>
-          <p>The agent you connect is another program, and it is up to you. It may send what it reads from PerMark (your selection, your comments, search results) to its own AI service, the way it would send anything else you show it. What that service does with it is between you and that service, under its terms and privacy policy. Turn the connection off, in one click from the status bar, and the agent sees nothing.</p>
+          <p>PerMark can tell an AI agent what you are looking at, so that you can say "rewrite this paragraph" and the agent knows which one. The connection is <strong>off in every project until you turn it on</strong>: choose <strong>Share this project with agents</strong> in <strong>Settings → Integration → Agent connection</strong>. Nothing inside a project can turn it on. While it is on, the status bar shows <strong>Agent</strong>.</p>
+          <ul>
+            <li>It is local: it talks only to programs on your computer and opens no network port.</li>
+            <li>The agent reads, shows you a place and marks your comments done. It never edits a file through PerMark.</li>
+            <li>A note reaches an agent only if you share that note.</li>
+            <li>Files listed in <code>.aiignore</code> never reach an agent. PerMark hides secret values by their key names. A secret inside ordinary text is not recognized, so list such files in <code>.aiignore</code>.</li>
+          </ul>
+          <p>The agent you connect is a separate program, and your choice. It may send what it reads through PerMark (your selection, your comments, search results) to its own AI service, as it would with anything else you show it. What that service does with it is between you and that service, under its terms and privacy policy. Turn the connection off, and the agent gets nothing more through PerMark.</p>
+
+          <h2>This website</h2>
+          <p>This website is hosted on GitHub Pages. When you visit, GitHub receives your request the way any web server does, including your IP address, under <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>. The site has no analytics, no tracking scripts and no cookies, and it loads its fonts and pictures from its own address.</p>
+          <p>The Microsoft Store link on this site carries a campaign tag. If you follow it, Microsoft counts, on its side, the Store page views and the downloads of PerMark that came from this site, and shows the developer only the totals. This site sets no cookie for it. What the Store page itself does is covered by <a href="https://privacy.microsoft.com/privacystatement">Microsoft's privacy statement</a>.</p>
 
           <h2>Children</h2>
           <p>PerMark has no accounts and collects no personal data, from children or from anyone else.</p>
@@ -81,7 +164,7 @@
         <img src="assets/logo.svg" width="24" height="24" alt="">
         <span>PerMark</span>
       </a>
-      <p>&copy; 2026 Edelmar Schneider. Licensed under <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option.</p>
+      <p>&copy; 2026 Edelmar Schneider. Licensed under <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option. "PerMark" and its logo are trademarks of Edelmar Schneider.</p>
       <p><a href="privacy.html" aria-current="page">Privacy</a> · <a href="https://github.com/EdelmarSchneider/permark">github.com/EdelmarSchneider/permark</a></p>
     </div>
   </footer>

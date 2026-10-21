@@ -3,34 +3,31 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PerMark: read what your AI writes, write what it reads</title>
-  <meta name="description" content="A free Markdown app for Windows, macOS and Linux. Open any .md file as a clean page, keep notes that save themselves, and follow and steer your AI agents.">
+  <title>Markdown viewer and editor: read what AI writes | PerMark</title>
+  <meta name="description" content="Open any .md file as a clean page, keep notes that save themselves, and see what your AI agents change. Free Markdown app for Windows, macOS and Linux.">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#16171a" media="(prefers-color-scheme: dark)">
   <link rel="canonical" href="https://edelmarschneider.github.io/permark/">
 
-  <!-- Open Graph / Twitter -->
+  <!-- Open Graph / Twitter. assets/og-image.png is 1200x630. -->
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="PerMark">
-  <meta property="og:title" content="PerMark: read what your AI writes, write what it reads">
-  <meta property="og:description" content="A free Markdown app: open any .md file as a clean page, keep notes that save themselves, and follow and steer your AI agents. Works with any AI tool, or none.">
+  <meta property="og:title" content="PerMark: AI speeds the work. Your vision steers it.">
+  <meta property="og:description" content="A Markdown app that opens every document as a clean page, shows what your AI agents change, and lets you keep or revert each change.">
   <meta property="og:url" content="https://edelmarschneider.github.io/permark/">
-  <meta property="og:image" content="https://edelmarschneider.github.io/permark/assets/screenshot-light.png">
-  <meta property="og:image:width" content="1440">
-  <meta property="og:image:height" content="900">
-  <meta property="og:image:alt" content="PerMark with a project open: file explorer, a rendered Markdown document and the live changes panel.">
+  <meta property="og:image" content="https://edelmarschneider.github.io/permark/assets/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="PerMark showing a Markdown document as a clean page, with a diagram, a table and a properties card.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="PerMark: read what your AI writes, write what it reads">
-  <meta name="twitter:description" content="A free Markdown app: open any .md file as a clean page, keep notes that save themselves, and follow and steer your AI agents.">
-  <meta name="twitter:image" content="https://edelmarschneider.github.io/permark/assets/screenshot-light.png">
+  <meta name="twitter:title" content="PerMark: AI speeds the work. Your vision steers it.">
+  <meta name="twitter:description" content="A Markdown app that opens every document as a clean page, shows what your AI agents change, and lets you keep or revert each change.">
+  <meta name="twitter:image" content="https://edelmarschneider.github.io/permark/assets/og-image.png">
 
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="styles.css">
   <script src="main.js" defer></script>
 </head>
@@ -44,11 +41,9 @@
         <span>PerMark</span>
       </a>
       <nav class="nav__links" aria-label="Primary">
-        <a href="#documents">Documents</a>
-        <a href="#agents">Agents</a>
-        <a href="#why-markdown">Why Markdown</a>
+        <a href="#read">Documents</a>
+        <a href="#see">Agents</a>
         <a href="#install">Install</a>
-        <a href="#roadmap">Roadmap</a>
       </nav>
       <a class="btn btn--ghost btn--sm" href="https://github.com/EdelmarSchneider/permark">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
@@ -58,595 +53,306 @@
   </header>
 
   <main id="main">
-    <!-- 1. Hero: the tagline, the two doors, and one visual for each -->
+    <!-- 1 + 2. Hero: the tagline, the download button, the two doors, and one picture for each door -->
     <section class="hero" id="top" aria-labelledby="hero-title">
       <div class="container hero__inner">
-        <img class="hero__logo" src="assets/logo.svg" width="72" height="72" alt="PerMark logo">
-        <p class="eyebrow">Free and open source · Windows, macOS, Linux</p>
         <h1 id="hero-title" class="hero__title">
-          <span class="hero__line">Read what your AI writes.</span>
-          <span class="hero__line grad">Write what it reads.</span>
+          <span class="hero__line">AI speeds the work.</span>
+          <span class="hero__line grad">Your vision steers it.</span>
         </h1>
-        <p class="hero__sub">
-          PerMark opens any <code>.md</code> file as a clean page you can read, edit and keep notes beside. Open a project folder instead, and it becomes the place where you follow, review and steer what your AI agents write.
-        </p>
-        <div class="hero__cta">
-          <a class="btn btn--primary btn--lg" id="download-btn" href="https://github.com/EdelmarSchneider/permark/releases/latest">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
-            <span id="download-label">Download</span>
-          </a>
-          <a class="btn btn--ghost btn--lg" href="https://github.com/EdelmarSchneider/permark">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" stroke="none" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.7 5.4-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
-            <span>View on GitHub</span>
-          </a>
+        <p class="hero__sub">A Markdown app that opens every document as a clean page. Read, write and organize your files with ease.</p>
+
+        <!-- Download button component: main.js sets the label and link for the visitor's system. Without JS, it is a plain link to #install. -->
+        <div class="download download--center">
+          <div class="download__row">
+            <a class="btn btn--primary btn--lg" href="#install" data-download>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+              <span data-download-label>Download PerMark</span>
+            </a>
+            <a class="link-all" href="#install">All platforms</a>
+          </div>
+          <p class="download__note" data-download-note hidden>PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically. The downloads from GitHub are not code-signed, so your system may warn you when you install or open PerMark.</p>
         </div>
-        <p class="hero__note">Windows: <a href="https://apps.microsoft.com/detail/9NVV5GVZMGGX">Microsoft Store</a> or <a href="https://github.com/EdelmarSchneider/permark/releases/latest">GitHub Releases</a>. macOS and Linux: <a href="https://github.com/EdelmarSchneider/permark/releases/latest">GitHub Releases</a>. Works with any AI tool, or with none. No account.</p>
+
+        <ul class="trust" aria-label="At a glance">
+          <li>Free and open source</li>
+          <li>No account, no telemetry</li>
+          <li>Works with any AI tool, or with none</li>
+          <li>Windows, macOS and Linux (tested by hand on Windows)</li>
+        </ul>
       </div>
 
-      <!-- The fork: two equal doors. Each links to its section below. -->
+      <!-- 2. The fork: two equal doors. Each links to its own bands below. -->
       <div class="container">
         <ul class="doors" aria-label="Where to start">
           <li class="card door door--a">
             <span class="card__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
             </span>
-            <h2 class="door__title">Got a .md file?</h2>
-            <p>Open it like a document: tables, diagrams and math on a clean page, and notes that save themselves.</p>
-            <a class="door__link" href="#documents">See how <span aria-hidden="true">→</span></a>
+            <h2 class="door__title">Got a .md file? Read it as a clean page.</h2>
+            <p>PerMark opens any Markdown file with its tables, diagrams and math, and keeps notes that save themselves.</p>
+            <a class="door__link" href="#read">See how <span aria-hidden="true">→</span></a>
           </li>
           <li class="card door door--b">
             <span class="card__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             </span>
-            <h2 class="door__title">Build with AI agents?</h2>
-            <p>Direct them from one place: watch what they change, see what you haven't read, and steer them with comments.</p>
-            <a class="door__link" href="#agents">See how <span aria-hidden="true">→</span></a>
+            <h2 class="door__title">Building with AI agents? Watch them write. Decide what stays.</h2>
+            <p>PerMark shows what your agents change, live and since your last visit. Keep or revert each change, and leave comments an agent can mark done.</p>
+            <a class="door__link" href="#see">See how <span aria-hidden="true">→</span></a>
           </li>
         </ul>
       </div>
 
-      <!-- Two overlapping frames. The project view sits in front; hovering or focusing a door brings its frame forward. -->
+      <!-- Two overlapping frames. The agents view sits in front; hovering or focusing a door brings its frame forward. -->
       <div class="container container--wide">
         <div class="shot duo">
           <div class="duo__frame duo__frame--page shot__frame">
-            <picture>
-              <source srcset="assets/screenshot-page-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="assets/screenshot-page.png" width="1440" height="900" decoding="async"
-                   alt="A family trip plan, Lisbon in four days, read as a clean page: a tip, an itinerary table and a checklist, with the folder's files on the left and the document outline on the right.">
-            </picture>
+            <picture><source srcset="assets/door-file-dark.png" media="(prefers-color-scheme: dark)"><img src="assets/door-file.png" width="1440" height="900" decoding="async" alt="A Markdown document open in PerMark as a clean page, with a table, a diagram and a properties card."></picture>
           </div>
-          <div class="duo__frame duo__frame--ide shot__frame">
-            <picture>
-              <source srcset="assets/screenshot-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="assets/screenshot-light.png" width="1440" height="900" fetchpriority="high"
-                   alt="PerMark with a project open: a file explorer with git badges on the left, a rendered Markdown document with its description, tag chips and a metadata card, and a paragraph that just changed on disk (highlighted, with a marker for the removed text) in the middle, and the Live changes and Since last visit panels on the right.">
-            </picture>
+          <div class="duo__frame duo__frame--agents shot__frame">
+            <picture><source srcset="assets/door-agents-dark.png" media="(prefers-color-scheme: dark)"><img src="assets/door-agents.png" width="1440" height="900" fetchpriority="high" decoding="async" alt="A project open in PerMark while an agent writes: a changed passage glows, and unread dots mark other documents in the file list."></picture>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- 2. Door A: Got a .md file? -->
-    <section class="section" id="documents" aria-labelledby="documents-title">
+    <!-- 3. Door 1: Read -->
+    <section class="section" id="read" aria-labelledby="read-title">
       <div class="container">
         <div class="section__head">
           <p class="eyebrow">Got a .md file?</p>
-          <h2 id="documents-title">A .md file is a document. Open it like one.</h2>
-          <p class="lead">Your AI, a colleague or a download gives you a <code>.md</code> file. PerMark shows it the way it was meant to look, lets you fix it, and never writes it until you save.</p>
+          <h2 id="read-title">A clean page, not a wall of symbols.</h2>
         </div>
-        <ul class="checks checks--cols">
-          <li><strong>It reads like a page.</strong> Tables, checklists, highlighted code, Mermaid diagrams, math, alerts and footnotes. Light and dark themes, three reading widths and a focus mode</li>
-          <li><strong>Links work.</strong> Links between documents open in the app, with back and forward, and images show where they belong</li>
-          <li><strong>An outline for long documents.</strong> The headings sit in a panel beside the page: the section you are reading is marked, and a click jumps to any other</li>
-          <li><strong>Edit or Source.</strong> Change the document like a word processor, with a toolbar and a <code>/</code> block menu, or in the Markdown itself. One click switches, keeping your place and your unsaved work</li>
-          <li><strong>Only your changes are saved.</strong> Every other byte of the file stays as it was. If something else changes the file while you edit, you choose <em>Reload theirs</em> or <em>Keep mine</em></li>
-          <li><strong>Make it your .md app.</strong> PerMark is listed under <em>Open with</em> for Markdown files and never takes over: whether it becomes your app for <code>.md</code> files is up to you</li>
-        </ul>
-      </div>
-
-      <div class="container notes">
-        <div class="notes__inner">
-          <div class="section__head section__head--sub">
-            <p class="eyebrow">Notes</p>
-            <h3 id="notes-title" class="h-sub">Notes that save themselves</h3>
-            <p class="lead">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> in PerMark and type. There is no name to choose, no folder to pick and no save prompt.</p>
-          </div>
-          <ul class="checks checks--cols">
-            <li><strong>Type and close.</strong> A note saves as you type, and closing never asks. Each one is a plain <code>.md</code> file in your Documents folder</li>
-            <li><strong>Pins.</strong> Pin the notes you keep for months, and open them with <kbd>Ctrl</kbd>+<kbd>1</kbd> to <kbd>9</kbd></li>
-            <li><strong>Earlier versions, and Undo.</strong> <em>Show earlier versions</em> brings back an earlier text, and a deleted note goes to the system trash, with Undo</li>
-            <li><strong>Copy a prompt to your AI.</strong> <em>Copy</em> puts the exact Markdown on the clipboard, ready to paste into any AI chat</li>
-            <li><strong>Any file, too.</strong> A Markdown or text file you open from anywhere is listed beside your notes, opens in Read, and is written only when you press <kbd>Ctrl</kbd>+<kbd>S</kbd></li>
-            <li><strong>Ordinary files.</strong> Edit a note with any other tool and PerMark picks the change up</li>
-          </ul>
+        <div class="lines">
+          <p class="line">Tables, task lists, diagrams and math show on the page. The details at the top of a file, its front matter, show as a clean card.</p>
+          <p class="line">Choose light, dark or a softer tone such as Paper or Sage. Pick a comfortable reading width, and jump through long documents with the outline.</p>
+          <p class="line">Focus mode hides everything but the page.</p>
         </div>
       </div>
-
       <div class="container container--wide">
         <figure class="shot">
           <div class="shot__frame">
-            <picture>
-              <source srcset="assets/screenshot-notes-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="assets/screenshot-notes.png" width="1440" height="900" loading="lazy" decoding="async"
-                   alt="The Notes window: pinned notes (a to-do list, useful numbers and a prompt drafted for an AI agent, shared with agents) above notes grouped by date and a loose file under Files, with the prompt open in Edit.">
-            </picture>
+            <picture><source srcset="assets/showcase-dark.png" media="(prefers-color-scheme: dark)"><img src="assets/showcase.png" width="1180" height="834" loading="lazy" decoding="async" alt="A document in View with a Mermaid diagram, a table, a formula and the properties card."></picture>
           </div>
         </figure>
       </div>
-    </section>
-
-    <!-- 3. Door B: Build with AI agents? -->
-    <section class="section section--tinted" id="agents" aria-labelledby="agents-title">
       <div class="container">
-        <div class="section__head">
-          <p class="eyebrow">Build with AI agents?</p>
-          <h2 id="agents-title">The place to direct your agents.</h2>
-          <p class="lead"><strong>Your agents write the docs. You still have to read them.</strong> PerMark doesn't run your agent. It's where you watch, review and steer what it writes.</p>
-        </div>
-        <ol class="loop">
-          <li class="loop__item">
-            <span class="loop__num" aria-hidden="true">1</span>
-            <h3>Brief</h3>
-            <ul>
-              <li>Draft in Notes, and <em>Copy</em> the exact Markdown into any AI chat</li>
-              <li><em>Share with agents</em> lets your connected agent read that one note, and no other</li>
-              <li><em>Move to project</em> turns a note into a file of your project</li>
-            </ul>
-          </li>
-          <li class="loop__item">
-            <span class="loop__num" aria-hidden="true">2</span>
-            <h3>Watch</h3>
-            <ul>
-              <li>Changed passages glow as they are written, and removed ones leave a marker</li>
-              <li>A live feed lists every file touched, across git worktrees too</li>
-              <li>Follow mode opens the document being written, and a reload keeps your scroll position</li>
-            </ul>
-          </li>
-          <li class="loop__item">
-            <span class="loop__num" aria-hidden="true">3</span>
-            <h3>Review</h3>
-            <ul>
-              <li>Unread dots mark what changed since you last read it, and <kbd>Alt</kbd>+<kbd>U</kbd> jumps to the next</li>
-              <li>Git badges and <em>since your last visit</em> work even after the agent has committed</li>
-              <li>Search everywhere finds the exact section, and code references open at the line</li>
-            </ul>
-          </li>
-          <li class="loop__item">
-            <span class="loop__num" aria-hidden="true">4</span>
-            <h3>Steer</h3>
-            <ul>
-              <li>Comment on a passage, and your agent lists your open comments and resolves them with a reply</li>
-              <li>Your agent knows the document, section and words you mean, through the optional agent connection</li>
-              <li><em>Copy reference</em> puts the path and a quote into any AI chat</li>
-            </ul>
-          </li>
-        </ol>
-        <figure class="shot">
-          <div class="shot__frame">
-            <video class="shot__video" autoplay loop muted playsinline preload="metadata" width="1760" height="1100"
-                   poster="assets/loop-poster.png"
-                   aria-label="An agent rewrites a paragraph and the passage glows; the reader comments on it with C; the agent reads the comment, rewrites the passage and marks the comment done with a reply.">
-              <source src="assets/loop.mp4" type="video/mp4">
-              <source src="assets/loop.webm" type="video/webm">
-            </video>
-          </div>
-        </figure>
+        <p class="band__more"><a href="https://github.com/EdelmarSchneider/permark#-beautiful-to-read-easy-to-edit">More in the README <span aria-hidden="true">→</span></a></p>
       </div>
     </section>
 
-    <!-- Live showcase -->
-    <section class="section" id="live" aria-labelledby="live-title">
-      <div class="container live">
-        <div class="live__copy">
-          <p class="eyebrow">Follow mode</p>
-          <h2 id="live-title">Follow your agents live</h2>
-          <p class="lead">Leave PerMark open next to your terminal. As an agent writes, you see exactly where.</p>
-          <ul class="checks">
-            <li>Changed blocks glow softly, then fade</li>
-            <li>Removed blocks leave a marker you can expand</li>
-            <li>One feed entry per file, bursts grouped, <code>git checkout</code> storms collapsed</li>
-            <li>Follow mode opens the doc being written, and never jumps while you're selecting</li>
-            <li>Jump between changes with <kbd>F7</kbd> and <kbd>Shift</kbd>+<kbd>F7</kbd></li>
-          </ul>
-        </div>
-
-        <div class="demo" role="img" aria-label="Illustration: a paragraph in docs/plan.md glows as an agent edits it and then fades, while a new entry for plan.md appears at the top of the Live changes feed.">
-          <div class="demo__doc" aria-hidden="true">
-            <div class="demo__bar">
-              <span class="demo__file">plan.md</span>
-              <span class="demo__follow"><span class="pulse"></span>Following</span>
-            </div>
-            <div class="demo__body">
-              <p class="demo__h">Retry policy</p>
-              <p class="demo__p">Requests are retried up to three times. Only idempotent calls are retried automatically.</p>
-              <p class="demo__p demo__changed">Backoff starts at 200&nbsp;ms and doubles on each attempt, capped at 5&nbsp;s, with ±20% jitter.</p>
-              <p class="demo__removed"><span>−</span> 1 block removed</p>
-              <p class="demo__p demo__muted">Timeouts are reported to the caller as <code>RetryExhausted</code>.</p>
-            </div>
-          </div>
-          <div class="demo__feed" aria-hidden="true">
-            <p class="demo__feedtitle">Live changes <span class="dot-live"></span></p>
-            <ul>
-              <li class="feed-item feed-item--new">
-                <span class="badge badge--mod">M</span>
-                <span class="feed-item__name">plan.md<small>docs</small></span>
-                <span class="feed-item__time">now</span>
-              </li>
-              <li class="feed-item">
-                <span class="badge badge--add">A</span>
-                <span class="feed-item__name">agent-log.md<small>docs/specs</small></span>
-                <span class="feed-item__time">10s</span>
-              </li>
-              <li class="feed-item">
-                <span class="badge badge--mod">M</span>
-                <span class="feed-item__name">roadmap.md<small>docs</small></span>
-                <span class="feed-item__time">1m</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Agent connection showcase -->
-    <section class="section section--tinted" id="agent" aria-labelledby="agent-title">
+    <!-- 4. Door 1: Write and notes -->
+    <section class="section section--tinted" id="write" aria-labelledby="write-title">
       <div class="container">
         <div class="section__head">
-          <p class="eyebrow">Agent connection</p>
-          <h2 id="agent-title">Your agent sees what you see</h2>
-          <p class="lead">Say "rewrite this paragraph" or "go through my comments", and your agent knows which document, which section and which words you mean. It works with any tool that speaks MCP.</p>
+          <p class="eyebrow">Write and keep notes</p>
+          <h2 id="write-title">Fix it as it looks. Notes save themselves.</h2>
         </div>
-        <ul class="checks checks--cols">
-          <li><strong>Where you are.</strong> The open document, the section on screen and your selection, plus the documents that changed since you read them</li>
-          <li><strong>Comments.</strong> Select a passage, press <kbd>C</kbd> and write. Your agent lists the open comments and marks them done with a short reply</li>
-          <li><strong>"Where is X described?"</strong> Your agent searches the same section index as you, and can open a place for you without taking your focus</li>
-          <li><strong>Yours to switch on.</strong> Off by default, per project, local only, and visible in the status bar while it is on. An agent never edits through PerMark</li>
+        <div class="lines">
+          <p class="line">Edit changes the page as it looks, with a toolbar and a / menu. Source shows the raw file, every byte.</p>
+          <p class="line">In Edit, math, diagrams and HTML are kept as written, and pictures saved next to the file show in View and Source.</p>
+          <p class="line">Click Notes, next to Settings, and type. No name to choose, no folder to pick, no save prompt. Notes are plain Markdown files you own.</p>
+        </div>
+        <ul class="qa">
+          <li class="card"><p><strong>Will it take over my files?</strong> You choose. PerMark asks once, with Markdown files checked and other types unchecked. On Windows, you confirm it in Windows Settings.</p></li>
+          <li class="card"><p><strong>Is it free and safe?</strong> It is free: no price, no trial and no license key, in every build. It is open source under MIT or Apache-2.0, at your option. Documents are cleaned before they show, and a click on a program never runs it.</p></li>
         </ul>
-      </div>
-
-      <div class="container container--wide">
-        <figure class="shot">
-          <div class="shot__frame">
-            <picture>
-              <source srcset="assets/screenshot-comments-dark.png" media="(prefers-color-scheme: dark)">
-              <img src="assets/screenshot-comments.png" width="1440" height="900" loading="lazy" decoding="async"
-                   alt="A document with comment bars in the margin, and the Comments tab listing the open comments by document, with one done comment showing the agent's reply.">
-            </picture>
-          </div>
-        </figure>
-      </div>
-    </section>
-
-    <!-- Works with -->
-    <section class="section" id="works-with" aria-labelledby="works-title">
-      <div class="container center">
-        <p class="eyebrow">Tool-agnostic</p>
-        <h2 id="works-title">Works with whatever writes your Markdown</h2>
-        <p class="lead lead--center">PerMark only relies on your filesystem and git, so there is no plugin to install and no account to connect.</p>
-        <ul class="chips" aria-label="Compatible tools">
-          <li class="chip">Claude Code</li>
-          <li class="chip">opencode</li>
-          <li class="chip">Cursor</li>
-          <li class="chip">Aider</li>
-          <li class="chip">Codex</li>
-          <li class="chip">Gemini CLI</li>
-          <li class="chip chip--none">or no AI at all</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 4. Why Markdown -->
-    <section class="section section--tinted" id="why-markdown" aria-labelledby="why-markdown-title">
-      <div class="container">
-        <article class="page">
-          <p class="eyebrow">Why Markdown</p>
-          <h2 id="why-markdown-title">Markdown was made for readers. So is PerMark.</h2>
-          <p>Markdown was designed in 2004 so that plain text reads well as it is. Twenty years later, AI adopted it for the same reason: it is structured enough for a machine, and clear enough for a person. A Markdown file can hold most of what a document needs (headings, tables, checklists, diagrams, math) as plain text that any app, and any AI, can open, and that stays yours. PerMark is built to do it justice.</p>
-          <p>It is also our opinion that many documents that live in Word or PDF today would be better as Markdown: smaller, comparable line by line in git, readable by any AI, and never locked inside one app.</p>
-        </article>
-      </div>
-    </section>
-
-    <!-- 5. Yours, and private -->
-    <section class="section" id="private" aria-labelledby="private-title">
-      <div class="container">
-        <div class="section__head">
-          <p class="eyebrow">Privacy</p>
-          <h2 id="private-title">Yours, and private</h2>
-        </div>
-        <ul class="checks checks--cols">
-          <li><strong>Plain files.</strong> Your documents stay ordinary files in folders you can see. PerMark keeps its own state in your user profile, unless you ask for a shared <code>.permark/</code> folder</li>
-          <li><strong>No account, no tracking.</strong> PerMark collects nothing about you or your documents, and has no sign-in</li>
-          <li><strong>The agent connection is off until you turn it on.</strong> It is per project, and it only talks to programs on your computer. Notes stay private unless you share one</li>
-          <li><strong>Free and open source.</strong> Licensed under MIT or Apache-2.0, at your option</li>
-          <li><strong>Windows, macOS and Linux.</strong> In English, Português (Brasil), Español, Deutsch and 简体中文</li>
-          <li><strong>Read the details.</strong> What the app does with the network, and what it does not, is in the <a href="privacy.html">privacy policy</a></li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 6. Install + shortcuts -->
-    <section class="section section--tinted" id="install" aria-labelledby="install-title">
-      <div class="container">
-        <div class="section__head">
-          <p class="eyebrow">Install</p>
-          <h2 id="install-title">Up and running in a minute</h2>
-        </div>
-        <div class="install">
-          <article class="panel">
-            <h3>Download</h3>
-            <p>On Windows, the Microsoft Store keeps PerMark up to date. Installers for Windows, macOS and Linux are on GitHub, and they update themselves: when a new version is out, you get a one-click restart.</p>
-            <a class="btn btn--primary" href="https://apps.microsoft.com/detail/9NVV5GVZMGGX">
-              <span>Get it from the Microsoft Store</span>
-            </a>
-            <a class="btn btn--ghost" href="https://github.com/EdelmarSchneider/permark/releases/latest">
+        <div class="download">
+          <div class="download__row">
+            <a class="btn btn--primary btn--lg" href="#install" data-download>
               <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
-              <span>Installers: latest release</span>
+              <span data-download-label>Download PerMark</span>
             </a>
-            <h4>Then open a file or a folder</h4>
-            <div class="code">
-              <pre><code><span class="c-cmd">permark</span>                <span class="c-com"># welcome screen, recent projects</span>
-<span class="c-cmd">permark</span> .              <span class="c-com"># this folder, as a project</span>
-<span class="c-cmd">permark</span> docs/plan.md   <span class="c-com"># one file, simple mode</span></code></pre>
-            </div>
-            <p class="small">Or drag a folder or a <code>.md</code> file onto the window.</p>
-          </article>
-
-          <article class="panel">
-            <h3>Build from source</h3>
-            <p>Requires <a href="https://rustup.rs">Rust</a>, <a href="https://nodejs.org">Node.js</a> 20+ and the <a href="https://v2.tauri.app/start/prerequisites/">Tauri prerequisites</a>.</p>
-            <div class="code">
-              <button class="code__copy" type="button" data-copy="git clone https://github.com/EdelmarSchneider/permark.git
-cd permark
-npm install
-npm run tauri build" aria-label="Copy build commands">Copy</button>
-              <pre><code><span class="c-cmd">git</span> clone https://github.com/EdelmarSchneider/permark.git
-<span class="c-cmd">cd</span> permark
-<span class="c-cmd">npm</span> install
-<span class="c-cmd">npm</span> run tauri build</code></pre>
-            </div>
-            <p class="small">A Tauri 2 app: a Rust core with a Svelte UI in the system webview. Small installer, low memory.</p>
-          </article>
+            <a class="link-all" href="#install">All platforms</a>
+          </div>
         </div>
-
-        <h3 class="subhead" id="shortcuts">Keyboard shortcuts</h3>
-        <div class="table-wrap">
-          <table class="keys">
-            <caption class="sr-only">Keyboard shortcuts</caption>
-            <thead><tr><th scope="col">Action</th><th scope="col">Shortcut</th></tr></thead>
-            <tbody>
-              <tr class="keys__group"><th scope="rowgroup" colspan="2">Reading and navigating</th></tr>
-              <tr><td>Search everywhere</td><td><kbd>Ctrl</kbd>+<kbd>T</kbd></td></tr>
-              <tr><td>Quick open file</td><td><kbd>Ctrl</kbd>+<kbd>P</kbd></td></tr>
-              <tr><td>Commands</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></td></tr>
-              <tr><td>Next unread document</td><td><kbd>Alt</kbd>+<kbd>U</kbd></td></tr>
-              <tr><td>Search all docs, by section</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td></tr>
-              <tr><td>Find in page</td><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
-              <tr><td>Show the Explorer / the Tags view</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd></td></tr>
-              <tr><td>Show the Outline (again to go back)</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>O</kbd></td></tr>
-              <tr><td>Cycle the reading width</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd></td></tr>
-              <tr><td>Toggle left / right panel</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>B</kbd></td></tr>
-              <tr><td>Next / previous change</td><td><kbd>F7</kbd> / <kbd>Shift</kbd>+<kbd>F7</kbd></td></tr>
-              <tr><td>Follow mode</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd></td></tr>
-              <tr><td>Back / forward</td><td><kbd>Alt</kbd>+<kbd>←</kbd> / <kbd>Alt</kbd>+<kbd>→</kbd></td></tr>
-              <tr><td>Copy reference (or selection with reference)</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></td></tr>
-              <tr><td>Edit tags and description</td><td><kbd>T</kbd></td></tr>
-              <tr><td>Leave a comment on the selected passage</td><td><kbd>C</kbd></td></tr>
-              <tr><td>Zoom in / out / reset</td><td><kbd>Ctrl</kbd>+<kbd>=</kbd> / <kbd>Ctrl</kbd>+<kbd>-</kbd> / <kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
-              <tr class="keys__group"><th scope="rowgroup" colspan="2">Editing</th></tr>
-              <tr><td>Start editing</td><td><kbd>E</kbd> or <kbd>Ctrl</kbd>+<kbd>E</kbd></td></tr>
-              <tr><td>Done, back to View</td><td><kbd>Ctrl</kbd>+<kbd>E</kbd> or <kbd>Esc</kbd></td></tr>
-              <tr><td>Switch between Edit and Source</td><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>E</kbd></td></tr>
-              <tr><td>Save</td><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
-              <tr><td>New file</td><td><kbd>Ctrl</kbd>+<kbd>N</kbd></td></tr>
-              <tr><td>Bold / italic / strikethrough</td><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>Ctrl</kbd>+<kbd>I</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>X</kbd></td></tr>
-              <tr><td>Link / inline code</td><td><kbd>Ctrl</kbd>+<kbd>K</kbd> / <kbd>Ctrl</kbd>+<kbd>`</kbd></td></tr>
-              <tr><td>Headings 1 to 6 / paragraph (Edit)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>…<kbd>6</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>0</kbd></td></tr>
-              <tr><td>Block menu (Edit)</td><td><kbd>/</kbd> in an empty paragraph</td></tr>
-              <tr class="keys__group"><th scope="rowgroup" colspan="2">Notes</th></tr>
-              <tr><td>New note (from any PerMark window)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></td></tr>
-              <tr><td>Show the Notes window</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>D</kbd></td></tr>
-              <tr><td>Copy the note's text (in a project: the open document)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td></tr>
-              <tr><td>Open a pinned note</td><td><kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd></td></tr>
-              <tr><td>Open a file (listed under Files)</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>O</kbd></td></tr>
-              <tr><td>Move the note into a project</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td></tr>
-              <tr><td>Next / previous note</td><td><kbd>Ctrl</kbd>+<kbd>Tab</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td></tr>
-              <tr><td>Rename the note / delete it</td><td><kbd>F2</kbd> / <kbd>Del</kbd></td></tr>
-              <tr class="keys__group"><th scope="rowgroup" colspan="2">In the Explorer</th></tr>
-              <tr><td>Rename</td><td><kbd>F2</kbd></td></tr>
-              <tr><td>Delete (asks first)</td><td><kbd>Del</kbd></td></tr>
-              <tr><td>Cut / paste to move</td><td><kbd>Ctrl</kbd>+<kbd>X</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd></td></tr>
-              <tr><td>Select several files</td><td><kbd>Ctrl</kbd>+click / <kbd>Shift</kbd>+click</td></tr>
-              <tr><td>Undo the last file operation</td><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
-            </tbody>
-          </table>
-        </div>
+      </div>
+      <div class="container container--wide">
+        <figure class="shot">
+          <div class="shot__frame">
+            <picture><source srcset="assets/edit-notes-dark.png" media="(prefers-color-scheme: dark)"><img src="assets/edit-notes.png" width="1440" height="900" loading="lazy" decoding="async" alt="A document in Edit: a table changed as it looks, with the toolbar above it and the front matter as properties."></picture>
+          </div>
+        </figure>
+      </div>
+      <div class="container">
+        <p class="band__more"><a href="https://github.com/EdelmarSchneider/permark#-beautiful-to-read-easy-to-edit">More in the README <span aria-hidden="true">→</span></a></p>
       </div>
     </section>
 
-    <!-- Features: the detail behind the two doors -->
-    <section class="section" id="features" aria-labelledby="features-title">
+    <!-- 5. Door 2: See -->
+    <section class="section" id="see" aria-labelledby="see-title">
       <div class="container">
         <div class="section__head">
-          <p class="eyebrow">Features</p>
-          <h2 id="features-title">Everything in PerMark, in detail</h2>
+          <p class="eyebrow">Building with AI agents?</p>
+          <h2 id="see-title">See what your AI writes, while it writes.</h2>
         </div>
-        <ul class="features">
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/></svg>
-            </span>
-            <h3>Reading that feels like a book</h3>
-            <p>GitHub-flavored Markdown with <strong>Mermaid</strong>, <strong>KaTeX</strong> math, alerts, footnotes and highlighted code. Frontmatter becomes a clean metadata card. Light and dark themes, zoom, three reading widths and a focus mode.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/></svg>
-            </span>
-            <h3>Notes that save themselves</h3>
-            <p>Open PerMark, type, close. Notes are plain <code>.md</code> files that you can <strong>pin</strong>, copy as exact Markdown, move into a project or share with your agent. Files you open from anywhere are listed beside them and written only when you save.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36z"/></svg>
-            </span>
-            <h3>Navigate like a wiki</h3>
-            <p>Open a folder as a project or a single file for a distraction-free reader. Relative links and images resolve in the app, with back and forward. Code references like <code>src/main.rs:42</code> open the file at the line, in PerMark or your editor. An <strong>outline</strong> follows you through long documents, and an Explorer filter keeps a code repository down to its docs.</p>
-          </li>
-          <li class="card card--accent">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-            </span>
-            <h3>Follow your agents live</h3>
-            <p>Docs reload without losing your scroll position. Changed blocks glow, removed blocks leave a marker, and a live feed shows every file being touched, across git worktrees too. <strong>Unread dots</strong> mark every document that changed since you read it.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-            </span>
-            <h3>Find anything, to the section</h3>
-            <p><strong>Search everywhere</strong> (<kbd>Ctrl</kbd>+<kbd>T</kbd>) finds files, sections, tags and commands in one box. Section-level full-text search shows <code>file › heading › snippet</code> and jumps to the exact spot. Accent- and case-insensitive, with light stemming, updated as files change.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5"/></svg>
-            </span>
-            <h3>Tags and descriptions</h3>
-            <p>Give any file a one-line description and tags, read from frontmatter or added in the app <strong>without touching your files</strong>. Browse by tag, filter search with <code>tag:needs-review</code>, and see descriptions in the tree and in results.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
-            </span>
-            <h3>Edit without fear</h3>
-            <p>Edit and Source rewrite <strong>only the blocks you changed</strong>. If an agent changes the file while you edit, you choose: reload theirs or keep mine. Images you paste land in <code>assets/</code>.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            </span>
-            <h3>Move files, keep your links</h3>
-            <p>Rename, move and delete from the Explorer. PerMark updates the links and images that point to a file, <strong>shows you the change first</strong>, and puts everything back with one <kbd>Ctrl</kbd>+<kbd>Z</kbd>.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="8" r="3"/><path d="M6 9v6"/><path d="M18 11a6 6 0 0 1-6 6H9"/></svg>
-            </span>
-            <h3>Git-aware</h3>
-            <p>Badges for modified, added and untracked files. Review changes <strong>since your last visit</strong> or since <code>HEAD</code>, even when the agent already committed. Clear banners for rebases and merges.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></svg>
-            </span>
-            <h3>Close the loop with your AI</h3>
-            <p>Turn on the agent connection and your coding agent knows which section you are reading and what you selected. Leave comments on passages for it to pick up, or copy a reference like <code>@docs/plan.md</code> into any AI chat.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
-            </span>
-            <h3>Open with PerMark</h3>
-            <p>Listed under <strong>Open with</strong> for Markdown files on Windows, macOS and Linux. PerMark never makes itself your default app on its own: it does so only when you choose it.</p>
-          </li>
-          <li class="card">
-            <span class="card__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-            </span>
-            <h3>Your language</h3>
-            <p>English, Português (Brasil), Español, Deutsch and 简体中文. PerMark follows your system's language, and a setting switches it at once, with no restart.</p>
-          </li>
+        <div class="lines">
+          <p class="line">Keep PerMark open beside your AI tool. Changed passages glow, removed ones leave a marker, and Follow mode opens the document being written.</p>
+          <p class="line">Live changes lists every file that changed, one entry per file, whatever program wrote it.</p>
+          <p class="line">Unread dots mark the documents that changed since you last read them, like new mail. Since last visit shows what changed while you were away, even without git.</p>
+        </div>
+      </div>
+      <div class="container container--wide">
+        <figure class="shot">
+          <div class="shot__frame">
+            <!-- Same capture as the hero frame; a clip can replace it later. -->
+            <picture><source srcset="assets/door-agents-dark.png" media="(prefers-color-scheme: dark)"><img src="assets/door-agents.png" width="1440" height="900" loading="lazy" decoding="async" alt="A project open in PerMark while an agent writes: a changed passage glows, and unread dots mark other documents in the file list."></picture>
+          </div>
+        </figure>
+      </div>
+      <div class="container">
+        <p class="band__more"><a href="https://github.com/EdelmarSchneider/permark#-see-what-your-ai-writes">More in the README <span aria-hidden="true">→</span></a></p>
+      </div>
+    </section>
+
+    <!-- 6. Door 2: Decide -->
+    <section class="section section--tinted" id="decide" aria-labelledby="decide-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Decide what stays</p>
+          <h2 id="decide-title">Your AI proposes. You decide what stays.</h2>
+        </div>
+        <div class="lines">
+          <p class="line">Review shows each change in place. Keep it or revert it, one by one or all at once, since you last read it or since the last commit.</p>
+          <p class="line">Select a passage and leave a comment. When you turn on the agent connection for a project, your agent reads your comments and marks them done with a reply. It is off until you do.</p>
+          <p class="line">Only the blocks you change are saved. Every other byte stays as its author, or agent, wrote it.</p>
+        </div>
+        <ul class="qa qa--one">
+          <li class="card"><p><strong>"Git diff already shows me the changes."</strong> Git diff compares with the last commit. PerMark also shows what changed since you last read each document, even after the agent has committed, and you keep or revert each change.</p></li>
         </ul>
-        <p class="footnote">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
-          <span><strong>Zero footprint by default.</strong> State lives in your user profile. Opt in to a shared <code>.permark/</code> folder only if you want settings and tags to travel with the project.</span>
+        <div class="download">
+          <div class="download__row">
+            <a class="btn btn--primary btn--lg" href="#install" data-download>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+              <span data-download-label>Download PerMark</span>
+            </a>
+            <a class="link-all" href="#install">All platforms</a>
+          </div>
+        </div>
+      </div>
+      <div class="container container--wide">
+        <figure class="shot">
+          <div class="shot__frame">
+            <picture><source srcset="assets/review-dark.png" media="(prefers-color-scheme: dark)"><img src="assets/review.png" width="1440" height="900" loading="lazy" decoding="async" alt="A document in Review: a bar says how many changes there are, and one change is marked in the page with Keep and Revert."></picture>
+          </div>
+        </figure>
+      </div>
+      <div class="container">
+        <p class="band__more">
+          <a href="https://github.com/EdelmarSchneider/permark#-decide-what-stays">More in the README <span aria-hidden="true">→</span></a>
+          <a href="https://github.com/EdelmarSchneider/permark#use-with-an-ai-agent">Connect an agent <span aria-hidden="true">→</span></a>
         </p>
       </div>
     </section>
 
-    <!-- 7. Roadmap -->
-    <section class="section section--tinted" id="roadmap" aria-labelledby="roadmap-title">
+    <!-- 7. Markdown at the center, not alone -->
+    <section class="section" id="files" aria-labelledby="files-title">
       <div class="container">
         <div class="section__head">
-          <p class="eyebrow">Roadmap</p>
-          <h2 id="roadmap-title">What's next</h2>
+          <p class="eyebrow">Around your Markdown</p>
+          <h2 id="files-title">Markdown at the center, not alone.</h2>
         </div>
-        <ol class="roadmap">
-          <li class="milestone">
-            <span class="milestone__tag">v0.2</span>
-            <span class="milestone__state">Released</span>
-            <ul>
-              <li><strong>Edit</strong> in a visual or a source editor that rewrites only the blocks you changed, and shares a file safely with agents</li>
-              <li><strong>Tags and descriptions</strong>, an Explorer filter, three reading widths and an <strong>outline</strong> for long documents</li>
-              <li><strong>File operations</strong> that update your links, with undo</li>
-            </ul>
-          </li>
-          <li class="milestone">
-            <span class="milestone__tag">v0.2.1</span>
-            <span class="milestone__state">Released</span>
-            <ul>
-              <li><strong>Your language:</strong> Português (Brasil), Español and Deutsch</li>
-              <li><strong>"Open with PerMark"</strong> in the Windows file manager, and one <strong>Read | Visual | Source</strong> switch</li>
-              <li>A window that remembers its place, and an Explorer for workspaces of several repositories</li>
-            </ul>
-          </li>
-          <li class="milestone">
-            <span class="milestone__tag">v0.3</span>
-            <span class="milestone__state">Released</span>
-            <ul>
-              <li><strong>Search everywhere</strong> (<kbd>Ctrl</kbd>+<kbd>T</kbd>): files, sections, tags and commands in one box</li>
-              <li><strong>Unread markers</strong>, clickable <strong>code references</strong> and <strong>"Open with PerMark"</strong> on macOS and Linux</li>
-            </ul>
-          </li>
-          <li class="milestone">
-            <span class="milestone__tag">v0.4</span>
-            <span class="milestone__state">Released</span>
-            <ul>
-              <li><strong>Your agent sees what you see:</strong> an optional, local connection that tells any coding agent which section you are reading and what you selected</li>
-              <li><strong>Comments</strong> on passages that your agent picks up, and "where is X described?" answered by PerMark</li>
-            </ul>
-          </li>
-          <li class="milestone">
-            <span class="milestone__tag">v0.5</span>
-            <span class="milestone__state">Released</span>
-            <ul>
-              <li><strong>Notes:</strong> open, type, close. Notes save themselves, sticky notes stay for months, and loose Markdown files from anywhere open in one place</li>
-              <li><strong>v0.5.2:</strong> pictures, audio and video open in the pane, and code blocks are highlighted for about 190 languages</li>
-              <li><strong>v0.5.8:</strong> PlantUML diagrams, a new file from a folder, and wide blocks that stay in the pane</li>
-              <li><strong>v0.5.7:</strong> review what changed since you last read, send comments to your agent, silence a folder, and repair broken links</li>
-              <li><strong>v0.5.6:</strong> TrailMark is now PerMark: a new name, the same app, and nothing lost on the way</li>
-              <li><strong>v0.5.5:</strong> tags with colors and icons, tags as your agent's index, a folder switcher and the navigation trail</li>
-              <li><strong>v0.5.4:</strong> the interface in Italiano (Italian), soft light tones and the Git letters explained</li>
-              <li><strong>v0.5.3:</strong> the interface in 简体中文 (Simplified Chinese), and search that finds Chinese and Japanese words</li>
-            </ul>
-          </li>
-          <li class="milestone">
-            <span class="milestone__tag milestone__tag--later">v0.6</span>
-            <ul>
-              <li><strong>Semantic search</strong>, local, offline and multilingual: ask for "retry policy" and find the section that describes it, whatever words it uses</li>
-            </ul>
-          </li>
-          <li class="milestone">
-            <span class="milestone__tag milestone__tag--later">Later</span>
-            <ul>
-              <li>Ideas being explored, with no promises: spec-driven workflows, a rendered diff against your last read, and backlinks</li>
-            </ul>
-          </li>
-        </ol>
-        <p class="center small"><a href="https://github.com/EdelmarSchneider/permark#roadmap">Full roadmap on GitHub →</a></p>
+        <div class="lines">
+          <p class="line">Markdown leads, and many files around it open too: config files, data and code, pictures, audio and video. Not every audio or video format plays.</p>
+          <p class="line">Config files such as TOML, YAML and .env open as clean sheets of keys and values. Change a value, and only those bytes change. Secret values are masked in the sheet.</p>
+          <p class="line">Agent files such as AGENTS.md and CLAUDE.md open with no setup. Prompt tags fold as blocks, and TOON files open as tables.</p>
+        </div>
+      </div>
+      <div class="container container--wide">
+        <figure class="shot shot--narrow">
+          <div class="shot__frame">
+            <picture><source srcset="assets/config-sheet-dark.png" media="(prefers-color-scheme: dark)"><img src="assets/config-sheet.png" width="1147" height="761" loading="lazy" decoding="async" alt="A config file open as a sheet: section cards, keys and values, comments as captions, and one secret value masked."></picture>
+          </div>
+        </figure>
+      </div>
+      <div class="container">
+        <p class="band__more"><a href="https://github.com/EdelmarSchneider/permark#-markdown-at-the-center-not-alone">More in the README <span aria-hidden="true">→</span></a></p>
       </div>
     </section>
 
-    <!-- Closing CTA -->
+    <!-- 8. Yours, and private -->
+    <section class="section section--tinted" id="private" aria-labelledby="private-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Privacy</p>
+          <h2 id="private-title">Yours, and private.</h2>
+        </div>
+        <p class="statement">No account, no telemetry, no tracking.</p>
+        <div class="lines lines--2">
+          <p class="line">PerMark goes online only to check for its own updates (installer versions; the Store and snap update it instead), and when you ask: a picture from the web, or the optional token-count vocabulary. Your documents never leave your computer through PerMark. An AI agent you connect is a separate program: what it sends online is up to that agent.</p>
+          <p class="line">Sharing with an agent is off in every project until you turn it on, and the connection stays on your computer.</p>
+        </div>
+
+        <h3 class="subhead">What PerMark is not</h3>
+        <ul class="not">
+          <li class="card"><p><strong>Not an agent.</strong> It does not run, host or replace your AI. It shows what your AI writes, and you decide what stays.</p></li>
+          <li class="card"><p><strong>Not a code editor.</strong> No code completion, refactoring, build, run or debug. Real code work opens in your own editor.</p></li>
+          <li class="card"><p><strong>Not a cloud service.</strong> No account, and no server of ours holds your documents.</p></li>
+        </ul>
+        <p class="band__more"><a href="privacy.html">Read the privacy policy <span aria-hidden="true">→</span></a></p>
+      </div>
+    </section>
+
+    <!-- 9. Install -->
+    <section class="section" id="install" aria-labelledby="install-title">
+      <div class="container">
+        <div class="section__head">
+          <p class="eyebrow">Install</p>
+          <h2 id="install-title">Get PerMark.</h2>
+        </div>
+        <ul class="platforms">
+          <li class="card platform">
+            <h3>Windows</h3>
+            <p>The <a href="https://apps.microsoft.com/detail/9NVV5GVZMGGX?cid=landing-page">Microsoft Store</a>, which keeps PerMark up to date. Or the <code>-setup.exe</code> from <a href="https://github.com/EdelmarSchneider/permark/releases/latest">GitHub Releases</a>.</p>
+          </li>
+          <li class="card platform">
+            <h3>macOS</h3>
+            <p>The universal <code>.dmg</code> (Apple silicon and Intel) from <a href="https://github.com/EdelmarSchneider/permark/releases/latest">GitHub Releases</a>.</p>
+          </li>
+          <li class="card platform">
+            <h3>Linux</h3>
+            <p>The <code>.AppImage</code>, <code>.deb</code> or <code>.rpm</code> from <a href="https://github.com/EdelmarSchneider/permark/releases/latest">GitHub Releases</a>, or the snap (64-bit Intel and AMD):</p>
+            <div class="code">
+              <button class="code__copy" type="button" data-copy="sudo snap install permark" aria-label="Copy the snap install command">Copy</button>
+              <pre><code>sudo snap install permark</code></pre>
+            </div>
+          </li>
+        </ul>
+
+        <p class="footnote">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+          <span>PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically. The downloads from GitHub are not code-signed, so your system may warn you when you install or open PerMark. Copies from GitHub check for their own updates; the Store and the snap update theirs.</span>
+        </p>
+        <p class="small install__langs">The interface speaks English, <span lang="pt-BR">Português (Brasil)</span>, <span lang="es">Español</span>, <span lang="de">Deutsch</span>, <span lang="zh-Hans">简体中文</span> and <span lang="it">Italiano</span>.</p>
+
+        <article class="page">
+          <h3>Why Markdown</h3>
+          <p>Markdown was made so that plain text reads well as it is. AI tools write it for the same reason: it is clear enough for a person and structured enough for a machine.</p>
+          <p>A Markdown file is plain text that any app and any AI can open, and it stays yours.</p>
+        </article>
+
+        <p class="footnote whatsnew">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>
+          <span>New in 0.6: tabs and many windows, config files as clean sheets, review of code and text files, and a Plugins page to turn off what you do not need. Every change is in the <a href="https://github.com/EdelmarSchneider/permark/blob/main/CHANGELOG.md">CHANGELOG</a>.</span>
+        </p>
+      </div>
+    </section>
+
+    <!-- Footer CTA -->
     <section class="cta" aria-labelledby="cta-title">
       <div class="container center">
         <h2 id="cta-title">Open a .md file, or point it at a folder.</h2>
-        <div class="hero__cta">
-          <a class="btn btn--primary btn--lg" href="https://github.com/EdelmarSchneider/permark/releases/latest">
-            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
-            <span>Download PerMark</span>
-          </a>
-          <a class="btn btn--ghost btn--lg" href="https://github.com/EdelmarSchneider/permark">Star on GitHub</a>
+        <div class="download download--center">
+          <div class="download__row">
+            <a class="btn btn--primary btn--lg" href="#install" data-download>
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
+              <span data-download-label>Download PerMark</span>
+            </a>
+            <a class="btn btn--ghost btn--lg" href="https://github.com/EdelmarSchneider/permark">View on GitHub</a>
+            <a class="link-all" href="#install">All platforms</a>
+          </div>
+          <p class="download__note" data-download-note hidden>PerMark 0.6 was tested by hand on Windows; the macOS and Linux builds are checked automatically. The downloads from GitHub are not code-signed, so your system may warn you when you install or open PerMark.</p>
         </div>
       </div>
     </section>
@@ -658,7 +364,7 @@ npm run tauri build" aria-label="Copy build commands">Copy</button>
         <img src="assets/logo.svg" width="24" height="24" alt="">
         <span>PerMark</span>
       </a>
-      <p>&copy; 2026 Edelmar Schneider. Licensed under <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option.</p>
+      <p>&copy; 2026 Edelmar Schneider. Licensed under <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-MIT">MIT</a> or <a href="https://github.com/EdelmarSchneider/permark/blob/main/LICENSE-APACHE">Apache-2.0</a>, at your option. "PerMark" and its logo are trademarks of Edelmar Schneider.</p>
       <p><a href="privacy.html">Privacy</a> · <a href="https://github.com/EdelmarSchneider/permark">github.com/EdelmarSchneider/permark</a></p>
     </div>
   </footer>
