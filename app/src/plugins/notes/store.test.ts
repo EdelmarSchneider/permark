@@ -8,6 +8,7 @@ import { DocumentController } from "../../core/doc/document.svelte";
 import { setLeaveGuard } from "../../core/editing/guard";
 import { EditingSession } from "../../core/editing/session.svelte";
 import { PluginClient } from "../../core/plugins/client";
+import { Box } from "../../core/testing/box.svelte";
 import { WindowStore } from "../../core/window.svelte";
 import type { NotesIntent } from "../../api";
 import { NotesStore, POLL_MS, showInNotes } from "./store.svelte";
@@ -50,6 +51,26 @@ async function setup(asked?: NotesIntent, onScreen?: () => boolean) {
 const FIRST = "2026-10-19 0907.md";
 
 describe("the list", () => {
+  it("is read again at once when the Notes tab comes back on screen, without a window focus", async () => {
+    const shown = new Box(true);
+    const { api } = await setup(undefined, () => shown.value);
+    const reads = (): number => api.probe.plugins.calls.filter((c) => c === "notes.list").length;
+    const first = reads();
+    // the person switches to another tab: nothing read
+    shown.value = false;
+    await settle();
+    expect(reads()).toBe(first);
+    // and back: one read, no focus event needed
+    shown.value = true;
+    await settle();
+    expect(reads()).toBe(first + 1);
+    // a rapid back and forth reads once per return, never while hidden
+    shown.value = false;
+    shown.value = true;
+    await settle();
+    expect(reads()).toBe(first + 1);
+  });
+
   it("is read again every few seconds only while the Notes tab is on screen", async () => {
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     try {

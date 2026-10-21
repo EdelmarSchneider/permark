@@ -13,6 +13,7 @@ import {
   type Version,
   type WorkspaceView,
 } from "../../api";
+import { untrack } from "svelte";
 import { documents as defaultDocuments } from "../../core/doc/document.svelte";
 import { confirmLeave } from "../../core/editing/guard";
 import { editing as defaultEditing } from "../../core/editing/session.svelte";
@@ -170,12 +171,22 @@ export class NotesStore {
     });
     const offSaved = this.#editing.onSaved(() => this.#refreshSoon());
     const timer = setInterval(() => {
-      // a hidden tab waits: its activation focuses it, and the focus reads the list
+      // a hidden tab waits: coming back on screen reads the list (below)
       const visible = typeof document === "undefined" || document.visibilityState !== "hidden";
       if (visible && this.#onScreen()) {
         void this.refresh();
       }
     }, POLL_MS);
+    // the tab comes back on screen: the list is read again at once (its hidden time did not poll; the window focus
+    // may not move on a tab switch)
+    let wasShown = untrack(() => this.#onScreen());
+    const offShown = $effect.root(() => {
+      $effect(() => {
+        const shown = this.#onScreen();
+        if (shown && !wasShown) untrack(() => void this.refresh());
+        wasShown = shown;
+      });
+    });
     const onFocus = (): void => void this.refresh();
     const onBlur = (): void => this.#editing.dispatch({ e: "autosaveDue" });
     window.addEventListener("focus", onFocus);
@@ -197,6 +208,7 @@ export class NotesStore {
       gone = true;
       offIntent?.();
       clearInterval(timer);
+      offShown();
       if (this.#refreshTimer !== null) clearTimeout(this.#refreshTimer);
       this.#refreshTimer = null;
       window.removeEventListener("focus", onFocus);
