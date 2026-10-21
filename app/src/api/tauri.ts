@@ -256,8 +256,13 @@ export const tauriApi: Api = {
   },
   openDropped: (paths, scope) => call("open_dropped", { paths, scope }),
   focusView: () => call("view_focus", {}),
-  pickFolder: async (title) => {
-    const picked = await open({ directory: true, multiple: false, title });
+  pickFolder: async (title, from) => {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+      title,
+      ...(from ? { defaultPath: from } : {}),
+    });
     return typeof picked === "string" ? picked : null;
   },
   pickFile: async (title, filterName, anyFile = false) => {

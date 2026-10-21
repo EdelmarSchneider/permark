@@ -415,6 +415,7 @@ fn outside(fx: &Budget, changes: Vec<(&str, ChangeKind)>) {
             .collect(),
         bulk: false,
         rescan: false,
+        moved: Vec::new(),
     });
 }
 

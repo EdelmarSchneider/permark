@@ -298,6 +298,7 @@ mod tests {
             changes,
             bulk: false,
             rescan: false,
+            moved: Vec::new(),
         }
     }
 
@@ -433,6 +434,7 @@ mod tests {
             changes: many,
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         let out = feed.apply(&large, 5);
         assert_eq!(out.len(), 1);
@@ -460,6 +462,7 @@ mod tests {
             changes: checkout,
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         let out = feed.apply(&git, 6);
         assert!(matches!(
@@ -475,6 +478,7 @@ mod tests {
             changes: vec![change(".git/index", ChangeKind::Modified)],
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         assert!(matches!(
             &feed.apply(&signals, 7)[0],
@@ -489,6 +493,7 @@ mod tests {
             changes: Vec::new(),
             bulk: true,
             rescan: false,
+            moved: Vec::new(),
         };
         assert!(feed.apply(&empty, 8).is_empty());
     }
@@ -512,6 +517,7 @@ mod tests {
                 changes: moved,
                 bulk: true,
                 rescan: false,
+                moved: Vec::new(),
             },
             0,
         );
@@ -533,6 +539,7 @@ mod tests {
                 changes: Vec::new(),
                 bulk: false,
                 rescan: true,
+                moved: Vec::new(),
             },
             1,
         );

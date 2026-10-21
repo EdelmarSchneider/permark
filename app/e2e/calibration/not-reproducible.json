@@ -1,0 +1,12 @@
+[
+  {
+    "id": "project-rename-live",
+    "bug": "Included project folder renamed in the system file manager while open: Changes said it was gone + a new project appeared; the renamed folder showed as a plain folder with the include strip",
+    "reason": "Needs real OS file events (Windows reports a rename as two events, a move to another parent as a removal + a creation); the mock has no file watch. Covered by Rust tests with real renames: crates/core/src/projects/rename_tests.rs"
+  },
+  {
+    "id": "project-locate-start-folder",
+    "bug": "Locate... of a missing project opened the folder picker at another folder (the system's last one), not at the project's old parent or the opened folder",
+    "reason": "The system folder picker is outside the page; the mock answers it at once. Covered by store.test.ts (folder the picker is asked to open at) + rename_tests.rs (old parent, else the opened folder)"
+  }
+]

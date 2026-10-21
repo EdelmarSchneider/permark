@@ -962,8 +962,8 @@ export interface Api {
   openDropped(paths: string[], scope: DropScope): Promise<Result<DropOpened>>;
   /** This view's window comes forward and the view takes the keyboard (before a drop question; may be refused). */
   focusView(): Promise<Result<null>>;
-  /** System folder | file picker; `null` = cancelled. */
-  pickFolder(title: string): Promise<string | null>;
+  /** System folder | file picker; `null` = cancelled. `from`: the folder it opens at (else the system's choice). */
+  pickFolder(title: string, from?: string | null): Promise<string | null>;
   /** `anyFile`: no filter on the kind of file (the Notes open any text file). */
   pickFile(title: string, filterName: string, anyFile?: boolean): Promise<string | null>;
   /** Pictures chosen in the system's file dialog (PNG, JPG, GIF, WebP, SVG); absolute paths, none when cancelled. */

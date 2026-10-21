@@ -85,6 +85,7 @@ function row(path: string, fields: Partial<ProjectRow> = {}): ProjectRow {
     parent: null,
     inner: null,
     cardPlace: null,
+    locateFrom: null,
     ...fields,
   };
 }
@@ -105,13 +106,20 @@ function summarized(v: ProjectsView): ProjectsView {
   };
 }
 
+/** Where Locate… opens for a missing row: its old parent folder (the mock keeps every parent), else the root. */
+function located(root: string, r: ProjectRow): ProjectRow {
+  if (r.state !== "missing") return r;
+  const cut = r.path.lastIndexOf("/");
+  return { ...r, locateFrom: cut > 0 ? `${root}/${r.path.slice(0, cut)}` : root };
+}
+
 function view(root: string, rows: ProjectRow[], fields: Partial<ProjectsView> = {}): ProjectsView {
   return {
     seq: 1,
     present: rows.length > 0,
     ready: true,
     answer: "unanswered",
-    rows,
+    rows: rows.map((r) => located(root, r)),
     offered: { count: 0, names: [], inner: [] },
     record: { status: "absent" },
     skipped: [],

@@ -50,6 +50,9 @@ pub struct ProjectRow {
     pub inner: Option<u32>,
     /// Where its card is saved (included only).
     pub card_place: Option<CardPlace>,
+    /// Missing only: the folder Locate…'s picker opens at (absolute): the old parent folder when it still exists,
+    /// else the opened folder.
+    pub locate_from: Option<String>,
 }
 
 /// The record as the UI sees it.
