@@ -1,4 +1,5 @@
-//! Verifier adversarial tests (branch `verify/projects-round2`, not for merge): agent narrowing edge cases.
+//! Agent narrowing edge cases found by the verifier (round 2 findings B1, S1, S2, S3), kept as spec tests: each asserts
+//! the fixed behavior.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -71,7 +72,7 @@ fn tmp() -> (tempfile::TempDir, PathBuf) {
 /// `R` lists `hubs/a` and `hubs/a/sub`; `hubs/a/.aiignore` = `notes/`. In R's tab `hubs/a/sub/notes/n.md` is hidden
 /// (a on the chain). Opened alone, `sub` should keep that rule.
 #[test]
-fn v1_opened_alone_keeps_middle_chain_members_rules() {
+fn opened_alone_keeps_middle_chain_members_rules() {
     let (dir, root) = tmp();
     for (p, t) in [
         (
@@ -108,10 +109,10 @@ fn v1_opened_alone_keeps_middle_chain_members_rules() {
     );
 }
 
-/// A subfolder of an included member opened alone: R's private-file rule (`drafts/`) no longer applies (exact key
-/// match only).
+/// A subfolder of an included member opened alone keeps R's private-file rule (`drafts/`): the record lists a folder
+/// containing it.
 #[test]
-fn v1b_subfolder_of_member_opened_alone_loses_root_rules() {
+fn subfolder_of_member_opened_alone_keeps_root_rules() {
     let (dir, root) = tmp();
     for (p, t) in [
         (
@@ -136,9 +137,9 @@ fn v1b_subfolder_of_member_opened_alone_loses_root_rules() {
     );
 }
 
-/// A member switched off must look absent: a `[agent] deny` inside it must not answer `denied below <member>`.
+/// A member switched off looks absent: its `[agent] deny` never answers `denied below <member>` (no path leak).
 #[test]
-fn v2_off_member_with_deny_leaks_its_path() {
+fn off_member_with_deny_answers_not_found() {
     let (dir, root) = tmp();
     for (p, t) in [
         (
@@ -173,9 +174,10 @@ fn v2_off_member_with_deny_leaks_its_path() {
     );
 }
 
-/// Before the first walk ends the map does not know the found set: a not-included project must not be readable.
+/// Before the first walk ends the found set is unknown: the agent waits, then answers `busy`; never reads a
+/// not-included project.
 #[test]
-fn v3_not_included_project_readable_before_walk_ends() {
+fn not_included_project_never_readable_before_walk_ends() {
     let (dir, root) = tmp();
     write(&root, "hubs/x/.git/HEAD", "ref: refs/heads/main\n");
     write(&root, "hubs/x/secret.md", "# secret\n");
@@ -207,15 +209,15 @@ fn v3_not_included_project_readable_before_walk_ends() {
         "after walk: {late:?}"
     );
     assert!(
-        early_ready || matches!(early, Err(ToolError::NotFound(_))),
+        early_ready || matches!(early, Err(ToolError::NotFound(_) | ToolError::Busy)),
         "before the walk ended the agent read a not-included project: {early:?}"
     );
 }
 
-/// Person said "No thanks" (declined all); a record arriving by pull | agent edit lists the project -> the agent sees
-/// it (spec §2.1 "valid as written"; vision: nothing inside a project switches sharing on). Documents the behavior.
+/// Person said "No thanks" (declined all); a record arriving by pull | agent edit lists the project -> it stays out
+/// and hidden from the agent (spec §2.1 + D28: the person's answer beats a later entry).
 #[test]
-fn v4_record_written_after_decline_opens_project_to_agent() {
+fn record_written_after_decline_keeps_project_out() {
     let (dir, root) = tmp();
     write(&root, "hubs/x/.git/HEAD", "ref: refs/heads/main\n");
     write(&root, "hubs/x/doc.md", "# x\n");
@@ -249,9 +251,9 @@ fn v4_record_written_after_decline_opens_project_to_agent() {
     );
 }
 
-/// Files mode (`permark mcp`, app closed): the first call races the walk the same way.
+/// Files mode (`permark mcp`, app closed): the first call waits for the walk the same way.
 #[test]
-fn v5_files_mode_first_call_reads_not_included_project() {
+fn files_mode_first_call_never_reads_not_included_project() {
     let (dir, root) = tmp();
     write(&root, "hubs/x/.git/HEAD", "ref: refs/heads/main\n");
     write(&root, "hubs/x/secret.md", "# secret\n");
@@ -266,12 +268,36 @@ fn v5_files_mode_first_call_reads_not_included_project() {
     }
     let env = env(dir.path());
     share(&env, &root);
-    let core = ProjectCore::from_files(Root::open(&root).unwrap(), &env, &[crate::ID.clone()]);
+    let core = ProjectCore::from_files(
+        Root::open(&root).unwrap(),
+        &env,
+        std::slice::from_ref(&crate::ID),
+    );
     let early_ready = core.projects_view().ready;
     let early = read(&tools(&core), "hubs/x/secret.md");
     drop(core);
     assert!(
-        early_ready || matches!(early, Err(ToolError::NotFound(_))),
+        early_ready || matches!(early, Err(ToolError::NotFound(_) | ToolError::Busy)),
         "files mode, first call read a not-included project: {early:?}"
+    );
+}
+
+/// Fail closed (B1): a map that is not ready hides every path, lists included; the published context waits for nothing.
+#[test]
+fn a_map_not_ready_hides_everything() {
+    let (_dir, root) = tmp();
+    write(
+        &root, "a.md", "# a
+",
+    );
+    let guard = crate::guard::Guard::new(&Root::open(&root).unwrap(), &[]).with_projects(
+        Arc::new(permark_core::projects::ProjectMap::default()),
+        None,
+    );
+    assert!(guard.hidden("a.md", false));
+    assert!(matches!(guard.file("a.md"), Err(ToolError::NotFound(_))));
+    assert_eq!(
+        crate::render::error("read", &ToolError::Busy),
+        "ERR busy: PerMark still reading this folder -> retry in a few seconds"
     );
 }

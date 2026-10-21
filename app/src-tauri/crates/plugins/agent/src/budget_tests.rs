@@ -386,7 +386,7 @@ fn hand_off(fx: &Budget, tools: &Tools) {
     ] {
         journal.person(fact);
     }
-    let guard = tools.guard_now();
+    let guard = tools.guard_now(crate::tools::PROJECTS_WAIT).unwrap();
     let crate::handoff::HandOffPreview::Ready { upto, sessions, .. } =
         crate::handoff::preview(tools, &guard, None)
     else {

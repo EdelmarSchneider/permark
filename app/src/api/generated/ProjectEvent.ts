@@ -3,4 +3,4 @@
 /**
  * A change of the project list the Changes panel shows (`FeedItem::Project`).
  */
-export type ProjectEvent = { "kind": "appeared", name: string, path: string, } | { "kind": "moved", name: string, path: string, } | { "kind": "gone", name: string, path: string, } | { "kind": "back", name: string, path: string, } | { "kind": "listChanged" };
+export type ProjectEvent = { "kind": "appeared", name: string, path: string, } | { "kind": "moved", name: string, path: string, } | { "kind": "gone", name: string, path: string, } | { "kind": "back", name: string, path: string, } | { "kind": "listChanged" } | { "kind": "keptOut", name: string, path: string, };

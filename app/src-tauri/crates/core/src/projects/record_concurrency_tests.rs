@@ -1,4 +1,4 @@
-//! Verifier adversarial tests (branch `verify/projects-round2`, not for merge): concurrent record edits.
+//! Concurrent record edits (verifier round 2, adopted as spec tests, `projects.md` §13).
 
 use std::cell::Cell;
 

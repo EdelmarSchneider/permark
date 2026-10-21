@@ -561,11 +561,13 @@ pub fn init_project(dirs: &AppDirs, root: &Root) -> Result<StateStore, StateErro
 /// Takes back what [`init_project`] made, when it is untouched (`projects.md` §2.4, undo of a first include):
 /// `.permark/` holds only `config.toml` + `.gitignore` with the bytes init wrote, `local/`, `cache/`, no link anywhere.
 /// The project's private state (`local/`, the live state since init) is carried back into the profile (newer wins),
-/// then `.permark/` is removed. The caller stopped the plugins before (their files flushed) and reloads the state after.
+/// then `.permark/` is removed in one step: renamed away first (a temp name the tree and the watch never show), then
+/// deleted; a file held open (antivirus, editor) makes the rename fail and leaves `.permark/` whole, never half
+/// removed. The caller stopped the plugins before (their files flushed) and reloads the state after.
 /// `Ok(false)`: changed since init, left as it is.
 ///
 /// # Errors
-/// IO failure while carrying back | removing (nothing removed before the carry-back is whole).
+/// IO failure while carrying back | renaming (`.permark/` then stays whole).
 pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
     let permark = root.path().join(PERMARK_DIR);
     if !private::is_real_folder(&permark) {
@@ -604,7 +606,16 @@ pub fn uninit_project(dirs: &AppDirs, root: &Root) -> Result<bool, StateError> {
         std::fs::create_dir_all(&profile).map_err(fail(&profile))?;
         copy_over(&local, &profile).map_err(fail(&local))?;
     }
-    std::fs::remove_dir_all(&permark).map_err(fail(&permark))?;
+    // one step for everyone looking: `.permark/` is there whole or gone; the leftover temp folder is best effort
+    let gone = root.path().join(format!(
+        ".permark-undo-{}-{:x}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    ));
+    std::fs::rename(&permark, &gone).map_err(fail(&permark))?;
+    let _ = std::fs::remove_dir_all(&gone);
     Ok(true)
 }
 

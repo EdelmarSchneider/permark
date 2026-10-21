@@ -5,10 +5,10 @@ pub mod card;
 pub mod fsm;
 pub mod map;
 pub mod record;
+#[cfg(test)]
+mod record_concurrency_tests;
 mod service;
 pub mod uid;
-#[cfg(test)]
-mod verify_tests;
 pub mod view;
 
 pub use card::{CardChange, CardDto, CardField, CardPlace, CardWarning};
