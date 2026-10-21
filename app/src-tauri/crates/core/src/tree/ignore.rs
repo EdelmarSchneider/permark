@@ -3,8 +3,10 @@
 //! repository: un-hides from ignore files (`.gitignore` | `.ignore` | `exclude` | global), walked under its own rules
 //! only; never from the person's own `ignore` list or `node_modules` (hard rules). A `.permark` folder never un-hides (it
 //! can ship inside third-party content; `.git` cannot be committed). An ignored folder with a nested repository below
-//! is a container. One decision for the walk ([`Ignorer::classify`]) and for single paths ([`Ignorer::locate`],
-//! the watch).
+//! is a container. Included projects of the opened folder ([`MemberSet`], `projects.md` §5.1) un-hide like nested
+//! repositories (also `.permark`-only ones), the folders above them are containers, and inside them their hidden-files
+//! rule (`own` | `own+root`) and their own `ignore` list hold. One decision for the walk ([`Ignorer::classify`]) and
+//! for single paths ([`Ignorer::locate`], the watch).
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -13,6 +15,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 
 use crate::paths::CASE_INSENSITIVE;
+use crate::projects::HiddenRule;
 
 /// Dependency folders are ignored whatever the ignore files say (listed unopened when ignored files are shown).
 const DEPENDENCY_DIR: &str = "node_modules";
@@ -28,6 +31,38 @@ const PROJECT_SEARCH_ENTRIES: usize = 3000;
 pub struct Frames {
     layers: Vec<Arc<Gitignore>>,
     tail: Vec<Arc<Gitignore>>,
+    /// `ignore` lists of the included projects on the way down (hard rules: no marker un-hides them).
+    hard: Vec<Arc<Gitignore>>,
+}
+
+/// One included project as the ignore rules see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberRule {
+    pub hidden: HiddenRule,
+    /// It has its own `.git` (its `info/exclude` counts).
+    pub git: bool,
+    /// Its own `.permark/config.toml` `ignore` list (relative to it).
+    pub ignore: Vec<String>,
+}
+
+/// The included projects of the opened folder: path below the root -> rule. Empty for a plain folder.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MemberSet {
+    pub members: Vec<(String, MemberRule)>,
+}
+
+#[derive(Debug)]
+struct Member {
+    hidden: HiddenRule,
+    git: bool,
+    ignore: Option<Arc<Gitignore>>,
+}
+
+/// [`MemberSet`] made ready for lookups: keys of members + keys of the folders above them.
+#[derive(Debug, Default)]
+struct Members {
+    by_key: HashMap<String, Arc<Member>>,
+    above: HashSet<String>,
 }
 
 /// What a folder listing already told about the folder: saves a look at the disk per folder.
@@ -37,6 +72,8 @@ pub struct DirHints {
     pub gitignore: bool,
     pub ignore: bool,
     pub git: bool,
+    /// A real `.permark` folder (not a link | file) is among the entries.
+    pub permark: bool,
 }
 
 /// Whether `dir` is a folder of its own, not a link to one (a walk never follows links; neither do its probes).
@@ -90,6 +127,8 @@ pub struct Ignorer {
     projects: Mutex<HashSet<PathBuf>>,
     /// Ignored folder -> holds a nested repository below.
     containers: Mutex<HashMap<PathBuf, bool>>,
+    /// Included projects (main root only; empty: a plain folder pays nothing).
+    members: Mutex<Arc<Members>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -157,6 +196,112 @@ impl Ignorer {
             marks: Mutex::new(HashMap::new()),
             projects: Mutex::new(HashSet::new()),
             containers: Mutex::new(HashMap::new()),
+            members: Mutex::new(Arc::new(Members::default())),
+        }
+    }
+
+    /// The included projects count from now on (the caller walks the tree again). Ignored folders known to lead to
+    /// nothing are looked at again.
+    pub fn set_members(&self, set: &MemberSet) {
+        let mut members = Members::default();
+        for (rel, rule) in &set.members {
+            let key = super::model::key_of(rel);
+            let mut above = String::new();
+            for part in key.split('/') {
+                if !above.is_empty() {
+                    members.above.insert(above.clone());
+                    above.push('/');
+                }
+                above.push_str(part);
+            }
+            let ignore = extra_layer(&self.abs_of(rel), &rule.ignore);
+            members.by_key.insert(
+                key,
+                Arc::new(Member {
+                    hidden: rule.hidden,
+                    git: rule.git,
+                    ignore,
+                }),
+            );
+        }
+        *lock(&self.members) = Arc::new(members);
+        self.clear();
+    }
+
+    /// Key of `abs` below the root (`None`: the root itself, outside it, a name that is not text).
+    fn rel_key(&self, abs: &Path) -> Option<String> {
+        let rest = abs.strip_prefix(&self.root).ok()?;
+        let mut rel = String::new();
+        for part in rest.components() {
+            if !rel.is_empty() {
+                rel.push('/');
+            }
+            rel.push_str(part.as_os_str().to_str()?);
+        }
+        (!rel.is_empty()).then(|| super::model::key_of(&rel))
+    }
+
+    /// The included project at `dir`, if it is one.
+    fn member(&self, dir: &Path) -> Option<Arc<Member>> {
+        let members = Arc::clone(&lock(&self.members));
+        if members.by_key.is_empty() {
+            return None;
+        }
+        members.by_key.get(&self.rel_key(dir)?).cloned()
+    }
+
+    /// Whether an included project lies below `dir` (then `dir` is a container).
+    fn above_member(&self, dir: &Path) -> bool {
+        let members = Arc::clone(&lock(&self.members));
+        !members.above.is_empty()
+            && self
+                .rel_key(dir)
+                .is_some_and(|k| members.above.contains(&k))
+    }
+
+    /// Frames inside the included project `dir`: its hidden-files rule decides what of `parent` goes on.
+    fn member_frames(&self, parent: &Frames, dir: &Path, member: &Member) -> Frames {
+        let mut hard = parent.hard.clone();
+        if let Some(layer) = &member.ignore {
+            hard.push(Arc::clone(layer));
+        }
+        match member.hidden {
+            HiddenRule::Own => Frames {
+                layers: Vec::new(),
+                tail: self.repo_tail(member.git.then_some(dir)),
+                hard,
+            },
+            HiddenRule::OwnRoot => {
+                let mut tail: Vec<Arc<Gitignore>> = member
+                    .git
+                    .then(|| self.exclude_layer(dir))
+                    .flatten()
+                    .into_iter()
+                    .collect();
+                tail.extend(parent.tail.iter().cloned());
+                Frames {
+                    layers: parent.layers.clone(),
+                    tail,
+                    hard,
+                }
+            }
+        }
+    }
+
+    /// Frames a walk uses inside the container `dir`: the folder's own files count only on the way to an included
+    /// project (its `own+root` rule layers every file from the root down).
+    pub(crate) fn container_frames(
+        &self,
+        parent: &Frames,
+        dir: &Path,
+        hints: Option<DirHints>,
+    ) -> Frames {
+        if !self.above_member(dir) {
+            return parent.clone();
+        }
+        match hints {
+            Some(hints) => self.enter_hinted(parent, dir, hints),
+            None => self.enter(parent, dir),
         }
     }
 
@@ -239,10 +384,21 @@ impl Ignorer {
         known.map_or(now, |known| known != now)
     }
 
-    /// Whether a nested repository was known at or below `dir` (a folder that went: repositories may have gone too).
+    /// Whether a nested repository (or an included project) was known at or below `dir` (a folder that went:
+    /// projects may have gone too).
     #[must_use]
     pub fn held_project(&self, dir: &Path) -> bool {
-        dir != self.root.as_path() && lock(&self.projects).iter().any(|p| p.starts_with(dir))
+        if dir == self.root.as_path() {
+            return false;
+        }
+        if lock(&self.projects).iter().any(|p| p.starts_with(dir)) {
+            return true;
+        }
+        let members = Arc::clone(&lock(&self.members));
+        !members.by_key.is_empty()
+            && self.rel_key(dir).is_some_and(|key| {
+                members.by_key.contains_key(&key) || members.above.contains(&key)
+            })
     }
 
     fn folder_layer(&self, dir: &Path) -> Option<Arc<Gitignore>> {
@@ -303,6 +459,7 @@ impl Ignorer {
         let mut frames = Frames {
             layers: Vec::new(),
             tail: self.repo_tail(repo),
+            hard: Vec::new(),
         };
         // no repository found: the project folder's own files only
         let dirs: Vec<&Path> = if repo.is_some() {
@@ -318,18 +475,21 @@ impl Ignorer {
         frames
     }
 
-    /// Frames a nested repository hidden by the enclosing rules starts from: none of theirs, git's global excludes only.
-    fn fresh(&self) -> Frames {
+    /// Frames a nested repository hidden by the enclosing rules starts from: none of theirs, git's global excludes only
+    /// (the `ignore` lists of included projects above it still hold).
+    fn fresh(&self, frames: &Frames) -> Frames {
         Frames {
             layers: Vec::new(),
             tail: self.repo_tail(None),
+            hard: frames.hard.clone(),
         }
     }
 
-    /// Frames a walk hands to a folder it classified `entry` (inside `frames`); its own layers come on entering it.
-    pub(crate) fn base_for(&self, entry: Entry, frames: &Frames) -> Frames {
-        if entry == Entry::Project {
-            self.fresh()
+    /// Frames a walk hands to a folder it classified `entry` (inside `frames`); its own layers come on entering it
+    /// (an included project's rule decides there what of `frames` goes on).
+    pub(crate) fn base_for(&self, entry: Entry, frames: &Frames, dir: &Path) -> Frames {
+        if entry == Entry::Project && self.member(dir).is_none() {
+            self.fresh(frames)
         } else {
             frames.clone()
         }
@@ -338,10 +498,13 @@ impl Ignorer {
     /// Frames inside `dir`, a child folder of the folder `parent` describes.
     #[must_use]
     pub fn enter(&self, parent: &Frames, dir: &Path) -> Frames {
-        let mut frames = if self.is_nested_repo(dir) {
+        let mut frames = if let Some(member) = self.member(dir) {
+            self.member_frames(parent, dir, &member)
+        } else if self.is_nested_repo(dir) {
             Frames {
                 layers: Vec::new(),
                 tail: self.repo_tail(Some(dir)),
+                hard: parent.hard.clone(),
             }
         } else {
             parent.clone()
@@ -356,10 +519,13 @@ impl Ignorer {
     #[must_use]
     pub fn enter_hinted(&self, parent: &Frames, dir: &Path, hints: DirHints) -> Frames {
         self.set_marks(dir, hints.git);
-        let mut frames = if dir != self.root && hints.git {
+        let mut frames = if let Some(member) = self.member(dir) {
+            self.member_frames(parent, dir, &member)
+        } else if dir != self.root && hints.git {
             Frames {
                 layers: Vec::new(),
                 tail: self.repo_tail(Some(dir)),
+                hard: parent.hard.clone(),
             }
         } else {
             parent.clone()
@@ -374,14 +540,19 @@ impl Ignorer {
         frames
     }
 
-    /// Whether the person's own `ignore` list or `node_modules` hide `path`: no nested repository un-hides these.
-    fn hard_hidden(&self, path: &Path, is_dir: bool) -> bool {
+    /// Whether the person's own `ignore` lists (the root's + those of the included projects on the way) or
+    /// `node_modules` hide `path`: no marker un-hides these.
+    fn hard_hidden(&self, frames: &Frames, path: &Path, is_dir: bool) -> bool {
         hard_hidden_by(lock(&self.extra).as_deref(), path, is_dir)
+            || frames
+                .hard
+                .iter()
+                .any(|layer| verdict(layer, path, is_dir) == Some(true))
     }
 
-    /// Whether the rules of `frames` (+ the project's list, `node_modules`) hide `path`, a child of their folder.
+    /// Whether the rules of `frames` (+ the person's lists, `node_modules`) hide `path`, a child of their folder.
     fn rules_hide(&self, frames: &Frames, path: &Path, is_dir: bool) -> bool {
-        self.hard_hidden(path, is_dir)
+        self.hard_hidden(frames, path, is_dir)
             || frames
                 .layers
                 .iter()
@@ -404,11 +575,11 @@ impl Ignorer {
         // `.git` marks are looked at only for what the rules hide
         if !(in_ignored || self.rules_hide(frames, path, is_dir)) {
             Entry::Shown
-        } else if !is_dir || self.hard_hidden(path, true) {
+        } else if !is_dir || self.hard_hidden(frames, path, true) {
             Entry::Ignored
-        } else if self.is_nested_repo(path) {
+        } else if self.member(path).is_some() || self.is_nested_repo(path) {
             Entry::Project
-        } else if may_contain && self.is_container(path) {
+        } else if self.above_member(path) || (may_contain && self.is_container(path)) {
             Entry::Container
         } else {
             Entry::Ignored
@@ -428,17 +599,21 @@ impl Ignorer {
             current.push(part);
             match self.classify(&frames, &current, true, in_ignored, true) {
                 Entry::Ignored => return Some((Entry::Ignored, frames)),
-                // inside a container only nested repositories count: its frames are not needed
-                Entry::Container => in_ignored = true,
+                // inside a container only nested projects count: its frames are needed only on the way to an
+                // included one
+                Entry::Container => {
+                    frames = self.container_frames(&frames, &current, None);
+                    in_ignored = true;
+                }
                 entry @ (Entry::Shown | Entry::Project) => {
-                    frames = self.enter(&self.base_for(entry, &frames), &current);
+                    frames = self.enter(&self.base_for(entry, &frames, &current), &current);
                     in_ignored = false;
                 }
             }
         }
         current.push(last);
         let entry = self.classify(&frames, &current, is_dir, in_ignored, true);
-        Some((entry, self.base_for(entry, &frames)))
+        Some((entry, self.base_for(entry, &frames, &current)))
     }
 
     /// Whether `abs` (inside the project folder) is ignored as the walk decides it (containers and nested repositories

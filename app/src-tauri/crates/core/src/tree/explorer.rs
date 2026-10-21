@@ -532,6 +532,21 @@ impl Explorer {
         guard.as_ref()?.node(&key_of(path)).map(|n| n.kind)
     }
 
+    /// Folders of the project folder holding a project marker (`.git` | a real `.permark`), as the walk saw them; the
+    /// tree is built first when it is not yet (`projects.md` §1.1).
+    #[must_use]
+    pub fn markers(&self) -> Vec<super::Marker> {
+        let guard = self.model();
+        guard.as_ref().map_or_else(Vec::new, TreeModel::markers)
+    }
+
+    /// The included projects of the project folder count from now on (the caller publishes a rescan).
+    pub fn set_members(&self, set: &super::MemberSet) {
+        if let Some(main) = self.roots.first() {
+            main.ignorer.set_members(set);
+        }
+    }
+
     /// What the tree, when it is built, holds at `path`: `Some(is_folder)` | `None` (never walks the disk to find out).
     #[must_use]
     pub fn holds(&self, path: &str) -> Option<bool> {

@@ -341,6 +341,7 @@ fn search_leaves_silenced_documents_out_unless_asked() {
                 include_silenced: include,
                 tags: Vec::new(),
                 hidden_last: false,
+                project: None,
             })
             .unwrap();
         let mut paths: Vec<String> = h

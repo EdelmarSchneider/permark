@@ -1058,6 +1058,7 @@ fn paths_and_recent_answer_quick_open() {
         skip: ["docs/alpha.md".to_owned()].into_iter().collect(),
         muted: None,
         hidden_last: false,
+        within: None,
     };
     assert_eq!(f.index.paths("alpha", 10, 5, &skip).files.len(), 1);
     assert_eq!(

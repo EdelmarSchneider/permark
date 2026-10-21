@@ -1,0 +1,1643 @@
+//! `Projects`: the projects service of one `ProjectCore` (`projects.md` §1-§6). Owns the inputs of the membership
+//! machine, the per-member resources (card, agent rules, ignore list), the map snapshot readers get, the undo token of
+//! the last include. One lock (`Inner`) orders every change; disk discovery runs on the projects worker (the walk is
+//! waited for there, never on a command); events, rescans and feed news go out after the lock is released.
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{channel, Sender};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, Weak};
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
+
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+
+use super::card::{self, Card, CardChange, CardDto, CardPlace};
+use super::fsm::{
+    self, AgentChoice, Candidate, Event, Found, Inputs, Membership, MissingReason, Presence,
+    ProjectMarker, RecEntry, RootAnswer, MEMBERSHIP_FILE,
+};
+use super::map::{within, AgentRules, AncestorRules, MemberInfo, ProjectMap};
+use super::record::{self, HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
+use super::uid::ProjectUid;
+use super::view::{
+    CardTarget, IncludeOutcome, InnerLine, LocateRefusal, MemberState, MoveAsk, OfferSummary,
+    ProjectEvent, ProjectPick, ProjectRow, ProjectsChanged, ProjectsView, RecordStatus,
+};
+use crate::events::{CoreEvent, EventSink};
+use crate::paths::{Root, VaultPath, CASE_INSENSITIVE};
+use crate::settings::ProjectConfig;
+use crate::state::{AppDirs, StateFile, StateStore, PERMARK_DIR};
+use crate::tree::{Explorer, MemberRule, MemberSet};
+use crate::watch::{ChangeKind, FsBatch, OwnWrites, WatchHub};
+use crate::{ErrorKind, IpcError};
+
+/// The agent's ignore file (gitignore syntax), as the agent plugin reads it.
+const AI_IGNORE: &str = ".aiignore";
+const MAX_AI_IGNORE: u64 = 1024 * 1024;
+/// Levels above the opened folder searched for a record listing it.
+const MAX_ANCESTORS: usize = 32;
+/// How long closing waits for the worker before leaving it to end on its own.
+const STOP_WAIT: Duration = Duration::from_millis(200);
+/// Ancestor rules are read again after this long.
+const ANCESTORS_TTL: Duration = Duration::from_secs(5);
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn is_link(meta: &std::fs::Metadata) -> bool {
+    crate::tree::is_link_meta(meta)
+}
+
+fn real_dir(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && !is_link(&m))
+}
+
+fn abs_of(root: &Path, path: &VaultPath) -> PathBuf {
+    let mut abs = root.to_path_buf();
+    abs.extend(path.segments());
+    abs
+}
+
+fn folder_name(path: &str) -> String {
+    path.rsplit('/').next().unwrap_or(path).to_owned()
+}
+
+/// What a member brings while included (released at stop).
+#[derive(Debug, Clone, Default)]
+struct MemberRes {
+    card: Card,
+    place: Option<CardPlace>,
+    /// Its own `.permark/config.toml` `ignore` list.
+    ignore: Vec<String>,
+    agent: AgentRules,
+    /// Entries of its own (dormant) record.
+    inner: Vec<(VaultPath, ProjectUid)>,
+    has_record: bool,
+}
+
+/// Reads what a member brings from its folder (cheap: a few small files).
+fn load_member(dirs: &AppDirs, abs: &Path) -> MemberRes {
+    let config = Root::open(abs)
+        .map(|root| ProjectConfig::load(&root))
+        .unwrap_or_default();
+    let aiignore = crate::fsx::read_bytes(&abs.join(AI_IGNORE), MAX_AI_IGNORE)
+        .map(|b| {
+            String::from_utf8_lossy(&b)
+                .lines()
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    let (card, place) = card::file_of(dirs, abs).map_or((Card::default(), None), |file| {
+        (file.read(), Some(file.place()))
+    });
+    let read = record::read(abs);
+    let inner = read
+        .record()
+        .map(|r| {
+            r.entries
+                .iter()
+                .map(|e| (e.path.clone(), e.uid.clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    MemberRes {
+        card,
+        place,
+        ignore: config.ignore,
+        agent: AgentRules {
+            aiignore,
+            deny_paths: config.agent_deny_paths,
+            deny: config.agent_deny,
+        },
+        inner,
+        has_record: !matches!(read, RecordRead::Absent),
+    }
+}
+
+/// The marker on disk at `abs` (`.git` folder | file; a real `.permark`).
+fn marker_at(abs: &Path) -> Option<ProjectMarker> {
+    if !real_dir(abs) {
+        return None;
+    }
+    let git = std::fs::symlink_metadata(abs.join(".git")).is_ok();
+    ProjectMarker::of(git, real_dir(&abs.join(PERMARK_DIR)))
+}
+
+/// Whether a segment of `path` below `root` is a link | junction (existing segments only).
+fn through_link(root: &Path, path: &VaultPath) -> bool {
+    let mut abs = root.to_path_buf();
+    for segment in path.segments() {
+        abs.push(segment);
+        match std::fs::symlink_metadata(&abs) {
+            Ok(meta) if is_link(&meta) => return true,
+            Ok(_) => {}
+            Err(_) => return false,
+        }
+    }
+    false
+}
+
+fn gitignore_of(base: &Path, lines: &[String]) -> Option<Gitignore> {
+    if lines.is_empty() {
+        return None;
+    }
+    let mut builder = GitignoreBuilder::new(base);
+    let _ = builder.case_insensitive(CASE_INSENSITIVE);
+    for line in lines {
+        let _ = builder.add_line(None, line);
+    }
+    builder.build().ok().filter(|g| !g.is_empty())
+}
+
+/// The hard rules (`projects.md` §5.1 rules 2-3) for presence checks: `node_modules`, the root's `ignore` list, the
+/// `ignore` lists of members.
+struct Hard {
+    root: Option<Gitignore>,
+    /// Member key, its segment count, its `ignore` list.
+    members: Vec<(String, usize, Gitignore)>,
+}
+
+impl Hard {
+    /// Paths are given relative to each rule's folder (never absolute: a matcher asserts its root).
+    fn hides(&self, path: &VaultPath) -> bool {
+        if path
+            .segments()
+            .any(|s| crate::paths::fold(s) == crate::paths::fold("node_modules"))
+        {
+            return true;
+        }
+        if self.root.as_ref().is_some_and(|g| {
+            g.matched_path_or_any_parents(Path::new(path.as_str()), true)
+                .is_ignore()
+        }) {
+            return true;
+        }
+        let key = path.key();
+        self.members.iter().any(|(member, depth, rules)| {
+            key != *member && within(&key, member) && {
+                let rel: Vec<&str> = path.segments().skip(*depth).collect();
+                rules
+                    .matched_path_or_any_parents(Path::new(&rel.join("/")), true)
+                    .is_ignore()
+            }
+        })
+    }
+}
+
+/// The undo of the last include (`projects.md` §2.4).
+#[derive(Debug, Clone)]
+struct IncludeUndo {
+    token: u64,
+    uids: Vec<ProjectUid>,
+    created_record: bool,
+    created_permark: bool,
+    answer_before: RootAnswer,
+    declined_before: Vec<String>,
+}
+
+/// What an undo leaves to the core: `.permark/` to take back when untouched.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UndoPlan {
+    pub undone: bool,
+    pub created_permark: bool,
+}
+
+struct Inner {
+    inputs: Inputs,
+    record: RecordRead,
+    /// Entries skipped for disk reasons (link | outside).
+    disk_skipped: Vec<SkippedEntry>,
+    res: HashMap<ProjectUid, MemberRes>,
+    /// The opened folder's own card, read when first asked for (a plain folder never reads it).
+    root_card: Option<(Card, CardPlace)>,
+    member_set: MemberSet,
+    ready: bool,
+    seq: u64,
+    /// Ids given up this session (never drawn again).
+    removed: HashSet<ProjectUid>,
+    undo: Option<IncludeUndo>,
+    gone_told: HashSet<ProjectUid>,
+    rejected: HashSet<(ProjectUid, String)>,
+    ask: Option<MoveAsk>,
+    ancestors: (Vec<AncestorRules>, Option<Instant>),
+    /// Uids whose 0.6 state was copied (round 4; kept as read).
+    migrated: Vec<String>,
+    other: serde_json::Map<String, serde_json::Value>,
+}
+
+/// What a change leaves to do once the lock is released.
+#[derive(Default)]
+struct After {
+    rescan: bool,
+    changed: bool,
+    news: Vec<ProjectEvent>,
+}
+
+/// A batch, as far as projects care.
+#[derive(Debug, Default)]
+struct Hint {
+    rescan: bool,
+    folders: bool,
+    record: bool,
+    renames: Vec<(String, String)>,
+    files: Vec<String>,
+}
+
+enum Msg {
+    Walk,
+    Batch(Hint),
+    Stop,
+}
+
+type Listener = Arc<dyn Fn(&ProjectEvent) + Send + Sync>;
+
+pub struct Projects {
+    root: Root,
+    dirs: AppDirs,
+    membership: StateFile<Membership>,
+    explorer: Arc<Explorer>,
+    own: Arc<OwnWrites>,
+    hub: Arc<WatchHub>,
+    sink: Arc<dyn EventSink>,
+    files_only: bool,
+    inner: Mutex<Inner>,
+    map: RwLock<Arc<ProjectMap>>,
+    listeners: Mutex<Vec<(u64, Listener)>>,
+    next: AtomicU64,
+    tx: Mutex<Option<Sender<Msg>>>,
+    worker: Mutex<Option<JoinHandle<()>>>,
+    /// The core is closing: the worker does nothing more.
+    stopped: std::sync::atomic::AtomicBool,
+}
+
+impl std::fmt::Debug for Projects {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Projects")
+            .field("root", &self.root.path())
+            .finish_non_exhaustive()
+    }
+}
+
+/// Listening to project news until dropped (teardown symmetry).
+pub struct ProjectsSubscription {
+    owner: Weak<Projects>,
+    id: u64,
+}
+
+impl Drop for ProjectsSubscription {
+    fn drop(&mut self) {
+        if let Some(owner) = self.owner.upgrade() {
+            lock(&owner.listeners).retain(|(id, _)| *id != self.id);
+        }
+    }
+}
+
+impl Projects {
+    /// Reads the record, the person's answers and the included members of `root` (cheap: a plain folder costs one
+    /// failed open), gives the member set to the Explorer before its first walk. Discovery starts with
+    /// [`Projects::start`].
+    #[must_use]
+    #[allow(clippy::too_many_arguments)] // the core hands its services over once
+    pub fn open(
+        root: &Root,
+        dirs: &AppDirs,
+        explorer: Arc<Explorer>,
+        own: Arc<OwnWrites>,
+        hub: Arc<WatchHub>,
+        sink: Arc<dyn EventSink>,
+        files_only: bool,
+        root_ignore: &[String],
+    ) -> Arc<Self> {
+        let store = StateStore::for_project(dirs, root);
+        let membership = store.profile_file::<Membership>(MEMBERSHIP_FILE);
+        let kept = membership.load().into_value();
+        let read = record::read(root.path());
+        let inputs = Inputs {
+            answer: kept.answer,
+            declined: kept.declined.clone(),
+            agent_off: kept
+                .agent_off
+                .iter()
+                .filter_map(|s| ProjectUid::parse(s))
+                .collect(),
+            ..Inputs::default()
+        };
+        let projects = Arc::new(Self {
+            root: root.clone(),
+            dirs: dirs.clone(),
+            membership,
+            explorer,
+            own,
+            hub,
+            sink,
+            files_only,
+            inner: Mutex::new(Inner {
+                inputs,
+                record: read,
+                disk_skipped: Vec::new(),
+                res: HashMap::new(),
+                root_card: None,
+                member_set: MemberSet::default(),
+                ready: false,
+                seq: 0,
+                removed: HashSet::new(),
+                undo: None,
+                gone_told: HashSet::new(),
+                rejected: HashSet::new(),
+                ask: None,
+                ancestors: (Vec::new(), None),
+                migrated: kept.migrated,
+                other: kept.other,
+            }),
+            map: RwLock::new(Arc::new(ProjectMap::default())),
+            listeners: Mutex::new(Vec::new()),
+            next: AtomicU64::new(0),
+            tx: Mutex::new(None),
+            worker: Mutex::new(None),
+            stopped: std::sync::atomic::AtomicBool::new(false),
+        });
+        {
+            let mut inner = lock(&projects.inner);
+            projects.entries_from_record(&mut inner);
+            projects.presence(&mut inner, root_ignore);
+            let set = member_set(&inner);
+            if set != inner.member_set {
+                projects.explorer.set_members(&set);
+                inner.member_set = set;
+            }
+            projects.refresh_ancestors(&mut inner, true);
+            projects.rebuild_map(&inner);
+        }
+        projects
+    }
+
+    /// Starts the projects worker: it waits for the walk, then knows the found set (and follows the watch).
+    pub fn start(self: &Arc<Self>) {
+        let (tx, rx) = channel::<Msg>();
+        let weak = Arc::downgrade(self);
+        let handle = std::thread::Builder::new()
+            .name("permark-projects".to_owned())
+            .spawn(move || {
+                while let Ok(msg) = rx.recv() {
+                    let Some(projects) = weak.upgrade() else {
+                        return;
+                    };
+                    match msg {
+                        Msg::Stop => return,
+                        Msg::Walk => projects.discover(&Hint::default(), true),
+                        Msg::Batch(hint) => projects.on_hint(&hint),
+                    }
+                }
+            })
+            .ok();
+        let _ = tx.send(Msg::Walk);
+        *lock(&self.tx) = Some(tx);
+        *lock(&self.worker) = handle;
+    }
+
+    /// Stops the worker (core drop); releases every member.
+    pub fn stop(&self) {
+        self.stopped.store(true, Ordering::Relaxed);
+        if let Some(tx) = lock(&self.tx).take() {
+            let _ = tx.send(Msg::Stop);
+        }
+        if let Some(handle) = lock(&self.worker).take() {
+            // joined once idle; a worker still waiting for a long first walk ends on its own right after it (it holds no
+            // file, no lock, nothing of a member): closing a tab never waits for the walk
+            let until = Instant::now() + STOP_WAIT;
+            while !handle.is_finished() && Instant::now() < until {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            if handle.is_finished() {
+                let _ = handle.join();
+            }
+        }
+        let mut inner = lock(&self.inner);
+        inner.res.clear();
+        inner.undo = None;
+    }
+
+    /// Per-member resources held now (teardown tests).
+    #[must_use]
+    pub fn held_members(&self) -> usize {
+        lock(&self.inner).res.len()
+    }
+
+    /// The watch callback: hands what matters of a batch to the worker (plain saves cost a name check per change).
+    pub fn watch(&self, batch: &FsBatch) {
+        let mut hint = Hint {
+            rescan: batch.rescan,
+            ..Hint::default()
+        };
+        for change in &batch.changes {
+            let name = change.path.rsplit('/').next().unwrap_or(&change.path);
+            let structural = !matches!(change.kind, ChangeKind::Modified);
+            if change.is_dir && structural {
+                hint.folders = true;
+            }
+            if let ChangeKind::Renamed { from } = &change.kind {
+                if change.is_dir {
+                    hint.renames.push((from.clone(), change.path.clone()));
+                }
+            }
+            if crate::tree::Ignorer::is_git_name(name)
+                || (structural && crate::paths::fold(name) == crate::paths::fold(PERMARK_DIR))
+            {
+                hint.folders = true;
+            }
+            let key = crate::paths::key_of(&change.path);
+            if key == crate::paths::key_of(".permark/projects.toml") {
+                // own writes too: the worker compares with what it read last (an echo changes nothing)
+                hint.record = true;
+            } else if matches!(
+                name,
+                ".aiignore" | "project.toml" | "config.toml" | "projects.toml"
+            ) {
+                hint.files.push(change.path.clone());
+            }
+        }
+        if hint.rescan || hint.folders || hint.record || !hint.files.is_empty() {
+            if let Some(tx) = lock(&self.tx).as_ref() {
+                let _ = tx.send(Msg::Batch(hint));
+            }
+        }
+    }
+
+    /// The snapshot readers use.
+    #[must_use]
+    pub fn snapshot(&self) -> Arc<ProjectMap> {
+        Arc::clone(&self.map.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// Listens to project news (Changes panel rows) until the subscription goes.
+    #[must_use]
+    pub fn subscribe(
+        self: &Arc<Self>,
+        listener: impl Fn(&ProjectEvent) + Send + Sync + 'static,
+    ) -> ProjectsSubscription {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        lock(&self.listeners).push((id, Arc::new(listener)));
+        ProjectsSubscription {
+            owner: Arc::downgrade(self),
+            id,
+        }
+    }
+
+    // ---- reading the disk --------------------------------------------------------------------------------------
+
+    /// Record entries -> machine entries (valid ones; disk reasons checked here).
+    fn entries_from_record(&self, inner: &mut Inner) {
+        let Some(record) = inner.record.record().cloned() else {
+            // unreadable | absent: the last good entries stay (absent: none)
+            if matches!(inner.record, RecordRead::Absent) {
+                inner.inputs.entries.clear();
+                inner.disk_skipped.clear();
+            }
+            return;
+        };
+        inner.disk_skipped.clear();
+        inner.inputs.entries = record
+            .entries
+            .iter()
+            .filter(|e| {
+                if through_link(self.root.path(), &e.path) {
+                    inner.disk_skipped.push(SkippedEntry {
+                        line: e.line,
+                        reason: RecordSkip::Link,
+                    });
+                    false
+                } else {
+                    true
+                }
+            })
+            .map(|e| RecEntry {
+                uid: e.uid.clone(),
+                path: e.path.clone(),
+                hidden: e.hidden,
+            })
+            .collect();
+    }
+
+    /// Presence of every entry, outer first (an outer member's `ignore` list may hide an inner one); members that
+    /// start load what they bring, members that stop release it.
+    fn presence(&self, inner: &mut Inner, root_ignore: &[String]) {
+        let mut entries = inner.inputs.entries.clone();
+        entries.sort_by_key(|e| e.path.segments().count());
+        let mut hard = Hard {
+            root: gitignore_of(self.root.path(), root_ignore),
+            members: Vec::new(),
+        };
+        let mut presence = BTreeMap::new();
+        for entry in &entries {
+            let state = if hard.hides(&entry.path) {
+                Presence::Ignored
+            } else {
+                match marker_at(&abs_of(self.root.path(), &entry.path)) {
+                    Some(marker) => Presence::Here(marker),
+                    None => Presence::Gone,
+                }
+            };
+            if let Presence::Here(_) = state {
+                let res = inner.res.entry(entry.uid.clone()).or_insert_with(|| {
+                    load_member(&self.dirs, &abs_of(self.root.path(), &entry.path))
+                });
+                if let Some(rules) =
+                    gitignore_of(&abs_of(self.root.path(), &entry.path), &res.ignore)
+                {
+                    hard.members
+                        .push((entry.path.key(), entry.path.segments().count(), rules));
+                }
+            }
+            presence.insert(entry.uid.clone(), state);
+        }
+        inner.inputs.presence = presence;
+        let here: HashSet<ProjectUid> = inner.inputs.included().into_iter().collect();
+        inner.res.retain(|uid, _| here.contains(uid));
+    }
+
+    /// The opened folder's ancestors whose record lists it (opened alone: their agent rules narrow).
+    fn refresh_ancestors(&self, inner: &mut Inner, force: bool) {
+        if !force
+            && inner
+                .ancestors
+                .1
+                .is_some_and(|at| at.elapsed() < ANCESTORS_TTL)
+        {
+            return;
+        }
+        let mut found = Vec::new();
+        let mut rel: Vec<String> = Vec::new();
+        let mut dir = self.root.path().to_path_buf();
+        for _ in 0..MAX_ANCESTORS {
+            let Some(name) = dir.file_name().and_then(|n| n.to_str()).map(str::to_owned) else {
+                break;
+            };
+            rel.insert(0, name);
+            let Some(parent) = dir.parent().map(Path::to_path_buf) else {
+                break;
+            };
+            dir = parent;
+            if !record::record_path(&dir).is_file() {
+                continue;
+            }
+            let joined = rel.join("/");
+            let Ok(path) = VaultPath::parse(&joined) else {
+                continue;
+            };
+            let listed = record::read(&dir)
+                .record()
+                .is_some_and(|r| r.entries.iter().any(|e| e.path.key() == path.key()));
+            if listed {
+                let res = load_member(&self.dirs, &dir);
+                found.push(AncestorRules {
+                    base: dir.clone(),
+                    rel: joined,
+                    rules: res.agent,
+                });
+            }
+        }
+        inner.ancestors = (found, Some(Instant::now()));
+    }
+
+    /// The found set from the walk's markers + projects the dormant records of found projects list.
+    fn found_now(&self, inner: &Inner) -> BTreeMap<String, Found> {
+        let mut found = BTreeMap::new();
+        for marker in self.explorer.markers() {
+            let Ok(path) = VaultPath::parse(&marker.path) else {
+                continue;
+            };
+            let Some(kind) = ProjectMarker::of(marker.git, marker.permark) else {
+                continue;
+            };
+            found.insert(
+                path.key(),
+                Found {
+                    path,
+                    marker: kind,
+                    inner_uid: None,
+                },
+            );
+        }
+        // inner roots: their own records offer their projects (paths rebased, ids reused)
+        let mut inner_offers = Vec::new();
+        for f in found.values() {
+            if !matches!(f.marker, ProjectMarker::Permark | ProjectMarker::Both) {
+                continue;
+            }
+            let entries = inner
+                .inputs
+                .entries
+                .iter()
+                .find(|e| e.path.key() == f.path.key())
+                .and_then(|e| inner.res.get(&e.uid))
+                .map_or_else(
+                    || {
+                        record::read(&abs_of(self.root.path(), &f.path))
+                            .record()
+                            .map(|r| {
+                                r.entries
+                                    .iter()
+                                    .map(|e| (e.path.clone(), e.uid.clone()))
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    },
+                    |res| res.inner.clone(),
+                );
+            for (rel, uid) in entries {
+                let Ok(path) = VaultPath::parse(&format!("{}/{}", f.path.as_str(), rel.as_str()))
+                else {
+                    continue;
+                };
+                inner_offers.push((path, uid));
+            }
+        }
+        let hard = Hard {
+            root: gitignore_of(self.root.path(), &self.root_ignore()),
+            members: Vec::new(),
+        };
+        for (path, uid) in inner_offers {
+            if found.contains_key(&path.key())
+                || hard.hides(&path)
+                || through_link(self.root.path(), &path)
+            {
+                continue;
+            }
+            if let Some(marker) = marker_at(&abs_of(self.root.path(), &path)) {
+                found.insert(
+                    path.key(),
+                    Found {
+                        path,
+                        marker,
+                        inner_uid: Some(uid),
+                    },
+                );
+            }
+        }
+        found
+    }
+
+    fn root_ignore(&self) -> Vec<String> {
+        ProjectConfig::load(&self.root).ignore
+    }
+
+    // ---- worker --------------------------------------------------------------------------------------------------
+
+    fn on_hint(&self, hint: &Hint) {
+        if self.stopped.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut after = After::default();
+        {
+            let mut inner = lock(&self.inner);
+            if hint.record {
+                let read = record::read(self.root.path());
+                if read != inner.record {
+                    inner.record = read;
+                    self.entries_from_record(&mut inner);
+                    after.news.push(ProjectEvent::ListChanged);
+                    after.changed = true;
+                }
+            }
+            for path in &hint.files {
+                after.changed |= self.reload_files_at(&mut inner, path);
+            }
+        }
+        if hint.rescan || hint.folders || hint.record || after.changed {
+            self.discover(hint, false);
+        }
+        self.finish(&after);
+    }
+
+    /// A card | config | `.aiignore` | inner record changed: the member (or the root card) reads its files again.
+    fn reload_files_at(&self, inner: &mut Inner, path: &str) -> bool {
+        let key = crate::paths::key_of(path);
+        if key == crate::paths::key_of(".permark/project.toml") {
+            if let Some(file) = card::file_of(&self.dirs, self.root.path()) {
+                inner.root_card = Some((file.read(), file.place()));
+                return true;
+            }
+        }
+        let owner = inner
+            .inputs
+            .entries
+            .iter()
+            .filter(|e| inner.res.contains_key(&e.uid) && within(&key, &e.path.key()))
+            .max_by_key(|e| e.path.key().len())
+            .map(|e| (e.uid.clone(), e.path.clone()));
+        if let Some((uid, member)) = owner {
+            let res = load_member(&self.dirs, &abs_of(self.root.path(), &member));
+            inner.res.insert(uid, res);
+            return true;
+        }
+        false
+    }
+
+    /// Looks at the disk again: found set, presence, re-attach of moved | missing projects, members started | stopped.
+    fn discover(&self, hint: &Hint, first: bool) {
+        // the walk is waited for here (worker thread), outside the lock
+        let _ = self.explorer.markers();
+        if self.stopped.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut after = After::default();
+        {
+            let mut inner = lock(&self.inner);
+            let old = inner.inputs.clone();
+            let was_ready = inner.ready;
+            let found = self.found_now(&inner);
+            inner.inputs.found = found;
+            self.presence(&mut inner, &self.root_ignore());
+            self.reattach(&mut inner, hint, &mut after);
+            self.refresh_ancestors(&mut inner, false);
+            inner.ready = true;
+            if was_ready && !first {
+                Self::news_between(&mut inner, &old, &mut after);
+            }
+            let set = member_set(&inner);
+            if set != inner.member_set {
+                self.explorer.set_members(&set);
+                inner.member_set = set;
+                after.rescan = true;
+            }
+            after.changed |= first || !was_ready || inner.inputs != old;
+            if after.changed {
+                inner.seq += 1;
+                self.rebuild_map(&inner);
+            }
+        }
+        self.finish(&after);
+    }
+
+    /// Changes rows between two inputs (found while open, gone, back).
+    fn news_between(inner: &mut Inner, old: &Inputs, after: &mut After) {
+        let before = old.derive();
+        let now = inner.inputs.derive();
+        for (key, state) in &now {
+            let was = before.get(key);
+            match (was, state) {
+                (None, Candidate::Offered | Candidate::Declined) => {
+                    if let Some(f) = inner.inputs.found.get(key) {
+                        let path = f.path.as_str().to_owned();
+                        let parent = path
+                            .rsplit_once('/')
+                            .map_or(String::new(), |(p, _)| p.to_owned());
+                        after.news.push(ProjectEvent::Appeared {
+                            name: folder_name(&path),
+                            path: parent,
+                        });
+                    }
+                }
+                (
+                    Some(Candidate::Included { .. }),
+                    Candidate::Missing {
+                        uid,
+                        reason: MissingReason::Gone,
+                    },
+                ) => {
+                    if inner.gone_told.insert(uid.clone()) {
+                        let path = inner
+                            .inputs
+                            .entry(uid)
+                            .map(|e| e.path.as_str().to_owned())
+                            .unwrap_or_default();
+                        after.news.push(ProjectEvent::Gone {
+                            name: Self::name_of(inner, uid, &path),
+                            path,
+                        });
+                    }
+                }
+                (Some(Candidate::Missing { .. }), Candidate::Included { uid, .. }) => {
+                    let path = inner
+                        .inputs
+                        .entry(uid)
+                        .map(|e| e.path.as_str().to_owned())
+                        .unwrap_or_default();
+                    after.news.push(ProjectEvent::Back {
+                        name: Self::name_of(inner, uid, &path),
+                        path,
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn name_of(inner: &Inner, uid: &ProjectUid, path: &str) -> String {
+        inner
+            .res
+            .get(uid)
+            .and_then(|r| r.card.name.clone())
+            .unwrap_or_else(|| folder_name(path))
+    }
+
+    /// Re-attach (`projects.md` §4.4): rename hints, card ids, then one question.
+    #[allow(clippy::too_many_lines)] // the steps of §4.4 in their order
+    fn reattach(&self, inner: &mut Inner, hint: &Hint, after: &mut After) {
+        let missing: Vec<RecEntry> = inner
+            .inputs
+            .entries
+            .iter()
+            .filter(|e| inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone))
+            .cloned()
+            .collect();
+        if missing.is_empty() {
+            inner.ask = None;
+            return;
+        }
+        let mut moves: Vec<(ProjectUid, VaultPath, bool)> = Vec::new();
+        for entry in &missing {
+            // 1. a rename the watch paired covers it
+            let key = entry.path.key();
+            let renamed = hint.renames.iter().find_map(|(from, to)| {
+                let from_key = crate::paths::key_of(from);
+                within(&key, &from_key).then(|| {
+                    let depth = from.split('/').count();
+                    let rest: Vec<&str> = entry.path.as_str().split('/').skip(depth).collect();
+                    if rest.is_empty() {
+                        to.clone()
+                    } else {
+                        format!("{to}/{}", rest.join("/"))
+                    }
+                })
+            });
+            if let Some(Ok(path)) = renamed.map(|p| VaultPath::parse(&p)) {
+                if marker_at(&abs_of(self.root.path(), &path)).is_some() {
+                    moves.push((entry.uid.clone(), path, true));
+                    continue;
+                }
+            }
+            // 2. a found project's card carries its id
+            let offered: Vec<&Found> = inner
+                .inputs
+                .found
+                .iter()
+                .filter(|(k, f)| {
+                    inner.inputs.entry_by_key(k).is_none()
+                        && matches!(f.marker, ProjectMarker::Permark | ProjectMarker::Both)
+                })
+                .map(|(_, f)| f)
+                .collect();
+            let by_card: Vec<&&Found> = offered
+                .iter()
+                .filter(|f| {
+                    card::file_of(&self.dirs, &abs_of(self.root.path(), &f.path))
+                        .is_some_and(|file| file.read().id.as_ref() == Some(&entry.uid))
+                })
+                .collect();
+            if let [only] = by_card.as_slice() {
+                moves.push((entry.uid.clone(), only.path.clone(), false));
+            }
+        }
+        for (uid, path, moved) in moves {
+            if self.files_only {
+                break;
+            }
+            let (next, effects) =
+                fsm::step(&inner.inputs, &Event::SetPath(uid.clone(), path.clone()));
+            if effects.is_empty() {
+                continue;
+            }
+            let ops: Vec<RecordOp> = effects
+                .iter()
+                .filter_map(|e| match e {
+                    fsm::Effect::Record(op) => Some(op.clone()),
+                    _ => None,
+                })
+                .collect();
+            if self.write_record(&ops, false).is_ok() {
+                inner.inputs = next;
+                let name = Self::name_of(inner, &uid, path.as_str());
+                after.news.push(if moved {
+                    ProjectEvent::Moved {
+                        name,
+                        path: path.as_str().to_owned(),
+                    }
+                } else {
+                    ProjectEvent::Back {
+                        name,
+                        path: path.as_str().to_owned(),
+                    }
+                });
+                inner.record = record::read(self.root.path());
+                self.presence(inner, &self.root_ignore());
+                after.changed = true;
+            }
+        }
+        // 4. exactly one missing entry named like exactly one offered project: ask
+        inner.ask = None;
+        let gone: Vec<&RecEntry> = inner
+            .inputs
+            .entries
+            .iter()
+            .filter(|e| inner.inputs.presence.get(&e.uid) == Some(&Presence::Gone))
+            .collect();
+        let states = inner.inputs.derive();
+        for entry in &gone {
+            let name = crate::paths::fold(&folder_name(entry.path.as_str()));
+            let same: Vec<&Found> = inner
+                .inputs
+                .found
+                .iter()
+                .filter(|(k, f)| {
+                    states.get(*k) == Some(&Candidate::Offered)
+                        && crate::paths::fold(&folder_name(f.path.as_str())) == name
+                })
+                .map(|(_, f)| f)
+                .collect();
+            let others = gone
+                .iter()
+                .filter(|e| crate::paths::fold(&folder_name(e.path.as_str())) == name)
+                .count();
+            if let ([candidate], 1) = (same.as_slice(), others) {
+                if !inner
+                    .rejected
+                    .contains(&(entry.uid.clone(), candidate.path.key()))
+                {
+                    inner.ask = Some(MoveAsk {
+                        uid: entry.uid.clone(),
+                        name: Self::name_of(inner, &entry.uid, entry.path.as_str()),
+                        was: entry.path.as_str().to_owned(),
+                        candidate: candidate.path.as_str().to_owned(),
+                    });
+                    break;
+                }
+            }
+        }
+    }
+
+    // ---- publishing ------------------------------------------------------------------------------------------------
+
+    fn rebuild_map(&self, inner: &Inner) {
+        let states = inner.inputs.derive();
+        let mut members = Vec::new();
+        let mut closed = Vec::new();
+        for (key, state) in &states {
+            match state {
+                Candidate::Included { uid, marker } => {
+                    let Some(entry) = inner.inputs.entry(uid) else {
+                        continue;
+                    };
+                    let res = inner.res.get(uid).cloned().unwrap_or_default();
+                    let dto = card::dto(
+                        &res.card,
+                        &folder_name(entry.path.as_str()),
+                        res.place.unwrap_or(CardPlace::Profile),
+                    );
+                    members.push(MemberInfo {
+                        uid: uid.clone(),
+                        path: entry.path.clone(),
+                        key: key.clone(),
+                        marker: *marker,
+                        hidden: entry.hidden,
+                        name: dto.name,
+                        short: dto.short,
+                        agent_off: inner.inputs.agent_off.contains(uid),
+                        agent: res.agent.clone(),
+                    });
+                }
+                Candidate::Missing { .. } | Candidate::Offered | Candidate::Declined => {
+                    closed.push(key.clone());
+                }
+            }
+        }
+        let map = ProjectMap::new(
+            inner.seq,
+            inner.ready,
+            members,
+            closed,
+            inner.ancestors.0.clone(),
+        );
+        *self.map.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(map);
+    }
+
+    /// After the lock: rescan (members changed), `projects-changed`, feed news.
+    fn finish(&self, after: &After) {
+        if after.rescan {
+            self.hub.publish(&FsBatch {
+                rescan: true,
+                bulk: true,
+                ..FsBatch::default()
+            });
+        }
+        if after.changed {
+            let seq = lock(&self.inner).seq;
+            self.sink.emit(CoreEvent::ProjectsChanged(ProjectsChanged {
+                root: self.root.path().display().to_string(),
+                seq,
+            }));
+        }
+        if !after.news.is_empty() {
+            let listeners: Vec<Listener> = lock(&self.listeners)
+                .iter()
+                .map(|(_, l)| Arc::clone(l))
+                .collect();
+            for event in &after.news {
+                for listener in &listeners {
+                    listener(event);
+                }
+            }
+        }
+    }
+
+    fn save_membership(&self, inner: &Inner) -> Result<(), IpcError> {
+        if self.files_only {
+            return Ok(());
+        }
+        let data = Membership {
+            answer: inner.inputs.answer,
+            declined: inner.inputs.declined.clone(),
+            migrated: inner.migrated.clone(),
+            agent_off: inner
+                .inputs
+                .agent_off
+                .iter()
+                .map(|u| u.as_str().to_owned())
+                .collect(),
+            other: inner.other.clone(),
+        };
+        Ok(self.membership.save(&data)?)
+    }
+
+    fn write_record(&self, ops: &[RecordOp], create: bool) -> Result<record::Written, IpcError> {
+        if ops.is_empty() {
+            return Err(IpcError::new(ErrorKind::Unavailable).subject("projects"));
+        }
+        let own = Arc::clone(&self.own);
+        let path = ".permark/projects.toml";
+        Ok(record::write(self.root.path(), ops, create, &|bytes| {
+            own.expect_write(path, crate::fsx::hash(bytes));
+        })?)
+    }
+
+    /// Applies a person's event: record ops + profile + members + map, as one change.
+    fn apply_event(
+        &self,
+        inner: &mut Inner,
+        event: &Event,
+        create: bool,
+    ) -> Result<After, IpcError> {
+        let (next, effects) = fsm::step(&inner.inputs, event);
+        let ops: Vec<RecordOp> = effects
+            .iter()
+            .filter_map(|e| match e {
+                fsm::Effect::Record(op) => Some(op.clone()),
+                _ => None,
+            })
+            .collect();
+        // profile-only choices (decline, agent) stay possible while the record cannot be written
+        if !ops.is_empty() && !matches!(inner.record, RecordRead::Read(_) | RecordRead::Absent) {
+            return Err(IpcError::new(ErrorKind::Unavailable).subject("projects"));
+        }
+        let mut after = After::default();
+        if effects.is_empty() {
+            return Ok(after);
+        }
+        if !ops.is_empty() {
+            self.write_record(&ops, create)?;
+            inner.record = record::read(self.root.path());
+        }
+        for op in &ops {
+            if let RecordOp::Remove { uid } = op {
+                inner.removed.insert(uid.clone());
+            }
+        }
+        inner.inputs = next;
+        if effects.contains(&fsm::Effect::SaveMembership) {
+            self.save_membership(inner)?;
+        }
+        self.entries_from_record(inner);
+        self.presence(inner, &self.root_ignore());
+        let set = member_set(inner);
+        if set != inner.member_set {
+            self.explorer.set_members(&set);
+            inner.member_set = set;
+            after.rescan = true;
+        }
+        inner.seq += 1;
+        self.rebuild_map(inner);
+        after.changed = true;
+        Ok(after)
+    }
+
+    /// The opened folder's own card (read on first use).
+    fn root_card<'i>(&self, inner: &'i mut Inner) -> &'i (Card, CardPlace) {
+        inner.root_card.get_or_insert_with(|| {
+            card::file_of(&self.dirs, self.root.path())
+                .map_or((Card::default(), CardPlace::Profile), |file| {
+                    (file.read(), file.place())
+                })
+        })
+    }
+
+    // ---- commands ------------------------------------------------------------------------------------------------
+
+    fn keys_of(inner: &Inner, pick: &ProjectPick, wanted: &[Candidate]) -> Vec<String> {
+        let states = inner.inputs.derive();
+        match pick {
+            ProjectPick::All => states
+                .iter()
+                .filter(|(_, s)| wanted.contains(s))
+                .map(|(k, _)| k.clone())
+                .collect(),
+            ProjectPick::Paths { paths } => paths
+                .iter()
+                .filter_map(|p| VaultPath::parse(p).ok())
+                .map(|p| p.key())
+                .filter(|k| states.get(k).is_some_and(|s| wanted.contains(s)))
+                .collect(),
+        }
+    }
+
+    /// Includes projects (`projects.md` §4.2). `init`: Initialize PerMark in the root (when it has no `.permark/`),
+    /// called before the record is made; the core reloads its state there. Returns the outcome + whether init ran.
+    ///
+    /// # Errors
+    /// `Unavailable` (record unreadable | newer), `Conflict`, IO.
+    pub fn include(
+        &self,
+        pick: &ProjectPick,
+        init: &dyn Fn() -> Result<(), IpcError>,
+    ) -> Result<(IncludeOutcome, bool), IpcError> {
+        let needs_init = !real_dir(&self.root.path().join(PERMARK_DIR));
+        {
+            let inner = lock(&self.inner);
+            if Self::keys_of(&inner, pick, &[Candidate::Offered, Candidate::Declined]).is_empty() {
+                return Ok((
+                    IncludeOutcome {
+                        included: 0,
+                        undo: None,
+                    },
+                    false,
+                ));
+            }
+        }
+        if needs_init {
+            init()?;
+        }
+        let mut inner = lock(&self.inner);
+        let wanted: &[Candidate] = match pick {
+            // Include all: the offered ones (declined stay declined)
+            ProjectPick::All => &[Candidate::Offered],
+            ProjectPick::Paths { .. } => &[Candidate::Offered, Candidate::Declined],
+        };
+        let keys = Self::keys_of(&inner, pick, wanted);
+        let mut picks: Vec<(String, ProjectUid)> = Vec::new();
+        for key in keys {
+            let uid = self.uid_for(&inner, &key, &picks);
+            picks.push((key, uid));
+        }
+        let record_existed = record::record_path(self.root.path()).is_file();
+        let answer_before = inner.inputs.answer;
+        let declined_before = inner.inputs.declined.clone();
+        let mut after = self.apply_event(&mut inner, &Event::Include(picks.clone()), true)?;
+        let uids: Vec<ProjectUid> = picks
+            .into_iter()
+            .map(|(_, u)| u)
+            .filter(|u| inner.inputs.entry(u).is_some())
+            .collect();
+        let token = inner.seq;
+        let included = u32::try_from(uids.len()).unwrap_or(u32::MAX);
+        inner.undo = (included > 0).then_some(IncludeUndo {
+            token,
+            uids,
+            created_record: !record_existed,
+            created_permark: needs_init,
+            answer_before,
+            declined_before,
+        });
+        after.changed = true;
+        drop(inner);
+        self.finish(&after);
+        Ok((
+            IncludeOutcome {
+                included,
+                undo: (included > 0).then_some(token),
+            },
+            needs_init,
+        ))
+    }
+
+    /// The uid a project gets at include (`projects.md` §1.2): its card id, the id an inner record gives it, a draw.
+    fn uid_for(&self, inner: &Inner, key: &str, picked: &[(String, ProjectUid)]) -> ProjectUid {
+        let used = |u: &ProjectUid| {
+            inner.inputs.entry(u).is_some()
+                || picked.iter().any(|(_, p)| p == u)
+                || inner.removed.contains(u)
+        };
+        let Some(found) = inner.inputs.found.get(key) else {
+            return ProjectUid::draw(key, &used);
+        };
+        let abs = abs_of(self.root.path(), &found.path);
+        let card_id = matches!(found.marker, ProjectMarker::Permark | ProjectMarker::Both)
+            .then(|| card::file_of(&self.dirs, &abs).and_then(|f| f.read().id))
+            .flatten();
+        card_id
+            .filter(|u| !used(u))
+            .or_else(|| found.inner_uid.clone().filter(|u| !used(u)))
+            .unwrap_or_else(|| ProjectUid::draw(key, &used))
+    }
+
+    /// Takes back the last include when `token` is still its token: entries out, record removed when it made it and
+    /// it is empty, the answer as before. `.permark/` is left to the core ([`UndoPlan`]).
+    ///
+    /// # Errors
+    /// Record write failures.
+    pub fn undo(&self, token: u64) -> Result<UndoPlan, IpcError> {
+        let mut inner = lock(&self.inner);
+        let Some(undo) = inner.undo.clone().filter(|u| u.token == token) else {
+            return Ok(UndoPlan {
+                undone: false,
+                created_permark: false,
+            });
+        };
+        let ops: Vec<RecordOp> = undo
+            .uids
+            .iter()
+            .filter(|u| inner.inputs.entry(u).is_some())
+            .map(|uid| RecordOp::Remove { uid: uid.clone() })
+            .collect();
+        if !ops.is_empty() {
+            self.write_record(&ops, false)?;
+        }
+        inner.record = record::read(self.root.path());
+        let empty = inner
+            .record
+            .record()
+            .is_some_and(|r| r.entries.is_empty() && r.skipped.is_empty());
+        if undo.created_record && empty {
+            let path = record::record_path(self.root.path());
+            self.own
+                .expect_removals(&[".permark/projects.toml".to_owned()]);
+            std::fs::remove_file(&path)
+                .map_err(|e| IpcError::io(path.display().to_string(), &e))?;
+            inner.record = RecordRead::Absent;
+        }
+        inner.inputs.answer = undo.answer_before;
+        inner.inputs.declined.clone_from(&undo.declined_before);
+        for uid in &undo.uids {
+            inner.inputs.agent_off.remove(uid);
+        }
+        self.save_membership(&inner)?;
+        self.entries_from_record(&mut inner);
+        self.presence(&mut inner, &self.root_ignore());
+        let mut after = After {
+            changed: true,
+            ..After::default()
+        };
+        let set = member_set(&inner);
+        if set != inner.member_set {
+            self.explorer.set_members(&set);
+            inner.member_set = set;
+            after.rescan = true;
+        }
+        inner.undo = None;
+        inner.seq += 1;
+        self.rebuild_map(&inner);
+        drop(inner);
+        self.finish(&after);
+        Ok(UndoPlan {
+            undone: true,
+            created_permark: undo.created_permark,
+        })
+    }
+
+    /// A person's change of the list other than include | undo.
+    fn person(&self, event: &Event) -> Result<(), IpcError> {
+        let mut inner = lock(&self.inner);
+        let after = self.apply_event(&mut inner, event, false)?;
+        if after.changed {
+            inner.undo = None;
+        }
+        drop(inner);
+        self.finish(&after);
+        Ok(())
+    }
+
+    /// "No thanks": `All` on the first question declines the root; paths decline those projects.
+    ///
+    /// # Errors
+    /// Profile write failure.
+    pub fn decline(&self, pick: &ProjectPick) -> Result<(), IpcError> {
+        let event = match pick {
+            ProjectPick::All => Event::DeclineAll,
+            ProjectPick::Paths { .. } => {
+                let inner = lock(&self.inner);
+                Event::Decline(Self::keys_of(&inner, pick, &[Candidate::Offered]))
+            }
+        };
+        self.person(&event)
+    }
+
+    /// # Errors
+    /// `Unavailable`, `Conflict`, IO.
+    pub fn leave_out(&self, uids: &[ProjectUid]) -> Result<(), IpcError> {
+        self.person(&Event::LeaveOut(uids.to_vec()))
+    }
+
+    /// # Errors
+    /// `Unavailable`, `Conflict`, IO.
+    pub fn set_hidden(&self, uid: &ProjectUid, rule: HiddenRule) -> Result<(), IpcError> {
+        self.person(&Event::SetHidden(uid.clone(), rule))
+    }
+
+    /// # Errors
+    /// Profile write failure.
+    pub fn set_agent(&self, uid: &ProjectUid, choice: AgentChoice) -> Result<(), IpcError> {
+        self.person(&Event::SetAgent(uid.clone(), choice))
+    }
+
+    /// # Errors
+    /// `Unavailable`, `Conflict`, IO.
+    pub fn remove(&self, uids: &[ProjectUid]) -> Result<(), IpcError> {
+        self.person(&Event::Remove(uids.to_vec()))
+    }
+
+    /// Locate…: the missing entry `uid` is the project at `abs` (a folder the person picked).
+    ///
+    /// # Errors
+    /// `Unavailable`, `Conflict`, IO.
+    pub fn locate(&self, uid: &ProjectUid, abs: &Path) -> Result<Option<LocateRefusal>, IpcError> {
+        let vault = crate::paths::Vault::new(self.root.clone());
+        let Some(path) = vault
+            .relativize(abs)
+            .filter(|p| !p.is_root() && !p.as_str().starts_with(crate::paths::WORKTREE_PREFIX))
+        else {
+            return Ok(Some(LocateRefusal::Outside));
+        };
+        if through_link(self.root.path(), &path) {
+            return Ok(Some(LocateRefusal::Link));
+        }
+        if marker_at(&abs_of(self.root.path(), &path)).is_none() {
+            return Ok(Some(LocateRefusal::NotProject));
+        }
+        {
+            let inner = lock(&self.inner);
+            let key = path.key();
+            if inner
+                .inputs
+                .entries
+                .iter()
+                .any(|e| e.path.key() == key && &e.uid != uid)
+            {
+                return Ok(Some(LocateRefusal::Taken));
+            }
+        }
+        self.person(&Event::SetPath(uid.clone(), path))?;
+        Ok(None)
+    }
+
+    /// The move question's answer: `same` = it moved (the entry follows), else the candidate stays a new project and
+    /// is not asked about again this session.
+    ///
+    /// # Errors
+    /// `Unavailable`, `Conflict`, IO.
+    pub fn answer_move(&self, uid: &ProjectUid, path: &str, same: bool) -> Result<(), IpcError> {
+        let path = VaultPath::parse(path)
+            .map_err(|_| IpcError::new(ErrorKind::InvalidPath).subject(path.to_owned()))?;
+        if same {
+            self.person(&Event::SetPath(uid.clone(), path))?;
+        } else {
+            let mut inner = lock(&self.inner);
+            inner.rejected.insert((uid.clone(), path.key()));
+            inner.ask = None;
+            inner.seq += 1;
+            self.rebuild_map(&inner);
+            drop(inner);
+            self.finish(&After {
+                changed: true,
+                ..After::default()
+            });
+        }
+        Ok(())
+    }
+
+    /// Writes one field of a card (the root's or a member's); returns the card now.
+    ///
+    /// # Errors
+    /// `NotFound` (no such member), `InvalidData`, `Unavailable`, `Conflict`, IO.
+    pub fn card_set(&self, target: &CardTarget, change: &CardChange) -> Result<CardDto, IpcError> {
+        let mut inner = lock(&self.inner);
+        let (abs, uid, rel) =
+            match target {
+                CardTarget::Root => {
+                    let id =
+                        self.root_card(&mut inner).0.id.clone().unwrap_or_else(|| {
+                            ProjectUid::draw(self.root.key().as_str(), &|_| false)
+                        });
+                    (self.root.path().to_path_buf(), id, String::new())
+                }
+                CardTarget::Member { uid } => {
+                    let entry = inner
+                        .inputs
+                        .entry(uid)
+                        .filter(|_| inner.res.contains_key(uid))
+                        .ok_or_else(|| {
+                            IpcError::new(ErrorKind::NotFound).subject(uid.as_str().to_owned())
+                        })?;
+                    (
+                        abs_of(self.root.path(), &entry.path),
+                        uid.clone(),
+                        entry.path.as_str().to_owned(),
+                    )
+                }
+            };
+        let file = card::file_of(&self.dirs, &abs)
+            .ok_or_else(|| IpcError::new(ErrorKind::NotFound).subject("card"))?;
+        let own = Arc::clone(&self.own);
+        let rel_card = if rel.is_empty() {
+            ".permark/project.toml".to_owned()
+        } else {
+            format!("{rel}/.permark/project.toml")
+        };
+        file.write(&uid, change, &|_, bytes| {
+            own.expect_write(&rel_card, crate::fsx::hash(bytes));
+        })?;
+        let card = file.read();
+        let name = if rel.is_empty() {
+            self.root.name()
+        } else {
+            folder_name(&rel)
+        };
+        let dto = card::dto(&card, &name, file.place());
+        match target {
+            CardTarget::Root => inner.root_card = Some((card, file.place())),
+            CardTarget::Member { uid } => {
+                if let Some(res) = inner.res.get_mut(uid) {
+                    res.card = card;
+                    res.place = Some(file.place());
+                }
+            }
+        }
+        inner.seq += 1;
+        self.rebuild_map(&inner);
+        drop(inner);
+        self.finish(&After {
+            changed: true,
+            ..After::default()
+        });
+        Ok(dto)
+    }
+
+    /// Everything Settings > Projects and the strip show.
+    #[must_use]
+    #[allow(clippy::too_many_lines)] // one row per candidate, every field of `ProjectRow`
+    pub fn view(&self) -> ProjectsView {
+        let mut inner = lock(&self.inner);
+        let root_card = self.root_card(&mut inner).clone();
+        let states = inner.inputs.derive();
+        let keys: HashSet<&str> = states.keys().map(String::as_str).collect();
+        let mut rows = Vec::new();
+        let mut offered = OfferSummary::default();
+        for (key, state) in &states {
+            let entry = inner.inputs.entries.iter().find(|e| &e.path.key() == key);
+            let found = inner.inputs.found.get(key);
+            let path = found
+                .map(|f| f.path.as_str().to_owned())
+                .or_else(|| entry.map(|e| e.path.as_str().to_owned()))
+                .unwrap_or_default();
+            let res = entry.and_then(|e| inner.res.get(&e.uid));
+            let dto = card::dto(
+                &res.map(|r| r.card.clone()).unwrap_or_default(),
+                &folder_name(&path),
+                res.and_then(|r| r.place).unwrap_or(CardPlace::Profile),
+            );
+            let (row_state, missing, marker) = match state {
+                Candidate::Included { marker, .. } => (MemberState::Included, None, Some(*marker)),
+                Candidate::Missing { reason, .. } => (MemberState::Missing, Some(*reason), None),
+                Candidate::Offered => (MemberState::Offered, None, found.map(|f| f.marker)),
+                Candidate::Declined => (MemberState::Declined, None, found.map(|f| f.marker)),
+            };
+            let mut parent = None;
+            let mut end = 0;
+            while let Some(i) = key[end..].find('/') {
+                end += i;
+                if keys.contains(&key[..end]) {
+                    parent = Some(key[..end].to_owned());
+                }
+                end += 1;
+            }
+            let inner_count = res
+                .filter(|r| r.has_record)
+                .map(|r| u32::try_from(r.inner.len()).unwrap_or(u32::MAX))
+                .or_else(|| {
+                    let n = inner
+                        .inputs
+                        .found
+                        .values()
+                        .filter(|f| {
+                            f.inner_uid.is_some()
+                                && within(&f.path.key(), key)
+                                && f.path.key() != *key
+                        })
+                        .count();
+                    (n > 0).then(|| u32::try_from(n).unwrap_or(u32::MAX))
+                });
+            if row_state == MemberState::Offered {
+                offered.count += 1;
+                if offered.names.len() < 3 {
+                    offered.names.push(dto.name.clone());
+                }
+                if let Some(count) = inner_count {
+                    offered.inner.push(InnerLine {
+                        name: dto.name.clone(),
+                        count,
+                    });
+                }
+            }
+            rows.push(ProjectRow {
+                key: key.clone(),
+                uid: entry.map(|e| e.uid.clone()),
+                path,
+                state: row_state,
+                missing,
+                marker,
+                name: dto.name,
+                short: dto.short,
+                description: dto.description,
+                category: dto.category,
+                hidden: entry.map_or(HiddenRule::Own, |e| e.hidden),
+                hidden_unknown: entry.is_some_and(|e| {
+                    inner.record.record().is_some_and(|r| {
+                        r.entries.iter().any(|x| x.uid == e.uid && x.hidden_unknown)
+                    })
+                }),
+                agent: if entry.is_some_and(|e| inner.inputs.agent_off.contains(&e.uid)) {
+                    AgentChoice::Off
+                } else {
+                    AgentChoice::Same
+                },
+                parent,
+                inner: inner_count,
+                card_place: res.and_then(|r| r.place),
+            });
+        }
+        let record = match &inner.record {
+            RecordRead::Absent => RecordStatus::Absent,
+            RecordRead::Read(_) => RecordStatus::Ok,
+            RecordRead::Newer(_) => RecordStatus::Newer,
+            RecordRead::Unreadable { line, message } => RecordStatus::Unreadable {
+                line: *line,
+                message: message.clone(),
+            },
+        };
+        let mut skipped: Vec<SkippedEntry> = inner
+            .record
+            .record()
+            .map(|r| r.skipped.clone())
+            .unwrap_or_default();
+        skipped.extend(inner.disk_skipped.iter().copied());
+        skipped.sort_by_key(|s| s.line);
+        let present = !matches!(inner.record, RecordRead::Absent) || !rows.is_empty();
+        ProjectsView {
+            seq: inner.seq,
+            present,
+            ready: inner.ready,
+            answer: inner.inputs.effective_answer(),
+            rows,
+            offered,
+            record,
+            skipped,
+            ask: inner.ask.clone(),
+            root_card: card::dto(&root_card.0, &self.root.name(), root_card.1),
+        }
+    }
+}
+
+/// The member set the ignore rules need, from the included members.
+fn member_set(inner: &Inner) -> MemberSet {
+    let mut members: Vec<(String, MemberRule)> = inner
+        .inputs
+        .entries
+        .iter()
+        .filter_map(|e| match inner.inputs.presence.get(&e.uid) {
+            Some(Presence::Here(marker)) => Some((
+                // the disk spelling when the walk saw it (the member's own ignore list is matched under it)
+                inner.inputs.found.get(&e.path.key()).map_or_else(
+                    || e.path.as_str().to_owned(),
+                    |f| f.path.as_str().to_owned(),
+                ),
+                MemberRule {
+                    hidden: e.hidden,
+                    git: marker.git(),
+                    ignore: inner
+                        .res
+                        .get(&e.uid)
+                        .map(|r| r.ignore.clone())
+                        .unwrap_or_default(),
+                },
+            )),
+            _ => None,
+        })
+        .collect();
+    members.sort_by(|a, b| a.0.cmp(&b.0));
+    MemberSet { members }
+}
+
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod tests;
