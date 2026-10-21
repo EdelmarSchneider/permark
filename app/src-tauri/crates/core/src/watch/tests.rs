@@ -1113,3 +1113,82 @@ fn nested_projects_coming_and_going_while_open_update_tree_index_and_watch() {
     );
     assert!(!listed("hubs/b/z.md"));
 }
+
+// ---- verifier: rescan storms -----------------------------------------------------------------------------------------
+
+#[test]
+fn verify_checkout_and_install_churn_inside_a_nested_repo_never_rescans_but_a_shipped_marker_does()
+{
+    let dir = tempfile::tempdir().unwrap();
+    for f in NESTED {
+        let path = dir.path().join(f);
+        if f.ends_with('/') {
+            fs::create_dir_all(&path).unwrap();
+        } else {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, "x").unwrap();
+        }
+    }
+    nested_rules(dir.path());
+    let root = Root::open(dir.path()).unwrap();
+    let base = root.path().to_path_buf();
+    let vault = Vault::new(root);
+    let explorer = Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        Arc::new(Recorder::default()),
+        None,
+    );
+    let hub = WatchHub::new();
+    let seen: Seen = Arc::default();
+    let _sub = hub.subscribe({
+        let seen = Arc::clone(&seen);
+        move |batch| seen.lock().unwrap().push(batch.clone())
+    });
+    let _watcher = Watcher::start_with(
+        &vault,
+        explorer.ignorers(),
+        hub,
+        Arc::new(OwnWrites::new()),
+        None,
+        FAST,
+        true,
+    );
+    settle(&seen);
+    let a = base.join("hubs/a");
+    // a checkout: index.lock -> index, HEAD, refs, objects; files created, changed, removed; a folder made
+    fs::write(a.join(".git/index.lock"), "i").unwrap();
+    fs::rename(a.join(".git/index.lock"), a.join(".git/index")).unwrap();
+    fs::write(a.join(".git/HEAD"), "ref: refs/heads/other\n").unwrap();
+    fs::create_dir_all(a.join(".git/objects/ab")).unwrap();
+    fs::write(a.join(".git/objects/ab/cd"), "o").unwrap();
+    fs::create_dir_all(a.join("src/deep")).unwrap();
+    for n in 0..60 {
+        fs::write(a.join(format!("src/deep/f{n}.md")), format!("{n}")).unwrap();
+    }
+    fs::remove_file(a.join("doc.md")).unwrap();
+    // an install: many folders below node_modules, none a project
+    for n in 0..40 {
+        fs::create_dir_all(a.join(format!("node_modules/p{n}/lib"))).unwrap();
+        fs::write(a.join(format!("node_modules/p{n}/lib/i.js")), "x").unwrap();
+    }
+    // atomic saves (temp + rename) of a plain file
+    fs::write(a.join("src/.tmpsave"), "y").unwrap();
+    fs::rename(a.join("src/.tmpsave"), a.join("src/deep/f1.md")).unwrap();
+    let _ = wait_for(&seen, "the churn", |c| {
+        c.iter().any(|x| x.path.starts_with("hubs/a/src"))
+    });
+    let _ = quiet_for(&seen, 600);
+    let rescans = seen.lock().unwrap().iter().filter(|b| b.rescan).count();
+    assert_eq!(rescans, 0, "churn without markers rebuilds nothing");
+    // an npm package that ships its `.permark` folder: the layout counts it as a project -> one rescan
+    seen.lock().unwrap().clear();
+    let staging = tempfile::tempdir_in(base.parent().unwrap()).unwrap();
+    fs::create_dir_all(staging.path().join("pkg/.permark")).unwrap();
+    fs::write(staging.path().join("pkg/.permark/config.toml"), "").unwrap();
+    fs::write(staging.path().join("pkg/README.md"), "# pkg").unwrap();
+    fs::rename(staging.path().join("pkg"), a.join("node_modules/pkg")).unwrap();
+    let _ = quiet_for(&seen, 1500);
+    let rescans = seen.lock().unwrap().iter().filter(|b| b.rescan).count();
+    eprintln!("verify: rescans after a package with .permark moved into node_modules: {rescans}");
+}
