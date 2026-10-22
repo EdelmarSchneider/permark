@@ -70,6 +70,11 @@ type MockApi = {
     projects: { news(event: unknown): void };
     context: { set(over: Record<string, unknown>): void };
     plugins: {
+      agent: {
+        setEnabled(on: boolean): void;
+        fail(reason: string | null): void;
+        connect(client: string | null): void;
+      };
       feed(items: unknown[]): void;
       gitMembers: {
         unavailable(on: boolean): void;
@@ -288,6 +293,45 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
           m.mockApi.probe.context.set(o);
         },
         over,
+      );
+      break;
+    }
+    case "agent": {
+      // the agent connection of the mock project: the once-only offer's answer (BEFORE `project`), the switch, a server
+      // error, a connected client
+      const offer = args["offer"];
+      if (offer !== undefined && offer !== "unasked" && offer !== "declined" && offer !== "setup") {
+        throw new Error('seed agent: "offer" = unasked | declined | setup');
+      }
+      const error = args["error"];
+      if (error !== undefined && (typeof error !== "string" || error === "")) {
+        throw new Error('seed agent: "error" text expected');
+      }
+      const client = args["client"];
+      if (client !== undefined && (typeof client !== "string" || client === "")) {
+        throw new Error('seed agent: "client" text expected');
+      }
+      const on = args["on"] === true || error !== undefined || client !== undefined;
+      await withMock(
+        page,
+        async (m, a) => {
+          if (a.offer !== null) {
+            await m.mockApi.projectSessionSet(
+              "agent.offer",
+              a.offer === "unasked" ? null : a.offer,
+            );
+          }
+          const agent = m.mockApi.probe.plugins.agent;
+          if (a.error !== null) agent.fail(a.error);
+          if (a.on) agent.setEnabled(true);
+          if (a.client !== null) agent.connect(a.client);
+        },
+        {
+          offer: typeof offer === "string" ? offer : null,
+          error: typeof error === "string" ? error : null,
+          client: typeof client === "string" ? client : null,
+          on,
+        },
       );
       break;
     }

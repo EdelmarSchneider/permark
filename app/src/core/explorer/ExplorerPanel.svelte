@@ -1,7 +1,8 @@
 <script lang="ts">
   // The Explorer: toolbar, a virtualized list of the project tree, the filter popover, the context menu and the move
   // dialog. All state and actions are in the store; this draws it and turns events into store calls. Included projects
-  // inside the folder get their own look, a detail card and menu entries; their question sits under the list.
+  // inside the folder get their own look, a detail card and menu entries; their question sits under the list, then the
+  // code offer, then a plugin's note (one strip at a time).
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import ChevronsDownUp from "@lucide/svelte/icons/chevrons-down-up";
@@ -66,6 +67,13 @@
   const badges = $derived(registry.visible("treeBadge", conditions.current));
   /** What plugins know about included projects (git: the branch after the node's name). */
   const facts = $derived(registry.visible("projectFacts", conditions.current));
+  /** The plugins' strip under the list (the offer to share with agents): the first that has something to say. */
+  const note = $derived(
+    registry
+      .visible("explorerNote", conditions.current)
+      .sort((a, b) => a.order - b.order)
+      .find((n) => n.when()) ?? null,
+  );
   /** The project the detail card is about (gone with the project). */
   const cardRow = $derived(projects.card === null ? null : projects.memberAt(projects.card.path));
 
@@ -741,6 +749,9 @@
                 problem={store.edit.mode === "new" && store.edit.problem !== null
                   ? problemText(store.edit.problem)
                   : null}
+                note={store.edit.mode === "new" && store.edit.kind === "file"
+                  ? t("newFile.note")
+                  : null}
                 oninput={(v) => store.typeName(v)}
                 commit={() => void store.commitEdit()}
                 cancel={() => store.cancelEdit()}
@@ -895,6 +906,12 @@
           {t("explorer.code.decline")}
         </button>
       </div>
+    {:else if note !== null && !projects.askedThisOpen}
+      {#key note}
+        {#await note.view() then loaded}
+          <loaded.default focusList={() => list?.focus()} />
+        {/await}
+      {/key}
     {/if}
     <div class="foot" role="status">
       <span class="count">{countText}</span>

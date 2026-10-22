@@ -7,6 +7,7 @@ import type { PluginId } from "../../api/generated/PluginId";
 import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
+import type { PluginPageId } from "../shell/ui.svelte";
 import type {
   EmbedProps,
   FrontMatterProps,
@@ -64,6 +65,9 @@ export type ProjectFact = {
   spoken?: string;
   title?: string;
 };
+
+/** The props of a plugin's strip under the Explorer list: `focusList` moves focus to the list (the strip may go). */
+export type ExplorerNoteProps = { focusList: () => void };
 
 /** The props of a plugin's block in a project's detail card. */
 export type ProjectCardProps = { row: ProjectRow };
@@ -201,6 +205,30 @@ export type Contribution = Owned &
     /** Runs on the root of the page when it exists; returns what undoes it. */
     | { kind: "docDecoration"; id: string; decorate: (root: HTMLElement) => () => void }
     | { kind: "settingsSection"; id: string; label: MessageKey; view: LazyComponent }
+    /**
+     * A section of its own in the settings page nav (the agent connection), placed among the core sections by `order`
+     * (`CORE_SECTION_ORDER`). `view` draws the whole section (its own cards); `quick` = a row in the gear popover, last
+     * before its buttons. Opened with `ui.openSettingsPage(id, "content")`, the view focuses its first control itself.
+     */
+    | {
+        kind: "settingsPage";
+        id: PluginPageId;
+        label: MessageKey;
+        order: number;
+        view: LazyComponent;
+        quick?: LazyComponent;
+      }
+    /**
+     * A quiet strip under the Explorer list (the offer to share a project with agents), in the strip slot after the
+     * projects strip and the code offer: the first visible note by `order` whose `when` (reactive) holds, one at a time.
+     */
+    | {
+        kind: "explorerNote";
+        id: string;
+        order: number;
+        when: () => boolean;
+        view: LazyComponent<ExplorerNoteProps>;
+      }
     /** Rows a plugin adds to the Project section of the settings (what the project shares in `.permark/`). */
     | { kind: "projectSection"; id: string; label: MessageKey; view: LazyComponent }
     /** What the window shows for a workspace of a kind the core has no page for (the Notes): its sidebar and its page. */
