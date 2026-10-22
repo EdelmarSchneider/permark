@@ -1143,7 +1143,7 @@ export default {
   "agent.title": "智能体连接",
   "agent.switch": "与智能体共享此项目",
   "agent.switchHint":
-    "你连接的智能体（Claude Code、Cursor 或任何 MCP 客户端）可以看到你正在查看的内容和变更，搜索和阅读文件，阅读你的评论和你共享的笔记。仅限本机。智能体从不通过 PerMark 编辑文件。",
+    "你连接的智能体（Claude Code、Cursor 或任何 MCP 客户端）可以看到你正在查看的内容和变更，搜索和阅读本项目的文件，阅读你的评论和你共享的笔记，并向你展示某个位置。仅限本机。PerMark 识别出的密码和密钥会被隐藏，智能体从不通过 PerMark 编辑文件。这只涉及智能体从 PerMark 获得的内容：智能体仍可自行打开你电脑上的文件。",
   "agent.groups": "智能体可以做什么",
   "agent.group.context": "查看你正在看的内容",
   "agent.group.changes": "查看变更",
@@ -1157,8 +1157,10 @@ export default {
   "agent.defaults": "用于新项目",
   "agent.defaultsSaved": "新项目将以这些选择开始。",
   "agent.notSaved": "更改未保存。请重试。",
-  "agent.setup.json": "其他 MCP 客户端（JSON）",
-  "agent.setup.hook": "提示词钩子（在每个提示词前加上你正在查看的内容）",
+  "agent.setup.json":
+    "其他 MCP 客户端（JSON）：添加到该客户端针对本项目的设置中，例如此文件夹中的 .cursor/mcp.json",
+  "agent.setup.hook":
+    "Claude Code 提示词钩子，用于 .claude/settings.json（在每个提示词前加上你正在查看的内容）",
   "agent.copy": "复制",
   "agent.copied": "已复制",
   "agent.section": "AI 智能体",

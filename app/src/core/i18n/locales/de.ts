@@ -1204,7 +1204,7 @@ export default {
   "agent.title": "Agentenverbindung",
   "agent.switch": "Dieses Projekt mit Agenten teilen",
   "agent.switchHint":
-    "Ein verbundener Agent (Claude Code, Cursor oder ein anderer MCP-Client) sieht, was gerade angezeigt wird und was sich geändert hat, kann Dateien suchen und lesen, Kommentare lesen und geteilte Notizen lesen. Nur auf diesem Computer. Agenten bearbeiten nie Dateien über PerMark.",
+    "Ein verbundener Agent (Claude Code, Cursor oder ein anderer MCP-Client) sieht, was gerade angezeigt wird und was sich geändert hat, kann die Dateien dieses Projekts suchen und lesen, Kommentare und geteilte Notizen lesen und eine Stelle zeigen. Nur auf diesem Computer. Passwörter und Schlüssel, die PerMark erkennt, bleiben verborgen, und Agenten bearbeiten nie Dateien über PerMark. Das gilt nur für das, was Agenten von PerMark bekommen: Ein Agent kann Dateien auf diesem Computer weiterhin selbst öffnen.",
   "agent.groups": "Was Agenten dürfen",
   "agent.group.context": "Sehen, was angezeigt wird",
   "agent.group.changes": "Sehen, was sich geändert hat",
@@ -1218,8 +1218,10 @@ export default {
   "agent.defaults": "Für neue Projekte verwenden",
   "agent.defaultsSaved": "Neue Projekte beginnen mit dieser Auswahl.",
   "agent.notSaved": "Die Änderung wurde nicht gespeichert. Bitte erneut versuchen.",
-  "agent.setup.json": "Andere MCP-Clients (JSON)",
-  "agent.setup.hook": "Prompt-Hook (fügt jedem Prompt hinzu, was angezeigt wird)",
+  "agent.setup.json":
+    "Andere MCP-Clients (JSON): in die Einstellungen des Clients für dieses Projekt eintragen, etwa .cursor/mcp.json in diesem Ordner",
+  "agent.setup.hook":
+    "Prompt-Hook für Claude Code, in .claude/settings.json (fügt jedem Prompt hinzu, was angezeigt wird)",
   "agent.copy": "Kopieren",
   "agent.copied": "Kopiert",
   "agent.section": "KI-Agenten",
