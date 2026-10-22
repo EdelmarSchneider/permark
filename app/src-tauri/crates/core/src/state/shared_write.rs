@@ -354,7 +354,7 @@ mod private_dir_tests {
     fn the_lock_folder_is_private_and_a_link_or_a_foreign_folder_is_skipped() {
         let dir = tempfile::tempdir().unwrap();
         let fresh = dir.path().join("fresh");
-        let got = private_dir(&[fresh.clone()]).unwrap();
+        let got = private_dir(std::slice::from_ref(&fresh)).unwrap();
         assert_eq!(got, fresh.join("permark-locks"));
         let meta = std::fs::metadata(&got).unwrap();
         assert_eq!(meta.mode() & 0o777, 0o700);
@@ -367,7 +367,7 @@ mod private_dir_tests {
             std::fs::Permissions::from_mode(0o755),
         )
         .unwrap();
-        let got = private_dir(&[wide.clone()]).unwrap();
+        let got = private_dir(std::slice::from_ref(&wide)).unwrap();
         assert_eq!(std::fs::metadata(&got).unwrap().mode() & 0o777, 0o700);
         // a link in place of the folder: never used, the next base is
         let linked = dir.path().join("linked");
