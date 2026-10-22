@@ -304,12 +304,13 @@ describe("long lines that wrap (the setting)", () => {
 
   it("draws a smaller file one element per line, numbered in the page, no gutter", async () => {
     show(viewOf("one\ntwo\n\nfour\n", null, "a.txt"));
-    await until(() => target.querySelectorAll(".code .ln").length === 4, "lines");
+    // each line keeps its own line break: a copy gives the file's lines, nothing inserted
+    // (asked until it holds: the highlighted text replaces the plain one when it comes)
+    const texts = (): string =>
+      [...target.querySelectorAll(".code .ln")].map((l) => l.textContent).join("|");
+    await until(() => texts() === "one\n|two\n|\n|four\n", "lines");
     expect(target.querySelector(".text.wrap")).not.toBeNull();
     expect(target.querySelector(".gutter")).toBeNull();
-    const texts = [...target.querySelectorAll(".code .ln")].map((l) => l.textContent);
-    // each line keeps its own line break: a copy gives the file's lines, nothing inserted
-    expect(texts).toEqual(["one\n", "two\n", "\n", "four\n"]);
   });
 
   it("draws the plain text the same way with the highlight plugin off, CRLF without its carriage return", async () => {
