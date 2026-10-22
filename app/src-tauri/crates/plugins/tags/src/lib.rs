@@ -8,6 +8,8 @@ pub mod catalog;
 pub mod frontmatter;
 pub mod meta;
 pub mod normalize;
+#[cfg(test)]
+mod owners_tests;
 mod service;
 #[cfg(test)]
 mod service_tests;
@@ -25,7 +27,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running, ServiceLease,
 };
-use permark_core::state::StateLocation;
+use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
 use serde::Deserialize;
 
@@ -115,32 +117,42 @@ impl Plugin for TagsPlugin {
                 reason: "needs a project".to_owned(),
             });
         };
-        let shared_in_project = store.location() == StateLocation::Project;
         let events = cx.events().clone();
+        let started = project.owners(store);
+        // S3: before the worker knows the owners, nothing is written (it could land in the outer folder's file)
+        let early = !project.owners_known();
         let service = Arc::new(TagsService::start(ServiceArgs {
-            file: store.shared_file(META_FILE),
+            owners: started.clone(),
             // a reader with no window does not carry the profile copy over (the app does, on its next open)
-            legacy: if cx.files_only() {
-                None
-            } else {
-                store.legacy_shared_file(META_FILE)
-            },
-            location: if shared_in_project {
-                TagsLocation::Project
-            } else {
-                TagsLocation::Profile
-            },
-            watched: shared_in_project.then(|| META_PATH.to_owned()),
+            legacy: !cx.files_only(),
             own: Arc::clone(&project.own),
             scope: project.documents.scope().clone(),
-            explorer: Arc::clone(&project.explorer),
+            harvest: Arc::clone(project.search.harvest()),
+            projects: project.projects().cloned(),
             announce: Arc::new(move || events.emit("changed", serde_json::Value::Null)),
             timing: self.timing,
         }));
+        if early {
+            service.start_paused();
+        }
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.feed(batch)
         });
+        // each included project's tags live in its own meta.toml (`projects.md` §9.2)
+        let owners = project.follow_owners({
+            let service = Arc::downgrade(&service);
+            move |change| {
+                if let Some(service) = service.upgrade() {
+                    service.follow_owners(&change);
+                }
+            }
+        });
+        // an owners change between the read above and the subscription (or owners known meanwhile): caught up here
+        let now = project.owners(store);
+        if !now.same(&started) || (early && project.owners_known()) {
+            service.follow_owners(&OwnersChange::Resume(&now));
+        }
         let mut registrations = Vec::new();
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc("index", typed(move |_: NoArgs, _| Ok(s.index()))));
@@ -218,6 +230,7 @@ impl Plugin for TagsPlugin {
             .provide(Arc::new(TagsApi(service.lookup())));
         Ok(Box::new(TagsRunning {
             subscription: Some(subscription),
+            owners,
             registrations,
             lease: Some(lease),
             service: Some(service),
@@ -229,6 +242,7 @@ impl Plugin for TagsPlugin {
 /// the threads join (what was changed is written first).
 struct TagsRunning {
     subscription: Option<Subscription>,
+    owners: Option<permark_core::projects::ProjectsSubscription>,
     registrations: Vec<RpcRegistration>,
     lease: Option<ServiceLease>,
     service: Option<Arc<TagsService>>,
@@ -239,6 +253,7 @@ impl Running for TagsRunning {}
 impl Drop for TagsRunning {
     fn drop(&mut self) {
         self.subscription.take();
+        self.owners.take();
         self.registrations.clear();
         self.lease.take();
         self.service.take();

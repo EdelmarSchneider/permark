@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use permark_core::projects::{ProjectUid, TagStatus};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -79,6 +80,10 @@ pub struct TagCountView {
     pub count: u32,
     /// No file has it from the app: it exists only in front matter.
     pub only_in_files: bool,
+    /// Official | local | unlisted (`projects.md` §7.2); `None` while the opened folder has no official list.
+    pub status: Option<TagStatus>,
+    /// Local: the project whose own list has it.
+    pub owner: Option<ProjectUid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -92,6 +97,8 @@ pub struct TagsOverview {
     pub untagged: u32,
     /// Entries of files that are gone.
     pub orphans: u32,
+    /// Status marks are shown (the opened folder lists official tags | categories); `false`: dormant.
+    pub marks: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -113,6 +120,9 @@ pub struct TagRefView {
     pub file: bool,
     /// Added in the app.
     pub app: bool,
+    /// For this file's project chain (`projects.md` §7.2); `None` while dormant.
+    pub status: Option<TagStatus>,
+    pub owner: Option<ProjectUid>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]

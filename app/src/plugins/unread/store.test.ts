@@ -84,6 +84,23 @@ describe("the unread store", () => {
     stop();
   });
 
+  it("one project's documents: its count for the detail card, the list the tab shows (UX round 4 F8)", async () => {
+    const { api, store, stop } = await setup();
+    api.probe.plugins.unread(["hub-b/a.md", "hub-b/x/b.md", "hub-bc/c.md", "site/d.md"]);
+    await settle();
+    expect(store.projectCount("hub-b")).toBe("2 unread");
+    expect(store.projectCount("tools")).toBeNull();
+    expect(store.shown).toEqual(store.unread);
+    store.showOnly({ folder: "hub-b", name: "Hub B" });
+    flushSync();
+    // a sibling folder whose name starts the same is not inside
+    expect(store.shown).toEqual(["hub-b/a.md", "hub-b/x/b.md"]);
+    store.showOnly(null);
+    flushSync();
+    expect(store.shown).toEqual(store.unread);
+    stop();
+  });
+
   it("marks documents read, unread, a folder, everything", async () => {
     const { store, api, stop } = await setup();
     api.probe.plugins.unread(["docs/other.md", "notes/n.md"]);

@@ -193,6 +193,44 @@ impl Fact {
     pub fn is_marker(&self) -> bool {
         matches!(self, Self::HandOff { .. } | Self::Closed)
     }
+
+    /// The same fact with its paths seen from another folder (`rebase` answers `None` for a path outside it): `None`
+    /// when the main path is outside; a `from` outside is dropped (a move into the folder reads as new there).
+    #[must_use]
+    pub fn rebased(&self, rebase: &dyn Fn(&str) -> Option<String>) -> Option<Self> {
+        let mut fact = self.clone();
+        match &mut fact {
+            Self::File { op, path, from, .. } => {
+                *path = rebase(path)?;
+                if let Some(old) = from.take() {
+                    match rebase(&old) {
+                        Some(rel) => *from = Some(rel),
+                        None if *op == FileOp::Move => *op = FileOp::New,
+                        None => {}
+                    }
+                }
+            }
+            Self::Save { path, .. }
+            | Self::Comment { path, .. }
+            | Self::Tag { path, .. }
+            | Self::Review { path, .. } => *path = rebase(path)?,
+            Self::Convert { path, saved, .. } => {
+                *path = rebase(path)?;
+                *saved = saved.as_deref().and_then(rebase);
+            }
+            Self::Outside { change, path, from } => {
+                *path = rebase(path)?;
+                if let Some(old) = from.take() {
+                    match rebase(&old) {
+                        Some(rel) => *from = Some(rel),
+                        None => *change = OutsideChange::Created,
+                    }
+                }
+            }
+            Self::HandOff { .. } | Self::Closed => return None,
+        }
+        Some(fact)
+    }
 }
 
 /// One journal entry.
@@ -440,6 +478,27 @@ struct State {
     journal: Journal,
     dirty: bool,
     file: StateFile<Journal>,
+    /// The included projects whose own journal also gets the facts about their files (`projects.md` §9.2); `None`:
+    /// only this journal (a plain folder, or the owners are changing).
+    owners: Option<crate::projects::Owners>,
+    /// Facts waiting for the next write, per project journal (its file).
+    mirror: Vec<(StateFile<Journal>, Mirrored)>,
+}
+
+/// A fact for an included project's own journal, its paths relative to that project.
+#[derive(Debug, Clone)]
+enum Mirrored {
+    Fact {
+        at: u64,
+        by: By,
+        fact: Fact,
+    },
+    Outside {
+        at: u64,
+        change: OutsideChange,
+        path: String,
+        from: Option<String>,
+    },
 }
 
 struct Inner {
@@ -508,6 +567,8 @@ impl ActivityLog {
                 journal: load(&file),
                 dirty: false,
                 file,
+                owners: None,
+                mirror: Vec::new(),
             }),
             wake: Condvar::new(),
             stop: AtomicBool::new(false),
@@ -536,6 +597,8 @@ impl ActivityLog {
                     journal: Journal::default(),
                     dirty: false,
                     file,
+                    owners: None,
+                    mirror: Vec::new(),
                 }),
                 wake: Condvar::new(),
                 stop: AtomicBool::new(true),
@@ -565,6 +628,24 @@ impl ActivityLog {
         self.inner.wake.notify_all();
     }
 
+    /// The owners of state changed (`Projects::follow_owners`): before, what waits is written; after, facts about an
+    /// included project's files also go to that project's own journal (the one it uses opened alone). This journal
+    /// keeps every fact too: the hand-off and the agent's `activity` read it as before (merging = round 5).
+    pub fn follow_owners(&self, change: &crate::projects::OwnersChange<'_>) {
+        if !self.writing() {
+            return;
+        }
+        match change {
+            crate::projects::OwnersChange::Pause => {
+                lock(&self.inner.state).owners = None;
+                flush(&self.inner);
+            }
+            crate::projects::OwnersChange::Resume(owners) => {
+                lock(&self.inner.state).owners = (!owners.is_single()).then(|| (*owners).clone());
+            }
+        }
+    }
+
     fn append(&self, by: By, fact: Fact) -> Option<u64> {
         if !self.writing() {
             return None;
@@ -572,6 +653,7 @@ impl ActivityLog {
         let now = self.now();
         let entry = {
             let mut state = lock(&self.inner.state);
+            mirror_fact(&mut state, now, by, &fact);
             let seq = state.journal.push(now, by, fact);
             state.journal.trim(now);
             state.dirty = true;
@@ -638,6 +720,7 @@ impl ActivityLog {
                     ChangeKind::Removed => (OutsideChange::Deleted, None),
                     ChangeKind::Renamed { from } => (OutsideChange::Renamed, Some(from.as_str())),
                 };
+                mirror_outside(&mut state, now, kind, &change.path, from);
                 state.journal.push_outside(now, kind, &change.path, from);
                 noted = true;
             }
@@ -751,17 +834,111 @@ fn is_private(path: &str) -> bool {
     first.eq_ignore_ascii_case(".permark") || first.eq_ignore_ascii_case(".git")
 }
 
+/// The journal file of the included project owning `path` + its slot (`None`: the opened folder owns it).
+fn owner_file(state: &State, path: &str) -> Option<(StateFile<Journal>, usize)> {
+    let owners = state.owners.as_ref()?;
+    let i = owners.owner_of(path);
+    (i != 0).then(|| (owners.slots()[i].store.file::<Journal>(JOURNAL_FILE), i))
+}
+
+fn mirror_fact(state: &mut State, at: u64, by: By, fact: &Fact) {
+    let Some((file, i)) = fact.path().and_then(|p| owner_file(state, p)) else {
+        return;
+    };
+    let Some(owners) = state.owners.clone() else {
+        return;
+    };
+    let rebase = |p: &str| (owners.owner_of(p) == i).then(|| owners.rel(i, p));
+    if let Some(fact) = fact.rebased(&rebase) {
+        state.mirror.push((file, Mirrored::Fact { at, by, fact }));
+        state.dirty = true;
+    }
+}
+
+fn mirror_outside(
+    state: &mut State,
+    at: u64,
+    change: OutsideChange,
+    path: &str,
+    from: Option<&str>,
+) {
+    let Some((file, i)) = owner_file(state, path) else {
+        return;
+    };
+    let Some(owners) = state.owners.clone() else {
+        return;
+    };
+    let rel = owners.rel(i, path);
+    let from = from
+        .filter(|f| owners.owner_of(f) == i)
+        .map(|f| owners.rel(i, f));
+    let change = if change == OutsideChange::Renamed && from.is_none() {
+        OutsideChange::Created
+    } else {
+        change
+    };
+    state.mirror.push((
+        file,
+        Mirrored::Outside {
+            at,
+            change,
+            path: rel,
+            from,
+        },
+    ));
+    state.dirty = true;
+}
+
+/// Writes the facts waiting for included projects' journals: each read fresh, appended to, trimmed, written.
+fn flush_mirror(mirror: Vec<(StateFile<Journal>, Mirrored)>) {
+    let mut by_file: Vec<(StateFile<Journal>, Vec<Mirrored>)> = Vec::new();
+    for (file, item) in mirror {
+        match by_file.iter_mut().find(|(f, _)| f.path() == file.path()) {
+            Some((_, items)) => items.push(item),
+            None => by_file.push((file, vec![item])),
+        }
+    }
+    for (file, items) in by_file {
+        let mut journal = load(&file);
+        let mut last = 0;
+        for item in items {
+            match item {
+                Mirrored::Fact { at, by, fact } => {
+                    journal.push(at, by, fact);
+                    last = at;
+                }
+                Mirrored::Outside {
+                    at,
+                    change,
+                    path,
+                    from,
+                } => {
+                    journal.push_outside(at, change, &path, from.as_deref());
+                    last = at;
+                }
+            }
+        }
+        journal.trim(last);
+        // best effort, as this journal's own write
+        let _ = file.save(&journal);
+    }
+}
+
 fn flush(inner: &Inner) {
-    let (journal, file) = {
+    let (journal, file, mirror) = {
         let mut state = lock(&inner.state);
         if !state.dirty {
             return;
         }
         state.dirty = false;
-        (state.journal.clone(), state.file.clone())
+        let mirror = std::mem::take(&mut state.mirror);
+        (state.journal.clone(), state.file.clone(), mirror)
     };
     // best effort: a journal that cannot be written loses entries, never an action
     let _ = file.save(&journal);
+    if !mirror.is_empty() {
+        flush_mirror(mirror);
+    }
 }
 
 fn flush_loop(inner: &Weak<Inner>) {

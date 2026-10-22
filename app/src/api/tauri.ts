@@ -231,6 +231,11 @@ export const tauriApi: Api = {
   projectsRemove: (uids) => call("projects_remove", { uids }),
   projectsAnswerMove: (uid, path, same) => call("projects_answer_move", { uid, path, same }),
   projectsCardSet: (target, change) => call("projects_card_set", { target, change }),
+  vocabularyPromote: (kind, name) => call("vocabulary_promote", { kind, name }),
+  vocabularyRename: (kind, name, newName) => call("vocabulary_rename", { kind, name, newName }),
+  vocabularyRemove: (kind, name) => call("vocabulary_remove", { kind, name }),
+  vocabularySetStyle: (kind, name, color, icon) =>
+    call("vocabulary_set_style", { kind, name, color, icon }),
   projectConfigGet: () => call("project_config_get", {}),
   projectConfigSet: (change) => call("project_config_set", { change }),
   pluginsList: () => call("plugins_list", {}),

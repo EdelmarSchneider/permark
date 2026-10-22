@@ -6,6 +6,8 @@ import type { ProjectRow } from "./ProjectRow";
 import type { RecordStatus } from "./RecordStatus";
 import type { RootAnswer } from "./RootAnswer";
 import type { SkippedEntry } from "./SkippedEntry";
+import type { TagStatus } from "./TagStatus";
+import type { VocabularyView } from "./VocabularyView";
 
 /**
  * Everything Settings > Projects + the strip need.
@@ -22,4 +24,8 @@ ready: boolean, answer: RootAnswer, rows: Array<ProjectRow>, offered: OfferSumma
 /**
  * The opened folder's own card (Settings > Project).
  */
-rootCard: CardDto, };
+rootCard: CardDto, 
+/**
+ * The opened folder's card category against its own official list (`None`: no category | dormant).
+ */
+rootCategoryStatus: TagStatus | null, vocabulary: VocabularyView, };

@@ -14,7 +14,11 @@ import type {
   ProjectRow,
   ProjectsView,
   Result,
+  TagStatus,
+  VocabularyEntry,
+  VocabularyKind,
 } from "./types";
+import { COLORS, ICONS } from "../plugins/tags/model";
 
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
@@ -28,6 +32,72 @@ export const MOCK_PROJECTS_BROKEN = "C:/Users/demo/workspace-broken";
 export const MOCK_PROJECTS_ONE = "C:/Users/demo/template";
 /** A large folder (like a monorepo of repos): 36 included (long + Unicode names), 3 new, 1 missing. */
 export const MOCK_PROJECTS_MANY = "C:/Users/demo/workspace-many";
+/** Official tags + categories in the folder's `.permark/vocabulary.toml`; projects with lists of their own (round 4). */
+export const MOCK_PROJECTS_VOCAB = "C:/Users/demo/workspace-vocab";
+
+/** The lists included projects keep in their own `.permark/vocabulary.toml` (local to them), per fixture folder. */
+const LOCAL_VOCAB: Record<string, Record<string, { tags: string[]; categories: string[] }>> = {
+  [MOCK_PROJECTS_VOCAB]: {
+    "hub-b": { tags: ["draft", "spec"], categories: [] },
+    site: { tags: [], categories: ["website"] },
+  },
+};
+
+/**
+ * Official | local | unlisted of a tag | category (`projects.md` §7.2, the backend's rule): official = in the folder's
+ * list; local = in the list of an included project holding `path` (innermost first; `path` null = any project);
+ * else unlisted. Dormant (no official list): nulls.
+ */
+export function mockTagStatus(
+  v: ProjectsView | null,
+  root: string,
+  kind: VocabularyKind,
+  name: string,
+  path: string | null,
+): { status: TagStatus | null; owner: string | null } {
+  if (!v?.vocabulary.active) return { status: null, owner: null };
+  const official = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+  if (official.some((e) => e.name === name)) return { status: "official", owner: null };
+  const lists = LOCAL_VOCAB[root] ?? {};
+  const chain = v.rows
+    .filter((r) => r.state === "included" && r.uid !== null)
+    .filter((r) => path === null || path === r.path || path.startsWith(`${r.path}/`))
+    .sort((a, b) => b.path.length - a.path.length);
+  for (const r of chain) {
+    const own = lists[r.path];
+    if (own && (kind === "tag" ? own.tags : own.categories).includes(name)) {
+      return { status: "local", owner: r.uid };
+    }
+  }
+  return { status: "unlisted", owner: null };
+}
+
+/** Category marks + local list counts of a view (what the backend fills in). */
+function marked(root: string, v: ProjectsView): ProjectsView {
+  const lists = LOCAL_VOCAB[root] ?? {};
+  const official = (kind: VocabularyKind): string[] =>
+    (kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories).map((e) => e.name);
+  return {
+    ...v,
+    rootCategoryStatus:
+      v.rootCard.category === null
+        ? null
+        : mockTagStatus(v, root, "category", v.rootCard.category, "").status,
+    rows: v.rows.map((r) => {
+      if (r.state !== "included") return r;
+      const own = lists[r.path] ?? { tags: [], categories: [] };
+      return {
+        ...r,
+        categoryStatus:
+          r.category === null
+            ? null
+            : mockTagStatus(v, root, "category", r.category, r.path).status,
+        localTags: own.tags.filter((t) => !official("tag").includes(t)).length,
+        localCategories: own.categories.filter((c) => !official("category").includes(c)).length,
+      };
+    }),
+  };
+}
 
 /** Folder names of the large fixture: plain, long, Unicode (CJK, accents, NFD), spaces. */
 const MANY_NAMES: readonly string[] = [
@@ -87,6 +157,9 @@ function row(path: string, fields: Partial<ProjectRow> = {}): ProjectRow {
     inner: null,
     cardPlace: null,
     locateFrom: null,
+    categoryStatus: null,
+    localTags: 0,
+    localCategories: 0,
     ...fields,
   };
 }
@@ -126,6 +199,8 @@ function view(root: string, rows: ProjectRow[], fields: Partial<ProjectsView> = 
     skipped: [],
     ask: null,
     rootCard: card(nameOf(root)),
+    rootCategoryStatus: null,
+    vocabulary: { file: { status: "absent" }, active: false, tags: [], categories: [] },
     ...fields,
   };
 }
@@ -237,6 +312,55 @@ const FIXTURES: Record<string, Fixture> = {
     files: { "README.md": "# Template\n", "template-app/README.md": "# Template app\n" },
     view: () => view(MOCK_PROJECTS_ONE, [row("template-app")]),
   },
+  [MOCK_PROJECTS_VOCAB]: {
+    files: {
+      "overview.md": "---\ntags: [spec, roadmap]\n---\n# Workspace\n",
+      "hub-b/plan.md": "---\ntags: [spec, draft]\n---\n# Plan\n",
+      "hub-b/notes.md": "---\ntags: [lab]\n---\n# Notes\n",
+      "site/index.md": "---\ntags: [draft]\n---\n# Site\n",
+    },
+    view: () =>
+      view(
+        MOCK_PROJECTS_VOCAB,
+        [
+          row("hub-b", {
+            uid: "vocabhubb2",
+            state: "included",
+            marker: "both",
+            name: "PerMark software",
+            short: "hub-b",
+            category: "software",
+            cardPlace: "project",
+          }),
+          row("site", {
+            uid: "vocabsite2",
+            state: "included",
+            marker: "permark",
+            category: "website",
+            cardPlace: "project",
+          }),
+          row("tools/scratch", {
+            uid: "vocabtool2",
+            state: "included",
+            category: "experiments",
+            cardPlace: "profile",
+          }),
+        ],
+        {
+          answer: "answered",
+          record: { status: "ok" },
+          vocabulary: {
+            file: { status: "ok" },
+            active: true,
+            tags: [
+              { name: "needs-review", color: null, icon: null },
+              { name: "spec", color: "blue", icon: "book-open" },
+            ],
+            categories: [{ name: "software", color: "teal", icon: "code" }],
+          },
+        },
+      ),
+  },
 };
 
 /** What tests and seeds see of the mock projects. */
@@ -251,11 +375,16 @@ export type ProjectsProbe = {
   reset(): void;
   /** Asks "is this the missing one?" in the window's folder (a project moved | renamed while PerMark was closed). */
   askMove(ask: MoveAsk): void;
+  /** The next writes of the official list (promote, rename, remove, look) fail: the list changed while saving
+   *  (`conflict`) | `.permark/` can't be written (`io`, as a read-only folder answers); `null`: they work again. */
+  failPromote(how: "conflict" | "io" | null): void;
 };
 
 type Deps = {
   /** The folder the window shows. */
   root: () => string;
+  /** The tags plugin hears that official lists changed (`tags:changed`). */
+  tagsChanged?: () => void;
   emit: <E extends keyof Events>(event: E, payload: Events[E]) => void;
   feed: (item: FeedItem) => void;
   /** The fixture's files join the in-memory project (shown in the Explorer). */
@@ -275,6 +404,10 @@ type Handlers = Pick<
   | "projectsRemove"
   | "projectsAnswerMove"
   | "projectsCardSet"
+  | "vocabularyPromote"
+  | "vocabularyRename"
+  | "vocabularyRemove"
+  | "vocabularySetStyle"
 >;
 
 export function createMockProjects(deps: Deps): { handlers: Handlers; probe: ProjectsProbe } {
@@ -283,6 +416,7 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
   let feedId = 1_000_000;
   let nextUid = 1;
   const calls: string[] = [];
+  let promoteFails: "conflict" | "io" | null = null;
 
   /** The view of the window's folder (made from its fixture on first use; plain folders get a plain view). */
   function current(): ProjectsView {
@@ -290,7 +424,7 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
     const known = views.get(root);
     if (known) return known;
     const fixture = FIXTURES[root];
-    const made = summarized(fixture ? fixture.view() : view(root, []));
+    const made = marked(root, summarized(fixture ? fixture.view() : view(root, [])));
     if (fixture) deps.addFiles(fixture.files);
     views.set(root, made);
     return made;
@@ -298,7 +432,7 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
 
   /** Bumps `seq`, tells the window. */
   function commit(next: ProjectsView): void {
-    const fixed = summarized({ ...next, seq: next.seq + 1 });
+    const fixed = marked(deps.root(), summarized({ ...next, seq: next.seq + 1 }));
     views.set(deps.root(), fixed);
     deps.emit("projects-changed", { root: deps.root(), seq: fixed.seq });
   }
@@ -330,6 +464,70 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
   function update(change: (r: ProjectRow) => ProjectRow): void {
     const v = current();
     commit({ ...v, rows: v.rows.map(change) });
+  }
+
+  /** A typed name by the tag rule (the backend's `normalize_tag`). */
+  function vocabName(raw: string): string {
+    return raw.trim().toLowerCase().split(/\s+/).join("-");
+  }
+
+  /** No `.permark/` in a folder without a project list (the mock's stand-in), or a list that can't be read. */
+  function vocabWritable(v: ProjectsView): boolean {
+    return (
+      v.record.status !== "absent" &&
+      v.vocabulary.file.status !== "unreadable" &&
+      v.vocabulary.file.status !== "newer"
+    );
+  }
+
+  function vocabRefused(
+    command:
+      "vocabulary_promote" | "vocabulary_rename" | "vocabulary_remove" | "vocabulary_set_style",
+    kind: "invalidData" | "unavailable" | "notFound" | "exists",
+    subject: string,
+  ): Promise<Result<null>> {
+    return Promise.resolve({
+      ok: false,
+      error: { kind: "backend", command, error: { kind, subject, detail: null } },
+    });
+  }
+
+  /** The kind's list replaced (sorted by name like the backend), marks again, windows + tags plugin told. */
+  /** The next writes of the official list fail while `failPromote` says so (`conflict` | read-only `io`). */
+  function writeFails(
+    command:
+      "vocabulary_promote" | "vocabulary_rename" | "vocabulary_remove" | "vocabulary_set_style",
+  ): Promise<Result<null>> | null {
+    if (promoteFails === null) return null;
+    return Promise.resolve({
+      ok: false,
+      error: {
+        kind: "backend",
+        command,
+        error: {
+          kind: promoteFails,
+          subject: promoteFails === "io" ? ".permark/vocabulary.toml" : "vocabulary",
+          detail: promoteFails === "io" ? "Access is denied. (os error 5)" : null,
+        },
+      },
+    });
+  }
+
+  function vocabCommit(v: ProjectsView, kind: VocabularyKind, list: VocabularyEntry[]): void {
+    const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    const tags = kind === "tag" ? sorted : v.vocabulary.tags;
+    const categories = kind === "category" ? sorted : v.vocabulary.categories;
+    commit({
+      ...v,
+      vocabulary: {
+        ...v.vocabulary,
+        file: { status: "ok" },
+        active: tags.length + categories.length > 0,
+        tags,
+        categories,
+      },
+    });
+    deps.tagsChanged?.();
   }
 
   const handlers: Handlers = {
@@ -519,6 +717,88 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       );
       return ok(next);
     },
+    vocabularyPromote: (kind, name) => {
+      calls.push(`vocabulary_promote ${kind} ${name}`);
+      const v = current();
+      const clean = vocabName(name);
+      if (clean === "") return vocabRefused("vocabulary_promote", "invalidData", "name");
+      if (!vocabWritable(v)) return vocabRefused("vocabulary_promote", "unavailable", "vocabulary");
+      const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+      if (list.some((e) => e.name === clean)) return ok(null);
+      const failed = writeFails("vocabulary_promote");
+      if (failed) return failed;
+      vocabCommit(v, kind, [...list, { name: clean, color: null, icon: null }]);
+      return ok(null);
+    },
+    vocabularyRename: (kind, name, newName) => {
+      calls.push(`vocabulary_rename ${kind} ${name} ${newName}`);
+      const v = current();
+      const [from, to] = [vocabName(name), vocabName(newName)];
+      if (from === "") return vocabRefused("vocabulary_rename", "invalidData", "name");
+      if (to === "") return vocabRefused("vocabulary_rename", "invalidData", "newName");
+      if (!vocabWritable(v)) return vocabRefused("vocabulary_rename", "unavailable", "vocabulary");
+      const failed = writeFails("vocabulary_rename");
+      if (failed) return failed;
+      const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+      if (!list.some((e) => e.name === from)) {
+        return vocabRefused("vocabulary_rename", "notFound", "name");
+      }
+      if (from === to) return ok(null);
+      if (list.some((e) => e.name === to)) {
+        return vocabRefused("vocabulary_rename", "exists", "newName");
+      }
+      vocabCommit(
+        v,
+        kind,
+        list.map((e) => (e.name === from ? { ...e, name: to } : e)),
+      );
+      return ok(null);
+    },
+    vocabularyRemove: (kind, name) => {
+      calls.push(`vocabulary_remove ${kind} ${name}`);
+      const v = current();
+      const clean = vocabName(name);
+      if (clean === "") return vocabRefused("vocabulary_remove", "invalidData", "name");
+      if (!vocabWritable(v)) return vocabRefused("vocabulary_remove", "unavailable", "vocabulary");
+      const failed = writeFails("vocabulary_remove");
+      if (failed) return failed;
+      const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+      if (!list.some((e) => e.name === clean)) {
+        return vocabRefused("vocabulary_remove", "notFound", "name");
+      }
+      vocabCommit(
+        v,
+        kind,
+        list.filter((e) => e.name !== clean),
+      );
+      return ok(null);
+    },
+    vocabularySetStyle: (kind, name, color, icon) => {
+      calls.push(`vocabulary_set_style ${kind} ${name} ${color} ${icon}`);
+      const v = current();
+      const clean = vocabName(name);
+      const pickedColor =
+        color === null ? null : (COLORS.find((c) => c === color.toLowerCase()) ?? "");
+      const pickedIcon = icon === null ? null : (ICONS.find((i) => i === icon.toLowerCase()) ?? "");
+      if (clean === "") return vocabRefused("vocabulary_set_style", "invalidData", "name");
+      if (pickedColor === "") return vocabRefused("vocabulary_set_style", "invalidData", "color");
+      if (pickedIcon === "") return vocabRefused("vocabulary_set_style", "invalidData", "icon");
+      if (!vocabWritable(v)) {
+        return vocabRefused("vocabulary_set_style", "unavailable", "vocabulary");
+      }
+      const failed = writeFails("vocabulary_set_style");
+      if (failed) return failed;
+      const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+      const entry = list.find((e) => e.name === clean);
+      if (!entry) return vocabRefused("vocabulary_set_style", "notFound", "name");
+      if (entry.color === pickedColor && entry.icon === pickedIcon) return ok(null);
+      vocabCommit(
+        v,
+        kind,
+        list.map((e) => (e.name === clean ? { ...e, color: pickedColor, icon: pickedIcon } : e)),
+      );
+      return ok(null);
+    },
   };
 
   const probe: ProjectsProbe = {
@@ -528,13 +808,17 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       deps.feed({ item: "project", id: feedId, atMs: Date.now(), event });
     },
     viewOf: (root) =>
-      views.get(root) ?? (FIXTURES[root] ? summarized(FIXTURES[root].view()) : null),
+      views.get(root) ?? (FIXTURES[root] ? marked(root, summarized(FIXTURES[root].view())) : null),
     reset: () => {
       views.clear();
       undos.clear();
       calls.length = 0;
+      promoteFails = null;
     },
     askMove: (ask) => commit({ ...current(), ask }),
+    failPromote: (how) => {
+      promoteFails = how;
+    },
   };
   return { handlers, probe };
 }

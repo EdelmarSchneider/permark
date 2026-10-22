@@ -5,11 +5,21 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use super::shared_write::{lock_for, FileLock};
 use super::{private, Guard, StateError};
 use crate::fsx::{retry, write_atomic, write_atomic_checked};
 
 /// Pauses before a transient read error (an antivirus scan, a sync client) is believed.
 const READ_RETRY: [Duration; 2] = [Duration::from_millis(50), Duration::from_millis(150)];
+/// Reads + writes an update tries before it gives up (only a writer without the lock can make it try again).
+pub(super) const UPDATE_ATTEMPTS: usize = 8;
+
+pub(super) fn kept_changing() -> io::Error {
+    io::Error::new(
+        io::ErrorKind::WouldBlock,
+        "the file kept changing while it was being written",
+    )
+}
 
 #[derive(Debug, Clone)]
 enum Guarded {
@@ -82,6 +92,42 @@ impl RawFile {
             Err(error) => Err(error),
         })
         .map_err(|e| StateError::io(&self.path, e))
+    }
+
+    /// The writers' lock of this file (`shared_write`): held around a read + write made by hand (`Ok(None)`: none to
+    /// be had; compare-and-swap still guards the write).
+    ///
+    /// # Errors
+    /// Another writer held it too long: do not write now.
+    pub fn lock(&self) -> io::Result<Option<FileLock>> {
+        lock_for(&self.path)
+    }
+
+    /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the bytes
+    /// on disk now (`None`: no file) and returns what to write (`None`: nothing); written only while the file still
+    /// holds what `next` saw, else read again and `next` asked again. Returns the bytes on disk afterwards.
+    ///
+    /// # Errors
+    /// The refusal (a link in the way), an IO failure, or a file that kept changing under a writer without the lock.
+    pub fn update(
+        &self,
+        mut next: impl FnMut(Option<&[u8]>) -> Option<Vec<u8>>,
+    ) -> Result<Option<Vec<u8>>, StateError> {
+        self.guarded()?;
+        let _lock = self.lock().map_err(|e| StateError::io(&self.path, e))?;
+        for _ in 0..UPDATE_ATTEMPTS {
+            let now = self.read().map_err(|e| StateError::io(&self.path, e))?;
+            let Some(bytes) = next(now.as_deref()) else {
+                return Ok(now);
+            };
+            if now.as_deref() == Some(bytes.as_slice()) {
+                return Ok(now);
+            }
+            if self.write_over(now.as_deref(), &bytes)? {
+                return Ok(Some(bytes));
+            }
+        }
+        Err(StateError::io(&self.path, kept_changing()))
     }
 
     /// Refuses a write when a link stands in place of `.permark/` or its state folder.

@@ -21,8 +21,8 @@ use crate::plugins::{
     Services,
 };
 use crate::projects::{
-    CardChange, CardDto, CardTarget, IncludeOutcome, LocateRefusal, ProjectPick, Projects,
-    ProjectsUndone, ProjectsView,
+    CardChange, CardDto, CardTarget, IncludeOutcome, LocateRefusal, OwnersChange, ProjectPick,
+    Projects, ProjectsSubscription, ProjectsUndone, ProjectsView,
 };
 use crate::search::{SearchFilter, SearchIndex, SearchOptions};
 use crate::settings::{
@@ -252,6 +252,8 @@ pub struct ProjectCore {
     _documents_sub: Subscription,
     _search_sub: Subscription,
     _activity_sub: Option<Subscription>,
+    /// The journal follows where each included project keeps its state (`projects.md` §9.2).
+    _activity_owners: ProjectsSubscription,
     search: Arc<SearchIndex>,
     watcher: Watcher,
     fileops: FileOps,
@@ -394,6 +396,18 @@ impl ProjectCore {
             vault.main().path().display().to_string(),
             Arc::clone(&formats),
         ));
+        // front matter tags from the index pass: cached per owning project, shown at once next open (a reader with no
+        // window writes no cache)
+        if files_only.is_none() {
+            let weak = Arc::downgrade(&projects);
+            let fallback = store.clone();
+            search.harvest().use_cache(Some(Arc::new(move || {
+                weak.upgrade().map_or_else(
+                    || crate::projects::Owners::root_only(fallback.clone()),
+                    |p| p.owners(),
+                )
+            })));
+        }
         let search_sub = hub.subscribe(search.feeder());
         let watcher = start_watcher(&vault, &explorer, &hub, &own, env);
         projects.start();
@@ -409,6 +423,15 @@ impl ProjectCore {
                 move |batch| activity.outside(batch)
             })
         });
+        activity.follow_owners(&OwnersChange::Resume(&projects.owners()));
+        let activity_owners = projects.follow_owners({
+            let activity = Arc::downgrade(&activity);
+            move |change| {
+                if let Some(activity) = activity.upgrade() {
+                    activity.follow_owners(&change);
+                }
+            }
+        });
         let fileops = FileOps::new(
             vault.clone(),
             Arc::clone(&explorer),
@@ -422,6 +445,7 @@ impl ProjectCore {
             _documents_sub: documents_sub,
             _search_sub: search_sub,
             _activity_sub: activity_sub,
+            _activity_owners: activity_owners,
             search,
             watcher,
             fileops,

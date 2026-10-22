@@ -18,6 +18,7 @@ use permark_core::error::{ErrorKind, IpcError};
 use permark_core::format::units;
 use permark_core::fsx;
 use permark_core::paths::{key_of, VaultPath};
+use permark_core::projects::{Owners, OwnersChange, OwnersGate};
 use permark_core::state::RawFile;
 use permark_core::watch::{ChangeKind, FsBatch};
 
@@ -26,6 +27,9 @@ use crate::model::{
     Anchor, Book, By, Comment, CommentScope, CommentView, PassageState, Reply, ReplyView,
     MAX_COMMENTS, MAX_COMMENT_CHARS, MAX_QUOTE_CHARS, MAX_REPLIES, MAX_REPLY_CHARS, VERSION,
 };
+
+/// Comment ids made by this app (every core).
+static NEXT_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Documents larger than this are not read for comments.
 const MAX_DOC_BYTES: u64 = 5 * 1024 * 1024;
@@ -47,14 +51,272 @@ pub struct NewComment {
     pub end_line: u32,
 }
 
-struct State {
+/// One owner's `comments.json` (the opened folder's, or an included project's: `projects.md` §9.2), paths relative
+/// to that owner.
+struct Slot {
+    file: RawFile,
     book: Book,
+    /// The comments as last read or written: what this core changed since is laid on top of the file as it is when
+    /// written (another tab | app | `permark mcp` may have written it meanwhile; `projects.md` §14 D51).
+    base: Vec<Comment>,
     /// Length and time of the file as last read or written.
     stamp: Option<(u64, u128)>,
     /// The file exists and holds nothing this version can use: it is put aside before the first write.
     damaged: bool,
     /// The file could not be read just now (it may be fine a moment later).
     unreadable: Option<String>,
+}
+
+/// The comments of a file's bytes (`None`: not comments, or a newer layout).
+fn book_of(bytes: &[u8]) -> Option<Book> {
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    serde_json::from_slice::<Book>(bytes)
+        .ok()
+        .filter(|book| book.version <= VERSION)
+}
+
+/// Three-way merge by comment id: what this core added, changed or removed since `base` goes on top of `fresh` (the
+/// file now); every other comment is the file's. A comment removed elsewhere stays removed, even when this core changed
+/// it meanwhile.
+fn merge_book(base: &[Comment], mine: &[Comment], fresh: Book) -> Book {
+    let base_by: HashMap<&str, &Comment> = base.iter().map(|c| (c.id.as_str(), c)).collect();
+    let mine_by: HashMap<&str, &Comment> = mine.iter().map(|c| (c.id.as_str(), c)).collect();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut comments = Vec::with_capacity(fresh.comments.len() + mine.len());
+    for comment in fresh.comments {
+        seen.insert(comment.id.clone());
+        match (
+            base_by.get(comment.id.as_str()),
+            mine_by.get(comment.id.as_str()),
+        ) {
+            // removed here
+            (Some(_), None) => {}
+            // changed here
+            (Some(was), Some(now)) if was != now => comments.push((*now).clone()),
+            _ => comments.push(comment),
+        }
+    }
+    for comment in mine {
+        if !base_by.contains_key(comment.id.as_str()) && !seen.contains(&comment.id) {
+            comments.push(comment.clone());
+        }
+    }
+    Book {
+        version: fresh.version,
+        comments,
+        extra: fresh.extra,
+    }
+}
+
+impl Slot {
+    fn new(file: RawFile) -> Self {
+        Self {
+            file,
+            book: Book::default(),
+            base: Vec::new(),
+            stamp: None,
+            damaged: false,
+            unreadable: None,
+        }
+    }
+
+    /// Reads the file again when it is not what was last read.
+    fn refresh(&mut self) {
+        let stamp = self.file.stamp();
+        if self.stamp == stamp && self.unreadable.is_none() {
+            return;
+        }
+        match self.file.read() {
+            Ok(Some(bytes)) => {
+                if let Some(book) = book_of(&bytes) {
+                    self.book = book;
+                    self.damaged = false;
+                } else {
+                    self.book = Book::default();
+                    self.damaged = true;
+                }
+                self.unreadable = None;
+            }
+            Ok(None) => {
+                self.book = Book::default();
+                self.damaged = false;
+                self.unreadable = None;
+            }
+            Err(error) => {
+                self.unreadable = Some(error.to_string());
+                return;
+            }
+        }
+        self.base.clone_from(&self.book.comments);
+        self.stamp = stamp;
+    }
+
+    /// Writes the book: this core's changes since it last read the file go on top of the file as it is now (the
+    /// unreadable file is put aside first).
+    fn save(&mut self) -> Result<(), IpcError> {
+        if self.damaged {
+            let aside = self
+                .file
+                .path()
+                .with_file_name(format!("comments.unreadable-{}.json", now_ms()));
+            match std::fs::rename(self.file.path(), aside) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(IpcError::io("comments.json", &e)),
+            }
+            self.damaged = false;
+        }
+        let Self {
+            file, book, base, ..
+        } = self;
+        let mut merged: Option<Book> = None;
+        let mut foreign = false;
+        let mut encode_error = None;
+        file.update(|now| {
+            let fresh = match now {
+                None => Book::default(),
+                Some(bytes) => {
+                    let Some(fresh) = book_of(bytes) else {
+                        foreign = true;
+                        return None;
+                    };
+                    fresh
+                }
+            };
+            let next = merge_book(base, &book.comments, fresh);
+            match serde_json::to_vec_pretty(&next) {
+                Ok(bytes) => {
+                    merged = Some(next);
+                    Some(bytes)
+                }
+                Err(e) => {
+                    encode_error = Some(e.to_string());
+                    None
+                }
+            }
+        })?;
+        if let Some(why) = encode_error {
+            return Err(IpcError::new(ErrorKind::Internal).detail(why));
+        }
+        if foreign {
+            // another program wrote something this version cannot read: never written over
+            self.stamp = None;
+            return Err(IpcError::new(ErrorKind::Unavailable).subject("comments.json"));
+        }
+        if let Some(next) = merged {
+            self.base.clone_from(&next.comments);
+            self.book = next;
+        }
+        self.stamp = self.file.stamp();
+        Ok(())
+    }
+}
+
+/// The comments of every owner (one file each); `owners` none: one file, no projects.
+struct State {
+    owners: Option<Owners>,
+    slots: Vec<Slot>,
+    /// The owners are changing: changes wait (refused for that moment).
+    paused: bool,
+}
+
+impl State {
+    /// Reads every owner's file again when it is not what was last read.
+    fn refresh(&mut self) {
+        for slot in &mut self.slots {
+            slot.refresh();
+        }
+    }
+
+    fn unreadable(&self) -> Option<&String> {
+        self.slots.iter().find_map(|s| s.unreadable.as_ref())
+    }
+
+    /// Whether a comment kept in slot `i` (owner-relative path) belongs to a deeper owner (unused while it is
+    /// included).
+    fn dormant(&self, i: usize, path: &str) -> bool {
+        self.owners
+            .as_ref()
+            .is_some_and(|o| o.owner_of(&o.join(i, path)) != i)
+    }
+
+    /// The comments of every owner in one book, paths root-relative. An id taken by an earlier owner gets the owner's
+    /// uid in front (`<uid>:<id>`; `projects.md` §9.2).
+    fn merged(&self) -> Book {
+        let Some(owners) = &self.owners else {
+            return self
+                .slots
+                .first()
+                .map(|s| s.book.clone())
+                .unwrap_or_default();
+        };
+        let mut out = Book::default();
+        let mut ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for (i, slot) in self.slots.iter().enumerate() {
+            for comment in &slot.book.comments {
+                if self.dormant(i, &comment.path) {
+                    continue;
+                }
+                let mut comment = comment.clone();
+                comment.path = owners.join(i, &comment.path);
+                if !ids.insert(comment.id.clone()) {
+                    if let Some(uid) = &owners.slots()[i].uid {
+                        comment.id = format!("{uid}:{}", comment.id);
+                        ids.insert(comment.id.clone());
+                    }
+                }
+                out.comments.push(comment);
+            }
+        }
+        out
+    }
+
+    /// Lays a changed merged book back into the owners' books; returns the slots whose book changed.
+    fn split(&mut self, merged: Book) -> Vec<usize> {
+        let Some(owners) = self.owners.clone() else {
+            let changed = self.slots[0].book.comments != merged.comments;
+            self.slots[0].book.comments = merged.comments;
+            return if changed { vec![0] } else { Vec::new() };
+        };
+        let mut parts: Vec<Vec<Comment>> = (0..self.slots.len()).map(|_| Vec::new()).collect();
+        for mut comment in merged.comments {
+            let i = owners.owner_of(&comment.path);
+            comment.path = owners.rel(i, &comment.path);
+            // a prefixed id goes back to its file's own spelling
+            for slot in owners.slots().iter().skip(1) {
+                if let Some(uid) = &slot.uid {
+                    let prefix = format!("{uid}:");
+                    if comment.id.starts_with(&prefix) {
+                        comment.id.drain(..prefix.len());
+                        break;
+                    }
+                }
+            }
+            parts[i].push(comment);
+        }
+        let mut changed = Vec::new();
+        for (i, part) in parts.into_iter().enumerate() {
+            let mut fresh: Vec<Option<Comment>> = part.into_iter().map(Some).collect();
+            let mut list = Vec::with_capacity(self.slots[i].book.comments.len());
+            for old in &self.slots[i].book.comments {
+                if self.dormant(i, &old.path) {
+                    list.push(old.clone());
+                } else if let Some(new) = fresh
+                    .iter_mut()
+                    .find(|c| c.as_ref().is_some_and(|c| c.id == old.id))
+                    .and_then(Option::take)
+                {
+                    list.push(new);
+                }
+            }
+            list.extend(fresh.into_iter().flatten());
+            if list != self.slots[i].book.comments {
+                self.slots[i].book.comments = list;
+                changed.push(i);
+            }
+        }
+        changed
+    }
 }
 
 /// A document as far as a comment is concerned.
@@ -72,13 +334,13 @@ struct Cached {
 }
 
 struct Shared {
-    file: RawFile,
     scope: DocScope,
     announce: Arc<dyn Fn() + Send + Sync>,
     state: Mutex<State>,
     docs: Mutex<HashMap<String, Cached>>,
-    counter: AtomicU64,
     rev: AtomicU64,
+    /// Closed while the plugin started before the owners were known: changes wait for them.
+    gate: OwnersGate,
 }
 
 fn now_ms() -> u64 {
@@ -101,83 +363,81 @@ impl Shared {
         (self.announce)();
     }
 
-    /// Reads the file again when it is not what was last read.
-    fn refresh(&self, state: &mut State) {
-        let stamp = self.file.stamp();
-        if state.stamp == stamp && state.unreadable.is_none() {
-            return;
-        }
-        match self.file.read() {
-            Ok(Some(bytes)) => {
-                let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&bytes);
-                match serde_json::from_slice::<Book>(bytes) {
-                    Ok(book) if book.version <= VERSION => {
-                        state.book = book;
-                        state.damaged = false;
-                    }
-                    _ => {
-                        state.book = Book::default();
-                        state.damaged = true;
-                    }
-                }
-                state.unreadable = None;
-            }
-            Ok(None) => {
-                state.book = Book::default();
-                state.damaged = false;
-                state.unreadable = None;
-            }
-            Err(error) => {
-                state.unreadable = Some(error.to_string());
-                return;
-            }
-        }
-        state.stamp = stamp;
-    }
-
-    /// Writes the book (the unreadable file is put aside first).
-    fn save(&self, state: &mut State) -> Result<(), IpcError> {
-        if state.damaged {
-            let aside = self
-                .file
-                .path()
-                .with_file_name(format!("comments.unreadable-{}.json", now_ms()));
-            std::fs::rename(self.file.path(), aside)
-                .map_err(|e| IpcError::io("comments.json", &e))?;
-            state.damaged = false;
-        }
-        let bytes = serde_json::to_vec_pretty(&state.book)
-            .map_err(|e| IpcError::new(ErrorKind::Internal).detail(e.to_string()))?;
-        self.file.write(&bytes)?;
-        state.stamp = self.file.stamp();
-        Ok(())
-    }
-
-    /// Changes the comments. `change` says whether it changed anything; only then is the file written.
+    /// Changes the comments (one root-relative book over every owner's file). `change` says whether it changed
+    /// anything; only then are the files of the owners whose comments changed written.
     fn change<T>(
         &self,
         change: impl FnOnce(&mut Book) -> Result<(T, bool), IpcError>,
     ) -> Result<T, IpcError> {
+        self.gate.wait();
         let mut state = self.lock();
-        self.refresh(&mut state);
-        if let Some(why) = &state.unreadable {
+        state.refresh();
+        if let Some(why) = state.unreadable() {
             return Err(IpcError::new(ErrorKind::Unavailable)
                 .subject("comments.json")
                 .detail(why.clone()));
         }
-        let (value, changed) = change(&mut state.book)?;
+        if state.paused {
+            return Err(IpcError::new(ErrorKind::Unavailable).subject("comments.json"));
+        }
+        let mut book = state.merged();
+        let (value, changed) = change(&mut book)?;
         if changed {
-            self.save(&mut state)?;
+            let mut failed = None;
+            for i in state.split(book) {
+                if let Err(error) = state.slots[i].save() {
+                    // N9: a change that was not written is not shown either (the person was told; adding again
+                    // never makes a twin): that file is read again as it is on disk
+                    state.slots[i].stamp = None;
+                    failed = Some(error);
+                }
+            }
+            state.refresh();
             drop(state);
             self.bump();
+            if let Some(error) = failed {
+                return Err(error);
+            }
         }
         Ok(value)
     }
 
+    /// The owners change: writes stop until they are known again; then every owner's file is read again.
+    fn follow_owners(&self, change: &OwnersChange<'_>) {
+        match change {
+            OwnersChange::Pause => self.lock().paused = true,
+            OwnersChange::Resume(owners) => {
+                {
+                    let mut state = self.lock();
+                    // already running on these owners (the `Resume` told when the owners became known): nothing to do
+                    if !state.paused && state.owners.as_ref().is_some_and(|o| o.same(owners)) {
+                        drop(state);
+                        self.gate.open();
+                        return;
+                    }
+                    state.slots = owners
+                        .slots()
+                        .iter()
+                        .map(|s| Slot::new(s.store.raw_file(crate::FILE)))
+                        .collect();
+                    state.owners = Some((*owners).clone());
+                    state.paused = false;
+                    state.refresh();
+                }
+                self.docs
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .clear();
+                self.bump();
+                self.gate.open();
+            }
+        }
+    }
+
     fn comments(&self) -> Vec<Comment> {
         let mut state = self.lock();
-        self.refresh(&mut state);
-        state.book.comments.clone()
+        state.refresh();
+        state.merged().comments
     }
 
     /// The document `path` as comments see it (read again when its length or time changed).
@@ -316,23 +576,56 @@ impl CommentsService {
     /// Reads the file and starts the worker that keeps the passages found.
     #[must_use]
     pub fn start(file: RawFile, scope: DocScope, announce: Arc<dyn Fn() + Send + Sync>) -> Self {
+        Self::start_with(None, vec![file], scope, announce)
+    }
+
+    /// The comments of every owner (the opened folder + included projects, `projects.md` §9.2).
+    #[must_use]
+    pub fn start_owners(
+        owners: Owners,
+        scope: DocScope,
+        announce: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
+        let files = owners
+            .slots()
+            .iter()
+            .map(|s| s.store.raw_file(crate::FILE))
+            .collect();
+        Self::start_with(Some(owners), files, scope, announce)
+    }
+
+    /// The owners changed (`Projects::follow_owners`).
+    pub fn follow_owners(&self, change: &OwnersChange<'_>) {
+        self.shared.follow_owners(change);
+    }
+
+    /// Started before the owners were known: changes wait for the first `Resume`.
+    pub fn start_paused(&self) {
+        self.shared.gate.close();
+        self.shared.follow_owners(&OwnersChange::Pause);
+    }
+
+    fn start_with(
+        owners: Option<Owners>,
+        files: Vec<RawFile>,
+        scope: DocScope,
+        announce: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
         let shared = Arc::new(Shared {
-            file,
             scope,
             announce,
             state: Mutex::new(State {
-                book: Book::default(),
-                stamp: None,
-                damaged: false,
-                unreadable: None,
+                owners,
+                slots: files.into_iter().map(Slot::new).collect(),
+                paused: false,
             }),
             docs: Mutex::new(HashMap::new()),
-            counter: AtomicU64::new(0),
             rev: AtomicU64::new(1),
+            gate: OwnersGate::default(),
         });
         {
             let mut state = shared.lock();
-            shared.refresh(&mut state);
+            state.refresh();
         }
         let (tx, rx) = channel();
         let worker = Arc::clone(&shared);
@@ -386,8 +679,8 @@ impl CommentsService {
     ) -> Result<Vec<CommentView>, IpcError> {
         {
             let mut state = self.shared.lock();
-            self.shared.refresh(&mut state);
-            if let Some(why) = &state.unreadable {
+            state.refresh();
+            if let Some(why) = state.unreadable() {
                 return Err(IpcError::new(ErrorKind::Unavailable)
                     .subject("comments.json")
                     .detail(why.clone()));
@@ -468,7 +761,7 @@ impl CommentsService {
             },
         };
         let comment = Comment {
-            id: self.new_id(),
+            id: Self::new_id(),
             path,
             text,
             anchor,
@@ -489,9 +782,10 @@ impl CommentsService {
         Ok(view_of(&kept, &doc).0)
     }
 
-    fn new_id(&self) -> String {
-        let n = self.shared.counter.fetch_add(1, Ordering::Relaxed);
-        format!("c{:x}{:03x}", now_ms(), n % 4096)
+    fn new_id() -> String {
+        // unique across the cores of this app (one counter) and across apps writing the same file (process id)
+        let n = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        format!("c{:x}{:x}-{:x}", now_ms(), n % 4096, std::process::id())
     }
 
     /// Marks a comment done (the person did) or open again.

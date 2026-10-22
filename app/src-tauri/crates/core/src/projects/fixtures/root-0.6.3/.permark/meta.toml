@@ -1,0 +1,21 @@
+# hand note: keep the spec tags blue
+[files."sub-b/x.md"]
+owner = "kept unknown key"
+tags = ["draft"]
+
+[files."docs/a.md"]
+tags = ["spec"]
+
+[files."sub-a/notes/n.md"]
+description = "Loose notes."
+
+[files."sub-a/plan.md"]
+tags = ["spec", "needs-review"]
+description = "The plan of sub-a."
+
+[tag_styles.spec]
+color = "blue"
+icon = "book-open"
+
+[tag_styles.draft]
+color = "gray"
