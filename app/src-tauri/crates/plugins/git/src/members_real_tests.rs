@@ -268,6 +268,7 @@ fn the_root_status_leaves_out_included_projects_with_their_own_repository() {
             announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
             prefs: None,
             visit: None,
+            excluded: Vec::new(),
         });
         let paths = |service: &GitService| -> Vec<String> {
             service
@@ -298,6 +299,65 @@ fn the_root_status_leaves_out_included_projects_with_their_own_repository() {
     }
 }
 
+/// Verifier N2: members known at start are left out of the very first root status (no transient member lines).
+#[test]
+fn members_known_at_start_never_show_in_the_root_status() {
+    let (_dir, root) = base();
+    let outer = Repository::init(&root).unwrap();
+    write(
+        &root, "top.md", "t
+",
+    );
+    commit_all(&outer, "outer");
+    let member = root.join("hubs").join("a b");
+    let inner = Repository::init(&member).unwrap();
+    write(
+        &member, "in.md", "i
+",
+    );
+    commit_all(&inner, "inner");
+    write(
+        &member, "new.md", "n
+",
+    );
+    write(
+        &root, "top.md", "changed
+",
+    );
+    for (name, ops) in backends() {
+        let snapshots: Arc<Mutex<Vec<Option<GitSnapshot>>>> = Arc::default();
+        let heard = Arc::clone(&snapshots);
+        let service = GitService::start(ServiceArgs {
+            root: root.clone(),
+            worktrees: Vec::new(),
+            choice: BackendChoice::Fixed(Arc::clone(&ops)),
+            home: None,
+            timings: Timings {
+                quiet: Duration::from_millis(20),
+                max_wait: Duration::from_millis(100),
+                lock_wait: Duration::from_millis(100),
+            },
+            facts: ProjectFacts::new(None),
+            announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
+            prefs: None,
+            visit: None,
+            excluded: vec![permark_core::paths::key_of("hubs/a b")],
+        });
+        wait_until("first snapshot", || service.snapshot().is_some());
+        let all: Vec<String> = lock_vec(&snapshots)
+            .iter()
+            .flatten()
+            .flat_map(|s| s.files.iter().map(|f| f.path.clone()))
+            .collect();
+        assert!(all.contains(&"top.md".to_owned()), "{name}: {all:?}");
+        assert!(
+            !all.iter().any(|p| p.starts_with("hubs")),
+            "{name}: member files in a root snapshot: {all:?}"
+        );
+        drop(service);
+    }
+}
+
 fn lock_vec<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -325,6 +385,7 @@ fn real_env(ops: Arc<dyn GitOps>) -> Env {
         exclude: Arc::new(|_| {}),
         visit_file: Arc::new(|_| None),
         first_commits: Arc::new(|_| {}),
+        root_commits: Arc::new(|_| {}),
         announce_after: Duration::from_millis(10),
         first_commit_after: Duration::from_millis(10),
     }
@@ -551,18 +612,30 @@ fn a_project_renamed_while_closed_is_found_again_by_its_first_commit() {
         "version = 1\n\n[[project]]\nid = \"k7m2q7xd2a\"\npath = \"beta\"\nfirst_commit = \"{first}\"\n"
     );
     write(&root, ".permark/projects.toml", &record);
-    // moved while closed (same name, other parent): attached again by first commit + name, no question
+    // moved while closed (same name, other parent): the root commit is looked up in the pool after the map is
+    // ready, then the person is asked (D31: clones share the first commit; never attached silently)
     std::fs::create_dir_all(root.join("inner")).unwrap();
     std::fs::rename(&folder, root.join("inner").join("beta")).unwrap();
     let state = tempfile::tempdir().unwrap();
     let env = env_for(state.path());
     let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
-    wait_until("re-attached", || {
+    wait_until("the move question", || core.projects_view().ask.is_some());
+    let ask = core.projects_view().ask.unwrap();
+    assert_eq!(
+        (ask.was.as_str(), ask.candidate.as_str()),
+        ("beta", "inner/beta")
+    );
+    assert!(
         std::fs::read_to_string(root.join(".permark/projects.toml"))
-            .is_ok_and(|t| t.contains("path = \"inner/beta\""))
-    });
-    let view = core.projects_view();
-    assert!(view.ask.is_none());
+            .is_ok_and(|t| t.contains("path = \"beta\"")),
+        "nothing written before the answer"
+    );
+    core.projects()
+        .answer_move(&ask.uid, &ask.candidate, true)
+        .unwrap();
+    assert!(std::fs::read_to_string(root.join(".permark/projects.toml"))
+        .is_ok_and(|t| t.contains("path = \"inner/beta\"")));
+    assert!(core.projects_view().ask.is_none());
     drop(core);
     // renamed while closed (other name): the person is asked
     std::fs::rename(

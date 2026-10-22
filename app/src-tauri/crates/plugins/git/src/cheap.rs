@@ -63,14 +63,23 @@ fn is_hex_oid(text: &str) -> bool {
     (4..=64).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Whether HEAD may name `name`: a ref below `refs/` made of plain segments only. Anything else (`..`, an absolute
+/// path, a drive `C:`, a `\`) would read outside the git folder: HEAD is invalid then.
+fn valid_ref(name: &str) -> bool {
+    name.starts_with("refs/")
+        && !name.contains(['\\', ':'])
+        && name
+            .split('/')
+            .all(|s| !s.is_empty() && s != "." && s != "..")
+        && Path::new(name)
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
 /// The commit a ref names: its loose file, else its line in `packed-refs`; `None`: no such ref (unborn branch).
 fn resolve_ref(common: &Path, git_dir: &Path, name: &str) -> Option<String> {
     // a ref name never climbs out of the git folder
-    if name
-        .split('/')
-        .any(|s| s.is_empty() || s == "." || s == "..")
-        || name.contains('\\')
-    {
+    if !valid_ref(name) {
         return None;
     }
     for dir in [git_dir, common] {
@@ -98,6 +107,10 @@ fn resolve_ref(common: &Path, git_dir: &Path, name: &str) -> Option<String> {
 pub fn cheap_facts(git_dir: &Path) -> Option<Cheap> {
     let line = read_line(&git_dir.join("HEAD"))?;
     let head = if let Some(target) = line.strip_prefix("ref:").map(str::trim) {
+        if !valid_ref(target) {
+            // HEAD names something outside the git folder: not a repository PerMark reads
+            return None;
+        }
         let common = common_dir(git_dir);
         let oid = resolve_ref(&common, git_dir, target);
         HeadInfo {
@@ -164,11 +177,25 @@ mod tests {
         assert_eq!(detached.head.oid.as_deref(), Some(A));
         std::fs::write(git.join("HEAD"), "garbage\n").unwrap();
         assert_eq!(cheap_facts(git), None);
-        std::fs::write(git.join("HEAD"), "ref: refs/heads/../../../etc\n").unwrap();
-        assert!(
-            cheap_facts(git).unwrap().head.unborn,
-            "a ref never climbs out"
-        );
+        // a HEAD naming anything outside the git folder is invalid: nothing read there (verifier N1)
+        let outside = dir.path().join("outside.txt");
+        std::fs::write(&outside, format!("{A}\n")).unwrap();
+        let drive = outside.display().to_string().replace('\\', "/");
+        for bad in [
+            "refs/heads/../../../etc".to_owned(),
+            drive.clone(),
+            format!("refs/{drive}"),
+            "/etc/passwd".to_owned(),
+            "C:/x/y".to_owned(),
+            "refs\\heads\\main".to_owned(),
+            "refs/heads//main".to_owned(),
+            "../outside.txt".to_owned(),
+            "HEAD".to_owned(),
+        ] {
+            std::fs::write(git.join("HEAD"), format!("ref: {bad}\n")).unwrap();
+            assert_eq!(cheap_facts(git), None, "{bad}");
+        }
+        std::fs::write(git.join("HEAD"), "ref: refs/heads/main\n").unwrap();
         std::fs::create_dir(git.join("rebase-merge")).unwrap();
         assert_eq!(cheap_facts(git).unwrap().state, RepoState::Rebasing);
     }
