@@ -18,9 +18,9 @@ mod system;
 mod tests;
 #[cfg(windows)]
 mod tree;
+mod types;
 #[cfg(all(test, windows))]
 mod verify_tests;
-mod types;
 mod worktrees;
 
 use std::borrow::Cow;
