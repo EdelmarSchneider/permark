@@ -3,14 +3,16 @@
 //! writer's own changes on top ([`merge3`]), write only while the file still holds what was read (compare-and-swap),
 //! all under one OS lock per file ([`FileLock`]) so no writer ever slips in between.
 //!
-//! The lock lives in the temp folder (`permark-locks/<hash of the path>.lock`, empty files): nothing is added to a
-//! project or to the profile. No lock file to be had (temp folder not writable) -> the compare-and-swap alone still
-//! refuses to write over a version this writer has not read. A writer that holds the lock too long (a hung program;
+//! The lock lives in a folder private to the user (`permark-locks/<hash of the path>.lock`, empty files): nothing is
+//! added to a project or to the profile. Windows + macOS: the user's own temp folder. Linux | BSD (`/tmp` is shared by
+//! every user there): `$XDG_RUNTIME_DIR`, else the user cache folder; the folder must be a real folder (no link),
+//! owned by this user, mode 0700 (tightened when wider), so nobody else can hold a lock or plant a link in it. No such
+//! folder to be had -> the compare-and-swap alone still refuses to write over a version this writer has not read. A writer that holds the lock too long (a hung program;
 //! the OS frees the lock of a program that ends) -> this write fails and is tried again later, never made unlocked.
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions, TryLockError};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::paths::CASE_INSENSITIVE;
@@ -36,10 +38,9 @@ pub struct FileLock {
 /// # Errors
 /// `WouldBlock`: another writer held it longer than [`WAIT`] (the caller does not write now).
 pub fn lock_for(path: &Path) -> std::io::Result<Option<FileLock>> {
-    let dir = std::env::temp_dir().join("permark-locks");
-    if std::fs::create_dir_all(&dir).is_err() {
+    let Some(dir) = lock_dir() else {
         return Ok(None);
-    }
+    };
     let mut key = dunce::simplified(path).to_string_lossy().into_owned();
     if CASE_INSENSITIVE {
         key = key.to_lowercase();
@@ -70,6 +71,49 @@ pub fn lock_for(path: &Path) -> std::io::Result<Option<FileLock>> {
             Err(TryLockError::Error(_)) => return Ok(None),
         }
     }
+}
+
+/// The folder of the lock files, private to this user (`None`: none to be had; compare-and-swap alone).
+fn lock_dir() -> Option<PathBuf> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let runtime = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from);
+        let bases: Vec<PathBuf> = runtime
+            .into_iter()
+            .chain(dirs::cache_dir())
+            .filter(|p| p.is_absolute())
+            .collect();
+        private_dir(&bases)
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        // per-user already (Windows `%TEMP%`, macOS `$TMPDIR`)
+        let dir = std::env::temp_dir().join("permark-locks");
+        std::fs::create_dir_all(&dir).ok()?;
+        Some(dir)
+    }
+}
+
+/// `<base>/permark-locks` of the first base where it is (or is made) a real folder owned by this user, mode 0700.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn private_dir(bases: &[PathBuf]) -> Option<PathBuf> {
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
+    let me = rustix::process::geteuid().as_raw();
+    bases.iter().find_map(|base| {
+        let dir = base.join("permark-locks");
+        let _ = std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir);
+        let meta = std::fs::symlink_metadata(&dir).ok()?;
+        if !meta.file_type().is_dir() || meta.uid() != me {
+            return None;
+        }
+        if meta.mode() & 0o077 != 0 {
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).ok()?;
+        }
+        Some(dir)
+    })
 }
 
 /// Three-way merge of keyed entries: what this writer changed since `base` (added, changed, removed) goes on top of
@@ -283,7 +327,7 @@ mod verify_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("Case.json");
         let other = dir.path().join("case.JSON");
-        let _held = lock_for(&path).unwrap().expect("lock");
+        let held = lock_for(&path).unwrap().expect("lock");
         let start = Instant::now();
         let t = std::thread::spawn(move || {
             // either shares the lock (waits) or not; on case-insensitive systems it must wait
@@ -294,8 +338,58 @@ mod verify_tests {
         if CASE_INSENSITIVE {
             assert!(!finished, "case variant must share the lock");
         }
-        drop(_held);
+        drop(held);
         t.join().unwrap();
         let _ = start;
+    }
+}
+
+#[cfg(all(test, unix, not(target_os = "macos")))]
+mod private_dir_tests {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+
+    use super::*;
+
+    #[test]
+    fn the_lock_folder_is_private_and_a_link_or_a_foreign_folder_is_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let fresh = dir.path().join("fresh");
+        let got = private_dir(&[fresh.clone()]).unwrap();
+        assert_eq!(got, fresh.join("permark-locks"));
+        let meta = std::fs::metadata(&got).unwrap();
+        assert_eq!(meta.mode() & 0o777, 0o700);
+        assert_eq!(meta.uid(), rustix::process::geteuid().as_raw());
+        // made by an older build (0755): tightened
+        let wide = dir.path().join("wide");
+        std::fs::create_dir_all(wide.join("permark-locks")).unwrap();
+        std::fs::set_permissions(
+            wide.join("permark-locks"),
+            std::fs::Permissions::from_mode(0o755),
+        )
+        .unwrap();
+        let got = private_dir(&[wide.clone()]).unwrap();
+        assert_eq!(std::fs::metadata(&got).unwrap().mode() & 0o777, 0o700);
+        // a link in place of the folder: never used, the next base is
+        let linked = dir.path().join("linked");
+        std::fs::create_dir_all(&linked).unwrap();
+        std::os::unix::fs::symlink(&fresh, linked.join("permark-locks")).unwrap();
+        assert_eq!(
+            private_dir(&[linked.clone(), wide.clone()]),
+            Some(wide.join("permark-locks"))
+        );
+        assert_eq!(private_dir(&[linked]), None);
+        // a file in the way
+        let file = dir.path().join("file");
+        std::fs::create_dir_all(&file).unwrap();
+        std::fs::write(file.join("permark-locks"), b"x").unwrap();
+        assert_eq!(private_dir(&[file]), None);
+    }
+
+    #[test]
+    fn locks_still_work_in_the_private_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        let held = lock_for(&path).unwrap();
+        assert!(held.is_some(), "a lock to be had on this system");
     }
 }
