@@ -1,6 +1,14 @@
 //! What the organizing plugins (tags, silence, comments, unread) hand to core consumers: search and the agent
 //! connection. Typed, data-only, offered through [`crate::plugins::Services`] while the plugin runs (RAII lease); a
 //! consumer asks `services.get::<TagsApi>()` and works without when there is none.
+//!
+//! Also the person's tag data itself, shared by the `tags` plugin, the index pass (front matter tags, `projects.md`
+//! §7.3) and the one-time copy of 0.6 state into included projects (§9.3): tag rules ([`normalize`]), front matter
+//! tags ([`frontmatter`]), the `meta.toml` layout with its surgical writer ([`meta`]).
+
+pub mod frontmatter;
+pub mod meta;
+pub mod normalize;
 
 use std::collections::HashSet;
 use std::sync::Arc;

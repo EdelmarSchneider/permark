@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "comments": [
+    {
+      "id": "c1f9a0000001",
+      "path": "docs/a.md",
+      "text": "Root comment",
+      "anchor": {
+        "quote": "alpha beta",
+        "before": "intro",
+        "headingPath": [
+          "Plan"
+        ],
+        "line": 3,
+        "endLine": 4
+      },
+      "createdMs": 1760000000000,
+      "done": null
+    },
+    {
+      "id": "c1f9a0000002",
+      "path": "sub-a/plan.md",
+      "text": "Check this plan",
+      "anchor": {
+        "quote": "alpha beta",
+        "before": "intro",
+        "headingPath": [
+          "Plan"
+        ],
+        "line": 3,
+        "endLine": 4
+      },
+      "createdMs": 1760000000000,
+      "done": {
+        "atMs": 1760000100000,
+        "by": "agent",
+        "reply": "Fixed."
+      },
+      "replies": [
+        {
+          "atMs": 1760000050000,
+          "by": "user",
+          "text": "Please fix."
+        }
+      ],
+      "futureKey": "kept"
+    },
+    {
+      "id": "c1f9a0000003",
+      "path": "sub-b/x.md",
+      "text": "Profile-side comment",
+      "anchor": {
+        "quote": "alpha beta",
+        "before": "intro",
+        "headingPath": [
+          "Plan"
+        ],
+        "line": 3,
+        "endLine": 4
+      },
+      "createdMs": 1760000000000,
+      "done": null
+    },
+    {
+      "id": "c1f9a0000004",
+      "path": "sub-bc/y.md",
+      "text": "Sibling, not inside sub-b",
+      "anchor": {
+        "quote": "alpha beta",
+        "before": "intro",
+        "headingPath": [
+          "Plan"
+        ],
+        "line": 3,
+        "endLine": 4
+      },
+      "createdMs": 1760000000000,
+      "done": null
+    }
+  ],
+  "futureTop": 7
+}

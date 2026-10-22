@@ -63,6 +63,8 @@ pub struct Prepared {
     pub sections: Vec<SectionInput>,
     /// Keys of the project paths the document links to (each once).
     pub links: Vec<String>,
+    /// Markdown: the front matter tags (`projects.md` §7.3 harvest; the same text, read once).
+    pub fm_tags: Option<Vec<String>>,
 }
 
 /// File name without folder and extension: `docs/retry-policy.md` -> `retry-policy`.
@@ -184,10 +186,42 @@ pub fn prepare(path: &str, sig: Sig, text: &str, category: Category) -> Prepared
     } else {
         Vec::new()
     };
+    let fm_tags = (category == Category::Markdown).then(|| front_matter_tags(text));
     Prepared {
         path: Arc::from(path),
         sig,
         sections: inputs,
         links,
+        fm_tags,
     }
 }
+
+/// Front matter tags of a document's text: the first [`HEAD_BYTES`] only, as the `tags` plugin always read them.
+#[must_use]
+pub fn front_matter_tags(text: &str) -> Vec<String> {
+    let mut end = text.len().min(HEAD_BYTES);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    crate::organizing::frontmatter::from_text(&text[..end])
+}
+
+/// The front matter tags of a Markdown file too large for the index: its head only (no full read).
+#[must_use]
+pub fn head_tags(abs: &Path) -> Option<(Vec<String>, Sig)> {
+    use std::io::Read;
+    let meta = std::fs::metadata(abs).ok()?;
+    if !meta.is_file() {
+        return None;
+    }
+    let mut head = Vec::new();
+    std::fs::File::open(abs)
+        .ok()?
+        .take(HEAD_BYTES as u64)
+        .read_to_end(&mut head)
+        .ok()?;
+    let text = crate::fsx::decode(&head)?.text;
+    Some((front_matter_tags(&text), Sig::of(&meta)))
+}
+
+use crate::organizing::frontmatter::HEAD_BYTES;

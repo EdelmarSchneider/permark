@@ -4,6 +4,7 @@
 mod bm25;
 mod fold;
 mod fuzzy;
+pub mod harvest;
 mod index;
 mod prepare;
 #[cfg(test)]
@@ -227,11 +228,14 @@ pub(crate) struct Shared {
     pub(crate) index: RwLock<Index>,
     status: Mutex<StatusInner>,
     ready: Condvar,
+    /// Front matter tags of the Markdown documents, from the same reads (`projects.md` §7.3).
+    pub(crate) harvest: Arc<harvest::Harvest>,
 }
 
 impl Shared {
     fn new() -> Self {
         Self {
+            harvest: Arc::new(harvest::Harvest::default()),
             index: RwLock::new(Index::new()),
             status: Mutex::new(StatusInner {
                 phase: IndexPhase::Building,
@@ -330,6 +334,12 @@ impl SearchIndex {
             stop,
             thread: Mutex::new(thread),
         }
+    }
+
+    /// Front matter tags of the Markdown documents, taken from the index pass (`projects.md` §7.3 `HarvestApi`).
+    #[must_use]
+    pub fn harvest(&self) -> &Arc<harvest::Harvest> {
+        &self.shared.harvest
     }
 
     /// The formats that are on changed: config files are read again for their keys.

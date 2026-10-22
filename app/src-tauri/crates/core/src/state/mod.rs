@@ -460,6 +460,12 @@ impl StateStore {
         }
     }
 
+    /// A raw file in a plugin's namespace (the one-time copy of 0.6 state writes the plugins' files as they are).
+    #[must_use]
+    pub fn plugin_raw_file(&self, id: &PluginId, name: &str) -> RawFile {
+        RawFile::private(self.plugin_dir(id).join(name), self.guard.clone())
+    }
+
     /// Deletes a plugin's namespace (state + cache). Missing = done. A link in its place is removed as a link
     /// (never followed).
     ///

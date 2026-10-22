@@ -1410,3 +1410,91 @@ fn hidden_means_a_dot_segment_below_the_root() {
     assert!(is_hidden_path("@wt/feature/.github/ci.yml"));
     assert!(!is_hidden_path(""));
 }
+
+// ---- harvest: front matter tags from the index pass (`projects.md` §7.3) -------------------------------------------
+
+/// 10 000 tagged documents: every one read once by the pass, its tags in the harvest; a change | removal from the
+/// watch updates only that document; a Markdown file larger than the index reads still gives its tags (head only).
+#[test]
+fn harvest_takes_front_matter_tags_from_the_one_pass_and_follows_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    for n in 0..10_000 {
+        write(
+            dir.path(),
+            &format!("d{}/n{n}.md", n % 100),
+            &format!("---\ntags: [t{}, shared]\n---\n# N{n}\n", n % 7),
+        );
+    }
+    write(dir.path(), "plain.md", "# no front matter\n");
+    write(
+        dir.path(),
+        "toml.md",
+        "+++\ntags = [\"Toml Tag\"]\n+++\nx\n",
+    );
+    let big = format!(
+        "---\ntags: [huge]\n---\n{}",
+        "word ".repeat(usize::try_from(MARKDOWN_LIMIT).unwrap() / 5 + 10)
+    );
+    write(dir.path(), "big.md", &big);
+    let vault = Vault::new(Root::open(dir.path()).unwrap());
+    let sink = Arc::new(Recorder::default());
+    let explorer = Arc::new(Explorer::new(
+        &vault,
+        &ProjectConfig::default(),
+        sink.clone(),
+        None,
+    ));
+    let index = SearchIndex::start(vault, explorer, sink, "root".to_owned());
+    let started = Instant::now();
+    assert!(index.harvest().wait_ready(Duration::from_secs(120)));
+    let took = started.elapsed();
+    let docs = index.harvest().snapshot();
+    assert_eq!(
+        docs.len(),
+        10_003,
+        "every Markdown document, tagged or not ({took:?})"
+    );
+    assert_eq!(docs["d3/n3.md"].tags, ["t3", "shared"]);
+    assert!(docs["plain.md"].tags.is_empty());
+    assert_eq!(docs["toml.md"].tags, ["toml-tag"]);
+    assert_eq!(
+        docs["big.md"].tags,
+        ["huge"],
+        "too large for the index: head only"
+    );
+
+    let rev = index.harvest().rev();
+    write(dir.path(), "d3/n3.md", "---\ntags: [changed]\n---\n# N3\n");
+    let feed = index.feeder();
+    let change = |path: &str, kind: ChangeKind| Change {
+        path: path.to_owned(),
+        kind,
+        is_dir: false,
+        own: false,
+    };
+    feed(&FsBatch {
+        changes: vec![change("d3/n3.md", ChangeKind::Modified)],
+        ..FsBatch::default()
+    });
+    let wait = |what: &str, ok: &dyn Fn() -> bool| {
+        let start = Instant::now();
+        while !ok() {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "timed out: {what}"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    wait("changed tags", &|| {
+        index.harvest().tags_of("d3/n3.md") == Some(vec!["changed".to_owned()])
+    });
+    assert!(index.harvest().rev() > rev);
+    fs::remove_file(dir.path().join("d3/n3.md")).unwrap();
+    feed(&FsBatch {
+        changes: vec![change("d3/n3.md", ChangeKind::Removed)],
+        ..FsBatch::default()
+    });
+    wait("removed", &|| index.harvest().tags_of("d3/n3.md").is_none());
+    assert_eq!(index.harvest().snapshot().len(), 10_002);
+}

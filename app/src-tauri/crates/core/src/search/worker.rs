@@ -8,7 +8,8 @@ use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError};
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
-use super::prepare::{read_and_prepare, reads_content, Prepared, Sig};
+use super::harvest::DocTags;
+use super::prepare::{head_tags, read_and_prepare, reads_content, Prepared, Sig};
 use super::{IndexPhase, IndexProgress, Shared};
 use crate::events::{CoreEvent, EventSink};
 use crate::format::FormatRegistry;
@@ -49,8 +50,22 @@ pub struct Worker {
 enum Outcome {
     Unchanged,
     Read(Prepared, Category),
-    /// Not readable as text (binary, too large, vanished): listed by name only.
-    NameOnly(String),
+    /// Not readable as text (binary, too large, vanished): listed by name only (a Markdown file too large for the
+    /// index still gives its front matter tags, read from its head).
+    NameOnly(String, Option<DocTags>),
+}
+
+/// The harvest entry of a prepared Markdown document.
+fn harvested(prepared: &mut Prepared) -> Option<(String, DocTags)> {
+    let tags = prepared.fm_tags.take()?;
+    Some((
+        prepared.path.to_string(),
+        DocTags {
+            tags,
+            len: prepared.sig.len,
+            mtime_ms: prepared.sig.mtime_ms,
+        },
+    ))
 }
 
 impl Worker {
@@ -62,17 +77,33 @@ impl Worker {
         self.reconcile(true);
         loop {
             if self.stopped() {
+                self.shared.harvest.write_cache();
                 return;
             }
-            let Ok(first) = rx.recv() else {
-                return;
+            // the harvest cache is written once changes rest (`projects.md` §7.3: 2 s after the last)
+            let first = match self.shared.harvest.cache_due() {
+                Some(due) => match rx.recv_timeout(due) {
+                    Ok(msg) => msg,
+                    Err(RecvTimeoutError::Timeout) => {
+                        self.shared.harvest.write_cache();
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => return,
+                },
+                None => match rx.recv() {
+                    Ok(msg) => msg,
+                    Err(_) => return,
+                },
             };
             let mut changes: Vec<Change> = Vec::new();
             let mut reconcile = false;
             let mut next = Some(first);
             while let Some(msg) = next {
                 match msg {
-                    Msg::Stop => return,
+                    Msg::Stop => {
+                        self.shared.harvest.write_cache();
+                        return;
+                    }
                     Msg::FormatsChanged => {
                         self.forget_config_content();
                         reconcile = true;
@@ -179,6 +210,8 @@ impl Worker {
                     index.remove_file(path);
                 }
             }
+            // entries known from the cache only (files gone while closed)
+            self.shared.harvest.keep_only(&on_disk);
         }
         // 2. new files join the list
         for chunk in files.chunks(LIST_BATCH) {
@@ -207,6 +240,7 @@ impl Worker {
         }
         if initial {
             self.shared.set_ready();
+            self.shared.harvest.set_ready();
             self.emit(IndexPhase::Ready, total, total);
         }
         self.publish_linked();
@@ -281,7 +315,7 @@ impl Worker {
                 pending.push(outcome);
             }
             if pending.len() >= BATCH || ((idle || finished) && !pending.is_empty()) {
-                self.insert(std::mem::take(&mut pending));
+                self.insert(std::mem::take(&mut pending), initial);
             }
             if initial && (last_event.elapsed() >= PROGRESS_EVERY || finished) {
                 self.shared.set_building(done, total);
@@ -296,23 +330,36 @@ impl Worker {
         // drops its sender); without this the scope never ends and the index drop hangs (CI 39698724615)
         for _ in rx {}
         if !pending.is_empty() {
-            self.insert(pending);
+            self.insert(pending, initial);
         }
     }
 
-    fn insert(&self, batch: Vec<Outcome>) {
-        let mut index = self
-            .shared
-            .index
-            .write()
-            .unwrap_or_else(PoisonError::into_inner);
-        for outcome in batch {
-            match outcome {
-                Outcome::Unchanged => {}
-                Outcome::Read(prepared, category) => index.upsert_doc(prepared, category),
-                Outcome::NameOnly(path) => index.drop_content(&path),
+    fn insert(&self, batch: Vec<Outcome>, building: bool) {
+        let mut tags = Vec::new();
+        {
+            let mut index = self
+                .shared
+                .index
+                .write()
+                .unwrap_or_else(PoisonError::into_inner);
+            for outcome in batch {
+                match outcome {
+                    Outcome::Unchanged => {}
+                    Outcome::Read(mut prepared, category) => {
+                        tags.extend(harvested(&mut prepared));
+                        index.upsert_doc(prepared, category);
+                    }
+                    Outcome::NameOnly(path, doc) => {
+                        index.drop_content(&path);
+                        if let Some(doc) = doc {
+                            tags.push((path, doc));
+                        }
+                    }
+                }
             }
         }
+        self.shared.harvest.put(tags, building);
+        self.shared.harvest.tell(building);
     }
 
     // ---- incremental: one watch batch ------------------------------------------------------------------------------
@@ -343,16 +390,19 @@ impl Worker {
     }
 
     fn forget(&self, path: &str, is_dir: bool) {
-        let mut index = self
-            .shared
-            .index
-            .write()
-            .unwrap_or_else(PoisonError::into_inner);
-        if is_dir {
-            index.remove_under(path);
-        } else {
-            index.remove_file(path);
+        {
+            let mut index = self
+                .shared
+                .index
+                .write()
+                .unwrap_or_else(PoisonError::into_inner);
+            if is_dir {
+                index.remove_under(path);
+            } else {
+                index.remove_file(path);
+            }
         }
+        self.shared.harvest.remove(path, is_dir);
     }
 
     /// A file appeared or changed: it joins the list; documents are read again when their length or time differ.
@@ -391,16 +441,7 @@ impl Worker {
         }
         // read outside the lock
         let outcome = outcome_of(path, &abs, category, None, &self.formats());
-        let mut index = self
-            .shared
-            .index
-            .write()
-            .unwrap_or_else(PoisonError::into_inner);
-        match outcome {
-            Outcome::Read(prepared, category) => index.upsert_doc(prepared, category),
-            Outcome::NameOnly(path) => index.drop_content(&path),
-            Outcome::Unchanged => {}
-        }
+        self.insert(vec![outcome], false);
     }
 }
 
@@ -424,7 +465,17 @@ fn outcome_of(
     }
     match read_and_prepare(path, abs, category, formats) {
         Some(prepared) => Outcome::Read(prepared, category),
-        None => Outcome::NameOnly(path.to_owned()),
+        None => Outcome::NameOnly(
+            path.to_owned(),
+            (category == Category::Markdown)
+                .then(|| head_tags(abs))
+                .flatten()
+                .map(|(tags, sig)| DocTags {
+                    tags,
+                    len: sig.len,
+                    mtime_ms: sig.mtime_ms,
+                }),
+        ),
     }
 }
 
