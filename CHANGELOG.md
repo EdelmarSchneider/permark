@@ -31,6 +31,7 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - Closing a tab or a window, or opening another folder in it, no longer gets stuck when PerMark is still reading a large folder for search. Before, that could happen now and then, and the folder was never let go. <!-- f: search, tabs -->
 - The back and forward side buttons of the mouse work again: they go back and forward through the documents you viewed, like `Alt+Left` and `Alt+Right` and the Back and Forward buttons. They work while you read, in Edit and Source, and with the pointer over the side panels; they do nothing while a dialog or the search box is open. <!-- f: links-and-history -->
 - When an agent names itself in a request, PerMark now always shows and records that name. Before, the name it gave when it connected could sometimes replace it a moment later. <!-- f: agent-connection -->
+- On Windows, renaming, moving or deleting a project folder right after PerMark stopped asking git about it (for example after you close the folder or leave the project out) no longer fails because the folder is "in use". Before, a git program that PerMark had stopped could keep running in that folder for a few seconds. <!-- f: git-status, nested-projects -->
 
 ## [0.6.3] - 2026-10-21
 
