@@ -268,7 +268,7 @@ fn the_root_status_leaves_out_included_projects_with_their_own_repository() {
             announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
             prefs: None,
             visit: None,
-            excluded: Vec::new(),
+            excluded: Box::new(Vec::new),
         });
         let paths = |service: &GitService| -> Vec<String> {
             service
@@ -341,7 +341,11 @@ fn members_known_at_start_never_show_in_the_root_status() {
             announce: Arc::new(move |s| lock_vec(&heard).push(s.cloned())),
             prefs: None,
             visit: None,
-            excluded: vec![permark_core::paths::key_of("hubs/a b")],
+            // asked late (the members still being read): the first look waits for the answer
+            excluded: Box::new(|| {
+                std::thread::sleep(Duration::from_millis(150));
+                vec![permark_core::paths::key_of("hubs/a b")]
+            }),
         });
         wait_until("first snapshot", || service.snapshot().is_some());
         let all: Vec<String> = lock_vec(&snapshots)
@@ -790,4 +794,81 @@ fn route_sends_member_paths_to_their_repository_only() {
     };
     assert_eq!(route(Some(&map), &rescan), (Some(Why::Files), vec![]));
     let _ = Discovery::NoRepo;
+}
+
+/// Perf F1 (`perf-nested-projects.md`): opening a project reads no member repository on the opening thread (counted,
+/// not timed: 0 member folders read for 1 and for 40 listed repositories); their cheap facts follow off the open call.
+#[test]
+fn opening_reads_no_member_repository_on_the_open_call() {
+    use std::fmt::Write as _;
+    for n in [1_usize, 40] {
+        let (_dir, root) = base();
+        let mut record = String::from("version = 1\n");
+        for i in 0..n {
+            write(
+                &root,
+                &format!("hubs/r {i}/.git/HEAD"),
+                "ref: refs/heads/main\n",
+            );
+            write(&root, &format!("hubs/r {i}/doc.md"), "d\n");
+            let _ = write!(record, "\n[[project]]\npath = \"hubs/r {i}\"\n");
+        }
+        write(&root, ".permark/projects.toml", &record);
+        let state = tempfile::tempdir().unwrap();
+        let env = env_for(state.path());
+        let before = crate::cheap::LOCATIONS_READ.with(std::cell::Cell::get);
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+        let read = crate::cheap::LOCATIONS_READ.with(std::cell::Cell::get) - before;
+        assert_eq!(read, 0, "{n} listed: member repositories read at open");
+        wait_until("the cheap facts of every member", || {
+            call(&core, "repos", serde_json::Value::Null)
+                .as_array()
+                .is_some_and(|a| a.len() == n && a.iter().all(|r| r["branch"] == "main"))
+        });
+        drop(core);
+    }
+}
+
+/// Adversarial (F1): the members' keys asked before the first look come late; a list set meanwhile is newer and wins.
+#[test]
+fn a_list_set_before_the_first_look_beats_the_one_asked_at_start() {
+    let (_dir, root) = base();
+    let outer = Repository::init(&root).unwrap();
+    write(&root, "top.md", "t\n");
+    commit_all(&outer, "outer");
+    let member = root.join("hubs").join("a b");
+    let inner = Repository::init(&member).unwrap();
+    write(&member, "in.md", "i\n");
+    commit_all(&inner, "inner");
+    write(&member, "new.md", "n\n");
+    let (_, ops) = backends().remove(0);
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let service = GitService::start(ServiceArgs {
+        root: root.clone(),
+        worktrees: Vec::new(),
+        choice: BackendChoice::Fixed(ops),
+        home: None,
+        timings: Timings {
+            quiet: Duration::from_millis(20),
+            max_wait: Duration::from_millis(100),
+            lock_wait: Duration::from_millis(100),
+        },
+        facts: ProjectFacts::new(None),
+        announce: Arc::new(|_| {}),
+        prefs: None,
+        visit: None,
+        excluded: Box::new(move || {
+            let _ = rx.recv();
+            vec![permark_core::paths::key_of("hubs/a b")]
+        }),
+    });
+    // the member left the map before the worker's question came back
+    service.set_excluded(Vec::new());
+    tx.send(()).unwrap();
+    wait_until("the member's files in the root status", || {
+        service
+            .snapshot()
+            .is_some_and(|s| s.files.iter().any(|f| f.path.starts_with("hubs/a b")))
+    });
+    drop(service);
 }

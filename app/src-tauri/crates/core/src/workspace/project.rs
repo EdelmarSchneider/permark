@@ -360,7 +360,7 @@ impl ProjectCore {
             let explorer = Arc::clone(&explorer);
             move |batch| explorer.apply_batch(batch)
         });
-        // the included projects shape the walk: known before it starts (a plain folder: one failed open)
+        // the included projects shape the walk: read before it starts, never here (open costs the same for any record)
         let projects = Projects::open(
             vault.main(),
             &env.dirs,
@@ -543,6 +543,7 @@ impl ProjectCore {
         }
         if let Some(uid) = &options.project {
             // "This project": the member's subtree, projects inside it included
+            self.projects.load();
             let map = self.projects.snapshot();
             let member = map.member(uid).ok_or_else(|| {
                 crate::IpcError::new(crate::ErrorKind::NotFound).subject(uid.as_str().to_owned())
