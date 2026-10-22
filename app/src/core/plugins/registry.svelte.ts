@@ -48,7 +48,8 @@ export type OutlineCell = { text: string; title?: string };
 /**
  * A short fact a plugin knows about an included project (its branch, what its repository is doing). `chip`: a state
  * (drawn as a chip, as in the status bar; never cut); `warn`: a problem (a warning mark before `text`); `branch`:
- * `text` is a branch name (a branch mark before it, so it reads apart from the project's short name); `spoken`: what
+ * `text` is a branch name (a branch mark before it, so it reads apart from the project's short name); `commit`: `text`
+ * is a commit (a commit mark before it: not on a branch); `spoken`: what
  * the screen-reader name adds after the visible words (none: nothing); `title`: the tooltip (else `text`).
  */
 export type ProjectFact = {
@@ -56,6 +57,7 @@ export type ProjectFact = {
   chip?: boolean;
   warn?: boolean;
   branch?: boolean;
+  commit?: boolean;
   spoken?: string;
   title?: string;
 };
@@ -157,6 +159,11 @@ export type Contribution = Owned &
         note: () => string | null;
         card: LazyComponent<ProjectCardProps>;
       }
+    /**
+     * A short count a plugin keeps about an included project, for the counts line of its detail card ("2 open
+     * comments"; joined with " · " after the folder's badge titles). Reads reactive state; `null` = nothing to say.
+     */
+    | { kind: "projectCount"; id: string; count: (row: ProjectRow) => string | null }
     /** An entry of the Explorer's context menu (a single row). */
     | {
         kind: "treeMenu";

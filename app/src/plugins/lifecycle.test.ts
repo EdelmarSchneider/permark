@@ -134,6 +134,7 @@ describe("the organizing plugins", () => {
       "command",
       "docDecoration",
       "panel",
+      "projectCount",
       "selectionMenu",
       "shortcut",
       "statusItem",

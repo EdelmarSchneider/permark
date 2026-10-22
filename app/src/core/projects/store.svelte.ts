@@ -17,6 +17,7 @@ import type {
   ProjectsView,
   Result,
   Unlisten,
+  VocabularyKind,
 } from "../../api";
 import { apiErrorText } from "../errors";
 import { t, tn } from "../i18n";
@@ -29,6 +30,7 @@ import {
   stripOf,
   type Strip,
 } from "./model";
+import { vocabularyErrorText } from "./vocabulary";
 
 /** Wait after `projects-changed` before the view is read again (spec: 100 ms debounce). */
 export const RELOAD_MS = 100;
@@ -137,6 +139,8 @@ export class ProjectsStore {
   /** Settings > Projects inside exists here (a list, or >= 1 project found). */
   present = $derived(this.view?.present === true);
   readOnly = $derived(this.view !== null && readOnly(this.view));
+  /** The opened folder's name as its card says it (official lists, rules). */
+  rootName = $derived(this.view?.rootCard.name ?? "");
 
   #timer: ReturnType<typeof setTimeout> | null = null;
   #sayTimer: ReturnType<typeof setTimeout> | null = null;
@@ -453,6 +457,25 @@ export class ProjectsStore {
     }
     await this.reload();
     return result.value;
+  }
+
+  /** Makes a tag | category official in the opened folder (`.permark/vocabulary.toml`; the backend copies a local
+   *  look). The mark changes where it shows and the screen reader hears it; a refusal is said. Returns whether it is
+   *  official now. */
+  async promote(kind: VocabularyKind, name: string): Promise<boolean> {
+    const result = await this.#api.vocabularyPromote(kind, name);
+    if (!result.ok) {
+      this.#host.fail(vocabularyErrorText(result.error));
+      return false;
+    }
+    await this.reload();
+    this.announce(
+      t(kind === "tag" ? "tags.promoted" : "projects.category.promoted", {
+        name,
+        root: this.rootName,
+      }),
+    );
+    return true;
   }
 
   // ---- what the window looks at ----------------------------------------------------------------------------------

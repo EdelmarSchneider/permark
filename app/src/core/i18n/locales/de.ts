@@ -2078,4 +2078,50 @@ export default {
   "projects.card.gitError": "Git kann dieses Projekt nicht lesen.",
   "projects.card.noCommits": "Noch keine Commits",
   "projects.status.prefix": "{short} ·",
+  // ---- projects round 4: official | local | unlisted, promote, official lists
+  "tags.status.official": "Offiziell",
+  "tags.status.local": "Lokal in {short}",
+  "tags.status.localAny": "Lokal in einem Projekt",
+  "tags.status.unlisted": "Nicht gelistet (in Dateien gefunden, in keiner Liste)",
+  "projects.category.unlisted": "Nicht gelistet (in keiner Liste)",
+  "tags.promote": "In {root} offiziell machen",
+  "projects.category.promote": "In {root} offiziell machen",
+  "tags.promoteAsk": "„{name}“ wird ein offizielles Tag für jedes Projekt in {root}.",
+  "projects.category.promoteAsk":
+    "„{name}“ wird eine offizielle Kategorie für jedes Projekt in {root}.",
+  "tags.promoteConfirm": "Offiziell machen",
+  "tags.promoted": "„{name}“ ist jetzt ein offizielles Tag von {root}.",
+  "projects.category.promoted": "„{name}“ ist jetzt eine offizielle Kategorie von {root}.",
+  "tags.officialLook": "Farbe und Symbol kommen aus der offiziellen Liste von {root}.",
+  "projects.vocabulary.saves":
+    "PerMark speichert die offizielle Liste in diesem Ordner (.permark/vocabulary.toml).",
+  "projects.vocabulary.creates": "PerMark legt .permark/vocabulary.toml in diesem Ordner an.",
+  "projects.vocabulary.title": "Offizielle Tags und Kategorien",
+  "projects.vocabulary.intro":
+    "Offizielle Tags und Kategorien gelten für jedes Projekt in {root}. Eigene Namen eines Projekts zählen als lokal; Tags, die nur in Dateien stehen, sind nicht gelistet.",
+  "projects.vocabulary.tags": "Offizielle Tags",
+  "projects.vocabulary.categories": "Offizielle Kategorien",
+  "projects.vocabulary.none": "Noch keine.",
+  "projects.vocabulary.addTag": "Neues offizielles Tag",
+  "projects.vocabulary.addCategory": "Neue offizielle Kategorie",
+  "projects.vocabulary.add": "Hinzufügen",
+  "projects.vocabulary.typeName": "Zuerst einen Namen eingeben.",
+  "projects.vocabulary.already": "„{name}“ ist bereits offiziell.",
+  "projects.vocabulary.editHint":
+    "Zum Umbenennen oder Entfernen eines Namens oder um Farbe und Symbol zu ändern, die Datei bearbeiten.",
+  "projects.vocabulary.unreadable":
+    "Die offizielle Liste in diesem Ordner kann nicht gelesen werden (Zeile {line}). PerMark ändert sie erst, wenn sie repariert ist.",
+  "projects.vocabulary.newer":
+    "Die offizielle Liste wurde von einer neueren PerMark-Version geschrieben. Änderungen sind aus, bis PerMark aktualisiert ist.",
+  "projects.vocabulary.unavailable":
+    "Die offizielle Liste dieses Ordners kann gerade nicht geändert werden.",
+  "projects.vocabulary.conflict":
+    "Die offizielle Liste hat sich beim Speichern geändert. Bitte erneut versuchen.",
+  "projects.rules.tags": "Tags",
+  "projects.rules.tagsInfo.one":
+    "Nutzt die offiziellen Tags von {root}; 1 eigenes zählt als lokal.",
+  "projects.rules.tagsInfo.other":
+    "Nutzt die offiziellen Tags von {root}; {n} eigene zählen als lokal.",
+  "comments.projectCount.one": "1 offener Kommentar",
+  "comments.projectCount.other": "{n} offene Kommentare",
 } satisfies Messages;

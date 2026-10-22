@@ -5,7 +5,7 @@
 import type { ApiError, CommentView } from "../../api";
 import { documents } from "../../core/doc/document.svelte";
 import { apiErrorText } from "../../core/errors";
-import { t } from "../../core/i18n";
+import { t, tn } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import type { PageSelection } from "../../core/plugins/props";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
@@ -138,6 +138,13 @@ export class CommentsStore {
     return n === 0
       ? null
       : { text: String(n), tone: "muted", title: t("comments.badgeHint", { n }) };
+  }
+
+  /** Open comments on documents at | below a folder (a project's detail card); `null` when there are none. */
+  projectCount(folder: string): string | null {
+    const prefix = `${folder}/`;
+    const n = this.all.filter((c) => !c.done && c.path.startsWith(prefix)).length;
+    return n === 0 ? null : tn("comments.projectCount", n);
   }
 
   // ---- writing ------------------------------------------------------------------------------------------------

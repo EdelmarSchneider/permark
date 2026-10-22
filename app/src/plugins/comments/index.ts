@@ -23,6 +23,12 @@ export default definePlugin({
         badge: (path, isDir) => comments.badge(path, isDir),
       }),
       cx.contribute({
+        kind: "projectCount",
+        id: "comments.projectCount",
+        requires: NO_REQUIREMENT,
+        count: (row) => comments.projectCount(row.path),
+      }),
+      cx.contribute({
         kind: "panel",
         id: PANEL,
         side: "left",

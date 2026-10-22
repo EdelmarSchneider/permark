@@ -80,9 +80,10 @@ export function nodeFact(s: RepoSummary): ProjectFact | null {
   }
   const head = headText(s);
   if (head === null || head === "") return null;
-  // the visible words say it all for a detached HEAD; a branch name is said as one
+  // a detached HEAD: the commit alone with a commit mark (fits a row in every language, never cut mid-word: R2); its
+  // plain words in the tooltip and said; a branch name is said as one
   return s.detached
-    ? { text: head }
+    ? { text: shortOid(s.oid), commit: true, title: head, spoken: head }
     : { text: head, branch: true, spoken: t("projects.node.srBranch", { branch: head }) };
 }
 

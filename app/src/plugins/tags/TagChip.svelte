@@ -1,9 +1,12 @@
 <script lang="ts">
   // A tag as a small pill: its color and icon when the project gave it some. Plain, a button (opens the tag in the tags
-  // view) or removable (the editor); a tag from a file's front matter is locked.
+  // view) or removable (the editor); a tag from a file's front matter is locked. Where the opened folder has official
+  // lists: a mark says official | local | unlisted (shape + words; an unlisted tag's outline is dashed).
   import Lock from "@lucide/svelte/icons/lock";
   import X from "@lucide/svelte/icons/x";
+  import type { TagStatus } from "../../api";
   import { t } from "../../core/i18n";
+  import StatusMark from "../../core/projects/StatusMark.svelte";
   import { TAG_ICONS } from "./icons";
   import { isColor, isIcon } from "./model";
 
@@ -18,6 +21,9 @@
     onclick?: (event: MouseEvent) => void;
     onremove?: () => void;
     title?: string;
+    /** Official | local | unlisted (`null`: no official list, nothing drawn) and its words. */
+    status?: TagStatus | null;
+    statusWords?: string;
   };
   let {
     name,
@@ -29,23 +35,34 @@
     onclick,
     onremove,
     title,
+    status = null,
+    statusWords = "",
   }: Props = $props();
 
   const Icon = $derived(isIcon(icon) ? TAG_ICONS[icon] : null);
   const tint = $derived(isColor(color) ? `var(--tag-${color})` : "var(--muted)");
 </script>
 
-<span class="chip" class:active class:colored={isColor(color)} style:--c={tint}>
+<span
+  class="chip"
+  class:active
+  class:colored={isColor(color)}
+  class:unlisted={status === "unlisted"}
+  style:--c={tint}
+  data-tag={name}
+>
   {#if onclick}
     <button type="button" class="face" {onclick} {title}>
       {#if Icon}<Icon size={11} />{/if}
       <span class="name">{name}</span>
+      {#if status !== null}<StatusMark {status} words={statusWords} />{/if}
       {#if count !== undefined}<span class="count">{count}</span>{/if}
     </button>
   {:else}
     <span class="face" {title}>
       {#if Icon}<Icon size={11} />{/if}
       <span class="name">{name}</span>
+      {#if status !== null}<StatusMark {status} words={statusWords} />{/if}
       {#if count !== undefined}<span class="count">{count}</span>{/if}
     </span>
   {/if}
@@ -83,6 +100,9 @@
   .chip:not(.colored) {
     background: var(--surface-2);
     border-color: var(--border);
+  }
+  .chip.unlisted {
+    border-style: dashed;
   }
   .chip.active {
     background: color-mix(in srgb, var(--c) 28%, transparent);

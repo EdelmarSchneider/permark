@@ -40,9 +40,12 @@ describe("the node's muted text", () => {
     expect(nodeFact(repo())).toEqual({ text: "develop", branch: true, spoken: "branch develop" });
   });
 
-  it("a detached HEAD in plain words + 7 characters of the commit (nothing more to say)", () => {
+  it("a detached HEAD: the commit with a commit mark; plain words in the tooltip and said (R2: never cut mid-word)", () => {
     expect(nodeFact(repo({ branch: null, detached: true }))).toEqual({
-      text: "not on a branch (at a1b2c3d)",
+      text: "a1b2c3d",
+      commit: true,
+      title: "not on a branch (at a1b2c3d)",
+      spoken: "not on a branch (at a1b2c3d)",
     });
   });
 

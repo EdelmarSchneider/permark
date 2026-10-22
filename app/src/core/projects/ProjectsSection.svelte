@@ -14,6 +14,7 @@
   import { projects } from "./instance.svelte";
   import { depthOf, groupsOf, matches, recordPlace } from "./model";
   import ProjectRowView from "./ProjectRowView.svelte";
+  import VocabularySection from "./VocabularySection.svelte";
 
   const RECORD = ".permark/projects.toml";
 
@@ -350,6 +351,10 @@
       </div>
     {:else}
       <p class="quiet saved">{t("projects.settings.savedIn")}</p>
+      <!-- the official lists live in this folder's .permark/ (there once a project is included) -->
+      {#if view.record.status !== "absent" || view.vocabulary.file.status !== "absent"}
+        <VocabularySection />
+      {/if}
     {/if}
   {/if}
 </div>

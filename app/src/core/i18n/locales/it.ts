@@ -2058,4 +2058,48 @@ export default {
   "projects.card.gitError": "Git non riesce a leggere questo progetto.",
   "projects.card.noCommits": "Ancora nessun commit",
   "projects.status.prefix": "{short} ·",
+  // ---- projects round 4: official | local | unlisted, promote, official lists
+  "tags.status.official": "Ufficiale",
+  "tags.status.local": "Locale di {short}",
+  "tags.status.localAny": "Locale di un progetto",
+  "tags.status.unlisted": "Non in elenco (trovato nei file, in nessun elenco)",
+  "projects.category.unlisted": "Non in elenco (in nessun elenco)",
+  "tags.promote": "Rendi ufficiale in {root}",
+  "projects.category.promote": "Rendi ufficiale in {root}",
+  "tags.promoteAsk": "«{name}» diventa un tag ufficiale per ogni progetto in {root}.",
+  "projects.category.promoteAsk":
+    "«{name}» diventa una categoria ufficiale per ogni progetto in {root}.",
+  "tags.promoteConfirm": "Rendi ufficiale",
+  "tags.promoted": "«{name}» ora è un tag ufficiale di {root}.",
+  "projects.category.promoted": "«{name}» ora è una categoria ufficiale di {root}.",
+  "tags.officialLook": "Colore e icona vengono dall'elenco ufficiale di {root}.",
+  "projects.vocabulary.saves":
+    "PerMark salva l'elenco ufficiale in questa cartella (.permark/vocabulary.toml).",
+  "projects.vocabulary.creates": "PerMark crea .permark/vocabulary.toml in questa cartella.",
+  "projects.vocabulary.title": "Tag e categorie ufficiali",
+  "projects.vocabulary.intro":
+    "Tag e categorie ufficiali valgono per ogni progetto in {root}. I nomi propri di un progetto contano come locali; i tag trovati solo nei file non sono in elenco.",
+  "projects.vocabulary.tags": "Tag ufficiali",
+  "projects.vocabulary.categories": "Categorie ufficiali",
+  "projects.vocabulary.none": "Ancora nessuno.",
+  "projects.vocabulary.addTag": "Nuovo tag ufficiale",
+  "projects.vocabulary.addCategory": "Nuova categoria ufficiale",
+  "projects.vocabulary.add": "Aggiungi",
+  "projects.vocabulary.typeName": "Scrivi prima un nome.",
+  "projects.vocabulary.already": "«{name}» è già ufficiale.",
+  "projects.vocabulary.editHint":
+    "Per rinominare o togliere un nome, o cambiarne colore o icona, modifica il file.",
+  "projects.vocabulary.unreadable":
+    "Impossibile leggere l'elenco ufficiale di questa cartella (riga {line}). PerMark non lo cambierà finché non sarà corretto.",
+  "projects.vocabulary.newer":
+    "L'elenco ufficiale è stato scritto da una versione più recente di PerMark. Le modifiche sono disattivate finché non aggiorni PerMark.",
+  "projects.vocabulary.unavailable":
+    "L'elenco ufficiale di questa cartella non può essere cambiato ora.",
+  "projects.vocabulary.conflict":
+    "L'elenco ufficiale è cambiato mentre PerMark lo salvava. Riprova.",
+  "projects.rules.tags": "Tag",
+  "projects.rules.tagsInfo.one": "Usa i tag ufficiali di {root}; 1 suo conta come locale.",
+  "projects.rules.tagsInfo.other": "Usa i tag ufficiali di {root}; {n} suoi contano come locali.",
+  "comments.projectCount.one": "1 commento aperto",
+  "comments.projectCount.other": "{n} commenti aperti",
 } satisfies Messages;

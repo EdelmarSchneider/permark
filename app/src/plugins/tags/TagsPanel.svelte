@@ -89,11 +89,14 @@
       <ul class="list">
         {#each tags.listed as item (item.name)}
           {@const style = tags.styleOf(item.name)}
+          {@const mark = overview.marks ? tags.markOf(item) : null}
           <li>
             <TagChip
               name={item.name}
               color={style?.color}
               icon={style?.icon}
+              status={mark?.status ?? null}
+              statusWords={mark?.words ?? ""}
               count={item.count}
               active={tags.selected.includes(item.name)}
               onclick={(event) => tags.pick(item.name, event.ctrlKey || event.metaKey)}
@@ -112,7 +115,11 @@
               <Palette size={13} />
             </button>
             {#if styling === item.name}
-              <TagStylePopover tag={item.name} close={() => (styling = null)} />
+              <TagStylePopover
+                tag={item.name}
+                status={mark?.status ?? null}
+                close={() => (styling = null)}
+              />
             {/if}
           </li>
         {:else}

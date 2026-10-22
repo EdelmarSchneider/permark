@@ -8,12 +8,15 @@ import type {
   TaggedFile,
   TagsIndex,
   TagsOverview,
+  TagStatus,
   TagStyleView,
 } from "../../api";
 import { apiErrorText } from "../../core/errors";
 import { t } from "../../core/i18n";
 import { PluginClient, pluginClient, workspaceRoot } from "../../core/plugins/client";
 import type { TreeBadge } from "../../core/plugins/registry.svelte";
+import { projects } from "../../core/projects/instance.svelte";
+import { ownerShort, statusWords } from "../../core/projects/vocabulary";
 import { windowStore } from "../../core/window.svelte";
 import { filterCounts, tipOf } from "./model";
 
@@ -139,6 +142,30 @@ export class TagsStore {
 
   descriptionOf(path: string): string {
     return this.#byPath.get(path)?.description ?? "";
+  }
+
+  /** The mark of a tag (`projects.md` §7.2) with its words; `null` while the opened folder has no official list. */
+  markOf(item: { status: TagStatus | null; owner: string | null }): {
+    status: TagStatus;
+    words: string;
+  } | null {
+    if (item.status === null) return null;
+    return {
+      status: item.status,
+      words: statusWords(item.status, "tag", ownerShort(projects.view, item.owner)),
+    };
+  }
+
+  /** A tag of the opened folder's official list can be made official from the tags view: its list exists (or can be
+   *  made: the folder includes projects). A plain folder never offers it. */
+  get promotable(): boolean {
+    const view = projects.view;
+    if (!view?.present) return false;
+    return (
+      view.vocabulary.active ||
+      view.vocabulary.file.status !== "absent" ||
+      view.record.status !== "absent"
+    );
   }
 
   styleOf(tag: string): TagStyleView | undefined {

@@ -1,12 +1,15 @@
 <script lang="ts">
-  // The detail card of a project node (hover 500 ms | menu "Project details"): name, category, description, path,
-  // what plugins say about the folder (unread), whether the agent sees it, and two ways on. Non-modal: stays while the
+  // The detail card of a project node (hover 500 ms | menu "Project details"): name, category (+ its official | local |
+  // unlisted mark where official lists exist), description, path, what plugins say about the folder ("3 unread · 2 open
+  // comments": the project's own state), whether the agent sees it, and two ways on. Non-modal: stays while the
   // pointer or the focus is inside; Esc closes it (focus back to the tree when it had it). Never covers its row.
   import type { ProjectRow } from "../../api";
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import { projects } from "./instance.svelte";
+  import StatusMark from "./StatusMark.svelte";
+  import { officialEntry, statusWords } from "./vocabulary";
 
   type Props = {
     row: ProjectRow;
@@ -39,6 +42,19 @@
       const badge = b.badge(row.path, true);
       return badge === null || badge.text === "" ? [] : [badge.title ?? badge.text];
     });
+  });
+
+  /** Counts plugins keep about the project (open comments), after the badge titles (unread). */
+  const counts = $derived([
+    ...said,
+    ...contributions.visible("projectCount", conditions.current).flatMap((c) => c.count(row) ?? []),
+  ]);
+  /** An official category wears the official list's color (the tag palette). */
+  const categoryTint = $derived.by(() => {
+    if (row.category === null || row.categoryStatus !== "official") return null;
+    const color = officialEntry(projects.view, "category", row.category)?.color ?? null;
+    // the backend sends only names of the tag palette (`--tag-<name>`)
+    return color === null ? null : `var(--tag-${color})`;
   });
 
   // the card wants the details of its project while it shows
@@ -79,21 +95,34 @@
     return () => observer.disconnect();
   });
 
+  /** How it opened, as a plain value for the event handlers: a browser that blurs the focused button while the
+   *  closing card leaves the page (Chromium) must not read the props of a card already going (R3, `derived_inert`). */
+  let fromMenu = false;
+  let gone = false;
+  $effect.pre(() => {
+    fromMenu = from === "menu";
+  });
+  $effect(() => () => {
+    gone = true;
+  });
+
   // Esc closes it from anywhere while it shows
   $effect(() => {
     const onkey = (e: KeyboardEvent): void => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       e.preventDefault();
       e.stopPropagation();
-      close(from === "menu" || (card?.contains(document.activeElement) ?? false));
+      close(fromMenu || (card?.contains(document.activeElement) ?? false));
     };
     window.addEventListener("keydown", onkey, true);
     return () => window.removeEventListener("keydown", onkey, true);
   });
 
   function onfocusout(e: FocusEvent): void {
-    // focus left the card for something else (Tab out, a click elsewhere): it goes
-    if (from === "menu" && !(e.relatedTarget instanceof Node && card?.contains(e.relatedTarget))) {
+    // focus left the card for something else (Tab out, a click elsewhere): it goes; a card already closing (its own
+    // button took it away) has nothing to do
+    if (gone || projects.card === null) return;
+    if (fromMenu && !(e.relatedTarget instanceof Node && card?.contains(e.relatedTarget))) {
       close(false);
     }
   }
@@ -112,7 +141,15 @@
 >
   <div class="title">
     <span class="name">{row.name}</span>
-    {#if row.category}<span class="chip">{row.category}</span>{/if}
+    {#if row.category}<span
+        class="chip"
+        class:tinted={categoryTint !== null}
+        style:--c={categoryTint}
+        >{#if row.categoryStatus !== null}<StatusMark
+            status={row.categoryStatus}
+            words={statusWords(row.categoryStatus, "category", row.short)}
+          />{/if}<span class="chip-text">{row.category}</span></span
+      >{/if}
   </div>
   <div class="facts" id={FACTS_ID}>
     {#if row.description}<p class="description">{row.description}</p>{/if}
@@ -120,7 +157,7 @@
     {#each facts as fact (fact.id)}
       {#await fact.card() then block}<block.default {row} />{/await}
     {/each}
-    {#if said.length > 0}<p class="line">{said.join(" · ")}</p>{/if}
+    {#if counts.length > 0}<p class="line">{counts.join(" · ")}</p>{/if}
     {#if agentOn}
       <p class="line">
         {t(row.agent === "off" ? "projects.card.agentNot" : "projects.card.agentSees")}
@@ -176,7 +213,10 @@
     font-weight: 600;
   }
   .chip {
+    display: inline-flex;
     flex: none;
+    align-items: center;
+    gap: 3px;
     max-width: 50%;
     overflow: hidden;
     padding: 0 6px;
@@ -186,6 +226,15 @@
     font-size: var(--fs-ui-xs);
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .chip.tinted {
+    background: color-mix(in srgb, var(--c) 14%, transparent);
+    color: var(--c);
+  }
+  .chip-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   p {
     margin: 0;
