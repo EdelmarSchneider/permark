@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-22
+
+### Fixed
+- PerMark no longer closes when a document holds an HTML block with accented letters, Chinese text, emoji or other non-English characters; before, opening such a folder could quit the app while it looked for broken links. Thanks to @pkyes54 for the report and the fix. <!-- f: broken-links -->
+
 ## [0.6.3] - 2026-10-21
 
 ### Fixed
