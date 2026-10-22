@@ -1176,7 +1176,7 @@ const en = {
   "agent.title": "Agent connection",
   "agent.switch": "Share this project with agents",
   "agent.switchHint":
-    "An agent you connect (Claude Code, Cursor or any MCP client) can see what you're looking at, what changed, search and read files, read your comments and the notes you share. Only on this computer. Agents never edit files through PerMark.",
+    "An agent you connect (Claude Code, Cursor or any MCP client) can see what you're looking at and what changed, search and read this project's files, read your comments and the notes you share, and show you a place. Only on this computer. Passwords and keys that PerMark recognizes stay hidden, and agents never edit files through PerMark. This covers only what agents get from PerMark: an agent can still open files on your computer by itself.",
   "agent.groups": "What agents may do",
   "agent.group.context": "See what you're looking at",
   "agent.group.changes": "See what changed",
@@ -1190,8 +1190,10 @@ const en = {
   "agent.defaults": "Use these for new projects",
   "agent.defaultsSaved": "New projects will start with these choices.",
   "agent.notSaved": "The change wasn't saved. Try again.",
-  "agent.setup.json": "Other MCP clients (JSON)",
-  "agent.setup.hook": "Prompt hook (adds what you're looking at to each prompt)",
+  "agent.setup.json":
+    "Other MCP clients (JSON): add it to the client's settings for this project, such as .cursor/mcp.json in this folder",
+  "agent.setup.hook":
+    "Claude Code prompt hook, for .claude/settings.json (adds what you're looking at to each prompt)",
   "agent.copy": "Copy",
   "agent.copied": "Copied",
   "agent.section": "AI agents",

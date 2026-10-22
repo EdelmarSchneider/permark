@@ -108,7 +108,8 @@ describe("Settings > AI agents", () => {
     mountPage(AGENT_PAGE, true);
     await until(() => text(target).includes("Off for this project"), "state card");
     expect(text(target.querySelector(".title"))).toBe("AI agents");
-    expect(text(target)).toContain("Agents never edit files through PerMark.");
+    expect(text(target)).toContain("agents never edit files through PerMark.");
+    expect(text(target)).toContain("an agent can still open files on your computer by itself.");
     expect(text(target)).toContain("You can turn it off at any time.");
     const primary = button("Share this project with agents");
     expect(primary.classList.contains("btn--primary")).toBe(true);
