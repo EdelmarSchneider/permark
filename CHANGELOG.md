@@ -31,6 +31,11 @@ and the project uses [Semantic Versioning](https://semver.org/).
 - The back and forward side buttons of the mouse work again: they go back and forward through the documents you viewed, like `Alt+Left` and `Alt+Right` and the Back and Forward buttons. They work while you read, in Edit and Source, and with the pointer over the side panels; they do nothing while a dialog or the search box is open. <!-- f: links-and-history -->
 - When an agent names itself in a request, PerMark now always shows and records that name. Before, the name it gave when it connected could sometimes replace it a moment later. <!-- f: agent-connection -->
 
+## [0.6.4] - 2026-10-22
+
+### Fixed
+- PerMark no longer closes when a document holds an HTML block with accented letters, Chinese text, emoji or other non-English characters; before, opening such a folder could quit the app while it looked for broken links. Thanks to @pkyes54 for the report and the fix. <!-- f: broken-links -->
+
 ## [0.6.3] - 2026-10-21
 
 ### Fixed
