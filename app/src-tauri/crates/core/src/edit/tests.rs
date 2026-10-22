@@ -381,11 +381,11 @@ fn pictures_of_the_wrong_kind_or_too_large_are_refused() {
 }
 
 #[test]
-fn a_single_file_workspace_edits_its_file_and_puts_pictures_beside_it() {
+fn a_single_file_workspace_edits_the_files_of_its_folder_and_puts_pictures_beside_it() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("only.md");
     std::fs::write(&file, b"# Only\n").unwrap();
-    std::fs::write(dir.path().join("other.md"), b"no").unwrap();
+    std::fs::write(dir.path().join("other.md"), b"no\n").unwrap();
     let scope = DocScope::File(FileScope::open(&file).unwrap());
     let formats = formats();
     let editor = Editor {
@@ -399,10 +399,24 @@ fn a_single_file_workspace_edits_its_file_and_puts_pictures_beside_it() {
         .save("only.md", &source.hash, &[edit(1, 0, &["more"])])
         .unwrap();
     assert_eq!(std::fs::read(&file).unwrap(), b"# Only\nmore\n");
+    // B3: a file of its folder is a document too (a link to it opens there), with the same surgical save
+    let other = editor.source("other.md").unwrap();
+    editor
+        .save("other.md", &other.hash, &[edit(1, 0, &["also"])])
+        .unwrap();
     assert_eq!(
-        editor.source("other.md").unwrap_err().kind,
+        std::fs::read(dir.path().join("other.md")).unwrap(),
+        b"no\nalso\n"
+    );
+    assert_eq!(
+        editor.source("none.md").unwrap_err().kind,
         ErrorKind::NotFound
     );
+    // never outside the folder
+    assert!(editor.source("../only.md").is_err());
+    assert!(editor
+        .save("../only.md", &source.hash, &[edit(1, 0, &["x"])])
+        .is_err());
     let pic = editor.write_asset("only.md", "gif", b"GIF89a").unwrap();
     assert_eq!(pic, "only-1.gif");
     assert!(dir.path().join("only-1.gif").exists());
