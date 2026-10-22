@@ -40,7 +40,7 @@ jobs:
         working-directory: app
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # The system libraries the Tauri crates link against on Linux.
       - name: Install Linux dependencies
@@ -62,7 +62,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -111,7 +111,7 @@ jobs:
         working-directory: app
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust (pinned)
         run: rustup toolchain install
@@ -125,7 +125,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/develop' }}
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -146,3 +146,42 @@ jobs:
         shell: pwsh
         working-directory: .
         run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"
+
+  # The third-party notices every release ships (app/scripts/third-party-notices.mjs): made here too, on the three systems
+  # the release jobs run on, so a dependency with a license nobody accepted (app/src-tauri/about.toml), a package without
+  # a license or a system where the tool fails stops the push that caused it, not the release. The file is not kept.
+  notices:
+    name: Third-party notices (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-22.04, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # `cargo about` reads the dependency tree through cargo, which needs the toolchain app/rust-toolchain.toml pins.
+      - name: Install Rust (pinned)
+        working-directory: app
+        run: rustup toolchain install
+
+      - name: Set up Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Get cargo-about
+        shell: bash
+        run: bash scripts/get-cargo-about.sh
+
+      - name: Make the notices
+        working-directory: app
+        run: npm run notices

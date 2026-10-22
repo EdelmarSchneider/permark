@@ -152,3 +152,20 @@ fn macos_and_linux_list_every_group_and_never_claim_it() {
     assert!(DESKTOP.contains("Exec={{exec}} %f"));
     assert!(DESKTOP.contains("MimeType={{mime_type}};"));
 }
+
+#[test]
+fn the_third_party_notices_ship_in_every_installer_and_in_the_store_package() {
+    // a placeholder is tracked so that every build has the file; the release jobs replace it
+    // (`npm run notices`, app/scripts/third-party-notices.mjs)
+    let placeholder = include_str!("../resources/THIRD-PARTY-NOTICES.md");
+    assert!(placeholder.starts_with("# Third-party notices"));
+    let config = json(CONFIG);
+    assert_eq!(
+        config["bundle"]["resources"]["resources/THIRD-PARTY-NOTICES.md"],
+        "THIRD-PARTY-NOTICES.md"
+    );
+    // the Store package is laid out by hand: the script copies the file beside the program
+    assert!(SCRIPT.contains("THIRD-PARTY-NOTICES.md"));
+    // the app crate is not third-party software (cargo-about skips crates that are never published)
+    assert!(WORKSPACE.contains("publish = false"));
+}

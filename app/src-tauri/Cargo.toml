@@ -115,6 +115,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+# Never published on crates.io (also keeps it out of the third-party notices, about.toml).
+publish = false
 
 [lib]
 # `_lib` suffix: lib + bin of one package must not share a name (cargo#8519, Windows).
