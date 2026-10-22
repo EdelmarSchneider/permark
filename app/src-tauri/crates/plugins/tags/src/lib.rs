@@ -119,6 +119,8 @@ impl Plugin for TagsPlugin {
         };
         let events = cx.events().clone();
         let started = project.owners(store);
+        // S3: before the worker knows the owners, nothing is written (it could land in the outer folder's file)
+        let early = !project.owners_known();
         let service = Arc::new(TagsService::start(ServiceArgs {
             owners: started.clone(),
             // a reader with no window does not carry the profile copy over (the app does, on its next open)
@@ -130,6 +132,9 @@ impl Plugin for TagsPlugin {
             announce: Arc::new(move || events.emit("changed", serde_json::Value::Null)),
             timing: self.timing,
         }));
+        if early {
+            service.start_paused();
+        }
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.feed(batch)
@@ -143,9 +148,9 @@ impl Plugin for TagsPlugin {
                 }
             }
         });
-        // an owners change between the read above and the subscription: caught up here
+        // an owners change between the read above and the subscription (or owners known meanwhile): caught up here
         let now = project.owners(store);
-        if !now.same(&started) {
+        if !now.same(&started) || (early && project.owners_known()) {
             service.follow_owners(&OwnersChange::Resume(&now));
         }
         let mut registrations = Vec::new();

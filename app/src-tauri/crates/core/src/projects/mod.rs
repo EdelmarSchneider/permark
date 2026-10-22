@@ -24,7 +24,7 @@ mod vocabulary_edit_tests;
 pub use card::{CardChange, CardDto, CardField, CardPlace, CardWarning};
 pub use fsm::{AgentChoice, MissingReason, ProjectMarker, RootAnswer};
 pub use map::{AgentRules, AncestorRules, MemberInfo, Owner, ProjectMap};
-pub use owners::{OwnerSlot, Owners, OwnersChange};
+pub use owners::{OwnerSlot, Owners, OwnersChange, OwnersGate};
 pub use record::{HiddenRule, RecordOp, RecordRead, RecordSkip, SkippedEntry};
 pub use service::{Projects, ProjectsSubscription, RootCommitAsk, UndoPlan};
 pub use uid::ProjectUid;

@@ -18,7 +18,7 @@ use permark_core::error::{ErrorKind, IpcError};
 use permark_core::format::units;
 use permark_core::fsx;
 use permark_core::paths::{key_of, VaultPath};
-use permark_core::projects::{Owners, OwnersChange};
+use permark_core::projects::{Owners, OwnersChange, OwnersGate};
 use permark_core::state::RawFile;
 use permark_core::watch::{ChangeKind, FsBatch};
 
@@ -339,6 +339,8 @@ struct Shared {
     state: Mutex<State>,
     docs: Mutex<HashMap<String, Cached>>,
     rev: AtomicU64,
+    /// Closed while the plugin started before the owners were known: changes wait for them.
+    gate: OwnersGate,
 }
 
 fn now_ms() -> u64 {
@@ -367,6 +369,7 @@ impl Shared {
         &self,
         change: impl FnOnce(&mut Book) -> Result<(T, bool), IpcError>,
     ) -> Result<T, IpcError> {
+        self.gate.wait();
         let mut state = self.lock();
         state.refresh();
         if let Some(why) = state.unreadable() {
@@ -380,11 +383,21 @@ impl Shared {
         let mut book = state.merged();
         let (value, changed) = change(&mut book)?;
         if changed {
+            let mut failed = None;
             for i in state.split(book) {
-                state.slots[i].save()?;
+                if let Err(error) = state.slots[i].save() {
+                    // N9: a change that was not written is not shown either (the person was told; adding again
+                    // never makes a twin): that file is read again as it is on disk
+                    state.slots[i].stamp = None;
+                    failed = Some(error);
+                }
             }
+            state.refresh();
             drop(state);
             self.bump();
+            if let Some(error) = failed {
+                return Err(error);
+            }
         }
         Ok(value)
     }
@@ -396,6 +409,12 @@ impl Shared {
             OwnersChange::Resume(owners) => {
                 {
                     let mut state = self.lock();
+                    // already running on these owners (the `Resume` told when the owners became known): nothing to do
+                    if !state.paused && state.owners.as_ref().is_some_and(|o| o.same(owners)) {
+                        drop(state);
+                        self.gate.open();
+                        return;
+                    }
                     state.slots = owners
                         .slots()
                         .iter()
@@ -410,6 +429,7 @@ impl Shared {
                     .unwrap_or_else(PoisonError::into_inner)
                     .clear();
                 self.bump();
+                self.gate.open();
             }
         }
     }
@@ -579,6 +599,12 @@ impl CommentsService {
         self.shared.follow_owners(change);
     }
 
+    /// Started before the owners were known: changes wait for the first `Resume`.
+    pub fn start_paused(&self) {
+        self.shared.gate.close();
+        self.shared.follow_owners(&OwnersChange::Pause);
+    }
+
     fn start_with(
         owners: Option<Owners>,
         files: Vec<RawFile>,
@@ -595,6 +621,7 @@ impl CommentsService {
             }),
             docs: Mutex::new(HashMap::new()),
             rev: AtomicU64::new(1),
+            gate: OwnersGate::default(),
         });
         {
             let mut state = shared.lock();

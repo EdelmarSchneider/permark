@@ -538,6 +538,10 @@ impl UnreadService {
             OwnersChange::Resume(owners) => {
                 let (root, members) = {
                     let mut files = lock(&self.files);
+                    // already running on these owners (the `Resume` told when the owners became known): nothing to do
+                    if !files.paused && files.owners.same(owners) {
+                        return;
+                    }
                     let (persist, visit) = (files.persist, files.visit);
                     *files = Files::new((*owners).clone(), persist, visit);
                     let read = files.load_read();

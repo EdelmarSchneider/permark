@@ -24,7 +24,8 @@ use permark_core::fsx;
 use permark_core::organizing::{TagCount, TagLookup, TagsSummary};
 use permark_core::paths::{key_of, VaultPath, WORKTREE_PREFIX};
 use permark_core::projects::{
-    OwnerSlot, Owners, OwnersChange, ProjectUid, Projects, ProjectsSubscription, VocabKind,
+    OwnerSlot, Owners, OwnersChange, OwnersGate, ProjectUid, Projects, ProjectsSubscription,
+    VocabKind,
 };
 use permark_core::search::harvest::{Harvest, HarvestSubscription};
 use permark_core::state::{RawFile, StateLocation};
@@ -169,6 +170,8 @@ struct Units {
 
 struct Shared {
     units: RwLock<Units>,
+    /// Closed while the plugin started before the owners were known: the person's edits wait for them.
+    gate: OwnersGate,
     location: TagsLocation,
     legacy: bool,
     own: Arc<OwnWrites>,
@@ -860,6 +863,7 @@ impl TagsService {
             .map(|s| Arc::new(Unit::new(s, args.legacy)))
             .collect();
         let shared = Arc::new(Shared {
+            gate: OwnersGate::default(),
             units: RwLock::new(Units {
                 owners: args.owners,
                 list: list.clone(),
@@ -931,6 +935,15 @@ impl TagsService {
                     .paused = true;
             }
             OwnersChange::Resume(owners) => {
+                // already running on these owners (the `Resume` told when the owners became known): nothing to do
+                {
+                    let units = self.shared.units();
+                    if !units.paused && units.owners.same(owners) {
+                        drop(units);
+                        self.shared.gate.open();
+                        return;
+                    }
+                }
                 let old = self.shared.units().list.clone();
                 let list: Vec<Arc<Unit>> = owners
                     .slots()
@@ -961,8 +974,15 @@ impl TagsService {
                     self.queue(held);
                 }
                 let _ = self.meta_tx.send(MetaMsg::Edited);
+                self.shared.gate.open();
             }
         }
+    }
+
+    /// Started before the owners were known: the person's edits wait for the first `Resume` (moves are held).
+    pub fn start_paused(&self) {
+        self.shared.gate.close();
+        self.follow_owners(&OwnersChange::Pause);
     }
 
     /// The project's watch reported a batch (called on the watch thread: quick).
@@ -1077,6 +1097,7 @@ impl TagsService {
                 return Err(denied(path, "worktree"));
             }
         }
+        self.shared.gate.wait();
         let merged = self.shared.merged();
         {
             let units = self.shared.units();

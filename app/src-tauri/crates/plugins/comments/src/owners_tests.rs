@@ -528,6 +528,10 @@ fn verify_add_while_another_writer_holds_the_lock_writes_nothing() {
     eprintln!(
         "VERIFY before={before} shown_after_error={shown_after_error} after={texts:?} failed_add_on_disk={on_disk}"
     );
+    // N9: the add that failed is neither shown nor written later (adding again makes no twin)
+    assert_eq!(shown_after_error, before);
+    assert!(!on_disk);
+    assert!(!texts.iter().any(|t| t == "while locked"), "{texts:?}");
 }
 
 fn walk(dir: &Path) -> Vec<String> {

@@ -642,8 +642,11 @@ impl Projects {
                 if let Some(projects) = weak.upgrade() {
                     projects.load();
                     projects.announce_members();
-                    // the members' owners (+ their one-time copy) are in place: plugins that wait may read
+                    // the members' owners (+ their one-time copy) are in place: plugins that wait may read, and
+                    // the ones that started paused (S3: nothing written to the outer folder's file meanwhile) go on.
+                    // Told even when nothing changed; a follower already running on these owners ignores it.
                     projects.owners_known.store(true, Ordering::Release);
+                    projects.tell_owners(&OwnersChange::Resume(&projects.owners()));
                 }
                 Self::work(&weak, &explorer, &stopped, &rx);
             })
@@ -1688,6 +1691,13 @@ impl Projects {
             owner: Arc::downgrade(self),
             id,
         }
+    }
+
+    /// Whether the worker set the owners of the record's members (a follower that starts before stays paused until
+    /// the `Resume` that follows, so nothing lands in the wrong owner's file).
+    #[must_use]
+    pub fn owners_known(&self) -> bool {
+        self.owners_known.load(Ordering::Acquire)
     }
 
     /// Waits (at most `timeout`) until the worker set the owners of the record's members, on the caller's own thread

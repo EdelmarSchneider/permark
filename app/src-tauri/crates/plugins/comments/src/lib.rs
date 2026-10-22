@@ -110,11 +110,16 @@ impl Plugin for CommentsPlugin {
         };
         let events = cx.events().clone();
         let started = project.owners(store);
+        // S3: before the worker knows the owners, nothing is written (it could land in the outer folder's file)
+        let early = !project.owners_known();
         let service = Arc::new(CommentsService::start_owners(
             started.clone(),
             project.documents.scope().clone(),
             Arc::new(move || events.emit("changed", serde_json::Value::Null)),
         ));
+        if early {
+            service.start_paused();
+        }
         // comments follow where each included project keeps its state (`projects.md` §9.2)
         let owners = project.follow_owners({
             let service = Arc::downgrade(&service);
@@ -124,9 +129,9 @@ impl Plugin for CommentsPlugin {
                 }
             }
         });
-        // an owners change between the read above and the subscription: caught up here
+        // an owners change between the read above and the subscription (or owners known meanwhile): caught up here
         let now = project.owners(store);
-        if !now.same(&started) {
+        if !now.same(&started) || (early && project.owners_known()) {
             service.follow_owners(&OwnersChange::Resume(&now));
         }
         let subscription = hub.subscribe({

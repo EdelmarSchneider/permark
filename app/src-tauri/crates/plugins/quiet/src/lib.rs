@@ -25,7 +25,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running, ServiceLease,
 };
-use permark_core::projects::{Owners, OwnersChange, ProjectsSubscription};
+use permark_core::projects::{Owners, OwnersChange, OwnersGate, ProjectsSubscription};
 use permark_core::state::{merge3, RawFile};
 use permark_core::watch::{ChangeKind, FsBatch, Subscription};
 use serde::{Deserialize, Serialize};
@@ -97,6 +97,8 @@ pub struct QuietService {
     marks: RwLock<Marks>,
     files: Mutex<Files>,
     announce: Arc<dyn Fn(&QuietMarks) + Send + Sync>,
+    /// Closed while the plugin started before the owners were known: marks + moves wait for them.
+    gate: OwnersGate,
 }
 
 /// Reads every owner's file into one root-relative set of marks.
@@ -180,6 +182,7 @@ impl QuietService {
                 pending: false,
             }),
             announce,
+            gate: OwnersGate::default(),
         })
     }
 
@@ -199,6 +202,7 @@ impl QuietService {
                 pending: false,
             }),
             announce,
+            gate: OwnersGate::default(),
         })
     }
 
@@ -214,6 +218,15 @@ impl QuietService {
                 files.paused = true;
             }
             OwnersChange::Resume(owners) => {
+                // already running on these owners (the `Resume` told when the owners became known): nothing to do
+                {
+                    let files = self.lock_files();
+                    if !files.paused && files.owners.as_ref().is_some_and(|o| o.same(owners)) {
+                        drop(files);
+                        self.gate.open();
+                        return;
+                    }
+                }
                 let (marks, slots) = read_owners(owners);
                 {
                     let mut files = self.lock_files();
@@ -224,8 +237,15 @@ impl QuietService {
                 }
                 *self.marks.write().unwrap_or_else(PoisonError::into_inner) = marks;
                 (self.announce)(&self.marks());
+                self.gate.open();
             }
         }
+    }
+
+    /// Started before the owners were known: marks + moves wait for the first `Resume`.
+    pub fn start_paused(&self) {
+        self.gate.close();
+        self.follow_owners(&OwnersChange::Pause);
     }
 
     fn lock_files(&self) -> std::sync::MutexGuard<'_, Files> {
@@ -259,6 +279,7 @@ impl QuietService {
                 VaultPath::parse(path)?.to_string()
             });
         }
+        self.gate.wait();
         // one change at a time: the marks, their files and what the files were read as stay together
         let mut files = self.lock_files();
         // the owners are changing (a moment): the mark would land in a file about to be read again
@@ -282,6 +303,8 @@ impl QuietService {
 
     /// Moved files take their marks along.
     fn on_batch(&self, batch: &FsBatch) {
+        // a move before the owners are known: applied once they are (never into a file about to be read again)
+        self.gate.wait();
         let mut changed = false;
         let mut files = self.lock_files();
         let owner_folders: Vec<String> = files
@@ -475,6 +498,8 @@ impl Plugin for QuietPlugin {
         };
         let events = cx.events().clone();
         let started = project.owners(store);
+        // S3: before the worker knows the owners, nothing is written (it could land in the outer folder's file)
+        let early = !project.owners_known();
         let service = QuietService::load_owners(
             started.clone(),
             Arc::new(move |marks| {
@@ -484,6 +509,9 @@ impl Plugin for QuietPlugin {
                 );
             }),
         );
+        if early {
+            service.start_paused();
+        }
         // marks follow where each included project keeps its state (`projects.md` §9)
         let owners = project.follow_owners({
             let service = Arc::downgrade(&service);
@@ -493,9 +521,9 @@ impl Plugin for QuietPlugin {
                 }
             }
         });
-        // an owners change between the read above and the subscription: caught up here
+        // an owners change between the read above and the subscription (or owners known meanwhile): caught up here
         let now = project.owners(store);
-        if !now.same(&started) {
+        if !now.same(&started) || (early && project.owners_known()) {
             service.follow_owners(&OwnersChange::Resume(&now));
         }
         let subscription = hub.subscribe({
