@@ -57,7 +57,7 @@ What the command answers:
 
 | Call | Answer |
 | --- | --- |
-| `GetTitle` | "Open with PerMark" in the first of the person's Windows display languages that the app has (English, Português, Español, Deutsch, 简体中文, Italiano; English for any other). It is the display language of Windows, not the language chosen inside PerMark, because the rest of the menu is in it too (the installer version's entry follows the app's language). The words are those of the installer version's entry (`entries::menu_label`), and a test keeps the two in step. |
+| `GetTitle` | "Open with PerMark" in the first of the person's Windows display languages that the app has (English, Português (Brasil), Español, Deutsch, 简体中文, Italiano, 日本語, 한국어, Français, Português (Portugal), Català, Galego, Română; English for any other). It is the display language of Windows, not the language chosen inside PerMark, because the rest of the menu is in it too (the installer version's entry follows the app's language). The words are those of the installer version's entry (`entries::menu_label`), and a test keeps the two in step. |
 | `GetIcon` | `<package folder>\permark.exe,0`: the program's first icon, as the installer version's entry. |
 | `GetState` | Enabled. Hidden when more than 15 folders are selected (the limit Windows puts on a registry verb that opens a window for each item, which is what the installer version's entry is). |
 | `GetToolTip`, `EnumSubCommands` | Not implemented: no tooltip, no sub-menu. |
@@ -168,7 +168,7 @@ forbid it.
 **What to check** (on Windows 11, then on Windows 10 if there is one):
 
 1. Right-click a folder in Explorer. "Open with PerMark" is in the first-level menu, with the PerMark icon, in the Windows display
-   language (try one of the six). Choose it: PerMark opens with that folder as the project.
+   language (try one of the thirteen). Choose it: PerMark opens with that folder as the project.
 2. Right-click the empty area inside an open folder: the entry is there too, and opens that folder.
 3. Select three folders and right-click one of them: the entry is there, and three PerMark windows open, one for each.
 4. A folder with a space, an accent or a very long path in its name opens correctly. A drive root (`D:\`, from the background of the

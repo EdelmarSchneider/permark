@@ -20,6 +20,7 @@
   import Badge from "../shell/Badge.svelte";
   import { outlineShown } from "../shell/layout";
   import { rightSide, toggleOutlinePanel } from "../shell/sides";
+  import { compactRelativeFormat } from "../time";
   import { documents } from "./document.svelte";
   import { headerFit } from "./headerFit";
   import ReadingMenu from "./ReadingMenu.svelte";
@@ -118,10 +119,7 @@
     if (savedMs === null) return null;
     const seconds = Math.max(0, Math.round((now - savedMs) / 1000));
     if (seconds < 20) return t("doc.savedNow");
-    const rtf = new Intl.RelativeTimeFormat(language.locale, {
-      numeric: "always",
-      style: "narrow",
-    });
+    const rtf = compactRelativeFormat(language.locale);
     const [value, unit]: [number, Intl.RelativeTimeFormatUnit] =
       seconds < 3600
         ? [Math.round(seconds / 60), "minute"]

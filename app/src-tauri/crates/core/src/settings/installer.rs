@@ -8,7 +8,7 @@ pub fn installer_language() -> Option<LanguagePref> {
     installer_code().and_then(|code| language_from_code(&code))
 }
 
-/// A recorded code as a language: one of the six (spaces and line breaks around it ignored); `system` and anything
+/// A recorded code as a language: one of the thirteen (spaces and line breaks around it ignored); `system` and anything
 /// else are not a choice.
 #[must_use]
 pub fn language_from_code(code: &str) -> Option<LanguagePref> {

@@ -66,8 +66,11 @@ macro_rules! choice {
 }
 
 choice!(
-    /// Interface language: the system's, or one of the six.
-    LanguagePref { System = "system", En = "en", PtBr = "pt-BR", Es = "es", De = "de", ZhCn = "zh-CN", It = "it" } default System
+    /// Interface language: the system's, or one of the thirteen.
+    LanguagePref {
+        System = "system", En = "en", PtBr = "pt-BR", Es = "es", De = "de", ZhCn = "zh-CN", It = "it",
+        Ja = "ja", Ko = "ko", Fr = "fr", PtPt = "pt-PT", Ca = "ca", Gl = "gl", Ro = "ro",
+    } default System
 );
 choice!(ThemePref { System = "system", Light = "light", Dark = "dark" } default System);
 choice!(
