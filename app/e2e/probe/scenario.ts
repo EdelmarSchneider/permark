@@ -18,6 +18,7 @@ export const SEEDS = [
   "importFiles",
   "tabShown",
   "projectNews",
+  "gitRepos",
 ] as const;
 export type SeedUse = (typeof SEEDS)[number];
 
