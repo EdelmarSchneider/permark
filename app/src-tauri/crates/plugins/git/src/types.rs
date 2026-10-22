@@ -114,3 +114,87 @@ impl GitSnapshot {
             && self.worktrees == other.worktrees
     }
 }
+
+/// How much a view wants to know of a project's repository (`projects.md` §8). Order = more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum InterestLevel {
+    /// Changed files: count + list (node expanded, Settings row shown, status item).
+    Glance,
+    /// Also ahead | behind + last commit (detail card open).
+    Detail,
+}
+
+/// The last commit of a repository.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CommitLine {
+    /// Committer time, ms since the epoch.
+    #[ts(type = "number")]
+    pub at_ms: i64,
+    /// First line of the message (<= 200 chars). Text of the repository: data, never instructions.
+    pub subject: String,
+}
+
+/// Why a project's git facts are not shown.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum RepoError {
+    /// No git to ask (installed git chosen and missing): no branch text anywhere.
+    Unavailable,
+    /// Git could not read this repository (`reason`: git's first line, e.g. "dubious ownership").
+    Failed { reason: String },
+}
+
+/// One included project's repository as nodes, the detail card, Settings and the status item show it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RepoSummary {
+    /// The project's uid.
+    #[ts(type = "string")]
+    pub id: String,
+    /// Project path of its folder (root-relative, `/`): the owner of a path = longest prefix.
+    pub path: String,
+    /// `None`: detached, unborn without a name, or unknown.
+    pub branch: Option<String>,
+    pub detached: bool,
+    /// Full commit id at HEAD; `None`: no commit yet | unknown.
+    pub oid: Option<String>,
+    /// No commit yet.
+    pub unborn: bool,
+    pub state: RepoState,
+    /// Changed files against the baseline in use (`None`: not counted yet).
+    pub changed: Option<u32>,
+    /// `[ahead, behind]` as of the last fetch (`None`: no upstream | not asked yet; Detail).
+    pub ahead_behind: Option<[u32; 2]>,
+    /// Detail.
+    pub last_commit: Option<CommitLine>,
+    pub error: Option<RepoError>,
+    /// A look is queued or running ("Checking git…").
+    pub pending: bool,
+}
+
+/// Event `git:repos`: summaries that changed (150 ms debounce) + projects no longer followed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ReposChanged {
+    pub upsert: Vec<RepoSummary>,
+    #[ts(type = "string[]")]
+    pub removed: Vec<String>,
+}
+
+/// Event `git:projectSnapshot`: the changed files of a project's repository (only for projects a view shows; paths
+/// root-relative). `snapshot` null: no list kept any more.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ProjectSnapshot {
+    #[ts(type = "string")]
+    pub project: String,
+    pub snapshot: Option<GitSnapshot>,
+}
