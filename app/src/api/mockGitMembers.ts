@@ -4,12 +4,21 @@
 // (branch, detached, merging, no commit yet, an error); details (ahead | behind, last commit) appear once a view
 // asks for them, as in the app. The probe can make git missing or hold every answer ("Checking git…").
 
-import type { GitSnapshot, InterestLevel, PluginEvents, ProjectsView, RepoSummary } from "./types";
+import type {
+  BaselineKind,
+  GitSnapshot,
+  InterestLevel,
+  PluginEvents,
+  ProjectsView,
+  RepoSummary,
+} from "./types";
 
 type Deps = {
   /** The projects view of the window's folder (`null`: plain folder). */
   view: () => ProjectsView | null;
   emit: <E extends keyof PluginEvents>(event: E, data: PluginEvents[E]) => void;
+  /** "Changes since" of the window (shared by every repository, as in the app). */
+  baseline: () => BaselineKind;
 };
 
 export type GitMembersProbe = {
@@ -70,6 +79,8 @@ export function createMockGitMembers(deps: Deps): {
   interest(window: string, level: InterestLevel, ids: string[]): void;
   snapshot(project: string): GitSnapshot | null;
   refresh(project: string | null): void;
+  /** "Changes since" changed: every list a view looks at is measured again and announced. */
+  rebaseline(): void;
   probe: GitMembersProbe;
 } {
   const interestCalls: { ids: string[]; level: InterestLevel }[] = [];
@@ -141,7 +152,7 @@ export function createMockGitMembers(deps: Deps): {
         unborn: summary.unborn,
       },
       state: summary.state,
-      baseline: { kind: "lastVisit", oid: null },
+      baseline: { kind: deps.baseline(), oid: null },
       files,
       truncated: false,
       worktrees: [],
@@ -184,6 +195,13 @@ export function createMockGitMembers(deps: Deps): {
             .map((r) => r.id)
             .filter((id) => wanted(id));
       setTimeout(() => announce(ids), 20);
+    },
+    rebaseline() {
+      seq += 1;
+      for (const { id } of rows()) {
+        const snapshot = snapshotOf(id);
+        if (snapshot) deps.emit("git:projectSnapshot", { project: id, snapshot });
+      }
     },
     probe: {
       interest: interestCalls,

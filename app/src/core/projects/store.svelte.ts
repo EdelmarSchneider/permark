@@ -259,11 +259,18 @@ export class ProjectsStore {
     }
   }
 
-  /** The move question: `same` = the found project is the missing one. */
-  async answerMove(same: boolean): Promise<void> {
+  /** The move question: `same` = the found project is the missing one. A short notice (said politely) tells what
+   *  happened; returns the folder asked about (the focus goes to its node), `null` when nothing was answered. */
+  async answerMove(same: boolean): Promise<string | null> {
     const ask = this.view?.ask;
-    if (!ask) return;
-    await this.#run(this.#api.projectsAnswerMove(ask.uid, ask.candidate, same));
+    if (!ask) return null;
+    if (!(await this.#run(this.#api.projectsAnswerMove(ask.uid, ask.candidate, same)))) return null;
+    this.#note(
+      same
+        ? t("projects.strip.movedSame", { name: ask.name, folder: ask.candidate })
+        : t("projects.strip.movedNew", { folder: ask.candidate }),
+    );
+    return ask.candidate;
   }
 
   // ---- Choose… (consent mode of Settings > Projects inside) ------------------------------------------------------

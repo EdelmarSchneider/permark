@@ -46,6 +46,7 @@ const { ui } = await import("../../core/shell/ui.svelte");
 const { projects } = await import("../../core/projects/instance.svelte");
 const { windowStore } = await import("../../core/window.svelte");
 const { members } = await import("./members.svelte");
+const { git } = await import("./store.svelte");
 
 const HUB = "k7m2q7xd2a";
 const NOTES = "notes2note";
@@ -138,8 +139,9 @@ describe("the project node", () => {
     await expand(store, "tools");
     await until(() => factOf("tools/notes-app") === "develop", "branch on the node");
     expect(factOf("hubs/hub-b")).toBe("main");
+    // the name starts with the words on screen (WCAG 2.5.3), then what they are
     expect(node("tools/notes-app")?.getAttribute("aria-label")).toBe(
-      "notes-app, project, branch develop, 3 changed files inside",
+      "notes-app develop, project, branch develop, 3 changed files inside",
     );
     // the fact is part of the name the reader hears: never read twice
     expect(node("tools/notes-app")?.querySelector(".fact")?.getAttribute("aria-hidden")).toBe(
@@ -201,9 +203,16 @@ describe("the detail card", () => {
     expect(block()).toContain("“Update the plan of notes-app”");
     const ahead = document.querySelector('[data-project-git] [role="img"]');
     expect(ahead?.textContent).toBe("↑1 ↓1");
-    expect(ahead?.getAttribute("aria-label")).toBe(
-      "1 commits ahead, 1 behind, as of the last fetch",
-    );
+    // the arrows in plain words (said and in the tooltip)
+    expect(ahead?.getAttribute("aria-label")).toBe("1 change to send, 1 to get");
+    expect(ahead?.getAttribute("title")).toBe("1 change to send, 1 to get");
+    // opening the card says its facts: the dialog is described by them (branch, changes, last commit)
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const facts = document.getElementById(dialog.getAttribute("aria-describedby") ?? "");
+    expect(facts?.textContent).toContain("Branch develop");
+    expect(facts?.textContent).toContain("3 changed files");
+    expect(facts?.textContent).toContain("Last commit");
+    expect(facts?.textContent).not.toContain("Open in new tab");
     // the git dot's words are not repeated outside the block
     const card = document.querySelector('[role="dialog"]')!;
     expect(card.textContent).not.toContain("changed files inside");
@@ -306,7 +315,9 @@ describe("adversarial: many projects, odd repositories", () => {
     expect(facts.some((f) => f.textContent === "REBASING" && f.classList.contains("chip"))).toBe(
       true,
     );
-    expect(facts.some((f) => /^detached [0-9a-f]{7}$/.test(f.textContent ?? ""))).toBe(true);
+    expect(
+      facts.some((f) => /^not on a branch \(at [0-9a-f]{7}\)$/.test(f.textContent ?? "")),
+    ).toBe(true);
     expect(facts.some((f) => f.textContent === long && f.title === long)).toBe(true);
     expect(facts.some((f) => f.textContent === "功能/数据-ünïcödé ✨")).toBe(true);
     // the folder dot of every drawn project node
@@ -337,9 +348,9 @@ describe("the status item", () => {
 });
 
 describe("the move question (a project renamed while PerMark was closed)", () => {
-  it("asks 'Is this … ?' under the list; Yes answers with the found folder, focus back on the list", async () => {
+  it("names the found folder; Yes answers with it, says what happened, focus on its node", async () => {
     await openFolder(MOCK_PROJECTS_LISTED);
-    await explorer();
+    const { store } = await explorer();
     mock.probe.projects.askMove({
       uid: "hubx2hubx2",
       name: "hub-x",
@@ -351,9 +362,13 @@ describe("the move question (a project renamed while PerMark was closed)", () =>
     const strip = target.querySelector<HTMLElement>(
       '[role="region"][aria-label="Projects in this folder"]',
     );
-    expect(strip?.textContent).toContain("Is this hub-x, which was at hubs/hub-x?");
+    expect(strip?.textContent).toContain(
+      "Is tools/new-app the project hub-x that was at hubs/hub-x?",
+    );
+    const labels = Array.from(strip!.querySelectorAll("button")).map((b) => b.textContent?.trim());
+    expect(labels).toEqual(["Yes, same project", "No, it's new"]);
     const yes = Array.from(strip!.querySelectorAll("button")).find(
-      (b) => b.textContent?.trim() === "Yes, it moved",
+      (b) => b.textContent?.trim() === "Yes, same project",
     )!;
     yes.click();
     await until(
@@ -366,6 +381,131 @@ describe("the move question (a project renamed while PerMark was closed)", () =>
       () => document.activeElement === target.querySelector('[role="tree"]'),
       "focus list",
     );
+    // focus on the node of the folder it was about, shown
+    expect(store.focus).toBe("tools/new-app");
+    flushSync();
+    expect(node("tools/new-app")?.classList.contains("is-focused")).toBe(true);
+    // a short notice, said politely (the notices region is a polite live region)
+    await until(
+      () =>
+        windowStore.notices.some(
+          (n) => "text" in n && n.text === "hub-x is back at tools/new-app.",
+        ),
+      "notice",
+    );
     expect(ProjectStrip).toBeDefined();
+  });
+
+  it("No: the folder is a new project, said in a notice; focus on its node", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    const { store } = await explorer();
+    mock.probe.projects.askMove({
+      uid: "hubx2hubx2",
+      name: "hub-x",
+      was: "hubs/hub-x",
+      candidate: "tools/new-app",
+    });
+    await until(() => projects.strip.kind === "move", "move question");
+    flushSync();
+    const no = Array.from(
+      target.querySelectorAll<HTMLButtonElement>("[data-projects-strip] button"),
+    ).find((b) => b.textContent?.trim() === "No, it's new")!;
+    no.click();
+    await until(() => store.focus === "tools/new-app", "focus on the node");
+    await until(
+      () =>
+        windowStore.notices.some(
+          (n) => "text" in n && n.text === "tools/new-app is a new project.",
+        ),
+      "notice",
+    );
+  });
+});
+
+describe("UX round 3 fixes", () => {
+  it("F1: 'Changes since: the last commit' reaches the document's own project and the root: letters and legend agree", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    mountHere(GitStatus);
+    cleanups.push(() => void documents.show(null));
+    cleanups.push(() => {
+      git.legend = false;
+      void git.setBaseline("lastVisit");
+    });
+    await documents.show("tools/notes-app/README.md");
+    await until(() => target.querySelector(".prefix") !== null, "project item");
+    const inProject = (): string => git.badge("tools/notes-app/README.md", false)?.title ?? "";
+    const atRoot = (): string => {
+      const file = git.snapshot?.files[0];
+      return file === undefined ? "" : (git.badge(file.path, false)?.title ?? "");
+    };
+    await until(() => inProject().includes("since your last visit"), "project letter");
+    await until(() => atRoot().includes("since your last visit"), "root letter");
+    target.querySelector<HTMLButtonElement>(".chip")!.click();
+    flushSync();
+    const commit = Array.from(target.querySelectorAll<HTMLElement>('[role="radio"]')).find(
+      (r) => r.textContent === "the last commit",
+    )!;
+    commit.click();
+    await until(() => inProject().includes("since the last Git commit"), "project letter follows");
+    await until(() => atRoot().includes("since the last Git commit"), "root letter follows");
+    flushSync();
+    expect(commit.getAttribute("aria-checked")).toBe("true");
+    expect(target.querySelector('[role="dialog"] li')?.textContent).toContain(
+      "since the last Git commit",
+    );
+  });
+
+  it("F2: a project git can't read shows a warning mark and says it (tooltip + name), not a clean look", async () => {
+    await openFolder(MOCK_PROJECTS_MANY);
+    const failed = mock.probe.plugins.gitMembers
+      .summaries()
+      .find((s) => s.error?.kind === "failed")!;
+    const { store } = await explorer();
+    await expand(store, failed.path.split("/").slice(0, -1).join("/"));
+    await until(() => node(failed.path)?.querySelector(".fact.warn") != null, "warning mark");
+    const fact = node(failed.path)!.querySelector<HTMLElement>(".fact.warn")!;
+    expect(fact.querySelector("svg")).not.toBeNull();
+    expect(fact.title).toBe("Git can't read this project.");
+    expect(node(failed.path)?.getAttribute("aria-label")).toContain(
+      "project, Git can't read this project.",
+    );
+  });
+
+  it("F8 + F9: arrows move between the 'Changes since' choices; Escape gives the focus back to the git item", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    mountHere(GitStatus);
+    cleanups.push(() => {
+      git.legend = false;
+      void git.setBaseline("lastVisit");
+    });
+    await until(() => target.querySelector<HTMLButtonElement>(".chip") !== null, "item");
+    const chip = target.querySelector<HTMLButtonElement>(".chip")!;
+    chip.focus();
+    chip.click();
+    flushSync();
+    const radios = (): HTMLElement[] =>
+      Array.from(target.querySelectorAll<HTMLElement>('[role="radio"]'));
+    // one tab stop: the checked choice
+    expect(radios().map((r) => r.tabIndex)).toEqual([0, -1]);
+    radios()[0]!.focus();
+    radios()[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    flushSync();
+    expect(document.activeElement).toBe(radios()[1]);
+    await until(() => radios()[1]?.getAttribute("aria-checked") === "true", "chosen");
+    expect(radios().map((r) => r.tabIndex)).toEqual([-1, 0]);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    flushSync();
+    expect(target.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(chip);
+  });
+
+  it("F14: a long short name is cut apart from its separator", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    mountHere(GitStatus);
+    cleanups.push(() => void documents.show(null));
+    await documents.show("tools/notes-app/README.md");
+    await until(() => target.querySelector(".prefix .short") !== null, "prefix");
+    expect(target.querySelector(".prefix .short")?.textContent).toBe("notes-app");
+    expect(target.querySelector(".prefix")?.textContent).toBe("notes-app ·");
   });
 });

@@ -249,7 +249,7 @@ export function createMockPlugins(
   };
 
   const agent = createMockAgent(emit);
-  const members = createMockGitMembers({ view: projectsView, emit });
+  const members = createMockGitMembers({ view: projectsView, emit, baseline: () => baseline });
   const handlers: Handlers = {
     ...organizing.handlers,
     ...agent.handlers,
@@ -269,6 +269,7 @@ export function createMockPlugins(
       baseline = kind;
       seq += 1;
       emit("git:snapshot", snapshot());
+      members.rebaseline();
       return null;
     },
     "live-feed.items": () => feed,

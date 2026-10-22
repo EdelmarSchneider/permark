@@ -5,7 +5,15 @@
   import type { ProjectCardProps } from "../../core/plugins/registry.svelte";
   import { language, t } from "../../core/i18n";
   import { relativeTime } from "../../core/time";
-  import { STATE_KEYS, changedLine, checking, gitMissing, headText, reasonText } from "./facts";
+  import {
+    STATE_KEYS,
+    aheadBehindText,
+    changedLine,
+    checking,
+    gitMissing,
+    headText,
+    reasonText,
+  } from "./facts";
   import { members } from "./members.svelte";
 
   let { row }: ProjectCardProps = $props();
@@ -41,7 +49,7 @@
         {/if}
         {#if state}<span class="state">{t(state)}</span>{/if}
         {#if ahead !== null}
-          {@const label = t("projects.card.aheadBehindLabel", { a: ahead[0], b: ahead[1] })}
+          {@const label = aheadBehindText(ahead[0], ahead[1])}
           <span class="ahead" role="img" aria-label={label} title={label}
             >{t("projects.card.aheadBehind", { a: ahead[0], b: ahead[1] })}</span
           >
@@ -91,7 +99,8 @@
     padding: 0 6px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--git-modified) 18%, transparent);
-    color: var(--git-modified-text);
+    /* text color on the tint: AA in both themes (as the tree's chip) */
+    color: var(--text);
     font-size: var(--fs-ui-xs);
     font-weight: 600;
     letter-spacing: 0.02em;

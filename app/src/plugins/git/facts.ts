@@ -31,7 +31,7 @@ export function gitMissing(s: RepoSummary): boolean {
   return s.error?.kind === "unavailable";
 }
 
-/** Where HEAD is, in words: the branch, "detached a1b2c3d", or nothing (no commit and no name; unknown). */
+/** Where HEAD is, in words: the branch, "not on a branch (at a1b2c3d)", or nothing (no commit and no name; unknown). */
 export function headText(s: RepoSummary): string | null {
   if (gitMissing(s)) return null;
   if (s.detached) return t("projects.node.detached", { oid: shortOid(s.oid) });
@@ -39,9 +39,14 @@ export function headText(s: RepoSummary): string | null {
 }
 
 /** The node's muted text: what the repository is doing (a chip) instead of the branch, else the branch | detached
- *  commit; a repository with no commit yet says nothing. */
+ *  commit; a repository with no commit yet says nothing. Git can't read it: a warning mark (+ the branch when known),
+ *  never the look of a clean project. */
 export function nodeFact(s: RepoSummary): ProjectFact | null {
   if (gitMissing(s)) return null;
+  if (s.error?.kind === "failed") {
+    const problem = t("projects.card.gitError");
+    return { text: headText(s) ?? "", warn: true, spoken: problem, title: problem };
+  }
   const state = STATE_KEYS[s.state];
   if (state !== null) {
     const text = t(state);
@@ -51,10 +56,10 @@ export function nodeFact(s: RepoSummary): ProjectFact | null {
   if (s.unborn && !s.detached) return null;
   const head = headText(s);
   if (head === null || head === "") return null;
-  return {
-    text: head,
-    spoken: s.detached ? head : t("projects.node.srBranch", { branch: head }),
-  };
+  // the visible words say it all for a detached HEAD; a branch name is said as one
+  return s.detached
+    ? { text: head }
+    : { text: head, spoken: t("projects.node.srBranch", { branch: head }) };
 }
 
 /** The count of changed files as a number to show ("5000+" at the cap). */
@@ -73,12 +78,12 @@ export function rowFact(s: RepoSummary): ProjectFact | null {
   if (gitMissing(s)) return null;
   if (s.error?.kind === "failed") {
     const text = t("projects.card.gitError");
-    return { text, title: `${text} ${s.error.reason}` };
+    return { text, title: `${text} ${reasonText(s.error.reason)}` };
   }
   const state = STATE_KEYS[s.state];
   const full = state === null ? headText(s) : t(state);
-  // a long branch is cut so the count stays in sight (the tooltip has it whole)
-  const head = full === null ? null : cutEnd(full, ROW_HEAD_MAX);
+  // a long branch is cut so the count stays in sight (the tooltip has it whole); "not on a branch (at …)" is short
+  const head = full === null ? null : s.detached ? full : cutEnd(full, ROW_HEAD_MAX);
   const parts = [head ?? ""].filter((p) => p !== "");
   const fullParts = [full ?? ""].filter((p) => p !== "");
   const tail = checking(s)
@@ -113,8 +118,14 @@ export function infoText(s: RepoSummary | null, hasGit: boolean): string {
   if (s === null) return t("projects.git.checking");
   if (gitMissing(s)) return t("projects.card.gitMissing");
   if (s.error?.kind === "failed") return t("projects.card.gitError");
+  if (s.detached) return t("projects.rules.gitDetached", { oid: shortOid(s.oid) });
   const head = headText(s);
   return head === null ? t("git.status.noCommits") : t("projects.rules.gitRepo", { branch: head });
+}
+
+/** Ahead | behind in plain words: "1 change to send, 1 to get". */
+export function aheadBehindText(ahead: number, behind: number): string {
+  return `${tn("projects.card.toSend", ahead, { n: ahead })}, ${tn("projects.card.toGet", behind, { n: behind })}`;
 }
 
 /** Git's reason in words people know (dubious ownership -> "doesn't trust this folder's owner"). */

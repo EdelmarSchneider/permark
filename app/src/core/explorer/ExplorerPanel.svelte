@@ -9,6 +9,7 @@
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import ListFilter from "@lucide/svelte/icons/list-filter";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import type { ProjectRow, TreeNode } from "../../api";
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
@@ -174,21 +175,21 @@
     return null;
   }
 
-  /** What a screen reader hears for a project node: folder name, "project" (+ its short name when that differs), its
-   *  branch, what plugins say (changed files, unread). */
+  /** What a screen reader hears for a project node: the words it shows first (folder name, short name when that
+   *  differs, branch | state; WCAG 2.5.3), "project", what the fact adds ("branch develop", a problem), what plugins
+   *  say (changed files, unread). */
   function projectName(
     node: TreeNode,
     member: ProjectRow,
     fact: ProjectFact | null,
     said: readonly TreeBadge[],
   ): string {
-    const alias = aliasOf(member);
-    const folder = nameOf(node.path);
+    const shown = [nameOf(node.path), aliasOf(member) ?? "", fact?.text ?? ""]
+      .filter((words) => words !== "")
+      .join(" ");
     return [
-      alias === null
-        ? t("projects.node.sr", { folder })
-        : t("projects.node.srNamed", { folder, short: alias }),
-      ...(fact === null ? [] : [fact.spoken ?? fact.text]),
+      t("projects.node.sr", { folder: shown }),
+      ...(fact?.spoken === undefined ? [] : [fact.spoken]),
       ...said.flatMap((b) => (b.title === undefined || b.text === "" ? [] : [b.title])),
     ].join(", ");
   }
@@ -834,11 +835,17 @@
                   >
                 {/if}
                 {#if fact !== null}
-                  <!-- the branch | what the repository is doing: muted, cut before the name, gone in a narrow sidebar -->
+                  <!-- the branch | what the repository is doing: muted, cut before the name, gone in a narrow sidebar;
+                       a state chip is never cut (the name gives way); a problem: a warning mark first -->
                   <span
-                    class={["fact", fact.chip && "chip"]}
+                    class={["fact", fact.chip && "chip", fact.warn && "warn"]}
                     title={fact.title ?? fact.text}
-                    aria-hidden="true">{fact.text}</span
+                    aria-hidden="true"
+                    >{#if fact.warn}<TriangleAlert
+                        size={12}
+                        aria-hidden="true"
+                      />{/if}{#if fact.text !== ""}<span class="fact-text">{fact.text}</span
+                      >{/if}</span
                   >
                 {/if}
                 {#if node.kind.type === "dir" && node.kind.unlisted?.type === "large"}
@@ -858,7 +865,12 @@
       </div>
     </div>
     {#if projects.strip.kind !== "none"}
-      <ProjectStrip />
+      <ProjectStrip
+        focusNode={(path) => {
+          store.reveal(path);
+          list?.focus();
+        }}
+      />
     {:else if store.codeOffer.status === "offered" && !projects.askedThisOpen}
       <div class="code-offer" role="region" aria-label={t("explorer.code.label")}>
         <span>{tn("explorer.code.offer", store.codeOffer.hidden)}</span>
@@ -1072,8 +1084,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* a state: the status bar's chip tint, text in the text color (AA on every row tint) */
+  /* a state: the status bar's chip tint, text in the text color (AA on every row tint); never cut, the name gives way */
   .fact.chip {
+    flex: none;
     padding: 0 6px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--git-modified) 18%, transparent);
@@ -1086,8 +1099,26 @@
   .row.is-selected .fact:not(.chip) {
     color: color-mix(in srgb, var(--muted) 60%, var(--text));
   }
+  .fact-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* git can't read the project: a warning mark, kept when the branch is cut */
+  .fact.warn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .fact.warn :global(svg) {
+    flex: none;
+    color: var(--git-modified-text);
+  }
   @container explorer (max-width: 239px) {
-    .fact {
+    .fact:not(.warn) {
+      display: none;
+    }
+    .fact.warn .fact-text {
       display: none;
     }
   }

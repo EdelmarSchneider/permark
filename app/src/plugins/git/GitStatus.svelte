@@ -13,6 +13,8 @@
    *  opened folder's. */
   type Shown = {
     prefix: string | null;
+    /** The project's short name inside `prefix`. */
+    short: string | null;
     branch: string;
     oid: string | null;
     detached: boolean;
@@ -31,8 +33,10 @@
       if (gitMissing(repo)) return null;
       const row = projects.view?.rows.find((r) => r.uid === repo.id) ?? null;
       const list = members.lists.get(repo.id) ?? null;
+      const short = row?.short ?? repo.path;
       return {
-        prefix: t("projects.status.prefix", { short: row?.short ?? repo.path }),
+        prefix: t("projects.status.prefix", { short }),
+        short,
         branch: repo.detached
           ? t("git.status.detached", { oid: cut(repo.oid) })
           : (repo.branch ?? ""),
@@ -54,6 +58,7 @@
     const oid = head.oid === null ? null : cut(head.oid);
     return {
       prefix: null,
+      short: null,
       branch: head.detached ? t("git.status.detached", { oid: oid ?? "" }) : (head.branch ?? ""),
       oid,
       detached: head.detached,
@@ -83,6 +88,34 @@
   };
 
   let box: HTMLElement | undefined = $state();
+  let chip: HTMLButtonElement | undefined = $state();
+
+  /** The short name before the branch, apart from its separator: a long name is cut, never the "·". */
+  const prefixParts = $derived.by((): { short: string; rest: string } | null => {
+    if (shown === null || shown.prefix === null) return null;
+    const short = shown.short ?? "";
+    const at = short === "" ? -1 : shown.prefix.indexOf(short);
+    return at < 0
+      ? { short: shown.prefix, rest: "" }
+      : { short, rest: shown.prefix.slice(at + short.length) };
+  });
+
+  /** Arrow keys move between the two choices (and choose, as radios do). */
+  function onRadioKey(e: KeyboardEvent, at: number): void {
+    const step =
+      e.key === "ArrowRight" || e.key === "ArrowDown"
+        ? 1
+        : e.key === "ArrowLeft" || e.key === "ArrowUp"
+          ? -1
+          : 0;
+    if (step === 0) return;
+    e.preventDefault();
+    const next = BASELINES[(at + step + BASELINES.length) % BASELINES.length];
+    if (!next) return;
+    void git.setBaseline(next.kind);
+    const group = (e.currentTarget as HTMLElement).parentElement;
+    group?.querySelectorAll<HTMLElement>('[role="radio"]')[BASELINES.indexOf(next)]?.focus();
+  }
 
   /** The status bar clips what overflows it, so the legend is fixed and put above the item when it opens. */
   function above(node: HTMLElement): void {
@@ -97,7 +130,12 @@
   $effect(() => {
     if (!git.legend) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") git.legend = false;
+      if (e.key !== "Escape") return;
+      // focus inside the legend (or lost with it) goes back to the item that opened it
+      const at = document.activeElement;
+      const inside = at === null || at === document.body || (box?.contains(at) ?? false);
+      git.legend = false;
+      if (inside) chip?.focus();
     };
     const onPointer = (e: PointerEvent): void => {
       if (box && e.target instanceof Node && !box.contains(e.target)) git.legend = false;
@@ -114,6 +152,7 @@
 {#if shown !== null}
   <span class="git" bind:this={box}>
     <button
+      bind:this={chip}
       type="button"
       class="chip"
       aria-haspopup="dialog"
@@ -125,7 +164,9 @@
       onclick={() => (git.legend = !git.legend)}
     >
       <GitBranch size={13} aria-hidden="true" />
-      {#if shown.prefix !== null}<span class="prefix">{shown.prefix}</span>{/if}
+      {#if prefixParts !== null}<span class="prefix"
+          ><span class="short">{prefixParts.short}</span>{prefixParts.rest}</span
+        >{/if}
       <span class="branch">{shown.branch}</span>
       {#if shown.unborn}
         <span class="muted">{t("git.status.noCommits")}</span>
@@ -159,12 +200,14 @@
         </ul>
         <div class="baseline" role="radiogroup" aria-label={t("git.baseline.label")}>
           <span class="label">{t("git.baseline.label")}</span>
-          {#each BASELINES as option (option.kind)}
+          {#each BASELINES as option, at (option.kind)}
             <button
               type="button"
               role="radio"
               class={["segment", shown.baseline === option.kind && "is-on"]}
               aria-checked={shown.baseline === option.kind}
+              tabindex={shown.baseline === option.kind ? 0 : -1}
+              onkeydown={(e) => onRadioKey(e, at)}
               onclick={() => void git.setBaseline(option.kind)}>{t(option.label)}</button
             >
           {/each}
@@ -205,10 +248,15 @@
     color: var(--text);
   }
   .prefix {
-    max-width: 14ch;
+    display: inline-flex;
+    max-width: 16ch;
+    white-space: nowrap;
+  }
+  /* the short name is cut, its "·" stays */
+  .short {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
   .branch {
     max-width: 18ch;
@@ -226,7 +274,8 @@
     padding: 0 6px;
     border-radius: 999px;
     background: color-mix(in srgb, var(--git-modified) 18%, transparent);
-    color: var(--git-modified-text);
+    /* text color on the tint: AA in both themes (the tree's chip does the same) */
+    color: var(--text);
     font-size: var(--fs-ui-xs);
     font-weight: 600;
     letter-spacing: 0.02em;

@@ -47,10 +47,16 @@ export type OutlineCell = { text: string; title?: string };
 
 /**
  * A short fact a plugin knows about an included project (its branch, what its repository is doing). `chip`: a state
- * (drawn as a chip, as in the status bar); `spoken`: the words for its screen-reader name (else `text`); `title`: the
- * tooltip (else `text`).
+ * (drawn as a chip, as in the status bar; never cut); `warn`: a problem (a warning mark before `text`); `spoken`: what
+ * the screen-reader name adds after the visible words (none: nothing); `title`: the tooltip (else `text`).
  */
-export type ProjectFact = { text: string; chip?: boolean; spoken?: string; title?: string };
+export type ProjectFact = {
+  text: string;
+  chip?: boolean;
+  warn?: boolean;
+  spoken?: string;
+  title?: string;
+};
 
 /** The props of a plugin's block in a project's detail card. */
 export type ProjectCardProps = { row: ProjectRow };

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { RepoSummary } from "../../api";
 import {
   CHANGED_CAP,
+  aheadBehindText,
   changedLine,
   infoText,
   nodeFact,
@@ -36,17 +37,16 @@ describe("the node's muted text", () => {
     expect(nodeFact(repo())).toEqual({ text: "develop", spoken: "branch develop" });
   });
 
-  it("a detached HEAD reads 'detached' + 7 characters of the commit", () => {
+  it("a detached HEAD in plain words + 7 characters of the commit (nothing more to say)", () => {
     expect(nodeFact(repo({ branch: null, detached: true }))).toEqual({
-      text: "detached a1b2c3d",
-      spoken: "detached a1b2c3d",
+      text: "not on a branch (at a1b2c3d)",
     });
   });
 
   it("what the repository is doing replaces the branch, as a chip (mid-rebase: detached under it)", () => {
     const fact = nodeFact(repo({ state: "rebasing", branch: null, detached: true }));
     expect(fact).toMatchObject({ text: "REBASING", chip: true });
-    expect(fact?.title).toBe("REBASING · detached a1b2c3d");
+    expect(fact?.title).toBe("REBASING · not on a branch (at a1b2c3d)");
     expect(nodeFact(repo({ state: "merging" }))).toMatchObject({ text: "MERGING", chip: true });
   });
 
@@ -63,10 +63,21 @@ describe("the node's muted text", () => {
     expect(nodeFact(repo({ branch: "功能/数据-ünïcödé" }))?.text).toBe("功能/数据-ünïcödé");
   });
 
-  it("a repository git can't read keeps the branch it read without git", () => {
+  it("a repository git can't read: a warning, said and in the tooltip; the branch it read without git stays", () => {
     expect(
       nodeFact(repo({ error: { kind: "failed", reason: "dubious ownership" }, changed: null })),
-    ).toMatchObject({ text: "develop" });
+    ).toEqual({
+      text: "develop",
+      warn: true,
+      spoken: "Git can't read this project.",
+      title: "Git can't read this project.",
+    });
+    // nothing read at all: the mark alone
+    expect(
+      nodeFact(
+        repo({ error: { kind: "failed", reason: "x" }, branch: null, oid: null, changed: null }),
+      ),
+    ).toMatchObject({ text: "", warn: true });
   });
 });
 
@@ -108,7 +119,14 @@ describe("the Settings row", () => {
       repo({ error: { kind: "failed", reason: "detected dubious ownership" } }),
     );
     expect(failed?.text).toBe("Git can't read this project.");
-    expect(failed?.title).toContain("dubious ownership");
+    // git's own message in plain words, as on the card
+    expect(failed?.title).toBe(
+      "Git can't read this project. Git doesn't trust this folder's owner.",
+    );
+    // a detached HEAD is never cut (short and whole)
+    expect(rowFact(repo({ branch: null, detached: true, changed: 2 }))?.text).toBe(
+      "not on a branch (at a1b2c3d) · 2 changed",
+    );
     expect(rowFact(repo({ error: { kind: "unavailable" } }))).toBeNull();
   });
 });
@@ -116,6 +134,9 @@ describe("the Settings row", () => {
 describe("the expanded row's line", () => {
   it("its own repository, branch …; no git; git missing; can't read", () => {
     expect(infoText(repo(), true)).toBe("Its own repository, branch develop.");
+    expect(infoText(repo({ branch: null, detached: true }), true)).toBe(
+      "Its own repository, not on a branch (at a1b2c3d).",
+    );
     expect(infoText(null, false)).toBe("No git repository.");
     expect(infoText(null, true)).toBe("Checking git…");
     expect(infoText(repo({ error: { kind: "unavailable" } }), true)).toBe(
@@ -124,6 +145,11 @@ describe("the expanded row's line", () => {
     expect(infoText(repo({ error: { kind: "failed", reason: "x" } }), true)).toBe(
       "Git can't read this project.",
     );
+  });
+
+  it("ahead | behind in plain words, singular and plural", () => {
+    expect(aheadBehindText(1, 1)).toBe("1 change to send, 1 to get");
+    expect(aheadBehindText(3, 2)).toBe("3 changes to send, 2 to get");
   });
 
   it("git's ownership refusal in plain words", () => {

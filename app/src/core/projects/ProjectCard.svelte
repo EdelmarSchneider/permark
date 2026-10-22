@@ -22,6 +22,8 @@
   let { row, anchor, from, close, openTab, openSettings, hovering }: Props = $props();
 
   const WIDTH = 320;
+  /** The card's facts: its description for screen readers (said when it opens, the answer before the buttons). */
+  const FACTS_ID = "project-card-facts";
   const GAP = 8;
 
   let card: HTMLElement | undefined = $state();
@@ -102,6 +104,7 @@
   class="card"
   role="dialog"
   aria-label={t("projects.card.dialog", { name: row.name })}
+  aria-describedby={FACTS_ID}
   tabindex="-1"
   onpointerenter={() => hovering(true)}
   onpointerleave={() => hovering(false)}
@@ -111,20 +114,22 @@
     <span class="name">{row.name}</span>
     {#if row.category}<span class="chip">{row.category}</span>{/if}
   </div>
-  {#if row.description}<p class="description">{row.description}</p>{/if}
-  <p class="path">{row.path}</p>
-  {#each facts as fact (fact.id)}
-    {#await fact.card() then block}<block.default {row} />{/await}
-  {/each}
-  {#if said.length > 0}<p class="line">{said.join(" · ")}</p>{/if}
-  {#if agentOn}
-    <p class="line">
-      {t(row.agent === "off" ? "projects.card.agentNot" : "projects.card.agentSees")}
-    </p>
-  {/if}
-  {#if row.inner !== null && row.inner > 0}
-    <p class="line">{tn("projects.card.inner", row.inner)}</p>
-  {/if}
+  <div class="facts" id={FACTS_ID}>
+    {#if row.description}<p class="description">{row.description}</p>{/if}
+    <p class="path">{row.path}</p>
+    {#each facts as fact (fact.id)}
+      {#await fact.card() then block}<block.default {row} />{/await}
+    {/each}
+    {#if said.length > 0}<p class="line">{said.join(" · ")}</p>{/if}
+    {#if agentOn}
+      <p class="line">
+        {t(row.agent === "off" ? "projects.card.agentNot" : "projects.card.agentSees")}
+      </p>
+    {/if}
+    {#if row.inner !== null && row.inner > 0}
+      <p class="line">{tn("projects.card.inner", row.inner)}</p>
+    {/if}
+  </div>
   <div class="buttons">
     <button type="button" class="btn btn--sm" onclick={openTab}>{t("projects.card.openTab")}</button
     >
@@ -151,6 +156,12 @@
     font-size: var(--fs-ui-sm);
     outline: none;
     animation: pm-fade var(--dur-fast) var(--ease);
+  }
+  .facts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
   }
   .title {
     display: flex;
