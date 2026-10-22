@@ -1567,6 +1567,7 @@ fn context_of(
             context.plugins = core.plugins_on();
             context.git = core.facts().git();
             context.agent = core.facts().agent();
+            context.agent_files = core.agent_files().to_vec();
             context.live_updates = match core.live_status() {
                 crate::watch::LiveStatus::Available => LiveUpdates::Available,
                 crate::watch::LiveStatus::Unavailable { reason } => {

@@ -20,8 +20,9 @@ use crate::paths::CASE_INSENSITIVE;
 /// How long a writer waits for the others to finish (a write takes milliseconds; many writers queue up).
 pub(crate) const WAIT: Duration = Duration::from_secs(30);
 /// The wait of a writer that holds a plugin's lock meanwhile (comments, quiet: their lists wait for it). Longer -> a
-/// hung holder: this write fails at once-ish (the person is told | it is tried again later), lists keep answering.
-pub const BRIEF_WAIT: Duration = Duration::from_secs(2);
+/// hung holder: this write fails within seconds (the person is told | it is tried again later), lists keep answering.
+/// 10 s, not 2: many writers queued on a slow disk (Windows CI) took > 2 s and refused honest writes.
+pub const BRIEF_WAIT: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_millis(5);
 const OPEN_RETRY: [Duration; 3] = [
     Duration::from_millis(50),

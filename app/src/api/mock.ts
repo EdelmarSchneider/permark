@@ -70,6 +70,7 @@ function defaultSettings(): AppSettings {
     editor: "",
     keymap: {},
     plugins: {},
+    rightViews: null,
   };
 }
 
@@ -84,6 +85,7 @@ function neutralContext(): Context {
     distribution: "direct",
     platform: "windows",
     plugins: [],
+    agentFiles: [],
   };
 }
 
@@ -130,6 +132,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
       else plugins[change.value.plugin] = change.value.enabled;
       return { ...settings, plugins };
     }
+    case "rightViews":
+      return { ...settings, rightViews: change.value };
     default:
       return change satisfies never;
   }
@@ -191,6 +195,8 @@ export type MockProbe = {
   remote: { asked: string[]; always: boolean };
   /** Projects inside the folder: the fixture per folder, what was asked, news for the Changes panel. */
   projects: ProjectsProbe;
+  /** Facts of the shown project's context (`agentFiles`, `git`) over the mock's own; emitted at once. */
+  context: { set(over: Record<string, unknown>): void };
 };
 
 /** Fresh mock (tests get their own; the dev build uses `mockApi`). */
@@ -211,6 +217,11 @@ export function createMockApi(): Api & {
     { path: "D:/old/specs", name: "specs", openedMs: Date.now() - 86_400_000, missing: true },
   ];
   const session = new Map<string, JsonValue>();
+  // the mock folder has `CLAUDE.md` (a project that calls for agents): Live changes starts closed so the scenarios and
+  // calibration fixtures look as before; seeds `agentProject` | `gitOnlyProject` | `plainFolder` remove this
+  session.set("layout.views", { v: 1, open: { "live-feed.panel": false }, selected: [] });
+  /** Facts of a shown project's context over the mock's own (`agentFiles` until the backend type has it). */
+  let contextOver: Record<string, unknown> = { agentFiles: ["CLAUDE.md"] };
   const listeners: { [E in EventName]: Set<(payload: Events[E]) => void> } = {
     "window-changed": new Set(),
     "context-changed": new Set(),
@@ -437,6 +448,14 @@ export function createMockApi(): Api & {
     remote: { asked: [], always: false },
     tabs: { moved: [], movedTo: [], answers: [], saved: [], refuseMove: false },
     projects: projects.probe,
+    context: {
+      set: (over) => {
+        contextOver = { ...contextOver, ...over };
+        if (view.state === "showing") {
+          emit("context-changed", { window: "main", context: context() });
+        }
+      },
+    },
   };
   let tree: TreeView | null = null;
   /** The view's drop listeners (the system's drag events, fired by tests through `probe.drops.fire`). */
@@ -509,7 +528,8 @@ export function createMockApi(): Api & {
         : agent.clients[0] !== undefined
           ? { status: "connected", client: agent.clients[0] }
           : { status: "on" };
-    return { ...base, workspace: kinds[view.workspace.kind], agent: condition };
+    const over = view.workspace.kind === "project" ? contextOver : {};
+    return { ...base, workspace: kinds[view.workspace.kind], agent: condition, ...over } as Context;
   }
 
   /** Opens `path` in a new tab (`this`: in the active one) and shows it. */
