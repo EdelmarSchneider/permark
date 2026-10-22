@@ -203,7 +203,17 @@ fn tags_live_with_their_project_and_wear_their_status() {
 
     // the root's entry for a project file follows its moves (nothing written in the project), and what the person
     // takes off goes from it too
-    std::fs::rename(root.join("sub/plan.md"), root.join("sub/plan2.md")).unwrap();
+    // moved in the app (an outside rename is paired by the watch, not on every system)
+    let plan = ops
+        .plan_move(
+            &[permark_core::fileops::MoveSpec {
+                from: "sub/plan.md".to_owned(),
+                to: "sub/plan2.md".to_owned(),
+            }],
+            false,
+        )
+        .unwrap();
+    ops.apply_move(plan.plan_id, false).unwrap();
     wait("root entry follows the move", || {
         read(&root.join(".permark/meta.toml")).contains("[files.\"sub/plan2.md\"]")
     });
