@@ -858,10 +858,10 @@ fn a_new_table_goes_below_the_header_and_the_header_stays_when_the_table_goes() 
     let hand =
         "# team file\n\n[tree]\nshow = \"documents\" # default\n\n[agent]\ndeny = [\"notes\"]\n";
     let out = project_applied(hand, &ProjectSettingChange::TreeShow(None));
-    // (the blank line above `[agent]` is its own)
-    assert_eq!(out, "# team file\n\n\n[agent]\ndeny = [\"notes\"]\n");
+    // (the blank line above a table goes with it)
+    assert_eq!(out, "# team file\n\n[agent]\ndeny = [\"notes\"]\n");
     let out = project_applied(&out, &ProjectSettingChange::AgentDeny(Vec::new()));
-    assert_eq!(out, "# team file\n\n\n");
+    assert_eq!(out, "# team file\n");
     // a root key below the header, and a last comment line with no line end
     let out = project_applied(
         "# head\n# no end",

@@ -308,15 +308,20 @@ fn set_key(root: &mut Table, table: Option<&str>, key: &str, value: Option<Value
     }
 }
 
-/// Bytes of the file's header: its first whole lines, while blank or a comment.
+/// Bytes of the file's header: its first whole lines, while blank or a comment, up to the last comment (blank lines
+/// after it belong to what follows: they go with it).
 fn header_len(text: &str) -> usize {
     let mut len = 0;
+    let mut at = 0;
     for line in text.split_inclusive('\n') {
         let trimmed = line.trim_start();
         if !line.ends_with('\n') || !(trimmed.is_empty() || trimmed.starts_with('#')) {
             break;
         }
-        len += line.len();
+        at += line.len();
+        if !trimmed.is_empty() {
+            len = at;
+        }
     }
     len
 }
