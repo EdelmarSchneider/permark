@@ -479,7 +479,12 @@ describe("marks on the files of search results (UX regressions #10)", () => {
       titles.join(" | "),
     ).toBe(true);
     // the words are in the tooltip; the mark is not color only
-    expect(guideRow()?.querySelector(".badge.tone-unread")?.textContent).toBe("•");
+    expect(guideRow()?.querySelector(".badge.tone-unread .mark")?.textContent).toBe("•");
+    // screen readers hear the words, not the raw marks (UX review restore-b4 F1)
+    expect(guideRow()?.querySelector(".badge.tone-unread .mark")?.getAttribute("aria-hidden")).toBe(
+      "true",
+    );
+    expect(guideRow()?.querySelector(".badge.tone-unread .sr-only")?.textContent).toBe(", Unread");
     syncPlugins([]);
     await until(() => badgeTitles(guideRow()).length === 0, "the marks go with their plugins");
   });

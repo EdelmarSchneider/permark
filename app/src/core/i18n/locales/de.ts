@@ -46,6 +46,7 @@ export default {
   "status.version": "Version {version}",
   "status.versionUnavailable": "Version nicht verfügbar",
   "status.liveOff": "Live-Aktualisierung aus",
+  "status.liveOffShort": "Live: aus",
   "status.liveOffHint":
     "Dieser Ort kann keine Änderungen melden, daher kann PerMark sie nicht live verfolgen. Wechsle zurück zum Fenster, um zu aktualisieren.",
 
@@ -721,6 +722,7 @@ export default {
   "follow.back": "Zurück (Alt+←)",
   "follow.stop": "Beenden",
   "unread.dot": "Ungelesen",
+  "unread.order": "Neueste zuerst",
   "unread.folderCount.one": "{n} ungelesen",
   "unread.folderCount.other": "{n} ungelesen",
   "unread.markAllRead": "Alle als gelesen markieren",

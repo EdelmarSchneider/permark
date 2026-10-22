@@ -46,6 +46,7 @@ export default {
   "status.version": "Versão {version}",
   "status.versionUnavailable": "Versão indisponível",
   "status.liveOff": "Atualizações ao vivo desligadas",
+  "status.liveOffShort": "Ao vivo: não",
   "status.liveOffHint":
     "Este local não consegue informar alterações, então o PerMark não pode acompanhá-las ao vivo. Volte para a janela para atualizar.",
 
@@ -713,6 +714,7 @@ export default {
   "follow.back": "Voltar (Alt+←)",
   "follow.stop": "Parar",
   "unread.dot": "Não lido",
+  "unread.order": "Mais recentes primeiro",
   "unread.folderCount.one": "{n} não lido",
   "unread.folderCount.other": "{n} não lidos",
   "unread.markAllRead": "Marcar tudo como lido",

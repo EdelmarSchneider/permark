@@ -45,6 +45,7 @@ export default {
   "status.version": "版本 {version}",
   "status.versionUnavailable": "版本不可用",
   "status.liveOff": "实时更新已关闭",
+  "status.liveOffShort": "实时：关",
   "status.liveOffHint": "此位置无法报告更改，因此 PerMark 无法实时跟踪。切换回窗口即可刷新。",
 
   // ---- notices
@@ -680,6 +681,7 @@ export default {
   "follow.back": "后退 (Alt+←)",
   "follow.stop": "停止",
   "unread.dot": "未读",
+  "unread.order": "最新的在前",
   "unread.folderCount.one": "{n} 个未读",
   "unread.folderCount.other": "{n} 个未读",
   "unread.markAllRead": "全部标为已读",

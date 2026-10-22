@@ -481,7 +481,7 @@
   }
   .group {
     padding: var(--sp-2) var(--sp-2) 2px;
-    color: var(--faint);
+    color: var(--muted);
     font-size: var(--fs-ui-xs);
     font-weight: 600;
     letter-spacing: 0.04em;
@@ -537,7 +537,7 @@
     font-weight: 500;
   }
   .faint {
-    color: var(--faint);
+    color: var(--muted);
     font-size: var(--fs-ui-sm);
   }
   .snippet {
@@ -550,12 +550,12 @@
   }
   .aside {
     flex: none;
-    color: var(--faint);
+    color: var(--muted);
     font-size: var(--fs-ui-xs);
   }
   .reason {
     display: block;
-    color: var(--faint);
+    color: var(--muted);
     font-size: var(--fs-ui-sm);
   }
   .remedy {
@@ -589,7 +589,7 @@
     padding: 6px var(--sp-3);
     border-top: 1px solid var(--border);
     background: var(--surface);
-    color: var(--faint);
+    color: var(--muted);
     font-size: var(--fs-ui-xs);
   }
   .partial {

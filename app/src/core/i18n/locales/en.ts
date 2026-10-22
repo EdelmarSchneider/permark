@@ -44,6 +44,7 @@ const en = {
   "status.version": "Version {version}",
   "status.versionUnavailable": "Version unavailable",
   "status.liveOff": "Live updates off",
+  "status.liveOffShort": "Live: off",
   "status.liveOffHint":
     "This location can't report changes, so PerMark can't follow them live. Switch back to the window to refresh.",
 
@@ -697,6 +698,7 @@ const en = {
   "follow.back": "Back (Alt+Left)",
   "follow.stop": "Stop",
   "unread.dot": "Unread",
+  "unread.order": "Newest first",
   "unread.folderCount.one": "{n} unread",
   "unread.folderCount.other": "{n} unread",
   "unread.markAllRead": "Mark all read",

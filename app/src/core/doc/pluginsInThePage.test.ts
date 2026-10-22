@@ -116,7 +116,8 @@ describe("a badge in the header", () => {
     });
     await show("README.md");
     await until(() => target.querySelector(".doc-header .badge") !== null, "the badge");
-    expect(target.querySelector(".doc-header .badge")?.textContent).toBe("M");
+    expect(target.querySelector(".doc-header .badge .mark")?.textContent).toBe("M");
+    expect(target.querySelector(".doc-header .badge .sr-only")?.textContent).toBe(", changed");
     await show("docs/guide.md");
     await until(() => target.querySelector(".doc-header .badge") === null, "no badge");
   });
