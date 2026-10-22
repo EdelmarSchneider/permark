@@ -84,6 +84,7 @@ function neutralContext(): Context {
     distribution: "direct",
     platform: "windows",
     plugins: [],
+    agentFiles: [],
   };
 }
 
