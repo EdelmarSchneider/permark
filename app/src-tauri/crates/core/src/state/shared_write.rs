@@ -214,3 +214,88 @@ mod tests {
         let _b = lock_for(&dir.path().join("y.json")).unwrap().unwrap();
     }
 }
+
+/// Verifier re-check round 4 (B1 fix, D51): the timeout path never writes unlocked; a dead holder frees the lock.
+#[cfg(test)]
+mod verify_tests {
+    use super::*;
+
+    #[derive(Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+    struct Count {
+        n: u32,
+    }
+
+    impl super::super::StateData for Count {
+        const VERSION: u32 = 1;
+    }
+
+    #[test]
+    fn verify_lock_timeout_never_writes_unlocked() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = super::super::RawFile::private(dir.path().join("raw.json"), None);
+        std::fs::write(raw.path(), b"before").unwrap();
+        let store = super::super::StateStore::app(&super::super::AppDirs::under(dir.path()));
+        let state = store.app_file::<Count>("count.json");
+        std::fs::create_dir_all(state.path().parent().unwrap()).unwrap();
+        std::fs::write(state.path(), br#"{"version":1,"data":{"n":7}}"#).unwrap();
+        let state_before = std::fs::read(state.path()).unwrap();
+        // another writer (own handle) holds both locks longer than the wait
+        let held_raw = lock_for(raw.path()).unwrap().expect("lock");
+        let held_state = lock_for(state.path()).unwrap().expect("lock");
+        let start = Instant::now();
+        let t_raw = {
+            let raw = raw.clone();
+            std::thread::spawn(move || raw.update(|_| Some(b"after".to_vec())).is_err())
+        };
+        let t_state = {
+            let state = state.clone();
+            std::thread::spawn(move || state.update(|_| Some(Count { n: 99 })).is_err())
+        };
+        assert!(t_raw.join().unwrap(), "raw update must fail on timeout");
+        assert!(t_state.join().unwrap(), "state update must fail on timeout");
+        assert!(start.elapsed() >= WAIT, "{:?}", start.elapsed());
+        assert_eq!(std::fs::read(raw.path()).unwrap(), b"before");
+        assert_eq!(std::fs::read(state.path()).unwrap(), state_before);
+        drop((held_raw, held_state));
+        // freed: writes go through again
+        raw.update(|_| Some(b"after".to_vec())).unwrap();
+        assert_eq!(std::fs::read(raw.path()).unwrap(), b"after");
+    }
+
+    #[test]
+    fn verify_lock_of_a_panicked_holder_is_free_at_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("x.json");
+        let p = path.clone();
+        let r = std::thread::spawn(move || {
+            let _held = lock_for(&p).unwrap().expect("lock");
+            panic!("holder dies");
+        })
+        .join();
+        assert!(r.is_err());
+        let start = Instant::now();
+        let got = lock_for(&path).unwrap();
+        assert!(got.is_some() && start.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn verify_same_file_other_case_shares_the_lock_where_case_is_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Case.json");
+        let other = dir.path().join("case.JSON");
+        let _held = lock_for(&path).unwrap().expect("lock");
+        let start = Instant::now();
+        let t = std::thread::spawn(move || {
+            // either shares the lock (waits) or not; on case-insensitive systems it must wait
+            let _ = lock_for(&other);
+        });
+        std::thread::sleep(Duration::from_millis(300));
+        let finished = t.is_finished();
+        if CASE_INSENSITIVE {
+            assert!(!finished, "case variant must share the lock");
+        }
+        drop(_held);
+        t.join().unwrap();
+        let _ = start;
+    }
+}

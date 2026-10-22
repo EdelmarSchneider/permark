@@ -472,3 +472,108 @@ fn two_apps_on_one_folder_adding_and_removing_at_once_lose_nothing() {
     // each app sees the other's comments at its next look
     assert_eq!(list(&a).len(), list(&b).len());
 }
+
+/// Verifier re-check (D51): another writer holds the member file's lock past the wait -> the add fails and the file
+/// is untouched; what happens to that comment afterwards is reported (printed), not asserted.
+#[test]
+fn verify_add_while_another_writer_holds_the_lock_writes_nothing() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let core = opened(&root, &env(base.path()));
+    let member_file = root
+        .join(MEMBER)
+        .join(".permark")
+        .join("local")
+        .join("comments.json");
+    let before = list(&core).len();
+    let bytes = std::fs::read(&member_file).unwrap();
+    let held = permark_core::state::shared_write::lock_for(&member_file)
+        .unwrap()
+        .expect("lock");
+    let r = call(
+        &core,
+        "add",
+        json!({ "path": format!("{MEMBER}/doc.md"), "quote": "alpha", "text": "while locked" }),
+    );
+    let files: Vec<String> = walk(&root)
+        .into_iter()
+        .chain(walk(base.path()))
+        .filter(|p| p.ends_with("comments.json"))
+        .collect();
+    eprintln!(
+        "VERIFY add result ok={} files={files:?} member_changed={}",
+        r.is_ok(),
+        std::fs::read(&member_file).unwrap() != bytes
+    );
+    assert!(r.is_err(), "{r:?}");
+    assert_eq!(
+        std::fs::read(&member_file).unwrap(),
+        bytes,
+        "written while another writer held the lock"
+    );
+    drop(held);
+    let shown_after_error = list(&core).len();
+    call(
+        &core,
+        "add",
+        json!({ "path": format!("{MEMBER}/doc.md"), "quote": "alpha", "text": "after" }),
+    )
+    .unwrap();
+    let texts: Vec<String> = list(&core)
+        .iter()
+        .map(|c| c["text"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    let on_disk =
+        String::from_utf8_lossy(&std::fs::read(&member_file).unwrap()).contains("while locked");
+    eprintln!(
+        "VERIFY before={before} shown_after_error={shown_after_error} after={texts:?} failed_add_on_disk={on_disk}"
+    );
+}
+
+fn walk(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            out.extend(walk(&p));
+        } else {
+            out.push(p.display().to_string());
+        }
+    }
+    out
+}
+
+/// Verifier re-check (merge f83c954: owners set by the worker after open): a comment added on a member document
+/// before the owners are known must still be listed once they are.
+#[test]
+fn verify_comment_added_before_owners_known_stays_listed() {
+    let mut early = 0;
+    let mut lost = Vec::new();
+    for round in 0..20 {
+        let (_dir, root) = setup();
+        let base = tempfile::tempdir().unwrap();
+        // first open copies the 0.6 state once; the case that matters is every later open
+        drop(opened(&root, &env(base.path())));
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+        let known = core.projects().wait_owners(Duration::ZERO);
+        let text = format!("early {round}");
+        let r = call(
+            &core,
+            "add",
+            json!({ "path": format!("{MEMBER}/doc.md"), "quote": "alpha", "text": text }),
+        );
+        assert!(core.projects().wait_owners(Duration::from_secs(10)));
+        if !known && r.is_ok() {
+            early += 1;
+            let shown = list(&core).iter().any(|c| c["text"] == json!(text));
+            if !shown {
+                lost.push(round);
+            }
+        }
+    }
+    eprintln!("VERIFY early adds={early} hidden after owners known={lost:?}");
+    assert!(
+        lost.is_empty(),
+        "comments hidden: {lost:?} of {early} early adds"
+    );
+}

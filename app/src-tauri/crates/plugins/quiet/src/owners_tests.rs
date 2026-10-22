@@ -376,3 +376,92 @@ fn two_apps_on_one_folder_setting_and_clearing_marks_lose_nothing() {
         );
     }
 }
+
+/// Verifier re-check (D51): a mark the project opened alone clears stays cleared when the root tab writes next.
+#[test]
+fn verify_mark_cleared_in_alone_tab_stays_cleared_after_root_tab_writes() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let env = env(base.path());
+    let core = opened(&root, &env);
+    let alone = opened(&root.join(MEMBER), &env);
+    call(
+        &core,
+        "set",
+        json!({ "paths": [format!("{MEMBER}/x")], "interest": "quiet" }),
+    );
+    // the alone tab sees x only after its own next write (D51: learn at next write)
+    let stale = call(&alone, "rules", Value::Null);
+    eprintln!("VERIFY alone tab view before its write: {stale}");
+    call(
+        &alone,
+        "set",
+        json!({ "paths": ["z"], "interest": "quiet" }),
+    );
+    let learned = call(&alone, "rules", Value::Null);
+    assert_eq!(
+        learned["marks"]["x"],
+        json!("quiet"),
+        "alone tab learned: {learned}"
+    );
+    // x is not idle in the member alone only if a silenced folder is above: clear it to speaking
+    call(
+        &alone,
+        "set",
+        json!({ "paths": ["x"], "interest": "speaking" }),
+    );
+    let member_file = root.join(MEMBER).join(".permark/local/quiet.json");
+    let after_alone: Value = serde_json::from_slice(&std::fs::read(&member_file).unwrap()).unwrap();
+    assert!(
+        after_alone.get("x").is_none(),
+        "alone tab clear: {after_alone}"
+    );
+    call(
+        &core,
+        "set",
+        json!({ "paths": [format!("{MEMBER}/y")], "interest": "quiet" }),
+    );
+    let marks: Value = serde_json::from_slice(&std::fs::read(&member_file).unwrap()).unwrap();
+    assert!(marks.get("x").is_none(), "cleared mark came back: {marks}");
+    assert_eq!(marks["y"], json!("quiet"), "{marks}");
+    assert_eq!(marks["drafts"], json!("speaking"), "{marks}");
+    // and the root tab's own view follows the file after its write
+    let rules = call(&core, "rules", Value::Null);
+    assert!(
+        rules["marks"].get(format!("{MEMBER}/x")).is_none(),
+        "{rules}"
+    );
+}
+
+/// Verifier re-check (merge f83c954): a mark set on a member path before the owners are known (every open after the
+/// first) must still hold once they are.
+#[test]
+fn verify_mark_set_before_owners_known_still_holds() {
+    let mut early = 0;
+    let mut lost = Vec::new();
+    for round in 0..10 {
+        let (_dir, root) = setup();
+        let base = tempfile::tempdir().unwrap();
+        drop(opened(&root, &env(base.path())));
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+        let known = core.projects().wait_owners(Duration::ZERO);
+        let r = core.rpc().call(
+            "quiet",
+            "set",
+            &RpcCall {
+                window: "w".to_owned(),
+                args: json!({ "paths": [format!("{MEMBER}/early")], "interest": "quiet" }),
+            },
+        );
+        assert!(core.projects().wait_owners(Duration::from_secs(10)));
+        if !known && r.is_ok() {
+            early += 1;
+            let rules = call(&core, "rules", Value::Null);
+            if rules["marks"].get(format!("{MEMBER}/early")).is_none() {
+                lost.push(round);
+            }
+        }
+    }
+    eprintln!("VERIFY quiet early sets={early} lost after owners known={lost:?}");
+    assert!(lost.is_empty(), "marks lost: {lost:?} of {early}");
+}
