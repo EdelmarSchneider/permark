@@ -60,10 +60,9 @@ export class AgentStore {
   start(): () => void {
     return $effect.root(() => {
       $effect(() => {
-        if (this.#root() === null) {
-          this.status = null;
-          return;
-        }
+        // a new project starts unknown: the last project's switch never stands for this one
+        this.status = null;
+        if (this.#root() === null) return;
         let gone = false;
         const offs: (() => void)[] = [];
         const keep = (stop: () => void): void => {

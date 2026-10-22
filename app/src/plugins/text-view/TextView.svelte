@@ -14,6 +14,7 @@
     MASK,
     privateKeyLines,
     publicKeyLines,
+    type Span,
   } from "../../core/config/secrets";
   import { documents } from "../../core/doc/document.svelte";
   import {
@@ -38,12 +39,13 @@
     MIN_COLS,
     piecesFor,
     rowStarts,
-    rowsText,
+    rowsRange,
     widthsOf,
     type Anchor,
     type Piece,
     type Widths,
   } from "./wrapRows";
+  import { longLineSpans, LONG_LINE, type WindowCache } from "./longSecrets";
 
   let { view }: ViewerProps = $props();
 
@@ -137,11 +139,11 @@
     );
   }
 
-  /** Some rows of a very long line, as plain text. */
-  function partOf(piece: Piece): string {
+  /** Where some rows of a very long line start and end, in characters. */
+  function rangeOf(piece: Piece): [number, number] {
     const raw = lines[piece.line] ?? "";
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    return rowsText(line, piece.from, piece.to, cols, widths?.leads[piece.line] ?? 0);
+    return rowsRange(line, piece.from, piece.to, cols, widths?.leads[piece.line] ?? 0);
   }
 
   /** The indentation the further rows of a line of a smaller file keep. */
@@ -400,27 +402,47 @@
   /** Lines of certificates | public keys: never masked. */
   const publicBody = $derived(publicKeyLines(lines));
 
-  /** A line cut where its secret values are (a line of CRLF text loses its carriage return). */
-  function pieces(raw: string, no: number): Part[] {
+  /** The window scans of the very long lines of this text (line, 0-based -> its windows). */
+  let longScans: { lines: readonly string[]; byLine: Map<number, WindowCache> } | null = null;
+
+  /** Secret spans of line `i` (0-based) that reach into `from` .. `to`. */
+  function spansOf(line: string, i: number, from: number, to: number): Span[] {
+    if (keyBody.has(i)) return [{ from: line.length - line.trimStart().length, to: line.length }];
+    if (publicBody.has(i)) return [];
+    if (line.length <= LONG_LINE) return findCodeSecrets(line);
+    if (longScans?.lines !== lines) longScans = { lines, byLine: new Map() };
+    let cache = longScans.byLine.get(i);
+    if (cache === undefined) {
+      cache = new Map();
+      longScans.byLine.set(i, cache);
+    }
+    return longLineSpans(line, from, to, cache);
+  }
+
+  /**
+   * A line, or the part `range` of it (some rows of a very long one), cut where its secret values are (a line of CRLF
+   * text loses its carriage return). A value begun on an earlier row stays hidden: its mask is drawn where it starts.
+   */
+  function pieces(raw: string, no: number, range?: [number, number]): Part[] {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
-    const lead = line.length - line.trimStart().length;
-    const spans = keyBody.has(no - 1)
-      ? [{ from: lead, to: line.length }]
-      : line.length > 4000 || publicBody.has(no - 1)
-        ? []
-        : findCodeSecrets(line);
-    if (spans.length === 0) return [{ text: line, secret: null }];
+    const [start, end] = range ?? [0, line.length];
+    const spans = spansOf(line, no - 1, start, end);
+    if (spans.length === 0) return [{ text: line.slice(start, end), secret: null }];
     const open = shownSecrets.view === view ? shownSecrets.keys : new Set<string>();
     const out: Part[] = [];
-    let at = 0;
+    let at = start;
     for (const span of spans) {
-      out.push({ text: line.slice(at, span.from), secret: null });
+      if (span.to <= start) continue;
+      if (span.from >= end) break;
+      const from = Math.max(span.from, start);
+      const to = Math.min(span.to, end);
+      out.push({ text: line.slice(at, from), secret: null });
       const key = `${no}:${span.from}`;
-      const value = line.slice(span.from, span.to);
-      out.push({ text: open.has(key) ? value : MASK, secret: open.has(key) ? null : key });
-      at = span.to;
+      if (open.has(key)) out.push({ text: line.slice(from, to), secret: null });
+      else if (span.from >= start) out.push({ text: MASK, secret: key });
+      at = to;
     }
-    out.push({ text: line.slice(at), secret: null });
+    out.push({ text: line.slice(at, end), secret: null });
     return out;
   }
 
@@ -514,13 +536,13 @@
             <span class="no">{piece.from === 0 ? piece.line + 1 : ""}</span><span
               class="line"
               style:--lead={wrap ? leadOf(piece.line) : null}
-              >{#if whole(piece)}{#each pieces(lines[piece.line] ?? "", piece.line + 1) as part, i (i)}{#if part.secret !== null}<button
-                      type="button"
-                      class="secret"
-                      title={t("config.reveal")}
-                      aria-label={t("config.reveal")}
-                      onclick={() => reveal(part.secret ?? "")}>{part.text}</button
-                    >{:else}{part.text}{/if}{/each}{:else}{partOf(piece)}{/if}</span
+              >{#each pieces(lines[piece.line] ?? "", piece.line + 1, whole(piece) ? undefined : rangeOf(piece)) as part, i (i)}{#if part.secret !== null}<button
+                    type="button"
+                    class="secret"
+                    title={t("config.reveal")}
+                    aria-label={t("config.reveal")}
+                    onclick={() => reveal(part.secret ?? "")}>{part.text}</button
+                  >{:else}{part.text}{/if}{/each}</span
             >
           </div>
         {/each}
