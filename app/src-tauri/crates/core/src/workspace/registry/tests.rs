@@ -481,12 +481,10 @@ fn events_only_when_something_differs() {
         f.registry.context_of(&welcome).unwrap().workspace,
         WorkspaceKind::Welcome
     );
-    assert!(f
-        .registry
-        .context_of(&welcome)
-        .unwrap()
-        .agent_files
-        .is_empty());
+    assert_eq!(
+        f.registry.context_of(&welcome).unwrap().agent_files,
+        Vec::<String>::new()
+    );
 }
 
 #[test]
