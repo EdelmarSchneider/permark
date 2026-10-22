@@ -15,8 +15,10 @@ import type {
   ProjectsView,
   Result,
   TagStatus,
+  VocabularyEntry,
   VocabularyKind,
 } from "./types";
+import { COLORS, ICONS } from "../plugins/tags/model";
 
 const ok = <T>(value: T): Promise<Result<T>> => Promise.resolve({ ok: true, value });
 
@@ -400,6 +402,9 @@ type Handlers = Pick<
   | "projectsAnswerMove"
   | "projectsCardSet"
   | "vocabularyPromote"
+  | "vocabularyRename"
+  | "vocabularyRemove"
+  | "vocabularySetStyle"
 >;
 
 export function createMockProjects(deps: Deps): { handlers: Handlers; probe: ProjectsProbe } {
@@ -455,6 +460,50 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
   function update(change: (r: ProjectRow) => ProjectRow): void {
     const v = current();
     commit({ ...v, rows: v.rows.map(change) });
+  }
+
+  /** A typed name by the tag rule (the backend's `normalize_tag`). */
+  function vocabName(raw: string): string {
+    return raw.trim().toLowerCase().split(/\s+/).join("-");
+  }
+
+  /** No `.permark/` in a folder without a project list (the mock's stand-in), or a list that can't be read. */
+  function vocabWritable(v: ProjectsView): boolean {
+    return (
+      v.record.status !== "absent" &&
+      v.vocabulary.file.status !== "unreadable" &&
+      v.vocabulary.file.status !== "newer"
+    );
+  }
+
+  function vocabRefused(
+    command:
+      "vocabulary_promote" | "vocabulary_rename" | "vocabulary_remove" | "vocabulary_set_style",
+    kind: "invalidData" | "unavailable" | "notFound" | "exists",
+    subject: string,
+  ): Promise<Result<null>> {
+    return Promise.resolve({
+      ok: false,
+      error: { kind: "backend", command, error: { kind, subject, detail: null } },
+    });
+  }
+
+  /** The kind's list replaced (sorted by name like the backend), marks again, windows + tags plugin told. */
+  function vocabCommit(v: ProjectsView, kind: VocabularyKind, list: VocabularyEntry[]): void {
+    const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    const tags = kind === "tag" ? sorted : v.vocabulary.tags;
+    const categories = kind === "category" ? sorted : v.vocabulary.categories;
+    commit({
+      ...v,
+      vocabulary: {
+        ...v.vocabulary,
+        file: { status: "ok" },
+        active: tags.length + categories.length > 0,
+        tags,
+        categories,
+      },
+    });
+    deps.tagsChanged?.();
   }
 
   const handlers: Handlers = {
@@ -647,42 +696,75 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
     vocabularyPromote: (kind, name) => {
       calls.push(`vocabulary_promote ${kind} ${name}`);
       const v = current();
-      const clean = name.trim().toLowerCase().split(/\s+/).join("-");
-      // no `.permark/` in a folder without a project list (the mock's stand-in), or a list that can't be read
-      if (
-        clean === "" ||
-        v.record.status === "absent" ||
-        v.vocabulary.file.status === "unreadable" ||
-        v.vocabulary.file.status === "newer"
-      ) {
-        return Promise.resolve({
-          ok: false,
-          error: {
-            kind: "backend",
-            command: "vocabulary_promote",
-            error: {
-              kind: clean === "" ? "invalidData" : "unavailable",
-              subject: clean === "" ? "name" : "vocabulary",
-              detail: null,
-            },
-          },
-        });
-      }
+      const clean = vocabName(name);
+      if (clean === "") return vocabRefused("vocabulary_promote", "invalidData", "name");
+      if (!vocabWritable(v)) return vocabRefused("vocabulary_promote", "unavailable", "vocabulary");
       const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
       if (list.some((e) => e.name === clean)) return ok(null);
-      const entry = { name: clean, color: null, icon: null };
-      const grown = [...list, entry].sort((a, b) => a.name.localeCompare(b.name));
-      commit({
-        ...v,
-        vocabulary: {
-          ...v.vocabulary,
-          file: { status: "ok" },
-          active: true,
-          tags: kind === "tag" ? grown : v.vocabulary.tags,
-          categories: kind === "category" ? grown : v.vocabulary.categories,
-        },
-      });
-      deps.tagsChanged?.();
+      vocabCommit(v, kind, [...list, { name: clean, color: null, icon: null }]);
+      return ok(null);
+    },
+    vocabularyRename: (kind, name, newName) => {
+      calls.push(`vocabulary_rename ${kind} ${name} ${newName}`);
+      const v = current();
+      const [from, to] = [vocabName(name), vocabName(newName)];
+      if (from === "") return vocabRefused("vocabulary_rename", "invalidData", "name");
+      if (to === "") return vocabRefused("vocabulary_rename", "invalidData", "newName");
+      if (!vocabWritable(v)) return vocabRefused("vocabulary_rename", "unavailable", "vocabulary");
+      const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+      if (!list.some((e) => e.name === from)) {
+        return vocabRefused("vocabulary_rename", "notFound", "name");
+      }
+      if (from === to) return ok(null);
+      if (list.some((e) => e.name === to)) {
+        return vocabRefused("vocabulary_rename", "exists", "newName");
+      }
+      vocabCommit(
+        v,
+        kind,
+        list.map((e) => (e.name === from ? { ...e, name: to } : e)),
+      );
+      return ok(null);
+    },
+    vocabularyRemove: (kind, name) => {
+      calls.push(`vocabulary_remove ${kind} ${name}`);
+      const v = current();
+      const clean = vocabName(name);
+      if (clean === "") return vocabRefused("vocabulary_remove", "invalidData", "name");
+      if (!vocabWritable(v)) return vocabRefused("vocabulary_remove", "unavailable", "vocabulary");
+      const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+      if (!list.some((e) => e.name === clean)) {
+        return vocabRefused("vocabulary_remove", "notFound", "name");
+      }
+      vocabCommit(
+        v,
+        kind,
+        list.filter((e) => e.name !== clean),
+      );
+      return ok(null);
+    },
+    vocabularySetStyle: (kind, name, color, icon) => {
+      calls.push(`vocabulary_set_style ${kind} ${name} ${color} ${icon}`);
+      const v = current();
+      const clean = vocabName(name);
+      const pickedColor =
+        color === null ? null : (COLORS.find((c) => c === color.toLowerCase()) ?? "");
+      const pickedIcon = icon === null ? null : (ICONS.find((i) => i === icon.toLowerCase()) ?? "");
+      if (clean === "") return vocabRefused("vocabulary_set_style", "invalidData", "name");
+      if (pickedColor === "") return vocabRefused("vocabulary_set_style", "invalidData", "color");
+      if (pickedIcon === "") return vocabRefused("vocabulary_set_style", "invalidData", "icon");
+      if (!vocabWritable(v)) {
+        return vocabRefused("vocabulary_set_style", "unavailable", "vocabulary");
+      }
+      const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
+      const entry = list.find((e) => e.name === clean);
+      if (!entry) return vocabRefused("vocabulary_set_style", "notFound", "name");
+      if (entry.color === pickedColor && entry.icon === pickedIcon) return ok(null);
+      vocabCommit(
+        v,
+        kind,
+        list.map((e) => (e.name === clean ? { ...e, color: pickedColor, icon: pickedIcon } : e)),
+      );
       return ok(null);
     },
   };

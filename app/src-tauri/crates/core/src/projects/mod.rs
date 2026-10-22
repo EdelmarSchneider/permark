@@ -18,6 +18,8 @@ mod service;
 pub mod uid;
 pub mod view;
 pub mod vocabulary;
+#[cfg(test)]
+mod vocabulary_edit_tests;
 
 pub use card::{CardChange, CardDto, CardField, CardPlace, CardWarning};
 pub use fsm::{AgentChoice, MissingReason, ProjectMarker, RootAnswer};

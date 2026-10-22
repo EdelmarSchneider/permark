@@ -39,7 +39,6 @@ use crate::{ErrorKind, IpcError};
 
 /// The agent's ignore file (gitignore syntax), as the agent plugin reads it.
 const AI_IGNORE: &str = ".aiignore";
-const BOM: &[u8] = b"\xEF\xBB\xBF";
 const MAX_AI_IGNORE: u64 = 1024 * 1024;
 /// Levels above the opened folder searched for a record listing it.
 const MAX_ANCESTORS: usize = 32;
@@ -2694,70 +2693,97 @@ impl Projects {
     ///
     /// # Errors
     /// `InvalidData` (empty name); `Unavailable` (no `.permark/` here, list unreadable | newer, a link in the way,
-    /// a reader with no window); `Conflict` (changed while saving); IO.
+    /// a reader with no window); `Conflict` (kept changing while saving); IO.
     pub fn promote(&self, kind: VocabKind, name: &str) -> Result<(), IpcError> {
-        let unavailable = || IpcError::new(ErrorKind::Unavailable).subject("vocabulary");
-        let name = crate::organizing::normalize::normalize_tag(name)
-            .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject("name"))?;
+        let name = vocab_name(name, "name")?;
+        let style = self
+            .vocabularies()
+            .local_style(kind, &name)
+            .cloned()
+            .unwrap_or_default();
+        self.edit_vocabulary(|text| {
+            vocabulary::promote_text(text, kind, &name, &style)
+                .map_err(|m| vocab_unavailable().detail(m))
+        })
+    }
+
+    /// Renames an official tag | category (`projects.md` §7.2): only the entry's key changes. Documents are never
+    /// edited (the old name left in files becomes unlisted).
+    ///
+    /// # Errors
+    /// `InvalidData` (`name` | `newName` empty); `NotFound` (`name` not listed); `Exists` (`newName` already listed);
+    /// `Unavailable` | `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_rename(
+        &self,
+        kind: VocabKind,
+        name: &str,
+        new_name: &str,
+    ) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        let new_name = vocab_name(new_name, "newName")?;
+        self.edit_vocabulary(|text| {
+            vocabulary::rename_text(text, kind, &name, &new_name).map_err(refusal)
+        })
+    }
+
+    /// Takes an official tag | category out of the list (`projects.md` §7.2); comments around it stay.
+    ///
+    /// # Errors
+    /// `InvalidData` (empty name); `NotFound` (not listed); `Unavailable` | `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_remove(&self, kind: VocabKind, name: &str) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        self.edit_vocabulary(|text| {
+            vocabulary::remove_text(text, kind, &name)
+                .map(Some)
+                .map_err(refusal)
+        })
+    }
+
+    /// Sets the whole look of an official tag | category (`None` = no color | no icon), like `tags.setStyle`.
+    ///
+    /// # Errors
+    /// `InvalidData` (empty name; `color` | `icon` outside the style sets); `NotFound` (not listed); `Unavailable` |
+    /// `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_set_style(
+        &self,
+        kind: VocabKind,
+        name: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        let style = vocabulary::VocabStyle {
+            color: style_value(color, crate::organizing::normalize::known_color, "color")?,
+            icon: style_value(icon, crate::organizing::normalize::known_icon, "icon")?,
+        };
+        self.edit_vocabulary(|text| {
+            vocabulary::set_style_text(text, kind, &name, &style).map_err(refusal)
+        })
+    }
+
+    /// One write of the opened folder's `vocabulary.toml` (`projects.md` §7.2, `state::shared_write` rules): under
+    /// the file's lock, `edit` gets the text as it is on disk now (BOM off; `""` = no file) and answers the new text
+    /// (`None`: nothing to write); written only while the file still holds what was read, else read again and `edit`
+    /// asked again (an outside edit meanwhile is never written over). Then the lists are read again and the windows
+    /// told (`projects-changed`, `tags:changed`).
+    fn edit_vocabulary(
+        &self,
+        edit: impl FnMut(&str) -> Result<Option<String>, IpcError>,
+    ) -> Result<(), IpcError> {
         if self.files_only || !real_dir(&self.root.path().join(PERMARK_DIR)) {
-            return Err(unavailable());
+            return Err(vocab_unavailable());
         }
-        let vocab = self.vocabularies();
-        if !matches!(vocab.official, VocabRead::Absent | VocabRead::Read(_)) {
-            return Err(unavailable());
-        }
-        let style = vocab.local_style(kind, &name).cloned().unwrap_or_default();
         let path = self
             .root
             .path()
             .join(PERMARK_DIR)
             .join(vocabulary::VOCABULARY_FILE);
         if crate::tree::is_link_meta_of(&path) {
-            return Err(unavailable());
+            return Err(vocab_unavailable());
         }
-        let old = match std::fs::read(&path) {
-            Ok(bytes) => Some(bytes),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(IpcError::io("vocabulary.toml", &e)),
-        };
-        let (bom, text) = match old.as_deref() {
-            None => (false, ""),
-            Some(bytes) => {
-                let (bom, rest) = bytes
-                    .strip_prefix(BOM)
-                    .map_or((false, bytes), |rest| (true, rest));
-                (bom, std::str::from_utf8(rest).map_err(|_| unavailable())?)
-            }
-        };
-        let Some(new_text) = vocabulary::promote_text(text, kind, &name, &style)
-            .map_err(|m| unavailable().detail(m))?
-        else {
+        let Some(bytes) = vocabulary::write_file(&path, &self.own, edit)? else {
             return Ok(());
         };
-        let mut bytes = Vec::with_capacity(new_text.len() + 3);
-        if bom {
-            bytes.extend_from_slice(BOM);
-        }
-        bytes.extend_from_slice(new_text.as_bytes());
-        let hash = crate::fsx::hash(&bytes);
-        self.own.expect_write(".permark/vocabulary.toml", hash);
-        let written =
-            crate::fsx::write_atomic_checked(&path, &bytes, || match std::fs::read(&path) {
-                Ok(now) => Ok(old.as_deref() == Some(now.as_slice())),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(old.is_none()),
-                Err(e) => Err(e),
-            });
-        let written = match written {
-            Ok(written) => written,
-            Err(e) => {
-                self.own.retract_write(".permark/vocabulary.toml", hash);
-                return Err(IpcError::io("vocabulary.toml", &e));
-            }
-        };
-        if !written {
-            self.own.retract_write(".permark/vocabulary.toml", hash);
-            return Err(IpcError::new(ErrorKind::Conflict).subject("vocabulary"));
-        }
         {
             let mut inner = lock(&self.inner);
             inner.vocab_root = Some(vocabulary::parse(&bytes));
@@ -2769,6 +2795,38 @@ impl Projects {
             ..After::default()
         });
         Ok(())
+    }
+}
+
+fn vocab_unavailable() -> IpcError {
+    IpcError::new(ErrorKind::Unavailable).subject("vocabulary")
+}
+
+/// A name typed for a list, tag-normalized; empty -> `InvalidData` on `subject`.
+fn vocab_name(raw: &str, subject: &str) -> Result<String, IpcError> {
+    crate::organizing::normalize::normalize_tag(raw)
+        .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject(subject))
+}
+
+/// A color | icon from the style sets (any case), `None` = none; another value -> `InvalidData` on `subject`.
+fn style_value(
+    raw: Option<&str>,
+    known: fn(&str) -> Option<&'static str>,
+    subject: &str,
+) -> Result<Option<String>, IpcError> {
+    raw.map(|raw| {
+        known(raw)
+            .map(str::to_owned)
+            .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject(subject))
+    })
+    .transpose()
+}
+
+fn refusal(why: vocabulary::EditRefusal) -> IpcError {
+    match why {
+        vocabulary::EditRefusal::Unreadable(m) => vocab_unavailable().detail(m),
+        vocabulary::EditRefusal::NotListed => IpcError::new(ErrorKind::NotFound).subject("name"),
+        vocabulary::EditRefusal::Taken => IpcError::new(ErrorKind::Exists).subject("newName"),
     }
 }
 

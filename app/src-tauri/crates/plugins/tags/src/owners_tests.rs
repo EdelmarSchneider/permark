@@ -352,3 +352,60 @@ fn two_apps_on_one_folder_tagging_at_once_lose_nothing() {
         );
     }
 }
+
+/// D46: rename | remove | look of official names change only `vocabulary.toml`; documents and `meta.toml` stay byte
+/// for byte; the tags plugin follows (a renamed | removed name left in files = local where a project lists it, else
+/// unlisted; the official look wins while listed); no official name left -> marks dormant.
+#[test]
+fn official_names_renamed_removed_restyled_never_touch_documents() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let env = env(base.path());
+    let core = opened(&root, &env);
+    wait("harvest", || {
+        call(&core, "fileMeta", json!({ "path": "sub/fm.md" }))["tags"]
+            .as_array()
+            .is_some_and(|t| t.len() == 2)
+    });
+    let before: Vec<(String, Vec<u8>)> =
+        ["top.md", "sub/plan.md", "sub/fm.md", ".permark/meta.toml"]
+            .iter()
+            .map(|rel| ((*rel).to_owned(), std::fs::read(root.join(rel)).unwrap()))
+            .collect();
+    let projects = core.projects();
+    let vocab = root.join(".permark/vocabulary.toml");
+
+    projects.promote(VocabKind::Tag, "draft").unwrap();
+    projects
+        .vocabulary_set_style(VocabKind::Tag, "draft", Some("teal"), None)
+        .unwrap();
+    wait("official look", || {
+        call(&core, "index", Value::Null)["styles"]["draft"]["color"] == json!("teal")
+    });
+    projects
+        .vocabulary_rename(VocabKind::Tag, "spec", "specs")
+        .unwrap();
+    assert_eq!(
+        read(&vocab),
+        "version = 1\n\n[tags.specs]\ncolor = \"blue\"\n\n[tags.draft]\ncolor = \"teal\"\n"
+    );
+    wait("spec now unlisted", || {
+        status_of(&call(&core, "overview", Value::Null), "spec").0 == json!("unlisted")
+    });
+    projects.vocabulary_remove(VocabKind::Tag, "draft").unwrap();
+    wait("draft local again", || {
+        status_of(&call(&core, "overview", Value::Null), "draft") == (json!("local"), json!(UID))
+    });
+    projects.vocabulary_remove(VocabKind::Tag, "specs").unwrap();
+    assert_eq!(read(&vocab), "version = 1\n");
+    wait("dormant", || {
+        call(&core, "overview", Value::Null)["marks"] == json!(false)
+    });
+    for (rel, bytes) in before {
+        assert_eq!(
+            std::fs::read(root.join(&rel)).unwrap(),
+            bytes,
+            "{rel} untouched"
+        );
+    }
+}

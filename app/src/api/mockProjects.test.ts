@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Result } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), convertFileSrc: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
@@ -104,6 +105,21 @@ describe("mock projects", () => {
     expect(invoke).toHaveBeenCalledWith("projects_undo", { token: 3 });
     await tauriApi.vocabularyPromote("category", "lab");
     expect(invoke).toHaveBeenCalledWith("vocabulary_promote", { kind: "category", name: "lab" });
+    await tauriApi.vocabularyRename("tag", "spec", "specs");
+    expect(invoke).toHaveBeenCalledWith("vocabulary_rename", {
+      kind: "tag",
+      name: "spec",
+      newName: "specs",
+    });
+    await tauriApi.vocabularyRemove("category", "lab");
+    expect(invoke).toHaveBeenCalledWith("vocabulary_remove", { kind: "category", name: "lab" });
+    await tauriApi.vocabularySetStyle("tag", "spec", "blue", null);
+    expect(invoke).toHaveBeenCalledWith("vocabulary_set_style", {
+      kind: "tag",
+      name: "spec",
+      color: "blue",
+      icon: null,
+    });
   });
 
   it("official lists: status marks on cards and tags, promote (round 4)", async () => {
@@ -141,5 +157,67 @@ describe("mock projects", () => {
     // a folder without a project list has no .permark/ to write in
     const fresh = await opened(MOCK_PROJECTS_FRESH);
     expect((await fresh.vocabularyPromote("tag", "x")).ok).toBe(false);
+  });
+
+  it("official lists: rename, remove, look (D46)", async () => {
+    const api = await opened(MOCK_PROJECTS_VOCAB);
+    let tagsChanged = 0;
+    await api.onPlugin("tags:changed", () => (tagsChanged += 1));
+    const refusal = async (r: Promise<Result<null>>) => {
+      const res = await r;
+      if (res.ok || res.error.kind !== "backend") throw new Error("expected a backend refusal");
+      return [res.error.error.kind, res.error.error.subject];
+    };
+    expect(await refusal(api.vocabularyRename("tag", "spec", "needs-review"))).toEqual([
+      "exists",
+      "newName",
+    ]);
+    expect(await refusal(api.vocabularyRename("tag", "nope", "x"))).toEqual(["notFound", "name"]);
+    expect(await refusal(api.vocabularyRename("tag", "spec", " "))).toEqual([
+      "invalidData",
+      "newName",
+    ]);
+    expect(await refusal(api.vocabularySetStyle("tag", "spec", "ultraviolet", null))).toEqual([
+      "invalidData",
+      "color",
+    ]);
+    expect(await refusal(api.vocabularyRemove("category", "nope"))).toEqual(["notFound", "name"]);
+    expect(tagsChanged).toBe(0);
+
+    // same name | same look: nothing to do
+    expect(value(await api.vocabularyRename("tag", "spec", "Spec"))).toBeNull();
+    expect(value(await api.vocabularySetStyle("tag", "spec", "blue", "book-open"))).toBeNull();
+    expect(tagsChanged).toBe(0);
+
+    expect(value(await api.vocabularyRename("tag", "Spec", "Specs"))).toBeNull();
+    let view = value(await api.projectsView());
+    expect(view.vocabulary.tags).toEqual([
+      { name: "needs-review", color: null, icon: null },
+      { name: "specs", color: "blue", icon: "book-open" },
+    ]);
+    // documents untouched: the old name in files is now unlisted
+    const overview = value(await api.pluginCall("tags.overview", {}));
+    expect(overview.tags.find((t) => t.name === "spec")?.status).toBe("local");
+    expect(value(await api.vocabularySetStyle("tag", "specs", null, "star"))).toBeNull();
+    expect(value(await api.vocabularySetStyle("category", "software", "red", null))).toBeNull();
+    view = value(await api.projectsView());
+    expect(view.vocabulary.tags[1]).toEqual({ name: "specs", color: null, icon: "star" });
+    expect(view.vocabulary.categories).toEqual([{ name: "software", color: "red", icon: null }]);
+    expect(value(await api.vocabularyRemove("category", "software"))).toBeNull();
+    view = value(await api.projectsView());
+    expect(view.rows.find((r) => r.path === "hub-b")?.categoryStatus).toBe("unlisted");
+    for (const name of ["needs-review", "specs"]) {
+      expect(value(await api.vocabularyRemove("tag", name))).toBeNull();
+    }
+    view = value(await api.projectsView());
+    expect(view.vocabulary.active).toBe(false);
+    expect(view.rows.every((r) => r.categoryStatus === null)).toBe(true);
+    expect(tagsChanged).toBe(6);
+    // a folder without a project list has no .permark/ to write in
+    const fresh = await opened(MOCK_PROJECTS_FRESH);
+    expect(await refusal(fresh.vocabularyRemove("tag", "x"))).toEqual([
+      "unavailable",
+      "vocabulary",
+    ]);
   });
 });

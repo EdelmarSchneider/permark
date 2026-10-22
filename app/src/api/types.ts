@@ -382,6 +382,15 @@ export interface Commands {
   projects_answer_move: { args: { uid: ProjectUid; path: string; same: boolean }; result: null };
   projects_card_set: { args: { target: CardTarget; change: CardChange }; result: CardDto };
   vocabulary_promote: { args: { kind: VocabularyKind; name: string }; result: null };
+  vocabulary_rename: {
+    args: { kind: VocabularyKind; name: string; newName: string };
+    result: null;
+  };
+  vocabulary_remove: { args: { kind: VocabularyKind; name: string }; result: null };
+  vocabulary_set_style: {
+    args: { kind: VocabularyKind; name: string; color: string | null; icon: string | null };
+    result: null;
+  };
   fileops_plan_move: { args: { moves: MoveSpec[]; updateLinks: boolean }; result: MovePlan };
   fileops_apply_move: { args: { planId: number; updateLinks: boolean }; result: MoveOutcome };
   fileops_delete: { args: { paths: string[] }; result: DeleteOutcome };
@@ -860,6 +869,25 @@ export interface Api {
    * newer. Changes arrive as `projects-changed` (+ `tags:changed`).
    */
   vocabularyPromote(kind: VocabularyKind, name: string): Promise<Result<null>>;
+  /**
+   * Renames an official tag | category (only its line in `.permark/vocabulary.toml` changes; documents are never
+   * edited: the old name left in files becomes unlisted). Same name: nothing to do. Refusals: `invalidData`
+   * (`name` | `newName` empty), `notFound` `name` (not in the list), `exists` `newName` (already in the list),
+   * `unavailable` | `conflict` `vocabulary` as promote. Changes arrive as `projects-changed` (+ `tags:changed`).
+   */
+  vocabularyRename(kind: VocabularyKind, name: string, newName: string): Promise<Result<null>>;
+  /** Takes an official tag | category out of the list (documents untouched). Refusals as rename (no `exists`). */
+  vocabularyRemove(kind: VocabularyKind, name: string): Promise<Result<null>>;
+  /**
+   * The whole look of an official tag | category, like `tags.setStyle` (`null` = no color | no icon). Refusals as
+   * remove, plus `invalidData` `color` | `icon` (a value outside the style sets).
+   */
+  vocabularySetStyle(
+    kind: VocabularyKind,
+    name: string,
+    color: string | null,
+    icon: string | null,
+  ): Promise<Result<null>>;
   planMove(moves: MoveSpec[], updateLinks: boolean): Promise<Result<MovePlan>>;
   applyMove(planId: number, updateLinks: boolean): Promise<Result<MoveOutcome>>;
   deleteFiles(paths: string[]): Promise<Result<DeleteOutcome>>;
