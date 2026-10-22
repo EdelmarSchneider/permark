@@ -1572,7 +1572,7 @@ export default {
   "import.reason.intoItself": "enthält den Zielordner",
   "import.busy": "Warten Sie, bis der laufende Import fertig ist.",
   "import.dropCancelled":
-    "Das Ablegen in „{folder}“ wurde abgebrochen. Es wurde nichts hinzugefügt.",
+    "{project} ist in diesem Tab nicht mehr geöffnet, daher wurde das Ablegen in „{folder}“ abgebrochen. Es wurde nichts hinzugefügt; Sie können die Elemente erneut ablegen.",
   "import.progressLabel": "Dateien werden zum Projekt hinzugefügt",
   "import.counting": "Dateien werden angesehen …",
   "import.copying": "Kopiere nach „{folder}“ …",

@@ -19,6 +19,10 @@ function setup(api?: (mock: ReturnType<typeof createMockApi>) => Api) {
   const host: ImportHost = {
     fail: (e) => failures.push(e),
     note: (text) => notes.push(text),
+    cancelNote: (text) => {
+      notes.push(text);
+      return () => notes.splice(notes.indexOf(text), 1);
+    },
     action: (text, ...list) =>
       actions.push({ text, labels: list.map((a) => a.label), run: list.map((a) => a.run) }),
     project: () => "demo",

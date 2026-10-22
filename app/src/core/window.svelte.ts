@@ -333,9 +333,9 @@ export class WindowStore {
     this.#notify({ kind: "fileOpFailed", error });
   }
 
-  /** A quiet note ("Moved a.md", "Undone"). */
-  notifyNote(text: string): void {
-    this.#notify({ kind: "note", text });
+  /** A quiet note ("Moved a.md", "Undone"); returns its id (`dismiss` takes it back). */
+  notifyNote(text: string): number {
+    return this.#notify({ kind: "note", text });
   }
 
   /** A quiet line with buttons ("Deleted a note" + Undo). */
@@ -388,7 +388,7 @@ export class WindowStore {
     if (notice.kind === "timed") notice.onGone?.(how);
   }
 
-  #notify(body: NoticeBody): void {
+  #notify(body: NoticeBody): number {
     const notice = { ...body, id: this.#nextNotice++ } as Notice;
     // newest last; at most 5 on screen
     const all = [...this.notices, notice];
@@ -405,6 +405,7 @@ export class WindowStore {
       this.#clocks.set(notice.id, clock);
       this.#run(notice.id, clock);
     }
+    return notice.id;
   }
 }
 

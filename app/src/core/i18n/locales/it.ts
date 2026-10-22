@@ -1559,7 +1559,7 @@ export default {
   "import.reason.intoItself": "contiene la cartella di destinazione",
   "import.busy": "Attendi la fine dell'importazione in corso.",
   "import.dropCancelled":
-    "Il rilascio in «{folder}» è stato annullato. Non è stato aggiunto nulla.",
+    "{project} non è più aperto in questa scheda, quindi il rilascio in «{folder}» è stato annullato. Non è stato aggiunto nulla; puoi rilasciare di nuovo gli elementi.",
   "import.progressLabel": "Aggiunta di file al progetto",
   "import.counting": "Esame dei file…",
   "import.copying": "Copia in «{folder}»…",

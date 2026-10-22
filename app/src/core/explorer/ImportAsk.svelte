@@ -39,6 +39,7 @@
   describedby="import-ask-counts"
   close={cancel}
   ready={plan !== null}
+  home={() => document.querySelector<HTMLElement>('[role="tree"]')}
 >
   <h2 id="import-ask-title">{t("import.ask.title", { folder: where })}</h2>
 

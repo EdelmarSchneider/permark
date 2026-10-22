@@ -1514,7 +1514,8 @@ const en = {
   "import.reason.protected": "is reserved for git or PerMark",
   "import.reason.intoItself": "holds the folder it would go into",
   "import.busy": "Wait for the current import to finish.",
-  "import.dropCancelled": "The drop onto “{folder}” was cancelled. Nothing was added.",
+  "import.dropCancelled":
+    "{project} is no longer open in this tab, so the drop onto “{folder}” was cancelled. Nothing was added; you can drop the items again.",
   "import.progressLabel": "Adding files to the project",
   "import.counting": "Looking at the files…",
   "import.copying": "Copying to “{folder}”…",
