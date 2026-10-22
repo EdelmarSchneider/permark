@@ -96,14 +96,17 @@
   $effect(() => {
     documents.bind({
       note: (text) => store.notifyNote(text),
-      action: (text, ...actions) => store.notifyAction(text, ...actions),
+      pageNote: (text, ...actions) => store.notifyKeyed("page", text, ...actions),
+      clearPageNote: () => store.dismissKey("page"),
       fail: (error) => store.notifyFileOpFailed(error),
       reveal: (folder) => revealInTree(folder),
       editorSet: () => store.editor.trim() !== "",
       modKey: () => (conditions.current.platform === "mac" ? "Cmd" : "Ctrl"),
       chooseEditor,
-      openFolder: () => {
-        if (workspace.kind === "singleFile") void store.open(workspace.folder, "tab");
+      openFolderWith: (folder, document) => {
+        void api.openFolderWith(folder, document).then((result) => {
+          if (!result.ok) store.notifyFileOpFailed(result.error);
+        });
       },
     });
     editing.bind({
@@ -131,6 +134,12 @@
       if (editing.path !== null && editing.path !== shown) editing.release();
       void documents.show(path);
     });
+  });
+
+  // the editor setting changed: the references on the page say again what a click does
+  $effect(() => {
+    void store.editor;
+    untrack(() => documents.retitleRefs());
   });
 
   // the area goes away with the workspace (the window shows the welcome again): the controller lets go of the document

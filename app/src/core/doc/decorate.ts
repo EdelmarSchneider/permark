@@ -124,6 +124,15 @@ export class Decorator {
     };
   }
 
+  /** The tooltips of the references under `root` say again what a click does (the editor setting changed). */
+  retitle(root: Element): void {
+    const setup = this.refSetup();
+    for (const element of root.querySelectorAll<HTMLElement>(`.${CODE_REF}`)) {
+      const target = codeRefOf(element);
+      if (target) element.title = titleOf(target.paths, target.line, setup);
+    }
+  }
+
   /** Takes every embed down (the document is closed). */
   dispose(): void {
     for (const element of [...this.#mounted.keys()]) this.#unmountOne(element);
@@ -290,16 +299,21 @@ function markCodeRef(
   if (ref.col !== null) element.setAttribute("data-ref-col", String(ref.col));
   element.tabIndex = 0;
   element.setAttribute("role", "link");
+  element.title = titleOf(paths, ref.line, setup);
+}
+
+/** What the tooltip of a reference says: where it leads and what a click does. */
+function titleOf(
+  paths: readonly string[],
+  line: number | null,
+  setup: { editorSet: boolean; mod: string },
+): string {
   const first = paths[0] ?? "";
-  if (paths.length > 1) {
-    element.title = t("codeRef.titleMany", { count: paths.length });
-    return;
-  }
-  const title = refTitle(first, ref.line, setup.editorSet);
-  element.title =
-    title.line === null
-      ? t(title.key, { path: first, mod: setup.mod })
-      : t(title.key, { path: first, line: title.line, mod: setup.mod });
+  if (paths.length > 1) return t("codeRef.titleMany", { count: paths.length });
+  const title = refTitle(first, line, setup.editorSet);
+  return title.line === null
+    ? t(title.key, { path: first, mod: setup.mod })
+    : t(title.key, { path: first, line: title.line, mod: setup.mod });
 }
 
 /** What a click on a code reference asks for. */

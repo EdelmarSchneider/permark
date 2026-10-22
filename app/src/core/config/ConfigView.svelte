@@ -16,6 +16,9 @@
   const matches = new Matches();
   let box: HTMLElement | undefined = $state();
   let handled = 0;
+  let locateTimer: ReturnType<typeof setTimeout> | undefined;
+  // the tint's clock goes with the viewer
+  $effect(() => () => clearTimeout(locateTimer));
 
   // an ignore file counts what its patterns catch, once it is shown (again when the file changes)
   $effect(() => {
@@ -49,7 +52,8 @@
     row.classList.remove("pm-located");
     void row.offsetWidth;
     row.classList.add("pm-located");
-    setTimeout(() => row.classList.remove("pm-located"), 1600);
+    clearTimeout(locateTimer);
+    locateTimer = setTimeout(() => row.classList.remove("pm-located"), 1600);
   }
 </script>
 

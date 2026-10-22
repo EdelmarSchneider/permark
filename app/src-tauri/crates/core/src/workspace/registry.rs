@@ -1460,10 +1460,21 @@ fn name_of(reference: &WorkspaceRef) -> (WorkspaceKind, String, String) {
 }
 
 fn tab_summary(inner: &Inner, tab: &Tab) -> TabSummary {
-    let (kind, title, path) = tab_target(inner, tab).map_or_else(
+    let (kind, mut title, path) = tab_target(inner, tab).map_or_else(
         || (WorkspaceKind::Welcome, String::new(), String::new()),
         |r| name_of(&r),
     );
+    // a single file showing another file of its folder (a link): the chip names the file shown
+    if kind == WorkspaceKind::SingleFile {
+        let shown = tab
+            .view()
+            .and_then(|view| inner.views.get(view))
+            .and_then(|slot| slot.document.as_ref())
+            .and_then(|document| document.name().map(str::to_owned));
+        if let Some(shown) = shown {
+            title = shown;
+        }
+    }
     let (loaded, unsaved) = match tab.view() {
         Some(view) => (true, unsaved_of(inner, view).is_some()),
         None => (false, false),

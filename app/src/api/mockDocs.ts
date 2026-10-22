@@ -116,6 +116,7 @@ export function mockLinkTarget(
   doc: string,
   href: string,
   exists: (path: string) => boolean,
+  singleFile = false,
 ): LinkTarget {
   const value = href.trim();
   if (value.startsWith("#")) return { type: "anchor", id: decodeURIComponent(value.slice(1)) };
@@ -130,8 +131,10 @@ export function mockLinkTarget(
   for (const part of decodeURIComponent(target ?? "").split("/")) {
     if (part === "" || part === ".") continue;
     if (part === "..") {
-      // above the folder of the workspace: never served
-      if (parts.length === 0) return { type: "outside" };
+      // above the root: never served; a single file says outside, a project missing (as the backend)
+      if (parts.length === 0) {
+        return singleFile ? { type: "outside" } : { type: "missing", path: target ?? "" };
+      }
       parts.pop();
     } else parts.push(part);
   }

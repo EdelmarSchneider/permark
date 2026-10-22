@@ -187,6 +187,9 @@
   const LOCATE_MS = 1600;
   let located = $state.raw<{ line: number; seq: number } | null>(null);
   let handled = 0;
+  let locateTimer: ReturnType<typeof setTimeout> | undefined;
+  // the tint's clock goes with the viewer
+  $effect(() => () => clearTimeout(locateTimer));
 
   $effect(() => {
     const request = documents.lineRequest;
@@ -222,7 +225,8 @@
       pane.scrollTop = Math.max(0, y - pane.clientHeight / 3);
     }
     located = { line: at, seq };
-    setTimeout(() => {
+    clearTimeout(locateTimer);
+    locateTimer = setTimeout(() => {
       if (located?.seq === seq) located = null;
     }, LOCATE_MS);
   }

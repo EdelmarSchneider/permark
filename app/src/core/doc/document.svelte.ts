@@ -16,6 +16,7 @@ import {
 } from "../../api";
 import { BlockHost } from "./blocks";
 import { decideRef, inApp } from "./codeRefs";
+import { outsideTarget } from "./outside";
 import { Decorator, codeRefOf, type CodeRefTarget, type EmbedLookup } from "./decorate";
 import { enhanceBlock, type EnhanceEnv } from "./enhance";
 import { currentIndex } from "./outline";
@@ -74,8 +75,13 @@ export type LineRequest = { path: string; line: number; seq: number };
 export type Hooks = {
   /** A quiet note for the person. */
   note(text: string): void;
-  /** A quiet note with buttons. */
-  action(text: string, ...actions: HookAction[]): void;
+  /**
+   * The quiet note of the page (with its buttons): one at a time, a newer one takes its place; it goes when the page
+   * changes (`clearPageNote`).
+   */
+  pageNote(text: string, ...actions: HookAction[]): void;
+  /** The page's note goes. */
+  clearPageNote(): void;
   /** A failed request, worded by the shell. */
   fail(error: ApiError): void;
   /** The folder of the project's tree, shown. */
@@ -86,19 +92,20 @@ export type Hooks = {
   modKey(): string;
   /** Settings at the editor choice. */
   chooseEditor(): void;
-  /** The folder of a single file, opened as a project. */
-  openFolder(): void;
+  /** A folder opened as a project in a new tab, showing `document` (a path inside it) when given. */
+  openFolderWith(folder: string, document: string | null): void;
 };
 
 const NO_HOOKS: Hooks = {
   note: () => {},
-  action: () => {},
+  pageNote: () => {},
+  clearPageNote: () => {},
   fail: () => {},
   reveal: () => {},
   editorSet: () => false,
   modKey: () => "Ctrl",
   chooseEditor: () => {},
-  openFolder: () => {},
+  openFolderWith: () => {},
 };
 
 export class DocumentController {
@@ -143,6 +150,8 @@ export class DocumentController {
   singleDoc = $state<string | null>(null);
   /** The hint "choose an editor for code" was given in this window. */
   #hintedEditor = false;
+  /** The document the page's note is about (it goes when another one shows). */
+  #notePage: string | null = null;
 
   constructor(api: Api = defaultApi) {
     this.#api = api;
@@ -269,7 +278,10 @@ export class DocumentController {
     this.#line = intent?.line ?? null;
     // a line asked for an earlier document is not asked again when a viewer shows up later
     this.lineRequest = null;
+    if (this.#notePage !== null && this.#notePage !== path) this.#clearNote();
     this.#shown = path;
+    // a single file: the tab and the window title name the file shown (the backend holds it; nothing else follows)
+    if (this.singleFile) void this.#api.showDocument(path);
     if (this.#workspace?.kind === "project") recentFiles.visit(path);
     this.#painted = null;
     const opening = this.#open(path, true);
@@ -542,25 +554,30 @@ export class DocumentController {
     const path = this.#shown;
     if (path === null) return;
     const [target] = await this.decorator.links.resolve([value]);
-    if (target) this.#follow(target);
+    if (target) this.#follow(target, value);
   }
 
-  #follow(target: LinkTarget): void {
+  #follow(target: LinkTarget, href: string): void {
     switch (target.type) {
       case "anchor":
         this.#sameDocument(target.id);
         break;
       case "doc":
         // a single file follows links inside its folder (the backend resolves them there, never above it)
+        this.#toPage();
         this.navigate(target.path, target.anchor);
         break;
       case "folder":
         if (!this.singleFile) this.#hooks.reveal(target.path);
+        else this.#inFolderOnly(null);
         break;
       case "asset":
-        if (inApp(target.path)) this.navigate(target.path, null);
-        // a single file has no system program to hand a file to
-        else if (!this.singleFile) void this.openExternal(target.path, "defaultApp");
+        if (inApp(target.path)) {
+          this.#toPage();
+          this.navigate(target.path, null);
+        } else if (!this.singleFile) void this.openExternal(target.path, "defaultApp");
+        // a single file hands no file to the system's program: its folder, opened as a project, does
+        else this.#inFolderOnly(target.path);
         break;
       case "web":
         void this.openWeb(target.url);
@@ -569,16 +586,80 @@ export class DocumentController {
         this.#hooks.note(t("link.missing", { path: target.path }));
         break;
       case "outside":
-        if (this.singleFile) {
-          this.#hooks.action(t("link.outsideFile"), {
-            label: t("link.openFolder"),
-            run: () => this.#hooks.openFolder(),
-          });
-        } else this.#hooks.note(t("link.outside"));
+        if (this.singleFile) this.#outside(href);
+        else this.#hooks.note(t("link.outside"));
         break;
       default:
         target satisfies never;
     }
+  }
+
+  /** The keyboard goes to the page that shows what a link | reference opened (the link goes away with the page). */
+  #toPage(): void {
+    this.host.scroller?.focus({ preventScroll: true });
+  }
+
+  /** The single file's folder: where it is and its name. */
+  #folder(): { path: string; name: string } | null {
+    const workspace = this.#workspace;
+    if (workspace?.kind !== "singleFile") return null;
+    const name =
+      workspace.folder
+        .split(/[\\/]/)
+        .filter((s) => s !== "")
+        .at(-1) ?? workspace.folder;
+    return { path: workspace.folder, name };
+  }
+
+  /**
+   * A link of a single file above its folder: the nearest folder holding both the page and the target opens as a
+   * project showing it; when only a drive | the system root holds both, the note only says where the link leads.
+   */
+  #outside(href: string): void {
+    const own = this.#folder();
+    const page = this.#shown;
+    if (own === null || page === null) return;
+    const target = outsideTarget(own.path, page, href);
+    const text = t("link.outsideFolder", { folder: own.name });
+    if (target === null) {
+      this.#note(page, text);
+      return;
+    }
+    this.#note(page, text, {
+      label: t("link.openToFollow", { folder: target.name }),
+      run: () => this.#hooks.openFolderWith(target.folder, target.document),
+    });
+  }
+
+  /** A folder | a file of a single file's folder that only a project window shows: its folder opens as one. */
+  #inFolderOnly(document: string | null): void {
+    const own = this.#folder();
+    const page = this.#shown;
+    if (own === null || page === null) return;
+    this.#note(page, t("link.inFolderOnly", { folder: own.name }), {
+      label: t("link.openToFollow", { folder: own.name }),
+      run: () => this.#hooks.openFolderWith(own.path, document),
+    });
+  }
+
+  /** The page's note, about `page` (it goes when another document shows). */
+  #note(page: string, text: string, ...actions: HookAction[]): void {
+    this.#notePage = page;
+    this.#hooks.pageNote(
+      text,
+      ...actions.map((a) => ({
+        label: a.label,
+        run: () => {
+          this.#clearNote();
+          a.run();
+        },
+      })),
+    );
+  }
+
+  #clearNote(): void {
+    this.#notePage = null;
+    this.#hooks.clearPageNote();
   }
 
   #sameDocument(id: string): void {
@@ -696,22 +777,30 @@ export class DocumentController {
   }
 
   #refHere(path: string, line: number | null, hint: boolean): void {
-    // the keyboard goes to the page that shows it (the reference it was on goes away with the old page)
-    this.host.scroller?.focus({ preventScroll: true });
+    this.#toPage();
     this.navigate(path, null, line);
     if (!hint || this.#hintedEditor) return;
     this.#hintedEditor = true;
-    this.#hooks.action(t("codeRef.hintEditor"), {
+    // about the page the code shows on
+    this.#note(path, t("codeRef.hintEditor"), {
       label: t("codeRef.chooseEditor"),
       run: () => this.#hooks.chooseEditor(),
     });
   }
 
   #noEditor(): void {
-    this.#hooks.action(t("codeRef.noEditor"), {
+    const page = this.#shown;
+    if (page === null) return;
+    this.#note(page, t("codeRef.noEditor"), {
       label: t("codeRef.chooseEditor"),
       run: () => this.#hooks.chooseEditor(),
     });
+  }
+
+  /** The tooltips of the references on the page say again what a click does (the editor setting changed). */
+  retitleRefs(): void {
+    const root = this.host.scroller;
+    if (root) this.decorator.retitle(root);
   }
 
   codeRefAt(element: Element): CodeRefTarget | null {

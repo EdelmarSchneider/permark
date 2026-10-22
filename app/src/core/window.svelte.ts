@@ -36,8 +36,14 @@ export type Notice =
   | { id: number; kind: "initFailed"; path: string; error: ApiError }
   | { id: number; kind: "fileOpFailed"; error: ApiError }
   | { id: number; kind: "note"; text: string }
-  /** A quiet line with buttons (Undo, Open in project). */
-  | { id: number; kind: "action"; text: string; actions: readonly NoticeAction[] }
+  /** A quiet line with buttons (Undo, Open in project). `key`: one notice per key (a newer one takes its place). */
+  | {
+      id: number;
+      kind: "action";
+      text: string;
+      actions: readonly NoticeAction[];
+      key?: string;
+    }
   /** A quiet line (buttons optional) that closes by itself after `closeAfterMs`, paused while held (pointer | focus
    *  on it); `onGone` hears how it went. */
   | {
@@ -332,6 +338,19 @@ export class WindowStore {
   /** A quiet line with buttons ("Deleted a note" + Undo). */
   notifyAction(text: string, ...actions: NoticeAction[]): void {
     this.#notify({ kind: "action", text, actions });
+  }
+
+  /** A quiet line with buttons that takes the place of the one with the same `key` (no pile of the same note). */
+  notifyKeyed(key: string, text: string, ...actions: NoticeAction[]): void {
+    this.dismissKey(key);
+    this.#notify({ kind: "action", text, actions, key });
+  }
+
+  /** The notice with this `key` goes (its page changed). */
+  dismissKey(key: string): void {
+    for (const notice of this.notices) {
+      if (notice.kind === "action" && notice.key === key) this.dismiss(notice.id);
+    }
   }
 
   /** A quiet line that closes by itself (paused while held); `onGone` hears how it went. */

@@ -258,6 +258,10 @@ export function createMockApi(): Api & {
     // the agent switch is part of the window's context, as in the app
     if (event === "agent:status") emit("context-changed", { window: "main", context: context() });
   }
+  function singleFileShown(): boolean {
+    return view.state === "showing" && view.workspace.kind === "singleFile";
+  }
+
   function inProject(): boolean {
     return view.state === "showing" && view.workspace.kind === "project";
   }
@@ -287,7 +291,13 @@ export function createMockApi(): Api & {
     return {
       tab: entry.tab,
       kind: workspace.kind,
-      title: workspace.kind === "notes" ? "Notes" : workspace.name,
+      // a single file showing another file of its folder: the chip names the file shown (as the backend)
+      title:
+        workspace.kind === "notes"
+          ? "Notes"
+          : workspace.kind === "singleFile" && entry.view.document
+            ? nameOf(entry.view.document)
+            : workspace.name,
       path: workspace.kind === "notes" ? "" : pathOfView(entry.view),
       loaded: true,
       unsaved: entry.tab === activeTab && editing.probe.unsaved !== null,
@@ -616,6 +626,15 @@ export function createMockApi(): Api & {
       probe.opened.push({ path, mode: "project" });
       return ok(null);
     },
+    openFolderWith: (folder, document) => {
+      probe.opened.push({
+        path: document === null ? folder : `${folder}|${document}`,
+        mode: "folder",
+      });
+      show(folder, "tab");
+      if (document !== null && view.state === "showing") showView({ ...view, document });
+      return ok(null);
+    },
     listWindows: () => ok(windowsNow()),
     tabActivate: (tab) => {
       activateTab(tab);
@@ -863,11 +882,35 @@ export function createMockApi(): Api & {
           ? (editing.probe.files.get(path) ?? "")
           : `# ${path}\n`,
       ),
+    // as the backend: a relative link above the folder of a single file leads outside; in a project it is missing
     resolveLinks: (doc, hrefs) =>
-      ok(hrefs.map((href) => mockLinkTarget(doc, href, (p) => project.exists(p)))),
-    resolveCodeRefs: (_doc, written) =>
-      ok(written.map((w) => (project.exists(w.replace(/^\//, "")) ? [w.replace(/^\//, "")] : []))),
+      ok(
+        hrefs.map((href) => mockLinkTarget(doc, href, (p) => project.exists(p), singleFileShown())),
+      ),
+    // as the backend: a single file matches written paths exactly (the document's folder, then the file's folder)
+    resolveCodeRefs: (doc, written) =>
+      ok(
+        written.map((w) => {
+          const path = w.replace(/^\//, "");
+          if (!singleFileShown()) return project.exists(path) ? [path] : [];
+          const folder = doc.split("/").slice(0, -1).join("/");
+          const near = folder === "" ? path : `${folder}/${path}`;
+          const found = [near, path].find((p) => project.files.has(p));
+          return found === undefined ? [] : [found];
+        }),
+      ),
     openInEditor: (path, line, col) => {
+      // as the backend: a file, never a folder (a single file's root path is its folder)
+      if (path === "" || (project.exists(path) && !project.files.has(path))) {
+        return Promise.resolve({
+          ok: false,
+          error: {
+            kind: "backend",
+            command: "open_in_editor",
+            error: { kind: "notFound", subject: path, detail: null },
+          },
+        });
+      }
       // as the backend: no editor chosen, nothing starts
       if (settings.editor.trim() === "") {
         return Promise.resolve({
@@ -929,6 +972,8 @@ export function createMockApi(): Api & {
     assetUrl: (_workspace, path) => mockAssetUrl(path),
     showDocument: (path) => {
       if (view.state === "showing") showView({ ...view, document: path });
+      // the chips follow (a single file's chip names the file shown), as the backend publishes
+      announceTabs();
       return ok(null);
     },
     on: (event, handler) => {

@@ -352,6 +352,7 @@ export interface Commands {
   open_path: { args: { path: string; placement: OpenPlacement }; result: OpenOutcome };
   open_notes: { args: { placement: OpenPlacement }; result: OpenOutcome };
   open_in_project: { args: { path: string }; result: null };
+  open_folder_with: { args: { folder: string; document: string | null }; result: null };
   list_windows: { args: Record<string, never>; result: WindowSummary[] };
   focus_workspace: { args: { id: WorkspaceId }; result: null };
   tab_activate: { args: { tab: TabId }; result: null };
@@ -818,6 +819,8 @@ export interface Api {
   openNotes(placement: OpenPlacement): Promise<Result<OpenOutcome>>;
   /** Opens the project that holds a file (a new tab of this window), showing the file. */
   openInProject(path: string): Promise<Result<null>>;
+  /** Opens a folder as a project (a new tab of this window, or where it is), showing a document inside it. */
+  openFolderWith(folder: string, document: string | null): Promise<Result<null>>;
   /** Every window with its tabs (this view shows its own window's). */
   listWindows(): Promise<Result<WindowSummary[]>>;
   focusWorkspace(id: WorkspaceId): Promise<Result<null>>;

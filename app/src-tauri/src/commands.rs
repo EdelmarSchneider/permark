@@ -189,6 +189,35 @@ pub fn open_in_project(handle: AppHandle, window: Webview, path: String) -> Resu
     .map(|_| ())
 }
 
+/// Opens `folder` as a project in a new tab of this window (or where it is open already), showing `document` (a path
+/// inside it) when given: a link of a single file that leads outside its folder, followed from the folder holding
+/// both. The folder is the person's choice (a button they pressed); the document is checked against it.
+#[tauri::command(async)]
+pub fn open_folder_with(
+    handle: AppHandle,
+    window: Webview,
+    folder: String,
+    document: Option<String>,
+) -> Result<(), IpcError> {
+    let root = permark_core::paths::Root::open(std::path::Path::new(&folder))?;
+    let document = document
+        .as_deref()
+        .map(VaultPath::parse)
+        .transpose()
+        .map_err(IpcError::from)?;
+    if let Some(document) = &document {
+        permark_core::paths::Vault::new(root.clone()).resolve(document)?;
+    }
+    open_placed(
+        &handle,
+        window.label(),
+        &WorkspaceRef::Project(root),
+        document,
+        OpenPlacement::Tab,
+    )
+    .map(|_| ())
+}
+
 /// Every window with its tabs (each view shows its own window's chips).
 #[tauri::command(async)]
 pub fn list_windows(handle: AppHandle) -> Vec<WindowSummary> {
@@ -738,12 +767,22 @@ pub fn show_document(
     window: Webview,
     path: Option<String>,
 ) -> Result<(), IpcError> {
-    let core = project_of(&handle, &window)?;
     let parsed = path
         .as_deref()
         .map(VaultPath::parse)
         .transpose()
         .map_err(IpcError::from)?;
+    // a single file tells which file of its folder it shows (tab + window title); it polls by itself
+    if let Some((_, Workspace::SingleFile(file))) =
+        state(&handle).registry.workspace_of(window.label())
+    {
+        if let Some(parsed) = &parsed {
+            file.scope.resolve_asset(parsed).map_err(IpcError::from)?;
+        }
+        state(&handle).registry.set_document(window.label(), parsed);
+        return Ok(());
+    }
+    let core = project_of(&handle, &window)?;
     // without live updates the open document is polled
     let abs = parsed.as_ref().and_then(|p| core.vault().resolve(p).ok());
     core.watcher().poll_document(window.label(), abs.as_deref());
@@ -854,9 +893,13 @@ pub fn code_refs_resolve(
     let (workspace, _) = reading_of(&handle, &window)?;
     Ok(match workspace {
         Workspace::Project(core) => resolve_code_refs(core.explorer(), &doc, &written),
-        Workspace::SingleFile(_) | Workspace::Notes(_) => {
-            written.iter().map(|_| Vec::new()).collect()
-        }
+        // exact paths under the file's folder (no file list to match a tail against)
+        Workspace::SingleFile(file) => file
+            .documents
+            .scope()
+            .exact_code_refs(&doc, &written)
+            .unwrap_or_default(),
+        Workspace::Notes(_) => written.iter().map(|_| Vec::new()).collect(),
     })
 }
 
@@ -872,6 +915,10 @@ pub fn open_in_editor(
 ) -> Result<(), IpcError> {
     let (workspace, _) = reading_of(&handle, &window)?;
     let (_, abs) = documents_of(&workspace).scope().resolve(&path)?;
+    // a file, never a folder (a single file's root path is its folder)
+    if !abs.is_file() {
+        return Err(IpcError::new(ErrorKind::NotFound).subject(path));
+    }
     let template = state(&handle).env.settings().editor;
     editor::launch(&template, &abs, line.unwrap_or(1), col.unwrap_or(1))?;
     Ok(())
@@ -1485,6 +1532,7 @@ commands![
     open_path,
     open_notes,
     open_in_project,
+    open_folder_with,
     list_windows,
     focus_workspace,
     tab_activate,

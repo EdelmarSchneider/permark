@@ -12,12 +12,14 @@ type Fx = {
   doc: DocumentController;
   workspace: WorkspaceView;
   notes: string[];
-  /** Quiet notes with buttons: the text and the button labels. */
+  /** The page's notes (with buttons), in order: the text and the button labels. */
   actions: { text: string; labels: string[]; run: () => void }[];
+  /** The page's note on screen now (one at a time; `null`: none). */
+  pageNote: string | null;
   failures: ApiError[];
   revealed: string[];
   chose: number;
-  folders: number;
+  folders: { folder: string; document: string | null }[];
   /** The person's editor (setting): set by a test. */
   editor: { set: boolean };
   /** What the window does with `window-changed`: the document follows. */
@@ -40,24 +42,28 @@ async function setup(path: string = MOCK_FOLDER): Promise<Fx> {
     failures: [],
     revealed: [],
     chose: 0,
-    folders: 0,
+    folders: [],
+    pageNote: null,
     editor: { set: false },
     follow: () => tick(),
   };
   doc.bind({
     note: (text) => fx.notes.push(text),
-    action: (text, ...buttons) =>
+    pageNote: (text, ...buttons) => {
+      fx.pageNote = text;
       fx.actions.push({
         text,
         labels: buttons.map((b) => b.label),
         run: () => buttons[0]?.run(),
-      }),
+      });
+    },
+    clearPageNote: () => (fx.pageNote = null),
     fail: (error) => fx.failures.push(error),
     reveal: (folder) => fx.revealed.push(folder),
     editorSet: () => fx.editor.set,
     modKey: () => "Ctrl",
     chooseEditor: () => (fx.chose += 1),
-    openFolder: () => (fx.folders += 1),
+    openFolderWith: (folder, document) => fx.folders.push({ folder, document }),
   });
   doc.setWorkspace(workspace);
   // the window tells the document what to show, as the real window does on `window-changed`
@@ -486,15 +492,12 @@ describe("a single file", () => {
 
   it("follows links inside its folder in the same tab, with back and forward", async () => {
     const fx = await setup(file);
-    const show = vi.spyOn(fx.api, "showDocument");
     await showSingle(fx);
     expect(fx.doc.path).toBe("README.md");
     await fx.doc.activateLink("docs/guide.md");
     await showSingle(fx);
     expect(fx.doc.path).toBe("docs/guide.md");
     expect(fx.doc.view?.path).toBe("docs/guide.md");
-    // no project registry document for a single file
-    expect(show).not.toHaveBeenCalled();
     await fx.doc.back();
     await showSingle(fx);
     expect(fx.doc.path).toBe("README.md");
@@ -507,20 +510,31 @@ describe("a single file", () => {
     expect(fx.doc.path).toBe("README.md");
   });
 
-  it("a link above the file's folder: a note with the way to open the folder", async () => {
+  it("a link above the file's folder: the folder holding both opens, showing the target", async () => {
     const fx = await setup(file);
     await showSingle(fx);
-    await fx.doc.activateLink("../elsewhere/plan.md");
+    await fx.doc.activateLink("../elsewhere/plan.md#goals");
     await showSingle(fx);
     expect(fx.doc.path).toBe("README.md");
     expect(fx.actions.map((a) => [a.text, a.labels])).toEqual([
-      ["This link leads outside this file's folder.", ["Open the folder"]],
+      ["This link leads outside permark-docs.", ["Open demo to follow this link"]],
     ]);
     fx.actions[0]?.run();
-    expect(fx.folders).toBe(1);
+    expect(fx.folders).toEqual([{ folder: "C:/Users/demo", document: "elsewhere/plan.md" }]);
+    // the note went with its button
+    expect(fx.pageNote).toBeNull();
   });
 
-  it("leaves other files to nobody (no system program from a single file)", async () => {
+  it("a link above the drive's first folder: says where it leads, offers nothing that can't reach it", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    await fx.doc.activateLink("../../../../x.md");
+    expect(fx.actions.map((a) => [a.text, a.labels])).toEqual([
+      ["This link leads outside permark-docs.", []],
+    ]);
+  });
+
+  it("a file only a folder window shows: says so, with the folder to open, never the system", async () => {
     const fx = await setup(file);
     fx.api.probe.project.add("tools/run.exe", "MZ");
     await showSingle(fx);
@@ -528,6 +542,45 @@ describe("a single file", () => {
     await showSingle(fx);
     expect(fx.doc.path).toBe("README.md");
     expect(fx.api.probe.opened).toEqual([]);
+    expect(fx.actions.map((a) => [a.text, a.labels])).toEqual([
+      [
+        "This link opens when permark-docs is open as a folder.",
+        ["Open permark-docs to follow this link"],
+      ],
+    ]);
+    fx.actions[0]?.run();
+    expect(fx.folders).toEqual([{ folder: MOCK_FOLDER, document: "tools/run.exe" }]);
+  });
+
+  it("one note at a time, gone when another document shows", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    await fx.doc.activateLink("../elsewhere/a.md");
+    await fx.doc.activateLink("../elsewhere/b.md");
+    expect(fx.pageNote).toBe("This link leads outside permark-docs.");
+    await fx.doc.activateLink("docs/guide.md");
+    await showSingle(fx);
+    expect(fx.pageNote).toBeNull();
+  });
+
+  it("tells the backend which file it shows (tab and window title)", async () => {
+    const fx = await setup(file);
+    const shown = vi.spyOn(fx.api, "showDocument");
+    await showSingle(fx);
+    await fx.doc.activateLink("docs/guide.md");
+    await showSingle(fx);
+    expect(shown.mock.calls.map((c) => c[0])).toEqual(["README.md", "docs/guide.md"]);
+  });
+
+  it("references in a single file: exact paths of its folder only", async () => {
+    const fx = await setup(file);
+    await showSingle(fx);
+    const found = await fx.api.resolveCodeRefs("docs/guide.md", [
+      "img/logo.png",
+      "README.md",
+      "main.rs",
+    ]);
+    expect(found.ok && found.value).toEqual([["docs/img/logo.png"], ["README.md"], []]);
   });
 
   it("a new workspace starts at its own file", async () => {

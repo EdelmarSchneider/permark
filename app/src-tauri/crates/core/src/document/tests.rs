@@ -1000,7 +1000,6 @@ fn a_single_file_link_leaves_no_way_out_in_any_spelling() {
 /// reading.md §Links (single file): `Outside` -> notice + "Open the folder"; CHANGELOG [Unreleased] Fixed promises it
 /// for "a link that leads outside the file's folder". A relative `../` link is the common way out.
 #[test]
-#[ignore = "verify B3 finding F1: relative links above the folder resolve to Missing, not Outside"]
 fn a_single_file_relative_link_above_its_folder_is_outside() {
     let dir = tempfile::tempdir().unwrap();
     let (docs, _) = single(&dir, "note.md", b"# Note\n");
@@ -1008,4 +1007,91 @@ fn a_single_file_relative_link_above_its_folder_is_outside() {
         .scope()
         .resolve_links("note.md", &["../elsewhere/plan.md".to_owned()]);
     assert_eq!(targets[0], LinkTarget::Outside, "{targets:?}");
+}
+
+/// The other spellings of "above the folder" too; a missing file inside it stays missing; a project keeps `Missing`.
+#[test]
+fn only_a_single_file_says_outside_for_a_relative_way_up() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    std::fs::write(dir.path().join("docs/a.md"), "# A\n").unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    let hrefs: Vec<String> = [
+        "..\\x.md",
+        "../x.md#part",
+        "docs/../../x.md?q=1",
+        "%2E%2E/x.md",
+        "nope.md",
+        "docs/../docs/a.md",
+    ]
+    .iter()
+    .map(|h| (*h).to_owned())
+    .collect();
+    let targets = docs.scope().resolve_links("note.md", &hrefs);
+    assert_eq!(targets[0], LinkTarget::Outside);
+    assert_eq!(targets[1], LinkTarget::Outside);
+    assert_eq!(targets[2], LinkTarget::Outside);
+    assert_eq!(targets[3], LinkTarget::Outside);
+    assert!(
+        matches!(targets[4], LinkTarget::Missing { .. }),
+        "{targets:?}"
+    );
+    assert!(matches!(targets[5], LinkTarget::Doc { .. }), "{targets:?}");
+    // a project: a way up above its root names nothing of it (missing), as before
+    let p = project();
+    let targets = p
+        .docs
+        .scope()
+        .resolve_links("note.md", &["../x.md".to_owned()]);
+    assert!(
+        matches!(targets[0], LinkTarget::Missing { .. }),
+        "{targets:?}"
+    );
+}
+
+/// reading.md §Code references, single file: exact paths, the document's folder first, then the file's folder;
+/// existing files only; folders and ways out never.
+#[test]
+fn a_single_file_matches_code_references_exactly_inside_its_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("docs/img")).unwrap();
+    std::fs::create_dir_all(dir.path().join("src")).unwrap();
+    std::fs::write(dir.path().join("docs/img/a.png"), "png").unwrap();
+    std::fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(dir.path().join("docs/main.rs"), "// near\n").unwrap();
+    let (docs, _) = single(&dir, "note.md", b"# Note\n");
+    let written: Vec<String> = [
+        "img/a.png",
+        "src/main.rs",
+        "main.rs",
+        "/src/main.rs",
+        "src",
+        "../x.rs",
+        "lib.rs",
+    ]
+    .iter()
+    .map(|w| (*w).to_owned())
+    .collect();
+    let found = docs
+        .scope()
+        .exact_code_refs("docs/guide.md", &written)
+        .unwrap();
+    assert_eq!(
+        found,
+        vec![
+            vec!["docs/img/a.png".to_owned()],
+            vec!["src/main.rs".to_owned()],
+            vec!["docs/main.rs".to_owned()],
+            vec!["src/main.rs".to_owned()],
+            vec![],
+            vec![],
+            vec![],
+        ]
+    );
+    // a project answers from its file list, not here
+    assert!(project()
+        .docs
+        .scope()
+        .exact_code_refs("a.md", &written)
+        .is_none());
 }

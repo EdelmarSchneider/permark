@@ -199,6 +199,8 @@ describe("the page", () => {
     expect(event.defaultPrevented).toBe(true);
     await until(() => documents.path === "docs/guide.md", "navigated");
     expect(documents.trail.canBack).toBe(true);
+    // the keyboard is on the new page, not lost with the link
+    expect(document.activeElement?.hasAttribute("data-scroller")).toBe(true);
   });
 
   it("opens web links in the browser and code references in the chosen editor", async () => {
