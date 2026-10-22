@@ -24,6 +24,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running, ServiceLease,
 };
+use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
 use serde::Deserialize;
 
@@ -81,6 +82,7 @@ impl Plugin for UnreadPlugin {
         &self.manifest
     }
 
+    #[allow(clippy::too_many_lines)] // one registration per method the window calls
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let (Some(project), CxWorkspace::Project(vault), Some(hub)) =
             (cx.project(), &cx.workspace, cx.watch())
@@ -104,11 +106,12 @@ impl Plugin for UnreadPlugin {
                 reason: "needs a project".to_owned(),
             });
         };
+        let started = project.owners(store);
         let service = Arc::new(UnreadService::start(ServiceArgs {
             scope: project.documents.scope().clone(),
             explorer: Arc::clone(&project.explorer),
             roots,
-            owners: project.owners(store),
+            owners: started.clone(),
             // a reader with no window leaves the picture of the last visit alone
             visit: !cx.files_only(),
             announce: Arc::new(move |list| {
@@ -133,6 +136,11 @@ impl Plugin for UnreadPlugin {
                 }
             }
         });
+        // an owners change between the read above and the subscription: caught up here
+        let now = project.owners(store);
+        if !now.same(&started) {
+            service.follow_owners(&OwnersChange::Resume(&now));
+        }
         let mut registrations = Vec::new();
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc("list", typed(move |_: NoArgs, _| Ok(s.list()))));

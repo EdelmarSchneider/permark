@@ -96,10 +96,10 @@ fn abs_of(root: &Path, path: &VaultPath) -> PathBuf {
     abs
 }
 
-/// Whether a member's 0.6 state was copied (by uid, or by its folder after a leave out + include).
+/// Whether a member's 0.6 state was copied since it was last included (a project left out and included again is
+/// copied again: only what the opened folder got since, `projects.md` §14 D50).
 fn is_copied(inner: &Inner, member: &MemberInfo) -> bool {
     inner.migrated.iter().any(|u| u == member.uid.as_str())
-        || inner.migrated_paths.contains(&member.key)
 }
 
 /// Where `path` is now when one of `renames` (`(from, to)`, first that covers it wins) moved it or a folder above it.
@@ -316,8 +316,8 @@ struct Inner {
     root_ignore: Vec<String>,
     /// Uids whose 0.6 state was copied (`projects.md` §9.3): their state lives in their own files.
     migrated: Vec<String>,
-    /// Path keys of copied members (a new uid after leave out + include never copies twice).
-    migrated_paths: Vec<String>,
+    /// Members whose copy failed this session: tried again at the next start, not at every map change.
+    copy_failed: HashSet<ProjectUid>,
     /// Members moved since the owners were last told (`(from, to)`): their profile state folder follows once the
     /// plugins wrote what they hold (`projects.md` §9.1).
     pending_moves: Vec<(VaultPath, VaultPath)>,
@@ -490,7 +490,7 @@ impl Projects {
                 ancestors: (Vec::new(), None),
                 root_ignore: root_ignore.to_vec(),
                 migrated: kept.migrated,
-                migrated_paths: kept.migrated_paths,
+                copy_failed: HashSet::new(),
                 pending_moves: Vec::new(),
                 root_commits: HashMap::new(),
                 asked: HashSet::new(),
@@ -1593,13 +1593,16 @@ impl Projects {
         let _turn = lock(&self.owners_turn);
         let map = self.snapshot();
         let moves = std::mem::take(&mut lock(&self.inner).pending_moves);
+        if !self.files_only {
+            self.forget_left(&map);
+        }
         let to_copy: Vec<MemberInfo> = if self.files_only {
             Vec::new()
         } else {
             let inner = lock(&self.inner);
             map.members()
                 .iter()
-                .filter(|m| !is_copied(&inner, m))
+                .filter(|m| !is_copied(&inner, m) && !inner.copy_failed.contains(&m.uid))
                 .cloned()
                 .collect()
         };
@@ -1638,38 +1641,66 @@ impl Projects {
         }
     }
 
-    /// Copies the opened folder's 0.6 state into each member (`projects.md` §9.3); marks the ones that succeeded.
+    /// Members that were owners and are no longer in the map (left out, removed, declined): their copy mark goes, so
+    /// an include later copies what the opened folder got meanwhile (the ledger keeps out what was copied before).
+    fn forget_left(&self, map: &ProjectMap) {
+        let left: Vec<String> = lock(&self.owners)
+            .slots()
+            .iter()
+            .filter_map(|s| s.uid.as_ref())
+            .filter(|uid| map.member(uid).is_none())
+            .map(|uid| uid.as_str().to_owned())
+            .collect();
+        if left.is_empty() {
+            return;
+        }
+        let mut inner = lock(&self.inner);
+        let before = inner.migrated.len();
+        inner.migrated.retain(|u| !left.contains(u));
+        if inner.migrated.len() != before {
+            // a failed save keeps the mark on disk: a later include with the same uid then copies at the next start
+            let _ = self.save_membership(&inner);
+        }
+    }
+
+    /// Copies the opened folder's 0.6 state into each member (`projects.md` §9.3, by entry: §14 D50); marks the ones
+    /// that succeeded (copy + ledger saved).
     fn copy_state(&self, members: &[MemberInfo]) {
         let root = StateStore::for_project(&self.dirs, &self.root);
+        let ledger_file =
+            root.profile_file::<super::migrate::LedgerFile>(super::migrate::LEDGER_FILE);
+        let mut ledger = ledger_file.load().into_value();
         let mut done = Vec::new();
+        let mut failed = Vec::new();
         for member in members {
             let Some(target) = self.store_of(&member.path) else {
                 continue;
             };
-            if super::migrate::copy_state(&root, &target, member.path.as_str()).is_ok() {
-                done.push(member);
+            let seen = ledger.members.entry(member.key.clone()).or_default();
+            match super::migrate::copy_state(&root, &target, member.path.as_str(), seen) {
+                Ok(_) => done.push(member),
+                Err(_) => failed.push(member.uid.clone()),
             }
         }
+        if !done.is_empty() && ledger_file.save(&ledger).is_err() {
+            // the copies stand (the project's entries win next time); the marks wait for a ledger that is saved
+            failed.extend(done.drain(..).map(|m| m.uid.clone()));
+        }
+        let mut inner = lock(&self.inner);
+        inner.copy_failed.extend(failed);
         if done.is_empty() {
             return;
         }
-        let mut inner = lock(&self.inner);
         for member in done {
             let uid = member.uid.as_str().to_owned();
             if !inner.migrated.contains(&uid) {
                 inner.migrated.push(uid);
             }
-            if !inner.migrated_paths.contains(&member.key) {
-                inner.migrated_paths.push(member.key.clone());
-            }
         }
-        let inner = &mut *inner;
-        for list in [&mut inner.migrated, &mut inner.migrated_paths] {
-            let over = list.len().saturating_sub(MAX_MIGRATED);
-            list.drain(..over);
-        }
-        // not saved: copied again next start (idempotent: the project's entries win)
-        let _ = self.save_membership(inner);
+        let over = inner.migrated.len().saturating_sub(MAX_MIGRATED);
+        inner.migrated.drain(..over);
+        // not saved: copied again next start (by ledger: nothing twice)
+        let _ = self.save_membership(&inner);
     }
 
     // ---- publishing ------------------------------------------------------------------------------------------------
@@ -1773,7 +1804,6 @@ impl Projects {
             answer: inner.inputs.answer,
             declined: inner.inputs.declined.clone(),
             migrated: inner.migrated.clone(),
-            migrated_paths: inner.migrated_paths.clone(),
             agent_off: inner
                 .inputs
                 .agent_off

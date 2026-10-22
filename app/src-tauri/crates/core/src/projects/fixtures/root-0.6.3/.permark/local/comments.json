@@ -2,81 +2,65 @@
   "version": 1,
   "comments": [
     {
-      "id": "c1f9a0000001",
+      "id": "c1a16250a644000",
       "path": "docs/a.md",
       "text": "Root comment",
       "anchor": {
         "quote": "alpha beta",
-        "before": "intro",
+        "before": "planintro",
+        "after": "more",
         "headingPath": [
           "Plan"
         ],
         "line": 3,
-        "endLine": 4
+        "endLine": 3
       },
-      "createdMs": 1760000000000,
+      "createdMs": 1792650815044,
       "done": null
     },
     {
-      "id": "c1f9a0000002",
+      "id": "c1a16250a64f001",
       "path": "sub-a/plan.md",
       "text": "Check this plan",
       "anchor": {
         "quote": "alpha beta",
-        "before": "intro",
+        "before": "planintro",
+        "after": "steps",
         "headingPath": [
           "Plan"
         ],
         "line": 3,
-        "endLine": 4
+        "endLine": 3
       },
-      "createdMs": 1760000000000,
+      "createdMs": 1792650815055,
       "done": {
-        "atMs": 1760000100000,
-        "by": "agent",
-        "reply": "Fixed."
+        "atMs": 1792650815060,
+        "by": "user"
       },
       "replies": [
         {
-          "atMs": 1760000050000,
+          "atMs": 1792650815058,
           "by": "user",
           "text": "Please fix."
         }
-      ],
-      "futureKey": "kept"
+      ]
     },
     {
-      "id": "c1f9a0000003",
+      "id": "c1a16250a65c002",
       "path": "sub-b/x.md",
-      "text": "Profile-side comment",
+      "text": "In sub-b",
       "anchor": {
         "quote": "alpha beta",
-        "before": "intro",
+        "before": "x",
+        "after": "inx",
         "headingPath": [
-          "Plan"
+          "X"
         ],
         "line": 3,
-        "endLine": 4
+        "endLine": 3
       },
-      "createdMs": 1760000000000,
-      "done": null
-    },
-    {
-      "id": "c1f9a0000004",
-      "path": "sub-bc/y.md",
-      "text": "Sibling, not inside sub-b",
-      "anchor": {
-        "quote": "alpha beta",
-        "before": "intro",
-        "headingPath": [
-          "Plan"
-        ],
-        "line": 3,
-        "endLine": 4
-      },
-      "createdMs": 1760000000000,
+      "createdMs": 1792650815068,
       "done": null
     }
-  ],
-  "futureTop": 7
+  ]
 }

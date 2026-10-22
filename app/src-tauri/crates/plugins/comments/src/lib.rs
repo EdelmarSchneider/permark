@@ -24,6 +24,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, Plugin, PluginCx, PluginError, PluginId, PluginKind, PluginScope,
     RpcRegistration, Running, ServiceLease,
 };
+use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
 use permark_core::IpcError;
 use serde::Deserialize;
@@ -108,8 +109,9 @@ impl Plugin for CommentsPlugin {
             });
         };
         let events = cx.events().clone();
+        let started = project.owners(store);
         let service = Arc::new(CommentsService::start_owners(
-            project.owners(store),
+            started.clone(),
             project.documents.scope().clone(),
             Arc::new(move || events.emit("changed", serde_json::Value::Null)),
         ));
@@ -122,6 +124,11 @@ impl Plugin for CommentsPlugin {
                 }
             }
         });
+        // an owners change between the read above and the subscription: caught up here
+        let now = project.owners(store);
+        if !now.same(&started) {
+            service.follow_owners(&OwnersChange::Resume(&now));
+        }
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.feed(batch)

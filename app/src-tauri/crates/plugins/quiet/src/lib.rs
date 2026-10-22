@@ -26,7 +26,7 @@ use permark_core::plugins::{
     PluginScope, RpcRegistration, Running, ServiceLease,
 };
 use permark_core::projects::{Owners, OwnersChange, ProjectsSubscription};
-use permark_core::state::RawFile;
+use permark_core::state::{merge3, RawFile};
 use permark_core::watch::{ChangeKind, FsBatch, Subscription};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -76,7 +76,8 @@ struct OwnerFile {
     damaged: bool,
     /// Marks of this file that lie in a deeper owner: kept as written, unused while that one is included.
     dormant: BTreeMap<String, Interest>,
-    /// What the file holds now (owner-relative), as last read | written.
+    /// What the file holds now (owner-relative), as last read | written: the base this core's changes are laid on
+    /// when the file is written again (another tab | app may have written it meanwhile; `projects.md` §14 D51).
     written: BTreeMap<String, Interest>,
 }
 
@@ -100,7 +101,6 @@ pub struct QuietService {
 
 /// Reads every owner's file into one root-relative set of marks.
 fn read_owners(owners: &Owners) -> (Marks, Vec<OwnerFile>) {
-    let mut merged = BTreeMap::new();
     let mut slots = Vec::with_capacity(owners.slots().len());
     for (i, slot) in owners.slots().iter().enumerate() {
         let file = slot.store.raw_file(FILE);
@@ -112,23 +112,45 @@ fn read_owners(owners: &Owners) -> (Marks, Vec<OwnerFile>) {
             // a file that cannot be read now is set aside like a damaged one before the first write
             Err(_) => (Marks::default(), true),
         };
-        let mut dormant = BTreeMap::new();
-        for (rel, interest) in marks.iter() {
-            let path = owners.join(i, rel);
-            if owners.owner_of(&path) == i {
-                merged.insert(path, interest);
-            } else {
-                dormant.insert(rel.to_owned(), interest);
-            }
-        }
+        let written = marks.to_map();
         slots.push(OwnerFile {
             file,
             damaged,
-            dormant,
-            written: marks.to_map(),
+            dormant: dormant_of(owners, i, &written),
+            written,
         });
     }
-    (Marks::from_map(merged), slots)
+    (marks_of(Some(owners), &slots), slots)
+}
+
+/// The marks of file `i` that lie in a deeper owner.
+fn dormant_of(
+    owners: &Owners,
+    i: usize,
+    written: &BTreeMap<String, Interest>,
+) -> BTreeMap<String, Interest> {
+    written
+        .iter()
+        .filter(|(rel, _)| owners.owner_of(&owners.join(i, rel)) != i)
+        .map(|(rel, interest)| (rel.clone(), *interest))
+        .collect()
+}
+
+/// One root-relative set of marks from what every owner's file holds (dormant marks left out).
+fn marks_of(owners: Option<&Owners>, slots: &[OwnerFile]) -> Marks {
+    let Some(owners) = owners else {
+        return Marks::from_map(slots.first().map(|s| s.written.clone()).unwrap_or_default());
+    };
+    let mut merged = BTreeMap::new();
+    for (i, slot) in slots.iter().enumerate() {
+        for (rel, interest) in &slot.written {
+            let path = owners.join(i, rel);
+            if owners.owner_of(&path) == i {
+                merged.insert(path, *interest);
+            }
+        }
+    }
+    Marks::from_map(merged)
 }
 
 impl QuietService {
@@ -185,11 +207,11 @@ impl QuietService {
     pub fn follow_owners(&self, change: &OwnersChange<'_>) {
         match change {
             OwnersChange::Pause => {
-                let pending = self.lock_files().pending;
-                if pending {
-                    let _ = self.save();
+                let mut files = self.lock_files();
+                if files.pending {
+                    let _ = self.save(&mut files);
                 }
-                self.lock_files().paused = true;
+                files.paused = true;
             }
             OwnersChange::Resume(owners) => {
                 let (marks, slots) = read_owners(owners);
@@ -237,19 +259,22 @@ impl QuietService {
                 VaultPath::parse(path)?.to_string()
             });
         }
+        // one change at a time: the marks, their files and what the files were read as stay together
+        let mut files = self.lock_files();
         // the owners are changing (a moment): the mark would land in a file about to be read again
-        if self.lock_files().paused {
+        if files.paused {
             return Err(IpcError::new(ErrorKind::Unavailable).subject(FILE));
         }
         let changed = {
             let mut marks = self.marks.write().unwrap_or_else(PoisonError::into_inner);
             let before = marks.clone();
             marks.set(&checked, interest);
-            drop_idle(&mut marks);
+            drop_idle(&mut marks, &checked);
             *marks != before
         };
         if changed {
-            self.save()?;
+            self.save(&mut files)?;
+            drop(files);
             (self.announce)(&self.marks());
         }
         Ok(self.marks())
@@ -258,8 +283,8 @@ impl QuietService {
     /// Moved files take their marks along.
     fn on_batch(&self, batch: &FsBatch) {
         let mut changed = false;
-        let owner_folders: Vec<String> = self
-            .lock_files()
+        let mut files = self.lock_files();
+        let owner_folders: Vec<String> = files
             .owners
             .as_ref()
             .map(|o| {
@@ -282,19 +307,21 @@ impl QuietService {
                 }
             }
         }
-        if changed && self.save().is_ok() {
+        if changed && self.save(&mut files).is_ok() {
+            drop(files);
             (self.announce)(&self.marks());
         }
     }
 
-    /// Writes each owner's file whose marks changed (the root-relative marks split by owner, dormant ones kept).
-    fn save(&self) -> Result<(), IpcError> {
+    /// Writes each owner's file whose marks changed (the root-relative marks split by owner, dormant ones kept): this
+    /// core's changes since it last read | wrote a file go on top of the file as it is now; then the marks are what
+    /// the files hold (another tab's | app's marks included). Called with the files locked.
+    fn save(&self, files: &mut Files) -> Result<(), IpcError> {
         let marks = self
             .marks
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .to_map();
-        let mut files = self.lock_files();
         if files.paused {
             files.pending = true;
             return Ok(());
@@ -308,16 +335,27 @@ impl QuietService {
             None => vec![marks],
         };
         let mut result = Ok(());
-        for (slot, mut part) in files.slots.iter_mut().zip(parts) {
+        let mut wrote = false;
+        let owners = files.owners.clone();
+        for (i, (slot, mut part)) in files.slots.iter_mut().zip(parts).enumerate() {
             part.extend(slot.dormant.iter().map(|(p, i)| (p.clone(), *i)));
             if part == slot.written && !slot.damaged {
                 continue;
             }
-            if let Err(e) = write_marks(slot, &part) {
-                result = Err(e);
-                continue;
+            match write_marks(slot, &part) {
+                Ok(now) => {
+                    if let Some(owners) = &owners {
+                        slot.dormant = dormant_of(owners, i, &now);
+                    }
+                    slot.written = now;
+                    wrote = true;
+                }
+                Err(e) => result = Err(e),
             }
-            slot.written = part;
+        }
+        if wrote {
+            *self.marks.write().unwrap_or_else(PoisonError::into_inner) =
+                marks_of(owners.as_ref(), &files.slots);
         }
         files.pending = result.is_err();
         result
@@ -330,8 +368,12 @@ impl QuietService {
     }
 }
 
-/// Writes one owner's marks (a damaged file is put aside first, never overwritten).
-fn write_marks(slot: &mut OwnerFile, marks: &BTreeMap<String, Interest>) -> Result<(), IpcError> {
+/// Writes one owner's marks over the file as it is now (`marks` = this core's, `slot.written` = what it last saw; a
+/// damaged file is put aside first, never overwritten). Returns what the file holds afterwards.
+fn write_marks(
+    slot: &mut OwnerFile,
+    marks: &BTreeMap<String, Interest>,
+) -> Result<BTreeMap<String, Interest>, IpcError> {
     if slot.damaged {
         // what was there is not marks this version can read: kept next to the new file, never overwritten
         let ms = std::time::SystemTime::now()
@@ -349,15 +391,51 @@ fn write_marks(slot: &mut OwnerFile, marks: &BTreeMap<String, Interest>) -> Resu
             Err(e) => return Err(IpcError::io("quiet.json", &e)),
         }
     }
-    slot.file.write(&Marks::from_map(marks.clone()).to_json())?;
-    Ok(())
+    let base = &slot.written;
+    let mut merged = None;
+    let mut foreign = false;
+    slot.file.update(|now| {
+        let fresh = match now {
+            None => BTreeMap::new(),
+            Some(bytes) => {
+                let Some(fresh) = Marks::parse(bytes) else {
+                    foreign = true;
+                    return None;
+                };
+                fresh.to_map()
+            }
+        };
+        let next = merge3(base, marks, fresh);
+        let bytes = Marks::from_map(next.clone()).to_json();
+        merged = Some(next);
+        Some(bytes)
+    })?;
+    if foreign {
+        // another program wrote something that is not marks meanwhile: set aside at the next write
+        slot.damaged = true;
+        return Err(IpcError::new(ErrorKind::Unavailable).subject(FILE));
+    }
+    Ok(merged.unwrap_or_else(|| marks.clone()))
 }
 
-/// A `speaking` mark with no silenced folder above it changes nothing.
-fn drop_idle(marks: &mut Marks) {
+/// A `speaking` mark with no silenced folder above it changes nothing: dropped at | below the paths just `set` (marks
+/// elsewhere stay as written: in a project opened alone, a mark that only matters under the outer folder's silence is
+/// the outer tab's, `projects.md` §14 D51).
+fn drop_idle(marks: &mut Marks, set: &[String]) {
+    let keys: Vec<String> = set.iter().map(|p| permark_core::paths::key_of(p)).collect();
+    let touched = |path: &str| {
+        let key = permark_core::paths::key_of(path);
+        keys.iter().any(|k| {
+            k.is_empty()
+                || key == *k
+                || key
+                    .strip_prefix(k.as_str())
+                    .is_some_and(|rest| rest.starts_with('/'))
+        })
+    };
     let idle: Vec<String> = marks
         .iter()
-        .filter(|(_, interest)| *interest == Interest::Speaking)
+        .filter(|(path, interest)| *interest == Interest::Speaking && touched(path))
         .map(|(path, _)| path.to_owned())
         .filter(|path| {
             // without its own mark the path speaks already (no silenced folder above it)
@@ -396,8 +474,9 @@ impl Plugin for QuietPlugin {
             });
         };
         let events = cx.events().clone();
+        let started = project.owners(store);
         let service = QuietService::load_owners(
-            project.owners(store),
+            started.clone(),
             Arc::new(move |marks| {
                 events.emit(
                     "changed",
@@ -414,6 +493,11 @@ impl Plugin for QuietPlugin {
                 }
             }
         });
+        // an owners change between the read above and the subscription: caught up here
+        let now = project.owners(store);
+        if !now.same(&started) {
+            service.follow_owners(&OwnersChange::Resume(&now));
+        }
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);
             move |batch| service.on_batch(batch)

@@ -136,7 +136,7 @@ fn comments_live_with_their_project_and_a_shared_id_is_told_apart() {
 }
 
 #[test]
-fn two_tabs_writing_the_same_projects_comments_lose_nothing() {
+fn two_tabs_one_after_the_other_see_each_others_comments() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
@@ -404,4 +404,62 @@ fn verify_two_tabs_adding_concurrently_lose_nothing() {
         81,
         "lost updates: root tab kept {r}/40, alone tab kept {a}/40"
     );
+}
+
+/// B1 (D51): two app instances (own profiles) on the same folder add and remove comments of one project at the same
+/// time: every comment added stays, every comment removed stays removed.
+#[test]
+fn two_apps_on_one_folder_adding_and_removing_at_once_lose_nothing() {
+    let (_dir, root) = setup();
+    let (base_a, base_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (env_a, env_b) = (env(base_a.path()), env(base_b.path()));
+    let a = ProjectCore::open(Root::open(&root).unwrap(), &env_a);
+    let b = ProjectCore::open(Root::open(&root).unwrap(), &env_b);
+    assert!(a.projects().wait_ready(Duration::from_secs(10)));
+    assert!(b.projects().wait_ready(Duration::from_secs(10)));
+    let run = |core: Arc<ProjectCore>, tag: &'static str| {
+        std::thread::spawn(move || {
+            let mut removed = Vec::new();
+            for i in 0..25 {
+                let added = call(
+                    &core,
+                    "add",
+                    json!({ "path": format!("{MEMBER}/doc.md"), "quote": "alpha", "text": format!("{tag}{i}") }),
+                )
+                .unwrap();
+                if i % 3 == 0 {
+                    let id = added["id"].as_str().unwrap().to_owned();
+                    call(&core, "remove", json!({ "id": id })).unwrap();
+                    removed.push(format!("{tag}{i}"));
+                }
+            }
+            removed
+        })
+    };
+    let (ta, tb) = (run(Arc::clone(&a), "a"), run(Arc::clone(&b), "b"));
+    let mut removed = ta.join().unwrap();
+    removed.extend(tb.join().unwrap());
+    let file: Value = serde_json::from_slice(
+        &std::fs::read(root.join(MEMBER).join(".permark/local/comments.json")).unwrap(),
+    )
+    .unwrap();
+    let texts: Vec<String> = file["comments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["text"].as_str().unwrap().to_owned())
+        .collect();
+    for tag in ["a", "b"] {
+        for i in 0..25 {
+            let text = format!("{tag}{i}");
+            assert_eq!(
+                texts.contains(&text),
+                !removed.contains(&text),
+                "{text}: {texts:?}"
+            );
+        }
+    }
+    assert!(texts.contains(&"member one".to_owned()));
+    // each app sees the other's comments at its next look
+    assert_eq!(list(&a).len(), list(&b).len());
 }

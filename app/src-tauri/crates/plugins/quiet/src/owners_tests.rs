@@ -266,3 +266,106 @@ fn verify_ancestor_rename_keeps_member_marks() {
         "member file lost its mark: {file}; root file {root_file}"
     );
 }
+
+/// B1 (D51): the root tab and the project opened alone set marks at the same time (threads): every mark stays.
+#[test]
+fn two_tabs_setting_marks_at_once_lose_nothing() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let env = env(base.path());
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    let alone = ProjectCore::open(Root::open(&root.join(MEMBER)).unwrap(), &env);
+    let a = std::thread::spawn({
+        let core = Arc::clone(&core);
+        move || {
+            for i in 0..30 {
+                call(
+                    &core,
+                    "set",
+                    json!({ "paths": [format!("{MEMBER}/r{i}")], "interest": "quiet" }),
+                );
+            }
+        }
+    });
+    for i in 0..30 {
+        call(
+            &alone,
+            "set",
+            json!({ "paths": [format!("a{i}")], "interest": "quiet" }),
+        );
+    }
+    a.join().unwrap();
+    let marks: Value = serde_json::from_slice(
+        &std::fs::read(root.join(MEMBER).join(".permark/local/quiet.json")).unwrap(),
+    )
+    .unwrap();
+    for i in 0..30 {
+        assert!(marks.get(format!("r{i}")).is_some(), "r{i}: {marks}");
+        assert!(marks.get(format!("a{i}")).is_some(), "a{i}: {marks}");
+    }
+    assert_eq!(
+        marks["drafts"],
+        json!("speaking"),
+        "the copied mark: {marks}"
+    );
+    // the root tab learns the other tab's marks with its own next write
+    call(
+        &core,
+        "set",
+        json!({ "paths": [format!("{MEMBER}/last")], "interest": "quiet" }),
+    );
+    assert!(silenced(&core, &format!("{MEMBER}/a29/x.md")));
+}
+
+/// B1 (D51): two app instances on the same folder: one sets and then takes marks off while the other sets its own;
+/// nothing comes back, nothing is lost.
+#[test]
+fn two_apps_on_one_folder_setting_and_clearing_marks_lose_nothing() {
+    let (_dir, root) = setup();
+    let (base_a, base_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let a = ProjectCore::open(Root::open(&root).unwrap(), &env(base_a.path()));
+    let b = ProjectCore::open(Root::open(&root).unwrap(), &env(base_b.path()));
+    assert!(a.projects().wait_ready(Duration::from_secs(10)));
+    assert!(b.projects().wait_ready(Duration::from_secs(10)));
+    let ta = std::thread::spawn({
+        let a = Arc::clone(&a);
+        move || {
+            for i in 0..20 {
+                call(
+                    &a,
+                    "set",
+                    json!({ "paths": [format!("{MEMBER}/drafts/a{i}")], "interest": "quiet" }),
+                );
+            }
+            // speaking under a speaking folder changes nothing: the mark goes
+            for i in 0..10 {
+                call(
+                    &a,
+                    "set",
+                    json!({ "paths": [format!("{MEMBER}/drafts/a{i}")], "interest": "speaking" }),
+                );
+            }
+        }
+    });
+    for i in 0..20 {
+        call(
+            &b,
+            "set",
+            json!({ "paths": [format!("{MEMBER}/b{i}")], "interest": "quiet" }),
+        );
+    }
+    ta.join().unwrap();
+    let marks: Value = serde_json::from_slice(
+        &std::fs::read(root.join(MEMBER).join(".permark/local/quiet.json")).unwrap(),
+    )
+    .unwrap();
+    for i in 0..20 {
+        assert!(marks.get(format!("b{i}")).is_some(), "b{i}: {marks}");
+        assert_eq!(
+            marks.get(format!("drafts/a{i}")).is_some(),
+            i >= 10,
+            "drafts/a{i}: {marks}"
+        );
+    }
+}

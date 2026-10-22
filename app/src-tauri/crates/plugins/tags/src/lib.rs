@@ -27,6 +27,7 @@ use permark_core::plugins::{
     typed, CxWorkspace, Manifest, NoArgs, Plugin, PluginCx, PluginError, PluginId, PluginKind,
     PluginScope, RpcRegistration, Running, ServiceLease,
 };
+use permark_core::projects::OwnersChange;
 use permark_core::watch::Subscription;
 use serde::Deserialize;
 
@@ -117,8 +118,9 @@ impl Plugin for TagsPlugin {
             });
         };
         let events = cx.events().clone();
+        let started = project.owners(store);
         let service = Arc::new(TagsService::start(ServiceArgs {
-            owners: project.owners(store),
+            owners: started.clone(),
             // a reader with no window does not carry the profile copy over (the app does, on its next open)
             legacy: !cx.files_only(),
             own: Arc::clone(&project.own),
@@ -141,6 +143,11 @@ impl Plugin for TagsPlugin {
                 }
             }
         });
+        // an owners change between the read above and the subscription: caught up here
+        let now = project.owners(store);
+        if !now.same(&started) {
+            service.follow_owners(&OwnersChange::Resume(&now));
+        }
         let mut registrations = Vec::new();
         let s = Arc::clone(&service);
         registrations.extend(cx.rpc("index", typed(move |_: NoArgs, _| Ok(s.index()))));
