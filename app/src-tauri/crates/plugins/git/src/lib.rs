@@ -16,6 +16,8 @@ mod service;
 mod system;
 #[cfg(test)]
 mod tests;
+#[cfg(windows)]
+mod tree;
 mod types;
 mod worktrees;
 

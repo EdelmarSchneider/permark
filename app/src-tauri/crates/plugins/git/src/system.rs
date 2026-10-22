@@ -157,12 +157,13 @@ pub fn run_until(
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // no console window flashing up for each call
-        command.creation_flags(0x0800_0000);
+        // no console window flashing up for each call; suspended until it is in its job (`Tree::adopt`)
+        command.creation_flags(0x0800_0000 | crate::tree::START_SUSPENDED);
     }
     let mut child = command
         .spawn()
         .map_err(|e| GitError::Spawn(e.to_string()))?;
+    let tree = Tree::adopt(&mut child).map_err(|e| GitError::Spawn(e.to_string()))?;
     let overflow = Arc::new(AtomicBool::new(false));
     let out = spawn_reader(child.stdout.take(), max, Arc::clone(&overflow));
     let err = spawn_reader(
@@ -178,18 +179,15 @@ pub fn run_until(
             Err(e) => return Err(GitError::Spawn(e.to_string())),
         }
         if overflow.load(Ordering::SeqCst) {
-            let _ = child.kill();
-            let _ = child.wait();
+            tree.kill(&mut child);
             return Err(GitError::TooLarge(max));
         }
         if started.elapsed() > timeout {
-            let _ = child.kill();
-            let _ = child.wait();
+            tree.kill(&mut child);
             return Err(GitError::Timeout);
         }
         if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-            let _ = child.kill();
-            let _ = child.wait();
+            tree.kill(&mut child);
             return Err(GitError::Failed("stopped".to_owned()));
         }
         thread::sleep(Duration::from_millis(3));
@@ -205,6 +203,27 @@ pub fn run_until(
         stderr: String::from_utf8_lossy(&err.take()).trim().to_owned(),
     })
 }
+
+/// Elsewhere git on `PATH` is the real program: killing it is enough (see `tree.rs` for Windows).
+#[cfg(not(windows))]
+struct Tree;
+
+#[cfg(not(windows))]
+impl Tree {
+    #[allow(clippy::unnecessary_wraps)]
+    fn adopt(_: &mut std::process::Child) -> std::io::Result<Self> {
+        Ok(Self)
+    }
+
+    #[allow(clippy::unused_self)]
+    fn kill(&self, child: &mut std::process::Child) {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
+
+#[cfg(windows)]
+use crate::tree::Tree;
 
 /// A hex object id as git prints it (4..=64 digits): the only text of ours that reaches git as a revision.
 fn is_hex_oid(text: &str) -> bool {

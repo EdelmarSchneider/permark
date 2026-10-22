@@ -45,6 +45,10 @@ npm run fmt     # fixes formatting (rustfmt and prettier)
 - A change to what a file looks like after saving needs a test that proves every byte the person did not touch stays the
   same.
 - Types shared with the interface are generated from Rust when `cargo test` runs. Commit the result when it changes.
+- Adding a Rust crate or an npm package: every release lists the licenses of the third-party software inside it
+  (`THIRD-PARTY-NOTICES.md`, made by `npm run notices`, which needs [cargo-about](https://github.com/EmbarkStudios/cargo-about)).
+  CI makes it too, so a crate whose license is not in the `accepted` list of `app/src-tauri/about.toml`, or an npm package
+  that names no license, fails the build. Check that the license allows redistribution in a program, then add it.
 - The version number lives in `app/package.json`. `npm run version:sync` copies it to the other files; you rarely need it.
 
 ## Translations

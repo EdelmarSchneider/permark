@@ -230,6 +230,8 @@ describe("the page", () => {
     );
     await until(() => documents.path === "src/main.rs", "code shown here");
     expect(mock.probe.editor).toHaveLength(started);
+    // the keyboard is on the page, not lost with the reference
+    expect(document.activeElement?.hasAttribute("data-scroller")).toBe(true);
     expect(store.notices.some((n) => n.kind === "action")).toBe(true);
     expect(store.notices.some((n) => n.kind === "fileOpFailed")).toBe(false);
   });
