@@ -36,6 +36,9 @@ const LOCK_POLL: Duration = Duration::from_millis(40);
 /// How long dropping waits for running work before leaving it to end on its own (the built-in backend cannot be
 /// cancelled).
 const STOP_WAIT: Duration = Duration::from_millis(200);
+/// How long dropping waits for running installed-git work: it is killed and its process tree waited for (bounded in
+/// `tree.rs`), so the folders are free when closing returns (a rename | delete right after must not find them in use).
+const KILL_WAIT: Duration = Duration::from_secs(5);
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
@@ -900,9 +903,15 @@ impl Drop for Members {
         }
         self.pool.lookup_cancel.store(true, Ordering::SeqCst);
         self.pool.cv.notify_all();
-        // the installed git is killed at once; a built-in (libgit2) read cannot be: closing leaves it to end on its
-        // own (its answer is dropped, its visit written when it ends)
-        let until = Instant::now() + STOP_WAIT;
+        // the installed git is killed at once and waited for (teardown symmetry: no process left in a member folder);
+        // a built-in (libgit2) read cannot be: closing leaves it to end on its own (its answer is dropped, its visit
+        // written when it ends)
+        let wait = if self.pool.env.backends.killable() {
+            KILL_WAIT
+        } else {
+            STOP_WAIT
+        };
+        let until = Instant::now() + wait;
         for handle in lock(&self.threads).drain(..) {
             while !handle.is_finished() && Instant::now() < until {
                 std::thread::sleep(Duration::from_millis(2));
