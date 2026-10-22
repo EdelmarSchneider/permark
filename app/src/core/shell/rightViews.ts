@@ -11,8 +11,8 @@ export const LIVE_VIEW = "live-feed.panel";
 export const MAX_GROUPS = 3;
 /** A group's saved share never goes under this (it would vanish). */
 export const MIN_SHARE = 0.05;
-/** A drawn group is never squeezed under this height (header + 3 rows). */
-export const MIN_GROUP_PX = 120;
+/** A drawn group is never squeezed under this height: a view's header and at least two of its rows. */
+export const MIN_GROUP_PX = 210;
 
 export type ViewGroup = { readonly views: readonly string[]; readonly share: number };
 export type RightViews = { readonly v: 1; readonly groups: readonly ViewGroup[] };

@@ -679,8 +679,6 @@ export default {
   "git.error": "Git no puede leer este repositorio.",
   "live.label": "Cambios en vivo",
   "live.chipCount": "En vivo · {n}",
-  "live.chipLabel.one": "Cambios en vivo, {n} nuevo",
-  "live.chipLabel.other": "Cambios en vivo, {n} nuevos",
   "live.last": "Último cambio {ago}",
   "live.none": "Aún no hay cambios",
   "outline.tab": "Esquema",

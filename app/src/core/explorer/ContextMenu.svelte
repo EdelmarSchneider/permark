@@ -1,5 +1,7 @@
 <script lang="ts">
-  // A small context menu at the pointer: arrows move, Enter runs, Escape | click outside closes. Entries are data.
+  // A small context menu at the pointer: arrows | Home | End move the focus over the items (a disabled item is reached
+  // and announced, it does nothing), Enter runs, Escape | click outside closes. Entries are data.
+  import { untrack } from "svelte";
   import { t } from "../i18n";
   import type { MenuEntry } from "./menu";
 
@@ -39,6 +41,12 @@
     if (entry?.kind === "item") entry.run(shift);
   }
 
+  /** The item `at` takes the keyboard focus (assistive tech follows the focus). */
+  function focusItem(at: number): void {
+    picked = at;
+    menu?.querySelector<HTMLElement>(`[data-at="${at}"]`)?.focus();
+  }
+
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -47,7 +55,10 @@
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
       const at = items.indexOf(active);
-      picked = items[(at + step + items.length) % items.length] ?? active;
+      focusItem(items[(at + step + items.length) % items.length] ?? active);
+    } else if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      focusItem((e.key === "Home" ? items[0] : items[items.length - 1]) ?? active);
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       run(active, e.shiftKey);
@@ -73,7 +84,11 @@
       const box = menu.getBoundingClientRect();
       menu.style.left = `${Math.max(4, Math.min(x, window.innerWidth - box.width - 4))}px`;
       menu.style.top = `${Math.max(4, Math.min(y, window.innerHeight - box.height - 4))}px`;
-      menu.focus();
+      // the first item (or `start`) takes the focus; the menu itself only when it has no item
+      const first = untrack(() => active);
+      const item = menu.querySelector<HTMLElement>(`[data-at="${first}"]`);
+      if (item) item.focus();
+      else menu.focus();
     }
     const onPointer = (e: PointerEvent): void => {
       if (!(e.target instanceof Node) || !menu || menu.contains(e.target)) return;
@@ -107,6 +122,8 @@
       <button
         type="button"
         role="menuitem"
+        data-at={at}
+        tabindex={active === at ? 0 : -1}
         aria-haspopup={entry.opens === true ? "menu" : undefined}
         aria-disabled={entry.disabled === true ? "true" : undefined}
         class={[
@@ -115,7 +132,7 @@
           entry.disabled && "is-disabled",
           active === at && "is-active",
         ]}
-        onpointerenter={() => (picked = at)}
+        onpointerenter={() => focusItem(at)}
         onclick={(e) => run(at, e.shiftKey)}
       >
         {#if entry.detail}

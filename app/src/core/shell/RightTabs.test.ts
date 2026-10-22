@@ -50,7 +50,9 @@ describe("a group's tabs", () => {
     );
     expect(outline?.textContent?.trim()).toBe("Outline");
     expect(outline?.getAttribute("aria-selected")).toBe("true");
-    expect(live?.getAttribute("aria-label")).toBe("Live changes (3)");
+    // the name is what the tab shows, the count included (voice control + screen readers)
+    expect(live?.getAttribute("aria-label")).toBeNull();
+    expect(live?.textContent?.replace(/\s+/g, " ").trim()).toBe("Live changes 3");
     expect(live?.querySelector(".badge")?.textContent).toBe("3");
     expect([outline?.tabIndex, live?.tabIndex]).toEqual([0, -1]);
   });

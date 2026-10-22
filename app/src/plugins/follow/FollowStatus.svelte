@@ -31,12 +31,13 @@
     gap: 6px;
     padding: 0 6px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: var(--accent);
+    /* the accent as small text on its soft tint: AA in every theme and tone (--accent itself is below it here) */
+    background: var(--accent-soft);
+    color: color-mix(in srgb, var(--accent-text) 85%, var(--text));
     font-weight: 600;
   }
+  /* quieter by weight, not by color: the pill's text color is the one that keeps AA on its tint */
   .paused {
-    color: var(--muted);
     font-weight: 400;
   }
   .link {

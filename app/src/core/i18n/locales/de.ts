@@ -687,8 +687,6 @@ export default {
   "git.error": "Git kann dieses Repository nicht lesen.",
   "live.label": "Live-Änderungen",
   "live.chipCount": "Live · {n}",
-  "live.chipLabel.one": "Live-Änderungen, {n} neu",
-  "live.chipLabel.other": "Live-Änderungen, {n} neu",
   "live.last": "Letzte Änderung {ago}",
   "live.none": "Noch keine Änderungen",
   "outline.tab": "Gliederung",

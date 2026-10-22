@@ -685,8 +685,6 @@ export default {
   "git.error": "Git non riesce a leggere questo repository.",
   "live.label": "Modifiche in tempo reale",
   "live.chipCount": "Live · {n}",
-  "live.chipLabel.one": "Modifiche in tempo reale, {n} nuova",
-  "live.chipLabel.other": "Modifiche in tempo reale, {n} nuove",
   "live.last": "Ultima modifica {ago}",
   "live.none": "Ancora nessuna modifica",
   "outline.tab": "Struttura",
