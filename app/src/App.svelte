@@ -17,6 +17,7 @@
   import FocusExit from "./core/shell/FocusExit.svelte";
   import Frame from "./core/shell/Frame.svelte";
   import PanelToggle from "./core/shell/PanelToggle.svelte";
+  import RightTabs from "./core/shell/RightTabs.svelte";
   import Notices from "./core/shell/Notices.svelte";
   import DefaultAppDialog from "./core/shell/DefaultAppDialog.svelte";
   import { defaultApp } from "./core/shell/defaultApp.svelte";
@@ -275,6 +276,7 @@
 {/snippet}
 
 {#snippet panel()}
+  <RightTabs outline={outline !== null} />
   {#if rightPanel !== null}
     {#each rightPanels() as plugin (plugin.owner + plugin.id)}
       {#if plugin.id === rightPanel}

@@ -10,29 +10,33 @@
   import FolderGit2 from "@lucide/svelte/icons/folder-git-2";
   import Layers from "@lucide/svelte/icons/layers";
   import MessageSquare from "@lucide/svelte/icons/message-square";
+  import Radio from "@lucide/svelte/icons/radio";
   import RefreshCw from "@lucide/svelte/icons/refresh-cw";
   import Save from "@lucide/svelte/icons/save";
   import Send from "@lucide/svelte/icons/send";
   import Tag from "@lucide/svelte/icons/tag";
   import type { ActivityEntry, FeedItem, ProjectEvent } from "../../api";
+  import { keyHint } from "../../core/commands/hint";
   import { documents } from "../../core/doc/document.svelte";
   import { revealInTree } from "../../core/explorer/current";
   import { t, tn } from "../../core/i18n";
   import { projects } from "../../core/projects/instance.svelte";
   import { middleCut, relativeTo } from "../../core/projects/model";
   import { ui } from "../../core/shell/ui.svelte";
+  import { followStore } from "./followLink.svelte";
   import { mineLabel, pathOf, type FeedShow } from "./mine";
-  import { ACTIVE_MS, feed } from "./store.svelte";
+  import { feed, PANEL } from "./store.svelte";
   import { ago, split } from "./time";
 
   let now = $state(Date.now());
-  // "3 min ago" and the idle | active dot stay true while the panel is open
+  // "3 min ago" and "Last change ..." stay true while the panel is open
   $effect(() => {
     const timer = setInterval(() => (now = Date.now()), 5000);
     return () => clearInterval(timer);
   });
 
-  const active = $derived(feed.lastAt > 0 && now - feed.lastAt < ACTIVE_MS);
+  const follow = $derived(followStore());
+  const followHint = $derived(keyHint("follow.toggle"));
 
   function open(item: FeedItem): void {
     if (item.item === "entry" && !item.isDir && item.kind !== "removed") {
@@ -121,15 +125,22 @@
 
 <section class="feed" aria-label={t("live.label")}>
   <header>
-    <span
-      class="dot"
-      class:active
-      role="img"
-      aria-label={active ? t("live.active") : t("live.idle")}
-      title={active ? t("live.active") : t("live.idle")}
-    ></span>
     <h2>{t("live.label")}</h2>
     <span class="spacer"></span>
+    {#if follow !== null}
+      <button
+        type="button"
+        class="follow"
+        aria-pressed={follow.on}
+        title={followHint === null
+          ? t("follow.toggle")
+          : t("follow.buttonHint", { key: followHint })}
+        onclick={() => follow?.toggle()}
+      >
+        <Radio size={13} aria-hidden="true" />
+        {t("follow.button")}
+      </button>
+    {/if}
     <button
       type="button"
       class="icon"
@@ -144,8 +155,11 @@
       class="icon close"
       aria-label={t("feed.close")}
       title={t("feed.close")}
-      onclick={() => ui.toggleRight("live-feed.panel")}>×</button
+      onclick={() => ui.toggleRight(PANEL)}>×</button
     >
+    <p class="last">
+      {feed.lastAt > 0 ? t("live.last", { ago: ago(feed.lastAt, now) }) : t("live.none")}
+    </p>
     <div class="show" role="radiogroup" aria-label={t("feed.show.label")}>
       {#each SHOWS as show (show.id)}
         <button
@@ -317,16 +331,36 @@
   .spacer {
     flex: 1;
   }
-  .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--muted);
-    opacity: 0.5;
+  .follow {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 var(--sp-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--fs-ui-xs);
+    font-weight: 600;
+    cursor: pointer;
   }
-  .dot.active {
-    background: var(--accent);
-    opacity: 1;
+  .follow:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+  /* pressed = the look of the "Following" pill */
+  .follow[aria-pressed="true"] {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+  .last {
+    flex-basis: 100%;
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--fs-ui-xs);
   }
   .show {
     display: inline-flex;

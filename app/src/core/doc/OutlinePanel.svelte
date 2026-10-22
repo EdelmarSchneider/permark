@@ -5,6 +5,7 @@
   import { conditions } from "../conditions/context.svelte";
   import { t } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
+  import type { OutlineCell } from "../plugins/registry.svelte";
   import { documents } from "./document.svelte";
   import { depths } from "./outline";
 
@@ -17,6 +18,15 @@
   const columns = $derived(contributions.visible("outlineColumn", conditions.current));
   const headers = $derived(columns.map((column) => ({ column, header: column.header() })));
   const shown = $derived(headers.filter((h) => h.header !== null));
+  // marks plugins put on changed sections (a dot after the label): the first one that says something
+  const marks = $derived(contributions.visible("outlineMark", conditions.current));
+  function markOf(at: number): OutlineCell | null {
+    for (const mark of marks) {
+      const found = mark.mark(at);
+      if (found !== null) return found;
+    }
+    return null;
+  }
 
   // the current heading stays in view in a long outline
   $effect(() => {
@@ -44,17 +54,21 @@
   {:else}
     <ol class="items" bind:this={list}>
       {#each items as item, at (at)}
+        {@const mark = markOf(at)}
         <li style:--depth={indent[at] ?? 0} class:with-columns={shown.length > 0}>
           <button
             type="button"
             class="item"
             class:is-current={documents.currentHeading === at}
             data-at={at}
-            title={item.label}
+            title={mark?.title === undefined ? item.label : `${item.label} · ${mark.title}`}
             aria-current={documents.currentHeading === at ? "location" : undefined}
             onclick={() => documents.scrollToAnchor(item.id)}
           >
-            {item.label === "" ? t("outline.untitled") : item.label}
+            <span class="text">{item.label === "" ? t("outline.untitled") : item.label}</span>
+            {#if mark !== null}<span class="mark" data-mark
+                ><span class="sr-only">{mark.text}</span></span
+              >{/if}
           </button>
           {#each shown as { column } (column.owner + column.id)}
             {@const cell = column.cell(at)}
@@ -70,8 +84,8 @@
   .outline {
     display: flex;
     flex-direction: column;
+    flex: 1;
     min-height: 0;
-    height: 100%;
   }
   .title {
     display: flex;
@@ -118,7 +132,9 @@
     font-size: var(--fs-ui-sm);
   }
   .item {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 6px;
     flex: 1;
     min-width: 0;
     width: 100%;
@@ -133,8 +149,20 @@
     text-align: left;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
     cursor: pointer;
+  }
+  .text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* a changed section: a small dot after the label (the accent: the glow's own tint is too faint for a dot) */
+  .mark {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
   }
   .item:hover {
     background: var(--hover);

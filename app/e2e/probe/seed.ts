@@ -68,6 +68,7 @@ type MockApi = {
     drops: { fire(event: unknown): void };
     projects: { news(event: unknown): void };
     plugins: {
+      feed(items: unknown[]): void;
       gitMembers: {
         unavailable(on: boolean): void;
         hold(on: boolean): void;
@@ -265,6 +266,42 @@ export async function seed(page: Page, use: SeedUse, args: Record<string, unknow
           target: typeof args["target"] === "string" ? args["target"] : "",
           sources: sources as string[],
         },
+      );
+      break;
+    }
+    case "feedQuiet":
+      // a project nobody changed from outside yet (BEFORE `project`): the live feed stays dormant
+      await withMock(
+        page,
+        async (m) => void (await m.mockApi.pluginCall("live-feed.clear", {})),
+        null,
+      );
+      break;
+    case "feedNews": {
+      // `count` changes from outside PerMark (an agent writing), each a new row of the live feed
+      const count = typeof args["count"] === "number" ? args["count"] : 1;
+      const path = str(args, "path", "docs/handbook.md");
+      const kind = str(args, "kind", "modified");
+      if (!["created", "modified", "removed"].includes(kind)) {
+        throw new Error(`seed feedNews: kind created | modified | removed, not ${kind}`);
+      }
+      await withMock(
+        page,
+        (m, a) => {
+          const at = Date.now();
+          const items = Array.from({ length: a.count }, (_, n) => ({
+            item: "entry",
+            id: 100_000 + Math.floor(at % 100_000) * 10 + n,
+            path: a.path,
+            kind: a.kind,
+            atMs: at + n,
+            saves: 1,
+            own: false,
+            isDir: false,
+          }));
+          m.mockApi.probe.plugins.feed(items);
+        },
+        { count, path, kind },
       );
       break;
     }

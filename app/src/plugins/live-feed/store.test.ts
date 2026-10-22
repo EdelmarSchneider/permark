@@ -27,6 +27,8 @@ async function setup(shown: string | null = null) {
     new PluginClient(api, () => MOCK_FOLDER),
     () => MOCK_FOLDER,
     () => shown,
+    api,
+    () => false,
   );
   const stop = store.start();
   await settle();
@@ -134,6 +136,8 @@ describe("the feed store", () => {
       new PluginClient(api, () => null),
       () => null,
       () => null,
+      api,
+      () => false,
     );
     const stop = store.start();
     await settle();

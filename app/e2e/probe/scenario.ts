@@ -19,6 +19,8 @@ export const SEEDS = [
   "tabShown",
   "projectNews",
   "gitRepos",
+  "feedQuiet",
+  "feedNews",
 ] as const;
 export type SeedUse = (typeof SEEDS)[number];
 

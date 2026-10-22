@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Follow mode in the status bar: that it is on (and how to stop it), and the way back from the last jump.
+  // Follow mode in the status bar: that it is on (and how to stop it), that it waits while the person edits, and the
+  // way back from the last jump.
   import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import Radio from "@lucide/svelte/icons/radio";
   import { t } from "../../core/i18n";
@@ -12,6 +13,7 @@
   <span class="follow" role="status">
     <Radio size={13} aria-hidden="true" />
     {t("follow.on")}
+    {#if follow.paused}<span class="paused">· {t("follow.paused")}</span>{/if}
     {#if from}
       <button type="button" class="link" title={t("follow.back")} onclick={() => follow.goBack()}>
         <ArrowLeft size={12} aria-hidden="true" />
@@ -32,6 +34,10 @@
     background: color-mix(in srgb, var(--accent) 12%, transparent);
     color: var(--accent);
     font-weight: 600;
+  }
+  .paused {
+    color: var(--muted);
+    font-weight: 400;
   }
   .link {
     display: inline-flex;

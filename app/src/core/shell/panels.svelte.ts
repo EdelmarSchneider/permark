@@ -21,17 +21,26 @@ export function stableOrder(panels: readonly Panel[]): Panel[] {
     .map(({ panel }) => panel);
 }
 
+/** The panel is drawn now: its plugin offers it (a dormant one waits until the project calls for it). */
+export function isOffered(panel: Panel): boolean {
+  return panel.offered?.() ?? true;
+}
+
 /** Tabs plugins add to the sidebar, in a fixed order (`stableOrder`). */
 export function leftPanels(): Panel[] {
   return stableOrder(
-    contributions.visible("panel", conditions.current).filter((p) => p.side === "left"),
+    contributions
+      .visible("panel", conditions.current)
+      .filter((p) => p.side === "left" && isOffered(p)),
   );
 }
 
 /** Panels plugins add at the right of the page, in a fixed order (`stableOrder`). */
 export function rightPanels(): Panel[] {
   return stableOrder(
-    contributions.visible("panel", conditions.current).filter((p) => p.side === "right"),
+    contributions
+      .visible("panel", conditions.current)
+      .filter((p) => p.side === "right" && isOffered(p)),
   );
 }
 

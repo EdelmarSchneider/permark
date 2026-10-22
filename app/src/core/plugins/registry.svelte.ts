@@ -91,6 +91,10 @@ export type Contribution = Owned &
         /** A small icon: the tab shows it alone while another tab is the open one and the strip is crowded. */
         icon?: Component<{ size?: number }>;
         view: LazyComponent;
+        /** Reactive; false = not drawn (no tab, no panel: dormant until the project calls for it). Absent = true. */
+        offered?: () => boolean;
+        /** Reactive; a short count after the tab label in the right tab strip (`null`: none). */
+        badge?: () => string | null;
       }
     | {
         kind: "statusItem";
@@ -119,6 +123,9 @@ export type Contribution = Owned &
         cell: (index: number) => OutlineCell | null;
         watcher: LazyComponent<OutlineWatcherProps>;
       }
+    /** A dot after the label of outline item `index` (a changed section): `text` for screen readers, `title` the
+     *  tooltip. Reads reactive state; the first non-null mark of the visible ones is drawn. */
+    | { kind: "outlineMark"; id: string; mark: (index: number) => OutlineCell | null }
     /** A strip under the document header (the review bar, a repository notice). Lowest `order` first. */
     | { kind: "docBar"; id: string; order: number; view: LazyComponent }
     /** Changes the blocks the page shows (the review adds the removed ones and its own bars). Reads reactive state. */

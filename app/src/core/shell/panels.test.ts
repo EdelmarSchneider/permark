@@ -10,7 +10,7 @@ import type { PluginId } from "../../api/generated/PluginId";
 const removals: (() => void)[] = [];
 const view = () => import("../testing/StripFirst.svelte");
 
-function panel(id: string, side: "left" | "right", owner = "test"): void {
+function panel(id: string, side: "left" | "right", owner = "test", offered?: () => boolean): void {
   removals.push(
     contributions.register({
       kind: "panel",
@@ -20,6 +20,7 @@ function panel(id: string, side: "left" | "right", owner = "test"): void {
       label: "unread.title",
       requires: NO_REQUIREMENT,
       view,
+      ...(offered ? { offered } : {}),
     }),
   );
 }
@@ -53,6 +54,20 @@ describe("plugin panels", () => {
     expect(activeRight()).toBeNull();
     ui.right = "missing.panel";
     expect(activeRight()).toBeNull();
+  });
+
+  it("a dormant panel is not drawn and its choice falls back, until its plugin offers it", () => {
+    const state = { offered: false };
+    panel("b.panel", "right", "test", () => state.offered);
+    panel("c.panel", "left", "test", () => state.offered);
+    expect(rightPanels()).toEqual([]);
+    expect(leftPanels()).toEqual([]);
+    ui.right = "b.panel";
+    expect(activeRight()).toBeNull();
+    state.offered = true;
+    expect(rightPanels().map((p) => p.id)).toEqual(["b.panel"]);
+    expect(leftPanels().map((p) => p.id)).toEqual(["c.panel"]);
+    expect(activeRight()).toBe("b.panel");
   });
 
   it("keep one order whatever order the plugins finished loading in", () => {
