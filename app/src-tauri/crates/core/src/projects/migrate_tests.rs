@@ -567,6 +567,8 @@ fn open_copies_members_included_before_round_4_once_then_owners_hold_them() {
     let projects = core.projects();
     let a = ProjectUid::parse(UID_A).unwrap();
     let b = ProjectUid::parse(UID_B).unwrap();
+    // copied by the projects worker after it read the members (never on the open path)
+    wait("owners", || projects.owners().slots().len() == 3);
     assert!(projects.is_migrated(&a) && projects.is_migrated(&b));
     let owners = projects.owners();
     assert_eq!(owners.slots().len(), 3);
@@ -593,6 +595,7 @@ fn open_copies_members_included_before_round_4_once_then_owners_hold_them() {
     // second open: nothing copied again (a pre-filled target stays as the person left it)
     fs::write(fx.root.join("sub-a/.permark/local/quiet.json"), b"{}").unwrap();
     let core = ProjectCore::open(Root::open(&fx.root).unwrap(), &env);
+    wait("owners", || core.projects().owners().slots().len() == 3);
     assert!(core.projects().is_migrated(&a));
     assert_eq!(
         fs::read(fx.root.join("sub-a/.permark/local/quiet.json")).unwrap(),

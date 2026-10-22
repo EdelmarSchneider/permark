@@ -588,3 +588,95 @@ fn clones_with_the_same_card_id_are_asked_one_at_a_time() {
     assert!(core.projects_view().ask.is_none());
     assert!(read_record_text(&root).contains("path = \"beta\""));
 }
+
+/// Starts like the `git` plugin: follows the map, takes the root-commit lease, reads the snapshot; first it waits until
+/// the member read of its folder is inside its lock (held there by the test).
+struct Follows {
+    manifest: crate::plugins::Manifest,
+}
+
+struct FollowsRunning {
+    _map: ProjectsSubscription,
+    _lease: ProjectsSubscription,
+}
+
+impl crate::plugins::Running for FollowsRunning {}
+
+impl crate::plugins::Plugin for Follows {
+    fn manifest(&self) -> &crate::plugins::Manifest {
+        &self.manifest
+    }
+
+    fn start(
+        &self,
+        cx: &crate::plugins::PluginCx,
+    ) -> Result<Box<dyn crate::plugins::Running>, crate::plugins::PluginError> {
+        let fail = || crate::plugins::PluginError::Start {
+            id: cx.id.clone(),
+            reason: "no projects".to_owned(),
+        };
+        let projects = cx
+            .project()
+            .and_then(|p| p.projects().cloned())
+            .ok_or_else(fail)?;
+        let crate::plugins::CxWorkspace::Project(vault) = &cx.workspace else {
+            return Err(fail());
+        };
+        assert!(super::service::hold::wait_inside(vault.main().path()));
+        let map = projects.subscribe_map(|_| {});
+        let lease = projects.provide_root_commits(Arc::new(|_| {}));
+        let _ = projects.snapshot();
+        Ok(Box::new(FollowsRunning {
+            _map: map,
+            _lease: lease,
+        }))
+    }
+}
+
+/// Perf F1 (adversarial, timing-free): opening never waits for the members, even when a plugin that follows them
+/// starts while they are being read. The read is held inside its lock until open returned: open must return first
+/// (a plugin start that locked the service would wait for the read, and the read for the test).
+#[test]
+fn open_never_waits_for_the_members_being_read() {
+    let (_dir, root) = root_dir();
+    repo(&root, "hubs/a");
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"hubs/a\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    let plugin = Follows {
+        manifest: crate::plugins::Manifest {
+            id: crate::plugins::PluginId::of("follows"),
+            kind: crate::plugins::PluginKind::Feature,
+            scope: crate::plugins::PluginScope::Project,
+            requires: crate::conditions::Requirement::NONE,
+            depends_on: std::borrow::Cow::Owned(Vec::new()),
+            default_enabled: true,
+        },
+    };
+    let env = CoreEnv::new(
+        AppDirs::under(base.path()),
+        Arc::new(
+            PluginRegistry::new(vec![Arc::new(plugin) as Arc<dyn crate::plugins::Plugin>]).unwrap(),
+        ),
+        Arc::new(Recorder::default()),
+        Distribution::Direct,
+        AppSettings::default(),
+    );
+    let folder = Root::open(&root).unwrap();
+    let path = folder.path().to_path_buf();
+    super::service::hold::hold(&path);
+    let (tx, rx) = std::sync::mpsc::channel();
+    let opener = std::thread::spawn(move || {
+        let core = ProjectCore::open(folder, &env);
+        let _ = tx.send(());
+        (core, env)
+    });
+    let returned = rx.recv_timeout(Duration::from_secs(10)).is_ok();
+    super::service::hold::release(&path);
+    let (core, _env) = opener.join().unwrap();
+    assert!(returned, "open waited for the members being read");
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    assert_eq!(core.projects().held_members(), 1);
+}

@@ -19,6 +19,13 @@ use serde_json::{json, Value};
 
 use super::*;
 
+/// The core of `root`, once its projects worker set the owners (never on the open path).
+fn opened(root: &Path, env: &CoreEnv) -> Arc<ProjectCore> {
+    let core = ProjectCore::open(Root::open(root).unwrap(), env);
+    assert!(core.projects().wait_owners(Duration::from_secs(10)));
+    core
+}
+
 fn env(base: &Path) -> CoreEnv {
     CoreEnv::new(
         AppDirs::under(base),
@@ -115,7 +122,7 @@ fn read_state_lives_with_its_project_and_unread_stays_unread() {
     let root_read = root.join(".permark/local/plugins/unread/read.json");
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     // copied once: b stays unread; the fresh project starts read (no flood)
     assert_eq!(unread_now(&core), ["sub/b.md"]);
     let member_read = root.join("sub/.permark/local/plugins/unread/read.json");
@@ -159,7 +166,7 @@ fn a_project_included_while_open_keeps_what_the_root_knew() {
     std::fs::remove_file(root.join(".permark/projects.toml")).unwrap();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     // not included: the root's state (sub/b unread; fresh/f new since the root's state = unread)
     let before = unread_now(&core);
     assert!(before.contains(&"sub/b.md".to_owned()), "{before:?}");
@@ -191,9 +198,11 @@ fn two_tabs_marking_read_at_once_lose_nothing() {
     }
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
+    // the project's state copied first (the projects worker), then the project opened alone
+    let _ = unread_now(&core);
     let alone = ProjectCore::open(Root::open(&root.join("sub")).unwrap(), &env);
-    let _ = (unread_now(&core), unread_now(&alone));
+    let _ = unread_now(&alone);
     let ta = std::thread::spawn({
         let core = Arc::clone(&core);
         move || {

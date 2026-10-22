@@ -18,6 +18,13 @@ use serde_json::{json, Value};
 
 use super::*;
 
+/// The core of `root`, once its projects worker set the owners (never on the open path).
+fn opened(root: &Path, env: &CoreEnv) -> Arc<ProjectCore> {
+    let core = ProjectCore::open(Root::open(root).unwrap(), env);
+    assert!(core.projects().wait_owners(Duration::from_secs(10)));
+    core
+}
+
 const MEMBER: &str = "sub a";
 const UID: &str = "aaaaaaaaaa";
 
@@ -93,7 +100,9 @@ fn comments_live_with_their_project_and_a_shared_id_is_told_apart() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
+    // the owners come from the projects worker, after open
+    wait_until("owners", || core.projects().owners().slots().len() == 2);
     let all = list(&core);
     assert_eq!(all.len(), 2);
     let ids: Vec<&str> = all.iter().map(|c| c["id"].as_str().unwrap()).collect();
@@ -140,7 +149,7 @@ fn two_tabs_one_after_the_other_see_each_others_comments() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     let alone = ProjectCore::open(Root::open(&root.join(MEMBER)).unwrap(), &env);
     for i in 0..10 {
@@ -175,7 +184,7 @@ fn a_reader_with_no_window_never_sees_a_torn_file() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     let reader = ProjectCore::from_files(
         Root::open(&root).unwrap(),
@@ -244,7 +253,7 @@ fn verify_member_renamed_while_open_keeps_its_comments() {
         let (_dir, root) = setup();
         let base = tempfile::tempdir().unwrap();
         let env = env(base.path());
-        let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+        let core = opened(&root, &env);
         assert!(core.projects().wait_ready(Duration::from_secs(10)));
         assert!(paths_of(&core).contains(&format!("{MEMBER}/doc.md")));
         std::fs::rename(root.join(MEMBER), root.join("sub z")).unwrap();
@@ -294,7 +303,7 @@ fn verify_ancestor_of_member_renamed_while_open_keeps_its_comments() {
         .unwrap();
         let base = tempfile::tempdir().unwrap();
         let env = env(base.path());
-        let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+        let core = opened(&root, &env);
         assert!(core.projects().wait_ready(Duration::from_secs(10)));
         assert!(paths_of(&core).contains(&"hubs/m/doc.md".to_owned()));
         std::fs::rename(root.join("hubs"), root.join("hubs2")).unwrap();
@@ -323,7 +332,7 @@ fn verify_comment_added_while_left_out_survives_include_again() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     let uid = permark_core::projects::ProjectUid::parse(UID).unwrap();
     core.projects()
@@ -360,7 +369,7 @@ fn verify_two_tabs_adding_concurrently_lose_nothing() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     let alone = ProjectCore::open(Root::open(&root.join(MEMBER)).unwrap(), &env);
     let a = std::thread::spawn({
@@ -413,8 +422,8 @@ fn two_apps_on_one_folder_adding_and_removing_at_once_lose_nothing() {
     let (_dir, root) = setup();
     let (base_a, base_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let (env_a, env_b) = (env(base_a.path()), env(base_b.path()));
-    let a = ProjectCore::open(Root::open(&root).unwrap(), &env_a);
-    let b = ProjectCore::open(Root::open(&root).unwrap(), &env_b);
+    let a = opened(&root, &env_a);
+    let b = opened(&root, &env_b);
     assert!(a.projects().wait_ready(Duration::from_secs(10)));
     assert!(b.projects().wait_ready(Duration::from_secs(10)));
     let run = |core: Arc<ProjectCore>, tag: &'static str| {

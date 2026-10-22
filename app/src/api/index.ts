@@ -1,6 +1,7 @@
-// Backend for this build: mock in `--mode mock`, Tauri otherwise (the unused one is tree-shaken).
+// Backend for this build: mock in `--mode mock`, Tauri otherwise. The mock + its fixtures load only in mock mode: the
+// dynamic import sits in a branch the build folds away, so no mock module reaches a production bundle (checked by the
+// build: `noMockInProduction` in vite.config.ts).
 
-import { mockApi } from "./mock";
 import { tauriApi } from "./tauri";
 import type { Api } from "./types";
 
@@ -14,4 +15,5 @@ export type { StartIn } from "./generated/StartIn";
 export type { ThemePref } from "./generated/ThemePref";
 export type { Tone } from "./generated/Tone";
 
-export const api: Api = import.meta.env.MODE === "mock" ? mockApi : tauriApi;
+export const api: Api =
+  import.meta.env.MODE === "mock" ? (await import("./mock")).mockApi : tauriApi;

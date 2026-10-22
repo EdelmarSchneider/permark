@@ -21,7 +21,10 @@ mod worktrees;
 
 use std::borrow::Cow;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Weak};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use permark_core::conditions::{GitCondition, Requirement};
@@ -43,7 +46,8 @@ pub use members::{
 };
 pub use ops::{Baseline, Discovery, GitError, GitOps, RawFile, RawStatus, RepoLocation, MAX_FILES};
 pub use service::{
-    BackendCell, BackendChoice, GitService, Prefs, ServiceArgs, Timings, Visit, Why,
+    BackendCell, BackendChoice, ExcludedAtStart, GitService, Prefs, ServiceArgs, Timings, Visit,
+    Why,
 };
 pub use system::{find_git, SystemGit};
 pub use types::{
@@ -161,6 +165,63 @@ pub fn route(map: Option<&ProjectMap>, batch: &FsBatch) -> (Option<Why>, Vec<(St
     (root, members)
 }
 
+/// Brings the member repositories to the projects map on a thread of its own: a woken follower reads the newest map
+/// and syncs the members there (their `.git` files are read there), never on the caller (the open call, the projects
+/// worker, a command). Drop = stop, the thread is joined (a sync running ends first).
+struct Follower {
+    tx: Sender<()>,
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl Follower {
+    fn start(projects: Weak<Projects>, members: Weak<Members>, root: PathBuf) -> Self {
+        let (tx, rx) = channel::<()>();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopping = Arc::clone(&stop);
+        let thread = std::thread::Builder::new()
+            .name("permark-git-follow".to_owned())
+            .spawn(move || {
+                while rx.recv().is_ok() {
+                    // wakes that came meanwhile ask for the same newest map
+                    while rx.try_recv().is_ok() {}
+                    if stopping.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let (Some(projects), Some(members)) = (projects.upgrade(), members.upgrade())
+                    else {
+                        return;
+                    };
+                    projects.load();
+                    members.sync(&member_refs(&projects.snapshot(), &root));
+                }
+            })
+            .ok();
+        Self { tx, stop, thread }
+    }
+
+    fn waker(&self) -> impl Fn() + Send + Sync + 'static {
+        let tx = self.tx.clone();
+        move || {
+            let _ = tx.send(());
+        }
+    }
+
+    fn wake(&self) {
+        let _ = self.tx.send(());
+    }
+}
+
+impl Drop for Follower {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::SeqCst);
+        let _ = self.tx.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
 /// The HEAD reader other plugins use (review's "last commit"): a path inside an included project with its own
 /// repository is read from that repository (path rebased), else from the root's.
 struct Routed {
@@ -174,6 +235,8 @@ impl RepoReader for Routed {
     fn blob_at_head(&self, path: &str) -> Option<Vec<u8>> {
         if !path.starts_with(WORKTREE_PREFIX) {
             if let Some(projects) = self.projects.as_ref().and_then(Weak::upgrade) {
+                // a member's file is read from its own repository, also right after open
+                projects.load();
                 let map = projects.snapshot();
                 if let Some(member) = git_owner(&map, path) {
                     let members = self.members.upgrade()?;
@@ -230,16 +293,22 @@ impl Plugin for GitPlugin {
         });
         let root_path = vault.main().path().to_path_buf();
         let projects: Option<Arc<Projects>> = project.projects().cloned();
-        // members known at open leave the root status from its first look (verifier N2)
-        let excluded: Vec<String> = projects
-            .as_ref()
-            .map(|p| {
-                member_refs(&p.snapshot(), &root_path)
+        // members leave the root status from its first look (verifier N2), read on the git worker: nothing per
+        // project at open
+        let excluded: ExcludedAtStart = {
+            let projects = projects.as_ref().map(Arc::downgrade);
+            let root = root_path.clone();
+            Box::new(move || {
+                let Some(projects) = projects.as_ref().and_then(Weak::upgrade) else {
+                    return Vec::new();
+                };
+                projects.load();
+                member_refs(&projects.snapshot(), &root)
                     .into_iter()
                     .map(|m| m.key)
                     .collect()
             })
-            .unwrap_or_default();
+        };
         let service = Arc::new(GitService::start(ServiceArgs {
             root: vault.main().path().to_path_buf(),
             worktrees: vault
@@ -253,7 +322,12 @@ impl Plugin for GitPlugin {
             facts: Arc::clone(&project.facts),
             announce,
             prefs: cx.state_file("prefs.json"),
-            visit: cx.state_file("visit.json"),
+            // a reader with no window leaves where HEAD was at the last visit alone (it would write it at close)
+            visit: if cx.files_only() {
+                None
+            } else {
+                cx.state_file("visit.json")
+            },
             excluded,
         }));
         let weak_projects = projects.as_ref().map(Arc::downgrade);
@@ -262,17 +336,17 @@ impl Plugin for GitPlugin {
             &service,
             weak_projects.clone(),
         )));
-        // members follow the projects map: started, stopped, moved
-        let (map_lease, identity) = match &projects {
+        // members follow the projects map (started, stopped, moved) on a thread of their own
+        let (map_lease, identity, follower) = match &projects {
             Some(projects) => {
-                let weak = Arc::downgrade(&members);
-                let root = root_path.clone();
-                let lease = projects.subscribe_map(move |map| {
-                    if let Some(members) = weak.upgrade() {
-                        members.sync(&member_refs(map, &root));
-                    }
-                });
-                members.sync(&member_refs(&projects.snapshot(), &root_path));
+                let follower = Follower::start(
+                    Arc::downgrade(projects),
+                    Arc::downgrade(&members),
+                    root_path.clone(),
+                );
+                let wake = follower.waker();
+                let lease = projects.subscribe_map(move |_| wake());
+                follower.wake();
                 // root commits for re-attach: looked up in the member pool, answered later
                 let asking = Arc::downgrade(&members);
                 let identity = projects.provide_root_commits(Arc::new(move |folders| {
@@ -280,9 +354,9 @@ impl Plugin for GitPlugin {
                         members.look_up_roots(folders);
                     }
                 }));
-                (Some(lease), Some(identity))
+                (Some(lease), Some(identity), Some(follower))
             }
-            None => (None, None),
+            None => (None, None, None),
         };
         let trigger = service.trigger_fn();
         let routed_members = Arc::downgrade(&members);
@@ -389,6 +463,7 @@ impl Plugin for GitPlugin {
             facts: Arc::clone(&project.facts),
             subscription: Some(subscription).flatten(),
             map_lease,
+            follower,
             identity,
             registrations,
             lease: Some(lease),
@@ -468,6 +543,7 @@ struct GitRunning {
     facts: Arc<ProjectFacts>,
     subscription: Option<Subscription>,
     map_lease: Option<ProjectsSubscription>,
+    follower: Option<Follower>,
     identity: Option<ProjectsSubscription>,
     registrations: Vec<RpcRegistration>,
     lease: Option<ServiceLease>,
@@ -481,6 +557,7 @@ impl Drop for GitRunning {
     fn drop(&mut self) {
         self.subscription.take();
         self.map_lease.take();
+        self.follower.take();
         self.identity.take();
         self.registrations.clear();
         self.lease.take();

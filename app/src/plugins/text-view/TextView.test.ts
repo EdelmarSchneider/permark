@@ -179,6 +179,31 @@ describe("a very large file", () => {
     expect(target.querySelectorAll(".row .line")[1]?.textContent).toBe("API_TOKEN=abc123secret");
     expect(target.querySelector(".row .secret")).toBeNull();
   });
+
+  it("masks no ordinary code, and every line of a private key", async () => {
+    vi.spyOn(api, "documentMore").mockImplementation(() => ok({ text: "", next: null }));
+    const game = [
+      "var keys = { left: false, right: false, run: false, jump: false };",
+      'function keyJump(code) { return code === "KeyW" || code === "KeyZ"; }',
+      'document.addEventListener("keydown", function (e) {',
+      "  if (keyJump(e.code)) keys.jump = true;",
+      "  keys.left = false;",
+      "});",
+    ];
+    const pem = [
+      "-----BEGIN PRIVATE KEY-----",
+      "MIIEvQIBADANBg",
+      "  AbCdEf==",
+      "-----END PRIVATE KEY-----",
+    ];
+    show(viewOf([...game, ...pem, ""].join("\n"), { loaded: 400, total: 4000 }));
+    const rows = [...target.querySelectorAll(".row .line")].map((row) => row.textContent);
+    expect(rows.slice(0, game.length)).toEqual(game);
+    expect(target.querySelectorAll(".row .secret")).toHaveLength(2);
+    expect(rows[game.length + 1]).toBe(MASK);
+    expect(rows[game.length + 2]).toBe(`  ${MASK}`);
+    expect(rows[game.length + 3]).toBe(pem[3]);
+  });
 });
 
 describe("lines that changed on disk", () => {

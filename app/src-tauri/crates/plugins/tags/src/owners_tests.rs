@@ -19,6 +19,13 @@ use serde_json::{json, Value};
 
 use super::*;
 
+/// The core of `root`, once its projects worker set the owners (never on the open path).
+fn opened(root: &Path, env: &CoreEnv) -> Arc<ProjectCore> {
+    let core = ProjectCore::open(Root::open(root).unwrap(), env);
+    assert!(core.projects().wait_owners(Duration::from_secs(10)));
+    core
+}
+
 const UID: &str = "aaaaaaaaaa";
 
 fn fast() -> Timing {
@@ -119,7 +126,7 @@ fn tags_live_with_their_project_and_wear_their_status() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     // never copied into the project's shared meta.toml (D49): the root's entry is read with the project's own
     let member_meta = root.join("sub/.permark/meta.toml");
     assert!(!member_meta.exists());
@@ -278,7 +285,7 @@ fn without_an_official_list_marks_stay_dormant() {
     std::fs::remove_file(root.join(".permark/vocabulary.toml")).unwrap();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     wait("harvest", || {
         call(&core, "overview", Value::Null)["tags"]
             .as_array()
@@ -306,7 +313,7 @@ fn two_apps_on_one_folder_tagging_at_once_lose_nothing() {
         std::fs::write(root.join(format!("sub/b{i}.md")), "# b\n").unwrap();
     }
     let (base_a, base_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let a = ProjectCore::open(Root::open(&root).unwrap(), &env(base_a.path()));
+    let a = opened(&root, &env(base_a.path()));
     let b = ProjectCore::open(Root::open(&root.join("sub")).unwrap(), &env(base_b.path()));
     assert!(a.projects().wait_ready(Duration::from_secs(10)));
     let ta = std::thread::spawn({

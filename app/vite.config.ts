@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { noMockInProduction } from "./scripts/no-mock-in-production.ts";
 
 // KaTeX lists woff2, woff and ttf for every font; the webviews PerMark runs on all read woff2, so only that ships.
 function katexWoff2Only(): Plugin {
@@ -26,7 +27,7 @@ const toolFolder = `${process.cwd().split(path.sep).join("/")}/.claude/**`;
 
 // `vite --mode mock` (`npm run dev:mock`): browser UI against the mock backend (src/api/mock.ts).
 export default defineConfig({
-  plugins: [svelte(), katexWoff2Only()],
+  plugins: [svelte(), katexWoff2Only(), noMockInProduction()],
 
   // component tests mount the browser build of Svelte (jsdom), not the server one
   resolve: process.env["VITEST"] ? { conditions: ["browser"] } : undefined,

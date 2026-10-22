@@ -18,6 +18,13 @@ use serde_json::{json, Value};
 
 use super::*;
 
+/// The core of `root`, once its projects worker set the owners (never on the open path).
+fn opened(root: &Path, env: &CoreEnv) -> Arc<ProjectCore> {
+    let core = ProjectCore::open(Root::open(root).unwrap(), env);
+    assert!(core.projects().wait_owners(Duration::from_secs(10)));
+    core
+}
+
 const MEMBER: &str = "项目 ü";
 
 fn env(base: &Path) -> CoreEnv {
@@ -90,7 +97,7 @@ fn marks_live_with_their_project_and_the_closest_mark_across_files_wins() {
     let root_bytes = std::fs::read(&root_file).unwrap();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     // one root-relative view: the copied mark shows once
     assert_eq!(
         call(&core, "rules", Value::Null),
@@ -156,7 +163,7 @@ fn a_mark_set_while_the_owners_change_is_written_to_the_new_owner() {
     std::fs::remove_file(root.join(".permark/projects.toml")).unwrap();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     call(
         &core,
@@ -199,7 +206,7 @@ fn verify_marks_from_two_tabs_on_one_project_both_survive() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     let alone = ProjectCore::open(Root::open(&root.join(MEMBER)).unwrap(), &env);
     call(
@@ -242,7 +249,7 @@ fn verify_ancestor_rename_keeps_member_marks() {
     .unwrap();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     assert!(silenced(&core, "hubs/m/drafts/d.md"));
     std::fs::rename(root.join("hubs"), root.join("hubs2")).unwrap();
@@ -273,7 +280,7 @@ fn two_tabs_setting_marks_at_once_lose_nothing() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     assert!(core.projects().wait_ready(Duration::from_secs(10)));
     let alone = ProjectCore::open(Root::open(&root.join(MEMBER)).unwrap(), &env);
     let a = std::thread::spawn({
@@ -324,8 +331,8 @@ fn two_tabs_setting_marks_at_once_lose_nothing() {
 fn two_apps_on_one_folder_setting_and_clearing_marks_lose_nothing() {
     let (_dir, root) = setup();
     let (base_a, base_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let a = ProjectCore::open(Root::open(&root).unwrap(), &env(base_a.path()));
-    let b = ProjectCore::open(Root::open(&root).unwrap(), &env(base_b.path()));
+    let a = opened(&root, &env(base_a.path()));
+    let b = opened(&root, &env(base_b.path()));
     assert!(a.projects().wait_ready(Duration::from_secs(10)));
     assert!(b.projects().wait_ready(Duration::from_secs(10)));
     let ta = std::thread::spawn({

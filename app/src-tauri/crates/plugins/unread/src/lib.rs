@@ -122,6 +122,14 @@ impl Plugin for UnreadPlugin {
             }),
             timing: Timing::default(),
             persist: !cx.files_only(),
+            owners_known: {
+                let projects = project.projects().map(Arc::downgrade);
+                Arc::new(move || {
+                    if let Some(projects) = projects.as_ref().and_then(std::sync::Weak::upgrade) {
+                        let _ = projects.wait_owners(std::time::Duration::from_secs(5));
+                    }
+                })
+            },
         }));
         let subscription = hub.subscribe({
             let service = Arc::clone(&service);

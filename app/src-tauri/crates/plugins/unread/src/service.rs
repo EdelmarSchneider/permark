@@ -253,6 +253,9 @@ pub struct ServiceArgs {
     pub timing: Timing,
     /// `false`: a reader with no window (`files_only`): `read.json` is read, never written.
     pub persist: bool,
+    /// Waits until the folder's projects keep their own state (their owners known): the first look counts each
+    /// project's documents against its own read state (a project with none starts read, no flood of dots).
+    pub owners_known: Arc<dyn Fn() + Send + Sync>,
 }
 
 const ID: PluginId = PluginId::of("unread");
@@ -695,6 +698,7 @@ struct Worker {
 
 impl Worker {
     fn run(mut self, rx: &Receiver<Msg>) {
+        (self.args.owners_known)();
         self.scan();
         let mut save_at: Option<Instant> = None;
         let mut announce_at: Option<Instant> = None;
