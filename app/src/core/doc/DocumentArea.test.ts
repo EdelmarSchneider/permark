@@ -379,8 +379,8 @@ describe("reading", () => {
 describe("other kinds of file", () => {
   it("shows text with line numbers and a language label", async () => {
     await show("src/main.rs");
-    await until(() => target.querySelector(".text .gutter") !== null, "text view");
-    expect(target.querySelector(".gutter")?.textContent).toBe("1\n2\n3");
+    // long lines wrap by default: one element per line, numbered by the page
+    await until(() => target.querySelectorAll(".text .code .ln").length === 3, "text view");
     await until(() => target.querySelector(".text .lang")?.textContent === "Rust", "highlight");
   });
 

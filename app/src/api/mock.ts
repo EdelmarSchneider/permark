@@ -77,6 +77,7 @@ function defaultSettings(): AppSettings {
     keymap: {},
     plugins: {},
     rightViews: null,
+    wrapLines: true,
   };
 }
 
@@ -140,6 +141,8 @@ export function applyChange(settings: AppSettings, change: SettingChange): AppSe
     }
     case "rightViews":
       return { ...settings, rightViews: change.value };
+    case "wrapLines":
+      return { ...settings, wrapLines: change.value };
     default:
       return change satisfies never;
   }

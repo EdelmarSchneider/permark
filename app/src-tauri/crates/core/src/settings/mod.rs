@@ -277,6 +277,8 @@ pub struct AppSettings {
     pub plugins: BTreeMap<PluginId, bool>,
     /// The right column's arrangement (`[right_views]`); `None` = absent | unreadable = the frontend's default.
     pub right_views: Option<RightViews>,
+    /// Long lines wrap in the text viewer and the source editors (`wrap_lines`; absent = on).
+    pub wrap_lines: bool,
     /// Raw `[plugins.<id>]` tables: each plugin owns its schema.
     #[serde(skip)]
     #[ts(skip)]
@@ -301,6 +303,7 @@ impl Default for AppSettings {
             tokenizers: Vec::new(),
             plugins: BTreeMap::new(),
             right_views: None,
+            wrap_lines: true,
             plugin_tables: BTreeMap::new(),
         }
     }
@@ -339,6 +342,7 @@ pub enum SettingChange {
     },
     /// The right column's arrangement, written whole; `None` = back to the default (table removed).
     RightViews(Option<RightViews>),
+    WrapLines(bool),
 }
 
 impl SettingChange {
@@ -361,6 +365,7 @@ impl SettingChange {
             Self::Tokenizers(_) => "plugins.token-count.tokenizers".to_owned(),
             Self::PluginEnabled { plugin, .. } => format!("plugins.{plugin}.enabled"),
             Self::RightViews(_) => "right_views".to_owned(),
+            Self::WrapLines(_) => "wrap_lines".to_owned(),
         }
     }
 }
@@ -612,6 +617,11 @@ impl AppSettings {
             keymap,
             plugins,
             right_views: right_views_of(doc),
+            // a value that is not a boolean counts as not set
+            wrap_lines: doc
+                .get("wrap_lines")
+                .and_then(Item::as_bool)
+                .unwrap_or(true),
             plugin_tables,
         }
     }
@@ -674,6 +684,7 @@ pub fn apply_change(doc: &mut DocumentMut, change: &SettingChange) {
             set_plugin_key(root, plugin, "enabled", enabled.map(Value::from));
         }
         SettingChange::RightViews(views) => set_right_views(root, views.as_ref()),
+        SettingChange::WrapLines(on) => set_keeping_decor(root, "wrap_lines", (*on).into()),
     }
 }
 

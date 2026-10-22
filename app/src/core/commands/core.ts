@@ -5,6 +5,7 @@ import type { WorkspaceKind } from "../../api/generated/WorkspaceKind";
 import { documents } from "../doc/document.svelte";
 import { reading, WIDTHS } from "../doc/reading.svelte";
 import { webPictures } from "../doc/webPictures.svelte";
+import { toggleWrap } from "../doc/wrapLines";
 import { chooseMode, editBlockedReason, editingNow } from "../editing/choose";
 import { editing } from "../editing/session.svelte";
 import { diagramPanel } from "../editing/diagramPanel.svelte";
@@ -26,6 +27,7 @@ import { tabs } from "../shell/tabs.svelte";
 import { ui } from "../shell/ui.svelte";
 import { conditions } from "../conditions/context.svelte";
 import { stepChange } from "./changes";
+import { isTypingTarget } from "./dispatch";
 import { windowStore as store } from "../window.svelte";
 import { NO_REQUIREMENT, type Requirement } from "../conditions/available";
 
@@ -264,6 +266,15 @@ const SPECS: readonly Spec[] = [
     keys: ["Mod+Alt+w"],
     requires: READING,
     run: cycleWidth,
+  },
+  {
+    id: "doc.wrapLines",
+    label: "cmd.wrapLines",
+    keys: ["Alt+z"],
+    requires: READING,
+    // macOS: Option+Z types a character (Ω, ż) where text goes; there the key stays text
+    when: () => !(conditions.current.platform === "mac" && isTypingTarget(document.activeElement)),
+    run: toggleWrap,
   },
   {
     id: "edit.diagramPanel",

@@ -25,7 +25,7 @@ const TEXTS: Record<string, { text: string; language: string; format: string }> 
     format: "json",
   },
   "notes/todo.txt": {
-    text: "todo\n- read the guide\n- write the next section\n",
+    text: "todo\n- read the guide\n- write the next section\n- check the build log:\n  2026-10-22T09:14:03.512Z INFO [runner] step 4/7 finished: built 1284 modules in 38.2 s, cache hits 1120 (87.2%), warnings 3 (unused import in src/render/page.ts:41, deprecated option 'legacyAnchors' in docs.config.json, slow plugin 'mermaid' took 6.1 s), output written to dist/site with 412 pages, 96 images and 18 downloads; next step: link check over 3 018 links (external links skipped: offline mode)\n",
     language: "txt",
     format: "text",
   },

@@ -344,6 +344,10 @@ export default {
   "settings.refTemplate": "Plantilla de referencia",
   "settings.width": "Ancho de lectura",
   "settings.zoom": "Zoom",
+  "settings.wrap": "Ajustar líneas largas",
+  "settings.wrapHint": "En archivos de texto, registros y el modo Fuente.",
+  "settings.wrapHintKeys":
+    "En archivos de texto, registros y el modo Fuente. {keys} lo activa o desactiva.",
   "trail.all": "Lugares recientes",
   "width.comfortable": "Cómodo",
   "width.wide": "Ancho",
@@ -571,6 +575,11 @@ export default {
   "cmd.zoomIn": "Acercar",
   "cmd.zoomOut": "Alejar",
   "cmd.cycleWidth": "Cambiar el ancho de lectura",
+  "cmd.wrapLines": "Ajustar líneas largas (sí | no)",
+  "wrap.on": "Las líneas largas ahora se ajustan.",
+  "wrap.off":
+    "Las líneas largas ya no se ajustan. Para desplazarte hacia el lado, usa Mayús y la rueda del ratón, o haz clic en el texto y usa las flechas.",
+  "text.scrollRegion": "Texto (se desplaza hacia el lado)",
   "cmd.settings": "Abrir configuración",
   "cmd.newFile": "Nuevo archivo Markdown...",
   "cmd.toggleEdit": "Alternar entre Ver y el último editor",

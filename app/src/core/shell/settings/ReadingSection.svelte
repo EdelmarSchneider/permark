@@ -1,6 +1,9 @@
 <script lang="ts">
-  // Reading: the language, the look (theme + light tone), and how documents are read (width, zoom) in this window.
+  // Reading: the language, the look (theme + light tone), how documents are read (width, zoom) in this window, and
+  // whether long lines of text wrap (everywhere).
   import type { LanguagePref, ThemePref, Tone } from "../../../api";
+  import { keyHint } from "../../commands/hint";
+  import { setWrap } from "../../doc/wrapLines";
   import {
     WIDTHS,
     ZOOM_DEFAULT,
@@ -39,6 +42,8 @@
     if (value === "system") return "system";
     return LOCALES.find((locale) => locale === value) ?? "system";
   }
+
+  const wrapKeys = $derived(keyHint("doc.wrapLines"));
 
   /** A document can be read here (a project, a file or the Notes is shown): width and zoom have a page to act on. */
   const reads = $derived(store.view.state === "showing");
@@ -118,6 +123,20 @@
       {t("cmd.zoomReset")}
     </button>
   </div>
+</SettingRow>
+
+<SettingRow
+  label={t("settings.wrap")}
+  labelFor="set-wrap"
+  hint={wrapKeys === null ? t("settings.wrapHint") : t("settings.wrapHintKeys", { keys: wrapKeys })}
+>
+  <input
+    id="set-wrap"
+    type="checkbox"
+    role="switch"
+    checked={look.wrap}
+    onchange={(e) => void setWrap(e.currentTarget.checked, false)}
+  />
 </SettingRow>
 
 <style>

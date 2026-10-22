@@ -345,6 +345,10 @@ export default {
   "settings.refTemplate": "Modello del riferimento",
   "settings.width": "Larghezza di lettura",
   "settings.zoom": "Zoom",
+  "settings.wrap": "A capo nelle righe lunghe",
+  "settings.wrapHint": "Nei file di testo, nei log e nel modo Sorgente.",
+  "settings.wrapHintKeys":
+    "Nei file di testo, nei log e nel modo Sorgente. {keys} lo attiva o disattiva.",
   "trail.all": "Luoghi recenti",
   "width.comfortable": "Comoda",
   "width.wide": "Ampia",
@@ -575,6 +579,11 @@ export default {
   "cmd.zoomIn": "Zoom avanti",
   "cmd.zoomOut": "Zoom indietro",
   "cmd.cycleWidth": "Cambia larghezza di lettura",
+  "cmd.wrapLines": "A capo nelle righe lunghe (sì | no)",
+  "wrap.on": "Ora le righe lunghe vanno a capo.",
+  "wrap.off":
+    "Le righe lunghe non vanno più a capo. Per scorrere di lato, usa Maiusc e la rotellina, oppure fai clic sul testo e usa le frecce.",
+  "text.scrollRegion": "Testo (scorre di lato)",
   "cmd.settings": "Apri impostazioni",
   "cmd.newFile": "Nuovo file Markdown...",
   "cmd.toggleEdit": "Passa da Vista all'ultimo editor e viceversa",
