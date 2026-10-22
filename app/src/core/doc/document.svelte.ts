@@ -696,6 +696,8 @@ export class DocumentController {
   }
 
   #refHere(path: string, line: number | null, hint: boolean): void {
+    // the keyboard goes to the page that shows it (the reference it was on goes away with the old page)
+    this.host.scroller?.focus({ preventScroll: true });
     this.navigate(path, null, line);
     if (!hint || this.#hintedEditor) return;
     this.#hintedEditor = true;
