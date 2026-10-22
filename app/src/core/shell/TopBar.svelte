@@ -11,6 +11,7 @@
   import type { MenuEntry } from "../explorer/menu";
   import { t } from "../i18n";
   import type { WindowStore } from "../window.svelte";
+  import { newProject } from "./initProject";
   import Switcher from "./Switcher.svelte";
   import { tabs } from "./tabs.svelte";
   import { ui } from "./ui.svelte";
@@ -49,7 +50,7 @@
         hint: hint("app.openFile"),
         run: () => void store.openFile(),
       },
-      { kind: "item", label: t("welcome.newProject"), run: () => void store.newProject() },
+      { kind: "item", label: t("welcome.newProject"), run: () => void newProject(store) },
     ];
     if (notes) {
       list.push({

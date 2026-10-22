@@ -13,6 +13,7 @@
   import { relativeTime } from "../time";
   import type { WindowStore } from "../window.svelte";
   import { dropFlow } from "./dropView.svelte";
+  import { newProject } from "./initProject";
 
   type Props = { store: WindowStore };
   let { store }: Props = $props();
@@ -116,7 +117,7 @@
         class="btn"
         disabled={opening}
         title={t("welcome.newProjectHint")}
-        onclick={() => void store.newProject()}
+        onclick={() => void newProject(store)}
       >
         <FolderPlus size={14} aria-hidden="true" />
         {t("welcome.newProject")}

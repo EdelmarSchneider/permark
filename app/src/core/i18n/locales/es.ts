@@ -763,6 +763,12 @@ export default {
   "review.sr.undone.other": "Deshecho. {n} cambios.",
   "review.sr.updated.one": "El documento cambió. {n} cambio por revisar.",
   "review.sr.updated.other": "El documento cambió. {n} cambios por revisar.",
+  "review.sr.basisCommit.one": "Ahora se compara con el último commit. {n} cambio por revisar.",
+  "review.sr.basisCommit.other": "Ahora se compara con el último commit. {n} cambios por revisar.",
+  "review.sr.basisRead.one": "Ahora se compara con lo que leíste. {n} cambio por revisar.",
+  "review.sr.basisRead.other": "Ahora se compara con lo que leíste. {n} cambios por revisar.",
+  "review.closed": "Revisión cerrada.",
+  "review.again": "Revisar de nuevo",
   "git.backend.label": "Git",
   "git.backend.hint": "Qué git usa PerMark para leer tus repositorios.",
   "git.backend.automatic": "Automático (git instalado; si no, el integrado)",
@@ -1342,6 +1348,12 @@ export default {
   "project.initNote":
     "Tus archivos no se tocan. Las etiquetas, los comentarios y las marcas de lectura que ya tienes en este proyecto se copian.",
   "project.initTitle": "¿Inicializar PerMark en {name}?",
+  "project.newTitle": "¿Convertir {name} en un proyecto?",
+  "project.newWhy":
+    "Esta carpeta ya tiene archivos. PerMark le añade una carpeta .permark, donde guarda los ajustes de este proyecto, tus comentarios y lo que ya leíste.",
+  "project.newNote": "Tus archivos no se tocan.",
+  "project.newConfirm": "Usar esta carpeta",
+  "project.newBack": "Elegir otra carpeta…",
   "project.loadFailed": "No se pudieron leer los ajustes del proyecto.",
   "project.notInitialized": "PerMark no está inicializado en este proyecto",
   "project.notInitializedHint":
@@ -1547,7 +1559,8 @@ export default {
   "import.reason.protected": "está reservado para git o PerMark",
   "import.reason.intoItself": "contiene la carpeta de destino",
   "import.busy": "Espera a que termine la importación actual.",
-  "import.dropCancelled": "Se canceló lo que soltaste en «{folder}». No se añadió nada.",
+  "import.dropCancelled":
+    "{project} ya no está abierto en esta pestaña, así que se canceló lo que soltaste en «{folder}». No se añadió nada; puedes volver a soltar los elementos.",
   "import.progressLabel": "Añadiendo archivos al proyecto",
   "import.counting": "Revisando los archivos…",
   "import.copying": "Copiando a «{folder}»…",

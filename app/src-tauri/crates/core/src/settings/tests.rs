@@ -843,6 +843,36 @@ fn removing_every_project_setting_gives_the_file_back_byte_for_byte() {
 }
 
 #[test]
+fn a_new_table_goes_below_the_header_and_the_header_stays_when_the_table_goes() {
+    let show = ProjectSettingChange::TreeShow(Some(TreeShow::Everything));
+    // the file "Initialize PerMark" writes: comments only
+    let out = project_applied(DEFAULT_CONFIG_TOML, &show);
+    assert_eq!(
+        out,
+        format!("{DEFAULT_CONFIG_TOML}[tree]\nshow = \"everything\"\n")
+    );
+    let crlf = DEFAULT_CONFIG_TOML.replace('\n', "\r\n");
+    let out = project_applied(&crlf, &show);
+    assert_eq!(out, format!("{crlf}[tree]\r\nshow = \"everything\"\r\n"));
+    // a hand-written header above the first table stays when that table goes
+    let hand =
+        "# team file\n\n[tree]\nshow = \"documents\" # default\n\n[agent]\ndeny = [\"notes\"]\n";
+    let out = project_applied(hand, &ProjectSettingChange::TreeShow(None));
+    // (the blank line above a table goes with it)
+    assert_eq!(out, "# team file\n\n[agent]\ndeny = [\"notes\"]\n");
+    let out = project_applied(&out, &ProjectSettingChange::AgentDeny(Vec::new()));
+    assert_eq!(out, "# team file\n");
+    // a root key below the header, and a last comment line with no line end
+    let out = project_applied(
+        "# head\n# no end",
+        &ProjectSettingChange::Ignore(list(&["x/"])),
+    );
+    assert!(out.starts_with("# head\n"), "{out:?}");
+    assert!(out.contains("ignore = [\"x/\"]"), "{out:?}");
+    assert_eq!(ProjectConfig::from_doc(&doc(&out)).ignore, list(&["x/"]));
+}
+
+#[test]
 fn a_project_write_keeps_hand_edits_comments_unknown_keys_and_crlf() {
     let hand = "# team file\r\nignore = [\"old/\"] # kept for CI\r\nfuture = 1\r\n\r\n[tree]\r\nshow = \"documents\" # default\r\n\r\n[plugins.word-count]\r\nenabled = false\r\n";
     let out = project_applied(

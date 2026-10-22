@@ -33,7 +33,7 @@
   import SearchPanel from "./core/search/SearchPanel.svelte";
   import SidebarTabs from "./core/search/SidebarTabs.svelte";
   import KeymapDialog from "./core/shell/KeymapDialog.svelte";
-  import { confirmInit } from "./core/shell/initProject";
+  import { answerInit } from "./core/shell/initProject";
   import { rightAvailable } from "./core/shell/layout";
   import { layout } from "./core/shell/layout.svelte";
   import { hasSidebar, rightSide } from "./core/shell/sides";
@@ -364,7 +364,8 @@
   <InitDialog
     name={asked.name}
     path={asked.path}
-    answer={(yes) => (yes ? void confirmInit(asked.path) : ui.closeInit())}
+    fresh={asked.opens}
+    answer={(yes) => answerInit(asked, yes)}
   />
 {/if}
 {#if ui.finder.status === "open"}

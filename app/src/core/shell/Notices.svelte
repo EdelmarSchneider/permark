@@ -1,6 +1,6 @@
 <script lang="ts">
   // Quiet notices (bottom right): failed opens, state set aside, settings not kept. Dismissable; never block. Timed
-  // ones close by themselves (paused while the pointer | focus is on them). Their height is published as
+  // ones close by themselves (paused while the pointer | focus is on them). Esc with the keyboard in one dismisses it. Their height is published as
   // `--notices-h` so scrolling pages keep room under their last control.
   import { apiErrorText, ipcErrorText } from "../errors";
   import { t } from "../i18n";
@@ -61,12 +61,21 @@
 {#if store.notices.length > 0}
   <div class="notices" role="status" aria-live="polite" bind:this={region}>
     {#each store.notices as notice (notice.id)}
+      <!-- Esc bubbling up from its own buttons: the group only hears it, it never takes the keyboard itself -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <div
         role="group"
         class="notice"
         onpointerenter={() => store.holdNotice(notice.id, "pointer")}
         onpointerleave={() => store.releaseNotice(notice.id, "pointer")}
         onfocusin={() => store.holdNotice(notice.id, "focus")}
+        onkeydown={(e) => {
+          if (e.key !== "Escape" || e.defaultPrevented) return;
+          // this notice, nothing behind it (a review, the page)
+          e.preventDefault();
+          e.stopPropagation();
+          store.dismiss(notice.id);
+        }}
         onfocusout={(e) => {
           const into = e.relatedTarget;
           if (!(into instanceof Node && e.currentTarget.contains(into))) {

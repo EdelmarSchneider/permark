@@ -26,6 +26,7 @@ function view(on: Api["on"], label: string): ImportFlow {
   return new ImportFlow(api, {
     fail: () => undefined,
     note: () => undefined,
+    cancelNote: () => () => undefined,
     action: () => undefined,
     project: () => "p",
     view: () => label,

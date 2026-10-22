@@ -36,8 +36,14 @@ export type Notice =
   | { id: number; kind: "initFailed"; path: string; error: ApiError }
   | { id: number; kind: "fileOpFailed"; error: ApiError }
   | { id: number; kind: "note"; text: string }
-  /** A quiet line with buttons (Undo, Open in project). */
-  | { id: number; kind: "action"; text: string; actions: readonly NoticeAction[] }
+  /** A quiet line with buttons (Undo, Open in project); stays until dismissed. `onGone` hears how it went. */
+  | {
+      id: number;
+      kind: "action";
+      text: string;
+      actions: readonly NoticeAction[];
+      onGone?: (how: NoticeGone) => void;
+    }
   /** A quiet line (buttons optional) that closes by itself after `closeAfterMs`, paused while held (pointer | focus
    *  on it); `onGone` hears how it went. */
   | {
@@ -295,10 +301,19 @@ export class WindowStore {
     return true;
   }
 
-  /** New project: a folder is picked, PerMark is initialized in it, and it opens like any folder. */
-  async newProject(): Promise<void> {
-    const path = await this.#api.pickFolder(t("dialog.newProject"));
-    if (path === null) return;
+  /** New project: a folder is picked; an empty one is set up and opens like any folder. A folder with files in it
+   *  comes back (`ask`): `.permark/` would go in among them, so the person is asked first. */
+  async newProject(from?: string): Promise<{ ask: string } | null> {
+    const path = await this.#api.pickFolder(t("dialog.newProject"), from);
+    if (path === null) return null;
+    const empty = await this.#api.folderEmpty(path);
+    if (!empty.ok || !empty.value) return { ask: path };
+    await this.createProject(path);
+    return null;
+  }
+
+  /** PerMark is set up in the folder, which then opens. */
+  async createProject(path: string): Promise<void> {
     if (await this.initProject(path)) await this.open(path);
   }
 
@@ -324,14 +339,24 @@ export class WindowStore {
     this.#notify({ kind: "fileOpFailed", error });
   }
 
-  /** A quiet note ("Moved a.md", "Undone"). */
-  notifyNote(text: string): void {
-    this.#notify({ kind: "note", text });
+  /** A quiet note ("Moved a.md", "Undone"); returns its id (`dismiss` takes it back). */
+  notifyNote(text: string): number {
+    return this.#notify({ kind: "note", text });
   }
 
   /** A quiet line with buttons ("Deleted a note" + Undo). */
   notifyAction(text: string, ...actions: NoticeAction[]): void {
     this.#notify({ kind: "action", text, actions });
+  }
+
+  /** A quiet line with buttons that stays until the person dismisses it (no clock: a keyboard user can reach it);
+   *  `onGone` hears how it went. Returns its id (`dismiss` takes it back). */
+  notifyLasting(body: {
+    text: string;
+    actions: readonly NoticeAction[];
+    onGone: (how: NoticeGone) => void;
+  }): number {
+    return this.#notify({ kind: "action", ...body });
   }
 
   /** A quiet line that closes by itself (paused while held); `onGone` hears how it went. */
@@ -376,10 +401,10 @@ export class WindowStore {
     const clock = this.#clocks.get(notice.id);
     if (clock?.handle) clearTimeout(clock.handle);
     this.#clocks.delete(notice.id);
-    if (notice.kind === "timed") notice.onGone?.(how);
+    if (notice.kind === "timed" || notice.kind === "action") notice.onGone?.(how);
   }
 
-  #notify(body: NoticeBody): void {
+  #notify(body: NoticeBody): number {
     const notice = { ...body, id: this.#nextNotice++ } as Notice;
     // newest last; at most 5 on screen
     const all = [...this.notices, notice];
@@ -396,6 +421,7 @@ export class WindowStore {
       this.#clocks.set(notice.id, clock);
       this.#run(notice.id, clock);
     }
+    return notice.id;
   }
 }
 

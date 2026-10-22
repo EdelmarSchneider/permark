@@ -226,6 +226,37 @@ describe("the question at the drop point", () => {
     component = null;
     expect(document.activeElement).toBe(before);
   });
+
+  it("a drop from outside had the keyboard nowhere: on close it goes to the file list", async () => {
+    const tree = document.createElement("div");
+    tree.setAttribute("role", "tree");
+    tree.tabIndex = 0;
+    document.body.append(tree);
+    (document.activeElement as HTMLElement | null)?.blur();
+    expect(document.activeElement).toBe(document.body);
+    open(plan());
+    await tick();
+    flushSync();
+    expect(document.activeElement).not.toBe(tree);
+    if (component) await unmount(component);
+    component = null;
+    expect(document.activeElement).toBe(tree);
+  });
+
+  it("the place it came from went away meanwhile: the file list takes the keyboard", async () => {
+    const tree = document.createElement("div");
+    tree.setAttribute("role", "tree");
+    tree.tabIndex = 0;
+    const before = document.createElement("button");
+    document.body.append(tree, before);
+    before.focus();
+    open(plan());
+    await tick();
+    before.remove();
+    if (component) await unmount(component);
+    component = null;
+    expect(document.activeElement).toBe(tree);
+  });
 });
 
 describe("the progress card", () => {
