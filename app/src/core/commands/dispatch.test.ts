@@ -4,7 +4,15 @@ import type { Context, Requirement } from "../conditions/available";
 import { NO_REQUIREMENT } from "../conditions/available";
 import { neutralContext } from "../conditions/context.svelte";
 import type { CommandItem } from "./commands";
-import { installKeys, isTypingTarget, resolveKey, type KeyEnv } from "./dispatch";
+import {
+  installButtons,
+  installKeys,
+  isTypingTarget,
+  resolveButton,
+  resolveKey,
+  type ButtonEnv,
+  type KeyEnv,
+} from "./dispatch";
 import { buildKeymap } from "./keymap";
 
 function command(id: string, extra: Partial<CommandItem> = {}): CommandItem {
@@ -220,6 +228,82 @@ describe("the listener", () => {
     stop();
     window.dispatchEvent(press({ key: "j", ctrlKey: true }));
     expect(run).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("mouse side buttons", () => {
+  const READING: Requirement = {
+    needs: [{ need: "workspace", kinds: ["project", "singleFile", "notes"] }],
+    prefers: [],
+  };
+  function buttons(extra: Partial<ButtonEnv> = {}): {
+    env: ButtonEnv;
+    back: ReturnType<typeof vi.fn>;
+    forward: ReturnType<typeof vi.fn>;
+  } {
+    const back = vi.fn();
+    const forward = vi.fn();
+    // `when` false: like Alt+Left inside an editor; a side button is never text, so it still runs
+    const env: ButtonEnv = {
+      commands: [
+        command("doc.back", { run: back, requires: READING, when: () => false }),
+        command("doc.forward", { run: forward, requires: READING, when: () => false }),
+      ],
+      context: { ...neutralContext(), workspace: "project" },
+      overlay: "none",
+      dialog: false,
+      ...extra,
+    };
+    return { env, back, forward };
+  }
+  const up = (button: number): MouseEvent =>
+    new MouseEvent("mouseup", { button, bubbles: true, cancelable: true });
+
+  it("button 3 runs back, button 4 forward; 0-2 and unknown buttons pass", () => {
+    const { env } = buttons();
+    expect(resolveButton(up(3), env)).toMatchObject({ kind: "run", command: { id: "doc.back" } });
+    expect(resolveButton(up(4), env)).toMatchObject({
+      kind: "run",
+      command: { id: "doc.forward" },
+    });
+    for (const b of [0, 1, 2, 5, -1])
+      expect(resolveButton(up(b), env).kind, `button ${b}`).toBe("pass");
+  });
+
+  it("passes when an overlay or a dialog owns the input, another handler took it, or nothing shows a document", () => {
+    expect(resolveButton(up(3), buttons({ overlay: "box" }).env).kind).toBe("pass");
+    expect(resolveButton(up(3), buttons({ overlay: "question" }).env).kind).toBe("pass");
+    expect(resolveButton(up(4), buttons({ dialog: true }).env).kind).toBe("pass");
+    const taken = up(3);
+    taken.preventDefault();
+    expect(resolveButton(taken, buttons().env).kind).toBe("pass");
+    const welcome = buttons({ context: { ...neutralContext(), workspace: "welcome" } }).env;
+    expect(resolveButton(up(3), welcome).kind).toBe("pass");
+    expect(resolveButton(up(3), buttons({ commands: [] }).env).kind).toBe("pass");
+  });
+
+  it("the listener: one step per release (mousedown, auxclick do nothing), takes it, survives a throw, stops", () => {
+    const { env, back, forward } = buttons();
+    const stop = installButtons(window, () => env);
+    window.dispatchEvent(new MouseEvent("mousedown", { button: 3, bubbles: true }));
+    const release = up(3);
+    window.dispatchEvent(release);
+    window.dispatchEvent(new MouseEvent("auxclick", { button: 3, bubbles: true }));
+    expect(back).toHaveBeenCalledOnce();
+    expect(release.defaultPrevented).toBe(true);
+    const left = up(0);
+    window.dispatchEvent(left);
+    expect(left.defaultPrevented).toBe(false);
+    forward.mockImplementation(() => {
+      throw new Error("boom");
+    });
+    window.dispatchEvent(up(4));
+    window.dispatchEvent(up(3));
+    expect(forward).toHaveBeenCalledOnce();
+    expect(back).toHaveBeenCalledTimes(2);
+    stop();
+    window.dispatchEvent(up(3));
+    expect(back).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -8,5 +8,10 @@
     "id": "project-locate-start-folder",
     "bug": "Locate... of a missing project opened the folder picker at another folder (the system's last one), not at the project's old parent or the opened folder",
     "reason": "The system folder picker is outside the page; the mock answers it at once. Covered by store.test.ts (folder the picker is asked to open at) + rename_tests.rs (old parent, else the opened folder)"
+  },
+  {
+    "id": "mouse-side-buttons",
+    "bug": "The mouse side buttons (back, forward) did nothing; in 0.5 they went back and forward through the documents viewed, like Alt+Left and Alt+Right",
+    "reason": "The probe has no side-button step: Playwright mouse buttons are left | middle | right only, and a synthetic event in the page is what the vitest cases already send. Covered by dispatch.test.ts (button 3 | 4 -> back | forward, 0-2 pass, one step per press, overlay | dialog pass) + DocumentArea.test.ts (reading view and Source editor); the real button = real-input check"
   }
 ]

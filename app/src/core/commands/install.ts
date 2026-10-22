@@ -1,13 +1,14 @@
-// The window's keyboard: the core's commands go into the registry and one listener runs them. One call per window.
+// The window's keyboard and mouse side buttons: the core's commands go into the registry and one listener per input
+// runs them. One call per window.
 
 import { conditions } from "../conditions/context.svelte";
 import { contributions } from "../plugins/instance.svelte";
 import { ui } from "../shell/ui.svelte";
 import { registerCoreCommands } from "./core";
-import { installKeys, isTypingTarget } from "./dispatch";
+import { installButtons, installKeys, isTypingTarget } from "./dispatch";
 import { keys } from "./state.svelte";
 
-/** Registers the core's commands and starts listening on `target`; returns the teardown of both. */
+/** Registers the core's commands and starts listening on `target`; returns the teardown of all three. */
 export function installWindowKeys(
   target: Pick<Window, "addEventListener" | "removeEventListener"> = window,
 ): () => void {
@@ -20,7 +21,14 @@ export function installWindowKeys(
     typing: isTypingTarget(event.target),
     overlay: ui.overlay,
   }));
+  const stopButtons = installButtons(target, () => ({
+    commands: contributions.of("command"),
+    context: conditions.current,
+    overlay: ui.overlay,
+    dialog: document.querySelector('[aria-modal="true"]') !== null,
+  }));
   return () => {
+    stopButtons();
     stop();
     unregister();
   };

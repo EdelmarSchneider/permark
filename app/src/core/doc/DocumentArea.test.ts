@@ -306,6 +306,31 @@ describe("reading", () => {
     );
     await until(() => documents.path === "README.md", "back");
   });
+
+  it("the mouse side buttons go back and forward, once per press, and take the webview's own navigation", async () => {
+    await show("README.md");
+    await documents.activateLink("docs/guide.md");
+    await until(() => documents.path === "docs/guide.md", "guide");
+    await until(() => target.querySelector(".md-body") !== null, "page");
+    const release = (button: number): MouseEvent => {
+      const event = new MouseEvent("mouseup", { button, bubbles: true, cancelable: true });
+      target.querySelector(".md-body")?.dispatchEvent(event);
+      return event;
+    };
+    expect(release(3).defaultPrevented).toBe(true);
+    await until(() => documents.path === "README.md", "back");
+    // the click that follows the release is not a second step
+    target
+      .querySelector(".md-body")
+      ?.dispatchEvent(new MouseEvent("auxclick", { button: 3, bubbles: true, cancelable: true }));
+    expect(release(4).defaultPrevented).toBe(true);
+    await until(() => documents.path === "docs/guide.md", "forward");
+    expect(documents.trail.canBack).toBe(true);
+    // the other buttons stay with the page
+    for (const button of [0, 1, 2]) expect(release(button).defaultPrevented).toBe(false);
+    await tick();
+    expect(documents.path).toBe("docs/guide.md");
+  });
 });
 
 describe("other kinds of file", () => {
@@ -795,5 +820,35 @@ describe("focus mode", () => {
     expect(target.querySelector(".cm-editor")).not.toBeNull();
     escape();
     await until(() => target.querySelector(".cm-editor") === null, "back to View");
+  });
+});
+
+describe("going back from an editor", () => {
+  const modeButton = (label: string): HTMLButtonElement | undefined =>
+    [...target.querySelectorAll<HTMLButtonElement>(".modes button")].find(
+      (b) => b.textContent?.trim() === label,
+    );
+
+  it("in Source, Alt+Left stays a text key; the back side button goes back", async () => {
+    await show("README.md");
+    await documents.activateLink("docs/guide.md");
+    await until(() => documents.path === "docs/guide.md", "guide");
+    await until(() => modeButton("Source") !== undefined, "mode switch");
+    modeButton("Source")?.click();
+    await until(() => target.querySelector(".cm-content") !== null, "source editor");
+    const content = target.querySelector(".cm-content") as HTMLElement;
+    const key = new KeyboardEvent("keydown", {
+      key: "ArrowLeft",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    content.dispatchEvent(key);
+    await tick();
+    expect(documents.path).toBe("docs/guide.md");
+    const up = new MouseEvent("mouseup", { button: 3, bubbles: true, cancelable: true });
+    content.dispatchEvent(up);
+    expect(up.defaultPrevented).toBe(true);
+    await until(() => documents.path === "README.md", "back");
   });
 });
