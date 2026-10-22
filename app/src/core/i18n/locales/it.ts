@@ -786,6 +786,13 @@ export default {
   "git.state.reverting": "REVERTING",
   "git.state.bisecting": "BISECTING",
   "git.state.busy": "GIT OCCUPATO",
+  "git.stateHint.merging": "In git è stato avviato un merge che non è ancora finito.",
+  "git.stateHint.rebasing": "In git è stato avviato un rebase che non è ancora finito.",
+  "git.stateHint.cherryPicking": "In git è stato avviato un cherry-pick che non è ancora finito.",
+  "git.stateHint.reverting": "In git è stato avviato un revert che non è ancora finito.",
+  "git.stateHint.bisecting":
+    "In git è stata avviata la ricerca del commit che ha causato un problema (bisect) e non è ancora finita.",
+  "git.stateHint.busy": "Git è nel mezzo di un'altra operazione che non è ancora finita.",
   "git.unavailableHint": "Il git scelto non è disponibile. Sceglierne un altro nelle impostazioni.",
   "git.errorOwnership": "Git non si fida del proprietario di questa cartella.",
   "git.errorHint":
@@ -2049,5 +2056,6 @@ export default {
   "projects.card.gitMissing":
     "Git non è disponibile, quindi branch e modifiche non vengono mostrati.",
   "projects.card.gitError": "Git non riesce a leggere questo progetto.",
+  "projects.card.noCommits": "Ancora nessun commit",
   "projects.status.prefix": "{short} ·",
 } satisfies Messages;

@@ -47,13 +47,15 @@ export type OutlineCell = { text: string; title?: string };
 
 /**
  * A short fact a plugin knows about an included project (its branch, what its repository is doing). `chip`: a state
- * (drawn as a chip, as in the status bar; never cut); `warn`: a problem (a warning mark before `text`); `spoken`: what
+ * (drawn as a chip, as in the status bar; never cut); `warn`: a problem (a warning mark before `text`); `branch`:
+ * `text` is a branch name (a branch mark before it, so it reads apart from the project's short name); `spoken`: what
  * the screen-reader name adds after the visible words (none: nothing); `title`: the tooltip (else `text`).
  */
 export type ProjectFact = {
   text: string;
   chip?: boolean;
   warn?: boolean;
+  branch?: boolean;
   spoken?: string;
   title?: string;
 };

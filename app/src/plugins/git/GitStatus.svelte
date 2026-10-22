@@ -5,7 +5,7 @@
   import type { BaselineKind, Letter } from "../../api";
   import { t, type MessageKey } from "../../core/i18n";
   import { projects } from "../../core/projects/instance.svelte";
-  import { STATE_KEYS, changedCount, gitMissing, shortOid as cut } from "./facts";
+  import { STATE_KEYS, changedCount, gitMissing, shortOid as cut, stateHint } from "./facts";
   import { members } from "./members.svelte";
   import { LETTER_ORDER, git, letterOf } from "./store.svelte";
 
@@ -21,6 +21,8 @@
     unborn: boolean;
     changed: string;
     state: MessageKey | null;
+    /** What the state means, in plain words. */
+    hint: string | null;
     problem: string | null;
     baseline: BaselineKind;
     backend: "system" | "builtin" | null;
@@ -48,6 +50,7 @@
             ? ""
             : t("git.status.changed", { count: changedCount(repo.changed) }),
         state: STATE_KEYS[repo.state],
+        hint: stateHint(repo.state),
         problem: repo.error?.kind === "failed" ? t("projects.card.gitError") : null,
         baseline: snapshot?.baseline.kind ?? list?.baseline.kind ?? "lastVisit",
         backend: snapshot?.backend ?? list?.backend ?? null,
@@ -67,6 +70,7 @@
         ? t("git.status.changedMore", { count: snapshot.files.length })
         : t("git.status.changed", { count: snapshot.files.length }),
       state: STATE_KEYS[snapshot.state],
+      hint: stateHint(snapshot.state),
       problem: null,
       baseline: snapshot.baseline.kind,
       backend: snapshot.backend,
@@ -180,7 +184,9 @@
       {/if}
     </button>
     {#if shown.state}
-      <span class="state" role="status">{t(shown.state)}</span>
+      <span class="state" role="status" title={shown.hint}
+        >{t(shown.state)}<span class="sr-only">, {shown.hint}</span></span
+      >
     {/if}
     {#if git.legend}
       <div class="legend" role="dialog" aria-label={t("git.legend.title")} use:above>

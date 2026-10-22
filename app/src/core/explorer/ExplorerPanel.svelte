@@ -8,6 +8,7 @@
   import Crosshair from "@lucide/svelte/icons/crosshair";
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
+  import GitBranch from "@lucide/svelte/icons/git-branch";
   import ListFilter from "@lucide/svelte/icons/list-filter";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import type { ProjectRow, TreeNode } from "../../api";
@@ -836,13 +837,22 @@
                 {/if}
                 {#if fact !== null}
                   <!-- the branch | what the repository is doing: muted, cut before the name, gone in a narrow sidebar;
-                       a state chip is never cut (the name gives way); a problem: a warning mark first -->
+                       a state chip is never cut (the name gives way); a problem: a warning mark first; a branch: a
+                       branch mark first (reads apart from the short name) -->
                   <span
-                    class={["fact", fact.chip && "chip", fact.warn && "warn"]}
+                    class={[
+                      "fact",
+                      fact.chip && "chip",
+                      fact.warn && "warn",
+                      fact.branch && "marked",
+                    ]}
                     title={fact.title ?? fact.text}
                     aria-hidden="true"
                     >{#if fact.warn}<TriangleAlert
                         size={12}
+                        aria-hidden="true"
+                      />{:else if fact.branch}<GitBranch
+                        size={11}
                         aria-hidden="true"
                       />{/if}{#if fact.text !== ""}<span class="fact-text">{fact.text}</span
                       >{/if}</span
@@ -1104,11 +1114,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* git can't read the project: a warning mark, kept when the branch is cut */
-  .fact.warn {
+  /* git can't read the project: a warning mark, kept when the branch is cut; a branch: its mark, as the status bar's */
+  .fact.warn,
+  .fact.marked {
     display: inline-flex;
     align-items: center;
     gap: 3px;
+  }
+  .fact.marked :global(svg) {
+    flex: none;
   }
   .fact.warn :global(svg) {
     flex: none;

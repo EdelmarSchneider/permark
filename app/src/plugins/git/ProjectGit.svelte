@@ -13,6 +13,7 @@
     gitMissing,
     headText,
     reasonText,
+    stateHint,
   } from "./facts";
   import { members } from "./members.svelte";
 
@@ -22,6 +23,7 @@
   const hasGit = $derived(row.marker === "git" || row.marker === "both");
   const head = $derived(repo === null ? null : headText(repo));
   const state = $derived(repo === null ? null : STATE_KEYS[repo.state]);
+  const hint = $derived(repo === null ? null : stateHint(repo.state));
   const ahead = $derived(repo?.aheadBehind ?? null);
   const commit = $derived(repo?.lastCommit ?? null);
   // the age is read when the card shows (a card stays open briefly)
@@ -47,7 +49,9 @@
             >{repo.detached ? head : t("projects.card.branch", { branch: head })}</span
           >
         {/if}
-        {#if state}<span class="state">{t(state)}</span>{/if}
+        {#if state}<span class="state" title={hint}
+            >{t(state)}<span class="sr-only">, {hint}</span></span
+          >{/if}
         {#if ahead !== null}
           {@const label = aheadBehindText(ahead[0], ahead[1])}
           <span class="ahead" role="img" aria-label={label} title={label}
@@ -57,7 +61,7 @@
       </p>
       {#if repo.changed !== null}<p>{changedLine(repo.changed)}</p>{/if}
       {#if repo.unborn}
-        <p class="muted">{t("git.status.noCommits")}</p>
+        <p class="muted">{t("projects.card.noCommits")}</p>
       {:else if commit !== null}
         {@const text = t("projects.card.lastCommit", { age, subject: commit.subject })}
         <p class="muted cut" title={text}>{text}</p>

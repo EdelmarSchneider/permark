@@ -764,6 +764,13 @@ const en = {
   "git.state.reverting": "REVERTING",
   "git.state.bisecting": "BISECTING",
   "git.state.busy": "GIT BUSY",
+  "git.stateHint.merging": "A merge was started in git and isn't finished yet.",
+  "git.stateHint.rebasing": "A rebase was started in git and isn't finished yet.",
+  "git.stateHint.cherryPicking": "A cherry-pick was started in git and isn't finished yet.",
+  "git.stateHint.reverting": "A revert was started in git and isn't finished yet.",
+  "git.stateHint.bisecting":
+    "A search for the commit that caused a problem (bisect) was started in git and isn't finished yet.",
+  "git.stateHint.busy": "Git is in the middle of another task that isn't finished yet.",
   "git.unavailableHint": "The git you chose is not available. Choose another in the settings.",
   "git.errorOwnership": "Git doesn't trust this folder's owner.",
   "git.errorHint": "Open the settings to choose another git (the built-in one needs no trust).",
@@ -1996,6 +2003,7 @@ const en = {
   "projects.card.lastCommit": "Last commit {age}: “{subject}”",
   "projects.card.gitMissing": "Git isn't available, so branch and changes aren't shown.",
   "projects.card.gitError": "Git can't read this project.",
+  "projects.card.noCommits": "No commits yet",
   "projects.status.prefix": "{short} ·",
 } as const;
 

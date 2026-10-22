@@ -21,6 +21,23 @@ export const STATE_KEYS: Readonly<Record<RepoState, MessageKey | null>> = {
   busy: "git.state.busy",
 };
 
+/** What a state chip means, in plain words (tooltip + what a screen reader hears; UX round 3). */
+export const STATE_HINTS: Readonly<Record<RepoState, MessageKey | null>> = {
+  clean: null,
+  merging: "git.stateHint.merging",
+  rebasing: "git.stateHint.rebasing",
+  cherryPicking: "git.stateHint.cherryPicking",
+  reverting: "git.stateHint.reverting",
+  bisecting: "git.stateHint.bisecting",
+  busy: "git.stateHint.busy",
+};
+
+/** The plain-words meaning of a repository's state chip; `null`: no chip (clean). */
+export function stateHint(state: RepoState): string | null {
+  const key = STATE_HINTS[state];
+  return key === null ? null : t(key);
+}
+
 /** Seven characters of a commit id. */
 export function shortOid(oid: string | null): string {
   return oid?.slice(0, 7) ?? "";
@@ -38,9 +55,9 @@ export function headText(s: RepoSummary): string | null {
   return s.branch;
 }
 
-/** The node's muted text: what the repository is doing (a chip) instead of the branch, else the branch | detached
- *  commit; a repository with no commit yet says nothing. Git can't read it: a warning mark (+ the branch when known),
- *  never the look of a clean project. */
+/** The node's muted text: what the repository is doing (a chip, its meaning in the tooltip + spoken) instead of the
+ *  branch, else the branch (a branch mark before it; also the branch a repository with no commit yet is on) | detached
+ *  commit. Git can't read it: a warning mark (+ the branch when known), never the look of a clean project. */
 export function nodeFact(s: RepoSummary): ProjectFact | null {
   if (gitMissing(s)) return null;
   if (s.error?.kind === "failed") {
@@ -51,15 +68,22 @@ export function nodeFact(s: RepoSummary): ProjectFact | null {
   if (state !== null) {
     const text = t(state);
     const head = headText(s);
-    return { text, chip: true, title: head === null ? text : `${text} · ${head}` };
+    const hint = stateHint(s.state) ?? "";
+    const spokenHead =
+      head === null || s.detached ? null : t("projects.node.srBranch", { branch: head });
+    return {
+      text,
+      chip: true,
+      title: `${head === null ? text : `${text} · ${head}`}\n${hint}`,
+      spoken: spokenHead === null ? hint : `${spokenHead}, ${hint}`,
+    };
   }
-  if (s.unborn && !s.detached) return null;
   const head = headText(s);
   if (head === null || head === "") return null;
   // the visible words say it all for a detached HEAD; a branch name is said as one
   return s.detached
     ? { text: head }
-    : { text: head, spoken: t("projects.node.srBranch", { branch: head }) };
+    : { text: head, branch: true, spoken: t("projects.node.srBranch", { branch: head }) };
 }
 
 /** The count of changed files as a number to show ("5000+" at the cap). */
@@ -99,6 +123,8 @@ export function rowFact(s: RepoSummary): ProjectFact | null {
   }
   if (parts.length === 0) return null;
   const text = parts.join(" · ");
+  const hint = stateHint(s.state);
+  if (hint !== null) return { text, title: `${fullParts.join(" · ")}\n${hint}`, spoken: hint };
   const title = fullParts.join(" · ");
   return title === text ? { text } : { text, title };
 }

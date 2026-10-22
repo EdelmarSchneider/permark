@@ -508,4 +508,62 @@ describe("UX round 3 fixes", () => {
     expect(target.querySelector(".prefix .short")?.textContent).toBe("notes-app");
     expect(target.querySelector(".prefix")?.textContent).toBe("notes-app ·");
   });
+
+  it("F12 + F15: no commit yet shows its branch with a branch mark; the card says 'No commits yet'", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    mock.probe.plugins.gitMembers.shape((s: RepoSummary): RepoSummary => ({
+      ...s,
+      error: null,
+      unborn: true,
+      oid: null,
+      branch: "main",
+      lastCommit: null,
+    }));
+    const { store } = await explorer();
+    await expand(store, "tools");
+    await until(() => node("tools/notes-app")?.querySelector(".fact") != null, "fact");
+    const fact = node("tools/notes-app")!.querySelector<HTMLElement>(".fact")!;
+    expect(fact.textContent).toBe("main");
+    // the branch mark tells the branch apart from the short name; hidden from screen readers (the name says "branch")
+    expect(fact.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    expect(node("tools/notes-app")?.getAttribute("aria-label")).toContain("branch main");
+    projects.openCard({ path: "tools/notes-app", from: "menu", anchor: new DOMRect() });
+    flushSync();
+    const block = (): string => document.querySelector("[data-project-git]")?.textContent ?? "";
+    await until(() => block().includes("No commits yet"), "no commits line");
+    expect(block()).toContain("Branch main");
+    projects.closeCard();
+    flushSync();
+  });
+
+  it("MERGING | REBASING: their meaning in plain words, in the tooltip and said (node, card, row, status)", async () => {
+    await openFolder(MOCK_PROJECTS_LISTED);
+    mock.probe.plugins.gitMembers.shape((s: RepoSummary): RepoSummary => ({
+      ...s,
+      error: null,
+      state: "merging",
+    }));
+    const hint = "A merge was started in git and isn't finished yet.";
+    const { store } = await explorer();
+    await expand(store, "tools");
+    await until(() => node("tools/notes-app")?.querySelector(".fact.chip") != null, "chip");
+    const chip = node("tools/notes-app")!.querySelector<HTMLElement>(".fact.chip")!;
+    expect(chip.title).toContain(hint);
+    expect(chip.querySelector("svg")).toBeNull();
+    expect(node("tools/notes-app")?.getAttribute("aria-label")).toContain(hint);
+    projects.openCard({ path: "tools/notes-app", from: "menu", anchor: new DOMRect() });
+    flushSync();
+    await until(() => document.querySelector("[data-project-git] .state") !== null, "card chip");
+    const state = document.querySelector<HTMLElement>("[data-project-git] .state")!;
+    expect(state.title).toBe(hint);
+    expect(state.querySelector(".sr-only")?.textContent).toBe(`, ${hint}`);
+    projects.closeCard();
+    flushSync();
+    mountHere(GitStatus);
+    cleanups.push(() => void documents.show(null));
+    await documents.show("tools/notes-app/README.md");
+    await until(() => target.querySelector(".git .state") !== null, "status chip");
+    expect(target.querySelector<HTMLElement>(".git .state")?.title).toBe(hint);
+    expect(target.querySelector(".git .state")?.textContent).toContain(hint);
+  });
 });

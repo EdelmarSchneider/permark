@@ -135,7 +135,8 @@
     <div class="status">
       {#each status as fact, n (n)}
         <span class={["fact", fact.chip && "chip"]} title={fact.title ?? fact.text}
-          >{fact.text}</span
+          >{fact.text}{#if fact.spoken !== undefined}<span class="sr-only">, {fact.spoken}</span
+            >{/if}</span
         >
       {/each}
       {#each said as badge, n (n)}

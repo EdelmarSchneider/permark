@@ -2,8 +2,10 @@
 // row line, owner repository of a path. Pure.
 import { describe, expect, it } from "vitest";
 import type { RepoSummary } from "../../api";
+import type { RepoState } from "../../api/generated/RepoState";
 import {
   CHANGED_CAP,
+  STATE_KEYS,
   aheadBehindText,
   changedLine,
   infoText,
@@ -12,6 +14,7 @@ import {
   repoOf,
   reposByKey,
   rowFact,
+  stateHint,
 } from "./facts";
 
 function repo(patch: Partial<RepoSummary> = {}): RepoSummary {
@@ -33,8 +36,8 @@ function repo(patch: Partial<RepoSummary> = {}): RepoSummary {
 }
 
 describe("the node's muted text", () => {
-  it("is the branch, spoken as 'branch …'", () => {
-    expect(nodeFact(repo())).toEqual({ text: "develop", spoken: "branch develop" });
+  it("is the branch with a branch mark, spoken as 'branch …'", () => {
+    expect(nodeFact(repo())).toEqual({ text: "develop", branch: true, spoken: "branch develop" });
   });
 
   it("a detached HEAD in plain words + 7 characters of the commit (nothing more to say)", () => {
@@ -46,12 +49,31 @@ describe("the node's muted text", () => {
   it("what the repository is doing replaces the branch, as a chip (mid-rebase: detached under it)", () => {
     const fact = nodeFact(repo({ state: "rebasing", branch: null, detached: true }));
     expect(fact).toMatchObject({ text: "REBASING", chip: true });
-    expect(fact?.title).toBe("REBASING · not on a branch (at a1b2c3d)");
-    expect(nodeFact(repo({ state: "merging" }))).toMatchObject({ text: "MERGING", chip: true });
+    // the chip's meaning in plain words: in the tooltip and said (a detached HEAD: the visible words say it)
+    expect(fact?.title).toBe(
+      "REBASING · not on a branch (at a1b2c3d)\nA rebase was started in git and isn't finished yet.",
+    );
+    expect(fact?.spoken).toBe("A rebase was started in git and isn't finished yet.");
+    expect(nodeFact(repo({ state: "merging" }))).toEqual({
+      text: "MERGING",
+      chip: true,
+      title: "MERGING · develop\nA merge was started in git and isn't finished yet.",
+      spoken: "branch develop, A merge was started in git and isn't finished yet.",
+    });
   });
 
-  it("no commit yet: nothing; git missing: nothing anywhere", () => {
-    expect(nodeFact(repo({ unborn: true, oid: null }))).toBeNull();
+  it("every state chip has its meaning in words; clean has none", () => {
+    for (const state of Object.keys(STATE_KEYS) as RepoState[]) {
+      expect(stateHint(state) === null).toBe(state === "clean");
+    }
+  });
+
+  it("no commit yet: the branch it is on (UX F12); no name: nothing; git missing: nothing anywhere", () => {
+    expect(nodeFact(repo({ unborn: true, oid: null }))).toMatchObject({
+      text: "develop",
+      branch: true,
+    });
+    expect(nodeFact(repo({ unborn: true, oid: null, branch: null }))).toBeNull();
     expect(nodeFact(repo({ error: { kind: "unavailable" }, branch: null }))).toBeNull();
     // git missing wins over a branch the cheap reader still had
     expect(nodeFact(repo({ error: { kind: "unavailable" } }))).toBeNull();
@@ -114,7 +136,12 @@ describe("the Settings row", () => {
   });
 
   it("a state replaces the branch; trouble says so; git missing says nothing (the intro does)", () => {
-    expect(rowFact(repo({ state: "merging", changed: 1 }))?.text).toBe("MERGING · 1 changed");
+    const merging = rowFact(repo({ state: "merging", changed: 1 }));
+    expect(merging).toEqual({
+      text: "MERGING · 1 changed",
+      title: "MERGING · 1 changed\nA merge was started in git and isn't finished yet.",
+      spoken: "A merge was started in git and isn't finished yet.",
+    });
     const failed = rowFact(
       repo({ error: { kind: "failed", reason: "detected dubious ownership" } }),
     );
