@@ -2,6 +2,7 @@
 // PerMark cannot follow them as they happen. One signal in the status bar: the Live chip shows it when the chip is
 // there (it claims the signal); else the core's own item does. Single files and the Notes never follow live.
 
+import { untrack } from "svelte";
 import { conditions } from "../conditions/context.svelte";
 
 class LiveOffSignal {
@@ -18,14 +19,15 @@ class LiveOffSignal {
     return this.#claims > 0;
   }
 
-  /** Claims the signal until the returned function runs (call it from an effect of the item). */
+  /** Claims the signal until the returned function runs (call it from an effect of the item; the count is not
+   *  tracked there, so the effect does not run again on its own write). */
   claim(): () => void {
-    this.#claims += 1;
+    this.#claims = untrack(() => this.#claims) + 1;
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      this.#claims -= 1;
+      this.#claims = untrack(() => this.#claims) - 1;
     };
   }
 }
