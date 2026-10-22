@@ -1,6 +1,7 @@
 //! Verifier adversarial tests (job-object tree, 2026-10-22). Windows only. `nested_*` + `perf_*` are `#[ignore]`:
 //! run one per process (`--exact --ignored`), they put the whole test process in a job.
 #![allow(unsafe_code)]
+#![allow(clippy::unwrap_used)] // test helpers (not `#[test]` fns) inside a `cfg(all(test, windows))` module
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -57,7 +58,10 @@ fn rename_now(from: &Path, to: &Path) -> Result<Option<Duration>, std::io::Error
             while start.elapsed() < Duration::from_secs(1) {
                 std::thread::sleep(Duration::from_millis(1));
                 if std::fs::rename(from, to).is_ok() {
-                    eprintln!("rename failed at once ({first}), ok after {:?}", start.elapsed());
+                    eprintln!(
+                        "rename failed at once ({first}), ok after {:?}",
+                        start.elapsed()
+                    );
                     return Ok(Some(start.elapsed()));
                 }
             }
@@ -107,8 +111,15 @@ fn v_timeout_kills_the_whole_tree() {
         None,
     );
     assert_eq!(result.unwrap_err(), GitError::Timeout);
-    assert!(h.marker.exists(), "grandchild never ran: test proves nothing");
-    assert!(started.elapsed() < Duration::from_secs(8), "{:?}", started.elapsed());
+    assert!(
+        h.marker.exists(),
+        "grandchild never ran: test proves nothing"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(8),
+        "{:?}",
+        started.elapsed()
+    );
     assert_eq!(rename_now(&h.folder, &h.base.join("moved")).unwrap(), None);
 }
 
@@ -219,7 +230,12 @@ mod job {
                 assert_ne!(ok, 0);
             }
             let ok = AssignProcessToJobObject(job, GetCurrentProcess());
-            assert_ne!(ok, 0, "test process could not join job: {}", std::io::Error::last_os_error());
+            assert_ne!(
+                ok,
+                0,
+                "test process could not join job: {}",
+                std::io::Error::last_os_error()
+            );
             job
         }
     }
@@ -240,10 +256,20 @@ fn nested_ui_limited_parent_job_falls_back() {
     let _job = job::enter(false, true);
     // the call must still answer (job refused -> child alone)
     let h = hold("ui ü");
-    let out = run(&exe, &h.folder, &[OsStr::new("--version")], Duration::from_secs(10), 4096).unwrap();
+    let out = run(
+        &exe,
+        &h.folder,
+        &[OsStr::new("--version")],
+        Duration::from_secs(10),
+        4096,
+    )
+    .unwrap();
     assert_eq!(out.code, Some(0));
     // whether the tree is stopped too (job nested) or not (fallback): reported, not asserted
-    eprintln!("ui-limited parent: cancel+rename -> {:?}", cancel_once(&exe, "ui2 ü"));
+    eprintln!(
+        "ui-limited parent: cancel+rename -> {:?}",
+        cancel_once(&exe, "ui2 ü")
+    );
 }
 
 #[test]
@@ -252,13 +278,27 @@ fn perf_version_calls() {
     let Some(exe) = find_git() else { return };
     let here = std::env::temp_dir();
     for _ in 0..5 {
-        run(&exe, &here, &[OsStr::new("--version")], Duration::from_secs(10), 4096).unwrap();
+        run(
+            &exe,
+            &here,
+            &[OsStr::new("--version")],
+            Duration::from_secs(10),
+            4096,
+        )
+        .unwrap();
     }
     let n = 100_u32;
     let mut all = Vec::with_capacity(n as usize);
     for _ in 0..n {
         let t = Instant::now();
-        run(&exe, &here, &[OsStr::new("--version")], Duration::from_secs(10), 4096).unwrap();
+        run(
+            &exe,
+            &here,
+            &[OsStr::new("--version")],
+            Duration::from_secs(10),
+            4096,
+        )
+        .unwrap();
         all.push(t.elapsed());
     }
     all.sort();
@@ -287,50 +327,31 @@ fn v_control_rename_no_git_50() {
     eprintln!("control late renames: {} / 50: {late:?}", late.len());
 }
 
-/// Perf split: Toolhelp snapshot alone; spawn+wait plain | suspended+resume (no job) | full `run`.
+/// Perf split: plain `std::process` spawn + wait vs the job-list start (`tree::Proc`) + wait, same program.
 #[test]
 #[ignore = "perf; run alone in release"]
 fn perf_split() {
     use std::os::windows::process::CommandExt;
-    use windows_sys::Win32::Foundation::CloseHandle;
-    use windows_sys::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-    };
     let Some(exe) = find_git() else { return };
+    let here = std::env::temp_dir();
     let n = 50_u32;
-    let mut threads = 0_u32;
     let t = Instant::now();
     for _ in 0..n {
-        threads = 0;
-        unsafe {
-            let s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-            let mut e = THREADENTRY32 { dwSize: u32::try_from(std::mem::size_of::<THREADENTRY32>()).unwrap(), ..THREADENTRY32::default() };
-            let mut more = Thread32First(s, &raw mut e) != 0;
-            while more {
-                threads += 1;
-                more = Thread32Next(s, &raw mut e) != 0;
-            }
-            CloseHandle(s);
+        let mut c = std::process::Command::new(&exe);
+        c.arg("--version")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        c.creation_flags(0x0800_0000);
+        c.spawn().unwrap().wait().unwrap();
+    }
+    eprintln!("PERF plain spawn+wait: {:?}", t.elapsed() / n);
+    let t = Instant::now();
+    for _ in 0..n {
+        let mut p =
+            crate::tree::Proc::start(&exe, &here, &[OsStr::new("--version")], &[], &[]).unwrap();
+        while matches!(p.try_wait().unwrap(), crate::system::Wait::Running) {
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
-    eprintln!("PERF snapshot+walk: {:?} each ({threads} threads)", t.elapsed() / n);
-    let spawn = |flags: u32| {
-        let t = Instant::now();
-        for _ in 0..n {
-            let mut c = std::process::Command::new(&exe);
-            c.arg("--version").stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
-            c.creation_flags(0x0800_0000 | flags);
-            let mut child = c.spawn().unwrap();
-            if flags != 0 {
-                let tree = crate::tree::Tree::adopt(&mut child).unwrap();
-                child.wait().unwrap();
-                drop(tree);
-            } else {
-                child.wait().unwrap();
-            }
-        }
-        t.elapsed() / n
-    };
-    eprintln!("PERF plain spawn+wait: {:?}", spawn(0));
-    eprintln!("PERF suspended+job+resume spawn+wait: {:?}", spawn(crate::tree::START_SUSPENDED));
+    eprintln!("PERF job-list start+wait: {:?}", t.elapsed() / n);
 }

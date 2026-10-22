@@ -610,8 +610,21 @@ fn a_cancelled_git_leaves_nothing_running_in_the_folder() {
         worker.join().unwrap().unwrap_err(),
         GitError::Failed("stopped".to_owned())
     );
-    // at once: no grandchild (shell, sleep) holds the folder as its working directory
-    std::fs::rename(&folder, dir.path().join("renamed ü")).unwrap();
+    // at once: no grandchild (shell, sleep) holds the folder as its working directory. The system may need a few ms
+    // after the job is empty to let go of a working directory (verifier: 1 in 1200 at once, fine after 10 ms): a short
+    // retry, never more than 200 ms (an orphan that keeps running holds it for 30 s)
+    let target = dir.path().join("renamed ü");
+    let started = Instant::now();
+    loop {
+        match std::fs::rename(&folder, &target) {
+            Ok(()) => break,
+            Err(e) if started.elapsed() < Duration::from_millis(200) => {
+                eprintln!("rename retried: {e}");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("the folder is still held: {e}"),
+        }
+    }
 }
 
 #[test]
