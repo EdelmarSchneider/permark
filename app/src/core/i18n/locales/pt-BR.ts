@@ -45,6 +45,9 @@ export default {
   // ---- status bar
   "status.version": "Versão {version}",
   "status.versionUnavailable": "Versão indisponível",
+  "status.liveOff": "Atualizações ao vivo desligadas",
+  "status.liveOffHint":
+    "Este local não consegue informar alterações, então o PerMark não pode acompanhá-las ao vivo. Volte para a janela para atualizar.",
 
   // ---- notices
   "notice.stateRecovered":
@@ -628,6 +631,9 @@ export default {
   "finder.partial": "Ainda indexando: os resultados podem estar incompletos.",
   "finder.results.one": "{n} resultado",
   "finder.results.other": "{n} resultados",
+  "trail.show": "Ir para um lugar recente...",
+  "trail.filter": "Filtrar lugares recentes...",
+  "trail.here": "Você está aqui",
   "keymap.title": "Atalhos de teclado",
   "keymap.search": "Buscar um comando",
   "keymap.press": "Pressione as novas teclas…",

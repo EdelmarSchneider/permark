@@ -9,6 +9,6 @@ export type UnreadList = {
  */
 ready: boolean, 
 /**
- * Sorted by path.
+ * Newest change first (file time); the same time | none: by path.
  */
 unread: Array<string>, };

@@ -9,11 +9,13 @@
   import { remedyAction } from "../commands/remedy";
   import { keys } from "../commands/state.svelte";
   import { documents } from "../doc/document.svelte";
+  import { TRAIL_MENU } from "../doc/trail";
   import { confirmLeave } from "../editing/guard";
   import { explorerShowsHidden, revealInTree } from "../explorer/current";
   import { iconOfCategory } from "../explorer/icons";
   import Folder from "@lucide/svelte/icons/folder";
   import Hash from "@lucide/svelte/icons/hash";
+  import History from "@lucide/svelte/icons/history";
   import TagIcon from "@lucide/svelte/icons/tag";
   import Terminal from "@lucide/svelte/icons/terminal";
   import { t, tn, type MessageKey } from "../i18n";
@@ -23,6 +25,8 @@
   import { FinderStore, type FinderHost } from "./finderStore.svelte";
   import { outlineRows, type GroupTitle, type Row, type Scope } from "./finderModel";
   import { markRuns } from "./fuzzy";
+  import Badge from "../shell/Badge.svelte";
+  import { badgesOf } from "./badges";
   import Marked from "./Marked.svelte";
   import PathText from "./PathText.svelte";
   import { recentFiles } from "./recent.svelte";
@@ -56,6 +60,11 @@
       return view?.body.kind === "markdown" ? outlineRows(view.path, view.body.outline) : [];
     },
     opened: () => recentFiles.list,
+    places: () =>
+      documents.trail
+        .recent(TRAIL_MENU)
+        .map(({ index, place, current }) => ({ index, ...place, current })),
+    goToPlace: (index) => void documents.jump(index),
     showsHidden: () => explorerShowsHidden(),
     openFile: (path) => {
       void (async () => {
@@ -86,6 +95,7 @@
     sections: "finder.scope.sections",
     tags: "finder.scope.tags",
     commands: "finder.scope.commands",
+    places: "trail.all",
   };
   const GROUP_LABEL: Record<GroupTitle, MessageKey> = {
     opened: "finder.group.opened",
@@ -95,15 +105,23 @@
     sections: "finder.group.sections",
     tags: "finder.group.tags",
     commands: "finder.group.commands",
+    places: "trail.all",
   };
   const filters = $derived(contributions.visible("searchFilter", conditions.current));
-  const label = $derived(
-    preset === "quick"
-      ? t("finder.quickLabel")
-      : preset === "commands"
-        ? t("finder.commandsLabel")
-        : t("finder.label"),
-  );
+  const label = $derived.by(() => {
+    switch (preset) {
+      case "quick":
+        return t("finder.quickLabel");
+      case "commands":
+        return t("finder.commandsLabel");
+      case "trail":
+        return t("trail.all");
+      case "everywhere":
+        return t("finder.label");
+      default:
+        return preset satisfies never;
+    }
+  });
   const placeholder = $derived.by(() => {
     switch (finder.scope) {
       case "files":
@@ -116,6 +134,8 @@
         return t("finder.placeholder.commands");
       case "all":
         return t("finder.placeholder.all");
+      case "places":
+        return t("trail.filter");
       default:
         return finder.scope satisfies never;
     }
@@ -161,6 +181,8 @@
         return row.name;
       case "command":
         return t(row.entry.command.label);
+      case "place":
+        return row.anchor === null ? row.path : `${row.path}#${row.anchor}`;
       case "more":
         return t("finder.showAll", { n: row.count });
       default:
@@ -274,7 +296,9 @@
             aria-selected={activeKey === row.key}
             aria-disabled={row.type === "command" &&
               row.entry.availability.status === "unavailable"}
-            title={row.type === "file" || row.type === "folder" ? row.path : undefined}
+            title={row.type === "file" || row.type === "folder" || row.type === "place"
+              ? rowText(row)
+              : undefined}
             onpointermove={() => {
               const at = finder.view.rows.findIndex((r) => r.key === row.key);
               if (at >= 0 && at !== finder.active) finder.active = at;
@@ -285,6 +309,7 @@
               {@const Icon = iconOfCategory(row.category)}
               <Icon size={15} aria-hidden="true" />
               <span class="text"><PathText path={row.path} positions={row.positions} /></span>
+              {#each badgesOf(row.path) as badge, n (n)}<Badge {badge} />{/each}
               {#if row.hidden}<span class="aside mark">{t("finder.hidden")}</span>{/if}
             {:else if row.type === "folder"}
               <Folder size={15} aria-hidden="true" />
@@ -307,6 +332,13 @@
                   <span class="snippet"><SnippetText parts={row.snippet} /></span>
                 {/if}
               </span>
+            {:else if row.type === "place"}
+              <History size={15} aria-hidden="true" />
+              <span class="text">
+                <PathText path={row.path} positions={row.positions} />
+                {#if row.anchor !== null}<span class="faint">#{row.anchor}</span>{/if}
+              </span>
+              {#if row.current}<span class="aside">{t("trail.here")}</span>{/if}
             {:else if row.type === "tag"}
               <TagIcon size={15} aria-hidden="true" />
               <span class="text"><span class="strong">{row.name}</span></span>

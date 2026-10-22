@@ -16,6 +16,7 @@ import {
   stepScope,
   type Data,
   type ViewInput,
+  placeRows,
 } from "./finderModel";
 import { fuzzyMatch, markRuns } from "./fuzzy";
 import { flattenRows, groupHits } from "./panelModel";
@@ -359,5 +360,30 @@ describe("the Tags scope of Search everywhere", () => {
     const rows = view.groups[0]?.rows ?? [];
     expect(rows).toHaveLength(GROUP_LIMIT.tags + 1);
     expect(rows.at(-1)).toMatchObject({ type: "more", scope: "tags", count: 4 });
+  });
+});
+
+describe("the places of the trail (Go to a recent place)", () => {
+  const places = [
+    { index: 3, path: "docs/guide.md", anchor: "setup", current: true },
+    { index: 2, path: "notes/ideas.md", anchor: null, current: false },
+    { index: 1, path: "docs/guide.md", anchor: null, current: false },
+    { index: 0, path: "README.md", anchor: null, current: false },
+  ];
+
+  it("is a face of its own with one scope", () => {
+    expect(scopesFor("trail", false)).toEqual(["places"]);
+    expect(scopesFor("trail", true)).toEqual(["places"]);
+  });
+
+  it("lists every place newest first for an empty box, matching ones for words", () => {
+    expect(placeRows(places, " ").map((r) => r.index)).toEqual([3, 2, 1, 0]);
+    // the same score keeps the newer place first; a heading's name matches too, its letters are not marked in the path
+    const guide = placeRows(places, "guide");
+    expect(guide.map((r) => r.index)).toEqual([3, 1]);
+    expect(placeRows(places, "setup").map((r) => r.index)).toEqual([3]);
+    expect(placeRows(places, "setup")[0]?.positions).toEqual([]);
+    expect(placeRows(places, "zzz")).toEqual([]);
+    expect(placeRows([], "a")).toEqual([]);
   });
 });

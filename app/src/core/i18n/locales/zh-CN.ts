@@ -44,6 +44,8 @@ export default {
   // ---- status bar
   "status.version": "版本 {version}",
   "status.versionUnavailable": "版本不可用",
+  "status.liveOff": "实时更新已关闭",
+  "status.liveOffHint": "此位置无法报告更改，因此 PerMark 无法实时跟踪。切换回窗口即可刷新。",
 
   // ---- notices
   "notice.stateRecovered": "部分已保存的 PerMark 数据无法读取，已另行保留：{file}",
@@ -603,6 +605,9 @@ export default {
   "finder.partial": "仍在建立索引，结果可能不完整。",
   "finder.results.one": "{n} 个结果",
   "finder.results.other": "{n} 个结果",
+  "trail.show": "转到最近的位置...",
+  "trail.filter": "筛选最近的位置...",
+  "trail.here": "当前位置",
   "keymap.title": "键盘快捷键",
   "keymap.search": "查找命令",
   "keymap.press": "请按下新的按键…",

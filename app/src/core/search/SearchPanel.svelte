@@ -11,6 +11,8 @@
   import { contributions } from "../plugins/instance.svelte";
   import { documents } from "../doc/document.svelte";
   import { projects } from "../projects/instance.svelte";
+  import Badge from "../shell/Badge.svelte";
+  import { badgesOf } from "./badges";
   import Segments from "../shell/settings/Segments.svelte";
   import { apiErrorText } from "../errors";
   import { t, tn } from "../i18n";
@@ -261,6 +263,7 @@
               />{/if}
             <FileText size={14} aria-hidden="true" />
             <span class="path" title={row.path}><PathText path={row.path} /></span>
+            {#each badgesOf(row.path) as badge, n (n)}<Badge {badge} />{/each}
             <span class="count">{row.count}</span>
           </div>
         {:else}

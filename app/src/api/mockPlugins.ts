@@ -37,7 +37,7 @@ export type MockPluginProbe = {
   feed(items: FeedItem[]): void;
   /** An action of the person as if the activity journal had noted it. */
   mine(entry: ActivityEntry): void;
-  /** Marks documents unread as if an agent changed them. */
+  /** Marks documents unread as if an agent changed them, in this order (the last one is the newest change). */
   unread(paths: string[]): void;
   /** Calls the plugins got, `<plugin>.<method>`. */
   calls: string[];
@@ -198,8 +198,13 @@ export function createMockPlugins(
       isDir: false,
     },
   ];
+  /** Unread documents, oldest change first (the backend sends the newest first). */
   let unread = new Set<string>([GUIDE]);
-  const unreadList = (): UnreadList => ({ ready: true, unread: [...unread].sort() });
+  const changed = (path: string): void => {
+    unread.delete(path);
+    unread.add(path);
+  };
+  const unreadList = (): UnreadList => ({ ready: true, unread: [...unread].reverse() });
   const announceUnread = (): void => emit("unread:changed", unreadList());
   const since: SinceVisit = {
     ready: true,
@@ -368,7 +373,7 @@ export function createMockPlugins(
         emit("live-feed:activity", { entry });
       },
       unread: (paths) => {
-        for (const path of paths) unread.add(path);
+        for (const path of paths) changed(path);
         announceUnread();
       },
       calls,

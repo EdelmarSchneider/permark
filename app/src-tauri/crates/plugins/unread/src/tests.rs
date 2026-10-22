@@ -167,7 +167,15 @@ impl Harness {
         )
     }
 
+    /// The unread documents by path (which ones; the order has its own test).
     fn unread(&self) -> Vec<String> {
+        let mut list = self.unread_in_order();
+        list.sort();
+        list
+    }
+
+    /// The unread documents in the order the windows get them.
+    fn unread_in_order(&self) -> Vec<String> {
         self.call("list", Value::Null)
             .map(|v| {
                 v["unread"]
@@ -289,7 +297,7 @@ fn the_first_visit_reads_everything_then_news_is_unread_until_read() {
     wait_until("the announcement", || {
         h.sink.0.lock().unwrap().iter().any(|(n, p)| {
             n == "unread:changed"
-                && p["data"]["unread"] == json!(["a.md", "fresh.md"])
+                && p["data"]["unread"].as_array().is_some_and(|a| a.len() == 2)
                 && p["root"].is_string()
         })
     });
@@ -485,4 +493,42 @@ fn a_document_in_a_nested_repo_below_an_ignored_folder_becomes_unread_when_an_ag
     wait_until("the nested document is unread", || {
         h.unread() == ["hubs/a/plan.md"]
     });
+}
+
+#[test]
+fn the_windows_get_the_newest_change_first_and_the_agent_gets_them_by_path() {
+    use permark_core::organizing::UnreadLookup;
+    use std::time::SystemTime;
+    let mut h = Harness::new();
+    h.open();
+    wait_until("the first look", || h.ready());
+    std::thread::sleep(Duration::from_millis(250));
+    let base = SystemTime::now() - Duration::from_secs(3600);
+    // written in one order, changed at other times: `b` last, `a` + `c` at the same moment (then by path)
+    for (rel, minutes) in [("c.md", 10), ("b.md", 30), ("a.md", 10), ("z/old.md", 1)] {
+        h.write(rel, rel);
+        std::fs::File::options()
+            .write(true)
+            .open(h.root().join(rel))
+            .unwrap()
+            .set_modified(base + Duration::from_secs(60 * minutes))
+            .unwrap();
+    }
+    wait_until("all four unread", || h.unread().len() == 4);
+    assert_eq!(h.unread_in_order(), ["b.md", "a.md", "c.md", "z/old.md"]);
+    wait_until("the announcement in the same order", || {
+        h.sink.0.lock().unwrap().iter().any(|(n, p)| {
+            n == "unread:changed"
+                && p["data"]["unread"] == json!(["b.md", "a.md", "c.md", "z/old.md"])
+        })
+    });
+    let hub = h
+        .core
+        .as_ref()
+        .unwrap()
+        .services()
+        .services
+        .get::<UnreadHub>()
+        .unwrap();
+    assert_eq!(hub.unread().paths, ["a.md", "b.md", "c.md", "z/old.md"]);
 }

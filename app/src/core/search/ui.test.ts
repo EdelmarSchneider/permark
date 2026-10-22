@@ -26,6 +26,7 @@ const { documents } = await import("../doc/document.svelte");
 const { recentFiles } = await import("./recent.svelte");
 const { conditions } = await import("../conditions/context.svelte");
 const { NO_REQUIREMENT } = await import("../conditions/available");
+const { t } = await import("../i18n");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 
@@ -449,5 +450,99 @@ describe("the keyboard dialog", () => {
     const labels = Array.from(target.querySelectorAll(".label")).map((l) => l.textContent);
     expect(labels).toEqual(["Zoom in", "Zoom out", "Reset zoom"]);
     expect(NO_REQUIREMENT.needs).toEqual([]);
+  });
+});
+
+describe("marks on the files of search results (UX regressions #10)", () => {
+  const badgeTitles = (row: Element | undefined): string[] =>
+    Array.from(row?.querySelectorAll(".badge") ?? []).map((b) => b.getAttribute("title") ?? "");
+
+  it("shows the unread dot and the git letter as the file list does, and nothing with the plugins off", async () => {
+    await open();
+    conditions.set({ ...conditions.current, git: { status: "repo" } as never });
+    syncPlugins(["unread", "git"]);
+    ui.openFinder("quick");
+    component = mount(Finder, { target, props: { preset: "quick" } });
+    flushSync();
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    type(input, "guide");
+    const guideRow = (): Element | undefined =>
+      Array.from(target.querySelectorAll("[role=option]")).find((r) =>
+        r.textContent?.includes("guide.md"),
+      );
+    await until(() => badgeTitles(guideRow()).length === 2, "two marks on the row");
+    const titles = badgeTitles(guideRow());
+    expect(titles).toContain("Unread");
+    expect(
+      titles.some((title) => /modified/i.test(title)),
+      titles.join(" | "),
+    ).toBe(true);
+    // the words are in the tooltip; the mark is not color only
+    expect(guideRow()?.querySelector(".badge.tone-unread")?.textContent).toBe("•");
+    syncPlugins([]);
+    await until(() => badgeTitles(guideRow()).length === 0, "the marks go with their plugins");
+  });
+
+  it("puts the same marks on the file rows of the Search panel", async () => {
+    await open();
+    syncPlugins(["unread"]);
+    component = mount(SearchPanel, { target, props: { root: MOCK_FOLDER } });
+    flushSync();
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    type(input, "guide");
+    const fileRow = (): Element | undefined =>
+      Array.from(target.querySelectorAll(".file")).find((r) => r.textContent?.includes("guide.md"));
+    await until(() => badgeTitles(fileRow()).includes("Unread"), "the unread dot");
+  });
+});
+
+describe("Go to a recent place (UX regressions #12)", () => {
+  it("lists the trail newest first, says where you are, narrows by typing and goes on Enter", async () => {
+    await open();
+    documents.trail.clear();
+    for (const path of ["README.md", "docs/guide.md", "notes/ideas.md"]) {
+      documents.trail.visit({ path, anchor: null });
+    }
+    documents.trail.visit({ path: "docs/guide.md", anchor: "setup" });
+    const command = contributions.of("command").find((c) => c.id === "trail.show");
+    expect(command && t(command.label)).toBe("Go to a recent place...");
+    expect(command?.when?.()).toBe(true);
+    command?.run();
+    expect(ui.finder).toMatchObject({ status: "open", preset: "trail" });
+    component = mount(Finder, { target, props: { preset: "trail" } });
+    flushSync();
+    await tick();
+    expect(target.querySelector(".box")?.getAttribute("aria-label")).toBe("Recent places");
+    const places = (): (string | null)[] =>
+      Array.from(target.querySelectorAll("[role=option]")).map((r) => r.getAttribute("title"));
+    expect(places()).toEqual([
+      "docs/guide.md#setup",
+      "notes/ideas.md",
+      "docs/guide.md",
+      "README.md",
+    ]);
+    expect(target.querySelector("[role=option]")?.textContent).toContain("You are here");
+    expect(rowTexts().filter((text) => text.includes("You are here"))).toHaveLength(1);
+    const input = target.querySelector<HTMLInputElement>("input.field");
+    if (!input) throw new Error("no field");
+    expect(input.placeholder).toBe("Filter recent places...");
+    type(input, "read");
+    flushSync();
+    await tick();
+    expect(places()).toEqual(["README.md"]);
+    const jump = vi.spyOn(documents, "jump").mockResolvedValue();
+    press(input, "Enter");
+    expect(jump).toHaveBeenCalledWith(0);
+    expect(ui.finder.status).toBe("closed");
+    jump.mockRestore();
+  });
+
+  it("is not offered while there is nowhere else to go", () => {
+    documents.trail.clear();
+    documents.trail.visit({ path: "README.md", anchor: null });
+    const command = contributions.of("command").find((c) => c.id === "trail.show");
+    expect(command?.when?.()).toBe(false);
   });
 });
