@@ -248,13 +248,28 @@ fn the_first_visit_reads_everything_then_news_is_unread_until_read() {
     h.open();
     wait_until("the first look", || h.ready());
     assert_eq!(h.unread(), Vec::<String>::new(), "the baseline: all read");
-    // the probe was handed every document as read, with its bytes
-    wait_until("copies offered", || h.calls().len() >= 2);
-    let calls = h.calls();
-    assert!(calls.contains(&"at_rest:a.md:true".to_owned()), "{calls:?}");
+    // the probe was handed every document as read, with its bytes: live while the first look ran, else (it
+    // subscribed after that look, run 39717402281) from the hub's list once ready, as the review plugin catches up
+    let hub = h
+        .core
+        .as_ref()
+        .unwrap()
+        .services()
+        .services
+        .get::<UnreadHub>()
+        .unwrap();
+    let mut offered = h.calls();
+    for (path, hash) in hub.at_rest() {
+        let bytes = std::fs::read(h.root().join(&path)).unwrap();
+        offered.push(format!("at_rest:{path}:{}", fsx::hash(&bytes).0 == hash));
+    }
     assert!(
-        calls.contains(&"at_rest:docs/b ü.md:true".to_owned()),
-        "{calls:?}"
+        offered.contains(&"at_rest:a.md:true".to_owned()),
+        "{offered:?}"
+    );
+    assert!(
+        offered.contains(&"at_rest:docs/b ü.md:true".to_owned()),
+        "{offered:?}"
     );
     // the state is written once the baseline is taken
     wait_until("read.json", || h.read_json().is_some());
@@ -281,6 +296,13 @@ fn the_first_visit_reads_everything_then_news_is_unread_until_read() {
 
     // reading the version that is on disk settles it, and the hub hears it
     let hash = h.hash_of("a.md");
+    let a_at_rest = |calls: &[String]| {
+        calls
+            .iter()
+            .filter(|c| c.as_str() == "at_rest:a.md:true")
+            .count()
+    };
+    let before = a_at_rest(&h.calls());
     h.call("markRead", json!({"path": "a.md", "hash": hash}))
         .unwrap();
     assert_eq!(h.unread(), ["fresh.md"]);
@@ -291,13 +313,7 @@ fn the_first_visit_reads_everything_then_news_is_unread_until_read() {
             .any(|c| c.starts_with("read:a.md:") && c.ends_with(&hash)),
         "{calls:?}"
     );
-    assert!(
-        calls
-            .iter()
-            .filter(|c| c.as_str() == "at_rest:a.md:true")
-            .count()
-            >= 2
-    );
+    assert!(a_at_rest(&calls) > before, "{calls:?}");
     // reading a version that is not the one on disk leaves it unread
     h.call(
         "markRead",

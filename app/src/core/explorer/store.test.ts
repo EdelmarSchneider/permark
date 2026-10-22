@@ -785,6 +785,7 @@ describe("imported items in the tree", () => {
     return new ImportFlow(api, {
       fail: () => {},
       note: () => {},
+      cancelNote: () => () => {},
       action: () => {},
       project: () => "permark-docs",
       view: () => "main",

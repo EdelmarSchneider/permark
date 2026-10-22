@@ -1,0 +1,34 @@
+# Licenses of the Rust crates compiled into PerMark, listed in THIRD-PARTY-NOTICES.md (app/scripts/third-party-notices.mjs
+# runs `cargo about generate` with this file and about.hbs). A crate whose license is not accepted below fails the
+# build: adding one is a decision (check that its terms allow redistribution in a binary, then add it here).
+accepted = [
+  "Apache-2.0",
+  "MIT",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "0BSD",
+  "CC0-1.0",
+  "BSL-1.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CDLA-Permissive-2.0",
+  "MPL-2.0",
+]
+
+# What ships: no dev-dependencies (tests), no build-dependencies (build scripts run on the builder, they are not linked).
+ignore-dev-dependencies = true
+ignore-build-dependencies = true
+
+# The three desktop platforms. A crate that is only used on one of them still ships there.
+targets = [
+  "x86_64-pc-windows-msvc",
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-unknown-linux-gnu",
+]
+
+# PerMark's own crates (`publish = false`) are not third-party.
+[private]
+ignore = true

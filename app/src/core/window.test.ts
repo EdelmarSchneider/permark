@@ -201,16 +201,50 @@ describe("where a folder opens: the open_in setting", () => {
 describe("initializing a folder", () => {
   it("New project picks a folder, initializes it and opens it", async () => {
     const api = createMockApi();
-    const store = await started(api);
-    await store.newProject();
+    const inits: string[] = [];
+    const store = await started({
+      ...api,
+      folderEmpty: () => Promise.resolve({ ok: true, value: true }),
+      projectInit: (path) => {
+        inits.push(path);
+        return api.projectInit(path);
+      },
+    });
+    expect(await store.newProject()).toBeNull();
+    expect(inits).toEqual(["C:/Users/demo/permark-docs"]);
     expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
     expect(store.notices).toEqual([]);
+  });
+
+  it("a folder with files in it (or one that cannot be read) comes back to be asked about: nothing is written", async () => {
+    const api = createMockApi();
+    const inits: string[] = [];
+    for (const empty of [
+      { ok: true as const, value: false },
+      {
+        ok: false as const,
+        error: { kind: "command" as const, command: "folder_empty" as const, message: "gone" },
+      },
+    ]) {
+      const store = await started({
+        ...api,
+        folderEmpty: () => Promise.resolve(empty),
+        projectInit: (path) => {
+          inits.push(path);
+          return api.projectInit(path);
+        },
+      });
+      expect(await store.newProject()).toEqual({ ask: "C:/Users/demo/permark-docs" });
+      expect(store.view.state).toBe("welcome");
+    }
+    expect(inits).toEqual([]);
   });
 
   it("a folder that cannot be initialized says why and nothing opens", async () => {
     const api = createMockApi();
     const store = await started({
       ...api,
+      folderEmpty: () => Promise.resolve({ ok: true, value: true }),
       projectInit: () =>
         Promise.resolve({
           ok: false,

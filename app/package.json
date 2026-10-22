@@ -27,6 +27,7 @@
     "version:check": "node scripts/version.mjs check",
     "ux:probe": "node e2e/probe/cli.ts",
     "ux:calibrate": "node e2e/calibration/calibrate.ts",
+    "notices": "node scripts/third-party-notices.mjs",
     "gen:languages": "node scripts/gen-code-languages.mjs && prettier --write src/plugins/highlight/languageData.ts"
   },
   "dependencies": {

@@ -798,6 +798,14 @@ export default {
   "review.sr.undone.other": "Annullato. {n} modifiche.",
   "review.sr.updated.one": "Il documento è cambiato. {n} modifica da rivedere.",
   "review.sr.updated.other": "Il documento è cambiato. {n} modifiche da rivedere.",
+  "review.sr.basisCommit.one": "Ora il confronto è con l'ultimo commit. {n} modifica da rivedere.",
+  "review.sr.basisCommit.other":
+    "Ora il confronto è con l'ultimo commit. {n} modifiche da rivedere.",
+  "review.sr.basisRead.one": "Ora il confronto è con ciò che hai letto. {n} modifica da rivedere.",
+  "review.sr.basisRead.other":
+    "Ora il confronto è con ciò che hai letto. {n} modifiche da rivedere.",
+  "review.closed": "Revisione chiusa.",
+  "review.again": "Rivedi di nuovo",
   "git.backend.label": "Git",
   "git.backend.hint": "Quale git usa PerMark per leggere i tuoi repository.",
   "git.backend.automatic": "Automatico (git installato, altrimenti quello integrato)",
@@ -1403,6 +1411,12 @@ export default {
   "project.initNote":
     "I tuoi file non vengono toccati. I tag, i commenti e i segni di lettura che hai già per questo progetto vengono copiati.",
   "project.initTitle": "Inizializzare PerMark in {name}?",
+  "project.newTitle": "Rendere {name} un progetto?",
+  "project.newWhy":
+    "Questa cartella contiene già dei file. PerMark vi aggiunge una cartella .permark, dove tiene le impostazioni di questo progetto, i tuoi commenti e ciò che hai già letto.",
+  "project.newNote": "I tuoi file non vengono toccati.",
+  "project.newConfirm": "Usa questa cartella",
+  "project.newBack": "Scegli un'altra cartella…",
   "project.loadFailed": "Impossibile leggere le impostazioni del progetto.",
   "project.notInitialized": "PerMark non è inizializzato in questo progetto",
   "project.notInitializedHint":
@@ -1607,7 +1621,7 @@ export default {
   "import.reason.intoItself": "contiene la cartella di destinazione",
   "import.busy": "Attendi la fine dell'importazione in corso.",
   "import.dropCancelled":
-    "Il rilascio in «{folder}» è stato annullato. Non è stato aggiunto nulla.",
+    "{project} non è più aperto in questa scheda, quindi il rilascio in «{folder}» è stato annullato. Non è stato aggiunto nulla; puoi rilasciare di nuovo gli elementi.",
   "import.progressLabel": "Aggiunta di file al progetto",
   "import.counting": "Esame dei file…",
   "import.copying": "Copia in «{folder}»…",

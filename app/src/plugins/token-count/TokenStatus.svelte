@@ -310,8 +310,9 @@
     cursor: pointer;
     font-variant-numeric: tabular-nums;
   }
+  /* small text on the status bar: the text accent (AA in every tone), not the accent itself */
   .item.is-chip {
-    color: var(--accent);
+    color: var(--accent-text);
   }
   .item:hover,
   .item[aria-expanded="true"] {

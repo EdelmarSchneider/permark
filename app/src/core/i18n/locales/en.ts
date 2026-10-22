@@ -776,6 +776,12 @@ const en = {
   "review.sr.undone.other": "Undone. {n} changes.",
   "review.sr.updated.one": "The document changed. {n} change to review.",
   "review.sr.updated.other": "The document changed. {n} changes to review.",
+  "review.sr.basisCommit.one": "Now comparing with the last commit. {n} change to review.",
+  "review.sr.basisCommit.other": "Now comparing with the last commit. {n} changes to review.",
+  "review.sr.basisRead.one": "Now comparing with what you read. {n} change to review.",
+  "review.sr.basisRead.other": "Now comparing with what you read. {n} changes to review.",
+  "review.closed": "Review closed.",
+  "review.again": "Review again",
   "git.backend.label": "Git",
   "git.backend.hint": "Which git PerMark reads your repositories with.",
   "git.backend.automatic": "Automatic (installed git, else built-in)",
@@ -1367,6 +1373,12 @@ const en = {
   "project.initNote":
     "Your files are not touched. Tags, comments and read marks you already have for this project are copied in.",
   "project.initTitle": "Initialize PerMark in {name}?",
+  "project.newTitle": "Make {name} a project?",
+  "project.newWhy":
+    "This folder already has files in it. PerMark adds a .permark folder to it, where it keeps this project's settings, your comments and what you have read.",
+  "project.newNote": "Your files are not touched.",
+  "project.newConfirm": "Use this folder",
+  "project.newBack": "Choose another folder…",
   "project.loadFailed": "The project settings couldn't be read.",
   "project.notInitialized": "PerMark is not initialized in this project",
   "project.notInitializedHint":
@@ -1562,7 +1574,8 @@ const en = {
   "import.reason.protected": "is reserved for git or PerMark",
   "import.reason.intoItself": "holds the folder it would go into",
   "import.busy": "Wait for the current import to finish.",
-  "import.dropCancelled": "The drop onto “{folder}” was cancelled. Nothing was added.",
+  "import.dropCancelled":
+    "{project} is no longer open in this tab, so the drop onto “{folder}” was cancelled. Nothing was added; you can drop the items again.",
   "import.progressLabel": "Adding files to the project",
   "import.counting": "Looking at the files…",
   "import.copying": "Copying to “{folder}”…",

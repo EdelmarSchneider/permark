@@ -1,13 +1,14 @@
 <script lang="ts">
-  // "Initialize PerMark in this folder?": says what is created, then asks. Enter = Initialize, Escape | Cancel |
-  // backdrop = nothing happens.
+  // "Initialize PerMark in this folder?": says what is created, then asks. The keyboard starts on the safe button (a
+  // stray Enter writes nothing); Escape | it | backdrop = nothing is written. New project on a folder with files in it
+  // (`fresh`): says why it asks in plain words, and the safe button goes back to choosing a folder.
   import { t } from "../i18n";
 
-  type Props = { name: string; path: string; answer: (yes: boolean) => void };
-  let { name, path, answer }: Props = $props();
+  type Props = { name: string; path: string; fresh?: boolean; answer: (yes: boolean) => void };
+  let { name, path, fresh = false, answer }: Props = $props();
 
   let dialog: HTMLElement | undefined = $state();
-  let yes: HTMLButtonElement | undefined = $state();
+  let cancel: HTMLButtonElement | undefined = $state();
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
@@ -30,7 +31,7 @@
 
   $effect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    yes?.focus();
+    cancel?.focus();
     return () => before?.focus();
   });
 </script>
@@ -52,21 +53,30 @@
     tabindex="-1"
     {onkeydown}
   >
-    <h2 id="init-title">{t("project.initTitle", { name })}</h2>
+    <h2 id="init-title">
+      {fresh ? t("project.newTitle", { name }) : t("project.initTitle", { name })}
+    </h2>
     <p class="where" title={path}>{path}</p>
     <div id="init-body">
-      <p>{t("project.initIntro")}</p>
-      <ul>
-        <li><code>.permark/config.toml</code><span>{t("project.initConfig")}</span></li>
-        <li><code>.permark/.gitignore</code><span>{t("project.initIgnore")}</span></li>
-        <li><code>.permark/local</code><span>{t("project.initLocal")}</span></li>
-      </ul>
-      <p class="note">{t("project.initNote")}</p>
+      {#if fresh}
+        <p>{t("project.newWhy")}</p>
+        <p class="note">{t("project.newNote")}</p>
+      {:else}
+        <p>{t("project.initIntro")}</p>
+        <ul>
+          <li><code>.permark/config.toml</code><span>{t("project.initConfig")}</span></li>
+          <li><code>.permark/.gitignore</code><span>{t("project.initIgnore")}</span></li>
+          <li><code>.permark/local</code><span>{t("project.initLocal")}</span></li>
+        </ul>
+        <p class="note">{t("project.initNote")}</p>
+      {/if}
     </div>
     <footer>
-      <button type="button" class="btn" onclick={() => answer(false)}>{t("common.cancel")}</button>
-      <button bind:this={yes} type="button" class="btn btn--primary" onclick={() => answer(true)}>
-        {t("project.initConfirm")}
+      <button bind:this={cancel} type="button" class="btn" onclick={() => answer(false)}>
+        {fresh ? t("project.newBack") : t("common.cancel")}
+      </button>
+      <button type="button" class="btn btn--primary" onclick={() => answer(true)}>
+        {fresh ? t("project.newConfirm") : t("project.initConfirm")}
       </button>
     </footer>
   </div>

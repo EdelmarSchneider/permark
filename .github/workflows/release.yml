@@ -57,7 +57,7 @@ jobs:
     steps:
       # Fails when the tag does not exist, so no release can make a new tag.
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.TAG }}
 
@@ -155,7 +155,7 @@ jobs:
     steps:
       - name: Checkout
         if: env.RUN_THIS == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.TAG }}
 
@@ -187,7 +187,7 @@ jobs:
 
       - name: Set up Node
         if: env.RUN_THIS == 'true'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -197,6 +197,18 @@ jobs:
         if: env.RUN_THIS == 'true'
         working-directory: app
         run: npm ci
+
+      # The licenses of the third-party software inside, shipped in every installer (bundle.resources) and opened from
+      # the app's About. Fails the release when a crate's license is not accepted (app/src-tauri/about.toml).
+      - name: Get cargo-about
+        if: env.RUN_THIS == 'true'
+        shell: bash
+        run: bash scripts/get-cargo-about.sh
+
+      - name: Third-party notices
+        if: env.RUN_THIS == 'true'
+        working-directory: app
+        run: npm run notices
 
       # Builds, signs the updater artifacts and uploads installers + `.sig` files to the release (asset names as before:
       # tauri-action names them). `latest.json` is written by `publish`.
@@ -228,7 +240,7 @@ jobs:
       ID: ${{ needs.draft.outputs.id }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.TAG }}
 
@@ -298,7 +310,7 @@ jobs:
       REF: ${{ github.event_name == 'workflow_dispatch' && (inputs.msix_ref || inputs.tag) || github.ref_name }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ env.REF }}
 
@@ -307,7 +319,7 @@ jobs:
         run: rustup toolchain install
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -316,6 +328,15 @@ jobs:
       - name: Install frontend dependencies
         working-directory: app
         run: npm ci
+
+      # The package carries the third-party licenses beside the program (scripts/build-msix.ps1 copies them).
+      - name: Get cargo-about
+        shell: bash
+        run: bash scripts/get-cargo-about.sh
+
+      - name: Third-party notices
+        working-directory: app
+        run: npm run notices
 
       # A release is tagged after its version is bumped, so the tag and the app's version are the same number.
       - name: Check that the tag is the app's version
@@ -333,7 +354,7 @@ jobs:
         run: ./scripts/build-msix.ps1 -Build -OutDir "$env:RUNNER_TEMP\msix"
 
       - name: Keep the package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: PerMark-msix-${{ steps.pack.outputs.version }}
           path: ${{ steps.pack.outputs.msix }}

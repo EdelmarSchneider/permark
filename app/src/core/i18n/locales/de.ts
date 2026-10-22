@@ -800,6 +800,13 @@ export default {
   "review.sr.undone.other": "Rückgängig. {n} Änderungen.",
   "review.sr.updated.one": "Das Dokument hat sich geändert. {n} Änderung zu prüfen.",
   "review.sr.updated.other": "Das Dokument hat sich geändert. {n} Änderungen zu prüfen.",
+  "review.sr.basisCommit.one": "Jetzt im Vergleich mit dem letzten Commit. {n} Änderung zu prüfen.",
+  "review.sr.basisCommit.other":
+    "Jetzt im Vergleich mit dem letzten Commit. {n} Änderungen zu prüfen.",
+  "review.sr.basisRead.one": "Jetzt im Vergleich mit dem Gelesenen. {n} Änderung zu prüfen.",
+  "review.sr.basisRead.other": "Jetzt im Vergleich mit dem Gelesenen. {n} Änderungen zu prüfen.",
+  "review.closed": "Prüfung geschlossen.",
+  "review.again": "Erneut prüfen",
   "git.backend.label": "Git",
   "git.backend.hint": "Mit welchem Git PerMark deine Repositories liest.",
   "git.backend.automatic": "Automatisch (installiertes Git, sonst eingebautes)",
@@ -1410,6 +1417,12 @@ export default {
   "project.initNote":
     "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen.",
   "project.initTitle": "PerMark in {name} einrichten?",
+  "project.newTitle": "{name} zum Projekt machen?",
+  "project.newWhy":
+    "Dieser Ordner enthält bereits Dateien. PerMark legt darin einen Ordner .permark an, für die Einstellungen dieses Projekts, Kommentare und Lesemarken.",
+  "project.newNote": "Die vorhandenen Dateien bleiben unverändert.",
+  "project.newConfirm": "Diesen Ordner verwenden",
+  "project.newBack": "Anderen Ordner wählen…",
   "project.loadFailed": "Die Projekteinstellungen konnten nicht gelesen werden.",
   "project.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet",
   "project.notInitializedHint":
@@ -1620,7 +1633,7 @@ export default {
   "import.reason.intoItself": "enthält den Zielordner",
   "import.busy": "Warten Sie, bis der laufende Import fertig ist.",
   "import.dropCancelled":
-    "Das Ablegen in „{folder}“ wurde abgebrochen. Es wurde nichts hinzugefügt.",
+    "{project} ist in diesem Tab nicht mehr geöffnet, daher wurde das Ablegen in „{folder}“ abgebrochen. Es wurde nichts hinzugefügt; die Elemente lassen sich erneut ablegen.",
   "import.progressLabel": "Dateien werden zum Projekt hinzugefügt",
   "import.counting": "Dateien werden angesehen …",
   "import.copying": "Kopiere nach „{folder}“ …",

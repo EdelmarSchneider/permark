@@ -97,4 +97,16 @@ describe("matching commands", () => {
     expect(found[0]?.positions.length).toBe(4);
     expect(matchCommands(entries, "zzzz", label)).toEqual([]);
   });
+
+  it("a query typed as keys finds the commands on them, as each platform writes them", () => {
+    const ids = (q: string): string[] =>
+      matchCommands(entries, q, label).map((m) => m.entry.command.id);
+    for (const q of ["ctrl+o", "Ctrl + O", "CTRL+O", "mod+o", "cmd+o", "⌘O"]) {
+      expect(ids(q)[0], q).toBe("app.openFolder");
+    }
+    // a start of keys lists every command on them
+    expect(ids("ctrl+")).toContain("app.openFolder");
+    // words still match labels; keys that nothing has: nothing
+    expect(ids("ctrl+alt+shift+z")).toEqual([]);
+  });
 });

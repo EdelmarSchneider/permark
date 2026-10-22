@@ -6,7 +6,7 @@ import type { Api, PluginMethod, PluginMethods, Result } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
-import { ReviewStore, SEEN_MS, kindOf, type ReviewKind } from "./store.svelte";
+import { ReviewStore, SEEN_MS, kindOf, type ReviewKind, type ReviewNotice } from "./store.svelte";
 import type { DocumentView } from "../../api";
 import type { Reason } from "../../core/conditions/available";
 
@@ -69,6 +69,7 @@ async function setup(
   };
   const shown = new Box<Shown>(options.shown ?? { path: GUIDE, hash: guideHash, kind: "blocks" });
   const notes: string[] = [];
+  const notices: ReviewNotice[] = [];
   let repaints = 0;
   const store = new ReviewStore(
     new PluginClient(api, () => MOCK_FOLDER),
@@ -82,10 +83,20 @@ async function setup(
     },
     options.onScreen ?? (() => true),
     options.commitBlocked ?? (() => null),
+    (notice) => {
+      // the window's lasting notice: taking it back dismisses it (its onGone hears so)
+      notices.push(notice);
+      return () => {
+        const at = notices.indexOf(notice);
+        if (at < 0) return;
+        notices.splice(at, 1);
+        notice.onGone("dismissed");
+      };
+    },
   );
   const stop = store.start();
   await settle();
-  return { mock, store, stop, shown, notes, guideHash, repaints: () => repaints };
+  return { mock, store, stop, shown, notes, notices, guideHash, repaints: () => repaints };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -222,13 +233,90 @@ describe("the review store", () => {
     stop();
   });
 
-  it("the basis can be changed and the review is drawn again", async () => {
+  it("the basis can be changed and the review is drawn again, and says so", async () => {
     const { store, mock, stop } = await setup();
     await store.begin();
     await store.setBasis("commit");
     expect(store.basis).toBe("commit");
     expect(mock.probe.plugins.calls).toContain("review.setBasis");
     expect(store.reviewing?.canKeep).toBe(false);
+    expect(store.announcement).toMatch(
+      /^Now comparing with the last commit\. \d+ changes? to review\.$/,
+    );
+    await store.setBasis("read");
+    expect(store.announcement).toMatch(/^Now comparing with what you read\./);
+    stop();
+  });
+
+  it('Done | Esc with changes left: "Review again" reopens at the same change; the changes are held till then', async () => {
+    const { store, mock, notices, stop } = await setup();
+    await store.begin();
+    store.go(1);
+    await store.done();
+    expect(store.state.status).toBe("idle");
+    expect(mock.probe.plugins.calls).not.toContain("review.release");
+    const offered = notices[0]!;
+    expect([offered.text, offered.actions.map((a) => a.label)]).toEqual([
+      "Review closed.",
+      ["Review again"],
+    ]);
+    // the window dismisses it as "action", then runs the button
+    notices.splice(0, 1);
+    offered.onGone("action");
+    offered.actions[0]!.run();
+    await settle();
+    expect(store.state).toMatchObject({ status: "reviewing", at: 1 });
+    expect(store.announcement).toMatch(/^Change 2 of 2/);
+    expect(mock.probe.plugins.calls).not.toContain("review.release");
+    stop();
+  });
+
+  it("the offer has no clock: it waits; dismissed or the document left, the changes are let go once", async () => {
+    const { store, mock, notices, shown, stop } = await setup();
+    const releases = (): number =>
+      mock.probe.plugins.calls.filter((c) => c === "review.release").length;
+    await store.begin();
+    await store.done();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(notices).toHaveLength(1);
+    expect(releases()).toBe(0);
+    // dismissed (x, Esc in it)
+    const first = notices.splice(0, 1)[0]!;
+    first.onGone("dismissed");
+    await settle();
+    expect(releases()).toBe(1);
+    first.actions[0]!.run();
+    await settle();
+    expect(store.state.status).toBe("idle");
+    // closed, then another document: the offer goes with the changes
+    await store.begin();
+    await store.done();
+    expect(notices).toHaveLength(1);
+    shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
+    await settle();
+    expect(notices).toHaveLength(0);
+    expect(releases()).toBe(2);
+    stop();
+  });
+
+  it("asked for again another way (palette, key) while offered: the same change, and the offer goes", async () => {
+    const { store, mock, notices, stop } = await setup();
+    await store.begin();
+    store.go(1);
+    await store.done();
+    await store.begin();
+    expect(store.state).toMatchObject({ status: "reviewing", at: 1 });
+    expect(notices).toHaveLength(0);
+    expect(mock.probe.plugins.calls).not.toContain("review.release");
+    stop();
+  });
+
+  it("a review closed with no changes left in it offers nothing", async () => {
+    const { store, notices, stop } = await setup();
+    await store.begin();
+    await store.revertAll();
+    await store.done();
+    expect(notices).toEqual([]);
     stop();
   });
 

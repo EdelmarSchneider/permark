@@ -9,6 +9,10 @@ import { ImportFlow } from "./importFlow.svelte";
 export const importFlow = new ImportFlow(api, {
   fail: (error) => windowStore.notifyFileOpFailed(error),
   note: (text) => windowStore.notifyNote(text),
+  cancelNote: (text) => {
+    const id = windowStore.notifyNote(text);
+    return () => windowStore.dismiss(id);
+  },
   action: (text, ...actions) => windowStore.notifyAction(text, ...actions),
   project: () => {
     const view = windowStore.view;

@@ -17,6 +17,7 @@ describe("verifier: import flow", () => {
     const flow = new ImportFlow(api, {
       fail: () => undefined,
       note: () => undefined,
+      cancelNote: () => () => undefined,
       action: () => undefined,
       project: () => "demo",
       view: () => "main",
