@@ -1348,6 +1348,12 @@ export default {
   "project.initNote":
     "Tus archivos no se tocan. Las etiquetas, los comentarios y las marcas de lectura que ya tienes en este proyecto se copian.",
   "project.initTitle": "¿Inicializar PerMark en {name}?",
+  "project.newTitle": "¿Convertir {name} en un proyecto?",
+  "project.newWhy":
+    "Esta carpeta ya tiene archivos. PerMark le añade una carpeta .permark, donde guarda los ajustes de este proyecto, tus comentarios y lo que ya leíste.",
+  "project.newNote": "Tus archivos no se tocan.",
+  "project.newConfirm": "Usar esta carpeta",
+  "project.newBack": "Elegir otra carpeta…",
   "project.loadFailed": "No se pudieron leer los ajustes del proyecto.",
   "project.notInitialized": "PerMark no está inicializado en este proyecto",
   "project.notInitializedHint":

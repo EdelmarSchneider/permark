@@ -1325,6 +1325,12 @@ const en = {
   "project.initNote":
     "Your files are not touched. Tags, comments and read marks you already have for this project are copied in.",
   "project.initTitle": "Initialize PerMark in {name}?",
+  "project.newTitle": "Make {name} a project?",
+  "project.newWhy":
+    "This folder already has files in it. PerMark adds a .permark folder to it, where it keeps this project's settings, your comments and what you have read.",
+  "project.newNote": "Your files are not touched.",
+  "project.newConfirm": "Use this folder",
+  "project.newBack": "Choose another folder…",
   "project.loadFailed": "The project settings couldn't be read.",
   "project.notInitialized": "PerMark is not initialized in this project",
   "project.notInitializedHint":

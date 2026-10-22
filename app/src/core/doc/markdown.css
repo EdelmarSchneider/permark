@@ -114,12 +114,13 @@
 .md .anchor:focus-visible {
   opacity: 1;
 }
-/* the keyboard on it: inside the column, never cut by the pane's edge or under the side panel (it hangs in the
-   margin otherwise) */
+/* the keyboard on it: still in the margin (the heading text does not move), but no further out than the column's
+   padding, so the pane's edge or the side panel never cuts it; a very large heading may cover its first letters a
+   little (the mark's own background keeps both readable) */
 .md .anchor:focus-visible {
-  position: static;
-  display: inline-block;
-  margin-inline-end: 0.25em;
+  left: calc(-1 * min(1.1em, var(--sp-5) - 4px));
+  width: auto;
+  background: var(--bg);
 }
 .md p {
   margin: 0 0 1em;

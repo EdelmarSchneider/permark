@@ -11,10 +11,21 @@ export function askInitHere(): void {
   ui.askInit(view.workspace.root, view.workspace.name);
 }
 
-/** New project: a folder is picked and set up, then opens; a folder with files in it is asked about first. */
-export async function newProject(store: WindowStore = windowStore): Promise<void> {
-  const asked = await store.newProject();
+/** New project: a folder is picked and set up, then opens; a folder with files in it is asked about first. `from`:
+ *  the picker starts there (back from that question: the folder chosen is kept, not picked from scratch). */
+export async function newProject(store: WindowStore = windowStore, from?: string): Promise<void> {
+  const asked = await store.newProject(from);
   if (asked !== null) ui.askInit(asked.ask, folderName(asked.ask), true);
+}
+
+/** The person answered the question. New project: no = back to choosing a folder, at the one chosen. */
+export function answerInit(asked: { path: string; opens: boolean }, yes: boolean): void {
+  if (yes) {
+    void confirmInit(asked.path, asked.opens);
+    return;
+  }
+  ui.closeInit();
+  if (asked.opens) void newProject(windowStore, asked.path);
 }
 
 /** The person said yes; `opens`: the folder opens once set up (New project). */

@@ -1369,6 +1369,12 @@ export default {
   "project.initNote":
     "Die Dateien bleiben unberührt. Vorhandene Tags, Kommentare und Gelesen-Markierungen zu diesem Projekt werden übernommen.",
   "project.initTitle": "PerMark in {name} einrichten?",
+  "project.newTitle": "{name} zum Projekt machen?",
+  "project.newWhy":
+    "Dieser Ordner enthält bereits Dateien. PerMark legt darin einen Ordner .permark an, für die Einstellungen dieses Projekts, Kommentare und Lesemarken.",
+  "project.newNote": "Die vorhandenen Dateien bleiben unverändert.",
+  "project.newConfirm": "Diesen Ordner verwenden",
+  "project.newBack": "Anderen Ordner wählen…",
   "project.loadFailed": "Die Projekteinstellungen konnten nicht gelesen werden.",
   "project.notInitialized": "PerMark ist in diesem Projekt nicht eingerichtet",
   "project.notInitializedHint":

@@ -1292,6 +1292,12 @@ export default {
   "project.initLocal": "你在此项目中的私有数据（评论、已读标记）及其缓存。",
   "project.initNote": "你的文件不会被改动。此项目已有的标签、评论和已读标记会被复制进来。",
   "project.initTitle": "在 {name} 中初始化 PerMark？",
+  "project.newTitle": "将 {name} 设为项目？",
+  "project.newWhy":
+    "此文件夹中已有文件。PerMark 会在其中添加一个 .permark 文件夹，用来保存此项目的设置、你的评论和阅读记录。",
+  "project.newNote": "你的文件不会被改动。",
+  "project.newConfirm": "使用此文件夹",
+  "project.newBack": "选择其他文件夹…",
   "project.loadFailed": "无法读取项目设置。",
   "project.notInitialized": "此项目尚未初始化 PerMark",
   "project.notInitializedHint": "初始化会创建 .permark 文件夹，项目可在其中保存与团队共享的设置。",

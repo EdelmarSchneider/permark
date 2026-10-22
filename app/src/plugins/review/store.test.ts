@@ -83,7 +83,16 @@ async function setup(
     },
     options.onScreen ?? (() => true),
     options.commitBlocked ?? (() => null),
-    (notice) => notices.push(notice),
+    (notice) => {
+      // the window's lasting notice: taking it back dismisses it (its onGone hears so)
+      notices.push(notice);
+      return () => {
+        const at = notices.indexOf(notice);
+        if (at < 0) return;
+        notices.splice(at, 1);
+        notice.onGone("dismissed");
+      };
+    },
   );
   const stop = store.start();
   await settle();
@@ -246,11 +255,15 @@ describe("the review store", () => {
     await store.done();
     expect(store.state.status).toBe("idle");
     expect(mock.probe.plugins.calls).not.toContain("review.release");
-    expect(notices.map((n) => [n.text, n.actions.map((a) => a.label)])).toEqual([
-      ["Review closed.", ["Review again"]],
+    const offered = notices[0]!;
+    expect([offered.text, offered.actions.map((a) => a.label)]).toEqual([
+      "Review closed.",
+      ["Review again"],
     ]);
-    notices[0]!.actions[0]!.run();
-    notices[0]!.onGone("action");
+    // the window dismisses it as "action", then runs the button
+    notices.splice(0, 1);
+    offered.onGone("action");
+    offered.actions[0]!.run();
     await settle();
     expect(store.state).toMatchObject({ status: "reviewing", at: 1 });
     expect(store.announcement).toMatch(/^Change 2 of 2/);
@@ -258,41 +271,43 @@ describe("the review store", () => {
     stop();
   });
 
-  it("the offer to review again ends: the changes are let go (once), also when the person leaves first", async () => {
+  it("the offer has no clock: it waits; dismissed or the document left, the changes are let go once", async () => {
     const { store, mock, notices, shown, stop } = await setup();
     const releases = (): number =>
       mock.probe.plugins.calls.filter((c) => c === "review.release").length;
     await store.begin();
     await store.done();
-    notices[0]!.onGone("timeout");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(notices).toHaveLength(1);
+    expect(releases()).toBe(0);
+    // dismissed (x, Esc in it)
+    const first = notices.splice(0, 1)[0]!;
+    first.onGone("dismissed");
     await settle();
     expect(releases()).toBe(1);
-    // too late: nothing to reopen
-    notices[0]!.actions[0]!.run();
+    first.actions[0]!.run();
     await settle();
     expect(store.state.status).toBe("idle");
-    // closed, then the person opens another document before the offer goes
+    // closed, then another document: the offer goes with the changes
     await store.begin();
     await store.done();
+    expect(notices).toHaveLength(1);
     shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
     await settle();
-    expect(releases()).toBe(2);
-    notices[1]!.onGone("timeout");
-    await settle();
+    expect(notices).toHaveLength(0);
     expect(releases()).toBe(2);
     stop();
   });
 
-  it("opened again from the palette while the offer stands: the offer going later lets nothing go", async () => {
+  it("asked for again another way (palette, key) while offered: the same change, and the offer goes", async () => {
     const { store, mock, notices, stop } = await setup();
     await store.begin();
+    store.go(1);
     await store.done();
     await store.begin();
-    expect(store.state.status).toBe("reviewing");
-    notices[0]!.onGone("timeout");
-    await settle();
+    expect(store.state).toMatchObject({ status: "reviewing", at: 1 });
+    expect(notices).toHaveLength(0);
     expect(mock.probe.plugins.calls).not.toContain("review.release");
-    expect(store.state.status).toBe("reviewing");
     stop();
   });
 

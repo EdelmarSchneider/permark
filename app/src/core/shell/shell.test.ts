@@ -37,7 +37,8 @@ const { installWindowKeys } = await import("../commands/install");
 const { contributions } = await import("../plugins/instance.svelte");
 const { conditions } = await import("../conditions/context.svelte");
 const { pluginsStore, projectSettings } = await import("./settings/stores.svelte");
-const { confirmInit, askInitHere, newProject } = await import("./initProject");
+const { confirmInit, askInitHere, newProject, answerInit } = await import("./initProject");
+const { default: Notices } = await import("./Notices.svelte");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 const store = windowStore;
@@ -458,6 +459,44 @@ describe("the project settings and Initialize PerMark", () => {
     expect(ui.initDialog.status).toBe("closed");
     await until(() => conditions.current.permark === "initialized", "initialized");
     expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
+  });
+
+  it("New project, the question on a folder with files: plain words, the safe button goes back to choosing", async () => {
+    await open();
+    component = mount(InitDialog, {
+      target,
+      props: { name: "permark-docs", path: MOCK_FOLDER, fresh: true, answer: () => undefined },
+    });
+    flushSync();
+    expect(target.textContent).toContain("Make permark-docs a project?");
+    expect(target.textContent).toContain("This folder already has files in it.");
+    expect(target.textContent).not.toContain(".gitignore");
+    expect(document.activeElement?.textContent?.trim()).toBe("Choose another folder…");
+    await unmount(component);
+    component = null;
+    // no: the folder picker again, starting at the folder chosen
+    await newProject();
+    expect(ui.initDialog.status).toBe("asking");
+    answerInit({ path: MOCK_FOLDER, opens: true }, false);
+    await until(() => mock.probe.pickedFrom.at(-1) === MOCK_FOLDER, "picker at the folder");
+    await until(() => ui.initDialog.status === "asking", "asked again");
+    ui.closeInit();
+  });
+
+  it("a notice that waits for the person: Esc with the keyboard in it dismisses it", async () => {
+    const gone: string[] = [];
+    component = mount(Notices, { target, props: { store } });
+    store.notifyLasting({ text: "Review closed.", actions: [], onGone: (how) => gone.push(how) });
+    flushSync();
+    const mine = byText("[role=group]", "Review closed.");
+    const dismiss = mine.querySelector<HTMLButtonElement>("button")!;
+    dismiss.focus();
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    dismiss.dispatchEvent(esc);
+    flushSync();
+    expect(esc.defaultPrevented).toBe(true);
+    expect(gone).toEqual(["dismissed"]);
+    expect(target.textContent).not.toContain("Review closed.");
   });
 
   it("the command and the remedy exist only while the project is not initialized", async () => {
