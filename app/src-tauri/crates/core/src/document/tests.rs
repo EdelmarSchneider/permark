@@ -661,9 +661,11 @@ fn single(dir: &tempfile::TempDir, name: &str, bytes: &[u8]) -> (Arc<Documents>,
 }
 
 #[test]
-fn a_single_file_workspace_reads_only_its_own_file() {
+fn a_single_file_workspace_reads_the_files_of_its_folder_and_nothing_outside() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("other.md"), "o").unwrap();
+    std::fs::create_dir_all(dir.path().join("docs")).unwrap();
+    std::fs::write(dir.path().join("docs/guide ü.md"), "# Guide\n").unwrap();
     let (docs, _) = single(&dir, "note.md", b"# Note\n\n![i](pic.png)\n");
     let view = docs.open("w", "note.md", &[], &formats()).unwrap();
     let Body::Markdown { blocks, .. } = &view.body else {
@@ -675,18 +677,67 @@ fn a_single_file_workspace_reads_only_its_own_file() {
         .as_ref()
         .unwrap()
         .contains("pm-asset:pic.png"));
+    // B3: a link to a sibling | a file below the folder opens in the window
+    assert!(docs.open("w", "other.md", &[], &formats()).is_ok());
+    assert!(docs.open("w", "docs/guide ü.md", &[], &formats()).is_ok());
+    assert_eq!(docs.text("docs/guide ü.md").unwrap(), "# Guide\n");
     assert_eq!(
-        docs.open("w", "other.md", &[], &formats())
+        docs.open("w", "docs/none.md", &[], &formats())
             .unwrap_err()
             .kind,
         ErrorKind::NotFound
     );
-    assert!(docs.open("w", "../note.md", &[], &formats()).is_err());
+    // nothing outside the folder: parent steps, absolute paths, a link | junction leading out
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("secret.md"), "s").unwrap();
+    let parent_name = dir
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    for path in [
+        "../note.md".to_owned(),
+        "docs/../../x.md".to_owned(),
+        format!("../{parent_name}/note.md"),
+        outside.path().join("secret.md").display().to_string(),
+        "/etc/passwd".to_owned(),
+        "C:/Windows/win.ini".to_owned(),
+    ] {
+        assert!(docs.open("w", &path, &[], &formats()).is_err(), "{path}");
+        assert!(docs.text(&path).is_err(), "{path}");
+    }
+    if link_out(&dir.path().join("jump"), outside.path()) {
+        for path in ["jump/secret.md", "jump", "jump/new.md"] {
+            assert!(docs.open("w", path, &[], &formats()).is_err(), "{path}");
+            assert!(docs.text(path).is_err(), "{path}");
+        }
+    } else {
+        eprintln!("SKIPPED: cannot make a link | junction here");
+    }
     // another spelling of its name is the file itself where the file system ignores case (Windows, macOS by default)
     assert_eq!(
         docs.open("w", "NOTE.md", &[], &formats()).is_ok(),
         dir.path().join("NOTE.md").exists()
     );
+}
+
+/// A link (Unix: symlink; Windows: junction, no admin needed) at `link` leading to `target`.
+fn link_out(link: &std::path::Path, target: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link).is_ok()
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .stdout(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    }
 }
 
 #[test]

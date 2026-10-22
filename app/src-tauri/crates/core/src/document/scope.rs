@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::error::{ErrorKind, IpcError};
+use crate::error::IpcError;
 use crate::format::DocEnv;
 use crate::links::{resolve, Target};
 use crate::notes::NotesScope;
@@ -15,7 +15,8 @@ use crate::paths::{FileScope, Vault, VaultPath};
 #[derive(Debug, Clone)]
 pub enum DocScope {
     Project(Vault),
-    /// Only its own file is a document; the files next to it are assets.
+    /// A single-file workspace: its own file and any file below its folder (links to siblings open there); nothing
+    /// outside the folder (`..`, absolute paths, links | junctions leading out are refused).
     File(FileScope),
     /// The Notes window: the notes folder and the loose files.
     Notes(Arc<NotesScope>),
@@ -73,18 +74,13 @@ impl DocScope {
     /// Folded identity key + absolute path of a document path (checked against the boundary).
     ///
     /// # Errors
-    /// Escapes the workspace | invalid | not found; in a single-file workspace, any file but its own.
+    /// Escapes the workspace (single file: its folder) | invalid | not found.
     pub fn resolve(&self, path: &str) -> Result<(String, PathBuf), IpcError> {
         let parsed = VaultPath::parse(path)?;
         let abs = match self {
             Self::Project(vault) => vault.resolve(&parsed)?,
-            Self::File(scope) => {
-                let abs = scope.resolve_asset(&parsed)?;
-                if abs != scope.file() {
-                    return Err(IpcError::new(ErrorKind::NotFound).subject(path));
-                }
-                abs
-            }
+            // any file under the folder (B3: links to siblings); `resolve_under` refuses every way out
+            Self::File(scope) => scope.resolve_asset(&parsed)?,
             Self::Notes(scope) => return scope.resolve(path),
         };
         Ok((parsed.key(), abs))
