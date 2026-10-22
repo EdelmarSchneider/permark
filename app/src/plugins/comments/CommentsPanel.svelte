@@ -3,6 +3,7 @@
   // shown from the margin scrolls into view and is marked for a moment.
   import Send from "@lucide/svelte/icons/send";
   import { t, tn } from "../../core/i18n";
+  import OnlyProject from "../../core/projects/OnlyProject.svelte";
   import CommentRow from "./CommentRow.svelte";
   import { documentTitle } from "./model";
   import { comments } from "./store.svelte";
@@ -11,6 +12,11 @@
   let list: HTMLElement | undefined = $state();
   let marked = $state<string | null>(null);
   let doneOpen = $state(false);
+  /** Open comments shown (all | the project's). */
+  const openShown = $derived(comments.groups.reduce((n, g) => n + g.comments.length, 0));
+
+  // one project's comments last while the tab shows: back later, it lists all again
+  $effect(() => () => comments.showOnly(null));
 
   // a comment was asked for (a click in the margin): scroll to it, mark it for a moment
   $effect(() => {
@@ -35,9 +41,10 @@
 <section class="comments" aria-label={t("comments.list")}>
   <header>
     <h2>{t("comments.list")}</h2>
-    {#if comments.count > 0}<span class="count">{comments.count}</span>{/if}
+    {#if openShown > 0}<span class="count">{openShown}</span>{/if}
     <span class="spacer"></span>
-    {#if comments.count > 0}
+    <!-- sending is for every open comment: offered while all are listed -->
+    {#if comments.count > 0 && comments.only === null}
       <button
         type="button"
         class="send"
@@ -50,6 +57,10 @@
     {/if}
   </header>
 
+  {#if comments.only !== null}
+    <OnlyProject name={comments.only.name} clear={() => comments.showOnly(null)} />
+  {/if}
+
   <div class="body" bind:this={list}>
     {#if !comments.ready}
       <p class="note">{t("comments.loading")}</p>
@@ -57,7 +68,7 @@
       <p class="note strong">{t("comments.empty.title")}</p>
       <p class="note">{t("comments.empty.text")}</p>
     {:else}
-      {#if comments.count === 0}
+      {#if openShown === 0}
         <p class="note">{t("comments.allDone")}</p>
       {/if}
       {#each comments.groups as group (group.path)}

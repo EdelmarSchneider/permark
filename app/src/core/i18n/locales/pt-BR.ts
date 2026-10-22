@@ -2041,4 +2041,89 @@ export default {
   "projects.card.gitError": "O git não consegue ler este projeto.",
   "projects.card.noCommits": "Sem commits ainda",
   "projects.status.prefix": "{short} ·",
+  // ---- projects round 4: official | local | unlisted, promote, official lists
+  "tags.status.official": "Oficial",
+  "tags.status.local": "Local de {short}",
+  "tags.status.localAny": "Local de um projeto",
+  "tags.status.unlisted": "Fora da lista (encontrada em arquivos, em nenhuma lista)",
+  "projects.category.unlisted": "Fora da lista (em nenhuma lista)",
+  "tags.promote": "Tornar oficial em {root}",
+  "projects.category.promote": "Tornar oficial em {root}",
+  "tags.promoteAsk": "“{name}” passa a ser uma tag oficial para todos os projetos em {root}.",
+  "projects.category.promoteAsk":
+    "“{name}” passa a ser uma categoria oficial para todos os projetos em {root}.",
+  "tags.promoteConfirm": "Tornar oficial",
+  "tags.promoted": "“{name}” agora é uma tag oficial de {root}.",
+  "projects.category.promoted": "“{name}” agora é uma categoria oficial de {root}.",
+  "tags.officialLook": "A cor e o ícone vêm da lista oficial de {root}.",
+  "projects.vocabulary.saves":
+    "O PerMark salva a lista oficial nesta pasta (.permark/vocabulary.toml).",
+  "projects.vocabulary.creates": "O PerMark cria .permark/vocabulary.toml nesta pasta.",
+  "projects.vocabulary.title": "Tags e categorias oficiais",
+  "projects.vocabulary.intro":
+    "Tags e categorias oficiais valem para todos os projetos em {root}. Os nomes próprios de um projeto contam como locais; tags encontradas só em arquivos ficam fora da lista.",
+  "projects.vocabulary.tags": "Tags oficiais",
+  "projects.vocabulary.categories": "Categorias oficiais",
+  "projects.vocabulary.none": "Nenhuma ainda.",
+  "projects.vocabulary.addTag": "Nova tag oficial",
+  "projects.vocabulary.addCategory": "Nova categoria oficial",
+  "projects.vocabulary.add": "Adicionar",
+  "projects.vocabulary.typeName": "Digite um nome primeiro.",
+  "projects.vocabulary.already": "“{name}” já é oficial.",
+  "projects.vocabulary.editHint": "Você também pode editar a lista à mão.",
+  "projects.vocabulary.unreadable":
+    "Não é possível ler a lista oficial desta pasta (linha {line}). O PerMark não a altera até que seja corrigida.",
+  "projects.vocabulary.newer":
+    "A lista oficial foi escrita por uma versão mais nova do PerMark. As alterações ficam desativadas até atualizar o PerMark.",
+  "projects.vocabulary.unavailable": "A lista oficial desta pasta não pode ser alterada agora.",
+  "projects.vocabulary.conflict":
+    "A lista oficial mudou enquanto o PerMark a salvava. Tente de novo.",
+  "projects.rules.tags": "Tags",
+  "projects.rules.tagsInfoNone":
+    "As tags oficiais vêm de {root}. Este projeto não tem tags próprias.",
+  "projects.rules.tagsInfo.one":
+    "As tags oficiais vêm de {root}. Este projeto tem 1 tag própria, mostrada como local.",
+  "projects.rules.tagsInfo.other":
+    "As tags oficiais vêm de {root}. Este projeto tem {n} tags próprias, mostradas como locais.",
+  "comments.projectCount.one": "1 comentário aberto",
+  "comments.projectCount.other": "{n} comentários abertos",
+  // ---- projects round 4 UX fixes: marks legend, official list edits, project-only lists
+  "tags.countSr.one": "1 arquivo",
+  "tags.countSr.other": "{n} arquivos",
+  "tags.promoteRow": "Tornar oficial",
+  "tags.promoteRowNamed": "Tornar oficial: {name}",
+  "tags.officialEdit": "Editar a lista oficial…",
+  "tags.legend.label": "O que as marcas significam",
+  "tags.legend.local": "Local de um projeto",
+  "tags.legend.unlisted": "Fora da lista (só em arquivos)",
+  "projects.category.offered": "Categorias oficiais: {names}. Escolha uma ou digite a sua.",
+  "projects.only": "Mostrando só {name}",
+  "projects.showAll": "Mostrar tudo",
+  "projects.vocabulary.keep":
+    "Renomear ou remover um nome muda só esta lista: os arquivos e os cartões de projeto mantêm os nomes que usam, que passam a contar como locais ou fora da lista.",
+  "projects.vocabulary.rename": "Renomear",
+  "projects.vocabulary.renameNamed": "Renomear {name}",
+  "projects.vocabulary.newName": "Novo nome para {name}",
+  "projects.vocabulary.save": "Salvar",
+  "projects.vocabulary.remove": "Remover",
+  "projects.vocabulary.removeNamed": "Remover {name}",
+  "projects.vocabulary.look": "Cor e ícone",
+  "projects.vocabulary.lookNamed": "Cor e ícone de {name}",
+  "projects.vocabulary.done": "Pronto",
+  "projects.vocabulary.removeAskTag":
+    "Remover “{name}” das tags oficiais? Os arquivos mantêm esta tag como está.",
+  "projects.vocabulary.removeAskCategory":
+    "Remover “{name}” das categorias oficiais? Os projetos mantêm esta categoria como está.",
+  "projects.vocabulary.renamedTag":
+    "A tag oficial “{name}” agora se chama “{to}”. Os arquivos mantêm “{name}” como está.",
+  "projects.vocabulary.renamedCategory":
+    "A categoria oficial “{name}” agora se chama “{to}”. Os projetos mantêm “{name}” como está.",
+  "projects.vocabulary.removedTag":
+    "“{name}” não é mais uma tag oficial. Os arquivos a mantêm como está.",
+  "projects.vocabulary.removedCategory":
+    "“{name}” não é mais uma categoria oficial. Os projetos a mantêm como está.",
+  "projects.vocabulary.added": "“{name}” adicionada.",
+  "projects.vocabulary.undone": "Desfeito: “{name}” não é mais oficial.",
+  "projects.vocabulary.addAs":
+    "Será adicionada como “{name}” (minúsculas, hífens no lugar de espaços).",
 } satisfies Messages;

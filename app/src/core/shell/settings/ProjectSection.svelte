@@ -54,6 +54,8 @@
             id="root-card"
             target={{ kind: "root" }}
             place={card.place}
+            categoryStatus={projects.view.rootCategoryStatus}
+            short={card.short}
             values={{
               name: card.name,
               short: card.short,

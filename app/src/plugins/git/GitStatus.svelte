@@ -169,7 +169,8 @@
     >
       <GitBranch size={13} aria-hidden="true" />
       {#if prefixParts !== null}<span class="prefix"
-          ><span class="short">{prefixParts.short}</span>{prefixParts.rest}</span
+          ><span class="short">{prefixParts.short}</span><span class="rest">{prefixParts.rest}</span
+          ></span
         >{/if}
       <span class="branch">{shown.branch}</span>
       {#if shown.unborn}
@@ -263,6 +264,11 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* " ·": a flex item drops its leading space unless it is kept (R1: "repo-05· main") */
+  .rest {
+    flex: none;
+    white-space: pre;
   }
   .branch {
     max-width: 18ch;

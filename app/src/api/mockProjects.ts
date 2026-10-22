@@ -375,6 +375,9 @@ export type ProjectsProbe = {
   reset(): void;
   /** Asks "is this the missing one?" in the window's folder (a project moved | renamed while PerMark was closed). */
   askMove(ask: MoveAsk): void;
+  /** The next writes of the official list (promote, rename, remove, look) fail: the list changed while saving
+   *  (`conflict`) | `.permark/` can't be written (`io`, as a read-only folder answers); `null`: they work again. */
+  failPromote(how: "conflict" | "io" | null): void;
 };
 
 type Deps = {
@@ -413,6 +416,7 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
   let feedId = 1_000_000;
   let nextUid = 1;
   const calls: string[] = [];
+  let promoteFails: "conflict" | "io" | null = null;
 
   /** The view of the window's folder (made from its fixture on first use; plain folders get a plain view). */
   function current(): ProjectsView {
@@ -489,6 +493,26 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
   }
 
   /** The kind's list replaced (sorted by name like the backend), marks again, windows + tags plugin told. */
+  /** The next writes of the official list fail while `failPromote` says so (`conflict` | read-only `io`). */
+  function writeFails(
+    command:
+      "vocabulary_promote" | "vocabulary_rename" | "vocabulary_remove" | "vocabulary_set_style",
+  ): Promise<Result<null>> | null {
+    if (promoteFails === null) return null;
+    return Promise.resolve({
+      ok: false,
+      error: {
+        kind: "backend",
+        command,
+        error: {
+          kind: promoteFails,
+          subject: promoteFails === "io" ? ".permark/vocabulary.toml" : "vocabulary",
+          detail: promoteFails === "io" ? "Access is denied. (os error 5)" : null,
+        },
+      },
+    });
+  }
+
   function vocabCommit(v: ProjectsView, kind: VocabularyKind, list: VocabularyEntry[]): void {
     const sorted = [...list].sort((a, b) => a.name.localeCompare(b.name));
     const tags = kind === "tag" ? sorted : v.vocabulary.tags;
@@ -701,6 +725,8 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       if (!vocabWritable(v)) return vocabRefused("vocabulary_promote", "unavailable", "vocabulary");
       const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
       if (list.some((e) => e.name === clean)) return ok(null);
+      const failed = writeFails("vocabulary_promote");
+      if (failed) return failed;
       vocabCommit(v, kind, [...list, { name: clean, color: null, icon: null }]);
       return ok(null);
     },
@@ -711,6 +737,8 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       if (from === "") return vocabRefused("vocabulary_rename", "invalidData", "name");
       if (to === "") return vocabRefused("vocabulary_rename", "invalidData", "newName");
       if (!vocabWritable(v)) return vocabRefused("vocabulary_rename", "unavailable", "vocabulary");
+      const failed = writeFails("vocabulary_rename");
+      if (failed) return failed;
       const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
       if (!list.some((e) => e.name === from)) {
         return vocabRefused("vocabulary_rename", "notFound", "name");
@@ -732,6 +760,8 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       const clean = vocabName(name);
       if (clean === "") return vocabRefused("vocabulary_remove", "invalidData", "name");
       if (!vocabWritable(v)) return vocabRefused("vocabulary_remove", "unavailable", "vocabulary");
+      const failed = writeFails("vocabulary_remove");
+      if (failed) return failed;
       const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
       if (!list.some((e) => e.name === clean)) {
         return vocabRefused("vocabulary_remove", "notFound", "name");
@@ -756,6 +786,8 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       if (!vocabWritable(v)) {
         return vocabRefused("vocabulary_set_style", "unavailable", "vocabulary");
       }
+      const failed = writeFails("vocabulary_set_style");
+      if (failed) return failed;
       const list = kind === "tag" ? v.vocabulary.tags : v.vocabulary.categories;
       const entry = list.find((e) => e.name === clean);
       if (!entry) return vocabRefused("vocabulary_set_style", "notFound", "name");
@@ -781,8 +813,12 @@ export function createMockProjects(deps: Deps): { handlers: Handlers; probe: Pro
       views.clear();
       undos.clear();
       calls.length = 0;
+      promoteFails = null;
     },
     askMove: (ask) => commit({ ...current(), ask }),
+    failPromote: (how) => {
+      promoteFails = how;
+    },
   };
   return { handlers, probe };
 }

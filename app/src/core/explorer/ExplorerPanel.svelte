@@ -9,6 +9,7 @@
   import FilePlus from "@lucide/svelte/icons/file-plus";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import GitBranch from "@lucide/svelte/icons/git-branch";
+  import GitCommitHorizontal from "@lucide/svelte/icons/git-commit-horizontal";
   import ListFilter from "@lucide/svelte/icons/list-filter";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import type { ProjectRow, TreeNode } from "../../api";
@@ -844,7 +845,7 @@
                       "fact",
                       fact.chip && "chip",
                       fact.warn && "warn",
-                      fact.branch && "marked",
+                      (fact.branch || fact.commit) && "marked",
                     ]}
                     title={fact.title ?? fact.text}
                     aria-hidden="true"
@@ -852,6 +853,9 @@
                         size={12}
                         aria-hidden="true"
                       />{:else if fact.branch}<GitBranch
+                        size={11}
+                        aria-hidden="true"
+                      />{:else if fact.commit}<GitCommitHorizontal
                         size={11}
                         aria-hidden="true"
                       />{/if}{#if fact.text !== ""}<span class="fact-text">{fact.text}</span

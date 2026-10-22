@@ -8,7 +8,7 @@
   import type { ProjectRow } from "../../api";
   import { api } from "../../api";
   import { conditions } from "../conditions/context.svelte";
-  import { t } from "../i18n";
+  import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
   import type { TreeBadge } from "../plugins/registry.svelte";
   import Badge from "../shell/Badge.svelte";
@@ -38,6 +38,10 @@
   const id = $derived(`prow-${row.key.replace(/[^a-z0-9]/gi, "_")}`);
   const agentOn = $derived(conditions.current.agent.status !== "off");
   const quietOn = $derived(conditions.current.plugins.includes("quiet"));
+  /** Tags row (round 4): plugin `tags` on and the opened folder has official lists. */
+  const tagsRow = $derived(
+    conditions.current.plugins.includes("tags") && projects.view?.vocabulary.active === true,
+  );
   const locked = $derived(projects.readOnly);
   const included = $derived(row.state === "included");
   const missing = $derived(row.state === "missing");
@@ -244,6 +248,18 @@
           </div>
         </div>
       {/if}
+      {#if tagsRow}
+        <div class="rule">
+          <span class="rule-name">{t("projects.rules.tags")}</span>
+          <div class="rule-control">
+            <span class="info"
+              >{row.localTags === 0
+                ? t("projects.rules.tagsInfoNone", { root: rootName })
+                : tn("projects.rules.tagsInfo", row.localTags, { root: rootName })}</span
+            >
+          </div>
+        </div>
+      {/if}
       {#each infos as info, n (n)}
         <div class="rule">
           <span class="rule-name">{info.label}</span>
@@ -257,6 +273,8 @@
             {id}
             target={{ kind: "member", uid: row.uid ?? "" }}
             place={row.cardPlace ?? "profile"}
+            categoryStatus={row.categoryStatus}
+            short={row.short}
             values={{
               name: row.name,
               short: row.short,

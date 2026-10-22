@@ -187,6 +187,47 @@ describe("the project node", () => {
 });
 
 describe("the detail card", () => {
+  it("Project settings… with the git block shown: no stale read of the closed card (R3, derived_inert)", async () => {
+    const warn = vi.spyOn(console, "warn");
+    // Chromium fires focusout when the focused element leaves the DOM (jsdom does not): play it
+    const remove = Element.prototype.remove;
+    Element.prototype.remove = function (this: Element): void {
+      const at = document.activeElement;
+      if (at instanceof HTMLElement && this.contains(at)) {
+        at.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: null }));
+      }
+      remove.call(this);
+    };
+    cleanups.push(() => {
+      Element.prototype.remove = remove;
+    });
+    await openFolder(MOCK_PROJECTS_LISTED);
+    const { store } = await explorer();
+    await expand(store, "tools");
+    await until(() => node("tools/notes-app") !== null, "node");
+    projects.openCard({ path: "tools/notes-app", from: "menu", anchor: new DOMRect() });
+    flushSync();
+    await until(() => document.querySelector("[data-project-git]") !== null, "git block");
+    await until(
+      () => (document.querySelector("[data-project-git]")?.textContent ?? "").includes("Branch"),
+      "git facts",
+    );
+    const card = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const settings = Array.from(card.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => b.textContent?.trim() === "Project settings…",
+    )!;
+    settings.focus();
+    settings.click();
+    flushSync();
+    await tick();
+    // the git block's facts change after the card went (a repo update arrives): nothing reads the closed card
+    mock.probe.plugins.gitMembers.shape((r: RepoSummary) => ({ ...r, changed: 7 }));
+    await new Promise((r) => setTimeout(r, 300));
+    flushSync();
+    expect(document.querySelector("[data-project-git]")).toBeNull();
+    expect(warn.mock.calls.some((c) => String(c[0]).includes("derived_inert"))).toBe(false);
+  });
+
   it("branch, ahead | behind, changed files, last commit; details asked while it shows", async () => {
     await openFolder(MOCK_PROJECTS_LISTED);
     const { store } = await explorer();
@@ -315,8 +356,14 @@ describe("adversarial: many projects, odd repositories", () => {
     expect(facts.some((f) => f.textContent === "REBASING" && f.classList.contains("chip"))).toBe(
       true,
     );
+    // detached: the commit with its mark, the words in the tooltip (R2)
     expect(
-      facts.some((f) => /^not on a branch \(at [0-9a-f]{7}\)$/.test(f.textContent ?? "")),
+      facts.some(
+        (f) =>
+          /^[0-9a-f]{7}$/.test(f.textContent ?? "") &&
+          /^not on a branch \(at [0-9a-f]{7}\)$/.test(f.title) &&
+          f.querySelector("svg") !== null,
+      ),
     ).toBe(true);
     expect(facts.some((f) => f.textContent === long && f.title === long)).toBe(true);
     expect(facts.some((f) => f.textContent === "功能/数据-ünïcödé ✨")).toBe(true);
@@ -337,6 +384,8 @@ describe("the status item", () => {
     cleanups.push(() => void documents.show(null));
     await documents.show("tools/notes-app/README.md");
     await until(() => target.querySelector(".prefix")?.textContent === "notes-app ·", "prefix");
+    // the space before "·" is its own piece, kept whatever the layout (R1)
+    expect(target.querySelector(".prefix .rest")?.textContent).toBe(" ·");
     expect(target.querySelector(".branch")?.textContent).toBe("develop");
     await until(() => (target.textContent ?? "").includes("3 changed"), "count");
     await until(() => (interest("glance") ?? []).includes(NOTES), "status asks its count");
