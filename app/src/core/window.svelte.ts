@@ -295,10 +295,19 @@ export class WindowStore {
     return true;
   }
 
-  /** New project: a folder is picked, PerMark is initialized in it, and it opens like any folder. */
-  async newProject(): Promise<void> {
+  /** New project: a folder is picked; an empty one is set up and opens like any folder. A folder with files in it
+   *  comes back (`ask`): `.permark/` would go in among them, so the person is asked first. */
+  async newProject(): Promise<{ ask: string } | null> {
     const path = await this.#api.pickFolder(t("dialog.newProject"));
-    if (path === null) return;
+    if (path === null) return null;
+    const empty = await this.#api.folderEmpty(path);
+    if (!empty.ok || !empty.value) return { ask: path };
+    await this.createProject(path);
+    return null;
+  }
+
+  /** PerMark is set up in the folder, which then opens. */
+  async createProject(path: string): Promise<void> {
     if (await this.initProject(path)) await this.open(path);
   }
 

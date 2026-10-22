@@ -696,6 +696,8 @@ export function createMockApi(): Api & {
       }
       return ok(null);
     },
+    // the demo project has files; any other folder picked is new
+    folderEmpty: (path) => ok(path !== MOCK_FOLDER),
     recentList: () => ok(recent),
     recentRemove: (path) => {
       recent = recent.filter((r) => r.path !== path);

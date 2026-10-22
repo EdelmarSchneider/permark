@@ -1,13 +1,13 @@
 <script lang="ts">
-  // "Initialize PerMark in this folder?": says what is created, then asks. Enter = Initialize, Escape | Cancel |
-  // backdrop = nothing happens.
+  // "Initialize PerMark in this folder?": says what is created, then asks. The keyboard starts on Cancel (a stray
+  // Enter writes nothing); Escape | Cancel | backdrop = nothing happens.
   import { t } from "../i18n";
 
   type Props = { name: string; path: string; answer: (yes: boolean) => void };
   let { name, path, answer }: Props = $props();
 
   let dialog: HTMLElement | undefined = $state();
-  let yes: HTMLButtonElement | undefined = $state();
+  let cancel: HTMLButtonElement | undefined = $state();
 
   function onkeydown(e: KeyboardEvent): void {
     if (e.key === "Escape") {
@@ -30,7 +30,7 @@
 
   $effect(() => {
     const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    yes?.focus();
+    cancel?.focus();
     return () => before?.focus();
   });
 </script>
@@ -64,8 +64,10 @@
       <p class="note">{t("project.initNote")}</p>
     </div>
     <footer>
-      <button type="button" class="btn" onclick={() => answer(false)}>{t("common.cancel")}</button>
-      <button bind:this={yes} type="button" class="btn btn--primary" onclick={() => answer(true)}>
+      <button bind:this={cancel} type="button" class="btn" onclick={() => answer(false)}>
+        {t("common.cancel")}
+      </button>
+      <button type="button" class="btn btn--primary" onclick={() => answer(true)}>
         {t("project.initConfirm")}
       </button>
     </footer>

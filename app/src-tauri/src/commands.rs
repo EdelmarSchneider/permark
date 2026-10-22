@@ -1322,6 +1322,13 @@ pub fn project_init(handle: AppHandle, path: String) -> Result<(), IpcError> {
     state(&handle).init_project(std::path::Path::new(&path))
 }
 
+/// Whether a folder has nothing in it yet (New project asks first before writing `.permark/` into a folder with files).
+/// A folder that cannot be read counts as not empty.
+#[tauri::command(async)]
+pub fn folder_empty(path: String) -> bool {
+    std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_none())
+}
+
 /// The shared settings of the project the window shows.
 #[tauri::command(async)]
 pub fn project_config_get(handle: AppHandle, window: Webview) -> Result<ProjectSettings, IpcError> {
@@ -1501,6 +1508,7 @@ commands![
     search_recent,
     plugin_call,
     project_init,
+    folder_empty,
     project_config_get,
     project_config_set,
     plugins_list,

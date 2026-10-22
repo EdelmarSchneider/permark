@@ -27,8 +27,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   "project",
 ];
 export type SettingsPage = { status: "closed" } | { status: "open"; section: SettingsSection };
-/** The "Initialize PerMark" question: which folder (`path`, absolute) and what it is called. */
-export type InitDialog = { status: "closed" } | { status: "asking"; path: string; name: string };
+/** The "Initialize PerMark" question: which folder (`path`, absolute), what it is called, and whether it opens once
+ *  set up (New project; otherwise it is the project shown already). */
+export type InitDialog =
+  { status: "closed" } | { status: "asking"; path: string; name: string; opens: boolean };
 
 /** Focus mode: only the page. */
 export type Focus = "off" | "on";
@@ -156,8 +158,8 @@ class UiStore {
   }
 
   /** Asks whether to initialize PerMark in a folder. */
-  askInit(path: string, name: string): void {
-    this.initDialog = { status: "asking", path, name };
+  askInit(path: string, name: string, opens = false): void {
+    this.initDialog = { status: "asking", path, name, opens };
   }
 
   closeInit(): void {

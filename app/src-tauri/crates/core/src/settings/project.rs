@@ -308,8 +308,37 @@ fn set_key(root: &mut Table, table: Option<&str>, key: &str, value: Option<Value
     }
 }
 
-/// Applies a change to a document: only the bytes of that key change.
+/// Bytes of the file's header: its first whole lines, while blank or a comment.
+fn header_len(text: &str) -> usize {
+    let mut len = 0;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_start();
+        if !line.ends_with('\n') || !(trimmed.is_empty() || trimmed.starts_with('#')) {
+            break;
+        }
+        len += line.len();
+    }
+    len
+}
+
+/// Applies a change to a document: only the bytes of that key change. The header (comments above the first key |
+/// table) stays first: TOML keeps it as the trailing text of a file of comments only (the one "Initialize PerMark"
+/// writes), which would put a new table above it, or as the prefix of the first table, which would go with it.
 pub fn apply_project_change(doc: &mut DocumentMut, change: &ProjectSettingChange) {
+    let text = doc.to_string();
+    let (head, body) = text.split_at(header_len(&text));
+    if !head.is_empty() {
+        if let Ok(mut rest) = body.parse::<DocumentMut>() {
+            change_keys(&mut rest, change);
+            rest.as_table_mut().decor_mut().set_prefix(head);
+            *doc = rest;
+            return;
+        }
+    }
+    change_keys(doc, change);
+}
+
+fn change_keys(doc: &mut DocumentMut, change: &ProjectSettingChange) {
     let root = doc.as_table_mut();
     match change {
         ProjectSettingChange::TreeShow(v) => {

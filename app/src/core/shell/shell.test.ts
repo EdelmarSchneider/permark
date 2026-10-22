@@ -37,7 +37,7 @@ const { installWindowKeys } = await import("../commands/install");
 const { contributions } = await import("../plugins/instance.svelte");
 const { conditions } = await import("../conditions/context.svelte");
 const { pluginsStore, projectSettings } = await import("./settings/stores.svelte");
-const { confirmInit, askInitHere } = await import("./initProject");
+const { confirmInit, askInitHere, newProject } = await import("./initProject");
 
 const mock = api as unknown as ReturnType<typeof import("../../api/mock").createMockApi>;
 const store = windowStore;
@@ -433,6 +433,8 @@ describe("the project settings and Initialize PerMark", () => {
       },
     });
     flushSync();
+    // a stray Enter writes nothing: the keyboard starts on Cancel
+    expect(document.activeElement?.textContent?.trim()).toBe("Cancel");
     expect(target.textContent).toContain("Initialize PerMark in permark-docs?");
     expect(target.textContent).toContain(".permark/config.toml");
     expect(target.textContent).toContain("Your files are not touched.");
@@ -441,6 +443,21 @@ describe("the project settings and Initialize PerMark", () => {
     byText("button.btn--primary", "Initialize PerMark").click();
     expect(answers).toEqual([false, false, true]);
     ui.closeInit();
+  });
+
+  it("New project on a folder with files in it asks first; yes sets it up and opens it", async () => {
+    await open();
+    await newProject();
+    expect(ui.initDialog).toEqual({
+      status: "asking",
+      path: MOCK_FOLDER,
+      name: "permark-docs",
+      opens: true,
+    });
+    await confirmInit(MOCK_FOLDER, true);
+    expect(ui.initDialog.status).toBe("closed");
+    await until(() => conditions.current.permark === "initialized", "initialized");
+    expect(store.view.state === "showing" && store.view.workspace.name).toBe("permark-docs");
   });
 
   it("the command and the remedy exist only while the project is not initialized", async () => {
@@ -1176,6 +1193,10 @@ describe("the welcome screen", () => {
     component = mount(Welcome, { target, props: { store } });
     flushSync();
     byText("button", "New project").click();
+    // the demo folder has files in it: asked first
+    await until(() => ui.initDialog.status === "asking", "asked");
+    expect(store.view.state).toBe("welcome");
+    await confirmInit(MOCK_FOLDER, true);
     await until(() => store.view.state === "showing", "opened");
     expect(mock.probe.shell.project().initialized).toBe(true);
     await until(() => conditions.current.permark === "initialized", "initialized");

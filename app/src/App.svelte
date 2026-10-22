@@ -364,7 +364,7 @@
   <InitDialog
     name={asked.name}
     path={asked.path}
-    answer={(yes) => (yes ? void confirmInit(asked.path) : ui.closeInit())}
+    answer={(yes) => (yes ? void confirmInit(asked.path, asked.opens) : ui.closeInit())}
   />
 {/if}
 {#if ui.finder.status === "open"}

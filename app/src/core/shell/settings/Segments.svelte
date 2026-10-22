@@ -1,6 +1,6 @@
 <script lang="ts" generics="V extends string">
   // A row of exclusive choices (a radio group drawn as segments). Arrows move the choice (and the focus) like any
-  // radio group.
+  // radio group; only a plain arrow does: Alt+Left (back) and the like pass by, and focus alone never changes it.
   import { tick } from "svelte";
 
   /** `title`: tooltip; `why`: why the choice is off (tooltip + its accessible description). */
@@ -30,6 +30,7 @@
   const uid = $props.id();
 
   function onkeydown(e: KeyboardEvent): void {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
     const step =
       e.key === "ArrowRight" || e.key === "ArrowDown"
         ? 1
