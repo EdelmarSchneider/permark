@@ -138,6 +138,16 @@ fn html_attributes_are_destinations_and_comments_are_not() {
 }
 
 #[test]
+fn non_ascii_text_in_html_blocks_and_comments_does_not_panic() {
+    // Regression: the HTML scan sliced the `&str` at byte offsets, so a multibyte
+    // character inside an HTML block (which runs to the next blank line) aborted the app.
+    let text = "中文\n\n<div>\n中文内容\n</div>\n\n<!-- 注释：<a href=\"隐藏.md\"> -->\n\n<img src=\"图片/logo.png\" alt=\"中文\">\n";
+    assert_eq!(raws(text), ["图片/logo.png"]);
+    assert!(kinds(text).iter().all(|k| *k == Kind::Html));
+    assert!(parse(text).iter().all(|d| d.form == Form::Html));
+}
+
+#[test]
 fn offsets_are_exact_with_multibyte_text_a_bom_and_every_line_ending() {
     for ending in ["\n", "\r\n", "\r"] {
         let text = format!(
