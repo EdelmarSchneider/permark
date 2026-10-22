@@ -1210,8 +1210,12 @@ fn the_arrangement_change_wire_format() {
     for bad in [
         r#"{"key":"rightViews","value":{"groups":[]}}"#,
         r#"{"key":"rightViews","value":{"v":1,"groups":[{"views":"outline","share":0.5}]}}"#,
-        r#"{"key":"rightViews"}"#,
     ] {
         assert!(serde_json::from_str::<SettingChange>(bad).is_err(), "{bad}");
     }
+    // no value at all = the reset (serde reads an absent `Option` content as `None`)
+    assert_eq!(
+        serde_json::from_str::<SettingChange>(r#"{"key":"rightViews"}"#).unwrap(),
+        SettingChange::RightViews(None)
+    );
 }
