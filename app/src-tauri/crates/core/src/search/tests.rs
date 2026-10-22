@@ -1486,10 +1486,11 @@ fn harvest_takes_front_matter_tags_from_the_one_pass_and_follows_changes() {
             std::thread::sleep(Duration::from_millis(10));
         }
     };
+    // the revision goes up right after the tags are in (listeners are told then)
     wait("changed tags", &|| {
         index.harvest().tags_of("d3/n3.md") == Some(vec!["changed".to_owned()])
+            && index.harvest().rev() > rev
     });
-    assert!(index.harvest().rev() > rev);
     fs::remove_file(dir.path().join("d3/n3.md")).unwrap();
     feed(&FsBatch {
         changes: vec![change("d3/n3.md", ChangeKind::Removed)],
