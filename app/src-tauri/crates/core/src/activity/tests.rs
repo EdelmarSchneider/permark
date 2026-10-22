@@ -879,3 +879,60 @@ fn file_operations_and_their_undo_reach_the_journal_and_net_to_nothing() {
         Some(&Fact::Closed)
     );
 }
+
+/// CI 39814680202: facts noted before the projects worker told the owners (or while they change) reach the project's
+/// own journal once told, in order, with their own time; a plain folder (single owner) mirrors nothing.
+#[test]
+fn facts_before_the_owners_are_known_reach_the_project_journal_once_told() {
+    use crate::projects::{OwnerSlot, Owners, OwnersChange, ProjectUid};
+    let (dir, store) = store();
+    let member_dir = dir.path().join("p/sub a");
+    std::fs::create_dir_all(&member_dir).unwrap();
+    let member = StateStore::for_project(
+        &AppDirs::under(&dir.path().join("state")),
+        &Root::open(&member_dir).unwrap(),
+    );
+    let owners = Owners::new(
+        store.clone(),
+        vec![OwnerSlot::member(
+            ProjectUid::parse("k7m2q7xd2a").unwrap(),
+            "sub a",
+            member.clone(),
+        )],
+    );
+    let time = Time::new();
+    let log = ActivityLog::open(&store, time.clock());
+    let member_journal = || match member.file::<Journal>(JOURNAL_FILE).load() {
+        crate::state::Loaded::Found(j) => j,
+        _ => Journal::default(),
+    };
+    // not told yet: kept (and the opened folder's journal has it at once)
+    log.person(tag(true, "sub a/plan.md", "spec"));
+    log.person(tag(true, "top.md", "root"));
+    log.flush();
+    assert_eq!(log.snapshot().entries.len(), 2);
+    assert!(member_journal().entries.is_empty());
+    // told: routed, its path relative to the project
+    log.follow_owners(&OwnersChange::Resume(&owners));
+    log.flush();
+    let facts: Vec<Fact> = member_journal()
+        .entries
+        .into_iter()
+        .map(|e| e.fact)
+        .collect();
+    assert_eq!(facts, [tag(true, "plan.md", "spec")]);
+    // while the owners change: kept again, then routed
+    log.follow_owners(&OwnersChange::Pause);
+    log.person(tag(true, "sub a/later.md", "x"));
+    log.flush();
+    assert_eq!(member_journal().entries.len(), 1);
+    log.follow_owners(&OwnersChange::Resume(&owners));
+    log.flush();
+    assert_eq!(member_journal().entries.len(), 2);
+    // a plain folder: what waited mirrors nowhere
+    log.follow_owners(&OwnersChange::Pause);
+    log.person(tag(true, "sub a/third.md", "y"));
+    log.follow_owners(&OwnersChange::Resume(&Owners::root_only(store.clone())));
+    log.flush();
+    assert_eq!(member_journal().entries.len(), 2);
+}

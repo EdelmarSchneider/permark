@@ -423,7 +423,8 @@ impl ProjectCore {
                 move |batch| activity.outside(batch)
             })
         });
-        activity.follow_owners(&OwnersChange::Resume(&projects.owners()));
+        // the journal waits (facts kept) until the worker tells the owners; told already -> now (subscribed first:
+        // a `Resume` between the check and the subscription is never missed; a second one changes nothing)
         let activity_owners = projects.follow_owners({
             let activity = Arc::downgrade(&activity);
             move |change| {
@@ -432,6 +433,9 @@ impl ProjectCore {
                 }
             }
         });
+        if projects.owners_known() {
+            activity.follow_owners(&OwnersChange::Resume(&projects.owners()));
+        }
         let fileops = FileOps::new(
             vault.clone(),
             Arc::clone(&explorer),

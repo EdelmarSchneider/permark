@@ -11,8 +11,10 @@
 //! the OS frees the lock of a program that ends) -> this write fails and is tried again later, never made unlocked.
 
 use std::collections::BTreeMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use crate::paths::CASE_INSENSITIVE;
@@ -29,10 +31,90 @@ const OPEN_RETRY: [Duration; 3] = [
     Duration::from_millis(400),
 ];
 
-/// Held while one writer reads, changes and writes a state file; released on drop.
+/// Held while one writer reads, changes and writes a state file; released on drop (the OS lock first, then this
+/// process's turn).
 #[derive(Debug)]
 pub struct FileLock {
     _file: File,
+    _turn: Turn,
+}
+
+/// Inside this process the writers of one file take turns in arrival order. The OS lock alone is polled: a writer
+/// that writes again and again (two tabs adding comments) took it back each time while the other one slept between
+/// tries, until its wait ran out (CI 39816877707, `another PerMark writer holds this file` with no hung holder).
+#[derive(Debug, Default)]
+struct Turns {
+    state: Mutex<TurnState>,
+    cv: Condvar,
+}
+
+#[derive(Debug, Default)]
+struct TurnState {
+    next: u64,
+    serving: u64,
+    /// Tickets whose writer stopped waiting: skipped.
+    gone: BTreeSet<u64>,
+}
+
+/// This writer's turn; the next one's on drop.
+#[derive(Debug)]
+struct Turn(Arc<Turns>);
+
+impl Turns {
+    /// The turns of the lock file `name` (one per state file ever written; tiny, kept like the lock files).
+    fn of(name: &str) -> Arc<Self> {
+        static ALL: OnceLock<Mutex<HashMap<String, Arc<Turns>>>> = OnceLock::new();
+        let mut all = ALL
+            .get_or_init(Mutex::default)
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        Arc::clone(all.entry(name.to_owned()).or_default())
+    }
+
+    /// Waits for this writer's turn until `until` (`None`: still not its turn; its ticket is given up).
+    fn take(self: &Arc<Self>, until: Instant) -> Option<Turn> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let ticket = state.next;
+        state.next += 1;
+        loop {
+            if state.serving == ticket {
+                return Some(Turn(Arc::clone(self)));
+            }
+            let now = Instant::now();
+            if now >= until {
+                state.gone.insert(ticket);
+                return None;
+            }
+            state = self
+                .cv
+                .wait_timeout(state, until - now)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+    }
+}
+
+impl Drop for Turn {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.serving += 1;
+        loop {
+            let serving = state.serving;
+            if !state.gone.remove(&serving) {
+                break;
+            }
+            state.serving += 1;
+        }
+        drop(state);
+        self.0.cv.notify_all();
+    }
+}
+
+fn held_too_long() -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::WouldBlock,
+        "another PerMark writer holds this file",
+    )
 }
 
 /// The lock of the state file at `path` (same file = same lock in every thread and process of this user).
@@ -67,17 +149,19 @@ pub fn lock_within(path: &Path, wait: Duration) -> std::io::Result<Option<FileLo
     }) else {
         return Ok(None);
     };
-    let start = Instant::now();
+    let until = Instant::now() + wait;
+    // this process's writers first, in order; then the OS lock (other processes), in the time left
+    let turn = Turns::of(&name).take(until).ok_or_else(held_too_long)?;
     loop {
         match file.try_lock() {
-            Ok(()) => return Ok(Some(FileLock { _file: file })),
-            Err(TryLockError::WouldBlock) if start.elapsed() < wait => std::thread::sleep(POLL),
-            Err(TryLockError::WouldBlock) => {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::WouldBlock,
-                    "another PerMark writer holds this file",
-                ))
+            Ok(()) => {
+                return Ok(Some(FileLock {
+                    _file: file,
+                    _turn: turn,
+                }))
             }
+            Err(TryLockError::WouldBlock) if Instant::now() < until => std::thread::sleep(POLL),
+            Err(TryLockError::WouldBlock) => return Err(held_too_long()),
             // a file system without locks: compare-and-swap alone
             Err(TryLockError::Error(_)) => return Ok(None),
         }
@@ -315,6 +399,47 @@ mod verify_tests {
         // freed: writes go through again
         raw.update(|_| Some(b"after".to_vec())).unwrap();
         assert_eq!(std::fs::read(raw.path()).unwrap(), b"after");
+    }
+
+    /// Writers of one file in this process take turns: one writing again and again never starves another, also with
+    /// the brief wait (CI 39816877707: two tabs adding comments, one gave up after 2 s with no hung holder).
+    #[test]
+    fn writers_of_one_file_take_turns_and_none_starves() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw =
+            super::super::RawFile::private(dir.path().join("turns.json"), None).brief_lock_wait();
+        let threads: Vec<_> = (0..4)
+            .map(|t| {
+                let raw = raw.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..100 {
+                        raw.update(|now| {
+                            let mut bytes = now.map(<[u8]>::to_vec).unwrap_or_default();
+                            bytes.push(b'a' + t);
+                            Some(bytes)
+                        })
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        assert_eq!(std::fs::read(raw.path()).unwrap().len(), 400);
+        // a writer that gave up its ticket never blocks the ones after it
+        let held = lock_for(raw.path()).unwrap().expect("lock");
+        let late = raw.clone();
+        let gave_up = std::thread::spawn(move || {
+            lock_within(late.path(), Duration::from_millis(50)).is_err()
+        });
+        assert!(gave_up.join().unwrap());
+        drop(held);
+        let start = Instant::now();
+        assert!(lock_within(raw.path(), Duration::from_secs(5))
+            .unwrap()
+            .is_some());
+        assert!(start.elapsed() < Duration::from_secs(1));
     }
 
     /// N10 (verifier round 4): a writer holding a plugin's lock gives up after the brief wait, not the long one.
