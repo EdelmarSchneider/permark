@@ -119,6 +119,7 @@ impl Plugin for ReviewPlugin {
         &self.manifest
     }
 
+    #[allow(clippy::too_many_lines)] // one place wires the service and every method it serves
     fn start(&self, cx: &PluginCx) -> Result<Box<dyn Running>, PluginError> {
         let fail = |reason: &str| PluginError::Start {
             id: ID,
@@ -140,6 +141,8 @@ impl Plugin for ReviewPlugin {
                 prefs: cx.state_file("prefs.json"),
                 seen: cx.state_file("seen.json"),
             },
+            // a reader with no window writes no copies, `held` or `seen` of its own accord
+            !cx.files_only(),
         ));
         let mut registrations: Vec<RpcRegistration> = Vec::new();
         let s = Arc::clone(&service);

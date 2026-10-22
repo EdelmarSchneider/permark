@@ -74,8 +74,13 @@ pub(crate) fn diff(old: &[TreeNode], new: &[TreeNode]) -> (Vec<String>, Vec<Adde
     (removed, added)
 }
 
+/// Runs before the first walk of a tree (see [`Explorer::walk_after`]).
+pub type WalkGate = Arc<dyn Fn() + Send + Sync>;
+
 pub struct Explorer {
     roots: Vec<RootCtx>,
+    /// Passed before any walk until it returned once (the included projects shape the walk).
+    gate: Mutex<Option<WalkGate>>,
     model: Mutex<Option<TreeModel>>,
     views: Mutex<HashMap<String, View>>,
     /// Keys of folders made in the Explorer: shown while empty.
@@ -127,6 +132,7 @@ impl Explorer {
         }
         Self {
             roots,
+            gate: Mutex::new(None),
             model: Mutex::new(None),
             views: Mutex::new(HashMap::new()),
             kept_dirs: Mutex::new(HashSet::new()),
@@ -170,7 +176,22 @@ impl Explorer {
         }
     }
 
+    /// Holds every walk (tree, scans) until `gate` returned once: the projects service reads its members there, off
+    /// the open call, so the walk starts with them known. Callers arriving meanwhile wait inside the same call.
+    pub fn walk_after(&self, gate: WalkGate) {
+        *lock(&self.gate) = Some(gate);
+    }
+
+    fn pass_gate(&self) {
+        let gate = lock(&self.gate).clone();
+        if let Some(gate) = gate {
+            gate();
+            *lock(&self.gate) = None;
+        }
+    }
+
     fn model(&self) -> MutexGuard<'_, Option<TreeModel>> {
+        self.pass_gate();
         let mut guard = lock(&self.model);
         if guard.is_none() {
             let mut model = TreeModel::new(self.roots.clone());
@@ -417,6 +438,7 @@ impl Explorer {
     /// A fresh walk of every root without the large-folder guard (the search index reads it).
     #[must_use]
     pub fn scan(&self, cancel: &std::sync::atomic::AtomicBool) -> Vec<(String, super::Scan)> {
+        self.pass_gate();
         self.roots
             .iter()
             .map(|root| (root.prefix.clone(), scan_root(root, cancel)))
@@ -436,6 +458,7 @@ impl Explorer {
         cancel: &std::sync::atomic::AtomicBool,
         stop: &mut dyn FnMut(&super::ScanFile) -> bool,
     ) -> Result<super::Scan, TreeError> {
+        self.pass_gate();
         let not_a_folder = || TreeError::NotAFolder(folder.as_str().to_owned());
         let root = self.root_of(folder.as_str()).ok_or_else(not_a_folder)?;
         if !std::fs::metadata(abs).is_ok_and(|m| m.is_dir()) {
@@ -461,6 +484,7 @@ impl Explorer {
     /// tree leaves unlisted for their size), plus the ignored folders that were not looked into.
     #[must_use]
     pub fn scan_documents(&self, prefix: &str) -> (Vec<String>, Vec<String>) {
+        self.pass_gate();
         let never = std::sync::atomic::AtomicBool::new(false);
         let key = key_of(prefix);
         let Some(root) = self.roots.iter().find(|r| key_of(&r.prefix) == key) else {

@@ -19,6 +19,13 @@ use serde_json::{json, Value};
 
 use super::*;
 
+/// The core of `root`, once its projects worker set the owners (never on the open path).
+fn opened(root: &Path, env: &CoreEnv) -> Arc<ProjectCore> {
+    let core = ProjectCore::open(Root::open(root).unwrap(), env);
+    assert!(core.projects().wait_owners(Duration::from_secs(10)));
+    core
+}
+
 const UID: &str = "aaaaaaaaaa";
 
 fn fast() -> Timing {
@@ -114,15 +121,18 @@ fn status_of(overview: &Value, tag: &str) -> (Value, Value) {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // one story: read, edit, move, promote, opened alone
 fn tags_live_with_their_project_and_wear_their_status() {
     let (_dir, root) = setup();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
-    // copied once into the project's own meta.toml (its own paths)
+    let core = opened(&root, &env);
+    // never copied into the project's shared meta.toml (D49): the root's entry is read with the project's own
     let member_meta = root.join("sub/.permark/meta.toml");
-    assert!(read(&member_meta)
-        .contains("[files.\"plan.md\"]\ntags = [\"draft\"]\ndescription = \"The plan.\""));
+    assert!(!member_meta.exists());
+    let plan = call(&core, "fileMeta", json!({ "path": "sub/plan.md" }));
+    assert_eq!(plan["tags"][0]["name"], json!("draft"));
+    assert_eq!(plan["description"], json!("The plan."));
     wait("harvest", || {
         call(&core, "fileMeta", json!({ "path": "sub/fm.md" }))["tags"]
             .as_array()
@@ -198,6 +208,55 @@ fn tags_live_with_their_project_and_wear_their_status() {
         "the root's resting entry inside the project stays, CRLF kept"
     );
 
+    // the root's entry for a project file follows its moves (nothing written in the project), and what the person
+    // takes off goes from it too
+    // moved in the app (an outside rename is paired by the watch, not on every system)
+    let plan = ops
+        .plan_move(
+            &[permark_core::fileops::MoveSpec {
+                from: "sub/plan.md".to_owned(),
+                to: "sub/plan2.md".to_owned(),
+            }],
+            false,
+        )
+        .unwrap();
+    ops.apply_move(plan.plan_id, false).unwrap();
+    wait("root entry follows the move", || {
+        read(&root.join(".permark/meta.toml")).contains("[files.\"sub/plan2.md\"]")
+    });
+    let plan = call(&core, "fileMeta", json!({ "path": "sub/plan2.md" }));
+    assert_eq!(plan["description"], json!("The plan."));
+    assert!(
+        !read(&member_meta).contains("plan"),
+        "{}",
+        read(&member_meta)
+    );
+    call(
+        &core,
+        "setTags",
+        json!({ "path": "sub/plan2.md", "tags": ["kept"] }),
+    );
+    call(
+        &core,
+        "setDescription",
+        json!({ "path": "sub/plan2.md", "description": "" }),
+    );
+    wait("root entry gone", || {
+        !read(&root.join(".permark/meta.toml")).contains("plan2")
+    });
+    let plan = call(&core, "fileMeta", json!({ "path": "sub/plan2.md" }));
+    let names: Vec<&Value> = plan["tags"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| &t["name"])
+        .collect();
+    assert_eq!(names, [&json!("kept")]);
+    assert_eq!(plan["description"], json!(""));
+    wait("the person's edit in the project's file", || {
+        read(&member_meta).contains("[files.\"plan2.md\"]\ntags = [\"kept\"]")
+    });
+
     // promote: the local tag becomes official (its look copied), nothing else of the file changes
     core.projects().promote(VocabKind::Tag, "draft").unwrap();
     let vocab = read(&root.join(".permark/vocabulary.toml"));
@@ -226,7 +285,7 @@ fn without_an_official_list_marks_stay_dormant() {
     std::fs::remove_file(root.join(".permark/vocabulary.toml")).unwrap();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     wait("harvest", || {
         call(&core, "overview", Value::Null)["tags"]
             .as_array()
@@ -243,4 +302,110 @@ fn without_an_official_list_marks_stay_dormant() {
         !root.join(".permark/vocabulary.toml").exists(),
         "nothing written"
     );
+}
+
+/// B1 (D51): two app instances on the same folder tag files of one project at the same time: every tag is written.
+#[test]
+fn two_apps_on_one_folder_tagging_at_once_lose_nothing() {
+    let (_dir, root) = setup();
+    for i in 0..10 {
+        std::fs::write(root.join(format!("sub/a{i}.md")), "# a\n").unwrap();
+        std::fs::write(root.join(format!("sub/b{i}.md")), "# b\n").unwrap();
+    }
+    let (base_a, base_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let a = opened(&root, &env(base_a.path()));
+    let b = ProjectCore::open(Root::open(&root.join("sub")).unwrap(), &env(base_b.path()));
+    assert!(a.projects().wait_ready(Duration::from_secs(10)));
+    let ta = std::thread::spawn({
+        let a = Arc::clone(&a);
+        move || {
+            for i in 0..10 {
+                call(
+                    &a,
+                    "setTags",
+                    json!({ "path": format!("sub/a{i}.md"), "tags": ["from-a"] }),
+                );
+                std::thread::sleep(Duration::from_millis(15));
+            }
+        }
+    });
+    for i in 0..10 {
+        call(
+            &b,
+            "setTags",
+            json!({ "path": format!("b{i}.md"), "tags": ["from-b"] }),
+        );
+        std::thread::sleep(Duration::from_millis(15));
+    }
+    ta.join().unwrap();
+    drop(a);
+    drop(b);
+    let meta = read(&root.join("sub/.permark/meta.toml"));
+    for i in 0..10 {
+        assert!(
+            meta.contains(&format!("[files.\"a{i}.md\"]")),
+            "a{i}: {meta}"
+        );
+        assert!(
+            meta.contains(&format!("[files.\"b{i}.md\"]")),
+            "b{i}: {meta}"
+        );
+    }
+}
+
+/// D46: rename | remove | look of official names change only `vocabulary.toml`; documents and `meta.toml` stay byte
+/// for byte; the tags plugin follows (a renamed | removed name left in files = local where a project lists it, else
+/// unlisted; the official look wins while listed); no official name left -> marks dormant.
+#[test]
+fn official_names_renamed_removed_restyled_never_touch_documents() {
+    let (_dir, root) = setup();
+    let base = tempfile::tempdir().unwrap();
+    let env = env(base.path());
+    let core = opened(&root, &env);
+    wait("harvest", || {
+        call(&core, "fileMeta", json!({ "path": "sub/fm.md" }))["tags"]
+            .as_array()
+            .is_some_and(|t| t.len() == 2)
+    });
+    let before: Vec<(String, Vec<u8>)> =
+        ["top.md", "sub/plan.md", "sub/fm.md", ".permark/meta.toml"]
+            .iter()
+            .map(|rel| ((*rel).to_owned(), std::fs::read(root.join(rel)).unwrap()))
+            .collect();
+    let projects = core.projects();
+    let vocab = root.join(".permark/vocabulary.toml");
+
+    projects.promote(VocabKind::Tag, "draft").unwrap();
+    projects
+        .vocabulary_set_style(VocabKind::Tag, "draft", Some("teal"), None)
+        .unwrap();
+    wait("official look", || {
+        call(&core, "index", Value::Null)["styles"]["draft"]["color"] == json!("teal")
+    });
+    projects
+        .vocabulary_rename(VocabKind::Tag, "spec", "specs")
+        .unwrap();
+    assert_eq!(
+        read(&vocab),
+        "version = 1\n\n[tags.specs]\ncolor = \"blue\"\n\n[tags.draft]\ncolor = \"teal\"\n"
+    );
+    wait("spec now unlisted", || {
+        status_of(&call(&core, "overview", Value::Null), "spec").0 == json!("unlisted")
+    });
+    projects.vocabulary_remove(VocabKind::Tag, "draft").unwrap();
+    wait("draft local again", || {
+        status_of(&call(&core, "overview", Value::Null), "draft") == (json!("local"), json!(UID))
+    });
+    projects.vocabulary_remove(VocabKind::Tag, "specs").unwrap();
+    assert_eq!(read(&vocab), "version = 1\n");
+    wait("dormant", || {
+        call(&core, "overview", Value::Null)["marks"] == json!(false)
+    });
+    for (rel, bytes) in before {
+        assert_eq!(
+            std::fs::read(root.join(&rel)).unwrap(),
+            bytes,
+            "{rel} untouched"
+        );
+    }
 }

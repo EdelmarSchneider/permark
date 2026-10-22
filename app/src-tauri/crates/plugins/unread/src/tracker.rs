@@ -473,6 +473,41 @@ impl Tracker {
         (paths, wrote)
     }
 
+    /// Read marks another core (a tab, an app) wrote into the same `read.json`: `(path, what this tracker had when it
+    /// saved, what the file holds)`. Taken only where this tracker still has what it saved (a mark made here since
+    /// wins). Returns whether anything changed.
+    pub fn learn(&mut self, marks: &[(String, Option<u64>, Option<u64>)]) -> bool {
+        let mut changed = false;
+        for (path, before, after) in marks {
+            if !is_tracked(path) {
+                continue;
+            }
+            let key = key_of(path);
+            match self.docs.get_mut(&key) {
+                Some(doc) if doc.read == *before => {
+                    doc.read = *after;
+                    changed = true;
+                }
+                None if before.is_none() && after.is_some() => {
+                    self.docs.insert(
+                        key,
+                        Doc {
+                            path: path.clone(),
+                            current: None,
+                            read: *after,
+                        },
+                    );
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+        if changed {
+            self.revision += 1;
+        }
+        changed
+    }
+
     /// The documents that were never read or changed since: nothing is unread until the disk has been looked at.
     #[must_use]
     pub fn unread(&self) -> Vec<String> {

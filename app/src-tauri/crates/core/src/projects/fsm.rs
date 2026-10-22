@@ -90,10 +90,6 @@ pub struct Membership {
     /// Uids whose 0.6 state was copied (round 4).
     #[serde(default)]
     pub migrated: Vec<String>,
-    /// Path keys of the same projects: a project left out and included again gets a new uid, never a second copy
-    /// (what the person removed in it since stays removed).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub migrated_paths: Vec<String>,
     /// Members the agent does not see (profile only: nothing in a folder widens or narrows it).
     #[serde(default)]
     pub agent_off: Vec<String>,

@@ -4,6 +4,7 @@
 pub mod older;
 mod private;
 mod raw;
+pub mod shared_write;
 
 use std::io;
 use std::marker::PhantomData;
@@ -20,6 +21,7 @@ use crate::paths::Root;
 use crate::plugins::PluginId;
 
 pub use raw::RawFile;
+pub use shared_write::{merge3, FileLock};
 
 pub const PERMARK_DIR: &str = ".permark";
 /// Per-project files that ALWAYS stay in the profile (a project's files must never switch them).
@@ -224,19 +226,91 @@ impl<T: StateData> StateFile<T> {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Loaded::Missing,
             Err(_) => return Loaded::Recovered { backup: None },
         };
-        let read = serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(&bytes)
-            .ok()
-            .and_then(|envelope| match envelope.version {
-                v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
-                v if v < T::VERSION => T::upgrade(v, envelope.data),
-                _ => None,
-            });
-        match read {
+        match Self::parse(&bytes) {
             Some(data) => Loaded::Found(data),
             None => Loaded::Recovered {
                 backup: self.move_aside(),
             },
         }
+    }
+
+    /// The data of the file's bytes (`None`: not this layout, or a newer version).
+    fn parse(bytes: &[u8]) -> Option<T> {
+        serde_json::from_slice::<EnvelopeIn<serde_json::Value>>(bytes)
+            .ok()
+            .and_then(|envelope| match envelope.version {
+                v if v == T::VERSION => serde_json::from_value(envelope.data).ok(),
+                v if v < T::VERSION => T::upgrade(v, envelope.data),
+                _ => None,
+            })
+    }
+
+    fn encode(&self, data: &T) -> Result<Vec<u8>, StateError> {
+        serde_json::to_vec_pretty(&EnvelopeOut {
+            version: T::VERSION,
+            data,
+        })
+        .map_err(|source| StateError::Encode {
+            path: self.path.display().to_string(),
+            source,
+        })
+    }
+
+    /// Read-change-write for a file several cores write (`shared_write`): under the file's lock, `next` gets the data
+    /// on disk now (`None`: no file; a file this version cannot read is moved aside first, as [`StateFile::load`]
+    /// does) and returns what to write (`None`: nothing). Written only while the file still holds what `next` saw,
+    /// else read again and `next` asked again. Returns the data on disk afterwards.
+    ///
+    /// # Errors
+    /// Encode | IO failure, a link in place of `.permark/`, a file that kept changing under a writer without the lock.
+    pub fn update(
+        &self,
+        mut next: impl FnMut(Option<&T>) -> Option<T>,
+    ) -> Result<Option<T>, StateError> {
+        if let (Some(guard), Some(dir)) = (&self.guard, self.path.parent()) {
+            private::prepare(&guard.permark, &guard.state, dir)
+                .map_err(|e| StateError::io(&self.path, e))?;
+        }
+        let _lock =
+            shared_write::lock_for(&self.path).map_err(|e| StateError::io(&self.path, e))?;
+        for _ in 0..raw::UPDATE_ATTEMPTS {
+            let bytes = match std::fs::read(&self.path) {
+                Ok(bytes) => Some(bytes),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                Err(error) => return Err(StateError::io(&self.path, error)),
+            };
+            let fresh = match bytes.as_deref().map(Self::parse) {
+                None => None,
+                Some(Some(data)) => Some(data),
+                Some(None) => {
+                    // kept beside it, never written over (the next round sees no file)
+                    let _ = self.move_aside();
+                    continue;
+                }
+            };
+            let Some(data) = next(fresh.as_ref()) else {
+                return Ok(fresh);
+            };
+            let out = self.encode(&data)?;
+            if bytes.as_deref() == Some(out.as_slice()) {
+                return Ok(Some(data));
+            }
+            let written =
+                crate::fsx::write_atomic_checked(&self.path, &out, || {
+                    match std::fs::read(&self.path) {
+                        Ok(now) => Ok(bytes.as_deref() == Some(now.as_slice())),
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                            Ok(bytes.is_none())
+                        }
+                        Err(error) => Err(error),
+                    }
+                })
+                .map_err(|e| StateError::io(&self.path, e))?;
+            if written {
+                return Ok(Some(data));
+            }
+        }
+        Err(StateError::io(&self.path, raw::kept_changing()))
     }
 
     /// `<name>.broken-<ms>` next to it; never overwrites an older backup.
@@ -267,14 +341,7 @@ impl<T: StateData> StateFile<T> {
     /// # Errors
     /// Encode failure, IO failure, `.permark/` folder replaced by a link.
     pub fn save(&self, data: &T) -> Result<(), StateError> {
-        let bytes = serde_json::to_vec_pretty(&EnvelopeOut {
-            version: T::VERSION,
-            data,
-        })
-        .map_err(|source| StateError::Encode {
-            path: self.path.display().to_string(),
-            source,
-        })?;
+        let bytes = self.encode(data)?;
         if let (Some(guard), Some(dir)) = (&self.guard, self.path.parent()) {
             private::prepare(&guard.permark, &guard.state, dir)
                 .map_err(|e| StateError::io(&self.path, e))?;

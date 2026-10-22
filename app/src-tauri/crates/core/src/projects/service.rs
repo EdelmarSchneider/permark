@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock, Weak};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock, PoisonError, RwLock, Weak};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -39,7 +39,6 @@ use crate::{ErrorKind, IpcError};
 
 /// The agent's ignore file (gitignore syntax), as the agent plugin reads it.
 const AI_IGNORE: &str = ".aiignore";
-const BOM: &[u8] = b"\xEF\xBB\xBF";
 const MAX_AI_IGNORE: u64 = 1024 * 1024;
 /// Levels above the opened folder searched for a record listing it.
 const MAX_ANCESTORS: usize = 32;
@@ -72,6 +71,61 @@ pub(crate) mod probe {
     }
 }
 
+/// Tests: the member read of a root held inside its lock until released, so a test can tell whether a caller waits
+/// for it (timing-free: the caller either returns while the read is held, or not).
+#[cfg(test)]
+pub(crate) mod hold {
+    use std::path::{Path, PathBuf};
+    use std::sync::{Condvar, Mutex};
+    use std::time::Duration;
+
+    /// Roots held: (root, the read is inside, released).
+    static HELD: Mutex<Vec<(PathBuf, bool, bool)>> = Mutex::new(Vec::new());
+    static CHANGED: Condvar = Condvar::new();
+
+    fn wait_until(mut done: impl FnMut(&[(PathBuf, bool, bool)]) -> bool) -> bool {
+        let held = HELD.lock().unwrap();
+        let (_held, timeout) = CHANGED
+            .wait_timeout_while(held, Duration::from_secs(10), |h| !done(h))
+            .unwrap();
+        !timeout.timed_out()
+    }
+
+    /// The next member read of `root` waits inside its lock until [`release`].
+    pub fn hold(root: &Path) {
+        HELD.lock()
+            .unwrap()
+            .push((root.to_path_buf(), false, false));
+    }
+
+    pub fn release(root: &Path) {
+        for entry in HELD.lock().unwrap().iter_mut() {
+            if entry.0 == root {
+                entry.2 = true;
+            }
+        }
+        CHANGED.notify_all();
+    }
+
+    /// Waits (<= 10 s) until a read of `root` is inside; `false`: none came.
+    pub fn wait_inside(root: &Path) -> bool {
+        wait_until(|h| h.iter().any(|e| e.0 == root && e.1))
+    }
+
+    /// Called by the read, inside its lock.
+    pub(super) fn inside(root: &Path) {
+        {
+            let mut held = HELD.lock().unwrap();
+            let Some(entry) = held.iter_mut().find(|e| e.0 == root) else {
+                return;
+            };
+            entry.1 = true;
+        }
+        CHANGED.notify_all();
+        let _ = wait_until(|h| h.iter().any(|e| e.0 == root && e.2));
+    }
+}
+
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
@@ -96,10 +150,10 @@ fn abs_of(root: &Path, path: &VaultPath) -> PathBuf {
     abs
 }
 
-/// Whether a member's 0.6 state was copied (by uid, or by its folder after a leave out + include).
+/// Whether a member's 0.6 state was copied since it was last included (a project left out and included again is
+/// copied again: only what the opened folder got since, `projects.md` §14 D50).
 fn is_copied(inner: &Inner, member: &MemberInfo) -> bool {
     inner.migrated.iter().any(|u| u == member.uid.as_str())
-        || inner.migrated_paths.contains(&member.key)
 }
 
 /// Where `path` is now when one of `renames` (`(from, to)`, first that covers it wins) moved it or a folder above it.
@@ -316,8 +370,8 @@ struct Inner {
     root_ignore: Vec<String>,
     /// Uids whose 0.6 state was copied (`projects.md` §9.3): their state lives in their own files.
     migrated: Vec<String>,
-    /// Path keys of copied members (a new uid after leave out + include never copies twice).
-    migrated_paths: Vec<String>,
+    /// Members whose copy failed this session: tried again at the next start, not at every map change.
+    copy_failed: HashSet<ProjectUid>,
     /// Members moved since the owners were last told (`(from, to)`): their profile state folder follows once the
     /// plugins wrote what they hold (`projects.md` §9.1).
     pending_moves: Vec<(VaultPath, VaultPath)>,
@@ -356,6 +410,8 @@ enum Msg {
     Batch(Hint),
     /// A grace window ended (`grace.rs`): look again.
     Tick,
+    /// A root-commit lease came: ask what a move question may need.
+    Ask,
     Stop,
 }
 
@@ -379,6 +435,8 @@ pub struct Projects {
     hub: Arc<WatchHub>,
     sink: Arc<dyn EventSink>,
     files_only: bool,
+    /// The record + the included members were read ([`Projects::load`]: once, off the open call).
+    loaded: OnceLock<()>,
     inner: Mutex<Inner>,
     map: RwLock<Arc<ProjectMap>>,
     listeners: Mutex<Vec<(u64, Listener)>>,
@@ -392,6 +450,8 @@ pub struct Projects {
     owner_followers: Mutex<Vec<(u64, OwnersFollower)>>,
     /// One owners change at a time (the worker and a command may both finish a change).
     owners_turn: Mutex<()>,
+    /// The owners of the record's members are known (the worker read them; never on the open path).
+    owners_known: AtomicBool,
     next: AtomicU64,
     tx: Mutex<Option<Sender<Msg>>>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -424,18 +484,26 @@ impl Drop for ProjectsSubscription {
             lock(&owner.listeners).retain(|(id, _)| *id != self.id);
             lock(&owner.map_listeners).retain(|(id, _)| *id != self.id);
             lock(&owner.owner_followers).retain(|(id, _)| *id != self.id);
-            let mut identity = lock(&owner.identity);
-            if identity.as_ref().is_some_and(|(id, _)| *id == self.id) {
-                *identity = None;
+            let lease = {
+                let mut identity = lock(&owner.identity);
+                let lease = identity.as_ref().is_some_and(|(id, _)| *id == self.id);
+                if lease {
+                    *identity = None;
+                }
+                lease
+            };
+            if lease {
+                // the lease's open questions die with it
+                lock(&owner.inner).asked.clear();
             }
         }
     }
 }
 
 impl Projects {
-    /// Reads the record, the person's answers and the included members of `root` (cheap: a plain folder costs one
-    /// failed open), gives the member set to the Explorer before its first walk. Discovery starts with
-    /// [`Projects::start`].
+    /// Reads the person's answers of `root` (one small profile file): nothing per project, whatever the record lists.
+    /// The record + the included members are read once, before the Explorer's first walk ([`Projects::load`]: the
+    /// walk passes through it, the worker starts with it). Discovery starts with [`Projects::start`].
     #[must_use]
     #[allow(clippy::too_many_arguments)] // the core hands its services over once
     pub fn open(
@@ -451,7 +519,6 @@ impl Projects {
         let store = StateStore::for_project(dirs, root);
         let membership = store.profile_file::<Membership>(MEMBERSHIP_FILE);
         let kept = membership.load().into_value();
-        let read = read_record(root.path());
         let inputs = Inputs {
             answer: kept.answer,
             declined: kept.declined.clone(),
@@ -471,9 +538,10 @@ impl Projects {
             hub,
             sink,
             files_only,
+            loaded: OnceLock::new(),
             inner: Mutex::new(Inner {
                 inputs,
-                record: read,
+                record: RecordRead::Absent,
                 disk_skipped: Vec::new(),
                 res: HashMap::new(),
                 root_card: None,
@@ -490,7 +558,7 @@ impl Projects {
                 ancestors: (Vec::new(), None),
                 root_ignore: root_ignore.to_vec(),
                 migrated: kept.migrated,
-                migrated_paths: kept.migrated_paths,
+                copy_failed: HashSet::new(),
                 pending_moves: Vec::new(),
                 root_commits: HashMap::new(),
                 asked: HashSet::new(),
@@ -505,6 +573,7 @@ impl Projects {
             owners: Mutex::new(Owners::root_only(store.clone())),
             owner_followers: Mutex::new(Vec::new()),
             owners_turn: Mutex::new(()),
+            owners_known: AtomicBool::new(false),
             next: AtomicU64::new(0),
             tx: Mutex::new(None),
             worker: Mutex::new(None),
@@ -512,21 +581,50 @@ impl Projects {
             ready_cv: Condvar::new(),
             manual_now: Mutex::new(None),
         });
-        {
-            let mut inner = lock(&projects.inner);
-            projects.entries_from_record(&mut inner);
-            projects.presence(&mut inner);
-            let set = member_set(&inner);
-            if set != inner.member_set {
-                projects.explorer.set_members(&set);
-                inner.member_set = set;
+        // the included projects shape the walk: read before it starts, on the thread that walks first
+        let weak = Arc::downgrade(&projects);
+        projects.explorer.walk_after(Arc::new(move || {
+            if let Some(projects) = weak.upgrade() {
+                projects.load();
             }
-            projects.refresh_ancestors(&mut inner, true);
-            projects.rebuild_map(&inner);
-        }
-        // members included before round 4 get their 0.6 state copied before any plugin reads it
-        projects.update_owners();
+        }));
         projects
+    }
+
+    /// Reads the record, the included members and the ancestor rules (once; a caller arriving while another reads
+    /// waits for it), gives the member set to the Explorer. Every command and the worker pass here first; the open
+    /// call never does (a record of 2000 entries costs ~0.5 s of small reads).
+    pub fn load(&self) {
+        self.loaded.get_or_init(|| self.read_members());
+    }
+
+    fn read_members(&self) {
+        // closing: nothing is held again after `stop` released it
+        if self.stopped.load(Ordering::Relaxed) {
+            return;
+        }
+        let mut inner = lock(&self.inner);
+        #[cfg(test)]
+        hold::inside(self.root.path());
+        inner.record = read_record(self.root.path());
+        self.entries_from_record(&mut inner);
+        self.presence(&mut inner);
+        let set = member_set(&inner);
+        if set != inner.member_set {
+            self.explorer.set_members(&set);
+            inner.member_set = set;
+        }
+        self.refresh_ancestors(&mut inner, true);
+        if !matches!(inner.record, RecordRead::Absent) {
+            inner.seq += 1;
+        }
+        self.rebuild_map(&inner);
+    }
+
+    /// The service state, the record + members read first ([`Projects::load`]).
+    fn state(&self) -> MutexGuard<'_, Inner> {
+        self.load();
+        lock(&self.inner)
     }
 
     /// Starts the projects worker: it waits for the walk, then knows the found set (and follows the watch). While it
@@ -538,40 +636,75 @@ impl Projects {
         let stopped = Arc::clone(&self.stopped);
         let handle = std::thread::Builder::new()
             .name("permark-projects".to_owned())
-            .spawn(move || loop {
-                // a grace window running: wake at its end (no `Projects` held while waiting)
-                let wake = weak.upgrade().and_then(|p| p.next_window_end());
-                let msg = match wake {
-                    Some(after) => match rx.recv_timeout(after) {
-                        Ok(msg) => msg,
-                        Err(RecvTimeoutError::Timeout) => Msg::Tick,
-                        Err(RecvTimeoutError::Disconnected) => return,
-                    },
-                    None => match rx.recv() {
-                        Ok(msg) => msg,
-                        Err(_) => return,
-                    },
-                };
-                if matches!(msg, Msg::Stop) {
-                    return;
+            .spawn(move || {
+                // the members first (unless a walk read them already), told at once: listeners (the `git` plugin)
+                // follow them while the walk runs
+                if let Some(projects) = weak.upgrade() {
+                    projects.load();
+                    projects.announce_members();
+                    // the members' owners (+ their one-time copy) are in place: plugins that wait may read, and
+                    // the ones that started paused (S3: nothing written to the outer folder's file meanwhile) go on.
+                    // Told even when nothing changed; a follower already running on these owners ignores it.
+                    projects.owners_known.store(true, Ordering::Release);
+                    projects.tell_owners(&OwnersChange::Resume(&projects.owners()));
                 }
-                let Some(markers) = wait_walk(&explorer, &stopped) else {
-                    return;
-                };
-                let Some(projects) = weak.upgrade() else {
-                    return;
-                };
-                match msg {
-                    Msg::Stop => return,
-                    Msg::Walk => projects.discover(&Hint::default(), true, &markers),
-                    Msg::Batch(hint) => projects.on_hint(&hint, &markers),
-                    Msg::Tick => projects.discover(&Hint::default(), false, &markers),
-                }
+                Self::work(&weak, &explorer, &stopped, &rx);
             })
             .ok();
         let _ = tx.send(Msg::Walk);
         *lock(&self.tx) = Some(tx);
         *lock(&self.worker) = handle;
+    }
+
+    /// A record was read: windows + map listeners hear the members (a folder without a record says nothing).
+    fn announce_members(&self) {
+        let listed = !matches!(lock(&self.inner).record, RecordRead::Absent);
+        if listed && !self.stopped.load(Ordering::Relaxed) {
+            self.finish(&After {
+                changed: true,
+                ..After::default()
+            });
+        }
+    }
+
+    /// The worker's loop: one message at a time, each after the first walk.
+    fn work(
+        weak: &Weak<Self>,
+        explorer: &Arc<Explorer>,
+        stopped: &Arc<AtomicBool>,
+        rx: &std::sync::mpsc::Receiver<Msg>,
+    ) {
+        loop {
+            // a grace window running: wake at its end (no `Projects` held while waiting)
+            let wake = weak.upgrade().and_then(|p| p.next_window_end());
+            let msg = match wake {
+                Some(after) => match rx.recv_timeout(after) {
+                    Ok(msg) => msg,
+                    Err(RecvTimeoutError::Timeout) => Msg::Tick,
+                    Err(RecvTimeoutError::Disconnected) => return,
+                },
+                None => match rx.recv() {
+                    Ok(msg) => msg,
+                    Err(_) => return,
+                },
+            };
+            if matches!(msg, Msg::Stop) {
+                return;
+            }
+            let Some(markers) = wait_walk(explorer, stopped) else {
+                return;
+            };
+            let Some(projects) = weak.upgrade() else {
+                return;
+            };
+            match msg {
+                Msg::Stop => return,
+                Msg::Walk => projects.discover(&Hint::default(), true, &markers),
+                Msg::Batch(hint) => projects.on_hint(&hint, &markers),
+                Msg::Tick => projects.discover(&Hint::default(), false, &markers),
+                Msg::Ask => projects.ask_root_commits(),
+            }
+        }
     }
 
     /// Stops the worker (core drop); releases every member; agent calls waiting for the map give up.
@@ -724,7 +857,7 @@ impl Projects {
         if !self.wait_ready(timeout) {
             return None;
         }
-        let mut inner = lock(&self.inner);
+        let mut inner = self.state();
         if self.refresh_ancestors(&mut inner, false) {
             self.rebuild_map(&inner);
         }
@@ -766,9 +899,13 @@ impl Projects {
     pub fn provide_root_commits(self: &Arc<Self>, ask: RootCommitAsk) -> ProjectsSubscription {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         *lock(&self.identity) = Some((id, ask));
-        // a former lease's open questions died with it
-        lock(&self.inner).asked.clear();
-        self.ask_root_commits();
+        // asked on the worker: the members may be being read now (a plugin start never waits for them)
+        let sent = lock(&self.tx)
+            .as_ref()
+            .is_some_and(|tx| tx.send(Msg::Ask).is_ok());
+        if !sent {
+            self.ask_root_commits();
+        }
         ProjectsSubscription {
             owner: Arc::downgrade(self),
             id,
@@ -816,7 +953,7 @@ impl Projects {
         if self.files_only || self.stopped.load(Ordering::Relaxed) {
             return Ok(());
         }
-        let mut inner = lock(&self.inner);
+        let mut inner = self.state();
         let RecordRead::Read(record) = &inner.record else {
             return Ok(());
         };
@@ -1104,7 +1241,7 @@ impl Projects {
         }
         let mut after = After::default();
         {
-            let mut inner = lock(&self.inner);
+            let mut inner = self.state();
             if hint.record {
                 let read = read_record(self.root.path());
                 if read != inner.record {
@@ -1184,7 +1321,7 @@ impl Projects {
         }
         let mut after = After::default();
         {
-            let mut inner = lock(&self.inner);
+            let mut inner = self.state();
             let old = inner.inputs.clone();
             let old_ask = inner.ask.clone();
             let was_ready = inner.ready;
@@ -1556,6 +1693,27 @@ impl Projects {
         }
     }
 
+    /// Whether the worker set the owners of the record's members (a follower that starts before stays paused until
+    /// the `Resume` that follows, so nothing lands in the wrong owner's file).
+    #[must_use]
+    pub fn owners_known(&self) -> bool {
+        self.owners_known.load(Ordering::Acquire)
+    }
+
+    /// Waits (at most `timeout`) until the worker set the owners of the record's members, on the caller's own thread
+    /// (a plugin worker: never the open path). `false`: not yet.
+    #[must_use]
+    pub fn wait_owners(&self, timeout: Duration) -> bool {
+        let start = Instant::now();
+        while !self.owners_known.load(Ordering::Acquire) {
+            if start.elapsed() >= timeout || self.stopped.load(Ordering::Relaxed) {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        true
+    }
+
     /// Whether the 0.6 state of `uid` was copied (tests, views).
     #[must_use]
     pub fn is_migrated(&self, uid: &ProjectUid) -> bool {
@@ -1593,13 +1751,16 @@ impl Projects {
         let _turn = lock(&self.owners_turn);
         let map = self.snapshot();
         let moves = std::mem::take(&mut lock(&self.inner).pending_moves);
+        if !self.files_only {
+            self.forget_left(&map);
+        }
         let to_copy: Vec<MemberInfo> = if self.files_only {
             Vec::new()
         } else {
             let inner = lock(&self.inner);
             map.members()
                 .iter()
-                .filter(|m| !is_copied(&inner, m))
+                .filter(|m| !is_copied(&inner, m) && !inner.copy_failed.contains(&m.uid))
                 .cloned()
                 .collect()
         };
@@ -1638,38 +1799,66 @@ impl Projects {
         }
     }
 
-    /// Copies the opened folder's 0.6 state into each member (`projects.md` §9.3); marks the ones that succeeded.
+    /// Members that were owners and are no longer in the map (left out, removed, declined): their copy mark goes, so
+    /// an include later copies what the opened folder got meanwhile (the ledger keeps out what was copied before).
+    fn forget_left(&self, map: &ProjectMap) {
+        let left: Vec<String> = lock(&self.owners)
+            .slots()
+            .iter()
+            .filter_map(|s| s.uid.as_ref())
+            .filter(|uid| map.member(uid).is_none())
+            .map(|uid| uid.as_str().to_owned())
+            .collect();
+        if left.is_empty() {
+            return;
+        }
+        let mut inner = lock(&self.inner);
+        let before = inner.migrated.len();
+        inner.migrated.retain(|u| !left.contains(u));
+        if inner.migrated.len() != before {
+            // a failed save keeps the mark on disk: a later include with the same uid then copies at the next start
+            let _ = self.save_membership(&inner);
+        }
+    }
+
+    /// Copies the opened folder's 0.6 state into each member (`projects.md` §9.3, by entry: §14 D50); marks the ones
+    /// that succeeded (copy + ledger saved).
     fn copy_state(&self, members: &[MemberInfo]) {
         let root = StateStore::for_project(&self.dirs, &self.root);
+        let ledger_file =
+            root.profile_file::<super::migrate::LedgerFile>(super::migrate::LEDGER_FILE);
+        let mut ledger = ledger_file.load().into_value();
         let mut done = Vec::new();
+        let mut failed = Vec::new();
         for member in members {
             let Some(target) = self.store_of(&member.path) else {
                 continue;
             };
-            if super::migrate::copy_state(&root, &target, member.path.as_str()).is_ok() {
-                done.push(member);
+            let seen = ledger.members.entry(member.key.clone()).or_default();
+            match super::migrate::copy_state(&root, &target, member.path.as_str(), seen) {
+                Ok(_) => done.push(member),
+                Err(_) => failed.push(member.uid.clone()),
             }
         }
+        if !done.is_empty() && ledger_file.save(&ledger).is_err() {
+            // the copies stand (the project's entries win next time); the marks wait for a ledger that is saved
+            failed.extend(done.drain(..).map(|m| m.uid.clone()));
+        }
+        let mut inner = lock(&self.inner);
+        inner.copy_failed.extend(failed);
         if done.is_empty() {
             return;
         }
-        let mut inner = lock(&self.inner);
         for member in done {
             let uid = member.uid.as_str().to_owned();
             if !inner.migrated.contains(&uid) {
                 inner.migrated.push(uid);
             }
-            if !inner.migrated_paths.contains(&member.key) {
-                inner.migrated_paths.push(member.key.clone());
-            }
         }
-        let inner = &mut *inner;
-        for list in [&mut inner.migrated, &mut inner.migrated_paths] {
-            let over = list.len().saturating_sub(MAX_MIGRATED);
-            list.drain(..over);
-        }
-        // not saved: copied again next start (idempotent: the project's entries win)
-        let _ = self.save_membership(inner);
+        let over = inner.migrated.len().saturating_sub(MAX_MIGRATED);
+        inner.migrated.drain(..over);
+        // not saved: copied again next start (by ledger: nothing twice)
+        let _ = self.save_membership(&inner);
     }
 
     // ---- publishing ------------------------------------------------------------------------------------------------
@@ -1773,7 +1962,6 @@ impl Projects {
             answer: inner.inputs.answer,
             declined: inner.inputs.declined.clone(),
             migrated: inner.migrated.clone(),
-            migrated_paths: inner.migrated_paths.clone(),
             agent_off: inner
                 .inputs
                 .agent_off
@@ -1903,7 +2091,7 @@ impl Projects {
     ) -> Result<(IncludeOutcome, bool), IpcError> {
         let needs_init = !real_dir(&self.root.path().join(PERMARK_DIR));
         {
-            let inner = lock(&self.inner);
+            let inner = self.state();
             if Self::keys_of(&inner, pick, &[Candidate::Offered, Candidate::Declined]).is_empty() {
                 return Ok((
                     IncludeOutcome {
@@ -1917,7 +2105,7 @@ impl Projects {
         if needs_init {
             init()?;
         }
-        let mut inner = lock(&self.inner);
+        let mut inner = self.state();
         let wanted: &[Candidate] = match pick {
             // Include all: the offered ones (declined stay declined)
             ProjectPick::All => &[Candidate::Offered],
@@ -2007,7 +2195,7 @@ impl Projects {
     /// # Errors
     /// Record write failures.
     pub fn undo(&self, token: u64) -> Result<UndoPlan, IpcError> {
-        let mut inner = lock(&self.inner);
+        let mut inner = self.state();
         let Some(undo) = inner.undo.clone().filter(|u| u.token == token) else {
             return Ok(UndoPlan {
                 undone: false,
@@ -2067,7 +2255,7 @@ impl Projects {
 
     /// A person's change of the list other than include | undo.
     fn person(&self, event: &Event) -> Result<(), IpcError> {
-        let mut inner = lock(&self.inner);
+        let mut inner = self.state();
         let after = self.apply_event(&mut inner, event, false)?;
         if after.changed {
             inner.undo = None;
@@ -2085,7 +2273,7 @@ impl Projects {
         let event = match pick {
             ProjectPick::All => Event::DeclineAll,
             ProjectPick::Paths { .. } => {
-                let inner = lock(&self.inner);
+                let inner = self.state();
                 Event::Decline(Self::keys_of(&inner, pick, &[Candidate::Offered]))
             }
         };
@@ -2135,7 +2323,7 @@ impl Projects {
             return Ok(Some(LocateRefusal::NotProject));
         }
         {
-            let inner = lock(&self.inner);
+            let inner = self.state();
             let key = path.key();
             if inner
                 .inputs
@@ -2175,7 +2363,7 @@ impl Projects {
         let path = VaultPath::parse(path)
             .map_err(|_| IpcError::new(ErrorKind::InvalidPath).subject(path.to_owned()))?;
         if same {
-            let mut inner = lock(&self.inner);
+            let mut inner = self.state();
             let was_missing = inner.inputs.presence.get(uid) == Some(&Presence::Gone);
             let mut after = self.apply_event(
                 &mut inner,
@@ -2195,7 +2383,7 @@ impl Projects {
             drop(inner);
             self.finish(&after);
         } else {
-            let mut inner = lock(&self.inner);
+            let mut inner = self.state();
             inner.rejected.insert((uid.clone(), path.key()));
             // the next candidate, if any (clones: one at a time)
             inner.ask = self.move_question(&inner);
@@ -2215,7 +2403,7 @@ impl Projects {
     /// # Errors
     /// `NotFound` (no such member), `InvalidData`, `Unavailable`, `Conflict`, IO.
     pub fn card_set(&self, target: &CardTarget, change: &CardChange) -> Result<CardDto, IpcError> {
-        let mut inner = lock(&self.inner);
+        let mut inner = self.state();
         let (abs, uid, rel) =
             match target {
                 CardTarget::Root => {
@@ -2281,7 +2469,7 @@ impl Projects {
     #[must_use]
     #[allow(clippy::too_many_lines)] // one row per candidate, every field of `ProjectRow`
     pub fn view(&self) -> ProjectsView {
-        let mut inner = lock(&self.inner);
+        let mut inner = self.state();
         let root_card = self.root_card(&mut inner).clone();
         let states = inner.inputs.derive();
         let keys: HashSet<&str> = states.keys().map(String::as_str).collect();
@@ -2515,70 +2703,97 @@ impl Projects {
     ///
     /// # Errors
     /// `InvalidData` (empty name); `Unavailable` (no `.permark/` here, list unreadable | newer, a link in the way,
-    /// a reader with no window); `Conflict` (changed while saving); IO.
+    /// a reader with no window); `Conflict` (kept changing while saving); IO.
     pub fn promote(&self, kind: VocabKind, name: &str) -> Result<(), IpcError> {
-        let unavailable = || IpcError::new(ErrorKind::Unavailable).subject("vocabulary");
-        let name = crate::organizing::normalize::normalize_tag(name)
-            .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject("name"))?;
+        let name = vocab_name(name, "name")?;
+        let style = self
+            .vocabularies()
+            .local_style(kind, &name)
+            .cloned()
+            .unwrap_or_default();
+        self.edit_vocabulary(|text| {
+            vocabulary::promote_text(text, kind, &name, &style)
+                .map_err(|m| vocab_unavailable().detail(m))
+        })
+    }
+
+    /// Renames an official tag | category (`projects.md` §7.2): only the entry's key changes. Documents are never
+    /// edited (the old name left in files becomes unlisted).
+    ///
+    /// # Errors
+    /// `InvalidData` (`name` | `newName` empty); `NotFound` (`name` not listed); `Exists` (`newName` already listed);
+    /// `Unavailable` | `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_rename(
+        &self,
+        kind: VocabKind,
+        name: &str,
+        new_name: &str,
+    ) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        let new_name = vocab_name(new_name, "newName")?;
+        self.edit_vocabulary(|text| {
+            vocabulary::rename_text(text, kind, &name, &new_name).map_err(refusal)
+        })
+    }
+
+    /// Takes an official tag | category out of the list (`projects.md` §7.2); comments around it stay.
+    ///
+    /// # Errors
+    /// `InvalidData` (empty name); `NotFound` (not listed); `Unavailable` | `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_remove(&self, kind: VocabKind, name: &str) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        self.edit_vocabulary(|text| {
+            vocabulary::remove_text(text, kind, &name)
+                .map(Some)
+                .map_err(refusal)
+        })
+    }
+
+    /// Sets the whole look of an official tag | category (`None` = no color | no icon), like `tags.setStyle`.
+    ///
+    /// # Errors
+    /// `InvalidData` (empty name; `color` | `icon` outside the style sets); `NotFound` (not listed); `Unavailable` |
+    /// `Conflict` | IO as [`Projects::promote`].
+    pub fn vocabulary_set_style(
+        &self,
+        kind: VocabKind,
+        name: &str,
+        color: Option<&str>,
+        icon: Option<&str>,
+    ) -> Result<(), IpcError> {
+        let name = vocab_name(name, "name")?;
+        let style = vocabulary::VocabStyle {
+            color: style_value(color, crate::organizing::normalize::known_color, "color")?,
+            icon: style_value(icon, crate::organizing::normalize::known_icon, "icon")?,
+        };
+        self.edit_vocabulary(|text| {
+            vocabulary::set_style_text(text, kind, &name, &style).map_err(refusal)
+        })
+    }
+
+    /// One write of the opened folder's `vocabulary.toml` (`projects.md` §7.2, `state::shared_write` rules): under
+    /// the file's lock, `edit` gets the text as it is on disk now (BOM off; `""` = no file) and answers the new text
+    /// (`None`: nothing to write); written only while the file still holds what was read, else read again and `edit`
+    /// asked again (an outside edit meanwhile is never written over). Then the lists are read again and the windows
+    /// told (`projects-changed`, `tags:changed`).
+    fn edit_vocabulary(
+        &self,
+        edit: impl FnMut(&str) -> Result<Option<String>, IpcError>,
+    ) -> Result<(), IpcError> {
         if self.files_only || !real_dir(&self.root.path().join(PERMARK_DIR)) {
-            return Err(unavailable());
+            return Err(vocab_unavailable());
         }
-        let vocab = self.vocabularies();
-        if !matches!(vocab.official, VocabRead::Absent | VocabRead::Read(_)) {
-            return Err(unavailable());
-        }
-        let style = vocab.local_style(kind, &name).cloned().unwrap_or_default();
         let path = self
             .root
             .path()
             .join(PERMARK_DIR)
             .join(vocabulary::VOCABULARY_FILE);
         if crate::tree::is_link_meta_of(&path) {
-            return Err(unavailable());
+            return Err(vocab_unavailable());
         }
-        let old = match std::fs::read(&path) {
-            Ok(bytes) => Some(bytes),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(IpcError::io("vocabulary.toml", &e)),
-        };
-        let (bom, text) = match old.as_deref() {
-            None => (false, ""),
-            Some(bytes) => {
-                let (bom, rest) = bytes
-                    .strip_prefix(BOM)
-                    .map_or((false, bytes), |rest| (true, rest));
-                (bom, std::str::from_utf8(rest).map_err(|_| unavailable())?)
-            }
-        };
-        let Some(new_text) = vocabulary::promote_text(text, kind, &name, &style)
-            .map_err(|m| unavailable().detail(m))?
-        else {
+        let Some(bytes) = vocabulary::write_file(&path, &self.own, edit)? else {
             return Ok(());
         };
-        let mut bytes = Vec::with_capacity(new_text.len() + 3);
-        if bom {
-            bytes.extend_from_slice(BOM);
-        }
-        bytes.extend_from_slice(new_text.as_bytes());
-        let hash = crate::fsx::hash(&bytes);
-        self.own.expect_write(".permark/vocabulary.toml", hash);
-        let written =
-            crate::fsx::write_atomic_checked(&path, &bytes, || match std::fs::read(&path) {
-                Ok(now) => Ok(old.as_deref() == Some(now.as_slice())),
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(old.is_none()),
-                Err(e) => Err(e),
-            });
-        let written = match written {
-            Ok(written) => written,
-            Err(e) => {
-                self.own.retract_write(".permark/vocabulary.toml", hash);
-                return Err(IpcError::io("vocabulary.toml", &e));
-            }
-        };
-        if !written {
-            self.own.retract_write(".permark/vocabulary.toml", hash);
-            return Err(IpcError::new(ErrorKind::Conflict).subject("vocabulary"));
-        }
         {
             let mut inner = lock(&self.inner);
             inner.vocab_root = Some(vocabulary::parse(&bytes));
@@ -2590,6 +2805,38 @@ impl Projects {
             ..After::default()
         });
         Ok(())
+    }
+}
+
+fn vocab_unavailable() -> IpcError {
+    IpcError::new(ErrorKind::Unavailable).subject("vocabulary")
+}
+
+/// A name typed for a list, tag-normalized; empty -> `InvalidData` on `subject`.
+fn vocab_name(raw: &str, subject: &str) -> Result<String, IpcError> {
+    crate::organizing::normalize::normalize_tag(raw)
+        .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject(subject))
+}
+
+/// A color | icon from the style sets (any case), `None` = none; another value -> `InvalidData` on `subject`.
+fn style_value(
+    raw: Option<&str>,
+    known: fn(&str) -> Option<&'static str>,
+    subject: &str,
+) -> Result<Option<String>, IpcError> {
+    raw.map(|raw| {
+        known(raw)
+            .map(str::to_owned)
+            .ok_or_else(|| IpcError::new(ErrorKind::InvalidData).subject(subject))
+    })
+    .transpose()
+}
+
+fn refusal(why: vocabulary::EditRefusal) -> IpcError {
+    match why {
+        vocabulary::EditRefusal::Unreadable(m) => vocab_unavailable().detail(m),
+        vocabulary::EditRefusal::NotListed => IpcError::new(ErrorKind::NotFound).subject("name"),
+        vocabulary::EditRefusal::Taken => IpcError::new(ErrorKind::Exists).subject("newName"),
     }
 }
 

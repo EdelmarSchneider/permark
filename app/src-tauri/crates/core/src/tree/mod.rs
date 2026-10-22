@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 pub use category::{category_of, extension_of, is_html, may_open_with_default_app, Category};
-pub use explorer::Explorer;
+pub use explorer::{Explorer, WalkGate};
 pub use filter::{FilterShow, TreeFilter};
 pub use ignore::{Ignorer, MemberRule, MemberSet};
 pub(crate) use model::{below_root, is_link as is_link_meta, key_of, path_always_out};

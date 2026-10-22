@@ -291,6 +291,395 @@ pub fn promote_text(
     Ok(Some(crate::settings::render(&doc, original)))
 }
 
+/// Why an edit of an official name was not made (`projects.md` §7.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EditRefusal {
+    /// `text` is not TOML, or the kind's table is not a table.
+    Unreadable(String),
+    /// The name is not in the list.
+    NotListed,
+    /// Rename: the new name is already in the list (never merged).
+    Taken,
+}
+
+/// The kind's table of the document, as a header table (`[tags]` | `[tags.x]` | dotted keys) or an inline table.
+enum Parent<'a> {
+    Table(&'a mut Table),
+    Inline(&'a mut toml_edit::InlineTable),
+}
+
+fn parent_of(doc: &mut DocumentMut, kind: VocabKind) -> Result<Option<Parent<'_>>, EditRefusal> {
+    match doc.get_mut(kind.table()) {
+        None => Ok(None),
+        Some(Item::Table(t)) => Ok(Some(Parent::Table(t))),
+        Some(Item::Value(Value::InlineTable(t))) => Ok(Some(Parent::Inline(t))),
+        Some(_) => Err(EditRefusal::Unreadable(format!(
+            "`{}` is not a table",
+            kind.table()
+        ))),
+    }
+}
+
+impl Parent<'_> {
+    fn like(&mut self) -> &mut dyn TableLike {
+        match self {
+            Self::Table(t) => *t,
+            Self::Inline(t) => *t,
+        }
+    }
+
+    /// The keys as written whose normalized form is `name`, in file order (the first is the one [`parse`] reads).
+    fn spellings(&mut self, name: &str) -> Vec<String> {
+        self.like()
+            .iter()
+            .filter(|(k, _)| normalize_tag(k).as_deref() == Some(name))
+            .map(|(k, _)| k.to_owned())
+            .collect()
+    }
+
+    /// Gives the entry `old` the key `new` in place: the entries after it are taken out and put back in order (a
+    /// header table keeps its place by its position anyway), the key keeps its decor.
+    fn rename(&mut self, old: &str, new: &str) {
+        let decor = |key: &toml_edit::Key| {
+            toml_edit::Key::new(new)
+                .with_leaf_decor(key.leaf_decor().clone())
+                .with_dotted_decor(key.dotted_decor().clone())
+        };
+        match self {
+            Self::Table(t) => {
+                let keys: Vec<String> = t.iter().map(|(k, _)| k.to_owned()).collect();
+                let Some(at) = keys.iter().position(|k| k == old) else {
+                    return;
+                };
+                let tail: Vec<_> = keys[at..]
+                    .iter()
+                    .filter_map(|k| t.remove_entry(k))
+                    .collect();
+                for (i, (key, item)) in tail.into_iter().enumerate() {
+                    let key = if i == 0 { decor(&key) } else { key };
+                    t.insert_formatted(&key, item);
+                }
+            }
+            Self::Inline(t) => {
+                let keys: Vec<String> = t.iter().map(|(k, _)| k.to_owned()).collect();
+                let Some(at) = keys.iter().position(|k| k == old) else {
+                    return;
+                };
+                let tail: Vec<_> = keys[at..]
+                    .iter()
+                    .filter_map(|k| t.remove_entry(k))
+                    .collect();
+                for (i, (key, value)) in tail.into_iter().enumerate() {
+                    let key = if i == 0 { decor(&key) } else { key };
+                    t.insert_formatted(&key, value);
+                }
+            }
+        }
+    }
+}
+
+/// Every table with a header (position, key path), for carrying comments of a removed table.
+fn header_tables(table: &Table, path: &mut Vec<String>, out: &mut Vec<(isize, Vec<String>)>) {
+    for (key, item) in table {
+        if let Item::Table(t) = item {
+            path.push(key.to_owned());
+            if !t.is_implicit() && !t.is_dotted() {
+                if let Some(position) = t.position() {
+                    out.push((position, path.clone()));
+                }
+            }
+            header_tables(t, path, out);
+            path.pop();
+        }
+    }
+}
+
+/// The comments written in front of a removed table go in front of the next table (else to the end of the file):
+/// removing an entry never takes the person's other text with it.
+fn carry_comments(doc: &mut DocumentMut, after: isize, prefix: &str) {
+    let mut all = Vec::new();
+    header_tables(doc.as_table(), &mut Vec::new(), &mut all);
+    let next = all
+        .into_iter()
+        .filter(|(position, _)| *position > after)
+        .min_by_key(|(position, _)| *position);
+    let table = next.and_then(|(_, path)| {
+        let mut table = doc.as_table_mut();
+        for key in &path {
+            table = table.get_mut(key)?.as_table_mut()?;
+        }
+        Some(table)
+    });
+    if let Some(table) = table {
+        let had = table
+            .decor()
+            .prefix()
+            .and_then(|p| p.as_str())
+            .unwrap_or_default()
+            .trim_start_matches(['\r', '\n'])
+            .to_owned();
+        table.decor_mut().set_prefix(format!("{prefix}{had}"));
+    } else {
+        let had = doc.trailing().as_str().unwrap_or_default().to_owned();
+        doc.set_trailing(format!("{had}{prefix}"));
+    }
+}
+
+fn doc_of(text: &str) -> Result<DocumentMut, EditRefusal> {
+    text.parse::<DocumentMut>()
+        .map_err(|e| EditRefusal::Unreadable(e.message().trim().to_owned()))
+}
+
+/// `text` with the official `name` renamed to `new` (both tag-normalized by the caller): only the key's text changes,
+/// its place, keys and comments stay. Other spellings of `name` (ignored when read) are dropped. Same name -> `None`.
+///
+/// # Errors
+/// Not TOML | not a table; `name` not listed; `new` already listed.
+pub fn rename_text(
+    text: &str,
+    kind: VocabKind,
+    name: &str,
+    new: &str,
+) -> Result<Option<String>, EditRefusal> {
+    let mut doc = doc_of(text)?;
+    let mut parent = parent_of(&mut doc, kind)?.ok_or(EditRefusal::NotListed)?;
+    let spellings = parent.spellings(name);
+    let Some((first, others)) = spellings.split_first() else {
+        return Err(EditRefusal::NotListed);
+    };
+    if name == new {
+        return Ok(None);
+    }
+    if !parent.spellings(new).is_empty() {
+        return Err(EditRefusal::Taken);
+    }
+    parent.rename(first, new);
+    let others = others.to_vec();
+    remove_keys(&mut doc, kind, &others)?;
+    Ok(Some(finish(&doc, text)))
+}
+
+/// Takes the entries `keys` (as written) out of the kind's table, keeping the comments in front of header tables.
+fn remove_keys(doc: &mut DocumentMut, kind: VocabKind, keys: &[String]) -> Result<(), EditRefusal> {
+    for key in keys {
+        let carried = {
+            let Some(mut parent) = parent_of(doc, kind)? else {
+                return Ok(());
+            };
+            match parent.like().remove(key) {
+                Some(Item::Table(t)) => t.position().and_then(|position| {
+                    let prefix = t.decor().prefix().and_then(|p| p.as_str())?;
+                    prefix.contains('#').then(|| (position, prefix.to_owned()))
+                }),
+                _ => None,
+            }
+        };
+        if let Some((position, prefix)) = carried {
+            carry_comments(doc, position, &prefix);
+        }
+    }
+    Ok(())
+}
+
+/// `text` with the official `name` (tag-normalized) taken out of the kind's list, every spelling of it.
+///
+/// # Errors
+/// Not TOML | not a table; `name` not listed.
+pub fn remove_text(text: &str, kind: VocabKind, name: &str) -> Result<String, EditRefusal> {
+    let mut doc = doc_of(text)?;
+    let spellings = parent_of(&mut doc, kind)?
+        .ok_or(EditRefusal::NotListed)?
+        .spellings(name);
+    if spellings.is_empty() {
+        return Err(EditRefusal::NotListed);
+    }
+    remove_keys(&mut doc, kind, &spellings)?;
+    Ok(finish(&doc, text))
+}
+
+/// `text` with the look of the official `name` (tag-normalized) set: `color` | `icon` written | removed, its other
+/// keys kept. Same look already -> `None`. An entry written as a plain value (`spec = true`) becomes a table only when
+/// it gets a look.
+///
+/// # Errors
+/// Not TOML | not a table; `name` not listed.
+pub fn set_style_text(
+    text: &str,
+    kind: VocabKind,
+    name: &str,
+    style: &VocabStyle,
+) -> Result<Option<String>, EditRefusal> {
+    let mut doc = doc_of(text)?;
+    let mut parent = parent_of(&mut doc, kind)?.ok_or(EditRefusal::NotListed)?;
+    let Some(first) = parent.spellings(name).into_iter().next() else {
+        return Err(EditRefusal::NotListed);
+    };
+    let like = parent.like();
+    let current = like
+        .get(&first)
+        .and_then(Item::as_table_like)
+        .map(style_of)
+        .unwrap_or_default();
+    if &current == style {
+        return Ok(None);
+    }
+    let like = parent.like();
+    if like.get(&first).and_then(Item::as_table_like).is_none() {
+        // stays on its line: `spec = { color = "blue" }`
+        if let Some(slot) = like.get_mut(&first) {
+            let decor = slot.as_value().map(|v| v.decor().clone());
+            let mut table = Value::InlineTable(toml_edit::InlineTable::new());
+            if let Some(decor) = decor {
+                *table.decor_mut() = decor;
+            }
+            *slot = Item::Value(table);
+        }
+    }
+    // `[tags.spec.more]` alone: `spec` gets its own header once it has keys
+    if let Some(Item::Table(t)) = like.get_mut(&first) {
+        t.set_implicit(false);
+    }
+    let closing = inline_closing(like.get(&first));
+    let Some(entry) = like.get_mut(&first).and_then(Item::as_table_like_mut) else {
+        return Err(EditRefusal::NotListed);
+    };
+    for (key, value) in [("color", &style.color), ("icon", &style.icon)] {
+        match value {
+            Some(value) => {
+                let mut new = Value::from(value.as_str());
+                if let Some(old) = entry.get(key).and_then(Item::as_value) {
+                    *new.decor_mut() = old.decor().clone();
+                }
+                entry.insert(key, Item::Value(new));
+            }
+            None => {
+                entry.remove(key);
+            }
+        }
+    }
+    if let Some(Item::Value(Value::InlineTable(t))) = like.get_mut(&first) {
+        close_inline(t, closing.as_deref());
+    }
+    Ok(Some(finish(&doc, text)))
+}
+
+/// The space before an inline table's `}` (the last value's suffix), when it has values.
+fn inline_closing(item: Option<&Item>) -> Option<String> {
+    let Some(Item::Value(Value::InlineTable(t))) = item else {
+        return None;
+    };
+    let (_, last) = t.iter().last()?;
+    last.decor()
+        .suffix()
+        .and_then(|s| s.as_str())
+        .map(str::to_owned)
+}
+
+/// After keys were added | removed in an inline table: only the last value carries the space before `}`
+/// (`{ icon = "star", color = "red" }`, never `{ icon = "star" , color = "red" }`).
+fn close_inline(table: &mut toml_edit::InlineTable, closing: Option<&str>) {
+    let Some(closing) = closing else {
+        return;
+    };
+    let n = table.len();
+    for (i, (_, value)) in table.iter_mut().enumerate() {
+        let decor = value.decor_mut();
+        if i + 1 == n {
+            decor.set_suffix(closing);
+        } else if decor.suffix().and_then(|s| s.as_str()) == Some(closing) {
+            decor.set_suffix("");
+        }
+    }
+}
+
+/// The document as text in the line endings of `original`, with its end kept: a file without a final newline gets
+/// none from an edit.
+fn finish(doc: &DocumentMut, original: &str) -> String {
+    let mut out = crate::settings::render(doc, original);
+    if !original.is_empty() && !original.ends_with('\n') {
+        if let Some(cut) = out.strip_suffix("\r\n").or_else(|| out.strip_suffix('\n')) {
+            out = cut.to_owned();
+        }
+    }
+    out
+}
+
+/// Reads + writes one vocabulary edit tries before it gives up (`Conflict`): only a writer without the lock (a
+/// person's editor) can make it try again.
+pub(crate) const WRITE_ATTEMPTS: usize = 8;
+
+/// One write of a `vocabulary.toml` (`state::shared_write` rules): under the file's lock, `edit` gets the text as it is
+/// on disk now (BOM off; `""` = no file) and answers the new text (`None`: nothing to write); written only while the
+/// file still holds what was read, else read again and `edit` asked again: an outside edit meanwhile is never written
+/// over, the op lands on top of it. A newer | unreadable file as it is now is never written. Returns the bytes
+/// written (`None`: nothing changed). The caller checked `.permark/` (real folder, no link).
+///
+/// # Errors
+/// `Unavailable` (newer | unreadable | not UTF-8), what `edit` refuses, `Conflict` (lock held too long | kept
+/// changing), IO.
+pub(crate) fn write_file(
+    path: &Path,
+    own: &crate::watch::OwnWrites,
+    mut edit: impl FnMut(&str) -> Result<Option<String>, crate::IpcError>,
+) -> Result<Option<Vec<u8>>, crate::IpcError> {
+    use crate::{ErrorKind, IpcError};
+    const BOM: &[u8] = b"\xEF\xBB\xBF";
+    const OWN_KEY: &str = ".permark/vocabulary.toml";
+    let unavailable = || IpcError::new(ErrorKind::Unavailable).subject("vocabulary");
+    let conflict = || IpcError::new(ErrorKind::Conflict).subject("vocabulary");
+    let _lock = crate::state::shared_write::lock_for(path).map_err(|_| conflict())?;
+    for _ in 0..WRITE_ATTEMPTS {
+        let old = match std::fs::read(path) {
+            Ok(bytes) => Some(bytes),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(IpcError::io(VOCABULARY_FILE, &e)),
+        };
+        if old
+            .as_deref()
+            .is_some_and(|bytes| !matches!(parse(bytes), VocabRead::Read(_)))
+        {
+            return Err(unavailable());
+        }
+        let (bom, text) = match old.as_deref() {
+            None => (false, ""),
+            Some(bytes) => {
+                let (bom, rest) = bytes
+                    .strip_prefix(BOM)
+                    .map_or((false, bytes), |rest| (true, rest));
+                (bom, std::str::from_utf8(rest).map_err(|_| unavailable())?)
+            }
+        };
+        let Some(new_text) = edit(text)? else {
+            return Ok(None);
+        };
+        let mut bytes = Vec::with_capacity(new_text.len() + BOM.len());
+        if bom {
+            bytes.extend_from_slice(BOM);
+        }
+        bytes.extend_from_slice(new_text.as_bytes());
+        if old.as_deref() == Some(bytes.as_slice()) {
+            return Ok(None);
+        }
+        let hash = crate::fsx::hash(&bytes);
+        own.expect_write(OWN_KEY, hash);
+        let written =
+            crate::fsx::write_atomic_checked(path, &bytes, || match std::fs::read(path) {
+                Ok(now) => Ok(old.as_deref() == Some(now.as_slice())),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(old.is_none()),
+                Err(e) => Err(e),
+            });
+        match written {
+            Ok(true) => return Ok(Some(bytes)),
+            Ok(false) => own.retract_write(OWN_KEY, hash),
+            Err(e) => {
+                own.retract_write(OWN_KEY, hash);
+                return Err(IpcError::io(VOCABULARY_FILE, &e));
+            }
+        }
+    }
+    Err(conflict())
+}
+
 /// The vocabularies an opened folder knows: its own lists (official) and each included project's (local).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Vocabularies {

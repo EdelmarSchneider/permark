@@ -3,7 +3,8 @@
 //! with root-relative paths and split it by owner when they read and write ([`Owners`]); the core tells them before
 //! and after the owners change ([`OwnersChange`]), so nothing is written to a place that is about to move.
 
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
+use std::time::Duration;
 
 use super::uid::ProjectUid;
 use crate::paths::{key_of, WORKTREE_PREFIX};
@@ -177,6 +178,50 @@ impl Owners {
             out[i].push((self.rel(i, &path), item));
         }
         out
+    }
+}
+
+/// The writes of a plugin keeping state per owner wait here while it starts before the owners are known (verifier
+/// round 4 S3): a write made then would land in the opened folder's file and be hidden once the owners are known.
+/// Open by default; [`OwnersGate::close`] at a start before the owners are known, [`OwnersGate::open`] after the first
+/// `Resume` was applied.
+#[derive(Debug)]
+pub struct OwnersGate {
+    open: Mutex<bool>,
+    cv: Condvar,
+}
+
+impl Default for OwnersGate {
+    fn default() -> Self {
+        Self {
+            open: Mutex::new(true),
+            cv: Condvar::new(),
+        }
+    }
+}
+
+impl OwnersGate {
+    /// How long a write waits for the owners (the worker sets them in milliseconds after open; a stuck worker -> the
+    /// write goes on and the plugin's own pause refuses it).
+    pub const WAIT: Duration = Duration::from_secs(5);
+
+    pub fn close(&self) {
+        *self.open.lock().unwrap_or_else(PoisonError::into_inner) = false;
+    }
+
+    pub fn open(&self) {
+        *self.open.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.cv.notify_all();
+    }
+
+    /// Waits (at most [`OwnersGate::WAIT`]) until the gate is open; `false`: still closed.
+    pub fn wait(&self) -> bool {
+        let open = self.open.lock().unwrap_or_else(PoisonError::into_inner);
+        let (open, _) = self
+            .cv
+            .wait_timeout_while(open, Self::WAIT, |open| !*open)
+            .unwrap_or_else(PoisonError::into_inner);
+        *open
     }
 }
 

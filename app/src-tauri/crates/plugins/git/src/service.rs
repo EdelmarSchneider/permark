@@ -130,8 +130,8 @@ struct Shared {
     snapshot: RwLock<Option<Arc<GitSnapshot>>>,
     repo: RwLock<Option<Repo>>,
     /// Path keys of included projects with their own repository: the root status never lists their files
-    /// (`projects.md` §8).
-    excluded: RwLock<Vec<String>>,
+    /// (`projects.md` §8). `None`: not known yet (the worker asks before its first look).
+    excluded: RwLock<Option<Vec<String>>>,
     /// The baseline in use (members measure against the same kind).
     baseline: RwLock<Option<BaselineKind>>,
 }
@@ -233,9 +233,19 @@ pub struct ServiceArgs {
     pub announce: Announce,
     pub prefs: Option<StateFile<Prefs>>,
     pub visit: Option<StateFile<Visit>>,
-    /// Path keys of included projects with their own repository known at start: left out of the very first status
-    /// (`projects.md` §8; later changes: [`GitService::set_excluded`]).
-    pub excluded: Vec<String>,
+    /// Path keys of included projects with their own repository: left out of the very first status (`projects.md` §8;
+    /// later changes: [`GitService::set_excluded`]).
+    pub excluded: ExcludedAtStart,
+}
+
+/// Asked on the worker right before its very first look (the projects service may still be reading its members: the
+/// open call never waits for them). A list set meanwhile ([`GitService::set_excluded`]) is newer and wins.
+pub type ExcludedAtStart = Box<dyn FnOnce() -> Vec<String> + Send>;
+
+fn sorted(mut keys: Vec<String>) -> Vec<String> {
+    keys.sort();
+    keys.dedup();
+    keys
 }
 
 /// "Since the last visit" of one repository: the commit stored at the last close, the session's start, HEAD now.
@@ -317,17 +327,9 @@ impl std::fmt::Debug for GitService {
 
 impl GitService {
     #[must_use]
-    pub fn start(args: ServiceArgs) -> Self {
+    pub fn start(mut args: ServiceArgs) -> Self {
         let shared = Arc::new(Shared::default());
-        {
-            let mut keys = args.excluded.clone();
-            keys.sort();
-            keys.dedup();
-            *shared
-                .excluded
-                .write()
-                .unwrap_or_else(PoisonError::into_inner) = keys;
-        }
+        let excluded_at_start = std::mem::replace(&mut args.excluded, Box::new(Vec::new));
         let backends = Arc::new(BackendCell::new(args.choice.clone()));
         let stop = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();
@@ -359,7 +361,16 @@ impl GitService {
         let thread = thread::Builder::new()
             .name("permark-git".to_owned())
             .stack_size(8 * 1024 * 1024)
-            .spawn(move || worker.run(&rx))
+            .spawn(move || {
+                let keys = sorted(excluded_at_start());
+                worker
+                    .shared
+                    .excluded
+                    .write()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .get_or_insert(keys);
+                worker.run(&rx);
+            })
             .ok();
         Self {
             shared,
@@ -388,19 +399,18 @@ impl GitService {
 
     /// Included projects with their own repository (path keys): their files leave the root status; a change of the
     /// set looks at the root again.
-    pub fn set_excluded(&self, mut keys: Vec<String>) {
-        keys.sort();
-        keys.dedup();
+    pub fn set_excluded(&self, keys: Vec<String>) {
+        let keys = sorted(keys);
         {
             let mut excluded = self
                 .shared
                 .excluded
                 .write()
                 .unwrap_or_else(PoisonError::into_inner);
-            if *excluded == keys {
+            if excluded.as_ref() == Some(&keys) {
                 return;
             }
-            *excluded = keys;
+            *excluded = Some(keys);
         }
         self.trigger(Why::Focus);
     }
@@ -694,7 +704,8 @@ impl Worker {
             .excluded
             .read()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+            .clone()
+            .unwrap_or_default();
         // included projects with their own repository: that repository owns their files
         let mut files: Vec<RawFile> = status
             .files

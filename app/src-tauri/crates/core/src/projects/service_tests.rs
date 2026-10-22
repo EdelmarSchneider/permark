@@ -746,9 +746,9 @@ fn case_twins_and_a_long_root_path() {
     assert_eq!(core.projects().held_members(), want);
 }
 
-/// Spec §13 perf (counting test): a plain folder costs the projects service nothing after open. Open = one record probe
-/// and one stat per ancestor level (opened-alone rules, <= 32); discovery after the walk, rescans and folder batches
-/// touch the disk 0 times (the walk finds markers by name, no extra syscall).
+/// Spec §13 perf (counting test): a plain folder costs the projects service nothing after open. Open = no disk touch;
+/// the first walk reads the record (one probe) and one stat per ancestor level (opened-alone rules, <= 32) first;
+/// discovery after the walk, rescans and folder batches touch the disk 0 times (the walk finds markers by name).
 #[test]
 fn a_plain_folder_costs_no_disk_touch_after_open() {
     let base = tempfile::tempdir().unwrap();
@@ -778,12 +778,14 @@ fn a_plain_folder_costs_no_disk_touch_after_open() {
         false,
         &config.ignore,
     );
-    let at_open = probe::count() - before;
-    assert!(
-        at_open <= 1 + levels.min(MAX_ANCESTORS as u64),
-        "open: {at_open} touches for {levels} levels"
-    );
+    assert_eq!(probe::count() - before, 0, "nothing read at open");
+    let before = probe::count();
     let markers = explorer.markers();
+    let at_walk = probe::count() - before;
+    assert!(
+        at_walk <= 1 + levels.min(MAX_ANCESTORS as u64),
+        "first walk: {at_walk} touches for {levels} levels"
+    );
     let before = probe::count();
     projects.discover(&Hint::default(), true, &markers);
     projects.on_hint(
@@ -1012,6 +1014,141 @@ fn closing_during_the_walk_lets_the_service_go_at_once() {
         started.elapsed() < Duration::from_secs(2),
         "close never waits for the walk"
     );
+}
+
+/// A folder whose record lists `n` git projects below the ignored `hub/` (one doc each).
+fn listed_root(n: usize) -> tempfile::TempDir {
+    use std::fmt::Write as _;
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join(".gitignore"), "hub/\n").unwrap();
+    let mut record = String::from("version = 1\n");
+    for i in 0..n {
+        git(dir.path(), &format!("hub/p {i}"));
+        fs::write(dir.path().join(format!("hub/p {i}/a.md")), "# a").unwrap();
+        let _ = write!(record, "\n[[project]]\npath = \"hub/p {i}\"\n");
+    }
+    permark(dir.path(), "");
+    fs::write(dir.path().join(".permark/projects.toml"), record).unwrap();
+    dir
+}
+
+/// The service alone on `root` (no worker, no walk yet).
+fn bare(root: &Root, base: &Path) -> (Arc<Explorer>, Arc<Projects>) {
+    let config = ProjectConfig::load(root);
+    let sink: Arc<dyn EventSink> = Arc::new(crate::events::NoEvents);
+    let explorer = Arc::new(Explorer::new(
+        &crate::paths::Vault::new(root.clone()),
+        &config,
+        Arc::clone(&sink),
+        None,
+    ));
+    let projects = Projects::open(
+        root,
+        &AppDirs::under(base),
+        Arc::clone(&explorer),
+        Arc::new(OwnWrites::new()),
+        WatchHub::new(),
+        sink,
+        false,
+        &config.ignore,
+    );
+    (explorer, projects)
+}
+
+/// Perf F1 (`perf-nested-projects.md`): opening a folder costs the same whatever its record lists. Counted, not timed:
+/// the projects service touches the disk 0 times on the opening thread for 1 and for 60 listed projects; the members
+/// are read off the open call, before the walk (all held once the map is ready).
+#[test]
+fn open_cost_does_not_scale_with_listed_projects() {
+    for n in [1_usize, 60] {
+        let base = tempfile::tempdir().unwrap();
+        let dir = listed_root(n);
+        let (env, _) = env(base.path());
+        let before = probe::count();
+        let core = ProjectCore::open(Root::open(dir.path()).unwrap(), &env);
+        assert_eq!(
+            probe::count() - before,
+            0,
+            "{n} listed: nothing read at open"
+        );
+        let view = ready(&core);
+        let included = view
+            .rows
+            .iter()
+            .filter(|r| r.state == MemberState::Included)
+            .count();
+        assert_eq!((included, core.projects().held_members()), (n, n));
+        // the walk started with the members known: a member below an ignored folder is in the first tree
+        assert!(core.explorer().listed("hub/p 0/a.md").is_some());
+    }
+}
+
+/// Adversarial (F1): a view or a command right after open, before any walk, waits for the record + members instead of
+/// answering from an empty list (an include then would never write over a record it had not read).
+#[test]
+fn a_view_right_after_open_has_the_record_before_any_walk() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = listed_root(3);
+    let root = Root::open(dir.path()).unwrap();
+    let (explorer, projects) = bare(&root, base.path());
+    assert_eq!(projects.held_members(), 0, "nothing read at open");
+    let view = projects.view();
+    assert_eq!(view.record, RecordStatus::Ok, "{view:#?}");
+    assert_eq!(
+        view.rows
+            .iter()
+            .filter(|r| r.state == MemberState::Included)
+            .count(),
+        3
+    );
+    assert_eq!(projects.held_members(), 3);
+    assert!(!explorer.walking(), "the view never walks");
+    // read once: the walk passes the gate without reading again
+    let before = probe::count();
+    let _ = explorer.markers();
+    assert_eq!(probe::count() - before, 0);
+}
+
+/// Adversarial (F1, teardown symmetry): closed before the members were read -> reading later holds nothing.
+#[test]
+fn closed_before_the_members_were_read_holds_nothing() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = listed_root(2);
+    let root = Root::open(dir.path()).unwrap();
+    let (explorer, projects) = bare(&root, base.path());
+    projects.stop();
+    let _ = explorer.markers();
+    projects.load();
+    assert_eq!(projects.held_members(), 0);
+    assert_eq!(projects.snapshot().members().len(), 0);
+}
+
+/// Adversarial (F1): several threads ask for the members at once (walk, scan, command, worker): read once, every caller
+/// waits for that one read.
+#[test]
+fn members_asked_from_many_threads_are_read_once() {
+    let base = tempfile::tempdir().unwrap();
+    let dir = listed_root(20);
+    let root = Root::open(dir.path()).unwrap();
+    let (explorer, projects) = bare(&root, base.path());
+    let never = std::sync::atomic::AtomicBool::new(false);
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            let _ = explorer.markers();
+            assert_eq!(projects.held_members(), 20);
+        });
+        s.spawn(|| {
+            let _ = explorer.scan(&never);
+            assert_eq!(projects.held_members(), 20);
+        });
+        s.spawn(|| {
+            assert_eq!(projects.view().rows.len(), 20);
+        });
+        s.spawn(|| {
+            projects.load();
+            assert_eq!(projects.held_members(), 20);
+        });
+    });
 }
 
 /// Live moves (real fs renames under the real watch).

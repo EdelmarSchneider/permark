@@ -19,6 +19,13 @@ use serde_json::{json, Value};
 
 use super::*;
 
+/// The core of `root`, once its projects worker set the owners (never on the open path).
+fn opened(root: &Path, env: &CoreEnv) -> Arc<ProjectCore> {
+    let core = ProjectCore::open(Root::open(root).unwrap(), env);
+    assert!(core.projects().wait_owners(Duration::from_secs(10)));
+    core
+}
+
 fn env(base: &Path) -> CoreEnv {
     CoreEnv::new(
         AppDirs::under(base),
@@ -115,7 +122,7 @@ fn read_state_lives_with_its_project_and_unread_stays_unread() {
     let root_read = root.join(".permark/local/plugins/unread/read.json");
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     // copied once: b stays unread; the fresh project starts read (no flood)
     assert_eq!(unread_now(&core), ["sub/b.md"]);
     let member_read = root.join("sub/.permark/local/plugins/unread/read.json");
@@ -159,7 +166,7 @@ fn a_project_included_while_open_keeps_what_the_root_knew() {
     std::fs::remove_file(root.join(".permark/projects.toml")).unwrap();
     let base = tempfile::tempdir().unwrap();
     let env = env(base.path());
-    let core = ProjectCore::open(Root::open(&root).unwrap(), &env);
+    let core = opened(&root, &env);
     // not included: the root's state (sub/b unread; fresh/f new since the root's state = unread)
     let before = unread_now(&core);
     assert!(before.contains(&"sub/b.md".to_owned()), "{before:?}");
@@ -179,4 +186,71 @@ fn a_project_included_while_open_keeps_what_the_root_knew() {
     );
     let member_read = root.join("sub/.permark/local/plugins/unread/read.json");
     assert_eq!(docs_of(&member_read), json!({ "a.md": hash("# a\n") }));
+}
+
+/// B1 (D51): the root tab and the project opened alone mark documents read at the same time; when both close, the
+/// project's `read.json` holds every mark (neither tab's save drops the other's), and a tab learns the other's marks.
+#[test]
+fn two_tabs_marking_read_at_once_lose_nothing() {
+    let (_dir, root) = setup();
+    for i in 0..12 {
+        std::fs::write(root.join(format!("sub/d{i}.md")), format!("# d{i}\n")).unwrap();
+    }
+    let base = tempfile::tempdir().unwrap();
+    let env = env(base.path());
+    let core = opened(&root, &env);
+    // the project's state copied first (the projects worker), then the project opened alone
+    let _ = unread_now(&core);
+    let alone = ProjectCore::open(Root::open(&root.join("sub")).unwrap(), &env);
+    let _ = unread_now(&alone);
+    let ta = std::thread::spawn({
+        let core = Arc::clone(&core);
+        move || {
+            for i in 0..6 {
+                call(
+                    &core,
+                    "markRead",
+                    json!({ "path": format!("sub/d{i}.md"), "hash": hash(&format!("# d{i}\n")) }),
+                );
+                std::thread::sleep(Duration::from_millis(60));
+            }
+        }
+    });
+    for i in 6..12 {
+        call(
+            &alone,
+            "markRead",
+            json!({ "path": format!("d{i}.md"), "hash": hash(&format!("# d{i}\n")) }),
+        );
+        std::thread::sleep(Duration::from_millis(60));
+    }
+    ta.join().unwrap();
+    let member_read = root.join("sub/.permark/local/plugins/unread/read.json");
+    // the alone tab saved its last mark; the root tab's next save learns it
+    wait("alone tab saved", || {
+        docs_of(&member_read).get("d11.md").is_some()
+    });
+    call(&core, "markUnread", json!({ "path": "sub/d0.md" }));
+    wait("root tab saved", || {
+        docs_of(&member_read).get("d0.md").is_none()
+    });
+    call(
+        &core,
+        "markRead",
+        json!({ "path": "sub/d0.md", "hash": hash("# d0\n") }),
+    );
+    wait("root tab learns", || {
+        !unread_now(&core).iter().any(|p| p.starts_with("sub/d"))
+    });
+    drop(alone);
+    drop(core);
+    let docs = docs_of(&member_read);
+    for i in 0..12 {
+        assert_eq!(
+            docs.get(format!("d{i}.md")),
+            Some(&json!(hash(&format!("# d{i}\n")))),
+            "d{i}: {docs}"
+        );
+    }
+    assert!(docs.get("a.md").is_some(), "{docs}");
 }

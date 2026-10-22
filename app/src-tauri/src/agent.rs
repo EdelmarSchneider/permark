@@ -406,4 +406,90 @@ users[2]{name,token}:
             std::thread::sleep(Duration::from_millis(50));
         }
     }
+
+    /// Every file and folder below `dir`: (path, size, modified time).
+    fn tree_of(
+        dir: &std::path::Path,
+    ) -> Vec<(std::path::PathBuf, u64, Option<std::time::SystemTime>)> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let meta = entry.metadata().unwrap();
+                if meta.is_dir() {
+                    stack.push(entry.path());
+                }
+                out.push((entry.path(), meta.len(), meta.modified().ok()));
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// Perf F3 (`perf-nested-projects.md`): a reader with no window writes no project state of its own accord, whatever
+    /// plugin runs. Every plugin of the build, started `files_only` on a git project whose state lives in its
+    /// `.permark/`, with a changed file: nothing below `.permark/` is made, changed or removed (git `visit.json`,
+    /// review copies, `held` | `seen` included).
+    #[test]
+    fn every_plugin_files_only_writes_no_project_state() {
+        use permark_core::conditions::Distribution;
+        use permark_core::plugins::RpcCall;
+        use permark_core::settings::AppSettings;
+
+        let dir = tempfile::tempdir().unwrap();
+        let root_dir = dir.path().join("proj é");
+        std::fs::create_dir_all(root_dir.join(".permark")).unwrap();
+        std::fs::write(root_dir.join(".permark/config.toml"), "").unwrap();
+        std::fs::write(root_dir.join("README.md"), "# Readme\n\nText.\n").unwrap();
+        std::fs::write(root_dir.join("notes.txt"), "plain\n").unwrap();
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])
+                .args(args)
+                .current_dir(&root_dir)
+                .output()
+                .is_ok_and(|o| o.status.success())
+        };
+        let repo =
+            git(&["init", "-q"]) && git(&["add", "-A"]) && git(&["commit", "-q", "-m", "one"]);
+        if !repo {
+            eprintln!("SKIPPED (git part): no git executable");
+        }
+        std::fs::write(root_dir.join("README.md"), "# Readme\n\nText changed.\n").unwrap();
+        std::fs::write(root_dir.join("notes.txt"), "plain, changed\n").unwrap();
+        let before = tree_of(&root_dir.join(".permark"));
+        let env = CoreEnv::new(
+            AppDirs::under(&dir.path().join("state")),
+            Arc::new(crate::plugins::registry()),
+            Arc::new(NoEvents),
+            Distribution::Direct,
+            AppSettings::default(),
+        );
+        env.apply_app_plugins();
+        let only: Vec<PluginId> = crate::plugins::all()
+            .iter()
+            .map(|p| p.manifest().id.clone())
+            .collect();
+        let core = ProjectCore::from_files(Root::open(&root_dir).unwrap(), &env, &only);
+        assert!(core.search().wait_ready(Duration::from_secs(30)));
+        if repo {
+            let deadline = std::time::Instant::now() + Duration::from_secs(30);
+            let call = RpcCall {
+                window: "w".to_owned(),
+                args: Value::Null,
+            };
+            while core.rpc().call("git", "snapshot", &call).unwrap().is_null() {
+                assert!(std::time::Instant::now() < deadline, "no git snapshot");
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+        // the review copier looks every 250 ms once unread's first look ended
+        std::thread::sleep(Duration::from_millis(800));
+        drop(core);
+        env.stop_app_plugins();
+        assert_eq!(tree_of(&root_dir.join(".permark")), before);
+    }
 }

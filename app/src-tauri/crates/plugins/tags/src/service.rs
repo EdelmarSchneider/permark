@@ -24,7 +24,8 @@ use permark_core::fsx;
 use permark_core::organizing::{TagCount, TagLookup, TagsSummary};
 use permark_core::paths::{key_of, VaultPath, WORKTREE_PREFIX};
 use permark_core::projects::{
-    OwnerSlot, Owners, OwnersChange, ProjectUid, Projects, ProjectsSubscription, VocabKind,
+    OwnerSlot, Owners, OwnersChange, OwnersGate, ProjectUid, Projects, ProjectsSubscription,
+    VocabKind,
 };
 use permark_core::search::harvest::{Harvest, HarvestSubscription};
 use permark_core::state::{RawFile, StateLocation};
@@ -33,7 +34,7 @@ use permark_core::watch::{ChangeKind, FsBatch, OwnWrites};
 
 use crate::catalog::{self, Docs};
 use crate::frontmatter::{from_text, HEAD_BYTES};
-use crate::meta::{edit_text, Entries, Op, Problem};
+use crate::meta::{edit_text, Entries, Entry, Op, Problem};
 use crate::normalize::normalize_tags;
 use crate::types::{
     FileMeta, IndexEntry, MetaProblem, TagCountView, TagRefView, TagStyleView, TaggedFile,
@@ -169,6 +170,8 @@ struct Units {
 
 struct Shared {
     units: RwLock<Units>,
+    /// Closed while the plugin started before the owners were known: the person's edits wait for them.
+    gate: OwnersGate,
     location: TagsLocation,
     legacy: bool,
     own: Arc<OwnWrites>,
@@ -269,6 +272,71 @@ fn within(key: &str, base: &str) -> bool {
             .is_some_and(|rest| rest.starts_with('/'))
 }
 
+/// One file's entry from its project's own `meta.toml` + the opened folder's entry for it: tags united (the project's
+/// first), the project's description unless it has none.
+fn united(own: Option<&Entry>, outer: Entry) -> Entry {
+    let Some(own) = own else { return outer };
+    let mut entry = own.clone();
+    for tag in outer.tags {
+        if !entry.tags.contains(&tag) {
+            entry.tags.push(tag);
+        }
+    }
+    if entry.description.is_empty() {
+        entry.description = outer.description;
+    }
+    entry
+}
+
+/// What a change does to the opened folder's own entries for files of included projects (`root`, root-relative;
+/// `projects.md` §14 D49): moves + removals follow the file; a tag | description the person takes off goes from that
+/// entry too (else it would still show). `routed` = the ops already going to the owners (no op twice).
+fn shadow_ops(
+    owners: &Owners,
+    root: &Entries,
+    op: &Op,
+    routed: &[(usize, Op)],
+) -> Vec<(usize, Op)> {
+    let outer = |path: &str| owners.owner_of(path) != 0;
+    let mut out = Vec::new();
+    match op {
+        Op::SetTags { path, tags } if outer(path) => {
+            if let Some(entry) = root.get(path) {
+                let kept: Vec<String> = entry
+                    .tags
+                    .iter()
+                    .filter(|t| tags.contains(t))
+                    .cloned()
+                    .collect();
+                if kept != entry.tags {
+                    out.push((0, Op::set_tags(path, &kept)));
+                }
+            }
+        }
+        Op::SetDescription { path, description } if outer(path) && description.is_empty() => {
+            if root.get(path).is_some_and(|e| !e.description.is_empty()) {
+                out.push((0, Op::set_description(path, "")));
+            }
+        }
+        Op::Remove { path } | Op::Rename { from: path, .. } if outer(path) => {
+            if root.get(path).is_some() {
+                out.push((0, op.clone()));
+            }
+        }
+        Op::RenameTree { from, .. } => {
+            let prefix = format!("{}/", key_of(from));
+            let any = root
+                .iter()
+                .any(|(p, _)| outer(p) && key_of(p).starts_with(&prefix));
+            if any && !routed.iter().any(|(i, o)| *i == 0 && o == op) {
+                out.push((0, op.clone()));
+            }
+        }
+        _ => {}
+    }
+    out
+}
+
 impl Shared {
     fn units(&self) -> std::sync::RwLockReadGuard<'_, Units> {
         self.units.read().unwrap_or_else(PoisonError::into_inner)
@@ -292,17 +360,26 @@ impl Shared {
             units.list[0].lock().entries.clone()
         } else {
             let mut out = Entries::default();
+            // the opened folder's entries for files of included projects: read together with the project's own
+            // (`projects.md` §9.3, §14 D49; nothing is copied into a project's shared `meta.toml`)
+            let mut shadow: Vec<(String, Entry)> = Vec::new();
             for (i, unit) in units.list.iter().enumerate() {
                 let inner = unit.lock();
                 for (path, entry) in inner.entries.iter() {
                     let at = units.owners.join(i, path);
                     if units.owners.owner_of(&at) == i {
                         out.insert(&at, entry.clone());
+                    } else if i == 0 {
+                        shadow.push((at, entry.clone()));
                     }
                 }
                 for (tag, style) in inner.entries.styles() {
                     out.insert_style(tag, style.clone());
                 }
+            }
+            for (at, entry) in shadow {
+                let joined = united(out.get(&at), entry);
+                out.insert(&at, joined);
             }
             out
         };
@@ -378,6 +455,11 @@ impl Shared {
             unit.lock().io_error = Some(message);
             bump(self);
             Flush::Failed
+        };
+        // no other core (tab, app) writes this file between the read and the write (`projects.md` §14 D51)
+        let _shared = match unit.file.lock() {
+            Ok(lock) => lock,
+            Err(error) => return fail(error.to_string()),
         };
         let bytes = match unit.file.read() {
             Ok(bytes) => bytes,
@@ -523,10 +605,17 @@ impl Shared {
 
     /// Splits a root-relative op into owner ops (`(unit, op)`); a move across owners becomes a removal in one file
     /// and the entry written in the other. `merged` = the root-relative entries (taken before any lock).
-    fn route(owners: &Owners, merged: &Entries, op: &Op) -> Vec<(usize, Op)> {
+    fn route(owners: &Owners, merged: &Entries, root: &Entries, op: &Op) -> Vec<(usize, Op)> {
         if owners.is_single() {
             return vec![(0, op.clone())];
         }
+        let mut out = Self::route_owned(owners, merged, op);
+        out.extend(shadow_ops(owners, root, op, &out));
+        out
+    }
+
+    /// [`Shared::route`] for the entries each owner keeps of its own files.
+    fn route_owned(owners: &Owners, merged: &Entries, op: &Op) -> Vec<(usize, Op)> {
         let one = |path: &str| {
             let i = owners.owner_of(path);
             (i, rebased(op, owners, i))
@@ -774,6 +863,7 @@ impl TagsService {
             .map(|s| Arc::new(Unit::new(s, args.legacy)))
             .collect();
         let shared = Arc::new(Shared {
+            gate: OwnersGate::default(),
             units: RwLock::new(Units {
                 owners: args.owners,
                 list: list.clone(),
@@ -845,6 +935,15 @@ impl TagsService {
                     .paused = true;
             }
             OwnersChange::Resume(owners) => {
+                // already running on these owners (the `Resume` told when the owners became known): nothing to do
+                {
+                    let units = self.shared.units();
+                    if !units.paused && units.owners.same(owners) {
+                        drop(units);
+                        self.shared.gate.open();
+                        return;
+                    }
+                }
                 let old = self.shared.units().list.clone();
                 let list: Vec<Arc<Unit>> = owners
                     .slots()
@@ -875,8 +974,15 @@ impl TagsService {
                     self.queue(held);
                 }
                 let _ = self.meta_tx.send(MetaMsg::Edited);
+                self.shared.gate.open();
             }
         }
+    }
+
+    /// Started before the owners were known: the person's edits wait for the first `Resume` (moves are held).
+    pub fn start_paused(&self) {
+        self.shared.gate.close();
+        self.follow_owners(&OwnersChange::Pause);
     }
 
     /// The project's watch reported a batch (called on the watch thread: quick).
@@ -965,9 +1071,10 @@ impl TagsService {
                 units.held.extend(touching);
                 return;
             }
+            let root = units.list[0].lock().entries.clone();
             let routed: Vec<(usize, Op)> = touching
                 .iter()
-                .flat_map(|op| Shared::route(&units.owners, &merged, op))
+                .flat_map(|op| Shared::route(&units.owners, &merged, &root, op))
                 .collect();
             for (i, op) in routed {
                 let Some(unit) = units.list.get(i) else {
@@ -990,13 +1097,15 @@ impl TagsService {
                 return Err(denied(path, "worktree"));
             }
         }
+        self.shared.gate.wait();
         let merged = self.shared.merged();
         {
             let units = self.shared.units();
             if units.paused {
                 return Err(IpcError::new(ErrorKind::Unavailable).subject("meta.toml"));
             }
-            let routed = Shared::route(&units.owners, &merged, op);
+            let root = units.list[0].lock().entries.clone();
+            let routed = Shared::route(&units.owners, &merged, &root, op);
             // refused as a whole when a file it touches cannot be read
             for (i, _) in &routed {
                 if let Some(problem) = units.list.get(*i).and_then(|u| u.lock().problem.clone()) {

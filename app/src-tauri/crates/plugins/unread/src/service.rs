@@ -12,7 +12,7 @@ use permark_core::document::DocScope;
 use permark_core::fsx;
 use permark_core::plugins::PluginId;
 use permark_core::projects::{Owners, OwnersChange};
-use permark_core::state::{Loaded, StateData, StateFile};
+use permark_core::state::{merge3, Loaded, StateData, StateFile};
 use permark_core::tree::Explorer;
 use permark_core::watch::{ChangeKind, FsBatch};
 use serde::{Deserialize, Serialize};
@@ -253,6 +253,9 @@ pub struct ServiceArgs {
     pub timing: Timing,
     /// `false`: a reader with no window (`files_only`): `read.json` is read, never written.
     pub persist: bool,
+    /// Waits until the folder's projects keep their own state (their owners known): the first look counts each
+    /// project's documents against its own read state (a project with none starts read, no flood of dots).
+    pub owners_known: Arc<dyn Fn() + Send + Sync>,
 }
 
 const ID: PluginId = PluginId::of("unread");
@@ -267,9 +270,15 @@ struct Files {
     /// Per owner: entries that lie in a deeper owner (kept as written, unused while it is included).
     read_dormant: Vec<BTreeMap<String, String>>,
     visit_dormant: Vec<BTreeMap<String, String>>,
-    /// Per owner: what `read.json` holds now (owner-relative), as last read | written.
+    /// Per owner: what `read.json` holds now (owner-relative), as last read | written: the base this core's changes
+    /// are laid on when it is written again (another tab | app may have written it meanwhile; `projects.md` §14 D51).
     written: Vec<Option<BTreeMap<String, String>>>,
+    /// Per owner: what `visit.json` held when it was read (the same, for the picture of the visit).
+    visit_base: Vec<BTreeMap<String, String>>,
 }
+
+/// A read mark another core wrote into a shared file: root-relative path, what this core had, what the file holds.
+pub type Learned = (String, Option<u64>, Option<u64>);
 
 /// What the owners' files hold: the opened folder's read state, each member's (folder key, map), and the files.
 type ReadState = (
@@ -315,6 +324,7 @@ impl Files {
             read_dormant: vec![BTreeMap::new(); n],
             visit_dormant: vec![BTreeMap::new(); n],
             written: vec![None; n],
+            visit_base: vec![BTreeMap::new(); n],
         }
     }
 
@@ -356,6 +366,7 @@ impl Files {
             let Loaded::Found(visit) = visit_file_of(&owners, i).load() else {
                 continue;
             };
+            self.visit_base[i].clone_from(&visit.docs);
             let (own, dormant) = own_and_dormant(&owners, i, visit.docs);
             self.visit_dormant[i] = dormant;
             let merged = out.get_or_insert_with(|| VisitFile {
@@ -370,15 +381,19 @@ impl Files {
         out
     }
 
-    /// Writes each owner's `read.json` whose entries changed (root-relative `saved` split by owner).
-    fn save_read(&mut self, saved: BTreeMap<String, u64>) {
+    /// Writes each owner's `read.json` whose entries changed (root-relative `saved` split by owner): this core's
+    /// changes since it last read | wrote the file go on top of the file as it is now. Returns the marks another core
+    /// wrote there meanwhile (for the tracker).
+    fn save_read(&mut self, saved: BTreeMap<String, u64>) -> Vec<Learned> {
+        let mut learned = Vec::new();
         if !self.persist || self.paused {
-            return;
+            return learned;
         }
         let owners = self.owners.clone();
         for (i, part) in owners.split(saved).into_iter().enumerate() {
-            let mut docs: BTreeMap<String, String> =
+            let own: BTreeMap<String, String> =
                 part.into_iter().map(|(p, h)| (p, hex_of(h))).collect();
+            let mut docs = own.clone();
             docs.extend(
                 self.read_dormant[i]
                     .iter()
@@ -390,17 +405,40 @@ impl Files {
             {
                 continue;
             }
+            let base = self.written[i].clone().unwrap_or_default();
             // a state that cannot be written does not stop anything; the next change tries again
-            if read_file_of(&owners, i)
-                .save(&ReadFile { docs: docs.clone() })
-                .is_ok()
-            {
-                self.written[i] = Some(docs);
+            let Ok(Some(now)) = read_file_of(&owners, i).update(|fresh| {
+                let fresh = fresh.map(|f| f.docs.clone()).unwrap_or_default();
+                Some(ReadFile {
+                    docs: merge3(&base, &docs, fresh),
+                })
+            }) else {
+                continue;
+            };
+            let (now_own, dormant) = own_and_dormant(&owners, i, now.docs.clone());
+            let mine: BTreeMap<String, Option<u64>> = own
+                .iter()
+                .map(|(rel, h)| (owners.join(i, rel), hash_from_hex(h)))
+                .collect();
+            for (path, hash) in &now_own {
+                let after = hash_from_hex(hash);
+                let before = mine.get(path).copied().flatten();
+                if before != after {
+                    learned.push((path.clone(), before, after));
+                }
             }
+            for (path, before) in &mine {
+                if !now_own.contains_key(path) {
+                    learned.push((path.clone(), *before, None));
+                }
+            }
+            self.read_dormant[i] = dormant;
+            self.written[i] = Some(now.docs);
         }
+        learned
     }
 
-    /// Writes each owner's picture of this visit.
+    /// Writes each owner's picture of this visit (on top of the file as it is now: another tab's documents stay).
     fn save_visit(&self, current: BTreeMap<String, u64>, at_ms: u64) {
         if !self.visit || self.paused {
             return;
@@ -416,7 +454,14 @@ impl Files {
             if i != 0 && docs.is_empty() {
                 continue;
             }
-            let _ = visit_file_of(&self.owners, i).save(&VisitFile { at_ms, docs });
+            let base = &self.visit_base[i];
+            let _ = visit_file_of(&self.owners, i).update(|fresh| {
+                let fresh = fresh.map(|f| f.docs.clone()).unwrap_or_default();
+                Some(VisitFile {
+                    at_ms,
+                    docs: merge3(base, &docs, fresh),
+                })
+            });
         }
     }
 }
@@ -483,14 +528,20 @@ impl UnreadService {
                 let saved = (!tracker.baseline_pending()).then(|| tracker.saved());
                 drop(tracker);
                 let mut files = lock(&self.files);
-                if let Some(saved) = saved {
-                    files.save_read(saved);
-                }
+                let learned = saved.map(|saved| files.save_read(saved));
                 files.paused = true;
+                drop(files);
+                if let Some(learned) = learned {
+                    lock(&self.hub.tracker).learn(&learned);
+                }
             }
             OwnersChange::Resume(owners) => {
                 let (root, members) = {
                     let mut files = lock(&self.files);
+                    // already running on these owners (the `Resume` told when the owners became known): nothing to do
+                    if !files.paused && files.owners.same(owners) {
+                        return;
+                    }
                     let (persist, visit) = (files.persist, files.visit);
                     *files = Files::new((*owners).clone(), persist, visit);
                     let read = files.load_read();
@@ -651,6 +702,7 @@ struct Worker {
 
 impl Worker {
     fn run(mut self, rx: &Receiver<Msg>) {
+        (self.args.owners_known)();
         self.scan();
         let mut save_at: Option<Instant> = None;
         let mut announce_at: Option<Instant> = None;
@@ -710,7 +762,7 @@ impl Worker {
         }
     }
 
-    fn save(&self) {
+    fn save(&mut self) {
         if !self.args.persist {
             return;
         }
@@ -721,7 +773,11 @@ impl Worker {
         }
         let saved = tracker.saved();
         drop(tracker);
-        lock(&self.files).save_read(saved);
+        let learned = lock(&self.files).save_read(saved);
+        // another tab | app read documents meanwhile: their dots go here too
+        if !learned.is_empty() && lock(&self.tracker).learn(&learned) {
+            self.announce();
+        }
     }
 
     /// The project closes: what every document holds now is the picture the next visit compares with.

@@ -14,6 +14,12 @@ use crate::worktrees::{common_dir, read_line};
 /// Most bytes of `packed-refs` read looking for one ref (a huge file is not read to its end).
 const MAX_PACKED: u64 = 8 * 1024 * 1024;
 
+#[cfg(test)]
+thread_local! {
+    /// Member folders read on this thread (tests: opening a project reads none).
+    pub(crate) static LOCATIONS_READ: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// What files say about a repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cheap {
@@ -28,6 +34,8 @@ pub struct Cheap {
 /// # Errors
 /// No `.git` | a gitfile without a `gitdir:` line | its target missing.
 pub fn member_location(folder: &Path) -> Result<RepoLocation, String> {
+    #[cfg(test)]
+    LOCATIONS_READ.with(|c| c.set(c.get() + 1));
     let entry = folder.join(".git");
     let meta = std::fs::symlink_metadata(&entry).map_err(|_| "no .git".to_owned())?;
     let git_dir = if meta.is_dir() {

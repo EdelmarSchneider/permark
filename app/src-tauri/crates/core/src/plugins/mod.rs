@@ -330,6 +330,13 @@ impl ProjectServices {
         )
     }
 
+    /// Whether the owners are known (`Projects::owners_known`); always without projects. A plugin keeping state per
+    /// owner that starts before starts paused and goes on at the `Resume` that follows.
+    #[must_use]
+    pub fn owners_known(&self) -> bool {
+        self.projects.as_ref().is_none_or(|p| p.owners_known())
+    }
+
     /// Hears the owners change (`Projects::follow_owners`); `None` without projects (the owners never change).
     #[must_use]
     pub fn follow_owners(
