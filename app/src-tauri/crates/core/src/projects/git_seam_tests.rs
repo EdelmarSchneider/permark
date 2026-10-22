@@ -289,3 +289,169 @@ fn the_profile_state_folder_follows_and_merges() {
         assert!(new.exists());
     }
 }
+
+// ---- verifier (round 3): clones share a first commit -------------------------------------------------------------
+
+fn row_state(core: &ProjectCore, path: &str) -> Option<crate::projects::view::MemberState> {
+    core.projects_view()
+        .rows
+        .iter()
+        .find(|r| r.path == path)
+        .map(|r| r.state.clone())
+}
+
+/// The person said No to a clone (`archive/beta`); the included `beta` is deleted while closed. Step 3 must never
+/// attach the entry to the refused clone (D28: the person's no beats; nothing re-points the record to it silently).
+#[test]
+fn verifier_a_declined_clone_is_never_attached_by_first_commit() {
+    let (_dir, root) = root_dir();
+    repo(&root, "beta");
+    repo(&root, "archive/beta");
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\nfirst_commit = \"{ROOT_A}\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    {
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+        assert!(core.projects().wait_ready(Duration::from_secs(10)));
+        core.projects()
+            .decline(&ProjectPick::Paths {
+                paths: vec!["archive/beta".to_owned()],
+            })
+            .unwrap();
+        assert_eq!(
+            row_state(&core, "archive/beta"),
+            Some(crate::projects::view::MemberState::Declined)
+        );
+    }
+    fs::remove_dir_all(root.join("beta")).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    // still refused after the reopen, before git can say anything
+    assert_eq!(
+        row_state(&core, "archive/beta"),
+        Some(crate::projects::view::MemberState::Declined)
+    );
+    let _lease = core.projects().provide_root_commits(source(&calls));
+    std::thread::sleep(Duration::from_millis(800));
+    let text = read_record_text(&root);
+    eprintln!(
+        "record after reopen:\n{text}\nrows: {:?}\nroot-commit calls: {}",
+        core.projects_view()
+            .rows
+            .iter()
+            .map(|r| (r.path.clone(), r.state.clone()))
+            .collect::<Vec<_>>(),
+        calls.load(Ordering::SeqCst)
+    );
+    assert!(
+        text.contains("path = \"beta\""),
+        "record re-pointed at the declined clone:\n{text}"
+    );
+    assert_ne!(
+        row_state(&core, "archive/beta"),
+        Some(crate::projects::view::MemberState::Included)
+    );
+}
+
+/// The included `beta` is deleted (not moved) while closed; another clone with the same folder name that the person
+/// never included sits elsewhere. Documents what step 3 does (spec: attaches by itself).
+#[test]
+fn verifier_a_never_included_clone_after_the_original_was_deleted() {
+    let (_dir, root) = root_dir();
+    repo(&root, "beta");
+    repo(&root, "archive/beta");
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\nfirst_commit = \"{ROOT_A}\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    fs::remove_dir_all(root.join("beta")).unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    let _lease = core.projects().provide_root_commits(source(&calls));
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    std::thread::sleep(Duration::from_millis(500));
+    let text = read_record_text(&root);
+    eprintln!(
+        "never-included clone -> attached silently: {} (ask: {:?})",
+        text.contains("path = \"archive/beta\""),
+        core.projects_view().ask.is_some()
+    );
+}
+
+/// Root commits are learned on the projects worker before the first map: a slow git per unlisted repository delays
+/// `ready` (agent `ERR busy`, Explorer nodes) and runs outside the pool bound.
+#[test]
+fn verifier_learning_root_commits_delays_the_first_map() {
+    let (_dir, root) = root_dir();
+    for n in 0..10 {
+        repo(&root, &format!("x{n}"));
+    }
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"gone\"\nfirst_commit = \"{ROOT_A}\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&calls);
+    let slow: RootCommitFn = Arc::new(move |_folder: &Path| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(200));
+        None
+    });
+    let start = Instant::now();
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    let _lease = core.projects().provide_root_commits(slow);
+    assert!(core.projects().wait_ready(Duration::from_secs(15)));
+    eprintln!(
+        "ready after {:?}; root-commit calls before|at ready: {}",
+        start.elapsed(),
+        calls.load(Ordering::SeqCst)
+    );
+}
+
+/// Same class, step 2 (round 2 code): a declined clone carrying the same card id (`.permark/project.toml` committed
+/// in the repository, so every clone has it).
+#[test]
+fn verifier_a_declined_clone_with_the_same_card_id_is_never_attached() {
+    let (_dir, root) = root_dir();
+    for rel in ["beta", "archive/beta"] {
+        fs::create_dir_all(root.join(rel).join(".permark")).unwrap();
+        fs::write(
+            root.join(rel).join(".permark/project.toml"),
+            format!("version = 1\nid = \"{UID}\"\n"),
+        )
+        .unwrap();
+    }
+    record(
+        &root,
+        &format!("version = 1\n\n[[project]]\nid = \"{UID}\"\npath = \"beta\"\n"),
+    );
+    let base = tempfile::tempdir().unwrap();
+    {
+        let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+        assert!(core.projects().wait_ready(Duration::from_secs(10)));
+        core.projects()
+            .decline(&ProjectPick::Paths {
+                paths: vec!["archive/beta".to_owned()],
+            })
+            .unwrap();
+    }
+    fs::remove_dir_all(root.join("beta")).unwrap();
+    let core = ProjectCore::open(Root::open(&root).unwrap(), &env(base.path()));
+    assert!(core.projects().wait_ready(Duration::from_secs(10)));
+    std::thread::sleep(Duration::from_millis(500));
+    let text = read_record_text(&root);
+    eprintln!(
+        "card-id clone: record path archive/beta = {}; state {:?}",
+        text.contains("path = \"archive/beta\""),
+        row_state(&core, "archive/beta")
+    );
+    assert_ne!(
+        row_state(&core, "archive/beta"),
+        Some(crate::projects::view::MemberState::Included)
+    );
+}
