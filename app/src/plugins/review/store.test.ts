@@ -6,7 +6,7 @@ import type { Api, PluginMethod, PluginMethods, Result } from "../../api";
 import { MOCK_FOLDER, createMockApi } from "../../api/mock";
 import { PluginClient } from "../../core/plugins/client";
 import { Box } from "../../core/testing/box.svelte";
-import { ReviewStore, SEEN_MS, kindOf, type ReviewKind } from "./store.svelte";
+import { ReviewStore, SEEN_MS, kindOf, type ReviewKind, type ReviewNotice } from "./store.svelte";
 import type { DocumentView } from "../../api";
 import type { Reason } from "../../core/conditions/available";
 
@@ -69,6 +69,7 @@ async function setup(
   };
   const shown = new Box<Shown>(options.shown ?? { path: GUIDE, hash: guideHash, kind: "blocks" });
   const notes: string[] = [];
+  const notices: ReviewNotice[] = [];
   let repaints = 0;
   const store = new ReviewStore(
     new PluginClient(api, () => MOCK_FOLDER),
@@ -82,10 +83,11 @@ async function setup(
     },
     options.onScreen ?? (() => true),
     options.commitBlocked ?? (() => null),
+    (notice) => notices.push(notice),
   );
   const stop = store.start();
   await settle();
-  return { mock, store, stop, shown, notes, guideHash, repaints: () => repaints };
+  return { mock, store, stop, shown, notes, notices, guideHash, repaints: () => repaints };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -222,13 +224,84 @@ describe("the review store", () => {
     stop();
   });
 
-  it("the basis can be changed and the review is drawn again", async () => {
+  it("the basis can be changed and the review is drawn again, and says so", async () => {
     const { store, mock, stop } = await setup();
     await store.begin();
     await store.setBasis("commit");
     expect(store.basis).toBe("commit");
     expect(mock.probe.plugins.calls).toContain("review.setBasis");
     expect(store.reviewing?.canKeep).toBe(false);
+    expect(store.announcement).toMatch(
+      /^Now comparing with the last commit\. \d+ changes? to review\.$/,
+    );
+    await store.setBasis("read");
+    expect(store.announcement).toMatch(/^Now comparing with what you read\./);
+    stop();
+  });
+
+  it('Done | Esc with changes left: "Review again" reopens at the same change; the changes are held till then', async () => {
+    const { store, mock, notices, stop } = await setup();
+    await store.begin();
+    store.go(1);
+    await store.done();
+    expect(store.state.status).toBe("idle");
+    expect(mock.probe.plugins.calls).not.toContain("review.release");
+    expect(notices.map((n) => [n.text, n.actions.map((a) => a.label)])).toEqual([
+      ["Review closed.", ["Review again"]],
+    ]);
+    notices[0]!.actions[0]!.run();
+    notices[0]!.onGone("action");
+    await settle();
+    expect(store.state).toMatchObject({ status: "reviewing", at: 1 });
+    expect(store.announcement).toMatch(/^Change 2 of 2/);
+    expect(mock.probe.plugins.calls).not.toContain("review.release");
+    stop();
+  });
+
+  it("the offer to review again ends: the changes are let go (once), also when the person leaves first", async () => {
+    const { store, mock, notices, shown, stop } = await setup();
+    const releases = (): number =>
+      mock.probe.plugins.calls.filter((c) => c === "review.release").length;
+    await store.begin();
+    await store.done();
+    notices[0]!.onGone("timeout");
+    await settle();
+    expect(releases()).toBe(1);
+    // too late: nothing to reopen
+    notices[0]!.actions[0]!.run();
+    await settle();
+    expect(store.state.status).toBe("idle");
+    // closed, then the person opens another document before the offer goes
+    await store.begin();
+    await store.done();
+    shown.value = { path: "README.md", hash: "ee".repeat(8), kind: "blocks" };
+    await settle();
+    expect(releases()).toBe(2);
+    notices[1]!.onGone("timeout");
+    await settle();
+    expect(releases()).toBe(2);
+    stop();
+  });
+
+  it("opened again from the palette while the offer stands: the offer going later lets nothing go", async () => {
+    const { store, mock, notices, stop } = await setup();
+    await store.begin();
+    await store.done();
+    await store.begin();
+    expect(store.state.status).toBe("reviewing");
+    notices[0]!.onGone("timeout");
+    await settle();
+    expect(mock.probe.plugins.calls).not.toContain("review.release");
+    expect(store.state.status).toBe("reviewing");
+    stop();
+  });
+
+  it("a review closed with no changes left in it offers nothing", async () => {
+    const { store, notices, stop } = await setup();
+    await store.begin();
+    await store.revertAll();
+    await store.done();
+    expect(notices).toEqual([]);
     stop();
   });
 

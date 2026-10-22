@@ -114,6 +114,13 @@
 .md .anchor:focus-visible {
   opacity: 1;
 }
+/* the keyboard on it: inside the column, never cut by the pane's edge or under the side panel (it hangs in the
+   margin otherwise) */
+.md .anchor:focus-visible {
+  position: static;
+  display: inline-block;
+  margin-inline-end: 0.25em;
+}
 .md p {
   margin: 0 0 1em;
 }

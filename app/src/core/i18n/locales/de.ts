@@ -772,6 +772,13 @@ export default {
   "review.sr.undone.other": "Rückgängig. {n} Änderungen.",
   "review.sr.updated.one": "Das Dokument hat sich geändert. {n} Änderung zu prüfen.",
   "review.sr.updated.other": "Das Dokument hat sich geändert. {n} Änderungen zu prüfen.",
+  "review.sr.basisCommit.one": "Jetzt im Vergleich mit dem letzten Commit. {n} Änderung zu prüfen.",
+  "review.sr.basisCommit.other":
+    "Jetzt im Vergleich mit dem letzten Commit. {n} Änderungen zu prüfen.",
+  "review.sr.basisRead.one": "Jetzt im Vergleich mit dem Gelesenen. {n} Änderung zu prüfen.",
+  "review.sr.basisRead.other": "Jetzt im Vergleich mit dem Gelesenen. {n} Änderungen zu prüfen.",
+  "review.closed": "Prüfung geschlossen.",
+  "review.again": "Erneut prüfen",
   "git.backend.label": "Git",
   "git.backend.hint": "Mit welchem Git PerMark deine Repositories liest.",
   "git.backend.automatic": "Automatisch (installiertes Git, sonst eingebautes)",
@@ -1572,7 +1579,7 @@ export default {
   "import.reason.intoItself": "enthält den Zielordner",
   "import.busy": "Warten Sie, bis der laufende Import fertig ist.",
   "import.dropCancelled":
-    "{project} ist in diesem Tab nicht mehr geöffnet, daher wurde das Ablegen in „{folder}“ abgebrochen. Es wurde nichts hinzugefügt; Sie können die Elemente erneut ablegen.",
+    "{project} ist in diesem Tab nicht mehr geöffnet, daher wurde das Ablegen in „{folder}“ abgebrochen. Es wurde nichts hinzugefügt; die Elemente lassen sich erneut ablegen.",
   "import.progressLabel": "Dateien werden zum Projekt hinzugefügt",
   "import.counting": "Dateien werden angesehen …",
   "import.copying": "Kopiere nach „{folder}“ …",

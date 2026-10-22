@@ -770,6 +770,14 @@ export default {
   "review.sr.undone.other": "Annullato. {n} modifiche.",
   "review.sr.updated.one": "Il documento è cambiato. {n} modifica da rivedere.",
   "review.sr.updated.other": "Il documento è cambiato. {n} modifiche da rivedere.",
+  "review.sr.basisCommit.one": "Ora il confronto è con l'ultimo commit. {n} modifica da rivedere.",
+  "review.sr.basisCommit.other":
+    "Ora il confronto è con l'ultimo commit. {n} modifiche da rivedere.",
+  "review.sr.basisRead.one": "Ora il confronto è con ciò che hai letto. {n} modifica da rivedere.",
+  "review.sr.basisRead.other":
+    "Ora il confronto è con ciò che hai letto. {n} modifiche da rivedere.",
+  "review.closed": "Revisione chiusa.",
+  "review.again": "Rivedi di nuovo",
   "git.backend.label": "Git",
   "git.backend.hint": "Quale git usa PerMark per leggere i tuoi repository.",
   "git.backend.automatic": "Automatico (git installato, altrimenti quello integrato)",
