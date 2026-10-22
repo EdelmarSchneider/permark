@@ -34,11 +34,16 @@ apps:
     command: usr/bin/permark
     desktop: usr/share/applications/PerMark.desktop
     extensions: [gnome]
+    # Plugs = what the person's documents and the app's own downloads need, nothing more.
+    # - home | removable-media: the person's files.
+    # - network (outbound only): the two downloads the person starts (token-count plugin: the token vocabulary, asks
+    #   first; web pictures a document names, per click | per project). The update check is off inside a snap (the
+    #   Store updates it). No `network-bind`: the app listens on no TCP | UDP port (agent connection = stdio + a local
+    #   Unix socket in the snap's runtime folder). Checked 2026-10-22 against the code + Cargo.lock (no server crate).
     plugs:
       - home
       - removable-media
       - network
-      - network-bind
     environment:
       WEBKIT_DISABLE_COMPOSITING_MODE: "1"
 
