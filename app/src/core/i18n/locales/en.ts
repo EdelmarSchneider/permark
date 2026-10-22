@@ -1859,7 +1859,7 @@ const en = {
     "{n} projects included. Change this any time in Settings > Projects inside.",
   "projects.undoKept": "The .permark folder stays: it has changed.",
   "projects.settings.intro":
-    "Projects are folders inside {root} with their own git history or PerMark settings. Included projects are followed from here: their changes and unread documents show in this folder.",
+    "Projects are folders inside {root} with their own git history or PerMark settings. Included projects are followed from here: their changes, unread documents and branches show in this folder.",
   "projects.settings.filter": "Filter projects",
   "projects.settings.includeShown": "Include the projects listed",
   "projects.settings.leaveOutShown": "Leave out the projects listed",
@@ -1953,9 +1953,10 @@ const en = {
   "search.scope.allProjects": "Whole folder",
   "search.scope.thisProject": "This project ({short})",
   "search.scope.notInProject": "The open document is not inside a project.",
-  "projects.strip.why.one": "Include it to follow its changes and unread documents from here.",
+  "projects.strip.why.one":
+    "Include it to follow its changes, unread documents and branch from here.",
   "projects.strip.why.other":
-    "Include them to follow their changes and unread documents from here.",
+    "Include them to follow their changes, unread documents and branches from here.",
   "projects.strip.newOne": "New project: {path}.",
   "projects.strip.newFew": "New projects: {paths}.",
   "projects.strip.newIn": "{n} new projects in {folder}.",
@@ -1973,6 +1974,24 @@ const en = {
   "projects.announce.kept": "{name} is back in the list.",
   "projects.node.srNamed": "{folder}, project {short}",
   "search.scope.noDocument": "Open a document inside a project to search only that project.",
+  "projects.git.checking": "Checking git…",
+  "projects.git.unavailable": "Git isn't available",
+  "projects.row.changed": "{n} changed",
+  "projects.row.clean": "clean",
+  "projects.rules.git": "Git",
+  "projects.rules.gitRepo": "Its own repository, branch {branch}.",
+  "projects.rules.noGit": "No git repository.",
+  "projects.node.srBranch": "branch {branch}",
+  "projects.node.detached": "detached {oid}",
+  "projects.card.branch": "Branch {branch}",
+  "projects.card.aheadBehind": "↑{a} ↓{b}",
+  "projects.card.aheadBehindLabel": "{a} commits ahead, {b} behind, as of the last fetch",
+  "projects.card.changed.one": "1 changed file",
+  "projects.card.changed.other": "{n} changed files",
+  "projects.card.lastCommit": "Last commit {age}: “{subject}”",
+  "projects.card.gitMissing": "Git isn't available, so branch and changes aren't shown.",
+  "projects.card.gitError": "Git can't read this project.",
+  "projects.status.prefix": "{short} ·",
 } as const;
 
 export default en;

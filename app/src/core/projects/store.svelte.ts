@@ -2,6 +2,7 @@
 // `projects-changed`, and every action of the strip, Settings > Projects inside, the project node and its card. One
 // store per view (the module instance); started while a project is shown, reset when it goes.
 
+import { untrack } from "svelte";
 import type {
   AgentChoice,
   Api,
@@ -68,6 +69,27 @@ export type SettingsAsk = { kind: "row"; key: string; n: number } | { kind: "pro
 /** The detail card of a project node: where it hangs, how it was opened (hover: no focus move; menu: focus inside). */
 export type CardOpen = { path: string; from: "hover" | "menu"; anchor: DOMRect };
 
+/** How closely a part of the window looks at projects: `glance` (a node open on screen, a Settings row in view) |
+ *  `detail` (the detail card). Plugins with facts about projects (git) learn it here and fetch only what is shown. */
+export type LookLevel = "glance" | "detail";
+/** What the window looks at now: project uids by level (sorted, no duplicates). */
+export type Looking = { glance: readonly string[]; detail: readonly string[] };
+
+const NOBODY: Looking = { glance: [], detail: [] };
+
+/** The union of every part's looks (pure). */
+export function lookingOf(
+  looks: ReadonlyMap<string, { level: LookLevel; uids: readonly string[] }>,
+): Looking {
+  if (looks.size === 0) return NOBODY;
+  const glance = new Set<string>();
+  const detail = new Set<string>();
+  for (const { level, uids } of looks.values()) {
+    for (const uid of uids) (level === "detail" ? detail : glance).add(uid);
+  }
+  return { glance: [...glance].sort(), detail: [...detail].sort() };
+}
+
 /** Words for a failed project action: the project list changed under the save | anything else by kind. */
 export function projectsErrorText(error: ApiError): string {
   if (
@@ -103,6 +125,12 @@ export class ProjectsStore {
   announcement = $state("");
   /** The detail card shown (`null`: none). */
   card = $state.raw<CardOpen | null>(null);
+  /** What each part of the window (Explorer, card, Settings) looks at; read through `looking`. */
+  #looks = $state.raw<ReadonlyMap<string, { level: LookLevel; uids: readonly string[] }>>(
+    new Map(),
+  );
+  /** The projects shown now, by level (plugins fetch their facts for these only). */
+  looking: Looking = $derived(lookingOf(this.#looks));
 
   strip: Strip = $derived(stripOf(this.view));
   members: ReadonlyMap<string, ProjectRow> = $derived(membersOf(this.view));
@@ -152,6 +180,7 @@ export class ProjectsStore {
     this.choosing = null;
     this.ask = null;
     this.card = null;
+    this.#looks = new Map();
     this.announcement = "";
     // a removal still waiting is dropped: the entry stays (nothing lost; the person can remove it again)
     this.removing = new Set();
@@ -417,6 +446,33 @@ export class ProjectsStore {
     }
     await this.reload();
     return result.value;
+  }
+
+  // ---- what the window looks at ----------------------------------------------------------------------------------
+
+  /** `part` (a stable name: `explorer`, `card`, `settings`) now shows these projects at `level`; `[]` = none. Same set
+   *  again = no change (nothing re-runs). */
+  look(part: string, level: LookLevel, uids: readonly string[]): void {
+    // called from effects: reading the looks must not make them depend on it (they would run again on their own write)
+    untrack(() => this.#look(part, level, uids));
+  }
+
+  #look(part: string, level: LookLevel, uids: readonly string[]): void {
+    const before = this.#looks.get(part);
+    const sorted = [...new Set(uids)].sort();
+    if (sorted.length === 0 && !before) return;
+    if (
+      before &&
+      before.level === level &&
+      before.uids.length === sorted.length &&
+      before.uids.every((u, n) => u === sorted[n])
+    ) {
+      return;
+    }
+    const next = new Map(this.#looks);
+    if (sorted.length === 0) next.delete(part);
+    else next.set(part, { level, uids: sorted });
+    this.#looks = next;
   }
 
   // ---- the detail card -------------------------------------------------------------------------------------------

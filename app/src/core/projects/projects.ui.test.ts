@@ -556,7 +556,7 @@ describe("UX review round 2: focus, words, places", () => {
     await explorer();
     const region = strip()!;
     expect(region.textContent).toContain(
-      "This folder holds 1 project: template-app. Include it to follow its changes and unread documents from here.",
+      "This folder holds 1 project: template-app. Include it to follow its changes, unread documents and branch from here.",
     );
     expect(["Include", "Choose…", "No thanks"].map((t) => button(t, region) !== undefined)).toEqual(
       [true, false, true],

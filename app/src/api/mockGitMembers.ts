@@ -21,6 +21,8 @@ export type GitMembersProbe = {
   hold(on: boolean): void;
   /** The summaries now. */
   summaries(): RepoSummary[];
+  /** Reshapes every summary (all dirty, mid-rebase, long branch names...); `null`: the fixture's facts again. */
+  shape(fn: ((summary: RepoSummary, index: number) => RepoSummary) | null): void;
 };
 
 const HOUR = 3_600_000;
@@ -74,6 +76,7 @@ export function createMockGitMembers(deps: Deps): {
   const wants = new Map<string, Set<string>>();
   let unavailable = false;
   let held = false;
+  let shaper: ((summary: RepoSummary, index: number) => RepoSummary) | null = null;
   let seq = 1_000;
 
   function rows(): { id: string; path: string }[] {
@@ -96,7 +99,8 @@ export function createMockGitMembers(deps: Deps): {
 
   function summaries(): RepoSummary[] {
     return rows().map(({ id, path }, index) => {
-      const base: RepoSummary = factsOf(id, path, index, wanted(id, "detail"));
+      const facts = factsOf(id, path, index, wanted(id, "detail"));
+      const base: RepoSummary = shaper === null ? facts : shaper(facts, index);
       if (unavailable) {
         return {
           ...base,
@@ -192,6 +196,15 @@ export function createMockGitMembers(deps: Deps): {
         announce(rows().map((r) => r.id));
       },
       summaries,
+      shape(fn) {
+        shaper = fn;
+        seq += 1;
+        announce(rows().map((r) => r.id));
+        for (const { id } of rows()) {
+          const snapshot = snapshotOf(id);
+          if (snapshot) deps.emit("git:projectSnapshot", { project: id, snapshot });
+        }
+      },
     },
   };
 }

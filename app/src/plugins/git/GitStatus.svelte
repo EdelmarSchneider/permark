@@ -4,34 +4,69 @@
   import GitBranch from "@lucide/svelte/icons/git-branch";
   import type { BaselineKind, Letter } from "../../api";
   import { t, type MessageKey } from "../../core/i18n";
+  import { projects } from "../../core/projects/instance.svelte";
+  import { STATE_KEYS, changedCount, gitMissing, shortOid as cut } from "./facts";
+  import { members } from "./members.svelte";
   import { LETTER_ORDER, git, letterOf } from "./store.svelte";
 
+  /** What the item shows: the repository of the active document's project (with its short name before it), else the
+   *  opened folder's. */
+  type Shown = {
+    prefix: string | null;
+    branch: string;
+    oid: string | null;
+    detached: boolean;
+    unborn: boolean;
+    changed: string;
+    state: MessageKey | null;
+    problem: string | null;
+    baseline: BaselineKind;
+    backend: "system" | "builtin" | null;
+  };
+
   const snapshot = $derived(git.snapshot);
-  const shortOid = $derived(snapshot?.head.oid?.slice(0, 7) ?? null);
-  const label = $derived.by(() => {
-    const head = snapshot?.head;
-    if (!head) return "";
-    if (head.detached) return t("git.status.detached", { oid: shortOid ?? "" });
-    return head.branch ?? "";
-  });
-  const changed = $derived(
-    snapshot === null
-      ? ""
-      : snapshot.truncated
+  const shown = $derived.by((): Shown | null => {
+    const repo = members.active;
+    if (repo !== null) {
+      if (gitMissing(repo)) return null;
+      const row = projects.view?.rows.find((r) => r.uid === repo.id) ?? null;
+      const list = members.lists.get(repo.id) ?? null;
+      return {
+        prefix: t("projects.status.prefix", { short: row?.short ?? repo.path }),
+        branch: repo.detached
+          ? t("git.status.detached", { oid: cut(repo.oid) })
+          : (repo.branch ?? ""),
+        oid: repo.oid === null ? null : cut(repo.oid),
+        detached: repo.detached,
+        unborn: repo.unborn,
+        changed:
+          repo.changed === null
+            ? ""
+            : t("git.status.changed", { count: changedCount(repo.changed) }),
+        state: STATE_KEYS[repo.state],
+        problem: repo.error?.kind === "failed" ? t("projects.card.gitError") : null,
+        baseline: snapshot?.baseline.kind ?? list?.baseline.kind ?? "lastVisit",
+        backend: snapshot?.backend ?? list?.backend ?? null,
+      };
+    }
+    if (snapshot === null) return null;
+    const head = snapshot.head;
+    const oid = head.oid === null ? null : cut(head.oid);
+    return {
+      prefix: null,
+      branch: head.detached ? t("git.status.detached", { oid: oid ?? "" }) : (head.branch ?? ""),
+      oid,
+      detached: head.detached,
+      unborn: head.unborn,
+      changed: snapshot.truncated
         ? t("git.status.changedMore", { count: snapshot.files.length })
         : t("git.status.changed", { count: snapshot.files.length }),
-  );
-
-  const STATES = {
-    clean: null,
-    merging: "git.state.merging",
-    rebasing: "git.state.rebasing",
-    cherryPicking: "git.state.cherryPicking",
-    reverting: "git.state.reverting",
-    bisecting: "git.state.bisecting",
-    busy: "git.state.busy",
-  } as const;
-  const repoState = $derived(snapshot === null ? null : STATES[snapshot.state]);
+      state: STATE_KEYS[snapshot.state],
+      problem: null,
+      baseline: snapshot.baseline.kind,
+      backend: snapshot.backend,
+    };
+  });
 
   const BASELINES: { kind: BaselineKind; label: "git.baseline.visit" | "git.baseline.commit" }[] = [
     { kind: "lastVisit", label: "git.baseline.visit" },
@@ -76,27 +111,35 @@
   });
 </script>
 
-{#if snapshot !== null}
+{#if shown !== null}
   <span class="git" bind:this={box}>
     <button
       type="button"
       class="chip"
       aria-haspopup="dialog"
       aria-expanded={git.legend}
-      title={t("git.status.hint", { branch: label, oid: shortOid ?? t("git.status.noCommits") })}
+      title={`${shown.prefix === null ? "" : `${shown.prefix} `}${t("git.status.hint", {
+        branch: shown.branch,
+        oid: shown.oid ?? t("git.status.noCommits"),
+      })}`}
       onclick={() => (git.legend = !git.legend)}
     >
       <GitBranch size={13} aria-hidden="true" />
-      <span class="branch">{label}</span>
-      {#if snapshot.head.unborn}
+      {#if shown.prefix !== null}<span class="prefix">{shown.prefix}</span>{/if}
+      <span class="branch">{shown.branch}</span>
+      {#if shown.unborn}
         <span class="muted">{t("git.status.noCommits")}</span>
-      {:else if shortOid && !snapshot.head.detached}
-        <span class="muted oid">{shortOid}</span>
+      {:else if shown.oid && !shown.detached}
+        <span class="muted oid">{shown.oid}</span>
       {/if}
-      <span class="muted" title={t("git.status.changedHint")}>{changed}</span>
+      {#if shown.problem !== null}
+        <span class="muted">{shown.problem}</span>
+      {:else}
+        <span class="muted" title={t("git.status.changedHint")}>{shown.changed}</span>
+      {/if}
     </button>
-    {#if repoState}
-      <span class="state" role="status">{t(repoState)}</span>
+    {#if shown.state}
+      <span class="state" role="status">{t(shown.state)}</span>
     {/if}
     {#if git.legend}
       <div class="legend" role="dialog" aria-label={t("git.legend.title")} use:above>
@@ -107,9 +150,7 @@
               <span class="mark tone-{letter}">{letterOf(letter)}</span>
               <span
                 >{t(LETTER_KEYS[letter], {
-                  since: t(
-                    snapshot.baseline.kind === "lastVisit" ? "git.since.visit" : "git.since.commit",
-                  ),
+                  since: t(shown.baseline === "lastVisit" ? "git.since.visit" : "git.since.commit"),
                 })}</span
               >
             </li>
@@ -122,16 +163,16 @@
             <button
               type="button"
               role="radio"
-              class={["segment", snapshot.baseline.kind === option.kind && "is-on"]}
-              aria-checked={snapshot.baseline.kind === option.kind}
+              class={["segment", shown.baseline === option.kind && "is-on"]}
+              aria-checked={shown.baseline === option.kind}
               onclick={() => void git.setBaseline(option.kind)}>{t(option.label)}</button
             >
           {/each}
         </div>
         <p class="note">
-          {t(
-            snapshot.backend === "system" ? "git.backend.usingSystem" : "git.backend.usingBuiltin",
-          )}
+          {#if shown.backend !== null}
+            {t(shown.backend === "system" ? "git.backend.usingSystem" : "git.backend.usingBuiltin")}
+          {/if}
           {t("git.legend.readOnly")}
         </p>
       </div>
@@ -162,6 +203,12 @@
   .chip[aria-expanded="true"] {
     background: var(--hover);
     color: var(--text);
+  }
+  .prefix {
+    max-width: 14ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .branch {
     max-width: 18ch;

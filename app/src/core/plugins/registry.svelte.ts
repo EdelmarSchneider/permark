@@ -4,7 +4,7 @@
 import { untrack, type Component } from "svelte";
 import type { Manifest } from "../../api/generated/Manifest";
 import type { PluginId } from "../../api/generated/PluginId";
-import type { Block, Context, DocumentView } from "../../api";
+import type { Block, Context, DocumentView, ProjectRow } from "../../api";
 import { available, type Requirement } from "../conditions/available";
 import type { MessageKey } from "../i18n";
 import type {
@@ -44,6 +44,16 @@ export type TreeBadge = {
 
 /** What a plugin puts in a column of the outline panel: a short text and, when useful, a longer one for the tooltip. */
 export type OutlineCell = { text: string; title?: string };
+
+/**
+ * A short fact a plugin knows about an included project (its branch, what its repository is doing). `chip`: a state
+ * (drawn as a chip, as in the status bar); `spoken`: the words for its screen-reader name (else `text`); `title`: the
+ * tooltip (else `text`).
+ */
+export type ProjectFact = { text: string; chip?: boolean; spoken?: string; title?: string };
+
+/** The props of a plugin's block in a project's detail card. */
+export type ProjectCardProps = { row: ProjectRow };
 
 /** Everything a plugin can add to the core UI. */
 export type Contribution = Owned &
@@ -123,6 +133,21 @@ export type Contribution = Owned &
         id: string;
         order: number;
         step: (direction: 1 | -1) => boolean | Promise<boolean>;
+      }
+    /**
+     * What a plugin knows about the included projects (git: branch, changes): the muted text of a project node, the
+     * status of its Settings row, a line in its expanded row, one sentence for the Settings intro, a block in its detail
+     * card. Every function reads reactive state; `null` = nothing to say. The plugin's own `treeBadge` on the project
+     * folder is left out of the card and the Settings row (its block | status says it).
+     */
+    | {
+        kind: "projectFacts";
+        id: string;
+        node: (row: ProjectRow) => ProjectFact | null;
+        row: (row: ProjectRow) => ProjectFact | null;
+        info: (row: ProjectRow) => { label: string; text: string } | null;
+        note: () => string | null;
+        card: LazyComponent<ProjectCardProps>;
       }
     /** An entry of the Explorer's context menu (a single row). */
     | {

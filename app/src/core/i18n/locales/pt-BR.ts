@@ -1891,7 +1891,7 @@ export default {
     "{n} projetos incluídos. Mude isso quando quiser em Configurações > Projetos dentro.",
   "projects.undoKept": "A pasta .permark fica: ela mudou.",
   "projects.settings.intro":
-    "Projetos são pastas dentro de {root} com histórico git próprio ou configurações próprias do PerMark. Projetos incluídos são acompanhados daqui: as mudanças e os documentos não lidos deles aparecem nesta pasta.",
+    "Projetos são pastas dentro de {root} com histórico git próprio ou configurações próprias do PerMark. Projetos incluídos são acompanhados daqui: as mudanças, os documentos não lidos e os branches deles aparecem nesta pasta.",
   "projects.settings.filter": "Filtrar projetos",
   "projects.settings.includeShown": "Incluir os projetos listados",
   "projects.settings.leaveOutShown": "Deixar de fora os projetos listados",
@@ -1988,9 +1988,9 @@ export default {
   "search.scope.thisProject": "Este projeto ({short})",
   "search.scope.notInProject": "O documento aberto não está dentro de um projeto.",
   "projects.strip.why.one":
-    "Inclua-o para acompanhar daqui as mudanças e os documentos não lidos dele.",
+    "Inclua-o para acompanhar daqui as mudanças, os documentos não lidos e o branch dele.",
   "projects.strip.why.other":
-    "Inclua-os para acompanhar daqui as mudanças e os documentos não lidos deles.",
+    "Inclua-os para acompanhar daqui as mudanças, os documentos não lidos e os branches deles.",
   "projects.strip.newOne": "Projeto novo: {path}.",
   "projects.strip.newFew": "Projetos novos: {paths}.",
   "projects.strip.newIn": "{n} projetos novos em {folder}.",
@@ -2009,4 +2009,23 @@ export default {
   "projects.node.srNamed": "{folder}, projeto {short}",
   "search.scope.noDocument":
     "Abra um documento dentro de um projeto para pesquisar só nesse projeto.",
+  "projects.git.checking": "Verificando o git…",
+  "projects.git.unavailable": "O git não está disponível",
+  "projects.row.changed": "{n} alterados",
+  "projects.row.clean": "sem mudanças",
+  "projects.rules.git": "Git",
+  "projects.rules.gitRepo": "Repositório próprio, branch {branch}.",
+  "projects.rules.noGit": "Sem repositório git.",
+  "projects.node.srBranch": "branch {branch}",
+  "projects.node.detached": "desanexado {oid}",
+  "projects.card.branch": "Branch {branch}",
+  "projects.card.aheadBehind": "↑{a} ↓{b}",
+  "projects.card.aheadBehindLabel": "{a} commits à frente, {b} atrás, desde o último fetch",
+  "projects.card.changed.one": "1 arquivo alterado",
+  "projects.card.changed.other": "{n} arquivos alterados",
+  "projects.card.lastCommit": "Último commit {age}: “{subject}”",
+  "projects.card.gitMissing":
+    "O git não está disponível, então o branch e as mudanças não aparecem.",
+  "projects.card.gitError": "O git não consegue ler este projeto.",
+  "projects.status.prefix": "{short} ·",
 } satisfies Messages;

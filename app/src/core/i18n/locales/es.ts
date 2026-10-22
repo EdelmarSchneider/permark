@@ -1895,7 +1895,7 @@ export default {
     "{n} proyectos incluidos. Puedes cambiarlo cuando quieras en Configuración > Proyectos dentro.",
   "projects.undoKept": "La carpeta .permark se queda: ha cambiado.",
   "projects.settings.intro":
-    "Los proyectos son carpetas dentro de {root} con su propio historial de git o su propia configuración de PerMark. Los proyectos incluidos se siguen desde aquí: sus cambios y documentos sin leer aparecen en esta carpeta.",
+    "Los proyectos son carpetas dentro de {root} con su propio historial de git o su propia configuración de PerMark. Los proyectos incluidos se siguen desde aquí: sus cambios, documentos sin leer y ramas aparecen en esta carpeta.",
   "projects.settings.filter": "Filtrar proyectos",
   "projects.settings.includeShown": "Incluir los proyectos de la lista",
   "projects.settings.leaveOutShown": "Dejar fuera los proyectos de la lista",
@@ -1991,9 +1991,10 @@ export default {
   "search.scope.allProjects": "Toda la carpeta",
   "search.scope.thisProject": "Este proyecto ({short})",
   "search.scope.notInProject": "El documento abierto no está dentro de un proyecto.",
-  "projects.strip.why.one": "Inclúyelo para seguir desde aquí sus cambios y documentos sin leer.",
+  "projects.strip.why.one":
+    "Inclúyelo para seguir desde aquí sus cambios, documentos sin leer y rama.",
   "projects.strip.why.other":
-    "Inclúyelos para seguir desde aquí sus cambios y documentos sin leer.",
+    "Inclúyelos para seguir desde aquí sus cambios, documentos sin leer y ramas.",
   "projects.strip.newOne": "Proyecto nuevo: {path}.",
   "projects.strip.newFew": "Proyectos nuevos: {paths}.",
   "projects.strip.newIn": "{n} proyectos nuevos en {folder}.",
@@ -2012,4 +2013,24 @@ export default {
   "projects.node.srNamed": "{folder}, proyecto {short}",
   "search.scope.noDocument":
     "Abre un documento dentro de un proyecto para buscar solo en ese proyecto.",
+  "projects.git.checking": "Comprobando git…",
+  "projects.git.unavailable": "Git no está disponible",
+  "projects.row.changed": "{n} cambiados",
+  "projects.row.clean": "sin cambios",
+  "projects.rules.git": "Git",
+  "projects.rules.gitRepo": "Repositorio propio, rama {branch}.",
+  "projects.rules.noGit": "Sin repositorio git.",
+  "projects.node.srBranch": "rama {branch}",
+  "projects.node.detached": "desacoplado {oid}",
+  "projects.card.branch": "Rama {branch}",
+  "projects.card.aheadBehind": "↑{a} ↓{b}",
+  "projects.card.aheadBehindLabel":
+    "{a} commits por delante, {b} por detrás, desde el último fetch",
+  "projects.card.changed.one": "1 archivo cambiado",
+  "projects.card.changed.other": "{n} archivos cambiados",
+  "projects.card.lastCommit": "Último commit {age}: “{subject}”",
+  "projects.card.gitMissing":
+    "Git no está disponible, así que la rama y los cambios no se muestran.",
+  "projects.card.gitError": "Git no puede leer este proyecto.",
+  "projects.status.prefix": "{short} ·",
 } satisfies Messages;

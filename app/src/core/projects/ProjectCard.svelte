@@ -6,6 +6,7 @@
   import { conditions } from "../conditions/context.svelte";
   import { t, tn } from "../i18n";
   import { contributions } from "../plugins/instance.svelte";
+  import { projects } from "./instance.svelte";
 
   type Props = {
     row: ProjectRow;
@@ -25,19 +26,30 @@
 
   let card: HTMLElement | undefined = $state();
   const agentOn = $derived(conditions.current.agent.status !== "off");
-  /** Plugin words about the folder (unread count, changed files): their tooltips, which say it in full. */
-  const said = $derived(
-    contributions.visible("treeBadge", conditions.current).flatMap((b) => {
+  /** Blocks of plugins that know about projects (git: branch, changes, last commit). */
+  const facts = $derived(contributions.visible("projectFacts", conditions.current));
+  /** Plugin words about the folder (unread count): their tooltips, which say it in full. A plugin with its own block
+   *  says its part there (git's changed files). */
+  const said = $derived.by(() => {
+    const own = new Set(facts.map((f) => f.owner));
+    return contributions.visible("treeBadge", conditions.current).flatMap((b) => {
+      if (own.has(b.owner)) return [];
       const badge = b.badge(row.path, true);
       return badge === null || badge.text === "" ? [] : [badge.title ?? badge.text];
-    }),
-  );
+    });
+  });
 
-  // placed right of the row when there is room, else below | above it; inside the window by 8 px
+  // the card wants the details of its project while it shows
   $effect(() => {
-    if (!card) return;
+    const uid = row.uid;
+    projects.look("card", "detail", uid === null ? [] : [uid]);
+    return () => projects.look("card", "detail", []);
+  });
+
+  /** Right of the row when there is room, else below | above it; inside the window by 8 px. */
+  function place(el: HTMLElement): void {
     const width = Math.min(WIDTH, window.innerWidth - 2 * GAP);
-    const height = card.getBoundingClientRect().height;
+    const height = el.getBoundingClientRect().height;
     let left = anchor.right + GAP;
     let top = anchor.top;
     if (left + width > window.innerWidth - GAP) {
@@ -48,10 +60,21 @@
           : anchor.top - height - 4;
     }
     top = Math.max(GAP, Math.min(top, window.innerHeight - height - GAP));
-    card.style.left = `${left}px`;
-    card.style.top = `${top}px`;
-    card.style.width = `${width}px`;
-    if (from === "menu") card.querySelector<HTMLElement>("button")?.focus();
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
+    el.style.width = `${width}px`;
+  }
+
+  $effect(() => {
+    if (!card) return;
+    const el = card;
+    place(el);
+    if (from === "menu") el.querySelector<HTMLElement>("button")?.focus();
+    // a plugin's block that loads later makes it taller: it is placed again (never over its row)
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => place(el));
+    observer.observe(el);
+    return () => observer.disconnect();
   });
 
   // Esc closes it from anywhere while it shows
@@ -90,6 +113,9 @@
   </div>
   {#if row.description}<p class="description">{row.description}</p>{/if}
   <p class="path">{row.path}</p>
+  {#each facts as fact (fact.id)}
+    {#await fact.card() then block}<block.default {row} />{/await}
+  {/each}
   {#if said.length > 0}<p class="line">{said.join(" · ")}</p>{/if}
   {#if agentOn}
     <p class="line">
